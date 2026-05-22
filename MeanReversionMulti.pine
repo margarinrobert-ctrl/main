@@ -1,0 +1,189 @@
+//@version=5
+indicator("Mean Reversion Multi (RSI + Stoch + CVD Div)", shorttitle="MR-Multi", overlay=true, max_bars_back=500)
+
+// ============================================================
+// Inputs
+// ============================================================
+grpMR     = "Mean Reversion (Z-Score / BB)"
+zLen      = input.int(20,   "Mean / StDev Length",     minval=2,  group=grpMR)
+zEntry    = input.float(2.0,"Z-Score Entry Threshold", minval=0.1, step=0.1, group=grpMR)
+zExit     = input.float(0.0,"Z-Score Exit Threshold",  step=0.1, group=grpMR)
+useBB     = input.bool(true, "Plot Bollinger Bands",   group=grpMR)
+bbMult    = input.float(2.0, "BB StDev Mult", step=0.1, group=grpMR)
+
+grpRSI    = "RSI"
+rsiLen    = input.int(14,   "RSI Length",      minval=2, group=grpRSI)
+rsiOB     = input.int(70,   "RSI Overbought",  group=grpRSI)
+rsiOS     = input.int(30,   "RSI Oversold",    group=grpRSI)
+
+grpST     = "Stochastic"
+stKLen    = input.int(14,   "%K Length",       minval=1, group=grpST)
+stKSmooth = input.int(3,    "%K Smoothing",    minval=1, group=grpST)
+stDSmooth = input.int(3,    "%D Smoothing",    minval=1, group=grpST)
+stOB      = input.int(80,   "Stoch Overbought",group=grpST)
+stOS      = input.int(20,   "Stoch Oversold",  group=grpST)
+
+grpCVD    = "CVD Divergence"
+cvdLen    = input.int(14,   "CVD Pivot Lookback (left/right)", minval=2, group=grpCVD)
+cvdRange  = input.int(60,   "Max Bars Between Pivots",         minval=5, group=grpCVD)
+cvdReset  = input.string("Session", "CVD Reset", options=["Session","Day","Week","None"], group=grpCVD)
+
+grpSig    = "Signals"
+needAll   = input.bool(false,"Require ALL filters (RSI + Stoch + CVD Div)", group=grpSig)
+minScore  = input.int(2,     "Min Confluence Score (if not requiring all)", minval=1, maxval=3, group=grpSig)
+alertsOn  = input.bool(true, "Enable Alerts", group=grpSig)
+
+// ============================================================
+// Mean Reversion: Z-Score & Bollinger Bands
+// ============================================================
+basis = ta.sma(close, zLen)
+dev   = ta.stdev(close, zLen)
+z     = dev != 0 ? (close - basis) / dev : 0.0
+
+bbU   = basis + bbMult * dev
+bbL   = basis - bbMult * dev
+
+plot(useBB ? basis : na, "Basis", color=color.new(color.orange, 0))
+plot(useBB ? bbU   : na, "BB Upper", color=color.new(color.gray, 30))
+plot(useBB ? bbL   : na, "BB Lower", color=color.new(color.gray, 30))
+
+// ============================================================
+// RSI
+// ============================================================
+rsi = ta.rsi(close, rsiLen)
+
+// ============================================================
+// Stochastic
+// ============================================================
+stK = ta.sma(ta.stoch(close, high, low, stKLen), stKSmooth)
+stD = ta.sma(stK, stDSmooth)
+
+// ============================================================
+// CVD (intrabar volume delta approximation) with reset
+// ============================================================
+isNewPeriod =
+     cvdReset == "Session" ? ta.change(time("D")) != 0 :
+     cvdReset == "Day"     ? ta.change(time("D")) != 0 :
+     cvdReset == "Week"    ? ta.change(time("W")) != 0 :
+     false
+
+// Approximate delta per bar from price action and volume
+range1 = high - low
+buyPressure  = range1 > 0 ? volume * (close - low) / range1 : 0.0
+sellPressure = range1 > 0 ? volume * (high - close) / range1 : 0.0
+delta = buyPressure - sellPressure
+
+var float cvd = 0.0
+cvd := isNewPeriod ? delta : nz(cvd[1]) + delta
+
+// ============================================================
+// CVD Divergence using price pivots
+// ============================================================
+ph = ta.pivothigh(high, cvdLen, cvdLen)
+pl = ta.pivotlow(low,  cvdLen, cvdLen)
+
+var float lastPH       = na
+var int   lastPHBar    = na
+var float lastPHcvd    = na
+var float lastPL       = na
+var int   lastPLBar    = na
+var float lastPLcvd    = na
+
+bullDiv = false
+bearDiv = false
+
+if not na(pl)
+    plBar = bar_index - cvdLen
+    plCVD = cvd[cvdLen]
+    if not na(lastPL) and (plBar - lastPLBar) <= cvdRange
+        // Bullish divergence: price lower low, CVD higher low
+        if pl < lastPL and plCVD > lastPLcvd
+            bullDiv := true
+    lastPL    := pl
+    lastPLBar := plBar
+    lastPLcvd := plCVD
+
+if not na(ph)
+    phBar = bar_index - cvdLen
+    phCVD = cvd[cvdLen]
+    if not na(lastPH) and (phBar - lastPHBar) <= cvdRange
+        // Bearish divergence: price higher high, CVD lower high
+        if ph > lastPH and phCVD < lastPHcvd
+            bearDiv := true
+    lastPH    := ph
+    lastPHBar := phBar
+    lastPHcvd := phCVD
+
+// Latch divergences for a few bars so they can confluence with other signals
+divHoldBars = 5
+var int bullDivBar = na
+var int bearDivBar = na
+if bullDiv
+    bullDivBar := bar_index
+if bearDiv
+    bearDivBar := bar_index
+
+bullDivActive = not na(bullDivBar) and (bar_index - bullDivBar) <= divHoldBars
+bearDivActive = not na(bearDivBar) and (bar_index - bearDivBar) <= divHoldBars
+
+// ============================================================
+// Confluence
+// ============================================================
+longRSI   = rsi  < rsiOS
+longStoch = stK  < stOS and ta.crossover(stK, stD)
+longMR    = z <= -zEntry
+
+shortRSI   = rsi  > rsiOB
+shortStoch = stK  > stOB and ta.crossunder(stK, stD)
+shortMR    = z >= zEntry
+
+longScore  = (longRSI ? 1 : 0) + (longStoch ? 1 : 0) + (bullDivActive ? 1 : 0)
+shortScore = (shortRSI ? 1 : 0) + (shortStoch ? 1 : 0) + (bearDivActive ? 1 : 0)
+
+longSignal  = longMR  and (needAll ? (longRSI  and longStoch  and bullDivActive) : longScore  >= minScore)
+shortSignal = shortMR and (needAll ? (shortRSI and shortStoch and bearDivActive) : shortScore >= minScore)
+
+// Exit when z returns toward mean
+longExit  = ta.crossover(z, -zExit)
+shortExit = ta.crossunder(z, zExit)
+
+// ============================================================
+// Plots / Shapes
+// ============================================================
+plotshape(longSignal,  title="Long Signal",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0),   size=size.small, text="LONG")
+plotshape(shortSignal, title="Short Signal", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0),    size=size.small, text="SHORT")
+plotshape(longExit,    title="Long Exit",    style=shape.xcross,       location=location.abovebar, color=color.new(color.yellow, 0), size=size.tiny)
+plotshape(shortExit,   title="Short Exit",   style=shape.xcross,       location=location.belowbar, color=color.new(color.yellow, 0), size=size.tiny)
+
+plotshape(bullDiv, title="CVD Bull Div", style=shape.circle, location=location.belowbar, color=color.new(color.aqua, 0), size=size.tiny, offset=-cvdLen)
+plotshape(bearDiv, title="CVD Bear Div", style=shape.circle, location=location.abovebar, color=color.new(color.fuchsia, 0), size=size.tiny, offset=-cvdLen)
+
+// ============================================================
+// Info table
+// ============================================================
+var table t = table.new(position.top_right, 2, 6, border_width=1)
+if barstate.islast
+    table.cell(t, 0, 0, "Metric",  bgcolor=color.new(color.gray, 80), text_color=color.white)
+    table.cell(t, 1, 0, "Value",   bgcolor=color.new(color.gray, 80), text_color=color.white)
+    table.cell(t, 0, 1, "Z-Score")
+    table.cell(t, 1, 1, str.tostring(z, "#.##"), text_color = math.abs(z) >= zEntry ? color.yellow : color.white)
+    table.cell(t, 0, 2, "RSI")
+    table.cell(t, 1, 2, str.tostring(rsi, "#.##"), text_color = rsi > rsiOB ? color.red : rsi < rsiOS ? color.lime : color.white)
+    table.cell(t, 0, 3, "Stoch %K")
+    table.cell(t, 1, 3, str.tostring(stK, "#.##"), text_color = stK > stOB ? color.red : stK < stOS ? color.lime : color.white)
+    table.cell(t, 0, 4, "CVD")
+    table.cell(t, 1, 4, str.tostring(cvd, "#"), text_color = cvd >= 0 ? color.lime : color.red)
+    table.cell(t, 0, 5, "Bias")
+    table.cell(t, 1, 5, longSignal ? "LONG" : shortSignal ? "SHORT" : bullDivActive ? "Bull Div" : bearDivActive ? "Bear Div" : "—",
+         text_color = longSignal ? color.lime : shortSignal ? color.red : color.white)
+
+// ============================================================
+// Alerts
+// ============================================================
+if alertsOn
+    alertcondition(longSignal,  title="Mean Reversion LONG",  message="MR-Multi LONG: z<= -{{plot_0}}, RSI/Stoch/CVD confluence")
+    alertcondition(shortSignal, title="Mean Reversion SHORT", message="MR-Multi SHORT: z>= {{plot_0}}, RSI/Stoch/CVD confluence")
+    alertcondition(longExit,    title="Long Exit",            message="MR-Multi Long Exit")
+    alertcondition(shortExit,   title="Short Exit",           message="MR-Multi Short Exit")
+    alertcondition(bullDiv,     title="CVD Bullish Divergence", message="CVD Bullish Divergence")
+    alertcondition(bearDiv,     title="CVD Bearish Divergence", message="CVD Bearish Divergence")
