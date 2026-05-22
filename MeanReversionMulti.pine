@@ -31,7 +31,6 @@ cvdReset  = input.string("Session", "CVD Reset", options=["Session","Day","Week"
 grpSig    = "Signals"
 needAll   = input.bool(false,"Require ALL filters (RSI + Stoch + CVD Div)", group=grpSig)
 minScore  = input.int(2,     "Min Confluence Score (if not requiring all)", minval=1, maxval=3, group=grpSig)
-alertsOn  = input.bool(true, "Enable Alerts", group=grpSig)
 
 // ============================================================
 // Mean Reversion: Z-Score & Bollinger Bands
@@ -180,10 +179,9 @@ if barstate.islast
 // ============================================================
 // Alerts
 // ============================================================
-if alertsOn
-    alertcondition(longSignal,  title="Mean Reversion LONG",  message="MR-Multi LONG: z<= -{{plot_0}}, RSI/Stoch/CVD confluence")
-    alertcondition(shortSignal, title="Mean Reversion SHORT", message="MR-Multi SHORT: z>= {{plot_0}}, RSI/Stoch/CVD confluence")
-    alertcondition(longExit,    title="Long Exit",            message="MR-Multi Long Exit")
-    alertcondition(shortExit,   title="Short Exit",           message="MR-Multi Short Exit")
-    alertcondition(bullDiv,     title="CVD Bullish Divergence", message="CVD Bullish Divergence")
-    alertcondition(bearDiv,     title="CVD Bearish Divergence", message="CVD Bearish Divergence")
+alertcondition(longSignal,  title="Mean Reversion LONG",    message="MR-Multi LONG: z-score extreme with RSI/Stoch/CVD confluence")
+alertcondition(shortSignal, title="Mean Reversion SHORT",   message="MR-Multi SHORT: z-score extreme with RSI/Stoch/CVD confluence")
+alertcondition(longExit,    title="Long Exit",              message="MR-Multi Long Exit")
+alertcondition(shortExit,   title="Short Exit",             message="MR-Multi Short Exit")
+alertcondition(bullDiv,     title="CVD Bullish Divergence", message="CVD Bullish Divergence")
+alertcondition(bearDiv,     title="CVD Bearish Divergence", message="CVD Bearish Divergence")
