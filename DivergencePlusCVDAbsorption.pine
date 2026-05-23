@@ -65,8 +65,10 @@ gAbs = "Absorption Bubbles"
 showDots       = input.bool(true, "Show Bubbles?", group=gAbs)
 limitFactor    = input.float(0.1, "Absorption Threshold", step=0.1, minval=0.1, group=gAbs)
 lookbackperiod = input.int(100, "Lookback Period", group=gAbs)
-colUp   = color.green
-colDown = color.red
+bubbleSizeStr  = input.string("Tiny", "Bubble Size (fixed)", options=["Auto Tier","Tiny","Small","Normal","Large","Huge"], group=gAbs)
+colUp          = input.color(color.green, "Buying Absorption Color",  group=gAbs)
+colDown        = input.color(color.red,   "Selling Absorption Color", group=gAbs)
+gradOpacity    = input.int(70, "Bubble Transparency", minval=0, maxval=100, group=gAbs)
 
 // ============================================================
 // MAs
@@ -424,12 +426,8 @@ volData   = volume
 midPrice  = (high + low) / 2
 scaledVol = volData / ta.stdev(volData, lookbackperiod)
 
-gradUp = color.from_gradient(scaledVol, 0, 8,
-     chart.bg_color == color.white ? color.new(colUp, 100) : color.rgb(35, 73, 35, 15),
-     color.rgb(0, 217, 0, 70))
-gradDn = color.from_gradient(scaledVol, 0, 8,
-     chart.bg_color == color.white ? color.new(colDown, 100) : color.rgb(77, 34, 34, 15),
-     color.rgb(219, 0, 0, 70))
+gradUp = color.from_gradient(scaledVol, 0, 8, color.new(colUp,   95), color.new(colUp,   gradOpacity))
+gradDn = color.from_gradient(scaledVol, 0, 8, color.new(colDown, 95), color.new(colDown, gradOpacity))
 
 condA = showDots and scaledVol >= limitFactor             and scaledVol <  (limitFactor + 1)
 condB = showDots and scaledVol >= (limitFactor + 1)       and scaledVol <  (limitFactor + 2)
@@ -449,17 +447,25 @@ lowerZone = midPrice <= lowBody and midPrice >= low
 validUp = upperZone
 validDn = lowerZone
 
-plotshape(condA and validUp ? midPrice : na, "AbsBuyA", shape.circle, location.absolute, gradUp, size=size.tiny)
-plotshape(condB and validUp ? midPrice : na, "AbsBuyB", shape.circle, location.absolute, gradUp, size=size.small)
-plotshape(condC and validUp ? midPrice : na, "AbsBuyC", shape.circle, location.absolute, gradUp, size=size.normal)
-plotshape(condD and validUp ? midPrice : na, "AbsBuyD", shape.circle, location.absolute, gradUp, size=size.large)
-plotshape(condE and validUp ? midPrice : na, "AbsBuyE", shape.circle, location.absolute, gradUp, size=size.huge)
+f_size(tier) =>
+    bubbleSizeStr == "Auto Tier" ? tier :
+     bubbleSizeStr == "Tiny"     ? size.tiny :
+     bubbleSizeStr == "Small"    ? size.small :
+     bubbleSizeStr == "Normal"   ? size.normal :
+     bubbleSizeStr == "Large"    ? size.large :
+                                   size.huge
 
-plotshape(condA and validDn ? midPrice : na, "AbsSellA", shape.circle, location.absolute, gradDn, size=size.tiny)
-plotshape(condB and validDn ? midPrice : na, "AbsSellB", shape.circle, location.absolute, gradDn, size=size.small)
-plotshape(condC and validDn ? midPrice : na, "AbsSellC", shape.circle, location.absolute, gradDn, size=size.normal)
-plotshape(condD and validDn ? midPrice : na, "AbsSellD", shape.circle, location.absolute, gradDn, size=size.large)
-plotshape(condE and validDn ? midPrice : na, "AbsSellE", shape.circle, location.absolute, gradDn, size=size.huge)
+plotshape(condA and validUp ? midPrice : na, "AbsBuyA", shape.circle, location.absolute, gradUp, size=f_size(size.tiny))
+plotshape(condB and validUp ? midPrice : na, "AbsBuyB", shape.circle, location.absolute, gradUp, size=f_size(size.small))
+plotshape(condC and validUp ? midPrice : na, "AbsBuyC", shape.circle, location.absolute, gradUp, size=f_size(size.normal))
+plotshape(condD and validUp ? midPrice : na, "AbsBuyD", shape.circle, location.absolute, gradUp, size=f_size(size.large))
+plotshape(condE and validUp ? midPrice : na, "AbsBuyE", shape.circle, location.absolute, gradUp, size=f_size(size.huge))
+
+plotshape(condA and validDn ? midPrice : na, "AbsSellA", shape.circle, location.absolute, gradDn, size=f_size(size.tiny))
+plotshape(condB and validDn ? midPrice : na, "AbsSellB", shape.circle, location.absolute, gradDn, size=f_size(size.small))
+plotshape(condC and validDn ? midPrice : na, "AbsSellC", shape.circle, location.absolute, gradDn, size=f_size(size.normal))
+plotshape(condD and validDn ? midPrice : na, "AbsSellD", shape.circle, location.absolute, gradDn, size=f_size(size.large))
+plotshape(condE and validDn ? midPrice : na, "AbsSellE", shape.circle, location.absolute, gradDn, size=f_size(size.huge))
 
 insideBody   = midPrice > lowBody and midPrice < topBody
 heavyVolBody = scaledVol > (limitFactor + 2)
