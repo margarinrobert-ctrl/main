@@ -5,15 +5,20 @@
 // flip-on-opposite-signal and time-based exit.
 
 //@version=6
+// NOTE on position sizing: 'strategy.percent_of_equity' rounds down to 0
+// contracts on big-notional futures like NQ (~$590k/contract) when default
+// equity is small, which silently rejects every order. Default here is a
+// fixed 1-contract size with $100k starting capital so the strategy actually
+// places trades on NQ/ES/CL etc. Override via the inputs below.
 strategy("Divergence + CVD + Absorption Strategy",
      overlay              = true,
      max_bars_back        = 1000,
      max_lines_count      = 400,
      max_labels_count     = 400,
      pyramiding           = 0,
-     initial_capital      = 10000,
-     default_qty_type     = strategy.percent_of_equity,
-     default_qty_value    = 10,
+     initial_capital      = 100000,
+     default_qty_type     = strategy.fixed,
+     default_qty_value    = 1,
      commission_type      = strategy.commission.percent,
      commission_value     = 0.04,
      slippage             = 1,
@@ -31,6 +36,13 @@ useHiddenAsTrend= input.bool(true,  "Use Hidden Divergence (trend continuation)"
 useRegular      = input.bool(true,  "Use Regular Divergence (reversal)", group=gStrat)
 flipOnOpposite  = input.bool(true,  "Close & Flip on Opposite Signal", group=gStrat)
 signalCooldown  = input.int(3, "Bars Between Entries", minval=0, group=gStrat)
+
+gSize = "Position Sizing"
+qtyMode         = input.string("Fixed Contracts", "Sizing Mode",
+     options=["Fixed Contracts","Percent of Equity","Cash Value"], group=gSize)
+qtyContracts    = input.float(1.0,    "Fixed Contracts (Futures: keep ≥ 1)", minval=0.0, step=0.1, group=gSize)
+qtyPct          = input.float(10.0,   "Percent of Equity", minval=0.1, step=0.5, group=gSize)
+qtyCash         = input.float(10000,  "Cash per Trade ($)", minval=1, group=gSize)
 
 gRisk = "Risk / Exits"
 stopMode        = input.string("ATR", "Stop / TP Mode", options=["ATR","Percent","Off"], group=gRisk)
@@ -346,15 +358,25 @@ longEntry  = allowLongs  and preferLong  and trendLongOk  and tradeWindow and ca
 shortEntry = allowShorts and preferShort and trendShortOk and tradeWindow and canShort and strategy.position_size >= 0
 
 // ============================================================
+// Position sizing
+// ============================================================
+contractValue = close * syminfo.pointvalue
+pctQty  = contractValue > 0 ? (strategy.equity * qtyPct / 100.0) / contractValue : 0.0
+cashQty = contractValue > 0 ? qtyCash / contractValue : 0.0
+entryQty = qtyMode == "Fixed Contracts" ? qtyContracts : qtyMode == "Percent of Equity" ? pctQty : cashQty
+// Ensure at least 1 unit for symbols where partial contracts aren't tradeable.
+entryQty := math.max(entryQty, qtyMode == "Fixed Contracts" ? qtyContracts : 1.0)
+
+// ============================================================
 // Order management
 // strategy.entry auto-closes any opposite position when direction flips.
 // ============================================================
 if longEntry
-    strategy.entry("Long", strategy.long)
+    strategy.entry("Long", strategy.long, qty=entryQty)
     lastLongBar := bar_index
 
 if shortEntry
-    strategy.entry("Short", strategy.short)
+    strategy.entry("Short", strategy.short, qty=entryQty)
     lastShortBar := bar_index
 
 // Stops / TPs
