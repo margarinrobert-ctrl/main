@@ -99,7 +99,6 @@ gAbs = "Absorption Bubbles"
 showDots       = input.bool(true, "Show Bubbles?", group=gAbs)
 limitFactor    = input.float(0.1, "Absorption Threshold", step=0.1, minval=0.1, group=gAbs)
 lookbackperiod = input.int(100, "Lookback Period", group=gAbs)
-bubbleSizeStr  = input.string("Compact", "Bubble Size", options=["Compact","Auto Tier"], group=gAbs, tooltip="Compact: all bubbles fixed tiny size. Auto Tier: size scales with volume.")
 colUp          = input.color(color.green, "Buying Absorption Color",  group=gAbs)
 colDown        = input.color(color.red,   "Selling Absorption Color", group=gAbs)
 gradOpacity    = input.int(70, "Bubble Transparency", minval=0, maxval=100, group=gAbs)
@@ -481,26 +480,11 @@ lowerZone = midPrice <= lowBody and midPrice >= low
 validUp = upperZone
 validDn = lowerZone
 
-auto = bubbleSizeStr == "Auto Tier"
 anyUp = (condA or condB or condC or condD or condE) and validUp
 anyDn = (condA or condB or condC or condD or condE) and validDn
 
-// Auto-tier: size scales with volume tier
-plotshape(auto and condA and validUp ? midPrice : na, "AbsBuyA",  shape.circle, location.absolute, gradUp, size=size.tiny)
-plotshape(auto and condB and validUp ? midPrice : na, "AbsBuyB",  shape.circle, location.absolute, gradUp, size=size.small)
-plotshape(auto and condC and validUp ? midPrice : na, "AbsBuyC",  shape.circle, location.absolute, gradUp, size=size.normal)
-plotshape(auto and condD and validUp ? midPrice : na, "AbsBuyD",  shape.circle, location.absolute, gradUp, size=size.large)
-plotshape(auto and condE and validUp ? midPrice : na, "AbsBuyE",  shape.circle, location.absolute, gradUp, size=size.huge)
-
-plotshape(auto and condA and validDn ? midPrice : na, "AbsSellA", shape.circle, location.absolute, gradDn, size=size.tiny)
-plotshape(auto and condB and validDn ? midPrice : na, "AbsSellB", shape.circle, location.absolute, gradDn, size=size.small)
-plotshape(auto and condC and validDn ? midPrice : na, "AbsSellC", shape.circle, location.absolute, gradDn, size=size.normal)
-plotshape(auto and condD and validDn ? midPrice : na, "AbsSellD", shape.circle, location.absolute, gradDn, size=size.large)
-plotshape(auto and condE and validDn ? midPrice : na, "AbsSellE", shape.circle, location.absolute, gradDn, size=size.huge)
-
-// Compact: every bubble fixed tiny size
-plotshape(not auto and anyUp ? midPrice : na, "AbsBuyCompact",  shape.circle, location.absolute, gradUp, size=size.tiny)
-plotshape(not auto and anyDn ? midPrice : na, "AbsSellCompact", shape.circle, location.absolute, gradDn, size=size.tiny)
+plotshape(anyUp ? midPrice : na, "AbsBuy",  shape.circle, location.absolute, gradUp, size=size.tiny)
+plotshape(anyDn ? midPrice : na, "AbsSell", shape.circle, location.absolute, gradDn, size=size.tiny)
 
 insideBody   = midPrice > lowBody and midPrice < topBody
 heavyVolBody = scaledVol > (limitFactor + 2)
