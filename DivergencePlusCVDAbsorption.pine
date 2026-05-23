@@ -1,0 +1,491 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// Based on "Divergence for Many Indicators v4" by LonesomeTheBlue and
+// "Absorption Bubbles" by profitprotrading. Combined and extended with CVD
+// divergence, ported to Pine v6.
+
+//@version=6
+indicator("Divergence + CVD + Absorption", overlay=true, max_bars_back=1000, max_lines_count=400, max_labels_count=400)
+
+// ============================================================
+// Inputs - Divergence engine
+// ============================================================
+gDiv = "Divergence Engine"
+prd        = input.int(5,    "Pivot Period",      minval=1, maxval=50, group=gDiv)
+source     = input.string("Close", "Source for Pivot Points", options=["Close","High/Low"], group=gDiv)
+searchdiv  = input.string("Regular", "Divergence Type", options=["Regular","Hidden","Regular/Hidden"], group=gDiv)
+showindis  = input.string("Full", "Show Indicator Names", options=["Full","First Letter","Don't Show"], group=gDiv)
+showlimit  = input.int(1, "Minimum Number of Divergence", minval=1, maxval=12, group=gDiv)
+maxpp      = input.int(10, "Maximum Pivot Points to Check", minval=1, maxval=20, group=gDiv)
+maxbars    = input.int(100,"Maximum Bars to Check", minval=30, maxval=200, group=gDiv)
+shownum    = input.bool(true,  "Show Divergence Number", group=gDiv)
+showlast   = input.bool(false, "Show Only Last Divergence", group=gDiv)
+dontconfirm= input.bool(false, "Don't Wait for Confirmation", group=gDiv)
+showlines  = input.bool(true,  "Show Divergence Lines", group=gDiv)
+showpivot  = input.bool(false, "Show Pivot Points", group=gDiv)
+
+gInd = "Indicators"
+calcmacd   = input.bool(true, "MACD",                 group=gInd)
+calcmacda  = input.bool(true, "MACD Histogram",       group=gInd)
+calcrsi    = input.bool(true, "RSI",                  group=gInd)
+calcstoc   = input.bool(true, "Stochastic",           group=gInd)
+calccci    = input.bool(true, "CCI",                  group=gInd)
+calcmom    = input.bool(true, "Momentum",             group=gInd)
+calcobv    = input.bool(true, "OBV",                  group=gInd)
+calcvwmacd = input.bool(true, "VWmacd",               group=gInd)
+calccmf    = input.bool(true, "Chaikin Money Flow",   group=gInd)
+calcmfi    = input.bool(true, "Money Flow Index",     group=gInd)
+calccvd    = input.bool(true, "CVD (Cumulative Volume Delta)", group=gInd)
+calcext    = input.bool(false,"Check External Indicator", group=gInd)
+externalindi = input.source(close, "External Indicator", group=gInd)
+
+gCVD = "CVD Settings"
+cvdReset = input.string("Session", "CVD Reset", options=["Session","Day","Week","None"], group=gCVD)
+
+gCol = "Colors / Lines"
+pos_reg_div_col = input.color(color.yellow, "Positive Regular Divergence", group=gCol)
+neg_reg_div_col = input.color(color.navy,   "Negative Regular Divergence", group=gCol)
+pos_hid_div_col = input.color(color.lime,   "Positive Hidden Divergence",  group=gCol)
+neg_hid_div_col = input.color(color.red,    "Negative Hidden Divergence",  group=gCol)
+pos_div_text_col= input.color(color.black,  "Positive Divergence Text Color", group=gCol)
+neg_div_text_col= input.color(color.white,  "Negative Divergence Text Color", group=gCol)
+reg_div_l_style_= input.string("Solid",  "Regular Divergence Line Style", options=["Solid","Dashed","Dotted"], group=gCol)
+hid_div_l_style_= input.string("Dashed", "Hidden Divergence Line Style",  options=["Solid","Dashed","Dotted"], group=gCol)
+reg_div_l_width = input.int(2, "Regular Divergence Line Width", minval=1, maxval=5, group=gCol)
+hid_div_l_width = input.int(1, "Hidden Divergence Line Width",  minval=1, maxval=5, group=gCol)
+
+gMA = "Moving Averages"
+showmas = input.bool(false, "Show MAs 50 & 200", inline="ma12", group=gMA)
+cma1col = input.color(color.lime, "", inline="ma12", group=gMA)
+cma2col = input.color(color.red,  "", inline="ma12", group=gMA)
+
+// ============================================================
+// Inputs - Absorption Bubbles
+// ============================================================
+gAbs = "Absorption Bubbles"
+showDots       = input.bool(true, "Show Bubbles?", group=gAbs)
+limitFactor    = input.float(0.1, "Absorption Threshold", step=0.1, minval=0.1, group=gAbs)
+lookbackperiod = input.int(100, "Lookback Period", group=gAbs)
+colUp   = color.green
+colDown = color.red
+
+// ============================================================
+// MAs
+// ============================================================
+plot(showmas ? ta.sma(close, 50)  : na, "MA 50",  color = showmas ? cma1col : na)
+plot(showmas ? ta.sma(close, 200) : na, "MA 200", color = showmas ? cma2col : na)
+
+// ============================================================
+// Line styles
+// ============================================================
+var reg_div_l_style = reg_div_l_style_ == "Solid"  ? line.style_solid :
+                      reg_div_l_style_ == "Dashed" ? line.style_dashed :
+                                                     line.style_dotted
+var hid_div_l_style = hid_div_l_style_ == "Solid"  ? line.style_solid :
+                      hid_div_l_style_ == "Dashed" ? line.style_dashed :
+                                                     line.style_dotted
+
+// ============================================================
+// Indicators
+// ============================================================
+rsi    = ta.rsi(close, 14)
+[macd, signal, deltamacd] = ta.macd(close, 12, 26, 9)
+moment = ta.mom(close, 10)
+cci    = ta.cci(close, 10)
+Obv    = ta.obv
+stk    = ta.sma(ta.stoch(close, high, low, 14), 3)
+maFast = ta.vwma(close, 12)
+maSlow = ta.vwma(close, 26)
+vwmacd = maFast - maSlow
+Cmfm   = (high - low) > 0 ? ((close - low) - (high - close)) / (high - low) : 0.0
+Cmfv   = Cmfm * volume
+cmf    = ta.sma(Cmfv, 21) / ta.sma(volume, 21)
+Mfi    = ta.mfi(close, 14)
+
+// --- CVD ---
+isNewCvdPeriod = cvdReset == "Session" ? ta.change(time("D")) != 0 :
+                 cvdReset == "Day"     ? ta.change(time("D")) != 0 :
+                 cvdReset == "Week"    ? ta.change(time("W")) != 0 :
+                 false
+rng = high - low
+delta = rng > 0 ? volume * ((close - low) - (high - close)) / rng : 0.0
+var float cvd = 0.0
+cvd := isNewCvdPeriod ? delta : nz(cvd[1]) + delta
+
+// ============================================================
+// Names + colors arrays
+// ============================================================
+var indicators_name = array.new_string(12)
+var div_colors      = array.new_color(4)
+if barstate.isfirst
+    array.set(indicators_name, 0,  showindis == "Full" ? "MACD"   : "M")
+    array.set(indicators_name, 1,  showindis == "Full" ? "Hist"   : "H")
+    array.set(indicators_name, 2,  showindis == "Full" ? "RSI"    : "E")
+    array.set(indicators_name, 3,  showindis == "Full" ? "Stoch"  : "S")
+    array.set(indicators_name, 4,  showindis == "Full" ? "CCI"    : "C")
+    array.set(indicators_name, 5,  showindis == "Full" ? "MOM"    : "M")
+    array.set(indicators_name, 6,  showindis == "Full" ? "OBV"    : "O")
+    array.set(indicators_name, 7,  showindis == "Full" ? "VWMACD" : "V")
+    array.set(indicators_name, 8,  showindis == "Full" ? "CMF"    : "C")
+    array.set(indicators_name, 9,  showindis == "Full" ? "MFI"    : "M")
+    array.set(indicators_name, 10, showindis == "Full" ? "CVD"    : "D")
+    array.set(indicators_name, 11, showindis == "Full" ? "Extrn"  : "X")
+    array.set(div_colors, 0, pos_reg_div_col)
+    array.set(div_colors, 1, neg_reg_div_col)
+    array.set(div_colors, 2, pos_hid_div_col)
+    array.set(div_colors, 3, neg_hid_div_col)
+
+// ============================================================
+// Pivots
+// ============================================================
+float ph = ta.pivothigh(source == "Close" ? close : high, prd, prd)
+float pl = ta.pivotlow( source == "Close" ? close : low,  prd, prd)
+plotshape(ph and showpivot, text="H", style=shape.labeldown, color=color.new(color.white, 100), textcolor=color.red,  location=location.abovebar, offset=-prd)
+plotshape(pl and showpivot, text="L", style=shape.labelup,   color=color.new(color.white, 100), textcolor=color.lime, location=location.belowbar, offset=-prd)
+
+var int maxarraysize = 20
+var ph_positions = array.new_int(maxarraysize, 0)
+var pl_positions = array.new_int(maxarraysize, 0)
+var ph_vals      = array.new_float(maxarraysize, 0.0)
+var pl_vals      = array.new_float(maxarraysize, 0.0)
+
+if ph
+    array.unshift(ph_positions, bar_index)
+    array.unshift(ph_vals, ph)
+    if array.size(ph_positions) > maxarraysize
+        array.pop(ph_positions)
+        array.pop(ph_vals)
+
+if pl
+    array.unshift(pl_positions, bar_index)
+    array.unshift(pl_vals, pl)
+    if array.size(pl_positions) > maxarraysize
+        array.pop(pl_positions)
+        array.pop(pl_vals)
+
+// ============================================================
+// Divergence detection functions
+// ============================================================
+positive_regular_positive_hidden_divergence(src, cond) =>
+    divlen = 0
+    prsc = source == "Close" ? close : low
+    if dontconfirm or src > src[1] or close > close[1]
+        startpoint = dontconfirm ? 0 : 1
+        for x = 0 to maxpp - 1
+            len = bar_index - array.get(pl_positions, x) + prd
+            if array.get(pl_positions, x) == 0 or len > maxbars
+                break
+            if len > 5 and
+               ((cond == 1 and src[startpoint] > src[len] and prsc[startpoint] < nz(array.get(pl_vals, x))) or
+                (cond == 2 and src[startpoint] < src[len] and prsc[startpoint] > nz(array.get(pl_vals, x))))
+                slope1 = (src[startpoint] - src[len]) / (len - startpoint)
+                virtual_line1 = src[startpoint] - slope1
+                slope2 = (close[startpoint] - close[len]) / (len - startpoint)
+                virtual_line2 = close[startpoint] - slope2
+                arrived = true
+                for y = 1 + startpoint to len - 1
+                    if src[y] < virtual_line1 or nz(close[y]) < virtual_line2
+                        arrived := false
+                        break
+                    virtual_line1 := virtual_line1 - slope1
+                    virtual_line2 := virtual_line2 - slope2
+                if arrived
+                    divlen := len
+                    break
+    divlen
+
+negative_regular_negative_hidden_divergence(src, cond) =>
+    divlen = 0
+    prsc = source == "Close" ? close : high
+    if dontconfirm or src < src[1] or close < close[1]
+        startpoint = dontconfirm ? 0 : 1
+        for x = 0 to maxpp - 1
+            len = bar_index - array.get(ph_positions, x) + prd
+            if array.get(ph_positions, x) == 0 or len > maxbars
+                break
+            if len > 5 and
+               ((cond == 1 and src[startpoint] < src[len] and prsc[startpoint] > nz(array.get(ph_vals, x))) or
+                (cond == 2 and src[startpoint] > src[len] and prsc[startpoint] < nz(array.get(ph_vals, x))))
+                slope1 = (src[startpoint] - src[len]) / (len - startpoint)
+                virtual_line1 = src[startpoint] - slope1
+                slope2 = (close[startpoint] - nz(close[len])) / (len - startpoint)
+                virtual_line2 = close[startpoint] - slope2
+                arrived = true
+                for y = 1 + startpoint to len - 1
+                    if src[y] > virtual_line1 or nz(close[y]) > virtual_line2
+                        arrived := false
+                        break
+                    virtual_line1 := virtual_line1 - slope1
+                    virtual_line2 := virtual_line2 - slope2
+                if arrived
+                    divlen := len
+                    break
+    divlen
+
+calculate_divs(cond, indicator) =>
+    divs = array.new_int(4, 0)
+    array.set(divs, 0, cond and (searchdiv == "Regular" or searchdiv == "Regular/Hidden") ? positive_regular_positive_hidden_divergence(indicator, 1) : 0)
+    array.set(divs, 1, cond and (searchdiv == "Regular" or searchdiv == "Regular/Hidden") ? negative_regular_negative_hidden_divergence(indicator, 1) : 0)
+    array.set(divs, 2, cond and (searchdiv == "Hidden"  or searchdiv == "Regular/Hidden") ? positive_regular_positive_hidden_divergence(indicator, 2) : 0)
+    array.set(divs, 3, cond and (searchdiv == "Hidden"  or searchdiv == "Regular/Hidden") ? negative_regular_negative_hidden_divergence(indicator, 2) : 0)
+    divs
+
+// 12 indicators * 4 divergence flavors
+var all_divergences = array.new_int(48)
+
+array_set_divs(div_pointer, index) =>
+    for x = 0 to 3
+        array.set(all_divergences, index * 4 + x, array.get(div_pointer, x))
+
+array_set_divs(calculate_divs(calcmacd,   macd),         0)
+array_set_divs(calculate_divs(calcmacda,  deltamacd),    1)
+array_set_divs(calculate_divs(calcrsi,    rsi),          2)
+array_set_divs(calculate_divs(calcstoc,   stk),          3)
+array_set_divs(calculate_divs(calccci,    cci),          4)
+array_set_divs(calculate_divs(calcmom,    moment),       5)
+array_set_divs(calculate_divs(calcobv,    Obv),          6)
+array_set_divs(calculate_divs(calcvwmacd, vwmacd),       7)
+array_set_divs(calculate_divs(calccmf,    cmf),          8)
+array_set_divs(calculate_divs(calcmfi,    Mfi),          9)
+array_set_divs(calculate_divs(calccvd,    cvd),         10)
+array_set_divs(calculate_divs(calcext,    externalindi),11)
+
+total_div = 0
+for x = 0 to array.size(all_divergences) - 1
+    total_div := total_div + math.round(math.sign(array.get(all_divergences, x)))
+
+if total_div < showlimit
+    array.fill(all_divergences, 0)
+
+// ============================================================
+// Line / Label bookkeeping
+// ============================================================
+var pos_div_lines  = array.new_line(0)
+var neg_div_lines  = array.new_line(0)
+var pos_div_labels = array.new_label(0)
+var neg_div_labels = array.new_label(0)
+
+delete_old_pos_div_lines() =>
+    if array.size(pos_div_lines) > 0
+        for j = 0 to array.size(pos_div_lines) - 1
+            line.delete(array.get(pos_div_lines, j))
+        array.clear(pos_div_lines)
+
+delete_old_neg_div_lines() =>
+    if array.size(neg_div_lines) > 0
+        for j = 0 to array.size(neg_div_lines) - 1
+            line.delete(array.get(neg_div_lines, j))
+        array.clear(neg_div_lines)
+
+delete_old_pos_div_labels() =>
+    if array.size(pos_div_labels) > 0
+        for j = 0 to array.size(pos_div_labels) - 1
+            label.delete(array.get(pos_div_labels, j))
+        array.clear(pos_div_labels)
+
+delete_old_neg_div_labels() =>
+    if array.size(neg_div_labels) > 0
+        for j = 0 to array.size(neg_div_labels) - 1
+            label.delete(array.get(neg_div_labels, j))
+        array.clear(neg_div_labels)
+
+delete_last_pos_div_lines_label(n) =>
+    if n > 0 and array.size(pos_div_lines) >= n
+        asz = array.size(pos_div_lines)
+        for j = 1 to n
+            line.delete(array.get(pos_div_lines, asz - j))
+            array.pop(pos_div_lines)
+        if array.size(pos_div_labels) > 0
+            label.delete(array.get(pos_div_labels, array.size(pos_div_labels) - 1))
+            array.pop(pos_div_labels)
+
+delete_last_neg_div_lines_label(n) =>
+    if n > 0 and array.size(neg_div_lines) >= n
+        asz = array.size(neg_div_lines)
+        for j = 1 to n
+            line.delete(array.get(neg_div_lines, asz - j))
+            array.pop(neg_div_lines)
+        if array.size(neg_div_labels) > 0
+            label.delete(array.get(neg_div_labels, array.size(neg_div_labels) - 1))
+            array.pop(neg_div_labels)
+
+pos_reg_div_detected = false
+neg_reg_div_detected = false
+pos_hid_div_detected = false
+neg_hid_div_detected = false
+
+var last_pos_div_lines = 0
+var last_neg_div_lines = 0
+var remove_last_pos_divs = false
+var remove_last_neg_divs = false
+if pl
+    remove_last_pos_divs := false
+    last_pos_div_lines := 0
+if ph
+    remove_last_neg_divs := false
+    last_neg_div_lines := 0
+
+divergence_text_top    = ""
+divergence_text_bottom = ""
+distances = array.new_int(0)
+dnumdiv_top = 0
+dnumdiv_bottom = 0
+top_label_col    = color.white
+bottom_label_col = color.white
+old_pos_divs_can_be_removed = true
+old_neg_divs_can_be_removed = true
+startpoint = dontconfirm ? 0 : 1
+
+for x = 0 to 11
+    div_type = -1
+    for y = 0 to 3
+        if array.get(all_divergences, x * 4 + y) > 0
+            div_type := y
+            if (y % 2) == 1
+                dnumdiv_top := dnumdiv_top + 1
+                top_label_col := array.get(div_colors, y)
+            if (y % 2) == 0
+                dnumdiv_bottom := dnumdiv_bottom + 1
+                bottom_label_col := array.get(div_colors, y)
+            if not array.includes(distances, array.get(all_divergences, x * 4 + y))
+                array.push(distances, array.get(all_divergences, x * 4 + y))
+                new_line = showlines ? line.new(
+                     x1 = bar_index - array.get(all_divergences, x * 4 + y),
+                     y1 = (source == "Close" ? close[array.get(all_divergences, x * 4 + y)] :
+                                       (y % 2) == 0 ? low[array.get(all_divergences, x * 4 + y)] :
+                                                      high[array.get(all_divergences, x * 4 + y)]),
+                     x2 = bar_index - startpoint,
+                     y2 = (source == "Close" ? close[startpoint] :
+                                       (y % 2) == 0 ? low[startpoint] :
+                                                      high[startpoint]),
+                     color = array.get(div_colors, y),
+                     style = y < 2 ? reg_div_l_style : hid_div_l_style,
+                     width = y < 2 ? reg_div_l_width : hid_div_l_width) : na
+                if (y % 2) == 0
+                    if old_pos_divs_can_be_removed
+                        old_pos_divs_can_be_removed := false
+                        if not showlast and remove_last_pos_divs
+                            delete_last_pos_div_lines_label(last_pos_div_lines)
+                            last_pos_div_lines := 0
+                        if showlast
+                            delete_old_pos_div_lines()
+                    array.push(pos_div_lines, new_line)
+                    last_pos_div_lines := last_pos_div_lines + 1
+                    remove_last_pos_divs := true
+                if (y % 2) == 1
+                    if old_neg_divs_can_be_removed
+                        old_neg_divs_can_be_removed := false
+                        if not showlast and remove_last_neg_divs
+                            delete_last_neg_div_lines_label(last_neg_div_lines)
+                            last_neg_div_lines := 0
+                        if showlast
+                            delete_old_neg_div_lines()
+                    array.push(neg_div_lines, new_line)
+                    last_neg_div_lines := last_neg_div_lines + 1
+                    remove_last_neg_divs := true
+            if y == 0
+                pos_reg_div_detected := true
+            if y == 1
+                neg_reg_div_detected := true
+            if y == 2
+                pos_hid_div_detected := true
+            if y == 3
+                neg_hid_div_detected := true
+    if div_type >= 0
+        divergence_text_top    := divergence_text_top    + ((div_type % 2) == 1 ? (showindis != "Don't Show" ? array.get(indicators_name, x) + "\n" : "") : "")
+        divergence_text_bottom := divergence_text_bottom + ((div_type % 2) == 0 ? (showindis != "Don't Show" ? array.get(indicators_name, x) + "\n" : "") : "")
+
+if showindis != "Don't Show" or shownum
+    if shownum and dnumdiv_top > 0
+        divergence_text_top := divergence_text_top + str.tostring(dnumdiv_top)
+    if shownum and dnumdiv_bottom > 0
+        divergence_text_bottom := divergence_text_bottom + str.tostring(dnumdiv_bottom)
+    if divergence_text_top != ""
+        if showlast
+            delete_old_neg_div_labels()
+        array.push(neg_div_labels,
+             label.new(x = bar_index,
+                       y = math.max(high, high[1]),
+                       text = divergence_text_top,
+                       color = top_label_col,
+                       textcolor = neg_div_text_col,
+                       style = label.style_label_down))
+    if divergence_text_bottom != ""
+        if showlast
+            delete_old_pos_div_labels()
+        array.push(pos_div_labels,
+             label.new(x = bar_index,
+                       y = math.min(low, low[1]),
+                       text = divergence_text_bottom,
+                       color = bottom_label_col,
+                       textcolor = pos_div_text_col,
+                       style = label.style_label_up))
+
+// ============================================================
+// Absorption Bubbles
+// ============================================================
+volData   = volume
+midPrice  = (high + low) / 2
+scaledVol = volData / ta.stdev(volData, lookbackperiod)
+
+gradUp = color.from_gradient(scaledVol, 0, 8,
+     chart.bg_color == color.white ? color.new(colUp, 100) : color.rgb(35, 73, 35, 15),
+     color.rgb(0, 217, 0, 70))
+gradDn = color.from_gradient(scaledVol, 0, 8,
+     chart.bg_color == color.white ? color.new(colDown, 100) : color.rgb(77, 34, 34, 15),
+     color.rgb(219, 0, 0, 70))
+
+condA = showDots and scaledVol >= limitFactor             and scaledVol <  (limitFactor + 1)
+condB = showDots and scaledVol >= (limitFactor + 1)       and scaledVol <  (limitFactor + 2)
+condC = showDots and scaledVol >= (limitFactor + 2)       and scaledVol <  (limitFactor + 3)
+condD = showDots and scaledVol >= (limitFactor + 3)       and scaledVol <  (limitFactor + 6)
+condE = showDots and scaledVol >= (limitFactor + 6)
+
+bullBar = close > open
+bearBar = close < open
+
+topBody    = math.max(open, close)
+lowBody    = math.min(open, close)
+
+upperZone = midPrice >= topBody and midPrice <= high
+lowerZone = midPrice <= lowBody and midPrice >= low
+
+validUp = upperZone
+validDn = lowerZone
+
+plotshape(condA and validUp ? midPrice : na, "AbsBuyA", shape.circle, location.absolute, gradUp, size=size.tiny)
+plotshape(condB and validUp ? midPrice : na, "AbsBuyB", shape.circle, location.absolute, gradUp, size=size.small)
+plotshape(condC and validUp ? midPrice : na, "AbsBuyC", shape.circle, location.absolute, gradUp, size=size.normal)
+plotshape(condD and validUp ? midPrice : na, "AbsBuyD", shape.circle, location.absolute, gradUp, size=size.large)
+plotshape(condE and validUp ? midPrice : na, "AbsBuyE", shape.circle, location.absolute, gradUp, size=size.huge)
+
+plotshape(condA and validDn ? midPrice : na, "AbsSellA", shape.circle, location.absolute, gradDn, size=size.tiny)
+plotshape(condB and validDn ? midPrice : na, "AbsSellB", shape.circle, location.absolute, gradDn, size=size.small)
+plotshape(condC and validDn ? midPrice : na, "AbsSellC", shape.circle, location.absolute, gradDn, size=size.normal)
+plotshape(condD and validDn ? midPrice : na, "AbsSellD", shape.circle, location.absolute, gradDn, size=size.large)
+plotshape(condE and validDn ? midPrice : na, "AbsSellE", shape.circle, location.absolute, gradDn, size=size.huge)
+
+insideBody   = midPrice > lowBody and midPrice < topBody
+heavyVolBody = scaledVol > (limitFactor + 2)
+
+barcolor(insideBody and heavyVolBody and bullBar ? color.rgb(0, 255, 0)     : na)
+barcolor(insideBody and heavyVolBody and bearBar ? color.rgb(255, 132, 132) : na)
+
+// ============================================================
+// Alerts
+// ============================================================
+alertcondition(pos_reg_div_detected, title="Positive Regular Divergence Detected", message="Positive Regular Divergence Detected")
+alertcondition(neg_reg_div_detected, title="Negative Regular Divergence Detected", message="Negative Regular Divergence Detected")
+alertcondition(pos_hid_div_detected, title="Positive Hidden Divergence Detected",  message="Positive Hidden Divergence Detected")
+alertcondition(neg_hid_div_detected, title="Negative Hidden Divergence Detected",  message="Negative Hidden Divergence Detected")
+alertcondition(pos_reg_div_detected or pos_hid_div_detected, title="Positive Divergence Detected", message="Positive Divergence Detected")
+alertcondition(neg_reg_div_detected or neg_hid_div_detected, title="Negative Divergence Detected", message="Negative Divergence Detected")
+
+alertcondition((condA or condB or condC or condD or condE) and validDn and barstate.isconfirmed,
+     title="Buying Absorption",
+     message="Absorption detected: Buyers absorbed selling pressure")
+alertcondition((condA or condB or condC or condD or condE) and validUp and barstate.isconfirmed,
+     title="Selling Absorption",
+     message="Absorption detected: Sellers absorbed buying pressure")
+alertcondition((condA or condB or condC or condD or condE) and (validUp or validDn) and barstate.isconfirmed,
+     title="Absorption (Any)",
+     message="Absorption detected: Buying or Selling absorption event")
