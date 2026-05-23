@@ -535,11 +535,14 @@ rsiOS_now = rsi <= rsiOSlvl
 stOB_now  = stk >= stOBlvl
 stOS_now  = stk <= stOSlvl
 
-obTrigger = markMode == "Either RSI or Stoch" ? (rsiOB_now or stOB_now) : markMode == "Both RSI and Stoch" ? (rsiOB_now and stOB_now) : markMode == "RSI only" ? rsiOB_now : stOB_now
-osTrigger = markMode == "Either RSI or Stoch" ? (rsiOS_now or stOS_now) : markMode == "Both RSI and Stoch" ? (rsiOS_now and stOS_now) : markMode == "RSI only" ? rsiOS_now : stOS_now
+obState = markMode == "Either RSI or Stoch" ? (rsiOB_now or stOB_now) : markMode == "Both RSI and Stoch" ? (rsiOB_now and stOB_now) : markMode == "RSI only" ? rsiOB_now : stOB_now
+osState = markMode == "Either RSI or Stoch" ? (rsiOS_now or stOS_now) : markMode == "Both RSI and Stoch" ? (rsiOS_now and stOS_now) : markMode == "RSI only" ? rsiOS_now : stOS_now
+
+obTrigger = obState and not obState[1]
+osTrigger = osState and not osState[1]
 
 plotshape(showObOsMarks and osTrigger, title="OS Marker", style=shape.triangleup,   location=location.belowbar, color=osColor, size=size.tiny)
 plotshape(showObOsMarks and obTrigger, title="OB Marker", style=shape.triangledown, location=location.abovebar, color=obColor, size=size.tiny)
 
-alertcondition(osTrigger, title="Oversold Marker",  message="RSI/Stoch oversold trigger")
-alertcondition(obTrigger, title="Overbought Marker", message="RSI/Stoch overbought trigger")
+alertcondition(osTrigger, title="Oversold Marker",  message="RSI/Stoch oversold trigger (first bar)")
+alertcondition(obTrigger, title="Overbought Marker", message="RSI/Stoch overbought trigger (first bar)")
