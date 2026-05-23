@@ -310,46 +310,52 @@ tradeWindow = inSession and inDate
 absLongConf  = absBuy  and osTrigger
 absShortConf = absSell and obTrigger
 
+// Fresh-edge signals: only fire on the first bar a setup appears,
+// not on every subsequent bar where the engine still detects it.
+bullDivFresh = bullDiv and not bullDiv[1]
+bearDivFresh = bearDiv and not bearDiv[1]
+
 longSig  = false
 shortSig = false
 if entryMode == "Divergence Only"
-    longSig  := bullDiv
-    shortSig := bearDiv
+    longSig  := bullDivFresh
+    shortSig := bearDivFresh
 else if entryMode == "Absorption + OBOS Only"
     longSig  := absLongConf
     shortSig := absShortConf
 else if entryMode == "Divergence AND Absorption"
-    longSig  := bullDiv and absBuy
-    shortSig := bearDiv and absSell
+    longSig  := bullDivFresh and absBuy
+    shortSig := bearDivFresh and absSell
 else
-    longSig  := bullDiv or absLongConf
-    shortSig := bearDiv or absShortConf
+    longSig  := bullDivFresh or absLongConf
+    shortSig := bearDivFresh or absShortConf
 
-// Cooldown to prevent rapid-fire repeats from the same divergence cluster
-var int lastEntryBar = -10000
-canEntry = (bar_index - lastEntryBar) >= signalCooldown
+// Same-direction cooldown only — opposite-side flips are always allowed.
+var int lastLongBar  = -10000
+var int lastShortBar = -10000
+canLong  = strategy.position_size < 0 or (bar_index - lastLongBar)  >= signalCooldown
+canShort = strategy.position_size > 0 or (bar_index - lastShortBar) >= signalCooldown
 
-// Don't take both directions on the same bar — pick the freshest
-takeLong  = longSig  and not shortSig
-takeShort = shortSig and not longSig
+// If both fire on the same bar, prefer the direction opposite to current
+// position (force a flip). When flat, default to long.
+bothFire = longSig and shortSig
+preferLong  = bothFire ? strategy.position_size <= 0 : longSig
+preferShort = bothFire ? strategy.position_size  > 0 : shortSig
 
-longEntry  = allowLongs  and takeLong  and trendLongOk  and tradeWindow and canEntry and barstate.isconfirmed
-shortEntry = allowShorts and takeShort and trendShortOk and tradeWindow and canEntry and barstate.isconfirmed
+longEntry  = allowLongs  and preferLong  and trendLongOk  and tradeWindow and canLong  and strategy.position_size <= 0
+shortEntry = allowShorts and preferShort and trendShortOk and tradeWindow and canShort and strategy.position_size >= 0
 
 // ============================================================
 // Order management
+// strategy.entry auto-closes any opposite position when direction flips.
 // ============================================================
 if longEntry
-    if strategy.position_size < 0
-        strategy.close("Short", comment="Flip→Long")
     strategy.entry("Long", strategy.long)
-    lastEntryBar := bar_index
+    lastLongBar := bar_index
 
 if shortEntry
-    if strategy.position_size > 0
-        strategy.close("Long", comment="Flip→Short")
     strategy.entry("Short", strategy.short)
-    lastEntryBar := bar_index
+    lastShortBar := bar_index
 
 // Stops / TPs
 float longStopPx  = na
