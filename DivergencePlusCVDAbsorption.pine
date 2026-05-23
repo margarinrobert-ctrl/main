@@ -69,7 +69,7 @@ stOSlvl    = input.int(20, "Stoch OS level", group=gPanel)
 
 gOBOS = "OB/OS Bar Markers"
 showObOsMarks = input.bool(true, "Show OB/OS Triangles on Bars", group=gOBOS)
-markMode      = input.string("Either RSI or Stoch", "Trigger When", options=["Either RSI or Stoch","Both RSI and Stoch","RSI only","Stoch only"], group=gOBOS)
+markMode      = input.string("Both RSI and Stoch", "Trigger When", options=["Either RSI or Stoch","Both RSI and Stoch","RSI only","Stoch only"], group=gOBOS)
 osColor       = input.color(color.new(color.lime, 0), "OS (buy) Triangle Color",  group=gOBOS)
 obColor       = input.color(color.new(color.red,  0), "OB (sell) Triangle Color", group=gOBOS)
 
