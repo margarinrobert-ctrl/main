@@ -74,6 +74,25 @@ osColor       = input.color(color.new(color.lime, 0), "OS (buy) Triangle Color",
 obColor       = input.color(color.new(color.red,  0), "OB (sell) Triangle Color", group=gOBOS)
 
 // ============================================================
+// Inputs - AMT / Volume Profile
+// ============================================================
+gAMT = "AMT / Volume Profile"
+enableAMT      = input.bool(true,  "Enable AMT Signals", group=gAMT)
+sessAMT        = input.session("0930-1600", "Session (RTH)", group=gAMT)
+vaPctAMT       = input.float(0.70, "Value Area %", minval=0.50, maxval=0.95, step=0.05, group=gAMT)
+binsAMT        = input.int(80,     "Profile Bins", minval=20, maxval=200, group=gAMT)
+showCurVA      = input.bool(true,  "Show Current Session POC/VAH/VAL", group=gAMT)
+showPriorVA    = input.bool(true,  "Show Prior Session POC/VAH/VAL",   group=gAMT)
+acceptanceBars = input.int(3,      "Acceptance: bars held outside value", minval=1, group=gAMT)
+useCurrentLevels = input.bool(false, "Reference levels: use CURRENT developing (else PRIOR session)", group=gAMT, tooltip="Prior session is the standard A+ approach. Current developing is more reactive.")
+curPocCol      = input.color(color.new(color.fuchsia, 0), "Current POC", group=gAMT, inline="cur")
+curVahCol      = input.color(color.new(color.lime,   30), "Current VAH", group=gAMT, inline="cur")
+curValCol      = input.color(color.new(color.red,    30), "Current VAL", group=gAMT, inline="cur")
+priorPocCol    = input.color(color.new(color.purple, 20), "Prior POC", group=gAMT, inline="pri")
+priorVahCol    = input.color(color.new(color.teal,   30), "Prior VAH", group=gAMT, inline="pri")
+priorValCol    = input.color(color.new(color.maroon, 30), "Prior VAL", group=gAMT, inline="pri")
+
+// ============================================================
 // Inputs - Absorption Bubbles
 // ============================================================
 gAbs = "Absorption Bubbles"
@@ -546,3 +565,138 @@ plotshape(showObOsMarks and obTrigger, title="OB Marker", style=shape.triangledo
 
 alertcondition(osTrigger, title="Oversold Marker",  message="RSI/Stoch oversold trigger (first bar)")
 alertcondition(obTrigger, title="Overbought Marker", message="RSI/Stoch overbought trigger (first bar)")
+
+// ============================================================
+// AMT / Volume Profile - session-anchored developing profile
+// ============================================================
+inSessAMT  = not na(time(timeframe.period, sessAMT))
+newSessAMT = inSessAMT and not inSessAMT[1]
+endSessAMT = not inSessAMT and inSessAMT[1]
+
+var float[] vpBins = array.new_float(binsAMT, 0.0)
+var float sessHiAMT = na
+var float sessLoAMT = na
+
+if newSessAMT
+    array.fill(vpBins, 0.0)
+    sessHiAMT := high
+    sessLoAMT := low
+else if inSessAMT
+    sessHiAMT := math.max(nz(sessHiAMT, high), high)
+    sessLoAMT := math.min(nz(sessLoAMT, low),  low)
+
+if inSessAMT and not na(sessHiAMT) and not na(sessLoAMT) and sessHiAMT > sessLoAMT
+    binSz = (sessHiAMT - sessLoAMT) / binsAMT
+    if binSz > 0
+        bi = math.floor((hlc3 - sessLoAMT) / binSz)
+        bi := math.max(0, math.min(binsAMT - 1, bi))
+        array.set(vpBins, bi, array.get(vpBins, bi) + volume)
+
+f_computeVA(binArr, hi, lo, bins, pct) =>
+    float poc = na
+    float vah = na
+    float val = na
+    if not na(hi) and not na(lo) and hi > lo
+        bSize = (hi - lo) / bins
+        maxVol = 0.0
+        pocIdx = 0
+        total = 0.0
+        for i = 0 to bins - 1
+            v = array.get(binArr, i)
+            total += v
+            if v > maxVol
+                maxVol := v
+                pocIdx := i
+        poc := lo + (pocIdx + 0.5) * bSize
+        target = total * pct
+        accumV = array.get(binArr, pocIdx)
+        up = pocIdx
+        dn = pocIdx
+        while accumV < target and (up < bins - 1 or dn > 0)
+            upV = up < bins - 1 ? array.get(binArr, up + 1) : -1.0
+            dnV = dn > 0         ? array.get(binArr, dn - 1) : -1.0
+            if upV >= dnV and up < bins - 1
+                up := up + 1
+                accumV += array.get(binArr, up)
+            else if dn > 0
+                dn := dn - 1
+                accumV += array.get(binArr, dn)
+            else
+                break
+        vah := lo + (up + 1) * bSize
+        val := lo + dn * bSize
+    [poc, vah, val]
+
+var float curVPOC = na
+var float curVAH  = na
+var float curVAL  = na
+if inSessAMT
+    [p_, h_, l_] = f_computeVA(vpBins, sessHiAMT, sessLoAMT, binsAMT, vaPctAMT)
+    curVPOC := p_
+    curVAH  := h_
+    curVAL  := l_
+
+// Snapshot prior session levels on session close
+var float priorVPOC = na
+var float priorVAH  = na
+var float priorVAL  = na
+if endSessAMT
+    priorVPOC := curVPOC
+    priorVAH  := curVAH
+    priorVAL  := curVAL
+
+// ============================================================
+// Reference levels for signals
+// ============================================================
+refVPOC = useCurrentLevels ? curVPOC : (na(priorVPOC) ? curVPOC : priorVPOC)
+refVAH  = useCurrentLevels ? curVAH  : (na(priorVAH)  ? curVAH  : priorVAH)
+refVAL  = useCurrentLevels ? curVAL  : (na(priorVAL)  ? curVAL  : priorVAL)
+
+aboveVAH = not na(refVAH) and close > refVAH
+belowVAL = not na(refVAL) and close < refVAL
+
+// Rejection: price crossed back inside value from outside
+bullRejection = not na(refVAL) and ta.crossover(close,  refVAL)
+bearRejection = not na(refVAH) and ta.crossunder(close, refVAH)
+
+// Acceptance: closed outside value for N consecutive bars
+var int aboveCount = 0
+var int belowCount = 0
+aboveCount := aboveVAH ? aboveCount + 1 : 0
+belowCount := belowVAL ? belowCount + 1 : 0
+bullAcceptance = aboveCount == acceptanceBars
+bearAcceptance = belowCount == acceptanceBars
+
+// ============================================================
+// Confluence: AMT location + existing confirmation engine
+// ============================================================
+bullConfirm = pos_reg_div_detected or pos_hid_div_detected or osState or (showDots and (condA or condB or condC or condD or condE) and validDn)
+bearConfirm = neg_reg_div_detected or neg_hid_div_detected or obState or (showDots and (condA or condB or condC or condD or condE) and validUp)
+
+amtLongRej  = enableAMT and bullRejection  and bullConfirm
+amtLongAcc  = enableAMT and bullAcceptance and bullConfirm
+amtShortRej = enableAMT and bearRejection  and bearConfirm
+amtShortAcc = enableAMT and bearAcceptance and bearConfirm
+
+amtLongSignal  = amtLongRej  or amtLongAcc
+amtShortSignal = amtShortRej or amtShortAcc
+
+// ============================================================
+// AMT plots
+// ============================================================
+plot(showCurVA   ? curVPOC   : na, "Cur POC",  color=curPocCol,   style=plot.style_linebr, linewidth=2)
+plot(showCurVA   ? curVAH    : na, "Cur VAH",  color=curVahCol,   style=plot.style_linebr)
+plot(showCurVA   ? curVAL    : na, "Cur VAL",  color=curValCol,   style=plot.style_linebr)
+plot(showPriorVA ? priorVPOC : na, "Prior POC",color=priorPocCol, style=plot.style_linebr, linewidth=2)
+plot(showPriorVA ? priorVAH  : na, "Prior VAH",color=priorVahCol, style=plot.style_linebr)
+plot(showPriorVA ? priorVAL  : na, "Prior VAL",color=priorValCol, style=plot.style_linebr)
+
+plotshape(amtLongSignal,  "AMT LONG",  shape.labelup,   location.belowbar, color=color.new(color.lime, 10), textcolor=color.black, text="A+L", size=size.normal)
+plotshape(amtShortSignal, "AMT SHORT", shape.labeldown, location.abovebar, color=color.new(color.red,  10), textcolor=color.white, text="A+S", size=size.normal)
+
+alertcondition(amtLongRej,  title="AMT Long Rejection",   message="AMT: bullish VAL reclaim with divergence/OS/absorption confluence")
+alertcondition(amtLongAcc,  title="AMT Long Acceptance",  message="AMT: acceptance above VAH with confluence")
+alertcondition(amtShortRej, title="AMT Short Rejection",  message="AMT: bearish VAH loss with divergence/OB/absorption confluence")
+alertcondition(amtShortAcc, title="AMT Short Acceptance", message="AMT: acceptance below VAL with confluence")
+alertcondition(amtLongSignal,  title="AMT LONG (any)",  message="AMT confluence LONG signal")
+alertcondition(amtShortSignal, title="AMT SHORT (any)", message="AMT confluence SHORT signal")
