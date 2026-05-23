@@ -394,31 +394,28 @@ for x = 0 to 11
         divergence_text_top    := divergence_text_top    + ((div_type % 2) == 1 ? (showindis != "Don't Show" ? array.get(indicators_name, x) + "\n" : "") : "")
         divergence_text_bottom := divergence_text_bottom + ((div_type % 2) == 0 ? (showindis != "Don't Show" ? array.get(indicators_name, x) + "\n" : "") : "")
 
-if showindis != "Don't Show" or shownum
-    if shownum and dnumdiv_top > 0
-        divergence_text_top := divergence_text_top + str.tostring(dnumdiv_top)
-    if shownum and dnumdiv_bottom > 0
-        divergence_text_bottom := divergence_text_bottom + str.tostring(dnumdiv_bottom)
-    if divergence_text_top != ""
-        if showlast
-            delete_old_neg_div_labels()
-        array.push(neg_div_labels,
-             label.new(x = bar_index,
-                       y = math.max(high, high[1]),
-                       text = divergence_text_top,
-                       color = top_label_col,
-                       textcolor = neg_div_text_col,
-                       style = label.style_label_down))
-    if divergence_text_bottom != ""
-        if showlast
-            delete_old_pos_div_labels()
-        array.push(pos_div_labels,
-             label.new(x = bar_index,
-                       y = math.min(low, low[1]),
-                       text = divergence_text_bottom,
-                       color = bottom_label_col,
-                       textcolor = pos_div_text_col,
-                       style = label.style_label_up))
+if dnumdiv_top > 0
+    if showlast
+        delete_old_neg_div_labels()
+    array.push(neg_div_labels,
+         label.new(x = bar_index,
+                   y = math.max(high, high[1]),
+                   text = str.tostring(dnumdiv_top),
+                   color = color.new(color.white, 100),
+                   textcolor = top_label_col,
+                   style = label.style_label_down,
+                   size = size.small))
+if dnumdiv_bottom > 0
+    if showlast
+        delete_old_pos_div_labels()
+    array.push(pos_div_labels,
+         label.new(x = bar_index,
+                   y = math.min(low, low[1]),
+                   text = str.tostring(dnumdiv_bottom),
+                   color = color.new(color.white, 100),
+                   textcolor = bottom_label_col,
+                   style = label.style_label_up,
+                   size = size.small))
 
 // ============================================================
 // Absorption Bubbles
