@@ -506,18 +506,8 @@ alertcondition((condA or condB or condC or condD or condE) and (validUp or valid
 // ============================================================
 // On-Chart Value Panel (RSI / Stoch / CVD numbers)
 // ============================================================
-panelPosConst = panelPos == "top_left"      ? position.top_left :
-                panelPos == "top_right"     ? position.top_right :
-                panelPos == "top_center"    ? position.top_center :
-                panelPos == "middle_left"   ? position.middle_left :
-                panelPos == "middle_right"  ? position.middle_right :
-                panelPos == "bottom_left"   ? position.bottom_left :
-                                              position.bottom_right
-panelTextSize = panelSize == "tiny"   ? size.tiny :
-                panelSize == "small"  ? size.small :
-                panelSize == "normal" ? size.normal :
-                panelSize == "large"  ? size.large :
-                                        size.huge
+panelPosConst = panelPos == "top_left" ? position.top_left : panelPos == "top_right" ? position.top_right : panelPos == "top_center" ? position.top_center : panelPos == "middle_left" ? position.middle_left : panelPos == "middle_right" ? position.middle_right : panelPos == "bottom_left" ? position.bottom_left : position.bottom_right
+panelTextSize = panelSize == "tiny" ? size.tiny : panelSize == "small" ? size.small : panelSize == "normal" ? size.normal : panelSize == "large" ? size.large : size.huge
 
 var table valTable = table.new(panelPosConst, 2, 3, border_width=1, frame_color=color.new(color.gray, 50), frame_width=1)
 if showPanel and barstate.islast
