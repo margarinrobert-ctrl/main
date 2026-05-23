@@ -1,0 +1,380 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// Strategy version of "Divergence + CVD + Absorption".
+// Entries are taken on confluence between divergence signals, absorption events,
+// and RSI/Stoch OB/OS triggers. Exits use ATR stop + take profit, with optional
+// flip-on-opposite-signal and time-based exit.
+
+//@version=6
+strategy("Divergence + CVD + Absorption Strategy",
+     overlay              = true,
+     max_bars_back        = 1000,
+     max_lines_count      = 400,
+     max_labels_count     = 400,
+     pyramiding           = 0,
+     initial_capital      = 10000,
+     default_qty_type     = strategy.percent_of_equity,
+     default_qty_value    = 10,
+     commission_type      = strategy.commission.percent,
+     commission_value     = 0.04,
+     slippage             = 2,
+     calc_on_every_tick   = false,
+     process_orders_on_close = true)
+
+// ============================================================
+// Strategy Inputs
+// ============================================================
+gStrat = "Strategy"
+allowLongs      = input.bool(true,  "Allow Longs",  group=gStrat)
+allowShorts     = input.bool(true,  "Allow Shorts", group=gStrat)
+entryMode       = input.string("Divergence OR Absorption+OBOS", "Entry Trigger",
+     options=["Divergence Only","Absorption + OBOS Only","Divergence AND Absorption","Divergence OR Absorption+OBOS"], group=gStrat)
+useHiddenAsTrend= input.bool(true,  "Use Hidden Divergence (trend continuation)", group=gStrat)
+useRegular      = input.bool(true,  "Use Regular Divergence (reversal)", group=gStrat)
+flipOnOpposite  = input.bool(true,  "Close & Flip on Opposite Signal", group=gStrat)
+
+gRisk = "Risk / Exits"
+useAtrStop      = input.bool(true,  "Use ATR Stop Loss", group=gRisk)
+atrLen          = input.int(14,     "ATR Length",  minval=1, group=gRisk)
+atrStopMult     = input.float(2.0,  "ATR Stop Multiplier", step=0.1, minval=0.1, group=gRisk)
+useAtrTp        = input.bool(true,  "Use ATR Take Profit", group=gRisk)
+atrTpMult       = input.float(3.0,  "ATR TP Multiplier",   step=0.1, minval=0.1, group=gRisk)
+useTrail        = input.bool(false, "Use ATR Trailing Stop", group=gRisk)
+atrTrailMult    = input.float(2.5,  "ATR Trail Multiplier", step=0.1, minval=0.1, group=gRisk)
+useTimeStop     = input.bool(false, "Time-Based Exit (bars)", group=gRisk)
+maxBarsInTrade  = input.int(50,     "Max Bars In Trade", minval=1, group=gRisk)
+
+gFilt = "Trend / Session Filters"
+useTrendFilter  = input.bool(false, "Require EMA Trend Alignment", group=gFilt)
+trendLen        = input.int(200,    "Trend EMA Length", minval=1, group=gFilt)
+useSession      = input.bool(false, "Restrict to Session", group=gFilt)
+sessionStr      = input.session("0930-1600", "Session", group=gFilt)
+useDateRange    = input.bool(false, "Restrict Backtest Date Range", group=gFilt)
+startDate       = input.time(timestamp("2020-01-01 00:00"), "Start", group=gFilt)
+endDate         = input.time(timestamp("2030-01-01 00:00"), "End",   group=gFilt)
+
+// ============================================================
+// Inputs - Divergence engine (mirrors indicator)
+// ============================================================
+gDiv = "Divergence Engine"
+prd        = input.int(5,    "Pivot Period",      minval=1, maxval=50, group=gDiv)
+source     = input.string("Close", "Source for Pivot Points", options=["Close","High/Low"], group=gDiv)
+searchdiv  = input.string("Regular/Hidden", "Divergence Type", options=["Regular","Hidden","Regular/Hidden"], group=gDiv)
+showlimit  = input.int(1, "Minimum Number of Divergence", minval=1, maxval=12, group=gDiv)
+maxpp      = input.int(10, "Maximum Pivot Points to Check", minval=1, maxval=20, group=gDiv)
+maxbars    = input.int(100,"Maximum Bars to Check", minval=30, maxval=200, group=gDiv)
+dontconfirm= input.bool(false, "Don't Wait for Confirmation", group=gDiv)
+
+gInd = "Indicators (Divergence)"
+calcmacd   = input.bool(true, "MACD",                 group=gInd)
+calcmacda  = input.bool(true, "MACD Histogram",       group=gInd)
+calcrsi    = input.bool(true, "RSI",                  group=gInd)
+calcstoc   = input.bool(true, "Stochastic",           group=gInd)
+calccci    = input.bool(true, "CCI",                  group=gInd)
+calcmom    = input.bool(true, "Momentum",             group=gInd)
+calcobv    = input.bool(true, "OBV",                  group=gInd)
+calcvwmacd = input.bool(true, "VWmacd",               group=gInd)
+calccmf    = input.bool(true, "Chaikin Money Flow",   group=gInd)
+calcmfi    = input.bool(true, "Money Flow Index",     group=gInd)
+calccvd    = input.bool(true, "CVD (Cumulative Volume Delta)", group=gInd)
+
+gCVD = "CVD Settings"
+cvdReset = input.string("Session", "CVD Reset", options=["Session","Day","Week","None"], group=gCVD)
+
+gOBOS = "OB/OS Confluence"
+rsiOBlvl   = input.int(70, "RSI OB level", group=gOBOS)
+rsiOSlvl   = input.int(30, "RSI OS level", group=gOBOS)
+stOBlvl    = input.int(80, "Stoch OB level", group=gOBOS)
+stOSlvl    = input.int(20, "Stoch OS level", group=gOBOS)
+markMode   = input.string("Either RSI or Stoch", "OB/OS Trigger Mode",
+     options=["Either RSI or Stoch","Both RSI and Stoch","RSI only","Stoch only"], group=gOBOS)
+
+gAbs = "Absorption Bubbles"
+limitFactor    = input.float(0.1, "Absorption Threshold", step=0.1, minval=0.1, group=gAbs)
+lookbackperiod = input.int(100, "Lookback Period", group=gAbs)
+
+// ============================================================
+// Indicator math
+// ============================================================
+rsi    = ta.rsi(close, 14)
+[macd, signalLine, deltamacd] = ta.macd(close, 12, 26, 9)
+moment = ta.mom(close, 10)
+cci    = ta.cci(close, 10)
+Obv    = ta.obv
+stk    = ta.sma(ta.stoch(close, high, low, 14), 3)
+maFast = ta.vwma(close, 12)
+maSlow = ta.vwma(close, 26)
+vwmacd = maFast - maSlow
+Cmfm   = (high - low) > 0 ? ((close - low) - (high - close)) / (high - low) : 0.0
+Cmfv   = Cmfm * volume
+cmf    = ta.sma(Cmfv, 21) / ta.sma(volume, 21)
+Mfi    = ta.mfi(close, 14)
+atr    = ta.atr(atrLen)
+
+isNewCvdPeriod = cvdReset == "Session" ? ta.change(time("D")) != 0 :
+                 cvdReset == "Day"     ? ta.change(time("D")) != 0 :
+                 cvdReset == "Week"    ? ta.change(time("W")) != 0 :
+                 false
+rng = high - low
+delta = rng > 0 ? volume * ((close - low) - (high - close)) / rng : 0.0
+var float cvd = 0.0
+cvd := isNewCvdPeriod ? delta : nz(cvd[1]) + delta
+
+// ============================================================
+// Pivots
+// ============================================================
+float ph = ta.pivothigh(source == "Close" ? close : high, prd, prd)
+float pl = ta.pivotlow( source == "Close" ? close : low,  prd, prd)
+
+var int maxarraysize = 20
+var ph_positions = array.new_int(maxarraysize, 0)
+var pl_positions = array.new_int(maxarraysize, 0)
+var ph_vals      = array.new_float(maxarraysize, 0.0)
+var pl_vals      = array.new_float(maxarraysize, 0.0)
+
+if not na(ph)
+    array.unshift(ph_positions, bar_index)
+    array.unshift(ph_vals, ph)
+    if array.size(ph_positions) > maxarraysize
+        array.pop(ph_positions)
+        array.pop(ph_vals)
+
+if not na(pl)
+    array.unshift(pl_positions, bar_index)
+    array.unshift(pl_vals, pl)
+    if array.size(pl_positions) > maxarraysize
+        array.pop(pl_positions)
+        array.pop(pl_vals)
+
+// ============================================================
+// Divergence detection
+// ============================================================
+positive_div(src, cond) =>
+    divlen = 0
+    prsc = source == "Close" ? close : low
+    if dontconfirm or src > src[1] or close > close[1]
+        startpoint = dontconfirm ? 0 : 1
+        for x = 0 to maxpp - 1
+            len = bar_index - array.get(pl_positions, x) + prd
+            if array.get(pl_positions, x) == 0 or len > maxbars
+                break
+            if len > 5 and
+               ((cond == 1 and src[startpoint] > src[len] and prsc[startpoint] < nz(array.get(pl_vals, x))) or
+                (cond == 2 and src[startpoint] < src[len] and prsc[startpoint] > nz(array.get(pl_vals, x))))
+                slope1 = (src[startpoint] - src[len]) / (len - startpoint)
+                vline1 = src[startpoint] - slope1
+                slope2 = (close[startpoint] - close[len]) / (len - startpoint)
+                vline2 = close[startpoint] - slope2
+                arrived = true
+                for y = 1 + startpoint to len - 1
+                    if src[y] < vline1 or nz(close[y]) < vline2
+                        arrived := false
+                        break
+                    vline1 := vline1 - slope1
+                    vline2 := vline2 - slope2
+                if arrived
+                    divlen := len
+                    break
+    divlen
+
+negative_div(src, cond) =>
+    divlen = 0
+    prsc = source == "Close" ? close : high
+    if dontconfirm or src < src[1] or close < close[1]
+        startpoint = dontconfirm ? 0 : 1
+        for x = 0 to maxpp - 1
+            len = bar_index - array.get(ph_positions, x) + prd
+            if array.get(ph_positions, x) == 0 or len > maxbars
+                break
+            if len > 5 and
+               ((cond == 1 and src[startpoint] < src[len] and prsc[startpoint] > nz(array.get(ph_vals, x))) or
+                (cond == 2 and src[startpoint] > src[len] and prsc[startpoint] < nz(array.get(ph_vals, x))))
+                slope1 = (src[startpoint] - src[len]) / (len - startpoint)
+                vline1 = src[startpoint] - slope1
+                slope2 = (close[startpoint] - nz(close[len])) / (len - startpoint)
+                vline2 = close[startpoint] - slope2
+                arrived = true
+                for y = 1 + startpoint to len - 1
+                    if src[y] > vline1 or nz(close[y]) > vline2
+                        arrived := false
+                        break
+                    vline1 := vline1 - slope1
+                    vline2 := vline2 - slope2
+                if arrived
+                    divlen := len
+                    break
+    divlen
+
+calc_divs(cond, ind) =>
+    a = array.new_int(4, 0)
+    array.set(a, 0, cond and (searchdiv == "Regular" or searchdiv == "Regular/Hidden") ? positive_div(ind, 1) : 0)
+    array.set(a, 1, cond and (searchdiv == "Regular" or searchdiv == "Regular/Hidden") ? negative_div(ind, 1) : 0)
+    array.set(a, 2, cond and (searchdiv == "Hidden"  or searchdiv == "Regular/Hidden") ? positive_div(ind, 2) : 0)
+    array.set(a, 3, cond and (searchdiv == "Hidden"  or searchdiv == "Regular/Hidden") ? negative_div(ind, 2) : 0)
+    a
+
+var all_divergences = array.new_int(44)
+
+set_divs(div_ptr, index) =>
+    for x = 0 to 3
+        array.set(all_divergences, index * 4 + x, array.get(div_ptr, x))
+
+set_divs(calc_divs(calcmacd,   macd),         0)
+set_divs(calc_divs(calcmacda,  deltamacd),    1)
+set_divs(calc_divs(calcrsi,    rsi),          2)
+set_divs(calc_divs(calcstoc,   stk),          3)
+set_divs(calc_divs(calccci,    cci),          4)
+set_divs(calc_divs(calcmom,    moment),       5)
+set_divs(calc_divs(calcobv,    Obv),          6)
+set_divs(calc_divs(calcvwmacd, vwmacd),       7)
+set_divs(calc_divs(calccmf,    cmf),          8)
+set_divs(calc_divs(calcmfi,    Mfi),          9)
+set_divs(calc_divs(calccvd,    cvd),         10)
+
+total_div = 0
+for x = 0 to array.size(all_divergences) - 1
+    total_div := total_div + math.round(math.sign(array.get(all_divergences, x)))
+
+if total_div < showlimit
+    array.fill(all_divergences, 0)
+
+// Aggregate flags
+pos_reg = false
+neg_reg = false
+pos_hid = false
+neg_hid = false
+for i = 0 to 10
+    if array.get(all_divergences, i * 4 + 0) > 0
+        pos_reg := true
+    if array.get(all_divergences, i * 4 + 1) > 0
+        neg_reg := true
+    if array.get(all_divergences, i * 4 + 2) > 0
+        pos_hid := true
+    if array.get(all_divergences, i * 4 + 3) > 0
+        neg_hid := true
+
+bullDiv = (useRegular and pos_reg) or (useHiddenAsTrend and pos_hid)
+bearDiv = (useRegular and neg_reg) or (useHiddenAsTrend and neg_hid)
+
+// ============================================================
+// Absorption
+// ============================================================
+volData   = volume
+midPrice  = (high + low) / 2
+scaledVol = volData / ta.stdev(volData, lookbackperiod)
+
+absAny = scaledVol >= limitFactor
+
+topBody = math.max(open, close)
+lowBody = math.min(open, close)
+upperZone = midPrice >= topBody and midPrice <= high
+lowerZone = midPrice <= lowBody and midPrice >= low
+
+absBuy  = absAny and lowerZone   // buyers absorbing pressure at lows
+absSell = absAny and upperZone   // sellers absorbing pressure at highs
+
+// ============================================================
+// OB/OS triggers
+// ============================================================
+rsiOB = rsi >= rsiOBlvl
+rsiOS = rsi <= rsiOSlvl
+stOB  = stk >= stOBlvl
+stOS  = stk <= stOSlvl
+
+obState = markMode == "Either RSI or Stoch" ? (rsiOB or stOB) : markMode == "Both RSI and Stoch" ? (rsiOB and stOB) : markMode == "RSI only" ? rsiOB : stOB
+osState = markMode == "Either RSI or Stoch" ? (rsiOS or stOS) : markMode == "Both RSI and Stoch" ? (rsiOS and stOS) : markMode == "RSI only" ? rsiOS : stOS
+
+obTrigger = obState and not obState[1]
+osTrigger = osState and not osState[1]
+
+// ============================================================
+// Filters
+// ============================================================
+trendEma = ta.ema(close, trendLen)
+trendLongOk  = not useTrendFilter or close > trendEma
+trendShortOk = not useTrendFilter or close < trendEma
+
+inSession = not useSession or not na(time(timeframe.period, sessionStr))
+inDate    = not useDateRange or (time >= startDate and time <= endDate)
+
+tradeWindow = inSession and inDate
+
+// ============================================================
+// Entry signals
+// ============================================================
+absLongConf  = absBuy  and osTrigger
+absShortConf = absSell and obTrigger
+
+longSig  = false
+shortSig = false
+if entryMode == "Divergence Only"
+    longSig  := bullDiv
+    shortSig := bearDiv
+else if entryMode == "Absorption + OBOS Only"
+    longSig  := absLongConf
+    shortSig := absShortConf
+else if entryMode == "Divergence AND Absorption"
+    longSig  := bullDiv and absBuy
+    shortSig := bearDiv and absSell
+else
+    longSig  := bullDiv or absLongConf
+    shortSig := bearDiv or absShortConf
+
+longEntry  = allowLongs  and longSig  and trendLongOk  and tradeWindow
+shortEntry = allowShorts and shortSig and trendShortOk and tradeWindow
+
+// ============================================================
+// Order management
+// ============================================================
+if longEntry
+    if strategy.position_size < 0 and flipOnOpposite
+        strategy.close("Short", comment="Flip→Long")
+    if strategy.position_size <= 0
+        strategy.entry("Long", strategy.long)
+
+if shortEntry
+    if strategy.position_size > 0 and flipOnOpposite
+        strategy.close("Long", comment="Flip→Short")
+    if strategy.position_size >= 0
+        strategy.entry("Short", strategy.short)
+
+// Stops / TPs
+longStopPx  = strategy.position_avg_price - atrStopMult * atr
+longTpPx    = strategy.position_avg_price + atrTpMult   * atr
+shortStopPx = strategy.position_avg_price + atrStopMult * atr
+shortTpPx   = strategy.position_avg_price - atrTpMult   * atr
+
+if strategy.position_size > 0
+    strategy.exit("L-Exit", from_entry="Long",
+         stop   = useAtrStop ? longStopPx : na,
+         limit  = useAtrTp   ? longTpPx   : na,
+         trail_points = useTrail ? atrTrailMult * atr / syminfo.mintick : na,
+         trail_offset = useTrail ? atrTrailMult * atr / syminfo.mintick : na)
+
+if strategy.position_size < 0
+    strategy.exit("S-Exit", from_entry="Short",
+         stop   = useAtrStop ? shortStopPx : na,
+         limit  = useAtrTp   ? shortTpPx   : na,
+         trail_points = useTrail ? atrTrailMult * atr / syminfo.mintick : na,
+         trail_offset = useTrail ? atrTrailMult * atr / syminfo.mintick : na)
+
+// Time-based exit
+barsInTrade = ta.barssince(strategy.position_size[1] == 0 and strategy.position_size != 0)
+if useTimeStop and strategy.position_size != 0 and nz(barsInTrade) >= maxBarsInTrade
+    strategy.close_all(comment="TimeStop")
+
+// Force close outside session/date window
+if not tradeWindow and strategy.position_size != 0
+    strategy.close_all(comment="WindowExit")
+
+// ============================================================
+// Visual aids
+// ============================================================
+plotshape(longEntry,  title="Long Signal",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.small)
+plotshape(shortEntry, title="Short Signal", style=shape.triangledown, location=location.abovebar, color=color.new(color.red,  0), size=size.small)
+plot(useTrendFilter ? trendEma : na, "Trend EMA", color=color.new(color.orange, 0))
+
+// ============================================================
+// Alerts
+// ============================================================
+alertcondition(longEntry,  title="Strategy Long Entry",  message="Long entry triggered")
+alertcondition(shortEntry, title="Strategy Short Entry", message="Short entry triggered")
