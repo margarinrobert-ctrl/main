@@ -11,12 +11,12 @@ useSess = input.bool(true, "Restrict VWAP/Profile to Session", group=gSes)
 
 gMean  = "VWAP + Std Dev Bands"
 showVWAP = input.bool(true,  "Show VWAP", group=gMean)
-showSD1  = input.bool(true,  "Show +/-1sd",  group=gMean)
+showSD1  = input.bool(false, "Show +/-1sd",  group=gMean)
 showSD2  = input.bool(true,  "Show +/-2sd",  group=gMean)
 showSD3  = input.bool(false, "Show +/-3sd",  group=gMean)
 
 gBB    = "Bollinger Bands"
-showBB = input.bool(true, "Show Bollinger Bands", group=gBB)
+showBB = input.bool(false, "Show Bollinger Bands", group=gBB)
 bbLen  = input.int(20,    "BB Length",  minval=2, group=gBB)
 bbMult = input.float(2.0, "BB StDev",   step=0.1, group=gBB)
 
@@ -386,41 +386,38 @@ gradeLong  = f_grade(longScore)
 gradeShort = f_grade(shortScore)
 minRank    = f_rank(minGrade)
 
-longSignal  = f_rank(gradeLong)  >= minRank and longRec  > 0 and longR  >= minR
-shortSignal = f_rank(gradeShort) >= minRank and shortRec > 0 and shortR >= minR
+longSignal  = f_rank(gradeLong)  >= minRank and longRec  > 0 and longR  >= minR and bullDivActive
+shortSignal = f_rank(gradeShort) >= minRank and shortRec > 0 and shortR >= minR and bearDivActive
 
 // ============================================================
 // Plots
 // ============================================================
-plot(showVWAP ? vwap  : na, "VWAP", color=color.new(color.orange, 0),  linewidth=2)
-plot(showSD1  ? vwUp1 : na, "+1sd",  color=color.new(color.aqua,    70))
-plot(showSD1  ? vwDn1 : na, "-1sd",  color=color.new(color.aqua,    70))
-plot(showSD2  ? vwUp2 : na, "+2sd",  color=color.new(color.yellow,  30))
-plot(showSD2  ? vwDn2 : na, "-2sd",  color=color.new(color.yellow,  30))
-plot(showSD3  ? vwUp3 : na, "+3sd",  color=color.new(color.red,     50))
-plot(showSD3  ? vwDn3 : na, "-3sd",  color=color.new(color.red,     50))
+plot(showVWAP ? vwap  : na, "VWAP", color=color.new(color.orange, 20), linewidth=2)
+plot(showSD1  ? vwUp1 : na, "+1sd", color=color.new(color.aqua,    80))
+plot(showSD1  ? vwDn1 : na, "-1sd", color=color.new(color.aqua,    80))
+p2u = plot(showSD2 ? vwUp2 : na, "+2sd", color=color.new(color.yellow, 60))
+p2d = plot(showSD2 ? vwDn2 : na, "-2sd", color=color.new(color.yellow, 60))
+fill(p2u, p2d, color=color.new(color.yellow, 96), title="VWAP +/-2sd Range")
+plot(showSD3 ? vwUp3 : na, "+3sd", color=color.new(color.red, 70))
+plot(showSD3 ? vwDn3 : na, "-3sd", color=color.new(color.red, 70))
 
-plot(showBB ? bbBasis : na, "BB Basis", color=color.new(color.gray, 60))
-plot(showBB ? bbUp    : na, "BB Upper", color=color.new(color.gray, 30))
-plot(showBB ? bbDn    : na, "BB Lower", color=color.new(color.gray, 30))
+plot(showBB ? bbBasis : na, "BB Basis", color=color.new(color.gray, 70))
+plot(showBB ? bbUp    : na, "BB Upper", color=color.new(color.gray, 50))
+plot(showBB ? bbDn    : na, "BB Lower", color=color.new(color.gray, 50))
 
-plot(showProf ? poc : na, "POC", color=color.new(color.fuchsia, 0),  style=plot.style_linebr, linewidth=2)
-plot(showProf ? vah : na, "VAH", color=color.new(color.lime,    30), style=plot.style_linebr)
-plot(showProf ? val : na, "VAL", color=color.new(color.red,     30), style=plot.style_linebr)
+plot(showProf ? poc : na, "POC", color=color.new(color.fuchsia, 20), style=plot.style_linebr, linewidth=2)
+plot(showProf ? vah : na, "VAH", color=color.new(color.lime,    50), style=plot.style_linebr)
+plot(showProf ? val : na, "VAL", color=color.new(color.red,     50), style=plot.style_linebr)
 
-bgcolor(close > vwUp2 ? color.new(color.red, 92) : close < vwDn2 ? color.new(color.lime, 92) : na, title="Stretch Zone")
+bgcolor(close > vwUp2 ? color.new(color.red, 96) : close < vwDn2 ? color.new(color.lime, 96) : na, title="Stretch Zone")
 
-plotshape(longSignal,  "LONG",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.small)
-plotshape(shortSignal, "SHORT", style=shape.triangledown, location=location.abovebar, color=color.new(color.red,  0), size=size.small)
 plotshape(bullDivRSI or bullDivCVD, "Bull Div", style=shape.circle, location=location.belowbar, color=color.new(color.aqua,    0), size=size.tiny, offset=-cvdPiv)
 plotshape(bearDivRSI or bearDivCVD, "Bear Div", style=shape.circle, location=location.abovebar, color=color.new(color.fuchsia, 0), size=size.tiny, offset=-cvdPiv)
 
-if showLabels and longSignal
-    txtL = gradeLong + " LONG\nEntry " + str.tostring(close, format.mintick) + "\nStop " + str.tostring(longStop, format.mintick) + "\nTgt " + str.tostring(longTarget, format.mintick) + "\nR " + str.tostring(longR, "#.##") + "\nScore " + str.tostring(longScore, "#")
-    label.new(bar_index, low, txtL, color=color.new(color.lime, 60), textcolor=color.white, style=label.style_label_up, size=size.small)
-if showLabels and shortSignal
-    txtS = gradeShort + " SHORT\nEntry " + str.tostring(close, format.mintick) + "\nStop " + str.tostring(shortStop, format.mintick) + "\nTgt " + str.tostring(shortTarget, format.mintick) + "\nR " + str.tostring(shortR, "#.##") + "\nScore " + str.tostring(shortScore, "#")
-    label.new(bar_index, high, txtS, color=color.new(color.red, 60), textcolor=color.white, style=label.style_label_down, size=size.small)
+if showLabels and longSignal and gradeLong != ""
+    label.new(bar_index - cvdPiv, low[cvdPiv], gradeLong, color=color.new(color.lime, 20), textcolor=color.black, style=label.style_label_up, size=size.small)
+if showLabels and shortSignal and gradeShort != ""
+    label.new(bar_index - cvdPiv, high[cvdPiv], gradeShort, color=color.new(color.red, 20), textcolor=color.white, style=label.style_label_down, size=size.small)
 
 // ============================================================
 // Dashboard
