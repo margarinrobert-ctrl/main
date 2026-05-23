@@ -139,8 +139,8 @@ if barstate.isfirst
 // ============================================================
 float ph = ta.pivothigh(source == "Close" ? close : high, prd, prd)
 float pl = ta.pivotlow( source == "Close" ? close : low,  prd, prd)
-plotshape(ph and showpivot, text="H", style=shape.labeldown, color=color.new(color.white, 100), textcolor=color.red,  location=location.abovebar, offset=-prd)
-plotshape(pl and showpivot, text="L", style=shape.labelup,   color=color.new(color.white, 100), textcolor=color.lime, location=location.belowbar, offset=-prd)
+plotshape(not na(ph) and showpivot, text="H", style=shape.labeldown, color=color.new(color.white, 100), textcolor=color.red,  location=location.abovebar, offset=-prd)
+plotshape(not na(pl) and showpivot, text="L", style=shape.labelup,   color=color.new(color.white, 100), textcolor=color.lime, location=location.belowbar, offset=-prd)
 
 var int maxarraysize = 20
 var ph_positions = array.new_int(maxarraysize, 0)
@@ -148,14 +148,14 @@ var pl_positions = array.new_int(maxarraysize, 0)
 var ph_vals      = array.new_float(maxarraysize, 0.0)
 var pl_vals      = array.new_float(maxarraysize, 0.0)
 
-if ph
+if not na(ph)
     array.unshift(ph_positions, bar_index)
     array.unshift(ph_vals, ph)
     if array.size(ph_positions) > maxarraysize
         array.pop(ph_positions)
         array.pop(ph_vals)
 
-if pl
+if not na(pl)
     array.unshift(pl_positions, bar_index)
     array.unshift(pl_vals, pl)
     if array.size(pl_positions) > maxarraysize
@@ -317,10 +317,10 @@ var last_pos_div_lines = 0
 var last_neg_div_lines = 0
 var remove_last_pos_divs = false
 var remove_last_neg_divs = false
-if pl
+if not na(pl)
     remove_last_pos_divs := false
     last_pos_div_lines := 0
-if ph
+if not na(ph)
     remove_last_neg_divs := false
     last_neg_div_lines := 0
 
