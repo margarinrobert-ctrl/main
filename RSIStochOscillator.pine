@@ -1,0 +1,65 @@
+//@version=6
+indicator("RSI + Stoch Oscillator", shorttitle="RSI+Stoch", overlay=false, precision=2)
+
+// ============================================================
+// Inputs
+// ============================================================
+gRSI = "RSI"
+rsiLen   = input.int(14, "RSI Length", minval=2, group=gRSI)
+rsiSrc   = input.source(close, "RSI Source", group=gRSI)
+rsiOB    = input.int(70, "RSI Overbought", group=gRSI)
+rsiOS    = input.int(30, "RSI Oversold",   group=gRSI)
+rsiCol   = input.color(color.new(color.purple, 0), "RSI Line Color", group=gRSI)
+showRSI  = input.bool(true, "Show RSI", group=gRSI)
+
+gST = "Stochastic"
+stKLen   = input.int(14, "Stoch %K Length",   minval=1, group=gST)
+stKSm    = input.int(3,  "Stoch %K Smoothing",minval=1, group=gST)
+stDSm    = input.int(3,  "Stoch %D Smoothing",minval=1, group=gST)
+stOB     = input.int(80, "Stoch Overbought", group=gST)
+stOS     = input.int(20, "Stoch Oversold",   group=gST)
+stKCol   = input.color(color.new(color.blue, 0),   "%K Color", group=gST)
+stDCol   = input.color(color.new(color.orange, 0), "%D Color", group=gST)
+showStoch= input.bool(true, "Show Stochastic", group=gST)
+
+gFmt = "Formatting"
+shadeOB = input.bool(true, "Shade OB/OS Zones", group=gFmt)
+obCol   = input.color(color.new(color.red,  85), "OB Zone Color", group=gFmt)
+osCol   = input.color(color.new(color.lime, 85), "OS Zone Color", group=gFmt)
+
+// ============================================================
+// Calculations
+// ============================================================
+rsi    = ta.rsi(rsiSrc, rsiLen)
+stRaw  = ta.stoch(close, high, low, stKLen)
+stochK = ta.sma(stRaw, stKSm)
+stochD = ta.sma(stochK, stDSm)
+
+// ============================================================
+// Plots
+// ============================================================
+plot(showRSI   ? rsi    : na, "RSI",   color=rsiCol, linewidth=2)
+plot(showStoch ? stochK : na, "%K",    color=stKCol, linewidth=1)
+plot(showStoch ? stochD : na, "%D",    color=stDCol, linewidth=1)
+
+// Reference lines
+hline(50, "Mid",     color=color.new(color.gray, 60), linestyle=hline.style_dotted)
+obLine = hline(rsiOB,"OB",      color=color.new(color.red,  50), linestyle=hline.style_dashed)
+osLine = hline(rsiOS,"OS",      color=color.new(color.lime, 50), linestyle=hline.style_dashed)
+hline(stOB, "Stoch OB", color=color.new(color.red,  70), linestyle=hline.style_dotted)
+hline(stOS, "Stoch OS", color=color.new(color.lime, 70), linestyle=hline.style_dotted)
+hline(0,   "0",   color=color.new(color.gray, 80))
+hline(100, "100", color=color.new(color.gray, 80))
+
+fill(obLine, osLine, color=shadeOB ? color.new(color.gray, 95) : na, title="OB/OS Band")
+
+// Highlight overbought / oversold of RSI
+bgcolor(shadeOB and rsi >= rsiOB ? obCol : shadeOB and rsi <= rsiOS ? osCol : na, title="RSI OB/OS Tint")
+
+// ============================================================
+// Alerts
+// ============================================================
+alertcondition(ta.crossunder(rsi, rsiOB), title="RSI exits OB", message="RSI crossed back below overbought")
+alertcondition(ta.crossover(rsi,  rsiOS), title="RSI exits OS", message="RSI crossed back above oversold")
+alertcondition(ta.crossover(stochK,  stochD) and stochK <= stOS, title="Stoch bull cross in OS", message="Stoch %K crossed above %D in oversold")
+alertcondition(ta.crossunder(stochK, stochD) and stochK >= stOB, title="Stoch bear cross in OB", message="Stoch %K crossed below %D in overbought")
