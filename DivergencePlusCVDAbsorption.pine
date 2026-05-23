@@ -67,6 +67,12 @@ rsiOSlvl   = input.int(30, "RSI OS level", group=gPanel)
 stOBlvl    = input.int(80, "Stoch OB level", group=gPanel)
 stOSlvl    = input.int(20, "Stoch OS level", group=gPanel)
 
+gOBOS = "OB/OS Bar Markers"
+showObOsMarks = input.bool(true, "Show OB/OS Triangles on Bars", group=gOBOS)
+markMode      = input.string("Either RSI or Stoch", "Trigger When", options=["Either RSI or Stoch","Both RSI and Stoch","RSI only","Stoch only"], group=gOBOS)
+osColor       = input.color(color.new(color.lime, 0), "OS (buy) Triangle Color",  group=gOBOS)
+obColor       = input.color(color.new(color.red,  0), "OB (sell) Triangle Color", group=gOBOS)
+
 // ============================================================
 // Inputs - Absorption Bubbles
 // ============================================================
@@ -520,3 +526,20 @@ if showPanel and barstate.islast
     table.cell(valTable, 1, 1, str.tostring(stk, "#.#"),  text_color=stkClr, text_size=panelTextSize)
     table.cell(valTable, 0, 2, "CVD",   text_color=color.gray,  text_size=panelTextSize)
     table.cell(valTable, 1, 2, str.tostring(cvd, "#"),    text_color=cvdClr, text_size=panelTextSize)
+
+// ============================================================
+// OB/OS Bar Markers (live, no divergence required)
+// ============================================================
+rsiOB_now = rsi >= rsiOBlvl
+rsiOS_now = rsi <= rsiOSlvl
+stOB_now  = stk >= stOBlvl
+stOS_now  = stk <= stOSlvl
+
+obTrigger = markMode == "Either RSI or Stoch" ? (rsiOB_now or stOB_now) : markMode == "Both RSI and Stoch" ? (rsiOB_now and stOB_now) : markMode == "RSI only" ? rsiOB_now : stOB_now
+osTrigger = markMode == "Either RSI or Stoch" ? (rsiOS_now or stOS_now) : markMode == "Both RSI and Stoch" ? (rsiOS_now and stOS_now) : markMode == "RSI only" ? rsiOS_now : stOS_now
+
+plotshape(showObOsMarks and osTrigger, title="OS Marker", style=shape.triangleup,   location=location.belowbar, color=osColor, size=size.tiny)
+plotshape(showObOsMarks and obTrigger, title="OB Marker", style=shape.triangledown, location=location.abovebar, color=obColor, size=size.tiny)
+
+alertcondition(osTrigger, title="Oversold Marker",  message="RSI/Stoch oversold trigger")
+alertcondition(obTrigger, title="Overbought Marker", message="RSI/Stoch overbought trigger")
