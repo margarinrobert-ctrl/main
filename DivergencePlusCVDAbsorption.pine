@@ -59,7 +59,7 @@ cma1col = input.color(color.lime, "", inline="ma12", group=gMA)
 cma2col = input.color(color.red,  "", inline="ma12", group=gMA)
 
 gPanel = "On-Chart Value Panel"
-showPanel  = input.bool(true, "Show RSI / Stoch / CVD values", group=gPanel)
+showPanel  = input.bool(true, "Show RSI / Stoch / CCI / CVD values", group=gPanel)
 panelPos   = input.string("top_right", "Panel Position", options=["top_left","top_right","top_center","middle_left","middle_right","bottom_left","bottom_right"], group=gPanel)
 panelSize  = input.string("normal", "Text Size", options=["tiny","small","normal","large","huge"], group=gPanel)
 rsiOBlvl   = input.int(70, "RSI OB level", group=gPanel)
@@ -501,17 +501,20 @@ alertcondition((condA or condB or condC or condD or condE) and (validUp or valid
 panelPosConst = panelPos == "top_left" ? position.top_left : panelPos == "top_right" ? position.top_right : panelPos == "top_center" ? position.top_center : panelPos == "middle_left" ? position.middle_left : panelPos == "middle_right" ? position.middle_right : panelPos == "bottom_left" ? position.bottom_left : position.bottom_right
 panelTextSize = panelSize == "tiny" ? size.tiny : panelSize == "small" ? size.small : panelSize == "normal" ? size.normal : panelSize == "large" ? size.large : size.huge
 
-var table valTable = table.new(panelPosConst, 2, 3, border_width=1, frame_color=color.new(color.gray, 50), frame_width=1)
+var table valTable = table.new(panelPosConst, 2, 4, border_width=1, frame_color=color.new(color.gray, 50), frame_width=1)
 if showPanel and barstate.islast
     rsiClr = rsi >= rsiOBlvl ? color.red : rsi <= rsiOSlvl ? color.lime : color.white
     stkClr = stk >= stOBlvl  ? color.red : stk <= stOSlvl  ? color.lime : color.white
+    cciClr = cci >= cciOBlvl ? color.red : cci <= cciOSlvl ? color.lime : color.white
     cvdClr = cvd >= 0 ? color.lime : color.red
     table.cell(valTable, 0, 0, "RSI",   text_color=color.gray,  text_size=panelTextSize)
     table.cell(valTable, 1, 0, str.tostring(rsi, "#.#"),  text_color=rsiClr, text_size=panelTextSize)
     table.cell(valTable, 0, 1, "Stoch", text_color=color.gray,  text_size=panelTextSize)
     table.cell(valTable, 1, 1, str.tostring(stk, "#.#"),  text_color=stkClr, text_size=panelTextSize)
-    table.cell(valTable, 0, 2, "CVD",   text_color=color.gray,  text_size=panelTextSize)
-    table.cell(valTable, 1, 2, str.tostring(cvd, "#"),    text_color=cvdClr, text_size=panelTextSize)
+    table.cell(valTable, 0, 2, "CCI",   text_color=color.gray,  text_size=panelTextSize)
+    table.cell(valTable, 1, 2, str.tostring(cci, "#.#"),  text_color=cciClr, text_size=panelTextSize)
+    table.cell(valTable, 0, 3, "CVD",   text_color=color.gray,  text_size=panelTextSize)
+    table.cell(valTable, 1, 3, str.tostring(cvd, "#"),    text_color=cvdClr, text_size=panelTextSize)
 
 // ============================================================
 // OB/OS Bar Markers (live, no divergence required)
