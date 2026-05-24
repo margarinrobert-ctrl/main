@@ -39,7 +39,8 @@ calcext    = input.bool(false,"Check External Indicator", group=gInd)
 externalindi = input.source(close, "External Indicator", group=gInd)
 
 gCVD = "CVD Settings"
-cvdReset = input.string("Session", "CVD Reset", options=["Session","Day","Week","NY RTH (9:30-16:00 ET)","None"], group=gCVD)
+cvdReset   = input.string("Session", "CVD Reset", options=["Session","Day","Week","NY RTH (9:30-16:00 ET)","None"], group=gCVD)
+cvdLowerTf = input.string("1", "CVD Lower Timeframe (accuracy)", options=["1S","5S","15S","30S","1","3","5"], group=gCVD, tooltip="Lower timeframe used to classify volume as up or down for accurate CVD. Lower = more accurate but less history. '1S' requires paid plan with 1s data.")
 
 gCol = "Colors / Lines"
 pos_reg_div_col = input.color(color.yellow, "Positive Regular Divergence", group=gCol)
@@ -120,6 +121,16 @@ cmf    = ta.sma(Cmfv, 21) / ta.sma(volume, 21)
 Mfi    = ta.mfi(close, 14)
 
 // --- CVD ---
+// Accurate volume delta via lower-timeframe up/down volume classification.
+// Tick-rule: close>open => +volume, close<open => -volume, equal => previous direction.
+f_barDelta() =>
+    var float lastDir = 1.0
+    dir = close > open ? 1.0 : close < open ? -1.0 : lastDir
+    lastDir := dir
+    dir * volume
+
+deltaArr = request.security_lower_tf(syminfo.tickerid, cvdLowerTf, f_barDelta())
+
 nyRthTime      = time(timeframe.period, "0930-1600:23456", "America/New_York")
 inNyRth        = not na(nyRthTime)
 isNewNyRth     = inNyRth and na(nyRthTime[1])
@@ -128,9 +139,10 @@ isNewCvdPeriod = cvdReset == "Session"                ? ta.change(time("D")) != 
                  cvdReset == "Week"                   ? ta.change(time("W")) != 0 :
                  cvdReset == "NY RTH (9:30-16:00 ET)" ? isNewNyRth :
                  false
-rng = high - low
-rawDelta = rng > 0 ? volume * ((close - low) - (high - close)) / rng : 0.0
-delta = cvdReset == "NY RTH (9:30-16:00 ET)" and not inNyRth ? 0.0 : rawDelta
+rng       = high - low
+fallback  = rng > 0 ? volume * ((close - low) - (high - close)) / rng : 0.0
+rawDelta  = array.size(deltaArr) > 0 ? array.sum(deltaArr) : fallback
+delta     = cvdReset == "NY RTH (9:30-16:00 ET)" and not inNyRth ? 0.0 : rawDelta
 var float cvd = 0.0
 cvd := isNewCvdPeriod ? delta : nz(cvd[1]) + delta
 
