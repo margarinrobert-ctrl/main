@@ -66,10 +66,12 @@ rsiOBlvl   = input.int(70, "RSI OB level", group=gPanel)
 rsiOSlvl   = input.int(30, "RSI OS level", group=gPanel)
 stOBlvl    = input.int(80, "Stoch OB level", group=gPanel)
 stOSlvl    = input.int(20, "Stoch OS level", group=gPanel)
+cciOBlvl   = input.int(100,  "CCI OB level", group=gPanel)
+cciOSlvl   = input.int(-100, "CCI OS level", group=gPanel)
 
 gOBOS = "OB/OS Bar Markers"
 showObOsMarks = input.bool(true, "Show OB/OS Triangles on Bars", group=gOBOS)
-markMode      = input.string("Both RSI and Stoch", "Trigger When", options=["Either RSI or Stoch","Both RSI and Stoch","RSI only","Stoch only"], group=gOBOS)
+markMode      = input.string("All 3 (RSI, Stoch, CCI)", "Trigger When", options=["Any of RSI/Stoch/CCI","All 3 (RSI, Stoch, CCI)","2 of 3 (RSI/Stoch/CCI)","Both RSI and Stoch","RSI only","Stoch only","CCI only"], group=gOBOS)
 osColor       = input.color(color.new(color.lime, 0), "OS (buy) Triangle Color",  group=gOBOS)
 obColor       = input.color(color.new(color.red,  0), "OB (sell) Triangle Color", group=gOBOS)
 
@@ -518,9 +520,26 @@ rsiOB_now = rsi >= rsiOBlvl
 rsiOS_now = rsi <= rsiOSlvl
 stOB_now  = stk >= stOBlvl
 stOS_now  = stk <= stOSlvl
+cciOB_now = cci >= cciOBlvl
+cciOS_now = cci <= cciOSlvl
 
-obState = markMode == "Either RSI or Stoch" ? (rsiOB_now or stOB_now) : markMode == "Both RSI and Stoch" ? (rsiOB_now and stOB_now) : markMode == "RSI only" ? rsiOB_now : stOB_now
-osState = markMode == "Either RSI or Stoch" ? (rsiOS_now or stOS_now) : markMode == "Both RSI and Stoch" ? (rsiOS_now and stOS_now) : markMode == "RSI only" ? rsiOS_now : stOS_now
+obCount = (rsiOB_now ? 1 : 0) + (stOB_now ? 1 : 0) + (cciOB_now ? 1 : 0)
+osCount = (rsiOS_now ? 1 : 0) + (stOS_now ? 1 : 0) + (cciOS_now ? 1 : 0)
+
+obState = markMode == "Any of RSI/Stoch/CCI"     ? (obCount >= 1) :
+          markMode == "All 3 (RSI, Stoch, CCI)"  ? (obCount >= 3) :
+          markMode == "2 of 3 (RSI/Stoch/CCI)"   ? (obCount >= 2) :
+          markMode == "Both RSI and Stoch"       ? (rsiOB_now and stOB_now) :
+          markMode == "RSI only"                 ? rsiOB_now :
+          markMode == "Stoch only"               ? stOB_now :
+                                                   cciOB_now
+osState = markMode == "Any of RSI/Stoch/CCI"     ? (osCount >= 1) :
+          markMode == "All 3 (RSI, Stoch, CCI)"  ? (osCount >= 3) :
+          markMode == "2 of 3 (RSI/Stoch/CCI)"   ? (osCount >= 2) :
+          markMode == "Both RSI and Stoch"       ? (rsiOS_now and stOS_now) :
+          markMode == "RSI only"                 ? rsiOS_now :
+          markMode == "Stoch only"               ? stOS_now :
+                                                   cciOS_now
 
 obTrigger = obState and not obState[1]
 osTrigger = osState and not osState[1]
