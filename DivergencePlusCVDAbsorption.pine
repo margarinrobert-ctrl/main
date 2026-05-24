@@ -39,7 +39,7 @@ calcext    = input.bool(false,"Check External Indicator", group=gInd)
 externalindi = input.source(close, "External Indicator", group=gInd)
 
 gCVD = "CVD Settings"
-cvdReset = input.string("Session", "CVD Reset", options=["Session","Day","Week","None"], group=gCVD)
+cvdReset = input.string("Session", "CVD Reset", options=["Session","Day","Week","NY RTH (9:30-16:00 ET)","None"], group=gCVD)
 
 gCol = "Colors / Lines"
 pos_reg_div_col = input.color(color.yellow, "Positive Regular Divergence", group=gCol)
@@ -120,12 +120,17 @@ cmf    = ta.sma(Cmfv, 21) / ta.sma(volume, 21)
 Mfi    = ta.mfi(close, 14)
 
 // --- CVD ---
-isNewCvdPeriod = cvdReset == "Session" ? ta.change(time("D")) != 0 :
-                 cvdReset == "Day"     ? ta.change(time("D")) != 0 :
-                 cvdReset == "Week"    ? ta.change(time("W")) != 0 :
+nyRthTime      = time(timeframe.period, "0930-1600:23456", "America/New_York")
+inNyRth        = not na(nyRthTime)
+isNewNyRth     = inNyRth and na(nyRthTime[1])
+isNewCvdPeriod = cvdReset == "Session"                ? ta.change(time("D")) != 0 :
+                 cvdReset == "Day"                    ? ta.change(time("D")) != 0 :
+                 cvdReset == "Week"                   ? ta.change(time("W")) != 0 :
+                 cvdReset == "NY RTH (9:30-16:00 ET)" ? isNewNyRth :
                  false
 rng = high - low
-delta = rng > 0 ? volume * ((close - low) - (high - close)) / rng : 0.0
+rawDelta = rng > 0 ? volume * ((close - low) - (high - close)) / rng : 0.0
+delta = cvdReset == "NY RTH (9:30-16:00 ET)" and not inNyRth ? 0.0 : rawDelta
 var float cvd = 0.0
 cvd := isNewCvdPeriod ? delta : nz(cvd[1]) + delta
 
