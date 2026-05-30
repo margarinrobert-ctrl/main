@@ -68,7 +68,8 @@ dailyLblColor   = input.color(color.new(color.gray, 30), "Day-tag bg",  group=G_
 // VOLUME PROFILE
 // =====================================================================
 showProfile     = input.bool(true,  "Show Volume Profile",            group=G_VP)
-rowCount        = input.int (60,    "Number of Rows", minval=10, maxval=200, group=G_VP)
+rowsInput       = input.int (60,    "Number of Rows", minval=10, maxval=200, group=G_VP,
+     tooltip="Auto-reduced at render time if needed so the WHOLE profile fits inside TradingView's hard 500-box limit. The effective count is shown on the Rows line of the stats box when it gets capped.")
 profileWidthPct = input.float(30,   "Width (% of box)",  minval=5, maxval=100, group=G_VP)
 profilePlace    = input.string("Left", "Placement", options=["Left","Right"], group=G_VP)
 showValues      = input.bool(false, "Show row values",               group=G_VP)
@@ -167,6 +168,22 @@ boxBdStyle = input.string("Solid", "Border style", options=["Solid","Dashed","Do
 alertPOC = input.bool(false, "Alert when price crosses POC", group=G_ALR)
 alertVAH = input.bool(false, "Alert when price crosses VAH", group=G_ALR)
 alertVAL = input.bool(false, "Alert when price crosses VAL", group=G_ALR)
+
+// =====================================================================
+// EFFECTIVE ROW COUNT  -  clamp so the full profile fits the box budget
+// ---------------------------------------------------------------------
+// TradingView caps total boxes at 500 (hard limit). Each rendered row can
+// spawn up to: profile up + profile down (when split) + a delta box + an
+// HVN/LVN band box. Because boxes are created bottom-bin-first, overflowing
+// 500 makes TradingView silently drop the OLDEST (lowest-price) boxes - that
+// is why the bottom of the profile/delta could disappear. We reserve a slice
+// of the budget for the range box / developing / daily drawings and clamp the
+// effective row count so the ENTIRE price range always renders.
+// =====================================================================
+int boxesPerRow   = (showProfile ? (splitDirection ? 2 : 1) : 0) + (showDelta ? 1 : 0) + (showHVN ? 1 : 0)
+int maxRenderRows = boxesPerRow > 0 ? math.max(10, int(math.floor(460 / boxesPerRow))) : rowsInput
+int  rowCount     = math.min(rowsInput, maxRenderRows)
+bool rowsCapped   = rowCount < rowsInput
 
 // =====================================================================
 // HELPERS
@@ -579,7 +596,7 @@ if barstate.islast
             // -------- Delta histogram --------
             if showDelta and maxAbsDelta > 0
                 d  = array.get(binDelta, b)
-                wd = math.max(0, math.round(dltMaxW * math.abs(d) / maxAbsDelta))
+                wd = math.abs(d) > 0 ? math.max(1, math.round(dltMaxW * math.abs(d) / maxAbsDelta)) : 0
                 if wd > 0
                     colD = d >= 0 ? deltaPosColor : deltaNegColor
                     if deltaPlace == "Left"
@@ -695,7 +712,8 @@ if barstate.islast
                  "\nBuy Vol     :  " + f_fmtVol(buyVol)  + "  (" + str.tostring(buyPct, "#.#") + "%)" +
                  "\nSell Vol    :  " + f_fmtVol(sellVol) + "  (" + str.tostring(sellPct, "#.#") + "%)" +
                  "\nNet Delta  :  " + f_fmtVol(totDelta) +
-                 "\nMethod     :  " + (useLTF ? "LTF Accurate" : "Heuristic")
+                 "\nMethod     :  " + (useLTF ? "LTF Accurate" : "Heuristic") +
+                 (rowsCapped ? "\nRows         :  " + str.tostring(rowCount) + " / " + str.tostring(rowsInput) + "  (capped to fit)" : "")
 
             isLeft   = str.contains(statsPos, "Left")
             isMiddle = str.contains(statsPos, "Middle")
