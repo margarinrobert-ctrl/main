@@ -1,0 +1,748 @@
+//@version=6
+// =====================================================================
+//  FRVP + Delta  -  Fixed Range Volume Profile with Delta Histogram
+//  ---------------------------------------------------------------
+//  Asia Session anchor added: 18:00 NY EST open -> 16:00 NY EST close
+//  HVN / LVN now drawn as 1-bin-tall squared bands (replaces diamonds).
+//    HVN = green  #26a69a    LVN = purple #7b1fa2
+//    Bands honor the existing "Extend lines" toggle for horizontal reach.
+//
+//  FIXES
+//    1) "Doesn't show everything" -> line/label budgets raised to the
+//       Pine maximum (500) so HVN/LVN bands, row values, developing
+//       POC/VA and daily anchors are no longer silently dropped when
+//       several features are enabled at once. Stats box now also prints
+//       the RESOLVED time range so you can confirm the full session was
+//       captured.
+//    2) Value-area readout now shows the active session everywhere:
+//       the POC / VAH / VAL chart labels are tagged with the anchor
+//       (e.g. "POC  30405.00  · Present Day") and the stats box prints
+//       the session name plus its From / To timestamps.
+// =====================================================================
+indicator("FRVP + Delta  |  Fixed Range Volume Profile with Delta", "FRVP+D",
+     overlay=true, max_boxes_count=500, max_lines_count=500,
+     max_labels_count=500, max_bars_back=5000)
+
+// =====================================================================
+// INPUT GROUPS
+// =====================================================================
+G_RNG  = "Range"
+G_VP   = "Volume Profile"
+G_DLT  = "Delta Histogram"
+G_LVL  = "Levels (POC / VAH / VAL)"
+G_DEV  = "Developing POC / VA"
+G_HLN  = "HVN / LVN"
+G_STA  = "Statistics Box"
+G_STY  = "Style"
+G_ALR  = "Alerts"
+G_DLY  = "Daily Anchors (Past + Present Week)"
+
+// =====================================================================
+// RANGE  (anchor preset OR draggable manual anchors)
+// =====================================================================
+anchorMode = input.string("Manual", "Anchor Preset",
+     options=["Manual", "Present Day", "Past Day", "Present Week", "Past Week", "Present Month", "Past Month", "Asia Session"],
+     group=G_RNG,
+     tooltip="Auto presets are anchored at 9:30 AM New York time (regular US open), EXCEPT 'Asia Session' which anchors 18:00 NY (Asia open) -> 16:00 NY (US close).")
+
+startTime = input.time(timestamp("2024-01-01T00:00"), "Range Start (Manual)",
+     group=G_RNG, confirm=true,
+     tooltip="Only used when Anchor Preset = Manual. Drag the anchor on the chart to move it.")
+endTime   = input.time(timestamp("2024-12-31T00:00"), "Range End (Manual)",
+     group=G_RNG, confirm=true,
+     tooltip="Only used when Anchor Preset = Manual.")
+
+// =====================================================================
+// DAILY ANCHORS  (one profile per trading day, 9:30 AM to 4:00 PM NY)
+// =====================================================================
+showDaily       = input.bool(false, "Show daily anchors (past + present week)", group=G_DLY,
+     tooltip="When ON, draws a separate simplified volume profile for every trading day (Mon-Fri) of last week and this week.")
+dailyRows       = input.int(20, "Rows per day", minval=8, maxval=60, group=G_DLY)
+dailyWidthPct   = input.float(15, "Width (% of each day)", minval=5, maxval=80, group=G_DLY)
+dailyFillColor  = input.color(color.new(#2962ff, 70), "Volume fill", group=G_DLY, inline="d1")
+dailyPocColor   = input.color(color.new(color.yellow, 0), "POC line", group=G_DLY, inline="d1")
+dailyBdColor    = input.color(color.new(#2962ff, 50), "Range border", group=G_DLY, inline="d2")
+dailyLblColor   = input.color(color.new(color.gray, 30), "Day-tag bg",  group=G_DLY, inline="d2")
+
+// =====================================================================
+// VOLUME PROFILE
+// =====================================================================
+showProfile     = input.bool(true,  "Show Volume Profile",            group=G_VP)
+rowCount        = input.int (60,    "Number of Rows", minval=10, maxval=200, group=G_VP)
+profileWidthPct = input.float(30,   "Width (% of box)",  minval=5, maxval=100, group=G_VP)
+profilePlace    = input.string("Left", "Placement", options=["Left","Right"], group=G_VP)
+showValues      = input.bool(false, "Show row values",               group=G_VP)
+splitDirection  = input.bool(true,  "Split Up / Down within each row", group=G_VP)
+upVolColor      = input.color(color.new(#26a69a, 55), "Up Volume",    group=G_VP, inline="vol")
+dnVolColor      = input.color(color.new(#7b1fa2, 55), "Down Volume",  group=G_VP, inline="vol")
+vaUpColor       = input.color(color.new(#26a69a, 20), "Value Area Up",   group=G_VP, inline="va")
+vaDnColor       = input.color(color.new(#7b1fa2, 20), "Value Area Down", group=G_VP, inline="va")
+
+// =====================================================================
+// DELTA HISTOGRAM
+// =====================================================================
+showDelta       = input.bool(true,  "Show Delta Histogram",          group=G_DLT)
+deltaMethod     = input.string("Heuristic", "Calculation Method",
+     options=["Heuristic","LTF Accurate"], group=G_DLT)
+deltaLTF        = input.timeframe("1", "Lower TF for accurate delta", group=G_DLT)
+deltaWidthPct   = input.float(15,   "Width (% of box)",  minval=5, maxval=100, group=G_DLT)
+deltaPlace      = input.string("Left", "Placement", options=["Left","Right"], group=G_DLT)
+deltaPosColor   = input.color(color.new(#26a69a, 25), "Positive Delta (+)", group=G_DLT, inline="d")
+deltaNegColor   = input.color(color.new(#ef5350, 25), "Negative Delta (-)", group=G_DLT, inline="d")
+deltaShowZero   = input.bool(true,  "Show zero line",                group=G_DLT)
+zeroLineColor   = input.color(color.new(color.gray, 50), "Zero line color", group=G_DLT)
+
+// =====================================================================
+// LEVELS  (POC / VAH / VAL)
+// =====================================================================
+vaPercent  = input.float(70, "Value Area %", minval=10, maxval=95, group=G_LVL)
+
+showPOC      = input.bool (true,             "Show POC",     group=G_LVL, inline="poc")
+pocColor     = input.color(color.yellow,     "",             group=G_LVL, inline="poc")
+pocStyle_s   = input.string("Solid",         "", options=["Solid","Dashed","Dotted"], group=G_LVL, inline="poc")
+pocWidth     = input.int  (2, "Width", minval=1, maxval=4,   group=G_LVL, inline="poc")
+showPOCLabel = input.bool (true, "POC label",                group=G_LVL, inline="poc_lbl")
+
+showVAH      = input.bool (true,             "Show VAH",     group=G_LVL, inline="vah")
+vahColor     = input.color(color.new(#26a69a, 0), "",        group=G_LVL, inline="vah")
+vahStyle_s   = input.string("Solid",         "", options=["Solid","Dashed","Dotted"], group=G_LVL, inline="vah")
+vahWidth     = input.int  (1, "Width", minval=1, maxval=4,   group=G_LVL, inline="vah")
+showVAHLabel = input.bool (true, "VAH label",                group=G_LVL, inline="vah_lbl")
+
+showVAL      = input.bool (true,             "Show VAL",     group=G_LVL, inline="val")
+valColor     = input.color(color.new(#7b1fa2, 0), "",        group=G_LVL, inline="val")
+valStyle_s   = input.string("Solid",         "", options=["Solid","Dashed","Dotted"], group=G_LVL, inline="val")
+valWidth     = input.int  (1, "Width", minval=1, maxval=4,   group=G_LVL, inline="val")
+showVALLabel = input.bool (true, "VAL label",                group=G_LVL, inline="val_lbl")
+
+showSessionTag = input.bool(true, "Tag level labels with session", group=G_LVL,
+     tooltip="Appends the active anchor (Present Day / Asia Session / Past Week, ...) to the POC / VAH / VAL labels.")
+
+extendLines = input.bool(true, "Extend POC / VAH / VAL to the right", group=G_LVL,
+     tooltip="Also controls how far HVN / LVN bands extend horizontally.")
+
+// =====================================================================
+// DEVELOPING POC / VA
+// =====================================================================
+showDevPOC   = input.bool(false, "Show Developing POC",       group=G_DEV)
+devPocColor  = input.color(color.new(color.gray, 0),   "Color", group=G_DEV)
+showDevVA    = input.bool(false, "Show Developing Value Area", group=G_DEV)
+devVAColor   = input.color(color.new(#26c6da, 50), "Fill color", group=G_DEV)
+devSmooth    = input.int(1, "Sample every N bars", minval=1, maxval=20, group=G_DEV)
+
+// =====================================================================
+// HVN / LVN  (now drawn as 1-bin-tall squared bands)
+// =====================================================================
+showHVN       = input.bool(true,  "Show HVN / LVN bands",            group=G_HLN,
+     tooltip="Draws a horizontal squared band exactly 1 bin tall at every HVN and LVN price level. Bands extend horizontally based on the 'Extend lines' toggle in the Levels group.")
+hvnThresh     = input.float(80,   "HVN threshold (% of POC volume)", minval=50, maxval=99, group=G_HLN)
+lvnThresh     = input.float(15,   "LVN threshold (% of POC volume)", minval=1,  maxval=40, group=G_HLN)
+hvnColor      = input.color(color.new(#26a69a, 70), "HVN band color (high volume)", group=G_HLN)
+lvnColor      = input.color(color.new(#7b1fa2, 70), "LVN band color (low volume)",  group=G_HLN)
+hvnLvnBorder  = input.bool(false, "Show band border",                group=G_HLN, inline="bd")
+hvnLvnBdColor = input.color(color.new(color.gray, 30), "",           group=G_HLN, inline="bd")
+
+// =====================================================================
+// STATISTICS BOX
+// =====================================================================
+showStats     = input.bool(true, "Show Statistics Box",                group=G_STA)
+statsPos      = input.string("Top Right", "Position",
+     options=["Top Right","Top Left","Middle Right","Middle Left","Bottom Right","Bottom Left"], group=G_STA)
+statsSize_s   = input.string("Normal", "Text Size",
+     options=["Tiny","Small","Normal","Large","Huge"], group=G_STA)
+statsBgColor  = input.color(color.new(color.black, 65), "Background", group=G_STA, inline="s")
+statsTxtColor = input.color(color.white,                "Text",       group=G_STA, inline="s")
+
+// =====================================================================
+// STYLE
+// =====================================================================
+showBox    = input.bool (true, "Show range outline / fill", group=G_STY)
+boxBgColor = input.color(color.new(#2962ff, 92), "Box fill",    group=G_STY, inline="b")
+boxBdColor = input.color(color.new(#2962ff, 50), "Box border",  group=G_STY, inline="b")
+boxBdStyle = input.string("Solid", "Border style", options=["Solid","Dashed","Dotted"], group=G_STY)
+
+// =====================================================================
+// ALERTS
+// =====================================================================
+alertPOC = input.bool(false, "Alert when price crosses POC", group=G_ALR)
+alertVAH = input.bool(false, "Alert when price crosses VAH", group=G_ALR)
+alertVAL = input.bool(false, "Alert when price crosses VAL", group=G_ALR)
+
+// =====================================================================
+// HELPERS
+// =====================================================================
+lineStyle(s) =>
+    s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
+
+boxStyle(s) =>
+    s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
+
+sizeOf(s) =>
+    s == "Tiny"   ? size.tiny   :
+     s == "Small"  ? size.small  :
+     s == "Large"  ? size.large  :
+     s == "Huge"   ? size.huge   : size.normal
+
+f_fmtVol(v) =>
+    av = math.abs(v)
+    str = av >= 1e9  ? str.tostring(v/1e9,  "#.##") + "B" :
+          av >= 1e6  ? str.tostring(v/1e6,  "#.##") + "M" :
+          av >= 1e3  ? str.tostring(v/1e3,  "#.##") + "K" :
+                       str.tostring(v, "#.##")
+    str
+
+// Tag appended to value-area level labels so each line shows its session.
+f_sessionTag() =>
+    showSessionTag ? "  · " + anchorMode : ""
+
+// =====================================================================
+// PER-BAR DELTA
+// =====================================================================
+ltf_c = request.security_lower_tf(syminfo.tickerid, deltaLTF, close)
+ltf_o = request.security_lower_tf(syminfo.tickerid, deltaLTF, open)
+ltf_v = request.security_lower_tf(syminfo.tickerid, deltaLTF, volume)
+
+f_barDeltaLTF() =>
+    float d = 0.0
+    if not na(ltf_v) and array.size(ltf_v) > 0
+        n = array.size(ltf_v)
+        for j = 0 to n - 1
+            lc = array.get(ltf_c, j)
+            lo = array.get(ltf_o, j)
+            lv = array.get(ltf_v, j)
+            d += (lc >= lo ? lv : -lv)
+    d
+
+barDelta = deltaMethod == "LTF Accurate" ? f_barDeltaLTF() : (close >= open ? volume : -volume)
+
+// =====================================================================
+// DAILY ANCHOR RENDERER
+// =====================================================================
+f_drawDaily(int startMs, int endMs, string lbl, bxArr, lnArr, lbArr) =>
+    float rH = na
+    float rL = na
+    int   fOff = na
+    int   lOff = na
+    bool  st = false
+    int   maxLB = math.min(bar_index, 9999)
+    for i = 0 to maxLB
+        t = time[i]
+        if t >= startMs and t <= endMs
+            rH := na(rH) ? high[i] : math.max(rH, high[i])
+            rL := na(rL) ? low[i]  : math.min(rL, low[i])
+            if na(lOff)
+                lOff := i
+            fOff := i
+            st := true
+        else if st
+            break
+
+    if not na(rH) and not na(rL) and rH > rL and not na(fOff) and not na(lOff) and fOff > lOff
+        int leftBI  = bar_index - fOff
+        int rightBI = bar_index - lOff
+        float binH  = (rH - rL) / dailyRows
+        bins = array.new<float>(dailyRows, 0.0)
+
+        for i = fOff to lOff
+            h = high[i]
+            l = low[i]
+            v = volume[i]
+            int bF  = math.max(0, math.floor((l - rL) / binH))
+            int bL_ = math.min(dailyRows - 1, math.floor((h - rL) / binH))
+            if bL_ < bF
+                bL_ := bF
+            int span = bL_ - bF + 1
+            float vPer = v / span
+            for b = bF to bL_
+                array.set(bins, b, array.get(bins, b) + vPer)
+
+        float mv = 0.0
+        int pocI = 0
+        for b = 0 to dailyRows - 1
+            vv = array.get(bins, b)
+            if vv > mv
+                mv := vv
+                pocI := b
+        float pocP = rL + (pocI + 0.5) * binH
+
+        int rangeBars = rightBI - leftBI
+        int maxW = math.max(1, math.round(rangeBars * dailyWidthPct / 100))
+
+        array.push(bxArr, box.new(leftBI, rH, rightBI, rL,
+             border_color=dailyBdColor, border_width=1, bgcolor=na, xloc=xloc.bar_index))
+
+        for b = 0 to dailyRows - 1
+            vv = array.get(bins, b)
+            if mv > 0
+                int w = math.max(0, math.round(maxW * vv / mv))
+                if w > 0
+                    array.push(bxArr, box.new(leftBI, rL + (b + 1) * binH, leftBI + w, rL + b * binH,
+                         border_color=na, bgcolor=dailyFillColor, xloc=xloc.bar_index))
+
+        array.push(lnArr, line.new(leftBI, pocP, rightBI, pocP, xloc=xloc.bar_index,
+             color=dailyPocColor, style=line.style_solid, width=1))
+
+        array.push(lbArr, label.new(math.round((leftBI + rightBI) / 2), rH, lbl,
+             xloc=xloc.bar_index, style=label.style_label_down,
+             color=dailyLblColor, textcolor=color.white, size=size.tiny))
+
+// =====================================================================
+// PERSISTENT DRAWING HANDLES
+// =====================================================================
+var box[]   profileBoxesUp   = array.new<box>()
+var box[]   profileBoxesDn   = array.new<box>()
+var box[]   deltaBoxes       = array.new<box>()
+var line[]  levelLines       = array.new<line>()
+var label[] levelLabels      = array.new<label>()
+var box[]   hvnLvnBands      = array.new<box>()     // <-- now boxes, not labels
+var line[]  devLines         = array.new<line>()
+var box[]   devVABoxes       = array.new<box>()
+var box[]   dailyBoxes       = array.new<box>()
+var line[]  dailyLines       = array.new<line>()
+var label[] dailyLabels      = array.new<label>()
+var line    zeroLine         = na
+var box     rngBox           = na
+var label   statsLabel       = na
+
+f_clearAll() =>
+    if array.size(profileBoxesUp) > 0
+        for i = 0 to array.size(profileBoxesUp) - 1
+            box.delete(array.get(profileBoxesUp, i))
+        array.clear(profileBoxesUp)
+    if array.size(profileBoxesDn) > 0
+        for i = 0 to array.size(profileBoxesDn) - 1
+            box.delete(array.get(profileBoxesDn, i))
+        array.clear(profileBoxesDn)
+    if array.size(deltaBoxes) > 0
+        for i = 0 to array.size(deltaBoxes) - 1
+            box.delete(array.get(deltaBoxes, i))
+        array.clear(deltaBoxes)
+    if array.size(levelLines) > 0
+        for i = 0 to array.size(levelLines) - 1
+            line.delete(array.get(levelLines, i))
+        array.clear(levelLines)
+    if array.size(levelLabels) > 0
+        for i = 0 to array.size(levelLabels) - 1
+            label.delete(array.get(levelLabels, i))
+        array.clear(levelLabels)
+    if array.size(hvnLvnBands) > 0
+        for i = 0 to array.size(hvnLvnBands) - 1
+            box.delete(array.get(hvnLvnBands, i))
+        array.clear(hvnLvnBands)
+    if array.size(devLines) > 0
+        for i = 0 to array.size(devLines) - 1
+            line.delete(array.get(devLines, i))
+        array.clear(devLines)
+    if array.size(devVABoxes) > 0
+        for i = 0 to array.size(devVABoxes) - 1
+            box.delete(array.get(devVABoxes, i))
+        array.clear(devVABoxes)
+    if array.size(dailyBoxes) > 0
+        for i = 0 to array.size(dailyBoxes) - 1
+            box.delete(array.get(dailyBoxes, i))
+        array.clear(dailyBoxes)
+    if array.size(dailyLines) > 0
+        for i = 0 to array.size(dailyLines) - 1
+            line.delete(array.get(dailyLines, i))
+        array.clear(dailyLines)
+    if array.size(dailyLabels) > 0
+        for i = 0 to array.size(dailyLabels) - 1
+            label.delete(array.get(dailyLabels, i))
+        array.clear(dailyLabels)
+
+// =====================================================================
+// MAIN  -  run only on last bar
+// =====================================================================
+if barstate.islast
+    f_clearAll()
+    if not na(zeroLine)
+        line.delete(zeroLine)
+        zeroLine := na
+    if not na(rngBox)
+        box.delete(rngBox)
+        rngBox := na
+    if not na(statsLabel)
+        label.delete(statsLabel)
+        statsLabel := na
+
+    // ---------- Resolve effective range from anchor preset ----------
+    int effStart = startTime
+    int effEnd   = endTime
+    if anchorMode != "Manual"
+        TZ          = "America/New_York"
+        y           = year(time, TZ)
+        m           = month(time, TZ)
+        d           = dayofmonth(time, TZ)
+        dow         = dayofweek(time, TZ)
+        hr          = hour(time, TZ)
+        daysSinceMon = (dow + 5) % 7
+        msDay       = 86400000
+        ms930       = 6 * 3600000 + 30 * 60000
+        todayOpen   = timestamp(TZ, y, m, d, 9, 30)
+
+        if anchorMode == "Present Day"
+            effStart := todayOpen
+            effEnd   := time
+        else if anchorMode == "Past Day"
+            back = dow == 2 ? 3 : dow == 1 ? 2 : dow == 7 ? 1 : 1
+            effStart := todayOpen - back * msDay
+            effEnd   := effStart + ms930
+        else if anchorMode == "Present Week"
+            effStart := todayOpen - daysSinceMon * msDay
+            effEnd   := time
+        else if anchorMode == "Past Week"
+            effStart := todayOpen - (daysSinceMon + 7) * msDay
+            effEnd   := effStart + 4 * msDay + ms930
+        else if anchorMode == "Present Month"
+            effStart := timestamp(TZ, y, m, 1, 9, 30)
+            effEnd   := time
+        else if anchorMode == "Past Month"
+            prevM = m == 1 ? 12 : m - 1
+            prevY = m == 1 ? y - 1 : y
+            effStart := timestamp(TZ, prevY, prevM, 1, 9, 30)
+            effEnd   := timestamp(TZ, y, m, 1, 0, 0)
+        else if anchorMode == "Asia Session"
+            // 18:00 NY EST open (Asia open) -> 16:00 NY EST close (US close)
+            if hr >= 18
+                effStart := timestamp(TZ, y, m, d, 18, 0)
+                effEnd   := time
+            else if hr < 16
+                effStart := timestamp(TZ, y, m, d, 18, 0) - msDay
+                effEnd   := time
+            else
+                effStart := timestamp(TZ, y, m, d, 18, 0) - msDay
+                effEnd   := timestamp(TZ, y, m, d, 16, 0)
+
+    // ---------- Scan range to find Hi / Lo / bar offsets ----------
+    float rHi  = na
+    float rLo  = na
+    int   firstOff = na
+    int   lastOff  = na
+    bool  started  = false
+    int   maxLookback = math.min(bar_index, 9999)
+
+    for i = 0 to maxLookback
+        t = time[i]
+        if t >= effStart and t <= effEnd
+            rHi := na(rHi) ? high[i] : math.max(rHi, high[i])
+            rLo := na(rLo) ? low[i]  : math.min(rLo, low[i])
+            if na(lastOff)
+                lastOff := i
+            firstOff := i
+            started := true
+        else if started
+            break
+
+    int leftBI  = na(firstOff) ? na : bar_index - firstOff
+    int rightBI = na(lastOff)  ? na : bar_index - lastOff
+
+    if not na(rHi) and not na(rLo) and rHi > rLo and not na(leftBI) and not na(rightBI) and rightBI > leftBI
+
+        // ---------- Bins ----------
+        float binH = (rHi - rLo) / rowCount
+        var float[] binVol   = array.new<float>(rowCount, 0.0)
+        var float[] binUp    = array.new<float>(rowCount, 0.0)
+        var float[] binDn    = array.new<float>(rowCount, 0.0)
+        var float[] binDelta = array.new<float>(rowCount, 0.0)
+        array.fill(binVol,   0.0)
+        array.fill(binUp,    0.0)
+        array.fill(binDn,    0.0)
+        array.fill(binDelta, 0.0)
+
+        useLTF = deltaMethod == "LTF Accurate" and firstOff < 4900
+        for i = firstOff to lastOff
+            h = high[i]
+            l = low[i]
+            v = volume[i]
+            isUp = close[i] >= open[i]
+            d = useLTF ? barDelta[i] : (isUp ? v : -v)
+            int bFirst = math.max(0, math.floor((l - rLo) / binH))
+            int bLast  = math.min(rowCount - 1, math.floor((h - rLo) / binH))
+            if bLast < bFirst
+                bLast := bFirst
+            int span = bLast - bFirst + 1
+            float vPer = v / span
+            float dPer = d / span
+            for b = bFirst to bLast
+                array.set(binVol, b, array.get(binVol, b) + vPer)
+                if isUp
+                    array.set(binUp, b, array.get(binUp, b) + vPer)
+                else
+                    array.set(binDn, b, array.get(binDn, b) + vPer)
+                array.set(binDelta, b, array.get(binDelta, b) + dPer)
+
+        // ---------- POC ----------
+        float maxVol = 0.0
+        int   pocIdx = 0
+        for b = 0 to rowCount - 1
+            v = array.get(binVol, b)
+            if v > maxVol
+                maxVol := v
+                pocIdx := b
+
+        // ---------- Value Area ----------
+        float totVol = array.sum(binVol)
+        float vaTarget = totVol * vaPercent / 100.0
+        float vaAcc = array.get(binVol, pocIdx)
+        int vaLo = pocIdx
+        int vaHi = pocIdx
+        while vaAcc < vaTarget and (vaLo > 0 or vaHi < rowCount - 1)
+            volAbove = vaHi < rowCount - 1 ? array.get(binVol, vaHi + 1) : -1.0
+            volBelow = vaLo > 0             ? array.get(binVol, vaLo - 1) : -1.0
+            if volAbove >= volBelow and vaHi < rowCount - 1
+                vaHi += 1
+                vaAcc += array.get(binVol, vaHi)
+            else if vaLo > 0
+                vaLo -= 1
+                vaAcc += array.get(binVol, vaLo)
+            else
+                break
+
+        float pocPrice = rLo + (pocIdx + 0.5) * binH
+        float vahPrice = rLo + (vaHi + 1) * binH
+        float valPrice = rLo + vaLo * binH
+
+        int rangeBars = rightBI - leftBI
+        int vpMaxW    = math.max(1, math.round(rangeBars * profileWidthPct / 100))
+        int dltMaxW   = math.max(1, math.round(rangeBars * deltaWidthPct  / 100))
+
+        // ---------- HVN/LVN bands need lineRight computed up-front ----------
+        int lineRight = extendLines ? bar_index + 50 : rightBI
+
+        if showBox
+            rngBox := box.new(leftBI, rHi, rightBI, rLo,
+                 border_color=boxBdColor, border_style=boxStyle(boxBdStyle),
+                 border_width=1, bgcolor=boxBgColor, xloc=xloc.bar_index)
+
+        float maxAbsDelta = 0.0
+        for b = 0 to rowCount - 1
+            float ad = math.abs(array.get(binDelta, b))
+            if ad > maxAbsDelta
+                maxAbsDelta := ad
+
+        for b = 0 to rowCount - 1
+            float bTop = rLo + (b + 1) * binH
+            float bBot = rLo + b * binH
+            float bMid = (bTop + bBot) / 2
+            float v   = array.get(binVol, b)
+
+            // -------- HVN / LVN bands (drawn first so profile bars sit on top) --------
+            if showHVN and v > 0 and maxVol > 0
+                pct = v / maxVol * 100
+                if pct >= hvnThresh and b != pocIdx
+                    array.push(hvnLvnBands, box.new(leftBI, bTop, lineRight, bBot,
+                         border_color=hvnLvnBorder ? hvnLvnBdColor : na,
+                         border_width=hvnLvnBorder ? 1 : 0,
+                         bgcolor=hvnColor, xloc=xloc.bar_index))
+                else if pct <= lvnThresh
+                    array.push(hvnLvnBands, box.new(leftBI, bTop, lineRight, bBot,
+                         border_color=hvnLvnBorder ? hvnLvnBdColor : na,
+                         border_width=hvnLvnBorder ? 1 : 0,
+                         bgcolor=lvnColor, xloc=xloc.bar_index))
+
+            // -------- Volume profile bars --------
+            if showProfile
+                float vUp = array.get(binUp,  b)
+                float vDn = array.get(binDn,  b)
+                int   w   = math.max(1, math.round(vpMaxW * v / maxVol))
+                bool  inVA = b >= vaLo and b <= vaHi
+                color colUp = inVA ? vaUpColor : upVolColor
+                color colDn = inVA ? vaDnColor : dnVolColor
+
+                if splitDirection and v > 0
+                    wUp = math.round(w * vUp / v)
+                    wDn = w - wUp
+                    if profilePlace == "Left"
+                        if wUp > 0
+                            array.push(profileBoxesUp, box.new(leftBI, bTop, leftBI + wUp, bBot, border_color=na, bgcolor=colUp, xloc=xloc.bar_index))
+                        if wDn > 0
+                            array.push(profileBoxesDn, box.new(leftBI + wUp, bTop, leftBI + wUp + wDn, bBot, border_color=na, bgcolor=colDn, xloc=xloc.bar_index))
+                    else
+                        if wUp > 0
+                            array.push(profileBoxesUp, box.new(rightBI - wUp, bTop, rightBI, bBot, border_color=na, bgcolor=colUp, xloc=xloc.bar_index))
+                        if wDn > 0
+                            array.push(profileBoxesDn, box.new(rightBI - wUp - wDn, bTop, rightBI - wUp, bBot, border_color=na, bgcolor=colDn, xloc=xloc.bar_index))
+                else if v > 0
+                    col = vUp >= vDn ? colUp : colDn
+                    if profilePlace == "Left"
+                        array.push(profileBoxesUp, box.new(leftBI, bTop, leftBI + w, bBot, border_color=na, bgcolor=col, xloc=xloc.bar_index))
+                    else
+                        array.push(profileBoxesUp, box.new(rightBI - w, bTop, rightBI, bBot, border_color=na, bgcolor=col, xloc=xloc.bar_index))
+
+                if showValues and v > 0
+                    anchorX = profilePlace == "Left" ? leftBI + w + 1 : rightBI - w - 1
+                    anchorStyle = profilePlace == "Left" ? label.style_label_left : label.style_label_right
+                    array.push(levelLabels, label.new(anchorX, bMid, f_fmtVol(v),
+                         xloc=xloc.bar_index, style=anchorStyle, color=color.new(color.black, 100),
+                         textcolor=color.new(color.gray, 30), size=size.tiny))
+
+            // -------- Delta histogram --------
+            if showDelta and maxAbsDelta > 0
+                d  = array.get(binDelta, b)
+                wd = math.max(0, math.round(dltMaxW * math.abs(d) / maxAbsDelta))
+                if wd > 0
+                    colD = d >= 0 ? deltaPosColor : deltaNegColor
+                    if deltaPlace == "Left"
+                        array.push(deltaBoxes, box.new(leftBI - wd, bTop, leftBI, bBot, border_color=na, bgcolor=colD, xloc=xloc.bar_index))
+                    else
+                        array.push(deltaBoxes, box.new(rightBI, bTop, rightBI + wd, bBot, border_color=na, bgcolor=colD, xloc=xloc.bar_index))
+
+        if showDelta and deltaShowZero
+            zx = deltaPlace == "Left" ? leftBI : rightBI
+            zeroLine := line.new(zx, rLo, zx, rHi, xloc=xloc.bar_index, color=zeroLineColor, width=1)
+
+        sTag = f_sessionTag()
+        if showPOC
+            array.push(levelLines, line.new(leftBI, pocPrice, lineRight, pocPrice, xloc=xloc.bar_index,
+                 color=pocColor, style=lineStyle(pocStyle_s), width=pocWidth))
+            if showPOCLabel
+                array.push(levelLabels, label.new(lineRight, pocPrice, "POC  " + str.tostring(pocPrice, format.mintick) + sTag,
+                     xloc=xloc.bar_index, style=label.style_label_left,
+                     color=color.new(pocColor, 70), textcolor=pocColor, size=size.small))
+        if showVAH
+            array.push(levelLines, line.new(leftBI, vahPrice, lineRight, vahPrice, xloc=xloc.bar_index,
+                 color=vahColor, style=lineStyle(vahStyle_s), width=vahWidth))
+            if showVAHLabel
+                array.push(levelLabels, label.new(lineRight, vahPrice, "VAH  " + str.tostring(vahPrice, format.mintick) + sTag,
+                     xloc=xloc.bar_index, style=label.style_label_left,
+                     color=color.new(vahColor, 70), textcolor=vahColor, size=size.small))
+        if showVAL
+            array.push(levelLines, line.new(leftBI, valPrice, lineRight, valPrice, xloc=xloc.bar_index,
+                 color=valColor, style=lineStyle(valStyle_s), width=valWidth))
+            if showVALLabel
+                array.push(levelLabels, label.new(lineRight, valPrice, "VAL  " + str.tostring(valPrice, format.mintick) + sTag,
+                     xloc=xloc.bar_index, style=label.style_label_left,
+                     color=color.new(valColor, 70), textcolor=valColor, size=size.small))
+
+        if showDevPOC or showDevVA
+            var float[] dvBin = array.new<float>(rowCount, 0.0)
+            array.fill(dvBin, 0.0)
+            prevX = leftBI
+            float prevPOC = na
+            counter = 0
+            for i = firstOff to lastOff
+                h2 = high[i]
+                l2 = low[i]
+                v2 = volume[i]
+                bF = math.max(0, math.floor((l2 - rLo) / binH))
+                bL = math.min(rowCount - 1, math.floor((h2 - rLo) / binH))
+                spanD = math.max(1, bL - bF + 1)
+                vPerD = v2 / spanD
+                for b = bF to bL
+                    array.set(dvBin, b, array.get(dvBin, b) + vPerD)
+                counter += 1
+                if counter % devSmooth == 0 or i == lastOff
+                    mv = 0.0
+                    pi = 0
+                    for b = 0 to rowCount - 1
+                        vv = array.get(dvBin, b)
+                        if vv > mv
+                            mv := vv
+                            pi := b
+                    devPOCp = rLo + (pi + 0.5) * binH
+                    dTot = array.sum(dvBin)
+                    dTarget = dTot * vaPercent / 100.0
+                    dAcc = array.get(dvBin, pi)
+                    dLo = pi
+                    dHi = pi
+                    while dAcc < dTarget and (dLo > 0 or dHi < rowCount - 1)
+                        va = dHi < rowCount - 1 ? array.get(dvBin, dHi + 1) : -1.0
+                        vb = dLo > 0 ? array.get(dvBin, dLo - 1) : -1.0
+                        if va >= vb and dHi < rowCount - 1
+                            dHi += 1
+                            dAcc += array.get(dvBin, dHi)
+                        else if dLo > 0
+                            dLo -= 1
+                            dAcc += array.get(dvBin, dLo)
+                        else
+                            break
+                    devVAHp = rLo + (dHi + 1) * binH
+                    devVALp = rLo + dLo * binH
+                    curX = bar_index - i
+                    if not na(prevPOC)
+                        if showDevPOC
+                            array.push(devLines, line.new(prevX, prevPOC, curX, devPOCp, xloc=xloc.bar_index, color=devPocColor, width=2))
+                        if showDevVA
+                            array.push(devVABoxes, box.new(prevX, devVAHp, curX, devVALp, border_color=na, bgcolor=devVAColor, xloc=xloc.bar_index))
+                    prevPOC := devPOCp
+                    prevX := curX
+
+        if showStats
+            totDelta = array.sum(binDelta)
+            buyVol  = 0.0
+            sellVol = 0.0
+            for b = 0 to rowCount - 1
+                buyVol  += array.get(binUp, b)
+                sellVol += array.get(binDn, b)
+            buyPct  = totVol > 0 ? buyVol  / totVol * 100 : 0
+            sellPct = totVol > 0 ? sellVol / totVol * 100 : 0
+            barsInRange = lastOff - firstOff + 1
+
+            txt = "=====  FRVP + Delta  =====" +
+                 "\nSession    :  " + anchorMode +
+                 "\nFrom        :  " + str.format_time(effStart, "MMM dd  HH:mm", "America/New_York") +
+                 "\nTo             :  " + str.format_time(effEnd,   "MMM dd  HH:mm", "America/New_York") +
+                 "\nRange      :  " + str.tostring(barsInRange) + "  bars" +
+                 "\nHigh        :  " + str.tostring(rHi, format.mintick) +
+                 "\nLow         :  " + str.tostring(rLo, format.mintick) +
+                 "\n--------------------------------" +
+                 "\nPOC        :  " + str.tostring(pocPrice, format.mintick) +
+                 "\nVAH         :  " + str.tostring(vahPrice, format.mintick) +
+                 "\nVAL         :  " + str.tostring(valPrice, format.mintick) +
+                 "\nVA Range  :  " + str.tostring(vahPrice - valPrice, format.mintick) +
+                 "\n--------------------------------" +
+                 "\nTotal Vol   :  " + f_fmtVol(totVol) +
+                 "\nBuy Vol     :  " + f_fmtVol(buyVol)  + "  (" + str.tostring(buyPct, "#.#") + "%)" +
+                 "\nSell Vol    :  " + f_fmtVol(sellVol) + "  (" + str.tostring(sellPct, "#.#") + "%)" +
+                 "\nNet Delta  :  " + f_fmtVol(totDelta) +
+                 "\nMethod     :  " + (useLTF ? "LTF Accurate" : "Heuristic")
+
+            isLeft   = str.contains(statsPos, "Left")
+            isMiddle = str.contains(statsPos, "Middle")
+            isBottom = str.contains(statsPos, "Bottom")
+            xPos = isLeft ? leftBI - 30 : bar_index + 30
+            yPos = isMiddle ? (rHi + rLo) / 2 : (isBottom ? rLo : rHi)
+            ls   = isLeft ? label.style_label_right : label.style_label_left
+
+            statsLabel := label.new(xPos, yPos, txt, xloc=xloc.bar_index,
+                 color=statsBgColor, textcolor=statsTxtColor,
+                 style=ls, size=sizeOf(statsSize_s), textalign=text.align_left)
+
+        if alertPOC and ((close[1] < pocPrice and close >= pocPrice) or (close[1] > pocPrice and close <= pocPrice))
+            alert("Price crossed POC at " + str.tostring(pocPrice, format.mintick), alert.freq_once_per_bar_close)
+        if alertVAH and ((close[1] < vahPrice and close >= vahPrice) or (close[1] > vahPrice and close <= vahPrice))
+            alert("Price crossed VAH at " + str.tostring(vahPrice, format.mintick), alert.freq_once_per_bar_close)
+        if alertVAL and ((close[1] < valPrice and close >= valPrice) or (close[1] > valPrice and close <= valPrice))
+            alert("Price crossed VAL at " + str.tostring(valPrice, format.mintick), alert.freq_once_per_bar_close)
+
+    // =====================================================================
+    // DAILY ANCHORS
+    // =====================================================================
+    if showDaily
+        TZ           = "America/New_York"
+        cy           = year(time, TZ)
+        cm           = month(time, TZ)
+        cd           = dayofmonth(time, TZ)
+        cdow         = dayofweek(time, TZ)
+        cdsm         = (cdow + 5) % 7
+        cMsDay       = 86400000
+        cMs930       = 6 * 3600000 + 30 * 60000
+        cTodayOpen   = timestamp(TZ, cy, cm, cd, 9, 30)
+        thisWeekMon  = cTodayOpen - cdsm * cMsDay
+        pastWeekMon  = thisWeekMon - 7 * cMsDay
+
+        dayTags = array.from("Mon", "Tue", "Wed", "Thu", "Fri")
+
+        for i = 0 to 4
+            dStart = pastWeekMon + i * cMsDay
+            dEnd   = dStart + cMs930
+            f_drawDaily(dStart, dEnd, "Last " + array.get(dayTags, i),
+                 dailyBoxes, dailyLines, dailyLabels)
+
+        maxPresent = math.min(cdsm, 4)
+        for i = 0 to maxPresent
+            dStart = thisWeekMon + i * cMsDay
+            dEnd   = dStart + cMs930
+            if dStart <= time
+                f_drawDaily(dStart, dEnd, array.get(dayTags, i),
+                     dailyBoxes, dailyLines, dailyLabels)
