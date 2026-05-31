@@ -56,7 +56,7 @@ dailyLblColor   = input.color(color.new(color.gray, 30), "Day-tag bg",  group=G_
 // VOLUME PROFILE
 // =====================================================================
 showProfile     = input.bool(true,  "Show Volume Profile",            group=G_VP)
-rowCount        = input.int (60,    "Number of Rows", minval=10, maxval=200, group=G_VP)
+rowCountInput   = input.int (60,    "Number of Rows", minval=10, maxval=200, group=G_VP)
 profileWidthPct = input.float(30,   "Width (% of box)",  minval=5, maxval=100, group=G_VP)
 profilePlace    = input.string("Left", "Placement", options=["Left","Right"], group=G_VP)
 showValues      = input.bool(false, "Show row values",               group=G_VP)
@@ -152,6 +152,17 @@ boxBdStyle = input.string("Solid", "Border style", options=["Solid","Dashed","Do
 alertPOC = input.bool(false, "Alert when price crosses POC", group=G_ALR)
 alertVAH = input.bool(false, "Alert when price crosses VAH", group=G_ALR)
 alertVAL = input.bool(false, "Alert when price crosses VAL", group=G_ALR)
+
+// =====================================================================
+// EFFECTIVE ROW COUNT  (auto-fit within Pine's 500-box drawing limit)
+// =====================================================================
+// Each visible row can spawn several boxes: the up/down profile halves,
+// a delta-histogram box, and an HVN/LVN band. With many rows these blow
+// past Pine's 500-box ceiling, so TradingView silently drops the oldest
+// (lowest) boxes and the bottom of the profile fails to render. Cap the
+// working row count so every box fits and the full price range shows.
+boxesPerRow = (showProfile ? (splitDirection ? 2 : 1) : 0) + (showDelta ? 1 : 0) + (showHVN ? 1 : 0)
+rowCount    = boxesPerRow > 0 ? math.max(10, math.min(rowCountInput, int(math.floor(498.0 / boxesPerRow)))) : rowCountInput
 
 // =====================================================================
 // HELPERS
