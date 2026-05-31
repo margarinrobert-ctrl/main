@@ -590,21 +590,21 @@ if barstate.islast
             array.push(levelLines, line.new(leftBI, pocPrice, lineRight, pocPrice, xloc=xloc.bar_index,
                  color=pocColor, style=lineStyle(pocStyle_s), width=pocWidth))
             if showPOCLabel
-                array.push(levelLabels, label.new(lineRight, pocPrice, "POC  " + str.tostring(pocPrice, format.mintick),
+                array.push(levelLabels, label.new(lineRight, pocPrice, "POC  " + str.tostring(pocPrice, format.mintick) + "  (" + anchorMode + ")",
                      xloc=xloc.bar_index, style=label.style_label_left,
                      color=color.new(pocColor, 70), textcolor=pocColor, size=size.small))
         if showVAH
             array.push(levelLines, line.new(leftBI, vahPrice, lineRight, vahPrice, xloc=xloc.bar_index,
                  color=vahColor, style=lineStyle(vahStyle_s), width=vahWidth))
             if showVAHLabel
-                array.push(levelLabels, label.new(lineRight, vahPrice, "VAH  " + str.tostring(vahPrice, format.mintick),
+                array.push(levelLabels, label.new(lineRight, vahPrice, "VAH  " + str.tostring(vahPrice, format.mintick) + "  (" + anchorMode + ")",
                      xloc=xloc.bar_index, style=label.style_label_left,
                      color=color.new(vahColor, 70), textcolor=vahColor, size=size.small))
         if showVAL
             array.push(levelLines, line.new(leftBI, valPrice, lineRight, valPrice, xloc=xloc.bar_index,
                  color=valColor, style=lineStyle(valStyle_s), width=valWidth))
             if showVALLabel
-                array.push(levelLabels, label.new(lineRight, valPrice, "VAL  " + str.tostring(valPrice, format.mintick),
+                array.push(levelLabels, label.new(lineRight, valPrice, "VAL  " + str.tostring(valPrice, format.mintick) + "  (" + anchorMode + ")",
                      xloc=xloc.bar_index, style=label.style_label_left,
                      color=color.new(valColor, 70), textcolor=valColor, size=size.small))
 
