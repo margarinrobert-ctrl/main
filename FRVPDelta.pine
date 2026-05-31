@@ -228,7 +228,7 @@ f_drawDaily(int startMs, int endMs, string lbl, bxArr, lnArr, lbArr) =>
             h = high[i]
             l = low[i]
             v = volume[i]
-            int bF  = math.max(0, math.floor((l - rL) / binH))
+            int bF  = math.min(dailyRows - 1, math.max(0, math.floor((l - rL) / binH)))
             int bL_ = math.min(dailyRows - 1, math.floor((h - rL) / binH))
             if bL_ < bF
                 bL_ := bF
@@ -437,7 +437,7 @@ if barstate.islast
             v = volume[i]
             isUp = close[i] >= open[i]
             d = useLTF ? barDelta[i] : (isUp ? v : -v)
-            int bFirst = math.max(0, math.floor((l - rLo) / binH))
+            int bFirst = math.min(rowCount - 1, math.max(0, math.floor((l - rLo) / binH)))
             int bLast  = math.min(rowCount - 1, math.floor((h - rLo) / binH))
             if bLast < bFirst
                 bLast := bFirst
@@ -607,7 +607,7 @@ if barstate.islast
                 h2 = high[i]
                 l2 = low[i]
                 v2 = volume[i]
-                bF = math.max(0, math.floor((l2 - rLo) / binH))
+                bF = math.min(rowCount - 1, math.max(0, math.floor((l2 - rLo) / binH)))
                 bL = math.min(rowCount - 1, math.floor((h2 - rLo) / binH))
                 spanD = math.max(1, bL - bF + 1)
                 vPerD = v2 / spanD
