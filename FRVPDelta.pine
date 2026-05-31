@@ -104,7 +104,7 @@ valWidth     = input.int  (1, "Width", minval=1, maxval=4,   group=G_LVL, inline
 showVALLabel = input.bool (true, "VAL label",                group=G_LVL, inline="val_lbl")
 
 extendLines = input.bool(true, "Extend POC / VAH / VAL to the right", group=G_LVL,
-     tooltip="Also controls how far HVN / LVN bands extend horizontally. When ON, lines/bands extend 5 minutes ahead of the current time.")
+     tooltip="Also controls how far HVN / LVN bands extend horizontally. When ON, lines/bands extend 2 minutes ahead of the current time.")
 
 // =====================================================================
 // DEVELOPING POC / VA
@@ -488,9 +488,9 @@ if barstate.islast
         int dltMaxW   = math.max(1, math.round(rangeBars * deltaWidthPct  / 100))
 
         // ---------- HVN/LVN bands need lineRight computed up-front ----------
-        // Extend 5 minutes ahead of the current time: convert 5 min to a bar
+        // Extend 2 minutes ahead of the current time: convert 2 min to a bar
         // count for the chart's timeframe (>=1 bar) and offset from the last bar.
-        int barsAhead = math.max(1, math.ceil(300 / timeframe.in_seconds()))
+        int barsAhead = math.max(1, math.ceil(120 / timeframe.in_seconds()))
         int lineRight = extendLines ? bar_index + barsAhead : rightBI
 
         if showBox
