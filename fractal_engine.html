@@ -116,7 +116,7 @@ canvas{width:100%;display:block}
   <header>
     <div class="brand">
       <h1>FRACTAL REGIME ENGINE<span class="dot">.</span></h1>
-      <p>Hurst-exponent regime detection on S&amp;P&nbsp;500 / Nasdaq-100. Trends get a FRAMA momentum rule, mean-reverting stretches get a z-score fade, noise gets sidelined — then the whole thing is backtested against buy &amp; hold.</p>
+      <p>Hurst-exponent regime detection (R/S or DFA) on S&amp;P&nbsp;500 / Nasdaq-100. Trends get a FRAMA momentum rule, mean-reverting stretches get a z-score fade, noise gets sidelined — then it's backtested net of costs against buy &amp; hold, with <b>walk-forward out-of-sample</b> validation and an <b>MSM-vs-GARCH</b> volatility model.</p>
     </div>
     <div class="srcbadge" id="srcBadge">DATA &middot; <b id="srcTxt">initializing…</b></div>
   </header>
@@ -145,6 +145,17 @@ canvas{width:100%;display:block}
       <div class="ctl">
         <label>Revert lookback</label>
         <input type="number" id="zlook" value="20" min="5" max="80" step="1">
+      </div>
+      <div class="ctl">
+        <label>Hurst method</label>
+        <select id="hmethod">
+          <option value="rs">R/S (rescaled range)</option>
+          <option value="dfa">DFA (less biased)</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <label>Cost (bps/side)</label>
+        <input type="number" id="costbps" value="1" min="0" max="20" step="0.5">
       </div>
       <div class="ctl">
         <label>Allow shorts</label>
@@ -198,12 +209,46 @@ canvas{width:100%;display:block}
     </table>
   </div>
 
+  <div class="chart-card">
+    <div class="chart-head">
+      <h3>Out-of-sample · walk-forward</h3>
+      <button class="btn" id="wfBtn">↻ Run walk-forward</button>
+    </div>
+    <div class="status" id="wfStatus">Re-selects the Hurst window &amp; FRAMA period on a rolling 2-year training block (best Sharpe), then evaluates on the next 6 months it has never seen, and stitches those out-of-sample pieces into one honest equity curve. This is the number that matters.</div>
+    <canvas id="cWF" height="230"></canvas>
+    <table class="tbl" style="margin-top:10px">
+      <thead><tr><th>Out-of-sample metric</th><th>Fractal (OOS)</th><th>Buy &amp; hold (OOS)</th></tr></thead>
+      <tbody id="wfBody"></tbody>
+    </table>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-head">
+      <h3>Volatility model · MSM vs GARCH</h3>
+      <button class="btn" id="msmBtn">↻ Fit MSM + GARCH</button>
+    </div>
+    <div class="status" id="msmStatus">Calvet-Fisher binomial Markov-Switching Multifractal (k=4), fit by maximum likelihood with the Hamilton filter, benchmarked against GARCH(1,1). Forecasts <b>volatility</b>, not direction — the options angle. Descriptive, heavily caveated.</div>
+    <canvas id="cVol" height="230"></canvas>
+    <div class="grid2" style="margin-top:10px">
+      <table class="tbl">
+        <thead><tr><th>Vol forecast (ann.)</th><th>MSM</th></tr></thead>
+        <tbody id="msmFcBody"></tbody>
+      </table>
+      <table class="tbl">
+        <thead><tr><th>Fit / benchmark</th><th>Value</th></tr></thead>
+        <tbody id="msmStatBody"></tbody>
+      </table>
+    </div>
+  </div>
+
   <div class="grid2">
     <div class="panel notes">
       <h3>How it works</h3>
       <p style="margin-bottom:10px"><b>1. Measure the market's memory.</b> Over a rolling window it runs <b>rescaled-range (R/S) analysis</b> to estimate the Hurst exponent H. H&gt;0.55 = trending (moves persist), H&lt;0.45 = mean-reverting (moves reverse), ~0.5 = random walk.</p>
       <p style="margin-bottom:10px"><b>2. Pick the matching tool.</b> In trends it uses <b>FRAMA</b> (Ehlers' Fractal Adaptive Moving Average) — long while price is above it. In reverting regimes it fades extremes using a <b>z-score</b> of price vs its recent mean. In random regimes it stays flat.</p>
-      <p><b>3. Backtest honestly.</b> Signals are computed on day <i>t</i> and the position is taken on <i>t+1</i> (no peeking ahead), then compared to simply holding the index.</p>
+      <p style="margin-bottom:10px"><b>3. Backtest honestly.</b> Signals are computed on day <i>t</i> and the position is taken on <i>t+1</i> (no peeking ahead), <b>net of transaction costs</b>, then compared to simply holding the index.</p>
+      <p style="margin-bottom:10px"><b>4. Validate out-of-sample.</b> The <b>walk-forward</b> panel re-selects parameters on a rolling training window and scores them only on data it has never seen — the honest test of whether any edge survives outside the backtest's hindsight.</p>
+      <p><b>5. Forecast volatility.</b> The <b>MSM</b> model (Calvet-Fisher Markov-Switching Multifractal) forecasts volatility for the options angle and is benchmarked head-to-head against GARCH(1,1).</p>
     </div>
     <div class="panel notes warn">
       <h3>⚠ Read before trusting it</h3>
@@ -262,6 +307,35 @@ function hurstRS(series){
   return den>0?num/den:NaN;
 }
 
+/* ---- Hurst via Detrended Fluctuation Analysis (less biased than R/S) ---- */
+function hurstDFA(series){
+  const n=series.length; if(n<40) return NaN;
+  const m=mean(series); const profile=new Array(n); let c=0;
+  for(let i=0;i<n;i++){c+=series[i]-m; profile[i]=c;}
+  const sizes=[]; for(let s=10;s<=Math.floor(n/2);s=Math.floor(s*1.6)) sizes.push(s);
+  if(sizes[sizes.length-1]<Math.floor(n/2)) sizes.push(Math.floor(n/2));
+  const X=[],Y=[];
+  for(const sz of sizes){
+    const chunks=Math.floor(n/sz); if(chunks<1) continue;
+    let rmsAcc=0,cnt=0;
+    for(let k=0;k<chunks;k++){
+      const seg=profile.slice(k*sz,(k+1)*sz);
+      // least-squares linear detrend over t=0..sz-1
+      let st=0,sy=0,stt=0,sty=0;
+      for(let t=0;t<sz;t++){st+=t; sy+=seg[t]; stt+=t*t; sty+=t*seg[t];}
+      const den=sz*stt-st*st; const b=(sz*sty-st*sy)/den, a=(sy-b*st)/sz;
+      let ss=0; for(let t=0;t<sz;t++){const f=a+b*t; ss+=(seg[t]-f)*(seg[t]-f);}
+      rmsAcc+=Math.sqrt(ss/sz); cnt++;
+    }
+    const fval=rmsAcc/cnt;
+    if(fval>1e-12){X.push(Math.log(sz)); Y.push(Math.log(fval));}
+  }
+  if(X.length<2) return NaN;
+  const mx=mean(X),my=mean(Y); let num=0,den=0;
+  for(let i=0;i<X.length;i++){num+=(X[i]-mx)*(Y[i]-my); den+=(X[i]-mx)**2;}
+  return den>0?num/den:NaN;
+}
+
 /* ---- FRAMA (Ehlers) ---- */
 function frama(high,low,close,N){
   if(N%2) N++; const half=N/2, out=new Array(close.length).fill(NaN);
@@ -285,9 +359,10 @@ function runModel(data,p){
   for(let i=1;i<n;i++) ret[i]=close[i]/close[i-1]-1;
   const logr=ret.map(r=>Math.log(1+r));
 
-  // rolling Hurst
+  // rolling Hurst (R/S or DFA)
   const H=new Array(n).fill(NaN);
-  for(let i=p.hwin;i<n;i++) H[i]=hurstRS(logr.slice(i-p.hwin+1,i+1));
+  const hfun=p.method==='dfa'?hurstDFA:hurstRS;
+  for(let i=p.hwin;i<n;i++) H[i]=hfun(logr.slice(i-p.hwin+1,i+1));
 
   // FRAMA
   const fr=frama(high,low,close,p.framaN);
@@ -320,11 +395,14 @@ function runModel(data,p){
     posRaw[i]=pos; prev=pos;
   }
 
-  // execute next bar -> strategy returns
+  // execute next bar -> strategy returns, net of transaction costs.
+  // a change in pos[i-1] vs pos[i-2] takes effect (is charged) at bar i.
   const stratRet=new Array(n).fill(0); let trades=0, inMkt=0;
+  const costRate=(p.costbps||0)*1e-4;
   for(let i=1;i<n;i++){
     const held=posRaw[i-1];
-    stratRet[i]=held*ret[i];
+    const turn=i>=2?Math.abs(posRaw[i-1]-posRaw[i-2]):Math.abs(posRaw[0]);
+    stratRet[i]=held*ret[i]-turn*costRate;
     if(posRaw[i]!==posRaw[i-1]) trades++;
     if(held!==0) inMkt++;
   }
@@ -345,6 +423,162 @@ function runModel(data,p){
   return {data,H,fr,regime,posRaw,vol,zsc,stratRet,ret,eqS,eqB,
     s:stats(stratRet,eqS), b:stats(ret,eqB),
     trades, exposure:inMkt/(n-1)};
+}
+
+/* ============ out-of-sample walk-forward ============ */
+function sliceData(d,a,b){return {date:d.date.slice(a,b),open:d.open.slice(a,b),
+  high:d.high.slice(a,b),low:d.low.slice(a,b),close:d.close.slice(a,b)};}
+
+function statsFromRets(rets){           // rets[0] ignored (no held position)
+  const eq=[10000]; for(let i=1;i<rets.length;i++) eq.push(eq[eq.length-1]*(1+rets[i]));
+  const r=rets.slice(1), yrs=r.length/252;
+  const tot=eq[eq.length-1]/eq[0]-1, cagr=Math.pow(eq[eq.length-1]/eq[0],1/yrs)-1;
+  const v=std(r)*Math.sqrt(252), sh=std(r)>0?(mean(r)/std(r))*Math.sqrt(252):0;
+  let peak=eq[0],mdd=0; for(const e of eq){if(e>peak)peak=e; const dd=e/peak-1; if(dd<mdd)mdd=dd;}
+  return {tot,cagr,v,sh,mdd,eq};
+}
+
+function walkForward(data,baseP){
+  const n=data.close.length, train=504, test=126;
+  const hwins=[80,120,160,200], framaNs=[10,16,24,32];
+  const oosS=[0], oosR=[0], chosen=[];
+  for(let start=0; start+train+test<=n; start+=test){
+    const tr=sliceData(data,start,start+train);
+    let best=baseP, bestSh=-1e9;
+    for(const hw of hwins) for(const fn of framaNs){
+      const p={...baseP,hwin:hw,framaN:fn};
+      const M=runModel(tr,p);
+      if(isFinite(M.s.sh) && M.s.sh>bestSh){bestSh=M.s.sh; best=p;}
+    }
+    chosen.push({date:data.date[start+train],hwin:best.hwin,framaN:best.framaN});
+    const blk=sliceData(data,start,start+train+test);
+    const M=runModel(blk,best);
+    for(let i=train;i<train+test;i++){oosS.push(M.stratRet[i]); oosR.push(M.ret[i]);}
+  }
+  if(chosen.length===0) return null;
+  return {s:statsFromRets(oosS), b:statsFromRets(oosR), chosen, nOOS:oosS.length-1,
+          dates:data.date.slice(n-(oosS.length-1))};
+}
+
+/* ============ Nelder-Mead (compact) for MLE ============ */
+function nelderMead(f,x0,opt={}){
+  const maxiter=opt.maxiter||1500, tol=opt.tol||1e-7, nn=x0.length;
+  let S=[x0.slice()]; for(let i=0;i<nn;i++){const x=x0.slice(); x[i]+=(x[i]!==0?0.06*x[i]:0.06); S.push(x);}
+  let F=S.map(f);
+  for(let it=0;it<maxiter;it++){
+    const idx=[...Array(nn+1).keys()].sort((a,b)=>F[a]-F[b]);
+    S=idx.map(i=>S[i]); F=idx.map(i=>F[i]);
+    if(Math.abs(F[nn]-F[0])<tol) break;
+    const xc=new Array(nn).fill(0);
+    for(let i=0;i<nn;i++) for(let j=0;j<nn;j++) xc[j]+=S[i][j]/nn;
+    const xr=xc.map((c,j)=>c+(c-S[nn][j])); const fr=f(xr);
+    if(fr<F[0]){ const xe=xc.map((c,j)=>c+2*(xr[j]-c)); const fe=f(xe);
+      if(fe<fr){S[nn]=xe;F[nn]=fe;} else {S[nn]=xr;F[nn]=fr;} }
+    else if(fr<F[nn-1]){ S[nn]=xr;F[nn]=fr; }
+    else { const xk=xc.map((c,j)=>c+0.5*(S[nn][j]-c)); const fk=f(xk);
+      if(fk<F[nn]){S[nn]=xk;F[nn]=fk;}
+      else { for(let i=1;i<=nn;i++){S[i]=S[i].map((v,j)=>S[0][j]+0.5*(v-S[0][j])); F[i]=f(S[i]);} } }
+  }
+  let bi=0; for(let i=1;i<F.length;i++) if(F[i]<F[bi]) bi=i;
+  return {x:S[bi], fun:F[bi]};
+}
+
+/* ============ Calvet-Fisher binomial MSM volatility model ============ */
+const LOG2PI=Math.log(2*Math.PI);
+function msmKron(A,B){const ra=A.length,ca=A[0].length,rb=B.length,cb=B[0].length;
+  const out=Array.from({length:ra*rb},()=>new Array(ca*cb).fill(0));
+  for(let i=0;i<ra;i++)for(let j=0;j<ca;j++)for(let p=0;p<rb;p++)for(let q=0;q<cb;q++)
+    out[i*rb+p][j*cb+q]=A[i][j]*B[p][q];
+  return out;}
+function msmG(k,m0){const hi=2-m0,M=1<<k,g=new Array(M);
+  for(let j=0;j<M;j++){let p=1; for(let i=0;i<k;i++) p*=((j>>i)&1)?hi:m0; g[j]=p;} return g;}
+function msmT(k,b,g1){let mats=[];
+  for(let i=0;i<k;i++){let gi=1-Math.pow(1-g1,Math.pow(b,i)); gi=Math.min(Math.max(gi,1e-12),1);
+    const s=1-gi/2,f=gi/2; mats.push([[s,f],[f,s]]);}
+  let T=mats[0]; for(let i=1;i<k;i++) T=msmKron(T,mats[i]); return T;}
+function msmUnpack(p){return [1+1/(1+Math.exp(-p[0])), Math.exp(p[1]),
+  1+Math.exp(p[2]), 1/(1+Math.exp(-p[3]))];}
+function msmPack(m0,s,b,g1){return [Math.log((m0-1)/(2-m0)),Math.log(s),
+  Math.log(b-1),Math.log(g1/(1-g1))];}
+function msmNLL(p,r,k){
+  const [m0,sigma,b,g1]=msmUnpack(p);
+  if(!(m0>1&&m0<2&&sigma>0&&b>1&&g1>0&&g1<1)) return 1e10;
+  const M=1<<k, g=msmG(k,m0), vv=g.map(x=>sigma*sigma*x), T=msmT(k,b,g1);
+  let pi=new Array(M).fill(1/M), ll=0;
+  for(let t=0;t<r.length;t++){
+    const pred=new Array(M).fill(0);
+    for(let i=0;i<M;i++){const pii=pi[i]; if(!pii)continue; const Ti=T[i]; for(let j=0;j<M;j++) pred[j]+=pii*Ti[j];}
+    const r2=r[t]*r[t]; let sm=0; const w=new Array(M);
+    for(let j=0;j<M;j++){const d=Math.exp(-0.5*(r2/vv[j])-0.5*Math.log(vv[j])-0.5*LOG2PI); w[j]=pred[j]*d; sm+=w[j];}
+    if(!(sm>0)||!isFinite(sm)) return 1e10;
+    ll+=Math.log(sm); for(let j=0;j<M;j++) pi[j]=w[j]/sm;
+  }
+  return -ll;
+}
+function fitMSM(returns,k=4,scale=100){
+  let r=returns.filter(x=>isFinite(x)); const mu=mean(r); r=r.map(x=>(x-mu)*scale);
+  const sd=std(r)||1;
+  const inits=[[1.4,sd,3,0.5],[1.3,sd*0.8,2,0.3],[1.6,sd*1.2,5,0.7],[1.2,sd,4,0.2]];
+  let best=null;
+  for(const init of inits){ const res=nelderMead(p=>msmNLL(p,r,k),msmPack(...init));
+    if(!best||res.fun<best.fun) best=res; }
+  const [m0,sigma,b,g1]=msmUnpack(best.x);
+  // recover final filtered state distribution
+  const M=1<<k, g=msmG(k,m0), vv=g.map(x=>sigma*sigma*x), T=msmT(k,b,g1);
+  let pi=new Array(M).fill(1/M);
+  for(let t=0;t<r.length;t++){
+    const pred=new Array(M).fill(0);
+    for(let i=0;i<M;i++){const pii=pi[i]; if(!pii)continue; const Ti=T[i]; for(let j=0;j<M;j++) pred[j]+=pii*Ti[j];}
+    const r2=r[t]*r[t]; let sm=0; const w=new Array(M);
+    for(let j=0;j<M;j++){const d=Math.exp(-0.5*(r2/vv[j])-0.5*Math.log(vv[j])-0.5*LOG2PI); w[j]=pred[j]*d; sm+=w[j];}
+    for(let j=0;j<M;j++) pi[j]=w[j]/sm;
+  }
+  return {k,m0,sigma:sigma/scale,b,gamma1:g1,loglik:-best.fun,n:r.length,scale,pi,g,T};
+}
+function msmForecast(fit,horizons=[1,5,10,22,44]){
+  const sigma2=fit.sigma*fit.sigma, out={};
+  for(const H of horizons){ let pi=fit.pi.slice(), cum=0;
+    for(let h=0;h<H;h++){ const np=new Array(pi.length).fill(0);
+      for(let i=0;i<pi.length;i++){const pii=pi[i]; if(!pii)continue; const Ti=fit.T[i]; for(let j=0;j<pi.length;j++) np[j]+=pii*Ti[j];}
+      pi=np; let eg=0; for(let j=0;j<pi.length;j++) eg+=pi[j]*fit.g[j];
+      cum+=sigma2*eg; }
+    out[H]=Math.sqrt(252)*Math.sqrt(cum/H);
+  }
+  return out;
+}
+function msmVolPath(fit,returns){       // annualized 1-step conditional vol
+  let r=returns.filter(x=>isFinite(x)); const mu=mean(r); const rs=r.map(x=>(x-mu)*fit.scale);
+  const M=1<<fit.k, g=msmG(fit.k,fit.m0), vv=g.map(x=>(fit.sigma*fit.scale)**2*x), T=fit.T;
+  let pi=new Array(M).fill(1/M); const path=new Array(rs.length);
+  for(let t=0;t<rs.length;t++){
+    const pred=new Array(M).fill(0);
+    for(let i=0;i<M;i++){const pii=pi[i]; if(!pii)continue; const Ti=T[i]; for(let j=0;j<M;j++) pred[j]+=pii*Ti[j];}
+    let fv=0; for(let j=0;j<M;j++) fv+=pred[j]*vv[j]; fv/=fit.scale*fit.scale;
+    path[t]=Math.sqrt(fv)*Math.sqrt(252);
+    const r2=rs[t]*rs[t]; let sm=0; const w=new Array(M);
+    for(let j=0;j<M;j++){const d=Math.exp(-0.5*(r2/vv[j])-0.5*Math.log(vv[j])-0.5*LOG2PI); w[j]=pred[j]*d; sm+=w[j];}
+    for(let j=0;j<M;j++) pi[j]=w[j]/sm;
+  }
+  return path;
+}
+
+/* ============ GARCH(1,1) benchmark ============ */
+function garchUnpack(p){const al=1/(1+Math.exp(-p[1]))*0.5; const be=1/(1+Math.exp(-p[2]))*(0.999-al);
+  return [Math.exp(p[0]),al,be];}
+function garchNLL(p,r){
+  const [w,al,be]=garchUnpack(p); const n=r.length; let s2=0; for(const x of r) s2+=x*x; s2/=n;
+  let ll=0; for(let t=0;t<n;t++){ if(t>0) s2=w+al*r[t-1]*r[t-1]+be*s2;
+    if(!(s2>0)||!isFinite(s2)) return 1e10; ll+=-0.5*(Math.log(s2)+r[t]*r[t]/s2); }
+  return -ll;
+}
+function fitGARCH(returns,scale=100){
+  let r=returns.filter(x=>isFinite(x)); const mu=mean(r); r=r.map(x=>(x-mu)*scale);
+  const res=nelderMead(p=>garchNLL(p,r),[Math.log(0.1),0,0.5]);
+  const [w,al,be]=garchUnpack(res.x);
+  let v=0; for(const x of r) v+=x*x; v/=r.length; let s2=v; const path=new Array(r.length);
+  for(let t=0;t<r.length;t++){ if(t>0) s2=w+al*r[t-1]*r[t-1]+be*s2;
+    path[t]=Math.sqrt(s2)/scale*Math.sqrt(252); }
+  return {omega:w,alpha:al,beta:be,loglik:-res.fun,path};
 }
 
 /* ============ charts (canvas) ============ */
@@ -517,7 +751,8 @@ function genDemo(sym){
 
 /* ============ wiring ============ */
 let SHORT=false;
-function params(){return {hwin:+$('hwin').value,framaN:+$('framaN').value,zlook:+$('zlook').value,allowShort:SHORT};}
+function params(){return {hwin:+$('hwin').value,framaN:+$('framaN').value,zlook:+$('zlook').value,
+  allowShort:SHORT, method:$('hmethod').value, costbps:+$('costbps').value};}
 function setBadge(kind,txt){const b=$('srcBadge');b.className='srcbadge '+kind;$('srcTxt').textContent=txt;}
 function setStatus(html){$('status').innerHTML=html;}
 
@@ -543,15 +778,90 @@ async function go(){
 
 $('runBtn').onclick=()=>{ if(!CSVDATA){} go(); };
 $('symbol').onchange=()=>{ CSVDATA=null; go(); };
-['hwin','framaN','zlook'].forEach(id=>$(id).onchange=()=>render(runModel(CURRENT.data,params())));
+['hwin','framaN','zlook','hmethod','costbps'].forEach(id=>$(id).onchange=()=>{if(CURRENT.data)render(runModel(CURRENT.data,params()));});
 $('shortTog').onclick=()=>{SHORT=!SHORT;$('shortTog').classList.toggle('on',SHORT);$('shortTog').querySelector('span').textContent=SHORT?'Long / short':'Long-only';if(CURRENT.data){$('stratHdr').textContent='Fractal strategy'+(SHORT?' (L/S)':' (long-only)');render(runModel(CURRENT.data,params()));}};
 $('csvBtn').onclick=()=>$('csvModal').classList.add('show');
 $('csvCancel').onclick=()=>$('csvModal').classList.remove('show');
 $('csvLoad').onclick=()=>{ try{ CSVDATA=parseCSV($('csvArea').value); $('csvModal').classList.remove('show'); go(); }catch(e){ alert(e.message); } };
 
+/* ---- walk-forward + volatility-model panels (heavy → run on click) ---- */
+const fmtP=x=>(x>=0?'+':'')+(x*100).toFixed(1)+'%';
+const WF_HINT='Re-selects the Hurst window &amp; FRAMA period on a rolling 2-year training block (best Sharpe), then evaluates on the next 6 months it has never seen, and stitches those out-of-sample pieces into one honest equity curve. This is the number that matters.';
+const MSM_HINT='Calvet-Fisher binomial Markov-Switching Multifractal (k=4), fit by maximum likelihood with the Hamilton filter, benchmarked against GARCH(1,1). Forecasts <b>volatility</b>, not direction — the options angle. Descriptive, heavily caveated.';
+
+function clearAux(){
+  ['wfBody','msmFcBody','msmStatBody'].forEach(id=>{const e=$(id); if(e) e.innerHTML='';});
+  for(const cid of ['cWF','cVol']){const cv=$(cid); if(cv){const x=cv.getContext('2d'); if(x) x.clearRect(0,0,cv.width,cv.height);}}
+  if($('wfStatus')) $('wfStatus').innerHTML=WF_HINT;
+  if($('msmStatus')) $('msmStatus').innerHTML=MSM_HINT;
+}
+
+$('wfBtn').onclick=()=>{
+  if(!CURRENT.data) return;
+  $('wfStatus').innerHTML='<span class="spinner"></span>running walk-forward (re-fitting params on each rolling window)…';
+  $('wfBtn').disabled=true;
+  setTimeout(()=>{
+    try{
+      const wf=walkForward(CURRENT.data,params());
+      if(!wf){ $('wfStatus').innerHTML='<span class="err">Not enough data for walk-forward (need ~2.5 years of bars).</span>'; $('wfBtn').disabled=false; return; }
+      drawLines($('cWF'),
+        [{data:wf.b.eq,color:'#6b7d96',w:1.4},{data:wf.s.eq,color:'#39c0c8',w:1.9}],
+        {dates:wf.dates.map(d=>d.slice(0,7)),fmt:v=>'$'+fmtNum(v)});
+      const rows=[
+        ['Total return (OOS)',fmtP(wf.s.tot),fmtP(wf.b.tot),1],
+        ['CAGR (OOS)',fmtP(wf.s.cagr),fmtP(wf.b.cagr),1],
+        ['Volatility (ann.)',(wf.s.v*100).toFixed(1)+'%',(wf.b.v*100).toFixed(1)+'%',-1],
+        ['Sharpe (OOS)',wf.s.sh.toFixed(2),wf.b.sh.toFixed(2),1],
+        ['Max drawdown',fmtP(wf.s.mdd),fmtP(wf.b.mdd),1],
+      ];
+      const body=$('wfBody'); body.innerHTML='';
+      rows.forEach(r=>{const tr=document.createElement('tr');
+        const better=r[3]>0?(parseFloat(r[1])>parseFloat(r[2])?1:2):(parseFloat(r[1])<parseFloat(r[2])?1:2);
+        tr.innerHTML=`<td>${r[0]}</td><td class="${better===1?'win':''}">${r[1]}</td><td class="${better===2?'win':''}">${r[2]}</td>`;
+        body.appendChild(tr);});
+      $('wfStatus').innerHTML='<span class="ok">✓ '+wf.nOOS+' out-of-sample bars across '+wf.chosen.length+' re-fitted windows.</span> Params were never chosen on this data — these are the honest numbers.';
+    }catch(e){ $('wfStatus').innerHTML='<span class="err">Error: '+e.message+'</span>'; }
+    $('wfBtn').disabled=false;
+  },50);
+};
+
+$('msmBtn').onclick=()=>{
+  if(!CURRENT.data) return;
+  $('msmStatus').innerHTML='<span class="spinner"></span>fitting MSM (Hamilton-filter MLE) + GARCH(1,1)…';
+  $('msmBtn').disabled=true;
+  setTimeout(()=>{
+    try{
+      const M=CURRENT, ret=M.ret.slice(1);
+      const fit=fitMSM(ret,4), fc=msmForecast(fit), mpath=msmVolPath(fit,ret), g=fitGARCH(ret);
+      const realized=M.vol.slice(1);
+      drawLines($('cVol'),
+        [{data:realized.map(x=>isNaN(x)?null:x*100),color:'#6b7d96',w:1.2},
+         {data:mpath.map(x=>x*100),color:'#39c0c8',w:1.7},
+         {data:g.path.map(x=>x*100),color:'#d6a430',w:1.3}],
+        {dates:M.data.date.slice(1).map(d=>d.slice(0,7)),fmt:v=>v.toFixed(0)+'%'});
+      const fb=$('msmFcBody'); fb.innerHTML='';
+      Object.keys(fc).forEach(H=>{const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${H}-day horizon</td><td>${(fc[H]*100).toFixed(1)}%</td>`; fb.appendChild(tr);});
+      let se=0,sg=0,c=0;
+      for(let i=0;i<realized.length;i++){ if(isNaN(realized[i]))continue; se+=(mpath[i]-realized[i])**2; sg+=(g.path[i]-realized[i])**2; c++; }
+      const rmseM=Math.sqrt(se/c), rmseG=Math.sqrt(sg/c), msmWins=rmseM<=rmseG;
+      const sb=$('msmStatBody'); sb.innerHTML='';
+      [['MSM fit','m0='+fit.m0.toFixed(3)+' σ='+fit.sigma.toFixed(4)+' b='+fit.b.toFixed(2)+' γ₁='+fit.gamma1.toFixed(3)],
+       ['MSM log-likelihood',fit.loglik.toFixed(1)],
+       ['GARCH(1,1)','ω='+g.omega.toFixed(3)+' α='+g.alpha.toFixed(3)+' β='+g.beta.toFixed(3)],
+       ['RMSE vs 20d realized','MSM '+(rmseM*100).toFixed(2)+'% · GARCH '+(rmseG*100).toFixed(2)+'%'],
+       ['Lower RMSE',msmWins?'MSM ✓':'GARCH ✓']
+      ].forEach(r=>{const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${r[0]}</td><td class="${r[0]==='Lower RMSE'?'win':''}">${r[1]}</td>`; sb.appendChild(tr);});
+      $('msmStatus').innerHTML='<span class="ok">✓ MSM fit on '+fit.n+' returns.</span> Forecast vs implied vol = rich/cheap view — descriptive, not a trade signal.';
+    }catch(e){ $('msmStatus').innerHTML='<span class="err">Error: '+e.message+'</span>'; }
+    $('msmBtn').disabled=false;
+  },50);
+};
+
 // keep last model for instant re-render on slider change
 let CURRENT={data:null};
-const _render=render; render=function(M){CURRENT=M;_render(M);};
+const _render=render; render=function(M){CURRENT=M;_render(M);clearAux();};
 
 window.addEventListener('resize',()=>{if(CURRENT.data)_render(CURRENT);});
 go();
