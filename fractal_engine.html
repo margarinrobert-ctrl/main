@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fractal Regime Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0a0e14; --bg2:#0d121b; --surf:#121925; --surf2:#161f2e;
+  --line:#1f2a3a; --line2:#2a3a4f;
+  --txt:#cdd9ea; --mut:#6b7d96; --dim:#475568;
+  --grn:#3fb950; --grn-d:#1f4a2a; --red:#f85149; --red-d:#4a2020;
+  --amb:#d6a430; --teal:#39c0c8; --blue:#4493f8;
+  --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  --sans:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+body{
+  background-image:
+    radial-gradient(1200px 600px at 80% -10%, rgba(57,192,200,.05), transparent),
+    linear-gradient(rgba(31,42,58,.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31,42,58,.18) 1px, transparent 1px);
+  background-size:auto, 44px 44px, 44px 44px;
+  min-height:100vh; padding:28px 20px 60px;
+}
+.wrap{max-width:1120px;margin:0 auto}
+.mono{font-family:var(--mono)}
+/* header */
+header{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px;
+  border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:22px;
+  animation:fade .6s ease both}
+.brand h1{font-family:var(--mono);font-weight:600;font-size:23px;letter-spacing:-.5px;line-height:1.1}
+.brand h1 .dot{color:var(--teal)}
+.brand p{color:var(--mut);font-size:12.5px;margin-top:5px;max-width:540px}
+.srcbadge{font-family:var(--mono);font-size:11px;padding:5px 11px;border:1px solid var(--line);
+  border-radius:6px;color:var(--mut);background:var(--surf);white-space:nowrap}
+.srcbadge b{color:var(--teal);font-weight:500}
+.srcbadge.live b{color:var(--grn)} .srcbadge.demo b{color:var(--amb)} .srcbadge.csv b{color:var(--blue)}
+/* controls */
+.panel{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin-bottom:18px}
+.controls{display:flex;flex-wrap:wrap;gap:16px 22px;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:6px}
+.ctl label{font-family:var(--mono);font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--mut)}
+select,input[type=number]{background:var(--bg2);color:var(--txt);border:1px solid var(--line);
+  border-radius:6px;padding:8px 10px;font-family:var(--mono);font-size:13px;min-width:96px;outline:none}
+select:focus,input:focus{border-color:var(--teal)}
+input[type=number]{width:78px}
+.tog{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.tog .box{width:38px;height:20px;border-radius:11px;background:var(--line);position:relative;transition:.2s;border:1px solid var(--line)}
+.tog .box::after{content:'';position:absolute;width:14px;height:14px;border-radius:50%;background:var(--mut);top:2px;left:2px;transition:.2s}
+.tog.on .box{background:var(--grn-d);border-color:var(--grn)}
+.tog.on .box::after{left:19px;background:var(--grn)}
+.tog span{font-size:12.5px;color:var(--txt)}
+.btn{font-family:var(--mono);font-size:12.5px;padding:9px 16px;border-radius:6px;cursor:pointer;border:1px solid var(--line);
+  background:var(--surf2);color:var(--txt);transition:.15s}
+.btn:hover{border-color:var(--teal);color:#fff}
+.btn.primary{background:var(--teal);color:#04181a;border-color:var(--teal);font-weight:600}
+.btn.primary:hover{filter:brightness(1.1)}
+.status{font-family:var(--mono);font-size:11.5px;color:var(--mut);margin-top:12px;min-height:16px}
+.status .err{color:var(--red)} .status .ok{color:var(--grn)}
+/* signal cards */
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:15px 16px;position:relative;overflow:hidden;
+  animation:fade .6s ease both}
+.card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line)}
+.card.trend::before{background:var(--grn)} .card.revert::before{background:var(--amb)} .card.random::before{background:var(--dim)}
+.card.long::before{background:var(--grn)} .card.short::before{background:var(--red)} .card.flat::before{background:var(--dim)}
+.card .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--mut)}
+.card .v{font-family:var(--mono);font-size:25px;font-weight:600;margin-top:7px;letter-spacing:-.5px}
+.card .sub{font-size:11.5px;color:var(--mut);margin-top:3px}
+.v.grn{color:var(--grn)} .v.red{color:var(--red)} .v.amb{color:var(--amb)} .v.teal{color:var(--teal)} .v.dim{color:var(--mut)}
+/* charts */
+.chart-card{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:14px 16px 8px;margin-bottom:18px}
+.chart-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;flex-wrap:wrap;gap:6px}
+.chart-head h3{font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:.3px}
+.chart-head .leg{display:flex;gap:14px;font-family:var(--mono);font-size:11px;color:var(--mut);flex-wrap:wrap}
+.leg i{display:inline-block;width:11px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+canvas{width:100%;display:block}
+/* table */
+.tbl{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:13px}
+.tbl th,.tbl td{text-align:right;padding:9px 10px;border-bottom:1px solid var(--line)}
+.tbl th:first-child,.tbl td:first-child{text-align:left;color:var(--mut)}
+.tbl thead th{color:var(--teal);font-weight:600;font-size:11px;letter-spacing:.5px;text-transform:uppercase}
+.tbl tr:last-child td{border-bottom:none}
+.pos{color:var(--grn)} .neg{color:var(--red)}
+.tbl .win{color:#fff;font-weight:600}
+/* notes */
+.notes{font-size:12.5px;color:var(--mut);line-height:1.65}
+.notes h3{font-family:var(--mono);font-size:12px;letter-spacing:.5px;text-transform:uppercase;color:var(--teal);margin-bottom:8px}
+.notes b{color:var(--txt);font-weight:500}
+.warn{border-color:var(--red-d);background:linear-gradient(var(--surf),var(--surf))}
+.warn h3{color:var(--amb)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(4,7,12,.78);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.modal.show{display:flex}
+.modal .box{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:22px;max-width:560px;width:100%}
+.modal h3{font-family:var(--mono);font-size:15px;margin-bottom:8px}
+.modal p{font-size:12.5px;color:var(--mut);margin-bottom:12px}
+.modal textarea{width:100%;height:170px;background:var(--bg2);color:var(--txt);border:1px solid var(--line);
+  border-radius:6px;padding:10px;font-family:var(--mono);font-size:12px;resize:vertical;outline:none}
+.modal textarea:focus{border-color:var(--teal)}
+.modal .row{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+.spinner{display:inline-block;width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--teal);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-1px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media(max-width:760px){.cards{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>FRACTAL REGIME ENGINE<span class="dot">.</span></h1>
+      <p>Hurst-exponent regime detection (R/S or DFA) on S&amp;P&nbsp;500 / Nasdaq-100. Trends get a FRAMA momentum rule, mean-reverting stretches get a z-score fade, noise gets sidelined — then it's backtested net of costs against buy &amp; hold, with <b>walk-forward out-of-sample</b> validation and an <b>MSM-vs-GARCH</b> volatility model.</p>
+    </div>
+    <div class="srcbadge" id="srcBadge">DATA &middot; <b id="srcTxt">initializing…</b></div>
+  </header>
+
+  <div class="panel">
+    <div class="controls">
+      <div class="ctl">
+        <label>Instrument</label>
+        <select id="symbol">
+          <option value="SPY">SPY · S&amp;P 500 ETF</option>
+          <option value="^GSPC">SPX · S&amp;P 500 index</option>
+          <option value="ES=F">ES · S&amp;P 500 futures</option>
+          <option value="QQQ">QQQ · Nasdaq-100 ETF</option>
+          <option value="^NDX">NDX · Nasdaq-100 index</option>
+          <option value="NQ=F">NQ · Nasdaq futures</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <label>Hurst window</label>
+        <input type="number" id="hwin" value="120" min="40" max="400" step="10">
+      </div>
+      <div class="ctl">
+        <label>FRAMA period</label>
+        <input type="number" id="framaN" value="16" min="6" max="60" step="2">
+      </div>
+      <div class="ctl">
+        <label>Revert lookback</label>
+        <input type="number" id="zlook" value="20" min="5" max="80" step="1">
+      </div>
+      <div class="ctl">
+        <label>Hurst method</label>
+        <select id="hmethod">
+          <option value="rs">R/S (rescaled range)</option>
+          <option value="dfa">DFA (less biased)</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <label>Cost (bps/side)</label>
+        <input type="number" id="costbps" value="1" min="0" max="20" step="0.5">
+      </div>
+      <div class="ctl">
+        <label>Allow shorts</label>
+        <div class="tog" id="shortTog"><div class="box"></div><span>Long-only</span></div>
+      </div>
+      <button class="btn primary" id="runBtn">↻ Fetch &amp; Run</button>
+      <button class="btn" id="csvBtn">Paste data</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="cards" id="cards">
+    <div class="card random"><div class="k">Current regime</div><div class="v dim" id="cRegime">—</div><div class="sub" id="cRegimeSub">awaiting data</div></div>
+    <div class="card"><div class="k">Hurst exponent</div><div class="v teal" id="cHurst">—</div><div class="sub" id="cHurstSub">0.5 = random walk</div></div>
+    <div class="card flat"><div class="k">Live signal</div><div class="v dim" id="cSignal">—</div><div class="sub" id="cSignalSub">next-bar position</div></div>
+    <div class="card"><div class="k">Volatility (ann.)</div><div class="v" id="cVol">—</div><div class="sub" id="cVolSub">20-day realized</div></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-head">
+      <h3>Price · FRAMA · Regime</h3>
+      <div class="leg">
+        <span><i style="background:#cdd9ea"></i>Price</span>
+        <span><i style="background:#39c0c8"></i>FRAMA</span>
+        <span><i style="background:#3fb950"></i>Trending</span>
+        <span><i style="background:#d6a430"></i>Mean-revert</span>
+        <span><i style="background:#475568"></i>Random</span>
+      </div>
+    </div>
+    <canvas id="cPrice" height="300"></canvas>
+  </div>
+
+  <div class="grid2">
+    <div class="chart-card">
+      <div class="chart-head"><h3>Hurst exponent over time</h3>
+        <div class="leg"><span><i style="background:#39c0c8"></i>H</span><span><i style="background:#3fb950"></i>0.55</span><span><i style="background:#d6a430"></i>0.45</span></div></div>
+      <canvas id="cHurstChart" height="230"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-head"><h3>Growth of $10,000</h3>
+        <div class="leg"><span><i style="background:#39c0c8"></i>Strategy</span><span><i style="background:#6b7d96"></i>Buy &amp; hold</span></div></div>
+      <canvas id="cEquity" height="230"></canvas>
+    </div>
+  </div>
+
+  <div class="chart-card" style="padding-bottom:14px">
+    <div class="chart-head"><h3>Backtest results</h3><div class="leg"><span id="periodTxt"></span></div></div>
+    <table class="tbl">
+      <thead><tr><th>Metric</th><th id="stratHdr">Fractal strategy</th><th>Buy &amp; hold</th></tr></thead>
+      <tbody id="statsBody"></tbody>
+    </table>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-head">
+      <h3>Out-of-sample · walk-forward</h3>
+      <button class="btn" id="wfBtn">↻ Run walk-forward</button>
+    </div>
+    <div class="status" id="wfStatus">Re-selects the Hurst window &amp; FRAMA period on a rolling 2-year training block (best Sharpe), then evaluates on the next 6 months it has never seen, and stitches those out-of-sample pieces into one honest equity curve. This is the number that matters.</div>
+    <canvas id="cWF" height="230"></canvas>
+    <table class="tbl" style="margin-top:10px">
+      <thead><tr><th>Out-of-sample metric</th><th>Fractal (OOS)</th><th>Buy &amp; hold (OOS)</th></tr></thead>
+      <tbody id="wfBody"></tbody>
+    </table>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-head">
+      <h3>Volatility model · MSM vs GARCH</h3>
+      <button class="btn" id="msmBtn">↻ Fit MSM + GARCH</button>
+    </div>
+    <div class="status" id="msmStatus">Calvet-Fisher binomial Markov-Switching Multifractal (k=4), fit by maximum likelihood with the Hamilton filter, benchmarked against GARCH(1,1). Forecasts <b>volatility</b>, not direction — the options angle. Descriptive, heavily caveated.</div>
+    <canvas id="cVol" height="230"></canvas>
+    <div class="grid2" style="margin-top:10px">
+      <table class="tbl">
+        <thead><tr><th>Vol forecast (ann.)</th><th>MSM</th></tr></thead>
+        <tbody id="msmFcBody"></tbody>
+      </table>
+      <table class="tbl">
+        <thead><tr><th>Fit / benchmark</th><th>Value</th></tr></thead>
+        <tbody id="msmStatBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel notes">
+      <h3>How it works</h3>
+      <p style="margin-bottom:10px"><b>1. Measure the market's memory.</b> Over a rolling window it runs <b>rescaled-range (R/S) analysis</b> to estimate the Hurst exponent H. H&gt;0.55 = trending (moves persist), H&lt;0.45 = mean-reverting (moves reverse), ~0.5 = random walk.</p>
+      <p style="margin-bottom:10px"><b>2. Pick the matching tool.</b> In trends it uses <b>FRAMA</b> (Ehlers' Fractal Adaptive Moving Average) — long while price is above it. In reverting regimes it fades extremes using a <b>z-score</b> of price vs its recent mean. In random regimes it stays flat.</p>
+      <p style="margin-bottom:10px"><b>3. Backtest honestly.</b> Signals are computed on day <i>t</i> and the position is taken on <i>t+1</i> (no peeking ahead), <b>net of transaction costs</b>, then compared to simply holding the index.</p>
+      <p style="margin-bottom:10px"><b>4. Validate out-of-sample.</b> The <b>walk-forward</b> panel re-selects parameters on a rolling training window and scores them only on data it has never seen — the honest test of whether any edge survives outside the backtest's hindsight.</p>
+      <p><b>5. Forecast volatility.</b> The <b>MSM</b> model (Calvet-Fisher Markov-Switching Multifractal) forecasts volatility for the options angle and is benchmarked head-to-head against GARCH(1,1).</p>
+    </div>
+    <div class="panel notes warn">
+      <h3>⚠ Read before trusting it</h3>
+      <p style="margin-bottom:9px">This is an educational tool, <b>not investment advice</b>. The Hurst exponent is biased in small samples and an H≠0.5 is statistically compatible with a pure random walk — it does <b>not</b> prove a real edge.</p>
+      <p style="margin-bottom:9px">A backtest is a description of the past with full hindsight on parameters. It ignores commissions, slippage, financing and taxes, and says little about the future.</p>
+      <p>Treat regime/Hurst as <b>one input among many</b>, not a buy button. Size small, paper-trade first.</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="csvModal">
+  <div class="box">
+    <h3>Paste your own data</h3>
+    <p>CSV with a header row. Needs <b>Date, Close</b> (Open/High/Low optional — improves FRAMA). Export from Yahoo Finance, Stooq, your broker, anywhere. Newest or oldest first is fine.</p>
+    <textarea id="csvArea" placeholder="Date,Open,High,Low,Close
+2023-01-03,384.37,386.43,377.83,380.82
+2023-01-04,383.18,385.88,380.00,383.76
+..."></textarea>
+    <div class="row">
+      <button class="btn" id="csvCancel">Cancel</button>
+      <button class="btn primary" id="csvLoad">Load data</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ helpers ============ */
+const $=id=>document.getElementById(id);
+const mean=a=>a.reduce((s,x)=>s+x,0)/a.length;
+const std=a=>{const m=mean(a);return Math.sqrt(a.reduce((s,x)=>s+(x-m)*(x-m),0)/a.length)};
+const fmtPct=x=>(x>=0?'+':'')+(x*100).toFixed(1)+'%';
+const fmtNum=x=>x.toLocaleString('en-US',{maximumFractionDigits:0});
+
+/* ---- Hurst via rescaled-range (R/S) over multiple chunk sizes ---- */
+function hurstRS(series){
+  const n=series.length; if(n<40) return NaN;
+  const sizes=[]; for(let s=10;s<=Math.floor(n/2);s=Math.floor(s*1.6)) sizes.push(s);
+  if(sizes[sizes.length-1]<Math.floor(n/2)) sizes.push(Math.floor(n/2));
+  const X=[],Y=[];
+  for(const sz of sizes){
+    const chunks=Math.floor(n/sz); if(chunks<1) continue;
+    let acc=0,c=0;
+    for(let k=0;k<chunks;k++){
+      const seg=series.slice(k*sz,(k+1)*sz);
+      const m=mean(seg); let cum=0,mn=Infinity,mx=-Infinity;
+      for(const v of seg){cum+=v-m; if(cum<mn)mn=cum; if(cum>mx)mx=cum;}
+      const R=mx-mn, S=std(seg);
+      if(S>1e-12){acc+=R/S; c++;}
+    }
+    if(c>0){X.push(Math.log(sz)); Y.push(Math.log(acc/c));}
+  }
+  if(X.length<2) return NaN;
+  // least-squares slope
+  const mx=mean(X),my=mean(Y); let num=0,den=0;
+  for(let i=0;i<X.length;i++){num+=(X[i]-mx)*(Y[i]-my); den+=(X[i]-mx)**2;}
+  return den>0?num/den:NaN;
+}
+
+/* ---- Hurst via Detrended Fluctuation Analysis (less biased than R/S) ---- */
+function hurstDFA(series){
+  const n=series.length; if(n<40) return NaN;
+  const m=mean(series); const profile=new Array(n); let c=0;
+  for(let i=0;i<n;i++){c+=series[i]-m; profile[i]=c;}
+  const sizes=[]; for(let s=10;s<=Math.floor(n/2);s=Math.floor(s*1.6)) sizes.push(s);
+  if(sizes[sizes.length-1]<Math.floor(n/2)) sizes.push(Math.floor(n/2));
+  const X=[],Y=[];
+  for(const sz of sizes){
+    const chunks=Math.floor(n/sz); if(chunks<1) continue;
+    let rmsAcc=0,cnt=0;
+    for(let k=0;k<chunks;k++){
+      const seg=profile.slice(k*sz,(k+1)*sz);
+      // least-squares linear detrend over t=0..sz-1
+      let st=0,sy=0,stt=0,sty=0;
+      for(let t=0;t<sz;t++){st+=t; sy+=seg[t]; stt+=t*t; sty+=t*seg[t];}
+      const den=sz*stt-st*st; const b=(sz*sty-st*sy)/den, a=(sy-b*st)/sz;
+      let ss=0; for(let t=0;t<sz;t++){const f=a+b*t; ss+=(seg[t]-f)*(seg[t]-f);}
+      rmsAcc+=Math.sqrt(ss/sz); cnt++;
+    }
+    const fval=rmsAcc/cnt;
+    if(fval>1e-12){X.push(Math.log(sz)); Y.push(Math.log(fval));}
+  }
+  if(X.length<2) return NaN;
+  const mx=mean(X),my=mean(Y); let num=0,den=0;
+  for(let i=0;i<X.length;i++){num+=(X[i]-mx)*(Y[i]-my); den+=(X[i]-mx)**2;}
+  return den>0?num/den:NaN;
+}
+
+/* ---- FRAMA (Ehlers) ---- */
+function frama(high,low,close,N){
+  if(N%2) N++; const half=N/2, out=new Array(close.length).fill(NaN);
+  for(let i=0;i<close.length;i++){
+    if(i<N){out[i]=close[i]; continue;}
+    const h1=Math.max(...high.slice(i-N+1,i-half+1)), l1=Math.min(...low.slice(i-N+1,i-half+1));
+    const h2=Math.max(...high.slice(i-half+1,i+1)),  l2=Math.min(...low.slice(i-half+1,i+1));
+    const h3=Math.max(...high.slice(i-N+1,i+1)),      l3=Math.min(...low.slice(i-N+1,i+1));
+    const n1=(h1-l1)/half, n2=(h2-l2)/half, n3=(h3-l3)/N;
+    let D=1; if(n1>0&&n2>0&&n3>0) D=(Math.log(n1+n2)-Math.log(n3))/Math.log(2);
+    let a=Math.exp(-4.6*(D-1)); a=Math.max(0.01,Math.min(1,a));
+    out[i]=a*close[i]+(1-a)*out[i-1];
+  }
+  return out;
+}
+
+/* ============ model ============ */
+function runModel(data,p){
+  const {date,open,high,low,close}=data, n=close.length;
+  const ret=new Array(n).fill(0);
+  for(let i=1;i<n;i++) ret[i]=close[i]/close[i-1]-1;
+  const logr=ret.map(r=>Math.log(1+r));
+
+  // rolling Hurst (R/S or DFA)
+  const H=new Array(n).fill(NaN);
+  const hfun=p.method==='dfa'?hurstDFA:hurstRS;
+  for(let i=p.hwin;i<n;i++) H[i]=hfun(logr.slice(i-p.hwin+1,i+1));
+
+  // FRAMA
+  const fr=frama(high,low,close,p.framaN);
+
+  // rolling mean/std of close for z-score
+  const zmean=new Array(n).fill(NaN), zstd=new Array(n).fill(NaN), zsc=new Array(n).fill(NaN);
+  for(let i=p.zlook;i<n;i++){
+    const w=close.slice(i-p.zlook+1,i+1); zmean[i]=mean(w); zstd[i]=std(w);
+    zsc[i]=zstd[i]>0?(close[i]-zmean[i])/zstd[i]:0;
+  }
+
+  // rolling realized vol (annualized)
+  const vol=new Array(n).fill(NaN);
+  for(let i=20;i<n;i++) vol[i]=std(ret.slice(i-19,i+1))*Math.sqrt(252);
+
+  // regime + raw position (computed at close of day i, applied next day)
+  const regime=new Array(n).fill('na'), posRaw=new Array(n).fill(0);
+  let prev=0;
+  for(let i=0;i<n;i++){
+    if(isNaN(H[i])||isNaN(fr[i])||isNaN(zsc[i])){posRaw[i]=0; prev=0; continue;}
+    let pos;
+    if(H[i]>0.55){ regime[i]='trend'; pos=close[i]>fr[i]?1:0; }
+    else if(H[i]<0.45){ regime[i]='revert';
+      if(prev<=0 && zsc[i]<-1) pos=1;
+      else if(prev>0 && zsc[i]>0) pos=0;
+      else if(p.allowShort && prev>=0 && zsc[i]>1) pos=-1;
+      else if(p.allowShort && prev<0 && zsc[i]<0) pos=0;
+      else pos=prev;
+    } else { regime[i]='random'; pos=0; }
+    posRaw[i]=pos; prev=pos;
+  }
+
+  // execute next bar -> strategy returns, net of transaction costs.
+  // a change in pos[i-1] vs pos[i-2] takes effect (is charged) at bar i.
+  const stratRet=new Array(n).fill(0); let trades=0, inMkt=0;
+  const costRate=(p.costbps||0)*1e-4;
+  for(let i=1;i<n;i++){
+    const held=posRaw[i-1];
+    const turn=i>=2?Math.abs(posRaw[i-1]-posRaw[i-2]):Math.abs(posRaw[0]);
+    stratRet[i]=held*ret[i]-turn*costRate;
+    if(posRaw[i]!==posRaw[i-1]) trades++;
+    if(held!==0) inMkt++;
+  }
+
+  // equity curves
+  const eqS=[10000], eqB=[10000];
+  for(let i=1;i<n;i++){ eqS.push(eqS[eqS.length-1]*(1+stratRet[i])); eqB.push(eqB[eqB.length-1]*(1+ret[i])); }
+
+  const stats=(rets,eq)=>{
+    const r=rets.slice(1), yrs=r.length/252;
+    const tot=eq[eq.length-1]/eq[0]-1;
+    const cagr=Math.pow(eq[eq.length-1]/eq[0],1/yrs)-1;
+    const v=std(r)*Math.sqrt(252);
+    const sh=std(r)>0?(mean(r)/std(r))*Math.sqrt(252):0;
+    let peak=eq[0],mdd=0; for(const e of eq){if(e>peak)peak=e; const dd=e/peak-1; if(dd<mdd)mdd=dd;}
+    return {tot,cagr,v,sh,mdd};
+  };
+  return {data,H,fr,regime,posRaw,vol,zsc,stratRet,ret,eqS,eqB,
+    s:stats(stratRet,eqS), b:stats(ret,eqB),
+    trades, exposure:inMkt/(n-1)};
+}
+
+/* ============ out-of-sample walk-forward ============ */
+function sliceData(d,a,b){return {date:d.date.slice(a,b),open:d.open.slice(a,b),
+  high:d.high.slice(a,b),low:d.low.slice(a,b),close:d.close.slice(a,b)};}
+
+function statsFromRets(rets){           // rets[0] ignored (no held position)
+  const eq=[10000]; for(let i=1;i<rets.length;i++) eq.push(eq[eq.length-1]*(1+rets[i]));
+  const r=rets.slice(1), yrs=r.length/252;
+  const tot=eq[eq.length-1]/eq[0]-1, cagr=Math.pow(eq[eq.length-1]/eq[0],1/yrs)-1;
+  const v=std(r)*Math.sqrt(252), sh=std(r)>0?(mean(r)/std(r))*Math.sqrt(252):0;
+  let peak=eq[0],mdd=0; for(const e of eq){if(e>peak)peak=e; const dd=e/peak-1; if(dd<mdd)mdd=dd;}
+  return {tot,cagr,v,sh,mdd,eq};
+}
+
+function walkForward(data,baseP){
+  const n=data.close.length, train=504, test=126;
+  const hwins=[80,120,160,200], framaNs=[10,16,24,32];
+  const oosS=[0], oosR=[0], chosen=[];
+  for(let start=0; start+train+test<=n; start+=test){
+    const tr=sliceData(data,start,start+train);
+    let best=baseP, bestSh=-1e9;
+    for(const hw of hwins) for(const fn of framaNs){
+      const p={...baseP,hwin:hw,framaN:fn};
+      const M=runModel(tr,p);
+      if(isFinite(M.s.sh) && M.s.sh>bestSh){bestSh=M.s.sh; best=p;}
+    }
+    chosen.push({date:data.date[start+train],hwin:best.hwin,framaN:best.framaN});
+    const blk=sliceData(data,start,start+train+test);
+    const M=runModel(blk,best);
+    for(let i=train;i<train+test;i++){oosS.push(M.stratRet[i]); oosR.push(M.ret[i]);}
+  }
+  if(chosen.length===0) return null;
+  return {s:statsFromRets(oosS), b:statsFromRets(oosR), chosen, nOOS:oosS.length-1,
+          dates:data.date.slice(n-(oosS.length-1))};
+}
+
+/* ============ Nelder-Mead (compact) for MLE ============ */
+function nelderMead(f,x0,opt={}){
+  const maxiter=opt.maxiter||1500, tol=opt.tol||1e-7, nn=x0.length;
+  let S=[x0.slice()]; for(let i=0;i<nn;i++){const x=x0.slice(); x[i]+=(x[i]!==0?0.06*x[i]:0.06); S.push(x);}
+  let F=S.map(f);
+  for(let it=0;it<maxiter;it++){
+    const idx=[...Array(nn+1).keys()].sort((a,b)=>F[a]-F[b]);
+    S=idx.map(i=>S[i]); F=idx.map(i=>F[i]);
+    if(Math.abs(F[nn]-F[0])<tol) break;
+    const xc=new Array(nn).fill(0);
+    for(let i=0;i<nn;i++) for(let j=0;j<nn;j++) xc[j]+=S[i][j]/nn;
+    const xr=xc.map((c,j)=>c+(c-S[nn][j])); const fr=f(xr);
+    if(fr<F[0]){ const xe=xc.map((c,j)=>c+2*(xr[j]-c)); const fe=f(xe);
+      if(fe<fr){S[nn]=xe;F[nn]=fe;} else {S[nn]=xr;F[nn]=fr;} }
+    else if(fr<F[nn-1]){ S[nn]=xr;F[nn]=fr; }
+    else { const xk=xc.map((c,j)=>c+0.5*(S[nn][j]-c)); const fk=f(xk);
+      if(fk<F[nn]){S[nn]=xk;F[nn]=fk;}
+      else { for(let i=1;i<=nn;i++){S[i]=S[i].map((v,j)=>S[0][j]+0.5*(v-S[0][j])); F[i]=f(S[i]);} } }
+  }
+  let bi=0; for(let i=1;i<F.length;i++) if(F[i]<F[bi]) bi=i;
+  return {x:S[bi], fun:F[bi]};
+}
+
+/* ============ Calvet-Fisher binomial MSM volatility model ============ */
+const LOG2PI=Math.log(2*Math.PI);
+function msmKron(A,B){const ra=A.length,ca=A[0].length,rb=B.length,cb=B[0].length;
+  const out=Array.from({length:ra*rb},()=>new Array(ca*cb).fill(0));
+  for(let i=0;i<ra;i++)for(let j=0;j<ca;j++)for(let p=0;p<rb;p++)for(let q=0;q<cb;q++)
+    out[i*rb+p][j*cb+q]=A[i][j]*B[p][q];
+  return out;}
+function msmG(k,m0){const hi=2-m0,M=1<<k,g=new Array(M);
+  for(let j=0;j<M;j++){let p=1; for(let i=0;i<k;i++) p*=((j>>i)&1)?hi:m0; g[j]=p;} return g;}
+function msmT(k,b,g1){let mats=[];
+  for(let i=0;i<k;i++){let gi=1-Math.pow(1-g1,Math.pow(b,i)); gi=Math.min(Math.max(gi,1e-12),1);
+    const s=1-gi/2,f=gi/2; mats.push([[s,f],[f,s]]);}
+  let T=mats[0]; for(let i=1;i<k;i++) T=msmKron(T,mats[i]); return T;}
+function msmUnpack(p){return [1+1/(1+Math.exp(-p[0])), Math.exp(p[1]),
+  1+Math.exp(p[2]), 1/(1+Math.exp(-p[3]))];}
+function msmPack(m0,s,b,g1){return [Math.log((m0-1)/(2-m0)),Math.log(s),
+  Math.log(b-1),Math.log(g1/(1-g1))];}
+function msmNLL(p,r,k){
+  const [m0,sigma,b,g1]=msmUnpack(p);
+  if(!(m0>1&&m0<2&&sigma>0&&b>1&&g1>0&&g1<1)) return 1e10;
+  const M=1<<k, g=msmG(k,m0), vv=g.map(x=>sigma*sigma*x), T=msmT(k,b,g1);
+  let pi=new Array(M).fill(1/M), ll=0;
+  for(let t=0;t<r.length;t++){
+    const pred=new Array(M).fill(0);
+    for(let i=0;i<M;i++){const pii=pi[i]; if(!pii)continue; const Ti=T[i]; for(let j=0;j<M;j++) pred[j]+=pii*Ti[j];}
+    const r2=r[t]*r[t]; let sm=0; const w=new Array(M);
+    for(let j=0;j<M;j++){const d=Math.exp(-0.5*(r2/vv[j])-0.5*Math.log(vv[j])-0.5*LOG2PI); w[j]=pred[j]*d; sm+=w[j];}
+    if(!(sm>0)||!isFinite(sm)) return 1e10;
+    ll+=Math.log(sm); for(let j=0;j<M;j++) pi[j]=w[j]/sm;
+  }
+  return -ll;
+}
+function fitMSM(returns,k=4,scale=100){
+  let r=returns.filter(x=>isFinite(x)); const mu=mean(r); r=r.map(x=>(x-mu)*scale);
+  const sd=std(r)||1;
+  const inits=[[1.4,sd,3,0.5],[1.3,sd*0.8,2,0.3],[1.6,sd*1.2,5,0.7],[1.2,sd,4,0.2]];
+  let best=null;
+  for(const init of inits){ const res=nelderMead(p=>msmNLL(p,r,k),msmPack(...init));
+    if(!best||res.fun<best.fun) best=res; }
+  const [m0,sigma,b,g1]=msmUnpack(best.x);
+  // recover final filtered state distribution
+  const M=1<<k, g=msmG(k,m0), vv=g.map(x=>sigma*sigma*x), T=msmT(k,b,g1);
+  let pi=new Array(M).fill(1/M);
+  for(let t=0;t<r.length;t++){
+    const pred=new Array(M).fill(0);
+    for(let i=0;i<M;i++){const pii=pi[i]; if(!pii)continue; const Ti=T[i]; for(let j=0;j<M;j++) pred[j]+=pii*Ti[j];}
+    const r2=r[t]*r[t]; let sm=0; const w=new Array(M);
+    for(let j=0;j<M;j++){const d=Math.exp(-0.5*(r2/vv[j])-0.5*Math.log(vv[j])-0.5*LOG2PI); w[j]=pred[j]*d; sm+=w[j];}
+    for(let j=0;j<M;j++) pi[j]=w[j]/sm;
+  }
+  return {k,m0,sigma:sigma/scale,b,gamma1:g1,loglik:-best.fun,n:r.length,scale,pi,g,T};
+}
+function msmForecast(fit,horizons=[1,5,10,22,44]){
+  const sigma2=fit.sigma*fit.sigma, out={};
+  for(const H of horizons){ let pi=fit.pi.slice(), cum=0;
+    for(let h=0;h<H;h++){ const np=new Array(pi.length).fill(0);
+      for(let i=0;i<pi.length;i++){const pii=pi[i]; if(!pii)continue; const Ti=fit.T[i]; for(let j=0;j<pi.length;j++) np[j]+=pii*Ti[j];}
+      pi=np; let eg=0; for(let j=0;j<pi.length;j++) eg+=pi[j]*fit.g[j];
+      cum+=sigma2*eg; }
+    out[H]=Math.sqrt(252)*Math.sqrt(cum/H);
+  }
+  return out;
+}
+function msmVolPath(fit,returns){       // annualized 1-step conditional vol
+  let r=returns.filter(x=>isFinite(x)); const mu=mean(r); const rs=r.map(x=>(x-mu)*fit.scale);
+  const M=1<<fit.k, g=msmG(fit.k,fit.m0), vv=g.map(x=>(fit.sigma*fit.scale)**2*x), T=fit.T;
+  let pi=new Array(M).fill(1/M); const path=new Array(rs.length);
+  for(let t=0;t<rs.length;t++){
+    const pred=new Array(M).fill(0);
+    for(let i=0;i<M;i++){const pii=pi[i]; if(!pii)continue; const Ti=T[i]; for(let j=0;j<M;j++) pred[j]+=pii*Ti[j];}
+    let fv=0; for(let j=0;j<M;j++) fv+=pred[j]*vv[j]; fv/=fit.scale*fit.scale;
+    path[t]=Math.sqrt(fv)*Math.sqrt(252);
+    const r2=rs[t]*rs[t]; let sm=0; const w=new Array(M);
+    for(let j=0;j<M;j++){const d=Math.exp(-0.5*(r2/vv[j])-0.5*Math.log(vv[j])-0.5*LOG2PI); w[j]=pred[j]*d; sm+=w[j];}
+    for(let j=0;j<M;j++) pi[j]=w[j]/sm;
+  }
+  return path;
+}
+
+/* ============ GARCH(1,1) benchmark ============ */
+function garchUnpack(p){const al=1/(1+Math.exp(-p[1]))*0.5; const be=1/(1+Math.exp(-p[2]))*(0.999-al);
+  return [Math.exp(p[0]),al,be];}
+function garchNLL(p,r){
+  const [w,al,be]=garchUnpack(p); const n=r.length; let s2=0; for(const x of r) s2+=x*x; s2/=n;
+  let ll=0; for(let t=0;t<n;t++){ if(t>0) s2=w+al*r[t-1]*r[t-1]+be*s2;
+    if(!(s2>0)||!isFinite(s2)) return 1e10; ll+=-0.5*(Math.log(s2)+r[t]*r[t]/s2); }
+  return -ll;
+}
+function fitGARCH(returns,scale=100){
+  let r=returns.filter(x=>isFinite(x)); const mu=mean(r); r=r.map(x=>(x-mu)*scale);
+  const res=nelderMead(p=>garchNLL(p,r),[Math.log(0.1),0,0.5]);
+  const [w,al,be]=garchUnpack(res.x);
+  let v=0; for(const x of r) v+=x*x; v/=r.length; let s2=v; const path=new Array(r.length);
+  for(let t=0;t<r.length;t++){ if(t>0) s2=w+al*r[t-1]*r[t-1]+be*s2;
+    path[t]=Math.sqrt(s2)/scale*Math.sqrt(252); }
+  return {omega:w,alpha:al,beta:be,loglik:-res.fun,path};
+}
+
+/* ============ charts (canvas) ============ */
+function setup(cv){
+  if(!cv.dataset.h) cv.dataset.h=cv.getAttribute('height')||300;
+  const hLog=+cv.dataset.h;
+  const dpr=window.devicePixelRatio||1, w=cv.clientWidth;
+  cv.style.height=hLog+'px';
+  cv.width=w*dpr; cv.height=hLog*dpr; const x=cv.getContext('2d'); x.scale(dpr,dpr);
+  x.clearRect(0,0,w,hLog); return {x,w,h:hLog};
+}
+function niceBounds(lo,hi){ if(lo===hi){lo-=1;hi+=1;} const pad=(hi-lo)*.08; return [lo-pad,hi+pad]; }
+
+function drawLines(cv,lines,opts={}){
+  const {x,w,h}=setup(cv); const L=46,R=12,T=12,B=22;
+  let lo=Infinity,hi=-Infinity;
+  for(const ln of lines) for(const v of ln.data) if(v!=null&&!isNaN(v)){if(v<lo)lo=v; if(v>hi)hi=v;}
+  if(opts.guides) for(const g of opts.guides){if(g.y<lo)lo=g.y; if(g.y>hi)hi=g.y;}
+  [lo,hi]=niceBounds(lo,hi);
+  const N=Math.max(...lines.map(l=>l.data.length));
+  const px=i=>L+(w-L-R)*(i/(N-1)), py=v=>T+(h-T-B)*(1-(v-lo)/(hi-lo));
+  // regime bands
+  if(opts.bands){ for(let i=0;i<opts.bands.length;i++){ const c=opts.bands[i]; if(!c) continue;
+      x.fillStyle=c; x.globalAlpha=.10; x.fillRect(px(i)-(w-L-R)/(N-1)/2,T,(w-L-R)/(N-1)+1,h-T-B); }
+    x.globalAlpha=1;
+  }
+  // grid + y labels
+  x.font='10px IBM Plex Mono,monospace'; x.fillStyle='#475568'; x.textAlign='right'; x.textBaseline='middle';
+  for(let g=0;g<=4;g++){ const v=lo+(hi-lo)*g/4, yy=py(v);
+    x.strokeStyle='rgba(31,42,58,.6)'; x.beginPath(); x.moveTo(L,yy); x.lineTo(w-R,yy); x.stroke();
+    let lab=v; if(opts.fmt) lab=opts.fmt(v); else lab=v>=1000?fmtNum(v):v.toFixed(2);
+    x.fillStyle='#475568'; x.fillText(lab,L-6,yy);
+  }
+  // x labels (dates)
+  if(opts.dates){ x.textAlign='center'; x.textBaseline='top';
+    for(let g=0;g<=4;g++){ const i=Math.round((N-1)*g/4); const d=opts.dates[i]||'';
+      x.fillText(d,px(i),h-B+6);
+    }
+  }
+  // guides
+  if(opts.guides) for(const gd of opts.guides){ x.strokeStyle=gd.color; x.globalAlpha=.55; x.setLineDash([4,4]);
+    const yy=py(gd.y); x.beginPath(); x.moveTo(L,yy); x.lineTo(w-R,yy); x.stroke(); x.setLineDash([]); x.globalAlpha=1; }
+  // lines
+  for(const ln of lines){ x.strokeStyle=ln.color; x.lineWidth=ln.w||1.6; x.globalAlpha=ln.alpha||1;
+    x.beginPath(); let started=false;
+    for(let i=0;i<ln.data.length;i++){ const v=ln.data[i]; if(v==null||isNaN(v)){started=false;continue;}
+      if(!started){x.moveTo(px(i),py(v));started=true;} else x.lineTo(px(i),py(v)); }
+    x.stroke(); x.globalAlpha=1;
+  }
+}
+
+const REGCOL={trend:'#3fb950',revert:'#d6a430',random:'#475568',na:null};
+
+function render(M){
+  const dates=M.data.date.map(d=>d.slice(0,7));
+  drawLines($('cPrice'),
+    [{data:M.data.close,color:'#cdd9ea',w:1.4},{data:M.fr,color:'#39c0c8',w:1.8}],
+    {dates,bands:M.regime.map(r=>REGCOL[r])});
+  drawLines($('cHurstChart'),[{data:M.H,color:'#39c0c8',w:1.8}],
+    {dates,guides:[{y:0.55,color:'#3fb950'},{y:0.45,color:'#d6a430'},{y:0.5,color:'#475568'}],fmt:v=>v.toFixed(2)});
+  drawLines($('cEquity'),
+    [{data:M.eqB,color:'#6b7d96',w:1.4},{data:M.eqS,color:'#39c0c8',w:1.9}],
+    {dates,fmt:v=>'$'+fmtNum(v)});
+
+  // cards
+  const i=M.data.close.length-1;
+  let reg=M.regime[i]; for(let k=i;k>=0&&(reg==='na');k--) reg=M.regime[k];
+  const regMap={trend:['TRENDING','grn','Momentum mode'],revert:['MEAN-REVERT','amb','Fade extremes'],random:['RANDOM','dim','Stay flat'],na:['—','dim','—']};
+  const rc=$('cards').children[0]; rc.className='card '+(reg==='na'?'random':reg);
+  $('cRegime').className='v '+regMap[reg][1]; $('cRegime').textContent=regMap[reg][0]; $('cRegimeSub').textContent=regMap[reg][2];
+  let h=M.H[i]; for(let k=i;k>=0&&isNaN(h);k--) h=M.H[k];
+  $('cHurst').textContent=isNaN(h)?'—':h.toFixed(3);
+  $('cHurstSub').textContent=isNaN(h)?'':(h>0.55?'persistent':h<0.45?'anti-persistent':'≈ random walk');
+  const sig=M.posRaw[i];
+  const sc=$('cards').children[2]; sc.className='card '+(sig>0?'long':sig<0?'short':'flat');
+  $('cSignal').className='v '+(sig>0?'grn':sig<0?'red':'dim'); $('cSignal').textContent=sig>0?'LONG':sig<0?'SHORT':'FLAT';
+  $('cSignalSub').textContent='for next bar';
+  let v=M.vol[i]; for(let k=i;k>=0&&isNaN(v);k--) v=M.vol[k];
+  const vh=M.vol.filter(x=>!isNaN(x)).sort((a,b)=>a-b); const pct=vh.length?vh.filter(x=>x<v).length/vh.length:0;
+  $('cVol').className='v '+(pct>0.66?'red':pct<0.33?'grn':'amb'); $('cVol').textContent=isNaN(v)?'—':(v*100).toFixed(1)+'%';
+  $('cVolSub').textContent=isNaN(v)?'':(pct>0.66?'stressed regime':pct<0.33?'calm regime':'normal regime');
+
+  // stats table
+  const rows=[
+    ['Total return',fmtPct(M.s.tot),fmtPct(M.b.tot)],
+    ['Annualized (CAGR)',fmtPct(M.s.cagr),fmtPct(M.b.cagr)],
+    ['Volatility (ann.)',(M.s.v*100).toFixed(1)+'%',(M.b.v*100).toFixed(1)+'%'],
+    ['Sharpe ratio',M.s.sh.toFixed(2),M.b.sh.toFixed(2)],
+    ['Max drawdown',fmtPct(M.s.mdd),fmtPct(M.b.mdd)],
+    ['Time in market',(M.exposure*100).toFixed(0)+'%','100%'],
+    ['Trades',String(M.trades),'1'],
+  ];
+  const body=$('statsBody'); body.innerHTML='';
+  rows.forEach((r,idx)=>{
+    const tr=document.createElement('tr');
+    const better=(()=>{ if(idx===3||idx===1||idx===0) return parseFloat(r[1])>parseFloat(r[2])?1:2;
+      if(idx===4) return parseFloat(r[1])>parseFloat(r[2])?1:2; if(idx===2) return parseFloat(r[1])<parseFloat(r[2])?1:2; return 0;})();
+    tr.innerHTML=`<td>${r[0]}</td><td class="${better===1?'win':''}">${r[1]}</td><td class="${better===2?'win':''}">${r[2]}</td>`;
+    body.appendChild(tr);
+  });
+  $('periodTxt').textContent=M.data.date[0]+' → '+M.data.date[M.data.date.length-1]+' · '+M.data.close.length+' bars';
+}
+
+/* ============ data loading ============ */
+function parseYahoo(j){
+  const r=j.chart.result[0], t=r.timestamp, q=r.indicators.quote[0];
+  const adj=r.indicators.adjclose?r.indicators.adjclose[0].adjclose:null;
+  const date=[],open=[],high=[],low=[],close=[];
+  for(let i=0;i<t.length;i++){
+    const c=adj?adj[i]:q.close[i]; if(c==null) continue;
+    date.push(new Date(t[i]*1000).toISOString().slice(0,10));
+    const sc=q.close[i]&&adj?adj[i]/q.close[i]:1;
+    open.push((q.open[i]??c)*sc); high.push((q.high[i]??c)*sc); low.push((q.low[i]??c)*sc); close.push(c);
+  }
+  return {date,open,high,low,close};
+}
+async function fetchLive(sym){
+  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=5y&interval=1d`;
+  const proxies=[
+    u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
+    u=>'https://corsproxy.io/?url='+encodeURIComponent(u),
+    u=>u
+  ];
+  for(const px of proxies){
+    try{
+      const res=await fetch(px(url),{cache:'no-store'}); if(!res.ok) continue;
+      const j=await res.json(); if(j.chart&&j.chart.result) return parseYahoo(j);
+    }catch(e){/* try next */}
+  }
+  return null;
+}
+function parseCSV(text){
+  const lines=text.trim().split(/\r?\n/); const head=lines[0].toLowerCase().split(',').map(s=>s.trim());
+  const di=head.findIndex(h=>h.includes('date')), ci=head.findIndex(h=>h==='close'||h.includes('adj')&&h.includes('close'));
+  const cci=ci<0?head.findIndex(h=>h==='close'):ci;
+  const oi=head.indexOf('open'),hi=head.indexOf('high'),li=head.indexOf('low');
+  const closeIdx=cci<0?head.indexOf('close'):cci;
+  if(di<0||closeIdx<0) throw new Error('Need at least Date and Close columns');
+  const rows=[];
+  for(let i=1;i<lines.length;i++){ const c=lines[i].split(','); const cl=parseFloat(c[closeIdx]); if(isNaN(cl))continue;
+    rows.push({d:c[di].trim(),o:parseFloat(c[oi])||cl,h:parseFloat(c[hi])||cl,l:parseFloat(c[li])||cl,c:cl}); }
+  if(rows.length<60) throw new Error('Need ≥ 60 rows of data');
+  if(rows[0].d>rows[rows.length-1].d) rows.reverse();
+  return {date:rows.map(r=>r.d),open:rows.map(r=>r.o),high:rows.map(r=>r.h),low:rows.map(r=>r.l),close:rows.map(r=>r.c)};
+}
+function genDemo(sym){
+  // regime-switching synthetic index w/ vol clustering — labelled clearly as demo
+  let seed=sym.split('').reduce((a,c)=>a+c.charCodeAt(0),0)+7;
+  const rnd=()=>{seed=(seed*9301+49297)%233280; return seed/233280;};
+  const gauss=()=>{let u=0,v=0;while(!u)u=rnd();while(!v)v=rnd();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);};
+  const n=1260; let price=sym.includes('NDX')||sym.includes('NQ')?15000:4200; if(sym==='SPY')price=420; if(sym==='QQQ')price=350;
+  const date=[],open=[],high=[],low=[],close=[]; let d=new Date('2020-06-01');
+  let drift=0.0004, vol=0.011, regimeLeft=0;
+  for(let i=0;i<n;i++){
+    if(regimeLeft<=0){ const r=rnd(); regimeLeft=40+Math.floor(rnd()*120);
+      if(r<0.45){drift=0.0007+rnd()*0.0006; vol=0.008+rnd()*0.004;}      // bull trend
+      else if(r<0.6){drift=-0.0009-rnd()*0.0008; vol=0.014+rnd()*0.012;} // bear
+      else {drift=0; vol=0.009+rnd()*0.006;}                            // chop/mean-revert
+    }
+    regimeLeft--;
+    vol=0.92*vol+0.08*(0.008+Math.abs(gauss())*0.006); // vol clustering
+    const ret=drift+vol*gauss(); const o=price; price*=(1+ret);
+    const hi=Math.max(o,price)*(1+Math.abs(gauss())*vol*0.4);
+    const lo=Math.min(o,price)*(1-Math.abs(gauss())*vol*0.4);
+    d.setDate(d.getDate()+1); if(d.getDay()===6)d.setDate(d.getDate()+2); if(d.getDay()===0)d.setDate(d.getDate()+1);
+    date.push(d.toISOString().slice(0,10)); open.push(o); high.push(hi); low.push(lo); close.push(price);
+  }
+  return {date,open,high,low,close};
+}
+
+/* ============ wiring ============ */
+let SHORT=false;
+function params(){return {hwin:+$('hwin').value,framaN:+$('framaN').value,zlook:+$('zlook').value,
+  allowShort:SHORT, method:$('hmethod').value, costbps:+$('costbps').value};}
+function setBadge(kind,txt){const b=$('srcBadge');b.className='srcbadge '+kind;$('srcTxt').textContent=txt;}
+function setStatus(html){$('status').innerHTML=html;}
+
+let CSVDATA=null;
+async function go(){
+  const sym=$('symbol').value;
+  $('runBtn').disabled=true;
+  let data, source;
+  if(CSVDATA){ data=CSVDATA; source='csv'; }
+  else{
+    setStatus('<span class="spinner"></span>fetching live data for '+sym+' …');
+    data=await fetchLive(sym);
+    if(data&&data.close.length>200){ source='live'; }
+    else { data=genDemo(sym); source='demo'; }
+  }
+  if(source==='live'){setBadge('live','LIVE · '+sym);setStatus('<span class="ok">✓ live data loaded — '+data.close.length+' daily bars</span>');}
+  else if(source==='csv'){setBadge('csv','YOUR DATA');setStatus('<span class="ok">✓ using pasted data — '+data.close.length+' bars</span>');}
+  else {setBadge('demo','DEMO · simulated');setStatus('<span class="err">⚠ live fetch blocked here — showing realistic SIMULATED data so you can see it work. Use “Paste data” for real '+sym+' prices.</span>');}
+  $('stratHdr').textContent='Fractal strategy'+(SHORT?' (L/S)':' (long-only)');
+  try{ render(runModel(data,params())); }catch(e){ setStatus('<span class="err">Error: '+e.message+'</span>'); }
+  $('runBtn').disabled=false;
+}
+
+$('runBtn').onclick=()=>{ if(!CSVDATA){} go(); };
+$('symbol').onchange=()=>{ CSVDATA=null; go(); };
+['hwin','framaN','zlook','hmethod','costbps'].forEach(id=>$(id).onchange=()=>{if(CURRENT.data)render(runModel(CURRENT.data,params()));});
+$('shortTog').onclick=()=>{SHORT=!SHORT;$('shortTog').classList.toggle('on',SHORT);$('shortTog').querySelector('span').textContent=SHORT?'Long / short':'Long-only';if(CURRENT.data){$('stratHdr').textContent='Fractal strategy'+(SHORT?' (L/S)':' (long-only)');render(runModel(CURRENT.data,params()));}};
+$('csvBtn').onclick=()=>$('csvModal').classList.add('show');
+$('csvCancel').onclick=()=>$('csvModal').classList.remove('show');
+$('csvLoad').onclick=()=>{ try{ CSVDATA=parseCSV($('csvArea').value); $('csvModal').classList.remove('show'); go(); }catch(e){ alert(e.message); } };
+
+/* ---- walk-forward + volatility-model panels (heavy → run on click) ---- */
+const fmtP=x=>(x>=0?'+':'')+(x*100).toFixed(1)+'%';
+const WF_HINT='Re-selects the Hurst window &amp; FRAMA period on a rolling 2-year training block (best Sharpe), then evaluates on the next 6 months it has never seen, and stitches those out-of-sample pieces into one honest equity curve. This is the number that matters.';
+const MSM_HINT='Calvet-Fisher binomial Markov-Switching Multifractal (k=4), fit by maximum likelihood with the Hamilton filter, benchmarked against GARCH(1,1). Forecasts <b>volatility</b>, not direction — the options angle. Descriptive, heavily caveated.';
+
+function clearAux(){
+  ['wfBody','msmFcBody','msmStatBody'].forEach(id=>{const e=$(id); if(e) e.innerHTML='';});
+  for(const cid of ['cWF','cVol']){const cv=$(cid); if(cv){const x=cv.getContext('2d'); if(x) x.clearRect(0,0,cv.width,cv.height);}}
+  if($('wfStatus')) $('wfStatus').innerHTML=WF_HINT;
+  if($('msmStatus')) $('msmStatus').innerHTML=MSM_HINT;
+}
+
+$('wfBtn').onclick=()=>{
+  if(!CURRENT.data) return;
+  $('wfStatus').innerHTML='<span class="spinner"></span>running walk-forward (re-fitting params on each rolling window)…';
+  $('wfBtn').disabled=true;
+  setTimeout(()=>{
+    try{
+      const wf=walkForward(CURRENT.data,params());
+      if(!wf){ $('wfStatus').innerHTML='<span class="err">Not enough data for walk-forward (need ~2.5 years of bars).</span>'; $('wfBtn').disabled=false; return; }
+      drawLines($('cWF'),
+        [{data:wf.b.eq,color:'#6b7d96',w:1.4},{data:wf.s.eq,color:'#39c0c8',w:1.9}],
+        {dates:wf.dates.map(d=>d.slice(0,7)),fmt:v=>'$'+fmtNum(v)});
+      const rows=[
+        ['Total return (OOS)',fmtP(wf.s.tot),fmtP(wf.b.tot),1],
+        ['CAGR (OOS)',fmtP(wf.s.cagr),fmtP(wf.b.cagr),1],
+        ['Volatility (ann.)',(wf.s.v*100).toFixed(1)+'%',(wf.b.v*100).toFixed(1)+'%',-1],
+        ['Sharpe (OOS)',wf.s.sh.toFixed(2),wf.b.sh.toFixed(2),1],
+        ['Max drawdown',fmtP(wf.s.mdd),fmtP(wf.b.mdd),1],
+      ];
+      const body=$('wfBody'); body.innerHTML='';
+      rows.forEach(r=>{const tr=document.createElement('tr');
+        const better=r[3]>0?(parseFloat(r[1])>parseFloat(r[2])?1:2):(parseFloat(r[1])<parseFloat(r[2])?1:2);
+        tr.innerHTML=`<td>${r[0]}</td><td class="${better===1?'win':''}">${r[1]}</td><td class="${better===2?'win':''}">${r[2]}</td>`;
+        body.appendChild(tr);});
+      $('wfStatus').innerHTML='<span class="ok">✓ '+wf.nOOS+' out-of-sample bars across '+wf.chosen.length+' re-fitted windows.</span> Params were never chosen on this data — these are the honest numbers.';
+    }catch(e){ $('wfStatus').innerHTML='<span class="err">Error: '+e.message+'</span>'; }
+    $('wfBtn').disabled=false;
+  },50);
+};
+
+$('msmBtn').onclick=()=>{
+  if(!CURRENT.data) return;
+  $('msmStatus').innerHTML='<span class="spinner"></span>fitting MSM (Hamilton-filter MLE) + GARCH(1,1)…';
+  $('msmBtn').disabled=true;
+  setTimeout(()=>{
+    try{
+      const M=CURRENT, ret=M.ret.slice(1);
+      const fit=fitMSM(ret,4), fc=msmForecast(fit), mpath=msmVolPath(fit,ret), g=fitGARCH(ret);
+      const realized=M.vol.slice(1);
+      drawLines($('cVol'),
+        [{data:realized.map(x=>isNaN(x)?null:x*100),color:'#6b7d96',w:1.2},
+         {data:mpath.map(x=>x*100),color:'#39c0c8',w:1.7},
+         {data:g.path.map(x=>x*100),color:'#d6a430',w:1.3}],
+        {dates:M.data.date.slice(1).map(d=>d.slice(0,7)),fmt:v=>v.toFixed(0)+'%'});
+      const fb=$('msmFcBody'); fb.innerHTML='';
+      Object.keys(fc).forEach(H=>{const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${H}-day horizon</td><td>${(fc[H]*100).toFixed(1)}%</td>`; fb.appendChild(tr);});
+      let se=0,sg=0,c=0;
+      for(let i=0;i<realized.length;i++){ if(isNaN(realized[i]))continue; se+=(mpath[i]-realized[i])**2; sg+=(g.path[i]-realized[i])**2; c++; }
+      const rmseM=Math.sqrt(se/c), rmseG=Math.sqrt(sg/c), msmWins=rmseM<=rmseG;
+      const sb=$('msmStatBody'); sb.innerHTML='';
+      [['MSM fit','m0='+fit.m0.toFixed(3)+' σ='+fit.sigma.toFixed(4)+' b='+fit.b.toFixed(2)+' γ₁='+fit.gamma1.toFixed(3)],
+       ['MSM log-likelihood',fit.loglik.toFixed(1)],
+       ['GARCH(1,1)','ω='+g.omega.toFixed(3)+' α='+g.alpha.toFixed(3)+' β='+g.beta.toFixed(3)],
+       ['RMSE vs 20d realized','MSM '+(rmseM*100).toFixed(2)+'% · GARCH '+(rmseG*100).toFixed(2)+'%'],
+       ['Lower RMSE',msmWins?'MSM ✓':'GARCH ✓']
+      ].forEach(r=>{const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${r[0]}</td><td class="${r[0]==='Lower RMSE'?'win':''}">${r[1]}</td>`; sb.appendChild(tr);});
+      $('msmStatus').innerHTML='<span class="ok">✓ MSM fit on '+fit.n+' returns.</span> Forecast vs implied vol = rich/cheap view — descriptive, not a trade signal.';
+    }catch(e){ $('msmStatus').innerHTML='<span class="err">Error: '+e.message+'</span>'; }
+    $('msmBtn').disabled=false;
+  },50);
+};
+
+// keep last model for instant re-render on slider change
+let CURRENT={data:null};
+const _render=render; render=function(M){CURRENT=M;_render(M);clearAux();};
+
+window.addEventListener('resize',()=>{if(CURRENT.data)_render(CURRENT);});
+go();
+</script>
+</body>
+</html>

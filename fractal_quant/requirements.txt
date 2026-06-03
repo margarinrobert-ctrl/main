@@ -1,0 +1,9 @@
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+matplotlib>=3.7
+yfinance>=0.2.40
+# optional but recommended:
+arch>=6.0          # GARCH(1,1) benchmark for the MSM module
+pyarrow>=12.0      # fast parquet cache (CSV fallback if missing)
+pytest>=7.0        # test suite
