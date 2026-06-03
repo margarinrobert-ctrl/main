@@ -33,7 +33,21 @@ pip install -r fractal_quant/requirements.txt
 That installs numpy, pandas, scipy, matplotlib, yfinance, and (recommended)
 `arch` (the GARCH benchmark), `pyarrow` (fast cache), and `pytest`.
 
-## Run it
+## Run it right now (no setup beyond the install)
+
+```bash
+# Try it offline with realistic SIMULATED data — works with no network at all
+python -m fractal_quant.cli --symbol QQQ --demo
+python -m fractal_quant.cli --symbol SPY --demo --walk-forward --msm
+```
+
+`--demo` uses a deterministic regime-switching simulator (clearly labelled
+`⚠ SIMULATED DEMO`, not real prices) so you can see the whole engine work
+immediately. If you run **without** `--demo` and the live feed is blocked or
+you're offline, it auto-falls back to the same demo with a warning rather than
+crashing.
+
+## Run it on real data
 
 From the repository root:
 
@@ -59,15 +73,17 @@ equity vs buy & hold, walk-forward OOS curve, parameter heatmap, vol forecast).
 
 ### Offline / restricted networks
 
-If `query1.finance.yahoo.com` is blocked (yfinance returns 0 rows), use
-`--csv` with data exported from Yahoo Finance, Stooq, or your broker. The CSV
-needs a header row with at least `Date,Close` (OHLC optional, improves FRAMA).
+If `query1.finance.yahoo.com` is blocked (yfinance returns 0 rows), you have
+two options: `--demo` to run on simulated data immediately, or `--csv` with
+data exported from Yahoo Finance, Stooq, or your broker (CSV needs a header row
+with at least `Date,Close`; OHLC optional, improves FRAMA).
 
 ## Useful flags
 
 | Flag | Meaning | Default |
 |------|---------|---------|
 | `--symbol` | SPY ^GSPC ES=F QQQ ^NDX NQ=F | QQQ |
+| `--demo` | use SIMULATED data, no network needed | off |
 | `--csv PATH` | load a CSV instead of yfinance | — |
 | `--start` / `--period` | history start date / yfinance period | 5y |
 | `--hwin` | Hurst rolling window | 120 |

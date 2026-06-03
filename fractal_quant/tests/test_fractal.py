@@ -1,7 +1,20 @@
 """Sanity tests for the fractal estimators (acceptance criteria, Section 8)."""
 import numpy as np
 
+from fractal_quant.data import gen_demo
 from fractal_quant.fractal import frama, hurst_dfa, hurst_rs
+
+
+def test_gen_demo_deterministic_and_shaped():
+    """Demo data is deterministic (seeded by symbol) and has aligned OHLC so
+    the tool is usable offline."""
+    a = gen_demo("QQQ")
+    b = gen_demo("QQQ")
+    assert len(a["close"]) == 1260
+    assert np.array_equal(a["close"], b["close"])           # deterministic
+    assert not np.array_equal(gen_demo("SPY")["close"], a["close"])  # per-symbol
+    assert np.all(a["high"] >= a["low"])                    # sane OHLC
+    assert np.all(np.isfinite(a["close"]))
 
 
 def _random_walk_logr(n=2000, seed=0, sigma=0.01):

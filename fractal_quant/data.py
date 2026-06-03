@@ -79,15 +79,23 @@ def load(symbol: str, start: str | None = None, period: str = "5y",
                 print(f"[data] {symbol}: {len(cached)} bars from cache")
             return to_dict(cached)
 
+    import contextlib
+    import io
+    import logging
+
     import yfinance as yf
 
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)
     kwargs = dict(interval="1d", auto_adjust=True, progress=False)
     if start:
         kwargs["start"] = start
     else:
         kwargs["period"] = period
 
-    df = yf.download(symbol, **kwargs)
+    # silence yfinance's internal stdout chatter so failures read cleanly
+    with contextlib.redirect_stdout(io.StringIO()), \
+            contextlib.redirect_stderr(io.StringIO()):
+        df = yf.download(symbol, **kwargs)
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df = df.dropna(subset=["Close"])
@@ -122,6 +130,66 @@ def load_csv(path: str) -> dict:
     if len(out) < 60:
         raise ValueError("Need >= 60 rows of data")
     return to_dict(out)
+
+
+def gen_demo(symbol: str, n: int = 1260) -> dict:
+    """Deterministic regime-switching simulated index with vol clustering.
+
+    Faithful port of ``genDemo`` in fractal_engine.html (same LCG/seed), so the
+    Python demo matches the browser demo bar-for-bar. Clearly SIMULATED — used
+    only as a fallback when live data is unreachable, so the tool is usable
+    offline. NOT real prices.
+    """
+    seed = sum(ord(c) for c in symbol) + 7
+
+    def rnd():
+        nonlocal seed
+        seed = (seed * 9301 + 49297) % 233280
+        return seed / 233280
+
+    def gauss():
+        u = v = 0.0
+        while not u:
+            u = rnd()
+        while not v:
+            v = rnd()
+        return np.sqrt(-2 * np.log(u)) * np.cos(2 * np.pi * v)
+
+    price = 15000.0 if ("NDX" in symbol or "NQ" in symbol) else 4200.0
+    if symbol == "SPY":
+        price = 420.0
+    if symbol == "QQQ":
+        price = 350.0
+
+    date, op, hi, lo, cl = [], [], [], [], []
+    d = datetime(2020, 6, 1)
+    drift, vol, regime_left = 0.0004, 0.011, 0
+    for _ in range(n):
+        if regime_left <= 0:
+            r = rnd()
+            regime_left = 40 + int(rnd() * 120)
+            if r < 0.45:
+                drift, vol = 0.0007 + rnd() * 0.0006, 0.008 + rnd() * 0.004
+            elif r < 0.6:
+                drift, vol = -0.0009 - rnd() * 0.0008, 0.014 + rnd() * 0.012
+            else:
+                drift, vol = 0.0, 0.009 + rnd() * 0.006
+        regime_left -= 1
+        vol = 0.92 * vol + 0.08 * (0.008 + abs(gauss()) * 0.006)
+        ret = drift + vol * gauss()
+        o = price
+        price *= (1 + ret)
+        h = max(o, price) * (1 + abs(gauss()) * vol * 0.4)
+        l = min(o, price) * (1 - abs(gauss()) * vol * 0.4)
+        d += timedelta(days=1)
+        if d.weekday() == 5:
+            d += timedelta(days=2)
+        elif d.weekday() == 6:
+            d += timedelta(days=1)
+        date.append(d.strftime("%Y-%m-%d"))
+        op.append(o); hi.append(h); lo.append(l); cl.append(price)
+    return {"date": date, "open": np.array(op), "high": np.array(hi),
+            "low": np.array(lo), "close": np.array(cl)}
 
 
 def random_walk(n: int = 1500, seed: int = 0, sigma: float = 0.01,

@@ -37,6 +37,9 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--start", help="start date YYYY-MM-DD (else --period)")
     pa.add_argument("--period", default="5y", help="yfinance period (default 5y)")
     pa.add_argument("--no-cache", action="store_true", help="ignore local cache")
+    pa.add_argument("--demo", action="store_true",
+                    help="use SIMULATED data (no network needed) — for trying "
+                         "the tool offline; not real prices")
 
     pa.add_argument("--hwin", type=int, default=120, help="Hurst window")
     pa.add_argument("--framaN", type=int, default=16, help="FRAMA period")
@@ -57,12 +60,25 @@ def build_parser() -> argparse.ArgumentParser:
     return pa
 
 
-def _load(args) -> dict:
+def _load(args) -> tuple[dict, str]:
+    """Return (data, source) where source is 'csv', 'live' or 'demo'."""
     if args.csv:
         print(f"[data] loading CSV {args.csv}")
-        return datamod.load_csv(args.csv)
-    return datamod.load(args.symbol, start=args.start, period=args.period,
-                        use_cache=not args.no_cache)
+        return datamod.load_csv(args.csv), "csv"
+    if args.demo:
+        print(f"[data] using SIMULATED demo data for {args.symbol} "
+              "(--demo; not real prices)")
+        return datamod.gen_demo(args.symbol), "demo"
+    try:
+        return datamod.load(args.symbol, start=args.start, period=args.period,
+                            use_cache=not args.no_cache), "live"
+    except Exception as e:
+        print(f"\n  ⚠ live data unavailable ({type(e).__name__}). This is "
+              "usually a blocked/offline network.")
+        print("    Falling back to SIMULATED data so you can see it run. For "
+              "real prices, use --csv with exported data\n    (Yahoo Finance / "
+              "Stooq / your broker) on a machine with network access.\n")
+        return datamod.gen_demo(args.symbol), "demo"
 
 
 def main(argv=None) -> int:
@@ -70,7 +86,7 @@ def main(argv=None) -> int:
     name = args.symbol if not args.csv else os.path.basename(args.csv)
     out_dir = os.path.join(args.out, name.replace("^", "_").replace("=", "_"))
 
-    data = _load(args)
+    data, source = _load(args)
     p = StrategyParams(hwin=args.hwin, framaN=args.framaN, zlook=args.zlook,
                        allow_short=args.shorts, hurst_method=args.hurst)
 
@@ -82,7 +98,12 @@ def main(argv=None) -> int:
     label = "Fractal " + ("(L/S)" if args.shorts else "(long-only)")
     print()
     print("=" * 64)
-    print(f"  FRACTAL REGIME ENGINE — {name}  (H={args.hurst.upper()})")
+    src = {"live": "LIVE", "csv": "YOUR CSV", "demo": "⚠ SIMULATED DEMO"}[source]
+    print(f"  FRACTAL REGIME ENGINE — {name}  (H={args.hurst.upper()})  "
+          f"[{src}]")
+    if source == "demo":
+        print("  Numbers below are from SIMULATED data — not real prices, not "
+              "advice.")
     print("=" * 64)
     _print_live(sig)
     print()
