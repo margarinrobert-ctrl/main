@@ -11,6 +11,8 @@
 //      IFVG+ => SHORT, a bearish IFVG- => LONG. This can be flipped to "follow" mode.
 //   5. Optional confluence: only fade toward the 50% midline (short above midline,
 //      long below midline) so the target is the opposite side of the daily range.
+//   6. Optional HTF liquidity sweep: require a 1H/4H swing-low sweep before longs
+//      and a 1H/4H swing-high sweep before shorts (stop-hunt confluence).
 //@version=6
 strategy("IFVG 50% Daily-Range Fade [1:1 RR]", shorttitle="IFVG-50%-1R",
      overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=100,
@@ -88,10 +90,36 @@ allowReverse = input.bool(true, "Reverse on Opposite Signal", group=groupTrade,
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// ⚙️ 02. IFVG ENGINE  (from "IFVG Sniper Entry Engine" by trade_w_samet)
+// 💧 02. HTF LIQUIDITY SWEEP
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-groupIFVG = "⚙️ 02. IFVG Engine"
+groupSweep = "💧 02. HTF Liquidity Sweep"
+
+useSweepFilter = input.bool(true, "Require HTF Liquidity Sweep", group=groupSweep,
+     tooltip="Only allow longs after a swing-LOW sweep and shorts after a swing-HIGH sweep on the higher timeframes.")
+
+sweepMode = input.string("Either 1H or 4H", "Sweep Source",
+     options=["Either 1H or 4H", "Both 1H and 4H", "1H only", "4H only"], group=groupSweep)
+
+htf1 = input.timeframe("60", "Swing Timeframe 1", group=groupSweep)
+htf2 = input.timeframe("240", "Swing Timeframe 2", group=groupSweep)
+
+pivotLeft = input.int(5, "Swing Pivot Left Bars", minval=1, group=groupSweep)
+pivotRight = input.int(5, "Swing Pivot Right Bars", minval=1, group=groupSweep)
+
+sweepValidBars = input.int(10, "Sweep Valid For N Bars", minval=1, group=groupSweep,
+     tooltip="A sweep stays valid as confluence for this many chart bars after it prints.")
+
+showSweeps = input.bool(true, "Mark Sweeps & HTF Levels", group=groupSweep)
+sweepHighColor = input.color(color.new(color.orange, 30), "Swing High Color", group=groupSweep)
+sweepLowColor = input.color(color.new(color.aqua, 30), "Swing Low Color", group=groupSweep)
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ⚙️ 03. IFVG ENGINE  (from "IFVG Sniper Entry Engine" by trade_w_samet)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+groupIFVG = "⚙️ 03. IFVG Engine"
 
 maxHiddenFVG = input.int(120, "Hidden FVG Memory", minval=10, maxval=500, group=groupIFVG)
 maxFvgAge = input.int(60, "Max Hidden FVG Age", minval=5, maxval=500, group=groupIFVG)
@@ -230,7 +258,59 @@ if barstate.isconfirmed
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 🚀 03. SIGNAL -> ORDER LOGIC
+// 💧 HTF LIQUIDITY SWEEP DETECTION
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Most recent confirmed swing high/low on each higher timeframe (no lookahead).
+ph1 = request.security(syminfo.tickerid, htf1, ta.pivothigh(pivotLeft, pivotRight), lookahead=barmerge.lookahead_off)
+pl1 = request.security(syminfo.tickerid, htf1, ta.pivotlow(pivotLeft, pivotRight), lookahead=barmerge.lookahead_off)
+ph2 = request.security(syminfo.tickerid, htf2, ta.pivothigh(pivotLeft, pivotRight), lookahead=barmerge.lookahead_off)
+pl2 = request.security(syminfo.tickerid, htf2, ta.pivotlow(pivotLeft, pivotRight), lookahead=barmerge.lookahead_off)
+
+var float h1High = na
+var float h1Low = na
+var float h4High = na
+var float h4Low = na
+
+h1High := not na(ph1) ? ph1 : h1High
+h1Low := not na(pl1) ? pl1 : h1Low
+h4High := not na(ph2) ? ph2 : h4High
+h4Low := not na(pl2) ? pl2 : h4Low
+
+// A sweep = price wicks beyond the swing level and closes back on the other side.
+f_bullSweep(float _lvl) => not na(_lvl) and low < _lvl and close > _lvl   // swept a swing LOW
+f_bearSweep(float _lvl) => not na(_lvl) and high > _lvl and close < _lvl  // swept a swing HIGH
+
+bool bull1 = f_bullSweep(h1Low)
+bool bear1 = f_bearSweep(h1High)
+bool bull4 = f_bullSweep(h4Low)
+bool bear4 = f_bearSweep(h4High)
+
+// A sweep stays valid as confluence for sweepValidBars chart bars.
+f_active(bool _ev) =>
+    int bs = ta.barssince(_ev)
+    not na(bs) and bs <= sweepValidBars
+
+bool bull1A = f_active(bull1)
+bool bear1A = f_active(bear1)
+bool bull4A = f_active(bull4)
+bool bear4A = f_active(bear4)
+
+bool bullSwept =
+     sweepMode == "1H only" ? bull1A :
+     sweepMode == "4H only" ? bull4A :
+     sweepMode == "Both 1H and 4H" ? (bull1A and bull4A) :
+     (bull1A or bull4A)
+
+bool bearSwept =
+     sweepMode == "1H only" ? bear1A :
+     sweepMode == "4H only" ? bear4A :
+     sweepMode == "Both 1H and 4H" ? (bear1A and bear4A) :
+     (bear1A or bear4A)
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🚀 04. SIGNAL -> ORDER LOGIC
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 bool fade = tradeBias == "Fade IFVG (opposite)"
@@ -250,11 +330,17 @@ float risk = rangeValid ? rangeRisk : (useAtrFallback ? atrRisk : na)
 
 // Validity guards.
 bool rangeOk = not na(risk) and risk > 0
-bool midlineOk = not useMidlineFilter or na(midline) ? true :
-     tradeDir == 1 ? entryPrice < midline : tradeDir == -1 ? entryPrice > midline : false
 
-bool takeLong = ifvgFired and tradeDir == 1 and rangeOk and midlineOk
-bool takeShort = ifvgFired and tradeDir == -1 and rangeOk and midlineOk
+// Midline confluence: when enabled, a trade requires a valid midline AND price on
+// the correct side. If the midline is unavailable the trade is blocked (strict).
+bool midlineOk = not useMidlineFilter ? true :
+     not na(midline) and (tradeDir == 1 ? entryPrice < midline : entryPrice > midline)
+
+// Sweep confluence: longs need a swing-low sweep, shorts need a swing-high sweep.
+bool sweepOk = not useSweepFilter ? true : (tradeDir == 1 ? bullSwept : bearSwept)
+
+bool takeLong = ifvgFired and tradeDir == 1 and rangeOk and midlineOk and sweepOk
+bool takeShort = ifvgFired and tradeDir == -1 and rangeOk and midlineOk and sweepOk
 
 float longSL = entryPrice - risk
 float longTP = entryPrice + risk * rrInput
@@ -273,8 +359,20 @@ if takeShort
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 🎨 04. VISUALS
+// 🎨 05. VISUALS
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// HTF swing levels (drawn only where defined).
+plot(showSweeps ? h1High : na, "1H Swing High", color=sweepHighColor, style=plot.style_linebr, linewidth=1)
+plot(showSweeps ? h1Low : na, "1H Swing Low", color=sweepLowColor, style=plot.style_linebr, linewidth=1)
+plot(showSweeps ? h4High : na, "4H Swing High", color=sweepHighColor, style=plot.style_linebr, linewidth=2)
+plot(showSweeps ? h4Low : na, "4H Swing Low", color=sweepLowColor, style=plot.style_linebr, linewidth=2)
+
+// Sweep events.
+plotshape(showSweeps and (bull1 or bull4), title="Bullish Sweep", style=shape.xcross,
+     location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny)
+plotshape(showSweeps and (bear1 or bear4), title="Bearish Sweep", style=shape.xcross,
+     location=location.abovebar, color=color.new(color.fuchsia, 0), size=size.tiny)
 
 plotshape(showIFVG and newBullIFVG, title="IFVG+", style=shape.triangleup,
      location=location.belowbar, color=bullIFVGColor, size=size.tiny, text="IFVG+")
@@ -288,7 +386,7 @@ plotshape(takeShort, title="Short Entry", style=shape.labeldown, location=locati
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 🔔 05. ALERTS
+// 🔔 06. ALERTS
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 alertcondition(takeLong, "Long Entry", "IFVG 50% Strategy | LONG on {{ticker}} {{interval}}")
