@@ -47,12 +47,14 @@ if high > daily_high and in_session
 if low < daily_low and in_session
     daily_low := low
 
-// Daily range and 50% midline (only meaningful on intraday <= 60m, same as source).
+// Daily range and 50% midline. Computed on every timeframe so the strategy can
+// always size a stop / apply the midline filter (the source only *plotted* it on
+// intraday <= 60m, which is preserved below via the plot gate).
 bool intradayOk = timeframe.isintraday and timeframe.multiplier <= 60
-float dailyRange = intradayOk ? (daily_high - daily_low) : na
-float midline = intradayOk ? daily_low + dailyRange / 2.0 : na
+float dailyRange = na(daily_high) or na(daily_low) ? na : daily_high - daily_low
+float midline = na(dailyRange) ? na : daily_low + dailyRange / 2.0
 
-plot(showMidline ? midline : na, title="50% midline", style=plot.style_line,
+plot(showMidline and intradayOk ? midline : na, title="50% midline", style=plot.style_line,
      linestyle=plot.linestyle_dotted, color=color.new(color.black, 25), linewidth=1)
 
 
@@ -71,8 +73,12 @@ riskPct = input.float(0.5, "Risk = % of Daily Range", minval=0.05, maxval=2.0, s
 
 rrInput = input.float(1.0, "Reward : Risk", minval=0.25, maxval=10.0, step=0.25, group=groupTrade)
 
-useMidlineFilter = input.bool(true, "Require 50% Midline Confluence", group=groupTrade,
-     tooltip="Only take longs below the midline and shorts above it, so price targets the opposite side of the daily range.")
+useAtrFallback = input.bool(true, "ATR Fallback When No Daily Range", group=groupTrade,
+     tooltip="When the daily range is unavailable (e.g. higher timeframes) or too small, size the stop from ATR instead so trades can still fire.")
+atrFallbackMult = input.float(1.5, "ATR Fallback Multiplier", minval=0.1, step=0.1, group=groupTrade)
+
+useMidlineFilter = input.bool(false, "Require 50% Midline Confluence", group=groupTrade,
+     tooltip="Only take longs below the midline and shorts above it, so price targets the opposite side of the daily range. Off by default so signals are not over-restricted.")
 
 minRangeTicks = input.int(4, "Min Daily Range / Ticks", minval=0, group=groupTrade,
      tooltip="Skip signals when the developing daily range is too small to size a meaningful stop.")
@@ -234,10 +240,16 @@ bool ifvgFired = newBullIFVG or newBearIFVG
 int tradeDir = ifvgFired ? (fade ? -newDir : newDir) : 0
 
 float entryPrice = newConfirmClose
-float risk = riskPct * dailyRange
+
+// Stop distance: 50% of the daily range, with an ATR fallback so the strategy can
+// still size a stop on higher timeframes or before the session range has formed.
+float rangeRisk = na(dailyRange) ? na : riskPct * dailyRange
+bool rangeValid = not na(rangeRisk) and dailyRange > minRangeTicks * syminfo.mintick
+float atrRisk = safeAtr * atrFallbackMult
+float risk = rangeValid ? rangeRisk : (useAtrFallback ? atrRisk : na)
 
 // Validity guards.
-bool rangeOk = not na(dailyRange) and dailyRange > minRangeTicks * syminfo.mintick and risk > 0
+bool rangeOk = not na(risk) and risk > 0
 bool midlineOk = not useMidlineFilter or na(midline) ? true :
      tradeDir == 1 ? entryPrice < midline : tradeDir == -1 ? entryPrice > midline : false
 
