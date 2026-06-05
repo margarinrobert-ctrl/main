@@ -145,7 +145,8 @@
       </div>
       <div>
         <label>Max Attempt Days (cap)</label>
-        <input id="maxDays" type="number" value="60">
+        <input id="maxDays" type="number" value="250">
+        <div class="hint">Trading-day budget to reach target. Small size needs more days — raise this if accounts "time out".</div>
       </div>
     </div>
   </div>
@@ -200,6 +201,7 @@
   </div>
 
   <div id="results" style="display:none">
+    <div id="timeoutWarn" style="display:none" class="warnbox"></div>
     <!-- STAT CARDS -->
     <div class="grid g4" style="margin-bottom:18px">
       <div class="stat green"><span class="ic">✅</span><div class="k">Pass Rate</div><div class="v" id="s_pass">–</div><div class="s" id="s_pass_s"></div></div>
@@ -416,10 +418,25 @@ function median(arr){const a=[...arr].sort((x,y)=>x-y);const m=a.length>>1;retur
 // ---------- render ----------
 function render(){
   const L=LAST,p=L.p; $('results').style.display='block';
+  // "resolved" pass rate ignores accounts that neither passed nor blew within the day cap,
+  // so it isn't distorted by contract size / day-cap interaction.
+  const resolved=L.passes+L.blown+L.blownDaily;
+  const resolvedRate=resolved? L.passes/resolved : 0;
+  const toRate=L.timeout/L.N;
   $('s_pass').textContent=pct(L.passRate);
-  $('s_pass_s').textContent=L.passes.toLocaleString()+' of '+L.N.toLocaleString();
+  $('s_pass_s').textContent=L.passes.toLocaleString()+' of '+L.N.toLocaleString()
+      + (L.timeout? ' · '+pct(resolvedRate)+' of finished' : '');
   $('s_blow').textContent=pct(L.blowRate);
   $('s_blow_s').textContent=(L.blown+L.blownDaily).toLocaleString()+' blown ('+L.timeout.toLocaleString()+' timed out)';
+  // warn when the day cap is silently capping results
+  const tw=$('timeoutWarn');
+  if(toRate>0.02){
+    tw.style.display='block';
+    tw.innerHTML='⏳ <b>'+pct(toRate)+' of accounts hit the '+p.maxDays+'-day cap without passing or blowing.</b> '
+      +'This usually means your size is small relative to the '+fmt(p.target)+' target, so it just needs more time — '
+      +'it is <b>not</b> the same as failing. Raise <b>Max Attempt Days</b> for a true read. '
+      +'Of accounts that actually finished, <b>'+pct(resolvedRate)+'</b> passed.';
+  } else { tw.style.display='none'; }
   $('s_days').textContent=L.medDays? L.medDays.toFixed(0):'—';
   $('s_days_s').textContent='among passers';
   $('s_dd').textContent=fmt(L.avgMaxDD);
