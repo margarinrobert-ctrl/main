@@ -7,12 +7,12 @@
 //   2. Detect IFVG (Inverted Fair Value Gap) formations with the IFVG Sniper engine.
 //   3. When an IFVG forms, enter a trade. Risk/stop and target are sized from
 //      50% of the daily candle range, and the take profit is placed 1:1 with the stop.
-//   4. By default the trade fades the IFVG ("target opposite direction"): a bullish
-//      IFVG+ => SHORT, a bearish IFVG- => LONG. This can be flipped to "follow" mode.
-//   5. Optional confluence: only fade toward the 50% midline (short above midline,
-//      long below midline) so the target is the opposite side of the daily range.
-//   6. Optional HTF liquidity sweep: require a 1H/4H swing-low sweep before longs
-//      and a 1H/4H swing-high sweep before shorts (stop-hunt confluence).
+//   4. By default the trade follows the IFVG (continuation): a bullish IFVG+ => LONG,
+//      a bearish IFVG- => SHORT. Can be flipped to "fade" (opposite) mode.
+//   5. Confluence filters (trend-aware) to keep quality high and cut over-trading:
+//        - 50% midline: follow longs in the upper half / shorts in the lower half.
+//        - HTF liquidity sweep: longs after a 1H/4H swing-low sweep, shorts after a
+//          1H/4H swing-high sweep (stop-hunt confluence).
 //@version=6
 strategy("IFVG 50% Daily-Range Fade [1:1 RR]", shorttitle="IFVG-50%-1R",
      overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=100,
@@ -66,21 +66,18 @@ plot(showMidline and intradayOk ? midline : na, title="50% midline", style=plot.
 
 groupTrade = "🎯 01. Strategy Model"
 
-tradeBias = input.string("Fade IFVG (opposite)", "Trade Direction",
+tradeBias = input.string("Follow IFVG (same)", "Trade Direction",
      options=["Fade IFVG (opposite)", "Follow IFVG (same)"], group=groupTrade,
-     tooltip="Fade = bullish IFVG+ goes SHORT, bearish IFVG- goes LONG (default).")
+     tooltip="Follow = bullish IFVG+ goes LONG, bearish IFVG- goes SHORT (continuation, default).\nFade = the opposite direction.")
 
 riskPct = input.float(0.5, "Risk = % of Daily Range", minval=0.05, maxval=2.0, step=0.05,
      group=groupTrade, tooltip="Stop distance = this fraction of the current daily candle range. 0.5 = 50%.")
 
-rrInput = input.float(1.0, "Reward : Risk", minval=0.25, maxval=10.0, step=0.25, group=groupTrade)
+rrInput = input.float(1.0, "Reward : Risk", minval=0.25, maxval=10.0, step=0.25, group=groupTrade,
+     tooltip="1.0 = the 1:1 you asked for. For a Follow (momentum) model, 2-3R is usually the single biggest profitability lever - try it.")
 
-useAtrFallback = input.bool(true, "ATR Fallback When No Daily Range", group=groupTrade,
-     tooltip="When the daily range is unavailable (e.g. higher timeframes) or too small, size the stop from ATR instead so trades can still fire.")
-atrFallbackMult = input.float(1.5, "ATR Fallback Multiplier", minval=0.1, step=0.1, group=groupTrade)
-
-useMidlineFilter = input.bool(false, "Require 50% Midline Confluence", group=groupTrade,
-     tooltip="Only take longs below the midline and shorts above it, so price targets the opposite side of the daily range. Off by default so signals are not over-restricted.")
+useMidlineFilter = input.bool(true, "Require 50% Midline Confluence", group=groupTrade,
+     tooltip="Trend-aware. Follow: longs only in the upper half (above midline), shorts only below. Fade: the opposite. Keeps trades on the right side of the daily range.")
 
 minRangeTicks = input.int(4, "Min Daily Range / Ticks", minval=0, group=groupTrade,
      tooltip="Skip signals when the developing daily range is too small to size a meaningful stop.")
@@ -321,20 +318,20 @@ int tradeDir = ifvgFired ? (fade ? -newDir : newDir) : 0
 
 float entryPrice = newConfirmClose
 
-// Stop distance: 50% of the daily range, with an ATR fallback so the strategy can
-// still size a stop on higher timeframes or before the session range has formed.
+// Stop distance: 50% of the daily candle range. Requires a valid developing daily
+// range (intraday); no trade is taken until the range is established.
 float rangeRisk = na(dailyRange) ? na : riskPct * dailyRange
 bool rangeValid = not na(rangeRisk) and dailyRange > minRangeTicks * syminfo.mintick
-float atrRisk = safeAtr * atrFallbackMult
-float risk = rangeValid ? rangeRisk : (useAtrFallback ? atrRisk : na)
+float risk = rangeValid ? rangeRisk : na
 
 // Validity guards.
 bool rangeOk = not na(risk) and risk > 0
 
-// Midline confluence: when enabled, a trade requires a valid midline AND price on
-// the correct side. If the midline is unavailable the trade is blocked (strict).
-bool midlineOk = not useMidlineFilter ? true :
-     not na(midline) and (tradeDir == 1 ? entryPrice < midline : entryPrice > midline)
+// Midline confluence (trend-aware). Follow: long in the upper half / short in the
+// lower half. Fade: the opposite. Strict - a missing midline blocks the trade.
+bool midlineSideOk = tradeDir == 1 ? (fade ? entryPrice < midline : entryPrice > midline) :
+     (fade ? entryPrice > midline : entryPrice < midline)
+bool midlineOk = not useMidlineFilter ? true : (not na(midline) and midlineSideOk)
 
 // Sweep confluence: longs need a swing-low sweep, shorts need a swing-high sweep.
 bool sweepOk = not useSweepFilter ? true : (tradeDir == 1 ? bullSwept : bearSwept)
