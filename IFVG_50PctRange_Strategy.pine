@@ -5,8 +5,11 @@
 // STRATEGY IDEA
 //   1. Track the daily session range and its 50% midline (the "50% level" indicator, kept as-is).
 //   2. Detect IFVG (Inverted Fair Value Gap) formations with the IFVG Sniper engine.
-//   3. When an IFVG forms, enter a trade. Risk/stop and target are sized from
-//      50% of the daily candle range, and the take profit is placed 1:1 with the stop.
+//   3. When an IFVG forms, enter a trade. The stop is 50% of the daily candle range.
+//      Exit modes:
+//        - Fixed RR     : take profit at the Reward:Risk target (1:1 by default).
+//        - Opposite IFVG: no take-profit, so winners can run past 1:1 - the trade is
+//          held until the stop (invalidation) is hit or an opposite IFVG closes it.
 //   4. By default the trade follows the IFVG (continuation): a bullish IFVG+ => LONG,
 //      a bearish IFVG- => SHORT. Can be flipped to "fade" (opposite) mode.
 //   5. Confluence filters (trend-aware) to keep quality high and cut over-trading:
@@ -74,7 +77,11 @@ riskPct = input.float(0.5, "Risk = % of Daily Range", minval=0.05, maxval=2.0, s
      group=groupTrade, tooltip="Stop distance = this fraction of the current daily candle range. 0.5 = 50%.")
 
 rrInput = input.float(1.0, "Reward : Risk", minval=0.25, maxval=10.0, step=0.25, group=groupTrade,
-     tooltip="1.0 = the 1:1 you asked for. For a Follow (momentum) model, 2-3R is usually the single biggest profitability lever - try it.")
+     tooltip="Only used in 'Fixed RR' exit mode. 1.0 = the 1:1 you asked for.")
+
+exitMode = input.string("Fixed RR", "Exit Mode",
+     options=["Fixed RR", "Opposite IFVG (let run)"], group=groupTrade,
+     tooltip="Fixed RR: take profit at the Reward:Risk target.\nOpposite IFVG: no take-profit, so a trade can run past 1:1 - it is held until the stop (invalidation) is hit OR an opposite IFVG forms and closes it.")
 
 useMidlineFilter = input.bool(true, "Require 50% Midline Confluence", group=groupTrade,
      tooltip="Trend-aware. Follow: longs only in the upper half (above midline), shorts only below. Fade: the opposite. Keeps trades on the right side of the daily range.")
@@ -344,15 +351,43 @@ float longTP = entryPrice + risk * rrInput
 float shortSL = entryPrice + risk
 float shortTP = entryPrice - risk * rrInput
 
-if takeLong
-    if allowReverse or strategy.position_size <= 0
-        strategy.entry("Long", strategy.long)
-        strategy.exit("Long-X", from_entry="Long", stop=longSL, limit=longTP)
+bool fixedExit = exitMode == "Fixed RR"
 
-if takeShort
-    if allowReverse or strategy.position_size >= 0
-        strategy.entry("Short", strategy.short)
+bool isLong = strategy.position_size > 0
+bool isShort = strategy.position_size < 0
+bool flat = strategy.position_size == 0
+
+// A new entry is allowed when flat, or when reversing an opposite position.
+bool canLong = flat or (isShort and allowReverse)
+bool canShort = flat or (isLong and allowReverse)
+
+bool enterLong = takeLong and canLong
+bool enterShort = takeShort and canShort
+
+// Entries. In Opposite-IFVG mode there is no take-profit, so trades can run past
+// 1:1 - only the stop (invalidation) and an opposite IFVG close them.
+if enterLong
+    strategy.entry("Long", strategy.long)
+    if fixedExit
+        strategy.exit("Long-X", from_entry="Long", stop=longSL, limit=longTP)
+    else
+        strategy.exit("Long-X", from_entry="Long", stop=longSL)
+
+if enterShort
+    strategy.entry("Short", strategy.short)
+    if fixedExit
         strategy.exit("Short-X", from_entry="Short", stop=shortSL, limit=shortTP)
+    else
+        strategy.exit("Short-X", from_entry="Short", stop=shortSL)
+
+// Opposite-IFVG exit: close an open trade when an IFVG of the opposite trade
+// direction forms (independent of the entry filters - this is an invalidation).
+// Skipped when a reverse entry above already handles the flip.
+if not fixedExit and ifvgFired
+    if isLong and tradeDir == -1 and not enterShort
+        strategy.close("Long", comment="Opp IFVG")
+    if isShort and tradeDir == 1 and not enterLong
+        strategy.close("Short", comment="Opp IFVG")
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
