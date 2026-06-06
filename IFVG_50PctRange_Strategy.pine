@@ -10,6 +10,8 @@
 //        - Fixed RR     : take profit at the Reward:Risk target (1:1 by default).
 //        - Opposite IFVG: no take-profit, so winners can run past 1:1 - the trade is
 //          held until the stop (invalidation) is hit or an opposite IFVG closes it.
+//      Optional scale-out: take 50% off at 1:1, move the stop on the remaining 50%
+//      to breakeven, and let that runner go to the selected exit mode.
 //   4. By default the trade follows the IFVG (continuation): a bullish IFVG+ => LONG,
 //      a bearish IFVG- => SHORT. Can be flipped to "fade" (opposite) mode.
 //   5. Confluence filters (trend-aware) to keep quality high and cut over-trading:
@@ -82,6 +84,9 @@ rrInput = input.float(1.0, "Reward : Risk", minval=0.25, maxval=10.0, step=0.25,
 exitMode = input.string("Fixed RR", "Exit Mode",
      options=["Fixed RR", "Opposite IFVG (let run)"], group=groupTrade,
      tooltip="Fixed RR: take profit at the Reward:Risk target.\nOpposite IFVG: no take-profit, so a trade can run past 1:1 - it is held until the stop (invalidation) is hit OR an opposite IFVG forms and closes it.")
+
+usePartialTP = input.bool(false, "Scale Out 50% at 1:1 + Breakeven", group=groupTrade,
+     tooltip="Take 50% off at 1:1, move the stop on the remaining 50% to breakeven, and let the runner go to the selected Exit Mode target (RR target or opposite IFVG).")
 
 useMidlineFilter = input.bool(true, "Require 50% Midline Confluence", group=groupTrade,
      tooltip="Trend-aware. Follow: longs only in the upper half (above midline), shorts only below. Fade: the opposite. Keeps trades on the right side of the daily range.")
@@ -364,21 +369,49 @@ bool canShort = flat or (isLong and allowReverse)
 bool enterLong = takeLong and canLong
 bool enterShort = takeShort and canShort
 
-// Entries. In Opposite-IFVG mode there is no take-profit, so trades can run past
-// 1:1 - only the stop (invalidation) and an opposite IFVG close them.
+// Per-trade state (used to manage scale-out / breakeven and the runner exit).
+var int tDir = 0          // 1 long, -1 short
+var float tEntry = na
+var float tStop = na      // current stop for the runner (initial -> breakeven)
+var float tTP1 = na       // 50% partial target (1:1)
+var float tRunTP = na     // runner target (Fixed RR) or na (Opposite IFVG)
+var bool tTP1Done = false
+
+// Entries. Record the trade state so exits can be managed each bar below.
 if enterLong
     strategy.entry("Long", strategy.long)
-    if fixedExit
-        strategy.exit("Long-X", from_entry="Long", stop=longSL, limit=longTP)
-    else
-        strategy.exit("Long-X", from_entry="Long", stop=longSL)
+    tDir := 1
+    tEntry := entryPrice
+    tStop := longSL
+    tTP1 := entryPrice + risk
+    tRunTP := fixedExit ? longTP : na
+    tTP1Done := false
 
 if enterShort
     strategy.entry("Short", strategy.short)
-    if fixedExit
-        strategy.exit("Short-X", from_entry="Short", stop=shortSL, limit=shortTP)
+    tDir := -1
+    tEntry := entryPrice
+    tStop := shortSL
+    tTP1 := entryPrice - risk
+    tRunTP := fixedExit ? shortTP : na
+    tTP1Done := false
+
+// Exit management, re-issued every bar so the stop can move to breakeven.
+string eid = tDir == 1 ? "Long" : tDir == -1 ? "Short" : na
+
+if strategy.position_size != 0 and not na(eid)
+    if usePartialTP
+        // When 1:1 is reached, the 50% scale fills and the runner's stop -> breakeven.
+        if not tTP1Done
+            bool hit1 = tDir == 1 ? high >= tTP1 : low <= tTP1
+            if hit1
+                tTP1Done := true
+                tStop := tEntry
+            strategy.exit("Scale", from_entry=eid, qty_percent=50, limit=tTP1, stop=tStop)
+        // Runner (remaining 50%): stop (initial -> BE) and the selected exit target.
+        strategy.exit("Run", from_entry=eid, stop=tStop, limit=tRunTP)
     else
-        strategy.exit("Short-X", from_entry="Short", stop=shortSL)
+        strategy.exit("Exit", from_entry=eid, stop=tStop, limit=tRunTP)
 
 // Opposite-IFVG exit: close an open trade when an IFVG of the opposite trade
 // direction forms (independent of the entry filters - this is an invalidation).
@@ -415,6 +448,11 @@ plotshape(takeLong, title="Long Entry", style=shape.labelup, location=location.b
      color=color.new(color.green, 0), textcolor=color.white, text="L", size=size.small)
 plotshape(takeShort, title="Short Entry", style=shape.labeldown, location=location.abovebar,
      color=color.new(color.red, 0), textcolor=color.white, text="S", size=size.small)
+
+// Partial take-profit (50% out + stop to breakeven).
+plotshape(usePartialTP and tTP1Done and not tTP1Done[1], title="50% TP / BE", style=shape.diamond,
+     location=location.belowbar, color=color.new(color.teal, 0), textcolor=color.white,
+     text="½TP", size=size.tiny)
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
