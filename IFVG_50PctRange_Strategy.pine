@@ -23,9 +23,9 @@
 //@version=6
 strategy("IFVG 50% Daily-Range Fade [1:1 RR]", shorttitle="IFVG-50%-1R",
      overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=100,
-     default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     default_qty_type=strategy.fixed, default_qty_value=1,
      pyramiding=0, calc_on_order_fills=false, process_orders_on_close=true,
-     initial_capital=10000, commission_type=strategy.commission.percent, commission_value=0.0)
+     initial_capital=100000, commission_type=strategy.commission.percent, commission_value=0.0)
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -83,6 +83,9 @@ plot(showMidline and intradayOk ? midline : na, title="50% midline", style=plot.
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 groupTrade = "🎯 01. Strategy Model"
+
+orderQty = input.int(1, "Contracts / Position", minval=1, group=groupTrade,
+     tooltip="Number of contracts (or units) per trade. Sized in fixed contracts so it works on futures (NQ/MNQ). Use >=2 if you enable the 50% scale-out so half a position is still a whole contract.")
 
 tradeBias = input.string("Follow IFVG (same)", "Trade Direction",
      options=["Fade IFVG (opposite)", "Follow IFVG (same)"], group=groupTrade,
@@ -392,7 +395,7 @@ var bool tTP1Done = false
 
 // Entries. Record the trade state so exits can be managed each bar below.
 if enterLong
-    strategy.entry("Long", strategy.long)
+    strategy.entry("Long", strategy.long, qty=orderQty)
     tDir := 1
     tEntry := entryPrice
     tStop := longSL
@@ -401,7 +404,7 @@ if enterLong
     tTP1Done := false
 
 if enterShort
-    strategy.entry("Short", strategy.short)
+    strategy.entry("Short", strategy.short, qty=orderQty)
     tDir := -1
     tEntry := entryPrice
     tStop := shortSL
