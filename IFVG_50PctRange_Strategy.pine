@@ -440,6 +440,48 @@ if not fixedExit and ifvgFired
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🔧 DIAGNOSTICS  (shows where signals are lost - turn off once tuned)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+showDiag = input.bool(true, "Show Diagnostics Panel", group="🔧 Diagnostics")
+
+var int dgIFVG = 0
+var int dgRange = 0
+var int dgMid = 0
+var int dgSweep = 0
+var int dgEntry = 0
+
+if barstate.isconfirmed
+    if ifvgFired
+        dgIFVG += 1
+        if rangeOk
+            dgRange += 1
+            if midlineOk
+                dgMid += 1
+                if sweepOk
+                    dgSweep += 1
+    if enterLong or enterShort
+        dgEntry += 1
+
+var table diag = table.new(position.top_right, 2, 9, border_width=1)
+
+f_dgRow(int _r, string _k, string _v) =>
+    table.cell(diag, 0, _r, _k, bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny)
+    table.cell(diag, 1, _r, _v, bgcolor=color.new(color.black, 25), text_color=color.white, text_size=size.tiny)
+
+if showDiag and barstate.islast
+    f_dgRow(0, "DIAGNOSTICS", "")
+    f_dgRow(1, "IFVGs", str.tostring(dgIFVG))
+    f_dgRow(2, "+ Range OK", str.tostring(dgRange))
+    f_dgRow(3, "+ Midline OK", str.tostring(dgMid))
+    f_dgRow(4, "+ Sweep OK", str.tostring(dgSweep))
+    f_dgRow(5, "Entries fired", str.tostring(dgEntry))
+    f_dgRow(6, "Closed trades", str.tostring(strategy.closedtrades))
+    f_dgRow(7, "Daily range", na(dailyRange) ? "na" : str.tostring(dailyRange, format.mintick))
+    f_dgRow(8, "Pos size", str.tostring(strategy.position_size))
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 🎨 05. VISUALS
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
