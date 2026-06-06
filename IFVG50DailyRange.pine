@@ -108,6 +108,11 @@ contractsQty = input.int(2, "Contracts per Trade", minval=2, step=2, group=group
 useMidlineFilter = input.bool(true, "Require 50% Midline Confluence", group=groupTrade,
      tooltip="Trend-aware. Follow: longs only in the upper half (above midline), shorts only below. Fade: the opposite. Keeps trades on the right side of the daily range.")
 
+useVwapFilter = input.bool(true, "Require VWAP Trend Confluence", group=groupTrade,
+     tooltip="Directional gate by VWAP. If VWAP is ABOVE price, only shorts are allowed; if VWAP is BELOW price, only longs are allowed. Applies to the final trade direction (after Fade/Follow).")
+
+showVwap = input.bool(true, "Show VWAP", group=groupTrade)
+
 minRangeTicks = input.int(4, "Min Daily Range / Ticks", minval=0, group=groupTrade,
      tooltip="Skip signals when the developing daily range is too small to size a meaningful stop.")
 
@@ -165,6 +170,9 @@ bearIFVGColor = input.color(color.rgb(255, 60, 70), "Bearish IFVG-", group=group
 
 atrValue = ta.atr(14)
 safeAtr = na(atrValue) or atrValue <= 0.0 ? syminfo.mintick : atrValue
+
+// Session-anchored VWAP used as a directional trend gate.
+float vwapValue = ta.vwap
 
 f_minGapAtr() =>
     filterMode == "Off" ? 0.0 : filterMode == "Loose" ? 0.15 : filterMode == "Strict" ? 0.40 : 0.25
@@ -365,8 +373,13 @@ bool midlineOk = not useMidlineFilter ? true : (not na(midline) and midlineSideO
 // Sweep confluence: longs need a swing-low sweep, shorts need a swing-high sweep.
 bool sweepOk = not useSweepFilter ? true : (tradeDir == 1 ? bullSwept : bearSwept)
 
-bool takeLong = ifvgFired and tradeDir == 1 and rangeOk and midlineOk and sweepOk
-bool takeShort = ifvgFired and tradeDir == -1 and rangeOk and midlineOk and sweepOk
+// VWAP trend gate: VWAP above price => shorts only; VWAP below price => longs only.
+// i.e. longs require price above VWAP, shorts require price below VWAP.
+bool vwapOk = not useVwapFilter ? true : (na(vwapValue) ? false :
+     (tradeDir == 1 ? entryPrice > vwapValue : entryPrice < vwapValue))
+
+bool takeLong = ifvgFired and tradeDir == 1 and rangeOk and midlineOk and sweepOk and vwapOk
+bool takeShort = ifvgFired and tradeDir == -1 and rangeOk and midlineOk and sweepOk and vwapOk
 
 float longSL = entryPrice - risk
 float longTP = entryPrice + risk * rrInput
@@ -447,6 +460,9 @@ if not fixedExit and ifvgFired
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 🎨 05. VISUALS
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// VWAP trend gate line.
+plot(showVwap ? vwapValue : na, title="VWAP", color=color.new(color.purple, 0), linewidth=2)
 
 // HTF swing levels (drawn only where defined).
 plot(showSweeps ? h1High : na, "1H Swing High", color=sweepHighColor, style=plot.style_linebr, linewidth=1)
