@@ -13,6 +13,7 @@
 //      long below midline) so the target is the opposite side of the daily range.
 //   6. VWAP trend gate: if VWAP is above price look only for shorts, if VWAP is
 //      below price look only for longs.
+//   7. RSI gate: only buy when RSI is oversold and only sell when RSI is overbought.
 //@version=6
 strategy("IFVG 50% Daily-Range Fade [1:1 RR]", shorttitle="IFVG-50%-1R",
      overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=100,
@@ -89,10 +90,24 @@ allowReverse = input.bool(true, "Reverse on Opposite Signal", group=groupTrade,
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// ⚙️ 02. IFVG ENGINE  (from "IFVG Sniper Entry Engine" by trade_w_samet)
+// 📈 02. RSI FILTER
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-groupIFVG = "⚙️ 02. IFVG Engine"
+groupRSI = "📈 02. RSI Filter"
+
+useRsiFilter = input.bool(true, "Combine with RSI (OB/OS)", group=groupRSI,
+     tooltip="Only BUY when RSI is oversold and only SELL when RSI is overbought, combined with the rest of the strategy.")
+
+rsiLength = input.int(14, "RSI Length", minval=1, group=groupRSI)
+rsiOversold = input.float(30.0, "Oversold (buy below)", minval=1.0, maxval=99.0, step=1.0, group=groupRSI)
+rsiOverbought = input.float(70.0, "Overbought (sell above)", minval=1.0, maxval=99.0, step=1.0, group=groupRSI)
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ⚙️ 03. IFVG ENGINE  (from "IFVG Sniper Entry Engine" by trade_w_samet)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+groupIFVG = "⚙️ 03. IFVG Engine"
 
 maxHiddenFVG = input.int(120, "Hidden FVG Memory", minval=10, maxval=500, group=groupIFVG)
 maxFvgAge = input.int(60, "Max Hidden FVG Age", minval=5, maxval=500, group=groupIFVG)
@@ -107,25 +122,6 @@ bearIFVGColor = input.color(color.rgb(255, 60, 70), "Bearish IFVG-", group=group
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 🧱 03. CISD ENGINE  (Change In State of Delivery)
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-groupCISD = "🧱 03. CISD"
-
-useCisdFilter = input.bool(true, "Combine IFVG with CISD", group=groupCISD,
-     tooltip="Require a matching CISD break to confirm the IFVG. Longs need a recent bullish CISD (a bearish CISD level broken UP), shorts need a recent bearish CISD (a bullish CISD level broken DOWN).")
-
-cisdValidBars = input.int(10, "CISD Valid For N Bars", minval=1, group=groupCISD,
-     tooltip="How many bars a CISD break stays valid as confluence for an IFVG entry. This is the 'combine' window between the CISD and the IFVG.")
-
-showCisd = input.bool(true, "Mark CISD Breaks", group=groupCISD)
-cisdBullColor = input.color(color.new(color.aqua, 0), "Bullish CISD", group=groupCISD)
-cisdBearColor = input.color(color.new(color.orange, 0), "Bearish CISD", group=groupCISD)
-cisdBullStr = input.string("CISD", "Bullish Label", group=groupCISD)
-cisdBearStr = input.string("CISD", "Bearish Label", group=groupCISD)
-
-
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // CORE VALUES + FILTER HELPERS
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -134,6 +130,9 @@ safeAtr = na(atrValue) or atrValue <= 0.0 ? syminfo.mintick : atrValue
 
 // Session-anchored VWAP used as a directional trend gate.
 float vwapValue = ta.vwap
+
+// RSI for the overbought / oversold gate.
+float rsiValue = ta.rsi(close, rsiLength)
 
 f_minGapAtr() =>
     filterMode == "Off" ? 0.0 : filterMode == "Loose" ? 0.15 : filterMode == "Strict" ? 0.40 : 0.25
@@ -253,167 +252,6 @@ if barstate.isconfirmed
 
 
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 🧱 CISD ENGINE LOGIC  (body-based, ported from "CISD")
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-int   cisdLookAhead = 5
-int   cisdLineWidth = 1
-
-// Body-only helpers.
-f_bodyHigh(int _o) => math.max(open[_o], close[_o])
-f_bodyLow(int _o)  => math.min(open[_o], close[_o])
-f_bodySize(int _o) => math.abs(close[_o] - open[_o])
-
-type MarketStructure
-    float topPrice
-    float bottomPrice
-    bool  isBullish
-
-type cisd
-    line  level
-    label txt
-    bool  completed
-
-var MarketStructure currentStructure = MarketStructure.new(math.max(open, close), math.min(open, close), close >= open)
-
-var cisdLevelsBu = array.new<cisd>()  // bullish CISD levels (below price)
-var cisdLevelsBe = array.new<cisd>()  // bearish CISD levels (above price)
-
-var bool  isBullishPullback   = false
-var bool  isBearishPullback   = false
-var float potentialTopPrice    = na
-var float potentialBottomPrice = na
-var int   bullishBreakIndex   = na
-var int   bearishBreakIndex   = na
-var bool  cisdState           = false  // false = bearish regime, true = bullish regime
-
-// CISD break events on this bar.
-bool cisdBull = false  // a bearish CISD (above price) broken UP   -> bullish change of state
-bool cisdBear = false  // a bullish CISD (below price) broken DOWN -> bearish change of state
-
-// Pullback detection (body-based, with 50% size filter).
-float minPullbackRatio = 0.5
-float pullbackBody = f_bodySize(1)
-float prevBody     = f_bodySize(2)
-bool  validPullback = prevBody > 0 and pullbackBody >= minPullbackRatio * prevBody
-
-bool bearishPullbackDetected = validPullback and close[1] > open[1]
-bool bullishPullbackDetected = validPullback and close[1] < open[1]
-
-if bearishPullbackDetected and not isBearishPullback
-    isBearishPullback := true
-    potentialTopPrice := open[1]
-    bullishBreakIndex := bar_index[1]
-
-if bullishPullbackDetected and not isBullishPullback
-    isBullishPullback    := true
-    potentialBottomPrice := open[1]
-    bearishBreakIndex    := bar_index[1]
-
-if isBullishPullback
-    if open < potentialBottomPrice
-        potentialBottomPrice := open
-        bearishBreakIndex    := bar_index
-    if (close < open) and (open > potentialBottomPrice)
-        potentialBottomPrice := open
-        bearishBreakIndex    := bar_index
-
-if isBearishPullback
-    if open > potentialTopPrice
-        potentialTopPrice := open
-        bullishBreakIndex := bar_index
-    if (close > open) and open < potentialTopPrice
-        potentialTopPrice := open
-        bullishBreakIndex := bar_index
-
-// Structure update - bearish break (body only).
-if f_bodyLow(0) < currentStructure.bottomPrice
-    currentStructure.bottomPrice := f_bodyLow(0)
-    currentStructure.isBullish   := false
-    if isBearishPullback and (bar_index - bullishBreakIndex != 0)
-        idxBack  = bar_index - bullishBreakIndex
-        idxBack1 = idxBack + 1
-        currentStructure.topPrice := math.max(f_bodyHigh(idxBack), f_bodyHigh(idxBack1))
-        isBearishPullback := false
-        beLine  = line.new(bullishBreakIndex, potentialTopPrice, bar_index + cisdLookAhead, potentialTopPrice, color=cisdBullColor, width=cisdLineWidth, style=line.style_solid)
-        beLabel = label.new(bar_index + cisdLookAhead, potentialTopPrice, cisdBullStr, color=color.new(color.white, 100), textcolor=cisdBullColor, style=label.style_label_left, size=size.small, text_formatting=text.format_italic)
-        array.push(cisdLevelsBe, cisd.new(beLine, beLabel, false))
-    else if close[1] > open[1] and close < open
-        currentStructure.topPrice := f_bodyHigh(1)
-        isBearishPullback := false
-        beLine  = line.new(bullishBreakIndex, potentialTopPrice, bar_index + cisdLookAhead, potentialTopPrice, color=cisdBullColor, width=cisdLineWidth, style=line.style_solid)
-        beLabel = label.new(bar_index + cisdLookAhead, potentialTopPrice, cisdBullStr, color=color.new(color.white, 100), textcolor=cisdBullColor, style=label.style_label_left, size=size.small, text_formatting=text.format_italic)
-        array.push(cisdLevelsBe, cisd.new(beLine, beLabel, false))
-
-// Structure update - bullish break (body only).
-if f_bodyHigh(0) > currentStructure.topPrice
-    currentStructure.isBullish := true
-    currentStructure.topPrice  := f_bodyHigh(0)
-    if isBullishPullback and (bar_index - bearishBreakIndex != 0)
-        idxBack  = bar_index - bearishBreakIndex
-        idxBack1 = idxBack + 1
-        currentStructure.bottomPrice := math.min(f_bodyLow(idxBack), f_bodyLow(idxBack1))
-        isBullishPullback := false
-        buLine  = line.new(bearishBreakIndex, potentialBottomPrice, bar_index + cisdLookAhead, potentialBottomPrice, color=cisdBearColor, width=cisdLineWidth, style=line.style_solid)
-        buLabel = label.new(bar_index + cisdLookAhead, potentialBottomPrice, cisdBearStr, color=color.new(color.white, 100), textcolor=cisdBearColor, style=label.style_label_left, size=size.small, text_formatting=text.format_italic)
-        array.push(cisdLevelsBu, cisd.new(buLine, buLabel, false))
-    else if close[1] < open[1] and close > open
-        currentStructure.bottomPrice := f_bodyLow(1)
-        isBullishPullback := false
-        buLine  = line.new(bearishBreakIndex, potentialBottomPrice, bar_index + cisdLookAhead, potentialBottomPrice, color=cisdBearColor, width=cisdLineWidth, style=line.style_solid)
-        buLabel = label.new(bar_index + cisdLookAhead, potentialBottomPrice, cisdBearStr, color=color.new(color.white, 100), textcolor=cisdBearColor, style=label.style_label_left, size=size.small, text_formatting=text.format_italic)
-        array.push(cisdLevelsBu, cisd.new(buLine, buLabel, false))
-
-// Keep only the latest level on each side.
-if array.size(cisdLevelsBu) > 1
-    oldestBu = array.shift(cisdLevelsBu)
-    line.delete(oldestBu.level)
-    label.delete(oldestBu.txt)
-if array.size(cisdLevelsBe) > 1
-    oldestBe = array.shift(cisdLevelsBe)
-    line.delete(oldestBe.level)
-    label.delete(oldestBe.txt)
-
-// Manage bullish CISD (below price): a downside break = bearish change of state.
-if array.size(cisdLevelsBu) >= 1
-    latestBuIndex = array.size(cisdLevelsBu) - 1
-    latestBu      = array.get(cisdLevelsBu, latestBuIndex)
-    if not (f_bodyLow(0) < latestBu.level.get_y2()) and not latestBu.completed
-        line.set_x2(latestBu.level, bar_index + cisdLookAhead)
-        label.set_x(latestBu.txt, bar_index + cisdLookAhead)
-    if f_bodyLow(0) < latestBu.level.get_y2() and not latestBu.completed
-        latestBu.completed := true
-        array.set(cisdLevelsBu, latestBuIndex, latestBu)
-        beLine  = line.new(bullishBreakIndex, potentialTopPrice, bar_index + cisdLookAhead, potentialTopPrice, color=cisdBullColor, width=cisdLineWidth, style=line.style_solid)
-        beLabel = label.new(bar_index + cisdLookAhead, potentialTopPrice, cisdBullStr, color=color.new(color.white, 100), textcolor=cisdBullColor, style=label.style_label_left, size=size.small, text_formatting=text.format_italic)
-        array.push(cisdLevelsBe, cisd.new(beLine, beLabel, false))
-        cisdState := false
-        cisdBear  := true
-
-// Manage bearish CISD (above price): an upside break = bullish change of state.
-if array.size(cisdLevelsBe) >= 1
-    latestBeIndex = array.size(cisdLevelsBe) - 1
-    latestBe      = array.get(cisdLevelsBe, latestBeIndex)
-    if not (f_bodyHigh(0) > latestBe.level.get_y2()) and not latestBe.completed
-        line.set_x2(latestBe.level, bar_index + cisdLookAhead)
-        label.set_x(latestBe.txt, bar_index + cisdLookAhead)
-    if f_bodyHigh(0) > latestBe.level.get_y2() and not latestBe.completed
-        latestBe.completed := true
-        array.set(cisdLevelsBe, latestBeIndex, latestBe)
-        buLine  = line.new(bearishBreakIndex, potentialBottomPrice, bar_index + cisdLookAhead, potentialBottomPrice, color=cisdBearColor, width=cisdLineWidth, style=line.style_solid)
-        buLabel = label.new(bar_index + cisdLookAhead, potentialBottomPrice, cisdBearStr, color=color.new(color.white, 100), textcolor=cisdBearColor, style=label.style_label_left, size=size.small, text_formatting=text.format_italic)
-        array.push(cisdLevelsBu, cisd.new(buLine, buLabel, false))
-        cisdState := true
-        cisdBull  := true
-
-// "Combine" window: a CISD break stays valid as IFVG confluence for N bars.
-int  cisdBullSince  = ta.barssince(cisdBull)
-int  cisdBearSince  = ta.barssince(cisdBear)
-bool cisdBullActive = not na(cisdBullSince) and cisdBullSince <= cisdValidBars
-bool cisdBearActive = not na(cisdBearSince) and cisdBearSince <= cisdValidBars
-
-
-//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 🚀 04. SIGNAL -> ORDER LOGIC
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -436,13 +274,12 @@ bool midlineOk = not useMidlineFilter or na(midline) ? true :
 bool vwapOk = not useVwapFilter or na(vwapValue) ? true :
      tradeDir == 1 ? entryPrice > vwapValue : tradeDir == -1 ? entryPrice < vwapValue : false
 
-// CISD confluence: combine the IFVG with a matching, still-valid CISD break.
-// Long needs a recent bullish CISD; short needs a recent bearish CISD.
-bool cisdOk = not useCisdFilter ? true :
-     tradeDir == 1 ? cisdBullActive : tradeDir == -1 ? cisdBearActive : false
+// RSI gate: buy only when oversold, sell only when overbought.
+bool rsiOk = not useRsiFilter or na(rsiValue) ? true :
+     tradeDir == 1 ? rsiValue <= rsiOversold : tradeDir == -1 ? rsiValue >= rsiOverbought : false
 
-bool takeLong = ifvgFired and tradeDir == 1 and rangeOk and midlineOk and vwapOk and cisdOk
-bool takeShort = ifvgFired and tradeDir == -1 and rangeOk and midlineOk and vwapOk and cisdOk
+bool takeLong = ifvgFired and tradeDir == 1 and rangeOk and midlineOk and vwapOk and rsiOk
+bool takeShort = ifvgFired and tradeDir == -1 and rangeOk and midlineOk and vwapOk and rsiOk
 
 float longSL = entryPrice - risk
 float longTP = entryPrice + risk * rrInput
@@ -465,12 +302,6 @@ if takeShort
 //━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 plot(showVwap ? vwapValue : na, title="VWAP", color=color.new(color.purple, 0), linewidth=2)
-
-// CISD change-of-state break events.
-plotshape(showCisd and cisdBull, title="CISD+ (bullish break)", style=shape.circle,
-     location=location.belowbar, color=cisdBullColor, size=size.tiny, text="CISD+")
-plotshape(showCisd and cisdBear, title="CISD- (bearish break)", style=shape.circle,
-     location=location.abovebar, color=cisdBearColor, size=size.tiny, text="CISD-")
 
 plotshape(showIFVG and newBullIFVG, title="IFVG+", style=shape.triangleup,
      location=location.belowbar, color=bullIFVGColor, size=size.tiny, text="IFVG+")
