@@ -1,46 +1,75 @@
 //@version=6
-indicator("Swing High/Low MTF (1H + 4H) - ICT", shorttitle="Swing HL MTF",
+indicator("Swing High/Low MTF (1H + 4H) + Weekly/Monthly - ICT", shorttitle="Swing HL MTF",
      overlay=true, max_lines_count=500, max_labels_count=500)
 
 // ============================================================
 // Inputs
 // ============================================================
 gGen = "General"
-maxSwings  = input.int(20, "Max Swings per Timeframe", minval=1, maxval=100, group=gGen)
+maxSwings  = input.int(20, "Max Levels per Timeframe", minval=1, maxval=100, group=gGen)
 lineWidth  = input.int(1, "Line Width", minval=1, maxval=5, group=gGen)
 styleStr   = input.string("Solid", "Line Style", options=["Solid", "Dashed", "Dotted"], group=gGen)
-showLabels = input.bool(true, "Show Labels", group=gGen)
-hideSwept  = input.bool(false, "Delete Line Once Swept", group=gGen,
-     tooltip="If on, the line is removed entirely when price trades through the level. If off, the line stays but stops at the candle that swept it.")
+hideSwept  = input.bool(false, "Delete Level Once Swept", group=gGen,
+     tooltip="If on, the line and label are removed entirely when price trades through the level. If off, the line stays but stops at the candle that swept it.")
 
-g1h = "1 Hour"
+gLbl = "Labels"
+showLabels   = input.bool(true, "Show Labels", group=gLbl)
+labelSizeStr = input.string("Small", "Label Size", options=["Tiny", "Small", "Normal", "Large", "Huge"], group=gLbl)
+labelPosStr  = input.string("Line End", "Label Position", options=["Line End", "Swing Start"], group=gLbl)
+showPrice    = input.bool(false, "Show Price in Label", group=gLbl)
+matchLineCol = input.bool(true, "Label Text Uses Line Color", group=gLbl,
+     tooltip="Turn off to use the custom label text color below for all labels")
+labelTextCol = input.color(color.white, "Custom Label Text Color", group=gLbl)
+labelBgCol   = input.color(color.new(color.black, 100), "Label Background Color", group=gLbl,
+     tooltip="Default is fully transparent; lower the transparency for a solid background")
+
+g1h = "1 Hour Swings"
 show1h  = input.bool(true, "Show 1H Swings", group=g1h)
 color1h = input.color(color.red, "1H Line Color", group=g1h)
 
-g4h = "4 Hour"
+g4h = "4 Hour Swings"
 show4h  = input.bool(true, "Show 4H Swings", group=g4h)
 color4h = input.color(color.blue, "4H Line Color", group=g4h)
 
+gW = "Weekly Levels"
+showW  = input.bool(true, "Show Previous Week High/Low", group=gW)
+colorW = input.color(color.orange, "Weekly Line Color", group=gW)
+
+gM = "Monthly Levels"
+showM  = input.bool(true, "Show Previous Month High/Low", group=gM)
+colorM = input.color(color.purple, "Monthly Line Color", group=gM)
+
 lineStyle = styleStr == "Dashed" ? line.style_dashed :
      styleStr == "Dotted" ? line.style_dotted : line.style_solid
+labelSize = labelSizeStr == "Tiny" ? size.tiny :
+     labelSizeStr == "Normal" ? size.normal :
+     labelSizeStr == "Large" ? size.large :
+     labelSizeStr == "Huge" ? size.huge : size.small
+labelAtEnd = labelPosStr == "Line End"
 
 // ============================================================
 // ICT swing detection (3-candle pattern on the higher timeframe):
 // swing high = candle whose high is above the highs of the candles
-// on both sides; swing low = candle whose low is below both neighbors
-// ============================================================
+// on both sides; swing low = candle whose low is below both neighbors.
 // Only completed HTF candles are used (offsets 1-3), so a swing never
 // appears and then disappears while the current HTF candle is forming
+// ============================================================
 f_ictSwings() =>
     sh = high[2] > high[3] and high[2] > high[1] ? high[2] : na
     sl = low[2]  < low[3]  and low[2]  < low[1]  ? low[2]  : na
     [sh, sl, time[2]]
 
+// Previous completed period high/low; time is the current period's open
+f_prevHL() =>
+    [high[1], low[1], time]
+
 [sh1h, sl1h, t1h] = request.security(syminfo.tickerid, "60",  f_ictSwings(), lookahead=barmerge.lookahead_off)
 [sh4h, sl4h, t4h] = request.security(syminfo.tickerid, "240", f_ictSwings(), lookahead=barmerge.lookahead_off)
+[hW, lW, tW]      = request.security(syminfo.tickerid, "W",   f_prevHL(),   lookahead=barmerge.lookahead_off)
+[hM, lM, tM]      = request.security(syminfo.tickerid, "M",   f_prevHL(),   lookahead=barmerge.lookahead_off)
 
 // ============================================================
-// Swing tracking
+// Level tracking
 // ============================================================
 type Swing
     line  ln
@@ -51,15 +80,19 @@ type Swing
 
 var array<Swing> swings1h = array.new<Swing>()
 var array<Swing> swings4h = array.new<Swing>()
+var array<Swing> swingsW  = array.new<Swing>()
+var array<Swing> swingsM  = array.new<Swing>()
 
 f_addSwing(array<Swing> arr, float level, int t, bool isHigh, color col, string txt) =>
     ln = line.new(t, level, time, level, xloc=xloc.bar_time,
          color=col, width=lineWidth, style=lineStyle, extend=extend.none)
     label lb = na
     if showLabels
-        lb := label.new(time, level, txt, xloc=xloc.bar_time,
-             style=label.style_label_left, textcolor=col,
-             color=color.new(color.black, 100), size=size.small)
+        lblTxt = showPrice ? txt + "  " + str.tostring(level, format.mintick) : txt
+        lb := label.new(labelAtEnd ? time : t, level, lblTxt, xloc=xloc.bar_time,
+             style=labelAtEnd ? label.style_label_left : label.style_label_right,
+             textcolor=matchLineCol ? col : labelTextCol,
+             color=labelBgCol, size=labelSize)
     array.push(arr, Swing.new(ln, lb, level, isHigh, true))
     if array.size(arr) > maxSwings
         old = array.shift(arr)
@@ -72,7 +105,7 @@ f_update(array<Swing> arr) =>
     for s in arr
         if s.active
             line.set_x2(s.ln, time)
-            if not na(s.lb)
+            if not na(s.lb) and labelAtEnd
                 label.set_x(s.lb, time)
             swept = s.isHigh ? high > s.level : low < s.level
             if swept
@@ -81,9 +114,11 @@ f_update(array<Swing> arr) =>
                     line.delete(s.ln)
                     label.delete(s.lb)
 
-// A pivot is confirmed once per new HTF swing bar time
+// A level is confirmed once per new HTF bar/period
 new1h = t1h != t1h[1]
 new4h = t4h != t4h[1]
+newW  = tW  != tW[1]
+newM  = tM  != tM[1]
 
 if show1h and new1h and not na(sh1h)
     f_addSwing(swings1h, sh1h, t1h, true, color1h, "1H swing high")
@@ -93,6 +128,16 @@ if show4h and new4h and not na(sh4h)
     f_addSwing(swings4h, sh4h, t4h, true, color4h, "4H swing high")
 if show4h and new4h and not na(sl4h)
     f_addSwing(swings4h, sl4h, t4h, false, color4h, "4H swing low")
+if showW and newW and not na(hW)
+    f_addSwing(swingsW, hW, tW, true, colorW, "Prev week high")
+if showW and newW and not na(lW)
+    f_addSwing(swingsW, lW, tW, false, colorW, "Prev week low")
+if showM and newM and not na(hM)
+    f_addSwing(swingsM, hM, tM, true, colorM, "Prev month high")
+if showM and newM and not na(lM)
+    f_addSwing(swingsM, lM, tM, false, colorM, "Prev month low")
 
 f_update(swings1h)
 f_update(swings4h)
+f_update(swingsW)
+f_update(swingsM)
