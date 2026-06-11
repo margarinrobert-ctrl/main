@@ -1,0 +1,414 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Turkish_Trader_
+
+//@version=6
+indicator("NDOG & NWOG Indicator", shorttitle="NWOG&NDOG", overlay=true, max_lines_count=500) // Increased max_lines_count slightly for potential table space
+
+// Input settings
+show_ndog = input.bool(true, "Show New Day Opening Gap (NDOG)", group="Display Settings")
+show_nwog = input.bool(true, "Show New Week Opening Gap (NWOG)", group="Display Settings")
+max_ndogs_to_show = input.int(10, "Maximum NDOGs to display", minval=1, maxval=50, group="Display Settings")
+max_nwogs_to_show = input.int(10, "Maximum NWOGs to display", minval=1, maxval=50, group="Display Settings")
+min_gap_size = input.float(0.0001, "Minimum gap size (points)", minval=0.0, step=0.0001, group="Display Settings")
+show_labels = input.bool(true, "Show Gap Level Text on Lines", group="Display Settings") // Updated description
+show_mid_level = input.bool(true, "Show Gap Mid Level Line", group="Display Settings") // Clarified input name
+extend_lines = input.bool(true, "Extend Lines to the Right", group="Display Settings", tooltip="ON: gap lines extend infinitely to the right. OFF: gap lines stop at the current bar (where price and time is).")
+
+// Label positioning and formatting
+label_offset_bars = input.int(20, "Label Offset (bars from current)", minval=0, maxval=100, group="Label Settings")
+show_price_in_label = input.bool(true, "Show Price in Label", group="Label Settings")
+show_date_in_label = input.bool(true, "Show Date in Label", group="Label Settings")
+label_side = input.string("Right", "Label Side", options=["Left", "Right"], group="Label Settings", tooltip="Right: the NDOG/NWOG label text appears to the right of its anchor point. Left: the label text appears to the left of its anchor point.")
+
+// Gap line colors and styles
+ndog_color = input.color(color.blue, "NDOG Color", group="Styling")
+nwog_color = input.color(color.red, "NWOG Color", group="Styling")
+mid_color = input.color(color.gray, "Mid Level Color", group="Styling")
+line_style = input.string("Solid", "Gap Line Style", options=["Solid", "Dashed", "Dotted"], group="Styling") // Clarified input name
+mid_line_style = input.string("Dashed", "Mid Line Style", options=["Solid", "Dashed", "Dotted"], group="Styling")
+line_width = input.int(2, "Line Width", minval=1, maxval=5, group="Styling")
+label_text_color = input.color(#ffffff, "Label Text Color", group="Styling") // Added text color input
+
+// Convert line style
+get_line_style(style_string) =>
+    switch style_string
+        "Solid" => line.style_solid
+        "Dashed" => line.style_dashed
+        "Dotted" => line.style_dotted
+        => line.style_solid
+
+// Label style based on chosen side
+// label.style_label_left puts the pointer on the left, so the text sits to the RIGHT of the anchor
+// label.style_label_right puts the pointer on the right, so the text sits to the LEFT of the anchor
+get_label_style() =>
+    label_side == "Right" ? label.style_label_left : label.style_label_right
+
+// Line extension based on the extend_lines setting
+get_line_extend() =>
+    extend_lines ? extend.right : extend.none
+
+// Function to format date
+get_formatted_date() =>
+    current_time = time
+    day_of_month = dayofmonth(current_time)
+    month_name = switch month(current_time)
+        1 => "Jan"
+        2 => "Feb"
+        3 => "Mar"
+        4 => "Apr"
+        5 => "May"
+        6 => "Jun"
+        7 => "Jul"
+        8 => "Aug"
+        9 => "Sep"
+        10 => "Oct"
+        11 => "Nov"
+        12 => "Dec"
+        => "Jan"
+
+    // Add ordinal suffix
+    suffix = switch day_of_month
+        1 => "st"
+        2 => "nd"
+        3 => "rd"
+        21 => "st"
+        22 => "nd"
+        23 => "rd"
+        31 => "st"
+        => "th"
+
+    month_name + " " + str.tostring(day_of_month) + suffix
+
+// Function to create formatted label text
+get_label_text(gap_type, gap_level, price) =>
+    base_text = gap_type + " " + gap_level
+    if show_date_in_label
+        base_text := base_text + " " + get_formatted_date()
+    if show_price_in_label
+        base_text := base_text + " • " + str.tostring(price, "#.##")
+    base_text
+
+// Variables to track lines (updated to include mid-level lines)
+var array<line> ndog_lines = array.new<line>()
+var array<line> nwog_lines = array.new<line>()
+var array<line> ndog_mid_lines = array.new<line>()
+var array<line> nwog_mid_lines = array.new<line>()
+
+// Variables to store previous session closes
+var float daily_close_459pm = na
+var float weekly_close_friday_459pm = na
+
+// Variables to track if we've processed opens
+var bool daily_open_processed = false
+var bool weekly_open_processed = false
+
+// Function to clean old lines (accounts for 2 lines per gap + mid lines)
+clean_old_ndog_lines(lines_array, mid_lines_array) =>
+    max_gaps = max_ndogs_to_show
+    // Total lines = max_gaps * 2 (top/bottom) + max_gaps (mid) if mid is shown
+    // We manage top/bottom and mid lines in separate arrays for easier cleanup based on input settings
+
+    // Clean top/bottom lines (2 per gap)
+    while array.size(lines_array) > max_gaps * 2
+        old_line = array.shift(lines_array)
+        if not na(old_line)
+            line.delete(old_line)
+
+    // Clean mid lines (1 per gap)
+    while array.size(mid_lines_array) > max_gaps
+        old_line = array.shift(mid_lines_array)
+        if not na(old_line)
+            line.delete(old_line)
+
+clean_old_nwog_lines(lines_array, mid_lines_array) =>
+    max_gaps = max_nwogs_to_show
+
+    // Clean top/bottom lines (2 per gap)
+    while array.size(lines_array) > max_gaps * 2
+        old_line = array.shift(lines_array)
+        if not na(old_line)
+            line.delete(old_line)
+
+    // Clean mid lines (1 per gap)
+    while array.size(mid_lines_array) > max_gaps
+        old_line = array.shift(mid_lines_array)
+        if not na(old_line)
+            line.delete(old_line)
+
+// Function to drag line endpoints along to the current bar when extension is disabled
+update_line_ends(lines_array) =>
+    if array.size(lines_array) > 0
+        for i = 0 to array.size(lines_array) - 1
+            l = array.get(lines_array, i)
+            if not na(l)
+                line.set_x2(l, bar_index)
+
+
+// Get current time in NY timezone - simplified approach
+// Use `time("1", "America/New_York")` only once per bar for efficiency
+var int current_time_ny = na
+if barstate.ishistory or barstate.isrealtime
+    current_time_ny := time("1", "America/New_York") // Get time in NY for the current bar
+
+current_hour_ny = hour(current_time_ny, "America/New_York")
+current_minute_ny = minute(current_time_ny, "America/New_York")
+current_dayofweek_ny = dayofweek(current_time_ny, "America/New_York")
+
+// Detect session changes more reliably using `time("1D", tz)` and `time("1W", tz)` changes
+// Ensure timezone is consistent
+ny_timezone = "America/New_York"
+session_start = ta.change(time("1D", ny_timezone)) != 0
+week_start = ta.change(time("1W", ny_timezone)) != 0
+
+// Function to check if current time is 4:59 PM NY time (daily close)
+is_daily_close_459pm() =>
+    current_hour_ny == 16 and current_minute_ny == 59
+
+// Function to check if current time is Friday 4:59 PM NY time (weekly close)
+is_weekly_close_friday_459pm() =>
+    current_dayofweek_ny == dayofweek.friday and current_hour_ny == 16 and current_minute_ny == 59
+
+// Simplified gap detection - trigger on first bar of new session
+// NDOG triggers on any new day start *unless* it's a Sunday week start
+is_new_day_gap() =>
+    session_start and not na(daily_close_459pm) and not (week_start and current_dayofweek_ny == dayofweek.sunday)
+
+// Simplified weekly gap detection - only on Sunday start, takes priority over daily
+is_new_week_gap() =>
+    week_start and current_dayofweek_ny == dayofweek.sunday and not na(weekly_close_friday_459pm)
+
+// Capture daily close at 4:59 PM or at the start of a new session (the previous bar's close)
+if is_daily_close_459pm() or session_start
+    // Use close[1] if it's the start of a new session (change in time("1D")), otherwise use current close
+    daily_close_459pm := session_start ? close[1] : close
+    daily_open_processed := false // Reset flag for the new day
+
+// Capture weekly close at Friday 4:59 PM or at the start of a new week (the previous bar's close)
+if is_weekly_close_friday_459pm() or (week_start and current_dayofweek_ny == dayofweek.sunday)
+     // Use close[1] if it's the start of a new week, otherwise use current close
+    weekly_close_friday_459pm := (week_start and current_dayofweek_ny == dayofweek.sunday) ? close[1] : close
+    weekly_open_processed := false // Reset flag for the new week
+
+// --- Gap Creation Logic ---
+
+// Create NDOG when a new day session starts and it's not the Sunday weekly open
+if show_ndog and is_new_day_gap() and not daily_open_processed and not na(daily_close_459pm)
+    gap_size = open - daily_close_459pm
+    if math.abs(gap_size) > min_gap_size // Only show if gap is larger than minimum size
+        // Calculate gap levels
+        gap_top = math.max(open, daily_close_459pm)
+        gap_bottom = math.min(open, daily_close_459pm)
+        gap_mid = (gap_top + gap_bottom) / 2
+
+        // Create lines for the gap
+        var line top_line = na
+        var line bottom_line = na
+        var line mid_line = na
+
+        if not na(gap_top) and not na(gap_bottom)
+            top_line := line.new(bar_index, gap_top, bar_index + 1, gap_top,color=ndog_color, style=get_line_style(line_style), width=line_width, extend=get_line_extend())
+            bottom_line := line.new(bar_index, gap_bottom, bar_index + 1, gap_bottom,
+                                  color=ndog_color, style=get_line_style(line_style), width=line_width, extend=get_line_extend())
+
+            // Add text to lines if enabled
+            if show_labels
+                // Position labels at the right side of the screen with offset
+                label_x = bar_index + label_offset_bars
+                label.new(label_x, gap_top, get_label_text("NDOG", "High", gap_top),
+                         color=ndog_color, textcolor=label_text_color,
+                         style=get_label_style(), size=size.small, xloc=xloc.bar_index)
+                label.new(label_x, gap_bottom, get_label_text("NDOG", "Low", gap_bottom),
+                         color=ndog_color, textcolor=label_text_color,
+                         style=get_label_style(), size=size.small, xloc=xloc.bar_index)
+              // Add lines to array
+            array.push(ndog_lines, top_line)
+            array.push(ndog_lines, bottom_line)
+
+            // Create mid level line if enabled
+            if show_mid_level
+                mid_line := line.new(bar_index, gap_mid, bar_index + 1, gap_mid,
+                                   color=mid_color, style=get_line_style(mid_line_style), width=line_width, extend=get_line_extend())
+                if show_labels
+                    label_x = bar_index + label_offset_bars
+                    label.new(label_x, gap_mid, get_label_text("NDOG", "Mid", gap_mid),
+                             color=mid_color, textcolor=label_text_color,
+                             style=get_label_style(), size=size.small, xloc=xloc.bar_index)
+                array.push(ndog_mid_lines, mid_line)
+
+            // Clean old lines (manage main lines and mid lines separately)
+            clean_old_ndog_lines(ndog_lines, ndog_mid_lines)
+
+            // Mark as processed for this session
+            daily_open_processed := true
+
+// Create NWOG when market opens Sunday 6 PM (after Friday 4:59 PM close)
+if show_nwog and is_new_week_gap() and not weekly_open_processed and not na(weekly_close_friday_459pm)
+    gap_size = open - weekly_close_friday_459pm
+    if math.abs(gap_size) > min_gap_size // Only show if gap is larger than minimum size
+        // Calculate gap levels
+        gap_top = math.max(open, weekly_close_friday_459pm)
+        gap_bottom = math.min(open, weekly_close_friday_459pm)
+        gap_mid = (gap_top + gap_bottom) / 2
+
+        // Create lines for the gap
+        var line top_line = na
+        var line bottom_line = na
+        var line mid_line = na
+
+        if not na(gap_top) and not na(gap_bottom)
+            top_line := line.new(bar_index, gap_top, bar_index + 1, gap_top, color=nwog_color, style=get_line_style(line_style), width=line_width, extend=get_line_extend())
+            bottom_line := line.new(bar_index, gap_bottom, bar_index + 1, gap_bottom,
+                                  color=nwog_color, style=get_line_style(line_style), width=line_width, extend=get_line_extend())
+
+            // Add text to lines if enabled
+            if show_labels
+                // Position labels at the right side of the screen with offset
+                label_x = bar_index + label_offset_bars
+                label.new(label_x, gap_top, get_label_text("NWOG", "High", gap_top),
+                         color=nwog_color, textcolor=label_text_color,
+                         style=get_label_style(), size=size.small, xloc=xloc.bar_index)
+                label.new(label_x, gap_bottom, get_label_text("NWOG", "Low", gap_bottom),
+                         color=nwog_color, textcolor=label_text_color,
+                         style=get_label_style(), size=size.small, xloc=xloc.bar_index)
+
+            // Add lines to array
+            array.push(nwog_lines, top_line)
+            array.push(nwog_lines, bottom_line)
+
+            // Create mid level line if enabled
+            if show_mid_level
+                mid_line := line.new(bar_index, gap_mid, bar_index + 1, gap_mid,
+                                   color=mid_color, style=get_line_style(mid_line_style), width=line_width, extend=get_line_extend())
+                if show_labels
+                    label_x = bar_index + label_offset_bars
+                    label.new(label_x, gap_mid, get_label_text("NWOG", "Mid", gap_mid),
+                             color=mid_color, textcolor=label_text_color,
+                             style=get_label_style(), size=size.small, xloc=xloc.bar_index)
+                array.push(nwog_mid_lines, mid_line)
+
+            // Clean old lines (manage main lines and mid lines separately)
+            clean_old_nwog_lines(nwog_lines, nwog_mid_lines)
+
+            // Mark as processed for this session
+            weekly_open_processed := true
+
+// When line extension is disabled, drag every stored line's right endpoint to the
+// current bar so the lines always end exactly where price and time is
+if not extend_lines
+    update_line_ends(ndog_lines)
+    update_line_ends(nwog_lines)
+    update_line_ends(ndog_mid_lines)
+    update_line_ends(nwog_mid_lines)
+
+
+// Note: Lines are horizontal rays that extend automatically to the right.
+// Labels are created separately to show gap level names.
+// The previous label.new calls for gap levels are removed.
+
+// Plot gap fill areas (optional background fill) - This would require tracking gap areas
+// and using fill() which is more complex with dynamic lines. Let's keep it simple
+// for now and maybe add fill logic in a later iteration if needed.
+// show_fill = input.bool(false, "Fill Gap Areas", group="Display Settings")
+// fill_transparency = input.int(90, "Fill Transparency", minval=0, maxval=100, group="Styling")
+
+// Table to display gap information
+show_table = input.bool(true, "Show Gap Info Table", group="Display Settings")
+table_position = input.string("top_right", "Table Position",
+                              options=["top_left", "top_center", "top_right", "middle_left", "middle_center", "middle_right", "bottom_left", "bottom_center", "bottom_right"],
+                              group="Display Settings")
+
+get_table_position() =>
+    switch table_position
+        "top_left" => position.top_left
+        "top_center" => position.top_center
+        "top_right" => position.top_right
+        "middle_left" => position.middle_left
+        "middle_center" => position.middle_center
+        "middle_right" => position.middle_right
+        "bottom_left" => position.bottom_left
+        "bottom_center" => position.bottom_center
+        "bottom_right" => position.bottom_right
+        => position.top_right
+
+// Create information table
+if show_table and barstate.islast // Only update table on the last bar for performance
+    var info_table = table.new(get_table_position(), 5, 4, bgcolor=#ffffff, border_width=1)
+
+    // Clear table content (keep header row for clarity)
+    table.cell(info_table, 0, 1, "", text_color=#000000, bgcolor=#ffffff)
+    table.cell(info_table, 1, 1, "", text_color=#000000, bgcolor=#ffffff)
+    table.cell(info_table, 2, 1, "", text_color=#000000, bgcolor=#ffffff)
+    table.cell(info_table, 3, 1, "", text_color=#000000, bgcolor=#ffffff)
+    table.cell(info_table, 4, 1, "", text_color=#000000, bgcolor=#ffffff)
+
+    table.cell(info_table, 0, 2, "", text_color=#000000, bgcolor=#ffffff)
+    table.cell(info_table, 1, 2, "", text_color=#000000, bgcolor=#ffffff)
+    table.cell(info_table, 2, 2, "", text_color=#000000, bgcolor=#ffffff)
+    table.cell(info_table, 3, 2, "", text_color=#000000, bgcolor=#ffffff)
+    table.cell(info_table, 4, 2, "", text_color=#000000, bgcolor=#ffffff)
+
+    table.cell(info_table, 0, 3, "", text_color=#000000, bgcolor=#d3d3d3)
+    table.cell(info_table, 1, 3, "", text_color=#000000, bgcolor=#d3d3d3)
+    table.cell(info_table, 2, 3, "", text_color=#000000, bgcolor=#d3d3d3)
+    table.cell(info_table, 3, 3, "", text_color=#000000, bgcolor=#d3d3d3)
+    table.cell(info_table, 4, 3, "", text_color=#000000, bgcolor=#d3d3d3)
+
+
+    // Headers (set once)
+    if barstate.isfirst
+        table.cell(info_table, 0, 0, "Gap Type", text_color=#000000, bgcolor=#c0c0c0) // Slightly darker header
+        table.cell(info_table, 1, 0, "Count", text_color=#000000, bgcolor=#c0c0c0)
+        table.cell(info_table, 2, 0, "Gap Status", text_color=#000000, bgcolor=#c0c0c0) // Clarified status
+        table.cell(info_table, 3, 0, "Mid Level", text_color=#000000, bgcolor=#c0c0c0)
+        table.cell(info_table, 4, 0, "Schedule (NY)", text_color=#000000, bgcolor=#c0c0c0) // Clarified schedule
+
+    // NDOG info
+    ndog_count = str.tostring(math.floor(array.size(ndog_lines) / 2))
+    table.cell(info_table, 0, 1, "NDOG", text_color=ndog_color, bgcolor=#ffffff)
+    table.cell(info_table, 1, 1, ndog_count, text_color=#000000, bgcolor=#ffffff)
+    table.cell(info_table, 2, 1, show_ndog ? "ON" : "OFF", text_color=show_ndog ? #008000 : #ff0000, bgcolor=#ffffff) // Use standard green/red
+    table.cell(info_table, 3, 1, show_mid_level ? str.tostring(array.size(ndog_mid_lines)) : "OFF", text_color=show_mid_level ? mid_color : #ff0000, bgcolor=#ffffff)
+    table.cell(info_table, 4, 1, "Close: 4:59PM\nOpen: 6:00PM", text_color=#000000, bgcolor=#ffffff)
+
+    // NWOG info
+    nwog_count = str.tostring(math.floor(array.size(nwog_lines) / 2))
+    table.cell(info_table, 0, 2, "NWOG", text_color=nwog_color, bgcolor=#ffffff)
+    table.cell(info_table, 1, 2, nwog_count, text_color=#000000, bgcolor=#ffffff)
+    table.cell(info_table, 2, 2, show_nwog ? "ON" : "OFF", text_color=show_nwog ? #008000 : #ff0000, bgcolor=#ffffff)
+    table.cell(info_table, 3, 2, show_mid_level ? str.tostring(array.size(nwog_mid_lines)) : "OFF", text_color=show_mid_level ? mid_color : #ff0000, bgcolor=#ffffff)
+    table.cell(info_table, 4, 2, "Fri Close: 4:59PM\nSun Open: 6:00PM", text_color=#000000, bgcolor=#ffffff)
+
+    // Current NY time info and Label Status
+    if not na(current_hour_ny) and not na(current_minute_ny) and not na(current_dayofweek_ny)
+        current_time_str = str.tostring(current_hour_ny, "#00") + ":" + str.tostring(current_minute_ny, "#00")
+        day_names = array.from("", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+        current_day_str = array.get(day_names, current_dayofweek_ny)
+        table.cell(info_table, 0, 3, "NY Time", text_color=#000000, bgcolor=#d3d3d3)
+        table.cell(info_table, 1, 3, current_day_str, text_color=#000000, bgcolor=#d3d3d3)
+        table.cell(info_table, 2, 3, current_time_str, text_color=#000000, bgcolor=#d3d3d3)
+        table.cell(info_table, 3, 3, show_labels ? "Labels ON" : "Labels OFF", text_color=show_labels ? #008000 : #ff0000, bgcolor=#d3d3d3)
+        table.cell(info_table, 4, 3, "Eastern", text_color=#000000, bgcolor=#d3d3d3)
+
+// Debug labels (optional - enabled by default for easier testing)
+show_debug = input.bool(false, "Show Debug Labels", group="Debug") // Changed back to false by default
+
+if show_debug
+    // Show when we capture closes (using label.new as these are bar-specific events)
+    if is_daily_close_459pm()
+        label.new(bar_index, high, "Daily Close 4:59PM\nClose: " + str.tostring(close), color=#0000ff, style=label.style_label_down, size=size.tiny)
+    if is_weekly_close_friday_459pm()
+        label.new(bar_index, high, "Weekly Close Fri 4:59PM\nClose: " + str.tostring(close), color=#ff0000, style=label.style_label_down, size=size.tiny)
+
+    // Show when we detect opens/gaps with more detail (using label.new)
+    if is_new_day_gap()
+        gap_type = "NDOG (Daily)"
+        label.new(bar_index, low, gap_type + "\nOpen: " + str.tostring(open) + "\nPrev Close: " + str.tostring(daily_close_459pm), color=#0000ff, style=label.style_label_up, size=size.tiny)
+    if is_new_week_gap()
+        gap_type = "NWOG (Weekly)"
+        label.new(bar_index, low, gap_type + "\nOpen: " + str.tostring(open) + "\nPrev Close: " + str.tostring(weekly_close_friday_459pm), color=#ff0000, style=label.style_label_up, size=size.tiny)
+
+    // Show session changes (using label.new)
+    if session_start and not (week_start and current_dayofweek_ny == dayofweek.sunday)
+        label.new(bar_index, close, "New Day Start", color=#ffff00, style=label.style_label_left, size=size.tiny)
+    if week_start and current_dayofweek_ny == dayofweek.sunday
+        label.new(bar_index, close, "New Week Start (Sunday)", color=#ff8000, style=label.style_label_left, size=size.tiny)
