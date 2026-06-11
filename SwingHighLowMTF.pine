@@ -1,5 +1,5 @@
 //@version=6
-indicator("Swing High/Low MTF (1H + 4H) + Weekly/Monthly - ICT", shorttitle="Swing HL MTF",
+indicator("Swing High/Low MTF (1H + 4H) + Daily/Weekly/Monthly - ICT", shorttitle="Swing HL MTF",
      overlay=true, max_lines_count=500, max_labels_count=500)
 
 // ============================================================
@@ -31,6 +31,20 @@ g4h = "4 Hour Swings"
 show4h  = input.bool(true, "Show 4H Swings", group=g4h)
 color4h = input.color(color.blue, "4H Line Color", group=g4h)
 
+gD = "Previous Day Levels (PDH/PDL/Open/Close)"
+tfD     = input.timeframe("D", "Timeframe", group=gD,
+     tooltip="Period for the previous high/low/open/close. Default is the previous day; pick another timeframe to track a different period.")
+showDHL = input.bool(true, "Show Previous High/Low", group=gD)
+colorDH = input.color(color.yellow, "High Line Color", group=gD)
+colorDL = input.color(color.yellow, "Low Line Color", group=gD)
+showDO  = input.bool(false, "Show Previous Open", group=gD)
+colorDO = input.color(color.aqua, "Open Line Color", group=gD)
+showDC  = input.bool(false, "Show Previous Close", group=gD)
+colorDC = input.color(color.maroon, "Close Line Color", group=gD)
+ocStyleStr  = input.string("Dotted", "Open/Close Line Style", options=["Solid", "Dashed", "Dotted"], group=gD)
+onlyLatestD = input.bool(true, "Only Show Latest Period", group=gD,
+     tooltip="If on, the previous period's lines are removed when a new period starts (like classic PDH/PDL scripts). If off, old highs/lows stay until swept and old open/close lines freeze at the period change.")
+
 gW = "Weekly Levels"
 showW  = input.bool(true, "Show Previous Week High/Low", group=gW)
 colorW = input.color(color.orange, "Weekly Line Color", group=gW)
@@ -39,8 +53,11 @@ gM = "Monthly Levels"
 showM  = input.bool(true, "Show Previous Month High/Low", group=gM)
 colorM = input.color(color.purple, "Monthly Line Color", group=gM)
 
-lineStyle = styleStr == "Dashed" ? line.style_dashed :
-     styleStr == "Dotted" ? line.style_dotted : line.style_solid
+f_style(string s) =>
+    s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
+
+lineStyle = f_style(styleStr)
+ocStyle   = f_style(ocStyleStr)
 labelSize = labelSizeStr == "Tiny" ? size.tiny :
      labelSizeStr == "Normal" ? size.normal :
      labelSizeStr == "Large" ? size.large :
@@ -59,33 +76,41 @@ f_ictSwings() =>
     sl = low[2]  < low[3]  and low[2]  < low[1]  ? low[2]  : na
     [sh, sl, time[2]]
 
-// Previous completed period high/low; time is the current period's open
+// Previous completed period values; time is the current period's open
 f_prevHL() =>
     [high[1], low[1], time]
 
-[sh1h, sl1h, t1h] = request.security(syminfo.tickerid, "60",  f_ictSwings(), lookahead=barmerge.lookahead_off)
-[sh4h, sl4h, t4h] = request.security(syminfo.tickerid, "240", f_ictSwings(), lookahead=barmerge.lookahead_off)
-[hW, lW, tW]      = request.security(syminfo.tickerid, "W",   f_prevHL(),   lookahead=barmerge.lookahead_off)
-[hM, lM, tM]      = request.security(syminfo.tickerid, "M",   f_prevHL(),   lookahead=barmerge.lookahead_off)
+f_prevHLOC() =>
+    [high[1], low[1], open[1], close[1], time]
+
+[sh1h, sl1h, t1h]    = request.security(syminfo.tickerid, "60",  f_ictSwings(), lookahead=barmerge.lookahead_off)
+[sh4h, sl4h, t4h]    = request.security(syminfo.tickerid, "240", f_ictSwings(), lookahead=barmerge.lookahead_off)
+[hD, lD, oD, cD, tD] = request.security(syminfo.tickerid, tfD,  f_prevHLOC(), lookahead=barmerge.lookahead_off)
+[hW, lW, tW]         = request.security(syminfo.tickerid, "W",   f_prevHL(),   lookahead=barmerge.lookahead_off)
+[hM, lM, tM]         = request.security(syminfo.tickerid, "M",   f_prevHL(),   lookahead=barmerge.lookahead_off)
 
 // ============================================================
 // Level tracking
+// dir:  1 = swing/period high (swept when price trades above)
+//      -1 = swing/period low  (swept when price trades below)
+//       0 = open/close level  (never swept; runs until its period ends)
 // ============================================================
 type Swing
     line  ln
     label lb
     float level
-    bool  isHigh
+    int   dir
     bool  active
 
 var array<Swing> swings1h = array.new<Swing>()
 var array<Swing> swings4h = array.new<Swing>()
+var array<Swing> swingsD  = array.new<Swing>()
 var array<Swing> swingsW  = array.new<Swing>()
 var array<Swing> swingsM  = array.new<Swing>()
 
-f_addSwing(array<Swing> arr, float level, int t, bool isHigh, color col, string txt) =>
+f_addSwing(array<Swing> arr, float level, int t, int dir, color col, string txt, string lnStyle) =>
     ln = line.new(t, level, time, level, xloc=xloc.bar_time,
-         color=col, width=lineWidth, style=lineStyle, extend=extend.none)
+         color=col, width=lineWidth, style=lnStyle, extend=extend.none)
     label lb = na
     if showLabels
         lblTxt = showPrice ? txt + "  " + str.tostring(level, format.mintick) : txt
@@ -93,7 +118,7 @@ f_addSwing(array<Swing> arr, float level, int t, bool isHigh, color col, string 
              style=labelAtEnd ? label.style_label_left : label.style_label_right,
              textcolor=matchLineCol ? col : labelTextCol,
              color=labelBgCol, size=labelSize)
-    array.push(arr, Swing.new(ln, lb, level, isHigh, true))
+    array.push(arr, Swing.new(ln, lb, level, dir, true))
     if array.size(arr) > maxSwings
         old = array.shift(arr)
         line.delete(old.ln)
@@ -107,37 +132,63 @@ f_update(array<Swing> arr) =>
             line.set_x2(s.ln, time)
             if not na(s.lb) and labelAtEnd
                 label.set_x(s.lb, time)
-            swept = s.isHigh ? high > s.level : low < s.level
+            swept = s.dir == 1 ? high > s.level : s.dir == -1 ? low < s.level : false
             if swept
                 s.active := false
                 if hideSwept
                     line.delete(s.ln)
                     label.delete(s.lb)
 
+f_clear(array<Swing> arr) =>
+    while array.size(arr) > 0
+        old = array.shift(arr)
+        line.delete(old.ln)
+        label.delete(old.lb)
+
 // A level is confirmed once per new HTF bar/period
 new1h = t1h != t1h[1]
 new4h = t4h != t4h[1]
+newD  = tD  != tD[1]
 newW  = tW  != tW[1]
 newM  = tM  != tM[1]
 
 if show1h and new1h and not na(sh1h)
-    f_addSwing(swings1h, sh1h, t1h, true, color1h, "1H swing high")
+    f_addSwing(swings1h, sh1h, t1h, 1, color1h, "1H swing high", lineStyle)
 if show1h and new1h and not na(sl1h)
-    f_addSwing(swings1h, sl1h, t1h, false, color1h, "1H swing low")
+    f_addSwing(swings1h, sl1h, t1h, -1, color1h, "1H swing low", lineStyle)
 if show4h and new4h and not na(sh4h)
-    f_addSwing(swings4h, sh4h, t4h, true, color4h, "4H swing high")
+    f_addSwing(swings4h, sh4h, t4h, 1, color4h, "4H swing high", lineStyle)
 if show4h and new4h and not na(sl4h)
-    f_addSwing(swings4h, sl4h, t4h, false, color4h, "4H swing low")
+    f_addSwing(swings4h, sl4h, t4h, -1, color4h, "4H swing low", lineStyle)
+
+if newD
+    if onlyLatestD
+        f_clear(swingsD)
+    else
+        // open/close levels belong to one period only: freeze them here
+        for s in swingsD
+            if s.dir == 0
+                s.active := false
+    if showDHL and not na(hD)
+        f_addSwing(swingsD, hD, tD, 1, colorDH, "Prev " + tfD + " high", lineStyle)
+    if showDHL and not na(lD)
+        f_addSwing(swingsD, lD, tD, -1, colorDL, "Prev " + tfD + " low", lineStyle)
+    if showDO and not na(oD)
+        f_addSwing(swingsD, oD, tD, 0, colorDO, "Prev " + tfD + " open", ocStyle)
+    if showDC and not na(cD)
+        f_addSwing(swingsD, cD, tD, 0, colorDC, "Prev " + tfD + " close", ocStyle)
+
 if showW and newW and not na(hW)
-    f_addSwing(swingsW, hW, tW, true, colorW, "Prev week high")
+    f_addSwing(swingsW, hW, tW, 1, colorW, "Prev week high", lineStyle)
 if showW and newW and not na(lW)
-    f_addSwing(swingsW, lW, tW, false, colorW, "Prev week low")
+    f_addSwing(swingsW, lW, tW, -1, colorW, "Prev week low", lineStyle)
 if showM and newM and not na(hM)
-    f_addSwing(swingsM, hM, tM, true, colorM, "Prev month high")
+    f_addSwing(swingsM, hM, tM, 1, colorM, "Prev month high", lineStyle)
 if showM and newM and not na(lM)
-    f_addSwing(swingsM, lM, tM, false, colorM, "Prev month low")
+    f_addSwing(swingsM, lM, tM, -1, colorM, "Prev month low", lineStyle)
 
 f_update(swings1h)
 f_update(swings4h)
+f_update(swingsD)
 f_update(swingsW)
 f_update(swingsM)
