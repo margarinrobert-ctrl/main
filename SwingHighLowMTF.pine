@@ -1,18 +1,17 @@
 //@version=6
-indicator("Swing High/Low MTF (1H + 4H)", shorttitle="Swing HL MTF",
-     overlay=true, max_lines_count=500)
+indicator("Swing High/Low MTF (1H + 4H) - ICT", shorttitle="Swing HL MTF",
+     overlay=true, max_lines_count=500, max_labels_count=500)
 
 // ============================================================
 // Inputs
 // ============================================================
 gGen = "General"
-pivotLen   = input.int(5, "Pivot Strength (bars left/right)", minval=1, group=gGen,
-     tooltip="Number of HTF bars on each side that must be lower (for highs) / higher (for lows) to confirm a swing")
-maxSwings  = input.int(10, "Max Swings per Timeframe/Side", minval=1, maxval=50, group=gGen)
-extendLine = input.bool(true, "Extend Lines to the Right", group=gGen)
+maxSwings  = input.int(20, "Max Swings per Timeframe", minval=1, maxval=100, group=gGen)
 lineWidth  = input.int(1, "Line Width", minval=1, maxval=5, group=gGen)
 styleStr   = input.string("Solid", "Line Style", options=["Solid", "Dashed", "Dotted"], group=gGen)
 showLabels = input.bool(true, "Show Labels", group=gGen)
+hideSwept  = input.bool(false, "Delete Line Once Swept", group=gGen,
+     tooltip="If on, the line is removed entirely when price trades through the level. If off, the line stays but stops at the candle that swept it.")
 
 g1h = "1 Hour"
 show1h  = input.bool(true, "Show 1H Swings", group=g1h)
@@ -26,63 +25,74 @@ lineStyle = styleStr == "Dashed" ? line.style_dashed :
      styleStr == "Dotted" ? line.style_dotted : line.style_solid
 
 // ============================================================
-// Higher-timeframe pivot detection
+// ICT swing detection (3-candle pattern on the higher timeframe):
+// swing high = candle whose high is above the highs of the candles
+// on both sides; swing low = candle whose low is below both neighbors
 // ============================================================
-f_pivots() =>
-    ph = ta.pivothigh(high, pivotLen, pivotLen)
-    pl = ta.pivotlow(low, pivotLen, pivotLen)
-    // time of the bar where the pivot actually occurred
-    [ph, pl, time[pivotLen]]
+// Only completed HTF candles are used (offsets 1-3), so a swing never
+// appears and then disappears while the current HTF candle is forming
+f_ictSwings() =>
+    sh = high[2] > high[3] and high[2] > high[1] ? high[2] : na
+    sl = low[2]  < low[3]  and low[2]  < low[1]  ? low[2]  : na
+    [sh, sl, time[2]]
 
-[ph1h, pl1h, t1h] = request.security(syminfo.tickerid, "60",  f_pivots(), lookahead=barmerge.lookahead_off)
-[ph4h, pl4h, t4h] = request.security(syminfo.tickerid, "240", f_pivots(), lookahead=barmerge.lookahead_off)
+[sh1h, sl1h, t1h] = request.security(syminfo.tickerid, "60",  f_ictSwings(), lookahead=barmerge.lookahead_off)
+[sh4h, sl4h, t4h] = request.security(syminfo.tickerid, "240", f_ictSwings(), lookahead=barmerge.lookahead_off)
 
 // ============================================================
-// Line management
+// Swing tracking
 // ============================================================
-var array<line>  lines1hH = array.new<line>()
-var array<line>  lines1hL = array.new<line>()
-var array<line>  lines4hH = array.new<line>()
-var array<line>  lines4hL = array.new<line>()
-var array<label> labelsAll = array.new<label>()
+type Swing
+    line  ln
+    label lb
+    float level
+    bool  isHigh
+    bool  active
 
-f_addSwing(array<line> arr, float level, int t, color col, string txt) =>
+var array<Swing> swings1h = array.new<Swing>()
+var array<Swing> swings4h = array.new<Swing>()
+
+f_addSwing(array<Swing> arr, float level, int t, bool isHigh, color col, string txt) =>
     ln = line.new(t, level, time, level, xloc=xloc.bar_time,
-         color=col, width=lineWidth, style=lineStyle,
-         extend=extendLine ? extend.right : extend.none)
-    array.push(arr, ln)
-    if array.size(arr) > maxSwings
-        line.delete(array.shift(arr))
+         color=col, width=lineWidth, style=lineStyle, extend=extend.none)
+    label lb = na
     if showLabels
-        lb = label.new(t, level, txt, xloc=xloc.bar_time,
+        lb := label.new(time, level, txt, xloc=xloc.bar_time,
              style=label.style_label_left, textcolor=col,
              color=color.new(color.black, 100), size=size.small)
-        array.push(labelsAll, lb)
-        if array.size(labelsAll) > 4 * maxSwings
-            label.delete(array.shift(labelsAll))
+    array.push(arr, Swing.new(ln, lb, level, isHigh, true))
+    if array.size(arr) > maxSwings
+        old = array.shift(arr)
+        line.delete(old.ln)
+        label.delete(old.lb)
 
-// A new pivot is confirmed when the HTF pivot time changes and the value is valid
-new1hH = show1h and not na(ph1h) and t1h != t1h[1]
-new1hL = show1h and not na(pl1h) and t1h != t1h[1]
-new4hH = show4h and not na(ph4h) and t4h != t4h[1]
-new4hL = show4h and not na(pl4h) and t4h != t4h[1]
+// Extend active lines to the current candle; once price trades through
+// the level, the line stops right at that candle (the sweep)
+f_update(array<Swing> arr) =>
+    for s in arr
+        if s.active
+            line.set_x2(s.ln, time)
+            if not na(s.lb)
+                label.set_x(s.lb, time)
+            swept = s.isHigh ? high > s.level : low < s.level
+            if swept
+                s.active := false
+                if hideSwept
+                    line.delete(s.ln)
+                    label.delete(s.lb)
 
-if new1hH
-    f_addSwing(lines1hH, ph1h, t1h, color1h, "1H SH")
-if new1hL
-    f_addSwing(lines1hL, pl1h, t1h, color1h, "1H SL")
-if new4hH
-    f_addSwing(lines4hH, ph4h, t4h, color4h, "4H SH")
-if new4hL
-    f_addSwing(lines4hL, pl4h, t4h, color4h, "4H SL")
+// A pivot is confirmed once per new HTF swing bar time
+new1h = t1h != t1h[1]
+new4h = t4h != t4h[1]
 
-// Keep non-extended lines growing with the chart
-f_updateEnds(array<line> arr) =>
-    if not extendLine
-        for ln in arr
-            line.set_x2(ln, time)
+if show1h and new1h and not na(sh1h)
+    f_addSwing(swings1h, sh1h, t1h, true, color1h, "1H swing high")
+if show1h and new1h and not na(sl1h)
+    f_addSwing(swings1h, sl1h, t1h, false, color1h, "1H swing low")
+if show4h and new4h and not na(sh4h)
+    f_addSwing(swings4h, sh4h, t4h, true, color4h, "4H swing high")
+if show4h and new4h and not na(sl4h)
+    f_addSwing(swings4h, sl4h, t4h, false, color4h, "4H swing low")
 
-f_updateEnds(lines1hH)
-f_updateEnds(lines1hL)
-f_updateEnds(lines4hH)
-f_updateEnds(lines4hL)
+f_update(swings1h)
+f_update(swings4h)
