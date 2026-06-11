@@ -22,6 +22,11 @@ matchLineCol = input.bool(true, "Label Text Uses Line Color", group=gLbl,
 labelTextCol = input.color(color.white, "Custom Label Text Color", group=gLbl)
 labelBgCol   = input.color(color.new(color.black, 100), "Label Background Color", group=gLbl,
      tooltip="Default is fully transparent; lower the transparency for a solid background")
+stackLabels  = input.bool(true, "Spread Stacked Labels", group=gLbl,
+     tooltip="When several levels sit at almost the same price, shift each overlapping label further to the right so they stay readable")
+stackBars    = input.int(8, "Stacked Label Spacing (bars)", minval=1, maxval=50, group=gLbl)
+stackAtrMult = input.float(0.5, "Stack Detection Distance (ATR x)", minval=0.1, step=0.1, group=gLbl,
+     tooltip="Labels closer together than this many ATRs are treated as stacked")
 
 g1h = "1 Hour Swings"
 show1h  = input.bool(true, "Show 1H Swings", group=g1h)
@@ -197,3 +202,42 @@ f_update(swings4h)
 f_update(swingsD)
 f_update(swingsW)
 f_update(swingsM)
+
+// ============================================================
+// Spread stacked labels: active line-end labels sitting within
+// "Stack Detection Distance" of each other are shifted right, one
+// spacing step further per label, so they don't overlap
+// ============================================================
+atrVal = ta.atr(14)
+
+f_collectActive(array<Swing> arr, array<Swing> out) =>
+    for s in arr
+        if s.active and not na(s.lb)
+            array.push(out, s)
+
+if showLabels and labelAtEnd and stackLabels
+    actives = array.new<Swing>()
+    f_collectActive(swings1h, actives)
+    f_collectActive(swings4h, actives)
+    f_collectActive(swingsD, actives)
+    f_collectActive(swingsW, actives)
+    f_collectActive(swingsM, actives)
+    n = array.size(actives)
+    if n > 1
+        // insertion sort by price level
+        for i = 1 to n - 1
+            s = array.get(actives, i)
+            j = i - 1
+            while j >= 0 and array.get(actives, j).level > s.level
+                array.set(actives, j + 1, array.get(actives, j))
+                j -= 1
+            array.set(actives, j + 1, s)
+        barDur = nz(time - time[1], 60000)
+        thresh = atrVal * stackAtrMult
+        slot = 0
+        float prevLevel = na
+        for i = 0 to n - 1
+            s = array.get(actives, i)
+            slot := not na(prevLevel) and s.level - prevLevel < thresh ? slot + 1 : 0
+            label.set_x(s.lb, time + slot * stackBars * barDur)
+            prevLevel := s.level
