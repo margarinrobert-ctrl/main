@@ -83,11 +83,16 @@ f_prevHL() =>
 f_prevHLOC() =>
     [high[1], low[1], open[1], close[1], time]
 
-[sh1h, sl1h, t1h]    = request.security(syminfo.tickerid, "60",  f_ictSwings(), lookahead=barmerge.lookahead_off)
-[sh4h, sl4h, t4h]    = request.security(syminfo.tickerid, "240", f_ictSwings(), lookahead=barmerge.lookahead_off)
-[hD, lD, oD, cD, tD] = request.security(syminfo.tickerid, tfD,  f_prevHLOC(), lookahead=barmerge.lookahead_off)
-[hW, lW, tW]         = request.security(syminfo.tickerid, "W",   f_prevHL(),   lookahead=barmerge.lookahead_off)
-[hM, lM, tM]         = request.security(syminfo.tickerid, "M",   f_prevHL(),   lookahead=barmerge.lookahead_off)
+// lookahead_on is safe (non-repainting) here because every value comes
+// from completed HTF candles ([1]+ offsets). It makes levels appear as
+// soon as they exist instead of one full HTF period late — with the
+// late arrival, a level could already be swept before its line was
+// created, so the sweep was never detected and the line never removed
+[sh1h, sl1h, t1h]    = request.security(syminfo.tickerid, "60",  f_ictSwings(), lookahead=barmerge.lookahead_on)
+[sh4h, sl4h, t4h]    = request.security(syminfo.tickerid, "240", f_ictSwings(), lookahead=barmerge.lookahead_on)
+[hD, lD, oD, cD, tD] = request.security(syminfo.tickerid, tfD,  f_prevHLOC(), lookahead=barmerge.lookahead_on)
+[hW, lW, tW]         = request.security(syminfo.tickerid, "W",   f_prevHL(),   lookahead=barmerge.lookahead_on)
+[hM, lM, tM]         = request.security(syminfo.tickerid, "M",   f_prevHL(),   lookahead=barmerge.lookahead_on)
 
 // ============================================================
 // Level tracking
