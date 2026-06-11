@@ -1,0 +1,88 @@
+//@version=6
+indicator("Swing High/Low MTF (1H + 4H)", shorttitle="Swing HL MTF",
+     overlay=true, max_lines_count=500)
+
+// ============================================================
+// Inputs
+// ============================================================
+gGen = "General"
+pivotLen   = input.int(5, "Pivot Strength (bars left/right)", minval=1, group=gGen,
+     tooltip="Number of HTF bars on each side that must be lower (for highs) / higher (for lows) to confirm a swing")
+maxSwings  = input.int(10, "Max Swings per Timeframe/Side", minval=1, maxval=50, group=gGen)
+extendLine = input.bool(true, "Extend Lines to the Right", group=gGen)
+lineWidth  = input.int(1, "Line Width", minval=1, maxval=5, group=gGen)
+styleStr   = input.string("Solid", "Line Style", options=["Solid", "Dashed", "Dotted"], group=gGen)
+showLabels = input.bool(true, "Show Labels", group=gGen)
+
+g1h = "1 Hour"
+show1h  = input.bool(true, "Show 1H Swings", group=g1h)
+color1h = input.color(color.red, "1H Line Color", group=g1h)
+
+g4h = "4 Hour"
+show4h  = input.bool(true, "Show 4H Swings", group=g4h)
+color4h = input.color(color.blue, "4H Line Color", group=g4h)
+
+lineStyle = styleStr == "Dashed" ? line.style_dashed :
+     styleStr == "Dotted" ? line.style_dotted : line.style_solid
+
+// ============================================================
+// Higher-timeframe pivot detection
+// ============================================================
+f_pivots() =>
+    ph = ta.pivothigh(high, pivotLen, pivotLen)
+    pl = ta.pivotlow(low, pivotLen, pivotLen)
+    // time of the bar where the pivot actually occurred
+    [ph, pl, time[pivotLen]]
+
+[ph1h, pl1h, t1h] = request.security(syminfo.tickerid, "60",  f_pivots(), lookahead=barmerge.lookahead_off)
+[ph4h, pl4h, t4h] = request.security(syminfo.tickerid, "240", f_pivots(), lookahead=barmerge.lookahead_off)
+
+// ============================================================
+// Line management
+// ============================================================
+var array<line>  lines1hH = array.new<line>()
+var array<line>  lines1hL = array.new<line>()
+var array<line>  lines4hH = array.new<line>()
+var array<line>  lines4hL = array.new<line>()
+var array<label> labelsAll = array.new<label>()
+
+f_addSwing(array<line> arr, float level, int t, color col, string txt) =>
+    ln = line.new(t, level, time, level, xloc=xloc.bar_time,
+         color=col, width=lineWidth, style=lineStyle,
+         extend=extendLine ? extend.right : extend.none)
+    array.push(arr, ln)
+    if array.size(arr) > maxSwings
+        line.delete(array.shift(arr))
+    if showLabels
+        lb = label.new(t, level, txt, xloc=xloc.bar_time,
+             style=label.style_label_left, textcolor=col,
+             color=color.new(color.black, 100), size=size.small)
+        array.push(labelsAll, lb)
+        if array.size(labelsAll) > 4 * maxSwings
+            label.delete(array.shift(labelsAll))
+
+// A new pivot is confirmed when the HTF pivot time changes and the value is valid
+new1hH = show1h and not na(ph1h) and t1h != t1h[1]
+new1hL = show1h and not na(pl1h) and t1h != t1h[1]
+new4hH = show4h and not na(ph4h) and t4h != t4h[1]
+new4hL = show4h and not na(pl4h) and t4h != t4h[1]
+
+if new1hH
+    f_addSwing(lines1hH, ph1h, t1h, color1h, "1H SH")
+if new1hL
+    f_addSwing(lines1hL, pl1h, t1h, color1h, "1H SL")
+if new4hH
+    f_addSwing(lines4hH, ph4h, t4h, color4h, "4H SH")
+if new4hL
+    f_addSwing(lines4hL, pl4h, t4h, color4h, "4H SL")
+
+// Keep non-extended lines growing with the chart
+f_updateEnds(array<line> arr) =>
+    if not extendLine
+        for ln in arr
+            line.set_x2(ln, time)
+
+f_updateEnds(lines1hH)
+f_updateEnds(lines1hL)
+f_updateEnds(lines4hH)
+f_updateEnds(lines4hL)
