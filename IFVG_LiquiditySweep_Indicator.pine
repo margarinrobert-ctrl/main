@@ -169,15 +169,20 @@ sweptLow  = (not na(lastPL)   and low  < lastPL   and close > lastPL) or
              (not na(pdl)      and low  < pdl      and close > pdl)    or
              (not na(eqlLevel) and low  < eqlLevel and close > eqlLevel)
 
-var int lastSweepHighBar = na
-var int lastSweepLowBar  = na
+// Track only the MOST RECENT sweep and its direction, so an unrelated opposite-side sweep
+// cannot also validate a trade. A long needs a fresh sweep of a LOW, a short a sweep of a HIGH.
+var int lastSweepDir = 0    // +1 = swept a high (short context), -1 = swept a low (long context)
+var int lastSweepBar = na
 if sweptHigh
-    lastSweepHighBar := bar_index
+    lastSweepDir := 1
+    lastSweepBar := bar_index
 if sweptLow
-    lastSweepLowBar := bar_index
+    lastSweepDir := -1
+    lastSweepBar := bar_index
 
-recentSweepHigh = not na(lastSweepHighBar) and (bar_index - lastSweepHighBar) <= sweepLookback
-recentSweepLow  = not na(lastSweepLowBar)  and (bar_index - lastSweepLowBar)  <= sweepLookback
+sweepFresh   = not na(lastSweepBar) and (bar_index - lastSweepBar) <= sweepLookback
+recentSweepHigh = sweepFresh and lastSweepDir == 1
+recentSweepLow  = sweepFresh and lastSweepDir == -1
 
 if showSweeps and sweptHigh
     label.new(bar_index, high, "✕ BSL", style=label.style_label_down, color=color.new(color.red, 30), textcolor=color.white, size=size.tiny)

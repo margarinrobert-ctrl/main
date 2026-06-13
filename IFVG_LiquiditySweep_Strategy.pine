@@ -187,14 +187,25 @@ sweptLow  = (not na(lastPL)   and low  < lastPL   and close > lastPL) or
              (not na(pdl)      and low  < pdl      and close > pdl)    or
              (not na(eqlLevel) and low  < eqlLevel and close > eqlLevel)
 
-var int lastSweepHighBar = na
-var int lastSweepLowBar  = na
+// Track only the MOST RECENT sweep and its direction. A bullish inversion (long) must be
+// preceded by a fresh, unconsumed sweep of a LOW; a bearish inversion (short) by a sweep
+// of a HIGH. Using a single most-recent event (not two independent flags) prevents an
+// unrelated opposite-side sweep from also validating the trade.
+var int  lastSweepDir = 0    // +1 = swept a high (short context), -1 = swept a low (long context)
+var int  lastSweepBar = na
+var bool sweepUsed    = false
 if sweptHigh
-    lastSweepHighBar := bar_index
+    lastSweepDir := 1
+    lastSweepBar := bar_index
+    sweepUsed := false
 if sweptLow
-    lastSweepLowBar := bar_index
-recentSweepHigh = not na(lastSweepHighBar) and (bar_index - lastSweepHighBar) <= sweepLookback
-recentSweepLow  = not na(lastSweepLowBar)  and (bar_index - lastSweepLowBar)  <= sweepLookback
+    lastSweepDir := -1
+    lastSweepBar := bar_index
+    sweepUsed := false
+
+sweepFresh   = not na(lastSweepBar) and (bar_index - lastSweepBar) <= sweepLookback and not sweepUsed
+recentSweepHigh = sweepFresh and lastSweepDir == 1
+recentSweepLow  = sweepFresh and lastSweepDir == -1
 
 // -------------------------------------------------------------------------------------
 // FVG detection
@@ -331,6 +342,7 @@ if flat and (longSignal or shortSignal)
             pendBar  := bar_index
             beDone   := false
             ithLevel := ta.highest(high, slLookback)
+            sweepUsed := true
             if isMarket
                 strategy.entry("Long", strategy.long)
             else
@@ -348,6 +360,7 @@ if flat and (longSignal or shortSignal)
             pendBar  := bar_index
             beDone   := false
             ithLevel := ta.lowest(low, slLookback)
+            sweepUsed := true
             if isMarket
                 strategy.entry("Short", strategy.short)
             else
