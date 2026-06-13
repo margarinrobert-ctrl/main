@@ -1,0 +1,254 @@
+//@version=6
+// =====================================================================================
+//  IFVG + Liquidity Sweep Model (Dodgy DD style) — INDICATOR
+//  Nasdaq-100 futures (NQ) oriented, built for the 1-minute execution timeframe.
+//
+//  Implements the "Dodgy DD" Inversion Fair Value Gap workflow described in the
+//  strategy guide:
+//    1. Liquidity Sweep  : price purges a key level (PDH/PDL or swing high/low) and
+//                          rejects back through it (the "manipulation leg").
+//    2. Displacement     : an aggressive reversal candle (body >= ATR multiple).
+//    3. FVG + Inversion  : an opposing Fair Value Gap is closed through by a candle
+//                          BODY close -> the gap "inverts" (Bullish FVG -> Bearish
+//                          IFVG and vice-versa).
+//    4. Signal           : marks the IFVG and the suggested limit-retest entry edge.
+//
+//  Confluences / filters: 50-EMA trend filter, NY/London killzone time window,
+//  consecutive ("double") FVG rejection, and a minimum gap-size filter.
+//
+//  NOTE: This is an educational discretionary-aid indicator. It draws the model and
+//  prints signals; it does not place orders. Use the companion strategy file to
+//  backtest. Nothing here is financial advice.
+// =====================================================================================
+
+indicator("IFVG + Liquidity Sweep Model | DodgyDD", shorttitle="IFVG-Model",
+     overlay=true, max_boxes_count=500, max_labels_count=500, max_lines_count=500,
+     max_bars_back=5000)
+
+// -------------------------------------------------------------------------------------
+// Inputs
+// -------------------------------------------------------------------------------------
+gFVG = "Fair Value Gap"
+minGapTicks  = input.float(8.0,  "Min FVG size (ticks)", minval=0.0, step=1.0, group=gFVG,
+     tooltip="Minimum height of an FVG (in ticks) for it to be tracked. Filters out tiny noise gaps.")
+fvgMaxAge    = input.int(60,     "Max FVG age (bars)", minval=5, group=gFVG,
+     tooltip="An untouched FVG is dropped after this many bars.")
+showFVG      = input.bool(true,  "Draw FVG / IFVG boxes", group=gFVG)
+extendBoxes  = input.bool(true,  "Extend boxes to current bar", group=gFVG)
+
+gSweep = "Liquidity Sweep"
+useSweep     = input.bool(true,  "Require liquidity sweep before inversion", group=gSweep)
+sweepLookback= input.int(20,     "Sweep look-back (bars)", minval=1, group=gSweep,
+     tooltip="A sweep must have occurred within this many bars before the inversion.")
+pivotLen     = input.int(8,      "Swing pivot strength", minval=1, group=gSweep)
+usePDLevels  = input.bool(true,  "Use Previous Day High/Low as sweep levels", group=gSweep)
+showSweeps   = input.bool(true,  "Mark sweeps", group=gSweep)
+
+gDisp = "Displacement"
+useDisp      = input.bool(true,  "Require displacement on inversion candle", group=gDisp)
+atrLen       = input.int(14,     "ATR length", minval=1, group=gDisp)
+dispMult     = input.float(1.0,  "Min body size (x ATR)", minval=0.0, step=0.1, group=gDisp)
+
+gTrend = "Trend Filter (50 EMA)"
+useEMA       = input.bool(true,  "Use EMA trend filter", group=gTrend)
+emaLen       = input.int(50,     "EMA length", minval=1, group=gTrend)
+showEMA      = input.bool(true,  "Plot EMA", group=gTrend)
+
+gTime = "Time Filter (Killzones)"
+useTime      = input.bool(true,  "Restrict signals to killzones", group=gTime)
+kz1          = input.session("0830-1100", "NY Killzone (exchange tz)", group=gTime)
+kz2          = input.session("0200-0500", "London Killzone (exchange tz)", group=gTime)
+tzInfo       = input.string("America/New_York", "Killzone timezone", group=gTime,
+     options=["America/New_York","Europe/London","Exchange","UTC"])
+
+gFilt = "Quality Filters"
+useDoubleFvg = input.bool(true,  "Reject consecutive (double) FVGs", group=gFilt,
+     tooltip="Skip a setup when 2+ same-direction FVGs stack (over-extension / 'gapping sack').")
+
+gStyle = "Style"
+colBullFVG   = input.color(color.new(color.teal,  80), "Bullish FVG", group=gStyle)
+colBearFVG   = input.color(color.new(color.red,   80), "Bearish FVG", group=gStyle)
+colBullIFVG  = input.color(color.new(color.lime,  60), "Bullish IFVG", group=gStyle)
+colBearIFVG  = input.color(color.new(color.fuchsia,60),"Bearish IFVG", group=gStyle)
+
+// -------------------------------------------------------------------------------------
+// Core series
+// -------------------------------------------------------------------------------------
+minGap = minGapTicks * syminfo.mintick
+ema    = ta.ema(close, emaLen)
+atr    = ta.atr(atrLen)
+
+tz = tzInfo == "Exchange" ? syminfo.timezone : tzInfo
+inKZ = not useTime or (not na(time(timeframe.period, kz1, tz)) or not na(time(timeframe.period, kz2, tz)))
+
+// Swing pivots (confirmed `pivotLen` bars back)
+ph = ta.pivothigh(high, pivotLen, pivotLen)
+pl = ta.pivotlow(low,  pivotLen, pivotLen)
+var float lastPH = na
+var float lastPL = na
+if not na(ph)
+    lastPH := ph
+if not na(pl)
+    lastPL := pl
+
+// Previous Day High / Low (stable, no lookahead)
+pdh = usePDLevels ? request.security(syminfo.tickerid, "1D", high[1], lookahead=barmerge.lookahead_off) : na
+pdl = usePDLevels ? request.security(syminfo.tickerid, "1D", low[1],  lookahead=barmerge.lookahead_off) : na
+
+// -------------------------------------------------------------------------------------
+// Liquidity sweeps: wick beyond a level then close back inside
+// -------------------------------------------------------------------------------------
+sweptHigh = (not na(lastPH) and high > lastPH and close < lastPH) or
+             (not na(pdh)    and high > pdh    and close < pdh)
+sweptLow  = (not na(lastPL) and low  < lastPL and close > lastPL) or
+             (not na(pdl)    and low  < pdl    and close > pdl)
+
+var int lastSweepHighBar = na
+var int lastSweepLowBar  = na
+if sweptHigh
+    lastSweepHighBar := bar_index
+if sweptLow
+    lastSweepLowBar := bar_index
+
+recentSweepHigh = not na(lastSweepHighBar) and (bar_index - lastSweepHighBar) <= sweepLookback
+recentSweepLow  = not na(lastSweepLowBar)  and (bar_index - lastSweepLowBar)  <= sweepLookback
+
+if showSweeps and sweptHigh
+    label.new(bar_index, high, "✕ SSH", style=label.style_label_down, color=color.new(color.red, 30),
+         textcolor=color.white, size=size.tiny)
+if showSweeps and sweptLow
+    label.new(bar_index, low, "✕ SSL", style=label.style_label_up, color=color.new(color.green, 30),
+         textcolor=color.white, size=size.tiny)
+
+// -------------------------------------------------------------------------------------
+// Fair Value Gap detection (3-candle imbalance, confirmed on the 3rd candle)
+// -------------------------------------------------------------------------------------
+isBullFVG = low > high[2] and (low - high[2]) >= minGap
+isBearFVG = high < low[2] and (low[2] - high) >= minGap
+
+bullTop = low
+bullBot = high[2]
+bearTop = low[2]
+bearBot = high
+
+// Consecutive same-direction FVG tracking (for the double-FVG filter)
+var int lastBullFvgBar = na
+var int lastBearFvgBar = na
+blockBull = useDoubleFvg and not na(lastBullFvgBar) and (bar_index - lastBullFvgBar) <= 5
+blockBear = useDoubleFvg and not na(lastBearFvgBar) and (bar_index - lastBearFvgBar) <= 5
+if isBullFVG
+    lastBullFvgBar := bar_index
+if isBearFVG
+    lastBearFvgBar := bar_index
+
+// -------------------------------------------------------------------------------------
+// FVG store (parallel arrays). dir: 1 = bullish FVG, -1 = bearish FVG
+// -------------------------------------------------------------------------------------
+var array<float> fTop  = array.new_float()
+var array<float> fBot  = array.new_float()
+var array<int>   fDir  = array.new_int()
+var array<int>   fBar  = array.new_int()
+var array<bool>  fInv  = array.new_bool()
+var array<box>   fBoxA = array.new_box()
+
+newFVG(float t, float b, int d) =>
+    array.push(fTop, t)
+    array.push(fBot, b)
+    array.push(fDir, d)
+    array.push(fBar, bar_index)
+    array.push(fInv, false)
+    box bx = na
+    if showFVG
+        bx := box.new(bar_index - 2, t, bar_index, b,
+             border_color=color.new(color.gray, 70),
+             bgcolor = d == 1 ? colBullFVG : colBearFVG)
+    array.push(fBoxA, bx)
+
+if isBullFVG and not blockBull
+    newFVG(bullTop, bullBot, 1)
+if isBearFVG and not blockBear
+    newFVG(bearTop, bearBot, -1)
+
+// -------------------------------------------------------------------------------------
+// Inversion check + box maintenance
+// -------------------------------------------------------------------------------------
+bullInversion = false   // bearish FVG closed through upward -> bullish IFVG (LONG)
+bearInversion = false   // bullish FVG closed through downward -> bearish IFVG (SHORT)
+var float longEdge  = na // top of the inverted bearish gap (buy-limit retest)
+var float shortEdge = na // bottom of the inverted bullish gap (sell-limit retest)
+
+if array.size(fTop) > 0
+    for i = array.size(fTop) - 1 to 0
+        bx     = array.get(fBoxA, i)
+        invd   = array.get(fInv, i)
+        d      = array.get(fDir, i)
+        t      = array.get(fTop, i)
+        b      = array.get(fBot, i)
+
+        if not invd
+            // Bullish FVG inverts to bearish IFVG on a body close below its bottom
+            if d == 1 and close < b and not bearInversion
+                array.set(fInv, i, true)
+                bearInversion := true
+                shortEdge := b
+                if not na(bx)
+                    box.set_bgcolor(bx, colBearIFVG)
+                    box.set_border_color(bx, color.new(color.fuchsia, 0))
+            // Bearish FVG inverts to bullish IFVG on a body close above its top
+            else if d == -1 and close > t and not bullInversion
+                array.set(fInv, i, true)
+                bullInversion := true
+                longEdge := t
+                if not na(bx)
+                    box.set_bgcolor(bx, colBullIFVG)
+                    box.set_border_color(bx, color.new(color.lime, 0))
+
+        // extend live (non-inverted) boxes to the current bar
+        if extendBoxes and not array.get(fInv, i) and not na(bx)
+            box.set_right(bx, bar_index)
+
+// Age-out / cleanup pass (drop oldest expired gaps)
+if array.size(fTop) > 0
+    for i = array.size(fTop) - 1 to 0
+        if (bar_index - array.get(fBar, i)) > fvgMaxAge and not array.get(fInv, i)
+            bx = array.get(fBoxA, i)
+            if not na(bx)
+                box.delete(bx)
+            array.remove(fTop, i)
+            array.remove(fBot, i)
+            array.remove(fDir, i)
+            array.remove(fBar, i)
+            array.remove(fInv, i)
+            array.remove(fBoxA, i)
+
+// -------------------------------------------------------------------------------------
+// Confluence gating -> final signals
+// -------------------------------------------------------------------------------------
+strongBody = math.abs(close - open) >= dispMult * atr
+dispOK     = not useDisp or strongBody
+emaLongOK  = not useEMA or close > ema
+emaShortOK = not useEMA or close < ema
+sweepLongOK  = not useSweep or recentSweepLow
+sweepShortOK = not useSweep or recentSweepHigh
+
+longSignal  = bullInversion and inKZ and dispOK and emaLongOK  and sweepLongOK
+shortSignal = bearInversion and inKZ and dispOK and emaShortOK and sweepShortOK
+
+plotshape(longSignal,  title="Bullish IFVG", style=shape.triangleup,   location=location.belowbar,
+     color=color.new(color.lime, 0), size=size.small, text="IFVG▲")
+plotshape(shortSignal, title="Bearish IFVG", style=shape.triangledown, location=location.abovebar,
+     color=color.new(color.fuchsia, 0), size=size.small, text="IFVG▼")
+
+// Plot suggested limit-retest entry edges
+plot(longSignal  ? longEdge  : na, "Long entry edge",  color=color.lime,    style=plot.style_circles, linewidth=2)
+plot(shortSignal ? shortEdge : na, "Short entry edge", color=color.fuchsia, style=plot.style_circles, linewidth=2)
+
+plot(showEMA ? ema : na, "EMA", color=color.new(color.orange, 0), linewidth=1)
+plot(usePDLevels ? pdh : na, "PDH", color=color.new(color.gray, 30), style=plot.style_stepline)
+plot(usePDLevels ? pdl : na, "PDL", color=color.new(color.gray, 30), style=plot.style_stepline)
+
+// -------------------------------------------------------------------------------------
+// Alerts
+// -------------------------------------------------------------------------------------
+alertcondition(longSignal,  "Bullish IFVG long",  "IFVG bullish inversion + sweep confluence (LONG)")
+alertcondition(shortSignal, "Bearish IFVG short", "IFVG bearish inversion + sweep confluence (SHORT)")

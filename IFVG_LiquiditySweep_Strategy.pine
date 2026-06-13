@@ -1,0 +1,305 @@
+//@version=6
+// =====================================================================================
+//  IFVG + Liquidity Sweep Model (Dodgy DD style) — STRATEGY (backtest)
+//  Nasdaq-100 futures (NQ) oriented, 1-minute execution timeframe.
+//
+//  Trade workflow (per the Dodgy DD IFVG guide):
+//    1. Liquidity sweep of PDH/PDL or a swing high/low (manipulation leg).
+//    2. Displacement reversal candle (body >= ATR multiple).
+//    3. Opposing Fair Value Gap is closed through by a candle BODY -> inversion (IFVG).
+//    4. Entry at the inverted gap edge (limit retest) or market on the inversion close.
+//       Stop beyond the swept swing; target a fixed Risk:Reward (default 1:2).
+//       Optional move-to-break-even after price travels +1R.
+//
+//  A+ confluences are toggleable: 50-EMA trend filter, killzone time window, sweep
+//  requirement, displacement, and a consecutive ("double") FVG reject filter.
+//
+//  Defaults follow the guide's "A+ setup" so the system trades selectively. Backtest
+//  results depend entirely on the symbol, timeframe, session and date range you load —
+//  no profitability is guaranteed. Past performance is not indicative of future results.
+// =====================================================================================
+
+strategy("IFVG + Liquidity Sweep Strategy | DodgyDD", shorttitle="IFVG-Strat",
+     overlay=true, max_boxes_count=500, max_labels_count=500, max_lines_count=500,
+     max_bars_back=5000, pyramiding=0, calc_on_every_tick=false,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     initial_capital=50000, commission_type=strategy.commission.cash_per_order,
+     commission_value=2.04, slippage=2)
+
+// -------------------------------------------------------------------------------------
+// Inputs — Model
+// -------------------------------------------------------------------------------------
+gFVG = "Fair Value Gap"
+minGapTicks  = input.float(8.0,  "Min FVG size (ticks)", minval=0.0, step=1.0, group=gFVG)
+fvgMaxAge    = input.int(60,     "Max FVG age (bars)", minval=5, group=gFVG)
+showFVG      = input.bool(true,  "Draw FVG / IFVG boxes", group=gFVG)
+
+gSweep = "Liquidity Sweep"
+useSweep     = input.bool(true,  "Require liquidity sweep before inversion", group=gSweep)
+sweepLookback= input.int(20,     "Sweep look-back (bars)", minval=1, group=gSweep)
+pivotLen     = input.int(8,      "Swing pivot strength", minval=1, group=gSweep)
+usePDLevels  = input.bool(true,  "Use Previous Day High/Low as sweep levels", group=gSweep)
+
+gDisp = "Displacement"
+useDisp      = input.bool(true,  "Require displacement on inversion candle", group=gDisp)
+atrLen       = input.int(14,     "ATR length", minval=1, group=gDisp)
+dispMult     = input.float(1.0,  "Min body size (x ATR)", minval=0.0, step=0.1, group=gDisp)
+
+gTrend = "Trend Filter (50 EMA)"
+useEMA       = input.bool(true,  "Use EMA trend filter", group=gTrend)
+emaLen       = input.int(50,     "EMA length", minval=1, group=gTrend)
+
+gTime = "Time Filter (Killzones)"
+useTime      = input.bool(true,  "Restrict entries to killzones", group=gTime)
+kz1          = input.session("0830-1100", "NY Killzone (exchange tz)", group=gTime)
+kz2          = input.session("0200-0500", "London Killzone (exchange tz)", group=gTime)
+tzInfo       = input.string("America/New_York", "Killzone timezone", group=gTime,
+     options=["America/New_York","Europe/London","Exchange","UTC"])
+
+gFilt = "Quality Filters"
+useDoubleFvg = input.bool(true,  "Reject consecutive (double) FVGs", group=gFilt)
+
+// -------------------------------------------------------------------------------------
+// Inputs — Execution & risk
+// -------------------------------------------------------------------------------------
+gExec = "Execution"
+entryMode    = input.string("Limit Retest", "Entry mode", options=["Limit Retest","Market on close"], group=gExec)
+limitExpiry  = input.int(6,      "Cancel unfilled limit after (bars)", minval=1, group=gExec)
+
+gRisk = "Risk Management"
+rr           = input.float(2.0,  "Reward:Risk (TP)", minval=0.5, step=0.1, group=gRisk)
+slLookback   = input.int(10,     "Stop look-back swing (bars)", minval=1, group=gRisk)
+slBufTicks   = input.float(4.0,  "Stop buffer (ticks)", minval=0.0, step=1.0, group=gRisk)
+useBE        = input.bool(true,  "Move stop to break-even", group=gRisk)
+beTrigger    = input.float(1.0,  "Break-even trigger (R)", minval=0.1, step=0.1, group=gRisk)
+flatEOD      = input.bool(true,  "Flatten at session end", group=gRisk)
+eodSession   = input.session("0830-1545", "Trading session (flatten outside)", group=gRisk)
+
+// -------------------------------------------------------------------------------------
+// Core series
+// -------------------------------------------------------------------------------------
+minGap = minGapTicks * syminfo.mintick
+ema    = ta.ema(close, emaLen)
+atr    = ta.atr(atrLen)
+
+tz   = tzInfo == "Exchange" ? syminfo.timezone : tzInfo
+inKZ = not useTime or (not na(time(timeframe.period, kz1, tz)) or not na(time(timeframe.period, kz2, tz)))
+inEOD = not na(time(timeframe.period, eodSession, syminfo.timezone))
+
+// Swing pivots
+ph = ta.pivothigh(high, pivotLen, pivotLen)
+pl = ta.pivotlow(low,  pivotLen, pivotLen)
+var float lastPH = na
+var float lastPL = na
+if not na(ph)
+    lastPH := ph
+if not na(pl)
+    lastPL := pl
+
+// Previous Day High / Low
+pdh = usePDLevels ? request.security(syminfo.tickerid, "1D", high[1], lookahead=barmerge.lookahead_off) : na
+pdl = usePDLevels ? request.security(syminfo.tickerid, "1D", low[1],  lookahead=barmerge.lookahead_off) : na
+
+// -------------------------------------------------------------------------------------
+// Liquidity sweeps
+// -------------------------------------------------------------------------------------
+sweptHigh = (not na(lastPH) and high > lastPH and close < lastPH) or
+             (not na(pdh)    and high > pdh    and close < pdh)
+sweptLow  = (not na(lastPL) and low  < lastPL and close > lastPL) or
+             (not na(pdl)    and low  < pdl    and close > pdl)
+
+var int lastSweepHighBar = na
+var int lastSweepLowBar  = na
+if sweptHigh
+    lastSweepHighBar := bar_index
+if sweptLow
+    lastSweepLowBar := bar_index
+
+recentSweepHigh = not na(lastSweepHighBar) and (bar_index - lastSweepHighBar) <= sweepLookback
+recentSweepLow  = not na(lastSweepLowBar)  and (bar_index - lastSweepLowBar)  <= sweepLookback
+
+// -------------------------------------------------------------------------------------
+// FVG detection
+// -------------------------------------------------------------------------------------
+isBullFVG = low > high[2] and (low - high[2]) >= minGap
+isBearFVG = high < low[2] and (low[2] - high) >= minGap
+
+bullTop = low
+bullBot = high[2]
+bearTop = low[2]
+bearBot = high
+
+var int lastBullFvgBar = na
+var int lastBearFvgBar = na
+blockBull = useDoubleFvg and not na(lastBullFvgBar) and (bar_index - lastBullFvgBar) <= 5
+blockBear = useDoubleFvg and not na(lastBearFvgBar) and (bar_index - lastBearFvgBar) <= 5
+if isBullFVG
+    lastBullFvgBar := bar_index
+if isBearFVG
+    lastBearFvgBar := bar_index
+
+// -------------------------------------------------------------------------------------
+// FVG store
+// -------------------------------------------------------------------------------------
+var array<float> fTop  = array.new_float()
+var array<float> fBot  = array.new_float()
+var array<int>   fDir  = array.new_int()
+var array<int>   fBar  = array.new_int()
+var array<bool>  fInv  = array.new_bool()
+var array<box>   fBoxA = array.new_box()
+
+newFVG(float t, float b, int d) =>
+    array.push(fTop, t)
+    array.push(fBot, b)
+    array.push(fDir, d)
+    array.push(fBar, bar_index)
+    array.push(fInv, false)
+    box bx = na
+    if showFVG
+        bx := box.new(bar_index - 2, t, bar_index, b,
+             border_color=color.new(color.gray, 70),
+             bgcolor = d == 1 ? color.new(color.teal, 80) : color.new(color.red, 80))
+    array.push(fBoxA, bx)
+
+if isBullFVG and not blockBull
+    newFVG(bullTop, bullBot, 1)
+if isBearFVG and not blockBear
+    newFVG(bearTop, bearBot, -1)
+
+// -------------------------------------------------------------------------------------
+// Inversion check + cleanup
+// -------------------------------------------------------------------------------------
+bullInversion = false
+bearInversion = false
+var float longEdge  = na
+var float shortEdge = na
+
+if array.size(fTop) > 0
+    for i = array.size(fTop) - 1 to 0
+        bx   = array.get(fBoxA, i)
+        invd = array.get(fInv, i)
+        d    = array.get(fDir, i)
+        t    = array.get(fTop, i)
+        b    = array.get(fBot, i)
+        if not invd
+            if d == 1 and close < b and not bearInversion
+                array.set(fInv, i, true)
+                bearInversion := true
+                shortEdge := b
+                if not na(bx)
+                    box.set_bgcolor(bx, color.new(color.fuchsia, 60))
+            else if d == -1 and close > t and not bullInversion
+                array.set(fInv, i, true)
+                bullInversion := true
+                longEdge := t
+                if not na(bx)
+                    box.set_bgcolor(bx, color.new(color.lime, 60))
+
+if array.size(fTop) > 0
+    for i = array.size(fTop) - 1 to 0
+        if (bar_index - array.get(fBar, i)) > fvgMaxAge and not array.get(fInv, i)
+            bx = array.get(fBoxA, i)
+            if not na(bx)
+                box.delete(bx)
+            array.remove(fTop, i)
+            array.remove(fBot, i)
+            array.remove(fDir, i)
+            array.remove(fBar, i)
+            array.remove(fInv, i)
+            array.remove(fBoxA, i)
+
+// -------------------------------------------------------------------------------------
+// Confluence gating -> signals
+// -------------------------------------------------------------------------------------
+strongBody = math.abs(close - open) >= dispMult * atr
+dispOK     = not useDisp or strongBody
+emaLongOK  = not useEMA or close > ema
+emaShortOK = not useEMA or close < ema
+sweepLongOK  = not useSweep or recentSweepLow
+sweepShortOK = not useSweep or recentSweepHigh
+
+longSignal  = bullInversion and inKZ and dispOK and emaLongOK  and sweepLongOK  and inEOD
+shortSignal = bearInversion and inKZ and dispOK and emaShortOK and sweepShortOK and inEOD
+
+// -------------------------------------------------------------------------------------
+// Order management
+// -------------------------------------------------------------------------------------
+buf = slBufTicks * syminfo.mintick
+
+var float pendStop  = na
+var float pendTP    = na
+var int   pendBar   = na
+var bool  beDone    = false
+
+flat = strategy.position_size == 0
+
+// ---- Entries ----
+if flat and (longSignal or shortSignal)
+    isMarket = entryMode == "Market on close"
+    if longSignal
+        ref   = isMarket ? close : longEdge
+        sl    = math.min(ta.lowest(low, slLookback), ref) - buf
+        risk  = ref - sl
+        if risk > 0
+            tp = ref + risk * rr
+            pendStop := sl
+            pendTP   := tp
+            pendBar  := bar_index
+            beDone   := false
+            if isMarket
+                strategy.entry("Long", strategy.long)
+            else
+                strategy.entry("Long", strategy.long, limit=ref)
+    else if shortSignal
+        ref   = isMarket ? close : shortEdge
+        sl    = math.max(ta.highest(high, slLookback), ref) + buf
+        risk  = sl - ref
+        if risk > 0
+            tp = ref - risk * rr
+            pendStop := sl
+            pendTP   := tp
+            pendBar  := bar_index
+            beDone   := false
+            if isMarket
+                strategy.entry("Short", strategy.short)
+            else
+                strategy.entry("Short", strategy.short, limit=ref)
+
+// ---- Cancel stale unfilled limit orders ----
+if flat and not na(pendBar) and (bar_index - pendBar) >= limitExpiry
+    strategy.cancel("Long")
+    strategy.cancel("Short")
+    pendBar := na
+
+// ---- Manage open position (stops, targets, break-even) ----
+if strategy.position_size > 0
+    entryP = strategy.position_avg_price
+    stopL  = pendStop
+    if useBE and not beDone and high >= entryP + (entryP - pendStop) * beTrigger
+        beDone := true
+    if beDone
+        stopL := math.max(stopL, entryP)
+    strategy.exit("L-exit", from_entry="Long", stop=stopL, limit=pendTP)
+
+if strategy.position_size < 0
+    entryP = strategy.position_avg_price
+    stopL  = pendStop
+    if useBE and not beDone and low <= entryP - (pendStop - entryP) * beTrigger
+        beDone := true
+    if beDone
+        stopL := math.min(stopL, entryP)
+    strategy.exit("S-exit", from_entry="Short", stop=stopL, limit=pendTP)
+
+// ---- End-of-session flatten ----
+if flatEOD and not inEOD and strategy.position_size != 0
+    strategy.close_all(comment="EOD flat")
+    strategy.cancel_all()
+
+// -------------------------------------------------------------------------------------
+// Visuals
+// -------------------------------------------------------------------------------------
+plot(ema, "EMA", color=color.new(color.orange, 0), linewidth=1)
+plot(usePDLevels ? pdh : na, "PDH", color=color.new(color.gray, 40), style=plot.style_stepline)
+plot(usePDLevels ? pdl : na, "PDL", color=color.new(color.gray, 40), style=plot.style_stepline)
+plotshape(longSignal,  title="Long sig",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0),    size=size.tiny)
+plotshape(shortSignal, title="Short sig", style=shape.triangledown, location=location.abovebar, color=color.new(color.fuchsia, 0), size=size.tiny)
