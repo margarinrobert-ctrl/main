@@ -68,6 +68,14 @@ rb = faster ? math.max(rightBars - 1, 1) : rightBars
 ph = ta.pivothigh(high, leftBars, rb)
 pl = ta.pivotlow(low,  leftBars, rb)
 
+// Comparison swing extremes measured over the SAME window that defines the chart pivot
+// (leftBars to the left + rb to the right of the swing bar). Using the local extreme
+// instead of the comparison's value at a single bar keeps detection consistent on lower
+// timeframes, where the two assets rarely swing on the exact same bar.
+winLen = leftBars + rb + 1
+cmpHH  = ta.highest(cmpHigh, winLen)
+cmpLL  = ta.lowest(cmpLow,  winLen)
+
 // Last confirmed pivots on the chart symbol, plus the comparison value at that same bar.
 var float lastPH    = na
 var int   lastPHbar = na
@@ -82,7 +90,7 @@ process = realtime or barstate.isconfirmed
 // ---- Bearish SMT (swing highs) ----
 if process and not na(ph)
     pivotBar = bar_index - rb
-    cmpVal   = cmpHigh[rb]
+    cmpVal   = cmpHH
     if not na(lastPH) and not na(cmpVal) and not na(lastPHcmp)
         chartUp = ph > lastPH
         cmpUp   = cmpVal > lastPHcmp
@@ -108,7 +116,7 @@ if process and not na(ph)
 // ---- Bullish SMT (swing lows) ----
 if process and not na(pl)
     pivotBar = bar_index - rb
-    cmpVal   = cmpLow[rb]
+    cmpVal   = cmpLL
     if not na(lastPL) and not na(cmpVal) and not na(lastPLcmp)
         chartDn = pl < lastPL
         cmpDn   = cmpVal < lastPLcmp
