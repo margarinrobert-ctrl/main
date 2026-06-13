@@ -53,7 +53,8 @@ showBOS      = input.bool(true,  "Mark BOS / MSS", group=gStruct)
 gSMT = "SMT Divergence"
 useSMT       = input.bool(false, "Require SMT divergence with correlated asset", group=gSMT,
      tooltip="Bearish SMT: NQ makes a higher high but the correlated asset fails to. Confirms the sweep is real distribution, not continuation.")
-smtSym       = input.symbol("CME_MINI:ES1!", "Correlated symbol", group=gSMT)
+smtSym       = input.string("", "Correlated symbol (blank = none; e.g. CME_MINI:ES1!)", group=gSMT,
+     tooltip="Leave BLANK to avoid a foreign-symbol data dependency. Set a correlated symbol only if you want true SMT divergence.")
 smtLen       = input.int(10,     "SMT swing length", minval=2, group=gSMT)
 smtLookback  = input.int(20,     "SMT validity (bars)", minval=1, group=gSMT)
 
@@ -142,8 +143,9 @@ pdl = usePDLevels ? request.security(syminfo.tickerid, "1D", low[1],  lookahead=
 // -------------------------------------------------------------------------------------
 // SMT divergence vs correlated asset (e.g. NQ vs ES)
 // -------------------------------------------------------------------------------------
-corrHigh = request.security(smtSym, timeframe.period, high, lookahead=barmerge.lookahead_off)
-corrLow  = request.security(smtSym, timeframe.period, low,  lookahead=barmerge.lookahead_off)
+smtTicker = smtSym == "" ? syminfo.tickerid : smtSym
+corrHigh = request.security(smtTicker, timeframe.period, high, lookahead=barmerge.lookahead_off)
+corrLow  = request.security(smtTicker, timeframe.period, low,  lookahead=barmerge.lookahead_off)
 madeHH = high > ta.highest(high, smtLen)[1]
 madeLL = low  < ta.lowest(low,  smtLen)[1]
 corrHH = corrHigh > ta.highest(corrHigh, smtLen)[1]

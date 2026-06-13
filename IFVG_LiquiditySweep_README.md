@@ -46,6 +46,15 @@ model for **Nasdaq‑100 futures (NQ/MNQ)** on the **1‑minute** chart. Built p
   reaches the target before the entry fills (the objective is already met).
 - **EOD flatten** — closes anything left at session end.
 
+## Futures & Deep Backtesting
+
+The script requests **only the chart's own symbol** by default, so it backtests cleanly on
+futures (NQ1!/MNQ1!) including TradingView's **Deep Backtesting** mode. The SMT‑divergence
+filter needs a *second* instrument; if you set a **Correlated symbol** (e.g.
+`CME_MINI:ES1!`) be aware that a foreign symbol can stop a futures Deep Backtest from
+producing any trades ("This report requires trade data"). Leave that field **blank**
+(the default) to backtest futures, and only fill it in when you specifically want SMT.
+
 ## How to use
 
 1. TradingView → **Pine Editor** → paste a file → **Add to chart**.
