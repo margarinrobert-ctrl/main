@@ -48,12 +48,23 @@ model for **Nasdaq‑100 futures (NQ/MNQ)** on the **1‑minute** chart. Built p
 
 ## Futures & Deep Backtesting
 
-The script requests **only the chart's own symbol** by default, so it backtests cleanly on
-futures (NQ1!/MNQ1!) including TradingView's **Deep Backtesting** mode. The SMT‑divergence
-filter needs a *second* instrument; if you set a **Correlated symbol** (e.g.
-`CME_MINI:ES1!`) be aware that a foreign symbol can stop a futures Deep Backtest from
-producing any trades ("This report requires trade data"). Leave that field **blank**
-(the default) to backtest futures, and only fill it in when you specifically want SMT.
+**Why a futures backtest can show zero trades ("This report requires trade data").**
+A TradingView strategy will not enter a position it cannot afford, and futures have a
+**Point Value / contract multiplier** (NQ = **$20/point**), so one NQ contract at ~20,000
+costs ~**$400,000** of notional. If `initial_capital` (with full margin) can't cover that,
+the tester places **no trades at all** — which is exactly why a strategy can work on an
+index (point value ≈ 1) but be empty on NQ. This is configured in the `strategy()` header:
+
+- `initial_capital = 100000`
+- `margin_long = 5`, `margin_short = 5` → simulates ~5% futures leverage, giving
+  `100000 / 0.05 = $2,000,000` of buying power, so 1 NQ/MNQ contract is always affordable.
+
+If you increase position size, raise `initial_capital` or lower the margin further.
+
+The script also requests **only the chart's own symbol** by default (the SMT **Correlated
+symbol** input is blank), so nothing external is needed for Deep Backtesting on futures.
+Only fill in a correlated symbol (e.g. `CME_MINI:ES1!`) if you specifically want SMT — a
+foreign symbol can interfere with a futures Deep Backtest.
 
 ## How to use
 
