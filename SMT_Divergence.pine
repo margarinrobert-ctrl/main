@@ -1,0 +1,147 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// ICT SMT (Smart Money Technique) Divergence indicator.
+// Compares the chart symbol against a user-selected correlated ticker and draws
+// a divergence line whenever the two assets disagree at a swing point:
+//   - Bearish SMT (at swing highs): one makes a higher high while the other makes a lower high.
+//   - Bullish SMT (at swing lows):  one makes a lower low while the other makes a higher low.
+
+//@version=6
+indicator("ICT SMT Divergence", overlay = true, max_bars_back = 1000, max_lines_count = 500, max_labels_count = 500)
+
+// ============================================================
+// Inputs
+// ============================================================
+gGen = "General"
+cmpTicker = input.symbol("CME_MINI:ES1!", "Comparison Ticker", group = gGen, tooltip = "The correlated asset to compare against the current chart for SMT divergence (e.g. ES vs NQ, EURUSD vs GBPUSD).")
+
+gPiv = "Pivots"
+leftBars  = input.int(3, "Pivot Left Bars",  minval = 1, maxval = 50, group = gPiv)
+rightBars = input.int(3, "Pivot Right Bars", minval = 1, maxval = 50, group = gPiv)
+
+gSet = "Settings"
+removeBroken = input.bool(true,  "Remove Broken SMTs", group = gSet, tooltip = "Delete an SMT line once price trades through its extreme edge (highest high / lowest low).")
+realtime     = input.bool(true,  "Work in Realtime",   group = gSet, tooltip = "Update SMTs and broken checks on the live (developing) bar instead of waiting for bar close.")
+faster       = input.bool(false, "Faster Detection",   group = gSet, tooltip = "Detect SMTs before candle is fully formed, results in faster detection, but makes indicator slower & could spot SMTs that are immediately violated.")
+mergeSMTs    = input.bool(true,  "Merge SMTs",         group = gSet, tooltip = "Reduce lines on chart by merging SMTs that have the same extreme edge (highest high or lowest low).")
+
+gStyle = "Style"
+bullColor = input.color(color.new(color.lime,   0), "Bullish SMT", group = gStyle)
+bearColor = input.color(color.new(color.yellow, 0), "Bearish SMT", group = gStyle)
+lineWidth = input.int(1, "Line Width", minval = 1, maxval = 5, group = gStyle)
+showLabel = input.bool(true, "Show Label", group = gStyle)
+
+// ============================================================
+// Comparison symbol data
+// ============================================================
+[cmpHigh, cmpLow] = request.security(cmpTicker, timeframe.period, [high, low], lookahead = barmerge.lookahead_off)
+
+// Clean display name for the comparison ticker (drop the EXCHANGE: prefix if present).
+parts   = str.split(cmpTicker, ":")
+cmpName = array.size(parts) > 1 ? array.get(parts, 1) : cmpTicker
+
+// ============================================================
+// SMT storage
+// ============================================================
+type SMT
+    line  ln
+    label lb
+    int   dir   // 1 = bullish, -1 = bearish
+    float edge  // extreme edge price used for the "broken" / "merge" tests
+
+var array<SMT> smts = array.new<SMT>()
+
+makeSMT(int x1, float y1, int x2, float y2, int dir, float edge) =>
+    col = dir == 1 ? bullColor : bearColor
+    ln  = line.new(x1, y1, x2, y2, xloc = xloc.bar_index, color = col, width = lineWidth)
+    lb  = label(na)
+    if showLabel
+        mid = math.round((x1 + x2) / 2)
+        lb := label.new(mid, (y1 + y2) / 2, "SMT - " + cmpName, xloc = xloc.bar_index, style = label.style_none, textcolor = col, size = size.small)
+    array.push(smts, SMT.new(ln, lb, dir, edge))
+
+// ============================================================
+// Pivot detection
+// ============================================================
+// Faster detection shrinks the right-side confirmation window.
+rb = faster ? math.max(rightBars - 1, 1) : rightBars
+
+ph = ta.pivothigh(high, leftBars, rb)
+pl = ta.pivotlow(low,  leftBars, rb)
+
+// Last confirmed pivots on the chart symbol, plus the comparison value at that same bar.
+var float lastPH    = na
+var int   lastPHbar = na
+var float lastPHcmp = na
+
+var float lastPL    = na
+var int   lastPLbar = na
+var float lastPLcmp = na
+
+process = realtime or barstate.isconfirmed
+
+// ---- Bearish SMT (swing highs) ----
+if process and not na(ph)
+    pivotBar = bar_index - rb
+    cmpVal   = cmpHigh[rb]
+    if not na(lastPH) and not na(cmpVal) and not na(lastPHcmp)
+        chartUp = ph > lastPH
+        cmpUp   = cmpVal > lastPHcmp
+        if chartUp != cmpUp
+            edge   = math.max(ph, lastPH)
+            merged = false
+            if mergeSMTs and array.size(smts) > 0
+                for i = 0 to array.size(smts) - 1
+                    s = array.get(smts, i)
+                    if s.dir == -1 and math.abs(s.edge - edge) <= syminfo.mintick
+                        line.set_xy2(s.ln, pivotBar, ph)
+                        if showLabel and not na(s.lb)
+                            label.set_x(s.lb, math.round((line.get_x1(s.ln) + pivotBar) / 2))
+                            label.set_y(s.lb, (line.get_y1(s.ln) + ph) / 2)
+                        merged := true
+                        break
+            if not merged
+                makeSMT(lastPHbar, lastPH, pivotBar, ph, -1, edge)
+    lastPH    := ph
+    lastPHbar := pivotBar
+    lastPHcmp := cmpVal
+
+// ---- Bullish SMT (swing lows) ----
+if process and not na(pl)
+    pivotBar = bar_index - rb
+    cmpVal   = cmpLow[rb]
+    if not na(lastPL) and not na(cmpVal) and not na(lastPLcmp)
+        chartDn = pl < lastPL
+        cmpDn   = cmpVal < lastPLcmp
+        if chartDn != cmpDn
+            edge   = math.min(pl, lastPL)
+            merged = false
+            if mergeSMTs and array.size(smts) > 0
+                for i = 0 to array.size(smts) - 1
+                    s = array.get(smts, i)
+                    if s.dir == 1 and math.abs(s.edge - edge) <= syminfo.mintick
+                        line.set_xy2(s.ln, pivotBar, pl)
+                        if showLabel and not na(s.lb)
+                            label.set_x(s.lb, math.round((line.get_x1(s.ln) + pivotBar) / 2))
+                            label.set_y(s.lb, (line.get_y1(s.ln) + pl) / 2)
+                        merged := true
+                        break
+            if not merged
+                makeSMT(lastPLbar, lastPL, pivotBar, pl, 1, edge)
+    lastPL    := pl
+    lastPLbar := pivotBar
+    lastPLcmp := cmpVal
+
+// ============================================================
+// Remove broken SMTs
+// ============================================================
+if removeBroken and process and array.size(smts) > 0
+    i = array.size(smts) - 1
+    while i >= 0
+        s = array.get(smts, i)
+        broken = (s.dir == -1 and high > s.edge) or (s.dir == 1 and low < s.edge)
+        if broken
+            line.delete(s.ln)
+            if not na(s.lb)
+                label.delete(s.lb)
+            array.remove(smts, i)
+        i := i - 1
