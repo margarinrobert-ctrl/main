@@ -61,10 +61,9 @@ index (point value ≈ 1) but be empty on NQ. This is configured in the `strateg
 
 If you increase position size, raise `initial_capital` or lower the margin further.
 
-The script also requests **only the chart's own symbol** by default (the SMT **Correlated
-symbol** input is blank), so nothing external is needed for Deep Backtesting on futures.
-Only fill in a correlated symbol (e.g. `CME_MINI:ES1!`) if you specifically want SMT — a
-foreign symbol can interfere with a futures Deep Backtest.
+The SMT‑divergence filter compares the chart symbol against a **Correlated symbol**
+(default `CME_MINI:ES1!`). That was **not** the cause of the empty futures report — the
+capital/Point‑Value issue above was — so it is left as the original ES comparison.
 
 ## How to use
 
