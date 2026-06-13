@@ -1,65 +1,67 @@
-# IFVG + Liquidity Sweep Model (Dodgy DD style) — TradingView Pine v6
+# IFVG + Liquidity Sweep Model (Dodgy DD / ICT) — TradingView Pine v6
 
 Two Pine Script v6 files implementing the **Dodgy DD Inversion Fair Value Gap (IFVG)**
-model for **Nasdaq‑100 futures (NQ/MNQ)** on the **1‑minute** chart, distilled from the
-strategy guide PDF.
+model for **Nasdaq‑100 futures (NQ/MNQ)** on the **1‑minute** chart. Built purely on the
+**ICT / Smart‑Money concepts** from the two source documents (the IFVG strategy guide and
+*Dodgy's Ultimate Trading Course*) — **no moving‑average filter**.
 
 | File | Type | Purpose |
 |------|------|---------|
-| `IFVG_LiquiditySweep_Indicator.pine` | `indicator` | Draws FVGs, marks inversions (IFVGs), liquidity sweeps, PDH/PDL, EMA, and prints A+ long/short signals with the suggested limit‑retest entry edge. Includes `alertcondition`s. |
-| `IFVG_LiquiditySweep_Strategy.pine` | `strategy` | Backtests the model end‑to‑end: entry, stop, 1:2 target, optional break‑even, killzone + EOD flatten. |
+| `IFVG_LiquiditySweep_Indicator.pine` | `indicator` | Draws FVGs, marks inversions (IFVGs), liquidity sweeps, EQH/EQL, PDH/PDL, structure bias, and prints A+ long/short signals + the limit‑retest edge. Has `alertcondition`s. |
+| `IFVG_LiquiditySweep_Strategy.pine` | `strategy` | Backtests the model end‑to‑end: entry, stop, target, ITH/ITL break‑even, killzone + EOD flatten. |
 
-## The model (exactly as in the guide)
+## The model (chronological sequence)
 
-A valid setup follows a strict chronological sequence:
-
-1. **Liquidity Sweep** — price purges a key level (Previous Day High/Low or a swing
-   high/low) and *rejects back through it* (wick beyond, body closes back inside). This
-   is the "manipulation leg" that traps breakout traders.
+1. **Liquidity Sweep** — price purges a key pool and *rejects back through it* (the
+   "manipulation leg" that stops out retail). Pools used, in the course's order of
+   preference: **Equal Highs/Lows (EQH/EQL)** → **PDH/PDL** → **swing highs/lows**.
 2. **Displacement** — an aggressive reversal candle (body ≥ `dispMult × ATR`).
-3. **FVG + Inversion** — an opposing 3‑candle Fair Value Gap is **closed through by a
-   candle body** (a wick is *not* enough):
-   - Bullish FVG closed *below* → flips to a **Bearish IFVG** → short bias.
-   - Bearish FVG closed *above* → flips to a **Bullish IFVG** → long bias.
-4. **Entry** — limit at the inverted gap edge (the retest), or market on the inversion
-   close. **Stop** beyond the swept swing; **target** a fixed 1:2 R:R (default), with an
-   optional move to break‑even after +1R.
+3. **FVG + Inversion** — an opposing 3‑candle FVG is **closed through by a candle body**
+   (a wick is *not* enough):
+   - Bullish FVG closed *below* → **Bearish IFVG** → short bias.
+   - Bearish FVG closed *above* → **Bullish IFVG** → long bias.
+4. **Entry** — market on the inversion close (the course's default) or a limit at the
+   inverted gap edge for better R:R.
 
-### A+ confluences (all toggleable)
-- **50‑EMA trend filter** — longs only above EMA, shorts only below.
-- **Killzones** — NY `08:30–11:00` and London `02:00–05:00` (New York time by default).
-- **Sweep requirement** — an external‑liquidity sweep must have happened within
-  `sweepLookback` bars before the inversion (the "fuel").
-- **Displacement** — rejects weak inversion candles.
-- **Double‑FVG reject** — skips stacked same‑direction gaps ("gapping sack" / over‑extension).
+## ICT context filters (these replace the EMA)
+
+- **Market‑Structure Bias (BOS / MSS)** — directional context from body‑close breaks of
+  swing points. Longs only while structure is bullish, shorts only while bearish.
+- **SMT Divergence (NQ vs ES)** — confirms a sweep is genuine distribution/accumulation,
+  not continuation. Optional (off by default; needs the correlated symbol's data).
+- **Killzones + ICT Macros** — NY AM / Lunch / PM and London windows, plus the optional
+  20‑minute macro windows (incl. the 10:00 reversal the course highlights).
+- **Singular‑FVG filter** — rejects consecutive ("double") FVGs / over‑extension.
+
+## Risk management (from the course)
+
+- **Stop** — two modes:
+  - `IFVG close` *(default, preferred)* — invalidate when a candle **closes back through
+    the inverted gap**; a hard stop just beyond the gap is kept as a safety net.
+  - `Swing high/low` — hard stop beyond the swept swing (easier to size, worse R:R).
+- **Take‑profit** — fixed R:R (default **1:2**) toward the opposing liquidity draw.
+- **Break‑even** — stop is moved to BE once the nearest **Internal Trading High/Low
+  (ITH/ITL)** is taken (the course's "free trade" rule).
+- **Premature‑liquidity‑take invalidation** — a pending limit is cancelled if price
+  reaches the target before the entry fills (the objective is already met).
+- **EOD flatten** — closes anything left at session end.
 
 ## How to use
 
-1. Open TradingView → **Pine Editor**.
-2. Paste a file's contents → **Add to chart**.
-3. Set the chart to **NQ1!/MNQ1!**, **1‑minute**. For the strategy, open the
-   **Strategy Tester** tab to see the report.
-4. Tune inputs in the settings gear (grouped: Fair Value Gap, Liquidity Sweep,
-   Displacement, Trend, Time, Execution, Risk Management).
+1. TradingView → **Pine Editor** → paste a file → **Add to chart**.
+2. Chart = **NQ1!/MNQ1!**, **1‑minute**. For the strategy, open the **Strategy Tester**.
+3. Tune inputs via the gear (grouped: FVG, Liquidity Sweep, Market Structure, SMT,
+   Displacement, Time, Execution, Risk).
 
-## Notes on "making it profitable"
+## Notes on profitability
 
-The defaults are deliberately **selective** — they encode the guide's "A+" filters so the
-strategy only fires high‑quality setups rather than every gap. Realised performance
-depends entirely on the **symbol, date range, session and broker fills** you load, so
-treat the numbers in the Strategy Tester as your own backtest, and walk‑forward before
-risking capital. Practical tuning levers, in order of impact:
+The defaults encode the course's selective "A+" criteria so the system trades quality
+setups, not every gap. Realised performance depends entirely on the **symbol, date range,
+session and fills** you load. Dodgy himself stresses that inversions are best **forward‑
+tested live** (instant backtest candles miss the discretionary daily‑bias read), so treat
+the Strategy Tester numbers as your own sample and walk‑forward before risking capital.
+Highest‑impact tuning levers: `rr`, `minGapTicks`/`dispMult`, the killzone toggles, the
+stop method, and the EQH/EQL tolerance.
 
-- **`rr`** (Reward:Risk): 1.5–2.0 trades more often / wins more often; 2.0–3.0 fewer wins,
-  bigger winners.
-- **`minGapTicks`** / **`dispMult`**: raise to take fewer, cleaner setups.
-- **Killzones** + **EOD flatten**: keep trading inside high‑volatility windows and avoid
-  overnight gap risk.
-- **`useBE` / `beTrigger`**: the guide's defensive break‑even rule — protects prop‑firm
-  trailing drawdown at the cost of more scratch trades.
-- Commission/slippage are pre‑set to realistic micro‑futures values; adjust for your
-  account and the contract you trade.
-
-This is an educational implementation of a publicly described discretionary model. It is
-**not financial advice**, and **past backtest performance does not guarantee future
-results.**
+Educational implementation of a publicly described discretionary model. **Not financial
+advice; past backtest performance does not guarantee future results.**

@@ -1,27 +1,28 @@
 //@version=6
 // =====================================================================================
-//  IFVG + Liquidity Sweep Model (Dodgy DD style) — INDICATOR
-//  Nasdaq-100 futures (NQ) oriented, built for the 1-minute execution timeframe.
+//  IFVG + Liquidity Sweep Model (Dodgy DD / ICT) — INDICATOR
+//  Nasdaq-100 futures (NQ) oriented, 1-minute execution timeframe.
 //
-//  Implements the "Dodgy DD" Inversion Fair Value Gap workflow described in the
-//  strategy guide:
-//    1. Liquidity Sweep  : price purges a key level (PDH/PDL or swing high/low) and
-//                          rejects back through it (the "manipulation leg").
-//    2. Displacement     : an aggressive reversal candle (body >= ATR multiple).
-//    3. FVG + Inversion  : an opposing Fair Value Gap is closed through by a candle
-//                          BODY close -> the gap "inverts" (Bullish FVG -> Bearish
-//                          IFVG and vice-versa).
-//    4. Signal           : marks the IFVG and the suggested limit-retest entry edge.
+//  Pure ICT / Smart-Money-Concept workflow taken from the Dodgy DD IFVG guide
+//  (no moving-average filter):
+//    1. Liquidity Sweep   : price purges a key level (PDH/PDL or swing high/low) and
+//                           rejects back through it (the "manipulation leg").
+//    2. Displacement      : an aggressive reversal candle (body >= ATR multiple).
+//    3. FVG + Inversion   : an opposing Fair Value Gap is closed through by a candle
+//                           BODY -> the gap inverts (Bullish FVG -> Bearish IFVG / v.v.).
+//    4. Signal            : marks the IFVG and the suggested limit-retest entry edge.
 //
-//  Confluences / filters: 50-EMA trend filter, NY/London killzone time window,
-//  consecutive ("double") FVG rejection, and a minimum gap-size filter.
+//  ICT confluences / filters (replacing the EMA):
+//    - Market-Structure Bias (BOS / MSS)  -> directional context.
+//    - SMT Divergence (NQ vs ES)          -> sweep is a genuine reversal, not continuation.
+//    - Killzones + ICT Macros             -> time-based delivery windows.
+//    - Consecutive ("double") FVG reject  -> avoids over-extension ("gapping sack").
 //
-//  NOTE: This is an educational discretionary-aid indicator. It draws the model and
-//  prints signals; it does not place orders. Use the companion strategy file to
-//  backtest. Nothing here is financial advice.
+//  Educational discretionary aid — draws the model and prints signals; no orders.
+//  Not financial advice.
 // =====================================================================================
 
-indicator("IFVG + Liquidity Sweep Model | DodgyDD", shorttitle="IFVG-Model",
+indicator("IFVG + Liquidity Sweep Model | ICT", shorttitle="IFVG-ICT",
      overlay=true, max_boxes_count=500, max_labels_count=500, max_lines_count=500,
      max_bars_back=5000)
 
@@ -29,41 +30,48 @@ indicator("IFVG + Liquidity Sweep Model | DodgyDD", shorttitle="IFVG-Model",
 // Inputs
 // -------------------------------------------------------------------------------------
 gFVG = "Fair Value Gap"
-minGapTicks  = input.float(8.0,  "Min FVG size (ticks)", minval=0.0, step=1.0, group=gFVG,
-     tooltip="Minimum height of an FVG (in ticks) for it to be tracked. Filters out tiny noise gaps.")
-fvgMaxAge    = input.int(60,     "Max FVG age (bars)", minval=5, group=gFVG,
-     tooltip="An untouched FVG is dropped after this many bars.")
+minGapTicks  = input.float(8.0,  "Min FVG size (ticks)", minval=0.0, step=1.0, group=gFVG)
+fvgMaxAge    = input.int(60,     "Max FVG age (bars)", minval=5, group=gFVG)
 showFVG      = input.bool(true,  "Draw FVG / IFVG boxes", group=gFVG)
 extendBoxes  = input.bool(true,  "Extend boxes to current bar", group=gFVG)
 
-gSweep = "Liquidity Sweep"
+gSweep = "Liquidity Sweep (ERL)"
 useSweep     = input.bool(true,  "Require liquidity sweep before inversion", group=gSweep)
-sweepLookback= input.int(20,     "Sweep look-back (bars)", minval=1, group=gSweep,
-     tooltip="A sweep must have occurred within this many bars before the inversion.")
+sweepLookback= input.int(20,     "Sweep look-back (bars)", minval=1, group=gSweep)
 pivotLen     = input.int(8,      "Swing pivot strength", minval=1, group=gSweep)
 usePDLevels  = input.bool(true,  "Use Previous Day High/Low as sweep levels", group=gSweep)
+useEQ        = input.bool(true,  "Use Equal Highs/Lows (EQH/EQL) as sweep levels", group=gSweep,
+     tooltip="Dodgy's #1 favourite liquidity pool. Two swing points within tolerance form an EQH/EQL magnet.")
+eqTicks      = input.float(8.0,  "Equal H/L tolerance (ticks)", minval=0.0, step=1.0, group=gSweep)
 showSweeps   = input.bool(true,  "Mark sweeps", group=gSweep)
+
+gStruct = "Market Structure (ICT bias)"
+useMSS       = input.bool(true,  "Use market-structure bias (BOS / MSS)", group=gStruct,
+     tooltip="Only allow longs while structure is bullish (price broke the last swing high) and shorts while bearish. Replaces the moving-average filter with ICT structure.")
+showBOS      = input.bool(true,  "Mark BOS / MSS", group=gStruct)
+
+gSMT = "SMT Divergence"
+useSMT       = input.bool(false, "Require SMT divergence with correlated asset", group=gSMT,
+     tooltip="Bearish SMT: NQ makes a higher high but the correlated asset fails to. Confirms the sweep is real distribution, not continuation.")
+smtSym       = input.symbol("CME_MINI:ES1!", "Correlated symbol", group=gSMT)
+smtLen       = input.int(10,     "SMT swing length", minval=2, group=gSMT)
+smtLookback  = input.int(20,     "SMT validity (bars)", minval=1, group=gSMT)
 
 gDisp = "Displacement"
 useDisp      = input.bool(true,  "Require displacement on inversion candle", group=gDisp)
 atrLen       = input.int(14,     "ATR length", minval=1, group=gDisp)
 dispMult     = input.float(1.0,  "Min body size (x ATR)", minval=0.0, step=0.1, group=gDisp)
 
-gTrend = "Trend Filter (50 EMA)"
-useEMA       = input.bool(true,  "Use EMA trend filter", group=gTrend)
-emaLen       = input.int(50,     "EMA length", minval=1, group=gTrend)
-showEMA      = input.bool(true,  "Plot EMA", group=gTrend)
-
-gTime = "Time Filter (Killzones)"
+gTime = "Time — Killzones & Macros"
 useTime      = input.bool(true,  "Restrict signals to killzones", group=gTime)
-kz1          = input.session("0830-1100", "NY Killzone (exchange tz)", group=gTime)
-kz2          = input.session("0200-0500", "London Killzone (exchange tz)", group=gTime)
-tzInfo       = input.string("America/New_York", "Killzone timezone", group=gTime,
+kz1          = input.session("0830-1100", "NY Killzone", group=gTime)
+kz2          = input.session("0200-0500", "London Killzone", group=gTime)
+useMacro     = input.bool(false, "Also require an ICT macro window", group=gTime)
+tzInfo       = input.string("America/New_York", "Killzone/Macro timezone", group=gTime,
      options=["America/New_York","Europe/London","Exchange","UTC"])
 
 gFilt = "Quality Filters"
-useDoubleFvg = input.bool(true,  "Reject consecutive (double) FVGs", group=gFilt,
-     tooltip="Skip a setup when 2+ same-direction FVGs stack (over-extension / 'gapping sack').")
+useDoubleFvg = input.bool(true,  "Reject consecutive (double) FVGs", group=gFilt)
 
 gStyle = "Style"
 colBullFVG   = input.color(color.new(color.teal,  80), "Bullish FVG", group=gStyle)
@@ -75,33 +83,91 @@ colBearIFVG  = input.color(color.new(color.fuchsia,60),"Bearish IFVG", group=gSt
 // Core series
 // -------------------------------------------------------------------------------------
 minGap = minGapTicks * syminfo.mintick
-ema    = ta.ema(close, emaLen)
 atr    = ta.atr(atrLen)
+tz     = tzInfo == "Exchange" ? syminfo.timezone : tzInfo
 
-tz = tzInfo == "Exchange" ? syminfo.timezone : tzInfo
-inKZ = not useTime or (not na(time(timeframe.period, kz1, tz)) or not na(time(timeframe.period, kz2, tz)))
+// ICT macro windows (NY time by default)
+mc1 = time(timeframe.period, "0830-0910", tz)
+mc2 = time(timeframe.period, "0950-1010", tz)
+mc3 = time(timeframe.period, "1050-1110", tz)
+mc4 = time(timeframe.period, "1150-1210", tz)
+mc5 = time(timeframe.period, "1310-1340", tz)
+mc6 = time(timeframe.period, "1515-1545", tz)
+inMacro = not na(mc1) or not na(mc2) or not na(mc3) or not na(mc4) or not na(mc5) or not na(mc6)
+inKZ    = not na(time(timeframe.period, kz1, tz)) or not na(time(timeframe.period, kz2, tz))
+inTime  = (not useTime or inKZ) and (not useMacro or inMacro)
 
-// Swing pivots (confirmed `pivotLen` bars back)
+// Swing pivots (confirmed pivotLen bars back)
 ph = ta.pivothigh(high, pivotLen, pivotLen)
 pl = ta.pivotlow(low,  pivotLen, pivotLen)
 var float lastPH = na
 var float lastPL = na
+var float prevPH = na
+var float prevPL = na
 if not na(ph)
+    prevPH := lastPH
     lastPH := ph
 if not na(pl)
+    prevPL := lastPL
     lastPL := pl
 
-// Previous Day High / Low (stable, no lookahead)
+// Equal Highs / Equal Lows (two swing points within tolerance) — favourite ICT liquidity
+eqTol = eqTicks * syminfo.mintick
+eqhLevel = useEQ and not na(lastPH) and not na(prevPH) and math.abs(lastPH - prevPH) <= eqTol ? math.max(lastPH, prevPH) : na
+eqlLevel = useEQ and not na(lastPL) and not na(prevPL) and math.abs(lastPL - prevPL) <= eqTol ? math.min(lastPL, prevPL) : na
+
+// -------------------------------------------------------------------------------------
+// Market structure bias (BOS / MSS) — ICT replacement for the EMA
+// -------------------------------------------------------------------------------------
+var int bias = 0
+bosUp = not na(lastPH) and close > lastPH
+bosDn = not na(lastPL) and close < lastPL
+biasPrev = bias
+if bosUp
+    bias := 1
+if bosDn
+    bias := -1
+if showBOS and bosUp and biasPrev <= 0
+    label.new(bar_index, low, "BOS▲", style=label.style_label_up, color=color.new(color.green, 20), textcolor=color.white, size=size.tiny)
+if showBOS and bosDn and biasPrev >= 0
+    label.new(bar_index, high, "BOS▼", style=label.style_label_down, color=color.new(color.red, 20), textcolor=color.white, size=size.tiny)
+
+biasLongOK  = not useMSS or bias >= 0
+biasShortOK = not useMSS or bias <= 0
+
+// Previous Day High / Low
 pdh = usePDLevels ? request.security(syminfo.tickerid, "1D", high[1], lookahead=barmerge.lookahead_off) : na
 pdl = usePDLevels ? request.security(syminfo.tickerid, "1D", low[1],  lookahead=barmerge.lookahead_off) : na
 
 // -------------------------------------------------------------------------------------
-// Liquidity sweeps: wick beyond a level then close back inside
+// SMT divergence vs correlated asset (e.g. NQ vs ES)
 // -------------------------------------------------------------------------------------
-sweptHigh = (not na(lastPH) and high > lastPH and close < lastPH) or
-             (not na(pdh)    and high > pdh    and close < pdh)
-sweptLow  = (not na(lastPL) and low  < lastPL and close > lastPL) or
-             (not na(pdl)    and low  < pdl    and close > pdl)
+corrHigh = request.security(smtSym, timeframe.period, high, lookahead=barmerge.lookahead_off)
+corrLow  = request.security(smtSym, timeframe.period, low,  lookahead=barmerge.lookahead_off)
+madeHH = high > ta.highest(high, smtLen)[1]
+madeLL = low  < ta.lowest(low,  smtLen)[1]
+corrHH = corrHigh > ta.highest(corrHigh, smtLen)[1]
+corrLL = corrLow  < ta.lowest(corrLow,  smtLen)[1]
+bearSMT = madeHH and not corrHH
+bullSMT = madeLL and not corrLL
+var int lastBearSMTBar = na
+var int lastBullSMTBar = na
+if bearSMT
+    lastBearSMTBar := bar_index
+if bullSMT
+    lastBullSMTBar := bar_index
+smtShortOK = not useSMT or (not na(lastBearSMTBar) and (bar_index - lastBearSMTBar) <= smtLookback)
+smtLongOK  = not useSMT or (not na(lastBullSMTBar) and (bar_index - lastBullSMTBar) <= smtLookback)
+
+// -------------------------------------------------------------------------------------
+// Liquidity sweeps (wick beyond a level then close back inside)
+// -------------------------------------------------------------------------------------
+sweptHigh = (not na(lastPH)   and high > lastPH   and close < lastPH) or
+             (not na(pdh)      and high > pdh      and close < pdh)    or
+             (not na(eqhLevel) and high > eqhLevel and close < eqhLevel)
+sweptLow  = (not na(lastPL)   and low  < lastPL   and close > lastPL) or
+             (not na(pdl)      and low  < pdl      and close > pdl)    or
+             (not na(eqlLevel) and low  < eqlLevel and close > eqlLevel)
 
 var int lastSweepHighBar = na
 var int lastSweepLowBar  = na
@@ -114,24 +180,20 @@ recentSweepHigh = not na(lastSweepHighBar) and (bar_index - lastSweepHighBar) <=
 recentSweepLow  = not na(lastSweepLowBar)  and (bar_index - lastSweepLowBar)  <= sweepLookback
 
 if showSweeps and sweptHigh
-    label.new(bar_index, high, "✕ SSH", style=label.style_label_down, color=color.new(color.red, 30),
-         textcolor=color.white, size=size.tiny)
+    label.new(bar_index, high, "✕ BSL", style=label.style_label_down, color=color.new(color.red, 30), textcolor=color.white, size=size.tiny)
 if showSweeps and sweptLow
-    label.new(bar_index, low, "✕ SSL", style=label.style_label_up, color=color.new(color.green, 30),
-         textcolor=color.white, size=size.tiny)
+    label.new(bar_index, low, "✕ SSL", style=label.style_label_up, color=color.new(color.green, 30), textcolor=color.white, size=size.tiny)
 
 // -------------------------------------------------------------------------------------
-// Fair Value Gap detection (3-candle imbalance, confirmed on the 3rd candle)
+// Fair Value Gap detection
 // -------------------------------------------------------------------------------------
 isBullFVG = low > high[2] and (low - high[2]) >= minGap
 isBearFVG = high < low[2] and (low[2] - high) >= minGap
-
 bullTop = low
 bullBot = high[2]
 bearTop = low[2]
 bearBot = high
 
-// Consecutive same-direction FVG tracking (for the double-FVG filter)
 var int lastBullFvgBar = na
 var int lastBearFvgBar = na
 blockBull = useDoubleFvg and not na(lastBullFvgBar) and (bar_index - lastBullFvgBar) <= 5
@@ -142,7 +204,7 @@ if isBearFVG
     lastBearFvgBar := bar_index
 
 // -------------------------------------------------------------------------------------
-// FVG store (parallel arrays). dir: 1 = bullish FVG, -1 = bearish FVG
+// FVG store
 // -------------------------------------------------------------------------------------
 var array<float> fTop  = array.new_float()
 var array<float> fBot  = array.new_float()
@@ -172,21 +234,19 @@ if isBearFVG and not blockBear
 // -------------------------------------------------------------------------------------
 // Inversion check + box maintenance
 // -------------------------------------------------------------------------------------
-bullInversion = false   // bearish FVG closed through upward -> bullish IFVG (LONG)
-bearInversion = false   // bullish FVG closed through downward -> bearish IFVG (SHORT)
-var float longEdge  = na // top of the inverted bearish gap (buy-limit retest)
-var float shortEdge = na // bottom of the inverted bullish gap (sell-limit retest)
+bullInversion = false
+bearInversion = false
+var float longEdge  = na
+var float shortEdge = na
 
 if array.size(fTop) > 0
     for i = array.size(fTop) - 1 to 0
-        bx     = array.get(fBoxA, i)
-        invd   = array.get(fInv, i)
-        d      = array.get(fDir, i)
-        t      = array.get(fTop, i)
-        b      = array.get(fBot, i)
-
+        bx   = array.get(fBoxA, i)
+        invd = array.get(fInv, i)
+        d    = array.get(fDir, i)
+        t    = array.get(fTop, i)
+        b    = array.get(fBot, i)
         if not invd
-            // Bullish FVG inverts to bearish IFVG on a body close below its bottom
             if d == 1 and close < b and not bearInversion
                 array.set(fInv, i, true)
                 bearInversion := true
@@ -194,7 +254,6 @@ if array.size(fTop) > 0
                 if not na(bx)
                     box.set_bgcolor(bx, colBearIFVG)
                     box.set_border_color(bx, color.new(color.fuchsia, 0))
-            // Bearish FVG inverts to bullish IFVG on a body close above its top
             else if d == -1 and close > t and not bullInversion
                 array.set(fInv, i, true)
                 bullInversion := true
@@ -202,12 +261,9 @@ if array.size(fTop) > 0
                 if not na(bx)
                     box.set_bgcolor(bx, colBullIFVG)
                     box.set_border_color(bx, color.new(color.lime, 0))
-
-        // extend live (non-inverted) boxes to the current bar
         if extendBoxes and not array.get(fInv, i) and not na(bx)
             box.set_right(bx, bar_index)
 
-// Age-out / cleanup pass (drop oldest expired gaps)
 if array.size(fTop) > 0
     for i = array.size(fTop) - 1 to 0
         if (bar_index - array.get(fBar, i)) > fvgMaxAge and not array.get(fInv, i)
@@ -222,33 +278,25 @@ if array.size(fTop) > 0
             array.remove(fBoxA, i)
 
 // -------------------------------------------------------------------------------------
-// Confluence gating -> final signals
+// Confluence gating -> signals
 // -------------------------------------------------------------------------------------
 strongBody = math.abs(close - open) >= dispMult * atr
 dispOK     = not useDisp or strongBody
-emaLongOK  = not useEMA or close > ema
-emaShortOK = not useEMA or close < ema
 sweepLongOK  = not useSweep or recentSweepLow
 sweepShortOK = not useSweep or recentSweepHigh
 
-longSignal  = bullInversion and inKZ and dispOK and emaLongOK  and sweepLongOK
-shortSignal = bearInversion and inKZ and dispOK and emaShortOK and sweepShortOK
+longSignal  = bullInversion and inTime and dispOK and biasLongOK  and sweepLongOK  and smtLongOK
+shortSignal = bearInversion and inTime and dispOK and biasShortOK and sweepShortOK and smtShortOK
 
-plotshape(longSignal,  title="Bullish IFVG", style=shape.triangleup,   location=location.belowbar,
-     color=color.new(color.lime, 0), size=size.small, text="IFVG▲")
-plotshape(shortSignal, title="Bearish IFVG", style=shape.triangledown, location=location.abovebar,
-     color=color.new(color.fuchsia, 0), size=size.small, text="IFVG▼")
-
-// Plot suggested limit-retest entry edges
+plotshape(longSignal,  title="Bullish IFVG", style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.small, text="IFVG▲")
+plotshape(shortSignal, title="Bearish IFVG", style=shape.triangledown, location=location.abovebar, color=color.new(color.fuchsia, 0), size=size.small, text="IFVG▼")
 plot(longSignal  ? longEdge  : na, "Long entry edge",  color=color.lime,    style=plot.style_circles, linewidth=2)
 plot(shortSignal ? shortEdge : na, "Short entry edge", color=color.fuchsia, style=plot.style_circles, linewidth=2)
-
-plot(showEMA ? ema : na, "EMA", color=color.new(color.orange, 0), linewidth=1)
 plot(usePDLevels ? pdh : na, "PDH", color=color.new(color.gray, 30), style=plot.style_stepline)
 plot(usePDLevels ? pdl : na, "PDL", color=color.new(color.gray, 30), style=plot.style_stepline)
+plot(eqhLevel, "EQH", color=color.new(color.orange, 20), style=plot.style_circles, linewidth=1)
+plot(eqlLevel, "EQL", color=color.new(color.aqua, 20),   style=plot.style_circles, linewidth=1)
+bgcolor(useMSS and bias == 1 ? color.new(color.green, 94) : useMSS and bias == -1 ? color.new(color.red, 94) : na, title="Structure bias tint")
 
-// -------------------------------------------------------------------------------------
-// Alerts
-// -------------------------------------------------------------------------------------
-alertcondition(longSignal,  "Bullish IFVG long",  "IFVG bullish inversion + sweep confluence (LONG)")
-alertcondition(shortSignal, "Bearish IFVG short", "IFVG bearish inversion + sweep confluence (SHORT)")
+alertcondition(longSignal,  "Bullish IFVG long",  "IFVG bullish inversion + sweep + structure confluence (LONG)")
+alertcondition(shortSignal, "Bearish IFVG short", "IFVG bearish inversion + sweep + structure confluence (SHORT)")
