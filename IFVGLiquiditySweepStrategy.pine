@@ -20,7 +20,8 @@
 //    - Market-Structure Bias (BOS / MSS, body close)          -> directional context.
 //    - Premium / Discount equilibrium (50% of the ICT day from -> only long in discount,
 //      the 18:00 New York open).                                  only short in premium.
-//    - SMT Divergence (NQ vs ES)                              -> genuine-reversal filter.
+//    - SMT Divergence (NQ vs ES/YM, or inverse vs DXY)        -> swing-anchored crack in
+//      correlation: a real liquidity raid on one side that the correlate refuses to confirm.
 //    - Killzones (NY AM / Lunch / PM, London) + ICT Macros    -> delivery windows.
 //    - Singular-FVG (reject consecutive "double" FVGs).
 //    - FVG size band (NQ ideal 7-15 pts) to reject noise + news spikes.
@@ -84,11 +85,14 @@ gPD = "Premium / Discount (PD array)"
 usePD        = input.bool(true,  "Only long in discount / short in premium", group=gPD,
      tooltip="50% equilibrium of the ICT day measured from the 18:00 New York open. Below = discount (longs), above = premium (shorts).")
 
-gSMT = "SMT Divergence"
-useSMT       = input.bool(false, "Require SMT divergence with correlated asset", group=gSMT)
+gSMT = "SMT Divergence (swing-anchored)"
+useSMT       = input.bool(false, "Require SMT divergence with correlated asset", group=gSMT,
+     tooltip="A genuine 'crack in correlation': THIS market sweeps a confirmed 3-bar swing extreme (a real liquidity raid) while the correlate FAILS to confirm. Anchored to swings + a sweep per the ICT Bible / SMT homework — not the old rolling-window high/low that fired on almost every bar and hurt performance.")
 smtSym       = input.symbol("CME_MINI:ES1!", "Correlated symbol", group=gSMT)
-smtLen       = input.int(10,     "SMT swing length", minval=2, group=gSMT)
-smtLookback  = input.int(20,     "SMT validity (bars)", minval=1, group=gSMT)
+smtInverse   = input.bool(false, "Correlated symbol is INVERSELY correlated (e.g. DXY)", group=gSMT,
+     tooltip="ES/YM move WITH NQ (leave off). DXY moves inversely to NQ (turn on) — the crack is then a failure to make the opposite-side extreme.")
+smtLookback  = input.int(20,     "SMT validity after the crack (bars)", minval=1, group=gSMT)
+showSMT      = input.bool(true,  "Mark SMT divergences on chart", group=gSMT)
 
 gDisp = "Displacement"
 useDisp      = input.bool(true,  "Require displacement on inversion candle", group=gDisp)
@@ -244,21 +248,42 @@ pdh = usePDLevels ? request.security(syminfo.tickerid, "1D", high[1], lookahead=
 pdl = usePDLevels ? request.security(syminfo.tickerid, "1D", low[1],  lookahead=barmerge.lookahead_off) : na
 
 // -------------------------------------------------------------------------------------
-// SMT divergence vs correlated asset
+// SMT divergence vs correlated asset — swing-anchored "crack in correlation".
+//   ICT Bible / SMT homework: correlated markets (NQ<->ES/YM, inversely NQ<->DXY) move in
+//   tandem; a genuine SMT prints only when THIS market sweeps a CONFIRMED 3-bar swing
+//   extreme (a real liquidity raid) while the correlate REFUSES to confirm. This replaces
+//   the old rolling-window high/low test, which fired on nearly every bar (noise -> the
+//   filter hurt rather than helped). The correlate level is captured at the SAME pivot bar
+//   so the two swings are time-aligned ("note when these swing points occurred").
 // -------------------------------------------------------------------------------------
 corrHigh = request.security(smtSym, timeframe.period, high, lookahead=barmerge.lookahead_off)
 corrLow  = request.security(smtSym, timeframe.period, low,  lookahead=barmerge.lookahead_off)
-madeHH = high > ta.highest(high, smtLen)[1]
-madeLL = low  < ta.lowest(low,  smtLen)[1]
-corrHH = corrHigh > ta.highest(corrHigh, smtLen)[1]
-corrLL = corrLow  < ta.lowest(corrLow,  smtLen)[1]
-bearSMT = madeHH and not corrHH
-bullSMT = madeLL and not corrLL
+
+// Latest confirmed swing extreme on THIS market + the correlate's level at that pivot bar.
+// pivots confirm pivotLen bars after the swing, so [pivotLen] reads the aligned correlate.
+var float nqSwLow  = na
+var float nqSwHigh = na
+var float coAtLow  = na
+var float coAtHigh = na
+if not na(pl)
+    nqSwLow := pl
+    coAtLow := corrLow[pivotLen]
+if not na(ph)
+    nqSwHigh := ph
+    coAtHigh := corrHigh[pivotLen]
+
+nqTookLow  = not na(nqSwLow)  and low  < nqSwLow     // this market raided its sell-side
+nqTookHigh = not na(nqSwHigh) and high > nqSwHigh    // this market raided its buy-side
+// Bullish crack: we raid sell-side; correlate holds its low (positive) or fails a new high (inverse).
+bullSMTraw = nqTookLow  and (smtInverse ? (not na(coAtHigh) and corrHigh <= coAtHigh) : (not na(coAtLow) and corrLow >= coAtLow))
+// Bearish crack: we raid buy-side; correlate holds its high (positive) or fails a new low (inverse).
+bearSMTraw = nqTookHigh and (smtInverse ? (not na(coAtLow) and corrLow >= coAtLow) : (not na(coAtHigh) and corrHigh <= coAtHigh))
+
 var int lastBearSMTBar = na
 var int lastBullSMTBar = na
-if bearSMT
+if bearSMTraw
     lastBearSMTBar := bar_index
-if bullSMT
+if bullSMTraw
     lastBullSMTBar := bar_index
 hasBullSMT = not na(lastBullSMTBar) and (bar_index - lastBullSMTBar) <= smtLookback
 hasBearSMT = not na(lastBearSMTBar) and (bar_index - lastBearSMTBar) <= smtLookback
@@ -567,4 +592,6 @@ plot(eqhLevel, "EQH", color=color.new(color.orange, 20), style=plot.style_circle
 plot(eqlLevel, "EQL", color=color.new(color.aqua, 20),   style=plot.style_circles, linewidth=1)
 plotshape(longSignal,  title="Long sig",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0),    size=size.tiny)
 plotshape(shortSignal, title="Short sig", style=shape.triangledown, location=location.abovebar, color=color.new(color.fuchsia, 0), size=size.tiny)
+plotshape(showSMT and bullSMTraw, title="Bull SMT", style=shape.diamond, location=location.belowbar, color=color.new(color.aqua, 0),    size=size.tiny)
+plotshape(showSMT and bearSMTraw, title="Bear SMT", style=shape.diamond, location=location.abovebar, color=color.new(color.orange, 0), size=size.tiny)
 bgcolor(useMSS and bias == 1 ? color.new(color.green, 94) : useMSS and bias == -1 ? color.new(color.red, 94) : na, title="Structure bias tint")
