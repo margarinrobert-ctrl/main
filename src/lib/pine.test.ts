@@ -26,7 +26,7 @@ function c(p: Partial<OptionContract>): OptionContract {
 }
 
 describe("buildGexPine", () => {
-  it("emits a v5 indicator with the symbol, key levels and ladder arrays", () => {
+  it("emits a v6 indicator with named GEX levels", () => {
     const chain = [
       c({ type: "call", strike: 105, gamma: 0.02, openInterest: 8000 }),
       c({ type: "put", strike: 95, gamma: 0.03, openInterest: 9000 }),
@@ -34,16 +34,18 @@ describe("buildGexPine", () => {
     const r = buildGexPine("TEST", chain, 100);
     expect(r.code).toContain("//@version=6");
     expect(r.code).toContain("OptionsFlow GEX • TEST");
-    expect(r.code).toContain("Gamma flip");
-    expect(r.code).toContain("array.from(");
+    expect(r.code).toContain("Call Resistance");
+    expect(r.code).toContain("Put Support");
+    expect(r.code).toContain("HVL");
+    expect(r.code).toContain("0DTE");
+    expect(r.code).toContain('"GEX " + str.tostring(i + 1)');
     expect(r.expiration).toBe("2026-06-19");
   });
 
   it("emits float arrays (never array<int>) and falls back to spot when empty", () => {
-    // a whole-number GEX must still render as a float literal
     const chain = [c({ type: "call", strike: 100, gamma: 0.01, openInterest: 1000000 })];
     const withData = buildGexPine("INTG", chain, 100);
-    expect(withData.code).toMatch(/var float\[\] gs = array\.from\([-0-9., ]*\.\d/);
+    expect(withData.code).toMatch(/var float\[\] gexK = array\.from\([-0-9., ]*\.\d/);
 
     const empty = buildGexPine("EMPTY", [], 50);
     expect(empty.code).toContain("indicator(");
