@@ -63,6 +63,13 @@ export function FlowTable() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const ms = Number(process.env.NEXT_PUBLIC_REFRESH_MS ?? 60000) || 0;
+    if (ms <= 0) return;
+    const id = setInterval(() => load(), ms);
+    return () => clearInterval(id);
+  }, [load]);
+
   const setParam = (k: keyof ServerParams) => (e: ChangeEvent<HTMLInputElement>) =>
     setServerParams((p) => ({ ...p, [k]: e.target.value }));
 

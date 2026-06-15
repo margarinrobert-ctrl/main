@@ -1,6 +1,6 @@
 import { cached } from "../cache/store";
 import { avOptions } from "../providers/alphavantage";
-import { cboeOptions } from "../providers/cboe";
+import { cboeOptions, cboeQuote } from "../providers/cboe";
 import { stooqHistory, stooqQuote } from "../providers/stooq";
 import { barchartRequest, readFixtureParsed } from "./client";
 import { config } from "./config";
@@ -21,13 +21,18 @@ export async function getQuote(symbol: string) {
   const sym = symbol.toUpperCase();
   const fixtures = [`quote.${sym}.json`, "quote.AAPL.json"];
 
-  if (useStooq()) {
+  if (config.dataSource === "live" && config.marketDataProvider !== "barchart") {
+    // Freshest free underlying: CBOE (~15-min delayed) → Stooq (EOD) → fixtures.
     try {
-      const data = await cached(`stooq:quote:${sym}`, config.cacheTtlSeconds, () => stooqQuote(sym));
-      return { data, source: "live" as const };
-    } catch (err) {
-      console.warn(`[stooq] quote failed for ${sym}; falling back to fixtures:`, err instanceof Error ? err.message : err);
-      return { data: await readFixtureParsed(fixtures, parseQuoteResponse), source: "fixtures" as const };
+      return { data: await cboeQuote(sym), source: "live" as const };
+    } catch {
+      try {
+        const data = await cached(`stooq:quote:${sym}`, config.cacheTtlSeconds, () => stooqQuote(sym));
+        return { data, source: "live" as const };
+      } catch (err) {
+        console.warn(`[quote] live failed for ${sym}; falling back to fixtures:`, err instanceof Error ? err.message : err);
+        return { data: await readFixtureParsed(fixtures, parseQuoteResponse), source: "fixtures" as const };
+      }
     }
   }
 

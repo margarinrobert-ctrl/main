@@ -39,6 +39,13 @@ export function QuoteCard({ symbol }: { symbol: string }) {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const ms = Number(process.env.NEXT_PUBLIC_REFRESH_MS ?? 60000) || 0;
+    if (ms <= 0) return;
+    const id = setInterval(() => load(), ms);
+    return () => clearInterval(id);
+  }, [load]);
+
   const up = (quote?.netChange ?? 0) >= 0;
 
   return (

@@ -1,14 +1,15 @@
 import { z } from "zod";
+import { cached } from "../cache/store";
 import { config } from "../barchart/config";
 import { numish } from "../barchart/schemas";
-import type { OptionContract, OptionType } from "../barchart/types";
+import type { NormalizedQuote, OptionContract, OptionType } from "../barchart/types";
 
 /**
- * CBOE delayed quotes — a public, keyless options feed (~15-min delayed) that powers
- * cboe.com's free quote pages. Returns full chains with volume, OI, IV and greeks.
+ * CBOE delayed quotes — a public, keyless feed (~15-min delayed) powering cboe.com's free pages.
+ * One fetch per symbol (cached) serves both the options chain and the underlying quote.
  *
- * Futures (ES/NQ) have no public options feed, so we map them to the matching CBOE
- * cash index (ES→SPX, NQ→NDX) as a free stand-in for S&P / Nasdaq index-options flow.
+ * Futures (ES/NQ) have no public options feed, so we map them to the matching CBOE cash index
+ * (ES→SPX, NQ→NDX) as a free stand-in for S&P / Nasdaq index-options flow.
  */
 const FUTURES_TO_INDEX: Record<string, string> = { ES: "SPX", NQ: "NDX", RTY: "RUT", YM: "DJX" };
 const CBOE_INDICES = new Set(["SPX", "NDX", "VIX", "RUT", "DJX", "XSP"]);
@@ -35,6 +36,10 @@ const cboeResponse = z
       .object({
         current_price: numish,
         close: numish,
+        prev_day_close: numish,
+        open: numish,
+        high: numish,
+        low: numish,
         options: z.array(cboeOption).nullish(),
       })
       .passthrough()
@@ -48,7 +53,6 @@ function cboePath(symbol: string): string {
   return CBOE_INDICES.has(s) ? `_${s}.json` : `${s}.json`;
 }
 
-/** Parse an OCC option symbol, e.g. "AAPL250117C00150000" -> {strike, type, expiration}. */
 function parseOcc(opt: string): { strike: number; type: OptionType; expiration: string } {
   const strike = Number(opt.slice(-8)) / 1000;
   const type: OptionType = opt.slice(-9, -8) === "P" ? "put" : "call";
@@ -62,7 +66,18 @@ function dteFrom(exp: string): number | null {
   return Number.isFinite(t) ? Math.round((t - Date.now()) / 86_400_000) : null;
 }
 
-export async function cboeOptions(symbol: string): Promise<OptionContract[]> {
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export interface CboeRaw {
+  options: OptionContract[];
+  spot: number | null;
+  prevClose: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+}
+
+async function fetchCboeRaw(symbol: string): Promise<CboeRaw> {
   const sym = symbol.toUpperCase();
   const url = `${config.cboeBaseUrl}/${cboePath(sym)}`;
 
@@ -80,12 +95,8 @@ export async function cboeOptions(symbol: string): Promise<OptionContract[]> {
     clearTimeout(timer);
   }
 
-  const parsed = cboeResponse.parse(json);
-  const rows = parsed.data?.options ?? [];
-  if (rows.length === 0) throw new Error(`CBOE: no options for ${sym}`);
-  const underlying = parsed.data?.current_price ?? parsed.data?.close ?? null;
-
-  return rows
+  const d = cboeResponse.parse(json).data;
+  const options = (d?.options ?? [])
     .map((r): OptionContract | null => {
       if (!/^.+\d{6}[CP]\d{8}$/.test(r.option)) return null;
       const { strike, type, expiration } = parseOcc(r.option);
@@ -107,8 +118,52 @@ export async function cboeOptions(symbol: string): Promise<OptionContract[]> {
         gamma: r.gamma,
         theta: r.theta,
         vega: r.vega,
-        underlyingPrice: underlying,
+        underlyingPrice: d?.current_price ?? d?.close ?? null,
       };
     })
     .filter((x): x is OptionContract => x !== null);
+
+  return {
+    options,
+    spot: d?.current_price ?? d?.close ?? null,
+    prevClose: d?.prev_day_close ?? d?.close ?? null,
+    open: d?.open ?? null,
+    high: d?.high ?? null,
+    low: d?.low ?? null,
+  };
+}
+
+/** Single cached CBOE fetch per symbol (shared by chain + quote). */
+export function cboeRaw(symbol: string): Promise<CboeRaw> {
+  return cached(`cboe:${symbol.toUpperCase()}`, config.cboeCacheTtlSeconds, () => fetchCboeRaw(symbol));
+}
+
+export async function cboeOptions(symbol: string): Promise<OptionContract[]> {
+  const raw = await cboeRaw(symbol);
+  if (raw.options.length === 0) throw new Error(`CBOE: no options for ${symbol}`);
+  return raw.options;
+}
+
+export async function cboeQuote(symbol: string): Promise<NormalizedQuote[]> {
+  const raw = await cboeRaw(symbol);
+  if (raw.spot == null) throw new Error(`CBOE: no quote for ${symbol}`);
+  const last = raw.spot;
+  const prev = raw.prevClose;
+  return [
+    {
+      symbol: symbol.toUpperCase(),
+      name: null,
+      last,
+      netChange: prev != null ? round2(last - prev) : null,
+      percentChange: prev ? round2(((last - prev) / prev) * 100) : null,
+      open: raw.open,
+      high: raw.high,
+      low: raw.low,
+      previousClose: prev,
+      volume: null,
+      tradeTimestamp: new Date().toISOString(),
+      mode: "cboe-delayed",
+      delayed: true,
+    },
+  ];
 }

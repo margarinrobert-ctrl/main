@@ -38,7 +38,7 @@ export const config = {
     .filter(Boolean),
   cacheTtlSeconds: toInt(process.env.CACHE_TTL_SECONDS, 60),
   optionsCacheTtlSeconds: toInt(process.env.OPTIONS_CACHE_TTL_SECONDS, 21600), // 6h (Alpha Vantage EOD)
-  cboeCacheTtlSeconds: toInt(process.env.CBOE_CACHE_TTL_SECONDS, 600), // 10m (CBOE delayed intraday)
+  cboeCacheTtlSeconds: toInt(process.env.CBOE_CACHE_TTL_SECONDS, 120), // 2m (CBOE ~15-min delayed intraday)
   pollIntervalMs: toInt(process.env.POLL_INTERVAL_MS, 0),
   requestTimeoutMs: 10_000,
   maxRetries: 3,
