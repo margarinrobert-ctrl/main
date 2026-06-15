@@ -74,7 +74,7 @@ export function KeyLevels({ symbol }: { symbol: string }) {
   }, [chain, spot]);
 
   return (
-    <div className="rounded-lg border border-neutral-800 p-4">
+    <div className="glass p-4">
       <h2 className="mb-3 font-semibold">Dealer positioning &amp; key levels · {symbol}</h2>
       {state === "loading" && <Loading />}
       {state === "error" && <ErrorState message={error} />}

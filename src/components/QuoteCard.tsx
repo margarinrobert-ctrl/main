@@ -49,7 +49,7 @@ export function QuoteCard({ symbol }: { symbol: string }) {
   const up = (quote?.netChange ?? 0) >= 0;
 
   return (
-    <div className="max-w-md rounded-lg border border-neutral-800 p-4">
+    <div className="max-w-md glass p-4">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="font-semibold">{symbol}</h2>
         <button onClick={load} className="rounded bg-neutral-800 px-2 py-1 text-xs hover:bg-neutral-700">

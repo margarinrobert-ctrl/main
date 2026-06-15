@@ -77,7 +77,7 @@ export function PriceChart({ symbol }: { symbol: string }) {
   }, [state, bars]);
 
   return (
-    <div className="rounded-lg border border-neutral-800 p-4">
+    <div className="glass p-4">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="font-semibold">Price · {symbol}</h2>
         {source && <span className="text-xs text-neutral-500">src: {source}</span>}

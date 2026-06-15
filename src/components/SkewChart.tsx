@@ -67,7 +67,7 @@ export function SkewChart({ symbol }: { symbol: string }) {
   );
 
   return (
-    <div className="rounded-lg border border-neutral-800 p-4">
+    <div className="glass p-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">IV skew · {symbol}</h2>
         <select

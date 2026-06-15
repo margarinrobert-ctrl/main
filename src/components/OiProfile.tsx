@@ -61,7 +61,7 @@ export function OiProfile({ symbol }: { symbol: string }) {
   }, [chain, spot]);
 
   return (
-    <div className="rounded-lg border border-neutral-800 p-4">
+    <div className="glass p-4">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="font-semibold">Open interest · {symbol}</h2>
         <span className="text-xs text-neutral-500">contracts by strike</span>

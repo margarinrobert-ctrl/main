@@ -104,7 +104,7 @@ export function OptionsChain({ symbol }: { symbol: string }) {
     c && c.delta != null ? { backgroundColor: `rgba(239,68,68,${0.06 + 0.5 * Math.min(0.9, Math.abs(c.delta))})` } : undefined;
 
   return (
-    <div className="rounded-lg border border-neutral-800 p-4">
+    <div className="glass p-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Options chain · {symbol}</h2>
         {gex != null && (

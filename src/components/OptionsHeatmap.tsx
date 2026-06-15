@@ -96,7 +96,7 @@ export function OptionsHeatmap({ symbol }: { symbol: string }) {
   }, [chain, metric, side]);
 
   return (
-    <div className="rounded-lg border border-neutral-800 p-4">
+    <div className="glass p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Options heatmap · {symbol}</h2>
         <div className="flex items-center gap-2 text-xs">

@@ -26,7 +26,7 @@ export function GexHistory({ symbol }: { symbol: string }) {
   );
 
   return (
-    <div className="rounded-lg border border-neutral-800 p-4">
+    <div className="glass p-4">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="font-semibold">History · {symbol}</h2>
         <span className="text-xs text-neutral-500">spot &amp; net GEX over the session</span>
