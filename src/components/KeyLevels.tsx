@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { alertsEnabled, requestNotifyPermission, setAlertsEnabled } from "@/lib/alerts";
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import {
@@ -31,6 +32,23 @@ export function KeyLevels({ symbol }: { symbol: string }) {
   const [spot, setSpot] = useState<number | null>(null);
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
+  const [alerts, setAlerts] = useState(false);
+
+  useEffect(() => {
+    setAlerts(alertsEnabled(symbol));
+  }, [symbol]);
+
+  const toggleAlerts = async () => {
+    if (alerts) {
+      setAlertsEnabled(symbol, false);
+      setAlerts(false);
+      return;
+    }
+    if (await requestNotifyPermission()) {
+      setAlertsEnabled(symbol, true);
+      setAlerts(true);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +93,20 @@ export function KeyLevels({ symbol }: { symbol: string }) {
 
   return (
     <div className="glass p-4">
-      <h2 className="mb-3 font-semibold">Dealer positioning &amp; key levels · {symbol}</h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="font-semibold">Dealer positioning &amp; key levels · {symbol}</h2>
+        <button
+          onClick={toggleAlerts}
+          title="Browser notification when spot crosses the call wall / γ-flip / put wall (while a ticker tab is open)"
+          className={`rounded-full border px-2.5 py-1 text-xs transition ${
+            alerts
+              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+              : "border-white/15 text-neutral-400 hover:text-neutral-200"
+          }`}
+        >
+          {alerts ? "🔔 Alerts on" : "🔕 Alerts"}
+        </button>
+      </div>
       {state === "loading" && <Loading />}
       {state === "error" && <ErrorState message={error} />}
       {state === "empty" && <EmptyState label="No options data." />}
