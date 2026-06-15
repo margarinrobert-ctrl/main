@@ -1,22 +1,40 @@
 export type DataSource = "fixtures" | "live";
 export type MarketDataProvider = "barchart" | "stooq";
+export type OptionsProvider = "barchart" | "alphavantage";
 
 function toInt(v: string | undefined, fallback: number): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
 
+function pickOptionsProvider(): OptionsProvider {
+  const v = process.env.OPTIONS_PROVIDER;
+  if (v === "alphavantage" || v === "barchart") return v;
+  // Auto-select Alpha Vantage (free EOD options) when a key is present.
+  return process.env.ALPHAVANTAGE_API_KEY ? "alphavantage" : "barchart";
+}
+
 /** Central runtime config. Read once from the environment (server-side only). */
 export const config = {
-  dataSource: (process.env.DATA_SOURCE === "live" ? "live" : "fixtures") as DataSource,
+  // Default to LIVE so deployed instances pull fresh data. Set DATA_SOURCE=fixtures for
+  // offline/dev. Any live failure still falls back to fixtures so the UI never breaks.
+  dataSource: (process.env.DATA_SOURCE === "fixtures" ? "fixtures" : "live") as DataSource,
   apiKey: process.env.BARCHART_API_KEY ?? "",
   baseUrl: (process.env.BARCHART_BASE_URL ?? "https://ondemand.websol.barchart.com/").replace(/\/+$/, "") + "/",
-  // Who serves underlying quote + price history when DATA_SOURCE=live.
-  // 'stooq' is free + keyless (EOD/delayed) — see live underlying data with no account.
-  // Options chain + screener are Barchart-only regardless of this setting.
-  marketDataProvider: (process.env.MARKET_DATA_PROVIDER === "stooq" ? "stooq" : "barchart") as MarketDataProvider,
+  // Underlying quote + price history. 'stooq' is free + keyless (EOD, ~1 day old).
+  marketDataProvider: (process.env.MARKET_DATA_PROVIDER === "barchart" ? "barchart" : "stooq") as MarketDataProvider,
   stooqBaseUrl: (process.env.STOOQ_BASE_URL ?? "https://stooq.com").replace(/\/+$/, ""),
+  // Options chain/heatmap/flow. 'alphavantage' = fresh EOD chains with a FREE key
+  // (auto-selected when ALPHAVANTAGE_API_KEY is set); 'barchart' needs a paid key.
+  optionsProvider: pickOptionsProvider(),
+  alphaVantageApiKey: process.env.ALPHAVANTAGE_API_KEY ?? "",
+  alphaVantageBaseUrl: process.env.ALPHAVANTAGE_BASE_URL ?? "https://www.alphavantage.co/query",
+  optionsWatchlist: (process.env.OPTIONS_WATCHLIST ?? "SPY,QQQ,AAPL,NVDA,TSLA,AMD")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean),
   cacheTtlSeconds: toInt(process.env.CACHE_TTL_SECONDS, 60),
+  optionsCacheTtlSeconds: toInt(process.env.OPTIONS_CACHE_TTL_SECONDS, 21600), // 6h (EOD data)
   pollIntervalMs: toInt(process.env.POLL_INTERVAL_MS, 0),
   requestTimeoutMs: 10_000,
   maxRetries: 3,

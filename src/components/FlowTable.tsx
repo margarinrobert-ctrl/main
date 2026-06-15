@@ -148,6 +148,13 @@ export function FlowTable() {
         {source && <span className="self-center text-xs text-neutral-500">src: {source}</span>}
       </div>
 
+      {source === "fixtures" && (
+        <div className="mb-3 rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
+          Showing <b>sample</b> options data. Set <code>ALPHAVANTAGE_API_KEY</code> (free) on your host for live EOD
+          options flow (~1 day old).
+        </div>
+      )}
+
       {state === "loading" && <Loading label="Loading flow…" />}
       {state === "error" && <ErrorState message={error} />}
       {state === "empty" && <EmptyState label="No unusual activity matched your filters." />}

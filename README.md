@@ -60,11 +60,11 @@ Vercel deploy above.
 
 ## Data source: `fixtures` vs `live`
 
-One flag in `.env.local` controls everything:
+One flag controls everything (default is now **live**):
 
 ```bash
-DATA_SOURCE=fixtures   # default: canned JSON in /fixtures
-DATA_SOURCE=live       # call Barchart with BARCHART_API_KEY
+DATA_SOURCE=live       # default: fetch fresh data (Stooq underlying + Alpha Vantage / Barchart options)
+DATA_SOURCE=fixtures   # offline: canned JSON in /fixtures
 ```
 
 Every Barchart call goes through a single client (`src/lib/barchart/client.ts`). In `live` mode,
@@ -78,19 +78,20 @@ only — it never reaches the browser. Live responses are cached in-memory for `
 Either set `BARCHART_API_KEY` as an environment variable (preferred — never touches the repo) or
 put it in `.env.local` (gitignored). Then set `DATA_SOURCE=live`.
 
-### See live data without a Barchart key (Stooq)
+### Fresh data — what's free vs. keyed
 
-To view live *underlying* quote + price history with **no key and no account**, use the free,
-keyless [Stooq](https://stooq.com) provider:
+| Data | Provider | Cost | Freshness |
+| --- | --- | --- | --- |
+| Underlying quote + price chart | **Stooq** (default) | free, **no key** | EOD (~1 day old) |
+| Options chain / heatmap / flow | **Alpha Vantage** | free **key** | EOD (~1 day old) |
+| Options intraday + multi-symbol scan | Barchart | paid key | real-time / delayed |
 
-```bash
-DATA_SOURCE=live
-MARKET_DATA_PROVIDER=stooq
-```
-
-Stooq serves EOD/delayed data (labeled "Delayed" in the UI) via its public CSV endpoints — a
-legitimate free source, not a paywall workaround. The **flow table and options chain still need a
-paid options feed** (Barchart), so they stay on fixtures under Stooq.
+Underlying data is live out of the box (Stooq, keyless, via its public CSV endpoints). For **fresh
+options**, grab a free [Alpha Vantage key](https://www.alphavantage.co/support/#api-key) and set
+`ALPHAVANTAGE_API_KEY` — the options provider auto-switches and the chain/heatmap/flow pull EOD
+chains (~1 day old). Free Alpha Vantage is rate-limited (25 req/day), so chains are cached for
+`OPTIONS_CACHE_TTL_SECONDS` (6h) and the flow is built from a small `OPTIONS_WATCHLIST`. Any live
+failure falls back to fixtures, so the UI never breaks.
 
 ---
 
