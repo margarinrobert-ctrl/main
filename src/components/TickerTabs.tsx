@@ -10,11 +10,12 @@ import { KeyLevels } from "./KeyLevels";
 import { OiProfile } from "./OiProfile";
 import { OptionsChain } from "./OptionsChain";
 import { OptionsHeatmap } from "./OptionsHeatmap";
+import { PineExport } from "./PineExport";
 import { PriceChart } from "./PriceChart";
 import { QuoteCard } from "./QuoteCard";
 import { SkewChart } from "./SkewChart";
 
-const TABS = ["Overview", "Chain", "Heatmap", "Gamma", "OI", "Skew", "History"] as const;
+const TABS = ["Overview", "Chain", "Heatmap", "Gamma", "OI", "Skew", "History", "Pine"] as const;
 type Tab = (typeof TABS)[number];
 
 export function TickerTabs({ symbol }: { symbol: string }) {
@@ -74,6 +75,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "OI" && <OiProfile symbol={symbol} />}
       {tab === "Skew" && <SkewChart symbol={symbol} />}
       {tab === "History" && <GexHistory symbol={symbol} />}
+      {tab === "Pine" && <PineExport symbol={symbol} />}
     </div>
   );
 }

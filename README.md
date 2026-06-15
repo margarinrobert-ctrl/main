@@ -167,6 +167,10 @@ driven by a pure analytics engine computed from the chain:
   time-series recorded client-side in your browser (no backend; Postgres + cron is the multi-day upgrade)
 - Two-sided options chain (calls │ strike │ puts) with spot / expiration / updated pills
 - **CSV export** of the ranked flow
+- **TradingView Pine export** — a per-ticker "Pine" tab generates a copy-paste Pine v5 indicator that
+  plots the GEX levels (S spot · C call wall · G γ-flip · P put wall + per-strike ladder) for the
+  0DTE/front expiration. Canonical template in `GEXLevels.pine`. (No TradingView write-API exists, so
+  it's copy/paste — save once as an indicator.)
 
 ---
 
