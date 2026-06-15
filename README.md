@@ -42,12 +42,27 @@ DATA_SOURCE=live       # call Barchart with BARCHART_API_KEY
 Every Barchart call goes through a single client (`src/lib/barchart/client.ts`). In `live` mode,
 **any** failure (auth error, 204, rate-limit, network, bad JSON) is caught and the client
 **falls back to fixtures** so the UI never renders half-broken. The key is injected server-side
-only — it never reaches the browser.
+only — it never reaches the browser. Live responses are cached in-memory for `CACHE_TTL_SECONDS`
+(keyed by endpoint + params) to protect trial quota; swap `CacheStore` for Redis later.
 
 ### Providing your key
 
 Either set `BARCHART_API_KEY` as an environment variable (preferred — never touches the repo) or
 put it in `.env.local` (gitignored). Then set `DATA_SOURCE=live`.
+
+### See live data without a Barchart key (Stooq)
+
+To view live *underlying* quote + price history with **no key and no account**, use the free,
+keyless [Stooq](https://stooq.com) provider:
+
+```bash
+DATA_SOURCE=live
+MARKET_DATA_PROVIDER=stooq
+```
+
+Stooq serves EOD/delayed data (labeled "Delayed" in the UI) via its public CSV endpoints — a
+legitimate free source, not a paywall workaround. The **flow table and options chain still need a
+paid options feed** (Barchart), so they stay on fixtures under Stooq.
 
 ---
 
@@ -78,7 +93,8 @@ With no key set, it tells you so and exits cleanly (the app still works in fixtu
 | Volume-spike baseline, sweep replay | `getEquityOptionsHistory` | **likely PAID** |
 
 Everything works in **fixtures mode regardless of tier.** Run `npm run probe` to confirm exactly
-what your key unlocks — that's what upgrading buys you.
+what your key unlocks — that's what upgrading buys you. For live underlying data with **no key**,
+set `MARKET_DATA_PROVIDER=stooq` (see above).
 
 ---
 
@@ -118,11 +134,12 @@ src/
   app/
     page.tsx              home: Flow table + quote demo
     ticker/[symbol]/      ticker detail
-    api/barchart/         server proxy routes (inject key, normalize) — quote, screener
+    api/barchart/         server proxy routes (inject key, normalize) — quote, history, options, screener
   lib/
-    barchart/             config, types, errors, zod schemas, client (fixtures|live), endpoints
+    barchart/             config, types, errors, zod schemas, client (fixtures|live, cached), endpoints
+    providers/stooq.ts    free keyless quote+history provider (live, no key)
     cache/store.ts        CacheStore interface + in-memory impl (Redis-ready)
-    flow/heuristic.ts     pure, unit-tested scoring
+    flow/                 heuristic (pure, unit-tested) + screener-filter
     persistence/          SnapshotStore interface + in-memory impl (Prisma/Postgres later)
   components/             FlowTable, QuoteCard, loading/empty/error states
 ```
@@ -134,8 +151,9 @@ src/
 - [x] **M2** price chart on ticker page (`getHistory`, lightweight-charts)
 - [x] **M3 (partial)** screener route + Flow table + heuristic (fixtures; live needs PAID)
 - [x] **M4** options chain + IV summary on ticker page (`getEquityOptions`)
-- [ ] Screener UI controls mapped to `getOptionsScreener` params
-- [ ] Wire `cached()` into the live request path (TTL = `CACHE_TTL_SECONDS`)
+- [x] Screener UI controls mapped to `getOptionsScreener` params
+- [x] Live response caching (TTL = `CACHE_TTL_SECONDS`), keyed by endpoint + params
+- [x] Free keyless provider (Stooq) for live quote + history — no account needed
 - [ ] Postgres/Prisma snapshot store + scheduled polling (for flow-over-time)
 
 > Note: persistence and background polling are intentionally deferred — meaningful flow-over-time

@@ -1,4 +1,5 @@
 export type DataSource = "fixtures" | "live";
+export type MarketDataProvider = "barchart" | "stooq";
 
 function toInt(v: string | undefined, fallback: number): number {
   const n = Number(v);
@@ -10,6 +11,11 @@ export const config = {
   dataSource: (process.env.DATA_SOURCE === "live" ? "live" : "fixtures") as DataSource,
   apiKey: process.env.BARCHART_API_KEY ?? "",
   baseUrl: (process.env.BARCHART_BASE_URL ?? "https://ondemand.websol.barchart.com/").replace(/\/+$/, "") + "/",
+  // Who serves underlying quote + price history when DATA_SOURCE=live.
+  // 'stooq' is free + keyless (EOD/delayed) — see live underlying data with no account.
+  // Options chain + screener are Barchart-only regardless of this setting.
+  marketDataProvider: (process.env.MARKET_DATA_PROVIDER === "stooq" ? "stooq" : "barchart") as MarketDataProvider,
+  stooqBaseUrl: (process.env.STOOQ_BASE_URL ?? "https://stooq.com").replace(/\/+$/, ""),
   cacheTtlSeconds: toInt(process.env.CACHE_TTL_SECONDS, 60),
   pollIntervalMs: toInt(process.env.POLL_INTERVAL_MS, 0),
   requestTimeoutMs: 10_000,

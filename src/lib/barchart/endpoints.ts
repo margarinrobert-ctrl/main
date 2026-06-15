@@ -1,4 +1,7 @@
-import { barchartRequest } from "./client";
+import { cached } from "../cache/store";
+import { stooqHistory, stooqQuote } from "../providers/stooq";
+import { barchartRequest, readFixtureParsed } from "./client";
+import { config } from "./config";
 import {
   historyResponseSchema,
   optionsResponseSchema,
@@ -59,38 +62,68 @@ function normalizeOption(r: RawOption): OptionContract | null {
   };
 }
 
+function parseQuoteFixture(raw: unknown): NormalizedQuote[] {
+  const parsed = quoteResponseSchema.parse(raw);
+  return (parsed.results ?? []).map(normalizeQuote);
+}
+
+function parseHistoryFixture(raw: unknown): HistoryBar[] {
+  const parsed = historyResponseSchema.parse(raw);
+  return (parsed.results ?? [])
+    .filter((b) => b.open !== null && b.high !== null && b.low !== null && b.close !== null)
+    .map((b) => ({
+      timestamp: b.timestamp,
+      open: b.open as number,
+      high: b.high as number,
+      low: b.low as number,
+      close: b.close as number,
+      volume: b.volume ?? 0,
+    }));
+}
+
+const useStooq = () => config.dataSource === "live" && config.marketDataProvider === "stooq";
+
 export async function getQuote(symbol: string) {
   const sym = symbol.toUpperCase();
-  return barchartRequest(
-    { endpoint: "getQuote.json", params: { symbols: sym }, fixtureCandidates: [`quote.${sym}.json`, "quote.AAPL.json"] },
-    (raw): NormalizedQuote[] => {
-      const parsed = quoteResponseSchema.parse(raw);
-      return (parsed.results ?? []).map(normalizeQuote);
-    },
-  );
+  const fixtures = [`quote.${sym}.json`, "quote.AAPL.json"];
+
+  if (useStooq()) {
+    try {
+      const data = await cached(`stooq:quote:${sym}`, config.cacheTtlSeconds, () => stooqQuote(sym));
+      return { data, source: "live" as const };
+    } catch (err) {
+      console.warn(`[stooq] quote failed for ${sym}; falling back to fixtures:`, err instanceof Error ? err.message : err);
+      return { data: await readFixtureParsed(fixtures, parseQuoteFixture), source: "fixtures" as const };
+    }
+  }
+
+  return barchartRequest({ endpoint: "getQuote.json", params: { symbols: sym }, fixtureCandidates: fixtures }, parseQuoteFixture);
 }
 
 export async function getHistory(symbol: string, params: { type?: string; maxRecords?: number } = {}) {
   const sym = symbol.toUpperCase();
+  const fixtures = [`history.${sym}.json`, "history.AAPL.json"];
+  const maxRecords = params.maxRecords ?? 60;
+
+  if (useStooq()) {
+    try {
+      const data = await cached(`stooq:history:${sym}:${maxRecords}`, config.cacheTtlSeconds, () =>
+        stooqHistory(sym, maxRecords),
+      );
+      return { data, source: "live" as const };
+    } catch (err) {
+      console.warn(`[stooq] history failed for ${sym}; falling back to fixtures:`, err instanceof Error ? err.message : err);
+      return { data: await readFixtureParsed(fixtures, parseHistoryFixture), source: "fixtures" as const };
+    }
+  }
+
   return barchartRequest(
     {
       endpoint: "getHistory.json",
-      params: { symbol: sym, type: params.type ?? "daily", maxRecords: params.maxRecords ?? 60 },
-      fixtureCandidates: [`history.${sym}.json`, "history.AAPL.json"],
+      params: { symbol: sym, type: params.type ?? "daily", maxRecords },
+      fixtureCandidates: fixtures,
     },
-    (raw): HistoryBar[] => {
-      const parsed = historyResponseSchema.parse(raw);
-      return (parsed.results ?? [])
-        .filter((b) => b.open !== null && b.high !== null && b.low !== null && b.close !== null)
-        .map((b) => ({
-          timestamp: b.timestamp,
-          open: b.open as number,
-          high: b.high as number,
-          low: b.low as number,
-          close: b.close as number,
-          volume: b.volume ?? 0,
-        }));
-    },
+    parseHistoryFixture,
   );
 }
 

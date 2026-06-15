@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { cached } from "../cache/store";
 import { config } from "./config";
 import { BarchartError, isRetryable, type BarchartErrorKind } from "./errors";
 
@@ -10,6 +11,8 @@ export interface BarchartRequestArgs {
   /** Fixture filenames tried in order (first that exists wins). */
   fixtureCandidates: string[];
 }
+
+type DataOriginInternal = "live" | "fixtures";
 
 const FIXTURES_DIR = path.join(process.cwd(), "fixtures");
 
@@ -24,6 +27,11 @@ async function readFixture(candidates: string[]): Promise<unknown> {
     }
   }
   throw new BarchartError("UNKNOWN", `No fixture found (tried: ${candidates.join(", ")})`, { cause: lastErr });
+}
+
+/** Read + parse a fixture outside the standard request flow (used by non-Barchart providers). */
+export async function readFixtureParsed<T>(candidates: string[], parse: (raw: unknown) => T): Promise<T> {
+  return parse(await readFixture(candidates));
 }
 
 function classifyHttp(status: number): BarchartErrorKind | null {
@@ -51,6 +59,14 @@ function buildUrl(endpoint: string, params: Record<string, string | number | und
     if (v !== undefined && v !== "") url.searchParams.set(k, String(v));
   }
   return url.toString();
+}
+
+function cacheKey(endpoint: string, params: Record<string, string | number | undefined>): string {
+  const entries = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== "")
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${k}=${v}`);
+  return `bc:${endpoint}?${entries.join("&")}`;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -109,7 +125,8 @@ async function liveCall(endpoint: string, params: Record<string, string | number
 /**
  * The single entry point for every Barchart call. Honors DATA_SOURCE:
  *  - 'fixtures' -> read canned JSON
- *  - 'live'     -> call the API; on ANY failure, fall back to fixtures so the UI never breaks.
+ *  - 'live'     -> call the API (cached by endpoint+params for CACHE_TTL_SECONDS);
+ *                  on ANY failure, fall back to fixtures so the UI never breaks.
  */
 export async function barchartRequest<T>(
   args: BarchartRequestArgs,
@@ -121,7 +138,9 @@ export async function barchartRequest<T>(
   }
 
   try {
-    const raw = await liveCall(args.endpoint, args.params);
+    const raw = await cached(cacheKey(args.endpoint, args.params), config.cacheTtlSeconds, () =>
+      liveCall(args.endpoint, args.params),
+    );
     return { data: parse(raw), source: "live" };
   } catch (err) {
     console.warn(
@@ -132,5 +151,3 @@ export async function barchartRequest<T>(
     return { data: parse(raw), source: "fixtures" };
   }
 }
-
-type DataOriginInternal = "live" | "fixtures";

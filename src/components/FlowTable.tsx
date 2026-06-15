@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, Loading } from "./states";
 
 interface Row {
@@ -22,11 +22,22 @@ type ViewState = "loading" | "error" | "empty" | "ok";
 type SortKey = "score" | "volume" | "openInterest" | "notional" | "voir";
 type Side = "all" | "call" | "put";
 
+interface ServerParams {
+  minVolume: string;
+  minOpenInterest: string;
+  minDTE: string;
+  maxDTE: string;
+  minVoir: string;
+}
+
+const DEFAULT_PARAMS: ServerParams = { minVolume: "100", minOpenInterest: "50", minDTE: "", maxDTE: "", minVoir: "" };
+
 export function FlowTable() {
   const [rows, setRows] = useState<Row[]>([]);
   const [source, setSource] = useState("");
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
+  const [serverParams, setServerParams] = useState<ServerParams>(DEFAULT_PARAMS);
   const [minScore, setMinScore] = useState(0);
   const [side, setSide] = useState<Side>("all");
   const [sortKey, setSortKey] = useState<SortKey>("score");
@@ -34,7 +45,9 @@ export function FlowTable() {
   const load = useCallback(async () => {
     setState("loading");
     try {
-      const res = await fetch("/api/barchart/screener", { cache: "no-store" });
+      const qs = new URLSearchParams();
+      for (const [k, v] of Object.entries(serverParams)) if (v !== "") qs.set(k, v);
+      const res = await fetch(`/api/barchart/screener?${qs.toString()}`, { cache: "no-store" });
       const json = await res.json();
       if (!res.ok) {
         setError(json?.error ?? "Request failed");
@@ -49,11 +62,14 @@ export function FlowTable() {
       setError(e instanceof Error ? e.message : "Network error");
       setState("error");
     }
-  }, []);
+  }, [serverParams]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const setParam = (k: keyof ServerParams) => (e: ChangeEvent<HTMLInputElement>) =>
+    setServerParams((p) => ({ ...p, [k]: e.target.value }));
 
   const view = useMemo(() => {
     const filtered = rows.filter((x) => x.score >= minScore && (side === "all" || x.type === side));
@@ -76,7 +92,24 @@ export function FlowTable() {
 
   return (
     <div>
+      <div className="mb-3 rounded border border-neutral-800 p-3">
+        <div className="mb-2 text-xs uppercase tracking-wide text-neutral-500">
+          Screener — maps to getOptionsScreener params
+        </div>
+        <div className="flex flex-wrap items-end gap-3 text-sm">
+          <NumInput label="min volume" value={serverParams.minVolume} onChange={setParam("minVolume")} />
+          <NumInput label="min OI" value={serverParams.minOpenInterest} onChange={setParam("minOpenInterest")} />
+          <NumInput label="DTE ≥" value={serverParams.minDTE} onChange={setParam("minDTE")} />
+          <NumInput label="DTE ≤" value={serverParams.maxDTE} onChange={setParam("maxDTE")} />
+          <NumInput label="min vol/OI" step="0.1" value={serverParams.minVoir} onChange={setParam("minVoir")} />
+          <button onClick={load} className="rounded bg-emerald-700 px-3 py-1 hover:bg-emerald-600">
+            Apply
+          </button>
+        </div>
+      </div>
+
       <div className="mb-4 flex flex-wrap items-end gap-3 text-sm">
+        <span className="w-full text-xs uppercase tracking-wide text-neutral-500">View</span>
         <label className="flex flex-col gap-1">
           <span className="text-neutral-400">min score</span>
           <input
@@ -180,6 +213,31 @@ export function FlowTable() {
         </div>
       )}
     </div>
+  );
+}
+
+function NumInput({
+  label,
+  value,
+  onChange,
+  step,
+}: {
+  label: string;
+  value: string;
+  onChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  step?: string;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-neutral-400">{label}</span>
+      <input
+        type="number"
+        value={value}
+        step={step}
+        onChange={onChange}
+        className="w-24 rounded border border-neutral-700 bg-neutral-900 px-2 py-1"
+      />
+    </label>
   );
 }
 
