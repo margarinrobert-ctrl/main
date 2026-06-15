@@ -155,14 +155,16 @@ All thresholds are in `src/lib/barchart/config.ts` (`flowThresholds`). Rows also
 
 ## Quant analytics (`src/lib/flow/analytics.ts`, unit-tested)
 
-Each ticker page is a tabbed dashboard — **Overview · Chain · Heatmap · Gamma · Skew** — driven by
-a pure analytics engine computed from the chain:
+Each ticker page is a tabbed dashboard — **Overview · Chain · Heatmap · Gamma · OI · Skew · History** —
+driven by a pure analytics engine computed from the chain:
 
 - **Dealer gamma exposure (GEX)** by strike, net GEX ($/1% move), and the **zero-gamma flip** level
 - **Dealer regime** badge: long gamma (mean-reverting) vs short gamma (trend-amplifying)
 - **Call wall / put wall** (max call/put gamma strikes), **max pain**, **expected move** (ATM straddle)
 - **Net Δ exposure**, **put/call ratios** (volume & OI)
 - **Gamma Profile** chart (GEX-by-strike, spot + flip markers) and **IV skew** chart (call vs put IV)
+- **Open-interest profile** (calls vs puts by strike) and a **History** tab — intraday spot + net-GEX
+  time-series recorded client-side in your browser (no backend; Postgres + cron is the multi-day upgrade)
 - Two-sided options chain (calls │ strike │ puts) with spot / expiration / updated pills
 - **CSV export** of the ranked flow
 

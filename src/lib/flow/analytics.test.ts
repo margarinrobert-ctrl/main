@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { expectedMove, gammaFlip, gexByStrike, maxPain, putCallRatio } from "./analytics";
+import { expectedMove, gammaFlip, gexByStrike, maxPain, oiByStrike, putCallRatio } from "./analytics";
 import type { OptionContract } from "../barchart/types";
 
 function c(p: Partial<OptionContract>): OptionContract {
@@ -70,5 +70,16 @@ describe("analytics", () => {
   it("computes put/call ratios", () => {
     const r = putCallRatio([c({ type: "call", volume: 100 }), c({ type: "put", volume: 200 })]);
     expect(r.vol).toBeCloseTo(2, 5);
+  });
+
+  it("aggregates open interest by strike", () => {
+    const oi = oiByStrike([
+      c({ type: "call", strike: 100, openInterest: 500 }),
+      c({ type: "put", strike: 100, openInterest: 300 }),
+      c({ type: "call", strike: 110, openInterest: 200 }),
+    ]);
+    expect(oi).toHaveLength(2);
+    expect(oi[0]).toMatchObject({ strike: 100, callOi: 500, putOi: 300 });
+    expect(oi[1]).toMatchObject({ strike: 110, callOi: 200, putOi: 0 });
   });
 });

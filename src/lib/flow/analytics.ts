@@ -131,6 +131,25 @@ export function putCallRatio(chain: OptionContract[]): { vol: number | null; oi:
   return { vol: cv > 0 ? pv / cv : null, oi: co > 0 ? po / co : null };
 }
 
+export interface StrikeOi {
+  strike: number;
+  callOi: number;
+  putOi: number;
+}
+
+/** Open interest aggregated by strike (calls vs puts). */
+export function oiByStrike(chain: OptionContract[]): StrikeOi[] {
+  const m = new Map<number, { c: number; p: number }>();
+  for (const x of chain) {
+    if (x.openInterest == null) continue;
+    const e = m.get(x.strike) ?? { c: 0, p: 0 };
+    if (x.type === "call") e.c += x.openInterest;
+    else e.p += x.openInterest;
+    m.set(x.strike, e);
+  }
+  return [...m.entries()].map(([strike, v]) => ({ strike, callOi: v.c, putOi: v.p })).sort((a, b) => a.strike - b.strike);
+}
+
 export function fmtUsd(v: number): string {
   const a = Math.abs(v);
   const s = v < 0 ? "−" : "";
