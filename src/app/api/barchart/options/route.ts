@@ -13,7 +13,9 @@ export async function GET(req: Request) {
 
   try {
     const { data, source } = await getEquityOptions(symbol);
-    return NextResponse.json({ chain: data, source });
+    const spot = data.find((c) => c.underlyingPrice != null)?.underlyingPrice ?? null;
+    const asOf = source === "live" ? new Date().toISOString() : null;
+    return NextResponse.json({ chain: data, source, spot, asOf });
   } catch (err) {
     const status = err instanceof BarchartError && err.kind === "BAD_PARAMS" ? 400 : 502;
     const message = err instanceof Error ? err.message : "Unknown error";

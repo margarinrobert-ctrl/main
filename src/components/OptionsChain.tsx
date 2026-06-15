@@ -1,32 +1,71 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
-function fmt(n: number | null): string {
+function n2(n: number | null | undefined): string {
   return n == null ? "—" : n.toFixed(2);
+}
+function ivPct(n: number | null | undefined): string {
+  return n == null ? "—" : `${(n * 100).toFixed(1)}%`;
+}
+function iv(n: number | null | undefined): string {
+  return n == null ? "—" : n.toFixed(2);
+}
+function loc(n: number | null | undefined): string {
+  return n == null ? "—" : n.toLocaleString();
+}
+
+/** Net dealer gamma exposure ($ per 1% move): calls long gamma, puts short. */
+function netGex(chain: OptionContract[], spot: number | null): number | null {
+  if (!spot) return null;
+  let g = 0;
+  let any = false;
+  for (const c of chain) {
+    if (c.gamma == null || c.openInterest == null) continue;
+    any = true;
+    g += (c.type === "call" ? 1 : -1) * c.gamma * c.openInterest * 100 * spot * spot * 0.01;
+  }
+  return any ? g : null;
+}
+function fmtGex(v: number): string {
+  const a = Math.abs(v);
+  const s = v < 0 ? "−" : "";
+  if (a >= 1e9) return `${s}$${(a / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `${s}$${(a / 1e6).toFixed(0)}M`;
+  return `${s}$${Math.round(a).toLocaleString()}`;
+}
+
+function Pill({ children }: { children: ReactNode }) {
+  return <span className="rounded-full border border-neutral-700 px-2 py-0.5 text-xs text-neutral-300">{children}</span>;
 }
 
 export function OptionsChain({ symbol }: { symbol: string }) {
   const [chain, setChain] = useState<OptionContract[]>([]);
+  const [spot, setSpot] = useState<number | null>(null);
+  const [asOf, setAsOf] = useState<string | null>(null);
   const [source, setSource] = useState("");
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
+  const [selectedExp, setSelectedExp] = useState("");
+  const [showFull, setShowFull] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setState("loading");
       try {
-        const { chain, source } = await loadChain(symbol);
+        const res = await loadChain(symbol);
         if (cancelled) return;
-        setSource(source);
-        setChain(chain);
-        setState(chain.length ? "ok" : "empty");
+        setChain(res.chain);
+        setSpot(res.spot);
+        setAsOf(res.asOf);
+        setSource(res.source);
+        setState(res.chain.length ? "ok" : "empty");
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Network error");
@@ -39,22 +78,61 @@ export function OptionsChain({ symbol }: { symbol: string }) {
     };
   }, [symbol]);
 
-  const summary = useMemo(() => {
-    const ivs = chain.map((c) => c.impliedVolatility).filter((x): x is number => x != null);
-    const avgIv = ivs.length ? ivs.reduce((a, b) => a + b, 0) / ivs.length : null;
-    const callVol = chain.filter((c) => c.type === "call").reduce((a, c) => a + (c.volume ?? 0), 0);
-    const putVol = chain.filter((c) => c.type === "put").reduce((a, c) => a + (c.volume ?? 0), 0);
-    const pcr = callVol > 0 ? putVol / callVol : null;
-    return { count: chain.length, avgIv, callVol, putVol, pcr };
-  }, [chain]);
-
   const expirations = useMemo(() => Array.from(new Set(chain.map((c) => c.expiration))).sort(), [chain]);
+
+  useEffect(() => {
+    if (expirations.length === 0) return;
+    if (expirations.includes(selectedExp)) return;
+    // default to the nearest non-expired expiration
+    const withDte = expirations.map((e) => ({ e, dte: chain.find((c) => c.expiration === e)?.dte ?? 9999 }));
+    const future = withDte.filter((x) => (x.dte ?? 0) >= 0).sort((a, b) => (a.dte ?? 0) - (b.dte ?? 0));
+    setSelectedExp((future[0] ?? withDte[0]).e);
+  }, [expirations, chain, selectedExp]);
+
+  const gex = useMemo(() => netGex(chain, spot), [chain, spot]);
+
+  const { rows, strikeCount } = useMemo(() => {
+    const byStrike = new Map<number, { call?: OptionContract; put?: OptionContract }>();
+    for (const c of chain) {
+      if (c.expiration !== selectedExp) continue;
+      const e = byStrike.get(c.strike) ?? {};
+      if (c.type === "call") e.call = c;
+      else e.put = c;
+      byStrike.set(c.strike, e);
+    }
+    let strikes = [...byStrike.keys()].sort((a, b) => a - b);
+    const count = strikes.length;
+    if (!showFull && spot != null && strikes.length > 25) {
+      let idx = 0;
+      let best = Infinity;
+      strikes.forEach((s, i) => {
+        const d = Math.abs(s - spot);
+        if (d < best) {
+          best = d;
+          idx = i;
+        }
+      });
+      strikes = strikes.slice(Math.max(0, idx - 12), Math.min(strikes.length, idx + 13));
+    }
+    return { rows: strikes.map((k) => ({ strike: k, ...byStrike.get(k)! })), strikeCount: count };
+  }, [chain, selectedExp, showFull, spot]);
+
+  const callBg = (c?: OptionContract) =>
+    c && c.delta != null ? { backgroundColor: `rgba(16,185,129,${0.06 + 0.5 * Math.min(0.9, Math.abs(c.delta))})` } : undefined;
+  const putBg = (c?: OptionContract) =>
+    c && c.delta != null ? { backgroundColor: `rgba(239,68,68,${0.06 + 0.5 * Math.min(0.9, Math.abs(c.delta))})` } : undefined;
 
   return (
     <div className="rounded-lg border border-neutral-800 p-4">
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Options chain · {symbol}</h2>
-        {source && <span className="text-xs text-neutral-500">src: {source}</span>}
+        {gex != null && (
+          <span
+            className={`rounded px-2 py-1 text-xs ${gex >= 0 ? "bg-emerald-900 text-emerald-200" : "bg-red-900 text-red-200"}`}
+          >
+            Dealer regime: {gex >= 0 ? "Long gamma (mean-reverting)" : "Short gamma (trend-amplifying)"} · {fmtGex(gex)}/1%
+          </span>
+        )}
       </div>
 
       {state === "loading" && <Loading />}
@@ -62,66 +140,88 @@ export function OptionsChain({ symbol }: { symbol: string }) {
       {state === "empty" && <EmptyState label="No options chain." />}
       {state === "ok" && (
         <>
-          <div className="mb-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-            <Stat label="contracts" value={String(summary.count)} />
-            <Stat label="avg IV" value={summary.avgIv != null ? summary.avgIv.toFixed(2) : "—"} />
-            <Stat label="put/call (vol)" value={summary.pcr != null ? summary.pcr.toFixed(2) : "—"} />
-            <Stat label="call/put vol" value={`${summary.callVol.toLocaleString()} / ${summary.putVol.toLocaleString()}`} />
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <Pill>Spot {spot != null ? spot.toLocaleString() : "—"}</Pill>
+            <span className="inline-flex items-center gap-1 rounded-full border border-neutral-700 px-2 py-0.5 text-xs text-neutral-300">
+              Exp
+              <select
+                value={selectedExp}
+                onChange={(e) => setSelectedExp(e.target.value)}
+                className="bg-transparent text-neutral-100 outline-none"
+              >
+                {expirations.map((e) => (
+                  <option key={e} value={e} className="bg-neutral-900">
+                    {e}
+                  </option>
+                ))}
+              </select>
+            </span>
+            <Pill>{strikeCount} strikes</Pill>
+            <Pill>{asOf ? `Updated ${asOf.slice(0, 19)}Z` : "sample data"}</Pill>
+            <Pill>src: {source}</Pill>
+            <label className="ml-auto flex items-center gap-1 text-xs text-neutral-400">
+              <input type="checkbox" checked={showFull} onChange={(e) => setShowFull(e.target.checked)} />
+              Show full chain
+            </label>
           </div>
 
-          {expirations.map((exp) => (
-            <div key={exp} className="mb-4">
-              <div className="mb-1 text-xs text-neutral-400">exp {exp}</div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="border-b border-neutral-800 text-left text-neutral-400">
-                    <tr>
-                      <th className="py-1 pr-3">Type</th>
-                      <th className="pr-3 text-right">Strike</th>
-                      <th className="pr-3 text-right">Bid</th>
-                      <th className="pr-3 text-right">Ask</th>
-                      <th className="pr-3 text-right">Last</th>
-                      <th className="pr-3 text-right">Vol</th>
-                      <th className="pr-3 text-right">OI</th>
-                      <th className="pr-3 text-right">IV</th>
-                      <th className="pr-3 text-right">Δ</th>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead>
+                <tr className="text-neutral-500">
+                  <th className="px-2 py-1 text-center font-semibold text-emerald-400" colSpan={7}>
+                    CALLS
+                  </th>
+                  <th className="px-2 py-1 text-center font-semibold text-neutral-300">STRIKE</th>
+                  <th className="px-2 py-1 text-center font-semibold text-red-400" colSpan={7}>
+                    PUTS
+                  </th>
+                </tr>
+                <tr className="border-b border-neutral-800 text-neutral-500">
+                  {["IV", "Δ", "Vol", "OI", "Bid", "Ask", "Last"].map((h) => (
+                    <th key={`c${h}`} className="px-2 py-1 font-normal">
+                      {h}
+                    </th>
+                  ))}
+                  <th className="px-2 py-1 text-center font-normal">·</th>
+                  {["Last", "Bid", "Ask", "OI", "Vol", "Δ", "IV"].map((h) => (
+                    <th key={`p${h}`} className="px-2 py-1 font-normal">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(({ strike, call, put }) => {
+                  const atm = spot != null && rows.length > 1;
+                  const isAtm = atm && Math.abs(strike - (spot ?? 0)) === Math.min(...rows.map((r) => Math.abs(r.strike - (spot ?? 0))));
+                  return (
+                    <tr key={strike} className="border-b border-neutral-900/60">
+                      <td className="px-2 py-1" style={callBg(call)}>{ivPct(call?.impliedVolatility)}</td>
+                      <td className="px-2 py-1" style={callBg(call)}>{n2(call?.delta)}</td>
+                      <td className="px-2 py-1" style={callBg(call)}>{loc(call?.volume)}</td>
+                      <td className="px-2 py-1" style={callBg(call)}>{loc(call?.openInterest)}</td>
+                      <td className="px-2 py-1" style={callBg(call)}>{n2(call?.bid)}</td>
+                      <td className="px-2 py-1" style={callBg(call)}>{n2(call?.ask)}</td>
+                      <td className="px-2 py-1" style={callBg(call)}>{n2(call?.last)}</td>
+                      <td className={`px-2 py-1 text-center font-mono font-semibold ${isAtm ? "bg-neutral-800 text-emerald-300" : "text-neutral-200"}`}>
+                        {strike}
+                      </td>
+                      <td className="px-2 py-1" style={putBg(put)}>{n2(put?.last)}</td>
+                      <td className="px-2 py-1" style={putBg(put)}>{n2(put?.bid)}</td>
+                      <td className="px-2 py-1" style={putBg(put)}>{n2(put?.ask)}</td>
+                      <td className="px-2 py-1" style={putBg(put)}>{loc(put?.openInterest)}</td>
+                      <td className="px-2 py-1" style={putBg(put)}>{loc(put?.volume)}</td>
+                      <td className="px-2 py-1" style={putBg(put)}>{n2(put?.delta)}</td>
+                      <td className="px-2 py-1" style={putBg(put)}>{iv(put?.impliedVolatility)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {chain
-                      .filter((c) => c.expiration === exp)
-                      .sort((a, b) => (a.type === b.type ? a.strike - b.strike : a.type === "call" ? -1 : 1))
-                      .map((c) => (
-                        <tr key={c.symbol} className="border-b border-neutral-900">
-                          <td className={`py-1 pr-3 ${c.type === "call" ? "text-emerald-400" : "text-red-400"}`}>
-                            {c.type}
-                          </td>
-                          <td className="pr-3 text-right">{c.strike}</td>
-                          <td className="pr-3 text-right">{fmt(c.bid)}</td>
-                          <td className="pr-3 text-right">{fmt(c.ask)}</td>
-                          <td className="pr-3 text-right">{fmt(c.last)}</td>
-                          <td className="pr-3 text-right">{c.volume?.toLocaleString() ?? "—"}</td>
-                          <td className="pr-3 text-right">{c.openInterest?.toLocaleString() ?? "—"}</td>
-                          <td className="pr-3 text-right">{fmt(c.impliedVolatility)}</td>
-                          <td className="pr-3 text-right">{fmt(c.delta)}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ))}
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded border border-neutral-800 px-2 py-1">
-      <div className="text-neutral-500">{label}</div>
-      <div className="font-mono text-neutral-200">{value}</div>
     </div>
   );
 }

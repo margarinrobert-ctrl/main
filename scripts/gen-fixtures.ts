@@ -64,6 +64,7 @@ function stepFor(price: number): number {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+const round4 = (n: number) => Math.round(n * 1e4) / 1e4;
 
 interface OptRow {
   symbol: string;
@@ -79,6 +80,9 @@ interface OptRow {
   openInterest: number;
   volatility: number;
   delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
   underlyingLastPrice: number;
 }
 
@@ -86,7 +90,7 @@ function buildChain(cfg: Cfg): OptRow[] {
   const r = rng(seedOf(cfg.symbol));
   const step = stepFor(cfg.price);
   const atm = Math.round(cfg.price / step) * step;
-  const strikes = Array.from({ length: 9 }, (_, i) => atm + step * (i - 4));
+  const strikes = Array.from({ length: 21 }, (_, i) => atm + step * (i - 10));
   const rows: OptRow[] = [];
 
   for (const dte of DTES) {
@@ -112,6 +116,9 @@ function buildChain(cfg: Cfg): OptRow[] {
 
         const callDelta = 1 / (1 + Math.exp(-(cfg.price - strike) / (width * 0.8 + 1e-6)));
         const delta = optionType === "Call" ? callDelta : callDelta - 1;
+        const gamma = (decay / (cfg.price * cfg.iv * t + 1e-6)) * 0.4;
+        const theta = -(tv / Math.max(dte, 1)) * 1.5;
+        const vega = cfg.price * t * decay * 0.01;
 
         rows.push({
           symbol: `${cfg.symbol}|${exp.replace(/-/g, "")}|${strike}${optionType[0]}`,
@@ -127,6 +134,9 @@ function buildChain(cfg: Cfg): OptRow[] {
           openInterest,
           volatility: round2(cfg.iv + (r() - 0.5) * 0.06 + Math.abs(otmPct) * 0.4),
           delta: round2(delta),
+          gamma: round4(gamma),
+          theta: round2(theta),
+          vega: round2(vega),
           underlyingLastPrice: cfg.price,
         });
       }

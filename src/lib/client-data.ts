@@ -53,14 +53,23 @@ export async function loadHistory(symbol: string): Promise<{ bars: HistoryBar[];
   return { bars: (json.bars as HistoryBar[]) ?? [], source: (json.source as string) ?? "" };
 }
 
-export async function loadChain(symbol: string): Promise<{ chain: OptionContract[]; source: string }> {
+export async function loadChain(
+  symbol: string,
+): Promise<{ chain: OptionContract[]; source: string; spot: number | null; asOf: string | null }> {
   const sym = symbol.toUpperCase();
   if (STATIC) {
     const raw = await fetchFixture([`options.${sym}.json`, "options.AAPL.json"]);
-    return { chain: parseOptionsResponse(raw), source: "fixtures" };
+    const chain = parseOptionsResponse(raw);
+    const spot = chain.find((c) => c.underlyingPrice != null)?.underlyingPrice ?? null;
+    return { chain, source: "fixtures", spot, asOf: null };
   }
   const json = await fetchJson(`/api/barchart/options?symbol=${encodeURIComponent(sym)}`);
-  return { chain: (json.chain as OptionContract[]) ?? [], source: (json.source as string) ?? "" };
+  return {
+    chain: (json.chain as OptionContract[]) ?? [],
+    source: (json.source as string) ?? "",
+    spot: (json.spot as number | null) ?? null,
+    asOf: (json.asOf as string | null) ?? null,
+  };
 }
 
 function parseScreenerQuery(qs: string): ScreenerParams {
