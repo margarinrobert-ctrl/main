@@ -7,6 +7,50 @@ function fmt(n: number): string {
   return s.includes(".") ? s : `${s}.0`;
 }
 
+function kfmt(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (a >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
+  return String(Math.round(n));
+}
+
+// ASCII-only USD formatter (avoid unicode in generated Pine source).
+function usd(n: number): string {
+  const a = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (a >= 1e9) return `${sign}$${(a / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `${sign}$${(a / 1e6).toFixed(1)}M`;
+  if (a >= 1e3) return `${sign}$${(a / 1e3).toFixed(0)}K`;
+  return `${sign}$${Math.round(a)}`;
+}
+
+interface StrikeStat {
+  oi: number;
+  vol: number;
+  gex: number;
+  dex: number;
+}
+
+function strikeStats(contracts: OptionContract[], strike: number | null, spot: number | null): StrikeStat {
+  const r: StrikeStat = { oi: 0, vol: 0, gex: 0, dex: 0 };
+  if (strike == null) return r;
+  for (const c of contracts) {
+    if (c.strike !== strike) continue;
+    r.oi += c.openInterest ?? 0;
+    r.vol += c.volume ?? 0;
+    if (spot && c.openInterest != null) {
+      if (c.gamma != null) r.gex += (c.type === "call" ? 1 : -1) * c.gamma * c.openInterest * 100 * spot * spot * 0.01;
+      if (c.delta != null) r.dex += c.delta * c.openInterest * 100 * spot;
+    }
+  }
+  return r;
+}
+
+function metaFull(contracts: OptionContract[], strike: number | null, spot: number | null): string {
+  const s = strikeStats(contracts, strike, spot);
+  return `OI ${kfmt(s.oi)} | V ${kfmt(s.vol)} | GEX ${usd(s.gex)} | DEX ${usd(s.dex)}`;
+}
+
 function nearestExpiration(chain: OptionContract[]): string | null {
   const exps = [...new Set(chain.map((c) => c.expiration))];
   const withDte = exps
@@ -26,10 +70,8 @@ export interface PineResult {
 }
 
 /**
- * Generate a TradingView Pine v6 indicator with named GEX levels (MenthorQ-style):
- * Call Resistance (call wall), Put Support (put wall), HVL (gamma flip), their 0DTE
- * variants, a GEX 1..N ladder (top strikes by |GEX|), and 1D Max/Min (expected range).
- * Values are baked in — re-generate from the site to refresh.
+ * Generate a TradingView Pine v6 indicator with named GEX levels (MenthorQ-style), each label
+ * annotated with OI / Volume / GEX(γ$) / DEX(Δ$) at that strike. Values are a baked snapshot.
  */
 export function buildGexPine(symbol: string, chain: OptionContract[], spot: number | null, ladderN = 10): PineResult {
   const exp = nearestExpiration(chain);
@@ -48,14 +90,25 @@ export function buildGexPine(symbol: string, chain: OptionContract[], spot: numb
   const dmax = em ? s + em.abs : s;
   const dmin = em ? s - em.abs : s;
 
-  // GEX ladder: top strikes by |net GEX|, ranked (GEX 1 = largest).
   const ladder = byAll
     .filter((x) => x.gex !== 0)
     .sort((a, b) => Math.abs(b.gex) - Math.abs(a.gex))
     .slice(0, ladderN);
   const gexk = ladder.length ? ladder.map((x) => fmt(x.strike)).join(", ") : fmt(s);
+  const gexLblStr = ladder.length
+    ? ladder
+        .map((x, i) => {
+          const st = strikeStats(chain, x.strike, spot);
+          return JSON.stringify(`GEX ${i + 1} @${x.strike}  OI ${kfmt(st.oi)} | V ${kfmt(st.vol)} | ${usd(x.gex)}`);
+        })
+        .join(", ")
+    : JSON.stringify("GEX 1");
 
   const v = (x: number | null) => fmt(x ?? s);
+  const crMeta = metaFull(chain, callRes, spot);
+  const psMeta = metaFull(chain, putSup, spot);
+  const cr0Meta = metaFull(sub, callRes0, spot);
+  const ps0Meta = metaFull(sub, putSup0, spot);
   const asOf = new Date().toISOString().slice(0, 16).replace("T", " ");
 
   const code = `//@version=6
@@ -63,10 +116,10 @@ export function buildGexPine(symbol: string, chain: OptionContract[], spot: numb
 // Paste into TradingView: Pine Editor -> paste -> Save -> Add to chart. Re-generate to refresh.
 indicator("OptionsFlow GEX • ${symbol}", overlay = true, max_lines_count = 300, max_labels_count = 300)
 
-show0dte = input.bool(true, "Show 0DTE levels")
-showGex  = input.bool(true, "Show GEX 1..N ladder")
+show0dte  = input.bool(true, "Show 0DTE levels")
+showGex   = input.bool(true, "Show GEX 1..N ladder")
 showRange = input.bool(true, "Show 1D Max/Min")
-lw       = input.int(2, "Key line width", minval = 1, maxval = 5)
+lw        = input.int(2, "Key line width", minval = 1, maxval = 5)
 labelSize = input.string("large", "Label size", options = ["small", "normal", "large", "huge"])
 sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
 
@@ -78,7 +131,8 @@ putSup0  = input.float(${v(putSup0)}, "Put Support 0DTE / HVL 0DTE")
 oneDMax  = input.float(${fmt(dmax)}, "1D Max")
 oneDMin  = input.float(${fmt(dmin)}, "1D Min")
 
-var float[] gexK = array.from(${gexk})
+var float[]  gexK   = array.from(${gexk})
+var string[] gexLbl = array.from(${gexLblStr})
 
 var line[]  _ln = array.new_line()
 var label[] _lb = array.new_label()
@@ -97,16 +151,16 @@ if barstate.islast
     clearAll()
     if showGex
         for i = 0 to array.size(gexK) - 1
-            addLevel(array.get(gexK, i), color.teal, "GEX " + str.tostring(i + 1), 1, line.style_solid)
+            addLevel(array.get(gexK, i), color.teal, array.get(gexLbl, i), 1, line.style_solid)
     if showRange
-        addLevel(oneDMin, color.orange, "1D Min", 1, line.style_dotted)
-        addLevel(oneDMax, color.orange, "1D Max", 1, line.style_dotted)
+        addLevel(oneDMin, color.orange, "1D Min " + str.tostring(oneDMin), 1, line.style_dotted)
+        addLevel(oneDMax, color.orange, "1D Max " + str.tostring(oneDMax), 1, line.style_dotted)
     if show0dte
-        addLevel(callRes0, color.red,  "Call Resistance 0DTE / Gamma Wall 0DTE", lw, line.style_dashed)
-        addLevel(putSup0,  color.blue, "Put Support 0DTE / HVL 0DTE", lw, line.style_dashed)
-    addLevel(putSup,  color.green, "Put Support", lw, line.style_solid)
-    addLevel(hvl,     color.blue,  "HVL", lw, line.style_solid)
-    addLevel(callRes, color.red,   "Call Resistance", lw, line.style_solid)
+        addLevel(callRes0, color.red,  "Call Resistance 0DTE / Gamma Wall 0DTE " + str.tostring(callRes0) + "  ${cr0Meta}", lw, line.style_dashed)
+        addLevel(putSup0,  color.blue, "Put Support 0DTE / HVL 0DTE " + str.tostring(putSup0) + "  ${ps0Meta}", lw, line.style_dashed)
+    addLevel(putSup,  color.green, "Put Support " + str.tostring(putSup) + "  ${psMeta}", lw, line.style_solid)
+    addLevel(hvl,     color.blue,  "HVL " + str.tostring(hvl), lw, line.style_solid)
+    addLevel(callRes, color.red,   "Call Resistance " + str.tostring(callRes) + "  ${crMeta}", lw, line.style_solid)
 `;
 
   return { code, expiration: exp, callRes, putSup, hvl, strikes: ladder.length };

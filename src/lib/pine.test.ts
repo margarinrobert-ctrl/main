@@ -26,10 +26,10 @@ function c(p: Partial<OptionContract>): OptionContract {
 }
 
 describe("buildGexPine", () => {
-  it("emits a v6 indicator with named GEX levels", () => {
+  it("emits a v6 indicator with named levels annotated with OI/V/GEX/DEX", () => {
     const chain = [
-      c({ type: "call", strike: 105, gamma: 0.02, openInterest: 8000 }),
-      c({ type: "put", strike: 95, gamma: 0.03, openInterest: 9000 }),
+      c({ type: "call", strike: 105, gamma: 0.02, openInterest: 8000, volume: 12000 }),
+      c({ type: "put", strike: 95, gamma: 0.03, openInterest: 9000, volume: 15000 }),
     ];
     const r = buildGexPine("TEST", chain, 100);
     expect(r.code).toContain("//@version=6");
@@ -38,14 +38,17 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("Put Support");
     expect(r.code).toContain("HVL");
     expect(r.code).toContain("0DTE");
-    expect(r.code).toContain('"GEX " + str.tostring(i + 1)');
+    expect(r.code).toContain("OI "); // open-interest annotation
+    expect(r.code).toContain("DEX "); // delta-exposure annotation
+    expect(r.code).toContain("GEX 1"); // ladder label
     expect(r.expiration).toBe("2026-06-19");
   });
 
-  it("emits float arrays (never array<int>) and falls back to spot when empty", () => {
+  it("emits float gexK + string gexLbl arrays and falls back to spot when empty", () => {
     const chain = [c({ type: "call", strike: 100, gamma: 0.01, openInterest: 1000000 })];
     const withData = buildGexPine("INTG", chain, 100);
-    expect(withData.code).toMatch(/var float\[\] gexK = array\.from\([-0-9., ]*\.\d/);
+    expect(withData.code).toMatch(/gexK\s*=\s*array\.from\([^)]*\.\d/); // float literal in gexK
+    expect(withData.code).toContain("gexLbl = array.from(");
 
     const empty = buildGexPine("EMPTY", [], 50);
     expect(empty.code).toContain("indicator(");

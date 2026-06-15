@@ -2,15 +2,15 @@
 // OptionsFlow — GEX Levels (template)
 //
 // Canonical TradingView indicator. The website's "Pine" tab generates a FILLED-IN copy
-// per ticker (with the current levels baked in) — use the site for ready-to-paste code.
+// per ticker (levels + OI/Volume/GEX/DEX baked in) — use the site for ready-to-paste code.
 //
-// Named levels (MenthorQ-style):
-//   Call Resistance = call wall (max call gamma)        — red
-//   Put Support     = put wall (max put gamma)          — green
-//   HVL             = gamma flip / zero-gamma level     — blue
-//   ...0DTE         = the same, for the front expiry    — dashed
-//   GEX 1..N        = top strikes by |net GEX|          — teal
-//   1D Max/Min      = expected daily range (ATM straddle) — orange (dotted)
+// Named levels (MenthorQ-style), each label annotated with size at that strike:
+//   Call Resistance = call wall (max call gamma)            — red
+//   Put Support     = put wall (max put gamma)              — green
+//   HVL             = gamma flip / zero-gamma level         — blue
+//   ...0DTE         = the same, for the front expiry        — dashed
+//   GEX 1..N        = top strikes by |net GEX|              — teal
+//   1D Max/Min      = expected daily range (ATM straddle)   — orange (dotted)
 indicator("OptionsFlow GEX • Levels", overlay = true, max_lines_count = 300, max_labels_count = 300)
 
 show0dte  = input.bool(true, "Show 0DTE levels")
@@ -29,7 +29,8 @@ putSup0  = input.float(536.0, "Put Support 0DTE / HVL 0DTE")
 oneDMax  = input.float(546.0, "1D Max")
 oneDMin  = input.float(538.0, "1D Min")
 
-var float[] gexK = array.from(545.0, 550.0, 535.0, 555.0, 530.0, 560.0, 525.0, 565.0)
+var float[]  gexK   = array.from(545.0, 550.0, 535.0, 555.0, 530.0, 560.0)
+var string[] gexLbl = array.from("GEX 1 @545  OI 18.0k | V 31.0k | $1.2B", "GEX 2 @550  OI 22.0k | V 40.0k | $1.6B", "GEX 3 @535  OI 12.0k | V 18.0k | -$0.8B", "GEX 4 @555  OI 9.0k | V 11.0k | $0.6B", "GEX 5 @530  OI 14.0k | V 20.0k | -$1.0B", "GEX 6 @560  OI 7.0k | V 8.0k | $0.4B")
 
 var line[]  _ln = array.new_line()
 var label[] _lb = array.new_label()
@@ -48,13 +49,13 @@ if barstate.islast
     clearAll()
     if showGex
         for i = 0 to array.size(gexK) - 1
-            addLevel(array.get(gexK, i), color.teal, "GEX " + str.tostring(i + 1), 1, line.style_solid)
+            addLevel(array.get(gexK, i), color.teal, array.get(gexLbl, i), 1, line.style_solid)
     if showRange
-        addLevel(oneDMin, color.orange, "1D Min", 1, line.style_dotted)
-        addLevel(oneDMax, color.orange, "1D Max", 1, line.style_dotted)
+        addLevel(oneDMin, color.orange, "1D Min " + str.tostring(oneDMin), 1, line.style_dotted)
+        addLevel(oneDMax, color.orange, "1D Max " + str.tostring(oneDMax), 1, line.style_dotted)
     if show0dte
-        addLevel(callRes0, color.red,  "Call Resistance 0DTE / Gamma Wall 0DTE", lw, line.style_dashed)
-        addLevel(putSup0,  color.blue, "Put Support 0DTE / HVL 0DTE", lw, line.style_dashed)
-    addLevel(putSup,  color.green, "Put Support", lw, line.style_solid)
-    addLevel(hvl,     color.blue,  "HVL", lw, line.style_solid)
-    addLevel(callRes, color.red,   "Call Resistance", lw, line.style_solid)
+        addLevel(callRes0, color.red,  "Call Resistance 0DTE / Gamma Wall 0DTE " + str.tostring(callRes0) + "  OI 21.0k | V 60.0k | GEX $1.9B | DEX $0.4B", lw, line.style_dashed)
+        addLevel(putSup0,  color.blue, "Put Support 0DTE / HVL 0DTE " + str.tostring(putSup0) + "  OI 19.0k | V 44.0k | GEX -$1.3B | DEX -$0.3B", lw, line.style_dashed)
+    addLevel(putSup,  color.green, "Put Support " + str.tostring(putSup) + "  OI 24.0k | V 30.0k | GEX -$1.5B | DEX -$0.5B", lw, line.style_solid)
+    addLevel(hvl,     color.blue,  "HVL " + str.tostring(hvl), lw, line.style_solid)
+    addLevel(callRes, color.red,   "Call Resistance " + str.tostring(callRes) + "  OI 26.0k | V 35.0k | GEX $1.8B | DEX $0.6B", lw, line.style_solid)
