@@ -1,0 +1,308 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-16T00:00:00-04:00",
+      "tradingDay": "2026-05-16",
+      "open": 171.07,
+      "high": 171.56,
+      "low": 169.33,
+      "close": 169.97,
+      "volume": 19380313
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-17T00:00:00-04:00",
+      "tradingDay": "2026-05-17",
+      "open": 169.97,
+      "high": 173.09,
+      "low": 169.27,
+      "close": 172.74,
+      "volume": 9955236
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-18T00:00:00-04:00",
+      "tradingDay": "2026-05-18",
+      "open": 172.74,
+      "high": 173.21,
+      "low": 170.29,
+      "close": 170.81,
+      "volume": 25170826
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-19T00:00:00-04:00",
+      "tradingDay": "2026-05-19",
+      "open": 170.81,
+      "high": 173.96,
+      "low": 170.1,
+      "close": 173.88,
+      "volume": 47150611
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-20T00:00:00-04:00",
+      "tradingDay": "2026-05-20",
+      "open": 173.88,
+      "high": 174.56,
+      "low": 173.76,
+      "close": 173.99,
+      "volume": 25515004
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-21T00:00:00-04:00",
+      "tradingDay": "2026-05-21",
+      "open": 173.99,
+      "high": 177.58,
+      "low": 173.1,
+      "close": 177.07,
+      "volume": 46623694
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-22T00:00:00-04:00",
+      "tradingDay": "2026-05-22",
+      "open": 177.07,
+      "high": 177.65,
+      "low": 173.56,
+      "close": 174.4,
+      "volume": 49082730
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-23T00:00:00-04:00",
+      "tradingDay": "2026-05-23",
+      "open": 174.4,
+      "high": 174.51,
+      "low": 171.74,
+      "close": 171.79,
+      "volume": 6690437
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-24T00:00:00-04:00",
+      "tradingDay": "2026-05-24",
+      "open": 171.79,
+      "high": 172.49,
+      "low": 170.85,
+      "close": 172.02,
+      "volume": 42822824
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-25T00:00:00-04:00",
+      "tradingDay": "2026-05-25",
+      "open": 172.02,
+      "high": 176,
+      "low": 171.22,
+      "close": 175.16,
+      "volume": 27993773
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-26T00:00:00-04:00",
+      "tradingDay": "2026-05-26",
+      "open": 175.16,
+      "high": 175.98,
+      "low": 174.81,
+      "close": 175.36,
+      "volume": 15655974
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-27T00:00:00-04:00",
+      "tradingDay": "2026-05-27",
+      "open": 175.36,
+      "high": 175.95,
+      "low": 174.13,
+      "close": 174.31,
+      "volume": 21396127
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-28T00:00:00-04:00",
+      "tradingDay": "2026-05-28",
+      "open": 174.31,
+      "high": 175.11,
+      "low": 173.26,
+      "close": 173.71,
+      "volume": 26362450
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-29T00:00:00-04:00",
+      "tradingDay": "2026-05-29",
+      "open": 173.71,
+      "high": 175.87,
+      "low": 173.07,
+      "close": 175.61,
+      "volume": 23564031
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-30T00:00:00-04:00",
+      "tradingDay": "2026-05-30",
+      "open": 175.61,
+      "high": 176.33,
+      "low": 173.52,
+      "close": 174.41,
+      "volume": 22765990
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-05-31T00:00:00-04:00",
+      "tradingDay": "2026-05-31",
+      "open": 174.41,
+      "high": 175.23,
+      "low": 174.24,
+      "close": 174.46,
+      "volume": 27986087
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-01T00:00:00-04:00",
+      "tradingDay": "2026-06-01",
+      "open": 174.46,
+      "high": 177.23,
+      "low": 174.05,
+      "close": 176.21,
+      "volume": 2517010
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-02T00:00:00-04:00",
+      "tradingDay": "2026-06-02",
+      "open": 176.21,
+      "high": 179,
+      "low": 175.88,
+      "close": 178.77,
+      "volume": 30042032
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-03T00:00:00-04:00",
+      "tradingDay": "2026-06-03",
+      "open": 178.77,
+      "high": 179.56,
+      "low": 174.9,
+      "close": 175.81,
+      "volume": 8780316
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-04T00:00:00-04:00",
+      "tradingDay": "2026-06-04",
+      "open": 175.81,
+      "high": 176.77,
+      "low": 175.28,
+      "close": 175.64,
+      "volume": 12796231
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-05T00:00:00-04:00",
+      "tradingDay": "2026-06-05",
+      "open": 175.64,
+      "high": 175.97,
+      "low": 174.15,
+      "close": 174.31,
+      "volume": 25709449
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-06T00:00:00-04:00",
+      "tradingDay": "2026-06-06",
+      "open": 174.31,
+      "high": 175.18,
+      "low": 173.64,
+      "close": 173.83,
+      "volume": 32103180
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-07T00:00:00-04:00",
+      "tradingDay": "2026-06-07",
+      "open": 173.83,
+      "high": 174.37,
+      "low": 171.56,
+      "close": 172.22,
+      "volume": 45157074
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-08T00:00:00-04:00",
+      "tradingDay": "2026-06-08",
+      "open": 172.22,
+      "high": 172.49,
+      "low": 169.65,
+      "close": 170.22,
+      "volume": 2566289
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-09T00:00:00-04:00",
+      "tradingDay": "2026-06-09",
+      "open": 170.22,
+      "high": 172.92,
+      "low": 169.45,
+      "close": 172.64,
+      "volume": 21015049
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-10T00:00:00-04:00",
+      "tradingDay": "2026-06-10",
+      "open": 172.64,
+      "high": 172.72,
+      "low": 171.21,
+      "close": 172.11,
+      "volume": 31958223
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-11T00:00:00-04:00",
+      "tradingDay": "2026-06-11",
+      "open": 172.11,
+      "high": 172.71,
+      "low": 168.98,
+      "close": 169.6,
+      "volume": 3245016
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-12T00:00:00-04:00",
+      "tradingDay": "2026-06-12",
+      "open": 169.6,
+      "high": 169.63,
+      "low": 166.39,
+      "close": 166.93,
+      "volume": 16781287
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-13T00:00:00-04:00",
+      "tradingDay": "2026-06-13",
+      "open": 166.93,
+      "high": 168.72,
+      "low": 166.32,
+      "close": 167.94,
+      "volume": 36276163
+    },
+    {
+      "symbol": "TSLA",
+      "timestamp": "2026-06-14T00:00:00-04:00",
+      "tradingDay": "2026-06-14",
+      "open": 167.94,
+      "high": 167.99,
+      "low": 165.93,
+      "close": 166.25,
+      "volume": 14515108
+    }
+  ]
+}

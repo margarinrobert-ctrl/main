@@ -182,7 +182,9 @@ src/
 - [x] Screener UI controls mapped to `getOptionsScreener` params
 - [x] Live response caching (TTL = `CACHE_TTL_SECONDS`), keyed by endpoint + params
 - [x] Free keyless provider (Stooq) for live quote + history — no account needed
+- [x] Index/ETF/futures focus (SPY, QQQ, ES, NQ) + interactive options **heatmap** (volume / vol-OI / notional)
 - [ ] Postgres/Prisma snapshot store + scheduled polling (for flow-over-time)
+- [ ] Live futures options (ES/NQ) via Barchart `getFuturesOptions` (fixtures provided for the demo)
 
 > Note: persistence and background polling are intentionally deferred — meaningful flow-over-time
 > needs the paid live screener, so the snapshot layer ships as an in-memory interface for now.

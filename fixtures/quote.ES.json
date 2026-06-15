@@ -1,0 +1,23 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "ES",
+      "name": "E-mini S&P 500 Future",
+      "exchange": "CME",
+      "mode": "d",
+      "lastPrice": 5420,
+      "tradeTimestamp": "2026-06-12T20:00:00-04:00",
+      "netChange": 3.83,
+      "percentChange": 0.07,
+      "open": 5409.79,
+      "high": 5438.07,
+      "low": 5396.47,
+      "previousClose": 5416.17,
+      "volume": 21464678
+    }
+  ]
+}

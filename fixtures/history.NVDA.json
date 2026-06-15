@@ -1,0 +1,308 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-16T00:00:00-04:00",
+      "tradingDay": "2026-05-16",
+      "open": 129.98,
+      "high": 130.23,
+      "low": 128.55,
+      "close": 129,
+      "volume": 1822007
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-17T00:00:00-04:00",
+      "tradingDay": "2026-05-17",
+      "open": 129,
+      "high": 129.57,
+      "low": 127.89,
+      "close": 128.53,
+      "volume": 20844511
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-18T00:00:00-04:00",
+      "tradingDay": "2026-05-18",
+      "open": 128.53,
+      "high": 128.84,
+      "low": 127.83,
+      "close": 128.81,
+      "volume": 11144259
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-19T00:00:00-04:00",
+      "tradingDay": "2026-05-19",
+      "open": 128.81,
+      "high": 129.28,
+      "low": 127.15,
+      "close": 127.59,
+      "volume": 1517896
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-20T00:00:00-04:00",
+      "tradingDay": "2026-05-20",
+      "open": 127.59,
+      "high": 130.61,
+      "low": 126.89,
+      "close": 129.89,
+      "volume": 5599009
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-21T00:00:00-04:00",
+      "tradingDay": "2026-05-21",
+      "open": 129.89,
+      "high": 131.73,
+      "low": 129.55,
+      "close": 131.38,
+      "volume": 29664238
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-22T00:00:00-04:00",
+      "tradingDay": "2026-05-22",
+      "open": 131.38,
+      "high": 131.58,
+      "low": 129.94,
+      "close": 130.09,
+      "volume": 23373471
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-23T00:00:00-04:00",
+      "tradingDay": "2026-05-23",
+      "open": 130.09,
+      "high": 130.09,
+      "low": 129.71,
+      "close": 130.07,
+      "volume": 6594525
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-24T00:00:00-04:00",
+      "tradingDay": "2026-05-24",
+      "open": 130.07,
+      "high": 131.96,
+      "low": 129.55,
+      "close": 131.8,
+      "volume": 37687765
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-25T00:00:00-04:00",
+      "tradingDay": "2026-05-25",
+      "open": 131.8,
+      "high": 131.91,
+      "low": 130.35,
+      "close": 130.75,
+      "volume": 46961671
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-26T00:00:00-04:00",
+      "tradingDay": "2026-05-26",
+      "open": 130.75,
+      "high": 132.08,
+      "low": 130.02,
+      "close": 131.77,
+      "volume": 17582195
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-27T00:00:00-04:00",
+      "tradingDay": "2026-05-27",
+      "open": 131.77,
+      "high": 133.82,
+      "low": 131.76,
+      "close": 133.62,
+      "volume": 8682293
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-28T00:00:00-04:00",
+      "tradingDay": "2026-05-28",
+      "open": 133.62,
+      "high": 135.29,
+      "low": 132.95,
+      "close": 135.09,
+      "volume": 47338974
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-29T00:00:00-04:00",
+      "tradingDay": "2026-05-29",
+      "open": 135.09,
+      "high": 135.65,
+      "low": 134.93,
+      "close": 135.18,
+      "volume": 22155150
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-30T00:00:00-04:00",
+      "tradingDay": "2026-05-30",
+      "open": 135.18,
+      "high": 136.09,
+      "low": 135.16,
+      "close": 135.43,
+      "volume": 33808393
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-05-31T00:00:00-04:00",
+      "tradingDay": "2026-05-31",
+      "open": 135.43,
+      "high": 137.24,
+      "low": 134.88,
+      "close": 136.59,
+      "volume": 15729041
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-01T00:00:00-04:00",
+      "tradingDay": "2026-06-01",
+      "open": 136.59,
+      "high": 137.58,
+      "low": 136.22,
+      "close": 136.85,
+      "volume": 44954501
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-02T00:00:00-04:00",
+      "tradingDay": "2026-06-02",
+      "open": 136.85,
+      "high": 137.58,
+      "low": 135.69,
+      "close": 136.21,
+      "volume": 46469145
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-03T00:00:00-04:00",
+      "tradingDay": "2026-06-03",
+      "open": 136.21,
+      "high": 138.67,
+      "low": 136.18,
+      "close": 138.02,
+      "volume": 49524271
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-04T00:00:00-04:00",
+      "tradingDay": "2026-06-04",
+      "open": 138.02,
+      "high": 140.58,
+      "low": 137.94,
+      "close": 139.88,
+      "volume": 17244425
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-05T00:00:00-04:00",
+      "tradingDay": "2026-06-05",
+      "open": 139.88,
+      "high": 140.47,
+      "low": 138.26,
+      "close": 138.58,
+      "volume": 9809893
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-06T00:00:00-04:00",
+      "tradingDay": "2026-06-06",
+      "open": 138.58,
+      "high": 139.09,
+      "low": 138.18,
+      "close": 138.25,
+      "volume": 38184434
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-07T00:00:00-04:00",
+      "tradingDay": "2026-06-07",
+      "open": 138.25,
+      "high": 138.9,
+      "low": 137.86,
+      "close": 138.12,
+      "volume": 18130862
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-08T00:00:00-04:00",
+      "tradingDay": "2026-06-08",
+      "open": 138.12,
+      "high": 138.37,
+      "low": 137.86,
+      "close": 137.93,
+      "volume": 46881007
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-09T00:00:00-04:00",
+      "tradingDay": "2026-06-09",
+      "open": 137.93,
+      "high": 139.78,
+      "low": 137.45,
+      "close": 139.19,
+      "volume": 48633993
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-10T00:00:00-04:00",
+      "tradingDay": "2026-06-10",
+      "open": 139.19,
+      "high": 139.27,
+      "low": 137.36,
+      "close": 138.19,
+      "volume": 5436101
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-11T00:00:00-04:00",
+      "tradingDay": "2026-06-11",
+      "open": 138.19,
+      "high": 139.32,
+      "low": 137.69,
+      "close": 138.67,
+      "volume": 9673556
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-12T00:00:00-04:00",
+      "tradingDay": "2026-06-12",
+      "open": 138.67,
+      "high": 138.68,
+      "low": 137.8,
+      "close": 138.56,
+      "volume": 19125124
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-13T00:00:00-04:00",
+      "tradingDay": "2026-06-13",
+      "open": 138.56,
+      "high": 139.93,
+      "low": 137.83,
+      "close": 139.78,
+      "volume": 43067311
+    },
+    {
+      "symbol": "NVDA",
+      "timestamp": "2026-06-14T00:00:00-04:00",
+      "tradingDay": "2026-06-14",
+      "open": 139.78,
+      "high": 140.12,
+      "low": 137.85,
+      "close": 138.52,
+      "volume": 48655653
+    }
+  ]
+}

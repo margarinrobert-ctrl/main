@@ -1,0 +1,308 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-16T00:00:00-04:00",
+      "tradingDay": "2026-05-16",
+      "open": 158.69,
+      "high": 159.12,
+      "low": 157.54,
+      "close": 158.47,
+      "volume": 8702250
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-17T00:00:00-04:00",
+      "tradingDay": "2026-05-17",
+      "open": 158.47,
+      "high": 160.88,
+      "low": 158.14,
+      "close": 160.55,
+      "volume": 15478245
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-18T00:00:00-04:00",
+      "tradingDay": "2026-05-18",
+      "open": 160.55,
+      "high": 162.19,
+      "low": 160.37,
+      "close": 161.52,
+      "volume": 3470406
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-19T00:00:00-04:00",
+      "tradingDay": "2026-05-19",
+      "open": 161.52,
+      "high": 162.56,
+      "low": 160.85,
+      "close": 161.62,
+      "volume": 47616625
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-20T00:00:00-04:00",
+      "tradingDay": "2026-05-20",
+      "open": 161.62,
+      "high": 162.64,
+      "low": 160.78,
+      "close": 161.77,
+      "volume": 49242009
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-21T00:00:00-04:00",
+      "tradingDay": "2026-05-21",
+      "open": 161.77,
+      "high": 163.13,
+      "low": 161.34,
+      "close": 162.38,
+      "volume": 32126815
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-22T00:00:00-04:00",
+      "tradingDay": "2026-05-22",
+      "open": 162.38,
+      "high": 162.46,
+      "low": 160.73,
+      "close": 161.1,
+      "volume": 29623967
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-23T00:00:00-04:00",
+      "tradingDay": "2026-05-23",
+      "open": 161.1,
+      "high": 161.13,
+      "low": 159.39,
+      "close": 159.78,
+      "volume": 25168706
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-24T00:00:00-04:00",
+      "tradingDay": "2026-05-24",
+      "open": 159.78,
+      "high": 160.46,
+      "low": 158.23,
+      "close": 158.89,
+      "volume": 31540037
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-25T00:00:00-04:00",
+      "tradingDay": "2026-05-25",
+      "open": 158.89,
+      "high": 160.85,
+      "low": 158.18,
+      "close": 159.93,
+      "volume": 12613930
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-26T00:00:00-04:00",
+      "tradingDay": "2026-05-26",
+      "open": 159.93,
+      "high": 161.28,
+      "low": 159.9,
+      "close": 161.26,
+      "volume": 28047572
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-27T00:00:00-04:00",
+      "tradingDay": "2026-05-27",
+      "open": 161.26,
+      "high": 162.89,
+      "low": 160.9,
+      "close": 161.93,
+      "volume": 26993949
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-28T00:00:00-04:00",
+      "tradingDay": "2026-05-28",
+      "open": 161.93,
+      "high": 163.62,
+      "low": 161.45,
+      "close": 163.11,
+      "volume": 35404545
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-29T00:00:00-04:00",
+      "tradingDay": "2026-05-29",
+      "open": 163.11,
+      "high": 164.02,
+      "low": 161.38,
+      "close": 161.56,
+      "volume": 36168519
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-30T00:00:00-04:00",
+      "tradingDay": "2026-05-30",
+      "open": 161.56,
+      "high": 162.69,
+      "low": 161.06,
+      "close": 162.54,
+      "volume": 13173568
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-05-31T00:00:00-04:00",
+      "tradingDay": "2026-05-31",
+      "open": 162.54,
+      "high": 164.67,
+      "low": 162.24,
+      "close": 164.3,
+      "volume": 24357261
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-01T00:00:00-04:00",
+      "tradingDay": "2026-06-01",
+      "open": 164.3,
+      "high": 166.18,
+      "low": 163.42,
+      "close": 165.9,
+      "volume": 27859105
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-02T00:00:00-04:00",
+      "tradingDay": "2026-06-02",
+      "open": 165.9,
+      "high": 166.63,
+      "low": 164.13,
+      "close": 164.44,
+      "volume": 4365092
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-03T00:00:00-04:00",
+      "tradingDay": "2026-06-03",
+      "open": 164.44,
+      "high": 166.88,
+      "low": 163.8,
+      "close": 166.58,
+      "volume": 26845605
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-04T00:00:00-04:00",
+      "tradingDay": "2026-06-04",
+      "open": 166.58,
+      "high": 168.87,
+      "low": 165.81,
+      "close": 168.12,
+      "volume": 18294899
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-05T00:00:00-04:00",
+      "tradingDay": "2026-06-05",
+      "open": 168.12,
+      "high": 170.35,
+      "low": 168,
+      "close": 169.81,
+      "volume": 13235768
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-06T00:00:00-04:00",
+      "tradingDay": "2026-06-06",
+      "open": 169.81,
+      "high": 170.69,
+      "low": 168.8,
+      "close": 169.47,
+      "volume": 28003638
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-07T00:00:00-04:00",
+      "tradingDay": "2026-06-07",
+      "open": 169.47,
+      "high": 170.4,
+      "low": 169.29,
+      "close": 170.15,
+      "volume": 44629348
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-08T00:00:00-04:00",
+      "tradingDay": "2026-06-08",
+      "open": 170.15,
+      "high": 171.03,
+      "low": 167.76,
+      "close": 168.27,
+      "volume": 46121115
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-09T00:00:00-04:00",
+      "tradingDay": "2026-06-09",
+      "open": 168.27,
+      "high": 170.03,
+      "low": 167.32,
+      "close": 169.08,
+      "volume": 48271994
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-10T00:00:00-04:00",
+      "tradingDay": "2026-06-10",
+      "open": 169.08,
+      "high": 170.01,
+      "low": 166.85,
+      "close": 167.3,
+      "volume": 30389133
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-11T00:00:00-04:00",
+      "tradingDay": "2026-06-11",
+      "open": 167.3,
+      "high": 167.49,
+      "low": 166.54,
+      "close": 166.62,
+      "volume": 7551412
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-12T00:00:00-04:00",
+      "tradingDay": "2026-06-12",
+      "open": 166.62,
+      "high": 167.07,
+      "low": 164.97,
+      "close": 165.27,
+      "volume": 45283302
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-13T00:00:00-04:00",
+      "tradingDay": "2026-06-13",
+      "open": 165.27,
+      "high": 166.13,
+      "low": 164.8,
+      "close": 165.38,
+      "volume": 34133675
+    },
+    {
+      "symbol": "AMD",
+      "timestamp": "2026-06-14T00:00:00-04:00",
+      "tradingDay": "2026-06-14",
+      "open": 165.38,
+      "high": 165.91,
+      "low": 163.56,
+      "close": 163.8,
+      "volume": 49773904
+    }
+  ]
+}

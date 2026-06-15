@@ -1,0 +1,308 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-16T00:00:00-04:00",
+      "tradingDay": "2026-05-16",
+      "open": 520.42,
+      "high": 523.51,
+      "low": 518.58,
+      "close": 521.18,
+      "volume": 15564684
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-17T00:00:00-04:00",
+      "tradingDay": "2026-05-17",
+      "open": 521.18,
+      "high": 522.99,
+      "low": 521.11,
+      "close": 521.55,
+      "volume": 5189546
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-18T00:00:00-04:00",
+      "tradingDay": "2026-05-18",
+      "open": 521.55,
+      "high": 525.53,
+      "low": 520.14,
+      "close": 522.98,
+      "volume": 24720278
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-19T00:00:00-04:00",
+      "tradingDay": "2026-05-19",
+      "open": 522.98,
+      "high": 523.86,
+      "low": 520.81,
+      "close": 523.34,
+      "volume": 47780382
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-20T00:00:00-04:00",
+      "tradingDay": "2026-05-20",
+      "open": 523.34,
+      "high": 528.31,
+      "low": 520.41,
+      "close": 525.45,
+      "volume": 10990193
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-21T00:00:00-04:00",
+      "tradingDay": "2026-05-21",
+      "open": 525.45,
+      "high": 526.05,
+      "low": 523.54,
+      "close": 525.97,
+      "volume": 28892127
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-22T00:00:00-04:00",
+      "tradingDay": "2026-05-22",
+      "open": 525.97,
+      "high": 530.96,
+      "low": 523.54,
+      "close": 528.65,
+      "volume": 7939237
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-23T00:00:00-04:00",
+      "tradingDay": "2026-05-23",
+      "open": 528.65,
+      "high": 530.26,
+      "low": 526.97,
+      "close": 528.19,
+      "volume": 7799195
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-24T00:00:00-04:00",
+      "tradingDay": "2026-05-24",
+      "open": 528.19,
+      "high": 532.95,
+      "low": 525.75,
+      "close": 530.72,
+      "volume": 46933872
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-25T00:00:00-04:00",
+      "tradingDay": "2026-05-25",
+      "open": 530.72,
+      "high": 531.28,
+      "low": 528.73,
+      "close": 530.63,
+      "volume": 15571510
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-26T00:00:00-04:00",
+      "tradingDay": "2026-05-26",
+      "open": 530.63,
+      "high": 531.96,
+      "low": 530.44,
+      "close": 530.98,
+      "volume": 25192156
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-27T00:00:00-04:00",
+      "tradingDay": "2026-05-27",
+      "open": 530.98,
+      "high": 534.1,
+      "low": 527.87,
+      "close": 530.15,
+      "volume": 7403872
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-28T00:00:00-04:00",
+      "tradingDay": "2026-05-28",
+      "open": 530.15,
+      "high": 531.86,
+      "low": 529.44,
+      "close": 529.9,
+      "volume": 48410437
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-29T00:00:00-04:00",
+      "tradingDay": "2026-05-29",
+      "open": 529.9,
+      "high": 533.06,
+      "low": 527.92,
+      "close": 528.84,
+      "volume": 49489603
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-30T00:00:00-04:00",
+      "tradingDay": "2026-05-30",
+      "open": 528.84,
+      "high": 530.35,
+      "low": 526.77,
+      "close": 530.22,
+      "volume": 3301221
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-05-31T00:00:00-04:00",
+      "tradingDay": "2026-05-31",
+      "open": 530.22,
+      "high": 531.13,
+      "low": 528.47,
+      "close": 529.25,
+      "volume": 5583175
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-01T00:00:00-04:00",
+      "tradingDay": "2026-06-01",
+      "open": 529.25,
+      "high": 534.2,
+      "low": 526.72,
+      "close": 532.02,
+      "volume": 19684242
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-02T00:00:00-04:00",
+      "tradingDay": "2026-06-02",
+      "open": 532.02,
+      "high": 533.02,
+      "low": 531.66,
+      "close": 531.97,
+      "volume": 6475848
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-03T00:00:00-04:00",
+      "tradingDay": "2026-06-03",
+      "open": 531.97,
+      "high": 534.62,
+      "low": 531.86,
+      "close": 533.83,
+      "volume": 35905710
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-04T00:00:00-04:00",
+      "tradingDay": "2026-06-04",
+      "open": 533.83,
+      "high": 536,
+      "low": 531.56,
+      "close": 533.47,
+      "volume": 45037780
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-05T00:00:00-04:00",
+      "tradingDay": "2026-06-05",
+      "open": 533.47,
+      "high": 535.71,
+      "low": 533.2,
+      "close": 534.71,
+      "volume": 7153325
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-06T00:00:00-04:00",
+      "tradingDay": "2026-06-06",
+      "open": 534.71,
+      "high": 538.21,
+      "low": 532.72,
+      "close": 536.73,
+      "volume": 50778472
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-07T00:00:00-04:00",
+      "tradingDay": "2026-06-07",
+      "open": 536.73,
+      "high": 539.23,
+      "low": 534.96,
+      "close": 536.6,
+      "volume": 33422681
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-08T00:00:00-04:00",
+      "tradingDay": "2026-06-08",
+      "open": 536.6,
+      "high": 537.12,
+      "low": 536.39,
+      "close": 536.8,
+      "volume": 19728868
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-09T00:00:00-04:00",
+      "tradingDay": "2026-06-09",
+      "open": 536.8,
+      "high": 540.01,
+      "low": 536.17,
+      "close": 536.33,
+      "volume": 43705307
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-10T00:00:00-04:00",
+      "tradingDay": "2026-06-10",
+      "open": 536.33,
+      "high": 539.15,
+      "low": 535.03,
+      "close": 538.56,
+      "volume": 39874873
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-11T00:00:00-04:00",
+      "tradingDay": "2026-06-11",
+      "open": 538.56,
+      "high": 541.1,
+      "low": 537.53,
+      "close": 541.04,
+      "volume": 36051182
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-12T00:00:00-04:00",
+      "tradingDay": "2026-06-12",
+      "open": 541.04,
+      "high": 543.46,
+      "low": 538.1,
+      "close": 539.9,
+      "volume": 13712253
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-13T00:00:00-04:00",
+      "tradingDay": "2026-06-13",
+      "open": 539.9,
+      "high": 541.73,
+      "low": 539.01,
+      "close": 540.18,
+      "volume": 17881852
+    },
+    {
+      "symbol": "SPY",
+      "timestamp": "2026-06-14T00:00:00-04:00",
+      "tradingDay": "2026-06-14",
+      "open": 540.18,
+      "high": 542.29,
+      "low": 536.83,
+      "close": 538.6,
+      "volume": 18341170
+    }
+  ]
+}

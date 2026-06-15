@@ -1,0 +1,23 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "NVDA",
+      "name": "NVIDIA Corp",
+      "exchange": "NASDAQ",
+      "mode": "d",
+      "lastPrice": 135.4,
+      "tradeTimestamp": "2026-06-12T20:00:00-04:00",
+      "netChange": -0.05,
+      "percentChange": -0.04,
+      "open": 135.28,
+      "high": 135.79,
+      "low": 134.78,
+      "previousClose": 135.45,
+      "volume": 54427912
+    }
+  ]
+}

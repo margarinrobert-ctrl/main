@@ -1,0 +1,23 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "META",
+      "name": "Meta Platforms",
+      "exchange": "NASDAQ",
+      "mode": "d",
+      "lastPrice": 700.5,
+      "tradeTimestamp": "2026-06-12T20:00:00-04:00",
+      "netChange": -2.43,
+      "percentChange": -0.35,
+      "open": 697.95,
+      "high": 702.44,
+      "low": 696.34,
+      "previousClose": 702.93,
+      "volume": 47823568
+    }
+  ]
+}

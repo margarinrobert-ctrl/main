@@ -1,0 +1,23 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "NQ",
+      "name": "E-mini Nasdaq-100 Future",
+      "exchange": "CME",
+      "mode": "d",
+      "lastPrice": 19100,
+      "tradeTimestamp": "2026-06-12T20:00:00-04:00",
+      "netChange": -18.25,
+      "percentChange": -0.1,
+      "open": 19057.58,
+      "high": 19155.42,
+      "low": 19066.98,
+      "previousClose": 19118.25,
+      "volume": 17220611
+    }
+  ]
+}
