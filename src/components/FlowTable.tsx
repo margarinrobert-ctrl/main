@@ -150,8 +150,8 @@ export function FlowTable() {
 
       {source === "fixtures" && (
         <div className="mb-3 rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
-          Showing <b>sample</b> options data. Set <code>ALPHAVANTAGE_API_KEY</code> (free) on your host for live EOD
-          options flow (~1 day old).
+          Showing <b>sample</b> data — the live options feed didn&rsquo;t respond from this host (it auto-falls back).
+          Hit Refresh to retry.
         </div>
       )}
 

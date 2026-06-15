@@ -80,18 +80,21 @@ put it in `.env.local` (gitignored). Then set `DATA_SOURCE=live`.
 
 ### Fresh data — what's free vs. keyed
 
-| Data | Provider | Cost | Freshness |
-| --- | --- | --- | --- |
-| Underlying quote + price chart | **Stooq** (default) | free, **no key** | EOD (~1 day old) |
-| Options chain / heatmap / flow | **Alpha Vantage** | free **key** | EOD (~1 day old) |
-| Options intraday + multi-symbol scan | Barchart | paid key | real-time / delayed |
+Everything live runs with **no key by default** — no signup required:
 
-Underlying data is live out of the box (Stooq, keyless, via its public CSV endpoints). For **fresh
-options**, grab a free [Alpha Vantage key](https://www.alphavantage.co/support/#api-key) and set
-`ALPHAVANTAGE_API_KEY` — the options provider auto-switches and the chain/heatmap/flow pull EOD
-chains (~1 day old). Free Alpha Vantage is rate-limited (25 req/day), so chains are cached for
-`OPTIONS_CACHE_TTL_SECONDS` (6h) and the flow is built from a small `OPTIONS_WATCHLIST`. Any live
-failure falls back to fixtures, so the UI never breaks.
+| Data | Default provider | Cost | Freshness |
+| --- | --- | --- | --- |
+| Underlying quote + price chart | **Stooq** | free, **no key** | EOD (~1 day old) |
+| Options chain / heatmap / flow | **CBOE delayed quotes** | free, **no key** | **~15-min delayed** |
+| Options (alternative) | Alpha Vantage (`ALPHAVANTAGE_API_KEY`) | free key | EOD (~1 day old) |
+| Options intraday + full-market scan | Barchart (`BARCHART_API_KEY`, `OPTIONS_PROVIDER=barchart`) | paid key | real-time / delayed |
+
+Out of the box, options come from **CBOE's public delayed-quotes feed** (`cdn.cboe.com`) — real
+chains with volume, OI, IV and greeks, ~15 min delayed, **keyless**. The flow table is built from
+`OPTIONS_WATCHLIST` (cached `CBOE_CACHE_TTL_SECONDS`, default 10m). Futures (ES/NQ) have no public
+options feed, so they map to the matching CBOE cash index (**ES→SPX, NQ→NDX**) as a free stand-in.
+Set `ALPHAVANTAGE_API_KEY` to switch to Alpha Vantage, or `OPTIONS_PROVIDER=barchart` (+ key) for
+the paid real-time tier. Any live failure falls back to fixtures, so the UI never breaks.
 
 ---
 

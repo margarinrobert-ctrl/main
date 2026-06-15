@@ -1,5 +1,6 @@
 import { cached } from "../cache/store";
 import { avOptions } from "../providers/alphavantage";
+import { cboeOptions } from "../providers/cboe";
 import { stooqHistory, stooqQuote } from "../providers/stooq";
 import { barchartRequest, readFixtureParsed } from "./client";
 import { config } from "./config";
@@ -7,8 +8,14 @@ import { parseHistoryResponse, parseOptionsResponse, parseQuoteResponse } from "
 import type { OptionContract } from "./types";
 
 const useStooq = () => config.dataSource === "live" && config.marketDataProvider === "stooq";
-const useAvOptions = () =>
-  config.dataSource === "live" && config.optionsProvider === "alphavantage" && !!config.alphaVantageApiKey;
+
+// Options: 'cboe' (public, keyless) and 'alphavantage' (free key) fetch per-symbol chains;
+// 'barchart' (paid) goes through the shared barchartRequest path below.
+const liveOptionsEnabled = () =>
+  config.dataSource === "live" &&
+  (config.optionsProvider === "cboe" || (config.optionsProvider === "alphavantage" && !!config.alphaVantageApiKey));
+const fetchLiveOptions = (sym: string) => (config.optionsProvider === "alphavantage" ? avOptions(sym) : cboeOptions(sym));
+const optionsTtl = () => (config.optionsProvider === "cboe" ? config.cboeCacheTtlSeconds : config.optionsCacheTtlSeconds);
 
 export async function getQuote(symbol: string) {
   const sym = symbol.toUpperCase();
@@ -58,12 +65,12 @@ export async function getEquityOptions(symbol: string) {
   const sym = symbol.toUpperCase();
   const fixtures = [`options.${sym}.json`, "options.AAPL.json"];
 
-  if (useAvOptions()) {
+  if (liveOptionsEnabled()) {
     try {
-      const data = await cached(`av:options:${sym}`, config.optionsCacheTtlSeconds, () => avOptions(sym));
+      const data = await cached(`opt:${config.optionsProvider}:${sym}`, optionsTtl(), () => fetchLiveOptions(sym));
       return { data, source: "live" as const };
     } catch (err) {
-      console.warn(`[alphavantage] options failed for ${sym}; falling back to fixtures:`, err instanceof Error ? err.message : err);
+      console.warn(`[${config.optionsProvider}] options failed for ${sym}; falling back to fixtures:`, err instanceof Error ? err.message : err);
       return { data: await readFixtureParsed(fixtures, parseOptionsResponse), source: "fixtures" as const };
     }
   }
@@ -89,20 +96,21 @@ export interface ScreenerParams {
 }
 
 export async function getOptionsScreener(params: ScreenerParams = {}) {
-  if (useAvOptions()) {
+  if (liveOptionsEnabled()) {
     try {
-      // Free Alpha Vantage has no multi-symbol scan, so synthesize flow from a cached
-      // watchlist of per-symbol chains (each cached for OPTIONS_CACHE_TTL_SECONDS).
+      // No free multi-symbol scan, so synthesize flow from a cached watchlist of per-symbol chains.
       const lists = await Promise.all(
         config.optionsWatchlist.map((s) =>
-          cached(`av:options:${s}`, config.optionsCacheTtlSeconds, () => avOptions(s)).catch(() => [] as OptionContract[]),
+          cached(`opt:${config.optionsProvider}:${s}`, optionsTtl(), () => fetchLiveOptions(s)).catch(
+            () => [] as OptionContract[],
+          ),
         ),
       );
       const data = lists.flat();
-      if (data.length === 0) throw new Error("no Alpha Vantage options data");
+      if (data.length === 0) throw new Error("no live options data");
       return { data, source: "live" as const };
     } catch (err) {
-      console.warn(`[alphavantage] screener failed; falling back to fixtures:`, err instanceof Error ? err.message : err);
+      console.warn(`[${config.optionsProvider}] screener failed; falling back to fixtures:`, err instanceof Error ? err.message : err);
       return { data: await readFixtureParsed(["screener.json"], parseOptionsResponse), source: "fixtures" as const };
     }
   }

@@ -1,6 +1,6 @@
 export type DataSource = "fixtures" | "live";
 export type MarketDataProvider = "barchart" | "stooq";
-export type OptionsProvider = "barchart" | "alphavantage";
+export type OptionsProvider = "barchart" | "alphavantage" | "cboe";
 
 function toInt(v: string | undefined, fallback: number): number {
   const n = Number(v);
@@ -9,9 +9,10 @@ function toInt(v: string | undefined, fallback: number): number {
 
 function pickOptionsProvider(): OptionsProvider {
   const v = process.env.OPTIONS_PROVIDER;
-  if (v === "alphavantage" || v === "barchart") return v;
-  // Auto-select Alpha Vantage (free EOD options) when a key is present.
-  return process.env.ALPHAVANTAGE_API_KEY ? "alphavantage" : "barchart";
+  if (v === "alphavantage" || v === "barchart" || v === "cboe") return v;
+  if (process.env.ALPHAVANTAGE_API_KEY) return "alphavantage";
+  // Default: CBOE delayed quotes — a public, keyless options feed (~15-min delayed).
+  return "cboe";
 }
 
 /** Central runtime config. Read once from the environment (server-side only). */
@@ -29,12 +30,15 @@ export const config = {
   optionsProvider: pickOptionsProvider(),
   alphaVantageApiKey: process.env.ALPHAVANTAGE_API_KEY ?? "",
   alphaVantageBaseUrl: process.env.ALPHAVANTAGE_BASE_URL ?? "https://www.alphavantage.co/query",
-  optionsWatchlist: (process.env.OPTIONS_WATCHLIST ?? "SPY,QQQ,AAPL,NVDA,TSLA,AMD")
+  // CBOE delayed quotes — public, keyless options feed (~15-min delayed).
+  cboeBaseUrl: process.env.CBOE_BASE_URL ?? "https://cdn.cboe.com/api/global/delayed_quotes/options",
+  optionsWatchlist: (process.env.OPTIONS_WATCHLIST ?? "SPY,QQQ,AAPL,NVDA,TSLA,ES,NQ")
     .split(",")
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean),
   cacheTtlSeconds: toInt(process.env.CACHE_TTL_SECONDS, 60),
-  optionsCacheTtlSeconds: toInt(process.env.OPTIONS_CACHE_TTL_SECONDS, 21600), // 6h (EOD data)
+  optionsCacheTtlSeconds: toInt(process.env.OPTIONS_CACHE_TTL_SECONDS, 21600), // 6h (Alpha Vantage EOD)
+  cboeCacheTtlSeconds: toInt(process.env.CBOE_CACHE_TTL_SECONDS, 600), // 10m (CBOE delayed intraday)
   pollIntervalMs: toInt(process.env.POLL_INTERVAL_MS, 0),
   requestTimeoutMs: 10_000,
   maxRetries: 3,
