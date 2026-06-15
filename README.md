@@ -44,6 +44,7 @@ Or manually: **Vercel → Add New… → Project → Import `margarinrobert-ctrl
   - `DATA_SOURCE=live` + `MARKET_DATA_PROVIDER=stooq` → live quote + price chart, **no key**.
   - Add a paid `BARCHART_API_KEY` to also make the flow table + options chain live.
 - Once the repo is connected, Vercel auto-builds a **preview URL for every branch/PR** (including this one).
+- ⚠️ This app lives on branch `claude/peaceful-sagan-ksfof0` (PR #16), and the repo's default branch doesn't have it yet. Either **merge PR #16 first** (then the default branch has the app), or in Vercel set **Settings → Git → Production Branch** to `claude/peaceful-sagan-ksfof0`.
 
 > The flow table + options chain are fixtures unless a paid Barchart key is set — no free options feed exists. Quote + chart go live for free via Stooq.
 
