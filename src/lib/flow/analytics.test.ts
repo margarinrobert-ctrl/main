@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { expectedMove, gammaFlip, gexByStrike, maxPain, oiByStrike, putCallRatio } from "./analytics";
+import { expectedMove, gammaFlip, gexByExpiration, gexByStrike, maxPain, oiByStrike, putCallRatio } from "./analytics";
 import type { OptionContract } from "../barchart/types";
 
 function c(p: Partial<OptionContract>): OptionContract {
@@ -70,6 +70,20 @@ describe("analytics", () => {
   it("computes put/call ratios", () => {
     const r = putCallRatio([c({ type: "call", volume: 100 }), c({ type: "put", volume: 200 })]);
     expect(r.vol).toBeCloseTo(2, 5);
+  });
+
+  it("aggregates GEX by expiration (term structure)", () => {
+    const term = gexByExpiration(
+      [
+        c({ type: "call", strike: 100, expiration: "2026-06-19", dte: 4, gamma: 0.02, openInterest: 5000 }),
+        c({ type: "put", strike: 100, expiration: "2026-07-17", dte: 32, gamma: 0.02, openInterest: 5000 }),
+      ],
+      100,
+    );
+    expect(term).toHaveLength(2);
+    expect(term[0].expiration).toBe("2026-06-19");
+    expect(term[0].gex).toBeGreaterThan(0); // call -> positive
+    expect(term[1].gex).toBeLessThan(0); // put -> negative
   });
 
   it("aggregates open interest by strike", () => {

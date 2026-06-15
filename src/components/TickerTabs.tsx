@@ -6,6 +6,7 @@ import { gammaFlip, gexByStrike, netGex } from "@/lib/flow/analytics";
 import { appendSample } from "@/lib/gex-history";
 import { GammaProfile } from "./GammaProfile";
 import { GexHistory } from "./GexHistory";
+import { GexTerm } from "./GexTerm";
 import { KeyLevels } from "./KeyLevels";
 import { OiProfile } from "./OiProfile";
 import { OptionsChain } from "./OptionsChain";
@@ -15,7 +16,7 @@ import { PriceChart } from "./PriceChart";
 import { QuoteCard } from "./QuoteCard";
 import { SkewChart } from "./SkewChart";
 
-const TABS = ["Overview", "Chain", "Heatmap", "Gamma", "OI", "Skew", "History", "Pine"] as const;
+const TABS = ["Overview", "Chain", "Heatmap", "Gamma", "Term", "OI", "Skew", "History", "Pine"] as const;
 type Tab = (typeof TABS)[number];
 
 export function TickerTabs({ symbol }: { symbol: string }) {
@@ -72,6 +73,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Chain" && <OptionsChain symbol={symbol} />}
       {tab === "Heatmap" && <OptionsHeatmap symbol={symbol} />}
       {tab === "Gamma" && <GammaProfile symbol={symbol} />}
+      {tab === "Term" && <GexTerm symbol={symbol} />}
       {tab === "OI" && <OiProfile symbol={symbol} />}
       {tab === "Skew" && <SkewChart symbol={symbol} />}
       {tab === "History" && <GexHistory symbol={symbol} />}

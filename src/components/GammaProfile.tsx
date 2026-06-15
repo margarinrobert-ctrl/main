@@ -14,6 +14,7 @@ export function GammaProfile({ symbol }: { symbol: string }) {
   const [spot, setSpot] = useState<number | null>(null);
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
+  const [exp, setExp] = useState<string>("ALL");
 
   useEffect(() => {
     let cancelled = false;
@@ -37,8 +38,11 @@ export function GammaProfile({ symbol }: { symbol: string }) {
     };
   }, [symbol]);
 
+  const expirations = useMemo(() => [...new Set(chain.map((c) => c.expiration))].sort(), [chain]);
+
   const { data, levels } = useMemo(() => {
-    const by = gexByStrike(chain, spot);
+    const sub = exp === "ALL" ? chain : chain.filter((c) => c.expiration === exp);
+    const by = gexByStrike(sub, spot);
     const flip = gammaFlip(by);
     const cw = callWall(by);
     const pw = putWall(by);
@@ -63,15 +67,29 @@ export function GammaProfile({ symbol }: { symbol: string }) {
         ? null
         : d.reduce((p, c) => (Math.abs(c.strike - target) < Math.abs(p - target) ? c.strike : p), d[0].strike);
     return { data: d, levels: { S: snap(spot), C: snap(cw), G: snap(flip), P: snap(pw) } };
-  }, [chain, spot]);
+  }, [chain, spot, exp]);
 
   const height = Math.min(720, Math.max(380, data.length * 20));
 
   return (
     <div className="glass p-4">
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Gamma profile · {symbol}</h2>
-        <span className="text-xs text-neutral-500">net GEX by strike ($/1%)</span>
+        <div className="flex items-center gap-2 text-xs text-neutral-500">
+          <select
+            value={exp}
+            onChange={(e) => setExp(e.target.value)}
+            className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-neutral-200"
+          >
+            <option value="ALL">all expirations</option>
+            {expirations.map((e) => (
+              <option key={e} value={e}>
+                {e}
+              </option>
+            ))}
+          </select>
+          <span>net GEX ($/1%)</span>
+        </div>
       </div>
       {state === "loading" && <Loading label="Loading gamma…" />}
       {state === "error" && <ErrorState message={error} />}

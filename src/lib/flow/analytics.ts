@@ -36,6 +36,29 @@ export function netGex(chain: OptionContract[], spot: number | null): number | n
   return by.length ? by.reduce((s, x) => s + x.gex, 0) : null;
 }
 
+export interface ExpGex {
+  expiration: string;
+  dte: number | null;
+  gex: number;
+}
+
+/** Net dealer GEX aggregated by expiration (the gamma term structure). */
+export function gexByExpiration(chain: OptionContract[], spot: number | null): ExpGex[] {
+  if (!spot) return [];
+  const m = new Map<string, { gex: number; dte: number | null }>();
+  for (const c of chain) {
+    if (c.gamma == null || c.openInterest == null) continue;
+    const g = (c.type === "call" ? 1 : -1) * c.gamma * c.openInterest * CONTRACT * spot * spot * 0.01;
+    const e = m.get(c.expiration) ?? { gex: 0, dte: c.dte };
+    e.gex += g;
+    if (e.dte == null) e.dte = c.dte;
+    m.set(c.expiration, e);
+  }
+  return [...m.entries()]
+    .map(([expiration, v]) => ({ expiration, dte: v.dte, gex: v.gex }))
+    .sort((a, b) => a.expiration.localeCompare(b.expiration));
+}
+
 /** Aggregate notional delta of open interest (calls +, puts -). */
 export function netDex(chain: OptionContract[], spot: number | null): number | null {
   if (!spot) return null;
