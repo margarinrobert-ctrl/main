@@ -30,6 +30,23 @@ npm run build        # production build
 
 ---
 
+## Deploy — click and open
+
+This is a standard Next.js app, so the fastest path to a live URL is **Vercel** (it signs in with
+your existing GitHub — no new password):
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fmargarinrobert-ctrl%2Fmain&project-name=options-flow&repository-name=options-flow)
+
+Or manually: **Vercel → Add New… → Project → Import `margarinrobert-ctrl/main` → Deploy.**
+
+- **First deploy needs zero config** — it boots in fixtures mode, so you get a fully working demo immediately at your `*.vercel.app` URL.
+- **Want live underlying data?** Vercel → Settings → Environment Variables:
+  - `DATA_SOURCE=live` + `MARKET_DATA_PROVIDER=stooq` → live quote + price chart, **no key**.
+  - Add a paid `BARCHART_API_KEY` to also make the flow table + options chain live.
+- Once the repo is connected, Vercel auto-builds a **preview URL for every branch/PR** (including this one).
+
+> The flow table + options chain are fixtures unless a paid Barchart key is set — no free options feed exists. Quote + chart go live for free via Stooq.
+
 ## Data source: `fixtures` vs `live`
 
 One flag in `.env.local` controls everything:
