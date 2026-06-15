@@ -150,10 +150,21 @@ There is no native Barchart "flow" endpoint — we synthesize it. For each contr
 weight is redistributed so the score isn't unfairly capped. Each row also carries boolean **flags**
 (`High Vol/OI`, `Volume Spike`, `Large Notional`, `Short-dated OTM`) so you can see *why* it ranked.
 
-All thresholds are in `src/lib/barchart/config.ts` (`flowThresholds`).
+All thresholds are in `src/lib/barchart/config.ts` (`flowThresholds`). Rows also flag aggressive
+**Sweeps** (high vol/OI + short-dated + large notional).
 
-**Known limitation:** true sweep/block aggressor detection needs time-&-sales, which OnDemand
-doesn't expose cheaply — deferred to a later milestone.
+## Quant analytics (`src/lib/flow/analytics.ts`, unit-tested)
+
+Each ticker page is a tabbed dashboard — **Overview · Chain · Heatmap · Gamma · Skew** — driven by
+a pure analytics engine computed from the chain:
+
+- **Dealer gamma exposure (GEX)** by strike, net GEX ($/1% move), and the **zero-gamma flip** level
+- **Dealer regime** badge: long gamma (mean-reverting) vs short gamma (trend-amplifying)
+- **Call wall / put wall** (max call/put gamma strikes), **max pain**, **expected move** (ATM straddle)
+- **Net Δ exposure**, **put/call ratios** (volume & OI)
+- **Gamma Profile** chart (GEX-by-strike, spot + flip markers) and **IV skew** chart (call vs put IV)
+- Two-sided options chain (calls │ strike │ puts) with spot / expiration / updated pills
+- **CSV export** of the ranked flow
 
 ---
 

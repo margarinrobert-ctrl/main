@@ -85,6 +85,33 @@ export function FlowTable() {
     return [...filtered].sort((a, b) => val(b) - val(a));
   }, [rows, minScore, side, sortKey]);
 
+  const exportCsv = () => {
+    const head = ["score", "ticker", "type", "strike", "expiration", "dte", "volume", "openInterest", "volOI", "iv", "notional", "flags"];
+    const lines = view.map((r) =>
+      [
+        r.score,
+        r.underlying,
+        r.type,
+        r.strike,
+        r.expiration,
+        r.dte ?? "",
+        r.volume ?? "",
+        r.openInterest ?? "",
+        r.signals.voir != null ? r.signals.voir.toFixed(2) : "",
+        r.impliedVolatility ?? "",
+        r.signals.notional != null ? Math.round(r.signals.notional) : "",
+        r.flags.join("|"),
+      ].join(","),
+    );
+    const csv = [head.join(","), ...lines].join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `flow-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
       <div className="mb-3 rounded border border-neutral-800 p-3">
@@ -142,10 +169,15 @@ export function FlowTable() {
             <option value="voir">vol/OI</option>
           </select>
         </label>
-        <button onClick={load} className="ml-auto rounded bg-neutral-800 px-3 py-1 hover:bg-neutral-700">
-          Refresh
-        </button>
-        {source && <span className="self-center text-xs text-neutral-500">src: {source}</span>}
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={exportCsv} className="rounded bg-neutral-800 px-3 py-1 hover:bg-neutral-700">
+            Export CSV
+          </button>
+          <button onClick={load} className="rounded bg-neutral-800 px-3 py-1 hover:bg-neutral-700">
+            Refresh
+          </button>
+          {source && <span className="self-center text-xs text-neutral-500">src: {source}</span>}
+        </div>
       </div>
 
       {source === "fixtures" && (

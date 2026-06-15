@@ -91,6 +91,7 @@ export function scoreContract(c: OptionContract, opts: ScoreOptions = {}): Score
   if (volSpike !== null && volSpike >= t.volSpikeFloor) flags.push("Volume Spike");
   if (notional !== null && notional >= t.notionalFloor) flags.push("Large Notional");
   if (shortDte && farOtm) flags.push("Short-dated OTM");
+  if (voir !== null && voir >= 3 && shortDte && notional !== null && notional >= t.notionalFloor) flags.push("Sweep");
 
   return { ...c, score, flags, signals, passedGates: true };
 }

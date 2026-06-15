@@ -3,6 +3,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
+import { fmtUsd, netGex } from "@/lib/flow/analytics";
 import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
@@ -18,26 +19,6 @@ function iv(n: number | null | undefined): string {
 }
 function loc(n: number | null | undefined): string {
   return n == null ? "—" : n.toLocaleString();
-}
-
-/** Net dealer gamma exposure ($ per 1% move): calls long gamma, puts short. */
-function netGex(chain: OptionContract[], spot: number | null): number | null {
-  if (!spot) return null;
-  let g = 0;
-  let any = false;
-  for (const c of chain) {
-    if (c.gamma == null || c.openInterest == null) continue;
-    any = true;
-    g += (c.type === "call" ? 1 : -1) * c.gamma * c.openInterest * 100 * spot * spot * 0.01;
-  }
-  return any ? g : null;
-}
-function fmtGex(v: number): string {
-  const a = Math.abs(v);
-  const s = v < 0 ? "−" : "";
-  if (a >= 1e9) return `${s}$${(a / 1e9).toFixed(2)}B`;
-  if (a >= 1e6) return `${s}$${(a / 1e6).toFixed(0)}M`;
-  return `${s}$${Math.round(a).toLocaleString()}`;
 }
 
 function Pill({ children }: { children: ReactNode }) {
@@ -130,7 +111,7 @@ export function OptionsChain({ symbol }: { symbol: string }) {
           <span
             className={`rounded px-2 py-1 text-xs ${gex >= 0 ? "bg-emerald-900 text-emerald-200" : "bg-red-900 text-red-200"}`}
           >
-            Dealer regime: {gex >= 0 ? "Long gamma (mean-reverting)" : "Short gamma (trend-amplifying)"} · {fmtGex(gex)}/1%
+            Dealer regime: {gex >= 0 ? "Long gamma (mean-reverting)" : "Short gamma (trend-amplifying)"} · {fmtUsd(gex)}/1%
           </span>
         )}
       </div>

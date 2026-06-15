@@ -48,4 +48,9 @@ describe("scoreContract", () => {
     expect(withoutSpike.signals.volSpike).toBeNull();
     expect(withoutSpike.score).toBeGreaterThan(0);
   });
+
+  it("flags aggressive short-dated sweeps", () => {
+    const r = scoreContract(base); // voir 10, dte 5, notional ~$550k
+    expect(r.flags).toContain("Sweep");
+  });
 });
