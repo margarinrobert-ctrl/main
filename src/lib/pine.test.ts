@@ -32,16 +32,21 @@ describe("buildGexPine", () => {
       c({ type: "put", strike: 95, gamma: 0.03, openInterest: 9000 }),
     ];
     const r = buildGexPine("TEST", chain, 100);
-    expect(r.code).toContain("//@version=5");
+    expect(r.code).toContain("//@version=6");
     expect(r.code).toContain("OptionsFlow GEX • TEST");
     expect(r.code).toContain("Gamma flip");
     expect(r.code).toContain("array.from(");
     expect(r.expiration).toBe("2026-06-19");
   });
 
-  it("stays valid with no usable strikes (falls back to spot)", () => {
-    const r = buildGexPine("EMPTY", [], 50);
-    expect(r.code).toContain("indicator(");
-    expect(r.code).toContain("array.from(50)");
+  it("emits float arrays (never array<int>) and falls back to spot when empty", () => {
+    // a whole-number GEX must still render as a float literal
+    const chain = [c({ type: "call", strike: 100, gamma: 0.01, openInterest: 1000000 })];
+    const withData = buildGexPine("INTG", chain, 100);
+    expect(withData.code).toMatch(/var float\[\] gs = array\.from\([-0-9., ]*\.\d/);
+
+    const empty = buildGexPine("EMPTY", [], 50);
+    expect(empty.code).toContain("indicator(");
+    expect(empty.code).toContain("array.from(50.0)");
   });
 });

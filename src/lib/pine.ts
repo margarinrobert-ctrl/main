@@ -2,7 +2,9 @@ import type { OptionContract } from "./barchart/types";
 import { callWall, gammaFlip, gexByStrike, putWall } from "./flow/analytics";
 
 function fmt(n: number): string {
-  return (Math.round(n * 100) / 100).toString();
+  // Always emit a float literal (with a decimal point) so Pine infers array<float>, not array<int>.
+  const s = (Math.round(n * 100) / 100).toString();
+  return s.includes(".") ? s : `${s}.0`;
 }
 
 function nearestExpiration(chain: OptionContract[]): string | null {
@@ -44,10 +46,10 @@ export function buildGexPine(symbol: string, chain: OptionContract[], spot: numb
 
   const s = spot ?? top[Math.floor(top.length / 2)]?.strike ?? 0;
   const ks = top.length ? top.map((x) => fmt(x.strike)).join(", ") : fmt(s);
-  const gs = top.length ? top.map((x) => Math.round(x.gex)).join(", ") : "0";
+  const gs = top.length ? top.map((x) => fmt(Math.round(x.gex))).join(", ") : "0.0";
   const asOf = new Date().toISOString().slice(0, 16).replace("T", " ");
 
-  const code = `//@version=5
+  const code = `//@version=6
 // OptionsFlow — GEX levels for ${symbol}  (exp ${exp ?? "n/a"}, generated ${asOf} UTC)
 // Paste into TradingView: Pine Editor -> paste -> Save -> Add to chart.
 // Levels are a snapshot; re-generate from the site to refresh.
