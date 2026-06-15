@@ -1,8 +1,8 @@
 name: Deploy demo to GitHub Pages
 
+# Manual trigger only. One-time setup: repo Settings → Pages → Source: "GitHub Actions"
+# (the workflow token can't enable Pages itself). Then run this workflow.
 on:
-  push:
-    branches: [claude/peaceful-sagan-ksfof0]
   workflow_dispatch:
 
 # Allow the workflow to enable + publish Pages with the built-in token.
