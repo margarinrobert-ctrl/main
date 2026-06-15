@@ -2,16 +2,9 @@
 
 import { ColorType, createChart, type IChartApi, type Time } from "lightweight-charts";
 import { useEffect, useRef, useState } from "react";
+import { loadHistory } from "@/lib/client-data";
+import type { HistoryBar } from "@/lib/barchart/types";
 import { EmptyState, ErrorState, Loading } from "./states";
-
-interface Bar {
-  timestamp: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -21,25 +14,18 @@ export function PriceChart({ symbol }: { symbol: string }) {
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
   const [source, setSource] = useState("");
-  const [bars, setBars] = useState<Bar[]>([]);
+  const [bars, setBars] = useState<HistoryBar[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setState("loading");
       try {
-        const res = await fetch(`/api/barchart/history?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
-        const json = await res.json();
+        const { bars, source } = await loadHistory(symbol);
         if (cancelled) return;
-        if (!res.ok) {
-          setError(json?.error ?? "Request failed");
-          setState("error");
-          return;
-        }
-        setSource(json.source ?? "");
-        const data: Bar[] = json.bars ?? [];
-        setBars(data);
-        setState(data.length ? "ok" : "empty");
+        setSource(source);
+        setBars(bars);
+        setState(bars.length ? "ok" : "empty");
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Network error");

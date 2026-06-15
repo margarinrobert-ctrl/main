@@ -48,6 +48,16 @@ Or manually: **Vercel → Add New… → Project → Import `margarinrobert-ctrl
 
 > The flow table + options chain are fixtures unless a paid Barchart key is set — no free options feed exists. Quote + chart go live for free via Stooq.
 
+### Zero-setup demo: GitHub Pages
+
+A GitHub Action (`.github/workflows/pages.yml`) builds a **static, fixtures-only** demo and publishes
+it to GitHub Pages on every push to this branch — no account or local setup needed:
+
+**https://margarinrobert-ctrl.github.io/main/**
+
+Static = no server, so it's the canned-data demo (flow table, charts, chains). For live data, use the
+Vercel deploy above.
+
 ## Data source: `fixtures` vs `live`
 
 One flag in `.env.local` controls everything:

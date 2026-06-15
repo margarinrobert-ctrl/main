@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { config } from "@/lib/barchart/config";
+import { withBase } from "@/lib/paths";
 
 export const metadata: Metadata = {
   title: "OptionsFlow",
@@ -14,7 +15,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body className="min-h-screen">
         <header className="border-b border-neutral-800 px-6 py-3 flex items-center justify-between">
-          <a href="/" className="font-semibold tracking-tight">
+          <a href={withBase("/")} className="font-semibold tracking-tight">
             Options<span className="text-emerald-400">Flow</span>
           </a>
           <span

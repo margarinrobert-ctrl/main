@@ -20,6 +20,9 @@ next-env.d.ts
 /fixtures/*.live.json
 /fixtures/*.raw.json
 
+# static export: fixtures copied into public/ at build time (source of truth is /fixtures)
+/public/fixtures/
+
 # misc
 *.log
 .DS_Store

@@ -1,6 +1,8 @@
 "use client";
 
 import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { loadFlow } from "@/lib/client-data";
+import { withBase } from "@/lib/paths";
 import { EmptyState, ErrorState, Loading } from "./states";
 
 interface Row {
@@ -47,17 +49,10 @@ export function FlowTable() {
     try {
       const qs = new URLSearchParams();
       for (const [k, v] of Object.entries(serverParams)) if (v !== "") qs.set(k, v);
-      const res = await fetch(`/api/barchart/screener?${qs.toString()}`, { cache: "no-store" });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json?.error ?? "Request failed");
-        setState("error");
-        return;
-      }
-      setSource(json.source ?? "");
-      const data: Row[] = json.rows ?? [];
-      setRows(data);
-      setState(data.length ? "ok" : "empty");
+      const { rows, source } = await loadFlow(qs.toString());
+      setSource(source);
+      setRows(rows as Row[]);
+      setState(rows.length ? "ok" : "empty");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");
       setState("error");
@@ -182,7 +177,7 @@ export function FlowTable() {
                     <ScoreBadge score={r.score} />
                   </td>
                   <td className="pr-3">
-                    <a className="text-emerald-400 hover:underline" href={`/ticker/${r.underlying}`}>
+                    <a className="text-emerald-400 hover:underline" href={withBase(`/ticker/${r.underlying}`)}>
                       {r.underlying}
                     </a>
                   </td>

@@ -1,18 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { loadQuote } from "@/lib/client-data";
+import type { NormalizedQuote } from "@/lib/barchart/types";
 import { EmptyState, ErrorState, Loading } from "./states";
-
-interface Quote {
-  symbol: string;
-  name: string | null;
-  last: number | null;
-  netChange: number | null;
-  percentChange: number | null;
-  volume: number | null;
-  tradeTimestamp: string | null;
-  delayed: boolean | null;
-}
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -21,7 +12,7 @@ function fmt(n: number | null | undefined): string {
 }
 
 export function QuoteCard({ symbol }: { symbol: string }) {
-  const [quote, setQuote] = useState<Quote | null>(null);
+  const [quote, setQuote] = useState<NormalizedQuote | null>(null);
   const [source, setSource] = useState("");
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
@@ -29,15 +20,9 @@ export function QuoteCard({ symbol }: { symbol: string }) {
   const load = useCallback(async () => {
     setState("loading");
     try {
-      const res = await fetch(`/api/barchart/quote?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json?.error ?? "Request failed");
-        setState("error");
-        return;
-      }
-      setSource(json.source ?? "");
-      const q: Quote | undefined = json.quotes?.[0];
+      const { quotes, source } = await loadQuote(symbol);
+      setSource(source);
+      const q = quotes[0];
       if (!q) {
         setState("empty");
         return;
@@ -60,10 +45,7 @@ export function QuoteCard({ symbol }: { symbol: string }) {
     <div className="max-w-md rounded-lg border border-neutral-800 p-4">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="font-semibold">{symbol}</h2>
-        <button
-          onClick={load}
-          className="rounded bg-neutral-800 px-2 py-1 text-xs hover:bg-neutral-700"
-        >
+        <button onClick={load} className="rounded bg-neutral-800 px-2 py-1 text-xs hover:bg-neutral-700">
           Refresh
         </button>
       </div>

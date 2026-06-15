@@ -1,22 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { loadChain } from "@/lib/client-data";
+import type { OptionContract } from "@/lib/barchart/types";
 import { EmptyState, ErrorState, Loading } from "./states";
-
-interface Contract {
-  symbol: string;
-  type: "call" | "put";
-  strike: number;
-  expiration: string;
-  dte: number | null;
-  bid: number | null;
-  ask: number | null;
-  last: number | null;
-  volume: number | null;
-  openInterest: number | null;
-  impliedVolatility: number | null;
-  delta: number | null;
-}
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -25,7 +12,7 @@ function fmt(n: number | null): string {
 }
 
 export function OptionsChain({ symbol }: { symbol: string }) {
-  const [chain, setChain] = useState<Contract[]>([]);
+  const [chain, setChain] = useState<OptionContract[]>([]);
   const [source, setSource] = useState("");
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
@@ -35,18 +22,11 @@ export function OptionsChain({ symbol }: { symbol: string }) {
     (async () => {
       setState("loading");
       try {
-        const res = await fetch(`/api/barchart/options?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
-        const json = await res.json();
+        const { chain, source } = await loadChain(symbol);
         if (cancelled) return;
-        if (!res.ok) {
-          setError(json?.error ?? "Request failed");
-          setState("error");
-          return;
-        }
-        setSource(json.source ?? "");
-        const data: Contract[] = json.chain ?? [];
-        setChain(data);
-        setState(data.length ? "ok" : "empty");
+        setSource(source);
+        setChain(chain);
+        setState(chain.length ? "ok" : "empty");
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Network error");

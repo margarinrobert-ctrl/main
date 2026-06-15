@@ -1,0 +1,91 @@
+import type { ScreenerParams } from "./barchart/endpoints";
+import { parseHistoryResponse, parseOptionsResponse, parseQuoteResponse } from "./barchart/normalize";
+import type { HistoryBar, NormalizedQuote, OptionContract } from "./barchart/types";
+import { scoreContracts, type ScoredContract } from "./flow/heuristic";
+import { applyScreenerFilter } from "./flow/screener-filter";
+
+/**
+ * Browser data layer. In a normal (server) deploy it calls the /api proxy routes.
+ * In a static export (GitHub Pages, NEXT_PUBLIC_STATIC=1) there is no server, so it
+ * fetches the fixture JSON directly and runs the same parse/score in the browser.
+ */
+const STATIC = process.env.NEXT_PUBLIC_STATIC === "1";
+const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
+async function fetchFixture(candidates: string[]): Promise<unknown> {
+  let lastErr: unknown;
+  for (const name of candidates) {
+    try {
+      const res = await fetch(`${BASE}/fixtures/${name}`, { cache: "no-store" });
+      if (res.ok) return await res.json();
+      lastErr = new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr ?? new Error(`fixture not found: ${candidates.join(", ")}`);
+}
+
+async function fetchJson(url: string): Promise<Record<string, unknown>> {
+  const res = await fetch(url, { cache: "no-store" });
+  const json = await res.json();
+  if (!res.ok) throw new Error((json as { error?: string })?.error ?? "Request failed");
+  return json as Record<string, unknown>;
+}
+
+export async function loadQuote(symbol: string): Promise<{ quotes: NormalizedQuote[]; source: string }> {
+  const sym = symbol.toUpperCase();
+  if (STATIC) {
+    const raw = await fetchFixture([`quote.${sym}.json`, "quote.AAPL.json"]);
+    return { quotes: parseQuoteResponse(raw), source: "fixtures" };
+  }
+  const json = await fetchJson(`/api/barchart/quote?symbol=${encodeURIComponent(sym)}`);
+  return { quotes: (json.quotes as NormalizedQuote[]) ?? [], source: (json.source as string) ?? "" };
+}
+
+export async function loadHistory(symbol: string): Promise<{ bars: HistoryBar[]; source: string }> {
+  const sym = symbol.toUpperCase();
+  if (STATIC) {
+    const raw = await fetchFixture([`history.${sym}.json`, "history.AAPL.json"]);
+    return { bars: parseHistoryResponse(raw), source: "fixtures" };
+  }
+  const json = await fetchJson(`/api/barchart/history?symbol=${encodeURIComponent(sym)}`);
+  return { bars: (json.bars as HistoryBar[]) ?? [], source: (json.source as string) ?? "" };
+}
+
+export async function loadChain(symbol: string): Promise<{ chain: OptionContract[]; source: string }> {
+  const sym = symbol.toUpperCase();
+  if (STATIC) {
+    const raw = await fetchFixture([`options.${sym}.json`, "options.AAPL.json"]);
+    return { chain: parseOptionsResponse(raw), source: "fixtures" };
+  }
+  const json = await fetchJson(`/api/barchart/options?symbol=${encodeURIComponent(sym)}`);
+  return { chain: (json.chain as OptionContract[]) ?? [], source: (json.source as string) ?? "" };
+}
+
+function parseScreenerQuery(qs: string): ScreenerParams {
+  const p = new URLSearchParams(qs);
+  const n = (k: string): number | undefined => {
+    const v = p.get(k);
+    if (!v) return undefined;
+    const x = Number(v);
+    return Number.isFinite(x) ? x : undefined;
+  };
+  return {
+    minVolume: n("minVolume"),
+    minOpenInterest: n("minOpenInterest"),
+    minDTE: n("minDTE"),
+    maxDTE: n("maxDTE"),
+    minVolumeOpenInterestRatio: n("minVoir"),
+  };
+}
+
+export async function loadFlow(qs: string): Promise<{ rows: ScoredContract[]; source: string }> {
+  if (STATIC) {
+    const raw = await fetchFixture(["screener.json"]);
+    const rows = scoreContracts(applyScreenerFilter(parseOptionsResponse(raw), parseScreenerQuery(qs)));
+    return { rows, source: "fixtures" };
+  }
+  const json = await fetchJson(`/api/barchart/screener?${qs}`);
+  return { rows: (json.rows as ScoredContract[]) ?? [], source: (json.source as string) ?? "" };
+}
