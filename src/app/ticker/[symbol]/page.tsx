@@ -1,3 +1,5 @@
+import { OptionsChain } from "@/components/OptionsChain";
+import { PriceChart } from "@/components/PriceChart";
 import { QuoteCard } from "@/components/QuoteCard";
 
 export default function TickerPage({ params }: { params: { symbol: string } }) {
@@ -12,11 +14,8 @@ export default function TickerPage({ params }: { params: { symbol: string } }) {
       </div>
 
       <QuoteCard symbol={symbol} />
-
-      <div className="rounded border border-neutral-800 p-4 text-sm text-neutral-500">
-        Price chart (M2) and options chain + IV summary (M4) land next. Both run in fixtures mode; the live chain needs
-        the PAID <code>getEquityOptions</code> endpoint.
-      </div>
+      <PriceChart symbol={symbol} />
+      <OptionsChain symbol={symbol} />
     </div>
   );
 }

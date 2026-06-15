@@ -131,10 +131,11 @@ src/
 
 - [x] **M0** scaffold + `npm run probe` + fixtures
 - [x] **M1** `getQuote` end-to-end (client → zod → route → UI)
+- [x] **M2** price chart on ticker page (`getHistory`, lightweight-charts)
 - [x] **M3 (partial)** screener route + Flow table + heuristic (fixtures; live needs PAID)
-- [ ] **M2** price chart on ticker page (`getHistory`)
-- [ ] **M4** options chain + IV summary (`getEquityOptions`)
+- [x] **M4** options chain + IV summary on ticker page (`getEquityOptions`)
 - [ ] Screener UI controls mapped to `getOptionsScreener` params
+- [ ] Wire `cached()` into the live request path (TTL = `CACHE_TTL_SECONDS`)
 - [ ] Postgres/Prisma snapshot store + scheduled polling (for flow-over-time)
 
 > Note: persistence and background polling are intentionally deferred — meaningful flow-over-time
