@@ -67,6 +67,8 @@ show0dte = input.bool(true, "Show 0DTE levels")
 showGex  = input.bool(true, "Show GEX 1..N ladder")
 showRange = input.bool(true, "Show 1D Max/Min")
 lw       = input.int(2, "Key line width", minval = 1, maxval = 5)
+labelSize = input.string("large", "Label size", options = ["small", "normal", "large", "huge"])
+sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
 
 callRes  = input.float(${v(callRes)}, "Call Resistance")
 putSup   = input.float(${v(putSup)}, "Put Support")
@@ -89,7 +91,7 @@ clearAll() =>
 
 addLevel(price, col, txt, w, st) =>
     array.push(_ln, line.new(bar_index, price, bar_index + 1, price, color = col, width = w, extend = extend.both, style = st))
-    array.push(_lb, label.new(bar_index, price, txt, style = label.style_label_left, textcolor = col, color = color.new(color.black, 100), size = size.small))
+    array.push(_lb, label.new(bar_index, price, txt, style = label.style_label_left, textcolor = col, color = color.new(color.black, 100), size = sz))
 
 if barstate.islast
     clearAll()
