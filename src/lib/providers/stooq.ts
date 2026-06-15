@@ -10,7 +10,22 @@ import type { HistoryBar, NormalizedQuote } from "../barchart/types";
  * (Stooq has no options data — chain/screener remain Barchart-only.)
  */
 
+// Futures/indices have no ".us" ticker — map to Stooq's cash-index symbols so the
+// underlying quote+chart stay live and consistent with the CBOE options mapping (ES→SPX, NQ→NDX).
+const STOOQ_SYMBOL_MAP: Record<string, string> = {
+  ES: "^spx",
+  NQ: "^ndx",
+  SPX: "^spx",
+  NDX: "^ndx",
+  VIX: "^vix",
+  RUT: "^rut",
+  YM: "^dji",
+  DJX: "^dji",
+};
+
 function stooqSymbol(symbol: string): string {
+  const u = symbol.toUpperCase();
+  if (STOOQ_SYMBOL_MAP[u]) return STOOQ_SYMBOL_MAP[u];
   const s = symbol.toLowerCase();
   return s.includes(".") ? s : `${s}.us`;
 }

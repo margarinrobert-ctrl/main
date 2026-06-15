@@ -6,17 +6,17 @@
   "results": [
     {
       "symbol": "NQ",
-      "name": "E-mini Nasdaq-100 Future",
+      "name": "E-mini Nasdaq-100 (cash index proxy)",
       "exchange": "CME",
       "mode": "d",
-      "lastPrice": 19100,
+      "lastPrice": 24000,
       "tradeTimestamp": "2026-06-12T20:00:00-04:00",
-      "netChange": -18.25,
+      "netChange": -22.93,
       "percentChange": -0.1,
-      "open": 19057.58,
-      "high": 19155.42,
-      "low": 19066.98,
-      "previousClose": 19118.25,
+      "open": 23946.7,
+      "high": 24069.64,
+      "low": 23958.51,
+      "previousClose": 24022.93,
       "volume": 17220611
     }
   ]

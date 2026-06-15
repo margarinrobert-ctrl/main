@@ -23,8 +23,8 @@ interface Cfg {
 const SYMBOLS: Cfg[] = [
   { symbol: "SPY", name: "SPDR S&P 500 ETF", price: 542.1, iv: 0.17, kind: "etf" },
   { symbol: "QQQ", name: "Invesco QQQ Trust", price: 485.0, iv: 0.2, kind: "etf" },
-  { symbol: "ES", name: "E-mini S&P 500 Future", price: 5420, iv: 0.16, kind: "future" },
-  { symbol: "NQ", name: "E-mini Nasdaq-100 Future", price: 19100, iv: 0.19, kind: "future" },
+  { symbol: "ES", name: "E-mini S&P 500 (cash index proxy)", price: 7540, iv: 0.16, kind: "future" },
+  { symbol: "NQ", name: "E-mini Nasdaq-100 (cash index proxy)", price: 24000, iv: 0.19, kind: "future" },
   { symbol: "AAPL", name: "Apple Inc", price: 196.45, iv: 0.3, kind: "equity" },
   { symbol: "NVDA", name: "NVIDIA Corp", price: 135.4, iv: 0.6, kind: "equity" },
   { symbol: "TSLA", name: "Tesla Inc", price: 178.2, iv: 0.72, kind: "equity" },
