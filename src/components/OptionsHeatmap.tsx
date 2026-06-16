@@ -47,7 +47,8 @@ function fmt(v: number, m: Metric): string {
   return v >= 1000 ? `${Math.round(v / 1000)}k` : String(Math.round(v));
 }
 
-export function OptionsHeatmap({ symbol }: { symbol: string }) {
+export function OptionsHeatmap({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
+  const isSel = (e: string) => exp !== "ALL" && e === exp;
   const [chain, setChain] = useState<OptionContract[]>([]);
   const [source, setSource] = useState("");
   const [state, setState] = useState<ViewState>("loading");
@@ -132,7 +133,12 @@ export function OptionsHeatmap({ symbol }: { symbol: string }) {
               <tr>
                 <th className="sticky left-0 bg-neutral-950 px-2 py-1 text-right text-neutral-400">strike \ exp</th>
                 {grid.expirations.map((e) => (
-                  <th key={e} className="px-2 py-1 text-center font-normal text-neutral-400">
+                  <th
+                    key={e}
+                    className={`px-2 py-1 text-center font-normal ${
+                      isSel(e) ? "rounded-t bg-emerald-500/10 font-semibold text-emerald-300" : "text-neutral-400"
+                    }`}
+                  >
                     {e.slice(5)}
                   </th>
                 ))}
@@ -155,7 +161,7 @@ export function OptionsHeatmap({ symbol }: { symbol: string }) {
                     return (
                       <td
                         key={e}
-                        className="px-2 py-1 text-center font-mono"
+                        className={`px-2 py-1 text-center font-mono ${isSel(e) ? "ring-1 ring-inset ring-emerald-400/50" : ""}`}
                         style={{
                           backgroundColor: v > 0 ? heat(t) : "transparent",
                           color: t > 0.45 ? "#0a0a0a" : "#d4d4d4",

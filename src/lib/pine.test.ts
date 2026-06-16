@@ -54,4 +54,14 @@ describe("buildGexPine", () => {
     expect(empty.code).toContain("indicator(");
     expect(empty.code).toContain("array.from(50.0)");
   });
+
+  it("targets a chosen expiration when one is passed (e.g. 0DTE)", () => {
+    const chain = [
+      c({ expiration: "2026-06-16", dte: 0, strike: 100, gamma: 0.03, openInterest: 7000 }),
+      c({ expiration: "2026-07-17", dte: 31, strike: 100, gamma: 0.02, openInterest: 5000 }),
+    ];
+    expect(buildGexPine("ZD", chain, 100).expiration).toBe("2026-06-16"); // nearest by default
+    expect(buildGexPine("ZD", chain, 100, 10, "2026-07-17").expiration).toBe("2026-07-17");
+    expect(buildGexPine("ZD", chain, 100, 10, "ALL").expiration).toBe("2026-06-16"); // ALL → nearest
+  });
 });

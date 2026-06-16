@@ -9,6 +9,7 @@ import {
   callWall,
   expectedMove,
   expectedMove1D,
+  filterByExpiration,
   fmtUsd,
   gammaFlip,
   gexByStrike,
@@ -30,7 +31,7 @@ function nearestExp(chain: OptionContract[]): string | null {
   return (future[0] ?? withDte[0])?.e ?? null;
 }
 
-export function KeyLevels({ symbol }: { symbol: string }) {
+export function KeyLevels({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
   const [chain, setChain] = useState<OptionContract[]>([]);
   const [spot, setSpot] = useState<number | null>(null);
   const [state, setState] = useState<ViewState>("loading");
@@ -76,28 +77,29 @@ export function KeyLevels({ symbol }: { symbol: string }) {
   }, [symbol]);
 
   const levels = useMemo(() => {
-    const by = gexByStrike(chain, spot);
-    const ngex = netGex(chain, spot);
-    const exp = nearestExp(chain);
-    const em = exp ? expectedMove(chain, spot, exp) : null;
-    const iv0 = exp ? atmIv(chain, spot, exp) : null;
+    const sub = filterByExpiration(chain, exp);
+    const by = gexByStrike(sub, spot);
+    const ngex = netGex(sub, spot);
+    const e = nearestExp(sub);
+    const em = e ? expectedMove(sub, spot, e) : null;
+    const iv0 = e ? atmIv(sub, spot, e) : null;
     const em1 = expectedMove1D(spot, iv0);
-    const pc = putCallRatio(chain);
+    const pc = putCallRatio(sub);
     return {
       ngex,
-      ndex: netDex(chain, spot),
+      ndex: netDex(sub, spot),
       flip: gammaFlip(by),
       cw: callWall(by),
       pw: putWall(by),
-      mp: exp ? maxPain(chain, exp) : null,
+      mp: e ? maxPain(sub, e) : null,
       em,
       em1,
       iv0,
-      so: secondOrderExposure(chain, spot),
+      so: secondOrderExposure(sub, spot),
       pc,
-      exp,
+      exp: e,
     };
-  }, [chain, spot]);
+  }, [chain, spot, exp]);
 
   const flowRead = useMemo(() => {
     const parts: string[] = [];

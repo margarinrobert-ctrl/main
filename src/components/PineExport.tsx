@@ -7,7 +7,7 @@ import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
-export function PineExport({ symbol }: { symbol: string }) {
+export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
   const [result, setResult] = useState<PineResult | null>(null);
   const [source, setSource] = useState("");
   const [state, setState] = useState<ViewState>("loading");
@@ -23,13 +23,13 @@ export function PineExport({ symbol }: { symbol: string }) {
         setState("empty");
         return;
       }
-      setResult(buildGexPine(symbol, chain, spot));
+      setResult(buildGexPine(symbol, chain, spot, 10, exp));
       setState("ok");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");
       setState("error");
     }
-  }, [symbol]);
+  }, [symbol, exp]);
 
   useEffect(() => {
     load();

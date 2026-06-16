@@ -53,7 +53,7 @@ function fmtVal(v: number, metric: SurfaceMetric): string {
   return fmtUsd(v);
 }
 
-export function GreeksSurface({ symbol }: { symbol: string }) {
+export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
   const [chain, setChain] = useState<OptionContract[]>([]);
   const [spot, setSpot] = useState<number | null>(null);
   const [state, setState] = useState<ViewState>("loading");
@@ -178,6 +178,18 @@ export function GreeksSurface({ symbol }: { symbol: string }) {
       ridge = `M${pts.join(" L")}`;
     }
 
+    // selected-expiration ridge (a row across strikes) — highlight, since exp is an axis here
+    let expRidge: string | null = null;
+    const expIdx = exp === "ALL" ? -1 : surface.expirations.findIndex((e) => e.label === exp);
+    if (expIdx >= 0) {
+      const pts: string[] = [];
+      for (let i = 0; i < nx; i++) {
+        const p = project(i, expIdx, hOf(surface.z[expIdx][i]));
+        pts.push(`${p.x},${p.y}`);
+      }
+      expRidge = `M${pts.join(" L")}`;
+    }
+
     // strike labels along the j=0 edge; expiration labels along i=0 edge
     const everyK = Math.max(1, Math.round(nx / 8));
     const strikeLabels = surface.strikes
@@ -186,8 +198,8 @@ export function GreeksSurface({ symbol }: { symbol: string }) {
       .map(({ s, i }) => ({ ...project(i, 0, 0), s }));
     const expLabels = surface.expirations.map((e, j) => ({ ...project(0, j, 0), e }));
 
-    return { quads, basePath, ridge, strikeLabels, expLabels };
-  }, [surface, azimuth, tilt, zmax, spotIdx]);
+    return { quads, basePath, ridge, expRidge, strikeLabels, expLabels };
+  }, [surface, azimuth, tilt, zmax, spotIdx, exp]);
 
   const peak = useMemo(() => {
     let best: { v: number; strike: number; exp: string } | null = null;
@@ -263,6 +275,7 @@ export function GreeksSurface({ symbol }: { symbol: string }) {
               {render.quads.map((q, i) => (
                 <path key={i} d={q.path} fill={q.fill} stroke="rgba(255,255,255,0.06)" strokeWidth={0.5} />
               ))}
+              {render.expRidge && <path d={render.expRidge} fill="none" stroke="#34d399" strokeWidth={2.4} />}
               {render.ridge && <path d={render.ridge} fill="none" stroke="#e5e5e5" strokeWidth={1.6} strokeDasharray="3 3" />}
               {render.strikeLabels.map((l) => (
                 <text key={`s${l.s}`} x={l.x} y={l.y + 14} fontSize={9} fill="#9ca3af" textAnchor="middle">

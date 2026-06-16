@@ -8,7 +8,7 @@ import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
-export function SkewChart({ symbol }: { symbol: string }) {
+export function SkewChart({ symbol, exp: globalExp = "ALL" }: { symbol: string; exp?: string }) {
   const [chain, setChain] = useState<OptionContract[]>([]);
   const [spot, setSpot] = useState<number | null>(null);
   const [state, setState] = useState<ViewState>("loading");
@@ -45,6 +45,11 @@ export function SkewChart({ symbol }: { symbol: string }) {
       setExp((future[0] ?? withDte[0]).e);
     }
   }, [expirations, chain, exp]);
+
+  // Honor the dashboard-wide expiration selector (overrides the local default).
+  useEffect(() => {
+    if (globalExp && globalExp !== "ALL" && chain.some((c) => c.expiration === globalExp)) setExp(globalExp);
+  }, [globalExp, chain]);
 
   const data = useMemo(() => {
     const m = new Map<number, { strike: number; call?: number; put?: number }>();

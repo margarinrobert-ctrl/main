@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
-import { oiByStrike } from "@/lib/flow/analytics";
+import { filterByExpiration, oiByStrike } from "@/lib/flow/analytics";
 import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
-export function OiProfile({ symbol }: { symbol: string }) {
+export function OiProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
   const [chain, setChain] = useState<OptionContract[]>([]);
   const [spot, setSpot] = useState<number | null>(null);
   const [state, setState] = useState<ViewState>("loading");
@@ -38,7 +38,7 @@ export function OiProfile({ symbol }: { symbol: string }) {
   }, [symbol]);
 
   const { data, spotX } = useMemo(() => {
-    const by = oiByStrike(chain);
+    const by = oiByStrike(filterByExpiration(chain, exp));
     let rows = by;
     if (spot != null && by.length > 41) {
       let idx = 0;
@@ -58,7 +58,7 @@ export function OiProfile({ symbol }: { symbol: string }) {
         ? null
         : d.reduce((p, c) => (Math.abs(c.strike - spot) < Math.abs(p - spot) ? c.strike : p), d[0].strike);
     return { data: d, spotX };
-  }, [chain, spot]);
+  }, [chain, spot, exp]);
 
   return (
     <div className="glass p-4">

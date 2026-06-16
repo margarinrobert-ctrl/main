@@ -9,7 +9,7 @@ import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
-export function GexTerm({ symbol }: { symbol: string }) {
+export function GexTerm({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
   const [chain, setChain] = useState<OptionContract[]>([]);
   const [spot, setSpot] = useState<number | null>(null);
   const [state, setState] = useState<ViewState>("loading");
@@ -73,7 +73,12 @@ export function GexTerm({ symbol }: { symbol: string }) {
                 <ReferenceLine y={0} stroke="#525252" />
                 <Bar dataKey="gex" radius={[3, 3, 0, 0]} isAnimationActive={false}>
                   {data.map((d) => (
-                    <Cell key={d.expiration} fill={d.gex >= 0 ? "#10b981" : "#ef4444"} />
+                    <Cell
+                      key={d.expiration}
+                      fill={d.gex >= 0 ? "#10b981" : "#ef4444"}
+                      stroke={exp !== "ALL" && d.expiration === exp ? "#e5e5e5" : undefined}
+                      strokeWidth={exp !== "ALL" && d.expiration === exp ? 2 : 0}
+                    />
                   ))}
                 </Bar>
               </BarChart>

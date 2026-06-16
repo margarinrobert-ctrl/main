@@ -25,7 +25,7 @@ function Pill({ children }: { children: ReactNode }) {
   return <span className="rounded-full border border-neutral-700 px-2 py-0.5 text-xs text-neutral-300">{children}</span>;
 }
 
-export function OptionsChain({ symbol }: { symbol: string }) {
+export function OptionsChain({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
   const [chain, setChain] = useState<OptionContract[]>([]);
   const [spot, setSpot] = useState<number | null>(null);
   const [asOf, setAsOf] = useState<string | null>(null);
@@ -69,6 +69,11 @@ export function OptionsChain({ symbol }: { symbol: string }) {
     const future = withDte.filter((x) => (x.dte ?? 0) >= 0).sort((a, b) => (a.dte ?? 0) - (b.dte ?? 0));
     setSelectedExp((future[0] ?? withDte[0]).e);
   }, [expirations, chain, selectedExp]);
+
+  // Honor the dashboard-wide expiration selector (overrides the local default).
+  useEffect(() => {
+    if (exp && exp !== "ALL" && chain.some((c) => c.expiration === exp)) setSelectedExp(exp);
+  }, [exp, chain]);
 
   const gex = useMemo(() => netGex(chain, spot), [chain, spot]);
 

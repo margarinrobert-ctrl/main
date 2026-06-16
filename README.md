@@ -156,7 +156,9 @@ All thresholds are in `src/lib/barchart/config.ts` (`flowThresholds`). Rows also
 ## Quant analytics (`src/lib/flow/analytics.ts`, unit-tested)
 
 Each ticker page is a tabbed dashboard — **Overview · Playbook · Chain · Heatmap · Gamma · Vanna/Charm · 3D · Term · OI · Skew · Vol Edge · History · Pine** —
-driven by a pure analytics engine computed from the chain:
+driven by a pure analytics engine computed from the chain. A **dashboard-wide expiration selector**
+(e.g. **0DTE**, a weekly, or **All**) scopes every view at once — levels, gamma, greeks, Playbook and
+the Pine export recompute for the chosen expiration; axis views (heatmap / term / 3D) highlight it:
 
 - **Dealer gamma exposure (GEX)** by strike, net GEX ($/1% move), and the **zero-gamma flip** level
 - **Dealer regime** badge: long gamma (mean-reverting) vs short gamma (trend-amplifying)

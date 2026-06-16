@@ -16,6 +16,7 @@ import {
 import type { OptionContract } from "@/lib/barchart/types";
 import {
   exposureProfile,
+  filterByExpiration,
   flipFromProfile,
   fmtUsd,
   secondOrderExposure,
@@ -47,7 +48,7 @@ function windowAroundSpot<T extends { strike: number }>(rows: T[], spot: number 
   return rows.slice(Math.max(0, idx - half), Math.max(0, idx - half) + n);
 }
 
-export function VannaCharmProfile({ symbol }: { symbol: string }) {
+export function VannaCharmProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
   const [chain, setChain] = useState<OptionContract[]>([]);
   const [spot, setSpot] = useState<number | null>(null);
   const [state, setState] = useState<ViewState>("loading");
@@ -76,7 +77,8 @@ export function VannaCharmProfile({ symbol }: { symbol: string }) {
     };
   }, [symbol]);
 
-  const so = useMemo(() => secondOrderExposure(chain, spot), [chain, spot]);
+  const sub = useMemo(() => filterByExpiration(chain, exp), [chain, exp]);
+  const so = useMemo(() => secondOrderExposure(sub, spot), [sub, spot]);
 
   const byStrike = useMemo(() => {
     const rows = windowAroundSpot(so.byStrike, spot).slice().sort((a, b) => b.strike - a.strike);
@@ -88,7 +90,7 @@ export function VannaCharmProfile({ symbol }: { symbol: string }) {
     return byStrike.reduce((p, c) => (Math.abs(c.strike - spot) < Math.abs(p - spot) ? c.strike : p), byStrike[0].strike);
   }, [byStrike, spot]);
 
-  const profile = useMemo(() => exposureProfile(chain, spot), [chain, spot]);
+  const profile = useMemo(() => exposureProfile(sub, spot), [sub, spot]);
   const profFlip = useMemo(() => flipFromProfile(profile), [profile]);
   const profData = useMemo(() => profile.map((p) => ({ spot: Math.round(p.spot * 100) / 100, val: p[profMetric] })), [profile, profMetric]);
 

@@ -34,6 +34,11 @@ export function gexByStrike(chain: OptionContract[], spot: number | null): Strik
     .sort((a, b) => a.strike - b.strike);
 }
 
+/** Narrow a chain to a single expiration. `"ALL"`, empty or undefined returns the full chain. */
+export function filterByExpiration(chain: OptionContract[], exp?: string | null): OptionContract[] {
+  return !exp || exp === "ALL" ? chain : chain.filter((c) => c.expiration === exp);
+}
+
 export function netGex(chain: OptionContract[], spot: number | null): number | null {
   const by = gexByStrike(chain, spot);
   return by.length ? by.reduce((s, x) => s + x.gex, 0) : null;

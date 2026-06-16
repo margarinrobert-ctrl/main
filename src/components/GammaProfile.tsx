@@ -9,12 +9,11 @@ import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
-export function GammaProfile({ symbol }: { symbol: string }) {
+export function GammaProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
   const [chain, setChain] = useState<OptionContract[]>([]);
   const [spot, setSpot] = useState<number | null>(null);
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
-  const [exp, setExp] = useState<string>("ALL");
 
   useEffect(() => {
     let cancelled = false;
@@ -37,8 +36,6 @@ export function GammaProfile({ symbol }: { symbol: string }) {
       cancelled = true;
     };
   }, [symbol]);
-
-  const expirations = useMemo(() => [...new Set(chain.map((c) => c.expiration))].sort(), [chain]);
 
   const { data, levels } = useMemo(() => {
     const sub = exp === "ALL" ? chain : chain.filter((c) => c.expiration === exp);
@@ -75,21 +72,7 @@ export function GammaProfile({ symbol }: { symbol: string }) {
     <div className="glass p-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Gamma profile · {symbol}</h2>
-        <div className="flex items-center gap-2 text-xs text-neutral-500">
-          <select
-            value={exp}
-            onChange={(e) => setExp(e.target.value)}
-            className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-neutral-200"
-          >
-            <option value="ALL">all expirations</option>
-            {expirations.map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </select>
-          <span>net GEX ($/1%)</span>
-        </div>
+        <span className="text-xs text-neutral-500">net GEX ($/1%) · {exp === "ALL" ? "all expirations" : exp}</span>
       </div>
       {state === "loading" && <Loading label="Loading gamma…" />}
       {state === "error" && <ErrorState message={error} />}

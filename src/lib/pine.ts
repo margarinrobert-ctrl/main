@@ -73,8 +73,14 @@ export interface PineResult {
  * Generate a TradingView Pine v6 indicator with named GEX levels (MenthorQ-style), each label
  * annotated with OI / Volume / GEX(γ$) / DEX(Δ$) at that strike. Values are a baked snapshot.
  */
-export function buildGexPine(symbol: string, chain: OptionContract[], spot: number | null, ladderN = 10): PineResult {
-  const exp = nearestExpiration(chain);
+export function buildGexPine(
+  symbol: string,
+  chain: OptionContract[],
+  spot: number | null,
+  ladderN = 10,
+  targetExp?: string | null,
+): PineResult {
+  const exp = targetExp && targetExp !== "ALL" && chain.some((c) => c.expiration === targetExp) ? targetExp : nearestExpiration(chain);
   const sub = exp ? chain.filter((c) => c.expiration === exp) : chain;
   const byAll = gexByStrike(chain, spot);
   const by0 = gexByStrike(sub, spot);

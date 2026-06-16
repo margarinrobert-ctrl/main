@@ -3,6 +3,7 @@ import {
   expectedMove,
   expectedMove1D,
   exposureProfile,
+  filterByExpiration,
   flipFromProfile,
   gammaFlip,
   gexByExpiration,
@@ -157,6 +158,13 @@ describe("analytics", () => {
     expect(surf.z[0]).toEqual([300, 400]); // front expiry OI row
     expect(surf.signed).toBe(false);
     expect(greekSurface(chain, 100, "gex").signed).toBe(true);
+  });
+
+  it("filters a chain by expiration (ALL / empty = passthrough)", () => {
+    const chain = [c({ expiration: "2026-06-19" }), c({ expiration: "2026-07-17" })];
+    expect(filterByExpiration(chain, "2026-06-19")).toHaveLength(1);
+    expect(filterByExpiration(chain, "ALL")).toHaveLength(2);
+    expect(filterByExpiration(chain, undefined)).toHaveLength(2);
   });
 
   it("aggregates open interest by strike", () => {

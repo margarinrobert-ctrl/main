@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
+import { filterByExpiration } from "@/lib/flow/analytics";
 import { buildPlaybook, type Side } from "@/lib/flow/playbook";
 import { EmptyState, ErrorState, Loading } from "./states";
 
@@ -14,7 +15,7 @@ const sideStyles: Record<Side, { chip: string; border: string; label: string }> 
   neutral: { chip: "bg-neutral-500/15 text-neutral-300 border-neutral-500/40", border: "border-l-neutral-500", label: "Neutral" },
 };
 
-export function Playbook({ symbol }: { symbol: string }) {
+export function Playbook({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
   const [chain, setChain] = useState<OptionContract[]>([]);
   const [spot, setSpot] = useState<number | null>(null);
   const [source, setSource] = useState("");
@@ -44,7 +45,7 @@ export function Playbook({ symbol }: { symbol: string }) {
     };
   }, [symbol]);
 
-  const pb = useMemo(() => buildPlaybook(chain, spot), [chain, spot]);
+  const pb = useMemo(() => buildPlaybook(filterByExpiration(chain, exp), spot), [chain, spot, exp]);
 
   return (
     <div className="glass p-4">
