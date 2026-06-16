@@ -1,4 +1,4 @@
-import type { OptionContract } from "../barchart/types";
+import type { HistoryBar, OptionContract } from "../barchart/types";
 
 const CONTRACT = 100; // shares per contract
 
@@ -152,6 +152,42 @@ export function putCallRatio(chain: OptionContract[]): { vol: number | null; oi:
     }
   }
   return { vol: cv > 0 ? pv / cv : null, oi: co > 0 ? po / co : null };
+}
+
+/** Annualized close-to-close realized volatility over the last `window` returns. */
+export function realizedVol(bars: HistoryBar[], window: number): number | null {
+  const closes = bars.map((b) => b.close).filter((x) => x > 0);
+  if (closes.length < window + 1) return null;
+  const slice = closes.slice(-(window + 1));
+  const rets: number[] = [];
+  for (let i = 1; i < slice.length; i++) rets.push(Math.log(slice[i] / slice[i - 1]));
+  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+  const varc = rets.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, rets.length - 1);
+  return Math.sqrt(varc * 252);
+}
+
+/** ATM implied vol (avg of nearest-strike call+put IV) for an expiration. */
+export function atmIv(chain: OptionContract[], spot: number | null, expiration: string): number | null {
+  if (!spot) return null;
+  const opts = chain.filter((c) => c.expiration === expiration && c.impliedVolatility != null && c.impliedVolatility > 0);
+  if (!opts.length) return null;
+  const strikes = [...new Set(opts.map((c) => c.strike))];
+  const atm = strikes.reduce((p, s) => (Math.abs(s - spot) < Math.abs(p - spot) ? s : p), strikes[0]);
+  const ivs = opts.filter((c) => c.strike === atm).map((c) => c.impliedVolatility as number);
+  return ivs.length ? ivs.reduce((a, b) => a + b, 0) / ivs.length : null;
+}
+
+export interface ExpIv {
+  expiration: string;
+  dte: number | null;
+  iv: number | null;
+}
+
+/** ATM IV per expiration — the implied-vol term structure. */
+export function ivTermStructure(chain: OptionContract[], spot: number | null): ExpIv[] {
+  return [...new Set(chain.map((c) => c.expiration))]
+    .sort()
+    .map((e) => ({ expiration: e, dte: chain.find((c) => c.expiration === e)?.dte ?? null, iv: atmIv(chain, spot, e) }));
 }
 
 export interface StrikeOi {

@@ -155,7 +155,7 @@ All thresholds are in `src/lib/barchart/config.ts` (`flowThresholds`). Rows also
 
 ## Quant analytics (`src/lib/flow/analytics.ts`, unit-tested)
 
-Each ticker page is a tabbed dashboard — **Overview · Playbook · Chain · Heatmap · Gamma · Term · OI · Skew · History · Pine** —
+Each ticker page is a tabbed dashboard — **Overview · Playbook · Chain · Heatmap · Gamma · Term · OI · Skew · Vol Edge · History · Pine** —
 driven by a pure analytics engine computed from the chain:
 
 - **Dealer gamma exposure (GEX)** by strike, net GEX ($/1% move), and the **zero-gamma flip** level
@@ -166,6 +166,8 @@ driven by a pure analytics engine computed from the chain:
 - **Open-interest profile** (calls vs puts by strike) and a **History** tab — intraday spot + net-GEX
   time-series recorded client-side in your browser (no backend; Postgres + cron is the multi-day upgrade)
 - Two-sided options chain (calls │ strike │ puts) with spot / expiration / updated pills
+- **Vol Edge** — the **volatility risk premium** (ATM IV vs realized vol), **IV term structure**
+  (contango/backwardation → IV-crush setups) and **25Δ skew**, each read as a **sell-vol vs buy-vol** edge
 - **Intraday Playbook** — translates the gamma regime + levels into a **bullish/bearish scalping plan**:
   long-γ (fade/mean-revert) vs short-γ (momentum) bias, then how to play each call wall / put wall / γ-flip /
   max pain / expected range / put-call skew (educational, not advice)
