@@ -1,5 +1,5 @@
 import type { OptionContract } from "./barchart/types";
-import { callWall, expectedMove, gammaFlip, gexByStrike, putWall } from "./flow/analytics";
+import { atmIv, callWall, expectedMove, expectedMove1D, gammaFlip, gexByStrike, putWall } from "./flow/analytics";
 
 function fmt(n: number): string {
   // Always emit a float literal (with a decimal point) so Pine infers array<float>, not array<int>.
@@ -84,11 +84,14 @@ export function buildGexPine(symbol: string, chain: OptionContract[], spot: numb
   const hvl = gammaFlip(byAll);
   const callRes0 = callWall(by0);
   const putSup0 = putWall(by0);
-  const em = exp ? expectedMove(chain, spot, exp) : null;
+  // True 1-day (1σ) range from front-expiration ATM IV — NOT the to-expiry straddle. Fall back to
+  // the straddle only if IV is unavailable so the lines still render.
+  const iv0 = exp ? atmIv(chain, spot, exp) : null;
+  const em1 = expectedMove1D(spot, iv0) ?? (exp ? expectedMove(chain, spot, exp) : null);
 
   const s = spot ?? byAll[Math.floor(byAll.length / 2)]?.strike ?? 0;
-  const dmax = em ? s + em.abs : s;
-  const dmin = em ? s - em.abs : s;
+  const dmax = em1 ? s + em1.abs : s;
+  const dmin = em1 ? s - em1.abs : s;
 
   const ladder = byAll
     .filter((x) => x.gex !== 0)

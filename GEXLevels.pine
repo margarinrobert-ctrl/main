@@ -10,7 +10,7 @@
 //   HVL             = gamma flip / zero-gamma level         — blue
 //   ...0DTE         = the same, for the front expiry        — dashed
 //   GEX 1..N        = top strikes by |net GEX|              — teal
-//   1D Max/Min      = expected daily range (ATM straddle)   — orange (dotted)
+//   1D Max/Min      = 1-day expected range (1σ from ATM IV)  — orange (dotted)
 indicator("OptionsFlow GEX • Levels", overlay = true, max_lines_count = 300, max_labels_count = 300)
 
 show0dte  = input.bool(true, "Show 0DTE levels")

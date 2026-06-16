@@ -5,8 +5,10 @@ import { alertsEnabled, requestNotifyPermission, setAlertsEnabled } from "@/lib/
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import {
+  atmIv,
   callWall,
   expectedMove,
+  expectedMove1D,
   fmtUsd,
   gammaFlip,
   gexByStrike,
@@ -15,6 +17,7 @@ import {
   netGex,
   putCallRatio,
   putWall,
+  secondOrderExposure,
 } from "@/lib/flow/analytics";
 import { EmptyState, ErrorState, Loading } from "./states";
 
@@ -77,6 +80,8 @@ export function KeyLevels({ symbol }: { symbol: string }) {
     const ngex = netGex(chain, spot);
     const exp = nearestExp(chain);
     const em = exp ? expectedMove(chain, spot, exp) : null;
+    const iv0 = exp ? atmIv(chain, spot, exp) : null;
+    const em1 = expectedMove1D(spot, iv0);
     const pc = putCallRatio(chain);
     return {
       ngex,
@@ -86,10 +91,34 @@ export function KeyLevels({ symbol }: { symbol: string }) {
       pw: putWall(by),
       mp: exp ? maxPain(chain, exp) : null,
       em,
+      em1,
+      iv0,
+      so: secondOrderExposure(chain, spot),
       pc,
       exp,
     };
   }, [chain, spot]);
+
+  const flowRead = useMemo(() => {
+    const parts: string[] = [];
+    if (levels.ngex != null)
+      parts.push(
+        levels.ngex >= 0
+          ? "Long-gamma: dealers dampen moves (mean-reversion, pinning)."
+          : "Short-gamma: dealers amplify moves (trends, air-pockets).",
+      );
+    if (levels.so.vanna != null)
+      parts.push(
+        levels.so.vanna >= 0
+          ? "Positive vanna → falling IV is a tailwind (melt-up); a vol spike turns dealers into sellers."
+          : "Negative vanna → falling IV is a headwind; vol spikes cushion the downside.",
+      );
+    if (levels.so.charm != null)
+      parts.push(
+        `Charm bleeds dealer delta ~${fmtUsd(Math.abs(levels.so.charm))}/day to the ${levels.so.charm >= 0 ? "SELL" : "BUY"} side into expiry.`,
+      );
+    return parts.join(" ");
+  }, [levels]);
 
   return (
     <div className="glass p-4">
@@ -125,13 +154,37 @@ export function KeyLevels({ symbol }: { symbol: string }) {
           <Stat label="Put wall" value={levels.pw == null ? "—" : String(levels.pw)} sub="max put γ" tone="bad" />
           <Stat label="Max pain" value={levels.mp == null ? "—" : String(levels.mp)} sub={levels.exp ?? ""} />
           <Stat
-            label="Expected move"
+            label="1-day range"
+            value={levels.em1 == null ? "—" : `±${levels.em1.abs.toFixed(2)}`}
+            sub={levels.em1 == null ? "" : `±${(levels.em1.pct * 100).toFixed(1)}% · 1σ from ATM IV`}
+            hint="True single-session 1σ move = spot × ATM IV × √(1/252). Intraday scalp targets."
+          />
+          <Stat
+            label="Exp move → exp"
             value={levels.em == null ? "—" : `±${levels.em.abs.toFixed(2)}`}
             sub={levels.em == null ? "" : `±${(levels.em.pct * 100).toFixed(1)}% · ${levels.exp ?? ""}`}
+            hint="ATM straddle — the move priced in all the way TO the front expiration (multi-day)."
+          />
+          <Stat
+            label="Vanna exp."
+            value={levels.so.vanna == null ? "—" : fmtUsd(levels.so.vanna)}
+            sub="$Δ / 1 vol-pt"
+            tone={levels.so.vanna == null ? "neutral" : levels.so.vanna >= 0 ? "good" : "bad"}
+            hint="Dealer ∂Δ/∂σ. Positive → falling IV makes dealers buy (vanna melt-up); a vol spike flips them to sellers."
+          />
+          <Stat
+            label="Charm exp."
+            value={levels.so.charm == null ? "—" : `${fmtUsd(levels.so.charm)}/d`}
+            sub={levels.so.charm == null ? "" : levels.so.charm >= 0 ? "dealers sell into decay" : "dealers buy into decay"}
+            tone={levels.so.charm == null ? "neutral" : levels.so.charm >= 0 ? "bad" : "good"}
+            hint="Dealer ∂Δ/∂t — the delta they must trade per day from time decay, strongest into Thu/Fri expiry."
           />
           <Stat label="Put/Call (vol)" value={levels.pc.vol == null ? "—" : levels.pc.vol.toFixed(2)} tone={levels.pc.vol != null && levels.pc.vol > 1 ? "bad" : "good"} />
           <Stat label="Put/Call (OI)" value={levels.pc.oi == null ? "—" : levels.pc.oi.toFixed(2)} />
         </div>
+      )}
+      {state === "ok" && flowRead && (
+        <p className="mt-3 border-t border-white/5 pt-3 text-xs leading-relaxed text-neutral-400">{flowRead}</p>
       )}
     </div>
   );
@@ -142,16 +195,21 @@ function Stat({
   value,
   sub,
   tone = "neutral",
+  hint,
 }: {
   label: string;
   value: string;
   sub?: string;
   tone?: "good" | "bad" | "neutral";
+  hint?: string;
 }) {
   const color = tone === "good" ? "text-emerald-400" : tone === "bad" ? "text-red-400" : "text-neutral-100";
   return (
-    <div className="rounded border border-neutral-800 px-3 py-2">
-      <div className="text-[11px] uppercase tracking-wide text-neutral-500">{label}</div>
+    <div className="rounded border border-neutral-800 px-3 py-2" title={hint}>
+      <div className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-neutral-500">
+        {label}
+        {hint ? <span className="cursor-help text-neutral-600">ⓘ</span> : null}
+      </div>
       <div className={`font-mono text-lg ${color}`}>{value}</div>
       {sub ? <div className="text-[11px] text-neutral-500">{sub}</div> : null}
     </div>

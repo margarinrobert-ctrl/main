@@ -160,7 +160,12 @@ driven by a pure analytics engine computed from the chain:
 
 - **Dealer gamma exposure (GEX)** by strike, net GEX ($/1% move), and the **zero-gamma flip** level
 - **Dealer regime** badge: long gamma (mean-reverting) vs short gamma (trend-amplifying)
-- **Call wall / put wall** (max call/put gamma strikes), **max pain**, **expected move** (ATM straddle)
+- **Call wall / put wall** (max call/put gamma strikes), **max pain**
+- **Expected move** two ways: the true **1-day 1σ** range (`spot × ATM IV × √(1/252)`) for intraday
+  targets, *and* the **to-expiry** ATM straddle for swing context
+- **Dealer Vanna & Charm exposure** (second-order greeks via Black-Scholes) — vanna ($Δ per IV
+  point: the falling-IV "melt-up" tailwind) and charm ($Δ per day: the time-decay drift that pins
+  into expiry), with a plain-English dealer-flow read
 - **Net Δ exposure**, **put/call ratios** (volume & OI)
 - **Gamma Profile** chart (GEX-by-strike, spot + flip markers) and **IV skew** chart (call vs put IV)
 - **Open-interest profile** (calls vs puts by strike) and a **History** tab — intraday spot + net-GEX
@@ -170,9 +175,9 @@ driven by a pure analytics engine computed from the chain:
   (contango/backwardation → IV-crush setups) and **25Δ skew**, each read as a **sell-vol vs buy-vol** edge
 - **Intraday Playbook** — translates the gamma regime + levels into a **bullish/bearish scalping plan**:
   long-γ (fade/mean-revert) vs short-γ (momentum) bias, then how to play each call wall / put wall / γ-flip /
-  max pain / expected range / put-call skew (educational, not advice)
+  max pain / 1-day range / put-call skew / **vanna** / **charm** (educational, not advice)
 - **CSV export** of the ranked flow
-- **TradingView Pine export** — a per-ticker "Pine" tab generates a copy-paste Pine v5 indicator that
+- **TradingView Pine export** — a per-ticker "Pine" tab generates a copy-paste Pine v6 indicator that
   plots the GEX levels (S spot · C call wall · G γ-flip · P put wall + per-strike ladder) for the
   0DTE/front expiration. Canonical template in `GEXLevels.pine`. (No TradingView write-API exists, so
   it's copy/paste — save once as an indicator.)

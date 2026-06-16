@@ -1,6 +1,9 @@
 import type { HistoryBar, OptionContract } from "../barchart/types";
+import { bsCharm, bsVanna } from "./greeks";
 
 const CONTRACT = 100; // shares per contract
+const TRADING_DAYS = 252;
+const CALENDAR_DAYS = 365;
 
 export interface StrikeGex {
   strike: number;
@@ -137,6 +140,17 @@ export function expectedMove(
   return abs > 0 ? { abs, pct: abs / spot } : null;
 }
 
+/**
+ * True 1-day (1σ) expected move from annualized ATM IV: spot × IV × √(1/252). Unlike the ATM
+ * straddle (which prices the move all the way TO the expiration), this is a single-session range —
+ * the correct number for "1D Max/Min" levels and intraday scalp targets.
+ */
+export function expectedMove1D(spot: number | null, iv: number | null): { abs: number; pct: number } | null {
+  if (!spot || iv == null || iv <= 0) return null;
+  const pct = iv * Math.sqrt(1 / TRADING_DAYS);
+  return { abs: spot * pct, pct };
+}
+
 export function putCallRatio(chain: OptionContract[]): { vol: number | null; oi: number | null } {
   let cv = 0;
   let pv = 0;
@@ -207,6 +221,61 @@ export function oiByStrike(chain: OptionContract[]): StrikeOi[] {
     m.set(x.strike, e);
   }
   return [...m.entries()].map(([strike, v]) => ({ strike, callOi: v.c, putOi: v.p })).sort((a, b) => a.strike - b.strike);
+}
+
+export interface SecondOrderStrike {
+  strike: number;
+  vanna: number; // $ notional delta per 1 IV-point move
+  charm: number; // $ notional delta drift per calendar day
+}
+
+export interface SecondOrder {
+  vanna: number | null; // net dealer vanna exposure ($ delta / 1 vol-pt)
+  charm: number | null; // net dealer charm exposure ($ delta / day)
+  byStrike: SecondOrderStrike[];
+}
+
+/**
+ * Dealer second-order exposure — Vanna (∂Δ/∂σ) and Charm (∂Δ/∂t) — derived per contract via
+ * Black-Scholes from spot/strike/DTE/IV, then aggregated with the SAME dealer sign convention as
+ * GEX (calls +, puts −, i.e. dealers long calls / short puts).
+ *
+ * - Vanna exposure is expressed as $ notional delta per **1 IV point** move.
+ * - Charm exposure is expressed as $ notional delta drift per **calendar day**.
+ */
+export function secondOrderExposure(chain: OptionContract[], spot: number | null): SecondOrder {
+  if (!spot) return { vanna: null, charm: null, byStrike: [] };
+  const m = new Map<number, { v: number; c: number }>();
+  let anyV = false;
+  let anyC = false;
+  for (const o of chain) {
+    if (o.openInterest == null || o.impliedVolatility == null || o.impliedVolatility <= 0) continue;
+    const tYears = Math.max(o.dte ?? 0, 0.5) / CALENDAR_DAYS; // floor 0DTE at ~half a session
+    const sign = o.type === "call" ? 1 : -1;
+    const e = m.get(o.strike) ?? { v: 0, c: 0 };
+    const va = bsVanna(spot, o.strike, o.impliedVolatility, tYears);
+    const ch = bsCharm(spot, o.strike, o.impliedVolatility, tYears);
+    // vanna is per 1.00 (=100 vol-pt) σ; ×0.01 →per 1 vol-pt; ×OI×100 shares ×spot → $; the
+    // 0.01 and 100 cancel, leaving vanna·OI·spot.
+    if (va != null) {
+      e.v += sign * va * o.openInterest * spot;
+      anyV = true;
+    }
+    // charm is per year; /365 → per day; ×OI×100 shares ×spot → $ notional delta drift / day.
+    if (ch != null) {
+      e.c += (sign * (ch / CALENDAR_DAYS) * o.openInterest * CONTRACT * spot);
+      anyC = true;
+    }
+    m.set(o.strike, e);
+  }
+  const byStrike = [...m.entries()]
+    .map(([strike, x]) => ({ strike, vanna: x.v, charm: x.c }))
+    .sort((a, b) => a.strike - b.strike);
+  return {
+    vanna: anyV ? byStrike.reduce((s, x) => s + x.vanna, 0) : null,
+    charm: anyC ? byStrike.reduce((s, x) => s + x.charm, 0) : null,
+    byStrike,
+  };
 }
 
 export function fmtUsd(v: number): string {

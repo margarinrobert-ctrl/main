@@ -1,5 +1,18 @@
 import type { OptionContract } from "../barchart/types";
-import { callWall, expectedMove, gammaFlip, gexByStrike, maxPain, netGex, putCallRatio, putWall } from "./analytics";
+import {
+  atmIv,
+  callWall,
+  expectedMove,
+  expectedMove1D,
+  fmtUsd,
+  gammaFlip,
+  gexByStrike,
+  maxPain,
+  netGex,
+  putCallRatio,
+  putWall,
+  secondOrderExposure,
+} from "./analytics";
 
 export type Side = "bullish" | "bearish" | "neutral";
 
@@ -47,6 +60,9 @@ export function buildPlaybook(chain: OptionContract[], spot: number | null): Pla
   const exp = withDte[0]?.e ?? exps[0] ?? null;
   const mp = exp ? maxPain(chain, exp) : null;
   const em = exp ? expectedMove(chain, spot, exp) : null;
+  const iv0 = exp ? atmIv(chain, spot, exp) : null;
+  const em1 = expectedMove1D(spot, iv0);
+  const so = secondOrderExposure(chain, spot);
 
   const regime: "long" | "short" | "unknown" = ngex == null ? "unknown" : ngex >= 0 ? "long" : "short";
   const regimeText =
@@ -118,13 +134,16 @@ export function buildPlaybook(chain: OptionContract[], spot: number | null): Pla
         "Into expiry, price often gravitates to max pain. Far above → lean fade-down toward it; far below → lean drift-up. Strongest on expiration day, weak early in the cycle.",
     });
   }
-  if (em != null && spot != null) {
+  if (em1 != null && spot != null) {
+    const lo = spot - em1.abs;
+    const hi = spot + em1.abs;
+    const toExp = em ? ` Through ${exp}: ±${em.abs.toFixed(2)} (±${(em.pct * 100).toFixed(1)}%).` : "";
     plays.push({
-      title: `1D expected range · ±${em.abs.toFixed(2)} (±${(em.pct * 100).toFixed(1)}%)`,
+      title: `1-day expected range · ±${em1.abs.toFixed(2)} (±${(em1.pct * 100).toFixed(1)}%)`,
       level: null,
       side: "neutral",
       bias: "Scalp targets",
-      detail: `Roughly ${fmtNum(spot - em.abs)} to ${fmtNum(spot + em.abs)}. In long-gamma, fade the edges back inside; in short-gamma, edge breaks can extend. Use as profit targets / reversal zones.`,
+      detail: `1σ session ≈ ${fmtNum(lo)} to ${fmtNum(hi)}${iv0 != null ? ` (ATM IV ${(iv0 * 100).toFixed(1)}%)` : ""}.${toExp} In long-gamma, fade the edges back inside; in short-gamma, edge breaks can extend. Use as profit targets / reversal zones.`,
     });
   }
   if (pc.vol != null) {
@@ -142,6 +161,30 @@ export function buildPlaybook(chain: OptionContract[], spot: number | null): Pla
             : "Balanced two-way flow — no strong skew.",
     });
   }
+  if (so.vanna != null && spot != null) {
+    const pos = so.vanna >= 0;
+    plays.push({
+      title: `Vanna exposure · ${fmtUsd(so.vanna)}/vol-pt`,
+      level: null,
+      side: pos ? "bullish" : "bearish",
+      bias: pos ? "Falling IV = tailwind" : "Falling IV = headwind",
+      detail: pos
+        ? "Positive dealer vanna: as IV drifts DOWN (calm tape) dealers must BUY — the classic vanna melt-up. A volatility SPIKE flips them to sellers and accelerates downside. Watch VIX/VVIX direction."
+        : "Negative dealer vanna: a DROP in IV pressures dealers to SELL, while a vol SPIKE makes them buy (cushioning selloffs). Falling-vol rallies are less supported here.",
+    });
+  }
+  if (so.charm != null && spot != null) {
+    const sell = so.charm >= 0;
+    plays.push({
+      title: `Charm exposure · ${fmtUsd(so.charm)}/day`,
+      level: null,
+      side: sell ? "bearish" : "bullish",
+      bias: sell ? "Decay drag" : "Decay lift",
+      detail: `Delta decay nudges dealers to ${sell ? "SELL" : "BUY"} ~${fmtUsd(Math.abs(so.charm))}/day of underlying, all else equal — ${
+        sell ? "a downward drift" : "an upward drift"
+      } that intensifies into Thu/Fri expiry and tightens the pin toward the heaviest-OI strikes.`,
+    });
+  }
 
   const notes = [
     regime === "long"
@@ -149,6 +192,9 @@ export function buildPlaybook(chain: OptionContract[], spot: number | null): Pla
       : regime === "short"
         ? "Short-gamma session = trend/momentum bias; respect stops — moves overshoot."
         : "",
+    so.vanna != null || so.charm != null
+      ? "Vanna/Charm are Black-Scholes model estimates (r=q=0) for direction & scale, not a peek at dealer books."
+      : "",
     "Levels are ~15-min delayed (free CBOE feed). Educational tooling — not financial advice.",
   ].filter(Boolean);
 
