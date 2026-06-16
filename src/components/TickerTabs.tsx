@@ -13,11 +13,12 @@ import { OiProfile } from "./OiProfile";
 import { OptionsChain } from "./OptionsChain";
 import { OptionsHeatmap } from "./OptionsHeatmap";
 import { PineExport } from "./PineExport";
+import { Playbook } from "./Playbook";
 import { PriceChart } from "./PriceChart";
 import { QuoteCard } from "./QuoteCard";
 import { SkewChart } from "./SkewChart";
 
-const TABS = ["Overview", "Chain", "Heatmap", "Gamma", "Term", "OI", "Skew", "History", "Pine"] as const;
+const TABS = ["Overview", "Playbook", "Chain", "Heatmap", "Gamma", "Term", "OI", "Skew", "History", "Pine"] as const;
 type Tab = (typeof TABS)[number];
 
 export function TickerTabs({ symbol }: { symbol: string }) {
@@ -84,6 +85,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
           <PriceChart symbol={symbol} />
         </div>
       )}
+      {tab === "Playbook" && <Playbook symbol={symbol} />}
       {tab === "Chain" && <OptionsChain symbol={symbol} />}
       {tab === "Heatmap" && <OptionsHeatmap symbol={symbol} />}
       {tab === "Gamma" && <GammaProfile symbol={symbol} />}

@@ -155,7 +155,7 @@ All thresholds are in `src/lib/barchart/config.ts` (`flowThresholds`). Rows also
 
 ## Quant analytics (`src/lib/flow/analytics.ts`, unit-tested)
 
-Each ticker page is a tabbed dashboard — **Overview · Chain · Heatmap · Gamma · OI · Skew · History** —
+Each ticker page is a tabbed dashboard — **Overview · Playbook · Chain · Heatmap · Gamma · Term · OI · Skew · History · Pine** —
 driven by a pure analytics engine computed from the chain:
 
 - **Dealer gamma exposure (GEX)** by strike, net GEX ($/1% move), and the **zero-gamma flip** level
@@ -166,6 +166,9 @@ driven by a pure analytics engine computed from the chain:
 - **Open-interest profile** (calls vs puts by strike) and a **History** tab — intraday spot + net-GEX
   time-series recorded client-side in your browser (no backend; Postgres + cron is the multi-day upgrade)
 - Two-sided options chain (calls │ strike │ puts) with spot / expiration / updated pills
+- **Intraday Playbook** — translates the gamma regime + levels into a **bullish/bearish scalping plan**:
+  long-γ (fade/mean-revert) vs short-γ (momentum) bias, then how to play each call wall / put wall / γ-flip /
+  max pain / expected range / put-call skew (educational, not advice)
 - **CSV export** of the ranked flow
 - **TradingView Pine export** — a per-ticker "Pine" tab generates a copy-paste Pine v5 indicator that
   plots the GEX levels (S spot · C call wall · G γ-flip · P put wall + per-strike ladder) for the
