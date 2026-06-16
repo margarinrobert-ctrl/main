@@ -155,11 +155,16 @@ All thresholds are in `src/lib/barchart/config.ts` (`flowThresholds`). Rows also
 
 ## Quant analytics (`src/lib/flow/analytics.ts`, unit-tested)
 
-Each ticker page is a tabbed dashboard — **Overview · Playbook · Chain · Heatmap · Gamma · Vanna/Charm · 3D · Term · OI · Skew · Vol Edge · Harvest · History · Pine** —
+Each ticker page is a tabbed dashboard — **Overview · Signals · Playbook · Chain · Heatmap · Gamma · Vanna/Charm · 3D · Term · OI · Skew · Vol Edge · Harvest · History · Pine** —
 driven by a pure analytics engine computed from the chain. A **dashboard-wide expiration selector**
 (e.g. **0DTE**, a weekly, or **All**) scopes every view at once — levels, gamma, greeks, Playbook and
 the Pine export recompute for the chosen expiration; axis views (heatmap / term / 3D) highlight it:
 
+- **Signal Board** — a synthesized, ranked **trade-signal** feed that fuses the gamma map (regime /
+  γ-flip / walls), order-flow tilt (net Δ exposure, put/call), second-order flow (vanna/charm), the
+  **VRP** (IV vs realized), skew and max-pain into a composite **−100…+100 bias** and concrete ideas
+  (directional, volatility, regime, pin/expiry, squeeze/tail, skew) — each with **entry / target /
+  stop** price levels, a **time horizon**, and a 0–100 conviction score
 - **Dealer gamma exposure (GEX)** by strike, net GEX ($/1% move), and the **zero-gamma flip** level
 - **Dealer regime** badge: long gamma (mean-reverting) vs short gamma (trend-amplifying)
 - **Call wall / put wall** (max call/put gamma strikes), **max pain**

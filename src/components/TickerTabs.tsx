@@ -19,12 +19,14 @@ import { PineExport } from "./PineExport";
 import { Playbook } from "./Playbook";
 import { PriceChart } from "./PriceChart";
 import { QuoteCard } from "./QuoteCard";
+import { SignalBoard } from "./SignalBoard";
 import { SkewChart } from "./SkewChart";
 import { VannaCharmProfile } from "./VannaCharmProfile";
 import { VolEdge } from "./VolEdge";
 
 const TABS = [
   "Overview",
+  "Signals",
   "Playbook",
   "Chain",
   "Heatmap",
@@ -164,6 +166,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
           <PriceChart symbol={symbol} />
         </div>
       )}
+      {tab === "Signals" && <SignalBoard symbol={symbol} exp={validExp} />}
       {tab === "Playbook" && <Playbook symbol={symbol} exp={validExp} />}
       {tab === "Chain" && <OptionsChain symbol={symbol} exp={validExp} />}
       {tab === "Heatmap" && <OptionsHeatmap symbol={symbol} exp={validExp} />}
