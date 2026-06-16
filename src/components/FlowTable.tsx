@@ -205,6 +205,7 @@ export function FlowTable() {
                 <th className="py-2 pr-3">Score</th>
                 <th className="pr-3">Ticker</th>
                 <th className="pr-3">C/P</th>
+                <th className="pr-3">Bias</th>
                 <th className="pr-3 text-right">Strike</th>
                 <th className="pr-3">Exp</th>
                 <th className="pr-3 text-right">DTE</th>
@@ -228,6 +229,16 @@ export function FlowTable() {
                     </a>
                   </td>
                   <td className={`pr-3 ${r.type === "call" ? "text-emerald-400" : "text-red-400"}`}>{r.type}</td>
+                  <td className="pr-3">
+                    <span
+                      className={`rounded px-1.5 py-0.5 text-[10px] ${
+                        r.type === "call" ? "bg-emerald-900 text-emerald-200" : "bg-red-900 text-red-200"
+                      }`}
+                      title="Directional tilt of the contract type (call flow = bullish, put flow = bearish)"
+                    >
+                      {r.type === "call" ? "Bullish" : "Bearish"}
+                    </span>
+                  </td>
                   <td className="pr-3 text-right">{r.strike}</td>
                   <td className="pr-3">{r.expiration}</td>
                   <td className="pr-3 text-right">{r.dte ?? "—"}</td>

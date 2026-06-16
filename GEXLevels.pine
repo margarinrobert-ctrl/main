@@ -19,6 +19,9 @@ showRange = input.bool(true, "Show 1D Max/Min")
 lw        = input.int(2, "Key line width", minval = 1, maxval = 5)
 labelSize = input.string("large", "Label size", options = ["small", "normal", "large", "huge"])
 sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
+showVwap = input.bool(true, "Show session VWAP")
+showOR   = input.bool(true, "Show opening range (intraday)")
+orMin    = input.int(30, "Opening-range minutes", minval = 1, maxval = 240)
 
 // ── Generated values (replace via the site's Pine tab) — example: SPY ──
 callRes  = input.float(550.0, "Call Resistance")
@@ -59,3 +62,20 @@ if barstate.islast
     addLevel(putSup,  color.green, "Put Support " + str.tostring(putSup) + "  OI 24.0k | V 30.0k | GEX -$1.5B | DEX -$0.5B", lw, line.style_solid)
     addLevel(hvl,     color.blue,  "HVL " + str.tostring(hvl), lw, line.style_solid)
     addLevel(callRes, color.red,   "Call Resistance " + str.tostring(callRes) + "  OI 26.0k | V 35.0k | GEX $1.8B | DEX $0.6B", lw, line.style_solid)
+
+// ── Intraday confluence overlays (computed live by TradingView) ──
+// A GEX level that lines up with VWAP or the opening range is higher-conviction.
+plot(showVwap ? ta.vwap : na, "VWAP", color = color.new(color.fuchsia, 0), linewidth = 2)
+newDay = ta.change(time("D")) != 0
+var float orH = na
+var float orL = na
+var int orStart = na
+if newDay
+    orH := high
+    orL := low
+    orStart := time
+if not na(orStart) and time - orStart <= orMin * 60 * 1000
+    orH := math.max(orH, high)
+    orL := math.min(orL, low)
+plot(showOR ? orH : na, "OR High", color = color.new(color.aqua, 0), style = plot.style_stepline)
+plot(showOR ? orL : na, "OR Low", color = color.new(color.aqua, 0), style = plot.style_stepline)
