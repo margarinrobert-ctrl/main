@@ -63,10 +63,22 @@ main {
 }
 
 .glow-text {
-  background: linear-gradient(90deg, #34d399, #22d3ee);
+  background: linear-gradient(90deg, #34d399, #22d3ee, #34d399);
+  background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  animation: glow-pan 6s linear infinite;
+}
+@keyframes glow-pan {
+  to {
+    background-position: 200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glow-text {
+    animation: none;
+  }
 }
 
 /* custom scrollbar */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HistoryBar, OptionContract } from "../barchart/types";
-import { buildSignals } from "./signals";
+import { buildSignals, scanRow } from "./signals";
 
 function c(p: Partial<OptionContract>): OptionContract {
   return {
@@ -110,5 +110,15 @@ describe("buildSignals", () => {
   it("returns an empty board without spot or chain", () => {
     expect(buildSignals([], 100, []).signals).toHaveLength(0);
     expect(buildSignals([c({})], null, []).signals).toHaveLength(0);
+  });
+
+  it("summarizes a symbol for the cross-ticker scanner", () => {
+    const row = scanRow("SPY", richChain(0.3), 100, bars("flat"));
+    expect(row.symbol).toBe("SPY");
+    expect(row.spot).toBe(100);
+    expect(["long", "short", "unknown"]).toContain(row.regime);
+    expect(row.vrp).not.toBeNull();
+    expect(row.top).not.toBeNull();
+    expect(typeof row.biasScore).toBe("number");
   });
 });

@@ -342,3 +342,38 @@ export function buildSignals(chain: OptionContract[], spot: number | null, bars:
 
   return { spot, regime, bias, biasScore, expiration: nExp, dte, signals, notes };
 }
+
+export interface ScanRow {
+  symbol: string;
+  spot: number | null;
+  bias: SignalSide;
+  biasScore: number;
+  regime: "long" | "short" | "unknown";
+  vrp: number | null;
+  flip: number | null;
+  callWall: number | null;
+  putWall: number | null;
+  top: TradeSignal | null;
+}
+
+/** Compact per-symbol summary for the cross-ticker scanner: composite bias, regime, VRP, key levels and the top signal. */
+export function scanRow(symbol: string, chain: OptionContract[], spot: number | null, bars: HistoryBar[], exp?: string | null): ScanRow {
+  const board = buildSignals(chain, spot, bars, exp);
+  const lvl = exp && exp !== "ALL" ? filterByExpiration(chain, exp) : chain;
+  const by = gexByStrike(lvl, spot);
+  const { exp: nExp } = nearestFutureExp(lvl);
+  const iv0 = nExp ? atmIv(lvl, spot, nExp) : null;
+  const rv = realizedVol(bars, 20) ?? realizedVol(bars, 10);
+  return {
+    symbol,
+    spot,
+    bias: board.bias,
+    biasScore: board.biasScore,
+    regime: board.regime,
+    vrp: iv0 != null && rv ? iv0 / rv : null,
+    flip: gammaFlip(by),
+    callWall: callWall(by),
+    putWall: putWall(by),
+    top: board.signals[0] ?? null,
+  };
+}

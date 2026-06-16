@@ -16,8 +16,9 @@ cp .env.example .env.local     # defaults to DATA_SOURCE=fixtures — no key nee
 npm run dev                    # http://localhost:3000
 ```
 
-You'll see the **Flow** table (scored unusual activity) and a **Quote** card, both served from
-`/fixtures`. Click a ticker to open its detail page.
+The home page opens on the **Signal Scanner** — a cross-ticker board that runs the full signal engine
+across the watchlist and ranks each symbol by composite bias, dealer regime, VRP, key levels and its
+top trade — above the scored **Flow** table. Click any ticker for its full dashboard.
 
 Other scripts:
 
