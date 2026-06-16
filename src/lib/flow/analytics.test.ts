@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   expectedMove,
   expectedMove1D,
+  exposureProfile,
+  flipFromProfile,
   gammaFlip,
   gexByExpiration,
   gexByStrike,
+  greekSurface,
   maxPain,
   oiByStrike,
   putCallRatio,
@@ -121,6 +124,39 @@ describe("analytics", () => {
     expect(term[0].expiration).toBe("2026-06-19");
     expect(term[0].gex).toBeGreaterThan(0); // call -> positive
     expect(term[1].gex).toBeLessThan(0); // put -> negative
+  });
+
+  it("re-prices the exposure profile across spot and finds the regime flip", () => {
+    // Puts below, calls above → short gamma under spot, long gamma over it: a flip in between.
+    const chain = [
+      c({ type: "put", strike: 95, gamma: 0.05, openInterest: 6000, impliedVolatility: 0.3, dte: 10 }),
+      c({ type: "call", strike: 105, gamma: 0.05, openInterest: 6000, impliedVolatility: 0.3, dte: 10 }),
+    ];
+    const prof = exposureProfile(chain, 100, 41);
+    expect(prof).toHaveLength(41);
+    expect(prof[0].spot).toBeLessThan(prof[prof.length - 1].spot); // ascending
+    const flip = flipFromProfile(prof);
+    expect(flip).not.toBeNull();
+    expect(flip!).toBeGreaterThan(95);
+    expect(flip!).toBeLessThan(105);
+    expect(exposureProfile(chain, null)).toHaveLength(0);
+  });
+
+  it("builds a (strike × expiration) greek surface ordered near→far by DTE", () => {
+    const chain = [
+      c({ strike: 100, expiration: "2026-07-17", dte: 31, openInterest: 100 }),
+      c({ strike: 110, expiration: "2026-07-17", dte: 31, openInterest: 200 }),
+      c({ strike: 100, expiration: "2026-06-19", dte: 3, openInterest: 300 }),
+      c({ strike: 110, expiration: "2026-06-19", dte: 3, openInterest: 400 }),
+    ];
+    const surf = greekSurface(chain, 100, "oi");
+    expect(surf.strikes).toEqual([100, 110]);
+    expect(surf.expirations.map((e) => e.dte)).toEqual([3, 31]); // near→far
+    expect(surf.z).toHaveLength(2);
+    expect(surf.z[0]).toHaveLength(2);
+    expect(surf.z[0]).toEqual([300, 400]); // front expiry OI row
+    expect(surf.signed).toBe(false);
+    expect(greekSurface(chain, 100, "gex").signed).toBe(true);
   });
 
   it("aggregates open interest by strike", () => {

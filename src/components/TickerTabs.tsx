@@ -8,6 +8,7 @@ import { appendSample } from "@/lib/gex-history";
 import { GammaProfile } from "./GammaProfile";
 import { GexHistory } from "./GexHistory";
 import { GexTerm } from "./GexTerm";
+import { GreeksSurface } from "./GreeksSurface";
 import { KeyLevels } from "./KeyLevels";
 import { OiProfile } from "./OiProfile";
 import { OptionsChain } from "./OptionsChain";
@@ -17,9 +18,24 @@ import { Playbook } from "./Playbook";
 import { PriceChart } from "./PriceChart";
 import { QuoteCard } from "./QuoteCard";
 import { SkewChart } from "./SkewChart";
+import { VannaCharmProfile } from "./VannaCharmProfile";
 import { VolEdge } from "./VolEdge";
 
-const TABS = ["Overview", "Playbook", "Chain", "Heatmap", "Gamma", "Term", "OI", "Skew", "Vol Edge", "History", "Pine"] as const;
+const TABS = [
+  "Overview",
+  "Playbook",
+  "Chain",
+  "Heatmap",
+  "Gamma",
+  "Vanna/Charm",
+  "3D",
+  "Term",
+  "OI",
+  "Skew",
+  "Vol Edge",
+  "History",
+  "Pine",
+] as const;
 type Tab = (typeof TABS)[number];
 
 export function TickerTabs({ symbol }: { symbol: string }) {
@@ -90,6 +106,8 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Chain" && <OptionsChain symbol={symbol} />}
       {tab === "Heatmap" && <OptionsHeatmap symbol={symbol} />}
       {tab === "Gamma" && <GammaProfile symbol={symbol} />}
+      {tab === "Vanna/Charm" && <VannaCharmProfile symbol={symbol} />}
+      {tab === "3D" && <GreeksSurface symbol={symbol} />}
       {tab === "Term" && <GexTerm symbol={symbol} />}
       {tab === "OI" && <OiProfile symbol={symbol} />}
       {tab === "Skew" && <SkewChart symbol={symbol} />}

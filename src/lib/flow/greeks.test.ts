@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bsCharm, bsVanna, d1d2, pdf } from "./greeks";
+import { bsCharm, bsGamma, bsVanna, d1d2, pdf } from "./greeks";
 
 describe("black-scholes second-order greeks", () => {
   it("pdf peaks at 0 and is symmetric", () => {
@@ -21,5 +21,13 @@ describe("black-scholes second-order greeks", () => {
   it("ITM call: raising IV lowers delta (vanna < 0), delta builds toward 1 (charm > 0)", () => {
     expect(bsVanna(100, 90, 0.3, 0.05)).toBeCloseTo(-0.5644, 3);
     expect(bsCharm(100, 90, 0.3, 0.05)).toBeCloseTo(1.6936, 3);
+  });
+
+  it("gamma is positive and peaks at the money", () => {
+    const atm = bsGamma(100, 100, 0.3, 0.05)!;
+    const otm = bsGamma(100, 130, 0.3, 0.05)!;
+    expect(atm).toBeGreaterThan(0);
+    expect(atm).toBeGreaterThan(otm);
+    expect(bsGamma(100, 100, 0, 0.05)).toBeNull();
   });
 });

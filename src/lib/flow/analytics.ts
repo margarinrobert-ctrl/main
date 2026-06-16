@@ -1,5 +1,5 @@
 import type { HistoryBar, OptionContract } from "../barchart/types";
-import { bsCharm, bsVanna } from "./greeks";
+import { bsCharm, bsGamma, bsVanna } from "./greeks";
 
 const CONTRACT = 100; // shares per contract
 const TRADING_DAYS = 252;
@@ -276,6 +276,134 @@ export function secondOrderExposure(chain: OptionContract[], spot: number | null
     charm: anyC ? byStrike.reduce((s, x) => s + x.charm, 0) : null,
     byStrike,
   };
+}
+
+export interface ProfilePoint {
+  spot: number;
+  gex: number;
+  vanna: number;
+  charm: number;
+}
+
+/**
+ * Net dealer exposure re-priced (Black-Scholes) across a range of hypothetical spot prices, holding
+ * each contract's IV fixed (sticky-strike). Shows how net gamma/vanna/charm evolve as price moves —
+ * the dynamic "gamma profile" that reveals where the regime flips, not just today's snapshot.
+ */
+export function exposureProfile(chain: OptionContract[], spot: number | null, points = 41): ProfilePoint[] {
+  if (!spot) return [];
+  const strikes = chain.map((c) => c.strike);
+  if (!strikes.length) return [];
+  const lo = Math.max(Math.min(...strikes), spot * 0.85);
+  const hi = Math.min(Math.max(...strikes), spot * 1.15);
+  if (!(hi > lo) || points < 2) return [];
+  const out: ProfilePoint[] = [];
+  for (let i = 0; i < points; i++) {
+    const S = lo + ((hi - lo) * i) / (points - 1);
+    let gex = 0;
+    let vanna = 0;
+    let charm = 0;
+    for (const o of chain) {
+      if (o.openInterest == null || o.impliedVolatility == null || o.impliedVolatility <= 0) continue;
+      const tYears = Math.max(o.dte ?? 0, 0.5) / CALENDAR_DAYS;
+      const sign = o.type === "call" ? 1 : -1;
+      const g = bsGamma(S, o.strike, o.impliedVolatility, tYears);
+      const va = bsVanna(S, o.strike, o.impliedVolatility, tYears);
+      const ch = bsCharm(S, o.strike, o.impliedVolatility, tYears);
+      if (g != null) gex += sign * g * o.openInterest * CONTRACT * S * S * 0.01;
+      if (va != null) vanna += sign * va * o.openInterest * S;
+      if (ch != null) charm += sign * (ch / CALENDAR_DAYS) * o.openInterest * CONTRACT * S;
+    }
+    out.push({ spot: S, gex, vanna, charm });
+  }
+  return out;
+}
+
+/** Zero-gamma spot interpolated from the re-priced profile (smoother than the discrete-strike flip). */
+export function flipFromProfile(profile: ProfilePoint[]): number | null {
+  for (let i = 1; i < profile.length; i++) {
+    const a = profile[i - 1];
+    const b = profile[i];
+    if ((a.gex < 0 && b.gex >= 0) || (a.gex > 0 && b.gex <= 0)) {
+      const denom = Math.abs(b.gex - a.gex);
+      const t = denom === 0 ? 0 : Math.abs(a.gex) / denom;
+      return a.spot + (b.spot - a.spot) * t;
+    }
+  }
+  return null;
+}
+
+export type SurfaceMetric = "gex" | "vanna" | "charm" | "oi" | "iv";
+
+export interface GreekSurface {
+  metric: SurfaceMetric;
+  strikes: number[];
+  expirations: { label: string; dte: number | null }[];
+  z: number[][]; // z[expirationIndex][strikeIndex]
+  signed: boolean; // true → diverging scale (can be ±), false → magnitude only
+}
+
+function surfaceCell(chain: OptionContract[], spot: number | null, exp: string, strike: number, metric: SurfaceMetric): number {
+  const opts = chain.filter((c) => c.expiration === exp && c.strike === strike);
+  if (!opts.length) return 0;
+  if (metric === "oi") return opts.reduce((s, c) => s + (c.openInterest ?? 0), 0);
+  if (metric === "iv") {
+    const ivs = opts.filter((c) => c.impliedVolatility != null && c.impliedVolatility > 0).map((c) => c.impliedVolatility as number);
+    return ivs.length ? ivs.reduce((a, b) => a + b, 0) / ivs.length : 0;
+  }
+  if (!spot) return 0;
+  let v = 0;
+  for (const c of opts) {
+    if (c.openInterest == null) continue;
+    const sign = c.type === "call" ? 1 : -1;
+    if (metric === "gex") {
+      if (c.gamma == null) continue;
+      v += sign * c.gamma * c.openInterest * CONTRACT * spot * spot * 0.01;
+      continue;
+    }
+    if (c.impliedVolatility == null || c.impliedVolatility <= 0) continue;
+    const tYears = Math.max(c.dte ?? 0, 0.5) / CALENDAR_DAYS;
+    if (metric === "vanna") {
+      const va = bsVanna(spot, c.strike, c.impliedVolatility, tYears);
+      if (va != null) v += sign * va * c.openInterest * spot;
+    } else {
+      const ch = bsCharm(spot, c.strike, c.impliedVolatility, tYears);
+      if (ch != null) v += sign * (ch / CALENDAR_DAYS) * c.openInterest * CONTRACT * spot;
+    }
+  }
+  return v;
+}
+
+/**
+ * Build a (strike × expiration) grid of a greek/exposure for a 3D surface. Strikes are windowed
+ * around spot to keep the surface readable; expirations are ordered near→far by DTE.
+ */
+export function greekSurface(chain: OptionContract[], spot: number | null, metric: SurfaceMetric, maxStrikes = 21): GreekSurface {
+  const expMap = new Map<string, number | null>();
+  for (const c of chain) if (!expMap.has(c.expiration)) expMap.set(c.expiration, c.dte);
+  const expirations = [...expMap.entries()]
+    .map(([label, dte]) => ({ label, dte }))
+    .sort((a, b) => (a.dte ?? Number.MAX_SAFE_INTEGER) - (b.dte ?? Number.MAX_SAFE_INTEGER));
+
+  let strikes = [...new Set(chain.map((c) => c.strike))].sort((a, b) => a - b);
+  if (spot != null && strikes.length > maxStrikes) {
+    let idx = 0;
+    let best = Infinity;
+    strikes.forEach((s, i) => {
+      const d = Math.abs(s - spot);
+      if (d < best) {
+        best = d;
+        idx = i;
+      }
+    });
+    const half = Math.floor(maxStrikes / 2);
+    const start = Math.min(Math.max(0, idx - half), Math.max(0, strikes.length - maxStrikes));
+    strikes = strikes.slice(start, start + maxStrikes);
+  }
+
+  const signed = metric === "gex" || metric === "vanna" || metric === "charm";
+  const z = expirations.map(({ label }) => strikes.map((k) => surfaceCell(chain, spot, label, k, metric)));
+  return { metric, strikes, expirations, z, signed };
 }
 
 export function fmtUsd(v: number): string {

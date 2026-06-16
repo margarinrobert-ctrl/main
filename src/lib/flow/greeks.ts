@@ -18,6 +18,13 @@ export function d1d2(spot: number, strike: number, iv: number, tYears: number): 
   return { d1, d2: d1 - vt };
 }
 
+/** Gamma = ∂Δ/∂S = φ(d1)/(S·σ·√T), per $1 move. Identical for calls and puts. */
+export function bsGamma(spot: number, strike: number, iv: number, tYears: number): number | null {
+  const dd = d1d2(spot, strike, iv, tYears);
+  if (!dd) return null;
+  return pdf(dd.d1) / (spot * iv * Math.sqrt(tYears));
+}
+
 /**
  * Vanna = ∂Δ/∂σ = ∂Vega/∂S, per 1.00 (=100 vol-point) change in σ. Same for calls and puts.
  * Positive when raising IV raises an option's delta (OTM calls / ITM puts move toward the money).

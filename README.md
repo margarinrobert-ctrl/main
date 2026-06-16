@@ -155,7 +155,7 @@ All thresholds are in `src/lib/barchart/config.ts` (`flowThresholds`). Rows also
 
 ## Quant analytics (`src/lib/flow/analytics.ts`, unit-tested)
 
-Each ticker page is a tabbed dashboard — **Overview · Playbook · Chain · Heatmap · Gamma · Term · OI · Skew · Vol Edge · History · Pine** —
+Each ticker page is a tabbed dashboard — **Overview · Playbook · Chain · Heatmap · Gamma · Vanna/Charm · 3D · Term · OI · Skew · Vol Edge · History · Pine** —
 driven by a pure analytics engine computed from the chain:
 
 - **Dealer gamma exposure (GEX)** by strike, net GEX ($/1% move), and the **zero-gamma flip** level
@@ -168,6 +168,10 @@ driven by a pure analytics engine computed from the chain:
   into expiry), with a plain-English dealer-flow read
 - **Net Δ exposure**, **put/call ratios** (volume & OI)
 - **Gamma Profile** chart (GEX-by-strike, spot + flip markers) and **IV skew** chart (call vs put IV)
+- **Vanna/Charm profile** — dealer vanna & charm by strike, plus an **exposure-across-spot** curve
+  (Black-Scholes re-priced as price moves, with the modeled γ-flip) so you see where the regime turns
+- **3D greeks surface** — an interactive, drag-to-rotate surface of GEX / Vanna / Charm / OI / IV
+  across **strike × expiration** (self-contained SVG, no plotting deps), with a spot ridge + auto-spin
 - **Open-interest profile** (calls vs puts by strike) and a **History** tab — intraday spot + net-GEX
   time-series recorded client-side in your browser (no backend; Postgres + cron is the multi-day upgrade)
 - Two-sided options chain (calls │ strike │ puts) with spot / expiration / updated pills
