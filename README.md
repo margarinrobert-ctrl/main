@@ -155,7 +155,7 @@ All thresholds are in `src/lib/barchart/config.ts` (`flowThresholds`). Rows also
 
 ## Quant analytics (`src/lib/flow/analytics.ts`, unit-tested)
 
-Each ticker page is a tabbed dashboard — **Overview · Playbook · Chain · Heatmap · Gamma · Vanna/Charm · 3D · Term · OI · Skew · Vol Edge · History · Pine** —
+Each ticker page is a tabbed dashboard — **Overview · Playbook · Chain · Heatmap · Gamma · Vanna/Charm · 3D · Term · OI · Skew · Vol Edge · Harvest · History · Pine** —
 driven by a pure analytics engine computed from the chain. A **dashboard-wide expiration selector**
 (e.g. **0DTE**, a weekly, or **All**) scopes every view at once — levels, gamma, greeks, Playbook and
 the Pine export recompute for the chosen expiration; axis views (heatmap / term / 3D) highlight it:
@@ -179,6 +179,11 @@ the Pine export recompute for the chosen expiration; axis views (heatmap / term 
 - Two-sided options chain (calls │ strike │ puts) with spot / expiration / updated pills
 - **Vol Edge** — the **volatility risk premium** (ATM IV vs realized vol), **IV term structure**
   (contango/backwardation → IV-crush setups) and **25Δ skew**, each read as a **sell-vol vs buy-vol** edge
+- **Premium Harvesting** — turns the **volatility risk premium** into ranked, fully-priced credit
+  structures (cash-secured put, covered call, **iron condor**, short strangle, bull-put / bear-call
+  spreads). Short strikes are chosen by **target delta** and anchored to **price levels** (gamma
+  walls / ±1σ); each signal shows credit, max profit/loss, breakevens, **POP**, **theta/day** and
+  return-on-capital, gated by a **harvest / selective / avoid** VRP regime and a **DTE** (time) window
 - **Intraday Playbook** — translates the gamma regime + levels into a **bullish/bearish scalping plan**:
   long-γ (fade/mean-revert) vs short-γ (momentum) bias, then how to play each call wall / put wall / γ-flip /
   max pain / 1-day range / put-call skew / **vanna** / **charm** (educational, not advice)

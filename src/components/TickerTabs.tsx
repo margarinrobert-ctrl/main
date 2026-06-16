@@ -10,6 +10,7 @@ import { GammaProfile } from "./GammaProfile";
 import { GexHistory } from "./GexHistory";
 import { GexTerm } from "./GexTerm";
 import { GreeksSurface } from "./GreeksSurface";
+import { HarvestPanel } from "./HarvestPanel";
 import { KeyLevels } from "./KeyLevels";
 import { OiProfile } from "./OiProfile";
 import { OptionsChain } from "./OptionsChain";
@@ -34,6 +35,7 @@ const TABS = [
   "OI",
   "Skew",
   "Vol Edge",
+  "Harvest",
   "History",
   "Pine",
 ] as const;
@@ -172,6 +174,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "OI" && <OiProfile symbol={symbol} exp={validExp} />}
       {tab === "Skew" && <SkewChart symbol={symbol} exp={validExp} />}
       {tab === "Vol Edge" && <VolEdge symbol={symbol} />}
+      {tab === "Harvest" && <HarvestPanel symbol={symbol} exp={validExp} />}
       {tab === "History" && <GexHistory symbol={symbol} />}
       {tab === "Pine" && <PineExport symbol={symbol} exp={validExp} />}
     </div>
