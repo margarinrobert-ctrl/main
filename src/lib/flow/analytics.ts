@@ -107,6 +107,35 @@ export function putWall(by: StrikeGex[]): number | null {
   return by.length ? by.reduce((m, x) => (x.putGex < m.putGex ? x : m)).strike : null;
 }
 
+/**
+ * Call resistance: the strongest call-gamma strike **at/above spot** (a level price struggles to
+ * pass). Restricting to the upside keeps it distinct from put support — without this, an ATM-heavy
+ * 0DTE chain can return the same strike for both. Falls back to the global call wall if nothing sits
+ * above spot (or spot is unknown).
+ */
+export function callResistance(by: StrikeGex[], spot: number | null): number | null {
+  if (!by.length) return null;
+  if (spot == null) return callWall(by);
+  const above = by.filter((x) => x.strike > spot);
+  return (above.length ? above : by).reduce((m, x) => (x.callGex > m.callGex ? x : m)).strike;
+}
+
+/** Put support: the strongest put-gamma strike **at/below spot**. Mirror of {@link callResistance}. */
+export function putSupport(by: StrikeGex[], spot: number | null): number | null {
+  if (!by.length) return null;
+  if (spot == null) return putWall(by);
+  const below = by.filter((x) => x.strike < spot);
+  return (below.length ? below : by).reduce((m, x) => (x.putGex < m.putGex ? x : m)).strike;
+}
+
+/** Strike holding the most call (resp. put) open interest — the OI "magnet" walls. */
+export function callOiWall(oi: StrikeOi[]): number | null {
+  return oi.length ? oi.reduce((m, x) => (x.callOi > m.callOi ? x : m)).strike : null;
+}
+export function putOiWall(oi: StrikeOi[]): number | null {
+  return oi.length ? oi.reduce((m, x) => (x.putOi > m.putOi ? x : m)).strike : null;
+}
+
 /** Max-pain strike for an expiration: minimizes total in-the-money value owed to holders. */
 export function maxPain(chain: OptionContract[], expiration: string): number | null {
   const opts = chain.filter((c) => c.expiration === expiration && c.openInterest != null);

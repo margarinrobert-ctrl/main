@@ -1,5 +1,17 @@
 import type { OptionContract } from "./barchart/types";
-import { atmIv, callWall, expectedMove, expectedMove1D, gammaFlip, gexByStrike, putWall } from "./flow/analytics";
+import {
+  atmIv,
+  callOiWall,
+  callResistance,
+  expectedMove,
+  expectedMove1D,
+  gammaFlip,
+  gexByStrike,
+  maxPain,
+  oiByStrike,
+  putOiWall,
+  putSupport,
+} from "./flow/analytics";
 
 function fmt(n: number): string {
   // Always emit a float literal (with a decimal point) so Pine infers array<float>, not array<int>.
@@ -85,11 +97,17 @@ export function buildGexPine(
   const byAll = gexByStrike(chain, spot);
   const by0 = gexByStrike(sub, spot);
 
-  const callRes = callWall(byAll);
-  const putSup = putWall(byAll);
+  // Side-aware so resistance sits ABOVE spot and support BELOW it (they can't collapse onto the
+  // same ATM strike the way raw max-gamma walls do).
+  const callRes = callResistance(byAll, spot);
+  const putSup = putSupport(byAll, spot);
   const hvl = gammaFlip(byAll);
-  const callRes0 = callWall(by0);
-  const putSup0 = putWall(by0);
+  const callRes0 = callResistance(by0, spot);
+  const putSup0 = putSupport(by0, spot);
+  const mp = exp ? maxPain(chain, exp) : null;
+  const oi = oiByStrike(chain);
+  const callOi = callOiWall(oi);
+  const putOi = putOiWall(oi);
   // True 1-day (1σ) range from front-expiration ATM IV — NOT the to-expiry straddle. Fall back to
   // the straddle only if IV is unavailable so the lines still render.
   const iv0 = exp ? atmIv(chain, spot, exp) : null;
@@ -118,6 +136,9 @@ export function buildGexPine(
   const psMeta = metaFull(chain, putSup, spot);
   const cr0Meta = metaFull(sub, callRes0, spot);
   const ps0Meta = metaFull(sub, putSup0, spot);
+  const mpMeta = metaFull(chain, mp, spot);
+  const coiMeta = metaFull(chain, callOi, spot);
+  const poiMeta = metaFull(chain, putOi, spot);
   const asOf = new Date().toISOString().slice(0, 16).replace("T", " ");
 
   const code = `//@version=6
@@ -128,6 +149,7 @@ indicator("OptionsFlow GEX • ${symbol}", overlay = true, max_lines_count = 300
 show0dte  = input.bool(true, "Show 0DTE levels")
 showGex   = input.bool(true, "Show GEX 1..N ladder")
 showRange = input.bool(true, "Show 1D Max/Min")
+showMag   = input.bool(true, "Show Max Pain & OI walls")
 lw        = input.int(2, "Key line width", minval = 1, maxval = 5)
 labelSize = input.string("large", "Label size", options = ["small", "normal", "large", "huge"])
 sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
@@ -142,6 +164,9 @@ callRes0 = input.float(${v(callRes0)}, "Call Resistance 0DTE / Gamma Wall 0DTE")
 putSup0  = input.float(${v(putSup0)}, "Put Support 0DTE / HVL 0DTE")
 oneDMax  = input.float(${fmt(dmax)}, "1D Max")
 oneDMin  = input.float(${fmt(dmin)}, "1D Min")
+maxPainL = input.float(${fmt(mp ?? s)}, "Max Pain")
+callOiL  = input.float(${fmt(callOi ?? s)}, "Call OI wall")
+putOiL   = input.float(${fmt(putOi ?? s)}, "Put OI wall")
 
 var float[]  gexK   = array.from(${gexk})
 var string[] gexLbl = array.from(${gexLblStr})
@@ -167,6 +192,10 @@ if barstate.islast
     if showRange
         addLevel(oneDMin, color.orange, "1D Min " + str.tostring(oneDMin), 1, line.style_dotted)
         addLevel(oneDMax, color.orange, "1D Max " + str.tostring(oneDMax), 1, line.style_dotted)
+    if showMag
+        addLevel(maxPainL, color.yellow, "Max Pain " + str.tostring(maxPainL) + "  ${mpMeta}", 1, line.style_dotted)
+        addLevel(callOiL,  color.olive,  "Call OI " + str.tostring(callOiL) + "  ${coiMeta}", 1, line.style_dotted)
+        addLevel(putOiL,   color.purple, "Put OI " + str.tostring(putOiL) + "  ${poiMeta}", 1, line.style_dotted)
     if show0dte
         addLevel(callRes0, color.red,  "Call Resistance 0DTE / Gamma Wall 0DTE " + str.tostring(callRes0) + "  ${cr0Meta}", lw, line.style_dashed)
         addLevel(putSup0,  color.blue, "Put Support 0DTE / HVL 0DTE " + str.tostring(putSup0) + "  ${ps0Meta}", lw, line.style_dashed)

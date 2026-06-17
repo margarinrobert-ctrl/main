@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  callOiWall,
+  callResistance,
   expectedMove,
   expectedMove1D,
   exposureProfile,
@@ -12,6 +14,8 @@ import {
   maxPain,
   oiByStrike,
   putCallRatio,
+  putOiWall,
+  putSupport,
   secondOrderExposure,
 } from "./analytics";
 import type { OptionContract } from "../barchart/types";
@@ -165,6 +169,35 @@ describe("analytics", () => {
     expect(filterByExpiration(chain, "2026-06-19")).toHaveLength(1);
     expect(filterByExpiration(chain, "ALL")).toHaveLength(2);
     expect(filterByExpiration(chain, undefined)).toHaveLength(2);
+  });
+
+  it("keeps call resistance above spot and put support below it (no same-strike collision)", () => {
+    // ATM strike 100 dominates BOTH call and put gamma — raw walls would collide there.
+    const by = gexByStrike(
+      [
+        c({ type: "call", strike: 100, gamma: 0.1, openInterest: 5000 }),
+        c({ type: "put", strike: 100, gamma: 0.1, openInterest: 5000 }),
+        c({ type: "call", strike: 105, gamma: 0.04, openInterest: 5000 }),
+        c({ type: "put", strike: 95, gamma: 0.04, openInterest: 5000 }),
+      ],
+      100,
+    );
+    const cr = callResistance(by, 100);
+    const ps = putSupport(by, 100);
+    expect(cr).toBe(105); // strictly above spot
+    expect(ps).toBe(95); // strictly below spot
+    expect(cr).not.toBe(ps);
+  });
+
+  it("finds the call/put open-interest walls", () => {
+    const oi = oiByStrike([
+      c({ type: "call", strike: 100, openInterest: 8000 }),
+      c({ type: "call", strike: 110, openInterest: 2000 }),
+      c({ type: "put", strike: 90, openInterest: 9000 }),
+      c({ type: "put", strike: 100, openInterest: 1000 }),
+    ]);
+    expect(callOiWall(oi)).toBe(100);
+    expect(putOiWall(oi)).toBe(90);
   });
 
   it("aggregates open interest by strike", () => {

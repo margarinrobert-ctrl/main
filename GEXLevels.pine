@@ -5,17 +5,21 @@
 // per ticker (levels + OI/Volume/GEX/DEX baked in) — use the site for ready-to-paste code.
 //
 // Named levels (MenthorQ-style), each label annotated with size at that strike:
-//   Call Resistance = call wall (max call gamma)            — red
-//   Put Support     = put wall (max put gamma)              — green
-//   HVL             = gamma flip / zero-gamma level         — blue
-//   ...0DTE         = the same, for the front expiry        — dashed
-//   GEX 1..N        = top strikes by |net GEX|              — teal
+//   Call Resistance = strongest call-gamma strike ABOVE spot — red
+//   Put Support     = strongest put-gamma strike BELOW spot  — green
+//   HVL             = gamma flip / zero-gamma level          — blue
+//   ...0DTE         = the same, for the front expiry         — dashed
+//   GEX 1..N        = top strikes by |net GEX|               — teal
 //   1D Max/Min      = 1-day expected range (1σ from ATM IV)  — orange (dotted)
+//   Max Pain        = strike of least option value at expiry — yellow (dotted)
+//   Call/Put OI     = strikes with the most open interest     — olive / purple (dotted)
+// (Resistance is forced above spot and Support below it, so they never print on the same strike.)
 indicator("OptionsFlow GEX • Levels", overlay = true, max_lines_count = 300, max_labels_count = 300)
 
 show0dte  = input.bool(true, "Show 0DTE levels")
 showGex   = input.bool(true, "Show GEX 1..N ladder")
 showRange = input.bool(true, "Show 1D Max/Min")
+showMag   = input.bool(true, "Show Max Pain & OI walls")
 lw        = input.int(2, "Key line width", minval = 1, maxval = 5)
 labelSize = input.string("large", "Label size", options = ["small", "normal", "large", "huge"])
 sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
@@ -31,6 +35,9 @@ callRes0 = input.float(548.0, "Call Resistance 0DTE / Gamma Wall 0DTE")
 putSup0  = input.float(536.0, "Put Support 0DTE / HVL 0DTE")
 oneDMax  = input.float(546.0, "1D Max")
 oneDMin  = input.float(538.0, "1D Min")
+maxPainL = input.float(541.0, "Max Pain")
+callOiL  = input.float(550.0, "Call OI wall")
+putOiL   = input.float(525.0, "Put OI wall")
 
 var float[]  gexK   = array.from(545.0, 550.0, 535.0, 555.0, 530.0, 560.0)
 var string[] gexLbl = array.from("GEX 1 @545  OI 18.0k | V 31.0k | $1.2B", "GEX 2 @550  OI 22.0k | V 40.0k | $1.6B", "GEX 3 @535  OI 12.0k | V 18.0k | -$0.8B", "GEX 4 @555  OI 9.0k | V 11.0k | $0.6B", "GEX 5 @530  OI 14.0k | V 20.0k | -$1.0B", "GEX 6 @560  OI 7.0k | V 8.0k | $0.4B")
@@ -56,6 +63,10 @@ if barstate.islast
     if showRange
         addLevel(oneDMin, color.orange, "1D Min " + str.tostring(oneDMin), 1, line.style_dotted)
         addLevel(oneDMax, color.orange, "1D Max " + str.tostring(oneDMax), 1, line.style_dotted)
+    if showMag
+        addLevel(maxPainL, color.yellow, "Max Pain " + str.tostring(maxPainL) + "  OI 28.0k | V 35.0k | GEX $0.3B | DEX $0.1B", 1, line.style_dotted)
+        addLevel(callOiL,  color.olive,  "Call OI " + str.tostring(callOiL) + "  OI 31.0k | V 42.0k | GEX $1.7B | DEX $0.5B", 1, line.style_dotted)
+        addLevel(putOiL,   color.purple, "Put OI " + str.tostring(putOiL) + "  OI 33.0k | V 39.0k | GEX -$1.6B | DEX -$0.4B", 1, line.style_dotted)
     if show0dte
         addLevel(callRes0, color.red,  "Call Resistance 0DTE / Gamma Wall 0DTE " + str.tostring(callRes0) + "  OI 21.0k | V 60.0k | GEX $1.9B | DEX $0.4B", lw, line.style_dashed)
         addLevel(putSup0,  color.blue, "Put Support 0DTE / HVL 0DTE " + str.tostring(putSup0) + "  OI 19.0k | V 44.0k | GEX -$1.3B | DEX -$0.3B", lw, line.style_dashed)

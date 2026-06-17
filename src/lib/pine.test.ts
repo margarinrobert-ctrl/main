@@ -55,6 +55,25 @@ describe("buildGexPine", () => {
     expect(empty.code).toContain("array.from(50.0)");
   });
 
+  it("adds Max Pain + OI-wall levels and never prints resistance == support", () => {
+    // ATM strike dominates both call and put gamma — the bug that put them on the same line.
+    const chain = [
+      c({ type: "call", strike: 100, gamma: 0.1, openInterest: 6000, volume: 5000 }),
+      c({ type: "put", strike: 100, gamma: 0.1, openInterest: 6000, volume: 5000 }),
+      c({ type: "call", strike: 105, gamma: 0.05, openInterest: 7000, volume: 4000 }),
+      c({ type: "put", strike: 95, gamma: 0.05, openInterest: 7000, volume: 4000 }),
+    ];
+    const r = buildGexPine("LVL", chain, 100);
+    expect(r.code).toContain("Max Pain");
+    expect(r.code).toContain("Call OI wall");
+    expect(r.code).toContain("Put OI wall");
+    const cr = Number(/callRes\s+=\s+input\.float\(([\d.]+)/.exec(r.code)?.[1]);
+    const ps = Number(/putSup\s+=\s+input\.float\(([\d.]+)/.exec(r.code)?.[1]);
+    expect(cr).toBeGreaterThan(100); // resistance above spot
+    expect(ps).toBeLessThan(100); // support below spot
+    expect(cr).not.toBe(ps);
+  });
+
   it("targets a chosen expiration when one is passed (e.g. 0DTE)", () => {
     const chain = [
       c({ expiration: "2026-06-16", dte: 0, strike: 100, gamma: 0.03, openInterest: 7000 }),

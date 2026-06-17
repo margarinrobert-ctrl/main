@@ -66,11 +66,12 @@ export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
       </div>
 
       <p className="mb-3 text-xs text-neutral-400">
-        Generates a Pine v6 indicator with named GEX levels — <span className="text-red-400">Call Resistance</span>,{" "}
-        <span className="text-green-400">Put Support</span>, <span className="text-blue-400">HVL</span> (γ-flip), their{" "}
-        <b>0DTE</b> variants, the <span className="text-teal-300">GEX 1…N</span> ladder, and{" "}
-        <span className="text-amber-400">1D Max/Min</span>. Copy into TradingView → <b>Pine Editor</b> → paste →{" "}
-        <b>Save</b> → <b>Add to chart</b>. Re-generate to refresh the snapshot.
+        Generates a Pine v6 indicator with named GEX levels — <span className="text-red-400">Call Resistance</span>{" "}
+        (above spot), <span className="text-green-400">Put Support</span> (below spot),{" "}
+        <span className="text-blue-400">HVL</span> (γ-flip), their <b>0DTE</b> variants, the{" "}
+        <span className="text-teal-300">GEX 1…N</span> ladder, <span className="text-amber-400">1D Max/Min</span>,{" "}
+        <span className="text-yellow-300">Max Pain</span> and the <span className="text-lime-400">Call/Put OI</span> walls.
+        Copy into TradingView → <b>Pine Editor</b> → paste → <b>Save</b> → <b>Add to chart</b>. Re-generate to refresh.
       </p>
 
       {state === "loading" && <Loading label="Building Pine…" />}
