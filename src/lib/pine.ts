@@ -143,11 +143,15 @@ export function buildGexPine(
   const callOi = callOiWall(oi);
   const putOi = putOiWall(oi);
   const iv0 = exp ? atmIv(chain, spot, exp) : null;
-  const em1 = expectedMove1D(spot, iv0) ?? (exp ? expectedMove(chain, spot, exp) : null);
+  // Expected move of the FRONT expiration (market-implied ATM straddle). For a 0DTE front this is
+  // literally today's expected high/low — the intraday range. Falls back to a 1-session 1σ from IV.
+  const emFront = (exp ? expectedMove(chain, spot, exp) : null) ?? (iv0 != null ? expectedMove1D(spot, iv0) : null);
+  const dteOf = sub.find((c) => c.dte != null)?.dte ?? null;
+  const dteLabel = dteOf == null ? "" : dteOf <= 0 ? "0DTE" : `${dteOf}d`;
 
   const s = spot ?? byAll[Math.floor(byAll.length / 2)]?.strike ?? 0;
-  const dmax = em1 ? s + em1.abs : null;
-  const dmin = em1 ? s - em1.abs : null;
+  const dmax = emFront ? s + emFront.abs : null;
+  const dmin = emFront ? s - emFront.abs : null;
 
   const ladder = byAll
     .filter((x) => x.gex !== 0)
@@ -155,9 +159,11 @@ export function buildGexPine(
     .slice(0, ladderN);
 
   const lvls: Lvl[] = [];
+  // Visible label is the NAME only; the indicator appends the actual on-chart price (after any basis
+  // shift), so labels always read correctly whether or not levels are aligned to a futures chart.
   const add = (price: number | null, name: string, color: string, style: string, width: number, prio: number, detail: string) => {
     if (price == null || !Number.isFinite(price)) return;
-    pushMerged(lvls, { price, short: `${name} ${fmtNice(price)}`, detail, color, style, width, prio }, spot ?? price);
+    pushMerged(lvls, { price, short: name, detail: `${detail} · strike ${fmtNice(price)}`, color, style, width, prio }, spot ?? price);
   };
 
   add(callRes, "Call Res", "color.red", "line.style_solid", 2, 0, `Call Resistance (max call gamma above spot) - ${meta(chain, callRes, spot)}`);
@@ -169,8 +175,8 @@ export function buildGexPine(
   add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, 2, `Call OI wall - ${meta(chain, callOi, spot)}`);
   add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, 2, `Put OI wall - ${meta(chain, putOi, spot)}`);
   add(spot, "Spot", "color.gray", "line.style_dotted", 1, 5, `Underlying spot when generated${feedAsOf ? ` (CBOE ${feedAsOf})` : " (~15-min delayed)"} — levels are anchored here; the chart's current price may have moved since.`);
-  add(dmax, "1D Max", "color.orange", "line.style_dotted", 1, 3, "1-day +1 sigma expected move (ATM IV)");
-  add(dmin, "1D Min", "color.orange", "line.style_dotted", 1, 3, "1-day -1 sigma expected move (ATM IV)");
+  add(dmax, `Exp Hi ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, 3, `Expected-move HIGH for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
+  add(dmin, `Exp Lo ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, 3, `Expected-move LOW for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
   ladder.forEach((x, i) => {
     const st = strikeStats(chain, x.strike, spot);
     add(x.strike, `GEX${i + 1}`, "color.teal", "line.style_solid", 1, 4, `GEX ${i + 1} @${fmtNice(x.strike)} - OI ${kfmt(st.oi)} | V ${kfmt(st.vol)} | ${usd(x.gex)}`);
@@ -189,19 +195,23 @@ export function buildGexPine(
   const asOf = new Date().toISOString().slice(0, 16).replace("T", " ");
   const isFut = /^(ES|NQ|RTY|YM)$/.test(symbol.toUpperCase());
   const proxy = isFut
-    ? `\n// NOTE: ${symbol} uses the cash index options (ES->SPX, NQ->NDX) as a free proxy. The future trades at a\n// basis to cash, so shift levels by (future - index) if you want them exact on the ${symbol} chart.`
+    ? `\n// ${symbol} uses cash-index options (ES->SPX, NQ->NDX) as a free proxy; the future trades at a basis. The\n// "Align to chart price" input (ON by default) shifts every level by (chart price - snapshot index) so they\n// land correctly on ${symbol}. Turn it off for raw index strikes.`
     : "";
 
   const code = `//@version=6
-// OptionsFlow — GEX levels for ${symbol}  (front/target exp ${exp ?? "n/a"})
-// APPLY ON THE ${symbol} CHART. These are ${symbol}-scale levels (spot ~${spot != null ? fmtNice(spot) : "n/a"}); they will look
-// wrong on a different instrument (e.g. QQQ's ~500 levels do not belong on an NQ ~30000 chart).
-// Snapshot: CBOE ${feedAsOf ?? "(time n/a)"} · generated ${asOf} UTC · ~15-min delayed. Re-generate to refresh.
-// Short labels; hover a label for full OI/Volume/GEX/DEX. Close levels auto-stagger so they don't overlap.${proxy}
+// OptionsFlow — GEX levels for ${symbol}  (front/target exp ${exp ?? "n/a"}${dteLabel ? ", " + dteLabel : ""})
+// APPLY ON THE ${symbol} CHART. These are ${symbol}-scale levels (spot ~${spot != null ? fmtNice(spot) : "n/a"}); QQQ's ~500
+// levels do NOT belong on an NQ ~30000 chart — generate the indicator for the symbol you are charting.
+// STATIC SNAPSHOT: a Pine script cannot fetch data, so this does NOT auto-update. Values are CBOE
+// ${feedAsOf ?? "(time n/a)"} (~15-min delayed), generated ${asOf} UTC — RE-GENERATE & re-paste for fresh levels.
+// Short labels show the on-chart price; hover for full OI/Volume/GEX/DEX. Close levels auto-stagger.${proxy}
 indicator("OptionsFlow GEX • ${symbol}", overlay = true, max_lines_count = 200, max_labels_count = 200)
 
 showMeta  = input.bool(true, "Detail on hover (tooltip)")
 laneStep  = input.int(14, "Stagger close labels (bars)", minval = 0, maxval = 80)
+alignToPrice = input.bool(${isFut ? "true" : "false"}, "Align levels to chart price (futures basis)")
+basisManual  = input.float(0.0, "Extra basis offset (points)")
+snapSpot     = input.float(${fmt(spot ?? 0)}, "Snapshot underlying (reference)")
 labelSize = input.string("normal", "Label size", options = ["small", "normal", "large", "huge"])
 sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
 showVwap = input.bool(true, "Show session VWAP")
@@ -225,7 +235,13 @@ clearAll() =>
     while array.size(_lb) > 0
         label.delete(array.pop(_lb))
 
+var float frozenBasis = na
 if barstate.islast
+    // Basis = chart price - snapshot index, frozen once so the walls stay at fixed prices (they don't
+    // drift with each tick). For futures this lifts NDX/SPX levels onto the ES/NQ chart.
+    if na(frozenBasis)
+        frozenBasis := alignToPrice and snapSpot > 0 ? close - snapSpot : 0.0
+    offset = nz(frozenBasis) + basisManual
     clearAll()
     rng = ta.highest(high, 120) - ta.lowest(low, 120)
     minGap = na(rng) or rng <= 0 ? close * 0.01 : rng * 0.022
@@ -233,12 +249,13 @@ if barstate.islast
     int lane = 0
     base = bar_index
     for i = 0 to array.size(P) - 1
-        p = array.get(P, i)
+        p = array.get(P, i) + offset
         lane := not na(prevP) and (p - prevP) < minGap ? lane + 1 : 0
         x = base + 1 + lane * laneStep
         col = array.get(C, i)
+        txt = array.get(T, i) + " " + str.tostring(math.round(p * 100) / 100)
         array.push(_ln, line.new(base, p, x, p, color = col, width = array.get(W, i), extend = extend.left, style = array.get(LS, i)))
-        array.push(_lb, label.new(x, p, array.get(T, i), style = label.style_label_left, textcolor = col, color = color.new(color.black, 100), size = sz, tooltip = showMeta ? array.get(D, i) : ""))
+        array.push(_lb, label.new(x, p, txt, style = label.style_label_left, textcolor = col, color = color.new(color.black, 100), size = sz, tooltip = showMeta ? array.get(D, i) : ""))
         prevP := p
 
 // ── Intraday confluence overlays (computed live by TradingView) ──

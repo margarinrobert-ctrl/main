@@ -41,6 +41,9 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("OI "); // open-interest annotation
     expect(r.code).toContain("DEX "); // delta-exposure annotation
     expect(r.code).toContain("~15-min delayed"); // freshness note
+    expect(r.code).toContain("does NOT auto-update"); // static-snapshot warning
+    expect(r.code).toContain("Exp Hi"); // expected-move (today's range) label
+    expect(r.code).toContain("Align levels to chart price"); // basis control
     expect(r.code).toMatch(/P\s+=\s+array\.from\([^)]*\.\d/); // float price array
     expect(r.code).toContain("D  = array.from("); // hover-detail array
     expect(r.expiration).toBe("2026-06-19");
@@ -74,6 +77,9 @@ describe("buildGexPine", () => {
     const chain = [c({ type: "call", strike: 105, gamma: 0.02, openInterest: 8000 }), c({ type: "put", strike: 95, gamma: 0.03, openInterest: 9000 })];
     expect(buildGexPine("NQ", chain, 100).code).toContain("proxy");
     expect(buildGexPine("SPY", chain, 100).code).not.toContain("free proxy");
+    // basis alignment defaults ON for futures, OFF for equities/ETFs
+    expect(buildGexPine("NQ", chain, 100).code).toContain('input.bool(true, "Align levels to chart price');
+    expect(buildGexPine("SPY", chain, 100).code).toContain('input.bool(false, "Align levels to chart price');
   });
 
   it("targets a chosen expiration when one is passed (e.g. 0DTE)", () => {
