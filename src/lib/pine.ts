@@ -120,7 +120,14 @@ export interface PineResult {
  * baked, ~15-min-delayed snapshot. Labels are short (full OI/Vol/GEX/DEX detail is on hover) and the
  * indicator auto-staggers labels that sit close together so they never overlap.
  */
-export function buildGexPine(symbol: string, chain: OptionContract[], spot: number | null, ladderN = 8, targetExp?: string | null): PineResult {
+export function buildGexPine(
+  symbol: string,
+  chain: OptionContract[],
+  spot: number | null,
+  ladderN = 8,
+  targetExp?: string | null,
+  feedAsOf?: string | null,
+): PineResult {
   const exp = targetExp && targetExp !== "ALL" && chain.some((c) => c.expiration === targetExp) ? targetExp : nearestExpiration(chain);
   const sub = exp ? chain.filter((c) => c.expiration === exp) : chain;
   const byAll = gexByStrike(chain, spot);
@@ -161,6 +168,7 @@ export function buildGexPine(symbol: string, chain: OptionContract[], spot: numb
   add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, 2, `Max Pain ${exp ?? ""} - ${meta(chain, mp, spot)}`);
   add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, 2, `Call OI wall - ${meta(chain, callOi, spot)}`);
   add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, 2, `Put OI wall - ${meta(chain, putOi, spot)}`);
+  add(spot, "Spot", "color.gray", "line.style_dotted", 1, 5, `Underlying spot when generated${feedAsOf ? ` (CBOE ${feedAsOf})` : " (~15-min delayed)"} — levels are anchored here; the chart's current price may have moved since.`);
   add(dmax, "1D Max", "color.orange", "line.style_dotted", 1, 3, "1-day +1 sigma expected move (ATM IV)");
   add(dmin, "1D Min", "color.orange", "line.style_dotted", 1, 3, "1-day -1 sigma expected move (ATM IV)");
   ladder.forEach((x, i) => {
@@ -186,7 +194,9 @@ export function buildGexPine(symbol: string, chain: OptionContract[], spot: numb
 
   const code = `//@version=6
 // OptionsFlow — GEX levels for ${symbol}  (front/target exp ${exp ?? "n/a"})
-// Snapshot ${asOf} UTC — ~15-min delayed CBOE data. Re-generate on the site to refresh.
+// APPLY ON THE ${symbol} CHART. These are ${symbol}-scale levels (spot ~${spot != null ? fmtNice(spot) : "n/a"}); they will look
+// wrong on a different instrument (e.g. QQQ's ~500 levels do not belong on an NQ ~30000 chart).
+// Snapshot: CBOE ${feedAsOf ?? "(time n/a)"} · generated ${asOf} UTC · ~15-min delayed. Re-generate to refresh.
 // Short labels; hover a label for full OI/Volume/GEX/DEX. Close levels auto-stagger so they don't overlap.${proxy}
 indicator("OptionsFlow GEX • ${symbol}", overlay = true, max_lines_count = 200, max_labels_count = 200)
 

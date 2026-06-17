@@ -17,13 +17,13 @@ export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
   const load = useCallback(async () => {
     setState("loading");
     try {
-      const { chain, spot, source } = await loadChain(symbol);
+      const { chain, spot, source, asOf } = await loadChain(symbol);
       setSource(source);
       if (!chain.length) {
         setState("empty");
         return;
       }
-      setResult(buildGexPine(symbol, chain, spot, 8, exp));
+      setResult(buildGexPine(symbol, chain, spot, 8, exp, asOf));
       setState("ok");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");
