@@ -99,6 +99,38 @@ export function gammaFlip(by: StrikeGex[]): number | null {
   return null;
 }
 
+/** All zero-gamma crossings of cumulative net GEX (low→high strike), interpolated. */
+function gammaFlips(by: StrikeGex[]): number[] {
+  if (by.length < 2) return [];
+  const out: number[] = [];
+  let cum = 0;
+  let prevCum = 0;
+  let prevStrike = by[0].strike;
+  for (const x of by) {
+    prevCum = cum;
+    cum += x.gex;
+    if ((prevCum < 0 && cum >= 0) || (prevCum > 0 && cum <= 0)) {
+      const denom = Math.abs(cum - prevCum);
+      const t = denom === 0 ? 0 : Math.abs(prevCum) / denom;
+      out.push(prevStrike + (x.strike - prevStrike) * t);
+    }
+    prevStrike = x.strike;
+  }
+  return out;
+}
+
+/**
+ * Zero-gamma flip **nearest spot**. A chain can cross zero several times; the crossing closest to
+ * price is the actionable HVL (the first/lowest crossing can sit thousands of points away and is
+ * useless on a chart). Falls back to the first crossing when spot is unknown.
+ */
+export function gammaFlipNearest(by: StrikeGex[], spot: number | null): number | null {
+  const flips = gammaFlips(by);
+  if (!flips.length) return null;
+  if (spot == null) return flips[0];
+  return flips.reduce((p, c) => (Math.abs(c - spot) < Math.abs(p - spot) ? c : p));
+}
+
 export function callWall(by: StrikeGex[]): number | null {
   return by.length ? by.reduce((m, x) => (x.callGex > m.callGex ? x : m)).strike : null;
 }

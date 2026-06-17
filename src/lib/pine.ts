@@ -5,7 +5,7 @@ import {
   callResistance,
   expectedMove,
   expectedMove1D,
-  gammaFlip,
+  gammaFlipNearest,
   gexByStrike,
   maxPain,
   oiByStrike,
@@ -17,6 +17,11 @@ function fmt(n: number): string {
   // Always emit a float literal (with a decimal point) so Pine infers array<float>, not array<int>.
   const s = (Math.round(n * 100) / 100).toString();
   return s.includes(".") ? s : `${s}.0`;
+}
+
+// Human-readable price for the visible label (whole numbers for index/futures-scale levels).
+function fmtNice(n: number): string {
+  return Math.abs(n) >= 1000 ? String(Math.round(n)) : String(Math.round(n * 100) / 100);
 }
 
 function kfmt(n: number): string {
@@ -58,7 +63,7 @@ function strikeStats(contracts: OptionContract[], strike: number | null, spot: n
   return r;
 }
 
-function metaFull(contracts: OptionContract[], strike: number | null, spot: number | null): string {
+function meta(contracts: OptionContract[], strike: number | null, spot: number | null): string {
   const s = strikeStats(contracts, strike, spot);
   return `OI ${kfmt(s.oi)} | V ${kfmt(s.vol)} | GEX ${usd(s.gex)} | DEX ${usd(s.dex)}`;
 }
@@ -72,6 +77,35 @@ function nearestExpiration(chain: OptionContract[]): string | null {
   return withDte[0]?.e ?? exps[0] ?? null;
 }
 
+interface Lvl {
+  price: number;
+  short: string; // visible text
+  detail: string; // hover tooltip
+  color: string; // Pine color token
+  style: string; // Pine line.style_* token
+  width: number;
+  prio: number; // lower = more important (kept on merge)
+}
+
+/** Merge a level into the list if another sits within tolerance, so stacked labels collapse to one. */
+function pushMerged(list: Lvl[], lvl: Lvl, scale: number): void {
+  const tol = Math.max(0.01, scale * 0.0006);
+  const hit = list.find((l) => Math.abs(l.price - lvl.price) <= tol);
+  if (!hit) {
+    list.push({ ...lvl });
+    return;
+  }
+  if (lvl.prio < hit.prio) {
+    hit.color = lvl.color;
+    hit.style = lvl.style;
+    hit.prio = lvl.prio;
+  }
+  hit.width = Math.max(hit.width, lvl.width);
+  const name = lvl.short.replace(/\s+[-\d.]+$/, "");
+  if (!hit.short.includes(name)) hit.short += ` + ${name}`;
+  hit.detail += `  ||  ${lvl.detail}`;
+}
+
 export interface PineResult {
   code: string;
   expiration: string | null;
@@ -82,94 +116,95 @@ export interface PineResult {
 }
 
 /**
- * Generate a TradingView Pine v6 indicator with named GEX levels (MenthorQ-style), each label
- * annotated with OI / Volume / GEX(γ$) / DEX(Δ$) at that strike. Values are a baked snapshot.
+ * Generate a TradingView Pine v6 indicator with named GEX levels (MenthorQ-style). Levels are a
+ * baked, ~15-min-delayed snapshot. Labels are short (full OI/Vol/GEX/DEX detail is on hover) and the
+ * indicator auto-staggers labels that sit close together so they never overlap.
  */
-export function buildGexPine(
-  symbol: string,
-  chain: OptionContract[],
-  spot: number | null,
-  ladderN = 10,
-  targetExp?: string | null,
-): PineResult {
+export function buildGexPine(symbol: string, chain: OptionContract[], spot: number | null, ladderN = 8, targetExp?: string | null): PineResult {
   const exp = targetExp && targetExp !== "ALL" && chain.some((c) => c.expiration === targetExp) ? targetExp : nearestExpiration(chain);
   const sub = exp ? chain.filter((c) => c.expiration === exp) : chain;
   const byAll = gexByStrike(chain, spot);
   const by0 = gexByStrike(sub, spot);
 
-  // Side-aware so resistance sits ABOVE spot and support BELOW it (they can't collapse onto the
-  // same ATM strike the way raw max-gamma walls do).
   const callRes = callResistance(byAll, spot);
   const putSup = putSupport(byAll, spot);
-  const hvl = gammaFlip(byAll);
+  const hvl = gammaFlipNearest(byAll, spot);
   const callRes0 = callResistance(by0, spot);
   const putSup0 = putSupport(by0, spot);
   const mp = exp ? maxPain(chain, exp) : null;
   const oi = oiByStrike(chain);
   const callOi = callOiWall(oi);
   const putOi = putOiWall(oi);
-  // True 1-day (1σ) range from front-expiration ATM IV — NOT the to-expiry straddle. Fall back to
-  // the straddle only if IV is unavailable so the lines still render.
   const iv0 = exp ? atmIv(chain, spot, exp) : null;
   const em1 = expectedMove1D(spot, iv0) ?? (exp ? expectedMove(chain, spot, exp) : null);
 
   const s = spot ?? byAll[Math.floor(byAll.length / 2)]?.strike ?? 0;
-  const dmax = em1 ? s + em1.abs : s;
-  const dmin = em1 ? s - em1.abs : s;
+  const dmax = em1 ? s + em1.abs : null;
+  const dmin = em1 ? s - em1.abs : null;
 
   const ladder = byAll
     .filter((x) => x.gex !== 0)
     .sort((a, b) => Math.abs(b.gex) - Math.abs(a.gex))
     .slice(0, ladderN);
-  const gexk = ladder.length ? ladder.map((x) => fmt(x.strike)).join(", ") : fmt(s);
-  const gexLblStr = ladder.length
-    ? ladder
-        .map((x, i) => {
-          const st = strikeStats(chain, x.strike, spot);
-          return JSON.stringify(`GEX ${i + 1} @${x.strike}  OI ${kfmt(st.oi)} | V ${kfmt(st.vol)} | ${usd(x.gex)}`);
-        })
-        .join(", ")
-    : JSON.stringify("GEX 1");
 
-  const v = (x: number | null) => fmt(x ?? s);
-  const crMeta = metaFull(chain, callRes, spot);
-  const psMeta = metaFull(chain, putSup, spot);
-  const cr0Meta = metaFull(sub, callRes0, spot);
-  const ps0Meta = metaFull(sub, putSup0, spot);
-  const mpMeta = metaFull(chain, mp, spot);
-  const coiMeta = metaFull(chain, callOi, spot);
-  const poiMeta = metaFull(chain, putOi, spot);
+  const lvls: Lvl[] = [];
+  const add = (price: number | null, name: string, color: string, style: string, width: number, prio: number, detail: string) => {
+    if (price == null || !Number.isFinite(price)) return;
+    pushMerged(lvls, { price, short: `${name} ${fmtNice(price)}`, detail, color, style, width, prio }, spot ?? price);
+  };
+
+  add(callRes, "Call Res", "color.red", "line.style_solid", 2, 0, `Call Resistance (max call gamma above spot) - ${meta(chain, callRes, spot)}`);
+  add(putSup, "Put Sup", "color.green", "line.style_solid", 2, 0, `Put Support (max put gamma below spot) - ${meta(chain, putSup, spot)}`);
+  add(hvl, "HVL", "color.blue", "line.style_solid", 2, 0, "HVL / gamma flip (zero-gamma nearest spot)");
+  add(callRes0, "Call Res 0DTE", "color.red", "line.style_dashed", 2, 1, `Call Resistance 0DTE - ${meta(sub, callRes0, spot)}`);
+  add(putSup0, "Put Sup 0DTE", "color.green", "line.style_dashed", 2, 1, `Put Support 0DTE - ${meta(sub, putSup0, spot)}`);
+  add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, 2, `Max Pain ${exp ?? ""} - ${meta(chain, mp, spot)}`);
+  add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, 2, `Call OI wall - ${meta(chain, callOi, spot)}`);
+  add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, 2, `Put OI wall - ${meta(chain, putOi, spot)}`);
+  add(dmax, "1D Max", "color.orange", "line.style_dotted", 1, 3, "1-day +1 sigma expected move (ATM IV)");
+  add(dmin, "1D Min", "color.orange", "line.style_dotted", 1, 3, "1-day -1 sigma expected move (ATM IV)");
+  ladder.forEach((x, i) => {
+    const st = strikeStats(chain, x.strike, spot);
+    add(x.strike, `GEX${i + 1}`, "color.teal", "line.style_solid", 1, 4, `GEX ${i + 1} @${fmtNice(x.strike)} - OI ${kfmt(st.oi)} | V ${kfmt(st.vol)} | ${usd(x.gex)}`);
+  });
+
+  if (!lvls.length) add(s, "Spot", "color.gray", "line.style_dotted", 1, 9, "spot");
+  lvls.sort((a, b) => a.price - b.price);
+
+  const P = lvls.map((l) => fmt(l.price)).join(", ");
+  const T = lvls.map((l) => JSON.stringify(l.short)).join(", ");
+  const D = lvls.map((l) => JSON.stringify(l.detail)).join(", ");
+  const C = lvls.map((l) => l.color).join(", ");
+  const LS = lvls.map((l) => l.style).join(", ");
+  const W = lvls.map((l) => String(l.width)).join(", ");
+
   const asOf = new Date().toISOString().slice(0, 16).replace("T", " ");
+  const isFut = /^(ES|NQ|RTY|YM)$/.test(symbol.toUpperCase());
+  const proxy = isFut
+    ? `\n// NOTE: ${symbol} uses the cash index options (ES->SPX, NQ->NDX) as a free proxy. The future trades at a\n// basis to cash, so shift levels by (future - index) if you want them exact on the ${symbol} chart.`
+    : "";
 
   const code = `//@version=6
-// OptionsFlow — GEX levels for ${symbol}  (0DTE/front exp ${exp ?? "n/a"}, generated ${asOf} UTC)
-// Paste into TradingView: Pine Editor -> paste -> Save -> Add to chart. Re-generate to refresh.
-indicator("OptionsFlow GEX • ${symbol}", overlay = true, max_lines_count = 300, max_labels_count = 300)
+// OptionsFlow — GEX levels for ${symbol}  (front/target exp ${exp ?? "n/a"})
+// Snapshot ${asOf} UTC — ~15-min delayed CBOE data. Re-generate on the site to refresh.
+// Short labels; hover a label for full OI/Volume/GEX/DEX. Close levels auto-stagger so they don't overlap.${proxy}
+indicator("OptionsFlow GEX • ${symbol}", overlay = true, max_lines_count = 200, max_labels_count = 200)
 
-show0dte  = input.bool(true, "Show 0DTE levels")
-showGex   = input.bool(true, "Show GEX 1..N ladder")
-showRange = input.bool(true, "Show 1D Max/Min")
-showMag   = input.bool(true, "Show Max Pain & OI walls")
-lw        = input.int(2, "Key line width", minval = 1, maxval = 5)
-labelSize = input.string("large", "Label size", options = ["small", "normal", "large", "huge"])
+showMeta  = input.bool(true, "Detail on hover (tooltip)")
+laneStep  = input.int(14, "Stagger close labels (bars)", minval = 0, maxval = 80)
+labelSize = input.string("normal", "Label size", options = ["small", "normal", "large", "huge"])
 sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
 showVwap = input.bool(true, "Show session VWAP")
 showOR   = input.bool(true, "Show opening range (intraday)")
 orMin    = input.int(30, "Opening-range minutes", minval = 1, maxval = 240)
 
-callRes  = input.float(${v(callRes)}, "Call Resistance")
-putSup   = input.float(${v(putSup)}, "Put Support")
-hvl      = input.float(${v(hvl)}, "HVL (gamma flip)")
-callRes0 = input.float(${v(callRes0)}, "Call Resistance 0DTE / Gamma Wall 0DTE")
-putSup0  = input.float(${v(putSup0)}, "Put Support 0DTE / HVL 0DTE")
-oneDMax  = input.float(${fmt(dmax)}, "1D Max")
-oneDMin  = input.float(${fmt(dmin)}, "1D Min")
-maxPainL = input.float(${fmt(mp ?? s)}, "Max Pain")
-callOiL  = input.float(${fmt(callOi ?? s)}, "Call OI wall")
-putOiL   = input.float(${fmt(putOi ?? s)}, "Put OI wall")
-
-var float[]  gexK   = array.from(${gexk})
-var string[] gexLbl = array.from(${gexLblStr})
+// ── Baked level snapshot (price / label / detail / color / style / width) ──
+var float[]  P  = array.from(${P})
+var string[] T  = array.from(${T})
+var string[] D  = array.from(${D})
+var color[]  C  = array.from(${C})
+var string[] LS = array.from(${LS})
+var int[]    W  = array.from(${W})
 
 var line[]  _ln = array.new_line()
 var label[] _lb = array.new_label()
@@ -180,31 +215,24 @@ clearAll() =>
     while array.size(_lb) > 0
         label.delete(array.pop(_lb))
 
-addLevel(price, col, txt, w, st) =>
-    array.push(_ln, line.new(bar_index, price, bar_index + 1, price, color = col, width = w, extend = extend.both, style = st))
-    array.push(_lb, label.new(bar_index, price, txt, style = label.style_label_left, textcolor = col, color = color.new(color.black, 100), size = sz))
-
 if barstate.islast
     clearAll()
-    if showGex
-        for i = 0 to array.size(gexK) - 1
-            addLevel(array.get(gexK, i), color.teal, array.get(gexLbl, i), 1, line.style_solid)
-    if showRange
-        addLevel(oneDMin, color.orange, "1D Min " + str.tostring(oneDMin), 1, line.style_dotted)
-        addLevel(oneDMax, color.orange, "1D Max " + str.tostring(oneDMax), 1, line.style_dotted)
-    if showMag
-        addLevel(maxPainL, color.yellow, "Max Pain " + str.tostring(maxPainL) + "  ${mpMeta}", 1, line.style_dotted)
-        addLevel(callOiL,  color.olive,  "Call OI " + str.tostring(callOiL) + "  ${coiMeta}", 1, line.style_dotted)
-        addLevel(putOiL,   color.purple, "Put OI " + str.tostring(putOiL) + "  ${poiMeta}", 1, line.style_dotted)
-    if show0dte
-        addLevel(callRes0, color.red,  "Call Resistance 0DTE / Gamma Wall 0DTE " + str.tostring(callRes0) + "  ${cr0Meta}", lw, line.style_dashed)
-        addLevel(putSup0,  color.blue, "Put Support 0DTE / HVL 0DTE " + str.tostring(putSup0) + "  ${ps0Meta}", lw, line.style_dashed)
-    addLevel(putSup,  color.green, "Put Support " + str.tostring(putSup) + "  ${psMeta}", lw, line.style_solid)
-    addLevel(hvl,     color.blue,  "HVL " + str.tostring(hvl), lw, line.style_solid)
-    addLevel(callRes, color.red,   "Call Resistance " + str.tostring(callRes) + "  ${crMeta}", lw, line.style_solid)
+    rng = ta.highest(high, 120) - ta.lowest(low, 120)
+    minGap = na(rng) or rng <= 0 ? close * 0.01 : rng * 0.022
+    float prevP = na
+    int lane = 0
+    base = bar_index
+    for i = 0 to array.size(P) - 1
+        p = array.get(P, i)
+        lane := not na(prevP) and (p - prevP) < minGap ? lane + 1 : 0
+        x = base + 1 + lane * laneStep
+        col = array.get(C, i)
+        array.push(_ln, line.new(base, p, x, p, color = col, width = array.get(W, i), extend = extend.left, style = array.get(LS, i)))
+        array.push(_lb, label.new(x, p, array.get(T, i), style = label.style_label_left, textcolor = col, color = color.new(color.black, 100), size = sz, tooltip = showMeta ? array.get(D, i) : ""))
+        prevP := p
 
 // ── Intraday confluence overlays (computed live by TradingView) ──
-// A GEX level that lines up with VWAP or the opening range is higher-conviction.
+// A level that lines up with VWAP or the opening range is higher-conviction.
 plot(showVwap ? ta.vwap : na, "VWAP", color = color.new(color.fuchsia, 0), linewidth = 2)
 newDay = ta.change(time("D")) != 0
 var float orH = na
@@ -221,5 +249,5 @@ plot(showOR ? orH : na, "OR High", color = color.new(color.aqua, 0), style = plo
 plot(showOR ? orL : na, "OR Low", color = color.new(color.aqua, 0), style = plot.style_stepline)
 `;
 
-  return { code, expiration: exp, callRes, putSup, hvl, strikes: ladder.length };
+  return { code, expiration: exp, callRes, putSup, hvl, strikes: lvls.length };
 }

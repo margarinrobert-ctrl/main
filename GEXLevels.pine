@@ -1,46 +1,38 @@
 //@version=6
 // OptionsFlow — GEX Levels (template)
 //
-// Canonical TradingView indicator. The website's "Pine" tab generates a FILLED-IN copy
-// per ticker (levels + OI/Volume/GEX/DEX baked in) — use the site for ready-to-paste code.
+// Canonical TradingView indicator. The website's "Pine" tab generates a FILLED-IN copy per ticker
+// (levels baked in) — use the site for ready-to-paste code; this file just documents the structure.
 //
-// Named levels (MenthorQ-style), each label annotated with size at that strike:
-//   Call Resistance = strongest call-gamma strike ABOVE spot — red
-//   Put Support     = strongest put-gamma strike BELOW spot  — green
-//   HVL             = gamma flip / zero-gamma level          — blue
-//   ...0DTE         = the same, for the front expiry         — dashed
-//   GEX 1..N        = top strikes by |net GEX|               — teal
-//   1D Max/Min      = 1-day expected range (1σ from ATM IV)  — orange (dotted)
-//   Max Pain        = strike of least option value at expiry — yellow (dotted)
-//   Call/Put OI     = strikes with the most open interest     — olive / purple (dotted)
-// (Resistance is forced above spot and Support below it, so they never print on the same strike.)
-indicator("OptionsFlow GEX • Levels", overlay = true, max_lines_count = 300, max_labels_count = 300)
+// Snapshot of ~15-min delayed CBOE data. Labels are SHORT — hover any label for the full
+// OI / Volume / GEX / DEX detail. Levels that sit close together auto-stagger to the right so they
+// never overlap. ES/NQ use SPX/NDX cash options as a free proxy (futures trade at a small basis).
+//
+// Named levels (MenthorQ-style):
+//   Call Res / Call Res 0DTE  = strongest call-gamma strike ABOVE spot   — red  (0DTE dashed)
+//   Put Sup  / Put Sup 0DTE   = strongest put-gamma strike BELOW spot    — green (0DTE dashed)
+//   HVL                       = gamma flip / zero-gamma nearest spot      — blue
+//   Max Pain                  = least option value at expiry             — yellow (dotted)
+//   Call OI / Put OI          = strikes with the most open interest       — olive / purple (dotted)
+//   1D Max/Min                = 1-day ±1σ expected range (ATM IV)         — orange (dotted)
+//   GEX 1..N                  = top strikes by |net GEX|                  — teal
+indicator("OptionsFlow GEX • Levels", overlay = true, max_lines_count = 200, max_labels_count = 200)
 
-show0dte  = input.bool(true, "Show 0DTE levels")
-showGex   = input.bool(true, "Show GEX 1..N ladder")
-showRange = input.bool(true, "Show 1D Max/Min")
-showMag   = input.bool(true, "Show Max Pain & OI walls")
-lw        = input.int(2, "Key line width", minval = 1, maxval = 5)
-labelSize = input.string("large", "Label size", options = ["small", "normal", "large", "huge"])
+showMeta  = input.bool(true, "Detail on hover (tooltip)")
+laneStep  = input.int(14, "Stagger close labels (bars)", minval = 0, maxval = 80)
+labelSize = input.string("normal", "Label size", options = ["small", "normal", "large", "huge"])
 sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
 showVwap = input.bool(true, "Show session VWAP")
 showOR   = input.bool(true, "Show opening range (intraday)")
 orMin    = input.int(30, "Opening-range minutes", minval = 1, maxval = 240)
 
-// ── Generated values (replace via the site's Pine tab) — example: SPY ──
-callRes  = input.float(550.0, "Call Resistance")
-putSup   = input.float(530.0, "Put Support")
-hvl      = input.float(540.0, "HVL (gamma flip)")
-callRes0 = input.float(548.0, "Call Resistance 0DTE / Gamma Wall 0DTE")
-putSup0  = input.float(536.0, "Put Support 0DTE / HVL 0DTE")
-oneDMax  = input.float(546.0, "1D Max")
-oneDMin  = input.float(538.0, "1D Min")
-maxPainL = input.float(541.0, "Max Pain")
-callOiL  = input.float(550.0, "Call OI wall")
-putOiL   = input.float(525.0, "Put OI wall")
-
-var float[]  gexK   = array.from(545.0, 550.0, 535.0, 555.0, 530.0, 560.0)
-var string[] gexLbl = array.from("GEX 1 @545  OI 18.0k | V 31.0k | $1.2B", "GEX 2 @550  OI 22.0k | V 40.0k | $1.6B", "GEX 3 @535  OI 12.0k | V 18.0k | -$0.8B", "GEX 4 @555  OI 9.0k | V 11.0k | $0.6B", "GEX 5 @530  OI 14.0k | V 20.0k | -$1.0B", "GEX 6 @560  OI 7.0k | V 8.0k | $0.4B")
+// ── Baked level snapshot (replace via the site's Pine tab) — example: SPY ──
+var float[]  P  = array.from(525.0, 530.0, 536.0, 538.0, 541.0, 545.0, 546.0, 550.0, 555.0, 560.0)
+var string[] T  = array.from("Put OI 525", "Put Sup 530", "1D Min 536", "HVL 538", "Max Pain 541", "GEX1 545", "1D Max 546", "Call Res 550", "Call OI 555", "GEX2 560")
+var string[] D  = array.from("Put OI wall - OI 33.0k | V 39.0k | GEX -$1.6B | DEX -$0.4B", "Put Support - OI 24.0k | V 30.0k | GEX -$1.5B | DEX -$0.5B", "1-day -1 sigma expected move (ATM IV)", "HVL / gamma flip (zero-gamma nearest spot)", "Max Pain - OI 28.0k | V 35.0k | GEX $0.3B | DEX $0.1B", "GEX 1 @545 - OI 18.0k | V 31.0k | $1.2B", "1-day +1 sigma expected move (ATM IV)", "Call Resistance - OI 26.0k | V 35.0k | GEX $1.8B | DEX $0.6B", "Call OI wall - OI 31.0k | V 42.0k | GEX $1.7B | DEX $0.5B", "GEX 2 @560 - OI 7.0k | V 8.0k | $0.4B")
+var color[]  C  = array.from(color.purple, color.green, color.orange, color.blue, color.yellow, color.teal, color.orange, color.red, color.olive, color.teal)
+var string[] LS = array.from(line.style_dotted, line.style_solid, line.style_dotted, line.style_solid, line.style_dotted, line.style_solid, line.style_dotted, line.style_solid, line.style_dotted, line.style_solid)
+var int[]    W  = array.from(1, 2, 1, 2, 1, 1, 1, 2, 1, 1)
 
 var line[]  _ln = array.new_line()
 var label[] _lb = array.new_label()
@@ -51,31 +43,24 @@ clearAll() =>
     while array.size(_lb) > 0
         label.delete(array.pop(_lb))
 
-addLevel(price, col, txt, w, st) =>
-    array.push(_ln, line.new(bar_index, price, bar_index + 1, price, color = col, width = w, extend = extend.both, style = st))
-    array.push(_lb, label.new(bar_index, price, txt, style = label.style_label_left, textcolor = col, color = color.new(color.black, 100), size = sz))
-
 if barstate.islast
     clearAll()
-    if showGex
-        for i = 0 to array.size(gexK) - 1
-            addLevel(array.get(gexK, i), color.teal, array.get(gexLbl, i), 1, line.style_solid)
-    if showRange
-        addLevel(oneDMin, color.orange, "1D Min " + str.tostring(oneDMin), 1, line.style_dotted)
-        addLevel(oneDMax, color.orange, "1D Max " + str.tostring(oneDMax), 1, line.style_dotted)
-    if showMag
-        addLevel(maxPainL, color.yellow, "Max Pain " + str.tostring(maxPainL) + "  OI 28.0k | V 35.0k | GEX $0.3B | DEX $0.1B", 1, line.style_dotted)
-        addLevel(callOiL,  color.olive,  "Call OI " + str.tostring(callOiL) + "  OI 31.0k | V 42.0k | GEX $1.7B | DEX $0.5B", 1, line.style_dotted)
-        addLevel(putOiL,   color.purple, "Put OI " + str.tostring(putOiL) + "  OI 33.0k | V 39.0k | GEX -$1.6B | DEX -$0.4B", 1, line.style_dotted)
-    if show0dte
-        addLevel(callRes0, color.red,  "Call Resistance 0DTE / Gamma Wall 0DTE " + str.tostring(callRes0) + "  OI 21.0k | V 60.0k | GEX $1.9B | DEX $0.4B", lw, line.style_dashed)
-        addLevel(putSup0,  color.blue, "Put Support 0DTE / HVL 0DTE " + str.tostring(putSup0) + "  OI 19.0k | V 44.0k | GEX -$1.3B | DEX -$0.3B", lw, line.style_dashed)
-    addLevel(putSup,  color.green, "Put Support " + str.tostring(putSup) + "  OI 24.0k | V 30.0k | GEX -$1.5B | DEX -$0.5B", lw, line.style_solid)
-    addLevel(hvl,     color.blue,  "HVL " + str.tostring(hvl), lw, line.style_solid)
-    addLevel(callRes, color.red,   "Call Resistance " + str.tostring(callRes) + "  OI 26.0k | V 35.0k | GEX $1.8B | DEX $0.6B", lw, line.style_solid)
+    rng = ta.highest(high, 120) - ta.lowest(low, 120)
+    minGap = na(rng) or rng <= 0 ? close * 0.01 : rng * 0.022
+    float prevP = na
+    int lane = 0
+    base = bar_index
+    for i = 0 to array.size(P) - 1
+        p = array.get(P, i)
+        lane := not na(prevP) and (p - prevP) < minGap ? lane + 1 : 0
+        x = base + 1 + lane * laneStep
+        col = array.get(C, i)
+        array.push(_ln, line.new(base, p, x, p, color = col, width = array.get(W, i), extend = extend.left, style = array.get(LS, i)))
+        array.push(_lb, label.new(x, p, array.get(T, i), style = label.style_label_left, textcolor = col, color = color.new(color.black, 100), size = sz, tooltip = showMeta ? array.get(D, i) : ""))
+        prevP := p
 
 // ── Intraday confluence overlays (computed live by TradingView) ──
-// A GEX level that lines up with VWAP or the opening range is higher-conviction.
+// A level that lines up with VWAP or the opening range is higher-conviction.
 plot(showVwap ? ta.vwap : na, "VWAP", color = color.new(color.fuchsia, 0), linewidth = 2)
 newDay = ta.change(time("D")) != 0
 var float orH = na

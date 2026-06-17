@@ -23,7 +23,7 @@ export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
         setState("empty");
         return;
       }
-      setResult(buildGexPine(symbol, chain, spot, 10, exp));
+      setResult(buildGexPine(symbol, chain, spot, 8, exp));
       setState("ok");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");
@@ -94,8 +94,10 @@ export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
             <code>{result.code}</code>
           </pre>
           <p className="mt-2 text-[11px] text-neutral-500">
-            Note: TradingView has no public API to auto-add scripts to an account, so this is copy/paste (save it once as
-            an indicator and it stays on your charts). Levels are a delayed snapshot, not a live TradingView feed.
+            Labels are short — <b>hover any label</b> for its full OI / Volume / GEX / DEX, and levels that sit close
+            together auto-stagger so they never overlap. Values are a <b>~15-min delayed snapshot</b> baked at generate
+            time (TradingView has no API to push live data), so hit <b>Re-generate</b> to refresh. ES/NQ use SPX/NDX cash
+            options as a free proxy — the future trades at a small basis to the index.
           </p>
         </>
       )}

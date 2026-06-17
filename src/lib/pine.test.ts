@@ -26,33 +26,31 @@ function c(p: Partial<OptionContract>): OptionContract {
 }
 
 describe("buildGexPine", () => {
-  it("emits a v6 indicator with named levels annotated with OI/V/GEX/DEX", () => {
+  it("emits a v6 indicator with named levels + OI/V/GEX/DEX detail and array-driven levels", () => {
     const chain = [
-      c({ type: "call", strike: 105, gamma: 0.02, openInterest: 8000, volume: 12000 }),
-      c({ type: "put", strike: 95, gamma: 0.03, openInterest: 9000, volume: 15000 }),
+      c({ type: "call", strike: 105, gamma: 0.05, openInterest: 9000, volume: 12000 }),
+      c({ type: "put", strike: 95, gamma: 0.02, openInterest: 4000, volume: 15000 }),
     ];
     const r = buildGexPine("TEST", chain, 100);
     expect(r.code).toContain("//@version=6");
     expect(r.code).toContain("OptionsFlow GEX • TEST");
-    expect(r.code).toContain("Call Resistance");
+    expect(r.code).toContain("Call Resistance"); // in hover detail
     expect(r.code).toContain("Put Support");
     expect(r.code).toContain("HVL");
     expect(r.code).toContain("0DTE");
     expect(r.code).toContain("OI "); // open-interest annotation
     expect(r.code).toContain("DEX "); // delta-exposure annotation
-    expect(r.code).toContain("GEX 1"); // ladder label
+    expect(r.code).toContain("~15-min delayed"); // freshness note
+    expect(r.code).toMatch(/P\s+=\s+array\.from\([^)]*\.\d/); // float price array
+    expect(r.code).toContain("D  = array.from("); // hover-detail array
     expect(r.expiration).toBe("2026-06-19");
   });
 
-  it("emits float gexK + string gexLbl arrays and falls back to spot when empty", () => {
-    const chain = [c({ type: "call", strike: 100, gamma: 0.01, openInterest: 1000000 })];
-    const withData = buildGexPine("INTG", chain, 100);
-    expect(withData.code).toMatch(/gexK\s*=\s*array\.from\([^)]*\.\d/); // float literal in gexK
-    expect(withData.code).toContain("gexLbl = array.from(");
-
+  it("collapses to a single spot level when there is no data", () => {
     const empty = buildGexPine("EMPTY", [], 50);
     expect(empty.code).toContain("indicator(");
     expect(empty.code).toContain("array.from(50.0)");
+    expect(empty.code).toContain("Spot");
   });
 
   it("adds Max Pain + OI-wall levels and never prints resistance == support", () => {
@@ -67,11 +65,15 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("Max Pain");
     expect(r.code).toContain("Call OI wall");
     expect(r.code).toContain("Put OI wall");
-    const cr = Number(/callRes\s+=\s+input\.float\(([\d.]+)/.exec(r.code)?.[1]);
-    const ps = Number(/putSup\s+=\s+input\.float\(([\d.]+)/.exec(r.code)?.[1]);
-    expect(cr).toBeGreaterThan(100); // resistance above spot
-    expect(ps).toBeLessThan(100); // support below spot
-    expect(cr).not.toBe(ps);
+    expect(r.callRes!).toBeGreaterThan(100); // resistance above spot
+    expect(r.putSup!).toBeLessThan(100); // support below spot
+    expect(r.callRes).not.toBe(r.putSup);
+  });
+
+  it("notes the index-proxy basis for futures symbols", () => {
+    const chain = [c({ type: "call", strike: 105, gamma: 0.02, openInterest: 8000 }), c({ type: "put", strike: 95, gamma: 0.03, openInterest: 9000 })];
+    expect(buildGexPine("NQ", chain, 100).code).toContain("proxy");
+    expect(buildGexPine("SPY", chain, 100).code).not.toContain("free proxy");
   });
 
   it("targets a chosen expiration when one is passed (e.g. 0DTE)", () => {
