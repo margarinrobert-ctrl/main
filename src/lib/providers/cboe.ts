@@ -32,6 +32,8 @@ const cboeOption = z
 
 const cboeResponse = z
   .object({
+    // CBOE stamps its own delayed-quote time at the top level — use it instead of fetch time.
+    timestamp: z.string().nullish(),
     data: z
       .object({
         current_price: numish,
@@ -40,6 +42,7 @@ const cboeResponse = z
         open: numish,
         high: numish,
         low: numish,
+        last_trade_time: z.string().nullish(),
         options: z.array(cboeOption).nullish(),
       })
       .passthrough()
@@ -75,6 +78,7 @@ export interface CboeRaw {
   open: number | null;
   high: number | null;
   low: number | null;
+  asOf: string | null; // CBOE's own data timestamp (delayed)
 }
 
 async function fetchCboeRaw(symbol: string): Promise<CboeRaw> {
@@ -95,7 +99,9 @@ async function fetchCboeRaw(symbol: string): Promise<CboeRaw> {
     clearTimeout(timer);
   }
 
-  const d = cboeResponse.parse(json).data;
+  const parsed = cboeResponse.parse(json);
+  const d = parsed.data;
+  const asOf = parsed.timestamp ?? d?.last_trade_time ?? null;
   const options = (d?.options ?? [])
     .map((r): OptionContract | null => {
       if (!/^.+\d{6}[CP]\d{8}$/.test(r.option)) return null;
@@ -130,6 +136,7 @@ async function fetchCboeRaw(symbol: string): Promise<CboeRaw> {
     open: d?.open ?? null,
     high: d?.high ?? null,
     low: d?.low ?? null,
+    asOf,
   };
 }
 
@@ -142,6 +149,13 @@ export async function cboeOptions(symbol: string): Promise<OptionContract[]> {
   const raw = await cboeRaw(symbol);
   if (raw.options.length === 0) throw new Error(`CBOE: no options for ${symbol}`);
   return raw.options;
+}
+
+/** Chain plus CBOE's own data timestamp + spot, for accurate freshness reporting. */
+export async function cboeChain(symbol: string): Promise<{ options: OptionContract[]; asOf: string | null; spot: number | null }> {
+  const raw = await cboeRaw(symbol);
+  if (raw.options.length === 0) throw new Error(`CBOE: no options for ${symbol}`);
+  return { options: raw.options, asOf: raw.asOf, spot: raw.spot };
 }
 
 export async function cboeQuote(symbol: string): Promise<NormalizedQuote[]> {
@@ -161,7 +175,7 @@ export async function cboeQuote(symbol: string): Promise<NormalizedQuote[]> {
       low: raw.low,
       previousClose: prev,
       volume: null,
-      tradeTimestamp: new Date().toISOString(),
+      tradeTimestamp: raw.asOf, // CBOE's stamped time (delayed), not fetch time
       mode: "cboe-delayed",
       delayed: true,
     },

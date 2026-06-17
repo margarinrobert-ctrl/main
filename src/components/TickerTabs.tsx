@@ -6,6 +6,7 @@ import type { OptionContract } from "@/lib/barchart/types";
 import { loadChain } from "@/lib/client-data";
 import { callWall, gammaFlip, gexByStrike, netGex, putWall } from "@/lib/flow/analytics";
 import { appendSample } from "@/lib/gex-history";
+import { DataStatus } from "./DataStatus";
 import { GammaProfile } from "./GammaProfile";
 import { GexHistory } from "./GexHistory";
 import { GexTerm } from "./GexTerm";
@@ -118,6 +119,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
 
   return (
     <div className="space-y-4">
+      <DataStatus symbol={symbol} />
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex flex-1 flex-wrap gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1 backdrop-blur">
           {TABS.map((t) => (

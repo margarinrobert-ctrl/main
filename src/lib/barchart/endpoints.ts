@@ -1,6 +1,6 @@
 import { cached } from "../cache/store";
 import { avOptions } from "../providers/alphavantage";
-import { cboeOptions, cboeQuote } from "../providers/cboe";
+import { cboeChain, cboeOptions, cboeQuote } from "../providers/cboe";
 import { stooqHistory, stooqQuote } from "../providers/stooq";
 import { barchartRequest, readFixtureParsed } from "./client";
 import { config } from "./config";
@@ -72,15 +72,20 @@ export async function getEquityOptions(symbol: string) {
 
   if (liveOptionsEnabled()) {
     try {
+      // CBOE path carries the feed's own timestamp (asOf) for honest freshness reporting.
+      if (config.optionsProvider === "cboe") {
+        const { options, asOf } = await cboeChain(sym);
+        return { data: options, source: "live" as const, asOf };
+      }
       const data = await cached(`opt:${config.optionsProvider}:${sym}`, optionsTtl(), () => fetchLiveOptions(sym));
-      return { data, source: "live" as const };
+      return { data, source: "live" as const, asOf: null };
     } catch (err) {
       console.warn(`[${config.optionsProvider}] options failed for ${sym}; falling back to fixtures:`, err instanceof Error ? err.message : err);
-      return { data: await readFixtureParsed(fixtures, parseOptionsResponse), source: "fixtures" as const };
+      return { data: await readFixtureParsed(fixtures, parseOptionsResponse), source: "fixtures" as const, asOf: null };
     }
   }
 
-  return barchartRequest(
+  const r = await barchartRequest(
     {
       endpoint: "getEquityOptions.json",
       params: { symbol: sym, fields: "volatility,delta,gamma,theta,vega,openInterest,volume" },
@@ -88,6 +93,7 @@ export async function getEquityOptions(symbol: string) {
     },
     parseOptionsResponse,
   );
+  return { ...r, asOf: null as string | null };
 }
 
 export interface ScreenerParams {
