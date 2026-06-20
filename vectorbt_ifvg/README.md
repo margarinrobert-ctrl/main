@@ -9,9 +9,22 @@ liquidity sweep (ERL)  →  displacement  →  FVG inversion (IFVG)  →  entry
 ```
 
 with the same context filters as the Pine source: market-structure bias (BOS/MSS),
-premium/discount equilibrium from the 18:00 NY ICT-day open, killzones + ICT macros,
-displacement (`body ≥ ATR × mult`), the singular-FVG ("reject double FVG") rule, an
-FVG size band, and prop-firm daily limits (max trades/day, two-losses-and-done).
+killzones + ICT macros, displacement (`body ≥ ATR × mult`), the singular-FVG ("reject
+double FVG") rule, an FVG size band, and prop-firm daily limits (max trades/day,
+two-losses-and-done).
+
+### Trade management (current defaults)
+
+- **Sweep → IFVG must form short-term**: the inversion has to print within
+  `sweep_lookback` bars of the liquidity sweep (default 5 ≈ 1–5 min on 1-min data).
+- **TP1 at 1:1 R:R**: scale `scale_pct`% (default 50%) off at +1R (`rr = 1.0`).
+- **Break-even at the internal high/low**: once price takes the nearest internal
+  swing (ITH/ITL), the runner's stop moves to entry (`use_be`).
+- **Runner targets the external swing high/low** (opposing liquidity draw); if no
+  external pool is available it falls back to `runner_rr` (default 2R).
+- **Daily 50% as support/resistance**: the midpoint of the prior daily candle is a
+  directional bias gate — price *above* it ⇒ longs only (50% = support), *below* ⇒
+  shorts only (50% = resistance). Set via `use_pd`.
 
 ## Layout
 

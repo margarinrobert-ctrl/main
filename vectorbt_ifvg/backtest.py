@@ -21,79 +21,93 @@ import vectorbt as vbt
 from .strategy import Params, Signals, generate, POINT_VALUE, MINTICK
 
 
-def _price_series(df: pd.DataFrame, sig: Signals) -> pd.Series:
-    """Fill price at each bar: entry price on entry bars, exit price on exit bars,
-    else the close. VectorBT executes signals at this price."""
-    px = df["close"].to_numpy(float).copy()
-    ent = ~np.isnan(sig.entry_price)
-    ext = ~np.isnan(sig.exit_price)
-    px[ent] = sig.entry_price[ent]
-    px[ext] = sig.exit_price[ext]
-    return pd.Series(px, index=df.index)
-
-
 def run_backtest(
     df: pd.DataFrame,
     p: Params | None = None,
     init_cash: float = 100_000.0,
-    contracts: int = 1,
+    contracts: float = 1.0,
     commission_per_order: float = 2.04,
     slippage_ticks: float = 2.0,
 ):
-    """Run one backtest. Returns (portfolio, signals, stats_dict)."""
+    """Run one backtest. Returns (portfolio, signals, stats_dict).
+
+    The strategy emits explicit signed orders (entry, the TP1 partial, and the
+    runner exit), so we drive ``vbt.Portfolio.from_orders`` directly. To get NQ
+    economics we run in "dollar price" units (price x $20/pt) so 1 order unit == 1
+    contract; slippage is modelled as a fractional move on the fill price.
+    """
     p = p or Params()
-    sig = generate(df, p)
+    sig = generate(df, p, contracts=contracts)
 
-    price = _price_series(df, sig)
-    # Trade $1 of "asset" per point => set size so 1 unit == 1 contract of $20/pt.
-    # vectorbt works in asset units priced at `price`; to get NQ economics we treat
-    # each contract as POINT_VALUE units of a $1 instrument is awkward, so instead we
-    # rescale: run vbt on the raw price with size = contracts, then multiply the
-    # resulting PnL by POINT_VALUE via a post-hoc scale on cash flows. Simpler &
-    # exact: convert price to "dollar price" = price * POINT_VALUE so 1 unit == 1 NQ.
-    dollar_price = price * POINT_VALUE
-    slip = (slippage_ticks * MINTICK * POINT_VALUE) / dollar_price  # fractional slippage
+    close = pd.Series(df["close"].to_numpy(float) * POINT_VALUE, index=df.index)
+    # Order fill price: use the per-order price where present, else the close.
+    fill = np.where(np.isnan(sig.order_price), df["close"].to_numpy(float),
+                    sig.order_price) * POINT_VALUE
+    fill = pd.Series(fill, index=df.index)
+    size = pd.Series(sig.order_size, index=df.index)  # NaN where no order
 
-    pf = vbt.Portfolio.from_signals(
-        close=dollar_price,
-        entries=sig.long_entries,
-        exits=sig.long_exits,
-        short_entries=sig.short_entries,
-        short_exits=sig.short_exits,
-        price=dollar_price,
-        size=contracts,
+    slip = (slippage_ticks * MINTICK * POINT_VALUE) / fill  # fractional slippage
+
+    # NQ's notional (~$400k/contract) dwarfs the $100k account, and this vbt build has
+    # no leverage/margin param, so a literal cash account would shrink every order to
+    # fit. We instead fund the simulator with ample headroom (futures PnL is cash-
+    # additive) and recenter all % metrics onto the intended capital afterwards.
+    headroom = max(init_cash, float(np.nanmax(np.abs(size)) if np.isfinite(
+        np.nanmax(np.abs(size))) else 1.0) * float(fill.max()) * 4.0)
+
+    pf = vbt.Portfolio.from_orders(
+        close=close,
+        size=size,
+        price=fill,
         size_type="amount",
-        init_cash=init_cash,
+        direction="both",
+        init_cash=headroom,
         fees=0.0,
         fixed_fees=commission_per_order,
         slippage=slip,
         freq="1min",
-        accumulate=False,
     )
 
-    stats = _compact_stats(pf, sig)
+    cost_per_order = commission_per_order + slippage_ticks * MINTICK * POINT_VALUE
+    stats = _compact_stats(pf, sig, init_cash=init_cash, vbt_cash=headroom,
+                           cost_per_order=cost_per_order)
     return pf, sig, stats
 
 
-def _compact_stats(pf, sig: Signals) -> dict:
-    # vectorbt 1.0 exposes these as methods.
-    trades = pf.trades
-    n_trades = int(trades.count())
+def _compact_stats(pf, sig: Signals, init_cash: float, vbt_cash: float,
+                   cost_per_order: float) -> dict:
+    # Recenter the (over-funded) equity curve onto the intended capital. Futures PnL
+    # is cash-additive, so real_equity(t) = init_cash + (vbt_value(t) - vbt_cash).
+    real_equity = init_cash + (pf.value() - vbt_cash)
+    pnl = float(real_equity.iloc[-1] - init_cash)
+    rets = real_equity.pct_change().fillna(0.0)
+    run_max = real_equity.cummax()
+    dd = (real_equity - run_max) / run_max
+    # Annualise the 1-minute Sharpe over a 252*390 trading-minute year.
+    ann = np.sqrt(252 * 390)
+    sharpe = float(rets.mean() / rets.std() * ann) if rets.std() > 0 else float("nan")
+
+    # POSITION-LEVEL trade stats (net of costs). vbt's own trade records split each
+    # partial-fill leg into its own "trade", which distorts win rate / profit factor;
+    # the strategy thinks in whole positions, so report those.
+    net = np.array([t["pnl"] - t["n_orders"] * cost_per_order for t in sig.trades])
+    n_trades = int(len(net))
     out = {
-        "total_return_pct": float(pf.total_return() * 100),
-        "final_value": float(pf.value().iloc[-1]),
-        "max_drawdown_pct": float(pf.max_drawdown() * 100),
+        "total_return_pct": float(pnl / init_cash * 100),
+        "final_value": float(real_equity.iloc[-1]),
+        "max_drawdown_pct": float(dd.min() * 100),
         "n_trades": n_trades,
+        "sharpe": sharpe,
     }
-    try:
-        out["sharpe"] = float(pf.sharpe_ratio())
-    except Exception:
-        out["sharpe"] = float("nan")
     if n_trades > 0:
-        out["win_rate_pct"] = float(trades.win_rate() * 100)
-        out["profit_factor"] = float(trades.profit_factor())
-        out["avg_pnl"] = float(trades.pnl.mean())
-        out["expectancy"] = float(trades.expectancy())
+        wins = net[net > 0]
+        losses = net[net < 0]
+        gross_w = float(wins.sum())
+        gross_l = float(-losses.sum())
+        out["win_rate_pct"] = float(len(wins) / n_trades * 100)
+        out["profit_factor"] = float(gross_w / gross_l) if gross_l > 0 else float("inf")
+        out["avg_pnl"] = float(net.mean())
+        out["expectancy"] = float(net.mean())
     else:
         out.update(win_rate_pct=float("nan"), profit_factor=float("nan"),
                    avg_pnl=float("nan"), expectancy=float("nan"))

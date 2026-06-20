@@ -27,31 +27,33 @@ from .backtest import run_backtest
 DEFAULT_GRID: dict[str, list] = {
     "min_gap_ticks": [12.0, 20.0, 32.0],
     "disp_mult": [0.6, 1.0, 1.4],
-    "rr": [1.5, 2.0, 3.0],
-    "sweep_lookback": [10, 20],
+    "runner_rr": [2.0, 3.0],          # runner fallback when no external pool
+    "sweep_lookback": [3, 5],         # how fast the IFVG must form after the sweep
     "stop_mode": ["IFVG close", "Swing high/low"],
 }
 
 # A smaller, faster grid for quick iteration (2*2*2 = 8 combos).
 QUICK_GRID: dict[str, list] = {
     "disp_mult": [0.6, 1.0],
-    "rr": [1.5, 2.0],
+    "sweep_lookback": [3, 5],
     "min_gap_ticks": [12.0, 20.0],
 }
 
 
 def _objective(stats: dict, min_trades: int) -> float:
-    """Score a run. Higher is better. Disqualify thin samples with -inf."""
+    """Score a run. Higher is better. Disqualify thin samples with -inf.
+
+    Transparent and robust: rank primarily by total return (the thing we care about),
+    with profit factor as a small tie-breaker. A trade-count floor stops the search
+    from 'winning' on a lucky handful of setups.
+    """
     n = stats["n_trades"]
     if n < min_trades:
         return float("-inf")
     pf = stats["profit_factor"]
     if not np.isfinite(pf):
         pf = 0.0
-    ret = stats["total_return_pct"]
-    dd = abs(stats["max_drawdown_pct"]) + 1e-6
-    # Reward return-per-drawdown, nudge by profit factor, with a mild trade-count bonus.
-    return (ret / dd) + 0.5 * pf + 0.02 * np.log(n)
+    return stats["total_return_pct"] + 0.1 * min(pf, 5.0)
 
 
 def optimize(

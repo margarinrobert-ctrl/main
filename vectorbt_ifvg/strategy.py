@@ -47,7 +47,7 @@ class Params:
     double_fvg_bars: int = 5
     # --- Liquidity sweep ---
     use_sweep: bool = True
-    sweep_lookback: int = 15
+    sweep_lookback: int = 5           # sweep -> IFVG must form short-term (~1-5 min)
     pivot_len: int = 8
     use_pd_levels: bool = True        # previous-day high/low
     use_eq: bool = True               # equal highs/lows
@@ -78,12 +78,14 @@ class Params:
     limit_expiry: int = 6
     # --- Risk ---
     stop_mode: str = "IFVG close"     # IFVG close | Swing high/low
-    tp_mode: str = "Fixed R:R"        # Fixed R:R | Opposing liquidity
-    rr: float = 2.0
+    tp_mode: str = "Opposing liquidity"  # runner draws to the external swing high/low
+    rr: float = 1.0                   # TP1 (partial) reward:risk -> 1:1 per the model
+    runner_rr: float = 2.0            # runner fallback R:R when no external pool exists
     sl_lookback: int = 10
     sl_buf_ticks: float = 4.0
-    use_be: bool = True
-    use_scale: bool = True
+    use_be: bool = True               # move stop to break-even at the internal high/low
+    use_scale: bool = True            # scale a partial at TP1 (1R)
+    scale_pct: float = 50.0           # % of position taken off at TP1
     flat_eod: bool = True
     eod_session: tuple[int, int] = (8 * 60 + 30, 16 * 60)  # 0830-1600 NY, minutes
 
@@ -95,7 +97,9 @@ class Signals:
     short_entries: np.ndarray
     short_exits: np.ndarray
     entry_price: np.ndarray   # fill price aligned to entry bars (NaN elsewhere)
-    exit_price: np.ndarray    # fill price aligned to exit bars (NaN elsewhere)
+    exit_price: np.ndarray    # final-exit fill price aligned to exit bars (NaN elsewhere)
+    order_size: np.ndarray    # signed contracts per bar (+buy/-sell, NaN = no order)
+    order_price: np.ndarray   # fill price for the order on that bar (NaN = no order)
     trades: list = field(default_factory=list)
 
 
@@ -136,7 +140,7 @@ def _pivots(h, l, length):
 # --------------------------------------------------------------------------------------
 # Main generator
 # --------------------------------------------------------------------------------------
-def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ) -> Signals:
+def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.0) -> Signals:
     idx = df.index
     if idx.tz is None:
         idx = idx.tz_localize(tz)
@@ -205,6 +209,8 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ) -> Signals:
     day_low_acc = np.inf
     pdh = np.nan
     pdl = np.nan
+    prev_day_hi = np.nan   # prior daily candle extremes (always tracked, for the 50% S/R)
+    prev_day_lo = np.nan
 
     # sweeps
     last_sweep_dir = 0
@@ -229,6 +235,8 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ) -> Signals:
     short_exits = np.zeros(n, bool)
     entry_price = np.full(n, np.nan)
     exit_price = np.full(n, np.nan)
+    order_size = np.full(n, np.nan)
+    order_price = np.full(n, np.nan)
     trades: list[dict] = []
 
     # position state for the event simulator
@@ -243,6 +251,8 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ) -> Signals:
         # --- ICT day reset (PD extremes, previous-day H/L, daily counters) ---
         if new_ict[i]:
             if day_high_acc > -np.inf:
+                prev_day_hi = day_high_acc
+                prev_day_lo = day_low_acc
                 pdh = day_high_acc if p.use_pd_levels else np.nan
                 pdl = day_low_acc if p.use_pd_levels else np.nan
             day_high_acc = -np.inf
@@ -257,9 +267,13 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ) -> Signals:
         day_high_acc = max(day_high_acc, h[i])
         day_low_acc = min(day_low_acc, l[i])
 
-        eq = np.nan if (np.isnan(ict_hi) or np.isnan(ict_lo)) else (ict_hi + ict_lo) / 2.0
-        pd_long_ok = (not p.use_pd) or np.isnan(eq) or (c[i] <= eq)
-        pd_short_ok = (not p.use_pd) or np.isnan(eq) or (c[i] >= eq)
+        # Daily 50% as support/resistance: the midpoint of the prior daily candle.
+        # When it sits BELOW price it is support -> only longs; when ABOVE price it is
+        # resistance -> only shorts. (A directional bias filter, not mean-reversion.)
+        daily_mid = np.nan if (np.isnan(prev_day_hi) or np.isnan(prev_day_lo)) \
+            else (prev_day_hi + prev_day_lo) / 2.0
+        pd_long_ok = (not p.use_pd) or np.isnan(daily_mid) or (c[i] >= daily_mid)
+        pd_short_ok = (not p.use_pd) or np.isnan(daily_mid) or (c[i] <= daily_mid)
 
         # --- pivots / structure ---
         if not np.isnan(ph[i]):
@@ -367,49 +381,74 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ) -> Signals:
                         sweep_short_ok and pd_short_ok and in_eod[i] and not day_block)
 
         # ============================ POSITION MANAGEMENT ============================
-        # 1) manage an open position first (exits take priority on this bar)
+        # 1) manage an open position first (exits take priority on this bar).
+        #    Levels: TP1 = 1R partial (scale_pct off), break-even at the internal
+        #    high/low, runner draws to the external swing high/low (cur["tp"]).
         if pos != 0 and cur is not None:
-            exit_now = False
-            xprice = np.nan
-            reason = ""
-            if pos == 1:
-                # break-even after ITH taken
-                if p.use_be and h[i] >= cur["tp1"]:
+            d = cur["dir"]
+            # Break-even when the internal high/low is taken.
+            if p.use_be and not cur["be_done"]:
+                if d == 1 and h[i] >= cur["be_level"]:
+                    cur["be_done"] = True
                     cur["stop"] = max(cur["stop"], cur["entry"])
-                # stop (worst-case before TP)
-                if l[i] <= cur["stop"]:
-                    exit_now, xprice, reason = True, cur["stop"], "stop"
-                elif h[i] >= cur["tp"]:
-                    exit_now, xprice, reason = True, cur["tp"], "tp"
-                elif p.stop_mode == "IFVG close" and not np.isnan(cur["inv_edge"]) and c[i] < cur["inv_edge"]:
-                    exit_now, xprice, reason = True, c[i], "ifvg"
-                elif p.flat_eod and not in_eod[i]:
-                    exit_now, xprice, reason = True, c[i], "eod"
-            else:
-                if p.use_be and l[i] <= cur["tp1"]:
+                elif d == -1 and l[i] <= cur["be_level"]:
+                    cur["be_done"] = True
                     cur["stop"] = min(cur["stop"], cur["entry"])
-                if h[i] >= cur["stop"]:
-                    exit_now, xprice, reason = True, cur["stop"], "stop"
-                elif l[i] <= cur["tp"]:
-                    exit_now, xprice, reason = True, cur["tp"], "tp"
-                elif p.stop_mode == "IFVG close" and not np.isnan(cur["inv_edge"]) and c[i] > cur["inv_edge"]:
-                    exit_now, xprice, reason = True, c[i], "ifvg"
-                elif p.flat_eod and not in_eod[i]:
-                    exit_now, xprice, reason = True, c[i], "eod"
 
-            if exit_now:
-                if pos == 1:
-                    long_exits[i] = True
+            # At most one fill action per bar; stop assumed first (worst case), then
+            # the 1R partial, then the runner, then IFVG-close / EOD invalidation.
+            action = None  # (kind, price, reason)
+            if d == 1:
+                if l[i] <= cur["stop"]:
+                    action = ("exit", cur["stop"], "stop")
+                elif p.use_scale and not cur["tp1_done"] and h[i] >= cur["tp1"]:
+                    action = ("partial", cur["tp1"], "tp1")
+                elif h[i] >= cur["tp"]:
+                    action = ("exit", cur["tp"], "tp")
+                elif p.stop_mode == "IFVG close" and not np.isnan(cur["inv_edge"]) and c[i] < cur["inv_edge"]:
+                    action = ("exit", c[i], "ifvg")
+                elif p.flat_eod and not in_eod[i]:
+                    action = ("exit", c[i], "eod")
+            else:
+                if h[i] >= cur["stop"]:
+                    action = ("exit", cur["stop"], "stop")
+                elif p.use_scale and not cur["tp1_done"] and l[i] <= cur["tp1"]:
+                    action = ("partial", cur["tp1"], "tp1")
+                elif l[i] <= cur["tp"]:
+                    action = ("exit", cur["tp"], "tp")
+                elif p.stop_mode == "IFVG close" and not np.isnan(cur["inv_edge"]) and c[i] > cur["inv_edge"]:
+                    action = ("exit", c[i], "ifvg")
+                elif p.flat_eod and not in_eod[i]:
+                    action = ("exit", c[i], "eod")
+
+            if action is not None:
+                kind, px, reason = action
+                if kind == "partial":
+                    part = cur["size"] * (p.scale_pct / 100.0)
+                    order_size[i] = -d * part
+                    order_price[i] = px
+                    cur["realized"] += (px - cur["entry"]) * d * POINT_VALUE * part
+                    cur["size"] -= part
+                    cur["tp1_done"] = True
                 else:
-                    short_exits[i] = True
-                exit_price[i] = xprice
-                pnl = (xprice - cur["entry"]) * pos * POINT_VALUE
-                if pnl < -4 * mintick * POINT_VALUE:
-                    losses_today += 1
-                cur.update(exit_bar=i, exit_price=xprice, reason=reason, pnl=pnl)
-                trades.append(cur)
-                cur = None
-                pos = 0
+                    rem = cur["size"]
+                    order_size[i] = -d * rem
+                    order_price[i] = px
+                    cur["realized"] += (px - cur["entry"]) * d * POINT_VALUE * rem
+                    if d == 1:
+                        long_exits[i] = True
+                    else:
+                        short_exits[i] = True
+                    exit_price[i] = px
+                    total = cur["realized"]
+                    if total < -4 * mintick * POINT_VALUE * cur["init_size"]:
+                        losses_today += 1
+                    n_orders = 3 if cur["tp1_done"] else 2  # entry + (partial?) + final
+                    cur.update(exit_bar=i, exit_price=px, reason=reason,
+                               pnl=total, n_orders=n_orders)
+                    trades.append(cur)
+                    cur = None
+                    pos = 0
 
         # 2) handle a pending limit order (fill or expire) when flat
         if pos == 0 and pend is not None:
@@ -430,9 +469,11 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ) -> Signals:
                 else:
                     short_entries[i] = True
                 entry_price[i] = fill
+                order_size[i] = pos * contracts
+                order_price[i] = fill
                 trades_today += 1
-                cur = dict(entry_bar=i, entry=fill, dir=pos, stop=pend["stop"],
-                           tp=pend["tp"], tp1=pend["tp1"], inv_edge=pend["inv_edge"])
+                cur = _new_cur(i, fill, pos, pend["stop"], pend["tp"], pend["tp1"],
+                               pend["be_level"], pend["inv_edge"], contracts)
                 sweep_used = True
                 pend = None
             elif age >= p.limit_expiry or pre_taken:
@@ -451,16 +492,18 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ) -> Signals:
                 hard_sl = swing_sl if p.stop_mode == "Swing high/low" else long_gap_bot - buf
                 risk = ref - hard_sl
                 if risk > 0:
-                    fixed_tp = ref + risk * p.rr
-                    pool = _near_above(ref, last_ph, pdh, eqh)
+                    tp1 = ref + risk * p.rr                       # 1R partial target
+                    pool = _near_above(ref, last_ph, pdh, eqh)    # external swing draw
+                    fallback = ref + risk * p.runner_rr
                     tp = pool if (p.tp_mode == "Opposing liquidity" and not np.isnan(pool)
-                                  and (pool - ref) >= risk * p.rr) else fixed_tp
-                    ith_raw = h[max(0, i - p.sl_lookback):i].max() if i > 0 else np.nan
-                    mid = ref + (tp - ref) * 0.5
-                    tp1 = ith_raw if (not np.isnan(ith_raw) and ref < ith_raw < tp) else mid
+                                  and pool > tp1) else fallback
+                    tp = max(tp, tp1 + mintick)                   # runner beyond TP1
+                    ith = h[max(0, i - p.sl_lookback):i].max() if i > 0 else np.nan
+                    be_level = ith if (not np.isnan(ith) and ith > ref) else ref
                     pos, cur, pend, trades_today, sweep_used = _commit_entry(
-                        is_market, i, 1, ref, hard_sl, tp, tp1, long_gap_bot,
-                        long_entries, short_entries, entry_price, trades_today, sweep_used)
+                        is_market, i, 1, ref, hard_sl, tp, tp1, be_level, long_gap_bot,
+                        contracts, long_entries, short_entries, entry_price,
+                        order_size, order_price, trades_today, sweep_used)
             elif short_signal:
                 ref_close = c[i]
                 chase = short_edge - ref_close
@@ -472,19 +515,21 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ) -> Signals:
                 hard_sl = swing_sl if p.stop_mode == "Swing high/low" else short_gap_top + buf
                 risk = hard_sl - ref
                 if risk > 0:
-                    fixed_tp = ref - risk * p.rr
+                    tp1 = ref - risk * p.rr
                     pool = _near_below(ref, last_pl, pdl, eql)
+                    fallback = ref - risk * p.runner_rr
                     tp = pool if (p.tp_mode == "Opposing liquidity" and not np.isnan(pool)
-                                  and (ref - pool) >= risk * p.rr) else fixed_tp
-                    itl_raw = l[max(0, i - p.sl_lookback):i].min() if i > 0 else np.nan
-                    mid = ref - (ref - tp) * 0.5
-                    tp1 = itl_raw if (not np.isnan(itl_raw) and tp < itl_raw < ref) else mid
+                                  and pool < tp1) else fallback
+                    tp = min(tp, tp1 - mintick)
+                    itl = l[max(0, i - p.sl_lookback):i].min() if i > 0 else np.nan
+                    be_level = itl if (not np.isnan(itl) and itl < ref) else ref
                     pos, cur, pend, trades_today, sweep_used = _commit_entry(
-                        is_market, i, -1, ref, hard_sl, tp, tp1, short_gap_top,
-                        long_entries, short_entries, entry_price, trades_today, sweep_used)
+                        is_market, i, -1, ref, hard_sl, tp, tp1, be_level, short_gap_top,
+                        contracts, long_entries, short_entries, entry_price,
+                        order_size, order_price, trades_today, sweep_used)
 
     return Signals(long_entries, long_exits, short_entries, short_exits,
-                   entry_price, exit_price, trades)
+                   entry_price, exit_price, order_size, order_price, trades)
 
 
 def _near_above(ref, a, b, c):
@@ -497,8 +542,17 @@ def _near_below(ref, a, b, c):
     return max(cands) if cands else np.nan
 
 
-def _commit_entry(is_market, i, direction, ref, stop, tp, tp1, inv_edge,
-                  long_entries, short_entries, entry_price, trades_today, sweep_used):
+def _new_cur(i, entry, d, stop, tp, tp1, be_level, inv_edge, size):
+    """Build the open-trade state dict (size in contracts; realized PnL accrues
+    across the TP1 partial and the runner leg)."""
+    return dict(entry_bar=i, entry=entry, dir=d, stop=stop, tp=tp, tp1=tp1,
+                be_level=be_level, inv_edge=inv_edge, size=size, init_size=size,
+                realized=0.0, tp1_done=False, be_done=False)
+
+
+def _commit_entry(is_market, i, direction, ref, stop, tp, tp1, be_level, inv_edge,
+                  contracts, long_entries, short_entries, entry_price,
+                  order_size, order_price, trades_today, sweep_used):
     """Apply an entry. Market fills now (this bar); limit becomes a pending order.
 
     Returns (pos, cur, pend, trades_today, sweep_used).
@@ -509,12 +563,13 @@ def _commit_entry(is_market, i, direction, ref, stop, tp, tp1, inv_edge,
         else:
             short_entries[i] = True
         entry_price[i] = ref
-        cur = dict(entry_bar=i, entry=ref, dir=direction, stop=stop,
-                   tp=tp, tp1=tp1, inv_edge=inv_edge)
+        order_size[i] = direction * contracts
+        order_price[i] = ref
+        cur = _new_cur(i, ref, direction, stop, tp, tp1, be_level, inv_edge, contracts)
         return direction, cur, None, trades_today + 1, True
     else:
-        pend = dict(bar=i, dir=direction, limit=ref, stop=stop, tp=tp,
-                    tp1=tp1, inv_edge=inv_edge)
+        pend = dict(bar=i, dir=direction, limit=ref, stop=stop, tp=tp, tp1=tp1,
+                    be_level=be_level, inv_edge=inv_edge)
         return 0, None, pend, trades_today, sweep_used
 
 

@@ -36,14 +36,16 @@ def test_signals_balanced():
 def test_pnl_consistency():
     df, _ = get_data(days=40, seed=7)
     pf, sig, stats = run_backtest(df, Params())
-    # Sum of per-trade PnL from the generator should track vbt's realised PnL sign/scale.
+    # The generator's GROSS per-trade PnL should match vbt's realised PnL up to the
+    # commission + slippage budget (which the generator does not model).
     gen_pnl = sum(t["pnl"] for t in sig.trades)
     vbt_pnl = float(pf.trades.pnl.sum())
-    # They won't match to the cent (vbt adds commission/slippage) but must agree in sign
-    # of the aggregate and be within commission+slippage budget per trade.
-    budget = len(sig.trades) * (2 * 2.04 + 2 * 2 * 0.25 * POINT_VALUE)
+    n_orders = int(np.isfinite(sig.order_size).sum())
+    budget = n_orders * (2.04 + 2 * 0.25 * POINT_VALUE)  # commission + 2-tick slippage
     assert abs(gen_pnl - vbt_pnl) <= budget + 1e-6, (gen_pnl, vbt_pnl, budget)
-    print(f"ok  pnl_consistency (gen={gen_pnl:.0f} vbt={vbt_pnl:.0f})")
+    # Each entry must be matched by an offsetting set of orders that nets to flat.
+    assert abs(float(np.nansum(sig.order_size))) < 1e-9
+    print(f"ok  pnl_consistency (gen={gen_pnl:.0f} vbt={vbt_pnl:.0f} budget={budget:.0f})")
 
 
 def test_optimizer_runs():
