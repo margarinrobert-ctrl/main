@@ -1,0 +1,42 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © kijunkun / milly
+//@version=6
+indicator('50% level', overlay = true)
+
+daily_range = '1600-1500'
+t = time(timeframe.period, daily_range + ':1234567')
+
+is_newbar(res) =>
+    ta.change(time(res)) != 0
+
+in_session = not na(t)
+is_first   = in_session and not in_session[1]
+
+daily_high = float(na)
+daily_low  = float(na)
+
+if is_first
+    daily_high := high
+    daily_low  := low
+else
+    daily_high := daily_high[1]
+    daily_low  := daily_low[1]
+
+if high > daily_high and in_session
+    daily_high := high
+if low < daily_low and in_session
+    daily_low := low
+
+midline = timeframe.isintraday and timeframe.multiplier <= 60 ? daily_low + (daily_high - daily_low) / 2 : na
+
+// When price trades above the 50% level it acts as Support, below it acts as Resistance.
+is_support = not na(midline) and close >= midline
+sr_color   = na(midline) ? na : (is_support ? color.new(color.green, 0) : color.new(color.red, 0))
+
+plot(midline, title = 'midline', style = plot.style_line, color = sr_color, linewidth = 1)
+
+// Floating label at the right edge that reads "Support" or "Resistance".
+var label sr_label = na
+if barstate.islast and not na(midline)
+    label.delete(sr_label)
+    sr_label := label.new(x = bar_index, y = midline, text = is_support ? 'Support' : 'Resistance', xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, color = is_support ? color.new(color.green, 0) : color.new(color.red, 0), textcolor = color.white, size = size.small)
