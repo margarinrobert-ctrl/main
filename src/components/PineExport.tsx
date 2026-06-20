@@ -23,7 +23,7 @@ export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
         setState("empty");
         return;
       }
-      setResult(buildGexPine(symbol, chain, spot, 8, exp, asOf));
+      setResult(buildGexPine(symbol, chain, spot, 10, exp, asOf));
       setState("ok");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Network error");

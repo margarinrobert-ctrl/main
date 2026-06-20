@@ -73,6 +73,21 @@ describe("buildGexPine", () => {
     expect(r.callRes).not.toBe(r.putSup);
   });
 
+  it("draws every level as its own label — never merges Call Res with a GEX strike", () => {
+    const chain = [
+      c({ type: "call", strike: 105, gamma: 0.05, openInterest: 9000, volume: 12000 }),
+      c({ type: "put", strike: 95, gamma: 0.04, openInterest: 8000, volume: 11000 }),
+      c({ type: "call", strike: 110, gamma: 0.03, openInterest: 6000 }),
+      c({ type: "put", strike: 90, gamma: 0.03, openInterest: 6000 }),
+    ];
+    const r = buildGexPine("MULTI", chain, 100);
+    expect(r.code).toContain('"Call Resistance"'); // stands alone
+    expect(r.code).toContain('"GEX 1"'); // ladder label stands alone
+    expect(r.code).toContain('"HVL 0DTE"'); // 0DTE flip present
+    expect(r.code).not.toMatch(/Call Res[^"]*\+[^"]*GEX/); // no "Call Res + GEX" combo labels
+    expect(r.strikes).toBeGreaterThanOrEqual(8); // many distinct levels, not collapsed
+  });
+
   it("notes the index-proxy basis for futures symbols", () => {
     const chain = [c({ type: "call", strike: 105, gamma: 0.02, openInterest: 8000 }), c({ type: "put", strike: 95, gamma: 0.03, openInterest: 9000 })];
     expect(buildGexPine("NQ", chain, 100).code).toContain("proxy");

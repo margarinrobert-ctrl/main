@@ -84,26 +84,6 @@ interface Lvl {
   color: string; // Pine color token
   style: string; // Pine line.style_* token
   width: number;
-  prio: number; // lower = more important (kept on merge)
-}
-
-/** Merge a level into the list if another sits within tolerance, so stacked labels collapse to one. */
-function pushMerged(list: Lvl[], lvl: Lvl, scale: number): void {
-  const tol = Math.max(0.01, scale * 0.0006);
-  const hit = list.find((l) => Math.abs(l.price - lvl.price) <= tol);
-  if (!hit) {
-    list.push({ ...lvl });
-    return;
-  }
-  if (lvl.prio < hit.prio) {
-    hit.color = lvl.color;
-    hit.style = lvl.style;
-    hit.prio = lvl.prio;
-  }
-  hit.width = Math.max(hit.width, lvl.width);
-  const name = lvl.short.replace(/\s+[-\d.]+$/, "");
-  if (!hit.short.includes(name)) hit.short += ` + ${name}`;
-  hit.detail += `  ||  ${lvl.detail}`;
 }
 
 export interface PineResult {
@@ -124,7 +104,7 @@ export function buildGexPine(
   symbol: string,
   chain: OptionContract[],
   spot: number | null,
-  ladderN = 8,
+  ladderN = 10,
   targetExp?: string | null,
   feedAsOf?: string | null,
 ): PineResult {
@@ -158,31 +138,35 @@ export function buildGexPine(
     .sort((a, b) => Math.abs(b.gex) - Math.abs(a.gex))
     .slice(0, ladderN);
 
+  const hvl0 = gammaFlipNearest(by0, spot);
+
   const lvls: Lvl[] = [];
-  // Visible label is the NAME only; the indicator appends the actual on-chart price (after any basis
-  // shift), so labels always read correctly whether or not levels are aligned to a futures chart.
-  const add = (price: number | null, name: string, color: string, style: string, width: number, prio: number, detail: string) => {
+  // Every level is drawn as its OWN line + label — never merged. Labels that sit close together get
+  // staggered horizontally (in the indicator) so all ~20 stay readable. Visible label is the NAME;
+  // the indicator appends the actual on-chart price (after any basis shift).
+  const add = (price: number | null, name: string, color: string, style: string, width: number, detail: string) => {
     if (price == null || !Number.isFinite(price)) return;
-    pushMerged(lvls, { price, short: name, detail: `${detail} · strike ${fmtNice(price)}`, color, style, width, prio }, spot ?? price);
+    lvls.push({ price, short: name, detail: `${detail} · strike ${fmtNice(price)}`, color, style, width });
   };
 
-  add(callRes, "Call Res", "color.red", "line.style_solid", 2, 0, `Call Resistance (max call gamma above spot) - ${meta(chain, callRes, spot)}`);
-  add(putSup, "Put Sup", "color.green", "line.style_solid", 2, 0, `Put Support (max put gamma below spot) - ${meta(chain, putSup, spot)}`);
-  add(hvl, "HVL", "color.blue", "line.style_solid", 2, 0, "HVL / gamma flip (zero-gamma nearest spot)");
-  add(callRes0, "Call Res 0DTE", "color.red", "line.style_dashed", 2, 1, `Call Resistance 0DTE - ${meta(sub, callRes0, spot)}`);
-  add(putSup0, "Put Sup 0DTE", "color.green", "line.style_dashed", 2, 1, `Put Support 0DTE - ${meta(sub, putSup0, spot)}`);
-  add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, 2, `Max Pain ${exp ?? ""} - ${meta(chain, mp, spot)}`);
-  add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, 2, `Call OI wall - ${meta(chain, callOi, spot)}`);
-  add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, 2, `Put OI wall - ${meta(chain, putOi, spot)}`);
-  add(spot, "Spot", "color.gray", "line.style_dotted", 1, 5, `Underlying spot when generated${feedAsOf ? ` (CBOE ${feedAsOf})` : " (~15-min delayed)"} — levels are anchored here; the chart's current price may have moved since.`);
-  add(dmax, `Exp Hi ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, 3, `Expected-move HIGH for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
-  add(dmin, `Exp Lo ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, 3, `Expected-move LOW for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
+  add(callRes, "Call Resistance", "color.red", "line.style_solid", 2, `Call Resistance (max call gamma above spot) - ${meta(chain, callRes, spot)}`);
+  add(putSup, "Put Support", "color.green", "line.style_solid", 2, `Put Support (max put gamma below spot) - ${meta(chain, putSup, spot)}`);
+  add(hvl, "HVL", "color.blue", "line.style_solid", 2, "HVL / gamma flip (zero-gamma nearest spot)");
+  add(callRes0, "Call Res 0DTE", "color.red", "line.style_dashed", 2, `Call Resistance 0DTE / Gamma Wall 0DTE - ${meta(sub, callRes0, spot)}`);
+  add(putSup0, "Put Sup 0DTE", "color.green", "line.style_dashed", 2, `Put Support 0DTE - ${meta(sub, putSup0, spot)}`);
+  add(hvl0, "HVL 0DTE", "color.blue", "line.style_dashed", 2, "HVL 0DTE / front-expiry gamma flip");
+  add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, `Max Pain ${exp ?? ""} - ${meta(chain, mp, spot)}`);
+  add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, `Call OI wall - ${meta(chain, callOi, spot)}`);
+  add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, `Put OI wall - ${meta(chain, putOi, spot)}`);
+  add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated${feedAsOf ? ` (CBOE ${feedAsOf})` : " (~15-min delayed)"} — levels are anchored here; the chart's current price may have moved since.`);
+  add(dmax, `Exp Hi ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move HIGH for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
+  add(dmin, `Exp Lo ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move LOW for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
   ladder.forEach((x, i) => {
     const st = strikeStats(chain, x.strike, spot);
-    add(x.strike, `GEX${i + 1}`, "color.teal", "line.style_solid", 1, 4, `GEX ${i + 1} @${fmtNice(x.strike)} - OI ${kfmt(st.oi)} | V ${kfmt(st.vol)} | ${usd(x.gex)}`);
+    add(x.strike, `GEX ${i + 1}`, "color.teal", "line.style_solid", 1, `GEX ${i + 1} @${fmtNice(x.strike)} - OI ${kfmt(st.oi)} | V ${kfmt(st.vol)} | ${usd(x.gex)}`);
   });
 
-  if (!lvls.length) add(s, "Spot", "color.gray", "line.style_dotted", 1, 9, "spot");
+  if (!lvls.length) add(s, "Spot", "color.gray", "line.style_dotted", 1, "spot");
   lvls.sort((a, b) => a.price - b.price);
 
   const P = lvls.map((l) => fmt(l.price)).join(", ");
