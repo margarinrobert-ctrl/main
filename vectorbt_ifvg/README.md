@@ -102,6 +102,34 @@ edge that generalises after costs. That is the truthful outcome for this mechani
 ICT model; treat any single-period positive as overfitting until walk-forward says
 otherwise.
 
+### Rolling walk-forward (the rigorous test)
+
+`walk_forward.py` optimises on each year and tests the winner on the *next, untouched*
+year, then pools every out-of-sample year (real Nasdaq-100 1-min, 2015→2020):
+
+| train→test | OOS return | win% | PF |
+|---|---|---|---|
+| 2015→2016 | −0.75% | 41% | 0.64 |
+| 2016→2017 | −1.23% | 17% | 0.33 |
+| 2017→2018 | −0.94% | 54% | 0.89 |
+| 2018→2019 | −0.18% | 50% | 0.91 |
+| 2019→2020 | −0.66% | 64% | 0.93 |
+| **pooled (163 trades)** | **−3.76%** | **50.3%** | **0.84** |
+
+**Every out-of-sample year loses.** Win rate is a healthy ~50%, but profit factor < 1
+— losers outweigh winners after costs. Run it yourself:
+
+```bash
+python -m vectorbt_ifvg.fetch_nas100 --years 2015 2016 2017 2018 2019 2020 \
+    --out vectorbt_ifvg/data/nas100_2015_2020.csv
+python -m vectorbt_ifvg.walk_forward
+```
+
+**Conclusion:** on real Nasdaq-100 data this mechanical IFVG/liquidity-sweep model has
+no durable edge. The framework (signals, VectorBT accounting, optimiser, walk-forward)
+is correct and reusable; the *strategy* doesn't make money out-of-sample. Plug in
+genuine NQ-futures 1-min data to confirm on the exact contract, but expect the same.
+
 ## Synthetic-data caveat (read this)
 
 This environment has **no market-data network access** (Yahoo & co. are not
