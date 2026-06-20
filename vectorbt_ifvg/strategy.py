@@ -100,6 +100,22 @@ class Params:
     eod_session: tuple[int, int] = (8 * 60 + 30, 16 * 60)  # 0830-1600 NY, minutes
 
 
+def preset(name: str = "robust") -> Params:
+    """Named parameter presets.
+
+    "robust" — the pure-1:1 config that survived cross-seed validation on the
+    synthetic series (median ~+3.6%, win rate ~63%, PF ~2.1 across 6 seeds). NOTE:
+    this is tuned on a synthetic generator and is a starting point, not a validated
+    real-market edge — re-optimise on your own NQ data.
+    """
+    if name == "robust":
+        return Params(min_gap_ticks=12.0, disp_mult=0.6, full_tp_1r=True,
+                      sweep_lookback=3, stop_mode="Swing high/low")
+    if name == "default":
+        return Params()
+    raise ValueError(f"unknown preset: {name}")
+
+
 @dataclass
 class Signals:
     long_entries: np.ndarray

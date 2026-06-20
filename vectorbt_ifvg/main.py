@@ -17,7 +17,7 @@ from __future__ import annotations
 import argparse
 
 from .data import get_data, load_csv
-from .strategy import Params
+from .strategy import Params, preset
 from .backtest import run_backtest, format_stats
 from .optimize import optimize, best_params, DEFAULT_GRID, QUICK_GRID
 
@@ -25,8 +25,10 @@ from .optimize import optimize, best_params, DEFAULT_GRID, QUICK_GRID
 def main(argv=None):
     ap = argparse.ArgumentParser(description="IFVG + Liquidity Sweep VectorBT backtest")
     ap.add_argument("--csv", help="path to a 1-minute OHLCV CSV (else synthetic)")
-    ap.add_argument("--days", type=int, default=120, help="synthetic session count")
+    ap.add_argument("--days", type=int, default=60, help="synthetic session count")
     ap.add_argument("--seed", type=int, default=7, help="synthetic RNG seed")
+    ap.add_argument("--preset", choices=["default", "robust"], default="default",
+                    help="parameter preset ('robust' = cross-seed-validated pure 1:1)")
     ap.add_argument("--optimize", action="store_true", help="run the grid search")
     ap.add_argument("--quick", action="store_true", help="use the small QUICK_GRID")
     ap.add_argument("--min-trades", type=int, default=12, help="opt: min sample size")
@@ -40,7 +42,7 @@ def main(argv=None):
         df, src = get_data(days=args.days, seed=args.seed)
     print(f"Loaded {len(df):,} bars ({src}) {df.index[0]} -> {df.index[-1]}\n")
 
-    params = Params()
+    params = preset(args.preset)
 
     if args.optimize:
         grid = QUICK_GRID if args.quick else DEFAULT_GRID
