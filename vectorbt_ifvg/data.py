@@ -28,15 +28,29 @@ NY_TZ = "America/New_York"
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 
 
-def load_csv(path: str, tz: str = NY_TZ) -> pd.DataFrame:
-    """Load a 1-minute OHLCV CSV into a tz-aware DataFrame indexed by time."""
+def load_csv(path: str, source_tz: str = "UTC", tz: str = NY_TZ) -> pd.DataFrame:
+    """Load a 1-minute OHLCV CSV into a NY-tz-aware DataFrame indexed by time.
+
+    Handles TradingView exports (a ``time`` column, UTC, possibly a UNIX timestamp,
+    plus extra indicator columns which are ignored). Naive timestamps are assumed to
+    be ``source_tz`` (UTC by default, which matches TradingView/Dukascopy exports),
+    then converted to ``tz`` (New York) for the killzone/session logic.
+    """
     df = pd.read_csv(path)
     cols = {c.lower(): c for c in df.columns}
-    tcol = cols.get("datetime") or cols.get("date") or cols.get("time") or df.columns[0]
-    df = df.rename(columns={tcol: "datetime"})
-    df["datetime"] = pd.to_datetime(df["datetime"])
-    df = df.set_index("datetime").sort_index()
-    # Normalise OHLCV column names.
+    tcol = cols.get("datetime") or cols.get("date") or cols.get("time") \
+        or cols.get("gmt time") or df.columns[0]
+    s = df[tcol]
+    # UNIX timestamp (numeric) vs ISO/string.
+    if np.issubdtype(s.dtype, np.number):
+        unit = "ms" if s.iloc[0] > 1e11 else "s"
+        idx = pd.to_datetime(s, unit=unit, utc=True)
+    else:
+        idx = pd.to_datetime(s, utc=False)
+    df = df.drop(columns=[tcol])
+    df.index = pd.DatetimeIndex(idx)
+    df = df.sort_index()
+    # Normalise OHLCV names; ignore any extra (indicator) columns.
     ren = {}
     for want in ("open", "high", "low", "close", "volume"):
         for c in df.columns:
@@ -46,9 +60,10 @@ def load_csv(path: str, tz: str = NY_TZ) -> pd.DataFrame:
     keep = [c for c in ("open", "high", "low", "close", "volume") if c in df.columns]
     df = df[keep]
     if df.index.tz is None:
-        df.index = df.index.tz_localize(tz)
+        df.index = df.index.tz_localize(source_tz).tz_convert(tz)
     else:
         df.index = df.index.tz_convert(tz)
+    df.index.name = "datetime"
     return df
 
 
