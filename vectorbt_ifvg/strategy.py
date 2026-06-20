@@ -272,6 +272,9 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
     eql = np.nan
 
     for i in range(n):
+        closed_this_bar = False   # guard: never enter on the same bar a trade exits
+                                  # (order_size holds one fill per bar; a same-bar entry
+                                  #  would overwrite the exit and leave a residual position)
         # --- ICT day reset (PD extremes, previous-day H/L, daily counters) ---
         if new_ict[i]:
             if day_high_acc > -np.inf:
@@ -495,6 +498,7 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
                     trades.append(cur)
                     cur = None
                     pos = 0
+                    closed_this_bar = True
 
         # 2) handle a pending limit order (fill or expire) when flat
         if pos == 0 and pend is not None:
@@ -525,8 +529,8 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
             elif age >= p.limit_expiry or pre_taken:
                 pend = None  # cancel; sweep re-armed (sweep_used stays False)
 
-        # 3) new entry when flat and no pending order
-        if pos == 0 and pend is None and (long_signal or short_signal):
+        # 3) new entry when flat and no pending order (and not on a same-bar exit)
+        if pos == 0 and pend is None and not closed_this_bar and (long_signal or short_signal):
             if long_signal:
                 ref_close = c[i]
                 chase = ref_close - long_edge

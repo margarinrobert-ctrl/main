@@ -48,6 +48,20 @@ def test_pnl_consistency():
     print(f"ok  pnl_consistency (gen={gen_pnl:.0f} vbt={vbt_pnl:.0f} budget={budget:.0f})")
 
 
+def test_orders_net_flat_across_seeds():
+    # Regression: an exit and a new entry must never share a bar (order_size holds one
+    # fill/bar), otherwise a residual position is marked-to-market and inflates equity.
+    from vectorbt_ifvg.data import synthetic_nq
+    p = Params(min_gap_ticks=12.0, disp_mult=1.0, sweep_lookback=3,
+               stop_mode="Swing high/low")
+    for seed in (7, 1, 2, 3, 42, 100):
+        df = synthetic_nq(days=40, seed=seed)
+        sig = generate(df, p, contracts=1.0)
+        resid = float(np.nansum(sig.order_size))
+        assert abs(resid) < 1e-9, f"seed {seed}: residual position {resid}"
+    print("ok  orders_net_flat_across_seeds")
+
+
 def test_optimizer_runs():
     df, _ = get_data(days=30, seed=2)
     res = optimize(df, grid=QUICK_GRID, min_trades=1, verbose=False)
@@ -62,5 +76,6 @@ if __name__ == "__main__":
     test_data_shape()
     test_signals_balanced()
     test_pnl_consistency()
+    test_orders_net_flat_across_seeds()
     test_optimizer_runs()
     print("\nAll smoke tests passed.")
