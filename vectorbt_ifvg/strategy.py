@@ -53,6 +53,13 @@ class Params:
     use_eq: bool = True               # equal highs/lows
     eq_ticks: float = 8.0
     allow_no_sweep_with_smt: bool = False
+    # Session ranges (a later session raids an earlier one's high/low). Each session's
+    # range freezes when it ends and becomes a sweep level + runner draw for the rest
+    # of the ICT day. All reset at the 18:00 NY ICT-day open.
+    use_sessions: bool = True
+    use_asian_range: bool = True      # Asian 20:00-00:00 NY
+    use_london_range: bool = True     # London 02:00-05:00 NY
+    use_ny_range: bool = True         # NY AM 08:30-12:00 NY
     # --- Market structure ---
     use_mss: bool = True
     # --- Premium/Discount ---
@@ -181,13 +188,17 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
         in_macro |= in_window(minute, s, e)
     in_time = (~p.use_time | in_kz) & (~p.use_macro | in_macro)
 
-    # ICT day open at 18:00 NY -> here our synthetic/real RTH data may not span 18:00,
-    # so the ICT day boundary is taken as a calendar-day change in NY for resets, and
-    # the equilibrium accumulates from the first bar of each NY day.
+    # ICT day opens at 18:00 NY. Reset on the transition INTO the evening only (this
+    # survives the 17:00-18:00 maintenance gap). If a feed never spans 18:00 (RTH-only
+    # data), fall back to a calendar-day change so resets still happen once per day.
     is_eve = hour >= 18
+    has_eve = bool(is_eve.any())
     new_ict = np.zeros(n, bool)
     new_ict[0] = True
-    new_ict[1:] = (is_eve[1:] & ~is_eve[:-1]) | (daynum[1:] != daynum[:-1])
+    if has_eve:
+        new_ict[1:] = is_eve[1:] & ~is_eve[:-1]
+    else:
+        new_ict[1:] = daynum[1:] != daynum[:-1]
 
     eod_s, eod_e = p.eod_session
     in_eod = in_window(minute, eod_s, eod_e) | (p.use_london & in_window(minute, 120, 300))
@@ -211,6 +222,19 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
     pdl = np.nan
     prev_day_hi = np.nan   # prior daily candle extremes (always tracked, for the 50% S/R)
     prev_day_lo = np.nan
+
+    # Session ranges: per-session developing + frozen high/low, reset each ICT day.
+    # Windows are [start, end) in NY minutes-of-day.
+    SESS = {
+        "asia": (20 * 60, 24 * 60, p.use_asian_range),
+        "london": (2 * 60, 5 * 60, p.use_london_range),
+        "ny": (8 * 60 + 30, 12 * 60, p.use_ny_range),
+    }
+    sess_dev_hi = {k: np.nan for k in SESS}
+    sess_dev_lo = {k: np.nan for k in SESS}
+    sess_hi = {k: np.nan for k in SESS}   # frozen (usable) levels
+    sess_lo = {k: np.nan for k in SESS}
+    in_sess_prev = {k: False for k in SESS}
 
     # sweeps
     last_sweep_dir = 0
@@ -261,6 +285,10 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
             ict_lo = l[i]
             trades_today = 0
             losses_today = 0
+            for k in SESS:                     # reset session ranges each ICT day
+                sess_dev_hi[k] = sess_dev_lo[k] = np.nan
+                sess_hi[k] = sess_lo[k] = np.nan
+                in_sess_prev[k] = False
         else:
             ict_hi = h[i] if np.isnan(ict_hi) else max(ict_hi, h[i])
             ict_lo = l[i] if np.isnan(ict_lo) else min(ict_lo, l[i])
@@ -295,13 +323,31 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
         bias_long_ok = (not p.use_mss) or bias >= 0
         bias_short_ok = (not p.use_mss) or bias <= 0
 
-        # --- sweeps (wick beyond level, body rejects back) ---
+        # --- session ranges: accumulate while in-session, freeze on session end ---
+        if p.use_sessions:
+            for k, (s0, s1, on) in SESS.items():
+                in_now = on and (s0 <= minute[i] < s1)
+                if in_now:
+                    sess_dev_hi[k] = h[i] if np.isnan(sess_dev_hi[k]) else max(sess_dev_hi[k], h[i])
+                    sess_dev_lo[k] = l[i] if np.isnan(sess_dev_lo[k]) else min(sess_dev_lo[k], l[i])
+                elif in_sess_prev[k]:           # just left the session -> freeze its range
+                    sess_hi[k] = sess_dev_hi[k]
+                    sess_lo[k] = sess_dev_lo[k]
+                in_sess_prev[k] = in_now
+
+        # Frozen session levels usable as sweep targets / runner draws this ICT day.
+        sh_levels = [sess_hi[k] for k in SESS] if p.use_sessions else []
+        sl_levels = [sess_lo[k] for k in SESS] if p.use_sessions else []
+
+        # --- sweeps (wick beyond level, body rejects back) over the expanded set ---
         swept_high = ((not np.isnan(last_ph) and h[i] > last_ph and c[i] < last_ph) or
                       (not np.isnan(pdh) and h[i] > pdh and c[i] < pdh) or
-                      (not np.isnan(eqh) and h[i] > eqh and c[i] < eqh))
+                      (not np.isnan(eqh) and h[i] > eqh and c[i] < eqh) or
+                      any((not np.isnan(x)) and h[i] > x and c[i] < x for x in sh_levels))
         swept_low = ((not np.isnan(last_pl) and l[i] < last_pl and c[i] > last_pl) or
                      (not np.isnan(pdl) and l[i] < pdl and c[i] > pdl) or
-                     (not np.isnan(eql) and l[i] < eql and c[i] > eql))
+                     (not np.isnan(eql) and l[i] < eql and c[i] > eql) or
+                     any((not np.isnan(x)) and l[i] < x and c[i] > x for x in sl_levels))
         if swept_high:
             last_sweep_dir = 1
             last_sweep_bar = i
@@ -493,7 +539,7 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
                 risk = ref - hard_sl
                 if risk > 0:
                     tp1 = ref + risk * p.rr                       # 1R partial target
-                    pool = _near_above(ref, last_ph, pdh, eqh)    # external swing draw
+                    pool = _near_above(ref, last_ph, pdh, eqh, *sh_levels)  # external draw
                     fallback = ref + risk * p.runner_rr
                     tp = pool if (p.tp_mode == "Opposing liquidity" and not np.isnan(pool)
                                   and pool > tp1) else fallback
@@ -516,7 +562,7 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
                 risk = hard_sl - ref
                 if risk > 0:
                     tp1 = ref - risk * p.rr
-                    pool = _near_below(ref, last_pl, pdl, eql)
+                    pool = _near_below(ref, last_pl, pdl, eql, *sl_levels)
                     fallback = ref - risk * p.runner_rr
                     tp = pool if (p.tp_mode == "Opposing liquidity" and not np.isnan(pool)
                                   and pool < tp1) else fallback
@@ -532,13 +578,13 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
                    entry_price, exit_price, order_size, order_price, trades)
 
 
-def _near_above(ref, a, b, c):
-    cands = [x for x in (a, b, c) if not np.isnan(x) and x > ref]
+def _near_above(ref, *levels):
+    cands = [x for x in levels if not np.isnan(x) and x > ref]
     return min(cands) if cands else np.nan
 
 
-def _near_below(ref, a, b, c):
-    cands = [x for x in (a, b, c) if not np.isnan(x) and x < ref]
+def _near_below(ref, *levels):
+    cands = [x for x in levels if not np.isnan(x) and x < ref]
     return max(cands) if cands else np.nan
 
 

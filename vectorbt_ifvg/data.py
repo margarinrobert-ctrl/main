@@ -53,12 +53,13 @@ def load_csv(path: str, tz: str = NY_TZ) -> pd.DataFrame:
 
 
 def _session_minutes(day: pd.Timestamp, tz: str) -> pd.DatetimeIndex:
-    """RTH-biased 1-minute grid 09:30-16:00 NY for one weekday (Globex-lite).
+    """Full Globex-day 1-minute grid for the ICT day ending on ``day``.
 
-    We model the regular cash session plus a pre-market expansion from 06:00 so
-    the 08:30 NY-AM killzone has context. Weekends are skipped by the caller.
+    Spans 18:00 the prior evening -> 16:00 ``day`` (NY), so every ICT session is
+    present and can raid the earlier one: Asian (20:00-00:00), London (02:00-05:00),
+    pre-market, and the NY cash session. Weekends are skipped by the caller.
     """
-    start = pd.Timestamp(day.year, day.month, day.day, 6, 0, tz=tz)
+    start = pd.Timestamp(day.year, day.month, day.day, 18, 0, tz=tz) - pd.Timedelta(days=1)
     end = pd.Timestamp(day.year, day.month, day.day, 16, 0, tz=tz)
     return pd.date_range(start, end, freq="1min", inclusive="left")
 
@@ -112,17 +113,24 @@ def synthetic_nq(
 
         for k, ts in enumerate(idx):
             minute_of_day = ts.hour * 60 + ts.minute
-            # Volatility envelope: calm pre-market, burst at 08:30-11:00, fade pm.
+            # Volatility/drift envelope across the full Globex day so each ICT session
+            # builds its own range for a later session to raid.
             if 510 <= minute_of_day <= 660:        # 08:30-11:00 NY AM killzone
                 vol = 3.2
                 drift = day_dir * day_strength * 0.9
-            elif 360 <= minute_of_day < 510:       # pre-market drift toward target
-                vol = 1.4
-                drift = np.sign(target - price) * 0.35
-            elif 810 <= minute_of_day <= 960:       # 13:30-16:00 NY PM
+            elif 810 <= minute_of_day <= 960:      # 13:30-16:00 NY PM
                 vol = 2.0
                 drift = day_dir * day_strength * 0.5
-            else:
+            elif 120 <= minute_of_day <= 300:      # 02:00-05:00 London
+                vol = 2.4
+                drift = day_dir * day_strength * 0.6
+            elif minute_of_day >= 1200 or minute_of_day < 0:  # 20:00-00:00 Asian
+                vol = 1.3
+                drift = np.sign(target - price) * 0.15
+            elif 300 <= minute_of_day < 510:       # 05:00-08:30 pre-market drift
+                vol = 1.4
+                drift = np.sign(target - price) * 0.35
+            else:                                   # 18:00-20:00 / 00:00-02:00 calm
                 vol = 1.0
                 drift = 0.0
 
@@ -141,7 +149,8 @@ def synthetic_nq(
             # both creates the fair-value gap and, on the reversal, inverts it. Without
             # it the strategy's "body >= ATR" filter almost never coincides with an
             # inversion (gaps would only come from wicks, which is not the real model).
-            if 510 <= minute_of_day <= 960 and rng.random() < 0.10:
+            in_kz = (510 <= minute_of_day <= 960) or (120 <= minute_of_day <= 300)
+            if in_kz and rng.random() < 0.10:
                 step = np.sign(step if step != 0 else day_dir) * rng.uniform(7, 16)
                 wick_mult = 0.4
 
@@ -186,7 +195,7 @@ def synthetic_nq(
     return df
 
 
-def get_data(days: int = 120, seed: int = 7) -> tuple[pd.DataFrame, str]:
+def get_data(days: int = 60, seed: int = 7) -> tuple[pd.DataFrame, str]:
     """Return (df, source). Prefer a real CSV in data/, else synthetic."""
     if os.path.isdir(DATA_DIR):
         for f in sorted(os.listdir(DATA_DIR)):

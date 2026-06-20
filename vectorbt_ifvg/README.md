@@ -26,6 +26,18 @@ two-losses-and-done).
   directional bias gate — price *above* it ⇒ longs only (50% = support), *below* ⇒
   shorts only (50% = resistance). Set via `use_pd`.
 
+### Liquidity sweep set (ERL)
+
+A sweep (wick beyond a level, body rejects back) off **any** enabled level satisfies
+the "sweep before IFVG" requirement, and the same levels seed the runner's external
+draw-on-liquidity target. Covered: old swing highs/lows (BSL/SSL), equal highs/lows,
+PDH/PDL, and **session ranges** — Asian (20:00–00:00), London (02:00–05:00) and NY AM
+(08:30–12:00) NY. Each session's high/low freezes when the session ends and stays
+sweepable for the rest of the ICT day (so London can raid Asian, NY can raid London),
+resetting at the 18:00 NY ICT-day open. Toggles: `use_sessions`, `use_asian_range`,
+`use_london_range`, `use_ny_range`. (PWH/PWL and trendline liquidity are not yet
+implemented.)
+
 ## Layout
 
 | file | what it does |
@@ -58,10 +70,11 @@ picked up automatically.
 
 This environment has **no market-data network access** (Yahoo & co. are not
 allowlisted), so by default the backtest runs on a **synthetic** 1-minute series.
-The generator deliberately manufactures the patterns the strategy hunts for
-(overnight drift, an 08:30 displacement leg that sweeps prior highs/lows and
-reverses, fair-value gaps, a quiet afternoon) so the *whole pipeline is exercised
-end-to-end* — but it is random noise with no genuine edge. **Negative expectancy on
+The generator now spans the **full Globex day (18:00 → 16:00 NY)** so every ICT
+session (Asian, London, NY) builds a range a later session can raid, and it
+manufactures the patterns the strategy hunts for (session drifts, an 08:30
+displacement leg that sweeps prior highs/lows and reverses, fair-value gaps) so the
+*whole pipeline is exercised end-to-end* — but it is random noise with no genuine edge. **Negative expectancy on
 synthetic data is the expected, honest result and says nothing about the real
 strategy.** Point the tool at real NQ/MNQ 1-minute data (via `--csv`) for any
 conclusion about performance.
