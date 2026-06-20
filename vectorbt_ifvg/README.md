@@ -71,7 +71,38 @@ CSV columns: `datetime, open, high, low, close, volume` (tz-naive datetimes are
 treated as America/New_York). Drop a `.csv` in `vectorbt_ifvg/data/` and it is
 picked up automatically.
 
-## Data caveat (read this)
+## Real data: Nasdaq-100 1-minute (free, works in-sandbox)
+
+Market-data APIs (Yahoo etc.) are blocked here, but `raw.githubusercontent.com` is
+reachable, so `fetch_nas100.py` pulls **real OANDA Nasdaq-100 (`NAS100_USD`) 1-minute
+data** (2005–2020) — the same underlying the NQ future tracks — from the public
+`FutureSharks/financial-data` repo, cleans it, and drops a CSV in `data/`:
+
+```bash
+python -m vectorbt_ifvg.fetch_nas100 --years 2019
+python -m vectorbt_ifvg.main                 # auto-picks up the CSV
+```
+
+It's the index (NQ *proxy*), so dollar figures use NQ economics ($20/pt) as an
+approximation; the win rate / profit factor / % return are the real-market numbers.
+
+### What the real data says (honest result)
+
+Walk-forward (optimise on 2018, test untouched 2017 & 2019), pure-1:1 exit:
+
+| | 2018 (in-sample best) | 2017 (OOS) | 2019 (OOS) |
+|---|---|---|---|
+| return | +1.23% | −0.93% | −0.18% |
+| win rate | 63% | 11% | 50% |
+| profit factor | 1.63 | 0.30 | 0.91 |
+
+The win rate now reads sensibly (~50–63%), but the in-sample edge **does not survive
+out-of-sample** — the strategy is roughly break-even on real Nasdaq-100 and has no
+edge that generalises after costs. That is the truthful outcome for this mechanical
+ICT model; treat any single-period positive as overfitting until walk-forward says
+otherwise.
+
+## Synthetic-data caveat (read this)
 
 This environment has **no market-data network access** (Yahoo & co. are not
 allowlisted), so by default the backtest runs on a **synthetic** 1-minute series.
