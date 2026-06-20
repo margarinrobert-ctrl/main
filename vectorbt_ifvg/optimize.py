@@ -27,7 +27,7 @@ from .backtest import run_backtest
 DEFAULT_GRID: dict[str, list] = {
     "min_gap_ticks": [12.0, 20.0, 32.0],
     "disp_mult": [0.6, 1.0, 1.4],
-    "runner_rr": [2.0, 3.0],          # runner fallback when no external pool
+    "full_tp_1r": [False, True],      # exit style: scale+runner vs pure 1:1
     "sweep_lookback": [3, 5],         # how fast the IFVG must form after the sweep
     "stop_mode": ["IFVG close", "Swing high/low"],
 }
@@ -88,6 +88,26 @@ def optimize(
     res = pd.DataFrame(rows)
     res = res.sort_values("score", ascending=False).reset_index(drop=True)
     return res
+
+
+def validate_across_seeds(p: Params, seeds=(7, 1, 2, 3, 42, 100), days: int = 60,
+                          init_cash: float = 100_000.0) -> pd.DataFrame:
+    """Re-run one config on several synthetic seeds. A real edge should hold up; a
+    seed-overfit config will show wild variance / a negative median. Returns a frame
+    with per-seed return / win rate / profit factor plus the median row."""
+    from .data import synthetic_nq
+    rows = []
+    for s in seeds:
+        df = synthetic_nq(days=days, seed=s)
+        _, _, st = run_backtest(df, p, init_cash=init_cash)
+        rows.append({"seed": s, "n_trades": st["n_trades"],
+                     "return_pct": st["total_return_pct"],
+                     "win_rate_pct": st["win_rate_pct"],
+                     "profit_factor": st["profit_factor"]})
+    res = pd.DataFrame(rows)
+    med = res.drop(columns="seed").median(numeric_only=True)
+    med["seed"] = "median"
+    return pd.concat([res, pd.DataFrame([med])], ignore_index=True)
 
 
 def best_params(results: pd.DataFrame, base: Params | None = None) -> Params:

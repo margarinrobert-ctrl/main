@@ -22,6 +22,11 @@ two-losses-and-done).
   swing (ITH/ITL), the runner's stop moves to entry (`use_be`).
 - **Runner targets the external swing high/low** (opposing liquidity draw); if no
   external pool is available it falls back to `runner_rr` (default 2R).
+- **Pure 1:1 mode** (`full_tp_1r=True`): take 100% off at the 1R target with a
+  symmetric hard stop — no partial/BE/runner/IFVG-early-exit. Use this when you want a
+  clean, readable win rate (≈ P(price reaches 1R before the stop), ~50%+ on data that
+  actually delivers). The default scale+runner style instead front-loads a 1R partial
+  and lets a runner chase external liquidity, which trades win rate for tail upside.
 - **Daily 50% as support/resistance**: the midpoint of the prior daily candle is a
   directional bias gate — price *above* it ⇒ longs only (50% = support), *below* ⇒
   shorts only (50% = resistance). Set via `use_pd`.

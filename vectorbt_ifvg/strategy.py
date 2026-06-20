@@ -93,6 +93,9 @@ class Params:
     use_be: bool = True               # move stop to break-even at the internal high/low
     use_scale: bool = True            # scale a partial at TP1 (1R)
     scale_pct: float = 50.0           # % of position taken off at TP1
+    full_tp_1r: bool = False          # pure 1:1: take 100% off at the 1R target with a
+                                      # symmetric hard stop (no partial/BE/runner/IFVG
+                                      # early-exit). Win rate then reads as P(1R first).
     flat_eod: bool = True
     eod_session: tuple[int, int] = (8 * 60 + 30, 16 * 60)  # 0830-1600 NY, minutes
 
@@ -435,8 +438,13 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
         #    high/low, runner draws to the external swing high/low (cur["tp"]).
         if pos != 0 and cur is not None:
             d = cur["dir"]
+            # Pure 1:1 mode disables the partial / break-even / IFVG-early-exit so the
+            # only outcomes are a full exit at the 1R target or the symmetric hard stop.
+            do_scale = p.use_scale and not p.full_tp_1r
+            do_be = p.use_be and not p.full_tp_1r
+            do_ifvg = (p.stop_mode == "IFVG close") and not p.full_tp_1r
             # Break-even when the internal high/low is taken.
-            if p.use_be and not cur["be_done"]:
+            if do_be and not cur["be_done"]:
                 if d == 1 and h[i] >= cur["be_level"]:
                     cur["be_done"] = True
                     cur["stop"] = max(cur["stop"], cur["entry"])
@@ -450,22 +458,22 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
             if d == 1:
                 if l[i] <= cur["stop"]:
                     action = ("exit", cur["stop"], "stop")
-                elif p.use_scale and not cur["tp1_done"] and h[i] >= cur["tp1"]:
+                elif do_scale and not cur["tp1_done"] and h[i] >= cur["tp1"]:
                     action = ("partial", cur["tp1"], "tp1")
                 elif h[i] >= cur["tp"]:
                     action = ("exit", cur["tp"], "tp")
-                elif p.stop_mode == "IFVG close" and not np.isnan(cur["inv_edge"]) and c[i] < cur["inv_edge"]:
+                elif do_ifvg and not np.isnan(cur["inv_edge"]) and c[i] < cur["inv_edge"]:
                     action = ("exit", c[i], "ifvg")
                 elif p.flat_eod and not in_eod[i]:
                     action = ("exit", c[i], "eod")
             else:
                 if h[i] >= cur["stop"]:
                     action = ("exit", cur["stop"], "stop")
-                elif p.use_scale and not cur["tp1_done"] and l[i] <= cur["tp1"]:
+                elif do_scale and not cur["tp1_done"] and l[i] <= cur["tp1"]:
                     action = ("partial", cur["tp1"], "tp1")
                 elif l[i] <= cur["tp"]:
                     action = ("exit", cur["tp"], "tp")
-                elif p.stop_mode == "IFVG close" and not np.isnan(cur["inv_edge"]) and c[i] > cur["inv_edge"]:
+                elif do_ifvg and not np.isnan(cur["inv_edge"]) and c[i] > cur["inv_edge"]:
                     action = ("exit", c[i], "ifvg")
                 elif p.flat_eod and not in_eod[i]:
                     action = ("exit", c[i], "eod")
@@ -548,6 +556,8 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
                     tp = pool if (p.tp_mode == "Opposing liquidity" and not np.isnan(pool)
                                   and pool > tp1) else fallback
                     tp = max(tp, tp1 + mintick)                   # runner beyond TP1
+                    if p.full_tp_1r:
+                        tp = tp1                                  # pure 1:1: exit all at 1R
                     ith = h[max(0, i - p.sl_lookback):i].max() if i > 0 else np.nan
                     be_level = ith if (not np.isnan(ith) and ith > ref) else ref
                     pos, cur, pend, trades_today, sweep_used = _commit_entry(
@@ -571,6 +581,8 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
                     tp = pool if (p.tp_mode == "Opposing liquidity" and not np.isnan(pool)
                                   and pool < tp1) else fallback
                     tp = min(tp, tp1 - mintick)
+                    if p.full_tp_1r:
+                        tp = tp1                                  # pure 1:1: exit all at 1R
                     itl = l[max(0, i - p.sl_lookback):i].min() if i > 0 else np.nan
                     be_level = itl if (not np.isnan(itl) and itl < ref) else ref
                     pos, cur, pend, trades_today, sweep_used = _commit_entry(
