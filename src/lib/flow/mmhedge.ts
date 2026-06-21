@@ -17,6 +17,7 @@ import {
   realizedVol,
   secondOrderExposure,
   type StrikeGex,
+  type StrikeOi,
 } from "./analytics";
 import { probTouch } from "./greeks";
 
@@ -58,6 +59,9 @@ export interface LevelPlay {
   outcome: string; // highest-probability reaction
   bias: Pressure; // direction of that reaction
   pReach: number | null; // BS probability price reaches this level by front expiry
+  callOi: number; // open interest at the nearest strike
+  putOi: number;
+  oiShare: number; // (call+put OI) / total chain OI — how heavily positioned the level is
 }
 
 export interface MMTarget {
@@ -154,7 +158,14 @@ function buildLevelPlays(
   raw: MMLevel[],
   iv: number | null,
   tYears: number,
+  oiRows: StrikeOi[],
+  totalOi: number,
 ): LevelPlay[] {
+  const oiAt = (price: number): { callOi: number; putOi: number; oiShare: number } => {
+    if (!oiRows.length) return { callOi: 0, putOi: 0, oiShare: 0 };
+    const o = oiRows.reduce((p, c) => (Math.abs(c.strike - price) < Math.abs(p.strike - price) ? c : p));
+    return { callOi: o.callOi, putOi: o.putOi, oiShare: totalOi > 0 ? (o.callOi + o.putOi) / totalOi : 0 };
+  };
   const seen: { price: number; name: string }[] = [];
   for (const l of raw) {
     if (l.price == null || !Number.isFinite(l.price)) continue;
@@ -190,7 +201,7 @@ function buildLevelPlays(
         outcome = longG ? "Bounce ↑" : "Flush ↓ through";
         bias = longG ? "up" : "down";
       }
-      return { name, price, distPct: ((price - spot) / spot) * 100, action, outcome, bias, pReach: iv != null ? probTouch(spot, price, iv, tYears) : null };
+      return { name, price, distPct: ((price - spot) / spot) * 100, action, outcome, bias, pReach: iv != null ? probTouch(spot, price, iv, tYears) : null, ...oiAt(price) };
     })
     .sort((a, b) => Math.abs(a.price - spot) - Math.abs(b.price - spot))
     .slice(0, 24);
@@ -399,6 +410,7 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
   // and the GEX 1..10 ladder (top strikes by |net GEX|).
   const mp = frontExp ? maxPain(chain, frontExp) : null;
   const oi = oiByStrike(chain);
+  const totalOi = oi.reduce((s, x) => s + x.callOi + x.putOi, 0);
   const coi = callOiWall(oi);
   const poi = putOiWall(oi);
   const em1d = expectedMove1D(spot, iv0)?.abs ?? null;
@@ -425,6 +437,8 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     ].filter((l) => l.price != null),
     iv0,
     tYears,
+    oi,
+    totalOi,
   );
 
   let trade: MMTrade | null;
@@ -446,10 +460,14 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
       management: ["No edge yet — let price reach a level and the pressure pick a side."],
     };
 
-  // conviction: pressure strength + at-level confluence + modelled EV + greeks coverage
+  // conviction: pressure strength + at-level confluence + modelled EV + greeks coverage + how
+  // heavily the in-play level is positioned (more OI = more dealers to hedge = more reliable).
   const cov = greeksCoverage(chain);
   const evPart = trade.ev != null ? clamp(trade.ev, 0, 1) : 0;
-  const conviction = Math.round(clamp(0.4 * (Math.abs(pressureScore) / 100) + 0.25 * (atLevel ? 1 : 0.35) + 0.2 * evPart + 0.15 * cov, 0, 1) * 100);
+  const nearOi = levelPlays[0]?.oiShare ?? 0;
+  const conviction = Math.round(
+    clamp(0.35 * (Math.abs(pressureScore) / 100) + 0.2 * (atLevel ? 1 : 0.35) + 0.15 * evPart + 0.1 * cov + 0.2 * clamp(nearOi / 0.15, 0, 1), 0, 1) * 100,
+  );
 
   const notes = [
     regime === "long"

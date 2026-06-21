@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, Loading } from "./states";
 type ViewState = "loading" | "error" | "empty" | "ok";
 
 const f2 = (n: number | null) => (n == null ? "—" : n.toLocaleString(undefined, { maximumFractionDigits: 2 }));
+const kfmt = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n)));
 const pressColor = (p: Pressure) => (p === "up" ? "text-emerald-300" : p === "down" ? "text-red-300" : "text-sky-300");
 const dirDot = (p: Pressure) => (p === "up" ? "bg-emerald-400" : p === "down" ? "bg-red-400" : "bg-neutral-400");
 const sideChip = (s: string) =>
@@ -96,7 +97,9 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
     const pBeyond = iv != null && t > 0 ? (lp.price >= spot ? probAbove(spot, lp.price, iv, t) : 1 - (probAbove(spot, lp.price, iv, t) ?? 0)) : null;
     const sigma = iv != null && t > 0 ? spot * iv * Math.sqrt(t) : null;
     const distSigma = sigma ? Math.abs(lp.price - spot) / sigma : null;
-    return { lp, st, pBeyond, distSigma };
+    const oiSum = st.callOi + st.putOi;
+    const volOi = oiSum > 0 ? (st.callVol + st.putVol) / oiSum : null; // >~0.5 = fresh positioning today
+    return { lp, st, pBeyond, distSigma, volOi };
   }, [selLevel, sub, spot, r]);
 
   return (
@@ -139,6 +142,7 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
                       <th className="px-2 py-1.5 text-right">Price</th>
                       <th className="px-3 py-1.5">Dealer action</th>
                       <th className="px-3 py-1.5">Most likely</th>
+                      <th className="px-3 py-1.5 text-right">OI</th>
                       <th className="px-3 py-1.5 text-right">P(reach)</th>
                     </tr>
                   </thead>
@@ -161,6 +165,10 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
                           </td>
                           <td className="px-3 py-1.5 text-neutral-300">{lp.action}</td>
                           <td className={`px-3 py-1.5 font-medium ${pressColor(lp.bias)}`}>{lp.outcome}</td>
+                          <td className="px-3 py-1.5 text-right font-mono">
+                            <span className={lp.callOi >= lp.putOi ? "text-emerald-300" : "text-red-300"}>{kfmt(lp.callOi + lp.putOi)}</span>
+                            <span className="ml-1 text-[10px] text-neutral-500">{Math.round(lp.oiShare * 100)}%</span>
+                          </td>
                           <td className="px-3 py-1.5 text-right font-mono text-sky-300">{lp.pReach != null ? Math.round(lp.pReach * 100) + "%" : "—"}</td>
                         </tr>
                       );
@@ -192,6 +200,12 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
                     <Stat label="Charm" value={`${fmtUsd(detail.st.charm)}/d`} />
                     <Stat label="Call / Put OI" value={`${detail.st.callOi.toLocaleString()} / ${detail.st.putOi.toLocaleString()}`} />
                     <Stat label="Call / Put Vol" value={`${detail.st.callVol.toLocaleString()} / ${detail.st.putVol.toLocaleString()}`} />
+                    <Stat
+                      label="Vol / OI"
+                      value={detail.volOi == null ? "—" : detail.volOi.toFixed(2)}
+                      sub={detail.volOi == null ? "" : detail.volOi >= 0.5 ? "fresh positioning" : "mostly stale OI"}
+                      tone={detail.volOi != null && detail.volOi >= 0.5 ? "text-emerald-300" : "text-neutral-100"}
+                    />
                     <Stat label="P(reach)" value={detail.lp.pReach != null ? `${Math.round(detail.lp.pReach * 100)}%` : "—"} tone="text-sky-300" />
                     <Stat label="P(close beyond)" value={detail.pBeyond != null ? `${Math.round(detail.pBeyond * 100)}%` : "—"} tone="text-sky-300" />
                   </div>

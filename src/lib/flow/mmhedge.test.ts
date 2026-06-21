@@ -83,6 +83,12 @@ describe("mmHedge", () => {
     expect(r.levelPlays.some((l) => l.name === "1D Min")).toBe(true);
     // sorted nearest-first
     expect(Math.abs(r.levelPlays[0].price - 100)).toBeLessThanOrEqual(Math.abs(r.levelPlays[r.levelPlays.length - 1].price - 100));
+    // each level carries open interest + its share of the book
+    const lvl = r.levelPlays[0];
+    expect(typeof lvl.callOi).toBe("number");
+    expect(typeof lvl.putOi).toBe("number");
+    expect(lvl.oiShare).toBeGreaterThanOrEqual(0);
+    expect(lvl.oiShare).toBeLessThanOrEqual(1);
   });
 
   it("classifies a short-gamma regime when puts dominate net GEX", () => {
