@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { HistoryBar, OptionContract } from "@/lib/barchart/types";
 import { loadChain, loadHistory } from "@/lib/client-data";
-import { filterByExpiration, fmtUsd } from "@/lib/flow/analytics";
+import { filterByExpiration, fmtUsd, levelStats } from "@/lib/flow/analytics";
+import { probAbove } from "@/lib/flow/greeks";
 import { mmHedge, type Pressure } from "@/lib/flow/mmhedge";
 import { EmptyState, ErrorState, Loading } from "./states";
 
@@ -56,6 +57,7 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
   const [source, setSource] = useState("");
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
+  const [selLevel, setSelLevel] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +83,21 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
     };
   }, [symbol]);
 
-  const r = useMemo(() => mmHedge(filterByExpiration(chain, exp), spot, bars), [chain, spot, bars, exp]);
+  const sub = useMemo(() => filterByExpiration(chain, exp), [chain, exp]);
+  const r = useMemo(() => mmHedge(sub, spot, bars), [sub, spot, bars]);
+
+  const detail = useMemo(() => {
+    if (!selLevel || spot == null) return null;
+    const lp = r.levelPlays.find((l) => l.name === selLevel);
+    if (!lp) return null;
+    const st = levelStats(sub, spot, lp.price);
+    const iv = r.frontIv;
+    const t = r.frontT;
+    const pBeyond = iv != null && t > 0 ? (lp.price >= spot ? probAbove(spot, lp.price, iv, t) : 1 - (probAbove(spot, lp.price, iv, t) ?? 0)) : null;
+    const sigma = iv != null && t > 0 ? spot * iv * Math.sqrt(t) : null;
+    const distSigma = sigma ? Math.abs(lp.price - spot) / sigma : null;
+    return { lp, st, pBeyond, distSigma };
+  }, [selLevel, sub, spot, r]);
 
   return (
     <div className="glass p-4">
@@ -114,7 +130,7 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
 
           {r.levelPlays.length > 0 && (
             <div className="mb-4">
-              <div className="mb-1 text-xs uppercase tracking-wide text-neutral-500">What dealers do at each level · most-likely reaction</div>
+              <div className="mb-1 text-xs uppercase tracking-wide text-neutral-500">What dealers do at each level · most-likely reaction · <span className="text-neutral-400">tap a row for detail</span></div>
               <div className="overflow-x-auto rounded-lg border border-white/10">
                 <table className="w-full text-sm">
                   <thead>
@@ -130,7 +146,11 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
                     {r.levelPlays.map((lp) => {
                       const here = r.nearestLevel?.name === lp.name && r.atLevel;
                       return (
-                        <tr key={lp.name} className={`border-t border-white/5 ${here ? "bg-amber-500/10" : "hover:bg-white/[0.03]"}`}>
+                        <tr
+                          key={lp.name}
+                          onClick={() => setSelLevel((s) => (s === lp.name ? null : lp.name))}
+                          className={`cursor-pointer border-t border-white/5 ${selLevel === lp.name ? "bg-sky-500/10" : here ? "bg-amber-500/10" : "hover:bg-white/[0.03]"}`}
+                        >
                           <td className="px-3 py-1.5">
                             <span className={`mr-2 inline-block h-2 w-2 rounded-full ${dirDot(lp.bias)}`} />
                             {lp.name}
@@ -149,6 +169,34 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
                 </table>
               </div>
               <p className="mt-1 text-[10px] text-neutral-500">Reaction = the dealer-hedging response if price reaches the level (long-γ defends/fades, short-γ amplifies/breaks). P(reach) is the BS chance it gets there by the front expiry — independent per level.</p>
+
+              {detail && (
+                <div className="mt-2 rounded-lg border border-sky-500/30 bg-sky-500/[0.05] p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-neutral-100">
+                      {detail.lp.name} · <span className="font-mono">{f2(detail.lp.price)}</span>{" "}
+                      <span className="text-xs text-neutral-500">
+                        {detail.lp.distPct >= 0 ? "+" : ""}
+                        {detail.lp.distPct.toFixed(2)}%{detail.distSigma != null ? ` · ${detail.distSigma.toFixed(2)}σ` : ""}
+                      </span>
+                    </span>
+                    <span className={`rounded-full border border-white/15 px-2 py-0.5 text-[11px] ${pressColor(detail.lp.bias)}`}>{detail.lp.outcome}</span>
+                  </div>
+                  <p className="mb-2 text-xs text-neutral-400">Dealers: {detail.lp.action}.</p>
+                  <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                    <Stat label="Strike" value={detail.st.strike != null ? String(detail.st.strike) : "—"} sub={`γ-share ${Math.round(detail.st.gexShare * 100)}%`} />
+                    <Stat label="Net GEX" value={fmtUsd(detail.st.gex)} tone={detail.st.gex >= 0 ? "text-emerald-300" : "text-red-300"} />
+                    <Stat label="Net DEX" value={fmtUsd(detail.st.dex)} />
+                    <Stat label="IV" value={detail.st.iv != null ? `${(detail.st.iv * 100).toFixed(1)}%` : "—"} />
+                    <Stat label="Vanna" value={`${fmtUsd(detail.st.vanna)}/vp`} />
+                    <Stat label="Charm" value={`${fmtUsd(detail.st.charm)}/d`} />
+                    <Stat label="Call / Put OI" value={`${detail.st.callOi.toLocaleString()} / ${detail.st.putOi.toLocaleString()}`} />
+                    <Stat label="Call / Put Vol" value={`${detail.st.callVol.toLocaleString()} / ${detail.st.putVol.toLocaleString()}`} />
+                    <Stat label="P(reach)" value={detail.lp.pReach != null ? `${Math.round(detail.lp.pReach * 100)}%` : "—"} tone="text-sky-300" />
+                    <Stat label="P(close beyond)" value={detail.pBeyond != null ? `${Math.round(detail.pBeyond * 100)}%` : "—"} tone="text-sky-300" />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

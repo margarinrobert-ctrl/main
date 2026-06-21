@@ -472,6 +472,71 @@ export function greekSurface(chain: OptionContract[], spot: number | null, metri
   return { metric, strikes, expirations, z, signed };
 }
 
+export interface LevelStats {
+  strike: number | null; // nearest actual strike to the requested price
+  callOi: number;
+  putOi: number;
+  callVol: number;
+  putVol: number;
+  gex: number; // net $ gamma exposure at the strike (calls +, puts −)
+  dex: number; // net $ delta exposure at the strike
+  vanna: number; // $ / vol-pt at the strike
+  charm: number; // $ / day at the strike
+  iv: number | null; // avg IV at the strike
+  gexShare: number; // |gex| / Σ|gex| — how concentrated the wall is (0..1)
+}
+
+/** Deep stats for the strike nearest a given price — powers the per-level drill-down. */
+export function levelStats(chain: OptionContract[], spot: number | null, price: number): LevelStats {
+  const empty: LevelStats = { strike: null, callOi: 0, putOi: 0, callVol: 0, putVol: 0, gex: 0, dex: 0, vanna: 0, charm: 0, iv: null, gexShare: 0 };
+  const strikes = [...new Set(chain.map((c) => c.strike))];
+  if (!strikes.length || !spot) return empty;
+  const strike = strikes.reduce((p, s) => (Math.abs(s - price) < Math.abs(p - price) ? s : p), strikes[0]);
+  let callOi = 0;
+  let putOi = 0;
+  let callVol = 0;
+  let putVol = 0;
+  let gex = 0;
+  let dex = 0;
+  let ivSum = 0;
+  let ivN = 0;
+  for (const c of chain) {
+    if (c.strike !== strike) continue;
+    const oi = c.openInterest ?? 0;
+    const vol = c.volume ?? 0;
+    if (c.type === "call") {
+      callOi += oi;
+      callVol += vol;
+    } else {
+      putOi += oi;
+      putVol += vol;
+    }
+    if (c.impliedVolatility != null && c.impliedVolatility > 0) {
+      ivSum += c.impliedVolatility;
+      ivN++;
+    }
+    if (c.gamma != null) gex += (c.type === "call" ? 1 : -1) * c.gamma * oi * CONTRACT * spot * spot * 0.01;
+    if (c.delta != null) dex += c.delta * oi * CONTRACT * spot;
+  }
+  const so = secondOrderExposure(chain, spot).byStrike.find((x) => x.strike === strike);
+  const by = gexByStrike(chain, spot);
+  const gross = by.reduce((s, x) => s + Math.abs(x.gex), 0) || 1;
+  const here = by.find((x) => x.strike === strike);
+  return {
+    strike,
+    callOi,
+    putOi,
+    callVol,
+    putVol,
+    gex,
+    dex,
+    vanna: so?.vanna ?? 0,
+    charm: so?.charm ?? 0,
+    iv: ivN ? ivSum / ivN : null,
+    gexShare: here ? Math.abs(here.gex) / gross : 0,
+  };
+}
+
 export function fmtUsd(v: number): string {
   const a = Math.abs(v);
   const s = v < 0 ? "−" : "";

@@ -11,6 +11,7 @@ import {
   gexByExpiration,
   gexByStrike,
   greekSurface,
+  levelStats,
   maxPain,
   oiByStrike,
   putCallRatio,
@@ -198,6 +199,22 @@ describe("analytics", () => {
     ]);
     expect(callOiWall(oi)).toBe(100);
     expect(putOiWall(oi)).toBe(90);
+  });
+
+  it("aggregates deep stats for the strike nearest a price", () => {
+    const chain = [
+      c({ type: "call", strike: 110, openInterest: 8000, volume: 5000, gamma: 0.04, delta: 0.3, impliedVolatility: 0.22 }),
+      c({ type: "put", strike: 110, openInterest: 2000, volume: 1000, gamma: 0.04, delta: -0.7, impliedVolatility: 0.24 }),
+      c({ type: "call", strike: 100, openInterest: 500, gamma: 0.02 }),
+    ];
+    const s = levelStats(chain, 100, 109); // nearest strike = 110
+    expect(s.strike).toBe(110);
+    expect(s.callOi).toBe(8000);
+    expect(s.putOi).toBe(2000);
+    expect(s.callVol).toBe(5000);
+    expect(s.iv).toBeCloseTo(0.23, 5);
+    expect(s.gexShare).toBeGreaterThan(0);
+    expect(s.gexShare).toBeLessThanOrEqual(1);
   });
 
   it("aggregates open interest by strike", () => {

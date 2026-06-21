@@ -89,6 +89,8 @@ export interface MMHedge {
   putWall: number | null;
   charmFlow: number | null; // $/day
   vannaFlow: number | null; // $/day (vanna × expected ΔIV)
+  frontIv: number | null; // front-expiry ATM IV (for level probabilities)
+  frontT: number; // front horizon in years
   levels: MMLevel[];
   levelPlays: LevelPlay[];
   nearestLevel: { name: string; price: number; distPct: number } | null;
@@ -281,6 +283,8 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     putWall: null,
     charmFlow: null,
     vannaFlow: null,
+    frontIv: null,
+    frontT: 0,
     levels: [],
     levelPlays: [],
     nearestLevel: null,
@@ -446,6 +450,8 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     putWall: pw,
     charmFlow,
     vannaFlow,
+    frontIv: iv0,
+    frontT: tYears,
     levels: lad,
     levelPlays,
     nearestLevel,
