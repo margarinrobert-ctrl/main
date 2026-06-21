@@ -65,6 +65,24 @@ describe("mmHedge", () => {
     expect(r.trade!.stop!).toBeGreaterThan(100); // stop above a short entry
   });
 
+  it("maps the dealer action + likely reaction at each level (regime-aware)", () => {
+    const chain = [
+      c({ type: "call", strike: 110, gamma: 0.05, openInterest: 9000 }),
+      c({ type: "put", strike: 90, gamma: 0.03, openInterest: 2000 }),
+    ];
+    const r = mmHedge(chain, 100); // long gamma
+    expect(r.levelPlays.length).toBeGreaterThan(0);
+    const callLvl = r.levelPlays.find((l) => l.name.toLowerCase().includes("call"));
+    expect(callLvl).toBeTruthy();
+    // long gamma: dealers SELL resistance → reject down
+    expect(callLvl!.action.toLowerCase()).toContain("sell");
+    expect(callLvl!.bias).toBe("down");
+    const putLvl = r.levelPlays.find((l) => l.name.toLowerCase().includes("put"));
+    expect(putLvl!.bias).toBe("up"); // defend support → bounce up
+    // sorted nearest-first
+    expect(Math.abs(r.levelPlays[0].price - 100)).toBeLessThanOrEqual(Math.abs(r.levelPlays[r.levelPlays.length - 1].price - 100));
+  });
+
   it("classifies a short-gamma regime when puts dominate net GEX", () => {
     const chain = [
       c({ type: "put", strike: 100, gamma: 0.05, openInterest: 9000 }),

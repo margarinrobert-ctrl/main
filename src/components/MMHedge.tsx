@@ -112,6 +112,46 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
             )}
           </div>
 
+          {r.levelPlays.length > 0 && (
+            <div className="mb-4">
+              <div className="mb-1 text-xs uppercase tracking-wide text-neutral-500">What dealers do at each level · most-likely reaction</div>
+              <div className="overflow-x-auto rounded-lg border border-white/10">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[10px] uppercase tracking-wide text-neutral-500">
+                      <th className="px-3 py-1.5">Level</th>
+                      <th className="px-2 py-1.5 text-right">Price</th>
+                      <th className="px-3 py-1.5">Dealer action</th>
+                      <th className="px-3 py-1.5">Most likely</th>
+                      <th className="px-3 py-1.5 text-right">P(reach)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {r.levelPlays.map((lp) => {
+                      const here = r.nearestLevel?.name === lp.name && r.atLevel;
+                      return (
+                        <tr key={lp.name} className={`border-t border-white/5 ${here ? "bg-amber-500/10" : "hover:bg-white/[0.03]"}`}>
+                          <td className="px-3 py-1.5">
+                            <span className={`mr-2 inline-block h-2 w-2 rounded-full ${dirDot(lp.bias)}`} />
+                            {lp.name}
+                            {here && <span className="ml-1 text-[10px] text-amber-300">← price here</span>}
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono">
+                            {f2(lp.price)} <span className="text-[10px] text-neutral-500">{lp.distPct >= 0 ? "+" : ""}{lp.distPct.toFixed(2)}%</span>
+                          </td>
+                          <td className="px-3 py-1.5 text-neutral-300">{lp.action}</td>
+                          <td className={`px-3 py-1.5 font-medium ${pressColor(lp.bias)}`}>{lp.outcome}</td>
+                          <td className="px-3 py-1.5 text-right font-mono text-sky-300">{lp.pReach != null ? Math.round(lp.pReach * 100) + "%" : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-1 text-[10px] text-neutral-500">Reaction = the dealer-hedging response if price reaches the level (long-γ defends/fades, short-γ amplifies/breaks). P(reach) is the BS chance it gets there by the front expiry — independent per level.</p>
+            </div>
+          )}
+
           <div className="mb-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
             <Stat label="Conviction" value={`${r.conviction}/100`} tone={r.conviction >= 60 ? "text-emerald-300" : r.conviction >= 35 ? "text-amber-300" : "text-neutral-100"} />
             <Stat label="Hedge / 1%" value={r.flowPer1pct == null ? "—" : fmtUsd(r.flowPer1pct)} sub={r.regime === "long" ? "stabilising" : r.regime === "short" ? "destabilising" : ""} />

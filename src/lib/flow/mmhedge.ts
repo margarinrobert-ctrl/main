@@ -46,6 +46,16 @@ export interface MMLevel {
   price: number;
 }
 
+export interface LevelPlay {
+  name: string;
+  price: number;
+  distPct: number;
+  action: string; // what dealers DO here
+  outcome: string; // highest-probability reaction
+  bias: Pressure; // direction of that reaction
+  pReach: number | null; // BS probability price reaches this level by front expiry
+}
+
 export interface MMTarget {
   price: number;
   label: string;
@@ -80,6 +90,7 @@ export interface MMHedge {
   charmFlow: number | null; // $/day
   vannaFlow: number | null; // $/day (vanna × expected ΔIV)
   levels: MMLevel[];
+  levelPlays: LevelPlay[];
   nearestLevel: { name: string; price: number; distPct: number } | null;
   atLevel: boolean;
   pressure: Pressure;
@@ -128,6 +139,53 @@ function ladder(raw: MMLevel[], tol: number): MMLevel[] {
     else out.push({ ...l });
   }
   return out.sort((a, b) => a.price - b.price);
+}
+
+/** What the dealer wants to do at each key level, and the highest-probability reaction there. */
+function buildLevelPlays(
+  spot: number,
+  regime: "long" | "short" | "unknown",
+  raw: MMLevel[],
+  iv: number | null,
+  tYears: number,
+): LevelPlay[] {
+  const seen: { price: number; name: string }[] = [];
+  for (const l of raw) {
+    if (l.price == null || !Number.isFinite(l.price)) continue;
+    const hit = seen.find((s) => Math.abs(s.price - l.price) <= Math.max(0.01, spot * 0.0008));
+    if (!hit) seen.push({ price: l.price, name: l.name });
+  }
+  const longG = regime === "long";
+  return seen
+    .map(({ name, price }) => {
+      const n = name.toLowerCase();
+      let action = "";
+      let outcome = "";
+      let bias: Pressure = "balanced";
+      if (n.includes("flip") || n.includes("hvl")) {
+        action = "Pivot — dealers stabilise above, amplify below";
+        outcome = price >= spot ? "Reclaim → calmer" : "Lose → trend";
+        bias = "balanced";
+      } else if (n.includes("magnet") || n.includes("centre")) {
+        action = longG ? "Pin — hedging pulls price here" : "Weak pull (short γ)";
+        outcome = longG ? "Magnet / pin" : "Drifts past";
+        bias = dirOf(price - spot);
+      } else if (n.includes("call")) {
+        action = longG ? "SELL into it — defend resistance" : "BUY the break — chase";
+        outcome = longG ? "Reject ↓" : "Squeeze ↑ through";
+        bias = longG ? "down" : "up";
+      } else if (n.includes("put")) {
+        action = longG ? "BUY it — defend support" : "SELL the break — cascade";
+        outcome = longG ? "Bounce ↑" : "Flush ↓ through";
+        bias = longG ? "up" : "down";
+      } else {
+        action = "—";
+        outcome = "—";
+      }
+      return { name, price, distPct: ((price - spot) / spot) * 100, action, outcome, bias, pReach: iv != null ? probTouch(spot, price, iv, tYears) : null };
+    })
+    .sort((a, b) => Math.abs(a.price - spot) - Math.abs(b.price - spot))
+    .slice(0, 6);
 }
 
 /** Build the entry/TP/stop plan + BS probabilities + modelled EV(R) in the pressure direction. */
@@ -224,6 +282,7 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     charmFlow: null,
     vannaFlow: null,
     levels: [],
+    levelPlays: [],
     nearestLevel: null,
     atLevel: false,
     pressure: "balanced",
@@ -326,6 +385,21 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     Math.max(em * 0.18, spot * 0.0008),
   );
 
+  const levelPlays = buildLevelPlays(
+    spot,
+    regime,
+    [
+      { name: "Call wall", price: cw as number },
+      { name: "Call Res 0DTE", price: cw0 as number },
+      { name: "Put wall", price: pw as number },
+      { name: "Put Sup 0DTE", price: pw0 as number },
+      { name: "γ-flip", price: flip as number },
+      { name: "Gamma magnet", price: magnet as number },
+    ].filter((l) => l.price != null),
+    iv0,
+    tYears,
+  );
+
   let trade: MMTrade | null;
   if (pressureScore > 15) trade = planTrade("long", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears);
   else if (pressureScore < -15) trade = planTrade("short", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears);
@@ -373,6 +447,7 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     charmFlow,
     vannaFlow,
     levels: lad,
+    levelPlays,
     nearestLevel,
     atLevel,
     pressure,
