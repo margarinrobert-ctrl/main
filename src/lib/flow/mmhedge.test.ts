@@ -65,20 +65,22 @@ describe("mmHedge", () => {
     expect(r.trade!.stop!).toBeGreaterThan(100); // stop above a short entry
   });
 
-  it("maps the dealer action + likely reaction at each level (regime-aware)", () => {
+  it("maps dealer action + likely reaction per level and includes the full level set", () => {
     const chain = [
       c({ type: "call", strike: 110, gamma: 0.05, openInterest: 9000 }),
       c({ type: "put", strike: 90, gamma: 0.03, openInterest: 2000 }),
     ];
-    const r = mmHedge(chain, 100); // long gamma
+    const r = mmHedge(chain, 100); // long gamma, dominant strike 110 → magnet
     expect(r.levelPlays.length).toBeGreaterThan(0);
-    const callLvl = r.levelPlays.find((l) => l.name.toLowerCase().includes("call"));
-    expect(callLvl).toBeTruthy();
-    // long gamma: dealers SELL resistance → reject down
-    expect(callLvl!.action.toLowerCase()).toContain("sell");
-    expect(callLvl!.bias).toBe("down");
-    const putLvl = r.levelPlays.find((l) => l.name.toLowerCase().includes("put"));
-    expect(putLvl!.bias).toBe("up"); // defend support → bounce up
+    // the dominant gamma strike is a magnet → pin
+    const mag = r.levelPlays.find((l) => l.name.toLowerCase().includes("magnet"));
+    expect(mag!.outcome.toLowerCase()).toContain("pin");
+    // a support level below spot in long gamma → dealers buy → bounce up
+    const sup = r.levelPlays.find((l) => l.price < 100 && !l.name.toLowerCase().includes("flip"));
+    expect(sup!.bias).toBe("up");
+    // the expanded set carries the 1-day range
+    expect(r.levelPlays.some((l) => l.name === "1D Max")).toBe(true);
+    expect(r.levelPlays.some((l) => l.name === "1D Min")).toBe(true);
     // sorted nearest-first
     expect(Math.abs(r.levelPlays[0].price - 100)).toBeLessThanOrEqual(Math.abs(r.levelPlays[r.levelPlays.length - 1].price - 100));
   });

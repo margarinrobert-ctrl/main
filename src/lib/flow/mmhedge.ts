@@ -1,14 +1,18 @@
 import type { HistoryBar, OptionContract } from "../barchart/types";
 import {
   atmIv,
+  callOiWall,
   callResistance,
   expectedMove1D,
   exposureProfile,
   flipFromProfile,
   gammaFlipNearest,
   gexByStrike,
+  maxPain,
   netGex,
+  oiByStrike,
   putCallRatio,
+  putOiWall,
   putSupport,
   realizedVol,
   secondOrderExposure,
@@ -156,38 +160,40 @@ function buildLevelPlays(
     if (l.price == null || !Number.isFinite(l.price)) continue;
     const hit = seen.find((s) => Math.abs(s.price - l.price) <= Math.max(0.01, spot * 0.0008));
     if (!hit) seen.push({ price: l.price, name: l.name });
+    // a GEX-ladder node coinciding with a named level just tags that level's rank (no duplicate row)
+    else if (/^GEX /.test(l.name) && !/GEX/.test(hit.name)) hit.name += ` · ${l.name}`;
   }
   const longG = regime === "long";
   return seen
     .map(({ name, price }) => {
       const n = name.toLowerCase();
+      const above = price >= spot;
       let action = "";
       let outcome = "";
       let bias: Pressure = "balanced";
       if (n.includes("flip") || n.includes("hvl")) {
         action = "Pivot — dealers stabilise above, amplify below";
-        outcome = price >= spot ? "Reclaim → calmer" : "Lose → trend";
+        outcome = above ? "Reclaim → calmer" : "Lose → trend";
         bias = "balanced";
-      } else if (n.includes("magnet") || n.includes("centre")) {
-        action = longG ? "Pin — hedging pulls price here" : "Weak pull (short γ)";
-        outcome = longG ? "Magnet / pin" : "Drifts past";
+      } else if (n.includes("magnet") || n.includes("centre") || n.includes("pain")) {
+        action = longG ? "Magnet — hedging / expiry pull" : "Weak pull (short γ)";
+        outcome = longG ? "Pin / gravitate" : "Drifts past";
         bias = dirOf(price - spot);
-      } else if (n.includes("call")) {
+      } else if (above) {
+        // resistance: a level above spot
         action = longG ? "SELL into it — defend resistance" : "BUY the break — chase";
         outcome = longG ? "Reject ↓" : "Squeeze ↑ through";
         bias = longG ? "down" : "up";
-      } else if (n.includes("put")) {
+      } else {
+        // support: a level below spot
         action = longG ? "BUY it — defend support" : "SELL the break — cascade";
         outcome = longG ? "Bounce ↑" : "Flush ↓ through";
         bias = longG ? "up" : "down";
-      } else {
-        action = "—";
-        outcome = "—";
       }
       return { name, price, distPct: ((price - spot) / spot) * 100, action, outcome, bias, pReach: iv != null ? probTouch(spot, price, iv, tYears) : null };
     })
     .sort((a, b) => Math.abs(a.price - spot) - Math.abs(b.price - spot))
-    .slice(0, 6);
+    .slice(0, 24);
 }
 
 /** Build the entry/TP/stop plan + BS probabilities + modelled EV(R) in the pressure direction. */
@@ -389,16 +395,33 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     Math.max(em * 0.18, spot * 0.0008),
   );
 
+  // full level set: structural walls, flip/magnet, max pain, OI walls, the 1-day expected range,
+  // and the GEX 1..10 ladder (top strikes by |net GEX|).
+  const mp = frontExp ? maxPain(chain, frontExp) : null;
+  const oi = oiByStrike(chain);
+  const coi = callOiWall(oi);
+  const poi = putOiWall(oi);
+  const em1d = expectedMove1D(spot, iv0)?.abs ?? null;
+  const gexLadder = by
+    .filter((x) => x.gex !== 0)
+    .sort((a, b) => Math.abs(b.gex) - Math.abs(a.gex))
+    .slice(0, 10);
   const levelPlays = buildLevelPlays(
     spot,
     regime,
     [
-      { name: "Call wall", price: cw as number },
-      { name: "Call Res 0DTE", price: cw0 as number },
-      { name: "Put wall", price: pw as number },
-      { name: "Put Sup 0DTE", price: pw0 as number },
       { name: "γ-flip", price: flip as number },
       { name: "Gamma magnet", price: magnet as number },
+      { name: "Call wall", price: cw as number },
+      { name: "Put wall", price: pw as number },
+      { name: "Call Res 0DTE", price: cw0 as number },
+      { name: "Put Sup 0DTE", price: pw0 as number },
+      { name: "Max Pain", price: mp as number },
+      { name: "Call OI", price: coi as number },
+      { name: "Put OI", price: poi as number },
+      { name: "1D Max", price: em1d != null ? spot + em1d : (null as unknown as number) },
+      { name: "1D Min", price: em1d != null ? spot - em1d : (null as unknown as number) },
+      ...gexLadder.map((x, i) => ({ name: `GEX ${i + 1}`, price: x.strike })),
     ].filter((l) => l.price != null),
     iv0,
     tYears,
