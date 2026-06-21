@@ -8,6 +8,7 @@ import { callWall, gammaFlip, gexByStrike, netGex, putWall } from "@/lib/flow/an
 import { appendSample } from "@/lib/gex-history";
 import { DataStatus } from "./DataStatus";
 import { GammaProfile } from "./GammaProfile";
+import { AnomalyScan } from "./AnomalyScan";
 import { GexHistory } from "./GexHistory";
 import { GexTerm } from "./GexTerm";
 import { GreeksSurface } from "./GreeksSurface";
@@ -41,6 +42,7 @@ const TABS = [
   "Skew",
   "Vol Edge",
   "Harvest",
+  "Anomaly",
   "History",
   "Pine",
 ] as const;
@@ -183,6 +185,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Skew" && <SkewChart symbol={symbol} exp={validExp} />}
       {tab === "Vol Edge" && <VolEdge symbol={symbol} />}
       {tab === "Harvest" && <HarvestPanel symbol={symbol} exp={validExp} />}
+      {tab === "Anomaly" && <AnomalyScan symbol={symbol} />}
       {tab === "History" && <GexHistory symbol={symbol} />}
       {tab === "Pine" && <PineExport symbol={symbol} exp={validExp} />}
     </div>
