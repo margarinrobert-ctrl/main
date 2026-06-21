@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { alertsEnabled, crossings, fireNotify } from "@/lib/alerts";
 import type { OptionContract } from "@/lib/barchart/types";
 import { loadChain } from "@/lib/client-data";
-import { callWall, gammaFlip, gexByStrike, netGex, putWall } from "@/lib/flow/analytics";
+import { atmIv, callWall, gammaFlip, gexByStrike, netGex, putCallRatio, putWall } from "@/lib/flow/analytics";
 import { appendSample } from "@/lib/gex-history";
 import { DataStatus } from "./DataStatus";
 import { GammaProfile } from "./GammaProfile";
+import { AnomalyLive } from "./AnomalyLive";
 import { AnomalyScan } from "./AnomalyScan";
 import { GexHistory } from "./GexHistory";
 import { GexTerm } from "./GexTerm";
@@ -93,7 +94,10 @@ export function TickerTabs({ symbol }: { symbol: string }) {
         );
         const by = gexByStrike(chain, spot);
         const flip = gammaFlip(by);
-        appendSample(symbol, { t: Date.now(), spot, gex: netGex(chain, spot), flip });
+        const exps = [...new Set(chain.map((c) => c.expiration))].sort();
+        const frontExp = exps.find((e) => (chain.find((c) => c.expiration === e)?.dte ?? -1) >= 0) ?? exps[0];
+        const iv = frontExp ? atmIv(chain, spot, frontExp) : null;
+        appendSample(symbol, { t: Date.now(), spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol });
         if (alertsEnabled(symbol) && prevSpot != null && spot != null) {
           const crossed = crossings(prevSpot, spot, [
             { name: "γ-flip", value: flip },
@@ -185,7 +189,12 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Skew" && <SkewChart symbol={symbol} exp={validExp} />}
       {tab === "Vol Edge" && <VolEdge symbol={symbol} />}
       {tab === "Harvest" && <HarvestPanel symbol={symbol} exp={validExp} />}
-      {tab === "Anomaly" && <AnomalyScan symbol={symbol} />}
+      {tab === "Anomaly" && (
+        <div className="space-y-4">
+          <AnomalyLive symbol={symbol} />
+          <AnomalyScan symbol={symbol} />
+        </div>
+      )}
       {tab === "History" && <GexHistory symbol={symbol} />}
       {tab === "Pine" && <PineExport symbol={symbol} exp={validExp} />}
     </div>

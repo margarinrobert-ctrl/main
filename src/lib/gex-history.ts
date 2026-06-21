@@ -3,6 +3,8 @@ export interface GexSample {
   spot: number | null;
   gex: number | null; // net dealer gamma ($/1%)
   flip: number | null; // zero-gamma level
+  iv?: number | null; // front/0DTE ATM implied vol
+  pcr?: number | null; // put/call volume ratio
 }
 
 const CAP = 600;

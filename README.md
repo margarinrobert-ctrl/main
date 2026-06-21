@@ -167,10 +167,12 @@ the Pine export recompute for the chosen expiration; axis views (heatmap / term 
   magnitude-aware into a **−100…+100 pressure** with a **conviction** score. Emits a full plan: entry
   zone, **layered TPs with R + Black-Scholes probability-of-touch**, a structural stop with **P(stop)**,
   a **modelled EV in R**, and management rules — long-γ fades to the magnet, short-γ rides the break
-- **Performance Anomaly Detection** — flags statistical outliers in market behaviour vs each metric's
-  trailing baseline: **z-scores** of daily return, overnight gap, range expansion, volume, short-vs-long
-  **vol regime**, trend extension, plus **VRP** and **put/call** extremes. Emits a 0–100 anomaly score,
-  a **calm / watch / anomalous** state and the ranked anomalies with direction + interpretation
+- **Performance Anomaly Detection** — two layers. A **live intraday (0DTE) monitor** graphs the
+  session series (spot with anomaly dots + a rolling anomaly-score pane) by z-scoring tick-to-tick
+  spot / dealer-gamma / IV changes recorded client-side, and an **EOD statistical scan** flags outliers
+  vs each metric's trailing baseline — **z-scores** of daily return, gap, range, volume, short-vs-long
+  **vol regime**, trend extension, plus **VRP** and **put/call** extremes — into a 0–100 score and a
+  **calm / watch / anomalous** state with ranked, interpreted anomalies
 - **Signal Board** — a synthesized, ranked **trade-signal** feed that fuses the gamma map (regime /
   γ-flip / walls), order-flow tilt (net Δ exposure, put/call), second-order flow (vanna/charm), the
   **VRP** (IV vs realized), skew and max-pain into a composite **−100…+100 bias** and concrete ideas
