@@ -32,7 +32,7 @@ export const config = {
   alphaVantageBaseUrl: process.env.ALPHAVANTAGE_BASE_URL ?? "https://www.alphavantage.co/query",
   // CBOE delayed quotes — public, keyless options feed (~15-min delayed).
   cboeBaseUrl: process.env.CBOE_BASE_URL ?? "https://cdn.cboe.com/api/global/delayed_quotes/options",
-  optionsWatchlist: (process.env.OPTIONS_WATCHLIST ?? "SPY,QQQ,AAPL,NVDA,TSLA,ES,NQ")
+  optionsWatchlist: (process.env.OPTIONS_WATCHLIST ?? "SPY,QQQ")
     .split(",")
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean),

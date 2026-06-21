@@ -44,6 +44,7 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("does NOT auto-update"); // static-snapshot warning
     expect(r.code).toContain("Exp Hi"); // expected-move (today's range) label
     expect(r.code).toContain("Align levels to chart price"); // basis control
+    expect(r.code).toContain("alertcondition("); // level-cross alerts
     expect(r.code).toMatch(/P\s+=\s+array\.from\([^)]*\.\d/); // float price array
     expect(r.code).toContain("D  = array.from("); // hover-detail array
     expect(r.expiration).toBe("2026-06-19");

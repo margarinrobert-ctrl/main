@@ -6,8 +6,6 @@ import { withBase } from "@/lib/paths";
 const FOCUS = [
   { sym: "SPY", label: "S&P 500 ETF" },
   { sym: "QQQ", label: "Nasdaq-100 ETF" },
-  { sym: "ES", label: "S&P E-mini" },
-  { sym: "NQ", label: "Nasdaq E-mini" },
 ];
 
 const CAPS = ["Signals", "Dealer GEX", "Vanna/Charm", "3D surface", "Premium Harvest", "Pine export"];
@@ -28,7 +26,8 @@ export default function Home() {
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-neutral-400">
             Synthesized trade signals across price, volatility &amp; time — GEX positioning, vanna/charm flows, a 3D greeks
-            surface, VRP premium-harvesting and copy-paste TradingView levels for equities, ETFs &amp; index futures.
+            surface, VRP premium-harvesting, a market-maker hedging algo and copy-paste TradingView levels — focused on
+            <span className="text-neutral-200"> SPY &amp; QQQ</span>.
             {config.dataSource !== "live" && " Running in fixtures mode (canned data)."}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">

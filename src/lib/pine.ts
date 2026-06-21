@@ -177,6 +177,21 @@ export function buildGexPine(
   const W = lvls.map((l) => String(l.width)).join(", ");
 
   const asOf = new Date().toISOString().slice(0, 16).replace("T", " ");
+  const alertInputs = [
+    callRes != null ? `kCallRes = input.float(${fmt(callRes)}, "Alert: Call Resistance")` : "",
+    putSup != null ? `kPutSup  = input.float(${fmt(putSup)}, "Alert: Put Support")` : "",
+    hvl != null ? `kHvl     = input.float(${fmt(hvl)}, "Alert: HVL (gamma flip)")` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const alertLines = [
+    callRes != null ? `alertcondition(ta.cross(close, kCallRes + offset), "Price ↔ Call Resistance", "{{ticker}} tagged Call Resistance")` : "",
+    putSup != null ? `alertcondition(ta.cross(close, kPutSup + offset), "Price ↔ Put Support", "{{ticker}} tagged Put Support")` : "",
+    hvl != null ? `alertcondition(ta.cross(close, kHvl + offset), "Price ↔ HVL", "{{ticker}} crossed HVL / gamma flip")` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const isFut = /^(ES|NQ|RTY|YM)$/.test(symbol.toUpperCase());
   const proxy = isFut
     ? `\n// ${symbol} uses cash-index options (ES->SPX, NQ->NDX) as a free proxy; the future trades at a basis. The\n// "Align to chart price" input (ON by default) shifts every level by (chart price - snapshot index) so they\n// land correctly on ${symbol}. Turn it off for raw index strikes.`
@@ -201,6 +216,7 @@ sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : label
 showVwap = input.bool(true, "Show session VWAP")
 showOR   = input.bool(true, "Show opening range (intraday)")
 orMin    = input.int(30, "Opening-range minutes", minval = 1, maxval = 240)
+${alertInputs}
 
 // ── Baked level snapshot (price / label / detail / color / style / width) ──
 var float[]  P  = array.from(${P})
@@ -219,13 +235,14 @@ clearAll() =>
     while array.size(_lb) > 0
         label.delete(array.pop(_lb))
 
+// Basis = chart price - snapshot index, frozen once so walls stay at fixed prices (futures: lifts
+// NDX/SPX levels onto an ES/NQ chart). For SPY/QQQ this is 0 — real options on the chart symbol.
 var float frozenBasis = na
+if barstate.islast and na(frozenBasis)
+    frozenBasis := alignToPrice and snapSpot > 0 ? close - snapSpot : 0.0
+offset = nz(frozenBasis) + basisManual
+
 if barstate.islast
-    // Basis = chart price - snapshot index, frozen once so the walls stay at fixed prices (they don't
-    // drift with each tick). For futures this lifts NDX/SPX levels onto the ES/NQ chart.
-    if na(frozenBasis)
-        frozenBasis := alignToPrice and snapSpot > 0 ? close - snapSpot : 0.0
-    offset = nz(frozenBasis) + basisManual
     clearAll()
     rng = ta.highest(high, 120) - ta.lowest(low, 120)
     minGap = na(rng) or rng <= 0 ? close * 0.01 : rng * 0.022
@@ -258,6 +275,9 @@ if not na(orStart) and time - orStart <= orMin * 60 * 1000
     orL := math.min(orL, low)
 plot(showOR ? orH : na, "OR High", color = color.new(color.aqua, 0), style = plot.style_stepline)
 plot(showOR ? orL : na, "OR Low", color = color.new(color.aqua, 0), style = plot.style_stepline)
+
+// ── Alerts: get pinged when price tags a dealer level (set via TradingView's alert dialog) ──
+${alertLines}
 `;
 
   return { code, expiration: exp, callRes, putSup, hvl, strikes: lvls.length };

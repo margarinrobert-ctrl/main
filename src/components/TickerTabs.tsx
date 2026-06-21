@@ -13,6 +13,7 @@ import { GexTerm } from "./GexTerm";
 import { GreeksSurface } from "./GreeksSurface";
 import { HarvestPanel } from "./HarvestPanel";
 import { KeyLevels } from "./KeyLevels";
+import { MMHedge } from "./MMHedge";
 import { OiProfile } from "./OiProfile";
 import { OptionsChain } from "./OptionsChain";
 import { OptionsHeatmap } from "./OptionsHeatmap";
@@ -28,6 +29,7 @@ import { VolEdge } from "./VolEdge";
 const TABS = [
   "Overview",
   "Signals",
+  "MM Hedge",
   "Playbook",
   "Chain",
   "Heatmap",
@@ -169,6 +171,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
         </div>
       )}
       {tab === "Signals" && <SignalBoard symbol={symbol} exp={validExp} />}
+      {tab === "MM Hedge" && <MMHedge symbol={symbol} exp={validExp} />}
       {tab === "Playbook" && <Playbook symbol={symbol} exp={validExp} />}
       {tab === "Chain" && <OptionsChain symbol={symbol} exp={validExp} />}
       {tab === "Heatmap" && <OptionsHeatmap symbol={symbol} exp={validExp} />}

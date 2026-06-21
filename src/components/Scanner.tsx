@@ -7,7 +7,7 @@ import { scanRow, type ScanRow } from "@/lib/flow/signals";
 import { withBase } from "@/lib/paths";
 import { Loading } from "./states";
 
-const DEFAULT_SYMBOLS = (process.env.NEXT_PUBLIC_WATCHLIST ?? "SPY,QQQ,ES,NQ,AAPL,NVDA,TSLA")
+const DEFAULT_SYMBOLS = (process.env.NEXT_PUBLIC_WATCHLIST ?? "SPY,QQQ")
   .split(",")
   .map((s) => s.trim().toUpperCase())
   .filter(Boolean);

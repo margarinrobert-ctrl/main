@@ -156,11 +156,15 @@ All thresholds are in `src/lib/barchart/config.ts` (`flowThresholds`). Rows also
 
 ## Quant analytics (`src/lib/flow/analytics.ts`, unit-tested)
 
-Each ticker page is a tabbed dashboard — **Overview · Signals · Playbook · Chain · Heatmap · Gamma · Vanna/Charm · 3D · Term · OI · Skew · Vol Edge · Harvest · History · Pine** —
+Each ticker page is a tabbed dashboard — **Overview · Signals · MM Hedge · Playbook · Chain · Heatmap · Gamma · Vanna/Charm · 3D · Term · OI · Skew · Vol Edge · Harvest · History · Pine** —
 driven by a pure analytics engine computed from the chain. A **dashboard-wide expiration selector**
 (e.g. **0DTE**, a weekly, or **All**) scopes every view at once — levels, gamma, greeks, Playbook and
 the Pine export recompute for the chosen expiration; axis views (heatmap / term / 3D) highlight it:
 
+- **Market-Maker Hedging algo** — reads dealer gamma/charm/vanna into a single **buy/sell pressure**
+  score and a trade taken *with* that pressure at the active level: in long-gamma it fades toward the
+  dominant **gamma magnet** (pin), in short-gamma it rides the **continuation** off the γ-flip — with
+  entry / target / stop and a per-component breakdown
 - **Signal Board** — a synthesized, ranked **trade-signal** feed that fuses the gamma map (regime /
   γ-flip / walls), order-flow tilt (net Δ exposure, put/call), second-order flow (vanna/charm), the
   **VRP** (IV vs realized), skew and max-pain into a composite **−100…+100 bias** and concrete ideas
@@ -230,7 +234,7 @@ src/
 - [x] Screener UI controls mapped to `getOptionsScreener` params
 - [x] Live response caching (TTL = `CACHE_TTL_SECONDS`), keyed by endpoint + params
 - [x] Free keyless provider (Stooq) for live quote + history — no account needed
-- [x] Index/ETF/futures focus (SPY, QQQ, ES, NQ) + interactive options **heatmap** (volume / vol-OI / notional)
+- [x] **SPY & QQQ focus** (real ETF options, no proxy) + interactive options **heatmap** (volume / vol-OI / notional)
 - [ ] Postgres/Prisma snapshot store + scheduled polling (for flow-over-time)
 - [ ] Live futures options (ES/NQ) via Barchart `getFuturesOptions` (fixtures provided for the demo)
 
