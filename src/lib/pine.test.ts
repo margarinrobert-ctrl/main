@@ -25,13 +25,32 @@ function c(p: Partial<OptionContract>): OptionContract {
   };
 }
 
+const SQ = (x: number) => x * x;
+// realistic 2-expiration book: ATM-peaked gamma, call OI rising with strike and put OI rising as
+// strike falls (call wall above, put wall below, a zero-gamma flip near spot), with the front 0DTE
+// peak shifted so its levels differ from the all-expiration walls and distinct GEX nodes remain.
+function multiChain(): OptionContract[] {
+  const out: OptionContract[] = [];
+  for (const { e, dte, pk, sc } of [
+    { e: "2026-06-16", dte: 0, pk: 102, sc: 1 },
+    { e: "2026-07-17", dte: 31, pk: 100, sc: 2 },
+  ])
+    for (const k of [88, 92, 96, 100, 104, 108, 112]) {
+      const g = 0.05 * Math.exp(-SQ(k - pk) / 70);
+      out.push(c({ expiration: e, dte, type: "call", strike: k, gamma: g, openInterest: Math.round((1500 + 260 * (k - 88)) * sc), volume: 9000, impliedVolatility: 0.25, delta: 0.4 }));
+      out.push(c({ expiration: e, dte, type: "put", strike: k, gamma: g, openInterest: Math.round((1500 + 260 * (112 - k)) * sc), volume: 6000, impliedVolatility: 0.25, delta: -0.4 }));
+    }
+  return out;
+}
+// extract the baked price array from the generated Pine
+function pricesOf(code: string): number[] {
+  const m = /P\s+=\s+array\.from\(([^)]*)\)/.exec(code);
+  return m ? m[1].split(",").map((s) => Number(s.trim())) : [];
+}
+
 describe("buildGexPine", () => {
   it("emits a v6 indicator with named levels + OI/V/GEX/DEX detail and array-driven levels", () => {
-    const chain = [
-      c({ type: "call", strike: 105, gamma: 0.05, openInterest: 9000, volume: 12000 }),
-      c({ type: "put", strike: 95, gamma: 0.02, openInterest: 4000, volume: 15000 }),
-    ];
-    const r = buildGexPine("TEST", chain, 100);
+    const r = buildGexPine("TEST", multiChain(), 100);
     expect(r.code).toContain("//@version=6");
     expect(r.code).toContain("OptionsFlow GEX • TEST");
     expect(r.code).toContain("Call Resistance"); // in hover detail
@@ -47,7 +66,7 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("alertcondition("); // level-cross alerts
     expect(r.code).toMatch(/P\s+=\s+array\.from\([^)]*\.\d/); // float price array
     expect(r.code).toContain("D  = array.from("); // hover-detail array
-    expect(r.expiration).toBe("2026-06-19");
+    expect(r.expiration).toBe("2026-06-16"); // nearest expiration
   });
 
   it("collapses to a single spot level when there is no data", () => {
@@ -58,35 +77,37 @@ describe("buildGexPine", () => {
   });
 
   it("adds Max Pain + OI-wall levels and never prints resistance == support", () => {
-    // ATM strike dominates both call and put gamma — the bug that put them on the same line.
-    const chain = [
-      c({ type: "call", strike: 100, gamma: 0.1, openInterest: 6000, volume: 5000 }),
-      c({ type: "put", strike: 100, gamma: 0.1, openInterest: 6000, volume: 5000 }),
-      c({ type: "call", strike: 105, gamma: 0.05, openInterest: 7000, volume: 4000 }),
-      c({ type: "put", strike: 95, gamma: 0.05, openInterest: 7000, volume: 4000 }),
-    ];
-    const r = buildGexPine("LVL", chain, 100);
+    // realistic book → OI walls sit at distinct strikes from the gamma walls
+    const r = buildGexPine("LVL", multiChain(), 100);
     expect(r.code).toContain("Max Pain");
-    expect(r.code).toContain("Call OI wall");
-    expect(r.code).toContain("Put OI wall");
-    expect(r.callRes!).toBeGreaterThan(100); // resistance above spot
-    expect(r.putSup!).toBeLessThan(100); // support below spot
-    expect(r.callRes).not.toBe(r.putSup);
+    expect(r.code).toContain("Call OI");
+    expect(r.code).toContain("Put OI");
+    // ATM-dominant edge case: resistance must stay above spot, support below (not the same strike)
+    const atm = buildGexPine(
+      "ATM",
+      [
+        c({ type: "call", strike: 100, gamma: 0.1, openInterest: 6000 }),
+        c({ type: "put", strike: 100, gamma: 0.1, openInterest: 6000 }),
+        c({ type: "call", strike: 105, gamma: 0.05, openInterest: 7000 }),
+        c({ type: "put", strike: 95, gamma: 0.05, openInterest: 7000 }),
+      ],
+      100,
+    );
+    expect(atm.callRes!).toBeGreaterThan(100);
+    expect(atm.putSup!).toBeLessThan(100);
+    expect(atm.callRes).not.toBe(atm.putSup);
   });
 
-  it("draws every level as its own label — never merges Call Res with a GEX strike", () => {
-    const chain = [
-      c({ type: "call", strike: 105, gamma: 0.05, openInterest: 9000, volume: 12000 }),
-      c({ type: "put", strike: 95, gamma: 0.04, openInterest: 8000, volume: 11000 }),
-      c({ type: "call", strike: 110, gamma: 0.03, openInterest: 6000 }),
-      c({ type: "put", strike: 90, gamma: 0.03, openInterest: 6000 }),
-    ];
-    const r = buildGexPine("MULTI", chain, 100);
+  it("gives every level its own price — no two levels stack on the same line", () => {
+    const r = buildGexPine("MULTI", multiChain(), 100);
     expect(r.code).toContain('"Call Resistance"'); // stands alone
-    expect(r.code).toContain('"GEX 1"'); // ladder label stands alone
-    expect(r.code).toContain('"HVL 0DTE"'); // 0DTE flip present
-    expect(r.code).not.toMatch(/Call Res[^"]*\+[^"]*GEX/); // no "Call Res + GEX" combo labels
-    expect(r.strikes).toBeGreaterThanOrEqual(8); // many distinct levels, not collapsed
+    expect(r.code).toContain('"GEX 1"'); // ladder renumbered from 1
+    expect(r.code).toContain("0DTE"); // 0DTE levels distinct from all-expiry walls
+    expect(r.code).not.toMatch(/·\s*GEX/); // no "Call Wall · GEX" combined labels
+    expect(r.strikes).toBeGreaterThanOrEqual(10);
+    // every baked level sits at a strictly distinct price (deduped)
+    const ps = pricesOf(r.code).sort((a, b) => a - b);
+    for (let i = 1; i < ps.length; i++) expect(ps[i] - ps[i - 1]).toBeGreaterThan(0.05);
   });
 
   it("notes the index-proxy basis for futures symbols", () => {

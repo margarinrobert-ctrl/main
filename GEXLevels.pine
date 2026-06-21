@@ -50,7 +50,7 @@ if barstate.islast
     offset = nz(frozenBasis) + basisManual
     clearAll()
     rng = ta.highest(high, 120) - ta.lowest(low, 120)
-    minGap = na(rng) or rng <= 0 ? close * 0.01 : rng * 0.022
+    minGap = math.max(na(rng) or rng <= 0 ? close * 0.012 : rng * 0.02, close * 0.0015)
     float prevP = na
     int lane = 0
     base = bar_index

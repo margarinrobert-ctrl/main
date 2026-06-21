@@ -167,14 +167,31 @@ export function buildGexPine(
   });
 
   if (!lvls.length) add(s, "Spot", "color.gray", "line.style_dotted", 1, "spot");
-  lvls.sort((a, b) => a.price - b.price);
 
-  const P = lvls.map((l) => fmt(l.price)).join(", ");
-  const T = lvls.map((l) => JSON.stringify(l.short)).join(", ");
-  const D = lvls.map((l) => JSON.stringify(l.detail)).join(", ");
-  const C = lvls.map((l) => l.color).join(", ");
-  const LS = lvls.map((l) => l.style).join(", ");
-  const W = lvls.map((l) => String(l.width)).join(", ");
+  // ONE level per price: keep the highest-priority (first-added) level at each strike and drop any
+  // coincident duplicates, so nothing ever stacks on the same line. Renumber surviving GEX nodes.
+  const lv: typeof lvls = [];
+  for (const l of lvls) {
+    const tol = Math.max(0.01, (spot ?? l.price) * 0.0006);
+    if (lv.some((u) => Math.abs(u.price - l.price) <= tol)) continue;
+    lv.push(l);
+  }
+  let gn = 0;
+  for (const l of lv) {
+    if (/^GEX /.test(l.short)) {
+      const n = ++gn;
+      l.short = `GEX ${n}`;
+      l.detail = l.detail.replace(/^GEX \d+/, `GEX ${n}`);
+    }
+  }
+  lv.sort((a, b) => a.price - b.price);
+
+  const P = lv.map((l) => fmt(l.price)).join(", ");
+  const T = lv.map((l) => JSON.stringify(l.short)).join(", ");
+  const D = lv.map((l) => JSON.stringify(l.detail)).join(", ");
+  const C = lv.map((l) => l.color).join(", ");
+  const LS = lv.map((l) => l.style).join(", ");
+  const W = lv.map((l) => String(l.width)).join(", ");
 
   const asOf = new Date().toISOString().slice(0, 16).replace("T", " ");
   const alertInputs = [
@@ -245,7 +262,7 @@ offset = nz(frozenBasis) + basisManual
 if barstate.islast
     clearAll()
     rng = ta.highest(high, 120) - ta.lowest(low, 120)
-    minGap = na(rng) or rng <= 0 ? close * 0.01 : rng * 0.022
+    minGap = math.max(na(rng) or rng <= 0 ? close * 0.012 : rng * 0.02, close * 0.0015)
     float prevP = na
     int lane = 0
     base = bar_index
@@ -280,5 +297,5 @@ plot(showOR ? orL : na, "OR Low", color = color.new(color.aqua, 0), style = plot
 ${alertLines}
 `;
 
-  return { code, expiration: exp, callRes, putSup, hvl, strikes: lvls.length };
+  return { code, expiration: exp, callRes, putSup, hvl, strikes: lv.length };
 }
