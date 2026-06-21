@@ -82,6 +82,8 @@ export interface MMTrade {
   rr: number | null; // to TP1
   rrFinal: number | null; // to last TP
   ev: number | null; // modelled expected value in R (prob-weighted, minus stop risk)
+  pWin: number | null; // BS probability TP1 is hit before the stop (driftless first-passage)
+  anchorLevel: string | null; // the level the plan is anchored to
   rationale: string;
   management: string[];
 }
@@ -99,6 +101,7 @@ export interface MMHedge {
   vannaFlow: number | null; // $/day (vanna × expected ΔIV)
   frontIv: number | null; // front-expiry ATM IV (for level probabilities)
   frontT: number; // front horizon in years
+  em: number; // 1-day expected move ($) used for plan buffers
   levels: MMLevel[];
   levelPlays: LevelPlay[];
   nearestLevel: { name: string; price: number; distPct: number } | null;
@@ -252,6 +255,15 @@ function planTrade(
     const upside = targets.reduce((s, t, i) => s + (w[i] ?? 0) * (t.pTouch as number) * (t.r as number), 0);
     ev = Math.round((upside - pStop) * 100) / 100;
   }
+  // P(win): driftless first-passage probability of tagging TP1 before the stop. In log space with
+  // absorbing barriers at +u (target) and −d (stop), P(target first) = d / (u + d).
+  let pWin: number | null = null;
+  const tp1 = targets[0]?.price;
+  if (tp1 != null && entry > 0 && stop > 0 && tp1 > 0) {
+    const u = Math.abs(Math.log(tp1 / entry));
+    const d = Math.abs(Math.log(stop / entry));
+    if (u + d > 0) pWin = Math.round((d / (u + d)) * 100) / 100;
+  }
 
   const entries = [
     { price: entry, label: atLevel && anchor ? `at ${anchor.name}` : "on reach" },
@@ -282,6 +294,8 @@ function planTrade(
     rr: targets[0]?.r ?? null,
     rrFinal: targets[targets.length - 1]?.r ?? null,
     ev,
+    pWin,
+    anchorLevel: anchor?.name ?? null,
     rationale,
     management,
   };
@@ -302,6 +316,7 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     vannaFlow: null,
     frontIv: null,
     frontT: 0,
+    em: 0,
     levels: [],
     levelPlays: [],
     nearestLevel: null,
@@ -456,6 +471,8 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
       rr: null,
       rrFinal: null,
       ev: null,
+      pWin: null,
+      anchorLevel: null,
       rationale: `Dealer pressure is balanced near the ${nearestLevel?.name ?? "level"} (${nearestLevel ? f2(nearestLevel.price) : "—"}). Wait for a commit through ${flip != null ? f2(flip) : "the flip"} or a tag of a wall.`,
       management: ["No edge yet — let price reach a level and the pressure pick a side."],
     };
@@ -493,6 +510,7 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     vannaFlow,
     frontIv: iv0,
     frontT: tYears,
+    em,
     levels: lad,
     levelPlays,
     nearestLevel,
@@ -504,6 +522,16 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     trade,
     notes,
   };
+}
+
+/**
+ * Re-anchor the trade plan to a user-selected level. Side follows that level's expected dealer
+ * reaction (resistance → short, support → long; pivot/pin → fall back to net pressure).
+ */
+export function planAtLevel(r: MMHedge, spot: number | null, lp: LevelPlay): MMTrade | null {
+  if (spot == null || r.regime === "unknown") return null;
+  const side: "long" | "short" = lp.bias === "up" ? "long" : lp.bias === "down" ? "short" : r.pressureScore >= 0 ? "long" : "short";
+  return planTrade(side, spot, { name: lp.name, price: lp.price }, true, r.levels, r.em || spot * 0.01, r.regime, r.magnet, r.frontIv, r.frontT);
 }
 
 function fmtMoney(v: number): string {

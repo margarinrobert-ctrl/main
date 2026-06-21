@@ -5,7 +5,7 @@ import type { HistoryBar, OptionContract } from "@/lib/barchart/types";
 import { loadChain, loadHistory } from "@/lib/client-data";
 import { filterByExpiration, fmtUsd, levelStats } from "@/lib/flow/analytics";
 import { probAbove } from "@/lib/flow/greeks";
-import { mmHedge, type Pressure } from "@/lib/flow/mmhedge";
+import { mmHedge, planAtLevel, type Pressure } from "@/lib/flow/mmhedge";
 import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
@@ -101,6 +101,18 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
     const volOi = oiSum > 0 ? (st.callVol + st.putVol) / oiSum : null; // >~0.5 = fresh positioning today
     return { lp, st, pBeyond, distSigma, volOi };
   }, [selLevel, sub, spot, r]);
+
+  // The plan re-anchors to a selected level; otherwise it's the auto plan at the in-play level.
+  const plan = useMemo(() => {
+    if (selLevel) {
+      const lp = r.levelPlays.find((l) => l.name === selLevel);
+      if (lp) {
+        const p = planAtLevel(r, spot, lp);
+        if (p) return p;
+      }
+    }
+    return r.trade;
+  }, [selLevel, r, spot]);
 
   return (
     <div className="glass p-4">
@@ -218,29 +230,39 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
             <Stat label="Conviction" value={`${r.conviction}/100`} tone={r.conviction >= 60 ? "text-emerald-300" : r.conviction >= 35 ? "text-amber-300" : "text-neutral-100"} />
             <Stat label="Hedge / 1%" value={r.flowPer1pct == null ? "—" : fmtUsd(r.flowPer1pct)} sub={r.regime === "long" ? "stabilising" : r.regime === "short" ? "destabilising" : ""} />
             <Stat label="Pin (COM)" value={r.com == null ? "—" : f2(r.com)} sub={r.magnet != null ? `magnet ${r.magnet}` : ""} />
-            <Stat label="EV (modelled)" value={r.trade?.ev == null ? "—" : `${r.trade.ev}R`} tone={r.trade?.ev == null ? "text-neutral-100" : r.trade.ev > 0 ? "text-emerald-300" : "text-red-300"} />
+            <Stat label="EV (modelled)" value={plan?.ev == null ? "—" : `${plan.ev}R`} tone={plan?.ev == null ? "text-neutral-100" : plan.ev > 0 ? "text-emerald-300" : "text-red-300"} />
           </div>
 
-          {r.trade && (
-            <div className={`mb-4 rounded-lg border border-white/5 border-l-4 bg-white/[0.02] p-3 ${r.trade.side === "long" ? "border-l-emerald-500" : r.trade.side === "short" ? "border-l-red-500" : "border-l-sky-500"}`}>
+          {plan && (
+            <div className={`mb-4 rounded-lg border border-white/5 border-l-4 bg-white/[0.02] p-3 ${plan.side === "long" ? "border-l-emerald-500" : plan.side === "short" ? "border-l-red-500" : "border-l-sky-500"}`}>
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-neutral-100">The trade plan</span>
-                <span className={`rounded-full border px-2 py-0.5 text-[11px] uppercase ${sideChip(r.trade.side)}`}>{r.trade.side}</span>
-                {r.trade.rr != null && (
-                  <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300">R:R {r.trade.rr}× → TP1 · {r.trade.rrFinal}× final</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[11px] uppercase ${sideChip(plan.side)}`}>{plan.side}</span>
+                {plan.anchorLevel && (
+                  <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] text-sky-300">
+                    @ {plan.anchorLevel}
+                    {selLevel ? " (selected)" : ""}
+                  </span>
                 )}
-                {r.trade.ev != null && (
-                  <span className={`rounded-full border px-2 py-0.5 text-[11px] ${r.trade.ev > 0 ? "border-emerald-500/40 text-emerald-300" : "border-red-500/40 text-red-300"}`}>EV {r.trade.ev}R</span>
+                {plan.pWin != null && (
+                  <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-neutral-200">P(win) {Math.round(plan.pWin * 100)}%</span>
+                )}
+                {plan.rr != null && (
+                  <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300">R:R {plan.rr}× → TP1 · {plan.rrFinal}× final</span>
+                )}
+                {plan.ev != null && (
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] ${plan.ev > 0 ? "border-emerald-500/40 text-emerald-300" : "border-red-500/40 text-red-300"}`}>EV {plan.ev}R</span>
                 )}
               </div>
 
-              <p className="mb-3 text-xs text-neutral-400">{r.trade.rationale}</p>
+              {selLevel && <p className="mb-2 text-[11px] text-sky-300">Synced to {selLevel} — tap it again to return to the auto plan.</p>}
+              <p className="mb-3 text-xs text-neutral-400">{plan.rationale}</p>
 
-              {r.trade.side !== "wait" && (
+              {plan.side !== "wait" && (
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="rounded border border-white/10 p-2">
                     <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Entry zone</div>
-                    {r.trade.entries.map((e) => (
+                    {plan.entries.map((e) => (
                       <div key={e.label} className="flex justify-between text-sm">
                         <span className="text-neutral-500">{e.label}</span>
                         <span className="font-mono text-neutral-100">{f2(e.price)}</span>
@@ -249,7 +271,7 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
                   </div>
                   <div className="rounded border border-white/10 p-2">
                     <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Take-profit · R · P(touch)</div>
-                    {r.trade.targets.map((t) => (
+                    {plan.targets.map((t) => (
                       <div key={t.label} className="flex items-baseline justify-between gap-2 text-sm">
                         <span className="truncate text-neutral-500">{t.label}</span>
                         <span className="whitespace-nowrap font-mono text-emerald-300">
@@ -264,18 +286,18 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
                     <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Stop / risk</div>
                     <div className="flex justify-between text-sm">
                       <span className="text-neutral-500">stop</span>
-                      <span className="font-mono text-red-300">{f2(r.trade.stop)}</span>
+                      <span className="font-mono text-red-300">{f2(plan.stop)}</span>
                     </div>
-                    <div className="text-[10px] text-neutral-500">{r.trade.stopLabel}</div>
-                    {r.trade.risk != null && <div className="mt-1 text-[11px] text-neutral-400">risk ≈ {f2(r.trade.risk)} / unit (= 1R)</div>}
-                    {r.trade.pStop != null && <div className="text-[11px] text-neutral-500">P(touch stop) {Math.round(r.trade.pStop * 100)}%</div>}
+                    <div className="text-[10px] text-neutral-500">{plan.stopLabel}</div>
+                    {plan.risk != null && <div className="mt-1 text-[11px] text-neutral-400">risk ≈ {f2(plan.risk)} / unit (= 1R)</div>}
+                    {plan.pStop != null && <div className="text-[11px] text-neutral-500">P(touch stop) {Math.round(plan.pStop * 100)}%</div>}
                   </div>
                 </div>
               )}
 
-              {r.trade.management.length > 0 && (
+              {plan.management.length > 0 && (
                 <ul className="mt-3 list-disc space-y-0.5 pl-4 text-[11px] text-neutral-400">
-                  {r.trade.management.map((m) => (
+                  {plan.management.map((m) => (
                     <li key={m}>{m}</li>
                   ))}
                 </ul>

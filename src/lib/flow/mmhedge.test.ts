@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OptionContract } from "../barchart/types";
-import { mmHedge } from "./mmhedge";
+import { mmHedge, planAtLevel } from "./mmhedge";
 
 function c(p: Partial<OptionContract>): OptionContract {
   return {
@@ -89,6 +89,23 @@ describe("mmHedge", () => {
     expect(typeof lvl.putOi).toBe("number");
     expect(lvl.oiShare).toBeGreaterThanOrEqual(0);
     expect(lvl.oiShare).toBeLessThanOrEqual(1);
+  });
+
+  it("computes BS P(win) and re-anchors the plan to a selected level", () => {
+    const chain = [
+      c({ type: "call", strike: 110, gamma: 0.05, openInterest: 9000 }),
+      c({ type: "put", strike: 90, gamma: 0.03, openInterest: 2000 }),
+    ];
+    const r = mmHedge(chain, 100);
+    expect(r.trade!.pWin!).toBeGreaterThan(0);
+    expect(r.trade!.pWin!).toBeLessThanOrEqual(1);
+    // anchor to a support level below spot → a long plan anchored there
+    const sup = r.levelPlays.find((l) => l.price < 100 && l.bias === "up");
+    const p = planAtLevel(r, 100, sup!);
+    expect(p).not.toBeNull();
+    expect(p!.anchorLevel).toBe(sup!.name);
+    expect(p!.side).toBe("long");
+    expect(p!.pWin).not.toBeNull();
   });
 
   it("classifies a short-gamma regime when puts dominate net GEX", () => {
