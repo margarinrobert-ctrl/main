@@ -1,5 +1,5 @@
 export type DataSource = "fixtures" | "live";
-export type MarketDataProvider = "barchart" | "stooq";
+export type MarketDataProvider = "barchart" | "stooq" | "yahoo";
 export type OptionsProvider = "barchart" | "alphavantage" | "cboe";
 
 function toInt(v: string | undefined, fallback: number): number {
@@ -22,9 +22,15 @@ export const config = {
   dataSource: (process.env.DATA_SOURCE === "fixtures" ? "fixtures" : "live") as DataSource,
   apiKey: process.env.BARCHART_API_KEY ?? "",
   baseUrl: (process.env.BARCHART_BASE_URL ?? "https://ondemand.websol.barchart.com/").replace(/\/+$/, "") + "/",
-  // Underlying quote + price history. 'stooq' is free + keyless (EOD, ~1 day old).
-  marketDataProvider: (process.env.MARKET_DATA_PROVIDER === "barchart" ? "barchart" : "stooq") as MarketDataProvider,
+  // Underlying quote + price history. Default 'yahoo' (keyless, real-time-ish, reliable from servers);
+  // 'stooq' (EOD CSV) is the fallback. Both free + keyless.
+  marketDataProvider: (process.env.MARKET_DATA_PROVIDER === "barchart"
+    ? "barchart"
+    : process.env.MARKET_DATA_PROVIDER === "stooq"
+      ? "stooq"
+      : "yahoo") as MarketDataProvider,
   stooqBaseUrl: (process.env.STOOQ_BASE_URL ?? "https://stooq.com").replace(/\/+$/, ""),
+  yahooBaseUrl: (process.env.YAHOO_BASE_URL ?? "https://query1.finance.yahoo.com").replace(/\/+$/, ""),
   // Options chain/heatmap/flow. 'alphavantage' = fresh EOD chains with a FREE key
   // (auto-selected when ALPHAVANTAGE_API_KEY is set); 'barchart' needs a paid key.
   optionsProvider: pickOptionsProvider(),

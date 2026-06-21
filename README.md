@@ -85,10 +85,14 @@ Everything live runs with **no key by default** — no signup required:
 
 | Data | Default provider | Cost | Freshness |
 | --- | --- | --- | --- |
-| Underlying quote + price chart | **Stooq** | free, **no key** | EOD (~1 day old) |
+| Underlying quote + price chart | **Yahoo** (Stooq fallback) | free, **no key** | real-time-ish / EOD |
 | Options chain / heatmap / flow | **CBOE delayed quotes** | free, **no key** | **~15-min delayed** |
 | Options (alternative) | Alpha Vantage (`ALPHAVANTAGE_API_KEY`) | free key | EOD (~1 day old) |
 | Options intraday + full-market scan | Barchart (`BARCHART_API_KEY`, `OPTIONS_PROVIDER=barchart`) | paid key | real-time / delayed |
+
+The underlying **quote + price chart** default to **Yahoo Finance's public chart API** (keyless,
+real-time-ish, reliable from servers), falling back to **Stooq** (EOD CSV) then fixtures — set
+`MARKET_DATA_PROVIDER=stooq` to force Stooq.
 
 Out of the box, options come from **CBOE's public delayed-quotes feed** (`cdn.cboe.com`) — real
 chains with volume, OI, IV and greeks, ~15 min delayed, **keyless**. The flow table is built from

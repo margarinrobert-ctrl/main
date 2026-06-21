@@ -2,12 +2,15 @@ import { cached } from "../cache/store";
 import { avOptions } from "../providers/alphavantage";
 import { cboeChain, cboeOptions, cboeQuote } from "../providers/cboe";
 import { stooqHistory, stooqQuote } from "../providers/stooq";
+import { yahooHistory, yahooQuote } from "../providers/yahoo";
 import { barchartRequest, readFixtureParsed } from "./client";
 import { config } from "./config";
 import { parseHistoryResponse, parseOptionsResponse, parseQuoteResponse } from "./normalize";
-import type { OptionContract } from "./types";
+import type { HistoryBar, NormalizedQuote, OptionContract } from "./types";
 
-const useStooq = () => config.dataSource === "live" && config.marketDataProvider === "stooq";
+const liveUnderlying = () => config.dataSource === "live" && config.marketDataProvider !== "barchart";
+// Try the free underlying providers in order (Yahoo first unless STOOQ is forced), then fixtures.
+const underlyingOrder = () => (config.marketDataProvider === "stooq" ? (["stooq", "yahoo"] as const) : (["yahoo", "stooq"] as const));
 
 // Options: 'cboe' (public, keyless) and 'alphavantage' (free key) fetch per-symbol chains;
 // 'barchart' (paid) goes through the shared barchartRequest path below.
@@ -21,19 +24,17 @@ export async function getQuote(symbol: string) {
   const sym = symbol.toUpperCase();
   const fixtures = [`quote.${sym}.json`, "quote.AAPL.json"];
 
-  if (config.dataSource === "live" && config.marketDataProvider !== "barchart") {
-    // Freshest free underlying: CBOE (~15-min delayed) → Stooq (EOD) → fixtures.
-    try {
-      return { data: await cboeQuote(sym), source: "live" as const };
-    } catch {
+  if (liveUnderlying()) {
+    // Freshest free underlying quote: Yahoo / Stooq (per order) → fixtures.
+    for (const p of underlyingOrder()) {
       try {
-        const data = await cached(`stooq:quote:${sym}`, config.cacheTtlSeconds, () => stooqQuote(sym));
-        return { data, source: "live" as const };
+        const data = await cached<NormalizedQuote[]>(`${p}:quote:${sym}`, config.cacheTtlSeconds, () => (p === "yahoo" ? yahooQuote(sym) : stooqQuote(sym)));
+        if (data.length) return { data, source: "live" as const };
       } catch (err) {
-        console.warn(`[quote] live failed for ${sym}; falling back to fixtures:`, err instanceof Error ? err.message : err);
-        return { data: await readFixtureParsed(fixtures, parseQuoteResponse), source: "fixtures" as const };
+        console.warn(`[${p}] quote failed for ${sym}:`, err instanceof Error ? err.message : err);
       }
     }
+    return { data: await readFixtureParsed(fixtures, parseQuoteResponse), source: "fixtures" as const };
   }
 
   return barchartRequest({ endpoint: "getQuote.json", params: { symbols: sym }, fixtureCandidates: fixtures }, parseQuoteResponse);
@@ -44,16 +45,19 @@ export async function getHistory(symbol: string, params: { type?: string; maxRec
   const fixtures = [`history.${sym}.json`, "history.AAPL.json"];
   const maxRecords = params.maxRecords ?? 60;
 
-  if (useStooq()) {
-    try {
-      const data = await cached(`stooq:history:${sym}:${maxRecords}`, config.cacheTtlSeconds, () =>
-        stooqHistory(sym, maxRecords),
-      );
-      return { data, source: "live" as const };
-    } catch (err) {
-      console.warn(`[stooq] history failed for ${sym}; falling back to fixtures:`, err instanceof Error ? err.message : err);
-      return { data: await readFixtureParsed(fixtures, parseHistoryResponse), source: "fixtures" as const };
+  if (liveUnderlying()) {
+    // Real price history: Yahoo (reliable from servers) → Stooq (EOD) → fixtures.
+    for (const p of underlyingOrder()) {
+      try {
+        const data = await cached<HistoryBar[]>(`${p}:history:${sym}:${maxRecords}`, config.cacheTtlSeconds, () =>
+          p === "yahoo" ? yahooHistory(sym, maxRecords) : stooqHistory(sym, maxRecords),
+        );
+        if (data.length) return { data, source: "live" as const };
+      } catch (err) {
+        console.warn(`[${p}] history failed for ${sym}:`, err instanceof Error ? err.message : err);
+      }
     }
+    return { data: await readFixtureParsed(fixtures, parseHistoryResponse), source: "fixtures" as const };
   }
 
   return barchartRequest(
