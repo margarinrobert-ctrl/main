@@ -49,6 +49,7 @@ class Params:
     use_sweep: bool = True
     sweep_lookback: int = 5           # sweep -> IFVG must form short-term (~1-5 min)
     pivot_len: int = 8
+    use_swing_sweep: bool = True      # use swing pivot highs/lows as sweep levels
     use_pd_levels: bool = True        # previous-day high/low
     use_eq: bool = True               # equal highs/lows
     eq_ticks: float = 8.0
@@ -71,6 +72,8 @@ class Params:
     # --- Time ---
     use_time: bool = True
     use_ny_am: bool = True
+    ny_am_start: int = 510            # NY AM killzone start, NY minutes (08:30 = 510)
+    ny_am_end: int = 660              # NY AM killzone end, NY minutes (11:00 = 660)
     use_ny_lunch: bool = False
     use_ny_pm: bool = True
     use_london: bool = False
@@ -195,7 +198,7 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
     def in_window(mn, start, end):
         return (mn >= start) & (mn < end)
 
-    in_ny_am = p.use_ny_am & in_window(minute, 510, 660)
+    in_ny_am = p.use_ny_am & in_window(minute, p.ny_am_start, p.ny_am_end)
     in_ny_lunch = p.use_ny_lunch & in_window(minute, 720, 780)
     in_ny_pm = p.use_ny_pm & in_window(minute, 810, 960)
     in_london = p.use_london & in_window(minute, 120, 300)
@@ -361,12 +364,13 @@ def generate(df: pd.DataFrame, p: Params, tz: str = NY_TZ, contracts: float = 1.
         sh_levels = [sess_hi[k] for k in SESS] if p.use_sessions else []
         sl_levels = [sess_lo[k] for k in SESS] if p.use_sessions else []
 
-        # --- sweeps (wick beyond level, body rejects back) over the expanded set ---
-        swept_high = ((not np.isnan(last_ph) and h[i] > last_ph and c[i] < last_ph) or
+        # --- sweeps (wick beyond level, body rejects back) over the enabled set ---
+        sw = p.use_swing_sweep
+        swept_high = ((sw and not np.isnan(last_ph) and h[i] > last_ph and c[i] < last_ph) or
                       (not np.isnan(pdh) and h[i] > pdh and c[i] < pdh) or
                       (not np.isnan(eqh) and h[i] > eqh and c[i] < eqh) or
                       any((not np.isnan(x)) and h[i] > x and c[i] < x for x in sh_levels))
-        swept_low = ((not np.isnan(last_pl) and l[i] < last_pl and c[i] > last_pl) or
+        swept_low = ((sw and not np.isnan(last_pl) and l[i] < last_pl and c[i] > last_pl) or
                      (not np.isnan(pdl) and l[i] < pdl and c[i] > pdl) or
                      (not np.isnan(eql) and l[i] < eql and c[i] > eql) or
                      any((not np.isnan(x)) and l[i] < x and c[i] > x for x in sl_levels))
