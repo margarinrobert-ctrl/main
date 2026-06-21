@@ -130,6 +130,26 @@ no durable edge. The framework (signals, VectorBT accounting, optimiser, walk-fo
 is correct and reusable; the *strategy* doesn't make money out-of-sample. Plug in
 genuine NQ-futures 1-min data to confirm on the exact contract, but expect the same.
 
+### Law-of-large-numbers test (~1,000,000 synthetic trades)
+
+`big_sample.py` accumulates ~1e6 trades across many synthetic seeds with filters open
+(pure 1:1, the raw IFVG-inversion entry) to converge the distribution:
+
+| (1,002,694 trades) | win rate | profit factor | mean/trade | t-stat |
+|---|---|---|---|---|
+| GROSS (no costs) | 40.98% | 0.796 | −$18.57 | −101.97 |
+| NET (commission+slippage) | 40.91% | 0.595 | −$42.65 | −234.19 |
+
+Even **before costs** the raw entry is significantly **negative** (t ≈ −102): on a
+million trades the IFVG-inversion entry has no positive edge — it's slightly
+anti-predictive on this data and strongly negative after costs. This agrees with the
+real-data walk-forward. (The filtered "robust" preset reads ~50–60% win because the
+filters *select* a subset; the entry itself carries no edge.) Repro:
+
+```bash
+python -m vectorbt_ifvg.big_sample --target 1000000   # ~33 min
+```
+
 ## Synthetic-data caveat (read this)
 
 This environment has **no market-data network access** (Yahoo & co. are not
