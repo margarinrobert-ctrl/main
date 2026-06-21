@@ -160,7 +160,7 @@ All thresholds are in `src/lib/barchart/config.ts` (`flowThresholds`). Rows also
 
 ## Quant analytics (`src/lib/flow/analytics.ts`, unit-tested)
 
-Each ticker page is a tabbed dashboard — **Overview · Signals · MM Hedge · Playbook · Chain · Heatmap · Gamma · Vanna/Charm · 3D · Term · OI · Skew · Vol Edge · Harvest · Anomaly · History · Pine** —
+Each ticker page is a tabbed dashboard — **Overview · Signals · MM Hedge · Playbook · Chain · Heatmap · Gamma · Levels Chart · Vanna/Charm · 3D · Term · OI · Skew · Vol Edge · Harvest · Anomaly · History · Pine** —
 driven by a pure analytics engine computed from the chain. A **dashboard-wide expiration selector**
 (e.g. **0DTE**, a weekly, or **All**) scopes every view at once — levels, gamma, greeks, Playbook and
 the Pine export recompute for the chosen expiration; axis views (heatmap / term / 3D) highlight it:
@@ -191,6 +191,10 @@ the Pine export recompute for the chosen expiration; axis views (heatmap / term 
   point: the falling-IV "melt-up" tailwind) and charm ($Δ per day: the time-decay drift that pins
   into expiry), with a plain-English dealer-flow read
 - **Net Δ exposure**, **put/call ratios** (volume & OI)
+- **Levels Chart** — a live candlestick chart at any **timeframe** (1m · 2m · 3m · 5m · 15m · 30m · 1h · 1D;
+  non-native intervals resampled) with the **GEX levels overlaid as price lines** (Call Res / Put Sup /
+  HVL / magnet / Max Pain / OI walls / 1D range / GEX ladder) and a **greeks header** (dealer γ, net Δ,
+  vanna, charm). Candles from Yahoo, levels from the CBOE chain — both live and synced, auto-refreshing
 - **Gamma Profile** chart (GEX-by-strike, spot + flip markers) and **IV skew** chart (call vs put IV)
 - **Vanna/Charm profile** — dealer vanna & charm by strike, plus an **exposure-across-spot** curve
   (Black-Scholes re-priced as price moves, with the modeled γ-flip) so you see where the regime turns

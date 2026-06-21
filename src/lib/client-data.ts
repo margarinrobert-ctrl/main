@@ -53,6 +53,16 @@ export async function loadHistory(symbol: string): Promise<{ bars: HistoryBar[];
   return { bars: (json.bars as HistoryBar[]) ?? [], source: (json.source as string) ?? "" };
 }
 
+export async function loadCandles(symbol: string, interval: string, range: string): Promise<{ bars: HistoryBar[]; source: string }> {
+  const sym = symbol.toUpperCase();
+  if (STATIC) {
+    const raw = await fetchFixture([`history.${sym}.json`, "history.AAPL.json"]);
+    return { bars: parseHistoryResponse(raw), source: "fixtures" };
+  }
+  const json = await fetchJson(`/api/barchart/candles?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}`);
+  return { bars: (json.bars as HistoryBar[]) ?? [], source: (json.source as string) ?? "" };
+}
+
 export async function loadChain(
   symbol: string,
 ): Promise<{ chain: OptionContract[]; source: string; spot: number | null; asOf: string | null }> {

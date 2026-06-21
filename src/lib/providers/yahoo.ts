@@ -38,8 +38,7 @@ async function fetchChart(symbol: string, range: string, interval: string): Prom
   }
 }
 
-export async function yahooHistory(symbol: string, maxBars = 120): Promise<HistoryBar[]> {
-  const r = await fetchChart(symbol, "6mo", "1d");
+function barsFrom(r: YResult, symbol: string): HistoryBar[] {
   const ts = r.timestamp ?? [];
   const q = r.indicators?.quote?.[0];
   if (!ts.length || !q?.close) throw new Error(`Yahoo: empty history for ${symbol}`);
@@ -57,7 +56,16 @@ export async function yahooHistory(symbol: string, maxBars = 120): Promise<Histo
     });
   }
   if (!out.length) throw new Error(`Yahoo: no usable bars for ${symbol}`);
-  return out.slice(-maxBars);
+  return out;
+}
+
+export async function yahooHistory(symbol: string, maxBars = 120): Promise<HistoryBar[]> {
+  return barsFrom(await fetchChart(symbol, "6mo", "1d"), symbol).slice(-maxBars);
+}
+
+/** OHLC candles at an arbitrary interval/range (e.g. 1m/1d, 5m/5d, 60m/3mo, 1d/6mo). */
+export async function yahooCandles(symbol: string, interval: string, range: string): Promise<HistoryBar[]> {
+  return barsFrom(await fetchChart(symbol, range, interval), symbol);
 }
 
 export async function yahooQuote(symbol: string): Promise<NormalizedQuote[]> {

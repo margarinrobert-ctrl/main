@@ -2,7 +2,7 @@ import { cached } from "../cache/store";
 import { avOptions } from "../providers/alphavantage";
 import { cboeChain, cboeOptions, cboeQuote } from "../providers/cboe";
 import { stooqHistory, stooqQuote } from "../providers/stooq";
-import { yahooHistory, yahooQuote } from "../providers/yahoo";
+import { yahooCandles, yahooHistory, yahooQuote } from "../providers/yahoo";
 import { barchartRequest, readFixtureParsed } from "./client";
 import { config } from "./config";
 import { parseHistoryResponse, parseOptionsResponse, parseQuoteResponse } from "./normalize";
@@ -68,6 +68,21 @@ export async function getHistory(symbol: string, params: { type?: string; maxRec
     },
     parseHistoryResponse,
   );
+}
+
+/** Intraday/any-timeframe OHLC candles (Yahoo only — Stooq has no intraday). Falls back to fixtures. */
+export async function getCandles(symbol: string, interval: string, range: string) {
+  const sym = symbol.toUpperCase();
+  const fixtures = [`history.${sym}.json`, "history.AAPL.json"];
+  if (config.dataSource === "live") {
+    try {
+      const data = await cached<HistoryBar[]>(`yh:candles:${sym}:${interval}:${range}`, config.cacheTtlSeconds, () => yahooCandles(sym, interval, range));
+      if (data.length) return { data, source: "live" as const };
+    } catch (err) {
+      console.warn(`[yahoo] candles failed for ${sym} ${interval}/${range}:`, err instanceof Error ? err.message : err);
+    }
+  }
+  return { data: await readFixtureParsed(fixtures, parseHistoryResponse), source: "fixtures" as const };
 }
 
 export async function getEquityOptions(symbol: string) {

@@ -15,6 +15,7 @@ import { GexTerm } from "./GexTerm";
 import { GreeksSurface } from "./GreeksSurface";
 import { HarvestPanel } from "./HarvestPanel";
 import { KeyLevels } from "./KeyLevels";
+import { LevelsChart } from "./LevelsChart";
 import { MMHedge } from "./MMHedge";
 import { OiProfile } from "./OiProfile";
 import { OptionsChain } from "./OptionsChain";
@@ -36,6 +37,7 @@ const TABS = [
   "Chain",
   "Heatmap",
   "Gamma",
+  "Levels Chart",
   "Vanna/Charm",
   "3D",
   "Term",
@@ -182,6 +184,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Chain" && <OptionsChain symbol={symbol} exp={validExp} />}
       {tab === "Heatmap" && <OptionsHeatmap symbol={symbol} exp={validExp} />}
       {tab === "Gamma" && <GammaProfile symbol={symbol} exp={validExp} />}
+      {tab === "Levels Chart" && <LevelsChart symbol={symbol} />}
       {tab === "Vanna/Charm" && <VannaCharmProfile symbol={symbol} exp={validExp} />}
       {tab === "3D" && <GreeksSurface symbol={symbol} exp={validExp} />}
       {tab === "Term" && <GexTerm symbol={symbol} exp={validExp} />}
