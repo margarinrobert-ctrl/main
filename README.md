@@ -161,12 +161,12 @@ driven by a pure analytics engine computed from the chain. A **dashboard-wide ex
 (e.g. **0DTE**, a weekly, or **All**) scopes every view at once — levels, gamma, greeks, Playbook and
 the Pine export recompute for the chosen expiration; axis views (heatmap / term / 3D) highlight it:
 
-- **Market-Maker Hedging algo** — reads dealer gamma/charm/vanna into a single **buy/sell pressure**
-  score and a full **trade plan** taken *with* that pressure: long-gamma fades toward the dominant
-  **gamma magnet** (pin), short-gamma rides the **continuation** off the γ-flip. Emits an **entry
-  zone** (anchor + scale-in), **layered take-profits at the next levels with R multiples**, a
-  **structural stop** (beyond the guarding level) + risk/R:R, a per-component breakdown and
-  management rules
+- **Market-Maker Hedging algo** (quant model) — BS-repriced gamma profile → zero-gamma flip + a
+  |GEX|-weighted **gamma centre-of-mass** (the pin), the **$ dealers hedge per 1% move**, and dealer
+  **drift flows in $/day** (charm decay + vanna × expected ΔIV from VRP mean-reversion), blended
+  magnitude-aware into a **−100…+100 pressure** with a **conviction** score. Emits a full plan: entry
+  zone, **layered TPs with R + Black-Scholes probability-of-touch**, a structural stop with **P(stop)**,
+  a **modelled EV in R**, and management rules — long-γ fades to the magnet, short-γ rides the break
 - **Signal Board** — a synthesized, ranked **trade-signal** feed that fuses the gamma map (regime /
   γ-flip / walls), order-flow tilt (net Δ exposure, put/call), second-order flow (vanna/charm), the
   **VRP** (IV vs realized), skew and max-pain into a composite **−100…+100 bias** and concrete ideas

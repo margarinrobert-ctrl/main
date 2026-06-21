@@ -43,6 +43,12 @@ describe("mmHedge", () => {
     expect(r.trade!.targets[0].r).not.toBeNull(); // R multiple computed
     expect(r.trade!.targets[0].pTouch!).toBeGreaterThan(0); // Black-Scholes prob-of-touch
     expect(r.trade!.targets[0].pTouch!).toBeLessThanOrEqual(1);
+    // quant-model fields
+    expect(r.flowPer1pct).not.toBeNull(); // $ hedged per 1% = net GEX
+    expect(r.com).not.toBeNull(); // gamma centre-of-mass
+    expect(r.conviction).toBeGreaterThanOrEqual(0);
+    expect(r.conviction).toBeLessThanOrEqual(100);
+    expect(typeof r.trade!.ev === "number").toBe(true); // modelled EV in R
   });
 
   it("long gamma pins DOWN toward a magnet below spot", () => {

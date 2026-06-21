@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { HistoryBar, OptionContract } from "@/lib/barchart/types";
 import { loadChain, loadHistory } from "@/lib/client-data";
-import { filterByExpiration } from "@/lib/flow/analytics";
+import { filterByExpiration, fmtUsd } from "@/lib/flow/analytics";
 import { mmHedge, type Pressure } from "@/lib/flow/mmhedge";
 import { EmptyState, ErrorState, Loading } from "./states";
 
@@ -14,6 +14,16 @@ const pressColor = (p: Pressure) => (p === "up" ? "text-emerald-300" : p === "do
 const dirDot = (p: Pressure) => (p === "up" ? "bg-emerald-400" : p === "down" ? "bg-red-400" : "bg-neutral-400");
 const sideChip = (s: string) =>
   s === "long" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : s === "short" ? "border-red-500/40 bg-red-500/10 text-red-300" : "border-sky-500/40 bg-sky-500/10 text-sky-300";
+
+function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
+  return (
+    <div className="rounded border border-white/10 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
+      <div className={`font-mono text-base ${tone ?? "text-neutral-100"}`}>{value}</div>
+      {sub ? <div className="text-[10px] text-neutral-500">{sub}</div> : null}
+    </div>
+  );
+}
 
 function PressureMeter({ score }: { score: number }) {
   const pct = (score + 100) / 2;
@@ -102,6 +112,13 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
             )}
           </div>
 
+          <div className="mb-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+            <Stat label="Conviction" value={`${r.conviction}/100`} tone={r.conviction >= 60 ? "text-emerald-300" : r.conviction >= 35 ? "text-amber-300" : "text-neutral-100"} />
+            <Stat label="Hedge / 1%" value={r.flowPer1pct == null ? "—" : fmtUsd(r.flowPer1pct)} sub={r.regime === "long" ? "stabilising" : r.regime === "short" ? "destabilising" : ""} />
+            <Stat label="Pin (COM)" value={r.com == null ? "—" : f2(r.com)} sub={r.magnet != null ? `magnet ${r.magnet}` : ""} />
+            <Stat label="EV (modelled)" value={r.trade?.ev == null ? "—" : `${r.trade.ev}R`} tone={r.trade?.ev == null ? "text-neutral-100" : r.trade.ev > 0 ? "text-emerald-300" : "text-red-300"} />
+          </div>
+
           {r.trade && (
             <div className={`mb-4 rounded-lg border border-white/5 border-l-4 bg-white/[0.02] p-3 ${r.trade.side === "long" ? "border-l-emerald-500" : r.trade.side === "short" ? "border-l-red-500" : "border-l-sky-500"}`}>
               <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -109,6 +126,9 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
                 <span className={`rounded-full border px-2 py-0.5 text-[11px] uppercase ${sideChip(r.trade.side)}`}>{r.trade.side}</span>
                 {r.trade.rr != null && (
                   <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300">R:R {r.trade.rr}× → TP1 · {r.trade.rrFinal}× final</span>
+                )}
+                {r.trade.ev != null && (
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] ${r.trade.ev > 0 ? "border-emerald-500/40 text-emerald-300" : "border-red-500/40 text-red-300"}`}>EV {r.trade.ev}R</span>
                 )}
               </div>
 
@@ -146,6 +166,7 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
                     </div>
                     <div className="text-[10px] text-neutral-500">{r.trade.stopLabel}</div>
                     {r.trade.risk != null && <div className="mt-1 text-[11px] text-neutral-400">risk ≈ {f2(r.trade.risk)} / unit (= 1R)</div>}
+                    {r.trade.pStop != null && <div className="text-[11px] text-neutral-500">P(touch stop) {Math.round(r.trade.pStop * 100)}%</div>}
                   </div>
                 </div>
               )}
