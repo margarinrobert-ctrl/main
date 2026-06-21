@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bsCharm, bsGamma, bsVanna, d1d2, pdf } from "./greeks";
+import { bsCharm, bsGamma, bsVanna, d1d2, ncdf, pdf, probAbove, probTouch } from "./greeks";
 
 describe("black-scholes second-order greeks", () => {
   it("pdf peaks at 0 and is symmetric", () => {
@@ -29,5 +29,23 @@ describe("black-scholes second-order greeks", () => {
     expect(atm).toBeGreaterThan(0);
     expect(atm).toBeGreaterThan(otm);
     expect(bsGamma(100, 100, 0, 0.05)).toBeNull();
+  });
+
+  it("normal CDF and probabilities behave", () => {
+    expect(ncdf(0)).toBeCloseTo(0.5, 5);
+    expect(ncdf(1.6448536)).toBeCloseTo(0.95, 3);
+    expect(probAbove(100, 100, 0.2, 0.25)).toBeLessThan(0.5); // driftless: slightly below 0.5
+  });
+
+  it("probability-of-touch: 1 at spot, higher for closer levels, ≥ prob of finishing past", () => {
+    expect(probTouch(100, 100, 0.2, 0.1)).toBe(1);
+    const near = probTouch(100, 102, 0.2, 0.1)!;
+    const far = probTouch(100, 110, 0.2, 0.1)!;
+    expect(near).toBeGreaterThan(far);
+    expect(near).toBeGreaterThan(0);
+    expect(near).toBeLessThanOrEqual(1);
+    // touching a barrier is at least as likely as finishing beyond it
+    expect(probTouch(100, 108, 0.2, 0.1)!).toBeGreaterThanOrEqual(probAbove(100, 108, 0.2, 0.1)!);
+    expect(probTouch(100, 110, 0, 0.1)).toBeNull();
   });
 });

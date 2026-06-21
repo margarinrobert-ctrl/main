@@ -126,13 +126,14 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
                     ))}
                   </div>
                   <div className="rounded border border-white/10 p-2">
-                    <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Take-profit</div>
+                    <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Take-profit · R · P(touch)</div>
                     {r.trade.targets.map((t) => (
                       <div key={t.label} className="flex items-baseline justify-between gap-2 text-sm">
                         <span className="truncate text-neutral-500">{t.label}</span>
                         <span className="whitespace-nowrap font-mono text-emerald-300">
                           {f2(t.price)}
                           {t.r != null && <span className="ml-1 text-[10px] text-neutral-500">{t.r}R</span>}
+                          {t.pTouch != null && <span className="ml-1 text-[10px] text-sky-300">{Math.round(t.pTouch * 100)}%</span>}
                         </span>
                       </div>
                     ))}

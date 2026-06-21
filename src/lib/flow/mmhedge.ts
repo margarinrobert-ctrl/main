@@ -12,6 +12,7 @@ import {
   secondOrderExposure,
   type StrikeGex,
 } from "./analytics";
+import { probTouch } from "./greeks";
 
 // Market-maker hedging algo. Dealers who are short/long options must hedge in the underlying, and
 // that hedging is mechanical around big-gamma strikes:
@@ -41,6 +42,7 @@ export interface MMTarget {
   price: number;
   label: string;
   r: number | null; // reward in R (multiples of risk)
+  pTouch: number | null; // Black-Scholes probability price touches this level by front expiry
 }
 
 export interface MMTrade {
@@ -105,6 +107,8 @@ function planTrade(
   em: number,
   regime: "long" | "short" | "unknown",
   magnet: number | null,
+  iv: number | null,
+  tYears: number,
 ): MMTrade {
   const entry = atLevel && anchor ? anchor.price : spot;
   const buf = Math.max(em * 0.12, entry * 0.0006);
@@ -129,6 +133,7 @@ function planTrade(
     price: l.price,
     label: `TP${i + 1} · ${l.name}`,
     r: risk > 0 ? r1(Math.abs(l.price - entry) / risk) : null,
+    pTouch: iv != null ? probTouch(spot, l.price, iv, tYears) : null,
   }));
 
   const entries = [
@@ -210,6 +215,8 @@ export function mmHedge(chain: OptionContract[], spot: number | null, _bars: His
   const pw0 = putSupport(by0, spot);
   const flip0 = gammaFlipNearest(by0, spot);
   const iv0 = frontExp ? atmIv(chain, spot, frontExp) : null;
+  const frontDte = sub.find((c) => c.dte != null)?.dte ?? null;
+  const tYears = Math.max(frontDte ?? 1, 0.5) / 365; // horizon for probability-of-touch
   const em = expectedMove1D(spot, iv0)?.abs ?? spot * 0.005;
   const regime: MMHedge["regime"] = ngex == null ? "unknown" : ngex >= 0 ? "long" : "short";
 
@@ -260,8 +267,8 @@ export function mmHedge(chain: OptionContract[], spot: number | null, _bars: His
   const pressure = pressureScore > 15 ? "up" : pressureScore < -15 ? "down" : "balanced";
 
   let trade: MMTrade | null;
-  if (pressureScore > 15) trade = planTrade("long", spot, nearest, atLevel, lad, em, regime, magnet);
-  else if (pressureScore < -15) trade = planTrade("short", spot, nearest, atLevel, lad, em, regime, magnet);
+  if (pressureScore > 15) trade = planTrade("long", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears);
+  else if (pressureScore < -15) trade = planTrade("short", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears);
   else
     trade = {
       side: "wait",

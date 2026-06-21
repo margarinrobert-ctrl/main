@@ -10,6 +10,36 @@ export function pdf(x: number): number {
   return Math.exp(-0.5 * x * x) / SQRT_2PI;
 }
 
+// Error function (Abramowitz-Stegun 7.1.26, ~1e-7 accuracy).
+function erf(x: number): number {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t) * Math.exp(-x * x);
+  return x >= 0 ? y : -y;
+}
+
+/** Standard-normal cumulative distribution N(x). */
+export function ncdf(x: number): number {
+  return 0.5 * (1 + erf(x / Math.SQRT2));
+}
+
+/** Risk-neutral (driftless) probability S_T > level by expiry = N(d2). */
+export function probAbove(spot: number, level: number, iv: number, tYears: number): number | null {
+  const dd = d1d2(spot, level, iv, tYears);
+  return dd ? ncdf(dd.d2) : null;
+}
+
+/**
+ * Probability the underlying TOUCHES `level` at least once before expiry, under driftless GBM
+ * (reflection principle): 2·N(−|ln(level/spot)| / (σ√T)). The right number for "will price reach
+ * this target?" — always ≥ the probability of merely finishing past it.
+ */
+export function probTouch(spot: number, level: number, iv: number, tYears: number): number | null {
+  if (spot <= 0 || level <= 0 || iv <= 0 || tYears <= 0) return null;
+  if (level === spot) return 1;
+  const x = Math.abs(Math.log(level / spot)) / (iv * Math.sqrt(tYears));
+  return Math.max(0, Math.min(1, 2 * ncdf(-x)));
+}
+
 /** Black-Scholes d1/d2 with r = q = 0. Returns null when inputs are degenerate. */
 export function d1d2(spot: number, strike: number, iv: number, tYears: number): { d1: number; d2: number } | null {
   if (spot <= 0 || strike <= 0 || iv <= 0 || tYears <= 0) return null;

@@ -41,6 +41,8 @@ describe("mmHedge", () => {
     expect(r.trade?.targets.length).toBeGreaterThanOrEqual(2); // layered TPs
     expect(r.trade!.stop!).toBeLessThan(100); // stop below a long entry
     expect(r.trade!.targets[0].r).not.toBeNull(); // R multiple computed
+    expect(r.trade!.targets[0].pTouch!).toBeGreaterThan(0); // Black-Scholes prob-of-touch
+    expect(r.trade!.targets[0].pTouch!).toBeLessThanOrEqual(1);
   });
 
   it("long gamma pins DOWN toward a magnet below spot", () => {
