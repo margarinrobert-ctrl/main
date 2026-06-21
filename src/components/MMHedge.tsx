@@ -105,15 +105,57 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
           {r.trade && (
             <div className={`mb-4 rounded-lg border border-white/5 border-l-4 bg-white/[0.02] p-3 ${r.trade.side === "long" ? "border-l-emerald-500" : r.trade.side === "short" ? "border-l-red-500" : "border-l-sky-500"}`}>
               <div className="mb-2 flex flex-wrap items-center gap-2">
-                <span className="text-sm font-semibold text-neutral-100">The trade</span>
+                <span className="text-sm font-semibold text-neutral-100">The trade plan</span>
                 <span className={`rounded-full border px-2 py-0.5 text-[11px] uppercase ${sideChip(r.trade.side)}`}>{r.trade.side}</span>
+                {r.trade.rr != null && (
+                  <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-neutral-300">R:R {r.trade.rr}× → TP1 · {r.trade.rrFinal}× final</span>
+                )}
               </div>
-              <div className="mb-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-                <span><span className="text-[10px] uppercase text-neutral-500">Entry </span><span className="font-mono">{f2(r.trade.entry)}</span></span>
-                <span><span className="text-[10px] uppercase text-neutral-500">Target </span><span className="font-mono text-emerald-300">{f2(r.trade.target)}</span></span>
-                <span><span className="text-[10px] uppercase text-neutral-500">Stop </span><span className="font-mono text-red-300">{f2(r.trade.stop)}</span></span>
-              </div>
-              <p className="text-xs text-neutral-400">{r.trade.rationale}</p>
+
+              <p className="mb-3 text-xs text-neutral-400">{r.trade.rationale}</p>
+
+              {r.trade.side !== "wait" && (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded border border-white/10 p-2">
+                    <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Entry zone</div>
+                    {r.trade.entries.map((e) => (
+                      <div key={e.label} className="flex justify-between text-sm">
+                        <span className="text-neutral-500">{e.label}</span>
+                        <span className="font-mono text-neutral-100">{f2(e.price)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded border border-white/10 p-2">
+                    <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Take-profit</div>
+                    {r.trade.targets.map((t) => (
+                      <div key={t.label} className="flex items-baseline justify-between gap-2 text-sm">
+                        <span className="truncate text-neutral-500">{t.label}</span>
+                        <span className="whitespace-nowrap font-mono text-emerald-300">
+                          {f2(t.price)}
+                          {t.r != null && <span className="ml-1 text-[10px] text-neutral-500">{t.r}R</span>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded border border-white/10 p-2">
+                    <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Stop / risk</div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-neutral-500">stop</span>
+                      <span className="font-mono text-red-300">{f2(r.trade.stop)}</span>
+                    </div>
+                    <div className="text-[10px] text-neutral-500">{r.trade.stopLabel}</div>
+                    {r.trade.risk != null && <div className="mt-1 text-[11px] text-neutral-400">risk ≈ {f2(r.trade.risk)} / unit (= 1R)</div>}
+                  </div>
+                </div>
+              )}
+
+              {r.trade.management.length > 0 && (
+                <ul className="mt-3 list-disc space-y-0.5 pl-4 text-[11px] text-neutral-400">
+                  {r.trade.management.map((m) => (
+                    <li key={m}>{m}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 

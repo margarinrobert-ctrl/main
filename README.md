@@ -162,9 +162,11 @@ driven by a pure analytics engine computed from the chain. A **dashboard-wide ex
 the Pine export recompute for the chosen expiration; axis views (heatmap / term / 3D) highlight it:
 
 - **Market-Maker Hedging algo** — reads dealer gamma/charm/vanna into a single **buy/sell pressure**
-  score and a trade taken *with* that pressure at the active level: in long-gamma it fades toward the
-  dominant **gamma magnet** (pin), in short-gamma it rides the **continuation** off the γ-flip — with
-  entry / target / stop and a per-component breakdown
+  score and a full **trade plan** taken *with* that pressure: long-gamma fades toward the dominant
+  **gamma magnet** (pin), short-gamma rides the **continuation** off the γ-flip. Emits an **entry
+  zone** (anchor + scale-in), **layered take-profits at the next levels with R multiples**, a
+  **structural stop** (beyond the guarding level) + risk/R:R, a per-component breakdown and
+  management rules
 - **Signal Board** — a synthesized, ranked **trade-signal** feed that fuses the gamma map (regime /
   γ-flip / walls), order-flow tilt (net Δ exposure, put/call), second-order flow (vanna/charm), the
   **VRP** (IV vs realized), skew and max-pain into a composite **−100…+100 bias** and concrete ideas

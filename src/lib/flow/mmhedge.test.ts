@@ -37,7 +37,10 @@ describe("mmHedge", () => {
     expect(r.pressure).toBe("up");
     expect(r.pressureScore).toBeGreaterThan(15);
     expect(r.trade?.side).toBe("long");
-    expect(r.trade?.target).toBe(110);
+    expect(r.trade?.targets.some((t) => t.price === 110)).toBe(true); // magnet is a TP
+    expect(r.trade?.targets.length).toBeGreaterThanOrEqual(2); // layered TPs
+    expect(r.trade!.stop!).toBeLessThan(100); // stop below a long entry
+    expect(r.trade!.targets[0].r).not.toBeNull(); // R multiple computed
   });
 
   it("long gamma pins DOWN toward a magnet below spot", () => {
@@ -50,7 +53,8 @@ describe("mmHedge", () => {
     expect(r.magnet).toBe(90);
     expect(r.pressure).toBe("down");
     expect(r.trade?.side).toBe("short");
-    expect(r.trade?.target).toBe(90);
+    expect(r.trade?.targets.some((t) => t.price === 90)).toBe(true); // magnet is a TP
+    expect(r.trade!.stop!).toBeGreaterThan(100); // stop above a short entry
   });
 
   it("classifies a short-gamma regime when puts dominate net GEX", () => {
