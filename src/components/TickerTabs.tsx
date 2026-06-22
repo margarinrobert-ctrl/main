@@ -8,6 +8,7 @@ import { atmIv, callWall, gammaFlip, gexByStrike, netGex, putCallRatio, putWall 
 import { appendSample } from "@/lib/gex-history";
 import { DataStatus } from "./DataStatus";
 import { GammaProfile } from "./GammaProfile";
+import { AnomalyIntel } from "./AnomalyIntel";
 import { AnomalyLive } from "./AnomalyLive";
 import { AnomalyScan } from "./AnomalyScan";
 import { GexHistory } from "./GexHistory";
@@ -194,6 +195,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Harvest" && <HarvestPanel symbol={symbol} exp={validExp} />}
       {tab === "Anomaly" && (
         <div className="space-y-4">
+          <AnomalyIntel symbol={symbol} exp={validExp} />
           <AnomalyLive symbol={symbol} />
           <AnomalyScan symbol={symbol} />
         </div>
