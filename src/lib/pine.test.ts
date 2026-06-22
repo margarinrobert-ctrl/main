@@ -62,7 +62,7 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("~15-min delayed"); // freshness note
     expect(r.code).toContain("does NOT auto-update"); // static-snapshot warning
     expect(r.code).toContain("Exp Hi"); // expected-move (today's range) label
-    expect(r.code).toContain("Align levels to chart price"); // basis control
+    expect(r.code).toContain("Convert levels to this chart"); // ES/NQ converter
     expect(r.code).toContain("alertcondition("); // level-cross alerts
     expect(r.code).toMatch(/P\s+=\s+array\.from\([^)]*\.\d/); // float price array
     expect(r.code).toContain("D  = array.from("); // hover-detail array
@@ -110,13 +110,14 @@ describe("buildGexPine", () => {
     for (let i = 1; i < ps.length; i++) expect(ps[i] - ps[i - 1]).toBeGreaterThan(0.05);
   });
 
-  it("notes the index-proxy basis for futures symbols", () => {
-    const chain = [c({ type: "call", strike: 105, gamma: 0.02, openInterest: 8000 }), c({ type: "put", strike: 95, gamma: 0.03, openInterest: 9000 })];
-    expect(buildGexPine("NQ", chain, 100).code).toContain("proxy");
-    expect(buildGexPine("SPY", chain, 100).code).not.toContain("free proxy");
-    // basis alignment defaults ON for futures, OFF for equities/ETFs
-    expect(buildGexPine("NQ", chain, 100).code).toContain('input.bool(true, "Align levels to chart price');
-    expect(buildGexPine("SPY", chain, 100).code).toContain('input.bool(false, "Align levels to chart price');
+  it("offers an accurate SPY/QQQ -> ES/NQ converter and static (extend.both) levels", () => {
+    const r = buildGexPine("SPY", multiChain(), 100);
+    expect(r.code).toContain("Convert levels to this chart");
+    expect(r.code).toContain("Auto (match chart)");
+    expect(r.code).toContain("close / snapSpot"); // accurate live-ratio scaling
+    expect(r.code).toContain("frozenScale"); // frozen once → levels don't move
+    expect(r.code).toContain("extend = extend.both"); // full static horizontal lines
+    expect(r.code).toContain("array.get(P, i) * scale"); // every level scaled by the factor
   });
 
   it("targets a chosen expiration when one is passed (e.g. 0DTE)", () => {

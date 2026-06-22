@@ -202,32 +202,29 @@ export function buildGexPine(
     .filter(Boolean)
     .join("\n");
   const alertLines = [
-    callRes != null ? `alertcondition(ta.cross(close, kCallRes + offset), "Price ↔ Call Resistance", "{{ticker}} tagged Call Resistance")` : "",
-    putSup != null ? `alertcondition(ta.cross(close, kPutSup + offset), "Price ↔ Put Support", "{{ticker}} tagged Put Support")` : "",
-    hvl != null ? `alertcondition(ta.cross(close, kHvl + offset), "Price ↔ HVL", "{{ticker}} crossed HVL / gamma flip")` : "",
+    callRes != null ? `alertcondition(ta.cross(close, kCallRes * scale), "Price ↔ Call Resistance", "{{ticker}} tagged Call Resistance")` : "",
+    putSup != null ? `alertcondition(ta.cross(close, kPutSup * scale), "Price ↔ Put Support", "{{ticker}} tagged Put Support")` : "",
+    hvl != null ? `alertcondition(ta.cross(close, kHvl * scale), "Price ↔ HVL", "{{ticker}} crossed HVL / gamma flip")` : "",
   ]
     .filter(Boolean)
     .join("\n");
 
-  const isFut = /^(ES|NQ|RTY|YM)$/.test(symbol.toUpperCase());
-  const proxy = isFut
-    ? `\n// ${symbol} uses cash-index options (ES->SPX, NQ->NDX) as a free proxy; the future trades at a basis. The\n// "Align to chart price" input (ON by default) shifts every level by (chart price - snapshot index) so they\n// land correctly on ${symbol}. Turn it off for raw index strikes.`
-    : "";
+  const convertNote = `\n// CONVERT TO ES / NQ: to overlay these ${symbol} levels on a futures chart, set the "Convert levels to\n// this chart" input to Auto — it scales every level by (chart price / ${symbol} spot), the live ratio\n// (SPY->ES ~10x, QQQ->NQ ~41x), frozen once so levels never move. Manual x is an extra fine-tune.`;
 
   const code = `//@version=6
 // OptionsFlow — GEX levels for ${symbol}  (front/target exp ${exp ?? "n/a"}${dteLabel ? ", " + dteLabel : ""})
-// APPLY ON THE ${symbol} CHART. These are ${symbol}-scale levels (spot ~${spot != null ? fmtNice(spot) : "n/a"}); QQQ's ~500
-// levels do NOT belong on an NQ ~30000 chart — generate the indicator for the symbol you are charting.
+// Built for the ${symbol} chart (spot ~${spot != null ? fmtNice(spot) : "n/a"}). To overlay on ES/NQ, use the
+// "Convert levels to this chart" input below (Auto = accurate live-ratio scaling).
 // STATIC SNAPSHOT: a Pine script cannot fetch data, so this does NOT auto-update. Values are CBOE
 // ${feedAsOf ?? "(time n/a)"} (~15-min delayed), generated ${asOf} UTC — RE-GENERATE & re-paste for fresh levels.
-// Short labels show the on-chart price; hover for full OI/Volume/GEX/DEX. Close levels auto-stagger.${proxy}
+// Short labels show the on-chart price; hover for full OI/Volume/GEX/DEX. Close levels auto-stagger.${convertNote}
 indicator("OptionsFlow GEX • ${symbol}", overlay = true, max_lines_count = 200, max_labels_count = 200)
 
 showMeta  = input.bool(true, "Detail on hover (tooltip)")
 laneStep  = input.int(14, "Stagger close labels (bars)", minval = 0, maxval = 80)
-alignToPrice = input.bool(${isFut ? "true" : "false"}, "Align levels to chart price (futures basis)")
-basisManual  = input.float(0.0, "Extra basis offset (points)")
-snapSpot     = input.float(${fmt(spot ?? 0)}, "Snapshot underlying (reference)")
+convertMode = input.string("Off", "Convert levels to this chart", options = ["Off", "Auto (match chart)"])
+manualMult  = input.float(1.0, "Manual x multiplier (fine-tune)", minval = 0.0001, step = 0.01)
+snapSpot    = input.float(${fmt(spot ?? 0)}, "Snapshot ${symbol} spot (for conversion)")
 labelSize = input.string("normal", "Label size", options = ["small", "normal", "large", "huge"])
 sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
 showVwap = input.bool(true, "Show session VWAP")
@@ -252,12 +249,13 @@ clearAll() =>
     while array.size(_lb) > 0
         label.delete(array.pop(_lb))
 
-// Basis = chart price - snapshot index, frozen once so walls stay at fixed prices (futures: lifts
-// NDX/SPX levels onto an ES/NQ chart). For SPY/QQQ this is 0 — real options on the chart symbol.
-var float frozenBasis = na
-if barstate.islast and na(frozenBasis)
-    frozenBasis := alignToPrice and snapSpot > 0 ? close - snapSpot : 0.0
-offset = nz(frozenBasis) + basisManual
+// Convert ${symbol} levels onto whatever chart this is applied to. "Auto (match chart)" multiplies every
+// level by (chart price / snapshot spot) — the live ratio (SPY->ES ~10x, QQQ->NQ ~41x) — FROZEN ONCE so
+// the levels never move while price moves. On the ${symbol} chart itself, leave it Off for exact strikes.
+var float frozenScale = na
+if barstate.islast and na(frozenScale)
+    frozenScale := convertMode == "Auto (match chart)" and snapSpot > 0 ? close / snapSpot : 1.0
+scale = nz(frozenScale, 1.0) * manualMult
 
 if barstate.islast
     clearAll()
@@ -267,12 +265,12 @@ if barstate.islast
     int lane = 0
     base = bar_index
     for i = 0 to array.size(P) - 1
-        p = array.get(P, i) + offset
+        p = array.get(P, i) * scale
         lane := not na(prevP) and (p - prevP) < minGap ? lane + 1 : 0
         x = base + 1 + lane * laneStep
         col = array.get(C, i)
         txt = array.get(T, i) + " " + str.tostring(math.round(p * 100) / 100)
-        array.push(_ln, line.new(base, p, x, p, color = col, width = array.get(W, i), extend = extend.left, style = array.get(LS, i)))
+        array.push(_ln, line.new(base, p, x, p, color = col, width = array.get(W, i), extend = extend.both, style = array.get(LS, i)))
         array.push(_lb, label.new(x, p, txt, style = label.style_label_left, textcolor = col, color = color.new(color.black, 100), size = sz, tooltip = showMeta ? array.get(D, i) : ""))
         prevP := p
 

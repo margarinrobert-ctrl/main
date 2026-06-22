@@ -96,8 +96,9 @@ export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
           <p className="mt-2 text-[11px] text-neutral-500">
             Labels are short — <b>hover any label</b> for its full OI / Volume / GEX / DEX, and levels that sit close
             together auto-stagger so they never overlap. Values are a <b>~15-min delayed snapshot</b> baked at generate
-            time (TradingView has no API to push live data), so hit <b>Re-generate</b> to refresh. ES/NQ use SPX/NDX cash
-            options as a free proxy — the future trades at a small basis to the index.
+            time (TradingView has no API to push live data), so hit <b>Re-generate</b> to refresh. To overlay on <b>ES/NQ</b>,
+            set the indicator's <b>Convert levels to this chart → Auto</b> — it scales by the live ratio (SPY→ES ~10×,
+            QQQ→NQ ~41×), frozen so the levels stay put.
           </p>
         </>
       )}

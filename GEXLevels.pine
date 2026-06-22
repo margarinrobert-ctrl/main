@@ -16,9 +16,9 @@ indicator("OptionsFlow GEX • Levels", overlay = true, max_lines_count = 200, m
 
 showMeta  = input.bool(true, "Detail on hover (tooltip)")
 laneStep  = input.int(14, "Stagger close labels (bars)", minval = 0, maxval = 80)
-alignToPrice = input.bool(false, "Align levels to chart price (futures basis)")
-basisManual  = input.float(0.0, "Extra basis offset (points)")
-snapSpot     = input.float(542.0, "Snapshot underlying (reference)")
+convertMode = input.string("Off", "Convert levels to this chart", options = ["Off", "Auto (match chart)"])
+manualMult  = input.float(1.0, "Manual x multiplier (fine-tune)", minval = 0.0001, step = 0.01)
+snapSpot    = input.float(542.0, "Snapshot spot (for conversion)")
 labelSize = input.string("normal", "Label size", options = ["small", "normal", "large", "huge"])
 sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
 showVwap = input.bool(true, "Show session VWAP")
@@ -42,12 +42,14 @@ clearAll() =>
     while array.size(_lb) > 0
         label.delete(array.pop(_lb))
 
-var float frozenBasis = na
+// Convert levels onto this chart. "Auto (match chart)" multiplies every level by (chart price /
+// snapshot spot) — the live ratio (SPY->ES ~10x, QQQ->NQ ~41x) — FROZEN ONCE so levels never move.
+var float frozenScale = na
+if barstate.islast and na(frozenScale)
+    frozenScale := convertMode == "Auto (match chart)" and snapSpot > 0 ? close / snapSpot : 1.0
+scale = nz(frozenScale, 1.0) * manualMult
+
 if barstate.islast
-    // Basis = chart price - snapshot index, frozen once so walls stay at fixed prices.
-    if na(frozenBasis)
-        frozenBasis := alignToPrice and snapSpot > 0 ? close - snapSpot : 0.0
-    offset = nz(frozenBasis) + basisManual
     clearAll()
     rng = ta.highest(high, 120) - ta.lowest(low, 120)
     minGap = math.max(na(rng) or rng <= 0 ? close * 0.012 : rng * 0.02, close * 0.0015)
@@ -55,12 +57,12 @@ if barstate.islast
     int lane = 0
     base = bar_index
     for i = 0 to array.size(P) - 1
-        p = array.get(P, i) + offset
+        p = array.get(P, i) * scale
         lane := not na(prevP) and (p - prevP) < minGap ? lane + 1 : 0
         x = base + 1 + lane * laneStep
         col = array.get(C, i)
         txt = array.get(T, i) + " " + str.tostring(math.round(p * 100) / 100)
-        array.push(_ln, line.new(base, p, x, p, color = col, width = array.get(W, i), extend = extend.left, style = array.get(LS, i)))
+        array.push(_ln, line.new(base, p, x, p, color = col, width = array.get(W, i), extend = extend.both, style = array.get(LS, i)))
         array.push(_lb, label.new(x, p, txt, style = label.style_label_left, textcolor = col, color = color.new(color.black, 100), size = sz, tooltip = showMeta ? array.get(D, i) : ""))
         prevP := p
 
