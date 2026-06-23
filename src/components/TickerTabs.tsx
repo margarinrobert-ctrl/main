@@ -3,9 +3,13 @@
 import { useEffect, useState } from "react";
 import { alertsEnabled, crossings, fireNotify } from "@/lib/alerts";
 import type { OptionContract } from "@/lib/barchart/types";
-import { loadChain } from "@/lib/client-data";
+import { loadChain, loadHistory } from "@/lib/client-data";
 import { atmIv, callWall, gammaFlip, gexByStrike, netGex, putCallRatio, putWall } from "@/lib/flow/analytics";
+import { anomalyIntel } from "@/lib/flow/anomalyPro";
+import { buildSignals } from "@/lib/flow/signals";
+import { mmHedge } from "@/lib/flow/mmhedge";
 import { appendSample } from "@/lib/gex-history";
+import { collectAndResolve } from "@/lib/intel/journal";
 import { DataStatus } from "./DataStatus";
 import { GammaProfile } from "./GammaProfile";
 import { AnomalyIntel } from "./AnomalyIntel";
@@ -15,6 +19,7 @@ import { GexHistory } from "./GexHistory";
 import { GexTerm } from "./GexTerm";
 import { GreeksSurface } from "./GreeksSurface";
 import { HarvestPanel } from "./HarvestPanel";
+import { IntelLab } from "./IntelLab";
 import { KeyLevels } from "./KeyLevels";
 import { LevelsChart } from "./LevelsChart";
 import { MMHedge } from "./MMHedge";
@@ -47,6 +52,7 @@ const TABS = [
   "Vol Edge",
   "Harvest",
   "Anomaly",
+  "Intel",
   "History",
   "Pine",
 ] as const;
@@ -100,7 +106,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
         const exps = [...new Set(chain.map((c) => c.expiration))].sort();
         const frontExp = exps.find((e) => (chain.find((c) => c.expiration === e)?.dte ?? -1) >= 0) ?? exps[0];
         const iv = frontExp ? atmIv(chain, spot, frontExp) : null;
-        appendSample(symbol, { t: Date.now(), spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol });
+        const samples = appendSample(symbol, { t: Date.now(), spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol });
         if (alertsEnabled(symbol) && prevSpot != null && spot != null) {
           const crossed = crossings(prevSpot, spot, [
             { name: "γ-flip", value: flip },
@@ -112,6 +118,17 @@ export function TickerTabs({ symbol }: { symbol: string }) {
           }
         }
         prevSpot = spot;
+
+        // Performance-intelligence loop: journal each engine's directional call and resolve matured
+        // ones against the recorded session series. Runs while any ticker tab is open.
+        if (chain.length && spot != null) {
+          const { bars } = await loadHistory(symbol).catch(() => ({ bars: [] }));
+          if (cancelled) return;
+          const intel = anomalyIntel(symbol, chain, spot, bars, samples);
+          const board = buildSignals(chain, spot, bars);
+          const mm = mmHedge(chain, spot, bars);
+          collectAndResolve(symbol, { chain, spot, bars, samples, intel, board, mm });
+        }
       } catch {
         /* ignore — history just won't gain a point this cycle */
       }
@@ -200,6 +217,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
           <AnomalyScan symbol={symbol} />
         </div>
       )}
+      {tab === "Intel" && <IntelLab symbol={symbol} />}
       {tab === "History" && <GexHistory symbol={symbol} />}
       {tab === "Pine" && <PineExport symbol={symbol} exp={validExp} />}
     </div>
