@@ -1,7 +1,7 @@
 import type { ScreenerParams } from "./barchart/endpoints";
 import { parseHistoryResponse, parseOptionsResponse, parseQuoteResponse } from "./barchart/normalize";
 import type { HistoryBar, NormalizedQuote, OptionContract } from "./barchart/types";
-import { darkPoolStats, type DarkPoolDay, type DarkPoolStats } from "./flow/darkpool";
+import { darkPoolLevels, darkPoolStats, type DarkPoolDay, type DarkPoolProfile, type DarkPoolStats } from "./flow/darkpool";
 import { scoreContracts, type ScoredContract } from "./flow/heuristic";
 import { applyScreenerFilter } from "./flow/screener-filter";
 import { mergeServerHistory, type GexSample } from "./gex-history";
@@ -121,15 +121,23 @@ export async function pullServerData(symbol: string): Promise<{ storeMode: strin
   return { storeMode: j.storeMode ?? "memory", history: history.length, journal: journal.length };
 }
 
-export async function loadDarkPool(symbol: string): Promise<{ stats: DarkPoolStats; source: string }> {
+export async function loadDarkPool(
+  symbol: string,
+): Promise<{ stats: DarkPoolStats; levels: DarkPoolProfile; days: DarkPoolDay[]; source: string }> {
   const sym = symbol.toUpperCase();
   if (STATIC) {
     // No server in the static export — read the sample series and reduce it in the browser.
     const raw = await fetchFixture([`darkpool.${sym}.json`, "darkpool.SAMPLE.json"]).catch(() => []);
-    return { stats: darkPoolStats((Array.isArray(raw) ? raw : []) as DarkPoolDay[]), source: "fixtures" };
+    const days = (Array.isArray(raw) ? raw : []) as DarkPoolDay[];
+    return { stats: darkPoolStats(days), levels: darkPoolLevels(days), days, source: "fixtures" };
   }
   const json = await fetchJson(`/api/darkpool?symbol=${encodeURIComponent(sym)}`);
-  return { stats: json.stats as DarkPoolStats, source: (json.source as string) ?? "" };
+  return {
+    stats: json.stats as DarkPoolStats,
+    levels: json.levels as DarkPoolProfile,
+    days: (json.days as DarkPoolDay[]) ?? [],
+    source: (json.source as string) ?? "",
+  };
 }
 
 export async function loadFlow(qs: string): Promise<{ rows: ScoredContract[]; source: string }> {

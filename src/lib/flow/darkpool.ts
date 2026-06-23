@@ -20,6 +20,13 @@ export interface DarkPoolDay {
   shortExemptVolume: number;
   offExchangeVolume: number; // FINRA reported total (off-exchange) for the day
   consolidatedVolume: number | null; // all-venue total volume that day (for off-exchange %)
+  // Daily OHLC for the same date (joined from price history). Used to map the day's off-exchange
+  // volume onto a price range → the dark-pool volume-by-price profile / levels. Optional: the ratio
+  // and sentiment metrics don't need it.
+  open?: number | null;
+  high?: number | null;
+  low?: number | null;
+  close?: number | null;
 }
 
 export interface DarkPoolPoint {
@@ -128,5 +135,117 @@ export function darkPoolStats(rows: DarkPoolDay[]): DarkPoolStats {
     trend: slopeSign(dprs),
     bias,
     series,
+  };
+}
+
+// ── Dark-pool price levels (off-exchange volume-by-price) ───────────────────────────────────────
+// FINRA off-exchange data is volume-only (no print prices), so true per-print levels need a paid
+// real-time feed. The honest free approximation: take each day's REAL off-exchange volume and spread
+// it across that day's REAL price range (its high–low), then aggregate into a volume-by-price profile.
+// Its peaks are the prices that absorbed the most dark volume — dark-pool support/resistance — and the
+// heaviest bin is the dark-pool Point of Control. Daily resolution; a proxy, not an intraday tape.
+
+export interface DarkPoolLevel {
+  price: number; // bin-center price
+  volume: number; // off-exchange volume mapped to this level
+  share: number; // volume / total profile volume (0..1)
+  rank: number; // 1 = heaviest
+}
+
+export interface DarkPoolProfile {
+  available: boolean;
+  poc: number | null; // point of control — heaviest off-exchange price
+  vah: number | null; // value-area high (≈70% of dark volume)
+  val: number | null; // value-area low
+  priceLo: number | null;
+  priceHi: number | null;
+  levels: DarkPoolLevel[]; // distinct top dark-pool S/R levels
+  bins: { price: number; volume: number }[]; // full histogram (for a profile viz)
+}
+
+const EMPTY_PROFILE: DarkPoolProfile = {
+  available: false,
+  poc: null,
+  vah: null,
+  val: null,
+  priceLo: null,
+  priceHi: null,
+  levels: [],
+  bins: [],
+};
+
+const dayLo = (d: DarkPoolDay) => (d.low != null ? d.low : d.close != null ? d.close : null);
+const dayHi = (d: DarkPoolDay) => (d.high != null ? d.high : d.close != null ? d.close : null);
+
+/** Build the off-exchange volume-by-price profile and extract dark-pool levels (POC, value area, peaks). */
+export function darkPoolLevels(days: DarkPoolDay[], opts: { bins?: number; topN?: number } = {}): DarkPoolProfile {
+  const binCount = Math.max(8, opts.bins ?? 48);
+  const topN = Math.max(1, opts.topN ?? 6);
+  const rows = days.filter((d) => d.offExchangeVolume > 0 && dayLo(d) != null && dayHi(d) != null);
+  if (!rows.length) return EMPTY_PROFILE;
+
+  const lo = Math.min(...rows.map((d) => dayLo(d) as number));
+  const hi = Math.max(...rows.map((d) => dayHi(d) as number));
+
+  if (!(hi > lo)) {
+    const volume = rows.reduce((s, d) => s + d.offExchangeVolume, 0);
+    return { available: true, poc: lo, vah: lo, val: lo, priceLo: lo, priceHi: hi, levels: [{ price: lo, volume, share: 1, rank: 1 }], bins: [{ price: lo, volume }] };
+  }
+
+  const width = (hi - lo) / binCount;
+  const vol = new Array<number>(binCount).fill(0);
+  for (const d of rows) {
+    const dl = dayLo(d) as number;
+    const dh = dayHi(d) as number;
+    if (dh <= dl) {
+      vol[Math.min(binCount - 1, Math.max(0, Math.floor((dl - lo) / width)))] += d.offExchangeVolume;
+      continue;
+    }
+    const span = dh - dl;
+    const first = Math.max(0, Math.floor((dl - lo) / width));
+    const last = Math.min(binCount - 1, Math.floor((dh - lo) / width));
+    for (let i = first; i <= last; i++) {
+      const binLo = lo + i * width;
+      const overlap = Math.min(dh, binLo + width) - Math.max(dl, binLo);
+      if (overlap > 0) vol[i] += d.offExchangeVolume * (overlap / span);
+    }
+  }
+
+  const bins = vol.map((volume, i) => ({ price: lo + (i + 0.5) * width, volume }));
+  const total = vol.reduce((s, x) => s + x, 0) || 1;
+
+  let pocIdx = 0;
+  for (let i = 1; i < binCount; i++) if (vol[i] > vol[pocIdx]) pocIdx = i;
+
+  // value area: expand out from the POC, always taking the heavier neighbour, until ~70% is covered
+  let loIdx = pocIdx;
+  let hiIdx = pocIdx;
+  let acc = vol[pocIdx];
+  const target = total * 0.7;
+  while (acc < target && (loIdx > 0 || hiIdx < binCount - 1)) {
+    const below = loIdx > 0 ? vol[loIdx - 1] : -1;
+    const above = hiIdx < binCount - 1 ? vol[hiIdx + 1] : -1;
+    if (above >= below) acc += Math.max(0, vol[++hiIdx]);
+    else acc += Math.max(0, vol[--loIdx]);
+  }
+
+  // distinct peak levels: greediest-volume bins kept ≥ minGap apart so they don't cluster on the POC
+  const minGap = Math.max(width * 1.5, ((lo + hi) / 2) * 0.004);
+  const picked: { price: number; volume: number }[] = [];
+  for (const b of bins.filter((b) => b.volume > 0).sort((a, b) => b.volume - a.volume)) {
+    if (picked.length >= topN) break;
+    if (picked.some((p) => Math.abs(p.price - b.price) < minGap)) continue;
+    picked.push(b);
+  }
+
+  return {
+    available: true,
+    poc: bins[pocIdx].price,
+    vah: bins[hiIdx].price,
+    val: bins[loIdx].price,
+    priceLo: lo,
+    priceHi: hi,
+    levels: picked.map((b, i) => ({ price: b.price, volume: b.volume, share: b.volume / total, rank: i + 1 })),
+    bins,
   };
 }

@@ -4,13 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { loadDarkPool } from "@/lib/client-data";
 import { fmtUsd } from "@/lib/flow/analytics";
-import type { DarkPoolBias, DarkPoolStats } from "@/lib/flow/darkpool";
+import type { DarkPoolBias, DarkPoolDay, DarkPoolProfile, DarkPoolStats } from "@/lib/flow/darkpool";
+import { DarkPoolLevelsChart } from "./DarkPoolLevelsChart";
 import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
 const pct = (x: number | null, d = 1) => (x == null ? "—" : `${(x * 100).toFixed(d)}%`);
 const kfmt = (n: number) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n)));
+const fmtPx = (p: number) => (Math.abs(p) >= 1000 ? String(Math.round(p)) : String(Math.round(p * 100) / 100));
 
 const biasChip = (b: DarkPoolBias | null) =>
   b === "accumulation"
@@ -37,6 +39,8 @@ function Stat({ label, value, sub, tone = "neutral", hint }: { label: string; va
 
 export function DarkPool({ symbol }: { symbol: string }) {
   const [stats, setStats] = useState<DarkPoolStats | null>(null);
+  const [levels, setLevels] = useState<DarkPoolProfile | null>(null);
+  const [days, setDays] = useState<DarkPoolDay[]>([]);
   const [source, setSource] = useState("");
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
@@ -46,9 +50,11 @@ export function DarkPool({ symbol }: { symbol: string }) {
     (async () => {
       setState("loading");
       try {
-        const { stats, source } = await loadDarkPool(symbol);
+        const { stats, levels, days, source } = await loadDarkPool(symbol);
         if (cancelled) return;
         setStats(stats);
+        setLevels(levels);
+        setDays(days);
         setSource(source);
         setState(stats.available ? "ok" : "empty");
       } catch (e) {
@@ -122,7 +128,43 @@ export function DarkPool({ symbol }: { symbol: string }) {
             <Stat label="Short volume" value={stats.latest ? kfmt(stats.latest.shortVolume) : "—"} sub="off-exchange, latest day" />
           </div>
 
-          <div className="mt-4 h-64 w-full">
+          {levels?.available && levels.poc != null && (
+            <div className="mt-5">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs uppercase tracking-wide text-neutral-500">Dark-pool levels on price · last {stats.days}d</div>
+                <div className="flex flex-wrap gap-3 text-[11px] text-neutral-400">
+                  <span><span className="text-purple-300">━</span> POC {fmtPx(levels.poc)}</span>
+                  {levels.val != null && levels.vah != null && (
+                    <span className="text-neutral-500">value area {fmtPx(levels.val)}–{fmtPx(levels.vah)}</span>
+                  )}
+                </div>
+              </div>
+              <DarkPoolLevelsChart days={days} levels={levels} />
+              {levels.levels.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-neutral-500">
+                  {levels.levels.map((l) => {
+                    const isPoc = levels.poc != null && Math.abs(l.price - levels.poc) < 1e-9;
+                    return (
+                      <span key={l.price} className="inline-flex items-center gap-1">
+                        <span className="inline-block h-2 w-2 rounded-sm" style={{ background: isPoc ? "#c084fc" : "#8b5cf6" }} />
+                        {isPoc ? "POC " : ""}
+                        {fmtPx(l.price)} <span className="text-neutral-600">{Math.round(l.share * 100)}%</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+                Each day&apos;s off-exchange (dark) volume spread across that day&apos;s price range, summed into a
+                volume-by-price profile — the peaks are the prices that absorbed the most dark volume (support / resistance),
+                the brightest being the dark-pool <b>Point of Control</b>. Daily resolution — a volume proxy, not an
+                intraday print tape.
+              </p>
+            </div>
+          )}
+
+          <div className="mt-5 mb-2 text-xs uppercase tracking-wide text-neutral-500">Dark-pool ratio &amp; off-exchange volume · trend</div>
+          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chart} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                 <CartesianGrid stroke="#1f1f1f" vertical={false} />

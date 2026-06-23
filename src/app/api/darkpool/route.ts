@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { readFixtureParsed } from "@/lib/barchart/client";
 import { config } from "@/lib/barchart/config";
 import { getHistory } from "@/lib/barchart/endpoints";
-import { darkPoolStats, type DarkPoolDay } from "@/lib/flow/darkpool";
+import { darkPoolLevels, darkPoolStats, type DarkPoolDay } from "@/lib/flow/darkpool";
 import { finraDarkPool } from "@/lib/providers/finra";
 
 // Off-exchange (dark-pool) flow for a symbol, from FINRA's free daily short-sale volume files.
@@ -30,18 +30,30 @@ export async function GET(req: Request) {
       source = "fixtures";
     }
 
-    // Join consolidated (all-venue) daily volume so we can show off-exchange % of the tape.
+    // Join daily price history: consolidated volume (for off-exchange %) and OHLC (so we can map
+    // each day's off-exchange volume onto its price range → the dark-pool volume-by-price levels).
     if (rows.length) {
       try {
-        const { data: bars } = await getHistory(sym, { maxRecords: 60 });
-        const vol = new Map(bars.map((b) => [b.timestamp.slice(0, 10), b.volume]));
-        rows = rows.map((r) => ({ ...r, consolidatedVolume: r.consolidatedVolume ?? vol.get(r.date) ?? null }));
+        const { data: bars } = await getHistory(sym, { maxRecords: 90 });
+        const byDate = new Map(bars.map((b) => [b.timestamp.slice(0, 10), b]));
+        rows = rows.map((r) => {
+          const b = byDate.get(r.date);
+          if (!b) return r;
+          return {
+            ...r,
+            consolidatedVolume: r.consolidatedVolume ?? b.volume ?? null,
+            open: r.open ?? b.open,
+            high: r.high ?? b.high,
+            low: r.low ?? b.low,
+            close: r.close ?? b.close,
+          };
+        });
       } catch {
-        /* off-exchange % just stays null */
+        /* off-exchange % and price levels just degrade to null */
       }
     }
 
-    return NextResponse.json({ symbol: sym, source, stats: darkPoolStats(rows) });
+    return NextResponse.json({ symbol: sym, source, days: rows, stats: darkPoolStats(rows), levels: darkPoolLevels(rows) });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "dark-pool fetch failed" }, { status: 502 });
   }

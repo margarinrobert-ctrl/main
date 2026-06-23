@@ -1,14 +1,14 @@
 [
-  { "date": "2026-06-04", "shortVolume": 15980000, "shortExemptVolume": 60000, "offExchangeVolume": 34000000, "consolidatedVolume": 73900000 },
-  { "date": "2026-06-05", "shortVolume": 16972000, "shortExemptVolume": 55000, "offExchangeVolume": 36500000, "consolidatedVolume": 78000000 },
-  { "date": "2026-06-08", "shortVolume": 15106000, "shortExemptVolume": 48000, "offExchangeVolume": 33200000, "consolidatedVolume": 72000000 },
-  { "date": "2026-06-09", "shortVolume": 18288000, "shortExemptVolume": 70000, "offExchangeVolume": 38100000, "consolidatedVolume": 80000000 },
-  { "date": "2026-06-10", "shortVolume": 16803000, "shortExemptVolume": 52000, "offExchangeVolume": 35600000, "consolidatedVolume": 75500000 },
-  { "date": "2026-06-11", "shortVolume": 19698000, "shortExemptVolume": 81000, "offExchangeVolume": 40200000, "consolidatedVolume": 83000000 },
-  { "date": "2026-06-12", "shortVolume": 18700000, "shortExemptVolume": 60000, "offExchangeVolume": 37400000, "consolidatedVolume": 78500000 },
-  { "date": "2026-06-15", "shortVolume": 22042000, "shortExemptVolume": 90000, "offExchangeVolume": 42800000, "consolidatedVolume": 86000000 },
-  { "date": "2026-06-16", "shortVolume": 20748000, "shortExemptVolume": 75000, "offExchangeVolume": 39900000, "consolidatedVolume": 81500000 },
-  { "date": "2026-06-17", "shortVolume": 23593000, "shortExemptVolume": 88000, "offExchangeVolume": 44100000, "consolidatedVolume": 88000000 },
-  { "date": "2026-06-18", "shortVolume": 22672000, "shortExemptVolume": 70000, "offExchangeVolume": 41600000, "consolidatedVolume": 84000000 },
-  { "date": "2026-06-19", "shortVolume": 25368000, "shortExemptVolume": 95000, "offExchangeVolume": 45300000, "consolidatedVolume": 90000000 }
+  { "date": "2026-06-04", "shortVolume": 15980000, "shortExemptVolume": 60000, "offExchangeVolume": 34000000, "consolidatedVolume": 73900000, "open": 597, "high": 600, "low": 596, "close": 598 },
+  { "date": "2026-06-05", "shortVolume": 16972000, "shortExemptVolume": 55000, "offExchangeVolume": 36500000, "consolidatedVolume": 78000000, "open": 598, "high": 603, "low": 597.5, "close": 602 },
+  { "date": "2026-06-08", "shortVolume": 15106000, "shortExemptVolume": 48000, "offExchangeVolume": 33200000, "consolidatedVolume": 72000000, "open": 601, "high": 604, "low": 600, "close": 601 },
+  { "date": "2026-06-09", "shortVolume": 18288000, "shortExemptVolume": 70000, "offExchangeVolume": 38100000, "consolidatedVolume": 80000000, "open": 601, "high": 606, "low": 600.5, "close": 605 },
+  { "date": "2026-06-10", "shortVolume": 16803000, "shortExemptVolume": 52000, "offExchangeVolume": 35600000, "consolidatedVolume": 75500000, "open": 605, "high": 607, "low": 602, "close": 603 },
+  { "date": "2026-06-11", "shortVolume": 19698000, "shortExemptVolume": 81000, "offExchangeVolume": 40200000, "consolidatedVolume": 83000000, "open": 603, "high": 608, "low": 602.5, "close": 607 },
+  { "date": "2026-06-12", "shortVolume": 18700000, "shortExemptVolume": 60000, "offExchangeVolume": 37400000, "consolidatedVolume": 78500000, "open": 607, "high": 609, "low": 604, "close": 606 },
+  { "date": "2026-06-15", "shortVolume": 22042000, "shortExemptVolume": 90000, "offExchangeVolume": 42800000, "consolidatedVolume": 86000000, "open": 605, "high": 605, "low": 600, "close": 602 },
+  { "date": "2026-06-16", "shortVolume": 20748000, "shortExemptVolume": 75000, "offExchangeVolume": 39900000, "consolidatedVolume": 81500000, "open": 602, "high": 606, "low": 601, "close": 604 },
+  { "date": "2026-06-17", "shortVolume": 23593000, "shortExemptVolume": 88000, "offExchangeVolume": 44100000, "consolidatedVolume": 88000000, "open": 604, "high": 609, "low": 603, "close": 608 },
+  { "date": "2026-06-18", "shortVolume": 22672000, "shortExemptVolume": 70000, "offExchangeVolume": 41600000, "consolidatedVolume": 84000000, "open": 608, "high": 611, "low": 605, "close": 609 },
+  { "date": "2026-06-19", "shortVolume": 25368000, "shortExemptVolume": 95000, "offExchangeVolume": 45300000, "consolidatedVolume": 90000000, "open": 609, "high": 612, "low": 606, "close": 610 }
 ]
