@@ -10,6 +10,7 @@ import { buildSignals } from "@/lib/flow/signals";
 import { mmHedge } from "@/lib/flow/mmhedge";
 import { appendSample } from "@/lib/gex-history";
 import { collectAndResolve } from "@/lib/intel/journal";
+import { DarkPool } from "./DarkPool";
 import { DataStatus } from "./DataStatus";
 import { DexProfile } from "./DexProfile";
 import { GammaProfile } from "./GammaProfile";
@@ -50,6 +51,7 @@ const TABS = [
   "3D",
   "Term",
   "OI",
+  "Dark Pool",
   "Skew",
   "Vol Edge",
   "Harvest",
@@ -216,6 +218,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "3D" && <GreeksSurface symbol={symbol} exp={validExp} />}
       {tab === "Term" && <GexTerm symbol={symbol} exp={validExp} />}
       {tab === "OI" && <OiProfile symbol={symbol} exp={validExp} />}
+      {tab === "Dark Pool" && <DarkPool symbol={symbol} />}
       {tab === "Skew" && <SkewChart symbol={symbol} exp={validExp} />}
       {tab === "Vol Edge" && <VolEdge symbol={symbol} />}
       {tab === "Harvest" && <HarvestPanel symbol={symbol} exp={validExp} />}
