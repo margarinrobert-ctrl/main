@@ -1,0 +1,23 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "AMD",
+      "name": "Advanced Micro Devices",
+      "exchange": "NASDAQ",
+      "mode": "d",
+      "lastPrice": 165.3,
+      "tradeTimestamp": "2026-06-12T20:00:00-04:00",
+      "netChange": -0.55,
+      "percentChange": -0.33,
+      "open": 164.79,
+      "high": 165.32,
+      "low": 164.53,
+      "previousClose": 165.85,
+      "volume": 47251391
+    }
+  ]
+}

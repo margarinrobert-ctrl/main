@@ -1,0 +1,23 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "QQQ",
+      "name": "Invesco QQQ Trust",
+      "exchange": "NASDAQ",
+      "mode": "d",
+      "lastPrice": 485,
+      "tradeTimestamp": "2026-06-12T20:00:00-04:00",
+      "netChange": -0.42,
+      "percentChange": -0.09,
+      "open": 483.67,
+      "high": 487.11,
+      "low": 482.77,
+      "previousClose": 485.42,
+      "volume": 29850242
+    }
+  ]
+}

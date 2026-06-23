@@ -1,0 +1,52 @@
+name: Collect intel
+
+# Headless 24/7 collection (no external account needed). On a schedule this runs the collector in the
+# GitHub runner and commits the data as JSON to the `intel-data` branch using the built-in token; the
+# website reads it back from that branch. The branch is force-pushed as a single commit each run, so it
+# never bloats, and Vercel is told not to deploy it (vercel.json git.deploymentEnabled), so no deploy
+# churn. The default branch gets no data commits.
+#
+# Activate: merge this workflow to your DEFAULT branch (scheduled workflows only run from there).
+# Private repos: also set a GH_DATA_TOKEN env var on Vercel so the site can read the branch.
+
+on:
+  schedule:
+    - cron: "*/10 13-21 * * 1-5" # every 10 min, ~US market hours (UTC), weekdays
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: intel-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - name: Collect (writes ./out-data)
+        env:
+          INTEL_DATA_REPO: ${{ github.repository }}
+          INTEL_DATA_REF: intel-data
+          GH_DATA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run collect-intel
+
+      - name: Publish to intel-data branch (single force-pushed commit)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd out-data
+          git init -q
+          git checkout -q -b intel-data
+          git add -A
+          git -c user.email=actions@users.noreply.github.com -c user.name="intel-collector[bot]" \
+            commit -q -m "intel data ${{ github.run_number }} [skip ci]" || { echo "nothing to commit"; exit 0; }
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" intel-data

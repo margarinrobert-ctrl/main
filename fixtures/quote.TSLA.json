@@ -1,0 +1,23 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "TSLA",
+      "name": "Tesla Inc",
+      "exchange": "NASDAQ",
+      "mode": "d",
+      "lastPrice": 178.2,
+      "tradeTimestamp": "2026-06-12T20:00:00-04:00",
+      "netChange": 0.44,
+      "percentChange": 0.25,
+      "open": 177.9,
+      "high": 178.23,
+      "low": 178.01,
+      "previousClose": 177.76,
+      "volume": 15949231
+    }
+  ]
+}

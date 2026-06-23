@@ -1,0 +1,23 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "NQ",
+      "name": "E-mini Nasdaq-100 (cash index proxy)",
+      "exchange": "CME",
+      "mode": "d",
+      "lastPrice": 24000,
+      "tradeTimestamp": "2026-06-12T20:00:00-04:00",
+      "netChange": -22.93,
+      "percentChange": -0.1,
+      "open": 23946.7,
+      "high": 24069.64,
+      "low": 23958.51,
+      "previousClose": 24022.93,
+      "volume": 17220611
+    }
+  ]
+}

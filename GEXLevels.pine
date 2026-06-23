@@ -1,0 +1,83 @@
+//@version=6
+// OptionsFlow — GEX Levels (template)
+//
+// Canonical TradingView indicator. The website's "Pine" tab generates a FILLED-IN copy per ticker
+// (levels baked in) — use the site for ready-to-paste code; this file documents the structure.
+//
+// STATIC SNAPSHOT: a Pine script cannot fetch data, so it does NOT auto-update. Re-generate on the
+// site and re-paste for fresh ~15-min-delayed CBOE levels. Labels are SHORT and show the on-chart
+// price; hover any label for the full OI / Volume / GEX / DEX. Close levels auto-stagger.
+//
+// APPLY ON THE MATCHING CHART: these are per-symbol price levels — QQQ's ~500 levels do NOT belong
+// on an NQ ~30000 chart. ES/NQ use SPX/NDX cash options as a proxy; the "Align to chart price" input
+// lifts the index levels onto the future by the basis. The dotted gray "Spot" line marks the
+// underlying when generated. "Exp Hi/Lo" is the front-expiry expected move — today's range on 0DTE.
+indicator("OptionsFlow GEX • Levels", overlay = true, max_lines_count = 200, max_labels_count = 200)
+
+showMeta  = input.bool(true, "Detail on hover (tooltip)")
+laneStep  = input.int(14, "Stagger close labels (bars)", minval = 0, maxval = 80)
+convertMode = input.string("Off", "Convert levels to this chart", options = ["Off", "Auto (match chart)"])
+manualMult  = input.float(1.0, "Manual x multiplier (fine-tune)", minval = 0.0001, step = 0.01)
+snapSpot    = input.float(542.0, "Snapshot spot (for conversion)")
+labelSize = input.string("normal", "Label size", options = ["small", "normal", "large", "huge"])
+sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
+showVwap = input.bool(true, "Show session VWAP")
+showOR   = input.bool(true, "Show opening range (intraday)")
+orMin    = input.int(30, "Opening-range minutes", minval = 1, maxval = 240)
+
+// ── Baked level snapshot (replace via the site's Pine tab) — example: SPY ──
+var float[]  P  = array.from(525.0, 530.0, 536.0, 538.0, 541.0, 542.0, 545.0, 546.0, 550.0, 555.0, 560.0)
+var string[] T  = array.from("Put OI", "Put Sup", "Exp Lo 0DTE", "HVL", "Max Pain", "Spot", "GEX1", "Exp Hi 0DTE", "Call Res", "Call OI", "GEX2")
+var string[] D  = array.from("Put OI wall - OI 33.0k | V 39.0k | GEX -$1.6B · strike 525", "Put Support - OI 24.0k | V 30.0k | GEX -$1.5B · strike 530", "Expected-move LOW (today's range on 0DTE) · strike 536", "HVL / gamma flip nearest spot · strike 538", "Max Pain - OI 28.0k | V 35.0k · strike 541", "Underlying spot when generated · strike 542", "GEX 1 @545 - OI 18.0k | V 31.0k | $1.2B · strike 545", "Expected-move HIGH (today's range on 0DTE) · strike 546", "Call Resistance - OI 26.0k | V 35.0k | GEX $1.8B · strike 550", "Call OI wall - OI 31.0k | V 42.0k | GEX $1.7B · strike 555", "GEX 2 @560 - OI 7.0k | V 8.0k | $0.4B · strike 560")
+var color[]  C  = array.from(color.purple, color.green, color.orange, color.blue, color.yellow, color.gray, color.teal, color.orange, color.red, color.olive, color.teal)
+var string[] LS = array.from(line.style_dotted, line.style_solid, line.style_dotted, line.style_solid, line.style_dotted, line.style_dotted, line.style_solid, line.style_dotted, line.style_solid, line.style_dotted, line.style_solid)
+var int[]    W  = array.from(1, 2, 1, 2, 1, 1, 1, 1, 2, 1, 1)
+
+var line[]  _ln = array.new_line()
+var label[] _lb = array.new_label()
+
+clearAll() =>
+    while array.size(_ln) > 0
+        line.delete(array.pop(_ln))
+    while array.size(_lb) > 0
+        label.delete(array.pop(_lb))
+
+// Convert levels onto this chart. "Auto (match chart)" multiplies every level by (chart price /
+// snapshot spot) — the live ratio (SPY->ES ~10x, QQQ->NQ ~41x) — FROZEN ONCE so levels never move.
+var float frozenScale = na
+if barstate.islast and na(frozenScale)
+    frozenScale := convertMode == "Auto (match chart)" and snapSpot > 0 ? close / snapSpot : 1.0
+scale = nz(frozenScale, 1.0) * manualMult
+
+if barstate.islast
+    clearAll()
+    rng = ta.highest(high, 120) - ta.lowest(low, 120)
+    minGap = math.max(na(rng) or rng <= 0 ? close * 0.012 : rng * 0.02, close * 0.0015)
+    float prevP = na
+    int lane = 0
+    base = bar_index
+    for i = 0 to array.size(P) - 1
+        p = array.get(P, i) * scale
+        lane := not na(prevP) and (p - prevP) < minGap ? lane + 1 : 0
+        x = base + 1 + lane * laneStep
+        col = array.get(C, i)
+        txt = array.get(T, i) + " " + str.tostring(math.round(p * 100) / 100)
+        array.push(_ln, line.new(base, p, x, p, color = col, width = array.get(W, i), extend = extend.both, style = array.get(LS, i)))
+        array.push(_lb, label.new(x, p, txt, style = label.style_label_left, textcolor = col, color = color.new(color.black, 100), size = sz, tooltip = showMeta ? array.get(D, i) : ""))
+        prevP := p
+
+// ── Intraday confluence overlays (computed live by TradingView) ──
+plot(showVwap ? ta.vwap : na, "VWAP", color = color.new(color.fuchsia, 0), linewidth = 2)
+newDay = ta.change(time("D")) != 0
+var float orH = na
+var float orL = na
+var int orStart = na
+if newDay
+    orH := high
+    orL := low
+    orStart := time
+if not na(orStart) and time - orStart <= orMin * 60 * 1000
+    orH := math.max(orH, high)
+    orL := math.min(orL, low)
+plot(showOR ? orH : na, "OR High", color = color.new(color.aqua, 0), style = plot.style_stepline)
+plot(showOR ? orL : na, "OR Low", color = color.new(color.aqua, 0), style = plot.style_stepline)

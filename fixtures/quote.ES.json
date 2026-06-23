@@ -1,0 +1,23 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "ES",
+      "name": "E-mini S&P 500 (cash index proxy)",
+      "exchange": "CME",
+      "mode": "d",
+      "lastPrice": 7540,
+      "tradeTimestamp": "2026-06-12T20:00:00-04:00",
+      "netChange": 5.32,
+      "percentChange": 0.07,
+      "open": 7525.8,
+      "high": 7565.14,
+      "low": 7507.27,
+      "previousClose": 7534.68,
+      "volume": 21464678
+    }
+  ]
+}

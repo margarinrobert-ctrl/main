@@ -1,0 +1,64 @@
+name: Deploy demo to GitHub Pages
+
+# Manual trigger only. One-time setup: repo Settings → Pages → Source: "GitHub Actions"
+# (the workflow token can't enable Pages itself). Then run this workflow.
+on:
+  workflow_dispatch:
+
+# Allow the workflow to enable + publish Pages with the built-in token.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Prepare static (fixtures-only) build
+        run: |
+          # Static export can't include server route handlers; the client reads fixtures directly.
+          rm -rf src/app/api
+          mkdir -p public/fixtures
+          cp fixtures/*.json public/fixtures/
+
+      - name: Build static export
+        env:
+          STATIC_EXPORT: "1"
+          NEXT_PUBLIC_STATIC: "1"
+          NEXT_PUBLIC_BASE_PATH: /main
+        run: |
+          npm run build
+          touch out/.nojekyll
+
+      - name: Configure Pages (auto-enable)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,23 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "SPY",
+      "name": "SPDR S&P 500 ETF",
+      "exchange": "NASDAQ",
+      "mode": "d",
+      "lastPrice": 542.1,
+      "tradeTimestamp": "2026-06-12T20:00:00-04:00",
+      "netChange": -2.03,
+      "percentChange": -0.37,
+      "open": 540.63,
+      "high": 545.26,
+      "low": 541.36,
+      "previousClose": 544.13,
+      "volume": 52332809
+    }
+  ]
+}

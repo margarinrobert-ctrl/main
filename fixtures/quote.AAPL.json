@@ -1,0 +1,23 @@
+{
+  "status": {
+    "code": 200,
+    "message": "Success."
+  },
+  "results": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc",
+      "exchange": "NASDAQ",
+      "mode": "d",
+      "lastPrice": 196.45,
+      "tradeTimestamp": "2026-06-12T20:00:00-04:00",
+      "netChange": 0.81,
+      "percentChange": 0.41,
+      "open": 196.29,
+      "high": 197.29,
+      "low": 195.61,
+      "previousClose": 195.64,
+      "volume": 54766049
+    }
+  ]
+}
