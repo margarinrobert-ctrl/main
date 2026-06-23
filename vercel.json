@@ -3,5 +3,5 @@
   "framework": "nextjs",
   "buildCommand": "next build",
   "installCommand": "npm install",
-  "crons": [{ "path": "/api/collect", "schedule": "0 13 * * *" }]
+  "git": { "deploymentEnabled": { "intel-data": false } }
 }

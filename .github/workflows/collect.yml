@@ -1,32 +1,52 @@
 name: Collect intel
 
-# Headless collection so the intelligence layer accrues history even when no browser is open.
-# Pings the deployed /api/collect endpoint on a schedule (GitHub's minimum is every 5 min).
+# Headless 24/7 collection (no external account needed). On a schedule this runs the collector in the
+# GitHub runner and commits the data as JSON to the `intel-data` branch using the built-in token; the
+# website reads it back from that branch. The branch is force-pushed as a single commit each run, so it
+# never bloats, and Vercel is told not to deploy it (vercel.json git.deploymentEnabled), so no deploy
+# churn. The default branch gets no data commits.
 #
-# One-time setup (Settings → Secrets and variables → Actions):
-#   • Variable  COLLECT_URL  = https://<your-vercel-domain>/api/collect   (production URL)
-#   • Secret    CRON_SECRET  = same value you set as the CRON_SECRET env var on Vercel (optional but recommended)
-# Notes:
-#   • Scheduled workflows only run from the repository's DEFAULT branch — merge this there to activate.
-#   • A durable KV store must be wired (see COLLECTION.md) or each call's data won't persist.
-#   • GitHub disables schedules after ~60 days of repo inactivity; re-enable from the Actions tab.
+# Activate: merge this workflow to your DEFAULT branch (scheduled workflows only run from there).
+# Private repos: also set a GH_DATA_TOKEN env var on Vercel so the site can read the branch.
 
 on:
   schedule:
-    - cron: "*/5 13-21 * * 1-5" # every 5 min, ~US market hours (UTC), weekdays
+    - cron: "*/10 13-21 * * 1-5" # every 10 min, ~US market hours (UTC), weekdays
   workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: intel-collect
+  cancel-in-progress: false
 
 jobs:
   collect:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping collector
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - name: Collect (writes ./out-data)
         env:
-          COLLECT_URL: ${{ vars.COLLECT_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          INTEL_DATA_REPO: ${{ github.repository }}
+          INTEL_DATA_REF: intel-data
+          GH_DATA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run collect-intel
+
+      - name: Publish to intel-data branch (single force-pushed commit)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -z "$COLLECT_URL" ]; then
-            echo "COLLECT_URL repo variable not set — skipping (see workflow header for setup)."
-            exit 0
-          fi
-          curl -fsS --max-time 60 -H "Authorization: Bearer ${CRON_SECRET}" "$COLLECT_URL" | head -c 2000
+          cd out-data
+          git init -q
+          git checkout -q -b intel-data
+          git add -A
+          git -c user.email=actions@users.noreply.github.com -c user.name="intel-collector[bot]" \
+            commit -q -m "intel data ${{ github.run_number }} [skip ci]" || { echo "nothing to commit"; exit 0; }
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" intel-data

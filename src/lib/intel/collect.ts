@@ -1,18 +1,26 @@
+import type { HistoryBar, OptionContract } from "../barchart/types";
 import { getEquityOptions, getHistory } from "../barchart/endpoints";
 import { atmIv, gammaFlip, gexByStrike, netGex, putCallRatio } from "../flow/analytics";
 import { anomalyIntel } from "../flow/anomalyPro";
 import { buildSignals } from "../flow/signals";
 import { mmHedge } from "../flow/mmhedge";
 import type { GexSample } from "../gex-history";
-import { buildCandidates, shouldRecord } from "./journal";
+import { buildCandidates, shouldRecord, type PredictionRecord } from "./journal";
 import { mergeHistory } from "./merge";
 import { resolveForSymbol } from "./resolve";
 import { loadServerHistory, loadServerJournal, saveServerHistory, saveServerJournal } from "./store";
 
 // Server-side collection — the same collect+resolve loop the browser runs, but reading/writing the
-// durable store so it works headless on a schedule. Fetches the live chain (CBOE) + candles (Yahoo),
-// records a snapshot, journals each engine's directional call, and resolves matured ones against the
-// accumulated server price series. No DOM/localStorage — safe in a route handler / cron.
+// durable store so it works headless on a schedule (Vercel route, or the standalone scripts/collect
+// runner that commits to git). `stepSymbol` is pure (no network/IO) so it's unit-tested; `fetchInputs`
+// does the live network; `collectSymbol` wires them to the store.
+
+export interface CollectInputs {
+  chain: OptionContract[];
+  spot: number | null;
+  bars: HistoryBar[];
+  source: string;
+}
 
 export interface CollectResult {
   symbol: string;
@@ -25,12 +33,23 @@ export interface CollectResult {
   error?: string;
 }
 
-export async function collectSymbol(symbol: string): Promise<CollectResult> {
+/** Fetch the live chain (CBOE) + candles (Yahoo) for a symbol. */
+export async function fetchInputs(symbol: string): Promise<CollectInputs> {
   const sym = symbol.toUpperCase();
   const { data: chain, source } = await getEquityOptions(sym);
   const spot = chain.find((c) => c.underlyingPrice != null)?.underlyingPrice ?? null;
-  if (!chain.length || spot == null) return { symbol: sym, source, spot, samples: 0, added: 0, resolved: 0, open: 0, error: "no chain/spot" };
-  const { data: bars } = await getHistory(sym, { maxRecords: 60 }).catch(() => ({ data: [] }));
+  const { data: bars } = await getHistory(sym, { maxRecords: 60 }).catch(() => ({ data: [] as HistoryBar[] }));
+  return { chain, spot, bars, source };
+}
+
+/** Pure: record a snapshot, journal each engine's call, resolve matured ones. No network/IO. */
+export function stepSymbol(symbol: string, inputs: CollectInputs, prevJournal: PredictionRecord[], prevHistory: GexSample[], now = Date.now()): { journal: PredictionRecord[]; history: GexSample[]; result: CollectResult } {
+  const sym = symbol.toUpperCase();
+  const { chain, spot, bars, source } = inputs;
+  const openOf = (j: PredictionRecord[]) => j.filter((r) => r.symbol === sym && r.outcome == null).length;
+  if (!chain.length || spot == null) {
+    return { journal: prevJournal, history: prevHistory, result: { symbol: sym, source, spot, samples: prevHistory.length, added: 0, resolved: 0, open: openOf(prevJournal), error: "no chain/spot" } };
+  }
 
   // snapshot → append to the durable session series
   const by = gexByStrike(chain, spot);
@@ -38,16 +57,16 @@ export async function collectSymbol(symbol: string): Promise<CollectResult> {
   const exps = [...new Set(chain.map((c) => c.expiration))].sort();
   const frontExp = exps.find((e) => (chain.find((c) => c.expiration === e)?.dte ?? -1) >= 0) ?? exps[0];
   const iv = frontExp ? atmIv(chain, spot, frontExp) : null;
-  const sample: GexSample = { t: Date.now(), spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol };
-  const hist = mergeHistory(await loadServerHistory(sym), [sample]);
+  const sample: GexSample = { t: now, spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol };
+  const history = mergeHistory(prevHistory, [sample]);
 
   // engines → candidate predictions
-  const intel = anomalyIntel(sym, chain, spot, bars, hist);
+  const intel = anomalyIntel(sym, chain, spot, bars, history);
   const board = buildSignals(chain, spot, bars);
   const mm = mmHedge(chain, spot, bars);
 
-  let journal = await loadServerJournal();
-  const cands = buildCandidates(sym, Date.now(), chain, spot, bars, intel, board, mm);
+  let journal = prevJournal;
+  const cands = buildCandidates(sym, now, chain, spot, bars, intel, board, mm);
   let added = 0;
   for (const cand of cands)
     if (shouldRecord(journal, cand)) {
@@ -55,12 +74,21 @@ export async function collectSymbol(symbol: string): Promise<CollectResult> {
       added++;
     }
   const before = journal.filter((r) => r.symbol === sym && r.outcome != null).length;
-  journal = resolveForSymbol(journal, sym, hist, Date.now());
+  journal = resolveForSymbol(journal, sym, history, now);
   const after = journal.filter((r) => r.symbol === sym && r.outcome != null).length;
 
-  await saveServerHistory(sym, hist);
+  return { journal, history, result: { symbol: sym, source, spot, samples: history.length, added, resolved: after - before, open: openOf(journal) } };
+}
+
+export async function collectSymbol(symbol: string): Promise<CollectResult> {
+  const sym = symbol.toUpperCase();
+  const inputs = await fetchInputs(sym);
+  const prevJournal = await loadServerJournal();
+  const prevHistory = await loadServerHistory(sym);
+  const { journal, history, result } = stepSymbol(sym, inputs, prevJournal, prevHistory);
+  await saveServerHistory(sym, history);
   await saveServerJournal(journal);
-  return { symbol: sym, source, spot, samples: hist.length, added, resolved: after - before, open: journal.filter((r) => r.symbol === sym && r.outcome == null).length };
+  return result;
 }
 
 /** Collect a list of symbols sequentially; one failure doesn't abort the rest. */

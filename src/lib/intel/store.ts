@@ -1,17 +1,21 @@
+import { cached } from "../cache/store";
 import type { GexSample } from "../gex-history";
 import type { PredictionRecord } from "./journal";
 import { HIST_CAP, JOURNAL_CAP } from "./merge";
 
 // Durable server-side store for the intelligence layer, so history accrues even when no browser is
-// open. Uses a KV REST API (Vercel KV or Upstash Redis — both expose the same REST shape) when the
-// env vars are present; otherwise falls back to a per-instance in-memory map (works, but resets on a
-// serverless cold start — that's why the UI reports the store mode and asks you to wire KV).
-//
-// Setup (free): provision Vercel KV or an Upstash Redis DB, then set KV_REST_API_URL +
-// KV_REST_API_TOKEN (or UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN). See COLLECTION.md.
+// open. Three backends, in priority order:
+//   1. KV    — Vercel KV / Upstash Redis REST (read + write) when KV_REST_API_* / UPSTASH_* are set.
+//   2. git   — READ-ONLY from a GitHub branch (default `intel-data`): a scheduled GitHub Action runs
+//              the collector and commits the JSON there (see scripts/collect-intel.ts + the workflow).
+//              On Vercel the repo is auto-detected from VERCEL_GIT_REPO_OWNER/SLUG; public repos need
+//              no token, private repos read via the API with GH_DATA_TOKEN.
+//   3. memory — per-instance fallback (resets on cold start) for local dev.
+// See COLLECTION.md.
 
 const JOURNAL_KEY = "intel:journal";
 const histKey = (sym: string) => `intel:hist:${sym.toUpperCase()}`;
+const histFile = (sym: string) => `history-${sym.toUpperCase()}.json`;
 
 function kvEnv(): { url: string; token: string } | null {
   const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL ?? "";
@@ -19,7 +23,20 @@ function kvEnv(): { url: string; token: string } | null {
   return url && token ? { url: url.replace(/\/+$/, ""), token } : null;
 }
 
-export const storeMode = (): "kv" | "memory" => (kvEnv() ? "kv" : "memory");
+function gitCfg(): { owner: string; repo: string; ref: string; token: string } | null {
+  const ref = process.env.INTEL_DATA_REF ?? "intel-data";
+  const token = process.env.GH_DATA_TOKEN ?? "";
+  const combined = process.env.INTEL_DATA_REPO ?? "";
+  if (combined.includes("/")) {
+    const [owner, repo] = combined.split("/");
+    return owner && repo ? { owner, repo, ref, token } : null;
+  }
+  const owner = process.env.INTEL_DATA_OWNER ?? process.env.VERCEL_GIT_REPO_OWNER ?? "";
+  const repo = combined || process.env.VERCEL_GIT_REPO_SLUG || "";
+  return owner && repo ? { owner, repo, ref, token } : null;
+}
+
+export const storeMode = (): "kv" | "git" | "memory" => (kvEnv() ? "kv" : gitCfg() ? "git" : "memory");
 
 const mem = new Map<string, unknown>();
 
@@ -52,14 +69,45 @@ async function kvSet<T>(key: string, value: T): Promise<void> {
   if (!res.ok) throw new Error(`kv set ${res.status}`);
 }
 
+/** Read a JSON data file from the git branch — raw CDN for public repos, contents API for private. */
+async function gitReadJson<T>(file: string): Promise<T | null> {
+  const g = gitCfg();
+  if (!g) return null;
+  return cached<T | null>(`git:${g.ref}:${file}`, 30, async () => {
+    const raw = `https://raw.githubusercontent.com/${g.owner}/${g.repo}/${g.ref}/data/intel/${file}`;
+    try {
+      const res = await fetch(raw, { cache: "no-store" });
+      if (res.ok) return (await res.json()) as T;
+    } catch {
+      /* fall through to API */
+    }
+    if (g.token) {
+      try {
+        const api = `https://api.github.com/repos/${g.owner}/${g.repo}/contents/data/intel/${encodeURIComponent(file)}?ref=${g.ref}`;
+        const res = await fetch(api, { headers: { Accept: "application/vnd.github.raw", Authorization: `Bearer ${g.token}`, "User-Agent": "optionsflow-intel" }, cache: "no-store" });
+        if (res.ok) return (await res.json()) as T;
+      } catch {
+        /* ignore */
+      }
+    }
+    return null;
+  });
+}
+
 export async function loadServerHistory(sym: string): Promise<GexSample[]> {
-  return (await kvGet<GexSample[]>(histKey(sym))) ?? [];
+  if (kvEnv()) return (await kvGet<GexSample[]>(histKey(sym))) ?? [];
+  const git = await gitReadJson<GexSample[]>(histFile(sym));
+  if (git) return git;
+  return (mem.get(histKey(sym)) as GexSample[]) ?? [];
 }
 export async function saveServerHistory(sym: string, hist: GexSample[]): Promise<void> {
   await kvSet(histKey(sym), hist.slice(-HIST_CAP));
 }
 export async function loadServerJournal(): Promise<PredictionRecord[]> {
-  return (await kvGet<PredictionRecord[]>(JOURNAL_KEY)) ?? [];
+  if (kvEnv()) return (await kvGet<PredictionRecord[]>(JOURNAL_KEY)) ?? [];
+  const git = await gitReadJson<PredictionRecord[]>("journal.json");
+  if (git) return git;
+  return (mem.get(JOURNAL_KEY) as PredictionRecord[]) ?? [];
 }
 export async function saveServerJournal(journal: PredictionRecord[]): Promise<void> {
   await kvSet(JOURNAL_KEY, journal.slice(-JOURNAL_CAP));

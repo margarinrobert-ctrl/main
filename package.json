@@ -8,6 +8,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "probe": "tsx scripts/probe.ts",
+    "collect-intel": "tsx scripts/collect-intel.ts",
     "test": "vitest run"
   },
   "dependencies": {

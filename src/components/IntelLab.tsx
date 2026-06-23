@@ -180,9 +180,13 @@ export function IntelLab({ symbol }: { symbol: string }) {
         <p className="mb-3 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[11px] text-emerald-300">
           Server collection ON — durable KV store connected. With a scheduler hitting <code>/api/collect</code>, history accrues 24/7 even when this site is closed.
         </p>
+      ) : storeMode === "git" ? (
+        <p className="mb-3 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[11px] text-emerald-300">
+          Server collection via GitHub Actions (git store) — the scheduled job records + resolves predictions to the <code>intel-data</code> branch 24/7, even when this site is closed. Enable the workflow on your default branch to start it. See <code>COLLECTION.md</code>.
+        </p>
       ) : storeMode === "memory" ? (
         <p className="mb-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-300">
-          Server collection is ephemeral (no KV configured) — predictions persist only in this browser. To collect 24/7 while closed, set <code>KV_REST_API_URL</code> + <code>KV_REST_API_TOKEN</code> and enable a scheduler. See <code>COLLECTION.md</code>.
+          Server collection is ephemeral — predictions persist only in this browser. To collect 24/7 while closed, enable the GitHub Actions collector (no signup) or wire a KV store. See <code>COLLECTION.md</code>.
         </p>
       ) : null}
 

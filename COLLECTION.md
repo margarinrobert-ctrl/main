@@ -2,58 +2,66 @@
 
 By default the intelligence layer (the **Intel** tab) records and scores predictions **only while a
 browser tab is open**, in that browser's `localStorage`. To keep collecting **even when the site is
-closed**, run the headless collector on a schedule and persist to a durable store. Two pieces:
-
-1. **A durable store (KV)** — so data survives between serverless invocations.
-2. **A scheduler** — to call `GET /api/collect` on a cadence.
-
-The browser then pulls everything the server gathered (`GET /api/intel`) on open and merges it locally,
-so you see the full record — not just your session.
+closed**, run the headless collector on a schedule and persist somewhere durable. The browser then
+pulls everything the server gathered (`GET /api/intel`) on open and merges it locally, so you see the
+full record — not just your session.
 
 > Honest limits: data is still ~15‑min‑delayed CBOE options + Yahoo candles (no real‑time OPRA, no
 > trade tape). Outcomes are scored from the recorded price series — real, but only as frequent as the
-> scheduler runs. I can't provision your accounts/keys; the steps below are yours to do once.
+> scheduler runs.
+
+There are two backends. **A** needs no external account.
 
 ---
 
-## 1) Durable store — Vercel KV or Upstash Redis (free tiers)
+## A) GitHub Actions + git store (no signup) — recommended
 
-The store auto‑activates when these env vars are present (either naming works):
+The included workflow `.github/workflows/collect.yml` runs the collector inside the GitHub runner every
+10 min during market hours, computes the snapshot/journal/resolution, and commits the JSON to a
+dedicated **`intel-data`** branch using GitHub's built‑in token. The website reads that branch back.
+
+How it stays clean:
+
+- The data branch is **force‑pushed as a single commit** each run → it never bloats.
+- `vercel.json` sets `git.deploymentEnabled.intel-data = false` → Vercel does **not** deploy data
+  commits → no deploy churn. Your default branch gets **no** data commits at all.
+- The site auto‑detects the repo on Vercel (`VERCEL_GIT_REPO_OWNER/SLUG`) and reads
+  `intel-data` via the raw CDN (public repos, keyless) or the contents API (private repos, with a token).
+
+### Activate (one‑time)
+
+1. **Merge this branch to your default branch.** Scheduled GitHub workflows only run from the default
+   branch.
+2. **Allow Actions to write.** Repo → Settings → Actions → General → Workflow permissions →
+   "Read and write permissions".
+3. **(Private repos only)** add a Vercel env var `GH_DATA_TOKEN` = a fine‑grained PAT with read access
+   to this repo's contents, so the deployed site can read the `intel-data` branch. Public repos need
+   nothing.
+4. Optionally run it now: Actions tab → **Collect intel** → *Run workflow*.
+
+That's it — the **Intel** tab banner turns green ("git store"), and the journal grows on every run.
+
+---
+
+## B) KV store (Vercel KV / Upstash Redis)
+
+Read+write store with no branch involved. Auto‑activates when these env vars are present (either
+naming works):
 
 ```
-KV_REST_API_URL / KV_REST_API_TOKEN            # Vercel KV
-UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN   # Upstash Redis
+KV_REST_API_URL / KV_REST_API_TOKEN                  # Vercel KV
+UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN    # Upstash Redis
 ```
 
-- **Vercel KV:** Vercel dashboard → Storage → Create → KV → connect it to this project. Vercel injects
-  `KV_REST_API_URL` + `KV_REST_API_TOKEN` automatically. Redeploy.
-- **Upstash:** create a free Redis DB → copy the **REST URL** + **REST token** → add them as the env
-  vars above in Vercel → redeploy.
+- **Vercel KV:** dashboard → Storage → Create → KV → connect to this project (env vars injected) → redeploy.
+- **Upstash:** create a free Redis DB → copy the REST URL + token → add as the env vars → redeploy.
 
-Without these, the store falls back to per‑instance memory (works, but resets on cold starts). The
-Intel tab shows the current mode (KV connected vs ephemeral).
+Then point any scheduler at `GET /api/collect` (protect it with `CRON_SECRET`):
 
-## 2) Scheduler — pick one
+- **GitHub Actions** — change the workflow's last step to `curl -H "Authorization: Bearer $CRON_SECRET" "$COLLECT_URL"`.
+- **External pinger** (cron‑job.org) — `https://<domain>/api/collect?key=<CRON_SECRET>`.
 
-**A. GitHub Actions (free, included)** — `.github/workflows/collect.yml` pings the endpoint every 5 min
-during market hours. Setup (repo → Settings → Secrets and variables → Actions):
-
-- Variable `COLLECT_URL` = `https://<your-vercel-domain>/api/collect`
-- Secret `CRON_SECRET` = a random string (also set it as an env var on Vercel — see below)
-
-Scheduled workflows run **only from the default branch**, so merge this branch there to activate.
-
-**B. Vercel Cron** — `vercel.json` already declares a daily cron hitting `/api/collect`. On the Hobby
-plan crons run ~once/day; upgrade to Pro for intraday frequency. Vercel sends `CRON_SECRET`
-automatically when that env var is set.
-
-**C. Any external pinger** (e.g. cron‑job.org) — hit
-`https://<domain>/api/collect?key=<CRON_SECRET>` on whatever schedule you like.
-
-## 3) Protect the endpoint (recommended)
-
-Set `CRON_SECRET` (any random string) as an env var on Vercel. The endpoint then requires
-`Authorization: Bearer <CRON_SECRET>` or `?key=<CRON_SECRET>`. If unset, the endpoint is open.
+KV mode shows a green "KV connected" banner.
 
 ---
 
@@ -61,18 +69,14 @@ Set `CRON_SECRET` (any random string) as an env var on Vercel. The endpoint then
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/collect` | Fetch live chain/candles for the watchlist, record a snapshot, journal each engine's call, resolve matured ones. Returns a per‑symbol summary + `storeMode`. |
-| `GET /api/collect?symbol=SPY` | Collect a single symbol. |
-| `GET /api/intel?symbol=SPY` | Return the stored history + journal for a symbol (the browser merges this on open). |
+| `GET /api/collect` | (KV mode) fetch live chain/candles for the watchlist, record, journal, resolve. CRON_SECRET‑protected. |
+| `GET /api/intel?symbol=SPY` | Return the stored history + journal + `storeMode` (the browser merges this on open). |
 
 Watchlist symbols come from `OPTIONS_WATCHLIST` (default `SPY,QQQ`).
 
 ## Verify
 
-```
-curl -H "Authorization: Bearer $CRON_SECRET" https://<domain>/api/collect
-# → {"ok":true,"storeMode":"kv","results":[{"symbol":"SPY","added":1,"resolved":0,...}]}
-```
-
-`storeMode:"kv"` confirms persistence is live. Then open the **Intel** tab — it should show the
-server‑collected records, and the count grows on each scheduled run.
+- **Git store:** run the **Collect intel** workflow once; confirm an `intel-data` branch appears with
+  `data/intel/journal.json`. Open the Intel tab — records should load and grow each run.
+- **KV store:** `curl -H "Authorization: Bearer $CRON_SECRET" https://<domain>/api/collect` →
+  `{"ok":true,"storeMode":"kv",...}`, then check the Intel tab.
