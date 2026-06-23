@@ -11,6 +11,7 @@ import { mmHedge } from "@/lib/flow/mmhedge";
 import { appendSample } from "@/lib/gex-history";
 import { collectAndResolve } from "@/lib/intel/journal";
 import { DataStatus } from "./DataStatus";
+import { DexProfile } from "./DexProfile";
 import { GammaProfile } from "./GammaProfile";
 import { AnomalyIntel } from "./AnomalyIntel";
 import { AnomalyLive } from "./AnomalyLive";
@@ -43,6 +44,7 @@ const TABS = [
   "Chain",
   "Heatmap",
   "Gamma",
+  "DEX",
   "Levels Chart",
   "Vanna/Charm",
   "3D",
@@ -208,6 +210,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Chain" && <OptionsChain symbol={symbol} exp={validExp} />}
       {tab === "Heatmap" && <OptionsHeatmap symbol={symbol} exp={validExp} />}
       {tab === "Gamma" && <GammaProfile symbol={symbol} exp={validExp} />}
+      {tab === "DEX" && <DexProfile symbol={symbol} exp={validExp} />}
       {tab === "Levels Chart" && <LevelsChart symbol={symbol} />}
       {tab === "Vanna/Charm" && <VannaCharmProfile symbol={symbol} exp={validExp} />}
       {tab === "3D" && <GreeksSurface symbol={symbol} exp={validExp} />}

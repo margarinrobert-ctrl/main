@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   callOiWall,
   callResistance,
+  deltaCallWall,
+  deltaFlip,
+  deltaPutWall,
+  dexByStrike,
   expectedMove,
   expectedMove1D,
   exposureProfile,
@@ -13,6 +17,7 @@ import {
   greekSurface,
   levelStats,
   maxPain,
+  netDex,
   oiByStrike,
   putCallRatio,
   putOiWall,
@@ -199,6 +204,51 @@ describe("analytics", () => {
     ]);
     expect(callOiWall(oi)).toBe(100);
     expect(putOiWall(oi)).toBe(90);
+  });
+
+  it("aggregates DEX by strike with call delta + and put delta −", () => {
+    const by = dexByStrike([c({ type: "call", strike: 100, delta: 0.5 }), c({ type: "put", strike: 100, delta: -0.4 })], 100);
+    expect(by).toHaveLength(1);
+    expect(by[0].callDex).toBeGreaterThan(0);
+    expect(by[0].putDex).toBeLessThan(0);
+    expect(by[0].dex).toBeCloseTo(by[0].callDex + by[0].putDex, 6);
+    expect(dexByStrike([c({})], null)).toHaveLength(0); // no spot → no DEX
+    expect(netDex([c({ type: "call", delta: 0.5, openInterest: 1000 })], 100)).toBeGreaterThan(0);
+  });
+
+  it("keeps the delta call wall above spot and the delta put wall below it (no ATM collision)", () => {
+    // ATM strike 100 carries the most delta on BOTH sides — restricted walls must not both land there.
+    const by = dexByStrike(
+      [
+        c({ type: "call", strike: 100, delta: 0.5, openInterest: 9000 }),
+        c({ type: "put", strike: 100, delta: -0.5, openInterest: 9000 }),
+        c({ type: "call", strike: 106, delta: 0.3, openInterest: 4000 }),
+        c({ type: "put", strike: 94, delta: -0.3, openInterest: 4000 }),
+      ],
+      100,
+    );
+    const cw = deltaCallWall(by, 100);
+    const pw = deltaPutWall(by, 100);
+    expect(cw).toBe(106); // strictly above spot
+    expect(pw).toBe(94); // strictly below spot
+    expect(cw).not.toBe(pw);
+  });
+
+  it("finds the delta-neutral flip between put-heavy and call-heavy strikes", () => {
+    // put dollar-delta at 95 is half the call dollar-delta at 105 → cumulative net DEX crosses zero
+    // partway between them (interpolated), not at an endpoint.
+    const by = dexByStrike(
+      [
+        c({ type: "put", strike: 95, delta: -0.5, openInterest: 4000 }),
+        c({ type: "call", strike: 105, delta: 0.5, openInterest: 8000 }),
+      ],
+      100,
+    );
+    const flip = deltaFlip(by, 100);
+    expect(flip).not.toBeNull();
+    expect(flip!).toBeGreaterThan(95);
+    expect(flip!).toBeLessThan(105);
+    expect(deltaFlip([], 100)).toBeNull();
   });
 
   it("aggregates deep stats for the strike nearest a price", () => {

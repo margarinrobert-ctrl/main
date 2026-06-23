@@ -3,6 +3,9 @@ import {
   atmIv,
   callOiWall,
   callResistance,
+  deltaCallWall,
+  deltaPutWall,
+  dexByStrike,
   expectedMove,
   expectedMove1D,
   gammaFlipNearest,
@@ -92,6 +95,8 @@ export interface PineResult {
   callRes: number | null;
   putSup: number | null;
   hvl: number | null;
+  deltaCallWall: number | null;
+  deltaPutWall: number | null;
   strikes: number;
 }
 
@@ -122,6 +127,9 @@ export function buildGexPine(
   const oi = oiByStrike(chain);
   const callOi = callOiWall(oi);
   const putOi = putOiWall(oi);
+  const dby = dexByStrike(chain, spot);
+  const dCallWall = deltaCallWall(dby, spot);
+  const dPutWall = deltaPutWall(dby, spot);
   const iv0 = exp ? atmIv(chain, spot, exp) : null;
   // Expected move of the FRONT expiration (market-implied ATM straddle). For a 0DTE front this is
   // literally today's expected high/low — the intraday range. Falls back to a 1-session 1σ from IV.
@@ -158,6 +166,8 @@ export function buildGexPine(
   add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, `Max Pain ${exp ?? ""} - ${meta(chain, mp, spot)}`);
   add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, `Call OI wall - ${meta(chain, callOi, spot)}`);
   add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, `Put OI wall - ${meta(chain, putOi, spot)}`);
+  add(dCallWall, "Delta Call Wall", "color.maroon", "line.style_solid", 2, `Delta Call Wall (heaviest call delta-exposure above spot = hedgeable-delta resistance) - ${meta(chain, dCallWall, spot)}`);
+  add(dPutWall, "Delta Put Wall", "color.lime", "line.style_solid", 2, `Delta Put Wall (heaviest put delta-exposure below spot = hedgeable-delta support) - ${meta(chain, dPutWall, spot)}`);
   add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated${feedAsOf ? ` (CBOE ${feedAsOf})` : " (~15-min delayed)"} — levels are anchored here; the chart's current price may have moved since.`);
   add(dmax, `Exp Hi ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move HIGH for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
   add(dmin, `Exp Lo ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move LOW for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
@@ -198,6 +208,8 @@ export function buildGexPine(
     callRes != null ? `kCallRes = input.float(${fmt(callRes)}, "Alert: Call Resistance")` : "",
     putSup != null ? `kPutSup  = input.float(${fmt(putSup)}, "Alert: Put Support")` : "",
     hvl != null ? `kHvl     = input.float(${fmt(hvl)}, "Alert: HVL (gamma flip)")` : "",
+    dCallWall != null ? `kDCall   = input.float(${fmt(dCallWall)}, "Alert: Delta Call Wall")` : "",
+    dPutWall != null ? `kDPut    = input.float(${fmt(dPutWall)}, "Alert: Delta Put Wall")` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -205,6 +217,8 @@ export function buildGexPine(
     callRes != null ? `alertcondition(ta.cross(close, kCallRes * scale), "Price ↔ Call Resistance", "{{ticker}} tagged Call Resistance")` : "",
     putSup != null ? `alertcondition(ta.cross(close, kPutSup * scale), "Price ↔ Put Support", "{{ticker}} tagged Put Support")` : "",
     hvl != null ? `alertcondition(ta.cross(close, kHvl * scale), "Price ↔ HVL", "{{ticker}} crossed HVL / gamma flip")` : "",
+    dCallWall != null ? `alertcondition(ta.cross(close, kDCall * scale), "Price ↔ Delta Call Wall", "{{ticker}} tagged Delta Call Wall")` : "",
+    dPutWall != null ? `alertcondition(ta.cross(close, kDPut * scale), "Price ↔ Delta Put Wall", "{{ticker}} tagged Delta Put Wall")` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -295,5 +309,5 @@ plot(showOR ? orL : na, "OR Low", color = color.new(color.aqua, 0), style = plot
 ${alertLines}
 `;
 
-  return { code, expiration: exp, callRes, putSup, hvl, strikes: lv.length };
+  return { code, expiration: exp, callRes, putSup, hvl, deltaCallWall: dCallWall, deltaPutWall: dPutWall, strikes: lv.length };
 }

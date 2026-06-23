@@ -98,6 +98,27 @@ describe("buildGexPine", () => {
     expect(atm.callRes).not.toBe(atm.putSup);
   });
 
+  it("adds delta call/put walls (delta-weighted OI), distinct from the gamma walls, with alerts", () => {
+    // 103/97 carry the most delta-dollars (near-ATM, high delta); 110/90 carry the most gamma & raw OI.
+    const chain = [
+      c({ type: "call", strike: 103, delta: 0.6, openInterest: 9000, gamma: 0.02 }),
+      c({ type: "put", strike: 97, delta: -0.6, openInterest: 9000, gamma: 0.02 }),
+      c({ type: "call", strike: 110, delta: 0.2, openInterest: 12000, gamma: 0.05 }),
+      c({ type: "put", strike: 90, delta: -0.2, openInterest: 12000, gamma: 0.05 }),
+    ];
+    const r = buildGexPine("DEX", chain, 100);
+    expect(r.deltaCallWall).toBe(103);
+    expect(r.deltaPutWall).toBe(97);
+    expect(r.code).toContain("Delta Call Wall");
+    expect(r.code).toContain("Delta Put Wall");
+    // delta-weighted walls sit at different strikes than the gamma walls on this book
+    expect(r.deltaCallWall).not.toBe(r.callRes);
+    expect(r.deltaPutWall).not.toBe(r.putSup);
+    // each gets its own configurable alert
+    expect(r.code).toContain("Alert: Delta Call Wall");
+    expect(r.code).toContain('alertcondition(ta.cross(close, kDPut * scale)');
+  });
+
   it("gives every level its own price — no two levels stack on the same line", () => {
     const r = buildGexPine("MULTI", multiChain(), 100);
     expect(r.code).toContain('"Call Resistance"'); // stands alone

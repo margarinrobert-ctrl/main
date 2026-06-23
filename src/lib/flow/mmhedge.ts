@@ -3,12 +3,16 @@ import {
   atmIv,
   callOiWall,
   callResistance,
+  deltaCallWall,
+  deltaPutWall,
+  dexByStrike,
   expectedMove1D,
   exposureProfile,
   flipFromProfile,
   gammaFlipNearest,
   gexByStrike,
   maxPain,
+  netDex,
   netGex,
   oiByStrike,
   putCallRatio,
@@ -97,6 +101,9 @@ export interface MMHedge {
   com: number | null; // gamma centre-of-mass (the pin target)
   callWall: number | null;
   putWall: number | null;
+  deltaCallWall: number | null; // heaviest call delta-exposure above spot (delta-weighted resistance)
+  deltaPutWall: number | null; // heaviest put delta-exposure below spot (delta-weighted support)
+  netDex: number | null; // aggregate notional delta of OI (calls +, puts −) — directional book weight
   charmFlow: number | null; // $/day
   vannaFlow: number | null; // $/day (vanna × expected ΔIV)
   frontIv: number | null; // front-expiry ATM IV (for level probabilities)
@@ -312,6 +319,9 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     com: null,
     callWall: null,
     putWall: null,
+    deltaCallWall: null,
+    deltaPutWall: null,
+    netDex: null,
     charmFlow: null,
     vannaFlow: null,
     frontIv: null,
@@ -338,6 +348,10 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
   const magnet = magnetStrike(by);
   const cw = callResistance(by, spot);
   const pw = putSupport(by, spot);
+  const dby = dexByStrike(chain, spot);
+  const dcw = deltaCallWall(dby, spot);
+  const dpw = deltaPutWall(dby, spot);
+  const ndex = netDex(chain, spot);
   const so = secondOrderExposure(chain, spot);
 
   // smoother zero-gamma flip from the BS-repriced profile, fallback to the discrete crossing
@@ -446,6 +460,8 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
       { name: "Max Pain", price: mp as number },
       { name: "Call OI", price: coi as number },
       { name: "Put OI", price: poi as number },
+      { name: "Delta Call Wall", price: dcw as number },
+      { name: "Delta Put Wall", price: dpw as number },
       { name: "1D Max", price: em1d != null ? spot + em1d : (null as unknown as number) },
       { name: "1D Min", price: em1d != null ? spot - em1d : (null as unknown as number) },
       ...gexLadder.map((x, i) => ({ name: `GEX ${i + 1}`, price: x.strike })),
@@ -506,6 +522,9 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     com,
     callWall: cw,
     putWall: pw,
+    deltaCallWall: dcw,
+    deltaPutWall: dpw,
+    netDex: ndex,
     charmFlow,
     vannaFlow,
     frontIv: iv0,

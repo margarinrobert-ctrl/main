@@ -70,7 +70,8 @@ export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
         (above spot), <span className="text-green-400">Put Support</span> (below spot),{" "}
         <span className="text-blue-400">HVL</span> (γ-flip), their <b>0DTE</b> variants, the{" "}
         <span className="text-teal-300">GEX 1…N</span> ladder, <span className="text-amber-400">1D Max/Min</span>,{" "}
-        <span className="text-yellow-300">Max Pain</span> and the <span className="text-lime-400">Call/Put OI</span> walls.
+        <span className="text-yellow-300">Max Pain</span>, the <span className="text-lime-400">Call/Put OI</span> walls and the{" "}
+        delta-weighted <span className="text-rose-400">Delta Call</span> / <span className="text-lime-300">Put walls</span>.
         Copy into TradingView → <b>Pine Editor</b> → paste → <b>Save</b> → <b>Add to chart</b>. Re-generate to refresh.
       </p>
 

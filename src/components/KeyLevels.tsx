@@ -7,6 +7,10 @@ import type { OptionContract } from "@/lib/barchart/types";
 import {
   atmIv,
   callWall,
+  deltaCallWall,
+  deltaFlip,
+  deltaPutWall,
+  dexByStrike,
   expectedMove,
   expectedMove1D,
   filterByExpiration,
@@ -79,6 +83,7 @@ export function KeyLevels({ symbol, exp = "ALL" }: { symbol: string; exp?: strin
   const levels = useMemo(() => {
     const sub = filterByExpiration(chain, exp);
     const by = gexByStrike(sub, spot);
+    const dby = dexByStrike(sub, spot);
     const ngex = netGex(sub, spot);
     const e = nearestExp(sub);
     const em = e ? expectedMove(sub, spot, e) : null;
@@ -91,6 +96,9 @@ export function KeyLevels({ symbol, exp = "ALL" }: { symbol: string; exp?: strin
       flip: gammaFlip(by),
       cw: callWall(by),
       pw: putWall(by),
+      dcw: deltaCallWall(dby, spot),
+      dpw: deltaPutWall(dby, spot),
+      dflip: deltaFlip(dby, spot),
       mp: e ? maxPain(sub, e) : null,
       em,
       em1,
@@ -149,11 +157,37 @@ export function KeyLevels({ symbol, exp = "ALL" }: { symbol: string; exp?: strin
             sub={levels.ngex == null ? "" : `${fmtUsd(levels.ngex)}/1%`}
             tone={levels.ngex == null ? "neutral" : levels.ngex >= 0 ? "good" : "bad"}
           />
-          <Stat label="Net Δ exposure" value={levels.ndex == null ? "—" : fmtUsd(levels.ndex)} />
+          <Stat
+            label="Net Δ exposure"
+            value={levels.ndex == null ? "—" : fmtUsd(levels.ndex)}
+            sub="$Δ of open interest"
+            tone={levels.ndex == null ? "neutral" : levels.ndex >= 0 ? "good" : "bad"}
+            hint="Aggregate notional delta of all open interest (calls +, puts −). Positive = the option book leans net-long delta; negative = net-short. The directional weight dealers sit against."
+          />
           <Stat label="Gamma flip" value={levels.flip == null ? "—" : levels.flip.toLocaleString(undefined, { maximumFractionDigits: 1 })} sub="zero-γ level" />
           <Stat label="Spot" value={spot == null ? "—" : spot.toLocaleString()} />
           <Stat label="Call wall" value={levels.cw == null ? "—" : String(levels.cw)} sub="max call γ" tone="good" />
           <Stat label="Put wall" value={levels.pw == null ? "—" : String(levels.pw)} sub="max put γ" tone="bad" />
+          <Stat
+            label="Δ Call wall"
+            value={levels.dcw == null ? "—" : String(levels.dcw)}
+            sub="max call Δ-exp"
+            tone="good"
+            hint="Delta call wall — the strike with the heaviest call delta-exposure (delta × OI) above spot. Delta-weighting favours the strikes that move with price, so it marks the hedgeable-delta resistance, a level rallies tend to stall under."
+          />
+          <Stat
+            label="Δ Put wall"
+            value={levels.dpw == null ? "—" : String(levels.dpw)}
+            sub="max put Δ-exp"
+            tone="bad"
+            hint="Delta put wall — the strike with the heaviest put delta-exposure below spot. The hedgeable-delta support, a level dips tend to hold above."
+          />
+          <Stat
+            label="Δ-neutral"
+            value={levels.dflip == null ? "—" : levels.dflip.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+            sub="delta flip"
+            hint="Delta-neutral / delta-flip strike: where cumulative net delta-exposure crosses zero — put-delta-dominated (net short) below, call-delta-dominated (net long) above. The pivot the book's directional weight balances on."
+          />
           <Stat label="Max pain" value={levels.mp == null ? "—" : String(levels.mp)} sub={levels.exp ?? ""} />
           <Stat
             label="1-day range"
