@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { alertsEnabled, crossings, fireNotify } from "@/lib/alerts";
 import type { OptionContract } from "@/lib/barchart/types";
-import { loadChain, loadHistory } from "@/lib/client-data";
+import { loadChain, loadHistory, pullServerData } from "@/lib/client-data";
 import { atmIv, callWall, gammaFlip, gexByStrike, netGex, putCallRatio, putWall } from "@/lib/flow/analytics";
 import { anomalyIntel } from "@/lib/flow/anomalyPro";
 import { buildSignals } from "@/lib/flow/signals";
@@ -86,6 +86,12 @@ export function TickerTabs({ symbol }: { symbol: string }) {
   // Reset the expiration filter when the ticker changes.
   useEffect(() => {
     setExp("ALL");
+  }, [symbol]);
+
+  // On open, pull anything the server collected while the site was closed and merge it locally so the
+  // whole dashboard (history, anomaly, intel) reflects the full record, not just this browser session.
+  useEffect(() => {
+    pullServerData(symbol).catch(() => {});
   }, [symbol]);
 
   // Background sampler: records spot + net GEX + gamma flip while the ticker page is open,

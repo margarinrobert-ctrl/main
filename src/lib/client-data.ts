@@ -3,6 +3,9 @@ import { parseHistoryResponse, parseOptionsResponse, parseQuoteResponse } from "
 import type { HistoryBar, NormalizedQuote, OptionContract } from "./barchart/types";
 import { scoreContracts, type ScoredContract } from "./flow/heuristic";
 import { applyScreenerFilter } from "./flow/screener-filter";
+import { mergeServerHistory, type GexSample } from "./gex-history";
+import { readJournal, writeJournal, type PredictionRecord } from "./intel/journal";
+import { mergeJournal } from "./intel/merge";
 
 /**
  * Browser data layer. In a normal (server) deploy it calls the /api proxy routes.
@@ -97,6 +100,24 @@ function parseScreenerQuery(qs: string): ScreenerParams {
     maxDTE: n("maxDTE"),
     minVolumeOpenInterestRatio: n("minVoir"),
   };
+}
+
+/**
+ * Pull the durable server-collected history + journal and merge them into local storage, so the UI
+ * shows everything gathered while the site was closed. Best-effort: a missing/empty server store just
+ * leaves the local data untouched. Returns the store mode for the status banner.
+ */
+export async function pullServerData(symbol: string): Promise<{ storeMode: string; history: number; journal: number }> {
+  if (typeof window === "undefined" || STATIC) return { storeMode: "memory", history: 0, journal: 0 };
+  const sym = symbol.toUpperCase();
+  const res = await fetch(`/api/intel?symbol=${encodeURIComponent(sym)}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const j = (await res.json()) as { storeMode: string; history?: GexSample[]; journal?: PredictionRecord[] };
+  const history = j.history ?? [];
+  const journal = j.journal ?? [];
+  if (history.length) mergeServerHistory(sym, history);
+  if (journal.length) writeJournal(mergeJournal(readJournal(), journal));
+  return { storeMode: j.storeMode ?? "memory", history: history.length, journal: journal.length };
 }
 
 export async function loadFlow(qs: string): Promise<{ rows: ScoredContract[]; source: string }> {

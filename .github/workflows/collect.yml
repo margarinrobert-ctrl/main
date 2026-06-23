@@ -1,0 +1,32 @@
+name: Collect intel
+
+# Headless collection so the intelligence layer accrues history even when no browser is open.
+# Pings the deployed /api/collect endpoint on a schedule (GitHub's minimum is every 5 min).
+#
+# One-time setup (Settings → Secrets and variables → Actions):
+#   • Variable  COLLECT_URL  = https://<your-vercel-domain>/api/collect   (production URL)
+#   • Secret    CRON_SECRET  = same value you set as the CRON_SECRET env var on Vercel (optional but recommended)
+# Notes:
+#   • Scheduled workflows only run from the repository's DEFAULT branch — merge this there to activate.
+#   • A durable KV store must be wired (see COLLECTION.md) or each call's data won't persist.
+#   • GitHub disables schedules after ~60 days of repo inactivity; re-enable from the Actions tab.
+
+on:
+  schedule:
+    - cron: "*/5 13-21 * * 1-5" # every 5 min, ~US market hours (UTC), weekdays
+  workflow_dispatch: {}
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping collector
+        env:
+          COLLECT_URL: ${{ vars.COLLECT_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$COLLECT_URL" ]; then
+            echo "COLLECT_URL repo variable not set — skipping (see workflow header for setup)."
+            exit 0
+          fi
+          curl -fsS --max-time 60 -H "Authorization: Bearer ${CRON_SECRET}" "$COLLECT_URL" | head -c 2000

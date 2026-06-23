@@ -1,3 +1,5 @@
+import { mergeHistory } from "./intel/merge";
+
 export interface GexSample {
   t: number; // epoch ms
   spot: number | null;
@@ -20,6 +22,18 @@ export function readHistory(sym: string): GexSample[] {
   } catch {
     return [];
   }
+}
+
+/** Merge a server-collected series into the local one (dedupe by timestamp), persist, and return it. */
+export function mergeServerHistory(sym: string, incoming: GexSample[]): GexSample[] {
+  if (typeof window === "undefined") return [];
+  const merged = mergeHistory(readHistory(sym), incoming, CAP);
+  try {
+    localStorage.setItem(key(sym), JSON.stringify(merged));
+  } catch {
+    /* storage full / disabled — ignore */
+  }
+  return merged;
 }
 
 /** Append a sample (collapsing points closer than MIN_GAP_MS), persist, and return the series. */

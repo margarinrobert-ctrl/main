@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { pullServerData } from "@/lib/client-data";
 import { readHistory } from "@/lib/gex-history";
 import { readJournal, writeJournal, type PredictionRecord } from "@/lib/intel/journal";
 import { open, resolved, resolveForSymbol } from "@/lib/intel/resolve";
@@ -96,9 +97,16 @@ export function IntelLab({ symbol }: { symbol: string }) {
   const [all, setAll] = useState(false);
   const [tick, setTick] = useState(0);
   const [showJson, setShowJson] = useState(false);
+  const [storeMode, setStoreMode] = useState<string | null>(null);
 
-  // resolve this symbol's matured predictions against the recorded session series, then re-read.
-  const refresh = useCallback(() => {
+  // pull durable server-collected data, merge locally, then resolve matured predictions and re-read.
+  const refresh = useCallback(async () => {
+    try {
+      const r = await pullServerData(sym);
+      setStoreMode(r.storeMode);
+    } catch {
+      /* offline / no server store reachable — local data still works */
+    }
     const journal = readJournal();
     const next = resolveForSymbol(journal, sym, readHistory(sym), Date.now());
     if (next !== journal) writeJournal(next);
@@ -167,6 +175,16 @@ export function IntelLab({ symbol }: { symbol: string }) {
           </button>
         </div>
       </div>
+
+      {storeMode === "kv" ? (
+        <p className="mb-3 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[11px] text-emerald-300">
+          Server collection ON — durable KV store connected. With a scheduler hitting <code>/api/collect</code>, history accrues 24/7 even when this site is closed.
+        </p>
+      ) : storeMode === "memory" ? (
+        <p className="mb-3 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-300">
+          Server collection is ephemeral (no KV configured) — predictions persist only in this browser. To collect 24/7 while closed, set <code>KV_REST_API_URL</code> + <code>KV_REST_API_TOKEN</code> and enable a scheduler. See <code>COLLECTION.md</code>.
+        </p>
+      ) : null}
 
       {records.length === 0 ? (
         <EmptyState label="No predictions journaled yet. Open a ticker tab and leave it running — the collector records every anomaly / signal / MM-hedge call and scores it against the price that follows." />
