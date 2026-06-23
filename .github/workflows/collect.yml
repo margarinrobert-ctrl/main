@@ -11,7 +11,7 @@ name: Collect intel
 
 on:
   schedule:
-    - cron: "*/10 13-21 * * 1-5" # every 10 min, ~US market hours (UTC), weekdays
+    - cron: "*/10 * * * *" # every 10 min, around the clock, 24/7 (all hours, every day)
   workflow_dispatch: {}
 
 permissions:
