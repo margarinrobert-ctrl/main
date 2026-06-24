@@ -159,20 +159,23 @@ export function TickerTabs({ symbol }: { symbol: string }) {
     <div className="space-y-4">
       <DataStatus symbol={symbol} />
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex flex-1 flex-wrap gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1 backdrop-blur">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`rounded-lg px-3 py-1.5 text-sm transition ${
-                tab === t
-                  ? "bg-emerald-500/15 font-medium text-emerald-300 shadow-[0_0_14px_-3px_rgba(16,185,129,0.6)]"
-                  : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
-              }`}
-            >
-              {t}
-            </button>
-          ))}
+        <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.03] p-1 backdrop-blur">
+          <div className="tabs-scroll">
+            {TABS.map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                aria-current={tab === t ? "page" : undefined}
+                className={`tab-pill shrink-0 rounded-lg px-3 py-1.5 text-sm transition ${
+                  tab === t
+                    ? "bg-emerald-500/15 font-medium text-emerald-300 shadow-[0_0_14px_-3px_rgba(16,185,129,0.6)]"
+                    : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
         </div>
         <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs backdrop-blur">
           <span className="uppercase tracking-wide text-neutral-500">Expiration</span>

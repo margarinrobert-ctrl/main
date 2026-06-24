@@ -11,10 +11,10 @@ export default function TickerPage({ params }: { params: { symbol: string } }) {
   return (
     <div className="space-y-4">
       <div>
-        <a href={withBase("/")} className="text-xs text-neutral-400 hover:underline">
+        <a href={withBase("/")} className="text-xs text-neutral-500 transition hover:text-neutral-300">
           ← back to flow
         </a>
-        <h1 className="mt-1 text-lg font-semibold">{symbol}</h1>
+        <h1 className="mt-0.5 text-2xl font-bold tracking-tight">{symbol}</h1>
       </div>
       <TickerTabs symbol={symbol} />
     </div>

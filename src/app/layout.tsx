@@ -5,23 +5,39 @@ import { config } from "@/lib/barchart/config";
 import { withBase } from "@/lib/paths";
 
 export const metadata: Metadata = {
-  title: "OptionsFlow — GEX & unusual options activity",
-  description: "Unusual options activity, dealer gamma & quant analytics",
+  title: "OptionsFlow — GEX, delta walls & dark-pool analytics",
+  description: "Unusual options activity, dealer gamma/delta positioning, dark-pool flow & quant analytics",
 };
+
+const NAV = ["SPY", "QQQ", "NVDA", "TSLA"];
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const live = config.dataSource === "live";
   return (
     <html lang="en">
-      <body className="min-h-screen">
-        <header className="sticky top-0 z-20 border-b border-white/10 bg-black/40 px-6 py-3 backdrop-blur-xl">
-          <div className="mx-auto flex max-w-7xl items-center justify-between">
-            <a href={withBase("/")} className="flex items-center gap-2 tracking-tight">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_12px_2px_rgba(16,185,129,0.7)]" />
+      <body className="flex min-h-screen flex-col">
+        <header className="sticky top-0 z-20 border-b border-white/10 bg-black/50 backdrop-blur-xl">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3">
+            <a href={withBase("/")} className="flex items-center gap-2.5 tracking-tight">
+              <span className="relative inline-flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_12px_2px_rgba(16,185,129,0.7)]" />
+              </span>
               <span className="text-lg font-semibold">
                 Options<span className="glow-text">Flow</span>
               </span>
             </a>
+            <nav className="hidden items-center gap-0.5 sm:flex">
+              {NAV.map((s) => (
+                <a
+                  key={s}
+                  href={withBase(`/ticker/${s}`)}
+                  className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-neutral-400 transition hover:bg-white/5 hover:text-neutral-100"
+                >
+                  {s}
+                </a>
+              ))}
+            </nav>
             <span
               className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
                 live
@@ -33,7 +49,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </span>
           </div>
         </header>
-        <main className="mx-auto max-w-7xl px-6 py-6">{children}</main>
+        <main className="fade-up mx-auto w-full max-w-7xl flex-1 px-5 py-6 sm:px-6">{children}</main>
+        <footer className="mx-auto w-full max-w-7xl px-5 pb-8 pt-4 sm:px-6">
+          <div className="border-t border-white/5 pt-4 text-[11px] leading-relaxed text-neutral-600">
+            <span className="text-neutral-400">OptionsFlow</span> — educational options-flow, dealer-gamma &amp; dark-pool
+            analytics. Data is delayed (CBOE ~15-min options, FINRA T+1 off-exchange) and synthesized for research. Not
+            financial advice.
+          </div>
+        </footer>
       </body>
     </html>
   );

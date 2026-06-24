@@ -6,14 +6,17 @@ import { withBase } from "@/lib/paths";
 const FOCUS = [
   { sym: "SPY", label: "S&P 500 ETF" },
   { sym: "QQQ", label: "Nasdaq-100 ETF" },
+  { sym: "NVDA", label: "NVIDIA" },
+  { sym: "TSLA", label: "Tesla" },
+  { sym: "AAPL", label: "Apple" },
 ];
 
-const CAPS = ["Signals", "Dealer GEX", "Vanna/Charm", "3D surface", "Premium Harvest", "Pine export"];
+const CAPS = ["Signals", "Dealer GEX", "Delta walls", "Dark pool", "Vanna/Charm", "3D surface", "Premium Harvest", "Pine export"];
 
 export default function Home() {
   return (
     <div className="space-y-8">
-      <section className="relative overflow-hidden rounded-2xl border border-white/10 p-6 sm:p-8">
+      <section className="fade-up relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-6 sm:p-8">
         <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-emerald-500/15 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-32 -left-16 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
         <div className="relative">
@@ -37,26 +40,27 @@ export default function Home() {
               </span>
             ))}
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             {FOCUS.map((f) => (
               <a
                 key={f.sym}
                 href={withBase(`/ticker/${f.sym}`)}
-                className="group rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm transition hover:border-emerald-500/40 hover:bg-emerald-500/[0.06]"
+                className="group flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm transition hover:border-emerald-500/40 hover:bg-emerald-500/[0.06]"
               >
-                <span className="font-semibold">{f.sym}</span>
-                <span className="ml-2 text-xs text-neutral-500 group-hover:text-neutral-400">{f.label}</span>
+                <span className="font-semibold tracking-tight">{f.sym}</span>
+                <span className="text-xs text-neutral-500 group-hover:text-neutral-400">{f.label}</span>
+                <span className="text-neutral-600 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-300">→</span>
               </a>
             ))}
           </div>
         </div>
       </section>
 
-      <section>
+      <section className="fade-up">
         <Scanner />
       </section>
 
-      <section>
+      <section className="fade-up">
         <div className="mb-3 flex items-end justify-between">
           <h2 className="text-lg font-semibold">Unusual Options Flow</h2>
           <a className="text-xs text-neutral-400 underline-offset-2 hover:underline" href="#how">
