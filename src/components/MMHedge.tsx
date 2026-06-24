@@ -6,7 +6,9 @@ import { loadChain, loadHistory } from "@/lib/client-data";
 import { filterByExpiration, fmtUsd, levelStats } from "@/lib/flow/analytics";
 import { probAbove } from "@/lib/flow/greeks";
 import { mmHedge, planAtLevel, type Pressure } from "@/lib/flow/mmhedge";
+import { EdgeBadge } from "./EdgeBadge";
 import { EmptyState, ErrorState, Loading } from "./states";
+import { useLearnedProfile } from "./useLearnedProfile";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -86,6 +88,7 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
 
   const sub = useMemo(() => filterByExpiration(chain, exp), [chain, exp]);
   const r = useMemo(() => mmHedge(sub, spot, bars), [sub, spot, bars]);
+  const profile = useLearnedProfile();
 
   const detail = useMemo(() => {
     if (!selLevel || spot == null) return null;
@@ -130,6 +133,7 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
       {state === "ok" && (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+            <EdgeBadge profile={profile} source="mmhedge" confidence={r.conviction} />
             <span className={`rounded-full border px-3 py-1 font-medium ${r.regime === "long" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : r.regime === "short" ? "border-red-500/40 bg-red-500/10 text-red-300" : "border-white/15 text-neutral-300"}`}>
               {r.regime === "long" ? "Long γ · pin/mean-revert" : r.regime === "short" ? "Short γ · amplify/trend" : "γ n/a"}
             </span>

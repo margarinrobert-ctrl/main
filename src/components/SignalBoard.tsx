@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { HistoryBar, OptionContract } from "@/lib/barchart/types";
 import { loadChain, loadHistory } from "@/lib/client-data";
 import { buildSignals, type SignalCategory, type SignalSide, type TradeSignal } from "@/lib/flow/signals";
+import { EdgeBadge } from "./EdgeBadge";
 import { EmptyState, ErrorState, Loading } from "./states";
+import { useLearnedProfile } from "./useLearnedProfile";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -124,11 +126,15 @@ export function SignalBoard({ symbol, exp = "ALL" }: { symbol: string; exp?: str
   }, [symbol]);
 
   const board = useMemo(() => buildSignals(chain, spot, bars, exp), [chain, spot, bars, exp]);
+  const profile = useLearnedProfile();
 
   return (
     <div className="glass p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold">Signal Board · {symbol}</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="font-semibold">Signal Board · {symbol}</h2>
+          <EdgeBadge profile={profile} source="signals" confidence={board.signals[0]?.score ?? null} />
+        </div>
         <BiasMeter score={board.biasScore} />
         <span className="text-xs text-neutral-500">
           {board.regime !== "unknown" ? `${board.regime}-γ` : ""} · src: {source}

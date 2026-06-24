@@ -13,6 +13,7 @@ import { collectAndResolve } from "@/lib/intel/journal";
 import { DarkPool } from "./DarkPool";
 import { DataStatus } from "./DataStatus";
 import { DexProfile } from "./DexProfile";
+import { EdgeOptimizer } from "./EdgeOptimizer";
 import { GammaProfile } from "./GammaProfile";
 import { AnomalyIntel } from "./AnomalyIntel";
 import { AnomalyLive } from "./AnomalyLive";
@@ -204,6 +205,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
 
       {tab === "Overview" && (
         <div className="space-y-4">
+          <EdgeOptimizer symbol={symbol} />
           <KeyLevels symbol={symbol} exp={validExp} />
           <QuoteCard symbol={symbol} />
           <PriceChart symbol={symbol} />
