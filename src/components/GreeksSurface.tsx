@@ -10,9 +10,11 @@ type ViewState = "loading" | "error" | "empty" | "ok";
 
 const METRICS: { key: SurfaceMetric; label: string }[] = [
   { key: "gex", label: "GEX (γ$)" },
+  { key: "dex", label: "DEX (Δ$)" },
   { key: "vanna", label: "Vanna" },
   { key: "charm", label: "Charm" },
-  { key: "oi", label: "Open interest" },
+  { key: "oi", label: "Open int." },
+  { key: "volume", label: "Volume" },
   { key: "iv", label: "Implied vol" },
 ];
 
@@ -48,9 +50,17 @@ function colorFor(h: number, signed: boolean): string {
 }
 
 function fmtVal(v: number, metric: SurfaceMetric): string {
-  if (metric === "oi") return Math.round(v).toLocaleString();
+  if (metric === "oi" || metric === "volume") return Math.round(v).toLocaleString();
   if (metric === "iv") return `${(v * 100).toFixed(1)}%`;
   return fmtUsd(v);
+}
+
+/** Scale an "rgb(r,g,b)" string by a brightness factor (for pseudo-lighting on the surface). */
+function shade(rgb: string, f: number): string {
+  const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(rgb);
+  if (!m) return rgb;
+  const s = (x: number) => Math.max(0, Math.min(255, Math.round(x * f)));
+  return `rgb(${s(+m[1])},${s(+m[2])},${s(+m[3])})`;
 }
 
 export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
@@ -151,10 +161,14 @@ export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: s
         const p11 = project(i + 1, j + 1, hOf(c11));
         const p01 = project(i, j + 1, hOf(c01));
         const avg = (c00 + c10 + c11 + c01) / 4;
+        const depthAvg = (p00.depth + p10.depth + p11.depth + p01.depth) / 4;
+        const hA = hOf(avg);
+        // pseudo-lighting: taller cells brighter, far (deeper) cells dimmer
+        const lightF = Math.max(0.6, Math.min(1.2, (0.84 + 0.3 * Math.abs(hA)) * (1 - 0.13 * ((depthAvg + 1.4) / 2.8))));
         quads.push({
           path: `M${p00.x},${p00.y} L${p10.x},${p10.y} L${p11.x},${p11.y} L${p01.x},${p01.y} Z`,
-          fill: colorFor(hOf(avg), surface.signed),
-          depth: (p00.depth + p10.depth + p11.depth + p01.depth) / 4,
+          fill: shade(colorFor(hA, surface.signed), lightF),
+          depth: depthAvg,
         });
       }
     }
@@ -271,12 +285,21 @@ export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: s
               onPointerUp={onUp}
               onPointerLeave={onUp}
             >
+              <defs>
+                <filter id="ridgeGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="3" result="b" />
+                  <feMerge>
+                    <feMergeNode in="b" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
               <path d={render.basePath} fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
               {render.quads.map((q, i) => (
-                <path key={i} d={q.path} fill={q.fill} stroke="rgba(255,255,255,0.06)" strokeWidth={0.5} />
+                <path key={i} d={q.path} fill={q.fill} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
               ))}
-              {render.expRidge && <path d={render.expRidge} fill="none" stroke="#34d399" strokeWidth={2.4} />}
-              {render.ridge && <path d={render.ridge} fill="none" stroke="#e5e5e5" strokeWidth={1.6} strokeDasharray="3 3" />}
+              {render.expRidge && <path d={render.expRidge} fill="none" stroke="#34d399" strokeWidth={2.6} filter="url(#ridgeGlow)" />}
+              {render.ridge && <path d={render.ridge} fill="none" stroke="#f5f5f5" strokeWidth={1.6} strokeDasharray="3 3" />}
               {render.strikeLabels.map((l) => (
                 <text key={`s${l.s}`} x={l.x} y={l.y + 14} fontSize={9} fill="#9ca3af" textAnchor="middle">
                   {l.s}

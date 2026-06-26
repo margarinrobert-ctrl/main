@@ -168,6 +168,8 @@ describe("analytics", () => {
     expect(surf.z[0]).toEqual([300, 400]); // front expiry OI row
     expect(surf.signed).toBe(false);
     expect(greekSurface(chain, 100, "gex").signed).toBe(true);
+    expect(greekSurface(chain, 100, "dex").signed).toBe(true); // delta exposure is signed
+    expect(greekSurface(chain, 100, "volume").signed).toBe(false); // volume is magnitude-only
   });
 
   it("filters a chain by expiration (ALL / empty = passthrough)", () => {

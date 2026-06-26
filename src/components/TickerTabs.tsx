@@ -38,6 +38,7 @@ import { SignalBoard } from "./SignalBoard";
 import { SkewChart } from "./SkewChart";
 import { VannaCharmProfile } from "./VannaCharmProfile";
 import { VolEdge } from "./VolEdge";
+import { VolSmile } from "./VolSmile";
 
 const TABS = [
   "Overview",
@@ -55,6 +56,7 @@ const TABS = [
   "OI",
   "Dark Pool",
   "Skew",
+  "Smile",
   "Vol Edge",
   "Harvest",
   "Anomaly",
@@ -69,7 +71,7 @@ const GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: "Overview", tabs: ["Overview", "Signals", "MM Hedge", "Playbook"] },
   { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
   { label: "Dark pool", tabs: ["Dark Pool"] },
-  { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Vol Edge"] },
+  { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Vol Edge"] },
   { label: "Flow / Intel", tabs: ["Chain", "Anomaly", "Harvest", "Intel", "History", "Pine"] },
 ];
 
@@ -244,6 +246,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "OI" && <OiProfile symbol={symbol} exp={validExp} />}
       {tab === "Dark Pool" && <DarkPool symbol={symbol} />}
       {tab === "Skew" && <SkewChart symbol={symbol} exp={validExp} />}
+      {tab === "Smile" && <VolSmile symbol={symbol} exp={validExp} />}
       {tab === "Vol Edge" && <VolEdge symbol={symbol} />}
       {tab === "Harvest" && <HarvestPanel symbol={symbol} exp={validExp} />}
       {tab === "Anomaly" && (

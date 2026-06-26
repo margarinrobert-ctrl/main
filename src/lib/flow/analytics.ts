@@ -484,7 +484,7 @@ export function flipFromProfile(profile: ProfilePoint[]): number | null {
   return null;
 }
 
-export type SurfaceMetric = "gex" | "vanna" | "charm" | "oi" | "iv";
+export type SurfaceMetric = "gex" | "dex" | "vanna" | "charm" | "oi" | "volume" | "iv";
 
 export interface GreekSurface {
   metric: SurfaceMetric;
@@ -498,6 +498,7 @@ function surfaceCell(chain: OptionContract[], spot: number | null, exp: string, 
   const opts = chain.filter((c) => c.expiration === exp && c.strike === strike);
   if (!opts.length) return 0;
   if (metric === "oi") return opts.reduce((s, c) => s + (c.openInterest ?? 0), 0);
+  if (metric === "volume") return opts.reduce((s, c) => s + (c.volume ?? 0), 0);
   if (metric === "iv") {
     const ivs = opts.filter((c) => c.impliedVolatility != null && c.impliedVolatility > 0).map((c) => c.impliedVolatility as number);
     return ivs.length ? ivs.reduce((a, b) => a + b, 0) / ivs.length : 0;
@@ -510,6 +511,10 @@ function surfaceCell(chain: OptionContract[], spot: number | null, exp: string, 
     if (metric === "gex") {
       if (c.gamma == null) continue;
       v += sign * c.gamma * c.openInterest * CONTRACT * spot * spot * 0.01;
+      continue;
+    }
+    if (metric === "dex") {
+      if (c.delta != null) v += c.delta * c.openInterest * CONTRACT * spot; // calls + / puts − (natural sign)
       continue;
     }
     if (c.impliedVolatility == null || c.impliedVolatility <= 0) continue;
@@ -552,7 +557,7 @@ export function greekSurface(chain: OptionContract[], spot: number | null, metri
     strikes = strikes.slice(start, start + maxStrikes);
   }
 
-  const signed = metric === "gex" || metric === "vanna" || metric === "charm";
+  const signed = metric === "gex" || metric === "dex" || metric === "vanna" || metric === "charm";
   const z = expirations.map(({ label }) => strikes.map((k) => surfaceCell(chain, spot, label, k, metric)));
   return { metric, strikes, expirations, z, signed };
 }
