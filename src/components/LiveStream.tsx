@@ -1,9 +1,10 @@
 "use client";
 
-// Bloomberg Television 24/7 live (YouTube channel live-embed). Bloomberg's own player isn't
-// embeddable, so this uses its public YouTube channel feed.
-const BLOOMBERG_CHANNEL = "UCIALMKvObZNtJ6AmdCLP7Lg";
-const EMBED = `https://www.youtube.com/embed/live_stream?channel=${BLOOMBERG_CHANNEL}&autoplay=1&mute=1`;
+// Bloomberg Television live on YouTube. Channel-live embeds are unreliable ("video unavailable"),
+// so we pin the live video id (override via NEXT_PUBLIC_LIVE_VIDEO_ID if the stream rotates).
+// youtube-nocookie + modestbranding + a top mask keep the YouTube chrome out of sight.
+const VIDEO_ID = process.env.NEXT_PUBLIC_LIVE_VIDEO_ID || "QB5BNdBFujE";
+const EMBED = `https://www.youtube-nocookie.com/embed/${VIDEO_ID}?autoplay=1&mute=1&playsinline=1&modestbranding=1&rel=0&iv_load_policy=3&color=white`;
 
 export function LiveStream() {
   return (
@@ -23,8 +24,10 @@ export function LiveStream() {
           allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
           allowFullScreen
         />
+        {/* mask the YouTube title/avatar strip so it reads as a native Bloomberg feed */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-black via-black/70 to-transparent" />
       </div>
-      <p className="mt-2 font-mono text-[11px] text-neutral-600">Bloomberg TV live — if the screen is dark the channel is briefly off-air between live segments.</p>
+      <p className="mt-2 font-mono text-[11px] text-neutral-600">Bloomberg TV live · hover for sound &amp; fullscreen.</p>
     </div>
   );
 }
