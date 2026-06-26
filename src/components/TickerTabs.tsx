@@ -24,6 +24,7 @@ import { GreeksSurface } from "./GreeksSurface";
 import { HarvestPanel } from "./HarvestPanel";
 import { IntelLab } from "./IntelLab";
 import { KeyLevels } from "./KeyLevels";
+import { KpiRibbon } from "./KpiRibbon";
 import { LevelsChart } from "./LevelsChart";
 import { MMHedge } from "./MMHedge";
 import { OiProfile } from "./OiProfile";
@@ -62,6 +63,15 @@ const TABS = [
   "Pine",
 ] as const;
 type Tab = (typeof TABS)[number];
+
+// Sidebar navigation groups (GregFlow-style section nav).
+const GROUPS: { label: string; tabs: Tab[] }[] = [
+  { label: "Overview", tabs: ["Overview", "Signals", "MM Hedge", "Playbook"] },
+  { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
+  { label: "Dark pool", tabs: ["Dark Pool"] },
+  { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Vol Edge"] },
+  { label: "Flow / Intel", tabs: ["Chain", "Anomaly", "Harvest", "Intel", "History", "Pine"] },
+];
 
 interface ExpOption {
   value: string;
@@ -157,53 +167,62 @@ export function TickerTabs({ symbol }: { symbol: string }) {
   const scoped = validExp !== "ALL";
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <DataStatus symbol={symbol} />
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/[0.03] p-1 backdrop-blur">
-          <div className="tabs-scroll">
-            {TABS.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                aria-current={tab === t ? "page" : undefined}
-                className={`tab-pill shrink-0 rounded-lg px-3 py-1.5 text-sm transition ${
-                  tab === t
-                    ? "bg-emerald-500/15 font-medium text-emerald-300 shadow-[0_0_14px_-3px_rgba(16,185,129,0.6)]"
-                    : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
-                }`}
+      <KpiRibbon symbol={symbol} />
+      <div className="flex flex-col gap-4 lg:flex-row">
+        {/* GregFlow-style section sidebar */}
+        <aside className="lg:w-44 lg:shrink-0">
+          <div className="glass p-2 lg:sticky lg:top-16">
+            <label className="mb-2 block">
+              <span className="lbl px-1">Expiration</span>
+              <select
+                value={validExp}
+                onChange={(e) => setExp(e.target.value)}
+                className="mt-1 w-full rounded border border-white/10 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 outline-none"
               >
-                {t}
-              </button>
-            ))}
+                {expOptions.map((o) => (
+                  <option key={o.value} value={o.value} className="bg-neutral-900">
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <nav className="space-y-2">
+              {GROUPS.map((g) => (
+                <div key={g.label}>
+                  <div className="lbl px-2 pb-1">{g.label}</div>
+                  <div className="flex flex-col">
+                    {g.tabs.map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setTab(t)}
+                        aria-current={tab === t ? "page" : undefined}
+                        className={`rounded px-2 py-1 text-left text-xs transition ${
+                          tab === t ? "border-l-2 border-l-emerald-400 bg-emerald-500/10 font-medium text-emerald-300" : "border-l-2 border-l-transparent text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </nav>
           </div>
-        </div>
-        <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs backdrop-blur">
-          <span className="uppercase tracking-wide text-neutral-500">Expiration</span>
-          <select
-            value={validExp}
-            onChange={(e) => setExp(e.target.value)}
-            className="rounded border border-white/10 bg-neutral-900 px-2 py-1 text-neutral-100 outline-none"
-          >
-            {expOptions.map((o) => (
-              <option key={o.value} value={o.value} className="bg-neutral-900">
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+        </aside>
 
-      {scoped && (
-        <p className="-mt-2 text-[11px] text-neutral-500">
-          Scoped to <span className="text-emerald-300">{expOptions.find((o) => o.value === validExp)?.label}</span> —{" "}
-          {AXIS_TABS.has(tab)
-            ? "this view spans expirations, so the selection is highlighted, not filtered."
-            : "levels, gamma & greeks are computed for this expiration only."}
-        </p>
-      )}
+        <main className="min-w-0 flex-1 space-y-4">
+          {scoped && (
+            <p className="text-[11px] text-neutral-500">
+              Scoped to <span className="text-emerald-300">{expOptions.find((o) => o.value === validExp)?.label}</span> —{" "}
+              {AXIS_TABS.has(tab)
+                ? "this view spans expirations, so the selection is highlighted, not filtered."
+                : "levels, gamma & greeks are computed for this expiration only."}
+            </p>
+          )}
 
-      {tab === "Overview" && (
+          {tab === "Overview" && (
         <div className="space-y-4">
           <EdgeOptimizer symbol={symbol} />
           <KeyLevels symbol={symbol} exp={validExp} />
@@ -237,6 +256,8 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Intel" && <IntelLab symbol={symbol} />}
       {tab === "History" && <GexHistory symbol={symbol} />}
       {tab === "Pine" && <PineExport symbol={symbol} exp={validExp} />}
+        </main>
+      </div>
     </div>
   );
 }

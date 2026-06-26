@@ -23,8 +23,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/60" />
                 <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_12px_2px_rgba(16,185,129,0.7)]" />
               </span>
-              <span className="text-lg font-semibold">
-                Options<span className="glow-text">Flow</span>
+              <span className="brand text-lg text-neutral-50">
+                OPTIONS<span className="glow-text">FLOW</span>
               </span>
             </a>
             <nav className="hidden items-center gap-0.5 sm:flex">
@@ -32,7 +32,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <a
                   key={s}
                   href={withBase(`/ticker/${s}`)}
-                  className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-neutral-400 transition hover:bg-white/5 hover:text-neutral-100"
+                  className="rounded px-2.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400 transition hover:bg-white/5 hover:text-neutral-100"
                 >
                   {s}
                 </a>

@@ -84,7 +84,7 @@ export function DexProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
         <>
           <div style={{ height }} className="w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} layout="vertical" margin={{ top: 8, right: 44, left: 8, bottom: 8 }} barCategoryGap={1}>
+              <BarChart data={data} layout="vertical" stackOffset="sign" margin={{ top: 8, right: 44, left: 8, bottom: 8 }} barCategoryGap={1}>
                 <XAxis
                   type="number"
                   tickFormatter={(v) => fmtUsd(Number(v))}
@@ -120,12 +120,12 @@ export function DexProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
                 )}
                 <Bar dataKey="callDex" stackId="dex" radius={[0, 3, 3, 0]} isAnimationActive={false}>
                   {data.map((d) => (
-                    <Cell key={`c-${d.strike}`} fill="#10b981" />
+                    <Cell key={`c-${d.strike}`} fill="#2f9e5f" />
                   ))}
                 </Bar>
                 <Bar dataKey="putDex" stackId="dex" radius={[3, 0, 0, 3]} isAnimationActive={false}>
                   {data.map((d) => (
-                    <Cell key={`p-${d.strike}`} fill="#ef4444" />
+                    <Cell key={`p-${d.strike}`} fill="#b4493d" />
                   ))}
                 </Bar>
               </BarChart>

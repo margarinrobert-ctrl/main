@@ -4,6 +4,11 @@
 
 :root {
   color-scheme: dark;
+  --bg: #08090c;
+  --panel: rgba(255, 255, 255, 0.022);
+  --border: rgba(255, 255, 255, 0.07);
+  --call: #2f9e5f;
+  --put: #b4493d;
 }
 
 html,
@@ -12,28 +17,11 @@ body {
 }
 
 body {
-  @apply text-neutral-100 antialiased;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background:
-    radial-gradient(1100px 560px at 12% -12%, rgba(16, 185, 129, 0.12), transparent 60%),
-    radial-gradient(1000px 520px at 112% 8%, rgba(34, 211, 238, 0.10), transparent 55%),
-    #05070a;
-  background-attachment: fixed;
-}
-
-/* faint grid that fades out toward the bottom */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-  background-size: 42px 42px;
-  -webkit-mask-image: radial-gradient(ellipse at 50% -10%, black, transparent 75%);
-  mask-image: radial-gradient(ellipse at 50% -10%, black, transparent 75%);
-  pointer-events: none;
-  z-index: 0;
+  @apply text-neutral-200 antialiased;
+  /* Terminal-style monospace stack for the whole data UI */
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
+  font-feature-settings: "tnum" 1; /* tabular figures so numbers align */
+  background: var(--bg);
 }
 
 header,
@@ -42,83 +30,46 @@ main {
   z-index: 1;
 }
 
-/* glassmorphism panel */
+/* Flat terminal panel (kept class name `glass` so existing components restyle in place) */
 .glass {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 0.9rem;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
-    0 16px 40px -24px rgba(0, 0, 0, 0.8);
-  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.glass-hover {
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 .glass-hover:hover {
-  border-color: rgba(16, 185, 129, 0.45);
-  box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
-    0 0 0 1px rgba(16, 185, 129, 0.15),
-    0 24px 50px -24px rgba(16, 185, 129, 0.25);
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+/* Micro uppercase label (the GregFlow ribbon/section style) */
+.lbl {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  line-height: 1.2;
+  color: #6b7280;
+}
+
+/* Bold display brand */
+.brand {
+  font-family: ui-serif, Georgia, "Times New Roman", serif;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+/* call / put semantic colors */
+.text-call {
+  color: #4cc38a;
+}
+.text-put {
+  color: #e2645a;
 }
 
 .glow-text {
-  background: linear-gradient(90deg, #34d399, #22d3ee, #34d399);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: glow-pan 6s linear infinite;
-}
-@keyframes glow-pan {
-  to {
-    background-position: 200% 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .glow-text {
-    animation: none;
-  }
-}
-
-/* custom scrollbar */
-*::-webkit-scrollbar {
-  height: 10px;
-  width: 10px;
-}
-*::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 9px;
-}
-*::-webkit-scrollbar-thumb:hover {
-  background: rgba(16, 185, 129, 0.45);
-}
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::selection {
-  background: rgba(16, 185, 129, 0.32);
-}
-
-/* ── Design system additions ─────────────────────────────────────────────── */
-
-/* Tighter, more intentional headings */
-h1 {
-  letter-spacing: -0.022em;
-}
-h2,
-h3 {
-  letter-spacing: -0.012em;
-}
-
-/* Visible, on-brand keyboard focus (accessibility + polish) */
-:where(a, button, [role="button"], [tabindex], input, select, textarea):focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 2px rgba(5, 7, 10, 1),
-    0 0 0 4px rgba(16, 185, 129, 0.6);
-  border-radius: 0.5rem;
+  color: #4cc38a; /* flat accent — terminal look, no animation */
 }
 
 /* Subtle staggered entrance for page sections */
@@ -133,7 +84,7 @@ h3 {
   }
 }
 .fade-up {
-  animation: fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 @media (prefers-reduced-motion: reduce) {
   .fade-up {
@@ -143,11 +94,10 @@ h3 {
 
 /* Shimmer skeletons for loading states */
 .skeleton {
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.09) 37%, rgba(255, 255, 255, 0.04) 63%);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.09) 37%, rgba(255, 255, 255, 0.04) 63%);
   background-size: 400% 100%;
   animation: shimmer 1.4s ease infinite;
-  border-radius: 0.5rem;
+  border-radius: 6px;
 }
 @keyframes shimmer {
   to {
@@ -160,13 +110,19 @@ h3 {
   }
 }
 
-/* Single-line, horizontally scrollable tab strip with faded edges */
+/* Visible, on-brand keyboard focus */
+:where(a, button, [role="button"], [tabindex], input, select, textarea):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px rgba(47, 158, 95, 0.6);
+  border-radius: 4px;
+}
+
+/* Single-line, horizontally scrollable strip with faded edges (used by ribbons & any tab rows) */
 .tabs-scroll {
   display: flex;
   gap: 0.25rem;
   overflow-x: auto;
   scrollbar-width: none;
-  scroll-snap-type: x proximity;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent);
   mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent);
 }
@@ -174,12 +130,29 @@ h3 {
   display: none;
 }
 .tab-pill {
-  scroll-snap-align: start;
   white-space: nowrap;
 }
 
-/* Thinner, calmer scrollbars */
+h1 {
+  letter-spacing: -0.01em;
+}
+
+/* Thin terminal scrollbars */
 *::-webkit-scrollbar {
   height: 8px;
   width: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(47, 158, 95, 0.5);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::selection {
+  background: rgba(47, 158, 95, 0.32);
 }
