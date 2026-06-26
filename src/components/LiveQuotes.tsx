@@ -35,8 +35,8 @@ export function LiveQuotes() {
   }, []);
 
   return (
-    <div className="glass p-3">
-      <div className="lbl mb-2">Watchlist · live</div>
+    <div className="border border-[#ffa028]/30 bg-black p-3 font-mono">
+      <div className="mb-2 text-[10px] uppercase tracking-[0.08em] text-[#ffa028]">Watchlist · live</div>
       <div className="grid grid-cols-2 gap-2">
         {SYMBOLS.map((s) => {
           const q = quotes[s];
@@ -46,10 +46,10 @@ export function LiveQuotes() {
             <a
               key={s}
               href={withBase(`/ticker/${s}`)}
-              className="glass-hover rounded border border-white/10 px-3 py-2 transition"
+              className="rounded border border-[#ffa028]/15 bg-white/[0.02] px-3 py-2 transition hover:border-[#ffa028]/40"
             >
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-neutral-100">{s}</span>
+                <span className="text-sm font-semibold text-[#ffa028]">{s}</span>
                 <span className={`font-mono text-[11px] ${chg == null ? "text-neutral-500" : up ? "text-call" : "text-put"}`}>
                   {chg != null ? `${up ? "▲" : "▼"} ${Math.abs(chg).toFixed(2)}%` : "—"}
                 </span>

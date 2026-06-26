@@ -45,7 +45,7 @@ export function TickerTape() {
 
   const item = (q: Q, key: string) => (
     <a key={key} href={withBase(`/ticker/${q.sym}`)} className="mx-4 inline-flex items-center gap-1.5 align-middle hover:opacity-80">
-      <span className="font-semibold text-neutral-100">{q.sym}</span>
+      <span className="font-semibold text-[#ffa028]">{q.sym}</span>
       <span className="font-mono text-neutral-300">{q.last != null ? q.last.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</span>
       <span className={`font-mono ${(q.chg ?? 0) >= 0 ? "text-call" : "text-put"}`}>
         {q.chg != null ? `${q.chg >= 0 ? "▲" : "▼"} ${Math.abs(q.chg).toFixed(2)}%` : ""}
@@ -55,7 +55,7 @@ export function TickerTape() {
   );
 
   return (
-    <div className="glass overflow-hidden py-1.5 text-xs">
+    <div className="overflow-hidden border border-[#ffa028]/30 bg-black py-1.5 font-mono text-xs">
       <div className="flex w-max animate-marquee whitespace-nowrap">
         <div className="flex">{qs.map((q) => item(q, `a-${q.sym}`))}</div>
         <div className="flex" aria-hidden>
