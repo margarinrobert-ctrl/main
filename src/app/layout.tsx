@@ -28,6 +28,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               </span>
             </a>
             <nav className="hidden items-center gap-0.5 sm:flex">
+              <a
+                href={withBase("/live")}
+                className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-semibold uppercase tracking-wider text-red-300 transition hover:bg-white/5"
+              >
+                <span className="relative inline-flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500/70" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-500" />
+                </span>
+                Live
+              </a>
               {NAV.map((s) => (
                 <a
                   key={s}
