@@ -5,8 +5,8 @@ import { config } from "@/lib/barchart/config";
 import { withBase } from "@/lib/paths";
 
 export const metadata: Metadata = {
-  title: "OptionsFlow — GEX, delta walls & dark-pool analytics",
-  description: "Unusual options activity, dealer gamma/delta positioning, dark-pool flow & quant analytics",
+  title: "OptionsFlow — GEX, delta walls & dealer analytics",
+  description: "Unusual options activity, dealer gamma/delta positioning & quant analytics",
 };
 
 const NAV = ["SPY", "QQQ", "NVDA", "TSLA"];
@@ -52,9 +52,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <main className="fade-up mx-auto w-full max-w-7xl flex-1 px-5 py-6 sm:px-6">{children}</main>
         <footer className="mx-auto w-full max-w-7xl px-5 pb-8 pt-4 sm:px-6">
           <div className="border-t border-white/5 pt-4 text-[11px] leading-relaxed text-neutral-600">
-            <span className="text-neutral-400">OptionsFlow</span> — educational options-flow, dealer-gamma &amp; dark-pool
-            analytics. Data is delayed (CBOE ~15-min options, FINRA T+1 off-exchange) and synthesized for research. Not
-            financial advice.
+            <span className="text-neutral-400">OptionsFlow</span> — educational options-flow &amp; dealer-gamma analytics.
+            Data is delayed (CBOE ~15-min options) and synthesized for research. Not financial advice.
           </div>
         </footer>
       </body>

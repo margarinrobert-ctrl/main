@@ -6,9 +6,7 @@ import { loadChain, loadHistory } from "@/lib/client-data";
 import { filterByExpiration } from "@/lib/flow/analytics";
 import { anomalyIntel, type Band } from "@/lib/flow/anomalyPro";
 import { readHistory, type GexSample } from "@/lib/gex-history";
-import { EdgeBadge } from "./EdgeBadge";
 import { EmptyState, ErrorState, Loading } from "./states";
-import { useLearnedProfile } from "./useLearnedProfile";
 
 type ViewState = "loading" | "error" | "ok";
 
@@ -95,7 +93,6 @@ export function AnomalyIntel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
 
   const scoped = useMemo(() => filterByExpiration(chain, exp), [chain, exp]);
   const r = useMemo(() => anomalyIntel(symbol, scoped, spot, bars, samples), [symbol, scoped, spot, bars, samples]);
-  const profile = useLearnedProfile();
 
   const copyJson = async () => {
     try {
@@ -117,12 +114,9 @@ export function AnomalyIntel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
             {r.source === "intraday" ? "intraday session series" : r.source === "daily" ? "daily history" : "awaiting data"} · src: {source || "—"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <EdgeBadge profile={profile} source="anomaly" confidence={r.confidence} />
-          <span className={`rounded-full border px-3 py-1 text-sm font-medium ${bandTone[r.band]}`}>
-            {r.band.toUpperCase()} · {r.strength}/100
-          </span>
-        </div>
+        <span className={`rounded-full border px-3 py-1 text-sm font-medium ${bandTone[r.band]}`}>
+          {r.band.toUpperCase()} · {r.strength}/100
+        </span>
       </div>
 
       {state === "loading" && <Loading label="Computing anomaly intelligence…" />}

@@ -11,7 +11,7 @@ const FOCUS = [
   { sym: "AAPL", label: "Apple" },
 ];
 
-const CAPS = ["Signals", "Dealer GEX", "Delta walls", "Dark pool", "Vanna/Charm", "3D surface", "Premium Harvest", "Pine export"];
+const CAPS = ["Signals", "Dealer GEX", "Delta walls", "Vol smile", "Vanna/Charm", "3D surface", "Premium Harvest", "Pine export"];
 
 export default function Home() {
   return (

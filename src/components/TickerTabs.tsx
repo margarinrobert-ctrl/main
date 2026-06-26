@@ -10,10 +10,8 @@ import { buildSignals } from "@/lib/flow/signals";
 import { mmHedge } from "@/lib/flow/mmhedge";
 import { appendSample } from "@/lib/gex-history";
 import { collectAndResolve } from "@/lib/intel/journal";
-import { DarkPool } from "./DarkPool";
 import { DataStatus } from "./DataStatus";
 import { DexProfile } from "./DexProfile";
-import { EdgeOptimizer } from "./EdgeOptimizer";
 import { GammaProfile } from "./GammaProfile";
 import { AnomalyIntel } from "./AnomalyIntel";
 import { AnomalyLive } from "./AnomalyLive";
@@ -22,7 +20,6 @@ import { GexHistory } from "./GexHistory";
 import { GexTerm } from "./GexTerm";
 import { GreeksSurface } from "./GreeksSurface";
 import { HarvestPanel } from "./HarvestPanel";
-import { IntelLab } from "./IntelLab";
 import { KeyLevels } from "./KeyLevels";
 import { KpiRibbon } from "./KpiRibbon";
 import { LevelsChart } from "./LevelsChart";
@@ -54,13 +51,11 @@ const TABS = [
   "3D",
   "Term",
   "OI",
-  "Dark Pool",
   "Skew",
   "Smile",
   "Vol Edge",
   "Harvest",
   "Anomaly",
-  "Intel",
   "History",
   "Pine",
 ] as const;
@@ -70,9 +65,8 @@ type Tab = (typeof TABS)[number];
 const GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: "Overview", tabs: ["Overview", "Signals", "MM Hedge", "Playbook"] },
   { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
-  { label: "Dark pool", tabs: ["Dark Pool"] },
   { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Vol Edge"] },
-  { label: "Flow / Intel", tabs: ["Chain", "Anomaly", "Harvest", "Intel", "History", "Pine"] },
+  { label: "Flow", tabs: ["Chain", "Anomaly", "Harvest", "History", "Pine"] },
 ];
 
 interface ExpOption {
@@ -226,7 +220,6 @@ export function TickerTabs({ symbol }: { symbol: string }) {
 
           {tab === "Overview" && (
         <div className="space-y-4">
-          <EdgeOptimizer symbol={symbol} />
           <KeyLevels symbol={symbol} exp={validExp} />
           <QuoteCard symbol={symbol} />
           <PriceChart symbol={symbol} />
@@ -244,7 +237,6 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "3D" && <GreeksSurface symbol={symbol} exp={validExp} />}
       {tab === "Term" && <GexTerm symbol={symbol} exp={validExp} />}
       {tab === "OI" && <OiProfile symbol={symbol} exp={validExp} />}
-      {tab === "Dark Pool" && <DarkPool symbol={symbol} />}
       {tab === "Skew" && <SkewChart symbol={symbol} exp={validExp} />}
       {tab === "Smile" && <VolSmile symbol={symbol} exp={validExp} />}
       {tab === "Vol Edge" && <VolEdge symbol={symbol} />}
@@ -256,7 +248,6 @@ export function TickerTabs({ symbol }: { symbol: string }) {
           <AnomalyScan symbol={symbol} />
         </div>
       )}
-      {tab === "Intel" && <IntelLab symbol={symbol} />}
       {tab === "History" && <GexHistory symbol={symbol} />}
       {tab === "Pine" && <PineExport symbol={symbol} exp={validExp} />}
         </main>
