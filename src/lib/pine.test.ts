@@ -59,7 +59,6 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("0DTE");
     expect(r.code).toContain("OI "); // open-interest annotation
     expect(r.code).toContain("DEX "); // delta-exposure annotation
-    expect(r.code).toContain("~15-min delayed"); // freshness note
     expect(r.code).toContain("does NOT auto-update"); // static-snapshot warning
     expect(r.code).toContain("Exp Hi"); // expected-move (today's range) label
     expect(r.code).toContain("Convert levels to this chart"); // ES/NQ converter

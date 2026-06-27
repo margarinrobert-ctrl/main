@@ -10,7 +10,6 @@ import { buildSignals } from "@/lib/flow/signals";
 import { mmHedge } from "@/lib/flow/mmhedge";
 import { appendSample } from "@/lib/gex-history";
 import { collectAndResolve } from "@/lib/intel/journal";
-import { DataStatus } from "./DataStatus";
 import { DexProfile } from "./DexProfile";
 import { GammaProfile } from "./GammaProfile";
 import { AnomalyIntel } from "./AnomalyIntel";
@@ -166,7 +165,6 @@ export function TickerTabs({ symbol }: { symbol: string }) {
 
   return (
     <div className="space-y-3">
-      <DataStatus symbol={symbol} />
       <KpiRibbon symbol={symbol} />
       <div className="flex flex-col gap-4 lg:flex-row">
         {/* GregFlow-style section sidebar */}

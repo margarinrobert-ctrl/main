@@ -51,7 +51,7 @@ export function Playbook({ symbol, exp = "ALL" }: { symbol: string; exp?: string
     <div className="glass p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Intraday Playbook · {symbol}</h2>
-        <span className="text-xs text-neutral-500">scalping bias from dealer gamma · src: {source}</span>
+        <span className="text-xs text-neutral-500">scalping bias from dealer gamma</span>
       </div>
 
       {state === "loading" && <Loading label="Reading the tape…" />}

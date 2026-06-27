@@ -111,7 +111,7 @@ export function AnomalyIntel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
           <h2 className="font-semibold">Anomaly Intelligence · {symbol}</h2>
           <p className="text-xs text-neutral-500">
             ensemble detection · dealer-gamma classification · targets &amp; time-forecast ·{" "}
-            {r.source === "intraday" ? "intraday session series" : r.source === "daily" ? "daily history" : "awaiting data"} · src: {source || "—"}
+            {r.source === "intraday" ? "intraday session series" : r.source === "daily" ? "daily history" : "awaiting data"}
           </p>
         </div>
         <span className={`rounded-full border px-3 py-1 text-sm font-medium ${bandTone[r.band]}`}>

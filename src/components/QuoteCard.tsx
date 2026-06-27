@@ -69,10 +69,7 @@ export function QuoteCard({ symbol }: { symbol: string }) {
           <div className="mt-2 text-xs text-neutral-400">
             {quote.name ?? ""} · vol {quote.volume?.toLocaleString() ?? "—"}
           </div>
-          <div className="mt-1 text-xs text-neutral-500">
-            {quote.delayed === true ? "Delayed" : quote.delayed === false ? "Real-time" : "Timeliness unknown"}
-            {quote.tradeTimestamp ? ` · ${quote.tradeTimestamp}` : ""} · src: {source}
-          </div>
+          {quote.tradeTimestamp && <div className="mt-1 text-xs text-neutral-500">{quote.tradeTimestamp}</div>}
         </div>
       )}
     </div>

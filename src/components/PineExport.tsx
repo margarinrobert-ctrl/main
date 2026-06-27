@@ -61,7 +61,7 @@ export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">TradingView Pine · {symbol}</h2>
         <span className="text-xs text-neutral-500">
-          {result?.expiration ? `exp ${result.expiration} · ${result.strikes} strikes · ` : ""}src: {source}
+          {result?.expiration ? `exp ${result.expiration} · ${result.strikes} strikes` : ""}
         </span>
       </div>
 
@@ -96,7 +96,7 @@ export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
           </pre>
           <p className="mt-2 text-[11px] text-neutral-500">
             Labels are short — <b>hover any label</b> for its full OI / Volume / GEX / DEX, and levels that sit close
-            together auto-stagger so they never overlap. Values are a <b>~15-min delayed snapshot</b> baked at generate
+            together auto-stagger so they never overlap. Values are a <b>snapshot</b> baked at generate
             time (TradingView has no API to push live data), so hit <b>Re-generate</b> to refresh. To overlay on <b>ES/NQ</b>,
             set the indicator's <b>Convert levels to this chart → Auto</b> — it scales by the live ratio (SPY→ES ~10×,
             QQQ→NQ ~41×), frozen so the levels stay put.

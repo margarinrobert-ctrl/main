@@ -119,7 +119,6 @@ export function OptionsHeatmap({ symbol, exp = "ALL" }: { symbol: string; exp?: 
             <option value="call">calls</option>
             <option value="put">puts</option>
           </select>
-          {source && <span className="text-neutral-500">src: {source}</span>}
         </div>
       </div>
 

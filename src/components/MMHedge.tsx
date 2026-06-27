@@ -119,7 +119,7 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-semibold">Market-Maker Hedging · {symbol}</h2>
-          <p className="text-xs text-neutral-500">trade with dealer hedging pressure at the key levels · src: {source}</p>
+          <p className="text-xs text-neutral-500">trade with dealer hedging pressure at the key levels</p>
         </div>
         <PressureMeter score={r.pressureScore} />
       </div>

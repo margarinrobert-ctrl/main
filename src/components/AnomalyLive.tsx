@@ -123,7 +123,7 @@ export function AnomalyLive({ symbol }: { symbol: string }) {
       )}
 
       <p className="mt-3 text-[11px] text-neutral-500">
-        Live, client-recorded (localStorage) at ~30s cadence while a ticker tab is open — chain is ~15-min delayed CBOE.
+        Live, client-recorded (localStorage) at ~30s cadence while a ticker tab is open.
         Dots mark flagged samples; the lower pane is the rolling anomaly score. Educational — not advice.
       </p>
     </div>

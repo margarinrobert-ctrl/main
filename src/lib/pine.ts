@@ -102,7 +102,7 @@ export interface PineResult {
 
 /**
  * Generate a TradingView Pine v6 indicator with named GEX levels (MenthorQ-style). Levels are a
- * baked, ~15-min-delayed snapshot. Labels are short (full OI/Vol/GEX/DEX detail is on hover) and the
+ * baked snapshot. Labels are short (full OI/Vol/GEX/DEX detail is on hover) and the
  * indicator auto-staggers labels that sit close together so they never overlap.
  */
 export function buildGexPine(
@@ -168,7 +168,7 @@ export function buildGexPine(
   add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, `Put OI wall - ${meta(chain, putOi, spot)}`);
   add(dCallWall, "Delta Call Wall", "color.maroon", "line.style_solid", 2, `Delta Call Wall (heaviest call delta-exposure above spot = hedgeable-delta resistance) - ${meta(chain, dCallWall, spot)}`);
   add(dPutWall, "Delta Put Wall", "color.lime", "line.style_solid", 2, `Delta Put Wall (heaviest put delta-exposure below spot = hedgeable-delta support) - ${meta(chain, dPutWall, spot)}`);
-  add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated${feedAsOf ? ` (CBOE ${feedAsOf})` : " (~15-min delayed)"} — levels are anchored here; the chart's current price may have moved since.`);
+  add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated — levels are anchored here; the chart's current price may have moved since.`);
   add(dmax, `Exp Hi ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move HIGH for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
   add(dmin, `Exp Lo ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move LOW for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
   ladder.forEach((x, i) => {
@@ -229,8 +229,8 @@ export function buildGexPine(
 // OptionsFlow — GEX levels for ${symbol}  (front/target exp ${exp ?? "n/a"}${dteLabel ? ", " + dteLabel : ""})
 // Built for the ${symbol} chart (spot ~${spot != null ? fmtNice(spot) : "n/a"}). To overlay on ES/NQ, use the
 // "Convert levels to this chart" input below (Auto = accurate live-ratio scaling).
-// STATIC SNAPSHOT: a Pine script cannot fetch data, so this does NOT auto-update. Values are CBOE
-// ${feedAsOf ?? "(time n/a)"} (~15-min delayed), generated ${asOf} UTC — RE-GENERATE & re-paste for fresh levels.
+// STATIC SNAPSHOT: a Pine script cannot fetch data, so this does NOT auto-update.
+// Generated ${asOf} UTC — RE-GENERATE & re-paste for fresh levels.
 // Short labels show the on-chart price; hover for full OI/Volume/GEX/DEX. Close levels auto-stagger.${convertNote}
 indicator("OptionsFlow GEX • ${symbol}", overlay = true, max_lines_count = 200, max_labels_count = 200)
 

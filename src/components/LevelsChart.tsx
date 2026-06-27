@@ -182,7 +182,6 @@ export function LevelsChart({ symbol }: { symbol: string }) {
               {t.label}
             </button>
           ))}
-          {source && <span className="ml-1 text-neutral-500">src: {source}</span>}
         </div>
       </div>
 
@@ -204,7 +203,7 @@ export function LevelsChart({ symbol }: { symbol: string }) {
         ))}
       </div>
       <p className="mt-2 text-[11px] text-neutral-500">
-        Candles: Yahoo ({tf.label}); GEX levels: CBOE ~15-min chain — both live, synced. Levels redraw as the chain updates. Educational — not advice.
+        Levels redraw as the chain updates. Educational — not advice.
       </p>
     </div>
   );

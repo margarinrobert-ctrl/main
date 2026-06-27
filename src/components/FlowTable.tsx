@@ -123,7 +123,7 @@ export function FlowTable() {
     <div>
       <div className="mb-3 rounded border border-neutral-800 p-3">
         <div className="mb-2 text-xs uppercase tracking-wide text-neutral-500">
-          Screener — maps to getOptionsScreener params
+          Screener filters
         </div>
         <div className="flex flex-wrap items-end gap-3 text-sm">
           <NumInput label="min volume" value={serverParams.minVolume} onChange={setParam("minVolume")} />
@@ -183,16 +183,8 @@ export function FlowTable() {
           <button onClick={load} className="rounded bg-neutral-800 px-3 py-1 hover:bg-neutral-700">
             Refresh
           </button>
-          {source && <span className="self-center text-xs text-neutral-500">src: {source}</span>}
         </div>
       </div>
-
-      {source === "fixtures" && (
-        <div className="mb-3 rounded border border-amber-900 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
-          Showing <b>sample</b> data — the live options feed didn&rsquo;t respond from this host (it auto-falls back).
-          Hit Refresh to retry.
-        </div>
-      )}
 
       {state === "loading" && <Loading label="Loading flow…" />}
       {state === "error" && <ErrorState message={error} />}

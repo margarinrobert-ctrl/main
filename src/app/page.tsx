@@ -1,6 +1,5 @@
 import { FlowTable } from "@/components/FlowTable";
 import { Scanner } from "@/components/Scanner";
-import { config } from "@/lib/barchart/config";
 import { withBase } from "@/lib/paths";
 
 const FOCUS = [
@@ -28,10 +27,9 @@ export default function Home() {
             Trade the <span className="glow-text">dealer gamma</span>, harvest the <span className="glow-text">vol premium</span>.
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-neutral-400">
-            Synthesized trade signals across price, volatility &amp; time — GEX positioning, vanna/charm flows, a 3D greeks
+            Composite trade signals across price, volatility &amp; time — GEX positioning, vanna/charm flows, a 3D greeks
             surface, VRP premium-harvesting, a market-maker hedging algo and copy-paste TradingView levels — focused on
             <span className="text-neutral-200"> SPY &amp; QQQ</span>.
-            {config.dataSource !== "live" && " Running in fixtures mode (canned data)."}
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             {CAPS.map((c) => (
@@ -77,8 +75,8 @@ export default function Home() {
         <p>
           Gates: volume ≥ 100 and open interest ≥ 50. Signals (each ramped 0–1, then weighted): vol/OI (0.4),
           volume-vs-average spike (0.2), notional = vol × mid × multiplier (0.3), short-DTE + far-OTM (0.1). Score =
-          weighted average × 100. Thresholds live in <code>src/lib/barchart/config.ts</code>. Click any ticker for its
-          signal board, gamma profile, greeks surface, premium-harvesting and intraday history.
+          weighted average × 100. Click any ticker for its signal board, gamma profile, greeks surface,
+          premium-harvesting and intraday history.
         </p>
       </section>
     </div>

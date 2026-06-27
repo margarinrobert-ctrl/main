@@ -74,7 +74,7 @@ export function VolEdge({ symbol }: { symbol: string }) {
     <div className="glass p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Vol Edge · {symbol}</h2>
-        <span className="text-xs text-neutral-500">volatility risk premium · term structure · skew · src: {source}</span>
+        <span className="text-xs text-neutral-500">volatility risk premium · term structure · skew</span>
       </div>
 
       {state === "loading" && <Loading label="Measuring vol…" />}

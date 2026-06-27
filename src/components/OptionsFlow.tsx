@@ -98,7 +98,7 @@ export function OptionsFlow({ symbol, exp = "ALL" }: { symbol: string; exp?: str
     <div className="glass p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Options Flow · {symbol}</h2>
-        <span className="lbl">{source ? `src: ${source}` : ""}{asOf ? ` · ${asOf}` : ""} · {rows.length} contracts</span>
+        <span className="lbl">{rows.length} contracts</span>
       </div>
 
       {state === "loading" && <Loading label="Loading flow…" />}
@@ -192,11 +192,8 @@ export function OptionsFlow({ symbol, exp = "ALL" }: { symbol: string; exp?: str
           )}
 
           <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
-            Barchart-style flow from the options chain ({source === "fixtures" ? "sample" : source || "live"}). Each row is a
-            contract: <b>Premium</b> = volume × mid × 100 (day&apos;s traded premium), <b>Side</b> = where the last print sits
-            in the bid/ask (AT ASK = aggressive buy → bullish; AT BID → bearish). The true per-print tape (single-trade
-            size/exchange-code/time) needs Barchart&apos;s premium flow feed; set <code>BARCHART_API_KEY</code> to pull the
-            chain straight from Barchart. Delayed data — not financial advice.
+            Each row is a contract: <b>Premium</b> = volume × mid × 100 (day&apos;s traded premium), <b>Side</b> = where the
+            last print sits in the bid/ask (AT ASK = aggressive buy → bullish; AT BID → bearish). Educational — not financial advice.
           </p>
         </>
       )}

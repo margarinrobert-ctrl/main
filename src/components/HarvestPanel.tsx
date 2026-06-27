@@ -140,7 +140,7 @@ export function HarvestPanel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
     <div className="glass p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Premium Harvesting · {symbol}</h2>
-        <span className="text-xs text-neutral-500">volatility risk premium → credit signals · src: {source}</span>
+        <span className="text-xs text-neutral-500">volatility risk premium → credit signals</span>
       </div>
 
       {state === "loading" && <Loading label="Scanning for premium…" />}

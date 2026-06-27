@@ -144,7 +144,6 @@ export function OptionsChain({ symbol, exp = "ALL" }: { symbol: string; exp?: st
             </span>
             <Pill>{strikeCount} strikes</Pill>
             <Pill>{asOf ? `Updated ${asOf.slice(0, 19)}Z` : "sample data"}</Pill>
-            <Pill>src: {source}</Pill>
             <label className="ml-auto flex items-center gap-1 text-xs text-neutral-400">
               <input type="checkbox" checked={showFull} onChange={(e) => setShowFull(e.target.checked)} />
               Show full chain

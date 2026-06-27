@@ -73,7 +73,7 @@ export function AnomalyScan({ symbol }: { symbol: string }) {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-semibold">Performance Anomaly Detection · {symbol}</h2>
-          <p className="text-xs text-neutral-500">statistical outliers vs trailing baseline · {r.sampleDays}d · src: {source}</p>
+          <p className="text-xs text-neutral-500">statistical outliers vs trailing baseline · {r.sampleDays}d</p>
         </div>
         <ScoreMeter score={r.score} />
       </div>

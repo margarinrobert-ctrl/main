@@ -48,8 +48,7 @@ export default function LivePage() {
       </div>
 
       <p className="text-[11px] text-neutral-600">
-        Bloomberg-terminal-styled view. Live news is a third-party stream; quotes are delayed (free feed) and for research
-        only — not affiliated with Bloomberg L.P. Not financial advice.
+        Bloomberg-terminal-styled view. Live news is a third-party stream — not affiliated with Bloomberg L.P. Not financial advice.
       </p>
     </div>
   );

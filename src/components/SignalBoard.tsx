@@ -131,7 +131,7 @@ export function SignalBoard({ symbol, exp = "ALL" }: { symbol: string; exp?: str
         <h2 className="font-semibold">Signal Board · {symbol}</h2>
         <BiasMeter score={board.biasScore} />
         <span className="text-xs text-neutral-500">
-          {board.regime !== "unknown" ? `${board.regime}-γ` : ""} · src: {source}
+          {board.regime !== "unknown" ? `${board.regime}-γ` : ""}
         </span>
       </div>
 

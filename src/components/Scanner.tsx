@@ -115,7 +115,6 @@ export function Scanner() {
           <button onClick={scan} className="rounded bg-white/5 px-3 py-1 text-neutral-200 hover:bg-white/10">
             Refresh
           </button>
-          {source && <span className="text-neutral-500">src: {source}</span>}
         </div>
       </div>
 
