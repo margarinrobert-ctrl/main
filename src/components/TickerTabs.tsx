@@ -26,6 +26,7 @@ import { LevelsChart } from "./LevelsChart";
 import { MMHedge } from "./MMHedge";
 import { OiProfile } from "./OiProfile";
 import { OptionsChain } from "./OptionsChain";
+import { OptionsFlow } from "./OptionsFlow";
 import { OptionsHeatmap } from "./OptionsHeatmap";
 import { PineExport } from "./PineExport";
 import { Playbook } from "./Playbook";
@@ -42,6 +43,7 @@ const TABS = [
   "Signals",
   "MM Hedge",
   "Playbook",
+  "Options Flow",
   "Chain",
   "Heatmap",
   "Gamma",
@@ -66,7 +68,7 @@ const GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: "Overview", tabs: ["Overview", "Signals", "MM Hedge", "Playbook"] },
   { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
   { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Vol Edge"] },
-  { label: "Flow", tabs: ["Chain", "Anomaly", "Harvest", "History", "Pine"] },
+  { label: "Flow", tabs: ["Options Flow", "Chain", "Anomaly", "Harvest", "History", "Pine"] },
 ];
 
 interface ExpOption {
@@ -228,6 +230,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Signals" && <SignalBoard symbol={symbol} exp={validExp} />}
       {tab === "MM Hedge" && <MMHedge symbol={symbol} exp={validExp} />}
       {tab === "Playbook" && <Playbook symbol={symbol} exp={validExp} />}
+      {tab === "Options Flow" && <OptionsFlow symbol={symbol} exp={validExp} />}
       {tab === "Chain" && <OptionsChain symbol={symbol} exp={validExp} />}
       {tab === "Heatmap" && <OptionsHeatmap symbol={symbol} exp={validExp} />}
       {tab === "Gamma" && <GammaProfile symbol={symbol} exp={validExp} />}
