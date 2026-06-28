@@ -229,6 +229,7 @@ function planTrade(
   magnet: number | null,
   iv: number | null,
   tYears: number,
+  edge: number, // directional conviction 0..1 (|pressureScore|/100) — drift for P(win)/EV
 ): MMTrade {
   const entry = atLevel && anchor ? anchor.price : spot;
   const buf = Math.max(em * 0.12, entry * 0.0006);
@@ -237,16 +238,30 @@ function planTrade(
   const ahead = lad.filter((l) => (long ? l.price > entry + buf : l.price < entry - buf)).sort((a, b) => (long ? a.price - b.price : b.price - a.price));
   const behind = lad.filter((l) => (long ? l.price < entry - buf : l.price > entry + buf)).sort((a, b) => (long ? b.price - a.price : a.price - b.price));
 
-  const guard = behind[0] ?? null;
-  const stop = guard ? (long ? guard.price - buf : guard.price + buf) : long ? entry - em * 0.6 : entry + em * 0.6;
-  const stopLabel = guard ? `beyond ${guard.name} ${f2(guard.price)}` : `${f2(stop)} (≈0.6× expected move)`;
-  const risk = Math.abs(entry - stop);
-
+  // Targets first (structural levels ahead, else expected-move multiples) so risk can be sized off them.
   const picks = ahead.slice(0, 3);
   while (picks.length < 2) {
     const mult = picks.length + 1;
     picks.push({ name: `${mult}× EM`, price: long ? entry + em * mult : entry - em * mult });
   }
+  const tp1Dist = Math.abs(picks[0].price - entry) || em;
+
+  // Structural invalidation (next level behind, else 0.6× EM), but CAP risk at the first target's
+  // distance so the plan is never worse than 1:1 — a far structural stop against a near target is bad
+  // risk management. Keep the structural stop only when it's already tighter than 1R.
+  const guard = behind[0] ?? null;
+  const structuralStop = guard ? (long ? guard.price - buf : guard.price + buf) : long ? entry - em * 0.6 : entry + em * 0.6;
+  const structuralRisk = Math.abs(entry - structuralStop);
+  let risk = Math.min(structuralRisk, tp1Dist);
+  if (!(risk > 0)) risk = Math.min(tp1Dist, em * 0.5);
+  const stop = long ? entry - risk : entry + risk;
+  const tightened = structuralRisk > tp1Dist + 1e-9;
+  const stopLabel = tightened
+    ? `${f2(stop)} · risk capped to 1R (${guard ? guard.name : "0.6× EM"} sat wider)`
+    : guard
+      ? `beyond ${guard.name} ${f2(guard.price)}`
+      : `${f2(stop)} (≈0.6× expected move)`;
+
   const targets: MMTarget[] = picks.map((l, i) => ({
     price: l.price,
     label: `TP${i + 1} · ${l.name}`,
@@ -255,22 +270,14 @@ function planTrade(
   }));
 
   const pStop = iv != null ? probTouch(spot, stop, iv, tYears) : null;
-  // Modelled EV in R: scale-out weights on the TPs (prob-of-touch × R), minus the chance of the stop.
-  let ev: number | null = null;
-  if (risk > 0 && pStop != null && targets.every((t) => t.pTouch != null && t.r != null)) {
-    const w = [0.5, 0.3, 0.2];
-    const upside = targets.reduce((s, t, i) => s + (w[i] ?? 0) * (t.pTouch as number) * (t.r as number), 0);
-    ev = Math.round((upside - pStop) * 100) / 100;
-  }
-  // P(win): driftless first-passage probability of tagging TP1 before the stop. In log space with
-  // absorbing barriers at +u (target) and −d (stop), P(target first) = d / (u + d).
-  let pWin: number | null = null;
-  const tp1 = targets[0]?.price;
-  if (tp1 != null && entry > 0 && stop > 0 && tp1 > 0) {
-    const u = Math.abs(Math.log(tp1 / entry));
-    const d = Math.abs(Math.log(stop / entry));
-    if (u + d > 0) pWin = Math.round((d / (u + d)) * 100) / 100;
-  }
+
+  // P(win) carries the model's DIRECTIONAL edge (dealer-pressure conviction, 0..1) as a drift on the
+  // base coin-flip — a driftless 1:1 trade is 0-EV by construction, so EV only turns positive when the
+  // model actually reads a direction. EV(R) = scale-out reward (R, weighted) × P(win) − 1R × P(loss).
+  const pWin = Math.round(Math.min(0.92, Math.max(0.5, 0.5 + 0.42 * Math.max(0, Math.min(1, edge)))) * 100) / 100;
+  const w = [0.5, 0.3, 0.2];
+  const rewardR = targets.reduce((s, t, i) => s + (w[i] ?? 0) * (t.r ?? 0), 0);
+  const ev = targets.some((t) => t.r != null) ? Math.round((pWin * rewardR - (1 - pWin)) * 100) / 100 : null;
 
   const entries = [
     { price: entry, label: atLevel && anchor ? `at ${anchor.name}` : "on reach" },
@@ -473,8 +480,9 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
   );
 
   let trade: MMTrade | null;
-  if (pressureScore > 15) trade = planTrade("long", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears);
-  else if (pressureScore < -15) trade = planTrade("short", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears);
+  const edge = Math.abs(pressureScore) / 100;
+  if (pressureScore > 15) trade = planTrade("long", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears, edge);
+  else if (pressureScore < -15) trade = planTrade("short", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears, edge);
   else
     trade = {
       side: "wait",
@@ -550,7 +558,7 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
 export function planAtLevel(r: MMHedge, spot: number | null, lp: LevelPlay): MMTrade | null {
   if (spot == null || r.regime === "unknown") return null;
   const side: "long" | "short" = lp.bias === "up" ? "long" : lp.bias === "down" ? "short" : r.pressureScore >= 0 ? "long" : "short";
-  return planTrade(side, spot, { name: lp.name, price: lp.price }, true, r.levels, r.em || spot * 0.01, r.regime, r.magnet, r.frontIv, r.frontT);
+  return planTrade(side, spot, { name: lp.name, price: lp.price }, true, r.levels, r.em || spot * 0.01, r.regime, r.magnet, r.frontIv, r.frontT, Math.abs(r.pressureScore) / 100);
 }
 
 function fmtMoney(v: number): string {
