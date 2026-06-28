@@ -233,6 +233,13 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
             <Stat label="EV (modelled)" value={plan?.ev == null ? "—" : `${plan.ev}R`} tone={plan?.ev == null ? "text-neutral-100" : plan.ev > 0 ? "text-emerald-300" : "text-red-300"} />
           </div>
 
+          <div className="mb-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+            <Stat label="Delta flip" value={r.deltaFlip == null ? "—" : f2(r.deltaFlip)} sub="delta-neutral pivot" />
+            <Stat label="Net flow" value={r.flowNetPremium == null ? "—" : fmtUsd(r.flowNetPremium)} sub="bull − bear premium" tone={(r.flowNetPremium ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"} />
+            <Stat label="Flow Δ-imbal" value={r.flowDeltaImbalance == null ? "—" : fmtUsd(r.flowDeltaImbalance)} sub="call vs put Δ·vol" tone={(r.flowDeltaImbalance ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"} />
+            <Stat label="Net DEX" value={r.netDex == null ? "—" : fmtUsd(r.netDex)} sub="OI Δ (calls + / puts −)" tone={(r.netDex ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"} />
+          </div>
+
           {plan && (
             <div className={`mb-4 rounded-lg border border-white/5 border-l-4 bg-white/[0.02] p-3 ${plan.side === "long" ? "border-l-emerald-500" : plan.side === "short" ? "border-l-red-500" : "border-l-sky-500"}`}>
               <div className="mb-2 flex flex-wrap items-center gap-2">
