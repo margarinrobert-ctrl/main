@@ -5,7 +5,7 @@ import type { HistoryBar, OptionContract } from "@/lib/barchart/types";
 import { loadChain, loadHistory } from "@/lib/client-data";
 import { filterByExpiration, fmtUsd, levelStats } from "@/lib/flow/analytics";
 import { probAbove } from "@/lib/flow/greeks";
-import { mmHedge, planAtLevel, type Pressure } from "@/lib/flow/mmhedge";
+import { mmHedge, planAtLevel, pressureAt, type Pressure } from "@/lib/flow/mmhedge";
 import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
@@ -113,6 +113,12 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
     }
     return r.trade;
   }, [selLevel, r, spot]);
+
+  // Pressure breakdown recomputed AT the selected level (gamma-pin/delta directions vs that price).
+  const levelPressure = useMemo(
+    () => (detail ? pressureAt(sub, spot, detail.lp.price, bars) : null),
+    [detail, sub, spot, bars],
+  );
 
   return (
     <div className="glass p-4">
@@ -313,17 +319,56 @@ export function MMHedge({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
           )}
 
           <div className="mb-3">
-            <div className="mb-1 text-xs uppercase tracking-wide text-neutral-500">Pressure breakdown</div>
+            <div className="mb-1 flex flex-wrap items-baseline gap-x-2 text-xs uppercase tracking-wide text-neutral-500">
+              <span>Pressure breakdown</span>
+              {detail && levelPressure && (
+                <span className="normal-case text-amber-300/90">
+                  @ {detail.lp.name} {f2(detail.lp.price)} · score {levelPressure.pressureScore > 0 ? "+" : ""}
+                  {levelPressure.pressureScore}
+                </span>
+              )}
+            </div>
             <div className="space-y-1">
-              {r.components.map((cp) => (
+              {(detail && levelPressure ? levelPressure.components : r.components).map((cp) => (
                 <div key={cp.label} className="flex items-center gap-2 text-xs">
-                  <span className={`inline-block h-2 w-2 rounded-full ${dirDot(cp.dir)}`} />
-                  <span className="w-24 text-neutral-300">{cp.label}</span>
-                  <span className={`w-12 font-mono ${pressColor(cp.dir)}`}>{cp.dir === "up" ? "▲" : cp.dir === "down" ? "▼" : "•"} {cp.weight}</span>
+                  <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dirDot(cp.dir)}`} />
+                  <span className="w-24 shrink-0 text-neutral-300">{cp.label}</span>
+                  <span className={`w-12 shrink-0 font-mono ${pressColor(cp.dir)}`}>{cp.dir === "up" ? "▲" : cp.dir === "down" ? "▼" : "•"} {cp.weight}</span>
                   <span className="flex-1 text-neutral-500">{cp.detail}</span>
                 </div>
               ))}
             </div>
+
+            {detail && (
+              <>
+                <div className="mb-1 mt-3 text-xs uppercase tracking-wide text-neutral-500">
+                  Greeks @ {detail.st.strike ?? detail.lp.name} <span className="normal-case text-neutral-600">· dealer exposure at the strike</span>
+                </div>
+                <div className="space-y-1">
+                  {[
+                    { k: "GEX (γ$)", v: detail.st.gex, fmt: (x: number) => fmtUsd(x), note: detail.st.gex >= 0 ? "call-γ — dealers dampen / support" : "put-γ — dealers amplify / destabilise" },
+                    { k: "DEX (Δ$)", v: detail.st.dex, fmt: (x: number) => fmtUsd(x), note: detail.st.dex >= 0 ? "net long delta (call-heavy)" : "net short delta (put-heavy)" },
+                    { k: "Vanna", v: detail.st.vanna, fmt: (x: number) => `${fmtUsd(x)}/vp`, note: detail.st.vanna >= 0 ? "IV↑ adds dealer delta" : "IV↑ sheds dealer delta" },
+                    { k: "Charm", v: detail.st.charm, fmt: (x: number) => `${fmtUsd(x)}/d`, note: detail.st.charm >= 0 ? "decay → dealers buy" : "decay → dealers sell" },
+                  ].map((g) => (
+                    <div key={g.k} className="flex items-center gap-2 text-xs">
+                      <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dirDot(g.v >= 0 ? "up" : "down")}`} />
+                      <span className="w-24 shrink-0 text-neutral-300">{g.k}</span>
+                      <span className={`w-28 shrink-0 font-mono ${g.v >= 0 ? "text-emerald-300" : "text-red-300"}`}>{g.fmt(g.v)}</span>
+                      <span className="flex-1 text-neutral-500">{g.note}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-neutral-500" />
+                    <span className="w-24 shrink-0 text-neutral-300">IV · γ-share</span>
+                    <span className="w-28 shrink-0 font-mono text-neutral-200">
+                      {detail.st.iv != null ? `${(detail.st.iv * 100).toFixed(1)}%` : "—"} · {Math.round(detail.st.gexShare * 100)}%
+                    </span>
+                    <span className="flex-1 text-neutral-500">implied vol &amp; this strike&apos;s share of total |GEX|</span>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="space-y-1">

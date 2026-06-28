@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OptionContract } from "../barchart/types";
-import { mmHedge, planAtLevel } from "./mmhedge";
+import { mmHedge, planAtLevel, pressureAt } from "./mmhedge";
 
 function c(p: Partial<OptionContract>): OptionContract {
   return {
@@ -246,5 +246,23 @@ describe("mmHedge", () => {
     expect(comp(r, "Open interest")).toBeUndefined(); // co=0 → pcr.oi null
     expect(comp(r, "Delta (DEX)")).toBeUndefined(); // no delta → grossDex 0
     expect(comp(r, "Options flow")).toBeUndefined(); // last at mid → no aggressor
+  });
+
+  it("pressureAt re-evaluates the gamma-pin direction vs the selected reference price", () => {
+    // long-gamma book, centre-of-mass ~104 → pin pulls toward it from either side.
+    const chain = [
+      c({ type: "call", strike: 105, gamma: 0.06, openInterest: 12000 }),
+      c({ type: "put", strike: 95, gamma: 0.03, openInterest: 3000 }),
+    ];
+    const below = pressureAt(chain, 100, 96);
+    const above = pressureAt(chain, 100, 114);
+    expect(below).not.toBeNull();
+    expect(above).not.toBeNull();
+    const gBelow = below!.components.find((x) => x.label.startsWith("Gamma"))!;
+    const gAbove = above!.components.find((x) => x.label.startsWith("Gamma"))!;
+    expect(gBelow.dir).toBe("up"); // reference below COM → pulled up toward the magnet
+    expect(gAbove.dir).toBe("down"); // reference above COM → pulled back down
+    expect(pressureAt([], 100, 100)).toBeNull();
+    expect(pressureAt(chain, null, 100)).toBeNull();
   });
 });
