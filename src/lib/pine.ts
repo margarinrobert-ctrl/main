@@ -223,7 +223,7 @@ export function buildGexPine(
     .filter(Boolean)
     .join("\n");
 
-  const convertNote = `\n// CONVERT TO ES / NQ / RTY: to overlay these ${symbol} levels on a futures chart, leave "Convert levels\n// to this chart" on Auto. It reads the LIVE ${symbol} price (request.security on the "Source symbol" input)\n// and this chart's price at the SAME instant, then scales every level by their exact ratio — so the\n// current index divisor AND futures basis are always baked in (QQQ->NQ ~41x, SPY->ES ~10x, IWM->RTY ~10x).\n// The ratio is frozen once so levels never drift; on the native ${symbol} chart it is 1.0 (exact strikes).`;
+  const convertNote = `\n// CONVERT TO ES / NQ / RTY: to overlay these ${symbol} levels on a futures chart, leave "Convert levels\n// to this chart" on Auto. It reads the LIVE ${symbol} price (request.security on the "Source symbol" input)\n// and this chart's price at the SAME instant, then scales every level by their exact ratio — so the\n// current index divisor AND futures basis are always baked in (QQQ->NQ ~41x, SPY->ES ~10x, IWM->RTY ~10x).\n// The ratio is LOCKED on the last closed bar so levels never move as price ticks; on the ${symbol} chart it is 1.0.`;
 
   const code = `//@version=6
 // OptionsFlow — GEX levels for ${symbol}  (front/target exp ${exp ?? "n/a"}${dteLabel ? ", " + dteLabel : ""})
@@ -265,13 +265,15 @@ clearAll() =>
         label.delete(array.pop(_lb))
 
 // Convert ${symbol} levels onto whatever chart this is applied to. "Auto (match chart)" scales every level
-// by the LIVE ratio close / srcLive — this chart's price and the SOURCE symbol's price read at the SAME
-// instant via request.security — so the current index divisor AND futures basis are always exact (QQQ->NQ
-// ~41x, SPY->ES ~10x). Frozen once on the last bar so levels never move while price does. On the ${symbol}
-// chart the ratio is 1.0 (exact strikes). Falls back to the snapshot-spot ratio if the source can't be read.
+// by the ratio close / srcLive — this chart's price and the SOURCE symbol's price read at the SAME bar via
+// request.security — so the current index divisor AND futures basis are exact (QQQ->NQ ~41x, SPY->ES ~10x).
+// The ratio is LOCKED once, on the last CLOSED bar before realtime (barstate.islastconfirmedhistory fires a
+// single time on a confirmed bar and never on realtime ticks), so it is committed and never recomputed —
+// converted levels stay pinned exactly where the data says while price moves. On the ${symbol} chart the
+// ratio is 1.0 (exact strikes). Falls back to the snapshot-spot ratio if the source symbol can't be read.
 srcLive = request.security(srcSym, timeframe.period, close)
 var float frozenScale = na
-if barstate.islast and na(frozenScale)
+if na(frozenScale) and (barstate.islastconfirmedhistory or barstate.islast)
     liveRatio = not na(srcLive) and srcLive > 0 ? close / srcLive : (snapSpot > 0 ? close / snapSpot : 1.0)
     frozenScale := convertMode == "Auto (match chart)" ? liveRatio : 1.0
 scale = nz(frozenScale, 1.0) * manualMult

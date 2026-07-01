@@ -142,6 +142,8 @@ describe("buildGexPine", () => {
     expect(r.code).toContain('input.symbol("SPY"'); // source symbol baked from the generated ticker
     expect(r.code).toContain("close / snapSpot"); // graceful fallback if the source can't be read
     expect(r.code).toContain("frozenScale"); // frozen once → levels don't move
+    // ratio is locked on a CONFIRMED bar (commits) so it never recomputes tick-by-tick on the realtime bar
+    expect(r.code).toContain("barstate.islastconfirmedhistory");
     expect(r.code).toContain("extend = extend.both"); // full static horizontal lines
     expect(r.code).toContain("array.get(P, i) * scale"); // every level scaled by the factor
   });
