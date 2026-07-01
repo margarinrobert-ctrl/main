@@ -223,7 +223,7 @@ export function buildGexPine(
     .filter(Boolean)
     .join("\n");
 
-  const convertNote = `\n// CONVERT TO ES / NQ: to overlay these ${symbol} levels on a futures chart, set the "Convert levels to\n// this chart" input to Auto — it scales every level by (chart price / ${symbol} spot), the live ratio\n// (SPY->ES ~10x, QQQ->NQ ~41x), frozen once so levels never move. Manual x is an extra fine-tune.`;
+  const convertNote = `\n// CONVERT TO ES / NQ / RTY: to overlay these ${symbol} levels on a futures chart, leave "Convert levels\n// to this chart" on Auto. It reads the LIVE ${symbol} price (request.security on the "Source symbol" input)\n// and this chart's price at the SAME instant, then scales every level by their exact ratio — so the\n// current index divisor AND futures basis are always baked in (QQQ->NQ ~41x, SPY->ES ~10x, IWM->RTY ~10x).\n// The ratio is frozen once so levels never drift; on the native ${symbol} chart it is 1.0 (exact strikes).`;
 
   const code = `//@version=6
 // OptionsFlow — GEX levels for ${symbol}  (front/target exp ${exp ?? "n/a"}${dteLabel ? ", " + dteLabel : ""})
@@ -236,9 +236,10 @@ indicator("OptionsFlow GEX • ${symbol}", overlay = true, max_lines_count = 200
 
 showMeta  = input.bool(true, "Detail on hover (tooltip)")
 laneStep  = input.int(14, "Stagger close labels (bars)", minval = 0, maxval = 80)
-convertMode = input.string("Off", "Convert levels to this chart", options = ["Off", "Auto (match chart)"])
+convertMode = input.string("Auto (match chart)", "Convert levels to this chart", options = ["Off", "Auto (match chart)"], tooltip = "Auto: rescale these ${symbol} levels onto whatever chart you are on (e.g. NQ / ES / RTY futures) using the LIVE price ratio. Off: draw the exact ${symbol} strikes (use on the ${symbol} chart).")
+srcSym      = input.symbol("${symbol}", "Source symbol (these levels are priced in it)", tooltip = "The symbol these levels came from. Auto reads its live price via request.security to build the exact ratio vs this chart. Typical maps: QQQ->NQ, SPY->ES, IWM->RTY, SPX->ES, NDX->NQ.")
 manualMult  = input.float(1.0, "Manual x multiplier (fine-tune)", minval = 0.0001, step = 0.01)
-snapSpot    = input.float(${fmt(spot ?? 0)}, "Snapshot ${symbol} spot (for conversion)")
+snapSpot    = input.float(${fmt(spot ?? 0)}, "Snapshot ${symbol} spot (fallback if source unavailable)")
 labelSize = input.string("normal", "Label size", options = ["small", "normal", "large", "huge"])
 sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
 showVwap = input.bool(true, "Show session VWAP")
@@ -263,12 +264,16 @@ clearAll() =>
     while array.size(_lb) > 0
         label.delete(array.pop(_lb))
 
-// Convert ${symbol} levels onto whatever chart this is applied to. "Auto (match chart)" multiplies every
-// level by (chart price / snapshot spot) — the live ratio (SPY->ES ~10x, QQQ->NQ ~41x) — FROZEN ONCE so
-// the levels never move while price moves. On the ${symbol} chart itself, leave it Off for exact strikes.
+// Convert ${symbol} levels onto whatever chart this is applied to. "Auto (match chart)" scales every level
+// by the LIVE ratio close / srcLive — this chart's price and the SOURCE symbol's price read at the SAME
+// instant via request.security — so the current index divisor AND futures basis are always exact (QQQ->NQ
+// ~41x, SPY->ES ~10x). Frozen once on the last bar so levels never move while price does. On the ${symbol}
+// chart the ratio is 1.0 (exact strikes). Falls back to the snapshot-spot ratio if the source can't be read.
+srcLive = request.security(srcSym, timeframe.period, close)
 var float frozenScale = na
 if barstate.islast and na(frozenScale)
-    frozenScale := convertMode == "Auto (match chart)" and snapSpot > 0 ? close / snapSpot : 1.0
+    liveRatio = not na(srcLive) and srcLive > 0 ? close / srcLive : (snapSpot > 0 ? close / snapSpot : 1.0)
+    frozenScale := convertMode == "Auto (match chart)" ? liveRatio : 1.0
 scale = nz(frozenScale, 1.0) * manualMult
 
 if barstate.islast

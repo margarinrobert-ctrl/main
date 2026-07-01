@@ -134,7 +134,13 @@ describe("buildGexPine", () => {
     const r = buildGexPine("SPY", multiChain(), 100);
     expect(r.code).toContain("Convert levels to this chart");
     expect(r.code).toContain("Auto (match chart)");
-    expect(r.code).toContain("close / snapSpot"); // accurate live-ratio scaling
+    // defaults ON, so QQQ/SPY levels aren't left off-screen on a futures chart
+    expect(r.code).toContain('convertMode = input.string("Auto (match chart)"');
+    // ratio comes from a LIVE, simultaneous source-symbol price (not a stale baked snapshot)
+    expect(r.code).toContain("request.security(srcSym, timeframe.period, close)");
+    expect(r.code).toContain("close / srcLive"); // exact live ratio → captures divisor + futures basis
+    expect(r.code).toContain('input.symbol("SPY"'); // source symbol baked from the generated ticker
+    expect(r.code).toContain("close / snapSpot"); // graceful fallback if the source can't be read
     expect(r.code).toContain("frozenScale"); // frozen once → levels don't move
     expect(r.code).toContain("extend = extend.both"); // full static horizontal lines
     expect(r.code).toContain("array.get(P, i) * scale"); // every level scaled by the factor
