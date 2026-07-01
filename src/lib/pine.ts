@@ -163,11 +163,13 @@ export function buildGexPine(
   add(callRes0, "Call Res 0DTE", "color.red", "line.style_dashed", 2, `Call Resistance 0DTE / Gamma Wall 0DTE - ${meta(sub, callRes0, spot)}`);
   add(putSup0, "Put Sup 0DTE", "color.green", "line.style_dashed", 2, `Put Support 0DTE - ${meta(sub, putSup0, spot)}`);
   add(hvl0, "HVL 0DTE", "color.blue", "line.style_dashed", 2, "HVL 0DTE / front-expiry gamma flip");
+  // Delta walls — dealer hedgeable-delta resistance/support. Ranked here (ABOVE Max Pain / OI walls) so they
+  // are never dropped by the one-level-per-price dedup when a raw-OI wall happens to sit on the same strike.
+  add(dCallWall, "Delta Resistance", "color.maroon", "line.style_solid", 2, `Delta Resistance Wall (heaviest call delta-exposure above spot = dealer hedgeable-delta resistance) - ${meta(chain, dCallWall, spot)}`);
+  add(dPutWall, "Delta Support", "color.lime", "line.style_solid", 2, `Delta Support Wall (heaviest put delta-exposure below spot = dealer hedgeable-delta support) - ${meta(chain, dPutWall, spot)}`);
   add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, `Max Pain ${exp ?? ""} - ${meta(chain, mp, spot)}`);
   add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, `Call OI wall - ${meta(chain, callOi, spot)}`);
   add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, `Put OI wall - ${meta(chain, putOi, spot)}`);
-  add(dCallWall, "Delta Call Wall", "color.maroon", "line.style_solid", 2, `Delta Call Wall (heaviest call delta-exposure above spot = hedgeable-delta resistance) - ${meta(chain, dCallWall, spot)}`);
-  add(dPutWall, "Delta Put Wall", "color.lime", "line.style_solid", 2, `Delta Put Wall (heaviest put delta-exposure below spot = hedgeable-delta support) - ${meta(chain, dPutWall, spot)}`);
   add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated — levels are anchored here; the chart's current price may have moved since.`);
   add(dmax, `Exp Hi ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move HIGH for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
   add(dmin, `Exp Lo ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move LOW for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
@@ -208,8 +210,8 @@ export function buildGexPine(
     callRes != null ? `kCallRes = input.float(${fmt(callRes)}, "Alert: Call Resistance")` : "",
     putSup != null ? `kPutSup  = input.float(${fmt(putSup)}, "Alert: Put Support")` : "",
     hvl != null ? `kHvl     = input.float(${fmt(hvl)}, "Alert: HVL (gamma flip)")` : "",
-    dCallWall != null ? `kDCall   = input.float(${fmt(dCallWall)}, "Alert: Delta Call Wall")` : "",
-    dPutWall != null ? `kDPut    = input.float(${fmt(dPutWall)}, "Alert: Delta Put Wall")` : "",
+    dCallWall != null ? `kDCall   = input.float(${fmt(dCallWall)}, "Alert: Delta Resistance")` : "",
+    dPutWall != null ? `kDPut    = input.float(${fmt(dPutWall)}, "Alert: Delta Support")` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -217,8 +219,8 @@ export function buildGexPine(
     callRes != null ? `alertcondition(ta.cross(close, kCallRes * scale), "Price ↔ Call Resistance", "{{ticker}} tagged Call Resistance")` : "",
     putSup != null ? `alertcondition(ta.cross(close, kPutSup * scale), "Price ↔ Put Support", "{{ticker}} tagged Put Support")` : "",
     hvl != null ? `alertcondition(ta.cross(close, kHvl * scale), "Price ↔ HVL", "{{ticker}} crossed HVL / gamma flip")` : "",
-    dCallWall != null ? `alertcondition(ta.cross(close, kDCall * scale), "Price ↔ Delta Call Wall", "{{ticker}} tagged Delta Call Wall")` : "",
-    dPutWall != null ? `alertcondition(ta.cross(close, kDPut * scale), "Price ↔ Delta Put Wall", "{{ticker}} tagged Delta Put Wall")` : "",
+    dCallWall != null ? `alertcondition(ta.cross(close, kDCall * scale), "Price ↔ Delta Resistance", "{{ticker}} tagged Delta Resistance Wall")` : "",
+    dPutWall != null ? `alertcondition(ta.cross(close, kDPut * scale), "Price ↔ Delta Support", "{{ticker}} tagged Delta Support Wall")` : "",
   ]
     .filter(Boolean)
     .join("\n");

@@ -35,10 +35,14 @@ function multiChain(): OptionContract[] {
     { e: "2026-06-16", dte: 0, pk: 102, sc: 1 },
     { e: "2026-07-17", dte: 31, pk: 100, sc: 2 },
   ])
-    for (const k of [88, 92, 96, 100, 104, 108, 112]) {
+    for (const k of [88, 91, 94, 97, 100, 103, 106, 109, 112]) {
       const g = 0.05 * Math.exp(-SQ(k - pk) / 70);
-      out.push(c({ expiration: e, dte, type: "call", strike: k, gamma: g, openInterest: Math.round((1500 + 260 * (k - 88)) * sc), volume: 9000, impliedVolatility: 0.25, delta: 0.4 }));
-      out.push(c({ expiration: e, dte, type: "put", strike: k, gamma: g, openInterest: Math.round((1500 + 260 * (112 - k)) * sc), volume: 6000, impliedVolatility: 0.25, delta: -0.4 }));
+      // moneyness-based delta (declines as the option gets more OTM) — realistic, and it keeps the
+      // delta-weighted walls off the raw-OI-wall strikes the way real chains do
+      const cd = 0.9 - 0.02 * (k - 88); // call delta: high ITM (low strike), low OTM (high strike)
+      const pd = 0.9 - 0.02 * (112 - k); // put |delta|: high ITM (high strike), low OTM (low strike)
+      out.push(c({ expiration: e, dte, type: "call", strike: k, gamma: g, openInterest: Math.round((1500 + 260 * (k - 88)) * sc), volume: 9000, impliedVolatility: 0.25, delta: cd }));
+      out.push(c({ expiration: e, dte, type: "put", strike: k, gamma: g, openInterest: Math.round((1500 + 260 * (112 - k)) * sc), volume: 6000, impliedVolatility: 0.25, delta: -pd }));
     }
   return out;
 }
@@ -76,7 +80,7 @@ describe("buildGexPine", () => {
   });
 
   it("adds Max Pain + OI-wall levels and never prints resistance == support", () => {
-    // realistic book → OI walls sit at distinct strikes from the gamma walls
+    // realistic book → gamma walls, delta walls and raw-OI walls sit at distinct strikes (nothing deduped)
     const r = buildGexPine("LVL", multiChain(), 100);
     expect(r.code).toContain("Max Pain");
     expect(r.code).toContain("Call OI");
@@ -108,13 +112,17 @@ describe("buildGexPine", () => {
     const r = buildGexPine("DEX", chain, 100);
     expect(r.deltaCallWall).toBe(103);
     expect(r.deltaPutWall).toBe(97);
-    expect(r.code).toContain("Delta Call Wall");
-    expect(r.code).toContain("Delta Put Wall");
+    // labelled as delta resistance (call wall, above spot) / delta support (put wall, below spot)
+    expect(r.code).toContain("Delta Resistance");
+    expect(r.code).toContain("Delta Support");
+    expect(r.code).toContain("Delta Resistance Wall"); // spelled out in the hover detail
+    expect(r.code).toContain("Delta Support Wall");
     // delta-weighted walls sit at different strikes than the gamma walls on this book
     expect(r.deltaCallWall).not.toBe(r.callRes);
     expect(r.deltaPutWall).not.toBe(r.putSup);
     // each gets its own configurable alert
-    expect(r.code).toContain("Alert: Delta Call Wall");
+    expect(r.code).toContain("Alert: Delta Resistance");
+    expect(r.code).toContain("Alert: Delta Support");
     expect(r.code).toContain('alertcondition(ta.cross(close, kDPut * scale)');
   });
 
