@@ -23,6 +23,9 @@ next-env.d.ts
 # static export: fixtures copied into public/ at build time (source of truth is /fixtures)
 /public/fixtures/
 
+# python
+__pycache__/
+
 # misc
 *.log
 .DS_Store
