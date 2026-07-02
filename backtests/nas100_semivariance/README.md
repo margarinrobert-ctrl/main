@@ -60,9 +60,45 @@ variants, does not produce an edge over simply holding NAS100 — which is what
 you'd expect: the paper measures how volatility propagates, it never claims
 the sign of SAM predicts index returns.
 
+## Deep dive: contrarian W=1 (`advanced_analysis.py`)
+
+Advanced metrics, harder benchmarks and Monte Carlo for the best variant.
+Outputs: `results/benchmarks.csv`, `results/advanced_metrics.csv`,
+`results/monte_carlo.png`, `results/diagnostics.png`.
+
+**Vs harder benchmarks (net of costs).** Simple mechanical baselines beat it
+on risk-adjusted terms:
+
+| | contrarian W=1 | buy & hold | 200d MA long/flat | vol-target 10% B&H |
+|---|---|---|---|---|
+| CAGR | 11.1% | 19.9% | 14.5% | 11.2% |
+| Sharpe | 0.46 | 0.79 | **0.85** | **0.98** |
+| Sortino | 0.68 | 1.03 | 0.91 | 1.25 |
+| Calmar | 0.40 | 0.56 | 0.57 | 0.65 |
+| max DD | −27.8% | −35.6% | −25.6% | **−17.2%** |
+| longest DD | **1,079 days** | 535 | 389 | 404 |
+
+Its one structural virtue: positive skew (+0.87) and a tail ratio > 1 — it's
+long crash-rebound convexity, the opposite profile of the short-vol-flavored
+baselines. But it spent 4.3 years in its longest drawdown and its profit
+factor is only 1.09.
+
+**Block-bootstrap Monte Carlo** (10,000 paths, 20-day blocks of its own net
+returns): median CAGR 11%, but the 5th percentile path loses money over 9
+years (CAGR −1.1%), P(overall loss) ≈ 7%, median max drawdown −35% with a 5%
+chance of −55% or worse.
+
+**Permutation test** (10,000 circular shifts of the position series over the
+same prices — same exposure, same turnover, timing destroyed): realized
+Sharpe 0.46 vs null mean −0.26, **p = 0.015**. So the *timing* is real
+relative to a coin-flip long/short book — but that alpha is again
+concentrated in the 2020 window (ex-COVID Sharpe 0.16, Sortino 0.24), and it
+still doesn't survive comparison with trivial long-only baselines.
+
 ## Reproduce
 
 ```bash
-pip install pandas numpy matplotlib
-python3 backtest.py
+pip install pandas numpy matplotlib scipy
+python3 backtest.py            # 9-variant grid vs buy & hold
+python3 advanced_analysis.py   # deep dive + Monte Carlo on contrarian W=1
 ```
