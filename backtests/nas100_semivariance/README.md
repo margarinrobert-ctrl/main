@@ -95,6 +95,27 @@ relative to a coin-flip long/short book — but that alpha is again
 concentrated in the 2020 window (ex-COVID Sharpe 0.16, Sortino 0.24), and it
 still doesn't survive comparison with trivial long-only baselines.
 
+## Expected value & the long-only refinement
+
+Per-side EV of contrarian W=1 (net of costs, 1,195 trades, avg hold 1.9 days):
+
+| | EV/trade | win rate |
+|---|---|---|
+| long trades (after bad-vol days) | **+0.217%** | 69.5% |
+| short trades (after good-vol days) | −0.058% | 52.7% |
+| combined | +0.079% (~19 pts at NAS100 ≈ 24,600) | 61.1% |
+
+All the edge is on the long side, so the best version is **long-only
+contrarian W=1** (long the day after bad volatility dominates, flat
+otherwise): CAGR 15.4%, Sharpe 0.81, max DD −25.9%, t-stat 2.44, ex-COVID
+Sharpe 0.70, OOS Sharpe 0.56 — matches buy & hold risk-adjusted with ~48%
+exposure. Caveat: this refinement was found by inspecting the same data
+(selection bias), so treat the headline numbers as optimistic.
+
+TradingView implementation: `../../SemivarianceContrarian.pine`
+(Pine v6 strategy, run on a 30-minute NAS100 chart; long-only by default,
+long/short modes and the W window as inputs).
+
 ## Reproduce
 
 ```bash

@@ -1,0 +1,106 @@
+//@version=6
+strategy("Semivariance Contrarian (SSRN 2815151)", shorttitle="SAM-Contra",
+     overlay=true,
+     initial_capital=100000,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=100,
+     commission_type=strategy.commission.percent,
+     commission_value=0.02,
+     process_orders_on_close=true,
+     calc_on_every_tick=false,
+     max_bars_back=500)
+
+// ============================================================
+// Concept (Barunik, Kocenda & Vacha — SSRN 2815151)
+// ============================================================
+// Daily realized variance from intraday returns is split into:
+//   RS- (bad volatility):  sum of squared NEGATIVE intraday returns
+//   RS+ (good volatility): sum of squared POSITIVE intraday returns
+// Asymmetry: SAM = RS+ - RS-.
+// Backtested edge on NAS100 (30m bars, 2016-2025): go LONG the day
+// AFTER bad volatility dominates (SAM < 0), flat otherwise.
+// Long-only: Sharpe 0.81, CAGR 15.4%, maxDD -25.9%, t-stat 2.44,
+// with ~48% market exposure. Short side had negative EV — off by default.
+//
+// USE ON A 30-MINUTE CHART. The signal is evaluated once per day on
+// the first bar of the new day and fills at that bar's close.
+
+// ============================================================
+// Inputs
+// ============================================================
+gSig = "Signal"
+W        = input.int(1,  "SAM window (days)",        minval=1, maxval=60, group=gSig)
+mode     = input.string("Long only (best)", "Mode", group=gSig,
+     options=["Long only (best)", "Long/short contrarian", "Long/short momentum"])
+minBars  = input.int(20, "Min 30m bars for a valid day", minval=1, group=gSig,
+     tooltip="Holiday/stub sessions with fewer bars are skipped, matching the backtest")
+
+gViz = "Display"
+showSam  = input.bool(true, "Background tint by yesterday's SAM sign", group=gViz)
+
+// ============================================================
+// Daily semivariance accumulation on 30m bars
+// ============================================================
+var float rsPosDay = 0.0   // running RS+ for the current day
+var float rsNegDay = 0.0   // running RS- for the current day
+var int   dayBars  = 0
+
+// completed-day history for the rolling W-day window
+var array<float> rsPosHist = array.new_float()
+var array<float> rsNegHist = array.new_float()
+
+newDay = ta.change(time("D")) != 0
+
+// first bar of a day uses open->close so the overnight gap never enters RS
+r = newDay ? math.log(close / open) : math.log(close / close[1])
+
+var int   dir      = 0     // today's position: 1 long, -1 short, 0 flat
+var float samValue = na    // last computed rolling SAM (for plotting)
+
+if newDay
+    // finalize YESTERDAY: only complete sessions count
+    if dayBars >= minBars
+        array.push(rsPosHist, rsPosDay)
+        array.push(rsNegHist, rsNegDay)
+        if array.size(rsPosHist) > W
+            array.shift(rsPosHist)
+            array.shift(rsNegHist)
+    // rolling SAM over the last W complete days
+    if array.size(rsPosHist) == W
+        samValue := array.sum(rsPosHist) - array.sum(rsNegHist)
+        contra   = samValue < 0 ? 1 : -1
+        dir := mode == "Long only (best)"      ? math.max(contra, 0) :
+               mode == "Long/short contrarian" ? contra : -contra
+    // reset accumulators for the new day
+    rsPosDay := 0.0
+    rsNegDay := 0.0
+    dayBars  := 0
+
+// accumulate this bar into the current day
+if not na(r)
+    rsPosDay += r > 0 ? r * r : 0.0
+    rsNegDay += r < 0 ? r * r : 0.0
+    dayBars  += 1
+
+// ============================================================
+// Orders — once per day, on the first bar of the new day
+// ============================================================
+if newDay and not na(samValue)
+    if dir == 1
+        strategy.entry("Long", strategy.long)
+    else if dir == -1
+        strategy.entry("Short", strategy.short)
+    else
+        strategy.close_all("flat day")
+
+// ============================================================
+// Display
+// ============================================================
+bgcolor(showSam and not na(samValue) ?
+     (samValue < 0 ? color.new(color.teal, 92) : color.new(color.orange, 94)) : na,
+     title="SAM regime (teal = bad vol dominated = long signal)")
+
+plotchar(newDay and dir == 1,  "Long signal",  "▲", location.belowbar,
+     color.new(color.teal, 0), size=size.tiny)
+plotchar(newDay and dir == -1, "Short signal", "▼", location.abovebar,
+     color.new(color.red, 0),  size=size.tiny)
