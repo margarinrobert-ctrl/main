@@ -18,10 +18,14 @@ strategy("Semivariance Contrarian (SSRN 2815151)", shorttitle="SAM-Contra",
 //   RS- (bad volatility):  sum of squared NEGATIVE intraday returns
 //   RS+ (good volatility): sum of squared POSITIVE intraday returns
 // Asymmetry: SAM = RS+ - RS-.
-// Backtested edge on NAS100 (30m bars, 2016-2025): go LONG the day
-// AFTER bad volatility dominates (SAM < 0), flat otherwise.
-// Long-only: Sharpe 0.81, CAGR 15.4%, maxDD -25.9%, t-stat 2.44,
-// with ~48% market exposure. Short side had negative EV — off by default.
+// Backtested edge on NAS100 (30m bars, 2016-2025): go LONG when bad
+// volatility dominated the last W days (SAM < 0), flat otherwise.
+// Robustness study (robustness_analysis.py): all 30 long-only contrarian
+// W values are profitable, plateau W 4-13, best W=8: Sharpe 1.02,
+// CAGR 20.5%, maxDD -23.3%, t-stat 3.07, ex-COVID Sharpe 0.90.
+// Momentum reading is negative for all 30 W. Short side has negative EV.
+// Walk-forward warning: re-picking the "recent best" W every 6 months
+// collapsed the Sharpe to 0.19 — pick a plateau value and leave it.
 //
 // USE ON A 30-MINUTE CHART. The signal is evaluated once per day on
 // the first bar of the new day and fills at that bar's close.
@@ -30,7 +34,10 @@ strategy("Semivariance Contrarian (SSRN 2815151)", shorttitle="SAM-Contra",
 // Inputs
 // ============================================================
 gSig = "Signal"
-W        = input.int(1,  "SAM window (days)",        minval=1, maxval=60, group=gSig)
+W        = input.int(8,  "SAM window (days)",        minval=1, maxval=60, group=gSig,
+     tooltip="Sharpe is positive for every W 1-30 and plateaus at W 4-13;"
+       + " 8 is the plateau centre. Don't re-tune this to recent performance"
+       + " — the walk-forward test shows that destroys the edge.")
 mode     = input.string("Long only (best)", "Mode", group=gSig,
      options=["Long only (best)", "Long/short contrarian", "Long/short momentum"])
 minBars  = input.int(20, "Min 30m bars for a valid day", minval=1, group=gSig,

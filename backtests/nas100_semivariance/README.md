@@ -147,6 +147,40 @@ Both are implemented in `SemivarianceContrarian.pine` ("Sizing mode" input);
 the martingale mode is included for experimentation but capped and labeled
 high-risk.
 
+## Robustness study (`robustness_analysis.py`)
+
+Four tests over the strategy's full parameter space — W ∈ 1..30 × three
+signal modes = 90 sets, fixed 1x sizing. Outputs: `results/param_grid.csv`,
+`clusters.csv`, `walk_forward.csv` + three charts.
+
+**1. Parameter stability.** Long-only contrarian is profitable for *all 30*
+W values (median Sharpe 0.76); L/S contrarian all 30 positive (median 0.44);
+L/S momentum all 30 negative. The long-only curve is a plateau, not a spike:
+W 4–13 all ≥ 0.83, peak at **W=8 (Sharpe 1.02, CAGR 20.5%, t 3.07, ex-COVID
+Sharpe 0.90, OOS Sharpe 0.60)** with a spike score of only +0.21 vs its
+neighbours. The signal direction is robust; the exact window barely matters.
+
+**2. Monte Carlo per parameter set** (2,000 block-bootstrap paths each).
+W=8 long-only: 5th-percentile Sharpe 0.55, P(Sharpe<0) = 0.05%, P(−50% DD)
+≈ 0.1%. Every long-only set has P(Sharpe<0) < 1%. Every momentum set has
+P(ruin) > 90%.
+
+**3. Cluster analysis** (hierarchical, on the 90×90 daily-return correlation
+matrix). Five clusters: one big robust family (all contrarian sets W≥2,
+n=58, median Sharpe 0.62), a small W=1 cluster (W=1 behaves differently from
+the rest — another reason to prefer W=8), and three momentum clusters that
+are uniformly toxic. The recommended config sits inside the robust family.
+
+**4. Walk-forward** (re-pick the best set every 126 days by trailing-756-day
+Sharpe, trade it OOS; 13 refits, 1,522 OOS days). The re-selected portfolio
+collapses: **OOS Sharpe 0.19 vs average in-sample Sharpe of the picks 1.18
+(walk-forward efficiency 0.16)**, while *fixed* W=1 long-only scored 0.87 on
+the same OOS days (buy & hold 0.73). Lesson: the edge survives holding a
+plateau parameter; it does not survive chasing recent winners.
+
+Net recommendation: **long-only contrarian, W=8, never re-optimized** —
+the Pine strategy's defaults.
+
 ## Reproduce
 
 ```bash
