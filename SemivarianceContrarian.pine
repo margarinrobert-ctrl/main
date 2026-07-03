@@ -5,6 +5,8 @@ strategy("Semivariance Contrarian (SSRN 2815151)", shorttitle="SAM-Contra",
      pyramiding=3,
      commission_type=strategy.commission.percent,
      commission_value=0.02,
+     margin_long=10,
+     margin_short=10,
      process_orders_on_close=true,
      calc_on_every_tick=false,
      max_bars_back=500)
@@ -141,7 +143,11 @@ if newDay and not na(samValue)
     else if haveSide != wantSide
         // fresh position (also reverses an opposite one)
         tranchesIn := 1
-        qty0 = splitMode ? qtyFor(fullPct / 3) : qtyFor(fullPct) * martMult
+        // martingale doubles from a 1x base (as researched), regardless of
+        // the split-entry full-size setting
+        qty0 = splitMode ? qtyFor(fullPct / 3) :
+             martMode ? qtyFor(math.min(fullPct, 100)) * martMult :
+             qtyFor(fullPct)
         if wantSide == 1
             strategy.entry("L1", strategy.long, qty=qty0)
         else
