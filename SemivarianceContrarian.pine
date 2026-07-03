@@ -2,8 +2,7 @@
 strategy("Semivariance Contrarian (SSRN 2815151)", shorttitle="SAM-Contra",
      overlay=true,
      initial_capital=100000,
-     default_qty_type=strategy.percent_of_equity,
-     default_qty_value=100,
+     pyramiding=3,
      commission_type=strategy.commission.percent,
      commission_value=0.02,
      process_orders_on_close=true,
@@ -34,6 +33,26 @@ mode     = input.string("Long only (best)", "Mode", group=gSig,
      options=["Long only (best)", "Long/short contrarian", "Long/short momentum"])
 minBars  = input.int(20, "Min 30m bars for a valid day", minval=1, group=gSig,
      tooltip="Holiday/stub sessions with fewer bars are skipped, matching the backtest")
+
+// Position sizing — see backtests/nas100_semivariance/martingale_analysis.py.
+// Monte Carlo over 10,000 resampled trade sequences (ruin = -50% account DD):
+//   fixed 1x            : P(ruin)  0.1%, median maxDD -22%
+//   split-entry 1/3 @1x : P(ruin)  0.0%, median maxDD -14%  <- defensive
+//   split-entry 1/3 @2x : P(ruin)  1.6%, ~same CAGR as fixed
+//   martingale x2 cap4  : P(ruin) 24.5%  <- looks great in-sample, do not use
+//   martingale x2 cap8  : P(ruin) 46.5%
+gSize = "Position sizing"
+sizing   = input.string("Fixed", "Sizing mode", group=gSize,
+     options=["Fixed", "Split entry 1/3 avg-down", "Martingale x2 after loss (HIGH RUIN RISK)"],
+     tooltip="Split entry: open 1/3 of full size, add 1/3 at the start of each"
+       + " day the trade is underwater (max 3 tranches). Martingale: double the"
+       + " next trade's size after every loss, reset on a win — Monte Carlo puts"
+       + " its probability of a 50% account drawdown at 24-47%. Research in"
+       + " backtests/nas100_semivariance/martingale_analysis.py")
+fullPct  = input.float(100, "Full position size (% of equity)", minval=1,
+     maxval=200, step=5, group=gSize)
+martCap  = input.float(4, "Martingale size cap (x)", minval=2, maxval=8,
+     step=1, group=gSize)
 
 gViz = "Display"
 showSam  = input.bool(true, "Background tint by yesterday's SAM sign", group=gViz)
@@ -83,15 +102,54 @@ if not na(r)
     dayBars  += 1
 
 // ============================================================
+// Position sizing state
+// ============================================================
+var int lossStreak = 0
+var int closedSeen = 0
+var int tranchesIn = 0
+
+// update the loss streak whenever a trade closes
+if strategy.closedtrades > closedSeen
+    lossStreak := strategy.closedtrades.profit(strategy.closedtrades - 1) < 0 ?
+         lossStreak + 1 : 0
+    closedSeen := strategy.closedtrades
+
+qtyFor(pct) => strategy.equity * (pct / 100) / close
+
+splitMode = sizing == "Split entry 1/3 avg-down"
+martMode  = sizing == "Martingale x2 after loss (HIGH RUIN RISK)"
+martMult  = martMode ? math.min(math.pow(2, lossStreak), martCap) : 1.0
+
+// is the open trade underwater? (side-aware, for the avg-down add)
+underwater = strategy.position_size > 0 ? close < strategy.position_avg_price :
+     strategy.position_size < 0 ? close > strategy.position_avg_price : false
+
+// ============================================================
 // Orders — once per day, on the first bar of the new day
 // ============================================================
 if newDay and not na(samValue)
-    if dir == 1
-        strategy.entry("Long", strategy.long)
-    else if dir == -1
-        strategy.entry("Short", strategy.short)
-    else
+    wantSide = dir == 1 ? 1 : dir == -1 ? -1 : 0
+    haveSide = strategy.position_size > 0 ? 1 : strategy.position_size < 0 ? -1 : 0
+
+    if wantSide == 0
         strategy.close_all("flat day")
+        tranchesIn := 0
+    else if haveSide != wantSide
+        // fresh position (also reverses an opposite one)
+        tranchesIn := 1
+        qty0 = splitMode ? qtyFor(fullPct / 3) : qtyFor(fullPct) * martMult
+        if wantSide == 1
+            strategy.entry("L1", strategy.long, qty=qty0)
+        else
+            strategy.entry("S1", strategy.short, qty=qty0)
+    else if splitMode and tranchesIn < 3 and underwater
+        // avg-down add: one extra tranche per day the trade is losing
+        tranchesIn += 1
+        id = (wantSide == 1 ? "L" : "S") + str.tostring(tranchesIn)
+        if wantSide == 1
+            strategy.entry(id, strategy.long, qty=qtyFor(fullPct / 3))
+        else
+            strategy.entry(id, strategy.short, qty=qtyFor(fullPct / 3))
 
 // ============================================================
 // Display

@@ -116,6 +116,37 @@ TradingView implementation: `../../SemivarianceContrarian.pine`
 (Pine v6 strategy, run on a 30-minute NAS100 chart; long-only by default,
 long/short modes and the W window as inputs).
 
+## Martingale / split-size research (`martingale_analysis.py`)
+
+Position-sizing schemes on top of long-only contrarian W=1, evaluated on the
+historical path **and** on 10,000 bootstrapped 9-year trade sequences (sizing
+is path-dependent, so the Monte Carlo re-runs each scheme's state machine per
+path). Ruin = a 50% account drawdown at any point.
+
+| scheme | hist. CAGR | hist. maxDD | MC median maxDD | **P(ruin)** |
+|---|---|---|---|---|
+| fixed 1x | 16.9% | −22.9% | −21.8% | 0.1% |
+| martingale ×2, cap 4x | 36.5% | −21.4% | −40.1% | **24.5%** |
+| martingale ×2, cap 8x | 41.1% | −21.4% | −48.3% | **46.5%** |
+| anti-martingale ×2, cap 4x | 21.4% | −71.2% | −58.4% | **75.3%** |
+| split-entry 1/3, full = 1x | 9.2% | **−11.0%** | −13.7% | **0.0%** |
+| split-entry 1/3, full = 2x | 18.0% | −21.2% | −26.3% | 1.6% |
+
+The classic martingale is the textbook mirage: the realized 2016–2025 path
+happened to contain no long losing streak (70% trade win rate), so doubling
+after losses *looks* free — same drawdown, double the CAGR. Reshuffle the same
+trades and a quarter (cap 4x) to half (cap 8x) of alternate histories halve
+the account. Sizing cannot add expectancy; it only reshapes the outcome
+distribution around the same edge.
+
+The defensible "split size" version is **tranche averaging-down**: enter 1/3
+of full size, add 1/3 at the start of each day the trade is underwater (max
+3). At a 1x cap it halves the max drawdown (−11% vs −23%) for proportionally
+lower return; at a 2x cap it matches fixed-1x returns with P(ruin) 1.6%.
+Both are implemented in `SemivarianceContrarian.pine` ("Sizing mode" input);
+the martingale mode is included for experimentation but capped and labeled
+high-risk.
+
 ## Reproduce
 
 ```bash
