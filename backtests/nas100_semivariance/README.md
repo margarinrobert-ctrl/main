@@ -202,6 +202,12 @@ to overfit — it holds a graded position equal to the share of W∈2..30
 windows whose SAM is negative. Smoothed selection also passes (0.72).
 Averaging is what works; picking is what fails.
 
+The ensemble's full record: full-sample Sharpe 0.82, CAGR 14.8%, maxDD
+−24.9%, t 2.47, average position 0.58x; Monte Carlo P(edge<0) 0.12%,
+median maxDD −23%, P(−50% DD) 0.1%. TradingView implementation:
+`../../SemivarianceEnsemble.pine` (graded long position = vote share,
+rebalanced daily).
+
 ## Reproduce
 
 ```bash
