@@ -181,6 +181,27 @@ plateau parameter; it does not survive chasing recent winners.
 Net recommendation: **long-only contrarian, W=8, never re-optimized** —
 the Pine strategy's defaults.
 
+## Fixing the walk-forward (`walk_forward_optimization.py`)
+
+Can a selection *process* pass walk-forward? Five processes on identical OOS
+days (Oct 2019 – Oct 2025), ordered by how much per-fold fitting they do:
+
+| process | OOS Sharpe | WF efficiency | OOS maxDD |
+|---|---|---|---|
+| A greedy best-of-90 (the failure) | 0.19 | 0.16 | −45.9% |
+| **B plateau ensemble** (equal-weight long-only W=2..30, no fitting) | **0.79** | **0.94** | −24.9% |
+| C smoothed selection (pick best W±2-averaged trailing Sharpe) | 0.70 | 0.72 | −26.3% |
+| D top-5 ensemble | 0.43 | 0.35 | −30.6% |
+| E fixed W=8 (full-sample pick, benchmark only) | 0.98 | 0.98 | −23.3% |
+| buy & hold | 0.73 | — | −35.6% |
+
+The pattern is monotone: the less a process fits per fold, the better it
+walks forward. The **plateau ensemble passes cleanly** (efficiency 0.94,
+beats buy & hold risk-adjusted with 11pts less drawdown) and has *nothing*
+to overfit — it holds a graded position equal to the share of W∈2..30
+windows whose SAM is negative. Smoothed selection also passes (0.72).
+Averaging is what works; picking is what fails.
+
 ## Reproduce
 
 ```bash
