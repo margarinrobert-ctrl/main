@@ -10,11 +10,18 @@ export default function TickerPage({ params }: { params: { symbol: string } }) {
   const symbol = params.symbol.toUpperCase();
   return (
     <div className="space-y-4">
-      <div>
-        <a href={withBase("/")} className="text-xs text-neutral-500 transition hover:text-neutral-300">
-          ← back to flow
-        </a>
-        <h1 className="mt-0.5 text-2xl font-bold tracking-tight">{symbol}</h1>
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+            <a href={withBase("/")} className="-mx-1 rounded px-1 py-1 uppercase tracking-wider transition hover:text-accent-bright">
+              Terminal
+            </a>
+            <span aria-hidden>/</span>
+            <span className="uppercase tracking-wider text-neutral-300">{symbol}</span>
+          </nav>
+          <h1 className="display mt-1 text-3xl leading-none text-neutral-50">{symbol}</h1>
+          <div className="lbl mt-1.5">Options analytics · dealer positioning</div>
+        </div>
       </div>
       <TickerTabs symbol={symbol} />
     </div>

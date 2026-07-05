@@ -2,13 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   OptionsFlow design system — dark graphite luxury.
+   Layered near-black base · white-alpha surfaces · emerald/cyan accents ·
+   strict call/put semantics · monospace data with premium sans display type.
+   ──────────────────────────────────────────────────────────────────────────── */
+
 :root {
   color-scheme: dark;
-  --bg: #08090c;
-  --panel: rgba(255, 255, 255, 0.022);
-  --border: rgba(255, 255, 255, 0.07);
-  --call: #2f9e5f;
-  --put: #b4493d;
+  --bg: #05060a;
+  --panel-hi: rgba(255, 255, 255, 0.045);
+  --panel-lo: rgba(255, 255, 255, 0.015);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --accent: #10b981;
+  --accent-bright: #34d399;
+  --accent-cyan: #22d3ee;
+  --call: #34d399;
+  --put: #f87171;
+  --text-hi: #fafafa;
+  --text: #d4d4d8;
+  --text-muted: #71717a;
 }
 
 html,
@@ -18,65 +32,227 @@ body {
 
 body {
   @apply text-neutral-200 antialiased;
-  /* Terminal-style monospace stack for the whole data UI */
-  font-family: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", "Roboto Mono", Menlo, Consolas, monospace;
-  font-feature-settings: "tnum" 1; /* tabular figures so numbers align */
-  background: var(--bg);
+  /* Terminal identity: monospace-first for data. Display type opts in via font-sans. */
+  font-family: var(--font-jbm), ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  font-feature-settings: "tnum" 1; /* tabular figures — numbers always align */
+  background:
+    radial-gradient(1100px 480px at 12% -8%, rgba(16, 185, 129, 0.055), transparent 60%),
+    radial-gradient(900px 460px at 95% 8%, rgba(34, 211, 238, 0.04), transparent 55%),
+    radial-gradient(1400px 800px at 50% 120%, rgba(16, 185, 129, 0.03), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+/* Faint blueprint grid over the ambient gradients — the “trading desk” texture. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 25%, transparent 78%);
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 25%, transparent 78%);
 }
 
 header,
-main {
+main,
+footer {
   position: relative;
   z-index: 1;
 }
 
-/* Flat terminal panel (kept class name `glass` so existing components restyle in place) */
+/* ── Panels ─────────────────────────────────────────────────────────────── */
+
+/* Premium panel (class name kept as `glass` so every component restyles in place):
+   gradient fill + hairline border + inset top highlight + soft ambient shadow. */
 .glass {
-  background: var(--panel);
+  background: linear-gradient(180deg, var(--panel-hi), var(--panel-lo));
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 30px -16px rgba(0, 0, 0, 0.6);
 }
 .glass-hover {
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 .glass-hover:hover {
-  border-color: rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--border-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 16px 40px -16px rgba(0, 0, 0, 0.7);
 }
 
-/* Micro uppercase label (the GregFlow ribbon/section style) */
+/* Interactive card: subtle lift + accent edge on hover (for links/clickable tiles). */
+.card-hover {
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease, background 0.18s ease;
+}
+.card-hover:hover {
+  border-color: rgba(16, 185, 129, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 16px 40px -14px rgba(0, 0, 0, 0.7), 0 0 24px -8px rgba(16, 185, 129, 0.25);
+  transform: translateY(-1px);
+}
+
+/* Hairline divider */
+.hairline {
+  border-color: var(--border);
+}
+
+/* ── Typography ─────────────────────────────────────────────────────────── */
+
+/* Micro uppercase label — section eyebrows, KPI captions, table headers. */
 .lbl {
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   font-size: 10px;
   line-height: 1.2;
-  color: #6b7280;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
-/* Bold display brand */
+/* Brand wordmark + display headings: premium sans, tight tracking. */
 .brand {
-  font-family: ui-serif, Georgia, "Times New Roman", serif;
-  letter-spacing: 0.06em;
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  font-weight: 800;
+}
+.display {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.03em;
   font-weight: 700;
+}
+
+h1 {
+  letter-spacing: -0.02em;
 }
 
 /* call / put semantic colors */
 .text-call {
-  color: #4cc38a;
+  color: var(--call);
 }
 .text-put {
-  color: #e2645a;
+  color: var(--put);
 }
 
+/* Gradient accent text (emerald → cyan). */
 .glow-text {
-  color: #4cc38a; /* flat accent — terminal look, no animation */
+  background: linear-gradient(100deg, var(--accent-bright) 10%, var(--accent-cyan) 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-/* Subtle staggered entrance for page sections */
+/* ── Controls ───────────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
+  padding: 0.55rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text-hi);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+}
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.28), rgba(16, 185, 129, 0.14));
+  color: #d1fae5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 24px -8px rgba(16, 185, 129, 0.5);
+}
+.btn-primary:hover {
+  border-color: rgba(52, 211, 153, 0.75);
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.38), rgba(16, 185, 129, 0.18));
+  color: #ecfdf5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 32px -6px rgba(16, 185, 129, 0.6);
+}
+
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+}
+.btn-ghost:hover {
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Small metadata chip / tag. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.2rem 0.65rem;
+  font-size: 11px;
+  color: #a1a1aa;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+/* Native selects & inputs — terminal styled. */
+select,
+input[type="text"],
+input[type="number"],
+input[type="search"] {
+  accent-color: var(--accent);
+}
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+
+/* Institutional data table: micro-cap headers, hairline rows, hover trace. */
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.tbl thead th {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: rgba(8, 9, 12, 0.92);
+  backdrop-filter: blur(4px);
+  z-index: 1;
+}
+.tbl tbody td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+}
+.tbl tbody tr {
+  transition: background 0.12s ease;
+}
+.tbl tbody tr:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+/* ── Motion ─────────────────────────────────────────────────────────────── */
+
 @keyframes fade-up {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -84,60 +260,40 @@ main {
   }
 }
 .fade-up {
-  animation: fade-up 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .fade-up {
-    animation: none;
-  }
+  animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Shimmer skeletons for loading states */
+/* Staggered entrance for grids/lists: apply .stagger to the parent. */
+.stagger > * {
+  animation: fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stagger > *:nth-child(1) { animation-delay: 0.03s; }
+.stagger > *:nth-child(2) { animation-delay: 0.07s; }
+.stagger > *:nth-child(3) { animation-delay: 0.11s; }
+.stagger > *:nth-child(4) { animation-delay: 0.15s; }
+.stagger > *:nth-child(5) { animation-delay: 0.19s; }
+.stagger > *:nth-child(6) { animation-delay: 0.23s; }
+.stagger > *:nth-child(7) { animation-delay: 0.27s; }
+.stagger > *:nth-child(8) { animation-delay: 0.31s; }
+.stagger > *:nth-child(9) { animation-delay: 0.35s; }
+.stagger > *:nth-child(10) { animation-delay: 0.39s; }
+.stagger > *:nth-child(11) { animation-delay: 0.43s; }
+.stagger > *:nth-child(12) { animation-delay: 0.47s; }
+
+/* Shimmer skeletons for loading states. */
 .skeleton {
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.09) 37%, rgba(255, 255, 255, 0.04) 63%);
   background-size: 400% 100%;
   animation: shimmer 1.4s ease infinite;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 @keyframes shimmer {
   to {
     background-position: -135% 0;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .skeleton {
-    animation: none;
-  }
-}
 
-/* Visible, on-brand keyboard focus */
-:where(a, button, [role="button"], [tabindex], input, select, textarea):focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px rgba(47, 158, 95, 0.6);
-  border-radius: 4px;
-}
-
-/* Single-line, horizontally scrollable strip with faded edges (used by ribbons & any tab rows) */
-.tabs-scroll {
-  display: flex;
-  gap: 0.25rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent);
-  mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent);
-}
-.tabs-scroll::-webkit-scrollbar {
-  display: none;
-}
-.tab-pill {
-  white-space: nowrap;
-}
-
-h1 {
-  letter-spacing: -0.01em;
-}
-
-/* Bloomberg-style scrolling ticker tape (render the row twice; translate -50% loops seamlessly) */
+/* Bloomberg-style scrolling tape (row rendered twice; -50% loops seamlessly). */
 @keyframes marquee {
   from {
     transform: translateX(0);
@@ -153,28 +309,90 @@ h1 {
 .animate-marquee:hover {
   animation-play-state: paused;
 }
-@media (prefers-reduced-motion: reduce) {
-  .animate-marquee {
-    animation: none;
+
+/* Live-status dot with a soft breathing halo. */
+.live-dot {
+  position: relative;
+  display: inline-flex;
+  height: 7px;
+  width: 7px;
+  border-radius: 999px;
+  background: var(--accent-bright);
+  box-shadow: 0 0 10px 1px rgba(52, 211, 153, 0.7);
+}
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  border: 1px solid rgba(52, 211, 153, 0.5);
+  animation: breathe 2.8s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0;
+    transform: scale(1.8);
   }
 }
 
-/* Thin terminal scrollbars */
+/* Honor reduced motion everywhere, including canvas-driven surfaces. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Chrome ─────────────────────────────────────────────────────────────── */
+
+/* Visible, on-brand keyboard focus. */
+:where(a, button, [role="button"], [tabindex], input, select, textarea):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px rgba(16, 185, 129, 0.6);
+  border-radius: 6px;
+}
+
+/* Single-line, horizontally scrollable strip with faded edges. */
+.tabs-scroll {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent);
+}
+.tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+.tab-pill {
+  white-space: nowrap;
+}
+
+/* Thin terminal scrollbars. */
 *::-webkit-scrollbar {
-  height: 8px;
-  width: 8px;
+  height: 6px;
+  width: 6px;
 }
 *::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.12);
   border-radius: 8px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(47, 158, 95, 0.5);
+  background: rgba(16, 185, 129, 0.55);
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 
 ::selection {
-  background: rgba(47, 158, 95, 0.32);
+  background: rgba(16, 185, 129, 0.32);
 }

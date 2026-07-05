@@ -26,11 +26,11 @@ import {
 const n0 = (x: number | null | undefined) => (x == null ? "—" : x.toLocaleString(undefined, { maximumFractionDigits: 0 }));
 const n2 = (x: number | null | undefined) => (x == null ? "—" : x.toLocaleString(undefined, { maximumFractionDigits: 2 }));
 
-function Kpi({ label, value, tone }: { label: string; value: string; tone?: string }) {
+function Kpi({ label, value, tone, loading }: { label: string; value: string; tone?: string; loading?: boolean }) {
   return (
-    <div className="flex shrink-0 flex-col gap-0.5 px-3 py-1.5">
+    <div className="flex shrink-0 flex-col gap-1 px-3.5 py-2">
       <span className="lbl">{label}</span>
-      <span className={`text-sm font-semibold ${tone ?? "text-neutral-100"}`}>{value}</span>
+      {loading ? <span className="skeleton h-4 w-14" /> : <span className={`text-sm font-semibold tracking-tight ${tone ?? "text-neutral-100"}`}>{value}</span>}
     </div>
   );
 }
@@ -88,31 +88,40 @@ export function KpiRibbon({ symbol }: { symbol: string }) {
 
   const regime = k?.ngex == null ? "—" : k.ngex >= 0 ? "Long γ" : "Short γ";
 
+  const busy = k == null;
+
   return (
     <div className="glass overflow-hidden">
-      {/* row A — spot + walls */}
-      <div className="tabs-scroll items-stretch divide-x divide-white/5 border-b border-white/5">
-        <div className="flex shrink-0 flex-col gap-0.5 px-3 py-1.5">
-          <span className="lbl">{sym} · spot</span>
-          <span className="text-lg font-bold text-neutral-50">{spot == null ? "—" : `$${n2(spot)}`}</span>
+      {/* row A — spot + dealer levels */}
+      <div className="tabs-scroll items-stretch divide-x divide-white/[0.05] border-b border-white/[0.05]">
+        <div className="flex shrink-0 flex-col gap-1 bg-white/[0.02] px-4 py-2">
+          <span className="lbl flex items-center gap-1.5">
+            <span className="live-dot" style={{ height: 5, width: 5 }} />
+            {sym} · spot
+          </span>
+          {spot == null ? (
+            <span className="skeleton h-5 w-20" />
+          ) : (
+            <span className="display text-lg leading-none text-neutral-50">${n2(spot)}</span>
+          )}
         </div>
-        <Kpi label="Call Wall" value={k ? `$${n0(k.callWall)}` : "—"} tone="text-call" />
-        <Kpi label="Put Wall" value={k ? `$${n0(k.putWall)}` : "—"} tone="text-put" />
-        <Kpi label="Max Pain" value={k ? `$${n0(k.maxPain)}` : "—"} tone="text-amber-300" />
-        <Kpi label="Gamma Flip" value={k ? `$${n0(k.flip)}` : "—"} tone="text-violet-300" />
-        <Kpi label="Δ Call Wall" value={k ? `$${n0(k.dcw)}` : "—"} tone="text-call" />
-        <Kpi label="Δ Put Wall" value={k ? `$${n0(k.dpw)}` : "—"} tone="text-put" />
-        <Kpi label="Net DEX" value={k && k.ndex != null ? fmtUsd(k.ndex) : "—"} tone={(k?.ndex ?? 0) >= 0 ? "text-call" : "text-put"} />
+        <Kpi loading={busy} label="Call Wall" value={k ? `$${n0(k.callWall)}` : "—"} tone="text-call" />
+        <Kpi loading={busy} label="Put Wall" value={k ? `$${n0(k.putWall)}` : "—"} tone="text-put" />
+        <Kpi loading={busy} label="Max Pain" value={k ? `$${n0(k.maxPain)}` : "—"} tone="text-amber-300" />
+        <Kpi loading={busy} label="Gamma Flip" value={k ? `$${n0(k.flip)}` : "—"} tone="text-violet-300" />
+        <Kpi loading={busy} label="Δ Call Wall" value={k ? `$${n0(k.dcw)}` : "—"} tone="text-call" />
+        <Kpi loading={busy} label="Δ Put Wall" value={k ? `$${n0(k.dpw)}` : "—"} tone="text-put" />
+        <Kpi loading={busy} label="Net DEX" value={k && k.ndex != null ? fmtUsd(k.ndex) : "—"} tone={(k?.ndex ?? 0) >= 0 ? "text-call" : "text-put"} />
       </div>
-      {/* row B — metrics */}
-      <div className="tabs-scroll items-stretch divide-x divide-white/5">
-        <Kpi label="ATM IV" value={k && k.iv != null ? `${(k.iv * 100).toFixed(1)}%` : "—"} tone="text-sky-300" />
-        <Kpi label="P/C Ratio" value={k && k.pcr != null ? k.pcr.toFixed(2) : "—"} tone={(k?.pcr ?? 0) > 1 ? "text-put" : "text-call"} />
-        <Kpi label="Net GEX" value={k && k.ngex != null ? fmtUsd(k.ngex) : "—"} tone={(k?.ngex ?? 0) >= 0 ? "text-call" : "text-put"} />
-        <Kpi label="Regime" value={regime} tone={k?.ngex == null ? "text-neutral-300" : k.ngex >= 0 ? "text-call" : "text-put"} />
-        <Kpi label="1σ Daily" value={k && k.em1 != null ? `±$${n2(k.em1.abs)}` : "—"} tone="text-neutral-200" />
-        <Kpi label="Call OI" value={k ? `$${n0(k.coi)}` : "—"} tone="text-neutral-300" />
-        <Kpi label="Put OI" value={k ? `$${n0(k.poi)}` : "—"} tone="text-neutral-300" />
+      {/* row B — vol & positioning metrics */}
+      <div className="tabs-scroll items-stretch divide-x divide-white/[0.05]">
+        <Kpi loading={busy} label="ATM IV" value={k && k.iv != null ? `${(k.iv * 100).toFixed(1)}%` : "—"} tone="text-sky-300" />
+        <Kpi loading={busy} label="P/C Ratio" value={k && k.pcr != null ? k.pcr.toFixed(2) : "—"} tone={(k?.pcr ?? 0) > 1 ? "text-put" : "text-call"} />
+        <Kpi loading={busy} label="Net GEX" value={k && k.ngex != null ? fmtUsd(k.ngex) : "—"} tone={(k?.ngex ?? 0) >= 0 ? "text-call" : "text-put"} />
+        <Kpi loading={busy} label="Regime" value={regime} tone={k?.ngex == null ? "text-neutral-300" : k.ngex >= 0 ? "text-call" : "text-put"} />
+        <Kpi loading={busy} label="1σ Daily" value={k && k.em1 != null ? `±$${n2(k.em1.abs)}` : "—"} tone="text-neutral-200" />
+        <Kpi loading={busy} label="Call OI Wall" value={k ? `$${n0(k.coi)}` : "—"} tone="text-neutral-300" />
+        <Kpi loading={busy} label="Put OI Wall" value={k ? `$${n0(k.poi)}` : "—"} tone="text-neutral-300" />
       </div>
     </div>
   );

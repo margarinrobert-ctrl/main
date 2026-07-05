@@ -62,7 +62,7 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
-// Sidebar navigation groups (GregFlow-style section nav).
+// Sidebar navigation groups.
 const GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: "Overview", tabs: ["Overview", "Signals", "MM Hedge", "Playbook"] },
   { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
@@ -94,6 +94,19 @@ export function TickerTabs({ symbol }: { symbol: string }) {
   const [tab, setTab] = useState<Tab>("Overview");
   const [exp, setExp] = useState("ALL");
   const [expOptions, setExpOptions] = useState<ExpOption[]>([{ value: "ALL", label: "All expirations" }]);
+
+  // Deep-link: honor ?tab= on mount (validated against the tab list).
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("tab");
+    if (p && (TABS as readonly string[]).includes(p)) setTab(p as Tab);
+  }, []);
+
+  const selectTab = (t: Tab) => {
+    setTab(t);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", t);
+    window.history.replaceState(null, "", url.toString());
+  };
 
   // Reset the expiration filter when the ticker changes.
   useEffect(() => {
@@ -163,62 +176,39 @@ export function TickerTabs({ symbol }: { symbol: string }) {
   const validExp = expOptions.some((o) => o.value === exp) ? exp : "ALL";
   const scoped = validExp !== "ALL";
 
-  return (
-    <div className="space-y-3">
-      <KpiRibbon symbol={symbol} />
-      <div className="flex flex-col gap-4 lg:flex-row">
-        {/* GregFlow-style section sidebar */}
-        <aside className="lg:w-44 lg:shrink-0">
-          <div className="glass p-2 lg:sticky lg:top-16">
-            <label className="mb-2 block">
-              <span className="lbl px-1">Expiration</span>
-              <select
-                value={validExp}
-                onChange={(e) => setExp(e.target.value)}
-                className="mt-1 w-full rounded border border-white/10 bg-neutral-900 px-2 py-1 text-xs text-neutral-100 outline-none"
-              >
-                {expOptions.map((o) => (
-                  <option key={o.value} value={o.value} className="bg-neutral-900">
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <nav className="space-y-2">
-              {GROUPS.map((g) => (
-                <div key={g.label}>
-                  <div className="lbl px-2 pb-1">{g.label}</div>
-                  <div className="flex flex-col">
-                    {g.tabs.map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => setTab(t)}
-                        aria-current={tab === t ? "page" : undefined}
-                        className={`rounded px-2 py-1 text-left text-xs transition ${
-                          tab === t ? "border-l-2 border-l-emerald-400 bg-emerald-500/10 font-medium text-emerald-300" : "border-l-2 border-l-transparent text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
-                        }`}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </nav>
-          </div>
-        </aside>
+  const expSelect = (
+    <div className="relative">
+      <select
+        value={validExp}
+        onChange={(e) => setExp(e.target.value)}
+        aria-label="Expiration filter"
+        className="w-full appearance-none rounded-lg border border-white/10 bg-white/[0.03] py-2 pl-3 pr-8 text-xs text-neutral-100 outline-none transition hover:border-white/20 focus:border-accent/50"
+      >
+        {expOptions.map((o) => (
+          <option key={o.value} value={o.value} className="bg-neutral-900">
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <svg aria-hidden viewBox="0 0 12 12" className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-500">
+        <path fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" d="m2.5 4.5 3.5 3.5 3.5-3.5" />
+      </svg>
+    </div>
+  );
 
-        <main className="min-w-0 flex-1 space-y-4">
-          {scoped && (
-            <p className="text-[11px] text-neutral-500">
-              Scoped to <span className="text-emerald-300">{expOptions.find((o) => o.value === validExp)?.label}</span> —{" "}
-              {AXIS_TABS.has(tab)
-                ? "this view spans expirations, so the selection is highlighted, not filtered."
-                : "levels, gamma & greeks are computed for this expiration only."}
-            </p>
-          )}
+  const content = (
+    <>
+      {scoped && (
+        <div className="flex items-center gap-2.5 rounded-lg border border-accent/25 bg-accent/[0.05] px-3 py-2 text-[11px] text-neutral-400">
+          <span className="lbl shrink-0 text-accent-bright">Scope</span>
+          <span className="font-medium text-neutral-200">{expOptions.find((o) => o.value === validExp)?.label}</span>
+          <span className="hidden text-neutral-500 sm:inline">
+            {AXIS_TABS.has(tab) ? "— this view spans expirations; the selection is highlighted, not filtered" : "— levels, gamma & greeks computed for this expiration only"}
+          </span>
+        </div>
+      )}
 
-          {tab === "Overview" && (
+      {tab === "Overview" && (
         <div className="space-y-4">
           <KeyLevels symbol={symbol} exp={validExp} />
           <QuoteCard symbol={symbol} />
@@ -251,6 +241,75 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       )}
       {tab === "History" && <GexHistory symbol={symbol} />}
       {tab === "Pine" && <PineExport symbol={symbol} exp={validExp} />}
+    </>
+  );
+
+  return (
+    <div className="space-y-3">
+      <KpiRibbon symbol={symbol} />
+
+      {/* Mobile: expiration + horizontal module scroller (sticky under the header). */}
+      <div className="sticky top-[53px] z-10 -mx-4 space-y-2 border-b border-white/[0.06] bg-[#05060a]/85 px-4 py-2 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:hidden">
+        {expSelect}
+        <div className="tabs-scroll -mx-1 px-1 pb-0.5">
+          {GROUPS.map((g, gi) => (
+            <div key={g.label} className="flex items-center gap-1">
+              {gi > 0 && <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-white/10" />}
+              {g.tabs.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => selectTab(t)}
+                  aria-current={tab === t ? "page" : undefined}
+                  className={`tab-pill rounded-lg px-3 py-2 text-xs font-medium transition ${
+                    tab === t ? "bg-accent/15 text-accent-bright shadow-glow-accent" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4 lg:flex-row">
+        {/* Desktop: section rail */}
+        <aside className="hidden lg:block lg:w-48 lg:shrink-0">
+          <div className="glass p-2.5 lg:sticky lg:top-16">
+            <label className="mb-3 block">
+              <span className="lbl px-1">Expiration</span>
+              <div className="mt-1.5">{expSelect}</div>
+            </label>
+            <nav className="space-y-3" aria-label="Analytics modules">
+              {GROUPS.map((g) => (
+                <div key={g.label}>
+                  <div className="lbl px-2 pb-1.5">{g.label}</div>
+                  <div className="flex flex-col gap-px">
+                    {g.tabs.map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => selectTab(t)}
+                        aria-current={tab === t ? "page" : undefined}
+                        className={`rounded-md border-l-2 px-2.5 py-1.5 text-left text-xs transition ${
+                          tab === t
+                            ? "border-l-accent-bright bg-accent/[0.08] font-medium text-accent-bright"
+                            : "border-l-transparent text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </div>
+        </aside>
+
+        <main className="min-w-0 flex-1">
+          <div key={tab} className="fade-up space-y-4">
+            {content}
+          </div>
         </main>
       </div>
     </div>
