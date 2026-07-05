@@ -27,3 +27,7 @@ next-env.d.ts
 *.log
 .DS_Store
 /coverage
+
+# Python
+__pycache__/
+*.pyc
