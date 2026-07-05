@@ -1535,6 +1535,45 @@ Omega(θ):               E[(R−θ)⁺] / E[(θ−R)⁺]
 Ulcer Index:            √(mean over t of DD_t²);  Martin = (CAGR − rf)/UI
 ```
 
+## Appendix C — Executed walk-forward, replication and paired-alpha test (2026-07-05)
+
+The owner supplied the underlying 30-minute NAS100 feed (103,693 bars, 2016-11-15 →
+2025-10-01, 2,283 sessions — matching the study's claimed sample). The harness in
+`backtests/walkforward/walkforward_sam.py` independently reimplements the Pine logic
+(gap-excluded 30m semivariance, first-bar-close fills, 10 % rebalance step, 2 bps/side) and
+executes the §1 program. Full tables: `backtests/walkforward/RESULTS.md`; equity chart:
+`backtests/walkforward/wf_equity.png`. The raw data file is deliberately **not** committed
+(broker feed, public repo). Findings:
+
+1. **Replication passes (§17 requirement satisfied).** Full-sample ensemble: Sharpe 0.86 vs
+   claimed 0.83, CAGR 14.0 % vs 15.1 %, maxDD −24.6 % vs −24.9 %, t 2.58 vs 2.51, exposure
+   0.58× vs 0.58×; W=8: 0.97 vs 1.02. The study's "buy & hold 0.73" matches the OOS-days
+   benchmark (0.72 here), not full-sample B&H (0.90 on this feed).
+2. **Walk-forward direction confirmed.** Rolling 756/126, 11 folds: refit-best-single-W
+   collapses to stitched OOS Sharpe 0.34 / WFE 0.29 (study: 0.19/0.16); the fixed ensemble
+   holds at OOS 0.73 / WFE 0.83, 91 % of folds positive, with maxDD −24.6 % vs B&H's −35.7 %
+   on identical days (the claimed "11 pts less drawdown" reproduces exactly). Anchored
+   variant agrees (A: 0.58/0.48; B: 0.73/0.70). Meta-selection (§1.11) never picks the
+   ensemble in-sample — the best single W always looks better in-sample and then
+   underperforms OOS: the selection trap, demonstrated live.
+3. **The paired alpha test (Gap 3) fails to reject luck.** Gross spread vs 0.58×-exposure
+   buy & hold: +2.5 %/yr, Newey–West t = **0.95**. Net of 6.5 % CFD financing: **−1.2 %/yr,
+   t = −0.47**. On a CFD, the timing edge is fully consumed by financing; on futures/cash
+   (financing ≈ 0 to embedded), the alpha is positive but statistically indistinguishable
+   from zero at this sample length.
+4. **Delay robustness passes (§7.3.3):** +1-bar-delayed fills leave the ensemble unchanged
+   (Sharpe 0.87 vs 0.86) — live alert latency is not a threat.
+5. **Scorecard update (§16.2):** component 1 stays 8 (now independently verified); component
+   3 drops 5→4 (the decisive significance test came back inconclusive-to-negative);
+   component 5 rises 3→4 (stitched OOS verified by second implementation); component 7
+   rises 4→5 (delay test passed, financing quantified). **Total: 58 → 59/100** — the score
+   barely moves; what moved is certainty. The honest product description is now sharper:
+   *SAM-Best delivers index-like risk-adjusted returns at 0.58× average exposure with
+   roughly one-third less drawdown — a defensive exposure-grading overlay. Its claim to
+   genuine timing alpha is unproven (t ≈ 1 gross, negative net on CFDs), so it must be
+   implemented on futures or cash instruments, and sized as a beta substitute, not an
+   alpha engine.*
+
 ## References
 
 - Baruník, Kočenda & Vácha — semivariance/asymmetric volatility work, SSRN 2815151 (the
