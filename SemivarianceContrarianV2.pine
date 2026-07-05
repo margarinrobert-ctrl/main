@@ -53,6 +53,32 @@ strategy("Semivariance Contrarian v2 — SAM-Best (validated core + risk/exec up
 //     days of history. Order alert_message on every rebalance for webhook
 //     automation. Live status table + data-window diagnostic plots.
 //
+// ============================================================
+// EXECUTED VALIDATION (backtests/walkforward/, run 2026-07-05)
+// ============================================================
+// An independent Python replication of this script's exact logic, run on
+// the owner's 30m NAS100 feed (103,693 bars, Nov 2016 - Oct 2025):
+//
+//  - Replication PASSED: ensemble Sharpe 0.86 (study claimed 0.83), maxDD
+//    -24.6% (claimed -24.9%), avg exposure 0.58x (exact), W=8 0.97 (1.02).
+//  - Rolling walk-forward (IS 756d / OOS 126d, 11 folds): refitting the
+//    best single W collapses (OOS Sharpe 0.34, WFE 0.29, picks bounce
+//    W8/W13/W29/W6/W4/W27...); THIS fixed ensemble holds (OOS Sharpe 0.73,
+//    WFE 0.83, 91% of folds positive, maxDD -25% vs buy & hold -36% on the
+//    same days). Anchored variant agrees.
+//  - +1-bar delayed fills leave results unchanged (0.87) - latency-robust.
+//  - Paired alpha vs 0.58x-exposure buy & hold (Newey-West t): +2.5%/yr
+//    gross, t = 0.95 - NOT statistically distinguishable from luck; net of
+//    6.5% CFD financing it is -1.2%/yr, t = -0.47.
+//
+// OPERATING RULES the executed tests imply:
+//  1) Trade futures or cash index products only. On a financed CFD the
+//     overnight swap consumes the entire timing edge (set the financing
+//     input to your broker's real rate and watch the net-equity row).
+//  2) Size this as a BETA SUBSTITUTE - index-like risk-adjusted return at
+//     0.58x average exposure with roughly one-third less drawdown - not as
+//     an alpha engine. Its timing alpha is unproven at this sample length.
+//
 // USE ON A 30-MINUTE NAS100 CHART. Long only. Signals evaluate once per
 // day and fill at the close of the (first + delay) bar of the session.
 // Read VALIDATION.md before trusting any number this prints.
