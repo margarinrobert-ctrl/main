@@ -1574,6 +1574,36 @@ executes the §1 program. Full tables: `backtests/walkforward/RESULTS.md`; equit
    implemented on futures or cash instruments, and sized as a beta substitute, not an
    alpha engine.*
 
+## Appendix D — Executed intraday conversion search (2026-07-05)
+
+On the owner's request, the flat-by-close (day-trading) conversion flagged in §I.1 was
+researched exhaustively on the same 30m feed. Harness: `backtests/intraday/intraday_grid.py`;
+tables: `backtests/intraday/RESULTS.md`; entry×exit Sharpe surface:
+`backtests/intraday/intraday_grid.png`. Grid: 46 entry × 46 exit half-hour slots × {graded,
+binary ≥0.25/0.50/0.75, always-in control, momentum control} = **6,210 configurations**, all
+net of 2 bps/side (4 bps per daily round trip). Findings:
+
+1. **The signal's intraday component is real but small.** Conditional decomposition: on
+   high-conviction days (vote > 2/3) the intraday leg earns +9.8 bps/day (NW t = 2.3) vs
+   +0.4 bps overnight; the graded-vs-always paired test gives +3.1 %/yr, t = 1.45.
+2. **No combination clears the multiple-testing bar.** Best of all 6,210: net Sharpe 0.54,
+   versus ≈ 1.24 expected from the best of that many correlated null trials on 8.9 years
+   (§12.4 arithmetic). Full-sample winners here are presumed selection noise.
+3. **Walk-forward of time-window selection fails outright**: refit-best-config per 126-day
+   fold scores stitched OOS Sharpe **−0.20** (WFE −0.21, 27 % folds positive), with picks
+   flipping between unrelated grid corners (BIN25 → MOM → BIN75). Entry/exit times must
+   never be tuned.
+4. **The only defensible configuration is the pre-specified plateau** — graded ensemble,
+   enter at session start, exit near session end: full-sample net Sharpe ≈ 0.50, OOS-days
+   0.34, maxDD −31 %, and Sharpe 0.16 at 2× costs. US-cash-hours-only variants are worse
+   (always-in control −0.24): this feed's intraday drift sits in the early/European hours.
+5. **Verdict: the swing version dominates.** v2 (0.86 full / 0.73 WF-OOS) roughly doubles
+   the intraday variant's risk-adjusted return; overnight exposure is where most of the
+   compensation lives, and a 4 bps daily toll is heavy against a ~10 bps conditional edge.
+   `SemivarianceContrarianV3.pine` implements the intraday candidate honestly (defaults =
+   the pre-specified plateau, warnings in the header) for users under a hard no-overnight
+   constraint; everyone else should trade v2 on futures/cash per Appendix C.
+
 ## References
 
 - Baruník, Kočenda & Vácha — semivariance/asymmetric volatility work, SSRN 2815151 (the
