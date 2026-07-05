@@ -1505,6 +1505,16 @@ committed in this repo:
    nothing in the script prevents `fullPct=200`. Consider hard-capping `fullPct` at 100 in
    code, since the study's own MC rejected 2×.
 
+**v2 addendum.** `SemivarianceContrarianV2.pine` implements every code-level item above while
+keeping v1's trading decisions as the default: hard 1× cap (item 6), warmup fix (item 4), an
+optional vote-change rebalance trigger (item 3), a display-only overnight-financing model with
+net-of-equity reporting (Gap 4 / §7.2), an execution-delay input for the §7.3.3 robustness
+test, an optional pre-committed drawdown halt (§18.16), optional ±Nσ winsorization of 30m
+returns (§9.3), and order alert messages for live automation. The behavior-changing options
+(winsorization, vote-mode rebalancing, delay > 0) ship **off** by default because each creates
+a new strategy that must re-enter the pipeline at §18 step 4; v1 remains the frozen artifact
+matching the study.
+
 ## Appendix B — Equation quick reference
 
 ```
