@@ -5,7 +5,8 @@ import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer,
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import { fmtUsd, gexByExpiration } from "@/lib/flow/analytics";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR, TOOLTIP_PROPS } from "@/lib/chartTheme";
+import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -48,44 +49,56 @@ export function GexTerm({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
   );
 
   return (
-    <div className="glass p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="font-semibold">Gamma term structure · {symbol}</h2>
-        <span className="text-xs text-neutral-500">net GEX by expiration ($/1%)</span>
-      </div>
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <SectionHeader eyebrow="Gamma term structure" title={symbol} right={<span className="lbl">Net GEX by expiration ($/1%)</span>} />
       {state === "loading" && <Loading label="Loading term structure…" />}
       {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No gamma data (needs greeks)." />}
+      {state === "empty" && <EmptyState label="Greeks unavailable for this chain." />}
       {state === "ok" && (
         <>
-          <div className="h-[320px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                <CartesianGrid stroke="#262626" />
-                <XAxis dataKey="label" tick={{ fill: "#a3a3a3", fontSize: 11 }} stroke="#404040" />
-                <YAxis tickFormatter={(v) => fmtUsd(Number(v))} tick={{ fill: "#a3a3a3", fontSize: 11 }} stroke="#404040" width={70} />
-                <Tooltip
-                  contentStyle={{ background: "#0a0a0a", border: "1px solid #404040", borderRadius: 6, fontSize: 12 }}
-                  formatter={(v: number | string) => [fmtUsd(Number(v)), "net GEX"]}
-                  labelFormatter={(l, p) => `${p?.[0]?.payload?.expiration ?? l}`}
-                  cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                />
-                <ReferenceLine y={0} stroke="#525252" />
-                <Bar dataKey="gex" radius={[3, 3, 0, 0]} isAnimationActive={false}>
-                  {data.map((d) => (
-                    <Cell
-                      key={d.expiration}
-                      fill={d.gex >= 0 ? "#10b981" : "#ef4444"}
-                      stroke={exp !== "ALL" && d.expiration === exp ? "#e5e5e5" : undefined}
-                      strokeWidth={exp !== "ALL" && d.expiration === exp ? 2 : 0}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <div className={data.length > 14 ? "overflow-x-auto" : ""}>
+            <div className="h-[320px] w-full" style={data.length > 14 ? { minWidth: data.length * 44 } : undefined}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
+                  <defs>
+                    <linearGradient id="gt-pos" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={CHART.call} stopOpacity={0.9} />
+                      <stop offset="100%" stopColor={CHART.call} stopOpacity={0.4} />
+                    </linearGradient>
+                    <linearGradient id="gt-neg" x1="0" y1="1" x2="0" y2="0">
+                      <stop offset="0%" stopColor={CHART.put} stopOpacity={0.9} />
+                      <stop offset="100%" stopColor={CHART.put} stopOpacity={0.4} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid {...GRID_PROPS} />
+                  <XAxis dataKey="label" {...AXIS_PROPS} />
+                  <YAxis tickFormatter={(v) => fmtUsd(Number(v))} {...AXIS_PROPS} width={64} />
+                  <Tooltip
+                    {...TOOLTIP_PROPS}
+                    formatter={(v: number | string) => [fmtUsd(Number(v)), "Net GEX"]}
+                    labelFormatter={(l, p) => `${p?.[0]?.payload?.expiration ?? l}`}
+                    cursor={TOOLTIP_CURSOR}
+                  />
+                  <ReferenceLine y={0} stroke="rgba(255,255,255,0.16)" />
+                  <Bar dataKey="gex" radius={[3, 3, 0, 0]} isAnimationActive={false}>
+                    {data.map((d) => {
+                      const selected = exp !== "ALL" && d.expiration === exp;
+                      return (
+                        <Cell
+                          key={d.expiration}
+                          fill={d.gex >= 0 ? "url(#gt-pos)" : "url(#gt-neg)"}
+                          style={selected ? { filter: `drop-shadow(0 0 6px ${d.gex >= 0 ? "rgba(52,211,153,0.55)" : "rgba(248,113,113,0.55)"})` } : undefined}
+                          opacity={exp !== "ALL" && !selected ? 0.45 : 1}
+                        />
+                      );
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-          <p className="mt-2 text-xs text-neutral-500">
-            Where dealer gamma concentrates by tenor — front expirations (e.g. 0DTE/weeklies) drive intraday pinning.
+          <p className="mt-2 text-xs leading-relaxed text-neutral-500">
+            Dealer gamma concentration by tenor — front expirations drive intraday pinning.
           </p>
         </>
       )}

@@ -5,14 +5,14 @@ import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import { filterByExpiration } from "@/lib/flow/analytics";
 import { buildPlaybook, type Side } from "@/lib/flow/playbook";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
 const sideStyles: Record<Side, { chip: string; border: string; label: string }> = {
-  bullish: { chip: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40", border: "border-l-emerald-500", label: "Bullish" },
-  bearish: { chip: "bg-red-500/15 text-red-300 border-red-500/40", border: "border-l-red-500", label: "Bearish" },
-  neutral: { chip: "bg-neutral-500/15 text-neutral-300 border-neutral-500/40", border: "border-l-neutral-500", label: "Neutral" },
+  bullish: { chip: "border-call/30 bg-call/10 text-call", border: "border-l-call/80", label: "Bullish" },
+  bearish: { chip: "border-put/30 bg-put/10 text-put", border: "border-l-put/80", label: "Bearish" },
+  neutral: { chip: "border-white/10 bg-white/[0.03] text-neutral-300", border: "border-l-accent-cyan/60", label: "Neutral" },
 };
 
 export function Playbook({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
@@ -48,57 +48,62 @@ export function Playbook({ symbol, exp = "ALL" }: { symbol: string; exp?: string
   const pb = useMemo(() => buildPlaybook(filterByExpiration(chain, exp), spot), [chain, spot, exp]);
 
   return (
-    <div className="glass p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Intraday Playbook · {symbol}</h2>
-        <span className="text-xs text-neutral-500">scalping bias from dealer gamma</span>
-      </div>
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <SectionHeader eyebrow="Intraday playbook" title={symbol} right={<span className="lbl">Bias from dealer gamma positioning</span>} />
 
-      {state === "loading" && <Loading label="Reading the tape…" />}
+      {state === "loading" && <Loading label="Loading gamma profile…" />}
       {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No options data to build a playbook." />}
+      {state === "empty" && <EmptyState label="No options data for a playbook." hint="The playbook builds from the option chain's dealer-gamma profile." />}
       {state === "ok" && (
         <>
-          <div className="mb-3 flex flex-wrap gap-2">
-            <span
-              className={`rounded-full border px-3 py-1 text-sm font-medium ${
-                pb.regime === "long"
-                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                  : pb.regime === "short"
-                    ? "border-red-500/40 bg-red-500/10 text-red-300"
-                    : "border-white/15 text-neutral-300"
-              }`}
-            >
-              {pb.regime === "long" ? "Long γ · mean-revert" : pb.regime === "short" ? "Short γ · momentum" : "γ n/a"}
-            </span>
-            <span className={`rounded-full border px-3 py-1 text-sm font-medium ${sideStyles[pb.bias].chip}`}>
-              Bias: {sideStyles[pb.bias].label}
-            </span>
+          <div className="mb-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${
+                  pb.regime === "long"
+                    ? "border-call/30 bg-call/10 text-call"
+                    : pb.regime === "short"
+                      ? "border-put/30 bg-put/10 text-put"
+                      : "border-white/10 bg-white/[0.03] text-neutral-300"
+                }`}
+              >
+                {pb.regime === "long" ? "Long γ · mean-revert" : pb.regime === "short" ? "Short γ · momentum" : "γ n/a"}
+              </span>
+              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${sideStyles[pb.bias].chip}`}>
+                Bias · {sideStyles[pb.bias].label}
+              </span>
+            </div>
+            <div className="lbl mt-3">Regime read</div>
+            <p className="mt-1 text-sm leading-relaxed text-neutral-300">{pb.regimeText}</p>
+            <p className="mt-1.5 text-sm leading-relaxed text-neutral-400">{pb.biasText}</p>
           </div>
 
-          <p className="mb-1 text-sm text-neutral-300">{pb.regimeText}</p>
-          <p className="mb-4 text-sm text-neutral-400">{pb.biasText}</p>
-
-          <div className="space-y-2">
+          <div className="stagger space-y-2">
             {pb.plays.map((p) => (
-              <div key={p.title} className={`rounded-md border border-white/5 border-l-4 bg-white/[0.02] p-3 ${sideStyles[p.side].border}`}>
+              <div
+                key={p.title}
+                className={`rounded-xl border border-white/[0.06] border-l-2 bg-white/[0.02] p-3.5 transition-colors hover:border-white/[0.14] hover:bg-white/[0.035] ${sideStyles[p.side].border}`}
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium text-neutral-100">{p.title}</span>
-                  <span className={`rounded-full border px-2 py-0.5 text-[11px] ${sideStyles[p.side].chip}`}>
+                  <span className="text-sm font-medium text-neutral-100">{p.title}</span>
+                  <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] ${sideStyles[p.side].chip}`}>
                     {sideStyles[p.side].label} · {p.bias}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-neutral-400">{p.detail}</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-neutral-400">{p.detail}</p>
               </div>
             ))}
           </div>
 
-          <div className="mt-4 space-y-1">
-            {pb.notes.map((n) => (
-              <p key={n} className="text-[11px] text-neutral-500">
-                {n}
-              </p>
-            ))}
+          <div className="mt-4 border-t border-white/[0.05] pt-3">
+            <div className="lbl mb-1.5">Model notes</div>
+            <div className="space-y-1">
+              {pb.notes.map((n) => (
+                <p key={n} className="text-[11px] leading-relaxed text-neutral-500">
+                  {n}
+                </p>
+              ))}
+            </div>
           </div>
         </>
       )}

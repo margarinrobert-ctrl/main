@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import { deltaCallWall, deltaFlip, deltaPutWall, dexByStrike, fmtUsd, netDex } from "@/lib/flow/analytics";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { AXIS_PROPS, CHART, CHART_TICK, TOOLTIP_CURSOR, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
+import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -69,79 +70,77 @@ export function DexProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
   const height = Math.min(720, Math.max(380, data.length * 22));
 
   return (
-    <div className="glass p-4">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Delta-exposure (DEX) profile · {symbol}</h2>
-        <span className="text-xs text-neutral-500">
-          $Δ of OI by strike · {exp === "ALL" ? "all expirations" : exp}
-          {ndex != null ? ` · net ${fmtUsd(ndex)}` : ""}
-        </span>
-      </div>
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <SectionHeader
+        eyebrow="Delta exposure"
+        title={symbol}
+        right={
+          <span className="lbl">
+            $Δ of OI by strike · {exp === "ALL" ? "all expirations" : exp}
+            {ndex != null ? ` · net ${fmtUsd(ndex)}` : ""}
+          </span>
+        }
+      />
       {state === "loading" && <Loading label="Loading delta exposure…" />}
       {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No delta data (needs greeks)." />}
+      {state === "empty" && <EmptyState label="Greeks unavailable for this chain." hint="Delta exposure requires per-contract delta; it appears once greeks are present." />}
       {state === "ok" && (
         <>
           <div style={{ height }} className="w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} layout="vertical" stackOffset="sign" margin={{ top: 8, right: 44, left: 8, bottom: 8 }} barCategoryGap={1}>
-                <XAxis
-                  type="number"
-                  tickFormatter={(v) => fmtUsd(Number(v))}
-                  tick={{ fill: "#a3a3a3", fontSize: 11 }}
-                  stroke="#404040"
-                />
-                <YAxis
-                  type="category"
-                  dataKey="strike"
-                  tick={{ fill: "#a3a3a3", fontSize: 10 }}
-                  stroke="#404040"
-                  width={56}
-                  interval={0}
-                />
+              <BarChart data={data} layout="vertical" stackOffset="sign" margin={{ top: 8, right: 40, left: 4, bottom: 8 }} barCategoryGap={1}>
+                <defs>
+                  <linearGradient id="dx-call" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor={CHART.call} stopOpacity={0.45} />
+                    <stop offset="100%" stopColor={CHART.call} stopOpacity={0.9} />
+                  </linearGradient>
+                  <linearGradient id="dx-put" x1="1" y1="0" x2="0" y2="0">
+                    <stop offset="0%" stopColor={CHART.put} stopOpacity={0.45} />
+                    <stop offset="100%" stopColor={CHART.put} stopOpacity={0.9} />
+                  </linearGradient>
+                </defs>
+                <XAxis type="number" tickFormatter={(v) => fmtUsd(Number(v))} {...AXIS_PROPS} />
+                <YAxis type="category" dataKey="strike" {...AXIS_PROPS} tick={CHART_TICK} width={48} interval={0} />
                 <Tooltip
-                  contentStyle={{ background: "#0a0a0a", border: "1px solid #404040", borderRadius: 6, fontSize: 12 }}
-                  formatter={(v: number | string, name) => [fmtUsd(Number(v)), name === "callDex" ? "call Δ-exp" : "put Δ-exp"]}
-                  labelFormatter={(l) => `strike ${l}`}
-                  cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                  {...TOOLTIP_PROPS}
+                  formatter={(v: number | string, name) => [fmtUsd(Number(v)), name === "callDex" ? "Call Δ-exposure" : "Put Δ-exposure"]}
+                  labelFormatter={(l) => `Strike ${l}`}
+                  cursor={TOOLTIP_CURSOR}
                 />
-                <ReferenceLine x={0} stroke="#525252" />
+                <ReferenceLine x={0} stroke="rgba(255,255,255,0.16)" />
                 {levels.S != null && (
-                  <ReferenceLine y={levels.S} stroke="#e5e5e5" strokeDasharray="4 4" label={{ value: "S", position: "right", fill: "#e5e5e5", fontSize: 11 }} />
+                  <ReferenceLine y={levels.S} stroke={CHART.spot} strokeDasharray="4 4" label={refLabel("Spot", CHART.spot, "insideTopRight")} />
                 )}
                 {levels.C != null && (
-                  <ReferenceLine y={levels.C} stroke="#34d399" strokeDasharray="4 4" label={{ value: "C", position: "right", fill: "#34d399", fontSize: 11 }} />
+                  <ReferenceLine y={levels.C} stroke={CHART.call} strokeDasharray="4 4" label={refLabel("Δ call wall", CHART.call, "insideTopLeft")} />
                 )}
                 {levels.F != null && (
-                  <ReferenceLine y={levels.F} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "F", position: "right", fill: "#f59e0b", fontSize: 11 }} />
+                  <ReferenceLine y={levels.F} stroke={CHART.violet} strokeDasharray="4 4" label={refLabel("Δ-neutral", CHART.violet, "insideTopRight")} />
                 )}
                 {levels.P != null && (
-                  <ReferenceLine y={levels.P} stroke="#ef4444" strokeDasharray="4 4" label={{ value: "P", position: "right", fill: "#ef4444", fontSize: 11 }} />
+                  <ReferenceLine y={levels.P} stroke={CHART.put} strokeDasharray="4 4" label={refLabel("Δ put wall", CHART.put, "insideTopLeft")} />
                 )}
-                <Bar dataKey="callDex" stackId="dex" radius={[0, 3, 3, 0]} isAnimationActive={false}>
-                  {data.map((d) => (
-                    <Cell key={`c-${d.strike}`} fill="#2f9e5f" />
-                  ))}
-                </Bar>
-                <Bar dataKey="putDex" stackId="dex" radius={[3, 0, 0, 3]} isAnimationActive={false}>
-                  {data.map((d) => (
-                    <Cell key={`p-${d.strike}`} fill="#b4493d" />
-                  ))}
-                </Bar>
+                <Bar dataKey="callDex" stackId="dex" fill="url(#dx-call)" radius={[0, 3, 3, 0]} isAnimationActive={false} />
+                <Bar dataKey="putDex" stackId="dex" fill="url(#dx-put)" radius={[3, 0, 0, 3]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-neutral-400">
-            <span><span className="text-neutral-200">S</span> spot</span>
-            <span><span className="text-emerald-400">C</span> Δ call wall</span>
-            <span><span className="text-amber-400">F</span> Δ-neutral flip</span>
-            <span><span className="text-red-400">P</span> Δ put wall</span>
-            <span className="text-neutral-500">· green = call delta (right), red = put delta (left)</span>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-white/[0.05] pt-3">
+            {[
+              { c: CHART.call, l: "Call Δ-exposure" },
+              { c: CHART.put, l: "Put Δ-exposure" },
+              { c: CHART.spot, l: "Spot" },
+              { c: CHART.violet, l: "Δ-neutral" },
+            ].map((it) => (
+              <span key={it.l} className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+                <span className="h-2 w-2 rounded-sm" style={{ background: it.c }} />
+                {it.l}
+              </span>
+            ))}
           </div>
-          <p className="mt-2 text-[11px] text-neutral-500">
-            Delta-exposure = delta × open interest × 100 × spot, per strike. The <b>call wall</b> (peak call Δ above spot)
-            tends to act as resistance and the <b>put wall</b> (peak put Δ below spot) as support — delta-weighting favours
-            the strikes that actually move with price, so these track the <i>hedgeable</i> delta dealers must trade.
+          <p className="mt-2 text-[11px] leading-relaxed text-neutral-600">
+            Delta-exposure = delta × open interest × 100 × spot, per strike. Peak call Δ-exposure above spot marks hedgeable
+            resistance; peak put Δ-exposure below spot marks hedgeable support.
           </p>
         </>
       )}

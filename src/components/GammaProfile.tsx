@@ -5,12 +5,10 @@ import { Bar, BarChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import { callWall, fmtUsd, gammaFlip, gexByStrike, putWall } from "@/lib/flow/analytics";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { AXIS_PROPS, CHART, CHART_TICK, TOOLTIP_CURSOR, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
+import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
-
-const CALL = "#2f9e5f";
-const PUT = "#b4493d";
 
 export function GammaProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
   const [chain, setChain] = useState<OptionContract[]>([]);
@@ -70,49 +68,61 @@ export function GammaProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: st
   const height = Math.min(720, Math.max(380, data.length * 20));
 
   return (
-    <div className="glass p-4">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Gamma exposure · {symbol}</h2>
-        <span className="lbl">net GEX ($/1%) · {exp === "ALL" ? "all expirations" : exp}</span>
-      </div>
-      {state === "loading" && <Loading label="Loading gamma…" />}
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <SectionHeader eyebrow="Gamma exposure" title={symbol} right={<span className="lbl">Net GEX ($/1%) · {exp === "ALL" ? "all expirations" : exp}</span>} />
+      {state === "loading" && <Loading label="Loading gamma exposure…" />}
       {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No gamma data (needs greeks)." />}
+      {state === "empty" && <EmptyState label="Greeks unavailable for this chain." hint="Gamma exposure requires per-contract gamma; it appears once greeks are present." />}
       {state === "ok" && (
         <>
           <div style={{ height }} className="relative w-full">
             {/* PUT / CALL watermark */}
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-[18%] text-4xl font-bold tracking-widest text-white/[0.04]">
+            <div className="pointer-events-none absolute inset-0 hidden items-center justify-between px-[22%] font-sans text-4xl font-bold tracking-widest text-white/[0.035] sm:flex">
               <span>PUT</span>
               <span>CALL</span>
             </div>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} layout="vertical" stackOffset="sign" margin={{ top: 8, right: 44, left: 8, bottom: 8 }} barCategoryGap={1}>
-                <XAxis type="number" tickFormatter={(v) => fmtUsd(Number(v))} tick={{ fill: "#a3a3a3", fontSize: 11 }} stroke="#404040" />
-                <YAxis type="category" dataKey="strike" tick={{ fill: "#a3a3a3", fontSize: 10 }} stroke="#404040" width={56} interval={0} />
+              <BarChart data={data} layout="vertical" stackOffset="sign" margin={{ top: 8, right: 40, left: 4, bottom: 8 }} barCategoryGap={1}>
+                <defs>
+                  <linearGradient id="gp-call" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor={CHART.call} stopOpacity={0.45} />
+                    <stop offset="100%" stopColor={CHART.call} stopOpacity={0.9} />
+                  </linearGradient>
+                  <linearGradient id="gp-put" x1="1" y1="0" x2="0" y2="0">
+                    <stop offset="0%" stopColor={CHART.put} stopOpacity={0.45} />
+                    <stop offset="100%" stopColor={CHART.put} stopOpacity={0.9} />
+                  </linearGradient>
+                </defs>
+                <XAxis type="number" tickFormatter={(v) => fmtUsd(Number(v))} {...AXIS_PROPS} />
+                <YAxis type="category" dataKey="strike" {...AXIS_PROPS} tick={CHART_TICK} width={48} interval={0} />
                 <Tooltip
-                  contentStyle={{ background: "#0a0a0a", border: "1px solid #404040", borderRadius: 6, fontSize: 12 }}
-                  formatter={(v: number | string, n) => [fmtUsd(Number(v)), n === "callGex" ? "call GEX" : "put GEX"]}
-                  labelFormatter={(l) => `strike ${l}`}
-                  cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                  {...TOOLTIP_PROPS}
+                  formatter={(v: number | string, n) => [fmtUsd(Number(v)), n === "callGex" ? "Call GEX" : "Put GEX"]}
+                  labelFormatter={(l) => `Strike ${l}`}
+                  cursor={TOOLTIP_CURSOR}
                 />
-                <ReferenceLine x={0} stroke="#525252" />
-                {levels.S != null && <ReferenceLine y={levels.S} stroke="#d4c44a" strokeDasharray="4 4" label={{ value: "S", position: "right", fill: "#d4c44a", fontSize: 11 }} />}
-                {levels.C != null && <ReferenceLine y={levels.C} stroke={CALL} strokeDasharray="4 4" label={{ value: "C", position: "right", fill: CALL, fontSize: 11 }} />}
-                {levels.G != null && <ReferenceLine y={levels.G} stroke="#8b7bd8" strokeDasharray="4 4" label={{ value: "G", position: "right", fill: "#8b7bd8", fontSize: 11 }} />}
-                {levels.P != null && <ReferenceLine y={levels.P} stroke={PUT} strokeDasharray="4 4" label={{ value: "P", position: "right", fill: PUT, fontSize: 11 }} />}
-                <Bar dataKey="putGex" stackId="gex" fill={PUT} radius={[3, 0, 0, 3]} isAnimationActive={false} />
-                <Bar dataKey="callGex" stackId="gex" fill={CALL} radius={[0, 3, 3, 0]} isAnimationActive={false} />
+                <ReferenceLine x={0} stroke="rgba(255,255,255,0.16)" />
+                {levels.S != null && <ReferenceLine y={levels.S} stroke={CHART.spot} strokeDasharray="4 4" label={refLabel("Spot", CHART.spot, "insideTopRight")} />}
+                {levels.C != null && <ReferenceLine y={levels.C} stroke={CHART.call} strokeDasharray="4 4" label={refLabel("Call wall", CHART.call, "insideTopLeft")} />}
+                {levels.G != null && <ReferenceLine y={levels.G} stroke={CHART.violet} strokeDasharray="4 4" label={refLabel("Flip", CHART.violet, "insideTopRight")} />}
+                {levels.P != null && <ReferenceLine y={levels.P} stroke={CHART.put} strokeDasharray="4 4" label={refLabel("Put wall", CHART.put, "insideTopLeft")} />}
+                <Bar dataKey="putGex" stackId="gex" fill="url(#gp-put)" radius={[3, 0, 0, 3]} isAnimationActive={false} />
+                <Bar dataKey="callGex" stackId="gex" fill="url(#gp-call)" radius={[0, 3, 3, 0]} isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-neutral-400">
-            <span><span className="text-call">▮</span> call γ (right)</span>
-            <span><span className="text-put">▮</span> put γ (left)</span>
-            <span><span style={{ color: "#d4c44a" }}>S</span> spot</span>
-            <span><span className="text-call">C</span> call wall</span>
-            <span><span style={{ color: "#8b7bd8" }}>G</span> γ-flip</span>
-            <span><span className="text-put">P</span> put wall</span>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-white/[0.05] pt-3">
+            {[
+              { c: CHART.call, l: "Call GEX" },
+              { c: CHART.put, l: "Put GEX" },
+              { c: CHART.spot, l: "Spot" },
+              { c: CHART.violet, l: "Gamma flip" },
+            ].map((it) => (
+              <span key={it.l} className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+                <span className="h-2 w-2 rounded-sm" style={{ background: it.c }} />
+                {it.l}
+              </span>
+            ))}
           </div>
         </>
       )}

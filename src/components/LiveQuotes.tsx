@@ -34,39 +34,52 @@ export function LiveQuotes() {
     };
   }, []);
 
+  const empty = Object.keys(quotes).length === 0;
+
   return (
-    <div className="border border-[#ffa028]/30 bg-black p-3 font-mono">
-      <div className="mb-2 text-[10px] uppercase tracking-[0.08em] text-[#ffa028]">Watchlist · live</div>
-      <div className="grid grid-cols-2 gap-2">
-        {SYMBOLS.map((s) => {
-          const q = quotes[s];
-          const chg = q?.percentChange ?? null;
-          const up = (chg ?? 0) >= 0;
-          return (
-            <a
-              key={s}
-              href={withBase(`/ticker/${s}`)}
-              className="rounded border border-[#ffa028]/15 bg-white/[0.02] px-3 py-2 transition hover:border-[#ffa028]/40"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-[#ffa028]">{s}</span>
-                <span className={`font-mono text-[11px] ${chg == null ? "text-neutral-500" : up ? "text-call" : "text-put"}`}>
-                  {chg != null ? `${up ? "▲" : "▼"} ${Math.abs(chg).toFixed(2)}%` : "—"}
-                </span>
-              </div>
-              <div className="mt-0.5 font-mono text-lg text-neutral-50">
-                {q?.last != null ? q.last.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}
-              </div>
-              {q?.netChange != null && (
-                <div className={`font-mono text-[11px] ${up ? "text-call" : "text-put"}`}>
-                  {up ? "+" : ""}
-                  {q.netChange.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                </div>
-              )}
-            </a>
-          );
-        })}
+    <div className="rounded-xl border border-amber-400/20 bg-base p-3 font-mono">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="live-dot" />
+        <span className="lbl text-amber-400">Watchlist · auto-refresh</span>
       </div>
+      {empty ? (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {SYMBOLS.map((s) => (
+            <div key={s} className="skeleton h-[74px] rounded-lg" />
+          ))}
+        </div>
+      ) : (
+        <div className="stagger grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {SYMBOLS.map((s) => {
+            const q = quotes[s];
+            const chg = q?.percentChange ?? null;
+            const up = (chg ?? 0) >= 0;
+            return (
+              <a
+                key={s}
+                href={withBase(`/ticker/${s}`)}
+                className="rounded-lg border border-amber-400/15 bg-white/[0.02] px-3 py-2 transition hover:border-amber-400/40 hover:bg-white/[0.04]"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-amber-400">{s}</span>
+                  <span className={`font-mono text-[11px] tabular-nums ${chg == null ? "text-neutral-500" : up ? "text-call" : "text-put"}`}>
+                    {chg != null ? `${up ? "▲" : "▼"} ${Math.abs(chg).toFixed(2)}%` : "—"}
+                  </span>
+                </div>
+                <div className="mt-0.5 font-mono text-lg tabular-nums text-neutral-50">
+                  {q?.last != null ? q.last.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}
+                </div>
+                {q?.netChange != null && (
+                  <div className={`font-mono text-[11px] tabular-nums ${up ? "text-call" : "text-put"}`}>
+                    {up ? "+" : ""}
+                    {q.netChange.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </div>
+                )}
+              </a>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -6,50 +6,41 @@ import { loadChain, loadHistory } from "@/lib/client-data";
 import { filterByExpiration } from "@/lib/flow/analytics";
 import { anomalyIntel, type Band } from "@/lib/flow/anomalyPro";
 import { readHistory, type GexSample } from "@/lib/gex-history";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { ErrorState, Loading, Stat } from "./states";
 
 type ViewState = "loading" | "error" | "ok";
 
 const bandTone: Record<Band, string> = {
-  Weak: "border-neutral-500/40 bg-neutral-500/10 text-neutral-300",
-  Moderate: "border-sky-500/40 bg-sky-500/10 text-sky-300",
-  Strong: "border-amber-500/40 bg-amber-500/10 text-amber-300",
-  Institutional: "border-orange-500/40 bg-orange-500/10 text-orange-300",
-  Extreme: "border-red-500/40 bg-red-500/10 text-red-300",
+  Weak: "border-white/10 bg-white/[0.03] text-neutral-300",
+  Moderate: "border-sky-400/40 bg-sky-400/10 text-sky-300",
+  Strong: "border-amber-400/40 bg-amber-400/10 text-amber-300",
+  Institutional: "border-amber-400/50 bg-amber-400/15 text-amber-200",
+  Extreme: "border-put/40 bg-put/10 text-put",
 };
 const bandFill: Record<Band, string> = {
   Weak: "bg-neutral-400",
   Moderate: "bg-sky-400",
   Strong: "bg-amber-400",
-  Institutional: "bg-orange-400",
-  Extreme: "bg-red-500",
+  Institutional: "bg-amber-300",
+  Extreme: "bg-put",
 };
 const riskTone: Record<string, string> = {
-  Low: "text-emerald-300",
+  Low: "text-call",
   Medium: "text-amber-300",
-  High: "text-red-300",
+  High: "text-put",
 };
 const num = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 function Meter({ label, value, fill }: { label: string; value: number; fill: string }) {
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between text-xs">
-        <span className="text-neutral-500">{label}</span>
-        <span className="font-mono text-neutral-200">{value}/100</span>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className="lbl">{label}</span>
+        <span className="font-mono text-xs tabular-nums text-neutral-200">{value}/100</span>
       </div>
-      <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-        <div className={`h-full rounded-full ${fill}`} style={{ width: `${Math.max(2, value)}%` }} />
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        <div className={`h-full rounded-full transition-[width] duration-500 ${fill}`} style={{ width: `${Math.max(2, value)}%` }} />
       </div>
-    </div>
-  );
-}
-
-function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className="rounded border border-white/10 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className={`font-mono text-sm ${tone ?? "text-neutral-100"}`}>{value}</div>
     </div>
   );
 }
@@ -105,47 +96,48 @@ export function AnomalyIntel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
   };
 
   return (
-    <div className="glass p-4">
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="font-semibold">Anomaly Intelligence · {symbol}</h2>
-          <p className="text-xs text-neutral-500">
-            ensemble detection · dealer-gamma classification · targets &amp; time-forecast ·{" "}
+          <div className="lbl mb-1">Anomaly intelligence</div>
+          <h2 className="display text-base text-neutral-50">{symbol}</h2>
+          <p className="mt-0.5 text-xs text-neutral-500">
+            Ensemble detection · dealer-gamma classification · targets &amp; time-forecast ·{" "}
             {r.source === "intraday" ? "intraday session series" : r.source === "daily" ? "daily history" : "awaiting data"}
           </p>
         </div>
-        <span className={`rounded-full border px-3 py-1 text-sm font-medium ${bandTone[r.band]}`}>
-          {r.band.toUpperCase()} · {r.strength}/100
+        <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wider ${bandTone[r.band]}`}>
+          {r.band} · {r.strength}/100
         </span>
       </div>
 
-      {state === "loading" && <Loading label="Computing anomaly intelligence…" />}
+      {state === "loading" && <Loading label="Loading anomaly intelligence…" />}
       {state === "error" && <ErrorState message={error} />}
       {state === "ok" && (
         <>
           {/* headline classification */}
-          <div className="mb-4 rounded-lg border border-white/10 bg-white/[0.02] p-3">
+          <div className="mb-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-medium text-neutral-100">{r.anomalyType}</span>
-              <span className={`text-xs ${riskTone[r.riskRating] ?? "text-neutral-300"}`}>Risk: {r.riskRating}</span>
+              <span className={`text-xs font-medium ${riskTone[r.riskRating] ?? "text-neutral-300"}`}>Risk: {r.riskRating}</span>
             </div>
             {/* bull / bear split */}
-            <div className="mb-1 flex items-center justify-between text-xs">
-              <span className="font-medium text-emerald-300">Bullish {r.bullish}%</span>
+            <div className="mb-1.5 flex items-center justify-between text-xs">
+              <span className="font-medium text-call">Bullish {r.bullish}%</span>
               {r.neutral && <span className="text-neutral-400">Neutral</span>}
-              <span className="font-medium text-red-300">{r.bearish}% Bearish</span>
+              <span className="font-medium text-put">{r.bearish}% Bearish</span>
             </div>
-            <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-white/10">
-              <div className="h-full bg-emerald-500/80" style={{ width: `${r.bullish}%` }} />
-              <div className="h-full bg-red-500/80" style={{ width: `${r.bearish}%` }} />
+            <div className="flex h-2 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="h-full bg-call/80 transition-[width] duration-500" style={{ width: `${r.bullish}%` }} />
+              <div className="h-full bg-put/80 transition-[width] duration-500" style={{ width: `${r.bearish}%` }} />
             </div>
-            <p className="mt-2 text-xs text-neutral-400">{r.expectedEdge}</p>
+            <p className="mt-2 text-xs leading-relaxed text-neutral-400">{r.expectedEdge}</p>
           </div>
 
           {/* meters */}
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
             <Meter label="Anomaly strength" value={r.strength} fill={bandFill[r.band]} />
-            <Meter label="Confidence" value={r.confidence} fill="bg-emerald-400" />
+            <Meter label="Confidence" value={r.confidence} fill="bg-call" />
             <Meter label="Forecast window conf." value={r.timeForecast.confidence} fill="bg-sky-400" />
           </div>
 
@@ -156,7 +148,7 @@ export function AnomalyIntel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
                 <div key={m.name} className="flex items-center gap-2 text-xs">
                   <span className="w-32 shrink-0 text-neutral-300">{m.name}</span>
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
-                    <div className={`h-full rounded-full ${m.vote >= 0.66 ? "bg-red-500" : m.vote >= 0.33 ? "bg-amber-400" : "bg-emerald-500/70"}`} style={{ width: `${Math.max(2, Math.round(m.vote * 100))}%` }} />
+                    <div className={`h-full rounded-full ${m.vote >= 0.66 ? "bg-put" : m.vote >= 0.33 ? "bg-amber-400" : "bg-call/70"}`} style={{ width: `${Math.max(2, Math.round(m.vote * 100))}%` }} />
                   </div>
                   <span className="w-10 shrink-0 text-right font-mono text-neutral-400">{Math.round(m.vote * 100)}%</span>
                   <span className="hidden w-44 shrink-0 truncate text-neutral-500 sm:inline" title={m.detail}>
@@ -180,7 +172,7 @@ export function AnomalyIntel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
               ) : (
                 <div className="space-y-1.5">
                   {r.targets.map((t) => (
-                    <div key={t.label} className="flex items-center justify-between rounded border border-white/10 px-3 py-1.5 text-sm">
+                    <div key={t.label} className="flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.015] px-3 py-2 text-sm">
                       <span className="text-neutral-400">{t.label}</span>
                       <span className="font-mono text-neutral-100">{num(t.price)}</span>
                       <span className="text-xs text-neutral-500">{t.kind}</span>
@@ -219,7 +211,7 @@ export function AnomalyIntel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
             <div className="space-y-1.5">
               {r.confidenceFactors.map((f) => (
                 <div key={f.label} className="flex items-start gap-2 text-xs">
-                  <span className={f.ok ? "text-emerald-400" : "text-neutral-600"}>{f.ok ? "✓" : "○"}</span>
+                  <span className={f.ok ? "text-call" : "text-neutral-600"}>{f.ok ? "✓" : "○"}</span>
                   <span className="w-40 shrink-0 text-neutral-300">{f.label}</span>
                   <span className="text-neutral-500">{f.detail}</span>
                 </div>
@@ -234,7 +226,7 @@ export function AnomalyIntel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
                 {r.levels.map((l) => (
                   <div key={`${l.kind}-${l.price}`} className="flex items-center gap-2 text-xs">
                     <span className="w-44 shrink-0 text-neutral-300">{l.kind}</span>
-                    <span className={`w-16 shrink-0 font-mono ${r.anomalyLevel != null && l.price >= r.anomalyLevel ? "text-emerald-300" : "text-red-300"}`}>{num(l.price)}</span>
+                    <span className={`w-16 shrink-0 font-mono tabular-nums ${r.anomalyLevel != null && l.price >= r.anomalyLevel ? "text-call" : "text-put"}`}>{num(l.price)}</span>
                     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
                       <div className="h-full rounded-full bg-neutral-400" style={{ width: `${Math.max(3, Math.round(l.strength * 100))}%` }} />
                     </div>
@@ -254,7 +246,7 @@ export function AnomalyIntel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
                 </li>
               ))}
             </ul>
-            <p className="mt-3 rounded border border-white/10 bg-white/[0.02] p-2 text-xs text-neutral-300">
+            <p className="mt-3 rounded-lg border border-accent/20 bg-accent/[0.04] p-3 text-xs leading-relaxed text-neutral-300">
               <span className="font-medium text-neutral-100">Institutional read: </span>
               {r.institutional}
             </p>
@@ -267,18 +259,18 @@ export function AnomalyIntel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
                 {m}
               </p>
             ))}
-            <div className="flex items-center gap-2 pt-1">
-              <button onClick={() => setShowJson((s) => !s)} className="rounded bg-neutral-800 px-2.5 py-1 text-xs hover:bg-neutral-700">
+            <div className="flex items-center gap-2 pt-2">
+              <button onClick={() => setShowJson((s) => !s)} className="btn !px-3 !py-1.5 !text-xs" aria-expanded={showJson}>
                 {showJson ? "Hide" : "Show"} JSON output
               </button>
               {showJson && (
-                <button onClick={copyJson} className="rounded bg-neutral-800 px-2.5 py-1 text-xs hover:bg-neutral-700">
+                <button onClick={copyJson} className="btn !px-3 !py-1.5 !text-xs">
                   {copied ? "Copied ✓" : "Copy"}
                 </button>
               )}
             </div>
             {showJson && (
-              <pre className="mt-2 max-h-[320px] overflow-auto rounded-lg border border-white/10 bg-black/50 p-3 text-[11px] leading-relaxed text-neutral-200">
+              <pre className="mt-2 max-h-[320px] overflow-auto rounded-xl border border-white/10 bg-[#07080c] p-3.5 text-[11px] leading-relaxed text-neutral-200">
                 <code>{r.json}</code>
               </pre>
             )}
@@ -291,8 +283,8 @@ export function AnomalyIntel({ symbol, exp = "ALL" }: { symbol: string; exp?: st
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mt-4">
-      <div className="mb-2 text-xs uppercase tracking-wide text-neutral-500">{title}</div>
+    <div className="mt-4 border-t border-white/[0.05] pt-3">
+      <div className="lbl mb-2">{title}</div>
       {children}
     </div>
   );

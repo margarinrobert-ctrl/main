@@ -3,7 +3,7 @@
 import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { loadFlow } from "@/lib/client-data";
 import { withBase } from "@/lib/paths";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { Chip, EmptyState, ErrorState, Loading } from "./states";
 
 interface Row {
   underlying: string;
@@ -33,6 +33,24 @@ interface ServerParams {
 }
 
 const DEFAULT_PARAMS: ServerParams = { minVolume: "100", minOpenInterest: "50", minDTE: "", maxDTE: "", minVoir: "" };
+
+/** Shared control recipe — inputs & selects read as one instrument. */
+const CTRL =
+  "rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 font-mono text-sm tabular-nums text-neutral-100 outline-none transition focus:border-accent/50";
+
+const EDGE_FADE = {
+  WebkitMaskImage: "linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent)",
+  maskImage: "linear-gradient(90deg, transparent, #000 14px, #000 calc(100% - 14px), transparent)",
+} as const;
+
+/** Abbreviated dollar notional — $1.24M instead of $1,240,000. */
+function abbrevUsd(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  if (a >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
+  return `$${Math.round(n)}`;
+}
 
 export function FlowTable() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -119,142 +137,134 @@ export function FlowTable() {
     URL.revokeObjectURL(url);
   };
 
+  /* Stale-while-refresh: keep the last tape rendered, dimmed, while new rows load. */
+  const refreshing = state === "loading" && rows.length > 0;
+
   return (
     <div>
-      <div className="mb-3 rounded border border-neutral-800 p-3">
-        <div className="mb-2 text-xs uppercase tracking-wide text-neutral-500">
-          Screener filters
-        </div>
+      <div className="mb-3 rounded-xl border border-white/[0.06] bg-white/[0.015] p-3.5">
+        <div className="lbl mb-2.5">Screener filters</div>
         <div className="flex flex-wrap items-end gap-3 text-sm">
-          <NumInput label="min volume" value={serverParams.minVolume} onChange={setParam("minVolume")} />
-          <NumInput label="min OI" value={serverParams.minOpenInterest} onChange={setParam("minOpenInterest")} />
+          <NumInput label="Min volume" value={serverParams.minVolume} onChange={setParam("minVolume")} />
+          <NumInput label="Min OI" value={serverParams.minOpenInterest} onChange={setParam("minOpenInterest")} />
           <NumInput label="DTE ≥" value={serverParams.minDTE} onChange={setParam("minDTE")} />
           <NumInput label="DTE ≤" value={serverParams.maxDTE} onChange={setParam("maxDTE")} />
-          <NumInput label="min vol/OI" step="0.1" value={serverParams.minVoir} onChange={setParam("minVoir")} />
-          <button onClick={load} className="rounded bg-emerald-700 px-3 py-1 hover:bg-emerald-600">
+          <NumInput label="Min vol/OI" step="0.1" value={serverParams.minVoir} onChange={setParam("minVoir")} />
+          <button onClick={load} className="btn btn-primary text-xs">
             Apply
           </button>
         </div>
       </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-3 text-sm">
-        <span className="w-full text-xs uppercase tracking-wide text-neutral-500">View</span>
-        <label className="flex flex-col gap-1">
-          <span className="text-neutral-400">min score</span>
+        <span className="lbl w-full">View</span>
+        <label className="flex flex-col gap-1.5">
+          <span className="lbl">Min score</span>
           <input
             type="number"
             value={minScore}
             min={0}
             max={100}
             onChange={(e) => setMinScore(Number(e.target.value))}
-            className="w-24 rounded border border-neutral-700 bg-neutral-900 px-2 py-1"
+            className={`w-24 ${CTRL}`}
           />
         </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-neutral-400">side</span>
-          <select
-            value={side}
-            onChange={(e) => setSide(e.target.value as Side)}
-            className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1"
-          >
-            <option value="all">all</option>
-            <option value="call">calls</option>
-            <option value="put">puts</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-neutral-400">sort by</span>
-          <select
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value as SortKey)}
-            className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1"
-          >
-            <option value="score">score</option>
-            <option value="volume">volume</option>
-            <option value="openInterest">open interest</option>
-            <option value="notional">notional</option>
-            <option value="voir">vol/OI</option>
-          </select>
-        </label>
+        <SelectField label="Side" value={side} onChange={(v) => setSide(v as Side)}>
+          <option value="all">All</option>
+          <option value="call">Calls</option>
+          <option value="put">Puts</option>
+        </SelectField>
+        <SelectField label="Sort by" value={sortKey} onChange={(v) => setSortKey(v as SortKey)}>
+          <option value="score">Score</option>
+          <option value="volume">Volume</option>
+          <option value="openInterest">Open interest</option>
+          <option value="notional">Notional</option>
+          <option value="voir">Vol/OI</option>
+        </SelectField>
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={exportCsv} className="rounded bg-neutral-800 px-3 py-1 hover:bg-neutral-700">
+          <button onClick={exportCsv} className="btn text-xs">
             Export CSV
           </button>
-          <button onClick={load} className="rounded bg-neutral-800 px-3 py-1 hover:bg-neutral-700">
+          <button onClick={load} className="btn text-xs">
             Refresh
           </button>
         </div>
       </div>
 
-      {state === "loading" && <Loading label="Loading flow…" />}
+      {state === "loading" && rows.length === 0 && <Loading label="Loading flow…" />}
       {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No unusual activity matched your filters." />}
-      {state === "ok" && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="border-b border-neutral-800 text-left text-neutral-400">
-              <tr>
-                <th className="py-2 pr-3">Score</th>
-                <th className="pr-3">Ticker</th>
-                <th className="pr-3">C/P</th>
-                <th className="pr-3">Bias</th>
-                <th className="pr-3 text-right">Strike</th>
-                <th className="pr-3">Exp</th>
-                <th className="pr-3 text-right">DTE</th>
-                <th className="pr-3 text-right">Vol</th>
-                <th className="pr-3 text-right">OI</th>
-                <th className="pr-3 text-right">Vol/OI</th>
-                <th className="pr-3 text-right">IV</th>
-                <th className="pr-3 text-right">Notional</th>
-                <th className="pr-3">Flags</th>
-              </tr>
-            </thead>
-            <tbody>
-              {view.map((r) => (
-                <tr key={r.symbol} className="border-b border-neutral-900 hover:bg-neutral-900/50">
-                  <td className="py-2 pr-3">
-                    <ScoreBadge score={r.score} />
-                  </td>
-                  <td className="pr-3">
-                    <a className="text-emerald-400 hover:underline" href={withBase(`/ticker/${r.underlying}`)}>
-                      {r.underlying}
-                    </a>
-                  </td>
-                  <td className={`pr-3 ${r.type === "call" ? "text-emerald-400" : "text-red-400"}`}>{r.type}</td>
-                  <td className="pr-3">
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] ${
-                        r.type === "call" ? "bg-emerald-900 text-emerald-200" : "bg-red-900 text-red-200"
-                      }`}
-                      title="Directional tilt of the contract type (call flow = bullish, put flow = bearish)"
-                    >
-                      {r.type === "call" ? "Bullish" : "Bearish"}
-                    </span>
-                  </td>
-                  <td className="pr-3 text-right">{r.strike}</td>
-                  <td className="pr-3">{r.expiration}</td>
-                  <td className="pr-3 text-right">{r.dte ?? "—"}</td>
-                  <td className="pr-3 text-right">{r.volume?.toLocaleString() ?? "—"}</td>
-                  <td className="pr-3 text-right">{r.openInterest?.toLocaleString() ?? "—"}</td>
-                  <td className="pr-3 text-right">{r.signals.voir != null ? r.signals.voir.toFixed(2) : "—"}</td>
-                  <td className="pr-3 text-right">{r.impliedVolatility != null ? r.impliedVolatility.toFixed(2) : "—"}</td>
-                  <td className="pr-3 text-right">
-                    {r.signals.notional != null ? "$" + Math.round(r.signals.notional).toLocaleString() : "—"}
-                  </td>
-                  <td className="pr-3">
-                    <div className="flex flex-wrap gap-1">
-                      {r.flags.map((f) => (
-                        <span key={f} className="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px]">
-                          {f}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {state === "empty" && (
+        <EmptyState label="No unusual activity matched your filters." hint="Loosen the volume, open-interest or DTE gates to widen the screen." />
+      )}
+      {(state === "ok" || refreshing) && rows.length > 0 && (
+        <>
+          {refreshing && <div className="skeleton mb-2 h-1 w-full" aria-hidden />}
+          {view.length === 0 ? (
+            <EmptyState label="No rows match the current view." hint="Lower the min score or widen the side filter." />
+          ) : (
+            <div className={`overflow-x-auto transition-opacity duration-300 ${refreshing ? "opacity-60" : ""}`} style={EDGE_FADE}>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Score</th>
+                    <th>Ticker</th>
+                    <th>Side</th>
+                    <th className="!text-right">Strike</th>
+                    <th>Exp</th>
+                    <th className="!text-right">DTE</th>
+                    <th className="!text-right">Vol</th>
+                    <th className="!text-right">OI</th>
+                    <th className="!text-right">Vol/OI</th>
+                    <th className="!text-right">IV</th>
+                    <th className="!text-right">Notional</th>
+                    <th>Flags</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {view.map((r) => (
+                    <tr key={r.symbol}>
+                      <td>
+                        <ScoreBadge score={r.score} />
+                      </td>
+                      <td>
+                        <a
+                          className="font-semibold text-neutral-100 transition hover:text-accent-bright"
+                          href={withBase(`/ticker/${r.underlying}`)}
+                        >
+                          {r.underlying}
+                        </a>
+                      </td>
+                      <td>
+                        <Chip tone={r.type}>{r.type === "call" ? "Call" : "Put"}</Chip>
+                      </td>
+                      <td className="text-right font-mono tabular-nums">{r.strike}</td>
+                      <td className="font-mono tabular-nums text-neutral-400">{r.expiration}</td>
+                      <td className="text-right font-mono tabular-nums">{r.dte ?? "—"}</td>
+                      <td className="text-right font-mono tabular-nums">{r.volume?.toLocaleString() ?? "—"}</td>
+                      <td className="text-right font-mono tabular-nums">{r.openInterest?.toLocaleString() ?? "—"}</td>
+                      <td className="text-right font-mono tabular-nums">
+                        {r.signals.voir != null ? r.signals.voir.toFixed(2) : "—"}
+                      </td>
+                      <td className="text-right font-mono tabular-nums">
+                        {r.impliedVolatility != null ? r.impliedVolatility.toFixed(2) : "—"}
+                      </td>
+                      <td className="text-right font-mono tabular-nums">
+                        {r.signals.notional != null ? abbrevUsd(r.signals.notional) : "—"}
+                      </td>
+                      <td>
+                        <div className="flex flex-wrap gap-1">
+                          {r.flags.map((f) => (
+                            <Chip key={f}>{f}</Chip>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -272,21 +282,53 @@ function NumInput({
   step?: string;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-neutral-400">{label}</span>
-      <input
-        type="number"
-        value={value}
-        step={step}
-        onChange={onChange}
-        className="w-24 rounded border border-neutral-700 bg-neutral-900 px-2 py-1"
-      />
+    <label className="flex flex-col gap-1.5">
+      <span className="lbl">{label}</span>
+      <input type="number" value={value} step={step} onChange={onChange} className={`w-24 ${CTRL}`} />
     </label>
   );
 }
 
+function SelectField({
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="lbl">{label}</span>
+      <div className="relative">
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={`appearance-none pr-8 ${CTRL}`}>
+          {children}
+        </select>
+        <svg aria-hidden viewBox="0 0 12 12" className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-500">
+          <path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+    </label>
+  );
+}
+
+/** Unusualness heat 0–100 — hotter (redder) = more anomalous flow. */
 function ScoreBadge({ score }: { score: number }) {
-  const color =
-    score >= 70 ? "bg-red-900 text-red-200" : score >= 40 ? "bg-amber-900 text-amber-200" : "bg-neutral-800 text-neutral-300";
-  return <span className={`inline-block w-9 rounded text-center font-mono ${color}`}>{score}</span>;
+  const cls =
+    score >= 70
+      ? "border-put/30 bg-put/10 text-put"
+      : score >= 40
+        ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+        : "border-white/10 bg-white/[0.03] text-neutral-400";
+  return (
+    <span
+      title="Unusualness heat, 0–100 — weighted vol/OI, volume vs. average, dollar notional and short-DTE/OTM convexity. Hotter reads more anomalous."
+      className={`inline-block w-9 rounded-md border py-0.5 text-center font-mono text-xs tabular-nums ${cls}`}
+    >
+      {score}
+    </span>
+  );
 }

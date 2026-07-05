@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
+import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR_LINE, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
 import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
@@ -90,21 +91,31 @@ export function VolSmile({ symbol, exp = "ALL" }: { symbol: string; exp?: string
   const front = smiles[0];
 
   return (
-    <div className="glass p-4">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Volatility smile · {symbol}</h2>
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <div className="lbl mb-1">Volatility smile</div>
+          <h2 className="display text-base text-neutral-50">{symbol}</h2>
+        </div>
         <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
-          {atmIv != null && <span className="rounded border border-white/10 px-2 py-1 text-sky-300">ATM IV {atmIv.toFixed(1)}%</span>}
+          {atmIv != null && (
+            <span className="inline-flex items-center rounded-full border border-sky-400/30 bg-sky-400/10 px-2.5 py-1 tabular-nums text-sky-300">
+              ATM IV {atmIv.toFixed(1)}%
+            </span>
+          )}
           {skew != null && (
-            <span className={`rounded border px-2 py-1 ${skew >= 0 ? "border-red-500/40 text-put" : "border-emerald-500/40 text-call"}`} title="IV(−10%) − IV(+10%): positive = downside put skew (smirk)">
+            <span
+              className={`inline-flex items-center rounded-full border px-2.5 py-1 tabular-nums ${skew >= 0 ? "border-put/30 bg-put/10 text-put" : "border-call/30 bg-call/10 text-call"}`}
+              title="IV(−10%) − IV(+10%): positive = downside put skew (smirk)"
+            >
               skew {skew >= 0 ? "+" : ""}{skew.toFixed(1)}pt {skew >= 0 ? "(put)" : "(call)"}
             </span>
           )}
         </div>
       </div>
-      {state === "loading" && <Loading label="Building smile…" />}
+      {state === "loading" && <Loading label="Loading volatility smile…" />}
       {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No IV data for a smile." />}
+      {state === "empty" && <EmptyState label="No implied-volatility data for a smile." />}
       {state === "ok" && smiles.length === 0 && <EmptyState label="Not enough IV points to draw a smile." />}
       {state === "ok" && smiles.length > 0 && (
         <>
@@ -117,23 +128,23 @@ export function VolSmile({ symbol, exp = "ALL" }: { symbol: string; exp?: string
                     <stop offset="100%" stopColor={front?.color ?? "#34d399"} stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="#1c1c1c" />
+                <CartesianGrid {...GRID_PROPS} />
                 <XAxis
                   type="number"
                   dataKey="m"
                   domain={[-WINDOW, WINDOW]}
                   tickFormatter={(v) => `${v > 0 ? "+" : ""}${v}%`}
-                  tick={{ fill: "#a3a3a3", fontSize: 11 }}
-                  stroke="#404040"
+                  {...AXIS_PROPS}
                   allowDuplicatedCategory={false}
                 />
-                <YAxis tickFormatter={(v) => `${v}%`} tick={{ fill: "#a3a3a3", fontSize: 11 }} stroke="#404040" width={44} domain={["auto", "auto"]} />
+                <YAxis tickFormatter={(v) => `${v}%`} {...AXIS_PROPS} width={44} domain={["auto", "auto"]} />
                 <Tooltip
-                  contentStyle={{ background: "#0a0a0a", border: "1px solid #404040", borderRadius: 6, fontSize: 12 }}
+                  {...TOOLTIP_PROPS}
+                  cursor={TOOLTIP_CURSOR_LINE}
                   formatter={(v: number | string, n) => [`${Number(v).toFixed(1)}%`, n]}
                   labelFormatter={(l) => `${Number(l) > 0 ? "+" : ""}${l}% from spot`}
                 />
-                <ReferenceLine x={0} stroke="#d4c44a" strokeDasharray="4 4" label={{ value: "ATM", position: "top", fill: "#d4c44a", fontSize: 10 }} />
+                <ReferenceLine x={0} stroke={CHART.amber} strokeDasharray="4 4" label={refLabel("ATM", CHART.amber, "insideTopRight")} />
                 {front && <Area data={front.points} dataKey="iv" stroke="none" fill="url(#smileFill)" isAnimationActive={false} />}
                 {smiles.map((s, i) => (
                   <Line
@@ -152,18 +163,18 @@ export function VolSmile({ symbol, exp = "ALL" }: { symbol: string; exp?: string
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-neutral-400">
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-white/[0.05] pt-3">
             {smiles.map((s) => (
-              <span key={s.exp} className="inline-flex items-center gap-1">
+              <span key={s.exp} className="inline-flex items-center gap-1.5 text-[11px] text-neutral-500">
                 <span className="inline-block h-2 w-3 rounded-sm" style={{ background: s.color }} />
                 {s.dte != null ? `${s.dte}d` : s.exp}
               </span>
             ))}
-            <span className="text-neutral-500">· x = % from spot · OTM-side IV (puts left, calls right)</span>
+            <span className="text-[11px] text-neutral-600">· x = % from spot · OTM-side IV</span>
           </div>
-          <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
-            Each curve is one expiration&apos;s implied-vol <b>smile</b> across moneyness. A downward-left tilt (higher put IV)
-            is the equity <b>smirk</b> — crash insurance bid. Near expiries are brightest; the front-expiry smile is shaded.
+          <p className="mt-2 text-[11px] leading-relaxed text-neutral-600">
+            Each curve is one expiration&apos;s implied-vol smile across moneyness. A downward-left tilt (higher put IV) is the
+            equity smirk — downside insurance bid. Near expiries are brightest; the front-expiry smile is shaded.
           </p>
         </>
       )}

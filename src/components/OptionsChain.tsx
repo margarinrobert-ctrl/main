@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import { fmtUsd, netGex } from "@/lib/flow/analytics";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -22,7 +22,7 @@ function loc(n: number | null | undefined): string {
 }
 
 function Pill({ children }: { children: ReactNode }) {
-  return <span className="rounded-full border border-neutral-700 px-2 py-0.5 text-xs text-neutral-300">{children}</span>;
+  return <span className="chip">{children}</span>;
 }
 
 export function OptionsChain({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
@@ -104,36 +104,40 @@ export function OptionsChain({ symbol, exp = "ALL" }: { symbol: string; exp?: st
   }, [chain, selectedExp, showFull, spot]);
 
   const callBg = (c?: OptionContract) =>
-    c && c.delta != null ? { backgroundColor: `rgba(16,185,129,${0.06 + 0.5 * Math.min(0.9, Math.abs(c.delta))})` } : undefined;
+    c && c.delta != null ? { backgroundColor: `rgba(52,211,153,${0.04 + 0.34 * Math.min(0.9, Math.abs(c.delta))})` } : undefined;
   const putBg = (c?: OptionContract) =>
-    c && c.delta != null ? { backgroundColor: `rgba(239,68,68,${0.06 + 0.5 * Math.min(0.9, Math.abs(c.delta))})` } : undefined;
+    c && c.delta != null ? { backgroundColor: `rgba(248,113,113,${0.04 + 0.3 * Math.min(0.9, Math.abs(c.delta))})` } : undefined;
 
   return (
-    <div className="glass p-4">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Options chain · {symbol}</h2>
-        {gex != null && (
-          <span
-            className={`rounded px-2 py-1 text-xs ${gex >= 0 ? "bg-emerald-900 text-emerald-200" : "bg-red-900 text-red-200"}`}
-          >
-            Dealer regime: {gex >= 0 ? "Long gamma (mean-reverting)" : "Short gamma (trend-amplifying)"} · {fmtUsd(gex)}/1%
-          </span>
-        )}
-      </div>
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <SectionHeader
+        eyebrow="Options chain"
+        title={symbol}
+        right={
+          gex != null ? (
+            <span
+              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${gex >= 0 ? "border-call/30 bg-call/10 text-call" : "border-put/30 bg-put/10 text-put"}`}
+            >
+              {gex >= 0 ? "Long gamma · mean-reverting" : "Short gamma · trend-amplifying"} · {fmtUsd(gex)}/1%
+            </span>
+          ) : undefined
+        }
+      />
 
-      {state === "loading" && <Loading />}
+      {state === "loading" && <Loading label="Loading options chain…" />}
       {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No options chain." />}
+      {state === "empty" && <EmptyState label="No options chain returned." />}
       {state === "ok" && (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <Pill>Spot {spot != null ? spot.toLocaleString() : "—"}</Pill>
-            <span className="inline-flex items-center gap-1 rounded-full border border-neutral-700 px-2 py-0.5 text-xs text-neutral-300">
+            <span className="chip gap-1">
               Exp
               <select
                 value={selectedExp}
                 onChange={(e) => setSelectedExp(e.target.value)}
-                className="bg-transparent text-neutral-100 outline-none"
+                aria-label="Expiration"
+                className="bg-transparent py-1 text-neutral-100 outline-none"
               >
                 {expirations.map((e) => (
                   <option key={e} value={e} className="bg-neutral-900">
@@ -143,34 +147,40 @@ export function OptionsChain({ symbol, exp = "ALL" }: { symbol: string; exp?: st
               </select>
             </span>
             <Pill>{strikeCount} strikes</Pill>
-            <Pill>{asOf ? `Updated ${asOf.slice(0, 19)}Z` : "sample data"}</Pill>
-            <label className="ml-auto flex items-center gap-1 text-xs text-neutral-400">
-              <input type="checkbox" checked={showFull} onChange={(e) => setShowFull(e.target.checked)} />
-              Show full chain
-            </label>
+            {asOf && <Pill>Updated {asOf.slice(11, 16)}Z</Pill>}
+            <button
+              type="button"
+              onClick={() => setShowFull((v) => !v)}
+              aria-pressed={showFull}
+              className={`ml-auto rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                showFull ? "border-accent/40 bg-accent/10 text-accent-bright" : "border-white/10 bg-white/[0.03] text-neutral-400 hover:border-white/20 hover:text-neutral-200"
+              }`}
+            >
+              {showFull ? "Full chain" : "Around spot"}
+            </button>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
+            <table className="w-full text-right text-xs tabular-nums">
               <thead>
-                <tr className="text-neutral-500">
-                  <th className="px-2 py-1 text-center font-semibold text-emerald-400" colSpan={7}>
-                    CALLS
+                <tr>
+                  <th className="lbl px-2 py-1.5 !text-center text-call" colSpan={7}>
+                    Calls
                   </th>
-                  <th className="px-2 py-1 text-center font-semibold text-neutral-300">STRIKE</th>
-                  <th className="px-2 py-1 text-center font-semibold text-red-400" colSpan={7}>
-                    PUTS
+                  <th className="lbl px-2 py-1.5 !text-center text-neutral-200">Strike</th>
+                  <th className="lbl px-2 py-1.5 !text-center text-put" colSpan={7}>
+                    Puts
                   </th>
                 </tr>
-                <tr className="border-b border-neutral-800 text-neutral-500">
+                <tr className="border-b border-white/[0.08]">
                   {["IV", "Δ", "Vol", "OI", "Bid", "Ask", "Last"].map((h) => (
-                    <th key={`c${h}`} className="px-2 py-1 font-normal">
+                    <th key={`c${h}`} className="lbl px-2 py-1.5 !text-right">
                       {h}
                     </th>
                   ))}
-                  <th className="px-2 py-1 text-center font-normal">·</th>
+                  <th className="px-2 py-1.5 text-center font-normal text-neutral-600">·</th>
                   {["Last", "Bid", "Ask", "OI", "Vol", "Δ", "IV"].map((h) => (
-                    <th key={`p${h}`} className="px-2 py-1 font-normal">
+                    <th key={`p${h}`} className="lbl px-2 py-1.5 !text-right">
                       {h}
                     </th>
                   ))}
@@ -181,7 +191,7 @@ export function OptionsChain({ symbol, exp = "ALL" }: { symbol: string; exp?: st
                   const atm = spot != null && rows.length > 1;
                   const isAtm = atm && Math.abs(strike - (spot ?? 0)) === Math.min(...rows.map((r) => Math.abs(r.strike - (spot ?? 0))));
                   return (
-                    <tr key={strike} className="border-b border-neutral-900/60">
+                    <tr key={strike} className="border-b border-white/[0.04] transition-colors hover:bg-white/[0.02]">
                       <td className="px-2 py-1" style={callBg(call)}>{ivPct(call?.impliedVolatility)}</td>
                       <td className="px-2 py-1" style={callBg(call)}>{n2(call?.delta)}</td>
                       <td className="px-2 py-1" style={callBg(call)}>{loc(call?.volume)}</td>
@@ -189,7 +199,7 @@ export function OptionsChain({ symbol, exp = "ALL" }: { symbol: string; exp?: st
                       <td className="px-2 py-1" style={callBg(call)}>{n2(call?.bid)}</td>
                       <td className="px-2 py-1" style={callBg(call)}>{n2(call?.ask)}</td>
                       <td className="px-2 py-1" style={callBg(call)}>{n2(call?.last)}</td>
-                      <td className={`px-2 py-1 text-center font-mono font-semibold ${isAtm ? "bg-neutral-800 text-emerald-300" : "text-neutral-200"}`}>
+                      <td className={`px-2 py-1 text-center font-mono font-semibold ${isAtm ? "bg-accent/[0.12] text-accent-bright shadow-[inset_0_0_0_1px_rgba(52,211,153,0.35)]" : "text-neutral-200"}`}>
                         {strike}
                       </td>
                       <td className="px-2 py-1" style={putBg(put)}>{n2(put?.last)}</td>
