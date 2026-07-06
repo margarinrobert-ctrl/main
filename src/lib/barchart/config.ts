@@ -42,7 +42,7 @@ export const config = {
   finraBaseUrl: (process.env.FINRA_BASE_URL ?? "https://cdn.finra.org").replace(/\/+$/, ""),
   darkPoolLookbackDays: toInt(process.env.DARKPOOL_LOOKBACK_DAYS, 10),
   darkPoolCacheTtlSeconds: toInt(process.env.DARKPOOL_CACHE_TTL_SECONDS, 21600), // 6h (EOD, T+1)
-  optionsWatchlist: (process.env.OPTIONS_WATCHLIST ?? "SPY,QQQ")
+  optionsWatchlist: (process.env.OPTIONS_WATCHLIST ?? "SPY,QQQ,NVDA,TSLA,AAPL,AMD,META")
     .split(",")
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean),

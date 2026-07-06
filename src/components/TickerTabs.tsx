@@ -115,10 +115,21 @@ export function TickerTabs({ symbol }: { symbol: string }) {
     setExp("ALL");
   }, [symbol]);
 
-  // On open, pull anything the server collected while the site was closed and merge it locally so the
-  // whole dashboard (history, anomaly, intel) reflects the full record, not just this browser session.
+  // Pull anything the 24/7 server collector recorded while the site was closed and merge it locally, so
+  // the whole dashboard (history, anomaly, intel) reflects the full round-the-clock record — not just
+  // this browser session. Re-pulled periodically so new server samples (collected every ~10 min by the
+  // scheduled job) keep flowing in even while you sit on the History or Anomaly tab.
   useEffect(() => {
-    pullServerData(symbol).catch(() => {});
+    let cancelled = false;
+    const pull = () => {
+      if (!cancelled) pullServerData(symbol).catch(() => {});
+    };
+    pull();
+    const id = setInterval(pull, 120_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [symbol]);
 
   // Background sampler: records spot + net GEX + gamma flip while the ticker page is open,

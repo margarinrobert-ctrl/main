@@ -40,7 +40,7 @@ export function AnomalyLive({ symbol }: { symbol: string }) {
         <div>
           <div className="lbl mb-1">Live anomaly monitor</div>
           <h2 className="display text-base text-neutral-50">{symbol}</h2>
-          <p className="mt-0.5 text-xs text-neutral-500">Intraday spot / dealer-gamma / IV z-scores, recorded this session</p>
+          <p className="mt-0.5 text-xs text-neutral-500">Spot / dealer-gamma / IV z-scores — 24/7 collected series + live session</p>
         </div>
         <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wider ${stateChip[r.current.state]}`}>
           {r.current.state === "anomalous" ? "ANOMALOUS" : r.current.state === "watch" ? "WATCH" : "CALM"} · {r.current.score}/100
@@ -57,9 +57,9 @@ export function AnomalyLive({ symbol }: { symbol: string }) {
       {r.samples < 4 ? (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-white/10 bg-white/[0.015] px-6 py-10 text-center">
           <span className="live-dot" />
-          <div className="text-sm text-neutral-400">Recording this session — the monitor fills in as samples arrive.</div>
+          <div className="text-sm text-neutral-400">Building the monitor — the scheduled collector records 24/7, merged with live samples.</div>
           <div className="text-[11px] text-neutral-600">
-            {r.samples} sample{r.samples === 1 ? "" : "s"} so far · one every ~30s while the terminal is open
+            {r.samples} sample{r.samples === 1 ? "" : "s"} so far · every ~10 min round-the-clock, plus ~30s live while open
           </div>
         </div>
       ) : (
@@ -121,8 +121,8 @@ export function AnomalyLive({ symbol }: { symbol: string }) {
       )}
 
       <p className="mt-3 border-t border-white/[0.05] pt-3 text-[11px] leading-relaxed text-neutral-600">
-        Recorded in this browser at ~30s cadence while a terminal is open. Dots mark flagged samples; the lower pane is the
-        rolling anomaly score. Educational — not advice.
+        Merges the 24/7 server-collected series (every ~10 min) with live session samples (~30s while open). Dots mark
+        flagged samples; the lower pane is the rolling anomaly score. Educational — not advice.
       </p>
     </div>
   );

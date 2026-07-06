@@ -7,33 +7,61 @@ import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR_LINE, TOOLTIP_PROPS } fro
 import { type GexSample, readHistory } from "@/lib/gex-history";
 import { EmptyState, SectionHeader } from "./states";
 
+function dur(ms: number): string {
+  const m = Math.max(0, Math.round(ms / 60000));
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h}h`;
+  return `${Math.round(h / 24)}d`;
+}
+
 export function GexHistory({ symbol }: { symbol: string }) {
   const [series, setSeries] = useState<GexSample[]>([]);
+  const [now, setNow] = useState(0);
 
   useEffect(() => {
-    setSeries(readHistory(symbol));
-    const id = setInterval(() => setSeries(readHistory(symbol)), 5000);
+    const tick = () => {
+      setSeries(readHistory(symbol));
+      setNow(Date.now());
+    };
+    tick();
+    const id = setInterval(tick, 5000);
     return () => clearInterval(id);
   }, [symbol]);
+
+  // Span of the record (server 24/7 samples merge in alongside this session), so labels stay unambiguous
+  // once the series covers more than a day.
+  const spanMs = series.length > 1 ? series[series.length - 1].t - series[0].t : 0;
+  const lastT = series.length ? series[series.length - 1].t : 0;
+  const multiDay = spanMs > 20 * 3600_000;
 
   const data = useMemo(
     () =>
       series.map((s) => ({
-        time: new Date(s.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        time: new Date(s.t).toLocaleTimeString([], multiDay ? { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" }),
         spot: s.spot,
         gex: s.gex,
       })),
-    [series],
+    [series, multiDay],
   );
 
   return (
     <div className="glass glass-hover fade-up p-4 sm:p-5">
-      <SectionHeader eyebrow="Intraday GEX" title={symbol} right={<span className="lbl">Spot &amp; net GEX over the session</span>} />
+      <SectionHeader
+        eyebrow="Intraday GEX"
+        title={symbol}
+        right={
+          <span className="lbl flex items-center gap-1.5">
+            <span className="live-dot" style={{ height: 5, width: 5 }} />
+            24/7 spot &amp; net GEX
+          </span>
+        }
+      />
 
       {data.length < 2 ? (
         <EmptyState
-          label="Collecting intraday history."
-          hint="A point is recorded each minute while this terminal is open; the series persists in your browser."
+          label="Collecting round-the-clock history."
+          hint="A scheduled collector records dealer positioning every ~10 minutes, 24/7, and merges it here — plus a point a minute while this terminal is open. The series builds up over the next few cycles."
         />
       ) : (
         <>
@@ -82,7 +110,11 @@ export function GexHistory({ symbol }: { symbol: string }) {
                 </span>
               ))}
             </div>
-            <span className="lbl">{data.length} samples this session</span>
+            <span className="lbl">
+              {data.length} samples
+              {spanMs > 0 ? ` · ${dur(spanMs)} span` : ""}
+              {lastT ? ` · updated ${dur(now - lastT)} ago` : ""}
+            </span>
           </div>
         </>
       )}
