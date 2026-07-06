@@ -204,7 +204,7 @@ export function detectAnomalies(bars: HistoryBar[], chain: OptionContract[], spo
     anomalies.length === 0
       ? "No statistical anomalies — behaviour is within normal ranges across return, gap, range, volume, vol-regime, trend, VRP and flow."
       : `${anomalies.length} anomal${anomalies.length === 1 ? "y" : "ies"} flagged; peak ${peak.toFixed(1)}σ. Anomalies cluster around regime shifts — confirm with the dealer-gamma context (MM Hedge / Signals).`,
-    "z-scores vs a 20-day trailing baseline on EOD bars (~1-day delayed); VRP/flow from the ~15-min CBOE chain. Educational — not advice.",
+    "z-scores vs a 20-day trailing baseline. Educational — not advice.",
   ];
 
   return { score, state, sampleDays, anomalies, notes };

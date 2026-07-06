@@ -35,10 +35,14 @@ function multiChain(): OptionContract[] {
     { e: "2026-06-16", dte: 0, pk: 102, sc: 1 },
     { e: "2026-07-17", dte: 31, pk: 100, sc: 2 },
   ])
-    for (const k of [88, 92, 96, 100, 104, 108, 112]) {
+    for (const k of [88, 91, 94, 97, 100, 103, 106, 109, 112]) {
       const g = 0.05 * Math.exp(-SQ(k - pk) / 70);
-      out.push(c({ expiration: e, dte, type: "call", strike: k, gamma: g, openInterest: Math.round((1500 + 260 * (k - 88)) * sc), volume: 9000, impliedVolatility: 0.25, delta: 0.4 }));
-      out.push(c({ expiration: e, dte, type: "put", strike: k, gamma: g, openInterest: Math.round((1500 + 260 * (112 - k)) * sc), volume: 6000, impliedVolatility: 0.25, delta: -0.4 }));
+      // moneyness-based delta (declines as the option gets more OTM) — realistic, and it keeps the
+      // delta-weighted walls off the raw-OI-wall strikes the way real chains do
+      const cd = 0.9 - 0.02 * (k - 88); // call delta: high ITM (low strike), low OTM (high strike)
+      const pd = 0.9 - 0.02 * (112 - k); // put |delta|: high ITM (high strike), low OTM (low strike)
+      out.push(c({ expiration: e, dte, type: "call", strike: k, gamma: g, openInterest: Math.round((1500 + 260 * (k - 88)) * sc), volume: 9000, impliedVolatility: 0.25, delta: cd }));
+      out.push(c({ expiration: e, dte, type: "put", strike: k, gamma: g, openInterest: Math.round((1500 + 260 * (112 - k)) * sc), volume: 6000, impliedVolatility: 0.25, delta: -pd }));
     }
   return out;
 }
@@ -59,7 +63,6 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("0DTE");
     expect(r.code).toContain("OI "); // open-interest annotation
     expect(r.code).toContain("DEX "); // delta-exposure annotation
-    expect(r.code).toContain("~15-min delayed"); // freshness note
     expect(r.code).toContain("does NOT auto-update"); // static-snapshot warning
     expect(r.code).toContain("Exp Hi"); // expected-move (today's range) label
     expect(r.code).toContain("Convert levels to this chart"); // ES/NQ converter
@@ -77,7 +80,7 @@ describe("buildGexPine", () => {
   });
 
   it("adds Max Pain + OI-wall levels and never prints resistance == support", () => {
-    // realistic book → OI walls sit at distinct strikes from the gamma walls
+    // realistic book → gamma walls, delta walls and raw-OI walls sit at distinct strikes (nothing deduped)
     const r = buildGexPine("LVL", multiChain(), 100);
     expect(r.code).toContain("Max Pain");
     expect(r.code).toContain("Call OI");
@@ -98,6 +101,31 @@ describe("buildGexPine", () => {
     expect(atm.callRes).not.toBe(atm.putSup);
   });
 
+  it("adds delta call/put walls (delta-weighted OI), distinct from the gamma walls, with alerts", () => {
+    // 103/97 carry the most delta-dollars (near-ATM, high delta); 110/90 carry the most gamma & raw OI.
+    const chain = [
+      c({ type: "call", strike: 103, delta: 0.6, openInterest: 9000, gamma: 0.02 }),
+      c({ type: "put", strike: 97, delta: -0.6, openInterest: 9000, gamma: 0.02 }),
+      c({ type: "call", strike: 110, delta: 0.2, openInterest: 12000, gamma: 0.05 }),
+      c({ type: "put", strike: 90, delta: -0.2, openInterest: 12000, gamma: 0.05 }),
+    ];
+    const r = buildGexPine("DEX", chain, 100);
+    expect(r.deltaCallWall).toBe(103);
+    expect(r.deltaPutWall).toBe(97);
+    // labelled as delta resistance (call wall, above spot) / delta support (put wall, below spot)
+    expect(r.code).toContain("Delta Resistance");
+    expect(r.code).toContain("Delta Support");
+    expect(r.code).toContain("Delta Resistance Wall"); // spelled out in the hover detail
+    expect(r.code).toContain("Delta Support Wall");
+    // delta-weighted walls sit at different strikes than the gamma walls on this book
+    expect(r.deltaCallWall).not.toBe(r.callRes);
+    expect(r.deltaPutWall).not.toBe(r.putSup);
+    // each gets its own configurable alert
+    expect(r.code).toContain("Alert: Delta Resistance");
+    expect(r.code).toContain("Alert: Delta Support");
+    expect(r.code).toContain('alertcondition(ta.cross(close, kDPut * scale)');
+  });
+
   it("gives every level its own price — no two levels stack on the same line", () => {
     const r = buildGexPine("MULTI", multiChain(), 100);
     expect(r.code).toContain('"Call Resistance"'); // stands alone
@@ -114,8 +142,16 @@ describe("buildGexPine", () => {
     const r = buildGexPine("SPY", multiChain(), 100);
     expect(r.code).toContain("Convert levels to this chart");
     expect(r.code).toContain("Auto (match chart)");
-    expect(r.code).toContain("close / snapSpot"); // accurate live-ratio scaling
+    // defaults ON, so QQQ/SPY levels aren't left off-screen on a futures chart
+    expect(r.code).toContain('convertMode = input.string("Auto (match chart)"');
+    // ratio comes from a LIVE, simultaneous source-symbol price (not a stale baked snapshot)
+    expect(r.code).toContain("request.security(srcSym, timeframe.period, close)");
+    expect(r.code).toContain("close / srcLive"); // exact live ratio → captures divisor + futures basis
+    expect(r.code).toContain('input.symbol("SPY"'); // source symbol baked from the generated ticker
+    expect(r.code).toContain("close / snapSpot"); // graceful fallback if the source can't be read
     expect(r.code).toContain("frozenScale"); // frozen once → levels don't move
+    // ratio is locked on a CONFIRMED bar (commits) so it never recomputes tick-by-tick on the realtime bar
+    expect(r.code).toContain("barstate.islastconfirmedhistory");
     expect(r.code).toContain("extend = extend.both"); // full static horizontal lines
     expect(r.code).toContain("array.get(P, i) * scale"); // every level scaled by the factor
   });

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { loadChain } from "@/lib/client-data";
 import { buildGexPine, type PineResult } from "@/lib/pine";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -57,21 +57,19 @@ export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
   };
 
   return (
-    <div className="glass p-4">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">TradingView Pine · {symbol}</h2>
-        <span className="text-xs text-neutral-500">
-          {result?.expiration ? `exp ${result.expiration} · ${result.strikes} strikes · ` : ""}src: {source}
-        </span>
-      </div>
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <SectionHeader
+        eyebrow="TradingView export"
+        title={symbol}
+        right={result?.expiration ? <span className="lbl">Exp {result.expiration} · {result.strikes} strikes</span> : undefined}
+      />
 
-      <p className="mb-3 text-xs text-neutral-400">
-        Generates a Pine v6 indicator with named GEX levels — <span className="text-red-400">Call Resistance</span>{" "}
-        (above spot), <span className="text-green-400">Put Support</span> (below spot),{" "}
-        <span className="text-blue-400">HVL</span> (γ-flip), their <b>0DTE</b> variants, the{" "}
-        <span className="text-teal-300">GEX 1…N</span> ladder, <span className="text-amber-400">1D Max/Min</span>,{" "}
-        <span className="text-yellow-300">Max Pain</span> and the <span className="text-lime-400">Call/Put OI</span> walls.
-        Copy into TradingView → <b>Pine Editor</b> → paste → <b>Save</b> → <b>Add to chart</b>. Re-generate to refresh.
+      <p className="mb-4 max-w-3xl text-xs leading-relaxed text-neutral-400">
+        Compiles the current dealer map into a Pine v6 indicator — <span className="text-put">Call Resistance</span>,{" "}
+        <span className="text-call">Put Support</span>, <span className="text-violet-300">HVL</span> (γ-flip), their 0DTE
+        variants, the GEX ladder, <span className="text-amber-300">expected-move bands &amp; Max Pain</span>, OI walls and
+        the delta-weighted <span className="text-call">Delta Support</span> / <span className="text-put">Resistance</span>{" "}
+        walls. Paste into TradingView&apos;s Pine Editor, save, and add to chart.
       </p>
 
       {state === "loading" && <Loading label="Building Pine…" />}
@@ -79,26 +77,25 @@ export function PineExport({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
       {state === "empty" && <EmptyState label="No options data to build levels from." />}
       {state === "ok" && result && (
         <>
-          <div className="mb-2 flex flex-wrap gap-2">
-            <button onClick={copy} className="rounded bg-emerald-600 px-3 py-1 text-sm font-medium hover:bg-emerald-500">
+          <div className="mb-3 flex flex-wrap gap-2">
+            <button onClick={copy} className="btn btn-primary">
               {copied ? "Copied ✓" : "Copy Pine"}
             </button>
-            <button onClick={download} className="rounded bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700">
+            <button onClick={download} className="btn">
               Download .pine
             </button>
-            <button onClick={load} className="rounded bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700">
+            <button onClick={load} className="btn">
               Re-generate
             </button>
           </div>
-          <pre className="max-h-[420px] overflow-auto rounded-lg border border-white/10 bg-black/50 p-3 text-[11px] leading-relaxed text-neutral-200">
+          <pre className="max-h-[420px] overflow-auto rounded-xl border border-white/10 bg-[#07080c] p-4 text-[11px] leading-relaxed text-neutral-200 shadow-panel">
             <code>{result.code}</code>
           </pre>
-          <p className="mt-2 text-[11px] text-neutral-500">
-            Labels are short — <b>hover any label</b> for its full OI / Volume / GEX / DEX, and levels that sit close
-            together auto-stagger so they never overlap. Values are a <b>~15-min delayed snapshot</b> baked at generate
-            time (TradingView has no API to push live data), so hit <b>Re-generate</b> to refresh. To overlay on <b>ES/NQ</b>,
-            set the indicator's <b>Convert levels to this chart → Auto</b> — it scales by the live ratio (SPY→ES ~10×,
-            QQQ→NQ ~41×), frozen so the levels stay put.
+          <p className="mt-3 border-t border-white/[0.05] pt-3 text-[11px] leading-relaxed text-neutral-600">
+            Labels are short — hover any label on the chart for its full OI / Volume / GEX / DEX; close levels auto-stagger.
+            Values are a snapshot baked at generate time, so re-generate for fresh levels. To overlay on ES or NQ, keep the
+            indicator&apos;s &quot;Convert levels to this chart&quot; on Auto — it scales by the live price ratio, locked on
+            load so the levels stay put.
           </p>
         </>
       )}

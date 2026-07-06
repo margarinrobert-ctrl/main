@@ -195,7 +195,7 @@ export function buildPlaybook(chain: OptionContract[], spot: number | null): Pla
     so.vanna != null || so.charm != null
       ? "Vanna/Charm are Black-Scholes model estimates (r=q=0) for direction & scale, not a peek at dealer books."
       : "",
-    "Levels are ~15-min delayed (free CBOE feed). Educational tooling — not financial advice.",
+    "Educational tooling — not financial advice.",
   ].filter(Boolean);
 
   return { regime, regimeText, bias, biasText, spot, netGex: ngex, plays, notes };

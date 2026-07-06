@@ -3,6 +3,9 @@ import {
   atmIv,
   callOiWall,
   callResistance,
+  deltaCallWall,
+  deltaPutWall,
+  dexByStrike,
   expectedMove,
   expectedMove1D,
   gammaFlipNearest,
@@ -92,12 +95,14 @@ export interface PineResult {
   callRes: number | null;
   putSup: number | null;
   hvl: number | null;
+  deltaCallWall: number | null;
+  deltaPutWall: number | null;
   strikes: number;
 }
 
 /**
  * Generate a TradingView Pine v6 indicator with named GEX levels (MenthorQ-style). Levels are a
- * baked, ~15-min-delayed snapshot. Labels are short (full OI/Vol/GEX/DEX detail is on hover) and the
+ * baked snapshot. Labels are short (full OI/Vol/GEX/DEX detail is on hover) and the
  * indicator auto-staggers labels that sit close together so they never overlap.
  */
 export function buildGexPine(
@@ -122,6 +127,9 @@ export function buildGexPine(
   const oi = oiByStrike(chain);
   const callOi = callOiWall(oi);
   const putOi = putOiWall(oi);
+  const dby = dexByStrike(chain, spot);
+  const dCallWall = deltaCallWall(dby, spot);
+  const dPutWall = deltaPutWall(dby, spot);
   const iv0 = exp ? atmIv(chain, spot, exp) : null;
   // Expected move of the FRONT expiration (market-implied ATM straddle). For a 0DTE front this is
   // literally today's expected high/low — the intraday range. Falls back to a 1-session 1σ from IV.
@@ -155,10 +163,14 @@ export function buildGexPine(
   add(callRes0, "Call Res 0DTE", "color.red", "line.style_dashed", 2, `Call Resistance 0DTE / Gamma Wall 0DTE - ${meta(sub, callRes0, spot)}`);
   add(putSup0, "Put Sup 0DTE", "color.green", "line.style_dashed", 2, `Put Support 0DTE - ${meta(sub, putSup0, spot)}`);
   add(hvl0, "HVL 0DTE", "color.blue", "line.style_dashed", 2, "HVL 0DTE / front-expiry gamma flip");
+  // Delta walls — dealer hedgeable-delta resistance/support. Ranked here (ABOVE Max Pain / OI walls) so they
+  // are never dropped by the one-level-per-price dedup when a raw-OI wall happens to sit on the same strike.
+  add(dCallWall, "Delta Resistance", "color.maroon", "line.style_solid", 2, `Delta Resistance Wall (heaviest call delta-exposure above spot = dealer hedgeable-delta resistance) - ${meta(chain, dCallWall, spot)}`);
+  add(dPutWall, "Delta Support", "color.lime", "line.style_solid", 2, `Delta Support Wall (heaviest put delta-exposure below spot = dealer hedgeable-delta support) - ${meta(chain, dPutWall, spot)}`);
   add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, `Max Pain ${exp ?? ""} - ${meta(chain, mp, spot)}`);
   add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, `Call OI wall - ${meta(chain, callOi, spot)}`);
   add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, `Put OI wall - ${meta(chain, putOi, spot)}`);
-  add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated${feedAsOf ? ` (CBOE ${feedAsOf})` : " (~15-min delayed)"} — levels are anchored here; the chart's current price may have moved since.`);
+  add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated — levels are anchored here; the chart's current price may have moved since.`);
   add(dmax, `Exp Hi ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move HIGH for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
   add(dmin, `Exp Lo ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move LOW for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
   ladder.forEach((x, i) => {
@@ -198,6 +210,8 @@ export function buildGexPine(
     callRes != null ? `kCallRes = input.float(${fmt(callRes)}, "Alert: Call Resistance")` : "",
     putSup != null ? `kPutSup  = input.float(${fmt(putSup)}, "Alert: Put Support")` : "",
     hvl != null ? `kHvl     = input.float(${fmt(hvl)}, "Alert: HVL (gamma flip)")` : "",
+    dCallWall != null ? `kDCall   = input.float(${fmt(dCallWall)}, "Alert: Delta Resistance")` : "",
+    dPutWall != null ? `kDPut    = input.float(${fmt(dPutWall)}, "Alert: Delta Support")` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -205,26 +219,29 @@ export function buildGexPine(
     callRes != null ? `alertcondition(ta.cross(close, kCallRes * scale), "Price ↔ Call Resistance", "{{ticker}} tagged Call Resistance")` : "",
     putSup != null ? `alertcondition(ta.cross(close, kPutSup * scale), "Price ↔ Put Support", "{{ticker}} tagged Put Support")` : "",
     hvl != null ? `alertcondition(ta.cross(close, kHvl * scale), "Price ↔ HVL", "{{ticker}} crossed HVL / gamma flip")` : "",
+    dCallWall != null ? `alertcondition(ta.cross(close, kDCall * scale), "Price ↔ Delta Resistance", "{{ticker}} tagged Delta Resistance Wall")` : "",
+    dPutWall != null ? `alertcondition(ta.cross(close, kDPut * scale), "Price ↔ Delta Support", "{{ticker}} tagged Delta Support Wall")` : "",
   ]
     .filter(Boolean)
     .join("\n");
 
-  const convertNote = `\n// CONVERT TO ES / NQ: to overlay these ${symbol} levels on a futures chart, set the "Convert levels to\n// this chart" input to Auto — it scales every level by (chart price / ${symbol} spot), the live ratio\n// (SPY->ES ~10x, QQQ->NQ ~41x), frozen once so levels never move. Manual x is an extra fine-tune.`;
+  const convertNote = `\n// CONVERT TO ES / NQ / RTY: to overlay these ${symbol} levels on a futures chart, leave "Convert levels\n// to this chart" on Auto. It reads the LIVE ${symbol} price (request.security on the "Source symbol" input)\n// and this chart's price at the SAME instant, then scales every level by their exact ratio — so the\n// current index divisor AND futures basis are always baked in (QQQ->NQ ~41x, SPY->ES ~10x, IWM->RTY ~10x).\n// The ratio is LOCKED on the last closed bar so levels never move as price ticks; on the ${symbol} chart it is 1.0.`;
 
   const code = `//@version=6
 // OptionsFlow — GEX levels for ${symbol}  (front/target exp ${exp ?? "n/a"}${dteLabel ? ", " + dteLabel : ""})
 // Built for the ${symbol} chart (spot ~${spot != null ? fmtNice(spot) : "n/a"}). To overlay on ES/NQ, use the
 // "Convert levels to this chart" input below (Auto = accurate live-ratio scaling).
-// STATIC SNAPSHOT: a Pine script cannot fetch data, so this does NOT auto-update. Values are CBOE
-// ${feedAsOf ?? "(time n/a)"} (~15-min delayed), generated ${asOf} UTC — RE-GENERATE & re-paste for fresh levels.
+// STATIC SNAPSHOT: a Pine script cannot fetch data, so this does NOT auto-update.
+// Generated ${asOf} UTC — RE-GENERATE & re-paste for fresh levels.
 // Short labels show the on-chart price; hover for full OI/Volume/GEX/DEX. Close levels auto-stagger.${convertNote}
 indicator("OptionsFlow GEX • ${symbol}", overlay = true, max_lines_count = 200, max_labels_count = 200)
 
 showMeta  = input.bool(true, "Detail on hover (tooltip)")
 laneStep  = input.int(14, "Stagger close labels (bars)", minval = 0, maxval = 80)
-convertMode = input.string("Off", "Convert levels to this chart", options = ["Off", "Auto (match chart)"])
+convertMode = input.string("Auto (match chart)", "Convert levels to this chart", options = ["Off", "Auto (match chart)"], tooltip = "Auto: rescale these ${symbol} levels onto whatever chart you are on (e.g. NQ / ES / RTY futures) using the LIVE price ratio. Off: draw the exact ${symbol} strikes (use on the ${symbol} chart).")
+srcSym      = input.symbol("${symbol}", "Source symbol (these levels are priced in it)", tooltip = "The symbol these levels came from. Auto reads its live price via request.security to build the exact ratio vs this chart. Typical maps: QQQ->NQ, SPY->ES, IWM->RTY, SPX->ES, NDX->NQ.")
 manualMult  = input.float(1.0, "Manual x multiplier (fine-tune)", minval = 0.0001, step = 0.01)
-snapSpot    = input.float(${fmt(spot ?? 0)}, "Snapshot ${symbol} spot (for conversion)")
+snapSpot    = input.float(${fmt(spot ?? 0)}, "Snapshot ${symbol} spot (fallback if source unavailable)")
 labelSize = input.string("normal", "Label size", options = ["small", "normal", "large", "huge"])
 sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : labelSize == "normal" ? size.normal : size.small
 showVwap = input.bool(true, "Show session VWAP")
@@ -249,12 +266,18 @@ clearAll() =>
     while array.size(_lb) > 0
         label.delete(array.pop(_lb))
 
-// Convert ${symbol} levels onto whatever chart this is applied to. "Auto (match chart)" multiplies every
-// level by (chart price / snapshot spot) — the live ratio (SPY->ES ~10x, QQQ->NQ ~41x) — FROZEN ONCE so
-// the levels never move while price moves. On the ${symbol} chart itself, leave it Off for exact strikes.
+// Convert ${symbol} levels onto whatever chart this is applied to. "Auto (match chart)" scales every level
+// by the ratio close / srcLive — this chart's price and the SOURCE symbol's price read at the SAME bar via
+// request.security — so the current index divisor AND futures basis are exact (QQQ->NQ ~41x, SPY->ES ~10x).
+// The ratio is LOCKED once, on the last CLOSED bar before realtime (barstate.islastconfirmedhistory fires a
+// single time on a confirmed bar and never on realtime ticks), so it is committed and never recomputed —
+// converted levels stay pinned exactly where the data says while price moves. On the ${symbol} chart the
+// ratio is 1.0 (exact strikes). Falls back to the snapshot-spot ratio if the source symbol can't be read.
+srcLive = request.security(srcSym, timeframe.period, close)
 var float frozenScale = na
-if barstate.islast and na(frozenScale)
-    frozenScale := convertMode == "Auto (match chart)" and snapSpot > 0 ? close / snapSpot : 1.0
+if na(frozenScale) and (barstate.islastconfirmedhistory or barstate.islast)
+    liveRatio = not na(srcLive) and srcLive > 0 ? close / srcLive : (snapSpot > 0 ? close / snapSpot : 1.0)
+    frozenScale := convertMode == "Auto (match chart)" ? liveRatio : 1.0
 scale = nz(frozenScale, 1.0) * manualMult
 
 if barstate.islast
@@ -295,5 +318,5 @@ plot(showOR ? orL : na, "OR Low", color = color.new(color.aqua, 0), style = plot
 ${alertLines}
 `;
 
-  return { code, expiration: exp, callRes, putSup, hvl, strikes: lv.length };
+  return { code, expiration: exp, callRes, putSup, hvl, deltaCallWall: dCallWall, deltaPutWall: dPutWall, strikes: lv.length };
 }

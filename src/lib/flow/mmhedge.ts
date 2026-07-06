@@ -3,12 +3,17 @@ import {
   atmIv,
   callOiWall,
   callResistance,
+  deltaCallWall,
+  deltaFlip,
+  deltaPutWall,
+  dexByStrike,
   expectedMove1D,
   exposureProfile,
   flipFromProfile,
   gammaFlipNearest,
   gexByStrike,
   maxPain,
+  netDex,
   netGex,
   oiByStrike,
   putCallRatio,
@@ -20,6 +25,7 @@ import {
   type StrikeOi,
 } from "./analytics";
 import { probTouch } from "./greeks";
+import { optionsFlow } from "./optionsflow";
 
 // Market-maker hedging algo (quant model).
 //
@@ -97,6 +103,12 @@ export interface MMHedge {
   com: number | null; // gamma centre-of-mass (the pin target)
   callWall: number | null;
   putWall: number | null;
+  deltaCallWall: number | null; // heaviest call delta-exposure above spot (delta-weighted resistance)
+  deltaPutWall: number | null; // heaviest put delta-exposure below spot (delta-weighted support)
+  netDex: number | null; // aggregate notional delta of OI (calls +, puts −) — directional book weight
+  flowNetPremium: number | null; // bullish − bearish $ premium (today's tape)
+  flowDeltaImbalance: number | null; // call+put delta-weighted volume (signed)
+  deltaFlip: number | null; // delta-neutral pivot strike
   charmFlow: number | null; // $/day
   vannaFlow: number | null; // $/day (vanna × expected ΔIV)
   frontIv: number | null; // front-expiry ATM IV (for level probabilities)
@@ -210,6 +222,129 @@ function buildLevelPlays(
     .slice(0, 24);
 }
 
+interface PressureBook {
+  regime: MMHedge["regime"];
+  com: number | null;
+  flip: number | null;
+  ngex: number | null;
+  grossGex: number;
+  dflip: number | null;
+  ndex: number | null;
+  grossDex: number;
+  em: number;
+  charmFlow: number;
+  vannaFlow: number;
+  deltaNotional: number;
+  hasCharm: boolean;
+  hasVanna: boolean;
+  dVolPts: number;
+  vrp: number | null;
+  flowS: { netPremium: number; bullPremium: number; bearPremium: number; deltaImbalance: number };
+  pcr: { vol: number | null; oi: number | null };
+}
+
+/**
+ * Build the signed pressure components + score at a REFERENCE price. The book (greeks/walls/flows) is
+ * fixed; only the gamma-pin and delta directions re-evaluate vs `ref`, so the same book yields the
+ * breakdown at spot or at any selected level. Convention: positive contribution = bullish.
+ */
+function buildPressure(ref: number, b: PressureBook): { components: MMComponent[]; pressureScore: number; pressure: Pressure } {
+  const components: MMComponent[] = [];
+  let gammaComp = 0;
+  if (b.regime === "long" && b.com != null) {
+    const pinStrength = clamp(Math.abs(b.ngex ?? 0) / b.grossGex / 0.25, 0, 1);
+    gammaComp = Math.sign(b.com - ref) * pinStrength * 40;
+    components.push({ label: "Gamma pin", dir: dirOf(gammaComp), weight: Math.round(Math.abs(gammaComp)), detail: `Long γ pulls to centre-of-mass ${f2(b.com)} (pin strength ${Math.round(pinStrength * 100)}%).` });
+  } else if (b.regime === "short") {
+    const r = b.flip ?? b.com;
+    if (r != null) {
+      const force = clamp(Math.abs(b.ngex ?? 0) / b.grossGex / 0.25, 0, 1);
+      gammaComp = Math.sign(ref - r) * force * 40;
+      components.push({ label: "Gamma (short)", dir: dirOf(gammaComp), weight: Math.round(Math.abs(gammaComp)), detail: `Short γ amplifies away from ${b.flip != null ? "the flip" : "COM"} ${f2(r)} (force ${Math.round(force * 100)}%).` });
+    }
+  }
+  // Delta / DEX (16): direction = ref vs delta-flip pivot; magnitude = net-DEX concentration.
+  let deltaComp = 0;
+  const dexConc = b.grossDex > 0 && b.ndex != null ? clamp(b.ndex / b.grossDex / 0.4, -1, 1) : 0;
+  if (b.dflip != null && b.grossDex > 0 && b.ndex != null && b.em > 0) {
+    const prox = clamp(Math.abs(ref - b.dflip) / b.em, 0, 1);
+    const sgn = Math.sign(ref - b.dflip);
+    deltaComp = sgn * prox * Math.abs(dexConc) * 16;
+    components.push({ label: "Delta (DEX)", dir: dirOf(deltaComp), weight: Math.round(Math.abs(deltaComp)), detail: `Price ${sgn >= 0 ? "above" : "below"} delta-flip ${f2(b.dflip)}; net OI delta ${fmtMoney(b.ndex)} (${Math.round(Math.abs(dexConc) * 100)}% concentration).` });
+  } else if (b.grossDex > 0 && b.ndex != null) {
+    deltaComp = dexConc * 8;
+    components.push({ label: "Delta (DEX)", dir: dirOf(deltaComp), weight: Math.round(Math.abs(deltaComp)), detail: `Net OI delta ${fmtMoney(b.ndex)} (${Math.round(Math.abs(dexConc) * 100)}% call-delta dominant); no delta-flip in range.` });
+  }
+  const charmComp = clamp(b.charmFlow / (0.02 * b.deltaNotional), -1, 1) * 12;
+  if (b.hasCharm) components.push({ label: "Charm flow", dir: dirOf(charmComp), weight: Math.round(Math.abs(charmComp)), detail: `Decay hedging ≈ ${fmtMoney(b.charmFlow)}/day (${charmComp >= 0 ? "buy/up" : "sell/down"}).` });
+  const vannaComp = clamp(b.vannaFlow / (0.02 * b.deltaNotional), -1, 1) * 8;
+  if (b.hasVanna) components.push({ label: "Vanna flow", dir: dirOf(vannaComp), weight: Math.round(Math.abs(vannaComp)), detail: `IV ${b.dVolPts <= 0 ? "fall" : "rise"} (VRP ${b.vrp != null ? b.vrp.toFixed(2) + "×" : "n/a"}) → ${fmtMoney(b.vannaFlow)}/day.` });
+  // Options flow (16): aggressive traded premium.
+  let flowComp = 0;
+  const flowSpan = b.flowS.bullPremium - b.flowS.bearPremium;
+  if (flowSpan > 0) {
+    const flowRatio = clamp(b.flowS.netPremium / flowSpan, -1, 1);
+    flowComp = (Number.isFinite(flowRatio) ? flowRatio : 0) * 16;
+    components.push({ label: "Options flow", dir: dirOf(flowComp), weight: Math.round(Math.abs(flowComp)), detail: `Net ${flowComp >= 0 ? "bullish" : "bearish"} premium ${fmtMoney(b.flowS.netPremium)} of ${fmtMoney(flowSpan)} traded (Δ-imbalance ${fmtMoney(b.flowS.deltaImbalance)}).` });
+  }
+  // Open interest (8): standing put/call OI lean (call-heavy = bullish).
+  let oiComp = 0;
+  if (b.pcr.oi != null && b.pcr.oi > 0) {
+    const skew = clamp(-Math.log(b.pcr.oi) / Math.log(2), -1, 1);
+    oiComp = skew * 8;
+    components.push({ label: "Open interest", dir: dirOf(oiComp), weight: Math.round(Math.abs(oiComp)), detail: `P/C OI ${b.pcr.oi.toFixed(2)} — ${b.pcr.oi < 1 ? "call-heavy" : b.pcr.oi > 1 ? "put-heavy" : "balanced"} standing book.` });
+  }
+  const pressureScore = Math.round(clamp(gammaComp + deltaComp + flowComp + charmComp + vannaComp + oiComp, -100, 100));
+  const pressure: Pressure = pressureScore > 15 ? "up" : pressureScore < -15 ? "down" : "balanced";
+  return { components, pressureScore, pressure };
+}
+
+/**
+ * Recompute the dealer-pressure breakdown AT an arbitrary reference price (e.g. a selected level).
+ * The book (greeks/walls/flows) is read from the live chain at spot; only the gamma-pin and delta
+ * directions are re-evaluated as if price were at `ref`. Returns null without a chain/spot.
+ */
+export function pressureAt(chain: OptionContract[], spot: number | null, ref: number, bars: HistoryBar[] = []): { components: MMComponent[]; pressureScore: number; pressure: Pressure } | null {
+  if (!spot || !chain.length) return null;
+  const by = gexByStrike(chain, spot);
+  if (!by.length) return null;
+  const ngex = netGex(chain, spot);
+  const grossGex = by.reduce((s, x) => s + Math.abs(x.gex), 0) || 1;
+  const com = centreOfMass(by);
+  const flip = flipFromProfile(exposureProfile(chain, spot, 41)) ?? gammaFlipNearest(by, spot);
+  const regime: MMHedge["regime"] = ngex == null ? "unknown" : ngex >= 0 ? "long" : "short";
+  const dby = dexByStrike(chain, spot);
+  const so = secondOrderExposure(chain, spot);
+  const exps = [...new Set(chain.map((c) => c.expiration))].sort();
+  const frontExp = exps.find((e) => (chain.find((c) => c.expiration === e)?.dte ?? -1) >= 0) ?? exps[0];
+  const iv0 = frontExp ? atmIv(chain, spot, frontExp) : null;
+  const em = expectedMove1D(spot, iv0)?.abs ?? spot * 0.005;
+  const rv = realizedVol(bars, 20) ?? realizedVol(bars, 10);
+  const vrp = iv0 != null && rv ? iv0 / rv : null;
+  const dVolPts = vrp == null ? 0 : clamp(-(vrp - 1) * 0.5, -2, 2);
+  const deltaNotional = chain.reduce((s, c) => s + (c.delta != null && c.openInterest != null ? Math.abs(c.delta) * c.openInterest : 0), 0) * 100 * spot || 1;
+  return buildPressure(ref, {
+    regime,
+    com,
+    flip,
+    ngex,
+    grossGex,
+    dflip: deltaFlip(dby, spot),
+    ndex: netDex(chain, spot),
+    grossDex: dby.reduce((s, x) => s + Math.abs(x.dex), 0),
+    em,
+    charmFlow: so.charm ?? 0,
+    vannaFlow: (so.vanna ?? 0) * dVolPts,
+    deltaNotional,
+    hasCharm: so.charm != null,
+    hasVanna: so.vanna != null,
+    dVolPts,
+    vrp,
+    flowS: optionsFlow(chain, spot).sentiment,
+    pcr: putCallRatio(chain),
+  });
+}
+
 /** Build the entry/TP/stop plan + BS probabilities + modelled EV(R) in the pressure direction. */
 function planTrade(
   side: "long" | "short",
@@ -222,6 +357,7 @@ function planTrade(
   magnet: number | null,
   iv: number | null,
   tYears: number,
+  edge: number, // directional conviction 0..1 (|pressureScore|/100) — drift for P(win)/EV
 ): MMTrade {
   const entry = atLevel && anchor ? anchor.price : spot;
   const buf = Math.max(em * 0.12, entry * 0.0006);
@@ -230,16 +366,30 @@ function planTrade(
   const ahead = lad.filter((l) => (long ? l.price > entry + buf : l.price < entry - buf)).sort((a, b) => (long ? a.price - b.price : b.price - a.price));
   const behind = lad.filter((l) => (long ? l.price < entry - buf : l.price > entry + buf)).sort((a, b) => (long ? b.price - a.price : a.price - b.price));
 
-  const guard = behind[0] ?? null;
-  const stop = guard ? (long ? guard.price - buf : guard.price + buf) : long ? entry - em * 0.6 : entry + em * 0.6;
-  const stopLabel = guard ? `beyond ${guard.name} ${f2(guard.price)}` : `${f2(stop)} (≈0.6× expected move)`;
-  const risk = Math.abs(entry - stop);
-
+  // Targets first (structural levels ahead, else expected-move multiples) so risk can be sized off them.
   const picks = ahead.slice(0, 3);
   while (picks.length < 2) {
     const mult = picks.length + 1;
     picks.push({ name: `${mult}× EM`, price: long ? entry + em * mult : entry - em * mult });
   }
+  const tp1Dist = Math.abs(picks[0].price - entry) || em;
+
+  // Structural invalidation (next level behind, else 0.6× EM), but CAP risk at the first target's
+  // distance so the plan is never worse than 1:1 — a far structural stop against a near target is bad
+  // risk management. Keep the structural stop only when it's already tighter than 1R.
+  const guard = behind[0] ?? null;
+  const structuralStop = guard ? (long ? guard.price - buf : guard.price + buf) : long ? entry - em * 0.6 : entry + em * 0.6;
+  const structuralRisk = Math.abs(entry - structuralStop);
+  let risk = Math.min(structuralRisk, tp1Dist);
+  if (!(risk > 0)) risk = Math.min(tp1Dist, em * 0.5);
+  const stop = long ? entry - risk : entry + risk;
+  const tightened = structuralRisk > tp1Dist + 1e-9;
+  const stopLabel = tightened
+    ? `${f2(stop)} · risk capped to 1R (${guard ? guard.name : "0.6× EM"} sat wider)`
+    : guard
+      ? `beyond ${guard.name} ${f2(guard.price)}`
+      : `${f2(stop)} (≈0.6× expected move)`;
+
   const targets: MMTarget[] = picks.map((l, i) => ({
     price: l.price,
     label: `TP${i + 1} · ${l.name}`,
@@ -248,22 +398,14 @@ function planTrade(
   }));
 
   const pStop = iv != null ? probTouch(spot, stop, iv, tYears) : null;
-  // Modelled EV in R: scale-out weights on the TPs (prob-of-touch × R), minus the chance of the stop.
-  let ev: number | null = null;
-  if (risk > 0 && pStop != null && targets.every((t) => t.pTouch != null && t.r != null)) {
-    const w = [0.5, 0.3, 0.2];
-    const upside = targets.reduce((s, t, i) => s + (w[i] ?? 0) * (t.pTouch as number) * (t.r as number), 0);
-    ev = Math.round((upside - pStop) * 100) / 100;
-  }
-  // P(win): driftless first-passage probability of tagging TP1 before the stop. In log space with
-  // absorbing barriers at +u (target) and −d (stop), P(target first) = d / (u + d).
-  let pWin: number | null = null;
-  const tp1 = targets[0]?.price;
-  if (tp1 != null && entry > 0 && stop > 0 && tp1 > 0) {
-    const u = Math.abs(Math.log(tp1 / entry));
-    const d = Math.abs(Math.log(stop / entry));
-    if (u + d > 0) pWin = Math.round((d / (u + d)) * 100) / 100;
-  }
+
+  // P(win) carries the model's DIRECTIONAL edge (dealer-pressure conviction, 0..1) as a drift on the
+  // base coin-flip — a driftless 1:1 trade is 0-EV by construction, so EV only turns positive when the
+  // model actually reads a direction. EV(R) = scale-out reward (R, weighted) × P(win) − 1R × P(loss).
+  const pWin = Math.round(Math.min(0.92, Math.max(0.5, 0.5 + 0.42 * Math.max(0, Math.min(1, edge)))) * 100) / 100;
+  const w = [0.5, 0.3, 0.2];
+  const rewardR = targets.reduce((s, t, i) => s + (w[i] ?? 0) * (t.r ?? 0), 0);
+  const ev = targets.some((t) => t.r != null) ? Math.round((pWin * rewardR - (1 - pWin)) * 100) / 100 : null;
 
   const entries = [
     { price: entry, label: atLevel && anchor ? `at ${anchor.name}` : "on reach" },
@@ -312,6 +454,12 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     com: null,
     callWall: null,
     putWall: null,
+    deltaCallWall: null,
+    deltaPutWall: null,
+    netDex: null,
+    flowNetPremium: null,
+    flowDeltaImbalance: null,
+    deltaFlip: null,
     charmFlow: null,
     vannaFlow: null,
     frontIv: null,
@@ -338,6 +486,10 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
   const magnet = magnetStrike(by);
   const cw = callResistance(by, spot);
   const pw = putSupport(by, spot);
+  const dby = dexByStrike(chain, spot);
+  const dcw = deltaCallWall(dby, spot);
+  const dpw = deltaPutWall(dby, spot);
+  const ndex = netDex(chain, spot);
   const so = secondOrderExposure(chain, spot);
 
   // smoother zero-gamma flip from the BS-repriced profile, fallback to the discrete crossing
@@ -368,32 +520,18 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
   const deltaNotional =
     chain.reduce((s, c) => s + (c.delta != null && c.openInterest != null ? Math.abs(c.delta) * c.openInterest : 0), 0) * 100 * spot || 1;
 
-  // ── pressure components (magnitude-aware) ──
-  const components: MMComponent[] = [];
-  let gammaComp = 0;
-  if (regime === "long" && com != null) {
-    const pinStrength = clamp(Math.abs(ngex ?? 0) / grossGex / 0.25, 0, 1); // net concentration
-    gammaComp = Math.sign(com - spot) * pinStrength * 50;
-    components.push({ label: "Gamma pin", dir: dirOf(gammaComp), weight: Math.round(Math.abs(gammaComp)), detail: `Long γ pulls to centre-of-mass ${f2(com)} (pin strength ${Math.round(pinStrength * 100)}%).` });
-  } else if (regime === "short") {
-    // amplify the move away from the flip; if there's no flip in range, use the centre-of-mass.
-    const ref = flip ?? com;
-    if (ref != null) {
-      const force = clamp(Math.abs(ngex ?? 0) / grossGex / 0.25, 0, 1);
-      gammaComp = Math.sign(spot - ref) * force * 50;
-      components.push({ label: "Gamma (short)", dir: dirOf(gammaComp), weight: Math.round(Math.abs(gammaComp)), detail: `Short γ amplifies away from ${flip != null ? "the flip" : "COM"} ${f2(ref)} (force ${Math.round(force * 100)}%).` });
-    }
-  }
-  const charmComp = clamp(charmFlow / (0.02 * deltaNotional), -1, 1) * 20;
-  if (so.charm != null) components.push({ label: "Charm flow", dir: dirOf(charmComp), weight: Math.round(Math.abs(charmComp)), detail: `Decay hedging ≈ ${fmtMoney(charmFlow)}/day (${charmComp >= 0 ? "buy/up" : "sell/down"}).` });
-  const vannaComp = clamp(vannaFlow / (0.02 * deltaNotional), -1, 1) * 15;
-  if (so.vanna != null) components.push({ label: "Vanna flow", dir: dirOf(vannaComp), weight: Math.round(Math.abs(vannaComp)), detail: `IV ${dVolPts <= 0 ? "fall" : "rise"} (VRP ${vrp != null ? vrp.toFixed(2) + "×" : "n/a"}) → ${fmtMoney(vannaFlow)}/day.` });
-  const pc = putCallRatio(chain);
-  const pcComp = (pc.vol == null ? 0 : pc.vol < 0.8 ? 1 : pc.vol > 1.2 ? -1 : 0) * 15;
-  if (pc.vol != null) components.push({ label: "Order flow", dir: dirOf(pcComp), weight: Math.round(Math.abs(pcComp)), detail: `Put/Call ${pc.vol.toFixed(2)} — ${pcComp > 0 ? "call-heavy" : pcComp < 0 ? "put-heavy" : "balanced"}.` });
-
-  const pressureScore = Math.round(clamp(gammaComp + charmComp + vannaComp + pcComp, -100, 100));
-  const pressure = pressureScore > 15 ? "up" : pressureScore < -15 ? "down" : "balanced";
+  // ── pressure components (magnitude-aware) ── built at a REFERENCE price so the breakdown can be
+  // recomputed at any selected level (gamma/delta direction re-evaluate vs that price).
+  const dflip = deltaFlip(dby, spot); // delta-neutral pivot; null if <2 DEX strikes / no crossing
+  const grossDex = dby.reduce((s, x) => s + Math.abs(x.dex), 0); // ≥ 0
+  const flowS = optionsFlow(chain, spot).sentiment; // never throws; zero gauges on empty/no-volume
+  const pcr = putCallRatio(chain); // { vol, oi }; fields may be null
+  const book: PressureBook = {
+    regime, com, flip, ngex, grossGex, dflip, ndex, grossDex, em,
+    charmFlow, vannaFlow, deltaNotional, hasCharm: so.charm != null, hasVanna: so.vanna != null,
+    dVolPts, vrp, flowS, pcr,
+  };
+  const { components, pressureScore, pressure } = buildPressure(spot, book);
 
   // nearest level + ladder
   const cands = [
@@ -446,6 +584,8 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
       { name: "Max Pain", price: mp as number },
       { name: "Call OI", price: coi as number },
       { name: "Put OI", price: poi as number },
+      { name: "Delta Call Wall", price: dcw as number },
+      { name: "Delta Put Wall", price: dpw as number },
       { name: "1D Max", price: em1d != null ? spot + em1d : (null as unknown as number) },
       { name: "1D Min", price: em1d != null ? spot - em1d : (null as unknown as number) },
       ...gexLadder.map((x, i) => ({ name: `GEX ${i + 1}`, price: x.strike })),
@@ -457,8 +597,9 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
   );
 
   let trade: MMTrade | null;
-  if (pressureScore > 15) trade = planTrade("long", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears);
-  else if (pressureScore < -15) trade = planTrade("short", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears);
+  const edge = Math.abs(pressureScore) / 100;
+  if (pressureScore > 15) trade = planTrade("long", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears, edge);
+  else if (pressureScore < -15) trade = planTrade("short", spot, nearest, atLevel, lad, em, regime, magnet, iv0, tYears, edge);
   else
     trade = {
       side: "wait",
@@ -506,6 +647,12 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
     com,
     callWall: cw,
     putWall: pw,
+    deltaCallWall: dcw,
+    deltaPutWall: dpw,
+    netDex: ndex,
+    flowNetPremium: flowS.netPremium,
+    flowDeltaImbalance: flowS.deltaImbalance,
+    deltaFlip: dflip,
     charmFlow,
     vannaFlow,
     frontIv: iv0,
@@ -531,7 +678,7 @@ export function mmHedge(chain: OptionContract[], spot: number | null, bars: Hist
 export function planAtLevel(r: MMHedge, spot: number | null, lp: LevelPlay): MMTrade | null {
   if (spot == null || r.regime === "unknown") return null;
   const side: "long" | "short" = lp.bias === "up" ? "long" : lp.bias === "down" ? "short" : r.pressureScore >= 0 ? "long" : "short";
-  return planTrade(side, spot, { name: lp.name, price: lp.price }, true, r.levels, r.em || spot * 0.01, r.regime, r.magnet, r.frontIv, r.frontT);
+  return planTrade(side, spot, { name: lp.name, price: lp.price }, true, r.levels, r.em || spot * 0.01, r.regime, r.magnet, r.frontIv, r.frontT, Math.abs(r.pressureScore) / 100);
 }
 
 function fmtMoney(v: number): string {

@@ -20,8 +20,9 @@ import {
   putSupport,
   secondOrderExposure,
 } from "@/lib/flow/analytics";
+import { CHART, LW_THEME } from "@/lib/chartTheme";
 import { resampleBars } from "@/lib/resample";
-import { Loading } from "./states";
+import { EmptyState, Loading, SectionHeader, Stat } from "./states";
 
 const TIMEFRAMES = [
   { id: "1m", label: "1m", interval: "1m", range: "1d", resample: 1 },
@@ -56,16 +57,16 @@ function buildLevels(chain: OptionContract[], spot: number | null): Level[] {
   const D = LineStyle.Dashed;
   const Dot = LineStyle.Dotted;
   const raw: (Level | null)[] = [
-    mk(callResistance(by, spot), "#ef4444", "Call Res", S),
-    mk(putSupport(by, spot), "#22c55e", "Put Sup", S),
-    mk(gammaFlipNearest(by, spot), "#3b82f6", "HVL", S),
-    mk(magnet, "#eab308", "Magnet", D),
-    mk(front ? maxPain(chain, front) : null, "#f59e0b", "Max Pain", D),
-    mk(callOiWall(oi), "#84cc16", "Call OI", Dot),
-    mk(putOiWall(oi), "#a855f7", "Put OI", Dot),
-    mk(em != null ? spot + em : null, "#fb923c", "1D Max", Dot),
-    mk(em != null ? spot - em : null, "#fb923c", "1D Min", Dot),
-    ...ladder.map((x, i) => mk(x.strike, "#2dd4bf", `GEX ${i + 1}`, S)),
+    mk(callResistance(by, spot), "#f87171", "Call Res", S),
+    mk(putSupport(by, spot), "#34d399", "Put Sup", S),
+    mk(gammaFlipNearest(by, spot), "#a78bfa", "HVL", S),
+    mk(magnet, "#fbbf24", "Magnet", D),
+    mk(front ? maxPain(chain, front) : null, "#fbbf24", "Max Pain", D),
+    mk(callOiWall(oi), "rgba(248,113,113,0.55)", "Call OI", Dot),
+    mk(putOiWall(oi), "rgba(52,211,153,0.55)", "Put OI", Dot),
+    mk(em != null ? spot + em : null, "#fbbf24", "+1σ EM", Dot),
+    mk(em != null ? spot - em : null, "#fbbf24", "−1σ EM", Dot),
+    ...ladder.map((x, i) => mk(x.strike, "rgba(255,255,255,0.35)", `GEX ${i + 1}`, Dot)),
   ];
   const tol = Math.max(0.01, spot * 0.0006);
   const out: Level[] = [];
@@ -131,19 +132,21 @@ export function LevelsChart({ symbol }: { symbol: string }) {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
       height: 380,
-      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#a3a3a3" },
-      grid: { vertLines: { color: "#1f1f1f" }, horzLines: { color: "#1f1f1f" } },
-      timeScale: { borderColor: "#404040", timeVisible: tf.id !== "1d", secondsVisible: false },
-      rightPriceScale: { borderColor: "#404040" },
+      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: LW_THEME.layout.textColor, fontSize: LW_THEME.layout.fontSize },
+      grid: { vertLines: { color: LW_THEME.grid.vertLines.color }, horzLines: { color: LW_THEME.grid.horzLines.color } },
+      timeScale: { borderColor: LW_THEME.timeScale.borderColor, timeVisible: tf.id !== "1d", secondsVisible: false },
+      rightPriceScale: { borderColor: LW_THEME.rightPriceScale.borderColor },
       crosshair: { mode: 0 },
+      handleScroll: { vertTouchDrag: false },
     });
     chartRef.current = chart;
-    seriesRef.current = chart.addCandlestickSeries({ upColor: "#34d399", downColor: "#f87171", borderVisible: false, wickUpColor: "#34d399", wickDownColor: "#f87171" });
+    seriesRef.current = chart.addCandlestickSeries({ upColor: CHART.call, downColor: CHART.put, borderVisible: false, wickUpColor: CHART.call, wickDownColor: CHART.put });
     const onResize = () => chart.applyOptions({ width: containerRef.current?.clientWidth });
     onResize();
-    window.addEventListener("resize", onResize);
+    const ro = new ResizeObserver(onResize);
+    ro.observe(containerRef.current);
     return () => {
-      window.removeEventListener("resize", onResize);
+      ro.disconnect();
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
@@ -169,53 +172,69 @@ export function LevelsChart({ symbol }: { symbol: string }) {
   }, [levels, bars]);
 
   return (
-    <div className="glass p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Levels Chart · {symbol}</h2>
-        <div className="flex items-center gap-1 text-xs">
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <div className="lbl mb-1">Levels chart</div>
+          <h2 className="display text-base text-neutral-50">{symbol}</h2>
+        </div>
+        <div className="tabs-scroll max-w-full">
           {TIMEFRAMES.map((t) => (
             <button
               key={t.id}
               onClick={() => setTf(t)}
-              className={`rounded-md px-2 py-1 transition ${tf.id === t.id ? "bg-emerald-500/15 text-emerald-300" : "text-neutral-400 hover:bg-white/5"}`}
+              aria-pressed={tf.id === t.id}
+              className={`tab-pill rounded-lg px-3 py-2 text-xs font-medium transition ${tf.id === t.id ? "bg-accent/15 text-accent-bright" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"}`}
             >
               {t.label}
             </button>
           ))}
-          {source && <span className="ml-1 text-neutral-500">src: {source}</span>}
         </div>
       </div>
 
-      <div className="mb-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+      <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-5">
         <Stat label="Spot" value={spot == null ? "—" : spot.toLocaleString()} />
-        <Stat label="Dealer γ" value={greeks.ngex == null ? "—" : greeks.ngex >= 0 ? "Long γ" : "Short γ"} sub={greeks.ngex == null ? "" : `${fmtUsd(greeks.ngex)}/1%`} tone={greeks.ngex == null ? undefined : greeks.ngex >= 0 ? "text-emerald-300" : "text-red-300"} />
+        <Stat
+          label="Dealer γ"
+          value={greeks.ngex == null ? "—" : greeks.ngex >= 0 ? "Long γ" : "Short γ"}
+          sub={greeks.ngex == null ? "" : `${fmtUsd(greeks.ngex)}/1%`}
+          tone={greeks.ngex == null ? undefined : greeks.ngex >= 0 ? "call" : "put"}
+        />
         <Stat label="Net Δ exp" value={greeks.ndex == null ? "—" : fmtUsd(greeks.ndex)} />
-        <Stat label="Vanna / Charm" value={`${greeks.vanna == null ? "—" : fmtUsd(greeks.vanna)} · ${greeks.charm == null ? "—" : fmtUsd(greeks.charm) + "/d"}`} />
+        <Stat label="Vanna" value={greeks.vanna == null ? "—" : fmtUsd(greeks.vanna)} sub="per 1% IV" />
+        <Stat label="Charm" value={greeks.charm == null ? "—" : `${fmtUsd(greeks.charm)}/d`} sub="Δ decay" />
       </div>
 
-      {loading && bars.length === 0 ? <Loading label="Loading candles…" /> : <div ref={containerRef} />}
+      {loading && bars.length === 0 ? (
+        <Loading label="Loading candles…" />
+      ) : bars.length === 0 ? (
+        <EmptyState label="No intraday candles returned." hint="Try another timeframe — shorter ranges depend on session hours." />
+      ) : (
+        <div ref={containerRef} />
+      )}
 
-      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-neutral-500">
-        {levels.map((l) => (
-          <span key={l.title} className="inline-flex items-center gap-1">
-            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: l.color }} />
-            {l.title} {Math.round(l.price * 100) / 100}
-          </span>
-        ))}
+      <div className="mt-3 space-y-1.5 border-t border-white/[0.05] pt-3">
+        {[
+          { name: "Walls", match: (t: string) => /Res|Sup|OI/.test(t) },
+          { name: "Model", match: (t: string) => /HVL|Magnet|Max Pain|EM/.test(t) },
+          { name: "GEX ladder", match: (t: string) => /^GEX /.test(t) },
+        ].map((g) => {
+          const items = levels.filter((l) => g.match(l.title));
+          if (!items.length) return null;
+          return (
+            <div key={g.name} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="lbl w-20 shrink-0">{g.name}</span>
+              {items.map((l) => (
+                <span key={l.title} className="inline-flex items-center gap-1 text-[10px] text-neutral-500">
+                  <span className="inline-block h-2 w-2 rounded-sm" style={{ background: l.color }} />
+                  {l.title} <span className="font-mono tabular-nums text-neutral-400">{Math.round(l.price * 100) / 100}</span>
+                </span>
+              ))}
+            </div>
+          );
+        })}
       </div>
-      <p className="mt-2 text-[11px] text-neutral-500">
-        Candles: Yahoo ({tf.label}); GEX levels: CBOE ~15-min chain — both live, synced. Levels redraw as the chain updates. Educational — not advice.
-      </p>
-    </div>
-  );
-}
-
-function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
-  return (
-    <div className="rounded border border-white/10 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className={`font-mono text-base ${tone ?? "text-neutral-100"}`}>{value}</div>
-      {sub ? <div className="text-[10px] text-neutral-500">{sub}</div> : null}
+      <p className="mt-2 text-[11px] text-neutral-600">Levels redraw as the chain updates. Educational — not advice.</p>
     </div>
   );
 }

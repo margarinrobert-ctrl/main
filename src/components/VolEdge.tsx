@@ -4,32 +4,53 @@ import { useEffect, useMemo, useState } from "react";
 import type { HistoryBar, OptionContract } from "@/lib/barchart/types";
 import { loadChain, loadHistory } from "@/lib/client-data";
 import { buildVolReport, type VolSide } from "@/lib/flow/voledge";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { EmptyState, ErrorState, Loading, SectionHeader, Stat } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
 const chip: Record<VolSide, string> = {
-  "short-vol": "border-amber-500/40 bg-amber-500/10 text-amber-300",
-  "long-vol": "border-sky-500/40 bg-sky-500/10 text-sky-300",
-  neutral: "border-neutral-500/40 bg-neutral-500/10 text-neutral-300",
-  info: "border-white/15 bg-white/5 text-neutral-300",
+  "short-vol": "border-amber-400/30 bg-amber-400/10 text-amber-300",
+  "long-vol": "border-sky-400/30 bg-sky-400/10 text-sky-300",
+  neutral: "border-white/10 bg-white/[0.03] text-neutral-300",
+  info: "border-accent-cyan/25 bg-accent-cyan/[0.06] text-neutral-300",
 };
 const leftBorder: Record<VolSide, string> = {
-  "short-vol": "border-l-amber-500",
-  "long-vol": "border-l-sky-500",
-  neutral: "border-l-neutral-500",
-  info: "border-l-white/20",
+  "short-vol": "border-l-amber-400/70",
+  "long-vol": "border-l-sky-400/70",
+  neutral: "border-l-white/20",
+  info: "border-l-accent-cyan/50",
 };
 const sideLabel: Record<VolSide, string> = { "short-vol": "Sell vol", "long-vol": "Buy vol", neutral: "Neutral", info: "Info" };
 
 const pct = (n: number | null) => (n == null ? "—" : `${(n * 100).toFixed(1)}%`);
+const shapeLabel: Record<string, string> = { contango: "Contango", backwardation: "Backwardation", flat: "Flat", "n/a": "—" };
 
-function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
+/** Inline term-structure micro-chart: expiry IVs as a single gradient polyline. */
+function TermSpark({ points }: { points: { iv: number | null }[] }) {
+  const ivs = points.map((p) => p.iv).filter((v): v is number => v != null);
+  if (ivs.length < 2) return null;
+  const min = Math.min(...ivs);
+  const max = Math.max(...ivs);
+  const span = max - min || 1;
+  const W = 100;
+  const H = 28;
+  const pts = ivs.map((v, i) => `${(i / (ivs.length - 1)) * W},${H - 4 - ((v - min) / span) * (H - 8)}`).join(" ");
   return (
-    <div className="rounded border border-white/10 px-3 py-2">
-      <div className="text-[11px] uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className={`font-mono text-lg ${tone ?? "text-neutral-100"}`}>{value}</div>
-      {sub ? <div className="text-[11px] text-neutral-500">{sub}</div> : null}
+    <div className="mt-3 rounded-lg border border-white/[0.05] bg-white/[0.015] px-3 py-2">
+      <div className="lbl mb-1">Term structure</div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-8 w-full" aria-hidden>
+        <defs>
+          <linearGradient id="ts-g" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#34d399" />
+            <stop offset="100%" stopColor="#22d3ee" />
+          </linearGradient>
+        </defs>
+        <polyline points={pts} fill="none" stroke="url(#ts-g)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="mt-0.5 flex justify-between text-[10px] text-neutral-600">
+        <span>front</span>
+        <span>back</span>
+      </div>
     </div>
   );
 }
@@ -68,21 +89,25 @@ export function VolEdge({ symbol }: { symbol: string }) {
 
   const r = useMemo(() => buildVolReport(chain, spot, bars), [chain, spot, bars]);
 
-  const vrpTone = r.vrpRatio == null ? undefined : r.vrpRatio >= 1.2 ? "text-amber-300" : r.vrpRatio <= 0.95 ? "text-sky-300" : "text-neutral-100";
+  const vrpTone: "call" | "put" | "neutral" | undefined =
+    r.vrpRatio == null ? undefined : r.vrpRatio >= 1.2 ? "put" : r.vrpRatio <= 0.95 ? "call" : "neutral";
+
+  // Term-structure points for the sparkline (front → back), from the already-computed report bounds.
+  const termPoints = useMemo(() => {
+    if (r.termFront == null || r.termBack == null) return [];
+    return [{ iv: r.termFront }, { iv: r.atmIv }, { iv: r.termBack }];
+  }, [r.termFront, r.termBack, r.atmIv]);
 
   return (
-    <div className="glass p-4">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">Vol Edge · {symbol}</h2>
-        <span className="text-xs text-neutral-500">volatility risk premium · term structure · skew · src: {source}</span>
-      </div>
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <SectionHeader eyebrow="Vol edge" title={symbol} right={<span className="lbl">VRP · term structure · skew</span>} />
 
-      {state === "loading" && <Loading label="Measuring vol…" />}
+      {state === "loading" && <Loading label="Loading volatility report…" />}
       {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No options data to measure volatility." />}
+      {state === "empty" && <EmptyState label="No options data for the volatility report." />}
       {state === "ok" && (
         <>
-          <div className="mb-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
+          <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
             <Stat label="ATM IV (front)" value={pct(r.atmIv)} sub="implied" />
             <Stat label="Realized 20d" value={pct(r.rv20)} sub={`10d ${pct(r.rv10)}`} />
             <Stat
@@ -91,18 +116,23 @@ export function VolEdge({ symbol }: { symbol: string }) {
               sub={r.vrpAbs == null ? "" : `${r.vrpAbs >= 0 ? "+" : ""}${(r.vrpAbs * 100).toFixed(1)} pts`}
               tone={vrpTone}
             />
-            <Stat label="Term" value={r.termShape} sub={`${pct(r.termFront)} → ${pct(r.termBack)}`} />
+            <Stat label="Term" value={shapeLabel[r.termShape] ?? r.termShape} sub={`${pct(r.termFront)} → ${pct(r.termBack)}`} />
             <Stat label="25Δ skew" value={r.skew == null ? "—" : `${r.skew >= 0 ? "+" : ""}${(r.skew * 100).toFixed(1)} pts`} sub="put − call IV" />
           </div>
 
-          <div className="space-y-2">
+          {termPoints.length >= 2 && <TermSpark points={termPoints} />}
+
+          <div className="stagger mt-4 space-y-2">
             {r.reads.map((rd) => (
-              <div key={rd.title} className={`rounded-md border border-white/5 border-l-4 bg-white/[0.02] p-3 ${leftBorder[rd.side]}`}>
+              <div
+                key={rd.title}
+                className={`rounded-xl border border-white/[0.06] border-l-2 bg-white/[0.02] p-3.5 transition-colors hover:border-white/[0.14] hover:bg-white/[0.035] ${leftBorder[rd.side]}`}
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium text-neutral-100">{rd.title}</span>
-                  <span className={`rounded-full border px-2 py-0.5 text-[11px] ${chip[rd.side]}`}>{sideLabel[rd.side]}</span>
+                  <span className="text-sm font-medium text-neutral-100">{rd.title}</span>
+                  <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] ${chip[rd.side]}`}>{sideLabel[rd.side]}</span>
                 </div>
-                <p className="mt-1 text-xs text-neutral-400">{rd.detail}</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-neutral-400">{rd.detail}</p>
               </div>
             ))}
           </div>

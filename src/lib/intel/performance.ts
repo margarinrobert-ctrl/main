@@ -13,7 +13,10 @@ export interface PerfSummary {
   expectancy: number | null; // mean directional return, %
   stdev: number | null; // % of per-trade directional return
   sharpe: number | null; // expectancy / stdev (per-trade)
+  sortino: number | null; // expectancy / downside deviation (per-trade)
   profitFactor: number | null;
+  maxDrawdown: number | null; // worst peak-to-trough of the cumulative edge curve, % points (≥0)
+  kelly: number | null; // full-Kelly fraction from hit-rate + win/loss payoff (≥0)
   brier: number | null; // mean Brier (lower = better calibrated)
   avgConfidence: number | null; // %
   mfe: number | null; // mean max-favourable-excursion, %
@@ -69,16 +72,42 @@ export function wilson(k: number, n: number, z = 1.96): { lo: number; hi: number
   return { lo: Math.max(0, centre - half), hi: Math.min(1, centre + half) };
 }
 
+/** Worst peak-to-trough of a cumulative-return path, in % points (≥0). */
+function maxDrawdownOf(seq: number[]): number {
+  let peak = 0;
+  let cum = 0;
+  let mdd = 0;
+  for (const r of seq) {
+    cum += r;
+    peak = Math.max(peak, cum);
+    mdd = Math.max(mdd, peak - cum);
+  }
+  return mdd;
+}
+
+/** Full-Kelly fraction from win-rate and the win/loss payoff ratio, clamped to [0, 1]. */
+export function kellyFraction(p: number, avgWin: number, avgLoss: number): number | null {
+  if (avgLoss <= 0) return avgWin > 0 && p > 0 ? 1 : null; // no losing tail → cap
+  const b = avgWin / avgLoss;
+  if (b <= 0) return 0;
+  return Math.max(0, Math.min(1, p - (1 - p) / b));
+}
+
 export function summarize(records: PredictionRecord[]): PerfSummary {
   const recs = resolved(records);
   const n = recs.length;
-  if (!n) return { n: 0, hitRate: null, ci: null, expectancy: null, stdev: null, sharpe: null, profitFactor: null, brier: null, avgConfidence: null, mfe: null, mae: null };
+  if (!n)
+    return { n: 0, hitRate: null, ci: null, expectancy: null, stdev: null, sharpe: null, sortino: null, profitFactor: null, maxDrawdown: null, kelly: null, brier: null, avgConfidence: null, mfe: null, mae: null };
   const wins = recs.filter((r) => r.outcome!.correct).length;
   const rets = recs.map((r) => r.outcome!.dirReturn * 100);
+  const ordered = recs.slice().sort((a, b) => a.outcome!.resolvedAt - b.outcome!.resolvedAt).map((r) => r.outcome!.dirReturn * 100);
   const sd = std(rets);
   const exp = mean(rets);
-  const gains = rets.filter((x) => x > 0).reduce((s, x) => s + x, 0);
-  const losses = rets.filter((x) => x < 0).reduce((s, x) => s + Math.abs(x), 0);
+  const downside = Math.sqrt(mean(rets.map((x) => Math.min(0, x) ** 2)));
+  const pos = rets.filter((x) => x > 0);
+  const neg = rets.filter((x) => x < 0).map((x) => Math.abs(x));
+  const gains = pos.reduce((s, x) => s + x, 0);
+  const losses = neg.reduce((s, x) => s + x, 0);
   return {
     n,
     hitRate: wins / n,
@@ -86,12 +115,35 @@ export function summarize(records: PredictionRecord[]): PerfSummary {
     expectancy: exp,
     stdev: sd,
     sharpe: sd > 0 ? exp / sd : null,
+    sortino: downside > 0 ? exp / downside : null,
     profitFactor: losses > 0 ? gains / losses : gains > 0 ? Infinity : null,
+    maxDrawdown: maxDrawdownOf(ordered),
+    kelly: kellyFraction(wins / n, pos.length ? mean(pos) : 0, neg.length ? mean(neg) : 0),
     brier: mean(recs.map((r) => r.outcome!.brier)),
     avgConfidence: mean(recs.map((r) => r.confidence)),
     mfe: mean(recs.map((r) => r.outcome!.mfe * 100)),
     mae: mean(recs.map((r) => r.outcome!.mae * 100)),
   };
+}
+
+export interface EquityPoint {
+  t: number;
+  equity: number; // cumulative directional return, % points
+  drawdown: number; // distance below the running peak, % points (≤0)
+}
+
+/** Cumulative directional-edge equity curve (ordered by resolution time) with running drawdown. */
+export function equityCurve(records: PredictionRecord[]): EquityPoint[] {
+  const recs = resolved(records).sort((a, b) => a.outcome!.resolvedAt - b.outcome!.resolvedAt);
+  const out: EquityPoint[] = [];
+  let cum = 0;
+  let peak = 0;
+  for (const r of recs) {
+    cum += r.outcome!.dirReturn * 100;
+    peak = Math.max(peak, cum);
+    out.push({ t: r.outcome!.resolvedAt, equity: cum, drawdown: cum - peak });
+  }
+  return out;
 }
 
 /** Group resolved records by a key function and summarise each group (sorted by expectancy desc). */

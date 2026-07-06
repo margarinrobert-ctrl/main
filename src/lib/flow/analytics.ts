@@ -160,6 +160,91 @@ export function putSupport(by: StrikeGex[], spot: number | null): number | null 
   return (below.length ? below : by).reduce((m, x) => (x.putGex < m.putGex ? x : m)).strike;
 }
 
+// ── Delta exposure (DEX) ──────────────────────────────────────────────────────────────────────
+// Gamma walls answer "where does dealer hedging stabilise/destabilise?"; delta walls answer "where
+// is the directional weight of open interest?". Delta-weighting an OI strike emphasises contracts
+// that actually move dollar-for-dollar with price (ATM/ITM) over far-OTM lottery tickets, so a delta
+// wall tracks the *hedgeable* delta concentration — a level price tends to defend or stall at.
+
+export interface StrikeDex {
+  strike: number;
+  callDex: number; // >= 0 — call delta is positive
+  putDex: number; // <= 0 — put delta is negative
+  dex: number; // callDex + putDex (net notional delta at the strike)
+}
+
+/** Dollar delta exposure of open interest, aggregated by strike (calls +, puts −). */
+export function dexByStrike(chain: OptionContract[], spot: number | null): StrikeDex[] {
+  if (!spot) return [];
+  const m = new Map<number, { call: number; put: number }>();
+  for (const c of chain) {
+    if (c.delta == null || c.openInterest == null) continue;
+    const d = c.delta * c.openInterest * CONTRACT * spot;
+    const e = m.get(c.strike) ?? { call: 0, put: 0 };
+    if (c.type === "call") e.call += d;
+    else e.put += d;
+    m.set(c.strike, e);
+  }
+  return [...m.entries()]
+    .map(([strike, v]) => ({ strike, callDex: v.call, putDex: v.put, dex: v.call + v.put }))
+    .sort((a, b) => a.strike - b.strike);
+}
+
+/** Global delta call wall: the strike holding the most positive call delta-exposure. */
+export function callDexWall(by: StrikeDex[]): number | null {
+  return by.length ? by.reduce((m, x) => (x.callDex > m.callDex ? x : m)).strike : null;
+}
+/** Global delta put wall: the strike holding the most negative put delta-exposure. */
+export function putDexWall(by: StrikeDex[]): number | null {
+  return by.length ? by.reduce((m, x) => (x.putDex < m.putDex ? x : m)).strike : null;
+}
+
+/**
+ * Delta call wall: the heaviest call delta-exposure strike **at/above spot** — the call-side delta
+ * concentration price tends to stall under (resistance). Restricting to the upside keeps it distinct
+ * from the put wall on an ATM-heavy chain; falls back to the global wall if nothing sits above spot
+ * (or spot is unknown). The delta-weighted analogue of {@link callResistance}.
+ */
+export function deltaCallWall(by: StrikeDex[], spot: number | null): number | null {
+  if (!by.length) return null;
+  if (spot == null) return callDexWall(by);
+  const above = by.filter((x) => x.strike > spot);
+  return (above.length ? above : by).reduce((m, x) => (x.callDex > m.callDex ? x : m)).strike;
+}
+
+/** Delta put wall: the heaviest put delta-exposure strike **at/below spot** (support). Mirror of {@link deltaCallWall}. */
+export function deltaPutWall(by: StrikeDex[], spot: number | null): number | null {
+  if (!by.length) return null;
+  if (spot == null) return putDexWall(by);
+  const below = by.filter((x) => x.strike < spot);
+  return (below.length ? below : by).reduce((m, x) => (x.putDex < m.putDex ? x : m)).strike;
+}
+
+/**
+ * Delta-neutral ("delta flip") strike: where cumulative net DEX (low→high strike) crosses zero —
+ * put-delta-dominated below, call-delta-dominated above. The pivot the book's directional weight
+ * balances on. Interpolated like the gamma flip; the crossing nearest spot when there are several.
+ */
+export function deltaFlip(by: StrikeDex[], spot: number | null): number | null {
+  if (by.length < 2) return null;
+  const flips: number[] = [];
+  let cum = 0;
+  let prevStrike = by[0].strike;
+  for (const x of by) {
+    const prevCum = cum;
+    cum += x.dex;
+    if ((prevCum < 0 && cum >= 0) || (prevCum > 0 && cum <= 0)) {
+      const denom = Math.abs(cum - prevCum);
+      const t = denom === 0 ? 0 : Math.abs(prevCum) / denom;
+      flips.push(prevStrike + (x.strike - prevStrike) * t);
+    }
+    prevStrike = x.strike;
+  }
+  if (!flips.length) return null;
+  if (spot == null) return flips[0];
+  return flips.reduce((p, c) => (Math.abs(c - spot) < Math.abs(p - spot) ? c : p));
+}
+
 /** Strike holding the most call (resp. put) open interest — the OI "magnet" walls. */
 export function callOiWall(oi: StrikeOi[]): number | null {
   return oi.length ? oi.reduce((m, x) => (x.callOi > m.callOi ? x : m)).strike : null;
@@ -399,7 +484,7 @@ export function flipFromProfile(profile: ProfilePoint[]): number | null {
   return null;
 }
 
-export type SurfaceMetric = "gex" | "vanna" | "charm" | "oi" | "iv";
+export type SurfaceMetric = "gex" | "dex" | "vanna" | "charm" | "oi" | "volume" | "iv";
 
 export interface GreekSurface {
   metric: SurfaceMetric;
@@ -413,6 +498,7 @@ function surfaceCell(chain: OptionContract[], spot: number | null, exp: string, 
   const opts = chain.filter((c) => c.expiration === exp && c.strike === strike);
   if (!opts.length) return 0;
   if (metric === "oi") return opts.reduce((s, c) => s + (c.openInterest ?? 0), 0);
+  if (metric === "volume") return opts.reduce((s, c) => s + (c.volume ?? 0), 0);
   if (metric === "iv") {
     const ivs = opts.filter((c) => c.impliedVolatility != null && c.impliedVolatility > 0).map((c) => c.impliedVolatility as number);
     return ivs.length ? ivs.reduce((a, b) => a + b, 0) / ivs.length : 0;
@@ -425,6 +511,10 @@ function surfaceCell(chain: OptionContract[], spot: number | null, exp: string, 
     if (metric === "gex") {
       if (c.gamma == null) continue;
       v += sign * c.gamma * c.openInterest * CONTRACT * spot * spot * 0.01;
+      continue;
+    }
+    if (metric === "dex") {
+      if (c.delta != null) v += c.delta * c.openInterest * CONTRACT * spot; // calls + / puts − (natural sign)
       continue;
     }
     if (c.impliedVolatility == null || c.impliedVolatility <= 0) continue;
@@ -467,7 +557,7 @@ export function greekSurface(chain: OptionContract[], spot: number | null, metri
     strikes = strikes.slice(start, start + maxStrikes);
   }
 
-  const signed = metric === "gex" || metric === "vanna" || metric === "charm";
+  const signed = metric === "gex" || metric === "dex" || metric === "vanna" || metric === "charm";
   const z = expirations.map(({ label }) => strikes.map((k) => surfaceCell(chain, spot, label, k, metric)));
   return { metric, strikes, expirations, z, signed };
 }

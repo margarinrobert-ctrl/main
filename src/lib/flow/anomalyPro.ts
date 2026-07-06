@@ -253,9 +253,9 @@ export function anomalyIntel(symbol: string, chain: OptionContract[], spot: numb
   const institutional = buildInstitutional(regime, dir, neutral, magnet, flip, so);
   const methodology = [
     "Ensemble: Z-score · Modified-Z (MAD) · EWMA/Kalman · CUSUM change-point · EVT tail (majority-weighted).",
-    "Order-flow factors are PROXIES from options flow (put/call, DEX) + volume — no trade tape (VPIN/cumulative-delta/absorption unavailable on free data).",
+    "Order-flow factors are PROXIES from options flow (put/call, DEX) + volume — no trade tape (VPIN/cumulative-delta/absorption unavailable).",
     "IV %ile is session-window (no long IV history). Targets, time-forecast and edge are MODEL estimates, not backtested accuracy.",
-    "Options ~15-min delayed (CBOE); candles via Yahoo. Educational — not financial advice.",
+    "Educational — not financial advice.",
   ];
 
   const out = {
