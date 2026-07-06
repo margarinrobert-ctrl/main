@@ -55,6 +55,23 @@ const MODULES: { tab: string; title: string; desc: string; motif: JSX.Element }[
     ),
   },
   {
+    tab: "Scenario",
+    title: "Dealer scenario matrix",
+    desc: "A spot × volatility stress grid of dealer re-hedging flow — where hedging dampens the move, and where it amplifies into the tail.",
+    motif: (
+      <svg viewBox="0 0 84 36" className="h-9 w-full" aria-hidden>
+        {[0, 1, 2].map((r) =>
+          [0, 1, 2, 3, 4, 5].map((c) => {
+            const t = (c - 2.5) / 2.5; // −1 (put/sell) … +1 (call/buy)
+            const mag = 0.18 + Math.abs(t) * 0.55;
+            const fill = t < 0 ? `rgba(248,113,113,${mag})` : t > 0 ? `rgba(52,211,153,${mag})` : "rgba(255,255,255,0.05)";
+            return <rect key={`${r}-${c}`} x={4 + c * 13} y={4 + r * 10} width="11.5" height="8.5" rx="1.5" fill={fill} />;
+          }),
+        )}
+      </svg>
+    ),
+  },
+  {
     tab: "Smile",
     title: "Volatility structure",
     desc: "Smile, skew and term structure with the risk-reversal read — where the vol market prices the tails.",
@@ -171,7 +188,7 @@ export default function Home() {
       {/* ── Capability strip ─────────────────────────────────────────────── */}
       <section aria-label="Capabilities" className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { v: "21", k: "Analytics modules", d: "Signals to surfaces, one terminal" },
+          { v: "22", k: "Analytics modules", d: "Signals to surfaces, one terminal" },
           { v: "GEX · DEX", k: "Exposure engines", d: "Gamma, delta, vanna & charm by strike" },
           { v: "±100", k: "Pressure model", d: "Six-factor dealer-hedging score" },
           { v: "Pine v6", k: "Level export", d: "ETF levels converted onto ES / NQ" },

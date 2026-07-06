@@ -31,6 +31,7 @@ import { PineExport } from "./PineExport";
 import { Playbook } from "./Playbook";
 import { PriceChart } from "./PriceChart";
 import { QuoteCard } from "./QuoteCard";
+import { Scenario } from "./Scenario";
 import { SignalBoard } from "./SignalBoard";
 import { SkewChart } from "./SkewChart";
 import { VannaCharmProfile } from "./VannaCharmProfile";
@@ -47,6 +48,7 @@ const TABS = [
   "Heatmap",
   "Gamma",
   "DEX",
+  "Scenario",
   "Levels Chart",
   "Vanna/Charm",
   "3D",
@@ -65,7 +67,7 @@ type Tab = (typeof TABS)[number];
 // Sidebar navigation groups.
 const GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: "Overview", tabs: ["Overview", "Signals", "MM Hedge", "Playbook"] },
-  { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
+  { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Scenario", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
   { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Vol Edge"] },
   { label: "Flow", tabs: ["Options Flow", "Chain", "Anomaly", "Harvest", "History", "Pine"] },
 ];
@@ -223,6 +225,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Heatmap" && <OptionsHeatmap symbol={symbol} exp={validExp} />}
       {tab === "Gamma" && <GammaProfile symbol={symbol} exp={validExp} />}
       {tab === "DEX" && <DexProfile symbol={symbol} exp={validExp} />}
+      {tab === "Scenario" && <Scenario symbol={symbol} exp={validExp} />}
       {tab === "Levels Chart" && <LevelsChart symbol={symbol} />}
       {tab === "Vanna/Charm" && <VannaCharmProfile symbol={symbol} exp={validExp} />}
       {tab === "3D" && <GreeksSurface symbol={symbol} exp={validExp} />}
