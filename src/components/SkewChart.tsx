@@ -6,6 +6,7 @@ import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR_LINE, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
 import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
+import { useChartFrame } from "./chartFrame";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -72,29 +73,34 @@ export function SkewChart({ symbol, exp: globalExp = "ALL" }: { symbol: string; 
     [data, spot],
   );
 
+  const frame = useChartFrame(`${symbol} IV skew`);
+
   return (
-    <div className="glass glass-hover fade-up p-4 sm:p-5">
+    <div ref={frame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${frame.expandedClass}`}>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
           <div className="lbl mb-1">IV skew</div>
           <h2 className="display text-base text-neutral-50">{symbol}</h2>
         </div>
-        <div className="relative">
-          <select
-            value={exp}
-            onChange={(e) => setExp(e.target.value)}
-            aria-label="Expiration"
-            className="appearance-none rounded-lg border border-white/10 bg-white/[0.03] py-2 pl-3 pr-8 text-xs text-neutral-100 outline-none transition hover:border-white/20 focus:border-accent/50"
-          >
-            {expirations.map((e) => (
-              <option key={e} value={e} className="bg-neutral-900">
-                {e}
-              </option>
-            ))}
-          </select>
-          <svg aria-hidden viewBox="0 0 12 12" className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-500">
-            <path fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" d="m2.5 4.5 3.5 3.5 3.5-3.5" />
-          </svg>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <select
+              value={exp}
+              onChange={(e) => setExp(e.target.value)}
+              aria-label="Expiration"
+              className="appearance-none rounded-lg border border-white/10 bg-white/[0.03] py-2 pl-3 pr-8 text-xs text-neutral-100 outline-none transition hover:border-white/20 focus:border-accent/50"
+            >
+              {expirations.map((e) => (
+                <option key={e} value={e} className="bg-neutral-900">
+                  {e}
+                </option>
+              ))}
+            </select>
+            <svg aria-hidden viewBox="0 0 12 12" className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-500">
+              <path fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" d="m2.5 4.5 3.5 3.5 3.5-3.5" />
+            </svg>
+          </div>
+          {frame.controls}
         </div>
       </div>
       {state === "loading" && <Loading label="Loading IV skew…" />}
@@ -102,7 +108,7 @@ export function SkewChart({ symbol, exp: globalExp = "ALL" }: { symbol: string; 
       {state === "empty" && <EmptyState label="No implied-volatility data for this chain." />}
       {state === "ok" && (
         <>
-          <div className="h-[320px] w-full">
+          <div className={`${frame.expanded ? "h-[calc(100vh-200px)]" : "h-[320px]"} w-full`}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
                 <CartesianGrid {...GRID_PROPS} />

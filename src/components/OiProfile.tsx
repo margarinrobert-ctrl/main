@@ -7,6 +7,7 @@ import type { OptionContract } from "@/lib/barchart/types";
 import { filterByExpiration, oiByStrike } from "@/lib/flow/analytics";
 import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
 import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
+import { useChartFrame } from "./chartFrame";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -61,15 +62,26 @@ export function OiProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: strin
     return { data: d, spotX };
   }, [chain, spot, exp]);
 
+  const frame = useChartFrame(`${symbol} OI`);
+
   return (
-    <div className="glass glass-hover fade-up p-4 sm:p-5">
-      <SectionHeader eyebrow="Open interest" title={symbol} right={<span className="lbl">Contracts by strike</span>} />
+    <div ref={frame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${frame.expandedClass}`}>
+      <SectionHeader
+        eyebrow="Open interest"
+        title={symbol}
+        right={
+          <div className="flex items-center gap-2">
+            <span className="lbl">Contracts by strike</span>
+            {frame.controls}
+          </div>
+        }
+      />
       {state === "loading" && <Loading label="Loading open interest…" />}
       {state === "error" && <ErrorState message={error} />}
       {state === "empty" && <EmptyState label="No open-interest data for this chain." />}
       {state === "ok" && (
         <>
-          <div className="h-[340px] w-full">
+          <div className={`${frame.expanded ? "h-[calc(100vh-200px)]" : "h-[340px]"} w-full`}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
                 <defs>

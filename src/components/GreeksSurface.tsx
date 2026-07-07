@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { OptionContract } from "@/lib/barchart/types";
 import { fmtUsd, greekSurface, type GreekSurface, type SurfaceMetric } from "@/lib/flow/analytics";
 import { loadChain } from "@/lib/client-data";
+import { useChartFrame } from "./chartFrame";
 import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
@@ -75,6 +76,7 @@ export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: s
   const [spin, setSpin] = useState(false);
   const [wire, setWire] = useState(false);
   const [hover, setHover] = useState<Hover | null>(null);
+  const frame = useChartFrame(`${symbol} 3D surface`);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -444,7 +446,7 @@ export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: s
   };
 
   return (
-    <div className="glass glass-hover fade-up p-4 sm:p-5">
+    <div ref={frame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${frame.expandedClass}`}>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
           <div className="lbl mb-1">3D greeks surface</div>
@@ -472,6 +474,8 @@ export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: s
           <button onClick={resetView} className="rounded-lg px-2.5 py-2 text-xs font-medium text-neutral-400 transition hover:bg-white/5 hover:text-neutral-200">
             Reset
           </button>
+          <span className="mx-1 h-4 w-px bg-white/10" />
+          {frame.controls}
         </div>
       </div>
 

@@ -22,6 +22,7 @@ import {
 } from "@/lib/flow/analytics";
 import { CHART, LW_THEME } from "@/lib/chartTheme";
 import { resampleBars } from "@/lib/resample";
+import { useChartFrame } from "./chartFrame";
 import { EmptyState, Loading, SectionHeader, Stat } from "./states";
 
 const TIMEFRAMES = [
@@ -88,6 +89,7 @@ export function LevelsChart({ symbol }: { symbol: string }) {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
+  const frame = useChartFrame(`${symbol} levels`);
 
   // fetch candles + chain (live), refresh on an interval
   useEffect(() => {
@@ -172,23 +174,26 @@ export function LevelsChart({ symbol }: { symbol: string }) {
   }, [levels, bars]);
 
   return (
-    <div className="glass glass-hover fade-up p-4 sm:p-5">
+    <div ref={frame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${frame.expandedClass}`}>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
           <div className="lbl mb-1">Levels chart</div>
           <h2 className="display text-base text-neutral-50">{symbol}</h2>
         </div>
-        <div className="tabs-scroll max-w-full">
-          {TIMEFRAMES.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTf(t)}
-              aria-pressed={tf.id === t.id}
-              className={`tab-pill rounded-lg px-3 py-2 text-xs font-medium transition ${tf.id === t.id ? "bg-accent/15 text-accent-bright" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"}`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="tabs-scroll max-w-full">
+            {TIMEFRAMES.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTf(t)}
+                aria-pressed={tf.id === t.id}
+                className={`tab-pill rounded-lg px-3 py-2 text-xs font-medium transition ${tf.id === t.id ? "bg-accent/15 text-accent-bright" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {frame.controls}
         </div>
       </div>
 

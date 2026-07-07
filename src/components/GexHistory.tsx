@@ -6,6 +6,7 @@ import { fmtUsd } from "@/lib/flow/analytics";
 import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR_LINE, TOOLTIP_PROPS } from "@/lib/chartTheme";
 import { type GexSample, readHistory } from "@/lib/gex-history";
 import { EmptyState, SectionHeader } from "./states";
+import { useChartFrame } from "./chartFrame";
 
 function dur(ms: number): string {
   const m = Math.max(0, Math.round(ms / 60000));
@@ -18,6 +19,7 @@ function dur(ms: number): string {
 export function GexHistory({ symbol }: { symbol: string }) {
   const [series, setSeries] = useState<GexSample[]>([]);
   const [now, setNow] = useState(0);
+  const frame = useChartFrame(`${symbol} intraday GEX`);
 
   useEffect(() => {
     const tick = () => {
@@ -46,15 +48,18 @@ export function GexHistory({ symbol }: { symbol: string }) {
   );
 
   return (
-    <div className="glass glass-hover fade-up p-4 sm:p-5">
+    <div ref={frame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${frame.expandedClass}`}>
       <SectionHeader
         eyebrow="Intraday GEX"
         title={symbol}
         right={
-          <span className="lbl flex items-center gap-1.5">
-            <span className="live-dot" style={{ height: 5, width: 5 }} />
-            24/7 spot &amp; net GEX
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="lbl flex items-center gap-1.5">
+              <span className="live-dot" style={{ height: 5, width: 5 }} />
+              24/7 spot &amp; net GEX
+            </span>
+            {frame.controls}
+          </div>
         }
       />
 
@@ -65,7 +70,7 @@ export function GexHistory({ symbol }: { symbol: string }) {
         />
       ) : (
         <>
-          <div className="h-[340px] w-full">
+          <div className={`${frame.expanded ? "h-[calc(100vh-200px)]" : "h-[340px]"} w-full`}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
                 <defs>

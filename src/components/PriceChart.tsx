@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { loadHistory } from "@/lib/client-data";
 import type { HistoryBar } from "@/lib/barchart/types";
 import { CHART, LW_THEME } from "@/lib/chartTheme";
+import { useChartFrame } from "./chartFrame";
 import { Chip, EmptyState, ErrorState, Loading, SectionHeader } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
@@ -16,6 +17,7 @@ export function PriceChart({ symbol }: { symbol: string }) {
   const [error, setError] = useState("");
   const [source, setSource] = useState("");
   const [bars, setBars] = useState<HistoryBar[]>([]);
+  const frame = useChartFrame(`${symbol} price`);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,14 +81,17 @@ export function PriceChart({ symbol }: { symbol: string }) {
   }, [state, bars]);
 
   return (
-    <div className="glass fade-up p-4">
+    <div ref={frame.ref} className={`glass fade-up p-4 ${frame.expandedClass}`}>
       <SectionHeader
         eyebrow="Price history"
         title={symbol}
         right={
-          <div className="flex items-center gap-1.5">
-            <Chip>Daily</Chip>
-            <Chip>Candles</Chip>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <Chip>Daily</Chip>
+              <Chip>Candles</Chip>
+            </div>
+            {frame.controls}
           </div>
         }
       />
