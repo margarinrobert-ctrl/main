@@ -11,6 +11,7 @@ import { mmHedge } from "@/lib/flow/mmhedge";
 import { appendSample } from "@/lib/gex-history";
 import { collectAndResolve } from "@/lib/intel/journal";
 import { DexProfile } from "./DexProfile";
+import { EdgeBoard } from "./EdgeBoard";
 import { GammaProfile } from "./GammaProfile";
 import { AnomalyIntel } from "./AnomalyIntel";
 import { AnomalyLive } from "./AnomalyLive";
@@ -41,6 +42,7 @@ import { VolSmile } from "./VolSmile";
 const TABS = [
   "Overview",
   "Signals",
+  "Edge",
   "MM Hedge",
   "Playbook",
   "Options Flow",
@@ -66,7 +68,7 @@ type Tab = (typeof TABS)[number];
 
 // Sidebar navigation groups.
 const GROUPS: { label: string; tabs: Tab[] }[] = [
-  { label: "Overview", tabs: ["Overview", "Signals", "MM Hedge", "Playbook"] },
+  { label: "Overview", tabs: ["Overview", "Signals", "Edge", "MM Hedge", "Playbook"] },
   { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Scenario", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
   { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Vol Edge"] },
   { label: "Flow", tabs: ["Options Flow", "Chain", "Anomaly", "Harvest", "History", "Pine"] },
@@ -229,6 +231,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
         </div>
       )}
       {tab === "Signals" && <SignalBoard symbol={symbol} exp={validExp} />}
+      {tab === "Edge" && <EdgeBoard symbol={symbol} exp={validExp} />}
       {tab === "MM Hedge" && <MMHedge symbol={symbol} exp={validExp} />}
       {tab === "Playbook" && <Playbook symbol={symbol} exp={validExp} />}
       {tab === "Options Flow" && <OptionsFlow symbol={symbol} exp={validExp} />}

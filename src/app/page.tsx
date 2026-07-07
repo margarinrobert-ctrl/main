@@ -15,6 +15,19 @@ const FOCUS = [
 /** Terminal modules — each motif is a hand-drawn miniature of the analytic it opens. */
 const MODULES: { tab: string; title: string; desc: string; motif: JSX.Element }[] = [
   {
+    tab: "Edge",
+    title: "Edge engine",
+    desc: "Documented risk-premium edges — variance risk premium (HAR-RV vs implied), term-structure carry, and a cross-sectional rich-vs-cheap vol factor across the watchlist.",
+    motif: (
+      <svg viewBox="0 0 84 36" className="h-9 w-full" aria-hidden>
+        <path d="M4 26 C 24 22, 40 12, 80 8" fill="none" stroke="rgba(52,211,153,0.8)" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M4 30 C 24 28, 40 24, 80 22" fill="none" stroke="rgba(34,211,238,0.55)" strokeWidth="1.6" strokeLinecap="round" strokeDasharray="3 3" />
+        <path d="M4 26 L 4 30 M 80 8 L 80 22" stroke="rgba(255,255,255,0.18)" strokeWidth="1" />
+        <text x="82" y="7" fill="rgba(52,211,153,0.7)" fontSize="5" textAnchor="end" fontFamily="monospace">IV</text>
+      </svg>
+    ),
+  },
+  {
     tab: "Gamma",
     title: "Gamma exposure",
     desc: "Dealer GEX by strike — call and put walls, the gamma flip, and the pinning field around spot.",
@@ -188,7 +201,7 @@ export default function Home() {
       {/* ── Capability strip ─────────────────────────────────────────────── */}
       <section aria-label="Capabilities" className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { v: "22", k: "Analytics modules", d: "Signals to surfaces, one terminal" },
+          { v: "23", k: "Analytics modules", d: "Signals to surfaces, one terminal" },
           { v: "GEX · DEX", k: "Exposure engines", d: "Gamma, delta, vanna & charm by strike" },
           { v: "±100", k: "Pressure model", d: "Six-factor dealer-hedging score" },
           { v: "Pine v6", k: "Level export", d: "ETF levels converted onto ES / NQ" },
