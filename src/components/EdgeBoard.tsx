@@ -106,8 +106,8 @@ function CarryCard({ r }: { r: CarryRead }) {
         <Stat label="Slope" value={vp(r.slopeVolPts)} tone={r.slopeVolPts == null ? undefined : r.slopeVolPts >= 0 ? "call" : "put"} sub="back − front" />
       </div>
       <div className="mt-2.5 grid grid-cols-2 gap-2.5">
-        <Stat label="Roll-down" value={r.rollDownVolPtsPerWeek == null ? "—" : `${(r.rollDownVolPtsPerWeek * 100).toFixed(2)}vp/wk`} sub="est. if curve holds" />
-        <Stat label="Read" value={r.side === "sell-front" ? "Sell front" : r.side === "own-back-carry" ? "Own back" : "Neutral"} />
+        <Stat label="Roll-down · long vega" value={r.rollDownVolPtsPerWeek == null ? "—" : `${(r.rollDownVolPtsPerWeek * 100).toFixed(2)}vp/wk`} sub="est. if curve holds" />
+        <Stat label="Carry read" value={r.side === "sell-front" ? "Sell front" : r.side === "sell-vol" ? "Sell vol" : "Neutral"} />
       </div>
       <div className="mt-3">
         <Conviction value={r.conviction} tone={bar} />

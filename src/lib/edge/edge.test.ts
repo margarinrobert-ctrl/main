@@ -77,12 +77,13 @@ describe("carryEngine", () => {
     ...atmChain(frontIv, "2026-02-06", 7),
     ...atmChain(backIv, "2026-03-20", 49),
   ];
-  it("contango → own-back-carry with positive roll-down", () => {
+  it("contango → sell-vol; roll-down is a COST to long vega (VIX-roll logic)", () => {
     const r = carryEngine(twoTenor(0.15, 0.22), 100);
     expect(r.shape).toBe("contango");
-    expect(r.side).toBe("own-back-carry");
-    expect(r.rollDownVolPtsPerWeek!).toBeGreaterThan(0);
+    expect(r.side).toBe("sell-vol");
     expect(r.slopeVolPts!).toBeGreaterThan(0);
+    // long-vega roll-down is negative in contango (the short harvests it)
+    expect(r.rollDownVolPtsPerWeek!).toBeLessThan(0);
   });
   it("backwardation → sell-front (event crush)", () => {
     const r = carryEngine(twoTenor(0.32, 0.2), 100);

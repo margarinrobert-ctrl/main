@@ -17,7 +17,7 @@ import { ivTermStructure } from "../flow/analytics";
  * Pure — unit-tested. Educational — not advice.
  */
 
-export type CarrySide = "sell-front" | "own-back-carry" | "neutral";
+export type CarrySide = "sell-front" | "sell-vol" | "neutral";
 
 export interface CarryRead {
   front: { dte: number; iv: number } | null;
@@ -25,7 +25,7 @@ export interface CarryRead {
   slopeVolPts: number | null; // back IV − front IV (annualized vol points)
   slopePctPerMonth: number | null; // normalized slope per 30 DTE
   shape: "contango" | "backwardation" | "flat" | "n/a";
-  rollDownVolPtsPerWeek: number | null; // approx vol a back-tenor position rolls down per week held
+  rollDownVolPtsPerWeek: number | null; // roll-down P&L to a LONG-vega back-tenor position per week, static curve (<0 in contango: long vol pays the carry; the short earns it)
   side: CarrySide;
   conviction: number; // 0..100
   notes: string[];
@@ -64,9 +64,11 @@ export function carryEngine(chain: OptionContract[], spot: number | null): Carry
   const slopePerMonth = (slope / dteGap) * 30;
   const shape: CarryRead["shape"] = slope > 0.01 ? "contango" : slope < -0.01 ? "backwardation" : "flat";
 
-  // Roll-down: a position at the back tenor drifts toward the front IV as it ages. Per week held it picks
-  // up roughly (slope / dteGap · 7) vol points of favorable re-pricing in contango (paid in backwardation).
-  const rollDownPerWeek = (slope / dteGap) * 7;
+  // Roll-down to a LONG-vega back-tenor position on a static curve: as the option ages its DTE falls and
+  // it re-marks toward the FRONT IV. In contango (front < back) that is a mark-DOWN → a cost to long vega,
+  // so the favorable roll-down accrues to the SHORT (the VIX-futures-roll logic). In backwardation the
+  // long earns it. Signed for the long-vega owner.
+  const rollDownLongVega = -(slope / dteGap) * 7;
 
   let side: CarrySide = "neutral";
   const notes: string[] = [];
@@ -74,8 +76,8 @@ export function carryEngine(chain: OptionContract[], spot: number | null): Carry
     side = "sell-front";
     notes.push(`Backwardated: front ${pct(front.iv)} > back ${pct(back.iv)} — the market is pricing a near-term event. Selling the ${front.dte}d premium or a calendar (short front / long back) harvests the crush; a binary gap through the strike is the risk.`);
   } else if (shape === "contango") {
-    side = "own-back-carry";
-    notes.push(`Contango: back ${pct(back.iv)} ≥ front ${pct(front.iv)} (slope +${(slope * 100).toFixed(1)}vp over ${dteGap}d). Normal regime — a long-vega position out the curve rolls down ~${(rollDownPerWeek * 100).toFixed(2)}vp/week; back-month premium-selling carries more vega risk.`);
+    side = "sell-vol";
+    notes.push(`Contango: back ${pct(back.iv)} ≥ front ${pct(front.iv)} (slope +${(slope * 100).toFixed(1)}vp over ${dteGap}d). Normal regime — vol carry favors SELLERS: a short-the-curve position harvests ~${(Math.abs(rollDownLongVega) * 100).toFixed(2)}vp/week of roll-down as options age down the upward curve, while a long-vega position PAYS that carry.`);
   } else {
     notes.push("Flat term structure — no carry edge; the vol trade is level (VRP), not slope.");
   }
@@ -89,7 +91,7 @@ export function carryEngine(chain: OptionContract[], spot: number | null): Carry
     slopeVolPts: slope,
     slopePctPerMonth: slopePerMonth,
     shape,
-    rollDownVolPtsPerWeek: rollDownPerWeek,
+    rollDownVolPtsPerWeek: rollDownLongVega,
     side,
     conviction,
     notes,
