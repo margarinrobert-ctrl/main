@@ -131,6 +131,20 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
 
   <section class="panel">
     <h2>Parámetros <span class="hl">de entrada</span></h2>
+    <div class="controls" style="margin-bottom:14px">
+      <div class="field">
+        <label>Reglas de prop firm (rellena drawdown, modo, objetivo, límite diario y días mínimos — todo editable)</label>
+        <div class="chips" id="presetChips">
+          <button class="chip on" data-p="custom">PERSONALIZADO</button>
+          <button class="chip" data-p="mffu_r25">MFFU RAPID 25K</button>
+          <button class="chip" data-p="mffu_r50">MFFU RAPID 50K</button>
+          <button class="chip" data-p="mffu_b50">MFFU BUILDER 50K</button>
+          <button class="chip" data-p="apex_25">APEX 25K</button>
+          <button class="chip" data-p="apex_50">APEX 50K</button>
+          <button class="chip" data-p="topstep_50">TOPSTEP 50K</button>
+        </div>
+      </div>
+    </div>
     <div class="controls">
       <div class="field"><label for="inWr">Win rate %</label><input id="inWr" type="number" value="73" min="1" max="99" step="1"></div>
       <div class="field"><label for="inWin">Ganancia / trade $</label><input id="inWin" type="number" value="250" min="1" step="10"></div>
@@ -159,10 +173,14 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
         <label>Límite de drawdown</label>
         <div class="chips" id="modeChips">
           <button class="chip on" data-m="static" title="El límite queda fijo en −DD desde el inicio">ESTÁTICO</button>
-          <button class="chip" data-m="trail" title="El límite sigue al pico de equidad para siempre (trailing perpetuo)">TRAILING</button>
-          <button class="chip" data-m="cap" title="El límite sigue al pico pero se bloquea al llegar a $0 (breakeven), estilo cuenta financiada">TRAILING · TOPE $0</button>
+          <button class="chip" data-m="trail" title="El límite sigue al pico de equidad para siempre (trailing intradía perpetuo)">TRAILING</button>
+          <button class="chip" data-m="cap" title="El límite sigue al pico intradía y se bloquea al alcanzar el nivel de bloqueo">TRAILING · LOCK</button>
+          <button class="chip" data-m="eod" title="El límite solo sube con el cierre diario (end-of-day) y se bloquea en el nivel de bloqueo — estilo Topstep">TRAILING EOD</button>
         </div>
       </div>
+      <div class="field"><label for="inLock" title="Nivel (en $ de PnL) donde el trailing se bloquea: 0 = breakeven, 100 = inicial+$100 (MFFU)">Lock trailing +$</label><input id="inLock" type="number" value="0" min="0" step="50"></div>
+      <div class="field"><label for="inDLL" title="Límite de pérdida diaria (soft): al tocarlo se deja de operar ese día. 0 = sin límite">Pérdida diaria máx. $</label><input id="inDLL" type="number" value="0" min="0" step="100"></div>
+      <div class="field"><label for="inMinDays">Días mín. evaluación</label><input id="inMinDays" type="number" value="1" min="1" max="30" step="1"></div>
       <button class="btn" id="btnCmp">⚖ Comparar trades/día: OFF</button>
       <div class="field"><label for="inTpdB">Trades / día (B)</label><input id="inTpdB" type="number" value="4" min="1" max="20" step="1" disabled></div>
     </div>
@@ -212,7 +230,7 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
     </div>
     <div class="subh" style="margin-top:20px">Explorador de riesgo por trade <span class="hl">(Kelly y ruina)</span> <span class="sub" id="rkN"></span></div>
     <div id="riskTable" style="overflow-x:auto"></div>
-    <div class="subh" style="margin-top:20px">Carrera: <span class="hl">objetivo vs liquidación</span> <span class="sub" id="raceN"></span></div>
+    <div class="subh" style="margin-top:20px">Evaluación: <span class="hl">objetivo vs liquidación</span> <span class="sub" id="raceN"></span></div>
     <div class="controls" style="margin-bottom:10px">
       <div class="field"><label for="inTarget">Objetivo de beneficio $</label><input id="inTarget" type="number" value="3000" min="100" step="100"></div>
     </div>
@@ -270,7 +288,19 @@ function nextTradingDay(d){const x=new Date(d);while(!isTradingDay(x))x.setDate(
 function tradingDays(start,n){const out=[];const d=new Date(start);while(out.length<n){if(isTradingDay(d))out.push(new Date(d));d.setDate(d.getDate()+1)}return out}
 
 /* ───────────────────── Simulación ───────────────────── */
-const MODE_LABEL={static:'límite estático',trail:'límite trailing (perpetuo)',cap:'límite trailing con tope $0'};
+const MODE_LABEL={static:'límite estático',trail:'límite trailing (perpetuo)',cap:'límite trailing con lock',eod:'límite trailing EOD'};
+/* Reglas de planes de evaluación reales (verificadas jul 2026; siempre editables).
+   mode/lock: cap+100 = trailing intradía que se bloquea en inicial+$100 (MFFU);
+   eod+0 = trailing de cierre diario que se bloquea en el balance inicial (Topstep). */
+const PRESETS={
+  custom:  {name:'Personalizado'},
+  mffu_r25:{name:'MyFundedFutures Rapid 25k', size:25000, dd:1000, mode:'cap', lock:100, dll:0,    target:1500, minDays:2},
+  mffu_r50:{name:'MyFundedFutures Rapid 50k', size:50000, dd:2000, mode:'cap', lock:100, dll:0,    target:3000, minDays:2},
+  mffu_b50:{name:'MyFundedFutures Builder 50k',size:50000,dd:2000, mode:'static',lock:0, dll:0,    target:3000, minDays:1},
+  apex_25: {name:'Apex 25k',                  size:25000, dd:1500, mode:'trail',lock:0,  dll:0,    target:1500, minDays:1},
+  apex_50: {name:'Apex 50k',                  size:50000, dd:2500, mode:'trail',lock:0,  dll:0,    target:3000, minDays:1},
+  topstep_50:{name:'Topstep 50k',             size:50000, dd:2000, mode:'eod', lock:0,   dll:1000, target:3000, minDays:2},
+};
 function readParams(){
   const cost=Math.max(0,+el('inCost').value||0);
   const rawWin=Math.max(1,+el('inWin').value||250);
@@ -281,6 +311,9 @@ function readParams(){
     loss: rawLoss+cost,             /* efectivo, neto de costes */
     rawWin,rawLoss,cost,
     mode: curMode,
+    lock: Math.max(0,+el('inLock').value||0),
+    dll: Math.max(0,+el('inDLL').value||0),
+    minDays: Math.min(30,Math.max(1,Math.round(+el('inMinDays').value||1))),
     target: Math.max(100,+el('inTarget').value||3000),
     tpd: Math.min(20,Math.max(1,Math.round(+el('inTpd').value||2))),
     tpdB: Math.min(20,Math.max(1,Math.round(+el('inTpdB').value||4))),
@@ -288,24 +321,30 @@ function readParams(){
     days: Math.min(1260,Math.max(20,Math.round(+el('inDays').value||252)))
   };
 }
-/* Suelo de liquidación según el modo. peak = máximo de equidad hasta ahora. */
-function floorOf(mode,peak,dd){
+/* Suelo de liquidación según el modo.
+   peak = máximo intradía de equidad; eodPeak = máximo de cierres diarios;
+   lock = nivel de PnL donde el trailing se bloquea. */
+function floorOf(mode,peak,eodPeak,dd,lock){
   if(mode==='static')return -dd;
   if(mode==='trail')return peak-dd;
-  return Math.min(peak-dd,0); /* cap: se bloquea en $0 (breakeven) */
+  if(mode==='cap')return Math.min(peak-dd,lock);
+  return Math.min(eodPeak-dd,lock); /* eod */
 }
+/* Parada suave por pérdida diaria: true = no se opera más ese día. */
+function dllHit(p,dayPnl){return p.dll>0&&dayPnl<=-p.dll}
 function simulateRun(p,tpd,seed,dates){
-  const days=[];let equity=0,peak=0,maxDD=0,ruinDay=-1;
-  let best=-Infinity,worst=Infinity,greens=0,reds=0,flats=0,streak=0,maxStreak=0;
+  const days=[];let equity=0,peak=0,eodPeak=0,maxDD=0,ruinDay=-1;
+  let best=-Infinity,worst=Infinity,greens=0,reds=0,flats=0,streak=0,maxStreak=0,dllStops=0;
   for(let i=0;i<dates.length;i++){
     if(ruinDay>=0){days.push({date:dates[i],active:false,pnl:0});continue}
     const rnd=dayStream(seed,i);
-    let wins=0,losses=0,pnl=0,ruinedToday=false;
+    let wins=0,losses=0,pnl=0,ruinedToday=false,dllToday=false;
     for(let t=0;t<tpd;t++){
       if(rnd()<p.wr){wins++;pnl+=p.win}else{losses++;pnl-=p.loss}
       const eqNow=equity+pnl;
       if(eqNow>peak)peak=eqNow;
-      if(eqNow<=floorOf(p.mode,peak,p.dd)){ruinedToday=true;break}
+      if(eqNow<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){ruinedToday=true;break}
+      if(dllHit(p,pnl)){dllToday=true;dllStops++;break}
     }
     equity+=pnl;
     if(equity>peak)peak=equity;
@@ -313,24 +352,30 @@ function simulateRun(p,tpd,seed,dates){
     if(pnl>best)best=pnl;
     if(pnl<worst)worst=pnl;
     if(pnl>0){greens++;streak=0}else if(pnl<0){reds++;streak++;if(streak>maxStreak)maxStreak=streak}else{flats++;streak=0}
-    days.push({date:dates[i],active:true,pnl,wins,losses,equity,ruined:ruinedToday,floor:floorOf(p.mode,peak,p.dd)});
+    const floorNow=floorOf(p.mode,peak,eodPeak,p.dd,p.lock);
+    if(equity>eodPeak)eodPeak=equity; /* cierre del día */
+    days.push({date:dates[i],active:true,pnl,wins,losses,equity,ruined:ruinedToday,dllStop:dllToday,floor:floorNow});
     if(ruinedToday)ruinDay=i;
   }
   const traded=days.filter(d=>d.active).length;
-  return {tpd,days,final:equity,maxDD,ruinDay,best,worst,greens,reds,flats,maxStreak,traded,
+  return {tpd,days,final:equity,maxDD,ruinDay,best,worst,greens,reds,flats,maxStreak,traded,dllStops,
           avgDaily:traded?equity/traded:0};
 }
 function simulateMC(p,tpd,sims,seedBase){
   const finals=new Float64Array(sims);let ruins=0,pos=0;
   for(let s=0;s<sims;s++){
     const rnd=mulberry32(seedBase+s*7919);
-    let eq=0,peak=0,dead=false;
+    let eq=0,peak=0,eodPeak=0,dead=false;
     for(let i=0;i<p.days&&!dead;i++){
+      let dayPnl=0;
       for(let t=0;t<tpd;t++){
-        eq+=rnd()<p.wr?p.win:-p.loss;
+        const x=rnd()<p.wr?p.win:-p.loss;
+        eq+=x;dayPnl+=x;
         if(eq>peak)peak=eq;
-        if(eq<=floorOf(p.mode,peak,p.dd)){dead=true;break}
+        if(eq<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){dead=true;break}
+        if(dllHit(p,dayPnl))break;
       }
+      if(eq>eodPeak)eodPeak=eq;
     }
     finals[s]=eq;if(dead)ruins++;if(eq>0)pos++;
   }
@@ -552,42 +597,39 @@ function solveTheta(p){
   return (lo+hi)/2;
 }
 function simulateLiq(p,tpds,seedBase){
-  const maxTpd=Math.max(...tpds);
-  const maxTrades=LIQ_DAYS*maxTpd;
   const theta=solveTheta(p);
-  const ev=p.wr*p.win-(1-p.wr)*p.loss;
-  /* Salida temprana: solo válida cuando el suelo NO persigue a la equidad.
-     estático: gap = eq+DD crece con eq; cap: el suelo se detiene en $0, gap = eq.
-     trailing: el suelo sigue al pico — nunca hay equidad "segura". */
-  let sims,safeEq=Infinity;
-  if(theta&&p.mode!=='trail'){
-    const expTrades=Math.min(maxTrades,(p.dd+Math.log(2e6)/theta)/ev*2);
-    sims=Math.max(2000,Math.min(20000,Math.round(30e6/expTrades)));
-    safeEq=p.dd+Math.log(sims*100)/theta; /* margen sobrado en ambos modos */
-  }else{
-    sims=Math.max(1000,Math.min(12000,Math.round(20e6/maxTrades)));
-  }
-  const ruinAt=new Float64Array(maxTrades+1);
-  for(let s=0;s<sims;s++){
-    const rnd=mulberry32((seedBase+s*104729)>>>0);
-    let eq=0,peak=0;
-    for(let k=1;k<=maxTrades;k++){
-      eq+=rnd()<p.wr?p.win:-p.loss;
-      if(eq>peak)peak=eq;
-      if(eq<=floorOf(p.mode,peak,p.dd)){ruinAt[k]++;break}
-      if(eq>=safeEq)break;
-    }
-  }
-  for(let k=1;k<=maxTrades;k++)ruinAt[k]+=ruinAt[k-1];
-  const curves=tpds.map(tpd=>{
+  /* Salida temprana: válida cuando el suelo está acotado por arriba (todo menos
+     trailing perpetuo): residual < 1/(100·sims) por la cota exponencial. */
+  const canExit=theta!==null&&p.mode!=='trail';
+  const curves=tpds.map((tpd,si)=>{
+    const sims=canExit?12000:Math.max(1000,Math.min(12000,Math.round(20e6/(LIQ_DAYS*tpd))));
+    const safeEq=canExit?p.lock+p.dd+Math.log(sims*100)/theta:Infinity;
     const c=new Float64Array(LIQ_DAYS+1);
-    for(let d=1;d<=LIQ_DAYS;d++)c[d]=ruinAt[Math.min(d*tpd,maxTrades)]/sims*100;
+    for(let s=0;s<sims;s++){
+      const rnd=mulberry32((seedBase+si*611953+s*104729)>>>0);
+      let eq=0,peak=0,eodPeak=0,dead=false;
+      for(let d=1;d<=LIQ_DAYS&&!dead;d++){
+        let dayPnl=0;
+        for(let t=0;t<tpd;t++){
+          const x=rnd()<p.wr?p.win:-p.loss;
+          eq+=x;dayPnl+=x;
+          if(eq>peak)peak=eq;
+          if(eq<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){c[d]++;dead=true;break}
+          if(dllHit(p,dayPnl))break;
+        }
+        if(eq>eodPeak)eodPeak=eq;
+        if(!dead&&eq>=safeEq)break;
+      }
+    }
+    for(let d=1;d<=LIQ_DAYS;d++)c[d]+=c[d-1];
+    for(let d=0;d<=LIQ_DAYS;d++)c[d]=c[d]/sims*100;
     const total=c[LIQ_DAYS];
     let median=null;
     if(total>0){for(let d=1;d<=LIQ_DAYS;d++)if(c[d]>=total/2){median=d;break}}
-    return {tpd,c,total,median,early20:total>0?c[20]/total*100:null};
+    return {tpd,c,total,median,early20:total>0?c[20]/total*100:null,sims};
   });
-  return {sims,theta,bound:theta!==null?Math.exp(-theta*p.dd)*100:null,curves};
+  return {sims:curves.reduce((a,c)=>a+c.sims,0),theta,
+    bound:(theta!==null&&p.mode==='static')?Math.exp(-theta*p.dd)*100:null,curves};
 }
 function renderLiq(liq,p,cmp){
   el('liqN').textContent='· primera pasada por el límite · '+MODE_LABEL[p.mode]+' · '+liq.sims.toLocaleString('en-US')+' sims · horizonte fijo de 5 años';
@@ -645,8 +687,11 @@ function renderLiq(liq,p,cmp){
   const lg=el('liqLegend');
   if(cmp){
     lg.style.display='flex';
+    const tradeAxis=p.mode!=='eod'&&!(p.dll>0);
     lg.innerHTML=liq.curves.map((c,si)=>`<span><span class="sw" style="background:${si===0?COL_A:COL_B}"></span>${si===0?'A':'B'} · ${c.tpd} trades/día</span>`).join('')+
-      '<span style="color:var(--ink-3)">misma curva de riesgo en el eje de trades — B la recorre '+(b.tpd/a.tpd).toFixed(1).replace(/\.0$/,'')+'× más rápido</span>';
+      (tradeAxis
+        ?'<span style="color:var(--ink-3)">misma curva de riesgo en el eje de trades — B la recorre '+(b.tpd/a.tpd).toFixed(1).replace(/\.0$/,'')+'× más rápido</span>'
+        :'<span style="color:var(--ink-3)">con límite EOD o pérdida diaria máx., el corte por días hace que A y B ya no compartan la curva exacta</span>');
   }else{lg.style.display='none'}
   const hit=el('liqHit'),cross=el('liqCross');
   hit.onmousemove=e=>{
@@ -678,12 +723,33 @@ function renderLiq(liq,p,cmp){
    exacta del resultado diario, DP exacto para rachas, y MC dirigido para
    percentiles y tamaños de riesgo alternativos. */
 function dayMoments(p,tpd){
-  /* distribución exacta del PnL de un día: j ganadas ~ Binomial(tpd, wr) */
-  let c=1,mu=0,ex2=0,neg2=0,pos=0,neg=0;
-  for(let j=0;j<=tpd;j++){
-    if(j>0)c=c*(tpd-j+1)/j;
-    const prob=c*Math.pow(p.wr,j)*Math.pow(1-p.wr,tpd-j);
-    const pnl=j*p.win-(tpd-j)*p.loss;
+  /* distribución exacta del PnL de un día. Sin límite diario: j ganadas ~
+     Binomial(tpd, wr). Con límite diario: DP sobre trades con absorción al
+     tocar −DLL (el orden importa, la binomial ya no aplica). */
+  let dist;
+  if(!(p.dll>0)){
+    dist=[];let c=1;
+    for(let j=0;j<=tpd;j++){
+      if(j>0)c=c*(tpd-j+1)/j;
+      dist.push([j*p.win-(tpd-j)*p.loss,c*Math.pow(p.wr,j)*Math.pow(1-p.wr,tpd-j)]);
+    }
+  }else{
+    let states=new Map([[0,1]]);const finals=new Map();
+    const add=(m,k,v)=>m.set(k,(m.get(k)||0)+v);
+    for(let t=0;t<tpd;t++){
+      const nx=new Map();
+      for(const[pnl,pr]of states){
+        add(nx,pnl+p.win,pr*p.wr);
+        const l=pnl-p.loss;
+        if(l<=-p.dll)add(finals,l,pr*(1-p.wr));else add(nx,l,pr*(1-p.wr));
+      }
+      states=nx;
+    }
+    for(const[k,v]of states)add(finals,k,v);
+    dist=[...finals.entries()];
+  }
+  let mu=0,ex2=0,neg2=0,pos=0,neg=0;
+  for(const[pnl,prob]of dist){
     mu+=prob*pnl;ex2+=prob*pnl*pnl;
     if(pnl<0){neg2+=prob*pnl*pnl;neg+=prob*(-pnl)}else pos+=prob*pnl;
   }
@@ -707,12 +773,18 @@ function simulatePct(p,tpd,sims,seedBase,days){
   const store=xs.map(()=>new Float64Array(sims));
   for(let s=0;s<sims;s++){
     const rnd=mulberry32((seedBase+s*31337)>>>0);
-    let eq=0,peak=0,dead=false,xi=0;
+    let eq=0,peak=0,eodPeak=0,dead=false,xi=0;
     for(let d=1;d<=days;d++){
-      if(!dead)for(let t=0;t<tpd;t++){
-        eq+=rnd()<p.wr?p.win:-p.loss;
-        if(eq>peak)peak=eq;
-        if(eq<=floorOf(p.mode,peak,p.dd)){dead=true;break}
+      if(!dead){
+        let dayPnl=0;
+        for(let t=0;t<tpd;t++){
+          const x=rnd()<p.wr?p.win:-p.loss;
+          eq+=x;dayPnl+=x;
+          if(eq>peak)peak=eq;
+          if(eq<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){dead=true;break}
+          if(dllHit(p,dayPnl))break;
+        }
+        if(eq>eodPeak)eodPeak=eq;
       }
       if(xi<xs.length&&d===xs[xi]){store[xi][s]=eq;xi++}
     }
@@ -726,23 +798,28 @@ function simulatePct(p,tpd,sims,seedBase,days){
 function riskRow(p,label,loss,win,seedBase){
   const pp={wr:p.wr,win,loss,dd:p.dd};
   const theta=solveTheta(pp);
-  const kMed=252*p.tpd;
-  const kMax=kMed+504*p.tpd; /* la curva de ruina es plana mucho antes de 3 años */
-  const budget=p.mode==='trail'?3e6:8e6;
-  const sims=Math.max(400,Math.min(2000,Math.round(budget/kMax)));
-  const safeEq=(theta&&p.mode!=='trail')?p.dd+Math.log(sims*100)/theta:Infinity;
+  const RD=756; /* 3 años: la curva de ruina es plana mucho antes */
+  const canExit=theta!==null&&p.mode!=='trail';
+  const sims=canExit?1500:Math.max(400,Math.min(1500,Math.round(4e6/(RD*p.tpd))));
+  const safeEq=canExit?p.lock+p.dd+Math.log(sims*100)/theta:Infinity;
   let ruin=0;const med=new Float64Array(sims);
   for(let s=0;s<sims;s++){
     const rnd=mulberry32((seedBase+s*7127)>>>0);
-    let eq=0,peak=0,dead=false;
-    for(let k=1;k<=kMax;k++){
+    let eq=0,peak=0,eodPeak=0,dead=false;
+    for(let d=1;d<=RD;d++){
       if(!dead){
-        eq+=rnd()<p.wr?win:-loss;
-        if(eq>peak)peak=eq;
-        if(eq<=floorOf(p.mode,peak,p.dd)){dead=true;ruin++}
+        let dayPnl=0;
+        for(let t=0;t<p.tpd;t++){
+          const x=rnd()<p.wr?win:-loss;
+          eq+=x;dayPnl+=x;
+          if(eq>peak)peak=eq;
+          if(eq<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){dead=true;ruin++;break}
+          if(p.dll>0&&dayPnl<=-p.dll)break;
+        }
+        if(eq>eodPeak)eodPeak=eq;
       }
-      if(k===kMed)med[s]=eq;
-      if(k>=kMed&&(dead||eq>=safeEq))break;
+      if(d===252)med[s]=eq;
+      if(d>=252&&(dead||eq>=safeEq))break;
     }
   }
   const sorted=Array.from(med).sort((a,b)=>a-b);
@@ -757,16 +834,22 @@ function riskRow(p,label,loss,win,seedBase){
    opcional sobre la martingala e^(−θ·S)):
    P(objetivo primero) = (e^(θ·DD) − 1) / (e^(θ·DD) − e^(−θ·T)). */
 function simulateRace(p,tpd,sims,seedBase){
-  const T=p.target,kCap=LIQ_DAYS*tpd;
+  const T=p.target;
   let hits=0,ruins=0;const daysTo=[];
   for(let s=0;s<sims;s++){
     const rnd=mulberry32((seedBase+s*4241)>>>0);
-    let eq=0,peak=0;
-    for(let k=1;k<=kCap;k++){
-      eq+=rnd()<p.wr?p.win:-p.loss;
-      if(eq>peak)peak=eq;
-      if(eq>=T){hits++;daysTo.push(Math.ceil(k/tpd));break}
-      if(eq<=floorOf(p.mode,peak,p.dd)){ruins++;break}
+    let eq=0,peak=0,eodPeak=0,done=false;
+    for(let d=1;d<=LIQ_DAYS&&!done;d++){
+      let dayPnl=0;
+      for(let t=0;t<tpd;t++){
+        const x=rnd()<p.wr?p.win:-p.loss;
+        eq+=x;dayPnl+=x;
+        if(eq>peak)peak=eq;
+        if(eq>=T){hits++;daysTo.push(Math.max(d,p.minDays));done=true;break}
+        if(eq<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){ruins++;done=true;break}
+        if(dllHit(p,dayPnl))break;
+      }
+      if(!done&&eq>eodPeak)eodPeak=eq;
     }
   }
   daysTo.sort((a,b)=>a-b);
@@ -774,7 +857,7 @@ function simulateRace(p,tpd,sims,seedBase){
   return {tpd,sims,hit:hits/sims*100,ruin:ruins/sims*100,d25:q(.25),d50:q(.5),d75:q(.75)};
 }
 function raceAnalytic(p){
-  if(p.mode!=='static')return null;
+  if(p.mode!=='static'||p.dll>0)return null; /* la fórmula asume caminata sin pausas ni suelo móvil */
   const theta=solveTheta(p);
   if(theta===null)return null;
   const a=Math.exp(theta*p.dd);
@@ -885,13 +968,14 @@ function renderAdv(p,cmp,runA,runB,pcts,races){
   /* ── Carrera objetivo vs liquidación ── */
   const [rA,rB]=races;
   const anal=raceAnalytic(p);
-  el('raceN').textContent='· ¿llega la cuenta a +'+money(p.target,false)+' antes de tocar el límite? · '+MODE_LABEL[p.mode]+' · '+races.map(r=>r.sims.toLocaleString('en-US')).join(' + ')+' sims';
+  const preset=PRESETS[curPreset];
+  el('raceN').textContent='· '+(curPreset!=='custom'?preset.name+' · ':'')+'objetivo +'+money(p.target,false)+' · mín. '+p.minDays+' día'+(p.minDays>1?'s':'')+' · '+MODE_LABEL[p.mode]+(p.dll>0?' · pérdida diaria máx. '+money(-p.dll):'')+' · '+races.map(r=>r.sims.toLocaleString('en-US')).join(' + ')+' sims';
   const dTxt=r=>r.d50!==null?('día '+r.d50+' (P25 '+r.d25+' · P75 '+r.d75+')'):'—';
   el('raceTiles').innerHTML=
-    tile('P(objetivo antes que ruina)',pair(rA.hit.toFixed(1)+'%',cmp?rB.hit.toFixed(1)+'%':''),cmp?'sm':(rA.hit>90?'good':'warn'),'Monte Carlo'+(cmp?' — misma prob. en el eje de trades':''))+
-    tile('Cota inferior (fórmula cerrada)',anal!==null?'≥ '+anal.toFixed(1)+'%':'—','info',anal!==null?'(e^(θ·DD)−1)/(e^(θ·DD)−e^(−θ·T)) sin corregir el overshoot — el MC queda un poco por encima':'solo existe en modo estático con EV > 0')+
-    tile('Mediana de días al objetivo',pair(rA.d50!==null?'día '+rA.d50:'—',cmp?(rB.d50!==null?'día '+rB.d50:'—'):''),cmp?'sm':'info',cmp?'entre las cuentas que llegan':dTxt(rA))+
-    tile('Ruina antes del objetivo',pair(rA.ruin.toFixed(1)+'%',cmp?rB.ruin.toFixed(1)+'%':''),cmp?'sm':(rA.ruin>10?'bad':'warn'),'toca el límite sin haber llegado a +'+money(p.target,false));
+    tile('P(pasar la evaluación)',pair(rA.hit.toFixed(1)+'%',cmp?rB.hit.toFixed(1)+'%':''),cmp?'sm':(rA.hit>90?'good':'warn'),'alcanza el objetivo antes de tocar el límite')+
+    tile('Cota inferior (fórmula cerrada)',anal!==null?'≥ '+anal.toFixed(1)+'%':'—','info',anal!==null?'(e^(θ·DD)−1)/(e^(θ·DD)−e^(−θ·T)) sin corregir el overshoot — el MC queda un poco por encima':'solo en modo estático, sin límite diario y con EV > 0')+
+    tile('Mediana de días a pasar',pair(rA.d50!==null?'día '+rA.d50:'—',cmp?(rB.d50!==null?'día '+rB.d50:'—'):''),cmp?'sm':'info',cmp?'incluye los días mínimos':('incluye mín. '+p.minDays+' día'+(p.minDays>1?'s':'')+' · '+dTxt(rA)))+
+    tile('Falla la evaluación',pair(rA.ruin.toFixed(1)+'%',cmp?rB.ruin.toFixed(1)+'%':''),cmp?'sm':(rA.ruin>10?'bad':'warn'),'toca el límite antes de +'+money(p.target,false));
 }
 
 /* ───────────────────── Render: calendario ───────────────────── */
@@ -1026,6 +1110,7 @@ el('cal').addEventListener('mouseover',e=>{
         `<div class="t2">PnL del día: <b>${money(dA.pnl)}</b> (${pct(dA.pnl/curP.dd*100)})</div>`+
         `<div class="t2">Equidad acumulada: ${money(dA.equity)}</div>`+
         (curP.mode!=='static'?`<div class="t2">Límite del día: ${money(dA.floor)}</div>`:'')+
+        (dA.dllStop?'<div class="t2" style="color:var(--amber-hi)">⏸ paró el día por pérdida diaria máx.</div>':'')+
         (dA.ruined?'<div class="t3">⚠ LÍMITE DE DRAWDOWN ALCANZADO — CUENTA LIQUIDADA</div>':'');
     }else{
       const dB=curRunB.days[i];
@@ -1071,7 +1156,22 @@ function renderNotes(mcs,p,cmp,liq){
 }
 
 /* ───────────────────── Orquestación ───────────────────── */
-let curP=null,curRunA=null,curRunB=null,seed=20260712,cmpOn=false,curMode='static';
+let curP=null,curRunA=null,curRunB=null,seed=20260712,cmpOn=false,curMode='static',curPreset='custom';
+function setModeChips(){document.querySelectorAll('#modeChips .chip').forEach(x=>x.classList.toggle('on',x.dataset.m===curMode))}
+function setPresetChips(){document.querySelectorAll('#presetChips .chip').forEach(x=>x.classList.toggle('on',x.dataset.p===curPreset))}
+function applyPreset(key){
+  curPreset=key;setPresetChips();
+  const pr=PRESETS[key];
+  if(key==='custom'||!pr.size)return;
+  el('inDD').value=pr.dd;
+  el('inLock').value=pr.lock;
+  el('inDLL').value=pr.dll;
+  el('inMinDays').value=pr.minDays;
+  el('inTarget').value=pr.target;
+  curMode=pr.mode;setModeChips();
+  recompute();
+}
+function markCustom(){if(curPreset!=='custom'){curPreset='custom';setPresetChips()}}
 function recompute(){
   curP=readParams();
   seed=Math.round(+el('inSeed').value)||seed;
@@ -1083,7 +1183,10 @@ function recompute(){
   const mcs=[simulateMC(curP,curP.tpd,sims,100003+((seed*31)>>>0))];
   if(cmpOn)mcs.push(simulateMC(curP,curP.tpdB,sims,100003+((seed*31)>>>0)));
   const liq=simulateLiq(curP,cmpOn?[curP.tpd,curP.tpdB]:[curP.tpd],700003+((seed*13)>>>0));
-  el('badgeDD').textContent='CON $'+curP.dd.toLocaleString('en-US')+' DE DRAWDOWN DISPONIBLE';
+  const preset=PRESETS[curPreset];
+  el('badgeDD').textContent=curPreset!=='custom'
+    ?preset.name.toUpperCase()+' · $'+curP.dd.toLocaleString('en-US')+' '+(curP.mode==='static'?'ESTÁTICO':curP.mode==='eod'?'TRAILING EOD':'TRAILING'+(curP.mode==='cap'?' (LOCK +$'+curP.lock+')':''))
+    :'CON $'+curP.dd.toLocaleString('en-US')+' DE DRAWDOWN DISPONIBLE';
   const pctSims=cmpOn?500:800;
   const pcts=[simulatePct(curP,curP.tpd,pctSims,500009+((seed*11)>>>0),curP.days)];
   if(cmpOn)pcts.push(simulatePct(curP,curP.tpdB,pctSims,500009+((seed*11)>>>0),curP.days));
@@ -1100,12 +1203,19 @@ function recompute(){
 }
 let deb=null;
 function queue(){clearTimeout(deb);deb=setTimeout(recompute,180)}
-['inWr','inWin','inLoss','inTpd','inTpdB','inDD','inSeed','inDays','inCost','inTarget'].forEach(id=>el(id).addEventListener('input',queue));
+['inWr','inWin','inLoss','inTpd','inTpdB','inDD','inSeed','inDays','inCost','inTarget','inLock','inDLL','inMinDays'].forEach(id=>el(id).addEventListener('input',queue));
+/* editar una regla a mano te saca del preset */
+['inDD','inLock','inDLL','inMinDays','inTarget'].forEach(id=>el(id).addEventListener('input',markCustom));
 el('modeChips').addEventListener('click',e=>{
   const c=e.target.closest('.chip');if(!c)return;
   curMode=c.dataset.m;
-  document.querySelectorAll('#modeChips .chip').forEach(x=>x.classList.toggle('on',x===c));
+  setModeChips();
+  markCustom();
   recompute();
+});
+el('presetChips').addEventListener('click',e=>{
+  const c=e.target.closest('.chip');if(!c)return;
+  applyPreset(c.dataset.p);
 });
 el('inDays').addEventListener('input',()=>{
   document.querySelectorAll('#chips .chip').forEach(c=>c.classList.toggle('on',+c.dataset.d===+el('inDays').value));
