@@ -64,6 +64,14 @@ h1{margin:0;font-size:clamp(22px,3.4vw,34px);letter-spacing:.04em;font-weight:80
 svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
 .mc-tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}
 
+/* Backtest de liquidación */
+.ltab{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+.ltab th{text-align:right;color:var(--ink-2);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;border-bottom:1px solid var(--rule);font-family:var(--sans)}
+.ltab td{text-align:right;padding:6px 10px;border-bottom:1px solid var(--rule-2);color:var(--ink);white-space:nowrap}
+.ltab th:first-child,.ltab td:first-child{text-align:left}
+.ltab tr.sel td{background:rgba(2,132,199,.12)}
+.ltab td.dim{color:var(--ink-3)}
+
 /* Calendar */
 .legend{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:var(--ink-2)}
 .legend .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
@@ -166,6 +174,14 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
       <div class="chart-box"><svg id="hist" viewBox="0 0 520 150" width="100%" height="150" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Distribución de resultados finales Monte Carlo"></svg></div>
     </section>
   </div>
+
+  <section class="panel">
+    <h2>Backtest <span class="hl">de liquidación</span> <span id="liqN" style="color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600"></span></h2>
+    <div class="tiles" id="liqTiles" style="margin-bottom:14px"></div>
+    <div class="legend" id="liqLegend" style="display:none;margin-bottom:6px"></div>
+    <div class="chart-box"><svg id="liq" viewBox="0 0 860 250" width="100%" height="250" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Porcentaje acumulado de cuentas liquidadas por día de trading"></svg></div>
+    <div id="liqTable" style="margin-top:14px;overflow-x:auto"></div>
+  </section>
 
   <section class="panel">
     <h2>Calendario <span class="hl">de PnL diario</span></h2>
@@ -455,6 +471,142 @@ function renderMC(mcs,p){
   svg.innerHTML=g;
 }
 
+/* ─────────────── Backtest de liquidación ───────────────
+   El riesgo de tocar −DD depende SOLO de la secuencia de trades (cada trade
+   suma +win o resta −loss contra el límite); los días solo marcan el ritmo.
+   Por eso se simula la primera pasada por −DD en el eje de trades y cada
+   escenario (tpd distinto) lee la misma curva a su propia velocidad. */
+const LIQ_DAYS=1260;
+const LIQ_CHECKPOINTS=[['20 días',20],['1 mes',21],['3 meses',63],['6 meses',126],['1 año',252],['2 años',504],['3 años',756],['4 años',1008],['5 años',1260]];
+/* Coeficiente de ajuste de Lundberg: θ>0 con E[e^(−θ·X)]=1, X = PnL de un trade.
+   Da la cota clásica de ruina con barrera −DD: P(liq, horizonte ∞) ≤ e^(−θ·DD). */
+function solveTheta(p){
+  const ev=p.wr*p.win-(1-p.wr)*p.loss;
+  if(ev<=0)return null;
+  const f=t=>p.wr*Math.exp(-t*p.win)+(1-p.wr)*Math.exp(t*p.loss)-1;
+  let hi=1e-6;
+  while(f(hi)<0&&hi<10)hi*=2;
+  if(f(hi)<0)return null;
+  let lo=hi/2;
+  for(let i=0;i<80;i++){const m=(lo+hi)/2;if(f(m)<0)lo=m;else hi=m}
+  return (lo+hi)/2;
+}
+function simulateLiq(p,tpds,seedBase){
+  const maxTpd=Math.max(...tpds);
+  const maxTrades=LIQ_DAYS*maxTpd;
+  const theta=solveTheta(p);
+  const ev=p.wr*p.win-(1-p.wr)*p.loss;
+  let sims,safeEq=Infinity;
+  if(theta){
+    /* Con deriva positiva se puede cortar la caminata cuando la equidad supera
+       safeEq: la prob. residual de caer desde ahí hasta −DD es
+       ≤ e^(−θ(safeEq+DD)) < 1/(100·sims) — sesgo despreciable. */
+    const expTrades=Math.min(maxTrades,(p.dd+Math.log(2e6)/theta)/ev*2);
+    sims=Math.max(2000,Math.min(20000,Math.round(30e6/expTrades)));
+    safeEq=p.dd+Math.log(sims*100)/theta;
+  }else{
+    sims=Math.max(1000,Math.min(4000,Math.round(30e6/maxTrades)));
+  }
+  const ruinAt=new Float64Array(maxTrades+1);
+  for(let s=0;s<sims;s++){
+    const rnd=mulberry32((seedBase+s*104729)>>>0);
+    let eq=0;
+    for(let k=1;k<=maxTrades;k++){
+      eq+=rnd()<p.wr?p.win:-p.loss;
+      if(eq<=-p.dd){ruinAt[k]++;break}
+      if(eq>=safeEq)break;
+    }
+  }
+  for(let k=1;k<=maxTrades;k++)ruinAt[k]+=ruinAt[k-1];
+  const curves=tpds.map(tpd=>{
+    const c=new Float64Array(LIQ_DAYS+1);
+    for(let d=1;d<=LIQ_DAYS;d++)c[d]=ruinAt[Math.min(d*tpd,maxTrades)]/sims*100;
+    const total=c[LIQ_DAYS];
+    let median=null;
+    if(total>0){for(let d=1;d<=LIQ_DAYS;d++)if(c[d]>=total/2){median=d;break}}
+    return {tpd,c,total,median,early20:total>0?c[20]/total*100:null};
+  });
+  return {sims,theta,bound:theta!==null?Math.exp(-theta*p.dd)*100:null,curves};
+}
+function renderLiq(liq,p,cmp){
+  el('liqN').textContent='· primera pasada por −'+money(p.dd,false).slice(1)+' · '+liq.sims.toLocaleString('en-US')+' sims · horizonte fijo de 5 años';
+  const [a,b]=liq.curves;
+  const fmtP=v=>v.toFixed(2)+'%';
+  const pairV=(fa,fb)=>cmp?`A ${fa}<br>B ${fb}`:fa;
+  const medTxt=c=>c.median!==null?('día '+c.median):'—';
+  const earlyTxt=c=>c.early20!==null?fmtP(c.early20):'—';
+  el('liqTiles').innerHTML=
+    tile('Liquidación a 5 años',pairV(fmtP(a.total),cmp?fmtP(b.total):''),cmp?'sm':(a.total>5?'bad':'good'),'cuentas que tocan −'+money(p.dd,false).slice(1))+
+    tile('Cota teórica (horizonte ∞)',liq.bound!==null?'≤ '+fmtP(liq.bound):'→ 100%',liq.bound!==null?'info':'bad',
+         liq.bound!==null?'Lundberg e^(−θ·DD) — igual para A y B':'expectativa por trade ≤ 0: la liquidación es segura a largo plazo')+
+    tile('Día mediano de liquidación',pairV(medTxt(a),cmp?medTxt(b):''),cmp?'sm':'warn','entre las cuentas liquidadas')+
+    tile('Liq. en los primeros 20 días',pairV(earlyTxt(a),cmp?earlyTxt(b):''),cmp?'sm':'warn','% de todas las liquidaciones (5 años)');
+  /* Curva acumulada */
+  const svg=el('liq');const W=860,H=250,L=64,R=26,T=12,B=34;
+  const yMax=Math.max(0.02,...liq.curves.map(c=>c.total))*1.28;
+  const x=d=>L+(W-L-R)*d/LIQ_DAYS;
+  const y=v=>T+(H-T-B)*(1-v/yMax);
+  let g='';
+  for(let i=0;i<=4;i++){
+    const v=yMax*i/4;
+    g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,.06)"/>`+
+       `<text x="${L-8}" y="${y(v)+3}" text-anchor="end">${v.toFixed(2)}%</text>`;
+  }
+  for(const [d,lbl] of [[20,'20d'],[63,'3m'],[126,'6m'],[252,'1a'],[504,'2a'],[756,'3a'],[1008,'4a'],[1260,'5a']]){
+    g+=`<text x="${x(d)}" y="${H-8}" text-anchor="${d===1260?'end':'middle'}">${lbl}</text>`+
+       `<line x1="${x(d)}" x2="${x(d)}" y1="${H-B}" y2="${H-B+4}" stroke="rgba(255,255,255,.2)"/>`;
+  }
+  if(p.days<LIQ_DAYS){
+    g+=`<line x1="${x(p.days)}" x2="${x(p.days)}" y1="${T}" y2="${H-B}" stroke="#c98500" stroke-dasharray="5 4" stroke-width="1.3"/>`+
+       `<text x="${Math.min(x(p.days)+5,W-120)}" y="${T+10}" fill="#fbbf24">horizonte actual (${p.days} días)</text>`;
+  }
+  const labelYs=[];
+  liq.curves.forEach((c,si)=>{
+    const col=si===0?COL_A:COL_B;
+    let pts=`${x(0)},${y(0)}`;
+    for(let d=1;d<=LIQ_DAYS;d++)pts+=` ${x(d).toFixed(1)},${y(c.c[d]).toFixed(1)}`;
+    g+=`<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
+    if(cmp){
+      let ly=y(c.total)+3;
+      for(const py of labelYs)if(Math.abs(ly-py)<11)ly=py+11;
+      labelYs.push(ly);
+      g+=`<text x="${W-R+3}" y="${ly}" fill="${col}" font-weight="700">${si===0?'A':'B'}</text>`;
+    }
+  });
+  g+=`<line id="liqCross" x1="0" x2="0" y1="${T}" y2="${H-B}" stroke="rgba(255,255,255,.35)" visibility="hidden"/>`+
+     `<rect id="liqHit" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/>`;
+  svg.innerHTML=g;
+  const lg=el('liqLegend');
+  if(cmp){
+    lg.style.display='flex';
+    lg.innerHTML=liq.curves.map((c,si)=>`<span><span class="sw" style="background:${si===0?COL_A:COL_B}"></span>${si===0?'A':'B'} · ${c.tpd} trades/día</span>`).join('')+
+      '<span style="color:var(--ink-3)">misma curva de riesgo en el eje de trades — B la recorre '+(b.tpd/a.tpd).toFixed(1).replace(/\.0$/,'')+'× más rápido</span>';
+  }else{lg.style.display='none'}
+  const hit=el('liqHit'),cross=el('liqCross');
+  hit.onmousemove=e=>{
+    const r=svg.getBoundingClientRect();
+    const px=(e.clientX-r.left)*(W/r.width);
+    const d=Math.max(1,Math.min(LIQ_DAYS,Math.round((px-L)/(W-L-R)*LIQ_DAYS)));
+    cross.setAttribute('x1',x(d));cross.setAttribute('x2',x(d));cross.setAttribute('visibility','visible');
+    let rows=`<div class="t2">A (${a.tpd} t/d, ${(d*a.tpd).toLocaleString('en-US')} trades): <b>${fmtP(a.c[d])}</b> liquidadas</div>`;
+    if(cmp)rows+=`<div class="t2">B (${b.tpd} t/d, ${(d*b.tpd).toLocaleString('en-US')} trades): <b>${fmtP(b.c[d])}</b> liquidadas</div>`+
+      `<div class="t2"><b>Δ: ${(b.c[d]-a.c[d]>=0?'+':'−')+Math.abs(b.c[d]-a.c[d]).toFixed(2)} pp</b></div>`;
+    showTip(e,`<div class="t1">Día de trading ${d}</div>`+rows);
+  };
+  hit.onmouseleave=()=>{cross.setAttribute('visibility','hidden');hideTip()};
+  /* Tabla de checkpoints */
+  const head=cmp
+    ?`<tr><th>Horizonte</th><th>Días</th><th>% liq. A (${a.tpd} t/d)</th><th>% liq. B (${b.tpd} t/d)</th><th>Δ (B−A)</th></tr>`
+    :`<tr><th>Horizonte</th><th>Días de trading</th><th>Trades</th><th>% liquidación</th></tr>`;
+  const rows=LIQ_CHECKPOINTS.map(([lbl,d])=>{
+    const sel=d===p.days?' class="sel"':'';
+    if(!cmp)return `<tr${sel}><td>${lbl}</td><td>${d}</td><td class="dim">${(d*a.tpd).toLocaleString('en-US')}</td><td>${fmtP(a.c[d])}</td></tr>`;
+    const dif=b.c[d]-a.c[d];
+    return `<tr${sel}><td>${lbl}</td><td>${d}</td><td>${fmtP(a.c[d])}</td><td>${fmtP(b.c[d])}</td><td>${(dif>=0?'+':'−')+Math.abs(dif).toFixed(2)} pp</td></tr>`;
+  }).join('');
+  el('liqTable').innerHTML=`<table class="ltab">${head}${rows}</table>`;
+}
+
 /* ───────────────────── Render: calendario ───────────────────── */
 function baseLegend(cmp){
   el('calLegend').innerHTML=cmp?
@@ -604,7 +756,7 @@ el('cal').addEventListener('mouseover',e=>{
 el('cal').addEventListener('mouseout',e=>{if(e.target.closest('.cell'))hideTip()});
 
 /* ───────────────────── Notas ───────────────────── */
-function renderNotes(mcs,p,cmp){
+function renderNotes(mcs,p,cmp,liq){
   const evd=t=>t*(p.wr*p.win-(1-p.wr)*p.loss);
   const m=mcs[0];
   const notes=[
@@ -618,6 +770,9 @@ function renderNotes(mcs,p,cmp){
     ['#f87171',cmp
       ?`En modo comparación ambos escenarios comparten la misma secuencia de resultados por día (los primeros min(A,B) trades son idénticos); Δ aísla el efecto de los trades adicionales. Modelo idealizado: sin comisiones ni deslizamiento.`
       :`Modelo idealizado: resultados de trade independientes y de tamaño fijo, sin comisiones, deslizamiento ni cambios de régimen. La racha real puede ser peor que la simulada.`],
+    ['#0284c7',liq.bound!==null
+      ?`Backtest de liquidación: el riesgo de tocar −${money(p.dd,false)} depende solo del número de trades ejecutados, no del calendario${cmp?` — B recorre la misma curva de riesgo que A, ${(p.tpdB/p.tpd).toFixed(1).replace(/\.0$/,'')}× más rápido en días`:''}. Verificación analítica (cota de Lundberg): P(liquidación) ≤ e^(−θ·DD) = ${liq.bound.toFixed(2)}%; el backtest a 5 años mide ${liq.curves[0].total.toFixed(2)}%, por debajo de la cota, y la prob. de ruina del panel Monte Carlo debe coincidir con la curva en el horizonte seleccionado.`
+      :`Backtest de liquidación: con la configuración actual la expectativa por trade es ≤ $0, así que no existe cota de Lundberg — a horizonte infinito la liquidación es segura (100%); el backtest muestra qué tan rápido se llega.`],
   ];
   el('notes').innerHTML=notes.map(([c,t])=>`<div class="fnote"><div class="bar" style="background:${c}"></div><div>${t}</div></div>`).join('');
 }
@@ -634,12 +789,14 @@ function recompute(){
   const sims=(curP.days>600?1000:2500)>>(cmpOn?1:0);
   const mcs=[simulateMC(curP,curP.tpd,sims,100003+((seed*31)>>>0))];
   if(cmpOn)mcs.push(simulateMC(curP,curP.tpdB,sims,100003+((seed*31)>>>0)));
+  const liq=simulateLiq(curP,cmpOn?[curP.tpd,curP.tpdB]:[curP.tpd],700003+((seed*13)>>>0));
   el('badgeDD').textContent='CON $'+curP.dd.toLocaleString('en-US')+' DE DRAWDOWN DISPONIBLE';
   renderRunTiles(curRunA,curRunB,curP);
   renderEquity(curRunB?[curRunA,curRunB]:[curRunA],curP);
   renderMC(mcs,curP);
+  renderLiq(liq,curP,cmpOn);
   renderCalendar(curRunA,curRunB,curP);
-  renderNotes(mcs,curP,cmpOn);
+  renderNotes(mcs,curP,cmpOn,liq);
 }
 let deb=null;
 function queue(){clearTimeout(deb);deb=setTimeout(recompute,180)}
