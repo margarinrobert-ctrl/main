@@ -238,6 +238,25 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
   </section>
 
   <section class="panel">
+    <h2>Payouts <span class="hl">— fase financiada</span> <span id="payN" style="color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600"></span></h2>
+    <div class="controls" style="margin-bottom:12px">
+      <div class="field"><label for="inSplit" title="Porcentaje del payout que se queda el trader">Split trader %</label><input id="inSplit" type="number" value="90" min="1" max="100" step="1"></div>
+      <div class="field"><label for="inFullUp" title="Primeros $ de beneficio que son 100% para el trader (Apex: $25,000)">100% primeros $</label><input id="inFullUp" type="number" value="0" min="0" step="1000"></div>
+      <div class="field"><label for="inCad" title="Días de trading mínimos entre payouts">Cadencia (días)</label><input id="inCad" type="number" value="1" min="0" max="30" step="1"></div>
+      <div class="field"><label for="inWDn" title="Días ganadores requeridos desde el último payout (0 = sin requisito)">Días ganadores req.</label><input id="inWDn" type="number" value="0" min="0" max="20" step="1"></div>
+      <div class="field"><label for="inWDmin" title="PnL mínimo del día para contar como día ganador">Día ganador ≥ $</label><input id="inWDmin" type="number" value="150" min="0" step="50"></div>
+      <div class="field"><label for="inPayMin" title="Importe mínimo por payout">Payout mín. $</label><input id="inPayMin" type="number" value="0" min="0" step="100"></div>
+      <div class="field"><label for="inPayMax" title="Importe máximo por payout (0 = sin máximo)">Payout máx. $</label><input id="inPayMax" type="number" value="0" min="0" step="500"></div>
+      <div class="field"><label for="inRet" title="PnL que debe quedar en la cuenta tras el payout (colchón / safety net). Apex: drawdown + $100">Retención $</label><input id="inRet" type="number" value="1400" min="0" step="100"></div>
+      <div class="field"><label for="inCons" title="Regla de consistencia al pedir payout: mejor día ≤ X% del beneficio desde el último payout (0 = sin regla)">Consistencia %</label><input id="inCons" type="number" value="0" min="0" max="100" step="5"></div>
+    </div>
+    <div class="tiles" id="payTiles"></div>
+    <div class="legend" id="payLegend" style="display:none;margin:10px 0 6px"></div>
+    <div class="chart-box" style="margin-top:12px"><svg id="payHist" viewBox="0 0 860 150" width="100%" height="150" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Distribución del neto cobrado por el trader"></svg></div>
+    <div class="note-inline">Estrategia simulada: retirar el máximo permitido en cuanto la cuenta es elegible, dejando la retención. La consistencia se evalúa sobre lo acumulado desde el último payout (aproximación — cada firma la calcula distinto). En fase financiada el trailing se considera bloqueado en su nivel de lock (así funcionan Apex PA y MFFU); las reglas de evaluación siguen aplicando al límite de drawdown.</div>
+  </section>
+
+  <section class="panel">
     <h2>Calendario <span class="hl">de PnL diario</span></h2>
     <div class="legend" id="calLegend"></div>
     <div id="cal"></div>
@@ -294,12 +313,18 @@ const MODE_LABEL={static:'límite estático',trail:'límite trailing (perpetuo)'
    eod+0 = trailing de cierre diario que se bloquea en el balance inicial (Topstep). */
 const PRESETS={
   custom:  {name:'Personalizado'},
-  mffu_r25:{name:'MyFundedFutures Rapid 25k', size:25000, dd:1000, mode:'cap', lock:100, dll:0,    target:1500, minDays:2},
-  mffu_r50:{name:'MyFundedFutures Rapid 50k', size:50000, dd:2000, mode:'cap', lock:100, dll:0,    target:3000, minDays:2},
-  mffu_b50:{name:'MyFundedFutures Builder 50k',size:50000,dd:2000, mode:'static',lock:0, dll:0,    target:3000, minDays:1},
-  apex_25: {name:'Apex 25k',                  size:25000, dd:1500, mode:'trail',lock:0,  dll:0,    target:1500, minDays:1},
-  apex_50: {name:'Apex 50k',                  size:50000, dd:2500, mode:'trail',lock:0,  dll:0,    target:3000, minDays:1},
-  topstep_50:{name:'Topstep 50k',             size:50000, dd:2000, mode:'eod', lock:0,   dll:1000, target:3000, minDays:2},
+  mffu_r25:{name:'MyFundedFutures Rapid 25k', size:25000, dd:1000, mode:'cap', lock:100, dll:0,    target:1500, minDays:2,
+            pay:{split:90,fullUp:0,cad:1,wdN:0,wdMin:0,min:100,max:0,ret:1100,cons:0}},
+  mffu_r50:{name:'MyFundedFutures Rapid 50k', size:50000, dd:2000, mode:'cap', lock:100, dll:0,    target:3000, minDays:2,
+            pay:{split:90,fullUp:0,cad:1,wdN:0,wdMin:0,min:100,max:0,ret:2100,cons:0}},
+  mffu_b50:{name:'MyFundedFutures Builder 50k',size:50000,dd:2000, mode:'static',lock:0, dll:0,    target:3000, minDays:1,
+            pay:{split:90,fullUp:0,cad:2,wdN:0,wdMin:0,min:500,max:2000,ret:2000,cons:50}},
+  apex_25: {name:'Apex 25k',                  size:25000, dd:1500, mode:'trail',lock:0,  dll:0,    target:1500, minDays:1,
+            pay:{split:90,fullUp:25000,cad:0,wdN:5,wdMin:200,min:500,max:0,ret:1600,cons:50}},
+  apex_50: {name:'Apex 50k',                  size:50000, dd:2500, mode:'trail',lock:0,  dll:0,    target:3000, minDays:1,
+            pay:{split:90,fullUp:25000,cad:0,wdN:5,wdMin:200,min:500,max:0,ret:2600,cons:50}},
+  topstep_50:{name:'Topstep 50k',             size:50000, dd:2000, mode:'eod', lock:0,   dll:1000, target:3000, minDays:2,
+            pay:{split:90,fullUp:0,cad:0,wdN:5,wdMin:150,min:250,max:2000,ret:0,cons:50}},
 };
 function readParams(){
   const cost=Math.max(0,+el('inCost').value||0);
@@ -318,7 +343,18 @@ function readParams(){
     tpd: Math.min(20,Math.max(1,Math.round(+el('inTpd').value||2))),
     tpdB: Math.min(20,Math.max(1,Math.round(+el('inTpdB').value||4))),
     dd: Math.max(100,+el('inDD').value||1400),
-    days: Math.min(1260,Math.max(20,Math.round(+el('inDays').value||252)))
+    days: Math.min(1260,Math.max(20,Math.round(+el('inDays').value||252))),
+    pay:{
+      split: Math.min(100,Math.max(1,+el('inSplit').value||90))/100,
+      fullUp: Math.max(0,+el('inFullUp').value||0),
+      cad: Math.min(30,Math.max(0,Math.round(+el('inCad').value||0))),
+      wdN: Math.min(20,Math.max(0,Math.round(+el('inWDn').value||0))),
+      wdMin: Math.max(0,+el('inWDmin').value||0),
+      min: Math.max(0,+el('inPayMin').value||0),
+      max: Math.max(0,+el('inPayMax').value||0),
+      ret: Math.max(0,+el('inRet').value||0),
+      cons: Math.min(100,Math.max(0,+el('inCons').value||0))
+    }
   };
 }
 /* Suelo de liquidación según el modo.
@@ -856,6 +892,109 @@ function simulateRace(p,tpd,sims,seedBase){
   const q=f=>daysTo.length?daysTo[Math.min(daysTo.length-1,Math.floor(f*daysTo.length))]:null;
   return {tpd,sims,hit:hits/sims*100,ruin:ruins/sims*100,d25:q(.25),d50:q(.5),d75:q(.75)};
 }
+/* ─────────────── Payouts (fase financiada) ───────────────
+   Cuenta financiada desde PnL 0 con las mismas reglas de límite (el trailing
+   se considera bloqueado en su lock — Apex PA / MFFU lo hacen). Estrategia:
+   retirar el máximo permitido en cuanto se es elegible, dejando la retención. */
+function payNet(gross,pay){
+  return Math.min(gross,pay.fullUp)+Math.max(0,gross-pay.fullUp)*pay.split;
+}
+function simulatePayout(p,tpd,sims,seedBase){
+  const y=p.pay;
+  const mode=p.mode==='trail'?'cap':p.mode;
+  const grossArr=new Float64Array(sims);
+  let any=0,aliveN=0;const firstDays=[];
+  for(let s=0;s<sims;s++){
+    const rnd=mulberry32((seedBase+s*9973)>>>0);
+    let eq=0,peak=0,eodPeak=0,dead=false;
+    let gross=0,lastPay=0,sincePnl=0,bestDay=0,winDays=0,first=null;
+    for(let d=1;d<=p.days&&!dead;d++){
+      let dayPnl=0;
+      for(let t=0;t<tpd;t++){
+        const x=rnd()<p.wr?p.win:-p.loss;
+        eq+=x;dayPnl+=x;
+        if(eq>peak)peak=eq;
+        if(eq<=floorOf(mode,peak,eodPeak,p.dd,p.lock)){dead=true;break}
+        if(dllHit(p,dayPnl))break;
+      }
+      if(dead)break;
+      if(eq>eodPeak)eodPeak=eq;
+      sincePnl+=dayPnl;
+      if(dayPnl>bestDay)bestDay=dayPnl;
+      if(dayPnl>=Math.max(1,y.wdMin))winDays++;
+      /* elegibilidad al cierre del día */
+      if(d-lastPay>=y.cad&&(y.wdN===0||winDays>=y.wdN)){
+        let amt=eq-y.ret;
+        if(y.max>0)amt=Math.min(amt,y.max);
+        const consOk=y.cons===0||(sincePnl>0&&bestDay<=y.cons/100*sincePnl);
+        if(amt>=Math.max(1,y.min)&&consOk){
+          eq-=amt;gross+=amt;
+          if(first===null)first=d;
+          lastPay=d;sincePnl=0;bestDay=0;winDays=0;
+          /* el suelo NO baja con el payout (los umbrales no se reducen) */
+        }
+      }
+    }
+    grossArr[s]=gross;
+    if(gross>0)any++;
+    if(!dead)aliveN++;
+    if(first!==null)firstDays.push(first);
+  }
+  const nets=Array.from(grossArr,g=>payNet(g,y)).sort((a,b)=>a-b);
+  firstDays.sort((a,b)=>a-b);
+  const q=(arr,f)=>arr.length?arr[Math.min(arr.length-1,Math.floor(f*arr.length))]:null;
+  return {tpd,sims,
+    pAny:any/sims*100,alive:aliveN/sims*100,
+    firstMed:q(firstDays,.5),
+    netMed:q(nets,.5),netMean:nets.reduce((a,b)=>a+b,0)/sims,
+    netP95:q(nets,.95),nets};
+}
+function renderPayout(pays,races,p,cmp){
+  const y=p.pay;
+  const [pA,pB]=pays;
+  const pair=(fa,fb)=>cmp?`A ${fa}<br>B ${fb}`:fa;
+  el('payN').textContent='· horizonte '+p.days+' días · split '+Math.round(y.split*100)+'%'+(y.fullUp>0?' (100% primeros '+money(y.fullUp,false)+')':'')+' · retención '+money(y.ret,false)+' · '+pays.map(r=>r.sims.toLocaleString('en-US')).join(' + ')+' sims';
+  const planA=races[0].hit/100*pA.netMean;
+  const planB=cmp?races[1].hit/100*pB.netMean:null;
+  el('payTiles').innerHTML=
+    tile('P(≥ 1 payout)',pair(pA.pAny.toFixed(1)+'%',cmp?pB.pAny.toFixed(1)+'%':''),cmp?'sm':(pA.pAny>90?'good':'warn'),'cobra al menos una vez en el horizonte')+
+    tile('Mediana días al 1er payout',pair(pA.firstMed!==null?'día '+pA.firstMed:'—',cmp?(pB.firstMed!==null?'día '+pB.firstMed:'—'):''),cmp?'sm':'info','entre las cuentas que cobran')+
+    tile('Neto mediano p/ trader',pair(money(pA.netMed),cmp?money(pB.netMed):''),cmp?'sm':signCls(pA.netMed),'tras split'+(y.fullUp>0?' y tramo 100%':''))+
+    tile('Neto medio (esperanza)',pair(money(pA.netMean),cmp?money(pB.netMean):''),cmp?'sm':signCls(pA.netMean),'promedio sobre todas las cuentas')+
+    tile('Cuentas vivas al final',pair(pA.alive.toFixed(1)+'%',cmp?pB.alive.toFixed(1)+'%':''),cmp?'sm':(pA.alive>50?'good':'bad'),'no tocaron el límite en el horizonte')+
+    tile('Esperanza del plan completo',pair(money(planA),cmp?money(planB):''),cmp?'sm':'info','P(pasar eval) × neto medio financiado');
+  /* Histograma del neto cobrado */
+  const svg=el('payHist');const W=860,H=150,L=10,R=10,T=8,B=22;
+  const lo=0,hi=Math.max(1,...pays.map(r=>r.nets[r.nets.length-1]));
+  const bins=30,bw=(W-L-R)/bins;
+  const sets=pays.map(r=>{
+    const c=new Array(bins).fill(0);
+    for(const v of r.nets)c[Math.min(bins-1,Math.floor((v-lo)/(hi-lo)*bins))]++;
+    return c.map(x=>x/r.sims);
+  });
+  const maxC=Math.max(...sets.flat());
+  let g='';
+  if(!cmp){
+    sets[0].forEach((v,i)=>{
+      const h=(H-T-B)*v/maxC;
+      const col=i===0?'#ef4444':'#059669'; /* bin 0 = nunca cobró */
+      g+=`<rect x="${(L+i*bw+1).toFixed(1)}" y="${(H-B-h).toFixed(1)}" width="${(bw-2).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${col}"><title>${money(lo+(hi-lo)*i/bins,false)} a ${money(lo+(hi-lo)*(i+1)/bins,false)} · ${(v*100).toFixed(1)}%</title></rect>`;
+    });
+    el('payLegend').style.display='none';
+  }else{
+    sets.forEach((c,si)=>{
+      const col=si===0?COL_A:COL_B;
+      let pts='';
+      for(let i=0;i<bins;i++){const x0=L+i*bw,x1=L+(i+1)*bw,yv=H-B-(H-T-B)*c[i]/maxC;pts+=`${x0.toFixed(1)},${yv.toFixed(1)} ${x1.toFixed(1)},${yv.toFixed(1)} `}
+      g+=`<polyline points="${L},${H-B} ${pts}${W-R},${H-B}" fill="none" stroke="${col}" stroke-width="2"/>`;
+    });
+    const lg=el('payLegend');lg.style.display='flex';
+    lg.innerHTML=pays.map((r,si)=>`<span><span class="sw" style="background:${si===0?COL_A:COL_B}"></span>${si===0?'A':'B'} · ${r.tpd} trades/día</span>`).join('');
+  }
+  g+=`<text x="${L}" y="${H-8}" text-anchor="start">$0 (el bin rojo = nunca cobró)</text>`+
+     `<text x="${W-R}" y="${H-8}" text-anchor="end">${money(hi,false)}</text>`;
+  svg.innerHTML=g;
+}
 function raceAnalytic(p){
   if(p.mode!=='static'||p.dll>0)return null; /* la fórmula asume caminata sin pausas ni suelo móvil */
   const theta=solveTheta(p);
@@ -1168,6 +1307,15 @@ function applyPreset(key){
   el('inDLL').value=pr.dll;
   el('inMinDays').value=pr.minDays;
   el('inTarget').value=pr.target;
+  el('inSplit').value=pr.pay.split;
+  el('inFullUp').value=pr.pay.fullUp;
+  el('inCad').value=pr.pay.cad;
+  el('inWDn').value=pr.pay.wdN;
+  el('inWDmin').value=pr.pay.wdMin;
+  el('inPayMin').value=pr.pay.min;
+  el('inPayMax').value=pr.pay.max;
+  el('inRet').value=pr.pay.ret;
+  el('inCons').value=pr.pay.cons;
   curMode=pr.mode;setModeChips();
   recompute();
 }
@@ -1193,19 +1341,24 @@ function recompute(){
   const raceSims=cmpOn?2500:4000;
   const races=[simulateRace(curP,curP.tpd,raceSims,300007+((seed*23)>>>0))];
   if(cmpOn)races.push(simulateRace(curP,curP.tpdB,raceSims,300007+((seed*23)>>>0)));
+  const paySims=cmpOn?1500:2500;
+  const pays=[simulatePayout(curP,curP.tpd,paySims,810007+((seed*29)>>>0))];
+  if(cmpOn)pays.push(simulatePayout(curP,curP.tpdB,paySims,810007+((seed*29)>>>0)));
   renderRunTiles(curRunA,curRunB,curP);
   renderEquity(curRunB?[curRunA,curRunB]:[curRunA],curP);
   renderMC(mcs,curP);
   renderLiq(liq,curP,cmpOn);
   renderAdv(curP,cmpOn,curRunA,curRunB,pcts,races);
+  renderPayout(pays,races,curP,cmpOn);
   renderCalendar(curRunA,curRunB,curP);
   renderNotes(mcs,curP,cmpOn,liq);
 }
 let deb=null;
 function queue(){clearTimeout(deb);deb=setTimeout(recompute,180)}
-['inWr','inWin','inLoss','inTpd','inTpdB','inDD','inSeed','inDays','inCost','inTarget','inLock','inDLL','inMinDays'].forEach(id=>el(id).addEventListener('input',queue));
+['inWr','inWin','inLoss','inTpd','inTpdB','inDD','inSeed','inDays','inCost','inTarget','inLock','inDLL','inMinDays',
+ 'inSplit','inFullUp','inCad','inWDn','inWDmin','inPayMin','inPayMax','inRet','inCons'].forEach(id=>el(id).addEventListener('input',queue));
 /* editar una regla a mano te saca del preset */
-['inDD','inLock','inDLL','inMinDays','inTarget'].forEach(id=>el(id).addEventListener('input',markCustom));
+['inDD','inLock','inDLL','inMinDays','inTarget','inSplit','inFullUp','inCad','inWDn','inWDmin','inPayMin','inPayMax','inRet','inCons'].forEach(id=>el(id).addEventListener('input',markCustom));
 el('modeChips').addEventListener('click',e=>{
   const c=e.target.closest('.chip');if(!c)return;
   curMode=c.dataset.m;
