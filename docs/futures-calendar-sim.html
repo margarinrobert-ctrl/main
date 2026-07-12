@@ -137,6 +137,7 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
       <div class="field"><label for="inLoss">Pérdida / trade $</label><input id="inLoss" type="number" value="300" min="1" step="10"></div>
       <div class="field"><label for="inTpd">Trades / día (A)</label><input id="inTpd" type="number" value="2" min="1" max="20" step="1"></div>
       <div class="field"><label for="inDD">Drawdown disp. $</label><input id="inDD" type="number" value="1400" min="100" step="100"></div>
+      <div class="field"><label for="inCost">Costes $/trade</label><input id="inCost" type="number" value="0" min="0" step="1" title="Comisión + deslizamiento por operación (resta a la ganancia, suma a la pérdida)"></div>
       <div class="field"><label for="inSeed">Semilla</label><input id="inSeed" type="number" value="20260712" step="1"></div>
       <button class="btn" id="btnRoll">🎲 Nueva simulación</button>
     </div>
@@ -154,6 +155,14 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
         </div>
       </div>
       <div class="field"><label for="inDays">Personalizado</label><input id="inDays" type="number" value="252" min="20" max="1260" step="1"></div>
+      <div class="field">
+        <label>Límite de drawdown</label>
+        <div class="chips" id="modeChips">
+          <button class="chip on" data-m="static" title="El límite queda fijo en −DD desde el inicio">ESTÁTICO</button>
+          <button class="chip" data-m="trail" title="El límite sigue al pico de equidad para siempre (trailing perpetuo)">TRAILING</button>
+          <button class="chip" data-m="cap" title="El límite sigue al pico pero se bloquea al llegar a $0 (breakeven), estilo cuenta financiada">TRAILING · TOPE $0</button>
+        </div>
+      </div>
       <button class="btn" id="btnCmp">⚖ Comparar trades/día: OFF</button>
       <div class="field"><label for="inTpdB">Trades / día (B)</label><input id="inTpdB" type="number" value="4" min="1" max="20" step="1" disabled></div>
     </div>
@@ -203,6 +212,11 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
     </div>
     <div class="subh" style="margin-top:20px">Explorador de riesgo por trade <span class="hl">(Kelly y ruina)</span> <span class="sub" id="rkN"></span></div>
     <div id="riskTable" style="overflow-x:auto"></div>
+    <div class="subh" style="margin-top:20px">Carrera: <span class="hl">objetivo vs liquidación</span> <span class="sub" id="raceN"></span></div>
+    <div class="controls" style="margin-bottom:10px">
+      <div class="field"><label for="inTarget">Objetivo de beneficio $</label><input id="inTarget" type="number" value="3000" min="100" step="100"></div>
+    </div>
+    <div class="tiles" id="raceTiles"></div>
   </section>
 
   <section class="panel">
@@ -256,16 +270,29 @@ function nextTradingDay(d){const x=new Date(d);while(!isTradingDay(x))x.setDate(
 function tradingDays(start,n){const out=[];const d=new Date(start);while(out.length<n){if(isTradingDay(d))out.push(new Date(d));d.setDate(d.getDate()+1)}return out}
 
 /* ───────────────────── Simulación ───────────────────── */
+const MODE_LABEL={static:'límite estático',trail:'límite trailing (perpetuo)',cap:'límite trailing con tope $0'};
 function readParams(){
+  const cost=Math.max(0,+el('inCost').value||0);
+  const rawWin=Math.max(1,+el('inWin').value||250);
+  const rawLoss=Math.max(1,+el('inLoss').value||300);
   return {
     wr: Math.min(99,Math.max(1,+el('inWr').value||73))/100,
-    win: Math.max(1,+el('inWin').value||250),
-    loss: Math.max(1,+el('inLoss').value||300),
+    win: Math.max(1,rawWin-cost),   /* efectivo, neto de costes */
+    loss: rawLoss+cost,             /* efectivo, neto de costes */
+    rawWin,rawLoss,cost,
+    mode: curMode,
+    target: Math.max(100,+el('inTarget').value||3000),
     tpd: Math.min(20,Math.max(1,Math.round(+el('inTpd').value||2))),
     tpdB: Math.min(20,Math.max(1,Math.round(+el('inTpdB').value||4))),
     dd: Math.max(100,+el('inDD').value||1400),
     days: Math.min(1260,Math.max(20,Math.round(+el('inDays').value||252)))
   };
+}
+/* Suelo de liquidación según el modo. peak = máximo de equidad hasta ahora. */
+function floorOf(mode,peak,dd){
+  if(mode==='static')return -dd;
+  if(mode==='trail')return peak-dd;
+  return Math.min(peak-dd,0); /* cap: se bloquea en $0 (breakeven) */
 }
 function simulateRun(p,tpd,seed,dates){
   const days=[];let equity=0,peak=0,maxDD=0,ruinDay=-1;
@@ -276,7 +303,9 @@ function simulateRun(p,tpd,seed,dates){
     let wins=0,losses=0,pnl=0,ruinedToday=false;
     for(let t=0;t<tpd;t++){
       if(rnd()<p.wr){wins++;pnl+=p.win}else{losses++;pnl-=p.loss}
-      if(equity+pnl<=-p.dd){ruinedToday=true;break}
+      const eqNow=equity+pnl;
+      if(eqNow>peak)peak=eqNow;
+      if(eqNow<=floorOf(p.mode,peak,p.dd)){ruinedToday=true;break}
     }
     equity+=pnl;
     if(equity>peak)peak=equity;
@@ -284,7 +313,7 @@ function simulateRun(p,tpd,seed,dates){
     if(pnl>best)best=pnl;
     if(pnl<worst)worst=pnl;
     if(pnl>0){greens++;streak=0}else if(pnl<0){reds++;streak++;if(streak>maxStreak)maxStreak=streak}else{flats++;streak=0}
-    days.push({date:dates[i],active:true,pnl,wins,losses,equity,ruined:ruinedToday});
+    days.push({date:dates[i],active:true,pnl,wins,losses,equity,ruined:ruinedToday,floor:floorOf(p.mode,peak,p.dd)});
     if(ruinedToday)ruinDay=i;
   }
   const traded=days.filter(d=>d.active).length;
@@ -295,11 +324,12 @@ function simulateMC(p,tpd,sims,seedBase){
   const finals=new Float64Array(sims);let ruins=0,pos=0;
   for(let s=0;s<sims;s++){
     const rnd=mulberry32(seedBase+s*7919);
-    let eq=0,dead=false;
+    let eq=0,peak=0,dead=false;
     for(let i=0;i<p.days&&!dead;i++){
       for(let t=0;t<tpd;t++){
         eq+=rnd()<p.wr?p.win:-p.loss;
-        if(eq<=-p.dd){dead=true;break}
+        if(eq>peak)peak=eq;
+        if(eq<=floorOf(p.mode,peak,p.dd)){dead=true;break}
       }
     }
     finals[s]=eq;if(dead)ruins++;if(eq>0)pos++;
@@ -377,8 +407,16 @@ function renderEquity(runs,p){
     g+=`<text x="${x(idx)}" y="${H-10}" text-anchor="${anchor}">día ${idx+1}</text>`;
   }
   if(y(0)>T&&y(0)<H-B)g+=`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="rgba(255,255,255,.18)"/>`;
-  g+=`<line x1="${L}" x2="${W-R}" y1="${y(-p.dd)}" y2="${y(-p.dd)}" stroke="#ef4444" stroke-dasharray="6 4" stroke-width="1.4"/>`+
-     `<text x="${W-R}" y="${y(-p.dd)-5}" text-anchor="end" fill="#f87171">LÍMITE DE DRAWDOWN −$${p.dd.toLocaleString('en-US')}</text>`;
+  if(p.mode==='static'){
+    g+=`<line x1="${L}" x2="${W-R}" y1="${y(-p.dd)}" y2="${y(-p.dd)}" stroke="#ef4444" stroke-dasharray="6 4" stroke-width="1.4"/>`+
+       `<text x="${W-R}" y="${y(-p.dd)-5}" text-anchor="end" fill="#f87171">LÍMITE DE DRAWDOWN −$${p.dd.toLocaleString('en-US')}</text>`;
+  }else{
+    /* suelo móvil del escenario A */
+    const fA=series[0].days;
+    const fpts=fA.map((d,i)=>`${x(i).toFixed(1)},${y(d.floor).toFixed(1)}`).join(' ');
+    g+=`<polyline points="${x(0)},${y(-p.dd)} ${fpts}" fill="none" stroke="#ef4444" stroke-dasharray="6 4" stroke-width="1.4"/>`+
+       `<text x="${W-R}" y="${Math.max(T+10,y(fA[fA.length-1].floor)-6)}" text-anchor="end" fill="#f87171">LÍMITE ${p.mode==='trail'?'TRAILING':'TRAILING·TOPE $0'}${series.length>1?' (A)':''}</text>`;
+  }
   for(const s of series){
     const pts=s.days.map((d,i)=>`${x(i).toFixed(1)},${y(d.equity).toFixed(1)}`);
     if(series.length===1)g+=`<polygon points="${x(0)},${y(0)} ${pts.join(' ')} ${x(s.days.length-1)},${y(0)}" fill="rgba(5,150,105,.10)"/>`;
@@ -407,7 +445,7 @@ function renderEquity(runs,p){
       const dot=el('eqDot'+si);
       const d=s.days[Math.min(i,s.days.length-1)];
       dot.setAttribute('cx',x(Math.min(i,s.days.length-1)));dot.setAttribute('cy',y(d.equity));dot.setAttribute('visibility','visible');
-      rows+=`<div class="t2">${series.length>1?('<b>'+s.label+'</b> '):''}PnL día: ${money(i<s.days.length?s.days[i].pnl:0)} · Equidad: <b>${money(d.equity)}</b></div>`;
+      rows+=`<div class="t2">${series.length>1?('<b>'+s.label+'</b> '):''}PnL día: ${money(i<s.days.length?s.days[i].pnl:0)} · Equidad: <b>${money(d.equity)}</b>${p.mode!=='static'?' · límite: '+money(d.floor):''}</div>`;
     });
     if(series.length>1){
       const eA=series[0].days[Math.min(i,series[0].days.length-1)].equity;
@@ -433,7 +471,7 @@ function renderMC(mcs,p){
   if(!cmp){
     const m=mcs[0];
     el('mcTiles').innerHTML=
-      tile('Prob. de ruina',f.ruina(m),m.ruins/m.sims>0.05?'bad':'good','toca −'+money(p.dd,false).slice(1)+' antes del final')+
+      tile('Prob. de ruina',f.ruina(m),m.ruins/m.sims>0.05?'bad':'good','toca el límite ('+MODE_LABEL[p.mode]+')')+
       tile('Prob. de terminar +',f.pos(m),'good','PnL final > $0')+
       tile('Resultado promedio',f.mean(m),signCls(m.mean),pct(m.mean/p.dd*100)+' sobre el drawdown')+
       tile('Mediana',f.p50(m),signCls(m.p50),'percentil 50')+
@@ -518,24 +556,25 @@ function simulateLiq(p,tpds,seedBase){
   const maxTrades=LIQ_DAYS*maxTpd;
   const theta=solveTheta(p);
   const ev=p.wr*p.win-(1-p.wr)*p.loss;
+  /* Salida temprana: solo válida cuando el suelo NO persigue a la equidad.
+     estático: gap = eq+DD crece con eq; cap: el suelo se detiene en $0, gap = eq.
+     trailing: el suelo sigue al pico — nunca hay equidad "segura". */
   let sims,safeEq=Infinity;
-  if(theta){
-    /* Con deriva positiva se puede cortar la caminata cuando la equidad supera
-       safeEq: la prob. residual de caer desde ahí hasta −DD es
-       ≤ e^(−θ(safeEq+DD)) < 1/(100·sims) — sesgo despreciable. */
+  if(theta&&p.mode!=='trail'){
     const expTrades=Math.min(maxTrades,(p.dd+Math.log(2e6)/theta)/ev*2);
     sims=Math.max(2000,Math.min(20000,Math.round(30e6/expTrades)));
-    safeEq=p.dd+Math.log(sims*100)/theta;
+    safeEq=p.dd+Math.log(sims*100)/theta; /* margen sobrado en ambos modos */
   }else{
-    sims=Math.max(1000,Math.min(4000,Math.round(30e6/maxTrades)));
+    sims=Math.max(1000,Math.min(12000,Math.round(20e6/maxTrades)));
   }
   const ruinAt=new Float64Array(maxTrades+1);
   for(let s=0;s<sims;s++){
     const rnd=mulberry32((seedBase+s*104729)>>>0);
-    let eq=0;
+    let eq=0,peak=0;
     for(let k=1;k<=maxTrades;k++){
       eq+=rnd()<p.wr?p.win:-p.loss;
-      if(eq<=-p.dd){ruinAt[k]++;break}
+      if(eq>peak)peak=eq;
+      if(eq<=floorOf(p.mode,peak,p.dd)){ruinAt[k]++;break}
       if(eq>=safeEq)break;
     }
   }
@@ -551,16 +590,21 @@ function simulateLiq(p,tpds,seedBase){
   return {sims,theta,bound:theta!==null?Math.exp(-theta*p.dd)*100:null,curves};
 }
 function renderLiq(liq,p,cmp){
-  el('liqN').textContent='· primera pasada por −'+money(p.dd,false).slice(1)+' · '+liq.sims.toLocaleString('en-US')+' sims · horizonte fijo de 5 años';
+  el('liqN').textContent='· primera pasada por el límite · '+MODE_LABEL[p.mode]+' · '+liq.sims.toLocaleString('en-US')+' sims · horizonte fijo de 5 años';
   const [a,b]=liq.curves;
   const fmtP=v=>v.toFixed(2)+'%';
   const pairV=(fa,fb)=>cmp?`A ${fa}<br>B ${fb}`:fa;
   const medTxt=c=>c.median!==null?('día '+c.median):'—';
   const earlyTxt=c=>c.early20!==null?fmtP(c.early20):'—';
+  const boundTile=p.mode==='static'
+    ?tile('Cota teórica (horizonte ∞)',liq.bound!==null?'≤ '+fmtP(liq.bound):'→ 100%',liq.bound!==null?'info':'bad',
+          liq.bound!==null?'Lundberg e^(−θ·DD) — igual para A y B':'expectativa por trade ≤ 0: la liquidación es segura a largo plazo')
+    :(p.mode==='trail'
+      ?tile('Horizonte ∞ (trailing)','→ 100%','bad','el límite persigue al pico: la liquidación es cuestión de tiempo')
+      :tile('Cota teórica (horizonte ∞)','—','info','sin fórmula cerrada con tope: el límite sube hasta $0 y se bloquea'));
   el('liqTiles').innerHTML=
-    tile('Liquidación a 5 años',pairV(fmtP(a.total),cmp?fmtP(b.total):''),cmp?'sm':(a.total>5?'bad':'good'),'cuentas que tocan −'+money(p.dd,false).slice(1))+
-    tile('Cota teórica (horizonte ∞)',liq.bound!==null?'≤ '+fmtP(liq.bound):'→ 100%',liq.bound!==null?'info':'bad',
-         liq.bound!==null?'Lundberg e^(−θ·DD) — igual para A y B':'expectativa por trade ≤ 0: la liquidación es segura a largo plazo')+
+    tile('Liquidación a 5 años',pairV(fmtP(a.total),cmp?fmtP(b.total):''),cmp?'sm':(a.total>5?'bad':'good'),'cuentas que tocan el límite ('+MODE_LABEL[p.mode]+')')+
+    boundTile+
     tile('Día mediano de liquidación',pairV(medTxt(a),cmp?medTxt(b):''),cmp?'sm':'warn','entre las cuentas liquidadas')+
     tile('Liq. en los primeros 20 días',pairV(earlyTxt(a),cmp?earlyTxt(b):''),cmp?'sm':'warn','% de todas las liquidaciones (5 años)');
   /* Curva acumulada */
@@ -663,9 +707,13 @@ function simulatePct(p,tpd,sims,seedBase,days){
   const store=xs.map(()=>new Float64Array(sims));
   for(let s=0;s<sims;s++){
     const rnd=mulberry32((seedBase+s*31337)>>>0);
-    let eq=0,dead=false,xi=0;
+    let eq=0,peak=0,dead=false,xi=0;
     for(let d=1;d<=days;d++){
-      if(!dead)for(let t=0;t<tpd;t++){eq+=rnd()<p.wr?p.win:-p.loss;if(eq<=-p.dd){dead=true;break}}
+      if(!dead)for(let t=0;t<tpd;t++){
+        eq+=rnd()<p.wr?p.win:-p.loss;
+        if(eq>peak)peak=eq;
+        if(eq<=floorOf(p.mode,peak,p.dd)){dead=true;break}
+      }
       if(xi<xs.length&&d===xs[xi]){store[xi][s]=eq;xi++}
     }
   }
@@ -680,16 +728,18 @@ function riskRow(p,label,loss,win,seedBase){
   const theta=solveTheta(pp);
   const kMed=252*p.tpd;
   const kMax=kMed+504*p.tpd; /* la curva de ruina es plana mucho antes de 3 años */
-  const sims=Math.max(400,Math.min(2000,Math.round(8e6/kMax)));
-  const safeEq=theta?p.dd+Math.log(sims*100)/theta:Infinity;
+  const budget=p.mode==='trail'?3e6:8e6;
+  const sims=Math.max(400,Math.min(2000,Math.round(budget/kMax)));
+  const safeEq=(theta&&p.mode!=='trail')?p.dd+Math.log(sims*100)/theta:Infinity;
   let ruin=0;const med=new Float64Array(sims);
   for(let s=0;s<sims;s++){
     const rnd=mulberry32((seedBase+s*7127)>>>0);
-    let eq=0,dead=false;
+    let eq=0,peak=0,dead=false;
     for(let k=1;k<=kMax;k++){
       if(!dead){
         eq+=rnd()<p.wr?win:-loss;
-        if(eq<=-p.dd){dead=true;ruin++}
+        if(eq>peak)peak=eq;
+        if(eq<=floorOf(p.mode,peak,p.dd)){dead=true;ruin++}
       }
       if(k===kMed)med[s]=eq;
       if(k>=kMed&&(dead||eq>=safeEq))break;
@@ -702,7 +752,35 @@ function riskRow(p,label,loss,win,seedBase){
     ruin:ruin/sims*100,
     med252:sorted[Math.floor(sims/2)]};
 }
-function renderAdv(p,cmp,runA,runB,pcts){
+/* Carrera de dos barreras: ¿la equidad alcanza +objetivo antes de tocar el
+   límite de liquidación? En modo estático existe fórmula cerrada (parada
+   opcional sobre la martingala e^(−θ·S)):
+   P(objetivo primero) = (e^(θ·DD) − 1) / (e^(θ·DD) − e^(−θ·T)). */
+function simulateRace(p,tpd,sims,seedBase){
+  const T=p.target,kCap=LIQ_DAYS*tpd;
+  let hits=0,ruins=0;const daysTo=[];
+  for(let s=0;s<sims;s++){
+    const rnd=mulberry32((seedBase+s*4241)>>>0);
+    let eq=0,peak=0;
+    for(let k=1;k<=kCap;k++){
+      eq+=rnd()<p.wr?p.win:-p.loss;
+      if(eq>peak)peak=eq;
+      if(eq>=T){hits++;daysTo.push(Math.ceil(k/tpd));break}
+      if(eq<=floorOf(p.mode,peak,p.dd)){ruins++;break}
+    }
+  }
+  daysTo.sort((a,b)=>a-b);
+  const q=f=>daysTo.length?daysTo[Math.min(daysTo.length-1,Math.floor(f*daysTo.length))]:null;
+  return {tpd,sims,hit:hits/sims*100,ruin:ruins/sims*100,d25:q(.25),d50:q(.5),d75:q(.75)};
+}
+function raceAnalytic(p){
+  if(p.mode!=='static')return null;
+  const theta=solveTheta(p);
+  if(theta===null)return null;
+  const a=Math.exp(theta*p.dd);
+  return (a-1)/(a-Math.exp(-theta*p.target))*100;
+}
+function renderAdv(p,cmp,runA,runB,pcts,races){
   const mA=dayMoments(p,p.tpd),mB=cmp?dayMoments(p,p.tpdB):null;
   const sharpe=m=>Math.sqrt(252)*m.mu/m.sd;
   const sortino=m=>m.ddev>1e-9?Math.sqrt(252)*m.mu/m.ddev:Infinity;
@@ -717,7 +795,7 @@ function renderAdv(p,cmp,runA,runB,pcts){
     tile('Sharpe anualizado',pair(f2(sharpe(mA)),cmp?f2(sharpe(mB)):''),cmp?'sm':'info','√252 · μ_día / σ_día — exacto de la binomial')+
     tile('Sortino anualizado',pair(f2(sortino(mA)),cmp?f2(sortino(mB)):''),cmp?'sm':'info','desviación solo de días negativos')+
     tile('Profit factor diario',pair(f2(mA.pf),cmp?f2(mB.pf):''),cmp?'sm':'good','por trade: '+f2(p.wr*p.win/((1-p.wr)*p.loss)))+
-    tile('Expectancia / trade',money(muT),signCls(muT),(muT/p.loss).toFixed(2)+' R por trade (R = $'+p.loss.toLocaleString('en-US')+')')+
+    tile('Expectancia / trade',money(muT),signCls(muT),(muT/p.loss).toFixed(2)+' R por trade (R = $'+p.loss.toLocaleString('en-US')+(p.cost>0?', neto de $'+p.cost+' de costes':'')+')')+
     tile('Kelly óptimo',kellyF>0?(kellyF*100).toFixed(1)+'%':'sin ventaja',kellyF>0?(p.loss<=kellyRisk?'good':'bad'):'bad',
          kellyF>0?('riesgo Kelly ≈ '+money(kellyRisk,false)+' — usas $'+p.loss.toLocaleString('en-US')+' = '+(p.loss/kellyRisk*100).toFixed(0)+'% del Kelly'):'f* ≤ 0: expectativa negativa')+
     tile('Calmar (esta simulación)',pair(f2(calmar(runA)),cmp?f2(calmar(runB)):''),cmp?'sm':'warn','retorno anualizado / máx. drawdown');
@@ -796,7 +874,7 @@ function renderAdv(p,cmp,runA,runB,pcts){
     rows.push(riskRow(p,(m===1?'Actual (1×)':m+'×'),Math.round(p.loss*m),Math.round(p.win*m),900007+((seed*7)>>>0)+Math.round(m*1000)));
   }
   if(kellyF>0)rows.push(riskRow(p,'Kelly (f*)',Math.round(kellyRisk),Math.round(kellyRisk*ratio),900007+((seed*7)>>>0)+99));
-  el('rkN').textContent='· mismo win rate y R:B, con '+p.tpd+' trades/día · ruina medida a 3 años';
+  el('rkN').textContent='· mismo win rate y R:B, con '+p.tpd+' trades/día · ruina medida a 3 años · '+MODE_LABEL[p.mode]+(p.cost>0?' · valores efectivos netos de costes':'');
   const rh='<tr><th>Tamaño</th><th>Riesgo / trade</th><th>Objetivo / trade</th><th>EV / día</th><th>Cota ∞ (Lundberg)</th><th>% ruina (MC)</th><th>Mediana 1 año</th></tr>';
   const rrows=rows.map(r=>{
     const cls=r.label.startsWith('Actual')?' class="sel"':(r.label.startsWith('Kelly')?' class="kelly"':'');
@@ -804,6 +882,16 @@ function renderAdv(p,cmp,runA,runB,pcts){
       `<td>${r.bound!==null?'≤ '+r.bound.toFixed(2)+'%':'→ 100%'}</td><td>${r.ruin.toFixed(2)}%</td><td>${money(r.med252)}</td></tr>`;
   }).join('');
   el('riskTable').innerHTML=`<table class="ltab">${rh}${rrows}</table>`;
+  /* ── Carrera objetivo vs liquidación ── */
+  const [rA,rB]=races;
+  const anal=raceAnalytic(p);
+  el('raceN').textContent='· ¿llega la cuenta a +'+money(p.target,false)+' antes de tocar el límite? · '+MODE_LABEL[p.mode]+' · '+races.map(r=>r.sims.toLocaleString('en-US')).join(' + ')+' sims';
+  const dTxt=r=>r.d50!==null?('día '+r.d50+' (P25 '+r.d25+' · P75 '+r.d75+')'):'—';
+  el('raceTiles').innerHTML=
+    tile('P(objetivo antes que ruina)',pair(rA.hit.toFixed(1)+'%',cmp?rB.hit.toFixed(1)+'%':''),cmp?'sm':(rA.hit>90?'good':'warn'),'Monte Carlo'+(cmp?' — misma prob. en el eje de trades':''))+
+    tile('Cota inferior (fórmula cerrada)',anal!==null?'≥ '+anal.toFixed(1)+'%':'—','info',anal!==null?'(e^(θ·DD)−1)/(e^(θ·DD)−e^(−θ·T)) sin corregir el overshoot — el MC queda un poco por encima':'solo existe en modo estático con EV > 0')+
+    tile('Mediana de días al objetivo',pair(rA.d50!==null?'día '+rA.d50:'—',cmp?(rB.d50!==null?'día '+rB.d50:'—'):''),cmp?'sm':'info',cmp?'entre las cuentas que llegan':dTxt(rA))+
+    tile('Ruina antes del objetivo',pair(rA.ruin.toFixed(1)+'%',cmp?rB.ruin.toFixed(1)+'%':''),cmp?'sm':(rA.ruin>10?'bad':'warn'),'toca el límite sin haber llegado a +'+money(p.target,false));
 }
 
 /* ───────────────────── Render: calendario ───────────────────── */
@@ -937,6 +1025,7 @@ el('cal').addEventListener('mouseover',e=>{
       html+=`<div class="t2">Trades: ${dA.wins}G / ${dA.losses}P</div>`+
         `<div class="t2">PnL del día: <b>${money(dA.pnl)}</b> (${pct(dA.pnl/curP.dd*100)})</div>`+
         `<div class="t2">Equidad acumulada: ${money(dA.equity)}</div>`+
+        (curP.mode!=='static'?`<div class="t2">Límite del día: ${money(dA.floor)}</div>`:'')+
         (dA.ruined?'<div class="t3">⚠ LÍMITE DE DRAWDOWN ALCANZADO — CUENTA LIQUIDADA</div>':'');
     }else{
       const dB=curRunB.days[i];
@@ -969,15 +1058,20 @@ function renderNotes(mcs,p,cmp,liq){
     ['#f87171',cmp
       ?`En modo comparación ambos escenarios comparten la misma secuencia de resultados por día (los primeros min(A,B) trades son idénticos); Δ aísla el efecto de los trades adicionales. Modelo idealizado: sin comisiones ni deslizamiento.`
       :`Modelo idealizado: resultados de trade independientes y de tamaño fijo, sin comisiones, deslizamiento ni cambios de régimen. La racha real puede ser peor que la simulada.`],
-    ['#0284c7',liq.bound!==null
-      ?`Backtest de liquidación: el riesgo de tocar −${money(p.dd,false)} depende solo del número de trades ejecutados, no del calendario${cmp?` — B recorre la misma curva de riesgo que A, ${(p.tpdB/p.tpd).toFixed(1).replace(/\.0$/,'')}× más rápido en días`:''}. Verificación analítica (cota de Lundberg): P(liquidación) ≤ e^(−θ·DD) = ${liq.bound.toFixed(2)}%; el backtest a 5 años mide ${liq.curves[0].total.toFixed(2)}%, por debajo de la cota, y la prob. de ruina del panel Monte Carlo debe coincidir con la curva en el horizonte seleccionado.`
-      :`Backtest de liquidación: con la configuración actual la expectativa por trade es ≤ $0, así que no existe cota de Lundberg — a horizonte infinito la liquidación es segura (100%); el backtest muestra qué tan rápido se llega.`],
+    ['#0284c7',(()=>{
+      const base=`Backtest de liquidación (${MODE_LABEL[p.mode]}): el riesgo vive en el eje de trades, no en el calendario${cmp?` — B recorre la misma curva de riesgo que A, ${(p.tpdB/p.tpd).toFixed(1).replace(/\.0$/,'')}× más rápido en días`:''}. `;
+      if(p.mode==='trail')return base+`Con trailing perpetuo el límite persigue al pico: a horizonte infinito la liquidación es segura; lo que se mide es cuándo (a 5 años: ${liq.curves[0].total.toFixed(2)}%).`;
+      if(p.mode==='cap')return base+`El límite sube con el pico hasta bloquearse en $0 (breakeven): sobrevivir los primeros +${money(p.dd,false)} de ganancia es la fase crítica. A 5 años: ${liq.curves[0].total.toFixed(2)}%.`;
+      return liq.bound!==null
+        ?base+`Verificación analítica (cota de Lundberg): P(liquidación) ≤ e^(−θ·DD) = ${liq.bound.toFixed(2)}%; el backtest a 5 años mide ${liq.curves[0].total.toFixed(2)}%, por debajo de la cota.`
+        :base+`Con expectativa por trade ≤ $0 no existe cota de Lundberg — a horizonte infinito la liquidación es segura (100%).`;
+    })()],
   ];
   el('notes').innerHTML=notes.map(([c,t])=>`<div class="fnote"><div class="bar" style="background:${c}"></div><div>${t}</div></div>`).join('');
 }
 
 /* ───────────────────── Orquestación ───────────────────── */
-let curP=null,curRunA=null,curRunB=null,seed=20260712,cmpOn=false;
+let curP=null,curRunA=null,curRunB=null,seed=20260712,cmpOn=false,curMode='static';
 function recompute(){
   curP=readParams();
   seed=Math.round(+el('inSeed').value)||seed;
@@ -993,17 +1087,26 @@ function recompute(){
   const pctSims=cmpOn?500:800;
   const pcts=[simulatePct(curP,curP.tpd,pctSims,500009+((seed*11)>>>0),curP.days)];
   if(cmpOn)pcts.push(simulatePct(curP,curP.tpdB,pctSims,500009+((seed*11)>>>0),curP.days));
+  const raceSims=cmpOn?2500:4000;
+  const races=[simulateRace(curP,curP.tpd,raceSims,300007+((seed*23)>>>0))];
+  if(cmpOn)races.push(simulateRace(curP,curP.tpdB,raceSims,300007+((seed*23)>>>0)));
   renderRunTiles(curRunA,curRunB,curP);
   renderEquity(curRunB?[curRunA,curRunB]:[curRunA],curP);
   renderMC(mcs,curP);
   renderLiq(liq,curP,cmpOn);
-  renderAdv(curP,cmpOn,curRunA,curRunB,pcts);
+  renderAdv(curP,cmpOn,curRunA,curRunB,pcts,races);
   renderCalendar(curRunA,curRunB,curP);
   renderNotes(mcs,curP,cmpOn,liq);
 }
 let deb=null;
 function queue(){clearTimeout(deb);deb=setTimeout(recompute,180)}
-['inWr','inWin','inLoss','inTpd','inTpdB','inDD','inSeed','inDays'].forEach(id=>el(id).addEventListener('input',queue));
+['inWr','inWin','inLoss','inTpd','inTpdB','inDD','inSeed','inDays','inCost','inTarget'].forEach(id=>el(id).addEventListener('input',queue));
+el('modeChips').addEventListener('click',e=>{
+  const c=e.target.closest('.chip');if(!c)return;
+  curMode=c.dataset.m;
+  document.querySelectorAll('#modeChips .chip').forEach(x=>x.classList.toggle('on',x===c));
+  recompute();
+});
 el('inDays').addEventListener('input',()=>{
   document.querySelectorAll('#chips .chip').forEach(c=>c.classList.toggle('on',+c.dataset.d===+el('inDays').value));
 });
