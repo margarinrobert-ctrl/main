@@ -460,7 +460,7 @@ function renderEquity(runs,p){
     const fA=series[0].days;
     const fpts=fA.map((d,i)=>`${x(i).toFixed(1)},${y(d.floor).toFixed(1)}`).join(' ');
     g+=`<polyline points="${x(0)},${y(-p.dd)} ${fpts}" fill="none" stroke="#ef4444" stroke-dasharray="6 4" stroke-width="1.4"/>`+
-       `<text x="${W-R}" y="${Math.max(T+10,y(fA[fA.length-1].floor)-6)}" text-anchor="end" fill="#f87171">LÍMITE ${p.mode==='trail'?'TRAILING':'TRAILING·TOPE $0'}${series.length>1?' (A)':''}</text>`;
+       `<text x="${W-R}" y="${Math.max(T+10,y(fA[fA.length-1].floor)-6)}" text-anchor="end" fill="#f87171">LÍMITE ${p.mode==='trail'?'TRAILING':(p.mode==='eod'?'TRAILING EOD':'TRAILING·LOCK')+' +$'+p.lock}${series.length>1?' (A)':''}</text>`;
   }
   for(const s of series){
     const pts=s.days.map((d,i)=>`${x(i).toFixed(1)},${y(d.equity).toFixed(1)}`);
