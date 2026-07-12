@@ -70,7 +70,11 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
 .ltab td{text-align:right;padding:6px 10px;border-bottom:1px solid var(--rule-2);color:var(--ink);white-space:nowrap}
 .ltab th:first-child,.ltab td:first-child{text-align:left}
 .ltab tr.sel td{background:rgba(2,132,199,.12)}
+.ltab tr.kelly td{background:rgba(5,150,105,.08)}
 .ltab td.dim{color:var(--ink-3)}
+.subh{font-size:12px;letter-spacing:.09em;color:var(--ink-2);font-weight:700;text-transform:uppercase;margin:18px 0 8px}
+.subh .hl{color:var(--cyan-hi)}
+.subh .sub{color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600}
 
 /* Calendar */
 .legend{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:var(--ink-2)}
@@ -181,6 +185,24 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
     <div class="legend" id="liqLegend" style="display:none;margin-bottom:6px"></div>
     <div class="chart-box"><svg id="liq" viewBox="0 0 860 250" width="100%" height="250" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Porcentaje acumulado de cuentas liquidadas por día de trading"></svg></div>
     <div id="liqTable" style="margin-top:14px;overflow-x:auto"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Cálculos <span class="hl">avanzados</span></h2>
+    <div class="tiles" id="advTiles"></div>
+    <div class="grid-2" style="margin-top:16px">
+      <div>
+        <div class="subh">Evolución del capital <span class="hl">(percentiles Monte Carlo)</span> <span class="sub" id="pctN"></span></div>
+        <div class="legend" id="pctLegend" style="margin-bottom:6px"></div>
+        <div class="chart-box"><svg id="pct" viewBox="0 0 860 260" width="100%" height="260" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bandas de percentiles del capital por día"></svg></div>
+      </div>
+      <div>
+        <div class="subh">Rachas perdedoras <span class="hl">(cálculo exacto)</span> <span class="sub" id="stN"></span></div>
+        <div style="overflow-x:auto"><div id="streakTable"></div></div>
+      </div>
+    </div>
+    <div class="subh" style="margin-top:20px">Explorador de riesgo por trade <span class="hl">(Kelly y ruina)</span> <span class="sub" id="rkN"></span></div>
+    <div id="riskTable" style="overflow-x:auto"></div>
   </section>
 
   <section class="panel">
@@ -607,6 +629,183 @@ function renderLiq(liq,p,cmp){
   el('liqTable').innerHTML=`<table class="ltab">${head}${rows}</table>`;
 }
 
+/* ─────────────── Cálculos avanzados ───────────────
+   Métricas cerradas (sin muestreo) a partir de la distribución binomial
+   exacta del resultado diario, DP exacto para rachas, y MC dirigido para
+   percentiles y tamaños de riesgo alternativos. */
+function dayMoments(p,tpd){
+  /* distribución exacta del PnL de un día: j ganadas ~ Binomial(tpd, wr) */
+  let c=1,mu=0,ex2=0,neg2=0,pos=0,neg=0;
+  for(let j=0;j<=tpd;j++){
+    if(j>0)c=c*(tpd-j+1)/j;
+    const prob=c*Math.pow(p.wr,j)*Math.pow(1-p.wr,tpd-j);
+    const pnl=j*p.win-(tpd-j)*p.loss;
+    mu+=prob*pnl;ex2+=prob*pnl*pnl;
+    if(pnl<0){neg2+=prob*pnl*pnl;neg+=prob*(-pnl)}else pos+=prob*pnl;
+  }
+  const sd=Math.sqrt(Math.max(0,ex2-mu*mu));
+  return {mu,sd,ddev:Math.sqrt(neg2),pf:neg>1e-12?pos/neg:Infinity};
+}
+/* P(al menos una racha de ≥k pérdidas consecutivas en n trades) — DP exacto:
+   f(i)=P(sin racha de k en i trades); f(i)=1 para i<k;
+   f(i)=Σ_{j=0..k-1} q^j·p·f(i−1−j) condicionando en la primera ganancia. */
+function probLosingStreak(wr,n,k){
+  if(k>n)return 0;
+  const q=1-wr,f=new Float64Array(n+1);
+  for(let i=0;i<k&&i<=n;i++)f[i]=1;
+  const qp=new Float64Array(k);for(let j=0;j<k;j++)qp[j]=Math.pow(q,j);
+  for(let i=k;i<=n;i++){let s=0;for(let j=0;j<k;j++)s+=qp[j]*f[i-1-j];f[i]=wr*s}
+  return 1-f[n];
+}
+function simulatePct(p,tpd,sims,seedBase,days){
+  const stride=Math.max(1,Math.ceil(days/64));
+  const xs=[];for(let d=stride;d<days;d+=stride)xs.push(d);xs.push(days);
+  const store=xs.map(()=>new Float64Array(sims));
+  for(let s=0;s<sims;s++){
+    const rnd=mulberry32((seedBase+s*31337)>>>0);
+    let eq=0,dead=false,xi=0;
+    for(let d=1;d<=days;d++){
+      if(!dead)for(let t=0;t<tpd;t++){eq+=rnd()<p.wr?p.win:-p.loss;if(eq<=-p.dd){dead=true;break}}
+      if(xi<xs.length&&d===xs[xi]){store[xi][s]=eq;xi++}
+    }
+  }
+  const q=(arr,f)=>{const a=Array.from(arr).sort((x,y)=>x-y);return a[Math.min(sims-1,Math.floor(f*sims))]};
+  return {tpd,sims,xs,
+    q05:store.map(a=>q(a,.05)),q25:store.map(a=>q(a,.25)),q50:store.map(a=>q(a,.5)),
+    q75:store.map(a=>q(a,.75)),q95:store.map(a=>q(a,.95))};
+}
+/* Una fila del explorador: mismo win rate y misma relación R:B, riesgo escalado. */
+function riskRow(p,label,loss,win,seedBase){
+  const pp={wr:p.wr,win,loss,dd:p.dd};
+  const theta=solveTheta(pp);
+  const kMed=252*p.tpd;
+  const kMax=kMed+504*p.tpd; /* la curva de ruina es plana mucho antes de 3 años */
+  const sims=Math.max(400,Math.min(2000,Math.round(8e6/kMax)));
+  const safeEq=theta?p.dd+Math.log(sims*100)/theta:Infinity;
+  let ruin=0;const med=new Float64Array(sims);
+  for(let s=0;s<sims;s++){
+    const rnd=mulberry32((seedBase+s*7127)>>>0);
+    let eq=0,dead=false;
+    for(let k=1;k<=kMax;k++){
+      if(!dead){
+        eq+=rnd()<p.wr?win:-loss;
+        if(eq<=-p.dd){dead=true;ruin++}
+      }
+      if(k===kMed)med[s]=eq;
+      if(k>=kMed&&(dead||eq>=safeEq))break;
+    }
+  }
+  const sorted=Array.from(med).sort((a,b)=>a-b);
+  return {label,loss,win,sims,
+    evDay:p.tpd*(p.wr*win-(1-p.wr)*loss),
+    bound:theta!==null?Math.exp(-theta*p.dd)*100:null,
+    ruin:ruin/sims*100,
+    med252:sorted[Math.floor(sims/2)]};
+}
+function renderAdv(p,cmp,runA,runB,pcts){
+  const mA=dayMoments(p,p.tpd),mB=cmp?dayMoments(p,p.tpdB):null;
+  const sharpe=m=>Math.sqrt(252)*m.mu/m.sd;
+  const sortino=m=>m.ddev>1e-9?Math.sqrt(252)*m.mu/m.ddev:Infinity;
+  const muT=p.wr*p.win-(1-p.wr)*p.loss;
+  const b=p.win/p.loss;
+  const kellyF=p.wr-(1-p.wr)/b;
+  const kellyRisk=kellyF*p.dd;
+  const calmar=r=>r.maxDD>0?(r.final/p.days*252)/r.maxDD:Infinity;
+  const f2=v=>isFinite(v)?v.toFixed(2):'∞';
+  const pair=(fa,fb)=>cmp?`A ${fa}<br>B ${fb}`:fa;
+  el('advTiles').innerHTML=
+    tile('Sharpe anualizado',pair(f2(sharpe(mA)),cmp?f2(sharpe(mB)):''),cmp?'sm':'info','√252 · μ_día / σ_día — exacto de la binomial')+
+    tile('Sortino anualizado',pair(f2(sortino(mA)),cmp?f2(sortino(mB)):''),cmp?'sm':'info','desviación solo de días negativos')+
+    tile('Profit factor diario',pair(f2(mA.pf),cmp?f2(mB.pf):''),cmp?'sm':'good','por trade: '+f2(p.wr*p.win/((1-p.wr)*p.loss)))+
+    tile('Expectancia / trade',money(muT),signCls(muT),(muT/p.loss).toFixed(2)+' R por trade (R = $'+p.loss.toLocaleString('en-US')+')')+
+    tile('Kelly óptimo',kellyF>0?(kellyF*100).toFixed(1)+'%':'sin ventaja',kellyF>0?(p.loss<=kellyRisk?'good':'bad'):'bad',
+         kellyF>0?('riesgo Kelly ≈ '+money(kellyRisk,false)+' — usas $'+p.loss.toLocaleString('en-US')+' = '+(p.loss/kellyRisk*100).toFixed(0)+'% del Kelly'):'f* ≤ 0: expectativa negativa')+
+    tile('Calmar (esta simulación)',pair(f2(calmar(runA)),cmp?f2(calmar(runB)):''),cmp?'sm':'warn','retorno anualizado / máx. drawdown');
+  /* ── Percentiles ── */
+  el('pctN').textContent='· '+pcts.map(x=>x.sims.toLocaleString('en-US')).join(' + ')+' sims · horizonte seleccionado';
+  const svg=el('pct');const W=860,H=260,L=64,R=26,T=12,B=30;
+  const A=pcts[0],Bp=pcts[1]||null;
+  const yMin=Math.min(-p.dd*1.15,...A.q05,...(Bp?Bp.q05:[]));
+  const yMax=Math.max(p.dd*0.2,...A.q95,...(Bp?Bp.q95:[]))*1.06;
+  const days=p.days;
+  const x=d=>L+(W-L-R)*d/days;
+  const y=v=>T+(H-T-B)*(1-(v-yMin)/(yMax-yMin));
+  let g='';
+  for(let i=0;i<=4;i++){
+    const v=yMin+(yMax-yMin)*i/4;
+    g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,.06)"/>`+
+       `<text x="${L-8}" y="${y(v)+3}" text-anchor="end">${v>=0?'':'−'}$${Math.abs(Math.round(v)).toLocaleString('en-US')}</text>`;
+  }
+  const xt=Math.min(6,days-1);
+  for(let i=0;i<=xt;i++){
+    const d=Math.round(days*i/xt)||1;
+    g+=`<text x="${x(d)}" y="${H-8}" text-anchor="${i===xt?'end':'middle'}">día ${d}</text>`;
+  }
+  if(y(0)>T&&y(0)<H-B)g+=`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="rgba(255,255,255,.18)"/>`;
+  g+=`<line x1="${L}" x2="${W-R}" y1="${y(-p.dd)}" y2="${y(-p.dd)}" stroke="#ef4444" stroke-dasharray="6 4" stroke-width="1.3"/>`;
+  const path=(xsArr,ys)=>xsArr.map((d,i)=>`${x(d).toFixed(1)},${y(ys[i]).toFixed(1)}`).join(' ');
+  const band=(lo,hi,op)=>`<polygon points="${x(0)},${y(0)} ${path(A.xs,hi)} ${[...A.xs].reverse().map((d,i)=>`${x(d).toFixed(1)},${y(lo[A.xs.length-1-i]).toFixed(1)}`).join(' ')} ${x(0)},${y(0)}" fill="rgba(5,150,105,${op})"/>`;
+  g+=band(A.q05,A.q95,'.10')+band(A.q25,A.q75,'.16');
+  g+=`<polyline points="${x(0)},${y(0)} ${path(A.xs,A.q50)}" fill="none" stroke="${COL_A}" stroke-width="2"/>`;
+  if(Bp){
+    g+=`<polyline points="${x(0)},${y(0)} ${path(Bp.xs,Bp.q50)}" fill="none" stroke="${COL_B}" stroke-width="2"/>`+
+       `<polyline points="${x(0)},${y(0)} ${path(Bp.xs,Bp.q05)}" fill="none" stroke="${COL_B}" stroke-width="1.2" stroke-dasharray="4 4"/>`+
+       `<polyline points="${x(0)},${y(0)} ${path(Bp.xs,Bp.q95)}" fill="none" stroke="${COL_B}" stroke-width="1.2" stroke-dasharray="4 4"/>`;
+  }
+  g+=`<line id="pctCross" x1="0" x2="0" y1="${T}" y2="${H-B}" stroke="rgba(255,255,255,.35)" visibility="hidden"/>`+
+     `<rect id="pctHit" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/>`;
+  svg.innerHTML=g;
+  el('pctLegend').innerHTML=
+    `<span><span class="sw" style="background:rgba(5,150,105,.35)"></span>A banda 5–95%</span>`+
+    `<span><span class="sw" style="background:rgba(5,150,105,.6)"></span>A banda 25–75%</span>`+
+    `<span><span class="sw" style="background:${COL_A}"></span>A mediana</span>`+
+    (Bp?`<span><span class="sw" style="background:${COL_B}"></span>B mediana (P5/P95 punteadas)</span>`:'');
+  const hit=el('pctHit'),cross=el('pctCross');
+  hit.onmousemove=e=>{
+    const r=svg.getBoundingClientRect();
+    const px=(e.clientX-r.left)*(W/r.width);
+    const d=Math.max(1,Math.min(days,Math.round((px-L)/(W-L-R)*days)));
+    let xi=0;for(let i=0;i<A.xs.length;i++){if(Math.abs(A.xs[i]-d)<Math.abs(A.xs[xi]-d))xi=i}
+    cross.setAttribute('x1',x(A.xs[xi]));cross.setAttribute('x2',x(A.xs[xi]));cross.setAttribute('visibility','visible');
+    let html=`<div class="t1">Día ${A.xs[xi]}</div>`+
+      `<div class="t2">A — P95: ${money(A.q95[xi])} · P75: ${money(A.q75[xi])}</div>`+
+      `<div class="t2">A — <b>mediana: ${money(A.q50[xi])}</b></div>`+
+      `<div class="t2">A — P25: ${money(A.q25[xi])} · P5: ${money(A.q05[xi])}</div>`;
+    if(Bp)html+=`<div class="t2">B — <b>mediana: ${money(Bp.q50[xi])}</b> (P5 ${money(Bp.q05[xi])} · P95 ${money(Bp.q95[xi])})</div>`;
+    showTip(e,html);
+  };
+  hit.onmouseleave=()=>{cross.setAttribute('visibility','hidden');hideTip()};
+  /* ── Rachas ── */
+  const nA=p.days*p.tpd,nB=cmp?p.days*p.tpdB:0;
+  el('stN').textContent='· '+nA.toLocaleString('en-US')+' trades'+(cmp?' (A) / '+nB.toLocaleString('en-US')+' (B)':'');
+  let sh=cmp?'<tr><th>Racha de pérdidas</th><th>Pérdida acumulada</th><th>P(ocurre) A</th><th>P(ocurre) B</th></tr>'
+           :'<tr><th>Racha de pérdidas</th><th>Pérdida acumulada</th><th>P(ocurre en el horizonte)</th></tr>';
+  let srows='';
+  for(let k=3;k<=10;k++){
+    const pa=probLosingStreak(p.wr,nA,k)*100;
+    const cum=k*p.loss;
+    const danger=cum>=p.dd;
+    srows+=`<tr><td>${k} trades seguidos${danger?' ⚠':''}</td><td class="${danger?'':'dim'}">${money(-cum)}${danger?' ≥ límite':''}</td><td>${pa<0.005?'<0.01%':pa.toFixed(2)+'%'}</td>`+
+      (cmp?`<td>${(probLosingStreak(p.wr,nB,k)*100).toFixed(2)}%</td>`:'')+'</tr>';
+  }
+  el('streakTable').innerHTML=`<table class="ltab">${sh}${srows}</table>`;
+  /* ── Explorador de riesgo ── */
+  const ratio=p.win/p.loss;
+  const rows=[];
+  for(const m of [0.5,0.75,1,1.25,1.5]){
+    rows.push(riskRow(p,(m===1?'Actual (1×)':m+'×'),Math.round(p.loss*m),Math.round(p.win*m),900007+((seed*7)>>>0)+Math.round(m*1000)));
+  }
+  if(kellyF>0)rows.push(riskRow(p,'Kelly (f*)',Math.round(kellyRisk),Math.round(kellyRisk*ratio),900007+((seed*7)>>>0)+99));
+  el('rkN').textContent='· mismo win rate y R:B, con '+p.tpd+' trades/día · ruina medida a 3 años';
+  const rh='<tr><th>Tamaño</th><th>Riesgo / trade</th><th>Objetivo / trade</th><th>EV / día</th><th>Cota ∞ (Lundberg)</th><th>% ruina (MC)</th><th>Mediana 1 año</th></tr>';
+  const rrows=rows.map(r=>{
+    const cls=r.label.startsWith('Actual')?' class="sel"':(r.label.startsWith('Kelly')?' class="kelly"':'');
+    return `<tr${cls}><td>${r.label}</td><td>${money(-r.loss)}</td><td>${money(r.win)}</td><td>${money(r.evDay)}</td>`+
+      `<td>${r.bound!==null?'≤ '+r.bound.toFixed(2)+'%':'→ 100%'}</td><td>${r.ruin.toFixed(2)}%</td><td>${money(r.med252)}</td></tr>`;
+  }).join('');
+  el('riskTable').innerHTML=`<table class="ltab">${rh}${rrows}</table>`;
+}
+
 /* ───────────────────── Render: calendario ───────────────────── */
 function baseLegend(cmp){
   el('calLegend').innerHTML=cmp?
@@ -791,10 +990,14 @@ function recompute(){
   if(cmpOn)mcs.push(simulateMC(curP,curP.tpdB,sims,100003+((seed*31)>>>0)));
   const liq=simulateLiq(curP,cmpOn?[curP.tpd,curP.tpdB]:[curP.tpd],700003+((seed*13)>>>0));
   el('badgeDD').textContent='CON $'+curP.dd.toLocaleString('en-US')+' DE DRAWDOWN DISPONIBLE';
+  const pctSims=cmpOn?500:800;
+  const pcts=[simulatePct(curP,curP.tpd,pctSims,500009+((seed*11)>>>0),curP.days)];
+  if(cmpOn)pcts.push(simulatePct(curP,curP.tpdB,pctSims,500009+((seed*11)>>>0),curP.days));
   renderRunTiles(curRunA,curRunB,curP);
   renderEquity(curRunB?[curRunA,curRunB]:[curRunA],curP);
   renderMC(mcs,curP);
   renderLiq(liq,curP,cmpOn);
+  renderAdv(curP,cmpOn,curRunA,curRunB,pcts);
   renderCalendar(curRunA,curRunB,curP);
   renderNotes(mcs,curP,cmpOn,liq);
 }
