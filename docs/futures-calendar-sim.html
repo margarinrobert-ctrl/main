@@ -39,12 +39,14 @@ h1{margin:0;font-size:clamp(22px,3.4vw,34px);letter-spacing:.04em;font-weight:80
 .field label{font-size:11px;letter-spacing:.07em;color:var(--ink-2);font-weight:700;text-transform:uppercase}
 .field input{background:var(--surface-2);border:1px solid var(--rule);color:var(--ink);border-radius:8px;padding:7px 10px;font-family:var(--mono);font-size:14px;width:110px}
 .field input:focus{outline:none;border-color:var(--info)}
+.field input:disabled{opacity:.35}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .chip{background:var(--surface-2);border:1px solid var(--rule);color:var(--ink-2);border-radius:8px;padding:7px 12px;font-weight:700;font-size:12.5px;cursor:pointer;letter-spacing:.03em}
 .chip:hover{color:var(--ink);border-color:var(--ink-3)}
 .chip.on{background:rgba(5,150,105,.16);border-color:var(--win-hi);color:var(--win-hi)}
 .btn{background:rgba(2,132,199,.15);border:1px solid var(--cyan-hi);color:var(--cyan-hi);border-radius:8px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer;letter-spacing:.03em}
 .btn:hover{background:rgba(2,132,199,.28)}
+.btn.on{background:rgba(5,150,105,.18);border-color:var(--win-hi);color:var(--win-hi)}
 .note-inline{font-size:11.5px;color:var(--ink-3);margin-top:10px}
 
 /* Stat tiles */
@@ -52,6 +54,7 @@ h1{margin:0;font-size:clamp(22px,3.4vw,34px);letter-spacing:.04em;font-weight:80
 .tile{background:var(--surface-2);border:1px solid var(--rule-2);border-radius:10px;padding:10px 12px}
 .tile .k{font-size:10.5px;letter-spacing:.08em;color:var(--ink-2);font-weight:700;text-transform:uppercase}
 .tile .v{font-family:var(--mono);font-size:19px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+.tile .v.sm{font-size:13.5px;line-height:1.5}
 .tile .s{font-size:11px;color:var(--ink-3);margin-top:2px;font-variant-numeric:tabular-nums}
 .v.good{color:var(--win-hi)} .v.bad{color:var(--loss-hi)} .v.warn{color:var(--amber-hi)} .v.info{color:var(--cyan-hi)}
 
@@ -68,17 +71,21 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
 .yearbar:first-child{margin-top:0}
 .yearbar .y{font-size:20px;font-weight:800;letter-spacing:.06em}
 .yearbar .yt{font-family:var(--mono);font-weight:700;font-size:15px;font-variant-numeric:tabular-nums}
-.yearbar .yd{font-size:12px;color:var(--ink-3)}
+.yearbar .yd{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
 .months{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:12px}
+#cal.cmp .months{grid-template-columns:repeat(auto-fill,minmax(310px,1fr))}
 .month{background:var(--surface-2);border:1px solid var(--rule-2);border-radius:12px;padding:10px 10px 8px}
-.month h3{margin:0 0 8px;font-size:12px;letter-spacing:.09em;color:var(--ink);font-weight:800;text-transform:uppercase;display:flex;justify-content:space-between;align-items:baseline}
-.month h3 .mt{font-family:var(--mono);font-size:11.5px;font-weight:700}
+.month h3{margin:0 0 8px;font-size:12px;letter-spacing:.09em;color:var(--ink);font-weight:800;text-transform:uppercase;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.month h3 .mt{font-family:var(--mono);font-size:11.5px;font-weight:700;white-space:nowrap}
 .mgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:3px}
 .dow{font-size:9.5px;color:var(--ink-3);text-align:center;font-weight:700;padding-bottom:2px}
 .cell{border-radius:6px;min-height:44px;padding:3px 4px 2px;position:relative;background:var(--surface-3);border:1px solid transparent}
+#cal.cmp .cell{min-height:66px}
 .cell .d{font-size:9px;color:var(--ink-3);line-height:1}
 .cell .p{font-family:var(--mono);font-size:11px;font-weight:700;line-height:1.25;margin-top:2px;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
 .cell .pc{font-family:var(--mono);font-size:9.5px;color:var(--ink-2);line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cell .ab{font-family:var(--mono);font-size:9.5px;color:var(--ink-2);line-height:1.35;margin-top:1px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cell .ab b{color:var(--ink);font-weight:700}
 .cell.trade{cursor:default}
 .cell.trade:hover{border-color:var(--ink-3)}
 .cell.blank{background:transparent}
@@ -87,15 +94,16 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
 .cell.dead{background:transparent;border:1px dashed rgba(239,68,68,.35)}
 .cell.dead .p{color:var(--ink-3)}
 .cell.ruin{outline:2px solid var(--loss-hi);outline-offset:-1px}
-.mfoot{display:flex;justify-content:space-between;margin-top:7px;font-size:10.5px;color:var(--ink-3);font-family:var(--mono);font-variant-numeric:tabular-nums}
+.mfoot{display:flex;justify-content:space-between;gap:8px;margin-top:7px;font-size:10.5px;color:var(--ink-3);font-family:var(--mono);font-variant-numeric:tabular-nums}
 
 .foot-notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
 .fnote{display:flex;gap:10px;font-size:12px;color:var(--ink-2)}
 .fnote .bar{width:3px;border-radius:2px;flex:none}
 
-#tip{position:fixed;z-index:50;pointer-events:none;background:#070a12;border:1px solid var(--rule);border-radius:8px;padding:8px 11px;font-size:12px;line-height:1.5;display:none;max-width:270px;box-shadow:0 6px 24px rgba(0,0,0,.55)}
+#tip{position:fixed;z-index:50;pointer-events:none;background:#070a12;border:1px solid var(--rule);border-radius:8px;padding:8px 11px;font-size:12px;line-height:1.5;display:none;max-width:300px;box-shadow:0 6px 24px rgba(0,0,0,.55)}
 #tip .t1{font-weight:700;color:var(--ink)}
 #tip .t2{color:var(--ink-2);font-family:var(--mono);font-variant-numeric:tabular-nums}
+#tip .t2 b{color:var(--ink)}
 #tip .t3{color:var(--loss-hi);font-weight:700}
 </style>
 </head>
@@ -115,7 +123,7 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
       <div class="field"><label for="inWr">Win rate %</label><input id="inWr" type="number" value="73" min="1" max="99" step="1"></div>
       <div class="field"><label for="inWin">Ganancia / trade $</label><input id="inWin" type="number" value="250" min="1" step="10"></div>
       <div class="field"><label for="inLoss">Pérdida / trade $</label><input id="inLoss" type="number" value="300" min="1" step="10"></div>
-      <div class="field"><label for="inTpd">Trades / día</label><input id="inTpd" type="number" value="2" min="1" max="20" step="1"></div>
+      <div class="field"><label for="inTpd">Trades / día (A)</label><input id="inTpd" type="number" value="2" min="1" max="20" step="1"></div>
       <div class="field"><label for="inDD">Drawdown disp. $</label><input id="inDD" type="number" value="1400" min="100" step="100"></div>
       <div class="field"><label for="inSeed">Semilla</label><input id="inSeed" type="number" value="20260712" step="1"></div>
       <button class="btn" id="btnRoll">🎲 Nueva simulación</button>
@@ -134,8 +142,10 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
         </div>
       </div>
       <div class="field"><label for="inDays">Personalizado</label><input id="inDays" type="number" value="252" min="20" max="1260" step="1"></div>
+      <button class="btn" id="btnCmp">⚖ Comparar trades/día: OFF</button>
+      <div class="field"><label for="inTpdB">Trades / día (B)</label><input id="inTpdB" type="number" value="4" min="1" max="20" step="1" disabled></div>
     </div>
-    <div class="note-inline">Modelo basado únicamente en tiempo: N operaciones por día de mercado (lun–vie, excluye festivos CME), sin dependencia del precio. La cuenta se liquida si la pérdida acumulada toca el límite de drawdown.</div>
+    <div class="note-inline">Modelo basado únicamente en tiempo: N operaciones por día de mercado (lun–vie, excluye festivos CME), sin dependencia del precio. La cuenta se liquida si la pérdida acumulada toca el límite de drawdown. En modo comparación, A y B viven el mismo día: los primeros min(A,B) trades de cada día son idénticos en ambos escenarios — la diferencia Δ muestra exactamente lo que aportan (o cuestan) los trades adicionales.</div>
   </section>
 
   <section class="panel">
@@ -146,24 +156,20 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
   <div class="grid-2">
     <section class="panel">
       <h2>Curva de <span class="hl">equidad diaria</span></h2>
+      <div class="legend" id="eqLegend" style="display:none;margin-bottom:8px"></div>
       <div class="chart-box"><svg id="eq" viewBox="0 0 860 280" width="100%" height="280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Curva de equidad diaria de la simulación"></svg></div>
     </section>
     <section class="panel">
       <h2>Monte Carlo <span class="hl" id="mcN"></span></h2>
       <div class="mc-tiles" id="mcTiles"></div>
+      <div class="legend" id="histLegend" style="display:none;margin-bottom:6px"></div>
       <div class="chart-box"><svg id="hist" viewBox="0 0 520 150" width="100%" height="150" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Distribución de resultados finales Monte Carlo"></svg></div>
     </section>
   </div>
 
   <section class="panel">
     <h2>Calendario <span class="hl">de PnL diario</span></h2>
-    <div class="legend">
-      <span><span class="sw" style="background:rgba(5,150,105,.55)"></span>Día ganador (+$ / +%)</span>
-      <span><span class="sw" style="background:rgba(239,68,68,.55)"></span>Día perdedor (−$ / −%)</span>
-      <span><span class="sw" style="background:repeating-linear-gradient(45deg,#1c2230 0 4px,rgba(255,255,255,.08) 4px 8px)"></span>Festivo CME</span>
-      <span><span class="sw" style="border:1px dashed rgba(239,68,68,.6);background:transparent"></span>Post-liquidación</span>
-      <span style="color:var(--ink-3)">% = PnL del día sobre el drawdown disponible</span>
-    </div>
+    <div class="legend" id="calLegend"></div>
     <div id="cal"></div>
   </section>
 
@@ -179,6 +185,13 @@ svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
 'use strict';
 /* ───────────────────────── RNG ───────────────────────── */
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+/* Un stream independiente por día de calendario: el día i produce la misma
+   secuencia de resultados sin importar cuántos trades tome cada escenario. */
+function dayStream(seed,i){
+  let h=(seed>>>0)^Math.imul(i+1,0x9E3779B1);
+  h=Math.imul(h^h>>>16,0x85EBCA6B);h=Math.imul(h^h>>>13,0xC2B2AE35);h^=h>>>16;
+  return mulberry32(h>>>0);
+}
 
 /* ─────────────── Calendario CME (festivos) ─────────────── */
 function easterSunday(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=(h+l-7*m+114)%31+1;return new Date(y,mo-1,da)}
@@ -211,18 +224,19 @@ function readParams(){
     win: Math.max(1,+el('inWin').value||250),
     loss: Math.max(1,+el('inLoss').value||300),
     tpd: Math.min(20,Math.max(1,Math.round(+el('inTpd').value||2))),
+    tpdB: Math.min(20,Math.max(1,Math.round(+el('inTpdB').value||4))),
     dd: Math.max(100,+el('inDD').value||1400),
     days: Math.min(1260,Math.max(20,Math.round(+el('inDays').value||252)))
   };
 }
-function simulateRun(p,seed,dates){
-  const rnd=mulberry32(seed);
+function simulateRun(p,tpd,seed,dates){
   const days=[];let equity=0,peak=0,maxDD=0,ruinDay=-1;
   let best=-Infinity,worst=Infinity,greens=0,reds=0,flats=0,streak=0,maxStreak=0;
   for(let i=0;i<dates.length;i++){
-    if(ruinDay>=0){days.push({date:dates[i],active:false});continue}
+    if(ruinDay>=0){days.push({date:dates[i],active:false,pnl:0});continue}
+    const rnd=dayStream(seed,i);
     let wins=0,losses=0,pnl=0,ruinedToday=false;
-    for(let t=0;t<p.tpd;t++){
+    for(let t=0;t<tpd;t++){
       if(rnd()<p.wr){wins++;pnl+=p.win}else{losses++;pnl-=p.loss}
       if(equity+pnl<=-p.dd){ruinedToday=true;break}
     }
@@ -236,16 +250,16 @@ function simulateRun(p,seed,dates){
     if(ruinedToday)ruinDay=i;
   }
   const traded=days.filter(d=>d.active).length;
-  return {days,final:equity,maxDD,ruinDay,best,worst,greens,reds,flats,maxStreak,traded,
+  return {tpd,days,final:equity,maxDD,ruinDay,best,worst,greens,reds,flats,maxStreak,traded,
           avgDaily:traded?equity/traded:0};
 }
-function simulateMC(p,sims,seedBase){
+function simulateMC(p,tpd,sims,seedBase){
   const finals=new Float64Array(sims);let ruins=0,pos=0;
   for(let s=0;s<sims;s++){
     const rnd=mulberry32(seedBase+s*7919);
     let eq=0,dead=false;
     for(let i=0;i<p.days&&!dead;i++){
-      for(let t=0;t<p.tpd;t++){
+      for(let t=0;t<tpd;t++){
         eq+=rnd()<p.wr?p.win:-p.loss;
         if(eq<=-p.dd){dead=true;break}
       }
@@ -255,7 +269,7 @@ function simulateMC(p,sims,seedBase){
   const sorted=Array.from(finals).sort((a,b)=>a-b);
   const q=f=>sorted[Math.min(sims-1,Math.floor(f*sims))];
   const mean=sorted.reduce((a,b)=>a+b,0)/sims;
-  return {finals:sorted,ruins,pos,sims,mean,p5:q(.05),p50:q(.5),p95:q(.95)};
+  return {tpd,finals:sorted,ruins,pos,sims,mean,p5:q(.05),p50:q(.5),p95:q(.95)};
 }
 
 /* ───────────────────── Formato ───────────────────── */
@@ -266,34 +280,49 @@ const MES=['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SE
 const MES_S=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
 const DOW_S=['dom','lun','mar','mié','jue','vie','sáb'];
 function fmtDate(d){return DOW_S[d.getDay()]+' '+d.getDate()+' '+MES_S[d.getMonth()]+' '+d.getFullYear()}
+const signCls=v=>v>0?'good':v<0?'bad':'warn';
+const COL_A='#059669',COL_B='#0284c7';
 
 /* ───────────────────── Render: tiles ───────────────────── */
 function tile(k,v,cls,s){return `<div class="tile"><div class="k">${k}</div><div class="v ${cls||''}">${v}</div>${s?`<div class="s">${s}</div>`:''}</div>`}
-function renderRunTiles(run,p){
-  const retPct=run.final/p.dd*100;
-  const gdPct=run.traded?run.greens/run.traded*100:0;
-  el('runRange').textContent='· '+fmtDate(run.days[0].date)+' → '+fmtDate(run.days[run.days.length-1].date);
+function renderRunTiles(runA,runB,p){
+  el('runRange').textContent='· '+fmtDate(runA.days[0].date)+' → '+fmtDate(runA.days[runA.days.length-1].date);
+  if(!runB){
+    const retPct=runA.final/p.dd*100;
+    const gdPct=runA.traded?runA.greens/runA.traded*100:0;
+    el('runTiles').innerHTML=
+      tile('PnL total',money(runA.final),signCls(runA.final),pct(retPct)+' sobre el drawdown')+
+      tile('Promedio / día',money(runA.avgDaily),signCls(runA.avgDaily),runA.traded+' días operados')+
+      tile('Días verdes',runA.greens+' / '+runA.traded,'info',pct(gdPct,1,false)+' de los días')+
+      tile('Mejor día',money(runA.best),'good',pct(runA.best/p.dd*100)+' del drawdown')+
+      tile('Peor día',money(runA.worst),'bad',pct(runA.worst/p.dd*100)+' del drawdown')+
+      tile('Máx. drawdown',money(-runA.maxDD),'warn','desde el pico de equidad')+
+      tile('Racha roja máx.',runA.maxStreak+' días','warn','pérdidas consecutivas')+
+      tile('Estado de la cuenta',runA.ruinDay>=0?'LIQUIDADA':'ACTIVA ✓',runA.ruinDay>=0?'bad':'good',
+           runA.ruinDay>=0?'límite tocado el día '+(runA.ruinDay+1):'nunca tocó el límite −'+money(p.dd,false).slice(1));
+    return;
+  }
+  const dif=runB.final-runA.final;
+  const estado=r=>r.ruinDay>=0?'LIQUIDADA día '+(r.ruinDay+1):'ACTIVA ✓';
   el('runTiles').innerHTML=
-    tile('PnL total',money(run.final),run.final>=0?'good':'bad',pct(retPct)+' sobre el drawdown')+
-    tile('Promedio / día',money(run.avgDaily),run.avgDaily>=0?'good':'bad',run.traded+' días operados')+
-    tile('Días verdes',run.greens+' / '+run.traded,'info',pct(gdPct,1,false)+' de los días')+
-    tile('Mejor día',money(run.best),'good',pct(run.best/p.dd*100)+' del drawdown')+
-    tile('Peor día',money(run.worst),'bad',pct(run.worst/p.dd*100)+' del drawdown')+
-    tile('Máx. drawdown',money(-run.maxDD),'warn','desde el pico de equidad')+
-    tile('Racha roja máx.',run.maxStreak+' días','warn','pérdidas consecutivas')+
-    tile('Estado de la cuenta',run.ruinDay>=0?'LIQUIDADA':'ACTIVA ✓',run.ruinDay>=0?'bad':'good',
-         run.ruinDay>=0?'límite tocado el día '+(run.ruinDay+1):'nunca tocó el límite −'+money(p.dd,false).slice(1));
+    tile(`PnL total A (${runA.tpd} t/d)`,money(runA.final),signCls(runA.final),pct(runA.final/p.dd*100)+' sobre el drawdown')+
+    tile(`PnL total B (${runB.tpd} t/d)`,money(runB.final),signCls(runB.final),pct(runB.final/p.dd*100)+' sobre el drawdown')+
+    tile('Diferencia (B − A)',money(dif),signCls(dif),pct(dif/p.dd*100)+' del drawdown')+
+    tile('Promedio / día',`A ${money(runA.avgDaily)}<br>B ${money(runB.avgDaily)}`,'sm','por día operado')+
+    tile('Días verdes',`A ${runA.greens}/${runA.traded} (${pct(runA.traded?runA.greens/runA.traded*100:0,0,false)})<br>B ${runB.greens}/${runB.traded} (${pct(runB.traded?runB.greens/runB.traded*100:0,0,false)})`,'sm','')+
+    tile('Máx. drawdown',`A ${money(-runA.maxDD)}<br>B ${money(-runB.maxDD)}`,'sm','desde el pico de equidad')+
+    tile('Racha roja máx.',`A ${runA.maxStreak} días<br>B ${runB.maxStreak} días`,'sm','pérdidas consecutivas')+
+    tile('Estado',`A: ${estado(runA)}<br>B: ${estado(runB)}`,'sm '+((runA.ruinDay>=0||runB.ruinDay>=0)?'bad':'good'),'');
 }
 
 /* ───────────────────── Render: curva de equidad ───────────────────── */
-let eqState=null;
-function renderEquity(run,p){
-  const svg=el('eq');const W=860,H=280,L=64,R=16,T=14,B=30;
-  const days=run.days.filter(d=>d.active);
-  const n=days.length;
-  const ys=days.map(d=>d.equity);
-  const yMin=Math.min(-p.dd*1.15,Math.min(...ys)*1.05);
-  const yMax=Math.max(...ys,p.dd*0.2)*1.06;
+function renderEquity(runs,p){
+  const svg=el('eq');const W=860,H=280,L=64,R=26,T=14,B=30;
+  const series=runs.map((r,si)=>({label:si===0?'A':'B',color:si===0?COL_A:COL_B,days:r.days.filter(d=>d.active),run:r}));
+  const n=Math.max(...series.map(s=>s.days.length));
+  const allY=series.flatMap(s=>s.days.map(d=>d.equity));
+  const yMin=Math.min(-p.dd*1.15,Math.min(...allY)*1.05);
+  const yMax=Math.max(...allY,p.dd*0.2)*1.06;
   const x=i=>L+(W-L-R)*(n===1?0.5:i/(n-1));
   const y=v=>T+(H-T-B)*(1-(v-yMin)/(yMax-yMin));
   let g='';
@@ -312,76 +341,150 @@ function renderEquity(run,p){
   if(y(0)>T&&y(0)<H-B)g+=`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="rgba(255,255,255,.18)"/>`;
   g+=`<line x1="${L}" x2="${W-R}" y1="${y(-p.dd)}" y2="${y(-p.dd)}" stroke="#ef4444" stroke-dasharray="6 4" stroke-width="1.4"/>`+
      `<text x="${W-R}" y="${y(-p.dd)-5}" text-anchor="end" fill="#f87171">LÍMITE DE DRAWDOWN −$${p.dd.toLocaleString('en-US')}</text>`;
-  const pts=ys.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`);
-  g+=`<polygon points="${x(0)},${y(0)} ${pts.join(' ')} ${x(n-1)},${y(0)}" fill="rgba(5,150,105,.10)"/>`;
-  g+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${run.final>=0?'#059669':'#ef4444'}" stroke-width="2" stroke-linejoin="round"/>`;
-  if(run.ruinDay>=0){const i=days.length-1;g+=`<circle cx="${x(i)}" cy="${y(ys[i])}" r="4.5" fill="#ef4444" stroke="#070a12" stroke-width="2"/>`}
-  g+=`<line id="eqCross" x1="0" x2="0" y1="${T}" y2="${H-B}" stroke="rgba(255,255,255,.35)" visibility="hidden"/>`+
-     `<circle id="eqDot" r="4" fill="#38bdf8" stroke="#070a12" stroke-width="2" visibility="hidden"/>`+
-     `<rect id="eqHit" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/>`;
+  for(const s of series){
+    const pts=s.days.map((d,i)=>`${x(i).toFixed(1)},${y(d.equity).toFixed(1)}`);
+    if(series.length===1)g+=`<polygon points="${x(0)},${y(0)} ${pts.join(' ')} ${x(s.days.length-1)},${y(0)}" fill="rgba(5,150,105,.10)"/>`;
+    g+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`;
+    const li=s.days.length-1;
+    if(series.length>1)g+=`<text x="${Math.min(x(li)+5,W-8)}" y="${y(s.days[li].equity)+3}" fill="${s.color}" font-weight="700">${s.label}</text>`;
+    if(s.run.ruinDay>=0)g+=`<circle cx="${x(li)}" cy="${y(s.days[li].equity)}" r="4.5" fill="#ef4444" stroke="#070a12" stroke-width="2"/>`;
+  }
+  g+=`<line id="eqCross" x1="0" x2="0" y1="${T}" y2="${H-B}" stroke="rgba(255,255,255,.35)" visibility="hidden"/>`;
+  series.forEach((s,si)=>{g+=`<circle id="eqDot${si}" r="4" fill="${s.color}" stroke="#070a12" stroke-width="2" visibility="hidden"/>`});
+  g+=`<rect id="eqHit" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/>`;
   svg.innerHTML=g;
-  eqState={days,x,y,L,R,W,n};
-  const hit=el('eqHit'),cross=el('eqCross'),dot=el('eqDot');
+  const lg=el('eqLegend');
+  if(series.length>1){
+    lg.style.display='flex';
+    lg.innerHTML=series.map(s=>`<span><span class="sw" style="background:${s.color}"></span>${s.label} · ${s.run.tpd} trades/día</span>`).join('');
+  }else{lg.style.display='none'}
+  const hit=el('eqHit'),cross=el('eqCross');
   hit.onmousemove=e=>{
     const r=svg.getBoundingClientRect();
     const px=(e.clientX-r.left)*(W/r.width);
     const i=Math.max(0,Math.min(n-1,Math.round((px-L)/(W-L-R)*(n-1))));
-    const d=days[i];
     cross.setAttribute('x1',x(i));cross.setAttribute('x2',x(i));cross.setAttribute('visibility','visible');
-    dot.setAttribute('cx',x(i));dot.setAttribute('cy',y(d.equity));dot.setAttribute('visibility','visible');
-    showTip(e,`<div class="t1">Día ${i+1} · ${fmtDate(d.date)}</div>`+
-      `<div class="t2">PnL del día: ${money(d.pnl)} (${pct(d.pnl/curP.dd*100)})</div>`+
-      `<div class="t2">Equidad: ${money(d.equity)}</div>`+(d.ruined?'<div class="t3">⚠ límite de drawdown tocado</div>':''));
+    let rows='';
+    series.forEach((s,si)=>{
+      const dot=el('eqDot'+si);
+      const d=s.days[Math.min(i,s.days.length-1)];
+      dot.setAttribute('cx',x(Math.min(i,s.days.length-1)));dot.setAttribute('cy',y(d.equity));dot.setAttribute('visibility','visible');
+      rows+=`<div class="t2">${series.length>1?('<b>'+s.label+'</b> '):''}PnL día: ${money(i<s.days.length?s.days[i].pnl:0)} · Equidad: <b>${money(d.equity)}</b></div>`;
+    });
+    if(series.length>1){
+      const eA=series[0].days[Math.min(i,series[0].days.length-1)].equity;
+      const eB=series[1].days[Math.min(i,series[1].days.length-1)].equity;
+      rows+=`<div class="t2"><b>Δ equidad (B−A): ${money(eB-eA)}</b></div>`;
+    }
+    const date=series[0].days[Math.min(i,series[0].days.length-1)].date;
+    showTip(e,`<div class="t1">Día ${i+1} · ${fmtDate(date)}</div>`+rows);
   };
-  hit.onmouseleave=()=>{cross.setAttribute('visibility','hidden');dot.setAttribute('visibility','hidden');hideTip()};
+  hit.onmouseleave=()=>{cross.setAttribute('visibility','hidden');series.forEach((s,si)=>el('eqDot'+si).setAttribute('visibility','hidden'));hideTip()};
 }
 
 /* ───────────────────── Render: Monte Carlo ───────────────────── */
-function renderMC(mc,p){
-  el('mcN').textContent='· '+mc.sims.toLocaleString('en-US')+' simulaciones';
-  el('mcTiles').innerHTML=
-    tile('Prob. de ruina',pct(mc.ruins/mc.sims*100,1,false),mc.ruins/mc.sims>0.05?'bad':'good','toca −'+money(p.dd,false).slice(1)+' antes del final')+
-    tile('Prob. de terminar +',pct(mc.pos/mc.sims*100,1,false),'good','PnL final > $0')+
-    tile('Resultado promedio',money(mc.mean),mc.mean>=0?'good':'bad',pct(mc.mean/p.dd*100)+' sobre el drawdown')+
-    tile('Mediana',money(mc.p50),mc.p50>=0?'good':'bad','percentil 50')+
-    tile('Peor escenario (5%)',money(mc.p5),mc.p5>=0?'good':'bad','percentil 5')+
-    tile('Mejor escenario (95%)',money(mc.p95),'good','percentil 95');
-  const svg=el('hist');const W=520,H=150,L=10,R=10,T=8,B=22;
-  const lo=mc.finals[0],hi=mc.finals[mc.finals.length-1];
-  const bins=26,counts=new Array(bins).fill(0);
-  const span=Math.max(1,hi-lo);
-  for(const v of mc.finals)counts[Math.min(bins-1,Math.floor((v-lo)/span*bins))]++;
-  const maxC=Math.max(...counts);
-  const bw=(W-L-R)/bins;
-  let g='';
-  for(let i=0;i<bins;i++){
-    const mid=lo+span*(i+0.5)/bins;
-    const h=(H-T-B)*counts[i]/maxC;
-    const col=mid>=0?'#059669':'#ef4444';
-    g+=`<rect x="${(L+i*bw+1).toFixed(1)}" y="${(H-B-h).toFixed(1)}" width="${(bw-2).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${col}"><title>${money(lo+span*i/bins)} a ${money(lo+span*(i+1)/bins)} · ${(counts[i]/mc.sims*100).toFixed(1)}% de sims</title></rect>`;
+function renderMC(mcs,p){
+  const cmp=mcs.length>1;
+  const totalSims=mcs.reduce((a,m)=>a+m.sims,0);
+  el('mcN').textContent='· '+totalSims.toLocaleString('en-US')+' simulaciones'+(cmp?' (A + B)':'');
+  const f={
+    ruina:m=>pct(m.ruins/m.sims*100,1,false),
+    pos:m=>pct(m.pos/m.sims*100,1,false),
+    mean:m=>money(m.mean), p50:m=>money(m.p50), p5:m=>money(m.p5), p95:m=>money(m.p95)
+  };
+  if(!cmp){
+    const m=mcs[0];
+    el('mcTiles').innerHTML=
+      tile('Prob. de ruina',f.ruina(m),m.ruins/m.sims>0.05?'bad':'good','toca −'+money(p.dd,false).slice(1)+' antes del final')+
+      tile('Prob. de terminar +',f.pos(m),'good','PnL final > $0')+
+      tile('Resultado promedio',f.mean(m),signCls(m.mean),pct(m.mean/p.dd*100)+' sobre el drawdown')+
+      tile('Mediana',f.p50(m),signCls(m.p50),'percentil 50')+
+      tile('Peor escenario (5%)',f.p5(m),signCls(m.p5),'percentil 5')+
+      tile('Mejor escenario (95%)',f.p95(m),'good','percentil 95');
+  }else{
+    const [a,b]=mcs;
+    const pair=(k,fn,sub)=>tile(k,`A ${fn(a)}<br>B ${fn(b)}`,'sm',sub||'');
+    el('mcTiles').innerHTML=
+      pair('Prob. de ruina',f.ruina,'toca −'+money(p.dd,false).slice(1))+
+      pair('Prob. de terminar +',f.pos,'PnL final > $0')+
+      pair('Resultado promedio',f.mean,'')+
+      pair('Mediana',f.p50,'percentil 50')+
+      pair('Peor escenario (5%)',f.p5,'percentil 5')+
+      pair('Mejor escenario (95%)',f.p95,'percentil 95');
   }
+  /* Histograma */
+  const svg=el('hist');const W=520,H=150,L=10,R=10,T=8,B=22;
+  const lo=Math.min(...mcs.map(m=>m.finals[0]));
+  const hi=Math.max(...mcs.map(m=>m.finals[m.finals.length-1]));
+  const span=Math.max(1,hi-lo);
+  const bins=26,bw=(W-L-R)/bins;
+  const countSets=mcs.map(m=>{
+    const c=new Array(bins).fill(0);
+    for(const v of m.finals)c[Math.min(bins-1,Math.floor((v-lo)/span*bins))]++;
+    return c.map(x=>x/m.sims);
+  });
+  const maxC=Math.max(...countSets.flat());
+  let g='';
+  if(!cmp){
+    const c=countSets[0];
+    for(let i=0;i<bins;i++){
+      const mid=lo+span*(i+0.5)/bins;
+      const h=(H-T-B)*c[i]/maxC;
+      const col=mid>=0?'#059669':'#ef4444';
+      g+=`<rect x="${(L+i*bw+1).toFixed(1)}" y="${(H-B-h).toFixed(1)}" width="${(bw-2).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${col}"><title>${money(lo+span*i/bins)} a ${money(lo+span*(i+1)/bins)} · ${(c[i]*100).toFixed(1)}% de sims</title></rect>`;
+    }
+    el('histLegend').style.display='none';
+  }else{
+    countSets.forEach((c,si)=>{
+      const col=si===0?COL_A:COL_B;
+      let pts='';
+      for(let i=0;i<bins;i++){
+        const x0=L+i*bw,x1=L+(i+1)*bw,yv=H-B-(H-T-B)*c[i]/maxC;
+        pts+=`${x0.toFixed(1)},${yv.toFixed(1)} ${x1.toFixed(1)},${yv.toFixed(1)} `;
+      }
+      g+=`<polyline points="${L},${H-B} ${pts}${W-R},${H-B}" fill="none" stroke="${col}" stroke-width="2"/>`;
+    });
+    const lg=el('histLegend');
+    lg.style.display='flex';
+    lg.innerHTML=mcs.map((m,si)=>`<span><span class="sw" style="background:${si===0?COL_A:COL_B}"></span>${si===0?'A':'B'} · ${m.tpd} trades/día</span>`).join('');
+  }
+  const med=cmp?null:mcs[0].p50;
   g+=`<text x="${L}" y="${H-8}" text-anchor="start">${money(lo)}</text>`+
-     `<text x="${W/2}" y="${H-8}" text-anchor="middle">mediana ${money(mc.p50)}</text>`+
+     (med!==null?`<text x="${W/2}" y="${H-8}" text-anchor="middle">mediana ${money(med)}</text>`:'')+
      `<text x="${W-R}" y="${H-8}" text-anchor="end">${money(hi)}</text>`;
   svg.innerHTML=g;
 }
 
 /* ───────────────────── Render: calendario ───────────────────── */
-function renderCalendar(run,p){
-  const byKey=new Map();
-  run.days.forEach((d,i)=>byKey.set(key(d.date),{...d,idx:i}));
-  const first=run.days[0].date,last=run.days[run.days.length-1].date;
+function baseLegend(cmp){
+  el('calLegend').innerHTML=cmp?
+    `<span><span class="sw" style="background:rgba(5,150,105,.55)"></span>Δ positivo — B gana más ese día</span>
+     <span><span class="sw" style="background:rgba(239,68,68,.55)"></span>Δ negativo — B pierde más ese día</span>
+     <span><span class="sw" style="background:repeating-linear-gradient(45deg,#1c2230 0 4px,rgba(255,255,255,.08) 4px 8px)"></span>Festivo CME</span>
+     <span><span class="sw" style="border:1px dashed rgba(239,68,68,.6);background:transparent"></span>Post-liquidación</span>
+     <span style="color:var(--ink-3)">Cada celda: PnL de A, PnL de B y Δ = B − A (% sobre el drawdown) — mismo día, mismos primeros trades</span>`:
+    `<span><span class="sw" style="background:rgba(5,150,105,.55)"></span>Día ganador (+$ / +%)</span>
+     <span><span class="sw" style="background:rgba(239,68,68,.55)"></span>Día perdedor (−$ / −%)</span>
+     <span><span class="sw" style="background:repeating-linear-gradient(45deg,#1c2230 0 4px,rgba(255,255,255,.08) 4px 8px)"></span>Festivo CME</span>
+     <span><span class="sw" style="border:1px dashed rgba(239,68,68,.6);background:transparent"></span>Post-liquidación</span>
+     <span style="color:var(--ink-3)">% = PnL del día sobre el drawdown disponible</span>`;
+}
+function renderCalendar(runA,runB,p){
+  const cmp=!!runB;
+  el('cal').classList.toggle('cmp',cmp);
+  baseLegend(cmp);
+  const first=runA.days[0].date,last=runA.days[runA.days.length-1].date;
   const kFirst=key(first),kLast=key(last);
-  const years=new Map(); // y -> months html + totals
+  const idxByKey=new Map();runA.days.forEach((d,i)=>idxByKey.set(key(d.date),i));
+  const years=new Map(),yearTotA=new Map(),yearTotB=new Map(),yearG=new Map(),yearR=new Map();
   let cur=new Date(first.getFullYear(),first.getMonth(),1);
   const endM=new Date(last.getFullYear(),last.getMonth(),1);
-  const yearTot=new Map(),yearG=new Map(),yearR=new Map();
   while(cur<=endM){
     const y=cur.getFullYear(),m=cur.getMonth();
     const dim=new Date(y,m+1,0).getDate();
-    let cells='',row=[],rows=[];
+    let row=[],rows=[];
     const flush=()=>{if(row.length){while(row.length<5)row.push('<div class="cell blank"></div>');rows.push(row.join(''));row=[]}};
-    let mTot=0,mG=0,mR=0,hasData=false;
+    let mTotA=0,mTotB=0,mG=0,mR=0,hasData=false;
     for(let dd=1;dd<=dim;dd++){
       const dt=new Date(y,m,dd),w=dt.getDay();
       if(w===0||w===6)continue;
@@ -392,39 +495,71 @@ function renderCalendar(run,p){
       if(k<kFirst||k>kLast){row.push(`<div class="cell blank"><div class="d">${dd}</div></div>`)}
       else if(hol){row.push(`<div class="cell holiday" data-hol="${hol}" data-date="${fmtDate(dt)}"><div class="d">${dd}</div><div class="p">FESTIVO</div></div>`)}
       else{
-        const rec=byKey.get(k);
-        if(!rec){row.push(`<div class="cell blank"><div class="d">${dd}</div></div>`)}
-        else if(!rec.active){row.push(`<div class="cell dead" data-dead="1"><div class="d">${dd}</div><div class="p">✕</div></div>`)}
+        const idx=idxByKey.get(k);
+        if(idx===undefined){row.push(`<div class="cell blank"><div class="d">${dd}</div></div>`)}
         else{
-          hasData=true;mTot+=rec.pnl;if(rec.pnl>0)mG++;else if(rec.pnl<0)mR++;
-          const inten=Math.min(1,Math.abs(rec.pnl)/(p.dd*0.45));
-          const bg=rec.pnl>0?`rgba(5,150,105,${(0.14+0.5*inten).toFixed(2)})`:rec.pnl<0?`rgba(239,68,68,${(0.14+0.5*inten).toFixed(2)})`:'var(--surface-3)';
-          row.push(`<div class="cell trade${rec.ruined?' ruin':''}" data-i="${rec.idx}" style="background:${bg}">`+
-            `<div class="d">${dd}</div><div class="p">${money(rec.pnl)}</div><div class="pc">${pct(rec.pnl/p.dd*100)}</div></div>`);
+          const rA=runA.days[idx],rB=cmp?runB.days[idx]:null;
+          if(!rA.active&&(!cmp||!rB.active)){
+            row.push(`<div class="cell dead" data-dead="1"><div class="d">${dd}</div><div class="p">✕</div></div>`);
+          }else if(!cmp){
+            hasData=true;mTotA+=rA.pnl;if(rA.pnl>0)mG++;else if(rA.pnl<0)mR++;
+            const inten=Math.min(1,Math.abs(rA.pnl)/(p.dd*0.45));
+            const bg=rA.pnl>0?`rgba(5,150,105,${(0.14+0.5*inten).toFixed(2)})`:rA.pnl<0?`rgba(239,68,68,${(0.14+0.5*inten).toFixed(2)})`:'var(--surface-3)';
+            row.push(`<div class="cell trade${rA.ruined?' ruin':''}" data-i="${idx}" style="background:${bg}">`+
+              `<div class="d">${dd}</div><div class="p">${money(rA.pnl)}</div><div class="pc">${pct(rA.pnl/p.dd*100)}</div></div>`);
+          }else{
+            hasData=true;
+            const pA=rA.active?rA.pnl:0,pB=rB.active?rB.pnl:0;
+            const dif=pB-pA;
+            mTotA+=pA;mTotB+=pB;if(dif>0)mG++;else if(dif<0)mR++;
+            const inten=Math.min(1,Math.abs(dif)/(p.dd*0.45));
+            const bg=dif>0?`rgba(5,150,105,${(0.12+0.5*inten).toFixed(2)})`:dif<0?`rgba(239,68,68,${(0.12+0.5*inten).toFixed(2)})`:'var(--surface-3)';
+            const lA=rA.active?money(pA)+(rA.ruined?' ⚠':''):'✕';
+            const lB=rB.active?money(pB)+(rB.ruined?' ⚠':''):'✕';
+            row.push(`<div class="cell trade${(rA.ruined||rB.ruined)?' ruin':''}" data-i="${idx}" style="background:${bg}">`+
+              `<div class="d">${dd}</div><div class="ab">A ${lA}</div><div class="ab">B ${lB}</div>`+
+              `<div class="p">Δ ${money(dif)}</div><div class="pc">${pct(dif/p.dd*100)}</div></div>`);
+          }
         }
       }
       if(row.length===5)flush();
     }
     flush();
-    cells=rows.join('');
-    const mPct=mTot/p.dd*100;
-    const html=`<div class="month"><h3><span>${MES[m]} ${y}</span><span class="mt" style="color:${mTot>0?'var(--win-hi)':mTot<0?'var(--loss-hi)':'var(--ink-3)'}">${hasData?money(mTot):''}</span></h3>`+
-      `<div class="mgrid"><div class="dow">L</div><div class="dow">M</div><div class="dow">X</div><div class="dow">J</div><div class="dow">V</div>${cells}</div>`+
-      `<div class="mfoot"><span>${hasData?(mG+'V / '+mR+'R'):'—'}</span><span>${hasData?pct(mPct):''}</span></div></div>`;
+    const html=(()=>{
+      const head=cmp
+        ?`<span class="mt" style="color:${mTotB-mTotA>0?'var(--win-hi)':mTotB-mTotA<0?'var(--loss-hi)':'var(--ink-3)'}">${hasData?'Δ '+money(mTotB-mTotA):''}</span>`
+        :`<span class="mt" style="color:${mTotA>0?'var(--win-hi)':mTotA<0?'var(--loss-hi)':'var(--ink-3)'}">${hasData?money(mTotA):''}</span>`;
+      const foot=cmp
+        ?`<span>A ${hasData?money(mTotA):'—'}</span><span>B ${hasData?money(mTotB):'—'}</span>`
+        :`<span>${hasData?(mG+'V / '+mR+'R'):'—'}</span><span>${hasData?pct(mTotA/p.dd*100):''}</span>`;
+      return `<div class="month"><h3><span>${MES[m]} ${y}</span>${head}</h3>`+
+        `<div class="mgrid"><div class="dow">L</div><div class="dow">M</div><div class="dow">X</div><div class="dow">J</div><div class="dow">V</div>${rows.join('')}</div>`+
+        `<div class="mfoot">${foot}</div></div>`;
+    })();
     if(!years.has(y))years.set(y,[]);
     years.get(y).push(html);
-    yearTot.set(y,(yearTot.get(y)||0)+mTot);
+    yearTotA.set(y,(yearTotA.get(y)||0)+mTotA);
+    yearTotB.set(y,(yearTotB.get(y)||0)+mTotB);
     yearG.set(y,(yearG.get(y)||0)+mG);
     yearR.set(y,(yearR.get(y)||0)+mR);
     cur=new Date(y,m+1,1);
   }
   let out='';
   for(const [y,months] of years){
-    const t=yearTot.get(y)||0;
-    out+=`<div class="yearbar"><span class="y">${y}</span>`+
-         `<span class="yt" style="color:${t>0?'var(--win-hi)':t<0?'var(--loss-hi)':'var(--ink-3)'}">${money(t)}</span>`+
-         `<span class="yd">${pct(t/p.dd*100)} sobre el drawdown · ${yearG.get(y)}V / ${yearR.get(y)}R</span></div>`+
-         `<div class="months">${months.join('')}</div>`;
+    const tA=yearTotA.get(y)||0,tB=yearTotB.get(y)||0;
+    if(!cmp){
+      out+=`<div class="yearbar"><span class="y">${y}</span>`+
+           `<span class="yt" style="color:${tA>0?'var(--win-hi)':tA<0?'var(--loss-hi)':'var(--ink-3)'}">${money(tA)}</span>`+
+           `<span class="yd">${pct(tA/p.dd*100)} sobre el drawdown · ${yearG.get(y)}V / ${yearR.get(y)}R</span></div>`;
+    }else{
+      const dif=tB-tA;
+      out+=`<div class="yearbar"><span class="y">${y}</span>`+
+           `<span class="yt" style="color:${COL_A}">A ${money(tA)}</span>`+
+           `<span class="yt" style="color:${COL_B}">B ${money(tB)}</span>`+
+           `<span class="yt" style="color:${dif>0?'var(--win-hi)':dif<0?'var(--loss-hi)':'var(--ink-3)'}">Δ ${money(dif)}</span>`+
+           `<span class="yd">B mejora ${yearG.get(y)} días · empeora ${yearR.get(y)} días</span></div>`;
+    }
+    out+=`<div class="months">${months.join('')}</div>`;
   }
   el('cal').innerHTML=out;
 }
@@ -444,49 +579,71 @@ document.addEventListener('mousemove',e=>{if(tip.style.display==='block')moveTip
 el('cal').addEventListener('mouseover',e=>{
   const c=e.target.closest('.cell');if(!c)return;
   if(c.dataset.i!==undefined){
-    const d=curRun.days[+c.dataset.i];
-    showTip(e,`<div class="t1">${fmtDate(d.date)} · Día ${+c.dataset.i+1}</div>`+
-      `<div class="t2">Trades: ${d.wins}G / ${d.losses}P</div>`+
-      `<div class="t2">PnL del día: ${money(d.pnl)} (${pct(d.pnl/curP.dd*100)})</div>`+
-      `<div class="t2">Equidad acumulada: ${money(d.equity)}</div>`+
-      (d.ruined?'<div class="t3">⚠ LÍMITE DE DRAWDOWN ALCANZADO — CUENTA LIQUIDADA</div>':''));
+    const i=+c.dataset.i;
+    const dA=curRunA.days[i];
+    let html=`<div class="t1">${fmtDate(dA.date)} · Día ${i+1}</div>`;
+    if(!curRunB){
+      html+=`<div class="t2">Trades: ${dA.wins}G / ${dA.losses}P</div>`+
+        `<div class="t2">PnL del día: <b>${money(dA.pnl)}</b> (${pct(dA.pnl/curP.dd*100)})</div>`+
+        `<div class="t2">Equidad acumulada: ${money(dA.equity)}</div>`+
+        (dA.ruined?'<div class="t3">⚠ LÍMITE DE DRAWDOWN ALCANZADO — CUENTA LIQUIDADA</div>':'');
+    }else{
+      const dB=curRunB.days[i];
+      const line=(lbl,d,tpd)=>d.active
+        ?`<div class="t2"><b>${lbl}</b> (${tpd} t/d): ${d.wins}G/${d.losses}P · <b>${money(d.pnl)}</b> (${pct(d.pnl/curP.dd*100)}) · eq ${money(d.equity)}${d.ruined?' ⚠':''}</div>`
+        :`<div class="t2"><b>${lbl}</b>: cuenta liquidada — sin trades</div>`;
+      const pA=dA.active?dA.pnl:0,pB=dB.active?dB.pnl:0;
+      html+=line('A',dA,curRunA.tpd)+line('B',dB,curRunB.tpd)+
+        `<div class="t2"><b>Δ del día (B−A): ${money(pB-pA)} (${pct((pB-pA)/curP.dd*100)})</b></div>`+
+        ((dA.ruined||dB.ruined)?'<div class="t3">⚠ un escenario tocó el límite de drawdown este día</div>':'');
+    }
+    showTip(e,html);
   }else if(c.dataset.hol){showTip(e,`<div class="t1">${c.dataset.date}</div><div class="t2">Festivo CME: ${c.dataset.hol} — sin operaciones</div>`)}
   else if(c.dataset.dead){showTip(e,'<div class="t2">Cuenta liquidada — sin operaciones restantes</div>')}
 });
 el('cal').addEventListener('mouseout',e=>{if(e.target.closest('.cell'))hideTip()});
 
 /* ───────────────────── Notas ───────────────────── */
-function renderNotes(run,mc,p){
-  const ev=p.tpd*(p.wr*p.win-(1-p.wr)*p.loss);
+function renderNotes(mcs,p,cmp){
+  const evd=t=>t*(p.wr*p.win-(1-p.wr)*p.loss);
+  const m=mcs[0];
   const notes=[
-    ['#38bdf8',`Expectativa matemática: ${money(ev)} por día (${p.tpd} trades · ${(p.wr*100).toFixed(0)}% win rate, +$${p.win} / −$${p.loss}).`],
-    ['#34d399',`En ${mc.sims.toLocaleString('en-US')} simulaciones de ${p.days} días, la probabilidad de ruina es ${pct(mc.ruins/mc.sims*100,1,false)} y el ${pct(mc.pos/mc.sims*100,1,false)} termina en positivo.`],
+    ['#38bdf8',cmp
+      ?`Expectativa matemática: A ${money(evd(p.tpd))}/día (${p.tpd} trades) vs B ${money(evd(p.tpdB))}/día (${p.tpdB} trades), con ${(p.wr*100).toFixed(0)}% win rate, +$${p.win} / −$${p.loss}.`
+      :`Expectativa matemática: ${money(evd(p.tpd))} por día (${p.tpd} trades · ${(p.wr*100).toFixed(0)}% win rate, +$${p.win} / −$${p.loss}).`],
+    ['#34d399',cmp
+      ?`Monte Carlo a ${p.days} días — prob. de ruina: A ${pct(mcs[0].ruins/mcs[0].sims*100,1,false)} vs B ${pct(mcs[1].ruins/mcs[1].sims*100,1,false)}. Más trades por día aceleran el retorno pero también la velocidad a la que se puede tocar el límite en una mala racha.`
+      :`En ${m.sims.toLocaleString('en-US')} simulaciones de ${p.days} días, la probabilidad de ruina es ${pct(m.ruins/m.sims*100,1,false)} y el ${pct(m.pos/m.sims*100,1,false)} termina en positivo.`],
     ['#fbbf24',`El calendario usa días reales de mercado de futuros: lunes a viernes, excluyendo los 8 festivos de cierre completo del CME (Año Nuevo, Viernes Santo, Memorial Day, Juneteenth, 4 de Julio, Labor Day, Acción de Gracias y Navidad).`],
-    ['#f87171',`Modelo idealizado: resultados de trade independientes y de tamaño fijo, sin comisiones, deslizamiento ni cambios de régimen. La racha real puede ser peor que la simulada.`],
+    ['#f87171',cmp
+      ?`En modo comparación ambos escenarios comparten la misma secuencia de resultados por día (los primeros min(A,B) trades son idénticos); Δ aísla el efecto de los trades adicionales. Modelo idealizado: sin comisiones ni deslizamiento.`
+      :`Modelo idealizado: resultados de trade independientes y de tamaño fijo, sin comisiones, deslizamiento ni cambios de régimen. La racha real puede ser peor que la simulada.`],
   ];
   el('notes').innerHTML=notes.map(([c,t])=>`<div class="fnote"><div class="bar" style="background:${c}"></div><div>${t}</div></div>`).join('');
 }
 
 /* ───────────────────── Orquestación ───────────────────── */
-let curP=null,curRun=null,seed=20260712;
+let curP=null,curRunA=null,curRunB=null,seed=20260712,cmpOn=false;
 function recompute(){
   curP=readParams();
   seed=Math.round(+el('inSeed').value)||seed;
   const start=nextTradingDay(new Date());
   const dates=tradingDays(start,curP.days);
-  curRun=simulateRun(curP,seed,dates);
-  const sims=curP.days>600?1000:2500;
-  const mc=simulateMC(curP,sims,100003+((seed*31)>>>0));
+  curRunA=simulateRun(curP,curP.tpd,seed,dates);
+  curRunB=cmpOn?simulateRun(curP,curP.tpdB,seed,dates):null;
+  const sims=(curP.days>600?1000:2500)>>(cmpOn?1:0);
+  const mcs=[simulateMC(curP,curP.tpd,sims,100003+((seed*31)>>>0))];
+  if(cmpOn)mcs.push(simulateMC(curP,curP.tpdB,sims,100003+((seed*31)>>>0)));
   el('badgeDD').textContent='CON $'+curP.dd.toLocaleString('en-US')+' DE DRAWDOWN DISPONIBLE';
-  renderRunTiles(curRun,curP);
-  renderEquity(curRun,curP);
-  renderMC(mc,curP);
-  renderCalendar(curRun,curP);
-  renderNotes(curRun,mc,curP);
+  renderRunTiles(curRunA,curRunB,curP);
+  renderEquity(curRunB?[curRunA,curRunB]:[curRunA],curP);
+  renderMC(mcs,curP);
+  renderCalendar(curRunA,curRunB,curP);
+  renderNotes(mcs,curP,cmpOn);
 }
 let deb=null;
 function queue(){clearTimeout(deb);deb=setTimeout(recompute,180)}
-['inWr','inWin','inLoss','inTpd','inDD','inSeed','inDays'].forEach(id=>el(id).addEventListener('input',queue));
+['inWr','inWin','inLoss','inTpd','inTpdB','inDD','inSeed','inDays'].forEach(id=>el(id).addEventListener('input',queue));
 el('inDays').addEventListener('input',()=>{
   document.querySelectorAll('#chips .chip').forEach(c=>c.classList.toggle('on',+c.dataset.d===+el('inDays').value));
 });
@@ -498,6 +655,13 @@ el('chips').addEventListener('click',e=>{
 });
 el('btnRoll').addEventListener('click',()=>{
   el('inSeed').value=(Math.random()*2**31)|0;
+  recompute();
+});
+el('btnCmp').addEventListener('click',()=>{
+  cmpOn=!cmpOn;
+  el('btnCmp').textContent='⚖ Comparar trades/día: '+(cmpOn?'ON':'OFF');
+  el('btnCmp').classList.toggle('on',cmpOn);
+  el('inTpdB').disabled=!cmpOn;
   recompute();
 });
 recompute();
