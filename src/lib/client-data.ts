@@ -2,6 +2,7 @@ import type { ScreenerParams } from "./barchart/endpoints";
 import { parseHistoryResponse, parseOptionsResponse, parseQuoteResponse } from "./barchart/normalize";
 import type { HistoryBar, NormalizedQuote, OptionContract } from "./barchart/types";
 import { darkPoolLevels, darkPoolStats, type DarkPoolDay, type DarkPoolProfile, type DarkPoolStats } from "./flow/darkpool";
+import { enrichGreeks } from "./flow/enrich";
 import { scoreContracts, type ScoredContract } from "./flow/heuristic";
 import { applyScreenerFilter } from "./flow/screener-filter";
 import { mergeServerHistory, type GexSample } from "./gex-history";
@@ -73,9 +74,9 @@ export async function loadChain(
   const sym = symbol.toUpperCase();
   if (STATIC) {
     const raw = await fetchFixture([`options.${sym}.json`, "options.AAPL.json"]);
-    const chain = parseOptionsResponse(raw);
-    const spot = chain.find((c) => c.underlyingPrice != null)?.underlyingPrice ?? null;
-    return { chain, source: "fixtures", spot, asOf: null };
+    const parsed = parseOptionsResponse(raw);
+    const spot = parsed.find((c) => c.underlyingPrice != null)?.underlyingPrice ?? null;
+    return { chain: enrichGreeks(parsed, spot), source: "fixtures", spot, asOf: null };
   }
   const json = await fetchJson(`/api/barchart/options?symbol=${encodeURIComponent(sym)}`);
   return {
