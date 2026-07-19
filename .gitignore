@@ -27,3 +27,10 @@ next-env.d.ts
 *.log
 .DS_Store
 /coverage
+
+# Python
+__pycache__/
+*.pyc
+
+# backtest intermediates derived from local market data
+backtests/**/grid.npz
