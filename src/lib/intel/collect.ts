@@ -1,6 +1,6 @@
 import type { HistoryBar, OptionContract } from "../barchart/types";
 import { getEquityOptions, getHistory } from "../barchart/endpoints";
-import { atmIv, gammaFlip, gexByStrike, netGex, putCallRatio } from "../flow/analytics";
+import { atmIv, gammaFlip, gexByStrike, netDex, netGex, putCallRatio } from "../flow/analytics";
 import { anomalyIntel } from "../flow/anomalyPro";
 import { buildSignals } from "../flow/signals";
 import { mmHedge } from "../flow/mmhedge";
@@ -57,7 +57,7 @@ export function stepSymbol(symbol: string, inputs: CollectInputs, prevJournal: P
   const exps = [...new Set(chain.map((c) => c.expiration))].sort();
   const frontExp = exps.find((e) => (chain.find((c) => c.expiration === e)?.dte ?? -1) >= 0) ?? exps[0];
   const iv = frontExp ? atmIv(chain, spot, frontExp) : null;
-  const sample: GexSample = { t: now, spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol };
+  const sample: GexSample = { t: now, spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol, dex: netDex(chain, spot) };
   const history = mergeHistory(prevHistory, [sample]);
 
   // engines → candidate predictions

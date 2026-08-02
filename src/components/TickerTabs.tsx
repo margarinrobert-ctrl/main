@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { alertsEnabled, crossings, fireNotify } from "@/lib/alerts";
 import type { OptionContract } from "@/lib/barchart/types";
 import { loadChain, loadHistory, pullServerData } from "@/lib/client-data";
-import { atmIv, callWall, gammaFlip, gexByStrike, netGex, putCallRatio, putWall } from "@/lib/flow/analytics";
+import { atmIv, callWall, gammaFlip, gexByStrike, netDex, netGex, putCallRatio, putWall } from "@/lib/flow/analytics";
 import { anomalyIntel } from "@/lib/flow/anomalyPro";
 import { buildSignals } from "@/lib/flow/signals";
 import { mmHedge } from "@/lib/flow/mmhedge";
@@ -152,7 +152,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
         const exps = [...new Set(chain.map((c) => c.expiration))].sort();
         const frontExp = exps.find((e) => (chain.find((c) => c.expiration === e)?.dte ?? -1) >= 0) ?? exps[0];
         const iv = frontExp ? atmIv(chain, spot, frontExp) : null;
-        const samples = appendSample(symbol, { t: Date.now(), spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol });
+        const samples = appendSample(symbol, { t: Date.now(), spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol, dex: netDex(chain, spot) });
         if (alertsEnabled(symbol) && prevSpot != null && spot != null) {
           const crossed = crossings(prevSpot, spot, [
             { name: "γ-flip", value: flip },
