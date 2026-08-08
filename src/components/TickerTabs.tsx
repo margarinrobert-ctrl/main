@@ -12,6 +12,8 @@ import { appendSample, readHistory } from "@/lib/gex-history";
 import { collectAndResolve } from "@/lib/intel/journal";
 import { groupByDay } from "@/lib/flow/historyDays";
 import { loadSnapshotDays } from "@/lib/client-data";
+import { buildSnapshot } from "@/lib/intel/snapshot";
+import { appendLocalSnapshot, localSnapshotDays } from "@/lib/snapshot-local";
 import { DexProfile } from "./DexProfile";
 import { EdgeBoard } from "./EdgeBoard";
 import { GammaProfile } from "./GammaProfile";
@@ -130,7 +132,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
     const build = async () => {
       const snapDays = await loadSnapshotDays(symbol).catch(() => [] as string[]);
       if (cancelled) return;
-      const snapSet = new Set(snapDays);
+      const snapSet = new Set([...snapDays, ...localSnapshotDays(symbol)]);
       const days = groupByDay(readHistory(symbol)).map((d) => ({ key: d.key, label: d.label, pts: d.samples.length, snap: snapSet.has(d.key) }));
       setRecordedDays(days);
     };
@@ -178,6 +180,9 @@ export function TickerTabs({ symbol }: { symbol: string }) {
         const frontExp = exps.find((e) => (chain.find((c) => c.expiration === e)?.dte ?? -1) >= 0) ?? exps[0];
         const iv = frontExp ? atmIv(chain, spot, frontExp) : null;
         const samples = appendSample(symbol, { t: Date.now(), spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol, dex: netDex(chain, spot) });
+        // Per-strike snapshot for today — expired chains can never be re-fetched, so capture it live
+        // here too rather than depending solely on the scheduled collector.
+        appendLocalSnapshot(symbol, buildSnapshot(chain, spot, Date.now()));
         if (alertsEnabled(symbol) && prevSpot != null && spot != null) {
           const crossed = crossings(prevSpot, spot, [
             { name: "γ-flip", value: flip },

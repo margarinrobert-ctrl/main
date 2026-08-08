@@ -7,6 +7,7 @@ import { fmtUsd } from "@/lib/flow/analytics";
 import { dayStats, groupByDay } from "@/lib/flow/historyDays";
 import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR_LINE, TOOLTIP_PROPS } from "@/lib/chartTheme";
 import { readHistory } from "@/lib/gex-history";
+import { readLocalSnapshot } from "@/lib/snapshot-local";
 import type { DaySnapshot } from "@/lib/intel/snapshot";
 import { useChartFrame } from "./chartFrame";
 import { EmptyState, Loading, SectionHeader, Stat } from "./states";
@@ -37,9 +38,15 @@ export function TimeMachine({ symbol, day, onLive }: { symbol: string; day: stri
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    const local = readLocalSnapshot(symbol, day);
+    if (local) setSnap(local); // show the locally-recorded one immediately
     loadDaySnapshot(symbol, day)
-      .then((s) => !cancelled && setSnap(s))
-      .catch(() => !cancelled && setSnap(null))
+      .then((server) => {
+        if (cancelled) return;
+        // keep whichever capture is later in the day (both are "closing picture" writes)
+        setSnap(server && (!local || server.t >= local.t) ? server : local);
+      })
+      .catch(() => !cancelled && setSnap(local))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
