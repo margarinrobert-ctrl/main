@@ -7,6 +7,7 @@ import { scoreContracts, type ScoredContract } from "./flow/heuristic";
 import { applyScreenerFilter } from "./flow/screener-filter";
 import { mergeServerHistory, type GexSample } from "./gex-history";
 import { readJournal, writeJournal, type PredictionRecord } from "./intel/journal";
+import type { DaySnapshot } from "./intel/snapshot";
 import { mergeJournal } from "./intel/merge";
 
 /**
@@ -120,6 +121,24 @@ export async function pullServerData(symbol: string): Promise<{ storeMode: strin
   if (history.length) mergeServerHistory(sym, history);
   if (journal.length) writeJournal(mergeJournal(readJournal(), journal));
   return { storeMode: j.storeMode ?? "memory", history: history.length, journal: journal.length };
+}
+
+/** Which past days have a recorded per-strike snapshot (cheap — day keys only). */
+export async function loadSnapshotDays(symbol: string): Promise<string[]> {
+  if (typeof window === "undefined" || STATIC) return [];
+  const res = await fetch(`/api/intel?symbol=${encodeURIComponent(symbol.toUpperCase())}`, { cache: "no-store" });
+  if (!res.ok) return [];
+  const j = (await res.json()) as { snapshotDays?: string[] };
+  return j.snapshotDays ?? [];
+}
+
+/** The full recorded snapshot (incl. per-strike GEX/DEX/OI) for one past day, or null if not recorded. */
+export async function loadDaySnapshot(symbol: string, day: string): Promise<DaySnapshot | null> {
+  if (typeof window === "undefined" || STATIC) return null;
+  const res = await fetch(`/api/intel?symbol=${encodeURIComponent(symbol.toUpperCase())}&day=${encodeURIComponent(day)}`, { cache: "no-store" });
+  if (!res.ok) return null;
+  const j = (await res.json()) as { snapshot?: DaySnapshot | null };
+  return j.snapshot ?? null;
 }
 
 export async function loadDarkPool(

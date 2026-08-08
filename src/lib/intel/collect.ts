@@ -8,7 +8,8 @@ import type { GexSample } from "../gex-history";
 import { buildCandidates, shouldRecord, type PredictionRecord } from "./journal";
 import { mergeHistory } from "./merge";
 import { resolveForSymbol } from "./resolve";
-import { loadServerHistory, loadServerJournal, saveServerHistory, saveServerJournal } from "./store";
+import { buildSnapshot, mergeSnapshots } from "./snapshot";
+import { loadServerHistory, loadServerJournal, loadServerSnapshots, saveServerHistory, saveServerJournal, saveServerSnapshots } from "./store";
 
 // Server-side collection — the same collect+resolve loop the browser runs, but reading/writing the
 // durable store so it works headless on a schedule (Vercel route, or the standalone scripts/collect
@@ -88,6 +89,9 @@ export async function collectSymbol(symbol: string): Promise<CollectResult> {
   const { journal, history, result } = stepSymbol(sym, inputs, prevJournal, prevHistory);
   await saveServerHistory(sym, history);
   await saveServerJournal(journal);
+  // Per-strike snapshot for the day (expired chains can't be re-fetched, so record the shape as it happens).
+  const snaps = mergeSnapshots(await loadServerSnapshots(sym).catch(() => []), buildSnapshot(inputs.chain, inputs.spot, Date.now()));
+  await saveServerSnapshots(sym, snaps);
   return result;
 }
 
