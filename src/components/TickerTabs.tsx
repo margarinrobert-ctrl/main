@@ -41,6 +41,7 @@ import { SignalBoard } from "./SignalBoard";
 import { TimeMachine } from "./TimeMachine";
 import { SkewChart } from "./SkewChart";
 import { VannaCharmProfile } from "./VannaCharmProfile";
+import { VixRange } from "./VixRange";
 import { VolEdge } from "./VolEdge";
 import { VolSmile } from "./VolSmile";
 
@@ -63,6 +64,7 @@ const TABS = [
   "OI",
   "Skew",
   "Smile",
+  "Range",
   "Vol Edge",
   "Harvest",
   "Anomaly",
@@ -75,7 +77,7 @@ type Tab = (typeof TABS)[number];
 const GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: "Overview", tabs: ["Overview", "Signals", "Edge", "MM Hedge", "Playbook"] },
   { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Scenario", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
-  { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Vol Edge"] },
+  { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Range", "Vol Edge"] },
   { label: "Flow", tabs: ["Options Flow", "Chain", "Anomaly", "Harvest", "History", "Pine"] },
 ];
 
@@ -320,6 +322,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "OI" && <OiProfile symbol={symbol} exp={validExp} />}
       {tab === "Skew" && <SkewChart symbol={symbol} exp={validExp} />}
       {tab === "Smile" && <VolSmile symbol={symbol} exp={validExp} />}
+      {tab === "Range" && <VixRange symbol={symbol} />}
       {tab === "Vol Edge" && <VolEdge symbol={symbol} />}
       {tab === "Harvest" && <HarvestPanel symbol={symbol} exp={validExp} />}
       {tab === "Anomaly" && (

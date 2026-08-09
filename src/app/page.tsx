@@ -28,6 +28,21 @@ const MODULES: { tab: string; title: string; desc: string; motif: JSX.Element }[
     ),
   },
   {
+    tab: "Range",
+    title: "Vol index & day range",
+    desc: "A CBOE-methodology 30d vol index for the symbol, Brownian-motion day high/low projections, and a walk-forward scoreboard of implied vs realized range.",
+    motif: (
+      <svg viewBox="0 0 84 36" className="h-9 w-full" aria-hidden>
+        <rect x="10" y="16" width="64" height="4" rx="2" fill="rgba(255,255,255,0.08)" />
+        <rect x="26" y="16" width="32" height="4" rx="2" fill="rgba(52,211,153,0.35)" />
+        <line x1="10" y1="12" x2="10" y2="24" stroke="rgba(248,113,113,0.8)" strokeWidth="1.6" />
+        <line x1="74" y1="12" x2="74" y2="24" stroke="rgba(52,211,153,0.8)" strokeWidth="1.6" />
+        <line x1="42" y1="10" x2="42" y2="26" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" strokeDasharray="2 2" />
+        <text x="42" y="33" fill="rgba(148,163,184,0.8)" fontSize="5.5" textAnchor="middle" fontFamily="monospace">1.596σ</text>
+      </svg>
+    ),
+  },
+  {
     tab: "Gamma",
     title: "Gamma exposure",
     desc: "Dealer GEX by strike — call and put walls, the gamma flip, and the pinning field around spot.",
@@ -201,7 +216,7 @@ export default function Home() {
       {/* ── Capability strip ─────────────────────────────────────────────── */}
       <section aria-label="Capabilities" className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { v: "23", k: "Analytics modules", d: "Signals to surfaces, one terminal" },
+          { v: "24", k: "Analytics modules", d: "Signals to surfaces, one terminal" },
           { v: "GEX · DEX", k: "Exposure engines", d: "Gamma, delta, vanna & charm by strike" },
           { v: "±100", k: "Pressure model", d: "Six-factor dealer-hedging score" },
           { v: "Pine v6", k: "Level export", d: "ETF levels converted onto ES / NQ" },
