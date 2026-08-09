@@ -156,6 +156,60 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("array.get(P, i) * scale"); // every level scaled by the factor
   });
 
+  it("reports side-specific exposure on side-named levels (Put Support shows PUT gamma, not net)", () => {
+    const r = buildGexPine("SIDE", multiChain(), 100);
+    // put-side gamma is ≤ 0 in the dealer convention — the tooltip must show it, with net alongside
+    expect(r.code).toMatch(/Put Support[^"]*Put GEX -\$/);
+    expect(r.code).toMatch(/Call Resistance[^"]*Call GEX \$/);
+    expect(r.code).toMatch(/Delta Support Wall[^"]*Put DEX -\$/);
+    expect(r.code).toMatch(/Delta Resistance Wall[^"]*Call DEX \$/);
+    // scope is stated, not implied
+    expect(r.code).toContain("ALL expirations");
+  });
+
+  it("tags front-expiry levels with the real tenor — 0DTE only when it IS 0DTE", () => {
+    const zero = buildGexPine("Z", multiChain(), 100); // front dte: 0
+    expect(zero.code).toContain("0DTE");
+    // 1d front: same book shifted to dte 1 — must say 1d, never 0DTE
+    const oneDay = multiChain().map((c) => (c.expiration === "2026-06-16" ? { ...c, dte: 1 } : c));
+    const r1 = buildGexPine("ONE", oneDay, 100);
+    // front walls that coincide with the all-exp walls are deduped (one level per price); the
+    // flip + expected-move variants always remain and must carry the true tenor
+    expect(r1.code).toContain('"HVL 1d"');
+    expect(r1.code).toContain('"Exp Hi 1d"');
+    expect(r1.code).not.toContain("0DTE");
+  });
+
+  it("keeps OI walls inside a tradeable moneyness band (no 30%-away LEAP tail strikes)", () => {
+    const chain = [
+      ...multiChain(),
+      // massive far-dated put hedge 35% below spot — the classic junk 'put OI wall'
+      c({ expiration: "2027-01-15", dte: 200, type: "put", strike: 65, gamma: 0.001, openInterest: 500000, delta: -0.05 }),
+    ];
+    const r = buildGexPine("BAND", chain, 100);
+    const put = /"Put OI wall[^"]*strike (\d+(?:\.\d+)?)"/.exec(r.code);
+    expect(put).not.toBeNull();
+    expect(Number(put![1])).toBeGreaterThanOrEqual(80); // within 20% of spot, not 65
+    expect(r.code).toContain("within 20% of spot");
+    // the delta walls get the same band — a 500k-OI far LEAP put must not become "Delta Support"
+    expect(r.deltaPutWall).not.toBeNull();
+    expect(r.deltaPutWall!).toBeGreaterThanOrEqual(80);
+  });
+
+  it("expresses the gamma regime: HVL shading, live regime read, and series-consistent ta calls", () => {
+    const r = buildGexPine("REG", multiChain(), 100);
+    expect(r.code).toContain("regimeLong = close >= kHvl * scale");
+    expect(r.code).toContain("bgcolor(showRegime");
+    expect(r.code).toContain("SHORT GAMMA - dealers amplify");
+    expect(r.code).toContain("LONG GAMMA - dealers dampen");
+    // ta.* hoisted out of the barstate.islast branch (Pine series-consistency)
+    expect(r.code).toContain("rngHi = ta.highest(high, 120)");
+    expect(r.code).not.toContain("rng = ta.highest");
+    // regime layer degrades cleanly when no flip exists (single-sided book → no kHvl)
+    const noFlip = buildGexPine("NF", [c({ type: "call", strike: 105, gamma: 0.05, openInterest: 5000 })], 100);
+    expect(noFlip.code).not.toContain("bgcolor(showRegime");
+  });
+
   it("targets a chosen expiration when one is passed (e.g. 0DTE)", () => {
     const chain = [
       c({ expiration: "2026-06-16", dte: 0, strike: 100, gamma: 0.03, openInterest: 7000 }),

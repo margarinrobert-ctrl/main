@@ -47,28 +47,58 @@ function usd(n: number): string {
 interface StrikeStat {
   oi: number;
   vol: number;
-  gex: number;
-  dex: number;
+  gex: number; // net dealer gamma-$ at the strike (calls +, puts −)
+  callGex: number;
+  putGex: number; // ≤ 0 in the dealer convention
+  dex: number; // net delta-$ (signed by delta)
+  callDex: number;
+  putDex: number; // ≤ 0
 }
 
 function strikeStats(contracts: OptionContract[], strike: number | null, spot: number | null): StrikeStat {
-  const r: StrikeStat = { oi: 0, vol: 0, gex: 0, dex: 0 };
+  const r: StrikeStat = { oi: 0, vol: 0, gex: 0, callGex: 0, putGex: 0, dex: 0, callDex: 0, putDex: 0 };
   if (strike == null) return r;
   for (const c of contracts) {
     if (c.strike !== strike) continue;
     r.oi += c.openInterest ?? 0;
     r.vol += c.volume ?? 0;
     if (spot && c.openInterest != null) {
-      if (c.gamma != null) r.gex += (c.type === "call" ? 1 : -1) * c.gamma * c.openInterest * 100 * spot * spot * 0.01;
-      if (c.delta != null) r.dex += c.delta * c.openInterest * 100 * spot;
+      if (c.gamma != null) {
+        const g = (c.type === "call" ? 1 : -1) * c.gamma * c.openInterest * 100 * spot * spot * 0.01;
+        r.gex += g;
+        if (c.type === "call") r.callGex += g;
+        else r.putGex += g;
+      }
+      if (c.delta != null) {
+        const d = c.delta * c.openInterest * 100 * spot;
+        r.dex += d;
+        if (c.type === "call") r.callDex += d;
+        else r.putDex += d;
+      }
     }
   }
   return r;
 }
 
-function meta(contracts: OptionContract[], strike: number | null, spot: number | null): string {
+// A level named for one SIDE of the book must report that side's exposure, not the strike's net —
+// a "Put Support" showing the (call-dominated) net GEX as a big positive number misreads the level.
+type MetaFocus = "call-gamma" | "put-gamma" | "call-delta" | "put-delta" | "net";
+
+function meta(contracts: OptionContract[], strike: number | null, spot: number | null, focus: MetaFocus = "net"): string {
   const s = strikeStats(contracts, strike, spot);
-  return `OI ${kfmt(s.oi)} | V ${kfmt(s.vol)} | GEX ${usd(s.gex)} | DEX ${usd(s.dex)}`;
+  const base = `OI ${kfmt(s.oi)} | V ${kfmt(s.vol)}`;
+  switch (focus) {
+    case "call-gamma":
+      return `${base} | Call GEX ${usd(s.callGex)} (net ${usd(s.gex)}) | DEX ${usd(s.dex)}`;
+    case "put-gamma":
+      return `${base} | Put GEX ${usd(s.putGex)} (net ${usd(s.gex)}) | DEX ${usd(s.dex)}`;
+    case "call-delta":
+      return `${base} | Call DEX ${usd(s.callDex)} (net ${usd(s.dex)}) | GEX ${usd(s.gex)}`;
+    case "put-delta":
+      return `${base} | Put DEX ${usd(s.putDex)} (net ${usd(s.dex)}) | GEX ${usd(s.gex)}`;
+    default:
+      return `${base} | GEX ${usd(s.gex)} | DEX ${usd(s.dex)}`;
+  }
 }
 
 function nearestExpiration(chain: OptionContract[]): string | null {
@@ -124,12 +154,19 @@ export function buildGexPine(
   const callRes0 = callResistance(by0, spot);
   const putSup0 = putSupport(by0, spot);
   const mp = exp ? maxPain(chain, exp) : null;
+  // OI walls restricted to a tradeable moneyness band: raw max OI over the whole chain routinely lands
+  // on far-dated tail hedges 30%+ away from spot (LEAP puts), which is meaningless as an intraday level.
+  const OI_BAND = 0.2;
   const oi = oiByStrike(chain);
-  const callOi = callOiWall(oi);
-  const putOi = putOiWall(oi);
+  const oiBand = spot != null ? oi.filter((x) => Math.abs(x.strike / spot - 1) <= OI_BAND) : oi;
+  const callOi = callOiWall(oiBand.length ? oiBand : oi);
+  const putOi = putOiWall(oiBand.length ? oiBand : oi);
+  // Delta walls get the same band: far-dated tail strikes carry so much OI that even a 0.05-delta
+  // LEAP can out-dollar every tradeable strike.
   const dby = dexByStrike(chain, spot);
-  const dCallWall = deltaCallWall(dby, spot);
-  const dPutWall = deltaPutWall(dby, spot);
+  const dbyBand = spot != null ? dby.filter((x) => Math.abs(x.strike / spot - 1) <= OI_BAND) : dby;
+  const dCallWall = deltaCallWall(dbyBand.length ? dbyBand : dby, spot);
+  const dPutWall = deltaPutWall(dbyBand.length ? dbyBand : dby, spot);
   const iv0 = exp ? atmIv(chain, spot, exp) : null;
   // Expected move of the FRONT expiration (market-implied ATM straddle). For a 0DTE front this is
   // literally today's expected high/low — the intraday range. Falls back to a 1-session 1σ from IV.
@@ -157,25 +194,28 @@ export function buildGexPine(
     lvls.push({ price, short: name, detail: `${detail} · strike ${fmtNice(price)}`, color, style, width });
   };
 
-  add(callRes, "Call Resistance", "color.red", "line.style_solid", 2, `Call Resistance (max call gamma above spot) - ${meta(chain, callRes, spot)}`);
-  add(putSup, "Put Support", "color.green", "line.style_solid", 2, `Put Support (max put gamma below spot) - ${meta(chain, putSup, spot)}`);
-  add(hvl, "HVL", "color.blue", "line.style_solid", 2, "HVL / gamma flip (zero-gamma nearest spot)");
-  add(callRes0, "Call Res 0DTE", "color.red", "line.style_dashed", 2, `Call Resistance 0DTE / Gamma Wall 0DTE - ${meta(sub, callRes0, spot)}`);
-  add(putSup0, "Put Sup 0DTE", "color.green", "line.style_dashed", 2, `Put Support 0DTE - ${meta(sub, putSup0, spot)}`);
-  add(hvl0, "HVL 0DTE", "color.blue", "line.style_dashed", 2, "HVL 0DTE / front-expiry gamma flip");
+  // Front-expiry levels carry the REAL tenor tag ("0DTE" only when the front actually expires today).
+  const frontTag = dteLabel || "front";
+  add(callRes, "Call Resistance", "color.red", "line.style_solid", 2, `Call Resistance (largest CALL gamma above spot, ALL expirations) — dealers long these calls sell into strength as price approaches: rallies tend to stall here - ${meta(chain, callRes, spot, "call-gamma")}`);
+  add(putSup, "Put Support", "color.green", "line.style_solid", 2, `Put Support (largest PUT gamma below spot, ALL expirations) — hedging of dealer short puts buys into weakness as price approaches: selloffs tend to slow here - ${meta(chain, putSup, spot, "put-gamma")}`);
+  add(hvl, "HVL", "color.blue", "line.style_solid", 2, "HVL / gamma flip (net dealer gamma crosses zero, ALL expirations). ABOVE = long-gamma regime: hedging dampens moves (fade extremes). BELOW = short-gamma: hedging amplifies moves (respect momentum, expect expansion).");
+  add(callRes0, `Call Res ${frontTag}`, "color.red", "line.style_dashed", 2, `Call Resistance / Gamma Wall for the ${frontTag} expiry only - ${meta(sub, callRes0, spot, "call-gamma")}`);
+  add(putSup0, `Put Sup ${frontTag}`, "color.green", "line.style_dashed", 2, `Put Support for the ${frontTag} expiry only - ${meta(sub, putSup0, spot, "put-gamma")}`);
+  add(hvl0, `HVL ${frontTag}`, "color.blue", "line.style_dashed", 2, `HVL / gamma flip for the ${frontTag} expiry only`);
   // Delta walls — dealer hedgeable-delta resistance/support. Ranked here (ABOVE Max Pain / OI walls) so they
   // are never dropped by the one-level-per-price dedup when a raw-OI wall happens to sit on the same strike.
-  add(dCallWall, "Delta Resistance", "color.maroon", "line.style_solid", 2, `Delta Resistance Wall (heaviest call delta-exposure above spot = dealer hedgeable-delta resistance) - ${meta(chain, dCallWall, spot)}`);
-  add(dPutWall, "Delta Support", "color.lime", "line.style_solid", 2, `Delta Support Wall (heaviest put delta-exposure below spot = dealer hedgeable-delta support) - ${meta(chain, dPutWall, spot)}`);
-  add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, `Max Pain ${exp ?? ""} - ${meta(chain, mp, spot)}`);
-  add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, `Call OI wall - ${meta(chain, callOi, spot)}`);
-  add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, `Put OI wall - ${meta(chain, putOi, spot)}`);
+  add(dCallWall, "Delta Resistance", "color.maroon", "line.style_solid", 2, `Delta Resistance Wall (heaviest CALL delta-exposure above spot, ALL expirations = dealer hedgeable-delta resistance) - ${meta(chain, dCallWall, spot, "call-delta")}`);
+  add(dPutWall, "Delta Support", "color.lime", "line.style_solid", 2, `Delta Support Wall (heaviest PUT delta-exposure below spot, ALL expirations = dealer hedgeable-delta support) - ${meta(chain, dPutWall, spot, "put-delta")}`);
+  add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, `Max Pain ${exp ?? ""} (strike minimizing option holders' payout at that expiry; weak pin candidate) - ${meta(chain, mp, spot)}`);
+  add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, `Call OI wall (max call open interest within 20% of spot; OI is prior-day T+1) - ${meta(chain, callOi, spot, "call-gamma")}`);
+  add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, `Put OI wall (max put open interest within 20% of spot; OI is prior-day T+1) - ${meta(chain, putOi, spot, "put-gamma")}`);
   add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated — levels are anchored here; the chart's current price may have moved since.`);
-  add(dmax, `Exp Hi ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move HIGH for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
-  add(dmin, `Exp Lo ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move LOW for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
+  const emNote = dteOf != null && dteOf <= 0 ? "literally today's expected range" : `the market-implied range into that expiry`;
+  add(dmax, `Exp Hi ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move HIGH for the ${dteLabel || "front"} expiry (ATM straddle price) — ${emNote}`);
+  add(dmin, `Exp Lo ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move LOW for the ${dteLabel || "front"} expiry (ATM straddle price) — ${emNote}`);
   ladder.forEach((x, i) => {
     const st = strikeStats(chain, x.strike, spot);
-    add(x.strike, `GEX ${i + 1}`, "color.teal", "line.style_solid", 1, `GEX ${i + 1} @${fmtNice(x.strike)} - OI ${kfmt(st.oi)} | V ${kfmt(st.vol)} | ${usd(x.gex)}`);
+    add(x.strike, `GEX ${i + 1}`, "color.teal", "line.style_solid", 1, `GEX ${i + 1} @${fmtNice(x.strike)} — rank-${i + 1} net dealer gamma (ALL exp): a hedging magnet/pin candidate while gamma is positive - OI ${kfmt(st.oi)} | V ${kfmt(st.vol)} | net GEX ${usd(x.gex)}`);
   });
 
   if (!lvls.length) add(s, "Spot", "color.gray", "line.style_dotted", 1, "spot");
@@ -228,7 +268,9 @@ export function buildGexPine(
   const convertNote = `\n// CONVERT TO ES / NQ / RTY: to overlay these ${symbol} levels on a futures chart, leave "Convert levels\n// to this chart" on Auto. It reads the LIVE ${symbol} price (request.security on the "Source symbol" input)\n// and this chart's price at the SAME instant, then scales every level by their exact ratio — so the\n// current index divisor AND futures basis are always baked in (QQQ->NQ ~41x, SPY->ES ~10x, IWM->RTY ~10x).\n// The ratio is LOCKED on the last closed bar so levels never move as price ticks; on the ${symbol} chart it is 1.0.`;
 
   const code = `//@version=6
-// OptionsFlow — GEX levels for ${symbol}  (front/target exp ${exp ?? "n/a"}${dteLabel ? ", " + dteLabel : ""})
+// OptionsFlow — GEX levels for ${symbol}
+// SCOPE: walls/HVL/delta walls span ALL expirations; "${dteLabel || "front"}"-tagged variants, Max Pain and the
+// expected move are for the front/target expiry ${exp ?? "n/a"} only. OI is prior-day (T+1).
 // Built for the ${symbol} chart (spot ~${spot != null ? fmtNice(spot) : "n/a"}). To overlay on ES/NQ, use the
 // "Convert levels to this chart" input below (Auto = accurate live-ratio scaling).
 // STATIC SNAPSHOT: a Pine script cannot fetch data, so this does NOT auto-update.
@@ -247,6 +289,7 @@ sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : label
 showVwap = input.bool(true, "Show session VWAP")
 showOR   = input.bool(true, "Show opening range (intraday)")
 orMin    = input.int(30, "Opening-range minutes", minval = 1, maxval = 240)
+${hvl != null ? 'showRegime = input.bool(true, "Shade gamma regime (vs HVL)")' : ""}
 ${alertInputs}
 
 // ── Baked level snapshot (price / label / detail / color / style / width) ──
@@ -279,10 +322,31 @@ if na(frozenScale) and (barstate.islastconfirmedhistory or barstate.islast)
     liveRatio = not na(srcLive) and srcLive > 0 ? close / srcLive : (snapSpot > 0 ? close / snapSpot : 1.0)
     frozenScale := convertMode == "Auto (match chart)" ? liveRatio : 1.0
 scale = nz(frozenScale, 1.0) * manualMult
+${
+  hvl != null
+    ? `
+// ── Gamma regime (the core GEX read) ─────────────────────────────────────────
+// Above the HVL dealers are net LONG gamma: their hedging sells strength / buys weakness, dampening
+// moves (mean-reversion conditions). Below it they are net SHORT gamma: hedging chases price and
+// AMPLIFIES moves (trend / expansion conditions). Shaded live from the chart's own price vs the level.
+regimeLong = close >= kHvl * scale
+bgcolor(showRegime ? (regimeLong ? color.new(color.teal, 96) : color.new(color.red, 95)) : na, title = "Gamma regime")
+var table _rt = table.new(position.top_right, 1, 1)
+`
+    : ""
+}
+// ta.* series must be computed on every bar (not inside a conditional) for series consistency.
+rngHi = ta.highest(high, 120)
+rngLo = ta.lowest(low, 120)
 
 if barstate.islast
     clearAll()
-    rng = ta.highest(high, 120) - ta.lowest(low, 120)
+${
+  hvl != null
+    ? `    table.cell(_rt, 0, 0, regimeLong ? "LONG GAMMA - dealers dampen (fade extremes)" : "SHORT GAMMA - dealers amplify (respect momentum)", text_color = regimeLong ? color.teal : color.red, text_size = size.small, bgcolor = color.new(color.black, 35))
+`
+    : ""
+}    rng = rngHi - rngLo
     minGap = math.max(na(rng) or rng <= 0 ? close * 0.012 : rng * 0.02, close * 0.0015)
     float prevP = na
     int lane = 0
