@@ -6,6 +6,7 @@ import type { OptionContract } from "@/lib/barchart/types";
 import { loadChain } from "@/lib/client-data";
 import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR_LINE, TOOLTIP_PROPS } from "@/lib/chartTheme";
 import { bsImpliedVol, bsQuote, valueCurve, type OptType } from "@/lib/quant/bs";
+import { scanStrikes, type TradeEval } from "@/lib/quant/strategy";
 import { useChartFrame } from "./chartFrame";
 import { EmptyState, ErrorState, Loading, SectionHeader, Stat } from "./states";
 
@@ -53,6 +54,9 @@ export function BsLab({ symbol }: { symbol: string }) {
   const [sR, setR] = useState("4.5");
   const [sQ, setQ] = useState("1.2");
   const [picked, setPicked] = useState<OptionContract | null>(null);
+  // trade-scanner scenario: the vol you believe will REALIZE and the drift you assume
+  const [sigmaScan, setSigmaScan] = useState("");
+  const [muScan, setMuScan] = useState("0");
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +73,16 @@ export function BsLab({ symbol }: { symbol: string }) {
           setK(String(Math.round(res.spot)));
         }
         setState(res.chain.length ? "ok" : "empty");
+        const exps0 = [...new Map(res.chain.map((c) => [c.expiration, c.dte])).entries()]
+          .filter(([, d]) => d != null && (d as number) >= 0)
+          .sort((a, b) => (a[1] as number) - (b[1] as number));
+        for (const [e] of exps0) {
+          const iv = res.chain.find((c) => c.expiration === e && c.impliedVolatility != null && c.impliedVolatility > 0)?.impliedVolatility;
+          if (iv) {
+            setSigmaScan((iv * 100).toFixed(1));
+            break;
+          }
+        }
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : "Network error");
@@ -131,6 +145,31 @@ export function BsLab({ symbol }: { symbol: string }) {
   }, [inputs, marketMid]);
 
   const breakeven = quote && K != null ? (type === "call" ? K + quote.price : K - quote.price) : null;
+
+  // per-strike trade scanner over the picked expiry, under the explicit scenario
+  const scan = useMemo(() => {
+    const sig = (num(sigmaScan) ?? 0) / 100;
+    if (!pickExp || spot == null || sig <= 0) return [];
+    return scanStrikes(
+      chain.filter((c) => c.expiration === pickExp),
+      spot,
+      { sigma: sig, mu: (num(muScan) ?? 0) / 100, r: (num(sR) ?? 0) / 100, q: (num(sQ) ?? 0) / 100 },
+    );
+  }, [chain, pickExp, spot, sigmaScan, muScan, sR, sQ]);
+  const bestOverall = useMemo(() => {
+    let b: { strike: number; t: TradeEval } | null = null;
+    for (const row of scan) for (const t of row.trades) if (!b || t.expPnl > b.t.expPnl) b = { strike: row.strike, t };
+    return b;
+  }, [scan]);
+  const bestDefined = useMemo(() => {
+    let b: { strike: number; t: TradeEval } | null = null;
+    for (const row of scan) for (const t of row.trades) if (Number.isFinite(t.maxLoss) && t.kind.startsWith("long") && (!b || t.expPnl > b.t.expPnl)) b = { strike: row.strike, t };
+    return b;
+  }, [scan]);
+  const atmStrike = useMemo(() => (scan.length && spot != null ? scan.reduce((p, c2) => (Math.abs(c2.strike - spot) < Math.abs(p.strike - spot) ? c2 : p)).strike : null), [scan, spot]);
+  const tradeName: Record<string, string> = { "long-call": "Long call", "short-call": "Short call", "long-put": "Long put", "short-put": "Short put" };
+  const tradeChip = (k: string) =>
+    k === "short-put" || k === "long-call" ? "border-call/30 bg-call/10 text-call" : k === "short-call" || k === "long-put" ? "border-put/30 bg-put/10 text-put" : "border-white/10 text-neutral-300";
 
   return (
     <div ref={frame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${frame.expandedClass}`}>
@@ -245,6 +284,114 @@ export function BsLab({ symbol }: { symbol: string }) {
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
+              </div>
+
+              {/* Per-strike trade scanner */}
+              <div className="mt-5 border-t border-white/[0.05] pt-4">
+                <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+                  <div>
+                    <div className="lbl">Trade scanner · {pickExp || "front expiry"}</div>
+                    <h3 className="display mt-0.5 text-sm text-neutral-100">Expected P&L and win rate per strike, at live mids</h3>
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <label className="block w-24">
+                      <span className="lbl px-0.5">Scenario σ</span>
+                      <div className="relative mt-1">
+                        <input value={sigmaScan} onChange={(e) => setSigmaScan(e.target.value)} inputMode="decimal" aria-label="Scenario vol" className={`${field} pr-8`} />
+                        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-neutral-500">%</span>
+                      </div>
+                    </label>
+                    <label className="block w-24">
+                      <span className="lbl px-0.5">Drift μ</span>
+                      <div className="relative mt-1">
+                        <input value={muScan} onChange={(e) => setMuScan(e.target.value)} inputMode="decimal" aria-label="Scenario drift" className={`${field} pr-10`} />
+                        <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-neutral-500">%/yr</span>
+                      </div>
+                    </label>
+                    <button
+                      onClick={() => setMuScan(String(Math.round(((num(sR) ?? 0) - (num(sQ) ?? 0)) * 100) / 100))}
+                      className="rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[11px] text-neutral-400 transition hover:border-white/20 hover:text-neutral-200"
+                      title="Set drift to r − q (risk-neutral): market-fair prices then show ~zero EV"
+                    >
+                      risk-neutral
+                    </button>
+                  </div>
+                </div>
+
+                {!scan.length ? (
+                  <EmptyState label="No scannable quotes for this expiry." hint="The scanner needs live bid/ask mids and a positive scenario vol." />
+                ) : (
+                  <>
+                    <div className="mb-3 grid gap-2.5 sm:grid-cols-2">
+                      {bestOverall && (
+                        <div className="rounded-xl border border-call/25 bg-call/[0.05] p-3.5">
+                          <div className="lbl mb-1 text-call">Highest expected P&L (any risk)</div>
+                          <p className="text-sm leading-relaxed text-neutral-300">
+                            <span className={`mr-1.5 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${tradeChip(bestOverall.t.kind)}`}>{tradeName[bestOverall.t.kind]}</span>
+                            <span className="font-mono">{bestOverall.strike}</span> · E[P&L] <span className="font-mono text-call">${px2(bestOverall.t.expPnl * 100)}</span>/ct · win{" "}
+                            <span className="font-mono">{(bestOverall.t.winRate * 100).toFixed(0)}%</span> · max loss{" "}
+                            <span className="font-mono text-put">{Number.isFinite(bestOverall.t.maxLoss) ? `$${px2(bestOverall.t.maxLoss * 100)}` : "uncapped"}</span>
+                          </p>
+                        </div>
+                      )}
+                      {bestDefined && (
+                        <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5">
+                          <div className="lbl mb-1">Best defined-risk (long premium)</div>
+                          <p className="text-sm leading-relaxed text-neutral-300">
+                            <span className={`mr-1.5 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${tradeChip(bestDefined.t.kind)}`}>{tradeName[bestDefined.t.kind]}</span>
+                            <span className="font-mono">{bestDefined.strike}</span> · E[P&L] <span className={`font-mono ${bestDefined.t.expPnl >= 0 ? "text-call" : "text-put"}`}>${px2(bestDefined.t.expPnl * 100)}</span>/ct · win{" "}
+                            <span className="font-mono">{(bestDefined.t.winRate * 100).toFixed(0)}%</span> · max loss <span className="font-mono">${px2(bestDefined.t.maxLoss * 100)}</span>
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-white/[0.08]">
+                      <table className="tbl w-full">
+                        <thead>
+                          <tr>
+                            <th className="!text-right">Strike</th>
+                            <th className="!text-right">Mkt IV C/P</th>
+                            <th>Best trade</th>
+                            <th className="!text-right">Mid</th>
+                            <th className="!text-right">Win rate</th>
+                            <th className="!text-right">E[P&L]/ct</th>
+                            <th className="!text-right">Max loss/ct</th>
+                            <th className="!text-right">B/E</th>
+                          </tr>
+                        </thead>
+                        <tbody className="font-mono tabular-nums">
+                          {scan.map((row) => (
+                            <tr key={row.strike} className={row.strike === atmStrike ? "bg-accent/[0.05]" : ""}>
+                              <td className="text-right font-semibold text-neutral-100">{row.strike}</td>
+                              <td className="text-right text-neutral-400">
+                                {row.callIv != null ? (row.callIv * 100).toFixed(1) : "—"}/{row.putIv != null ? (row.putIv * 100).toFixed(1) : "—"}
+                              </td>
+                              <td>
+                                {row.best ? (
+                                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${tradeChip(row.best.kind)}`}>{tradeName[row.best.kind]}</span>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                              <td className="text-right text-neutral-300">{row.best ? `$${px2(row.best.premium)}` : "—"}</td>
+                              <td className="text-right text-neutral-200">{row.best ? `${(row.best.winRate * 100).toFixed(0)}%` : "—"}</td>
+                              <td className={`text-right ${row.best && row.best.expPnl >= 0 ? "text-call" : "text-put"}`}>{row.best ? `$${px2(row.best.expPnl * 100)}` : "—"}</td>
+                              <td className="text-right text-neutral-400">{row.best ? (Number.isFinite(row.best.maxLoss) ? `$${px2(row.best.maxLoss * 100)}` : "∞") : "—"}</td>
+                              <td className="text-right text-neutral-400">{row.best ? px2(row.best.breakeven) : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-relaxed text-neutral-600">
+                      "Best" is CONDITIONAL on your scenario: it means the market's implied vol differs from the σ you typed (scenario σ below implied
+                      favors shorts — the variance-risk-premium trade — and above favors longs). Set drift to risk-neutral and σ to each strike's
+                      implied and every EV collapses to ≈ 0: the market offers no free trade. Win rate is P(profit), not safety — short legs win often
+                      and lose big; max loss is the honest column. Per-contract $ = ×100 shares, at mid (real fills pay spread).
+                    </p>
+                  </>
+                )}
               </div>
 
               <p className="mt-3 border-t border-white/[0.05] pt-3 text-[11px] leading-relaxed text-neutral-600">
