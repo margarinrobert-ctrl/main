@@ -1,4 +1,5 @@
 import type { OptionContract } from "./barchart/types";
+import { dayBands } from "./quant/daybands";
 import {
   atmIv,
   callOiWall,
@@ -7,7 +8,6 @@ import {
   deltaPutWall,
   dexByStrike,
   expectedMove,
-  expectedMove1D,
   gammaFlipNearest,
   gexByStrike,
   maxPain,
@@ -168,15 +168,14 @@ export function buildGexPine(
   const dCallWall = deltaCallWall(dbyBand.length ? dbyBand : dby, spot);
   const dPutWall = deltaPutWall(dbyBand.length ? dbyBand : dby, spot);
   const iv0 = exp ? atmIv(chain, spot, exp) : null;
-  // Expected move of the FRONT expiration (market-implied ATM straddle). For a 0DTE front this is
-  // literally today's expected high/low — the intraday range. Falls back to a 1-session 1σ from IV.
-  const emFront = (exp ? expectedMove(chain, spot, exp) : null) ?? (iv0 != null ? expectedMove1D(spot, iv0) : null);
+  // Day bands from ONE sigma. The ATM straddle is E|move| = 0.798·sigma (a ~57.5% band), NOT 1 sigma —
+  // dayBands() converts it (x sqrt(pi/2)) so the straddle path and the IV path mean the same thing.
+  const straddle = exp ? (expectedMove(chain, spot, exp)?.abs ?? null) : null;
+  const bands = dayBands(spot, straddle, iv0);
   const dteOf = sub.find((c) => c.dte != null)?.dte ?? null;
   const dteLabel = dteOf == null ? "" : dteOf <= 0 ? "0DTE" : `${dteOf}d`;
 
   const s = spot ?? byAll[Math.floor(byAll.length / 2)]?.strike ?? 0;
-  const dmax = emFront ? s + emFront.abs : null;
-  const dmin = emFront ? s - emFront.abs : null;
 
   const ladder = byAll
     .filter((x) => x.gex !== 0)
@@ -202,6 +201,31 @@ export function buildGexPine(
   add(callRes0, `Call Res ${frontTag}`, "color.red", "line.style_dashed", 2, `Call Resistance / Gamma Wall for the ${frontTag} expiry only - ${meta(sub, callRes0, spot, "call-gamma")}`);
   add(putSup0, `Put Sup ${frontTag}`, "color.green", "line.style_dashed", 2, `Put Support for the ${frontTag} expiry only - ${meta(sub, putSup0, spot, "put-gamma")}`);
   add(hvl0, `HVL ${frontTag}`, "color.blue", "line.style_dashed", 2, `HVL / gamma flip for the ${frontTag} expiry only`);
+
+  // ── Standard-deviation day bands (0DTE session range) ──────────────────────
+  // Every band comes from the same sigma, and each says the coverage it ACTUALLY has. A raw straddle
+  // band would be +/-0.798 sigma (~57.5%), which is why it is converted rather than drawn as "1 sigma".
+  if (bands) {
+    const srcNote = bands.source === "straddle" ? "sigma implied by the ATM straddle (converted: straddle = 0.798*sigma)" : "sigma from ATM implied vol / sqrt(252)";
+    const dayTag = dteOf != null && dteOf <= 0 ? "today (0DTE)" : `the ${dteLabel || "front"} expiry`;
+    const sd1 = bands.bands.find((b) => b.key === "sd1");
+    const p618 = bands.bands.find((b) => b.key === "p618");
+    const sd2 = bands.bands.find((b) => b.key === "sd2");
+    add(bands.mean, "Day Mean", "color.white", "line.style_dashed", 2, `Day MEAN for ${dayTag} (= spot when generated; with zero drift the expected close IS spot, so this doubles as the spot anchor)`.replace(/\s+$/, "") + ` — centre of the terminal distribution for ${dayTag} — the centre of the terminal distribution. With no drift the expected close IS spot; this is the distribution's centre, not a target. ${srcNote}: 1 sigma = ${fmtNice(bands.sigmaAbs)} (${(bands.sigmaPct * 100).toFixed(2)}%)`);
+    if (sd1) {
+      add(sd1.hi, "Day Max 1SD", "color.orange", "line.style_solid", 1, `Day MAXIMUM for ${dayTag} — +1 sigma. The close finishes inside +/-1 sigma about ${(sd1.coverage * 100).toFixed(1)}% of the time (so ~16% of days close ABOVE this). ${srcNote}`);
+      add(sd1.lo, "Day Min 1SD", "color.orange", "line.style_solid", 1, `Day MINIMUM for ${dayTag} — -1 sigma. The close finishes inside +/-1 sigma about ${(sd1.coverage * 100).toFixed(1)}% of the time (so ~16% of days close BELOW this). ${srcNote}`);
+    }
+    if (p618) {
+      add(p618.hi, "61.8% Hi", "color.aqua", "line.style_dotted", 1, `Upper 61.8% band (z = 0.874) — the close lands inside this band about ${(p618.coverage * 100).toFixed(1)}% of the time. Tighter than 1 sigma by construction.`);
+      add(p618.lo, "61.8% Lo", "color.aqua", "line.style_dotted", 1, `Lower 61.8% band (z = 0.874) — the close lands inside this band about ${(p618.coverage * 100).toFixed(1)}% of the time.`);
+    }
+    if (sd2) {
+      add(sd2.hi, "Day Max 2SD", "color.gray", "line.style_dotted", 1, `+2 sigma tail envelope — only ~${(((1 - sd2.coverage) / 2) * 100).toFixed(1)}% of closes finish above this.`);
+      add(sd2.lo, "Day Min 2SD", "color.gray", "line.style_dotted", 1, `-2 sigma tail envelope — only ~${(((1 - sd2.coverage) / 2) * 100).toFixed(1)}% of closes finish below this.`);
+    }
+  }
+
   // Delta walls — dealer hedgeable-delta resistance/support. Ranked here (ABOVE Max Pain / OI walls) so they
   // are never dropped by the one-level-per-price dedup when a raw-OI wall happens to sit on the same strike.
   add(dCallWall, "Delta Resistance", "color.maroon", "line.style_solid", 2, `Delta Resistance Wall (heaviest CALL delta-exposure above spot, ALL expirations = dealer hedgeable-delta resistance) - ${meta(chain, dCallWall, spot, "call-delta")}`);
@@ -209,10 +233,7 @@ export function buildGexPine(
   add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, `Max Pain ${exp ?? ""} (strike minimizing option holders' payout at that expiry; weak pin candidate) - ${meta(chain, mp, spot)}`);
   add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, `Call OI wall (max call open interest within 20% of spot; OI is prior-day T+1) - ${meta(chain, callOi, spot, "call-gamma")}`);
   add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, `Put OI wall (max put open interest within 20% of spot; OI is prior-day T+1) - ${meta(chain, putOi, spot, "put-gamma")}`);
-  add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated — levels are anchored here; the chart's current price may have moved since.`);
-  const emNote = dteOf != null && dteOf <= 0 ? "literally today's expected range" : `the market-implied range into that expiry`;
-  add(dmax, `Exp Hi ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move HIGH for the ${dteLabel || "front"} expiry (ATM straddle price) — ${emNote}`);
-  add(dmin, `Exp Lo ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move LOW for the ${dteLabel || "front"} expiry (ATM straddle price) — ${emNote}`);
+  if (!bands) add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated — levels are anchored here; the chart's current price may have moved since.`);
   ladder.forEach((x, i) => {
     const st = strikeStats(chain, x.strike, spot);
     add(x.strike, `GEX ${i + 1}`, "color.teal", "line.style_solid", 1, `GEX ${i + 1} @${fmtNice(x.strike)} — rank-${i + 1} net dealer gamma (ALL exp): a hedging magnet/pin candidate while gamma is positive - OI ${kfmt(st.oi)} | V ${kfmt(st.vol)} | net GEX ${usd(x.gex)}`);
@@ -270,7 +291,9 @@ export function buildGexPine(
   const code = `//@version=6
 // OptionsFlow — GEX levels for ${symbol}
 // SCOPE: walls/HVL/delta walls span ALL expirations; "${dteLabel || "front"}"-tagged variants, Max Pain and the
-// expected move are for the front/target expiry ${exp ?? "n/a"} only. OI is prior-day (T+1).
+// SD day bands are for the front/target expiry ${exp ?? "n/a"} only. OI is prior-day (T+1).
+// DAY BANDS: Day Mean / Day Max-Min 1SD (68.3%) / 61.8% band / 2SD envelope, all from ONE sigma. Note an
+// ATM straddle is E|move| = 0.798*sigma (~57.5% band), so it is CONVERTED to a true sigma, never drawn as 1SD.
 // Built for the ${symbol} chart (spot ~${spot != null ? fmtNice(spot) : "n/a"}). To overlay on ES/NQ, use the
 // "Convert levels to this chart" input below (Auto = accurate live-ratio scaling).
 // STATIC SNAPSHOT: a Pine script cannot fetch data, so this does NOT auto-update.

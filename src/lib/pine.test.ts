@@ -64,7 +64,7 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("OI "); // open-interest annotation
     expect(r.code).toContain("DEX "); // delta-exposure annotation
     expect(r.code).toContain("does NOT auto-update"); // static-snapshot warning
-    expect(r.code).toContain("Exp Hi"); // expected-move (today's range) label
+    expect(r.code).toContain("Day Max 1SD"); // sigma day band replaces the mislabeled straddle move
     expect(r.code).toContain("Convert levels to this chart"); // ES/NQ converter
     expect(r.code).toContain("alertcondition("); // level-cross alerts
     expect(r.code).toMatch(/P\s+=\s+array\.from\([^)]*\.\d/); // float price array
@@ -176,7 +176,7 @@ describe("buildGexPine", () => {
     // front walls that coincide with the all-exp walls are deduped (one level per price); the
     // flip + expected-move variants always remain and must carry the true tenor
     expect(r1.code).toContain('"HVL 1d"');
-    expect(r1.code).toContain('"Exp Hi 1d"');
+    expect(r1.code).toContain("the 1d expiry"); // band tooltips carry the true tenor
     expect(r1.code).not.toContain("0DTE");
   });
 
@@ -208,6 +208,31 @@ describe("buildGexPine", () => {
     // regime layer degrades cleanly when no flip exists (single-sided book → no kHvl)
     const noFlip = buildGexPine("NF", [c({ type: "call", strike: 105, gamma: 0.05, openInterest: 5000 })], 100);
     expect(noFlip.code).not.toContain("bgcolor(showRegime");
+  });
+
+  it("draws sigma day bands (mean / 1SD max-min / 61.8% / 2SD) with honest coverage, not a raw straddle", () => {
+    const r = buildGexPine("SD", multiChain(), 100);
+    for (const lbl of ['"Day Mean"', '"Day Max 1SD"', '"Day Min 1SD"', '"61.8% Hi"', '"61.8% Lo"', '"Day Max 2SD"', '"Day Min 2SD"']) {
+      expect(r.code).toContain(lbl);
+    }
+    // coverage is stated, and the straddle→sigma conversion is disclosed rather than silently applied
+    expect(r.code).toContain("68.3%");
+    expect(r.code).toContain("61.8%");
+    expect(r.code).toContain("0.798*sigma");
+    // the 1SD band must be strictly wider than the 61.8% band, and 2SD wider still
+    const at = (name: string) => {
+      const m = new RegExp(`"${name}[^"]*"`).exec(r.code);
+      return m ? m[0] : "";
+    };
+    expect(at("Day Mean")).not.toBe("");
+    const prices = /P\s+=\s+array\.from\(([^)]*)\)/.exec(r.code)![1].split(",").map((x) => Number(x.trim()));
+    const labels = /T\s+=\s+array\.from\(([^)]*)\)/.exec(r.code)![1].split(",").map((x) => x.trim().replace(/"/g, ""));
+    const priceOf = (l: string) => prices[labels.indexOf(l)];
+    const mean = priceOf("Day Mean");
+    expect(priceOf("Day Max 1SD") - mean).toBeGreaterThan(priceOf("61.8% Hi") - mean);
+    expect(priceOf("Day Max 2SD") - mean).toBeGreaterThan(priceOf("Day Max 1SD") - mean);
+    // symmetric about the mean
+    expect(mean - priceOf("Day Min 1SD")).toBeCloseTo(priceOf("Day Max 1SD") - mean, 1);
   });
 
   it("targets a chosen expiration when one is passed (e.g. 0DTE)", () => {
