@@ -51,6 +51,16 @@ describe("buildFuturesPine", () => {
     expect(r.code).toContain("score = pt * expR");
   });
 
+  it("guarantees at least 10 marked levels regardless of touch probability", () => {
+    const r = buildFuturesPine({ contract: "NQ1!", step: 40, ivPct: 20, proxy: "QQQ" });
+    expect(r.code).toContain('input.int(10, "Always mark at least N levels"');
+    expect(r.code).toContain("distCut"); // Nth-nearest distance threshold
+    expect(r.code).toContain("keep = math.abs(lvl - close) <= distCut + 0.0001 or pt * 100 >= minTouch");
+    expect(r.code).toContain("array.sort(dists, order.ascending)");
+    // grid is wide enough to satisfy the floor: 8 each side = 17 levels
+    expect(r.code).toContain('input.int(8, "Levels each side"');
+  });
+
   it("defaults the drift to zero so the honest 50% baseline is what ships", () => {
     const r = buildFuturesPine({ contract: "ES1!", step: 10, ivPct: 15, proxy: "SPY" });
     expect(r.code).toContain('input.float(0.0, "Session drift (pts, your bias)"');

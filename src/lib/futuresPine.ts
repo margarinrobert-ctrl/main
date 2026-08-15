@@ -31,7 +31,7 @@ export interface FuturesPineResult {
 
 export function buildFuturesPine(o: FuturesPineOptions): FuturesPineResult {
   const { contract, step, ivPct, proxy } = o;
-  const levels = o.levels ?? 6;
+  const levels = o.levels ?? 8;  // 17 grid levels available; at least `minShow` always drawn
   const iv = ivPct != null && ivPct > 0 ? Math.round(ivPct * 10) / 10 : 20;
   const asOf = new Date().toISOString().slice(0, 16).replace("T", " ");
   const dollarsPerPoint = contract === "NQ1!" ? 20 : 50; // NQ $20/pt, ES $50/pt
@@ -70,7 +70,8 @@ useSessVol = input.bool(true, "Blend live realized vol into IV", group = grpM, t
 grpG = "Grid"
 step      = input.float(${step}, "Level spacing / bracket size R (pts)", minval = 0.25, step = 0.25, group = grpG, tooltip = "${contract} default ${step} pts. Risk = reward = this, so R:R is 1:1.")
 nLevels   = input.int(${levels}, "Levels each side", minval = 1, maxval = 12, group = grpG)
-minTouch  = input.float(15, "Hide levels below P(touch) %", minval = 0, maxval = 100, group = grpG)
+minShow   = input.int(10, "Always mark at least N levels", minval = 1, maxval = 25, group = grpG, tooltip = "The nearest N levels are ALWAYS drawn, even if their touch probability is low. Late in the session sigma collapses and every far level would otherwise be filtered out, leaving the chart bare.")
+minTouch  = input.float(5, "Also show farther levels above P(touch) %", minval = 0, maxval = 100, group = grpG, tooltip = "Beyond the guaranteed N nearest, a level is only drawn if it still has this much chance of trading before the close.")
 
 grpS = "Session (0DTE)"
 sessSpec  = input.session("0930-1600", "Cash session", group = grpS, tooltip = "The window the 0DTE clock runs over. Probabilities shrink toward the close.")
@@ -139,17 +140,27 @@ clearAll() =>
     while array.size(_bx) > 0
         box.delete(array.pop(_bx))
 
-var table tb = table.new(position.top_right, 6, ${levels * 2 + 3}, border_width = 1)
+var table tb = table.new(position.top_right, 6, ${levels * 2 + 2}, border_width = 1)
 
 if barstate.islast
     clearAll()
     base = math.round(close / step) * step
+
+    // Guarantee a minimum number of marked levels: take the distance of the Nth-nearest grid level and
+    // always draw everything inside it, then let the touch filter decide about the rest.
+    dists = array.new_float()
+    for k = -nLevels to nLevels
+        lvl0 = base + k * step
+        if lvl0 > 0
+            array.push(dists, math.abs(lvl0 - close))
+    array.sort(dists, order.ascending)
+    distCut = array.size(dists) == 0 ? 0.0 : array.get(dists, math.min(minShow, array.size(dists)) - 1)
     hLog = math.log((base + step) / base)          // bracket half-width in log space
     pResolve = 1.0 - pNoTouchBand(hLog)
     pUp = pUpFirst(hLog)
 
     if showTable
-        table.clear(tb, 0, 0, 5, ${levels * 2 + 2})
+        table.clear(tb, 0, 0, 5, ${levels * 2 + 1})
         table.cell(tb, 0, 0, "LEVEL", text_color = color.gray, text_size = size.tiny, bgcolor = color.new(color.black, 30))
         table.cell(tb, 1, 0, "SIDE", text_color = color.gray, text_size = size.tiny, bgcolor = color.new(color.black, 30))
         table.cell(tb, 2, 0, "TOUCH", text_color = color.gray, text_size = size.tiny, bgcolor = color.new(color.black, 30))
@@ -166,7 +177,8 @@ if barstate.islast
         lvl = base + k * step
         if lvl > 0
             pt = pTouch(lvl)
-            if pt * 100 >= minTouch
+            keep = math.abs(lvl - close) <= distCut + 0.0001 or pt * 100 >= minTouch
+            if keep
                 // Below price you are buying support (long); above price you are selling resistance (short).
                 isLong = lvl <= close
                 win = isLong ? pUp : 1.0 - pUp
@@ -186,7 +198,7 @@ if barstate.islast
                        "\\nP(touch before close) " + str.tostring(math.round(pt * 100)) + "%   P(bracket resolves) " + str.tostring(math.round(pResolve * 100)) + "%" +
                        "\\nWin rate " + str.tostring(math.round(win * 100)) + "%  (exactly 50% at zero drift - the martingale null)" +
                        "\\nE[R] per filled trade " + str.tostring(expR, "#.##") + "R before costs"))
-                if showTable and row <= ${levels * 2 + 2}
+                if showTable and row <= ${levels * 2 + 1}
                     table.cell(tb, 0, row, str.tostring(lvl, format.mintick), text_color = color.new(color.white, 20), text_size = size.tiny)
                     table.cell(tb, 1, row, isLong ? "LONG" : "SHORT", text_color = col, text_size = size.tiny)
                     table.cell(tb, 2, row, str.tostring(math.round(pt * 100)) + "%", text_color = color.new(color.white, 35), text_size = size.tiny)
