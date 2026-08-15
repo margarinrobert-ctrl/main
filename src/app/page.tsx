@@ -15,6 +15,19 @@ const FOCUS = [
 /** Terminal modules — each motif is a hand-drawn miniature of the analytic it opens. */
 const MODULES: { tab: string; title: string; desc: string; motif: JSX.Element }[] = [
   {
+    tab: "BS Lab",
+    title: "Black-Scholes lab",
+    desc: "Interactive pricer verified against textbook values — full greeks with rates and dividends, implied vol solved from live quotes, and the value-vs-payoff curve.",
+    motif: (
+      <svg viewBox="0 0 84 36" className="h-9 w-full" aria-hidden>
+        <path d="M4 30 L46 30 C 60 30, 66 20, 80 6" fill="none" stroke="rgba(52,211,153,0.85)" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M4 28 C 24 27, 40 24, 46 20 C 56 13, 66 8, 80 5" fill="none" stroke="rgba(34,211,238,0.5)" strokeWidth="1.5" strokeDasharray="3 3" strokeLinecap="round" />
+        <line x1="46" y1="4" x2="46" y2="32" stroke="rgba(255,255,255,0.15)" strokeWidth="1" strokeDasharray="2 3" />
+        <text x="49" y="9" fill="rgba(255,255,255,0.35)" fontSize="6" fontFamily="monospace">K</text>
+      </svg>
+    ),
+  },
+  {
     tab: "Edge",
     title: "Edge engine",
     desc: "Documented risk-premium edges — variance risk premium (HAR-RV vs implied), term-structure carry, and a cross-sectional rich-vs-cheap vol factor across the watchlist.",
@@ -216,7 +229,7 @@ export default function Home() {
       {/* ── Capability strip ─────────────────────────────────────────────── */}
       <section aria-label="Capabilities" className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { v: "24", k: "Analytics modules", d: "Signals to surfaces, one terminal" },
+          { v: "25", k: "Analytics modules", d: "Signals to surfaces, one terminal" },
           { v: "GEX · DEX", k: "Exposure engines", d: "Gamma, delta, vanna & charm by strike" },
           { v: "±100", k: "Pressure model", d: "Six-factor dealer-hedging score" },
           { v: "Pine v6", k: "Level export", d: "ETF levels converted onto ES / NQ" },

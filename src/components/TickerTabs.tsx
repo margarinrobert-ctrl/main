@@ -18,6 +18,7 @@ import { DexProfile } from "./DexProfile";
 import { EdgeBoard } from "./EdgeBoard";
 import { GammaProfile } from "./GammaProfile";
 import { AnomalyIntel } from "./AnomalyIntel";
+import { BsLab } from "./BsLab";
 import { AnomalyLive } from "./AnomalyLive";
 import { AnomalyScan } from "./AnomalyScan";
 import { GexHistory } from "./GexHistory";
@@ -65,6 +66,7 @@ const TABS = [
   "Skew",
   "Smile",
   "Range",
+  "BS Lab",
   "Vol Edge",
   "Harvest",
   "Anomaly",
@@ -77,7 +79,7 @@ type Tab = (typeof TABS)[number];
 const GROUPS: { label: string; tabs: Tab[] }[] = [
   { label: "Overview", tabs: ["Overview", "Signals", "Edge", "MM Hedge", "Playbook"] },
   { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Scenario", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
-  { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Range", "Vol Edge"] },
+  { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Range", "BS Lab", "Vol Edge"] },
   { label: "Flow", tabs: ["Options Flow", "Chain", "Anomaly", "Harvest", "History", "Pine"] },
 ];
 
@@ -323,6 +325,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Skew" && <SkewChart symbol={symbol} exp={validExp} />}
       {tab === "Smile" && <VolSmile symbol={symbol} exp={validExp} />}
       {tab === "Range" && <VixRange symbol={symbol} />}
+      {tab === "BS Lab" && <BsLab symbol={symbol} />}
       {tab === "Vol Edge" && <VolEdge symbol={symbol} />}
       {tab === "Harvest" && <HarvestPanel symbol={symbol} exp={validExp} />}
       {tab === "Anomaly" && (
