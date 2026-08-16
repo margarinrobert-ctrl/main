@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import { EmptyState, ErrorState, Loading } from "./states";
+import { useChartFrame } from "./chartFrame";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 type Metric = "volume" | "voir" | "notional";
@@ -88,8 +89,10 @@ export function OptionsHeatmap({ symbol, exp = "ALL" }: { symbol: string; exp?: 
     return { expirations, strikes, cell, max, atm };
   }, [chain, metric, side]);
 
+  const frame = useChartFrame(`${symbol} options heatmap`);
+
   return (
-    <div className="glass glass-hover fade-up p-4 sm:p-5">
+    <div ref={frame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${frame.expandedClass}`}>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
           <div className="lbl mb-1">Options heatmap</div>
@@ -118,6 +121,7 @@ export function OptionsHeatmap({ symbol, exp = "ALL" }: { symbol: string; exp?: 
               </svg>
             </div>
           ))}
+          {frame.controls}
         </div>
       </div>
 

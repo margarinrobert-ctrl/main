@@ -1,4 +1,5 @@
 import type { OptionContract } from "./barchart/types";
+import { dayBands } from "./quant/daybands";
 import {
   atmIv,
   callOiWall,
@@ -7,13 +8,13 @@ import {
   deltaPutWall,
   dexByStrike,
   expectedMove,
-  expectedMove1D,
   gammaFlipNearest,
   gexByStrike,
   maxPain,
   oiByStrike,
   putOiWall,
   putSupport,
+  secondOrderExposure,
 } from "./flow/analytics";
 
 function fmt(n: number): string {
@@ -47,28 +48,61 @@ function usd(n: number): string {
 interface StrikeStat {
   oi: number;
   vol: number;
-  gex: number;
-  dex: number;
+  gex: number; // net dealer gamma-$ at the strike (calls +, puts −)
+  callGex: number;
+  putGex: number; // ≤ 0 in the dealer convention
+  dex: number; // net delta-$ (signed by delta)
+  callDex: number;
+  putDex: number; // ≤ 0
+  vex: number; // dealer VANNA exposure at the strike: $ delta gained per +1 vol point
 }
 
-function strikeStats(contracts: OptionContract[], strike: number | null, spot: number | null): StrikeStat {
-  const r: StrikeStat = { oi: 0, vol: 0, gex: 0, dex: 0 };
+function strikeStats(contracts: OptionContract[], strike: number | null, spot: number | null, vexAt?: Map<number, number>): StrikeStat {
+  const r: StrikeStat = { oi: 0, vol: 0, gex: 0, callGex: 0, putGex: 0, dex: 0, callDex: 0, putDex: 0, vex: strike != null ? (vexAt?.get(strike) ?? 0) : 0 };
   if (strike == null) return r;
   for (const c of contracts) {
     if (c.strike !== strike) continue;
     r.oi += c.openInterest ?? 0;
     r.vol += c.volume ?? 0;
     if (spot && c.openInterest != null) {
-      if (c.gamma != null) r.gex += (c.type === "call" ? 1 : -1) * c.gamma * c.openInterest * 100 * spot * spot * 0.01;
-      if (c.delta != null) r.dex += c.delta * c.openInterest * 100 * spot;
+      if (c.gamma != null) {
+        const g = (c.type === "call" ? 1 : -1) * c.gamma * c.openInterest * 100 * spot * spot * 0.01;
+        r.gex += g;
+        if (c.type === "call") r.callGex += g;
+        else r.putGex += g;
+      }
+      if (c.delta != null) {
+        const d = c.delta * c.openInterest * 100 * spot;
+        r.dex += d;
+        if (c.type === "call") r.callDex += d;
+        else r.putDex += d;
+      }
     }
   }
   return r;
 }
 
-function meta(contracts: OptionContract[], strike: number | null, spot: number | null): string {
-  const s = strikeStats(contracts, strike, spot);
-  return `OI ${kfmt(s.oi)} | V ${kfmt(s.vol)} | GEX ${usd(s.gex)} | DEX ${usd(s.dex)}`;
+// A level named for one SIDE of the book must report that side's exposure, not the strike's net —
+// a "Put Support" showing the (call-dominated) net GEX as a big positive number misreads the level.
+type MetaFocus = "call-gamma" | "put-gamma" | "call-delta" | "put-delta" | "net";
+
+function meta(contracts: OptionContract[], strike: number | null, spot: number | null, focus: MetaFocus = "net", vexAt?: Map<number, number>): string {
+  const s = strikeStats(contracts, strike, spot, vexAt);
+  // VEX is signed and always shown, so GEX and vanna can be read together at every level.
+  const vexTxt = ` | VEX ${s.vex >= 0 ? "+" : ""}${usd(s.vex)}/volpt`;
+  const base = `OI ${kfmt(s.oi)} | V ${kfmt(s.vol)}`;
+  switch (focus) {
+    case "call-gamma":
+      return `${base} | Call GEX ${usd(s.callGex)} (net ${usd(s.gex)}) | DEX ${usd(s.dex)}${vexTxt}`;
+    case "put-gamma":
+      return `${base} | Put GEX ${usd(s.putGex)} (net ${usd(s.gex)}) | DEX ${usd(s.dex)}${vexTxt}`;
+    case "call-delta":
+      return `${base} | Call DEX ${usd(s.callDex)} (net ${usd(s.dex)}) | GEX ${usd(s.gex)}${vexTxt}`;
+    case "put-delta":
+      return `${base} | Put DEX ${usd(s.putDex)} (net ${usd(s.dex)}) | GEX ${usd(s.gex)}${vexTxt}`;
+    default:
+      return `${base} | GEX ${usd(s.gex)} | DEX ${usd(s.dex)}${vexTxt}`;
+  }
 }
 
 function nearestExpiration(chain: OptionContract[]): string | null {
@@ -124,22 +158,61 @@ export function buildGexPine(
   const callRes0 = callResistance(by0, spot);
   const putSup0 = putSupport(by0, spot);
   const mp = exp ? maxPain(chain, exp) : null;
+  // OI walls restricted to a tradeable moneyness band: raw max OI over the whole chain routinely lands
+  // on far-dated tail hedges 30%+ away from spot (LEAP puts), which is meaningless as an intraday level.
+  const OI_BAND = 0.2;
   const oi = oiByStrike(chain);
-  const callOi = callOiWall(oi);
-  const putOi = putOiWall(oi);
+  const oiBand = spot != null ? oi.filter((x) => Math.abs(x.strike / spot - 1) <= OI_BAND) : oi;
+  const callOi = callOiWall(oiBand.length ? oiBand : oi);
+  const putOi = putOiWall(oiBand.length ? oiBand : oi);
+  // Delta walls get the same band: far-dated tail strikes carry so much OI that even a 0.05-delta
+  // LEAP can out-dollar every tradeable strike.
   const dby = dexByStrike(chain, spot);
-  const dCallWall = deltaCallWall(dby, spot);
-  const dPutWall = deltaPutWall(dby, spot);
+  const dbyBand = spot != null ? dby.filter((x) => Math.abs(x.strike / spot - 1) <= OI_BAND) : dby;
+  const dCallWall = deltaCallWall(dbyBand.length ? dbyBand : dby, spot);
+  const dPutWall = deltaPutWall(dbyBand.length ? dbyBand : dby, spot);
+  // ── VEX: dealer VANNA exposure (dDelta/dSigma) — read WITH gamma, not instead of it ──────────
+  // Units: $ of delta the dealer book GAINS per +1 vol point. VEX > 0 => an IV rise hands dealers delta
+  // and they SELL to re-hedge (vol up = supply). VEX < 0 => an IV rise costs them delta and they BUY.
+  const netGexAll = byAll.length ? byAll.reduce((t, x) => t + x.gex, 0) : null;
+  const so = secondOrderExposure(chain, spot);
+  const netVex = so.vanna;
+  const vexAt = new Map(so.byStrike.map((x) => [x.strike, x.vanna]));
+  const vexBand = spot != null ? so.byStrike.filter((x) => Math.abs(x.strike / spot - 1) <= 0.2) : so.byStrike;
+  const vexRows = vexBand.length ? vexBand : so.byStrike;
+  // A "negative vanna wall" must actually BE negative. Taking the min/max unconditionally mislabels the
+  // sign on one-sided books (the least-positive strike is not a negative wall).
+  const vexPosRows = vexRows.filter((x) => x.vanna > 0);
+  const vexNegRows = vexRows.filter((x) => x.vanna < 0);
+  const vexPos = vexPosRows.length ? vexPosRows.reduce((m, x) => (x.vanna > m.vanna ? x : m)) : null;
+  const vexNeg = vexNegRows.length ? vexNegRows.reduce((m, x) => (x.vanna < m.vanna ? x : m)) : null;
+  // Vanna flip: where cumulative dealer vanna crosses zero (the analogue of the gamma flip).
+  let vexFlip: number | null = null;
+  {
+    let cum = 0;
+    let prev = 0;
+    let prevK: number | null = null;
+    for (const x of [...so.byStrike].sort((a, b) => a.strike - b.strike)) {
+      prev = cum;
+      cum += x.vanna;
+      if (prevK != null && ((prev < 0 && cum >= 0) || (prev > 0 && cum <= 0))) {
+        const denom = Math.abs(cum - prev);
+        vexFlip = prevK + (x.strike - prevK) * (denom === 0 ? 0 : Math.abs(prev) / denom);
+        break;
+      }
+      prevK = x.strike;
+    }
+  }
+
   const iv0 = exp ? atmIv(chain, spot, exp) : null;
-  // Expected move of the FRONT expiration (market-implied ATM straddle). For a 0DTE front this is
-  // literally today's expected high/low — the intraday range. Falls back to a 1-session 1σ from IV.
-  const emFront = (exp ? expectedMove(chain, spot, exp) : null) ?? (iv0 != null ? expectedMove1D(spot, iv0) : null);
+  // Day bands from ONE sigma. The ATM straddle is E|move| = 0.798·sigma (a ~57.5% band), NOT 1 sigma —
+  // dayBands() converts it (x sqrt(pi/2)) so the straddle path and the IV path mean the same thing.
+  const straddle = exp ? (expectedMove(chain, spot, exp)?.abs ?? null) : null;
+  const bands = dayBands(spot, straddle, iv0);
   const dteOf = sub.find((c) => c.dte != null)?.dte ?? null;
   const dteLabel = dteOf == null ? "" : dteOf <= 0 ? "0DTE" : `${dteOf}d`;
 
   const s = spot ?? byAll[Math.floor(byAll.length / 2)]?.strike ?? 0;
-  const dmax = emFront ? s + emFront.abs : null;
-  const dmin = emFront ? s - emFront.abs : null;
 
   const ladder = byAll
     .filter((x) => x.gex !== 0)
@@ -157,35 +230,83 @@ export function buildGexPine(
     lvls.push({ price, short: name, detail: `${detail} · strike ${fmtNice(price)}`, color, style, width });
   };
 
-  add(callRes, "Call Resistance", "color.red", "line.style_solid", 2, `Call Resistance (max call gamma above spot) - ${meta(chain, callRes, spot)}`);
-  add(putSup, "Put Support", "color.green", "line.style_solid", 2, `Put Support (max put gamma below spot) - ${meta(chain, putSup, spot)}`);
-  add(hvl, "HVL", "color.blue", "line.style_solid", 2, "HVL / gamma flip (zero-gamma nearest spot)");
-  add(callRes0, "Call Res 0DTE", "color.red", "line.style_dashed", 2, `Call Resistance 0DTE / Gamma Wall 0DTE - ${meta(sub, callRes0, spot)}`);
-  add(putSup0, "Put Sup 0DTE", "color.green", "line.style_dashed", 2, `Put Support 0DTE - ${meta(sub, putSup0, spot)}`);
-  add(hvl0, "HVL 0DTE", "color.blue", "line.style_dashed", 2, "HVL 0DTE / front-expiry gamma flip");
+  // Front-expiry levels carry the REAL tenor tag ("0DTE" only when the front actually expires today).
+  const frontTag = dteLabel || "front";
+  add(callRes, "Call Resistance", "color.red", "line.style_solid", 2, `Call Resistance (largest CALL gamma above spot, ALL expirations) — dealers long these calls sell into strength as price approaches: rallies tend to stall here - ${meta(chain, callRes, spot, "call-gamma", vexAt)}`);
+  add(putSup, "Put Support", "color.green", "line.style_solid", 2, `Put Support (largest PUT gamma below spot, ALL expirations) — hedging of dealer short puts buys into weakness as price approaches: selloffs tend to slow here - ${meta(chain, putSup, spot, "put-gamma", vexAt)}`);
+  add(hvl, "HVL", "color.blue", "line.style_solid", 2, "HVL / gamma flip (net dealer gamma crosses zero, ALL expirations). ABOVE = long-gamma regime: hedging dampens moves (fade extremes). BELOW = short-gamma: hedging amplifies moves (respect momentum, expect expansion).");
+  add(callRes0, `Call Res ${frontTag}`, "color.red", "line.style_dashed", 2, `Call Resistance / Gamma Wall for the ${frontTag} expiry only - ${meta(sub, callRes0, spot, "call-gamma", vexAt)}`);
+  add(putSup0, `Put Sup ${frontTag}`, "color.green", "line.style_dashed", 2, `Put Support for the ${frontTag} expiry only - ${meta(sub, putSup0, spot, "put-gamma", vexAt)}`);
+  add(hvl0, `HVL ${frontTag}`, "color.blue", "line.style_dashed", 2, `HVL / gamma flip for the ${frontTag} expiry only`);
+
+  // ── Standard-deviation day bands (0DTE session range) ──────────────────────
+  // Every band comes from the same sigma, and each says the coverage it ACTUALLY has. A raw straddle
+  // band would be +/-0.798 sigma (~57.5%), which is why it is converted rather than drawn as "1 sigma".
+  if (bands) {
+    const srcNote = bands.source === "straddle" ? "sigma implied by the ATM straddle (converted: straddle = 0.798*sigma)" : "sigma from ATM implied vol / sqrt(252)";
+    const dayTag = dteOf != null && dteOf <= 0 ? "today (0DTE)" : `the ${dteLabel || "front"} expiry`;
+    const sd1 = bands.bands.find((b) => b.key === "sd1");
+    const p618 = bands.bands.find((b) => b.key === "p618");
+    const sd2 = bands.bands.find((b) => b.key === "sd2");
+    add(bands.mean, "Day Mean", "color.white", "line.style_dashed", 2, `Day MEAN for ${dayTag} (= spot when generated; with zero drift the expected close IS spot, so this doubles as the spot anchor)`.replace(/\s+$/, "") + ` — centre of the terminal distribution for ${dayTag} — the centre of the terminal distribution. With no drift the expected close IS spot; this is the distribution's centre, not a target. ${srcNote}: 1 sigma = ${fmtNice(bands.sigmaAbs)} (${(bands.sigmaPct * 100).toFixed(2)}%)`);
+    if (sd1) {
+      add(sd1.hi, "Day Max 1SD", "color.orange", "line.style_solid", 1, `Day MAXIMUM for ${dayTag} — +1 sigma. The close finishes inside +/-1 sigma about ${(sd1.coverage * 100).toFixed(1)}% of the time (so ~16% of days close ABOVE this). ${srcNote}`);
+      add(sd1.lo, "Day Min 1SD", "color.orange", "line.style_solid", 1, `Day MINIMUM for ${dayTag} — -1 sigma. The close finishes inside +/-1 sigma about ${(sd1.coverage * 100).toFixed(1)}% of the time (so ~16% of days close BELOW this). ${srcNote}`);
+    }
+    if (p618) {
+      add(p618.hi, "61.8% Hi", "color.aqua", "line.style_dotted", 1, `Upper 61.8% band (z = 0.874) — the close lands inside this band about ${(p618.coverage * 100).toFixed(1)}% of the time. Tighter than 1 sigma by construction.`);
+      add(p618.lo, "61.8% Lo", "color.aqua", "line.style_dotted", 1, `Lower 61.8% band (z = 0.874) — the close lands inside this band about ${(p618.coverage * 100).toFixed(1)}% of the time.`);
+    }
+    if (sd2) {
+      add(sd2.hi, "Day Max 2SD", "color.gray", "line.style_dotted", 1, `+2 sigma tail envelope — only ~${(((1 - sd2.coverage) / 2) * 100).toFixed(1)}% of closes finish above this.`);
+      add(sd2.lo, "Day Min 2SD", "color.gray", "line.style_dotted", 1, `-2 sigma tail envelope — only ~${(((1 - sd2.coverage) / 2) * 100).toFixed(1)}% of closes finish below this.`);
+    }
+  }
+
+  // ── VEX / vanna levels — combined with the gamma map above ─────────────────
+  // Gamma tells you how dealers hedge a SPOT move; vanna tells you how they hedge a VOL move. Read
+  // together: short gamma + big negative VEX means a vol spike brings dealer BUYING even as spot
+  // hedging chases price down.
+  const vexNote = (v: number) =>
+    v >= 0
+      ? `VEX +${usd(v)}/vol-pt (POSITIVE): a +1 vol-point move hands dealers ${usd(Math.abs(v))} of delta, so they SELL to re-hedge — rising IV is supply here.`
+      : `VEX ${usd(v)}/vol-pt (NEGATIVE): a +1 vol-point move costs dealers ${usd(Math.abs(v))} of delta, so they BUY to re-hedge — rising IV is support here.`;
+  if (vexPos) {
+    add(vexPos.strike, `VEX+ +${usd(vexPos.vanna)}`, "color.fuchsia", "line.style_solid", 2, `VANNA WALL (most POSITIVE vanna) — ${vexNote(vexPos.vanna)} Net book VEX ${netVex == null ? "n/a" : (netVex >= 0 ? "+" : "") + usd(netVex) + "/vol-pt"}. ${meta(chain, vexPos.strike, spot, "net", vexAt)}`);
+  }
+  if (vexNeg) {
+    add(vexNeg.strike, `VEX- ${usd(vexNeg.vanna)}`, "color.purple", "line.style_solid", 2, `VANNA WALL (most NEGATIVE vanna) — ${vexNote(vexNeg.vanna)} Net book VEX ${netVex == null ? "n/a" : (netVex >= 0 ? "+" : "") + usd(netVex) + "/vol-pt"}. ${meta(chain, vexNeg.strike, spot, "net", vexAt)}`);
+  }
+  add(vexFlip, "VEX Flip", "color.fuchsia", "line.style_dashed", 1, `VANNA FLIP — cumulative dealer vanna crosses zero here (the vol-hedging analogue of the gamma flip). Above/below this level an IV move flips the SIGN of the delta dealers must trade.`);
+
   // Delta walls — dealer hedgeable-delta resistance/support. Ranked here (ABOVE Max Pain / OI walls) so they
   // are never dropped by the one-level-per-price dedup when a raw-OI wall happens to sit on the same strike.
-  add(dCallWall, "Delta Resistance", "color.maroon", "line.style_solid", 2, `Delta Resistance Wall (heaviest call delta-exposure above spot = dealer hedgeable-delta resistance) - ${meta(chain, dCallWall, spot)}`);
-  add(dPutWall, "Delta Support", "color.lime", "line.style_solid", 2, `Delta Support Wall (heaviest put delta-exposure below spot = dealer hedgeable-delta support) - ${meta(chain, dPutWall, spot)}`);
-  add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, `Max Pain ${exp ?? ""} - ${meta(chain, mp, spot)}`);
-  add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, `Call OI wall - ${meta(chain, callOi, spot)}`);
-  add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, `Put OI wall - ${meta(chain, putOi, spot)}`);
-  add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated — levels are anchored here; the chart's current price may have moved since.`);
-  add(dmax, `Exp Hi ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move HIGH for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
-  add(dmin, `Exp Lo ${dteLabel}`.trim(), "color.orange", "line.style_dotted", 1, `Expected-move LOW for the ${dteLabel || "front"} expiry (ATM straddle) — today's range when 0DTE`);
+  add(dCallWall, "Delta Resistance", "color.maroon", "line.style_solid", 2, `Delta Resistance Wall (heaviest CALL delta-exposure above spot, ALL expirations = dealer hedgeable-delta resistance) - ${meta(chain, dCallWall, spot, "call-delta", vexAt)}`);
+  add(dPutWall, "Delta Support", "color.lime", "line.style_solid", 2, `Delta Support Wall (heaviest PUT delta-exposure below spot, ALL expirations = dealer hedgeable-delta support) - ${meta(chain, dPutWall, spot, "put-delta", vexAt)}`);
+  add(mp, "Max Pain", "color.yellow", "line.style_dotted", 1, `Max Pain ${exp ?? ""} (strike minimizing option holders' payout at that expiry; weak pin candidate) - ${meta(chain, mp, spot, "net", vexAt)}`);
+  add(callOi, "Call OI", "color.olive", "line.style_dotted", 1, `Call OI wall (max call open interest within 20% of spot; OI is prior-day T+1) - ${meta(chain, callOi, spot, "call-gamma", vexAt)}`);
+  add(putOi, "Put OI", "color.purple", "line.style_dotted", 1, `Put OI wall (max put open interest within 20% of spot; OI is prior-day T+1) - ${meta(chain, putOi, spot, "put-gamma", vexAt)}`);
+  if (!bands) add(spot, "Spot", "color.gray", "line.style_dotted", 1, `Underlying spot when generated — levels are anchored here; the chart's current price may have moved since.`);
   ladder.forEach((x, i) => {
     const st = strikeStats(chain, x.strike, spot);
-    add(x.strike, `GEX ${i + 1}`, "color.teal", "line.style_solid", 1, `GEX ${i + 1} @${fmtNice(x.strike)} - OI ${kfmt(st.oi)} | V ${kfmt(st.vol)} | ${usd(x.gex)}`);
+    add(x.strike, `GEX ${i + 1}`, "color.teal", "line.style_solid", 1, `GEX ${i + 1} @${fmtNice(x.strike)} — rank-${i + 1} net dealer gamma (ALL exp): a hedging magnet/pin candidate while gamma is positive - OI ${kfmt(st.oi)} | V ${kfmt(st.vol)} | net GEX ${usd(x.gex)}`);
   });
 
   if (!lvls.length) add(s, "Spot", "color.gray", "line.style_dotted", 1, "spot");
 
   // ONE level per price: keep the highest-priority (first-added) level at each strike and drop any
   // coincident duplicates, so nothing ever stacks on the same line. Renumber surviving GEX nodes.
+  // One LINE per price, but never lose a concept: when a lower-priority level lands on a price that is
+  // already taken, fold its name into the survivor's tooltip instead of dropping it silently. A strike
+  // that is simultaneously the call wall, the vanna wall and the OI wall should say so.
   const lv: typeof lvls = [];
   for (const l of lvls) {
     const tol = Math.max(0.01, (spot ?? l.price) * 0.0006);
-    if (lv.some((u) => Math.abs(u.price - l.price) <= tol)) continue;
+    const hit = lv.find((u) => Math.abs(u.price - l.price) <= tol);
+    if (hit) {
+      hit.detail += `  ||  ALSO ${l.short}: ${l.detail}`;
+      continue;
+    }
     lv.push(l);
   }
   let gn = 0;
@@ -228,7 +349,14 @@ export function buildGexPine(
   const convertNote = `\n// CONVERT TO ES / NQ / RTY: to overlay these ${symbol} levels on a futures chart, leave "Convert levels\n// to this chart" on Auto. It reads the LIVE ${symbol} price (request.security on the "Source symbol" input)\n// and this chart's price at the SAME instant, then scales every level by their exact ratio — so the\n// current index divisor AND futures basis are always baked in (QQQ->NQ ~41x, SPY->ES ~10x, IWM->RTY ~10x).\n// The ratio is LOCKED on the last closed bar so levels never move as price ticks; on the ${symbol} chart it is 1.0.`;
 
   const code = `//@version=6
-// OptionsFlow — GEX levels for ${symbol}  (front/target exp ${exp ?? "n/a"}${dteLabel ? ", " + dteLabel : ""})
+// OptionsFlow — GEX levels for ${symbol}
+// SCOPE: walls/HVL/delta walls span ALL expirations; "${dteLabel || "front"}"-tagged variants, Max Pain and the
+// SD day bands are for the front/target expiry ${exp ?? "n/a"} only. OI is prior-day (T+1).
+// DEALER EXPOSURE AT GENERATE TIME:  NET GEX ${hvl != null || byAll.length ? (netGexAll == null ? "n/a" : (netGexAll >= 0 ? "+" : "") + usd(netGexAll) + "/1% (" + (netGexAll >= 0 ? "LONG gamma - hedging DAMPENS" : "SHORT gamma - hedging AMPLIFIES") + ")") : "n/a"}
+//                                    NET VEX ${netVex == null ? "n/a" : (netVex >= 0 ? "+" : "") + usd(netVex) + "/vol-pt (" + (netVex >= 0 ? "POSITIVE - IV up => dealers SELL" : "NEGATIVE - IV up => dealers BUY") + ")"}
+// GEX answers "how do dealers hedge a SPOT move?"; VEX (vanna) answers "how do they hedge a VOL move?".
+// DAY BANDS: Day Mean / Day Max-Min 1SD (68.3%) / 61.8% band / 2SD envelope, all from ONE sigma. Note an
+// ATM straddle is E|move| = 0.798*sigma (~57.5% band), so it is CONVERTED to a true sigma, never drawn as 1SD.
 // Built for the ${symbol} chart (spot ~${spot != null ? fmtNice(spot) : "n/a"}). To overlay on ES/NQ, use the
 // "Convert levels to this chart" input below (Auto = accurate live-ratio scaling).
 // STATIC SNAPSHOT: a Pine script cannot fetch data, so this does NOT auto-update.
@@ -247,6 +375,7 @@ sz = labelSize == "huge" ? size.huge : labelSize == "large" ? size.large : label
 showVwap = input.bool(true, "Show session VWAP")
 showOR   = input.bool(true, "Show opening range (intraday)")
 orMin    = input.int(30, "Opening-range minutes", minval = 1, maxval = 240)
+${hvl != null ? 'showRegime = input.bool(true, "Shade gamma regime (vs HVL)")' : ""}
 ${alertInputs}
 
 // ── Baked level snapshot (price / label / detail / color / style / width) ──
@@ -279,10 +408,33 @@ if na(frozenScale) and (barstate.islastconfirmedhistory or barstate.islast)
     liveRatio = not na(srcLive) and srcLive > 0 ? close / srcLive : (snapSpot > 0 ? close / snapSpot : 1.0)
     frozenScale := convertMode == "Auto (match chart)" ? liveRatio : 1.0
 scale = nz(frozenScale, 1.0) * manualMult
+${
+  hvl != null
+    ? `
+// ── Gamma regime (the core GEX read) ─────────────────────────────────────────
+// Above the HVL dealers are net LONG gamma: their hedging sells strength / buys weakness, dampening
+// moves (mean-reversion conditions). Below it they are net SHORT gamma: hedging chases price and
+// AMPLIFIES moves (trend / expansion conditions). Shaded live from the chart's own price vs the level.
+regimeLong = close >= kHvl * scale
+bgcolor(showRegime ? (regimeLong ? color.new(color.teal, 96) : color.new(color.red, 95)) : na, title = "Gamma regime")
+var table _rt = table.new(position.top_right, 1, 3)
+`
+    : ""
+}
+// ta.* series must be computed on every bar (not inside a conditional) for series consistency.
+rngHi = ta.highest(high, 120)
+rngLo = ta.lowest(low, 120)
 
 if barstate.islast
     clearAll()
-    rng = ta.highest(high, 120) - ta.lowest(low, 120)
+${
+  hvl != null
+    ? `    table.cell(_rt, 0, 0, regimeLong ? "LONG GAMMA - dealers dampen (fade extremes)" : "SHORT GAMMA - dealers amplify (respect momentum)", text_color = regimeLong ? color.teal : color.red, text_size = size.small, bgcolor = color.new(color.black, 35))
+    table.cell(_rt, 0, 1, "NET GEX ${netGexAll == null ? "n/a" : (netGexAll >= 0 ? "+" : "") + usd(netGexAll) + "/1%"}", text_color = ${netGexAll != null && netGexAll >= 0 ? "color.teal" : "color.red"}, text_size = size.small, bgcolor = color.new(color.black, 35))
+    table.cell(_rt, 0, 2, "NET VEX ${netVex == null ? "n/a" : (netVex >= 0 ? "+" : "") + usd(netVex) + "/volpt"}  ${netVex == null ? "" : netVex >= 0 ? "(+) IV up => dealers SELL" : "(-) IV up => dealers BUY"}", text_color = ${netVex != null && netVex >= 0 ? "color.fuchsia" : "color.purple"}, text_size = size.small, bgcolor = color.new(color.black, 35))
+`
+    : ""
+}    rng = rngHi - rngLo
     minGap = math.max(na(rng) or rng <= 0 ? close * 0.012 : rng * 0.02, close * 0.0015)
     float prevP = na
     int lane = 0

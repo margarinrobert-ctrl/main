@@ -64,7 +64,7 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("OI "); // open-interest annotation
     expect(r.code).toContain("DEX "); // delta-exposure annotation
     expect(r.code).toContain("does NOT auto-update"); // static-snapshot warning
-    expect(r.code).toContain("Exp Hi"); // expected-move (today's range) label
+    expect(r.code).toContain("Day Max 1SD"); // sigma day band replaces the mislabeled straddle move
     expect(r.code).toContain("Convert levels to this chart"); // ES/NQ converter
     expect(r.code).toContain("alertcondition("); // level-cross alerts
     expect(r.code).toMatch(/P\s+=\s+array\.from\([^)]*\.\d/); // float price array
@@ -154,6 +154,126 @@ describe("buildGexPine", () => {
     expect(r.code).toContain("barstate.islastconfirmedhistory");
     expect(r.code).toContain("extend = extend.both"); // full static horizontal lines
     expect(r.code).toContain("array.get(P, i) * scale"); // every level scaled by the factor
+  });
+
+  it("reports side-specific exposure on side-named levels (Put Support shows PUT gamma, not net)", () => {
+    const r = buildGexPine("SIDE", multiChain(), 100);
+    // put-side gamma is ≤ 0 in the dealer convention — the tooltip must show it, with net alongside
+    expect(r.code).toMatch(/Put Support[^"]*Put GEX -\$/);
+    expect(r.code).toMatch(/Call Resistance[^"]*Call GEX \$/);
+    expect(r.code).toMatch(/Delta Support Wall[^"]*Put DEX -\$/);
+    expect(r.code).toMatch(/Delta Resistance Wall[^"]*Call DEX \$/);
+    // scope is stated, not implied
+    expect(r.code).toContain("ALL expirations");
+  });
+
+  it("tags front-expiry levels with the real tenor — 0DTE only when it IS 0DTE", () => {
+    const zero = buildGexPine("Z", multiChain(), 100); // front dte: 0
+    expect(zero.code).toContain("0DTE");
+    // 1d front: same book shifted to dte 1 — must say 1d, never 0DTE
+    const oneDay = multiChain().map((c) => (c.expiration === "2026-06-16" ? { ...c, dte: 1 } : c));
+    const r1 = buildGexPine("ONE", oneDay, 100);
+    // front walls that coincide with the all-exp walls are deduped (one level per price); the
+    // flip + expected-move variants always remain and must carry the true tenor
+    expect(r1.code).toContain('"HVL 1d"');
+    expect(r1.code).toContain("the 1d expiry"); // band tooltips carry the true tenor
+    expect(r1.code).not.toContain("0DTE");
+  });
+
+  it("keeps OI walls inside a tradeable moneyness band (no 30%-away LEAP tail strikes)", () => {
+    const chain = [
+      ...multiChain(),
+      // massive far-dated put hedge 35% below spot — the classic junk 'put OI wall'
+      c({ expiration: "2027-01-15", dte: 200, type: "put", strike: 65, gamma: 0.001, openInterest: 500000, delta: -0.05 }),
+    ];
+    const r = buildGexPine("BAND", chain, 100);
+    const put = /"Put OI wall[^"]*strike (\d+(?:\.\d+)?)"/.exec(r.code);
+    expect(put).not.toBeNull();
+    expect(Number(put![1])).toBeGreaterThanOrEqual(80); // within 20% of spot, not 65
+    expect(r.code).toContain("within 20% of spot");
+    // the delta walls get the same band — a 500k-OI far LEAP put must not become "Delta Support"
+    expect(r.deltaPutWall).not.toBeNull();
+    expect(r.deltaPutWall!).toBeGreaterThanOrEqual(80);
+  });
+
+  it("expresses the gamma regime: HVL shading, live regime read, and series-consistent ta calls", () => {
+    const r = buildGexPine("REG", multiChain(), 100);
+    expect(r.code).toContain("regimeLong = close >= kHvl * scale");
+    expect(r.code).toContain("bgcolor(showRegime");
+    expect(r.code).toContain("SHORT GAMMA - dealers amplify");
+    expect(r.code).toContain("LONG GAMMA - dealers dampen");
+    // ta.* hoisted out of the barstate.islast branch (Pine series-consistency)
+    expect(r.code).toContain("rngHi = ta.highest(high, 120)");
+    expect(r.code).not.toContain("rng = ta.highest");
+    // regime layer degrades cleanly when no flip exists (single-sided book → no kHvl)
+    const noFlip = buildGexPine("NF", [c({ type: "call", strike: 105, gamma: 0.05, openInterest: 5000 })], 100);
+    expect(noFlip.code).not.toContain("bgcolor(showRegime");
+  });
+
+  it("draws sigma day bands (mean / 1SD max-min / 61.8% / 2SD) with honest coverage, not a raw straddle", () => {
+    const r = buildGexPine("SD", multiChain(), 100);
+    for (const lbl of ['"Day Mean"', '"Day Max 1SD"', '"Day Min 1SD"', '"61.8% Hi"', '"61.8% Lo"', '"Day Max 2SD"', '"Day Min 2SD"']) {
+      expect(r.code).toContain(lbl);
+    }
+    // coverage is stated, and the straddle→sigma conversion is disclosed rather than silently applied
+    expect(r.code).toContain("68.3%");
+    expect(r.code).toContain("61.8%");
+    expect(r.code).toContain("0.798*sigma");
+    // the 1SD band must be strictly wider than the 61.8% band, and 2SD wider still
+    const at = (name: string) => {
+      const m = new RegExp(`"${name}[^"]*"`).exec(r.code);
+      return m ? m[0] : "";
+    };
+    expect(at("Day Mean")).not.toBe("");
+    const prices = /P\s+=\s+array\.from\(([^)]*)\)/.exec(r.code)![1].split(",").map((x) => Number(x.trim()));
+    const labels = /T\s+=\s+array\.from\(([^)]*)\)/.exec(r.code)![1].split(",").map((x) => x.trim().replace(/"/g, ""));
+    const priceOf = (l: string) => prices[labels.indexOf(l)];
+    const mean = priceOf("Day Mean");
+    expect(priceOf("Day Max 1SD") - mean).toBeGreaterThan(priceOf("61.8% Hi") - mean);
+    expect(priceOf("Day Max 2SD") - mean).toBeGreaterThan(priceOf("Day Max 1SD") - mean);
+    // symmetric about the mean
+    expect(mean - priceOf("Day Min 1SD")).toBeCloseTo(priceOf("Day Max 1SD") - mean, 1);
+  });
+
+  it("adds VEX (vanna) levels alongside GEX, always signed, with the hedging read spelled out", () => {
+    const r = buildGexPine("VEX", multiChain(), 100);
+    // signed net exposure for BOTH greeks, in the header and in the on-chart table
+    expect(r.code).toContain("NET GEX");
+    expect(r.code).toContain("NET VEX");
+    expect(r.code).toMatch(/NET VEX [+-]\$/); // sign is always printed
+    expect(r.code).toContain("/vol-pt");
+    // the sign is translated into what dealers actually DO — and the phrase must MATCH the sign
+    const m = /NET VEX ([+-])\$/.exec(r.code)!;
+    expect(m).not.toBeNull();
+    const positive = m[1] === "+";
+    expect(r.code).toContain(positive ? "IV up => dealers SELL" : "IV up => dealers BUY");
+    expect(r.code).not.toContain(positive ? "IV up => dealers BUY" : "IV up => dealers SELL");
+    expect(r.code).toContain(positive ? "POSITIVE" : "NEGATIVE");
+    // the positive vanna wall is drawn as its own level
+    expect(r.code).toMatch(/"VEX\+ [^"]*"/);
+    expect(r.code).toContain("VANNA WALL (most POSITIVE vanna)");
+    // a book carrying negative dealer vanna draws the negative wall and flips the hedging read
+    // ITM calls (strike below spot ⇒ d2 > 0) carry NEGATIVE dealer vanna
+    const itmCalls = [
+      c({ type: "call", strike: 90, delta: 0.85, openInterest: 25000, impliedVolatility: 0.25, gamma: 0.02, dte: 20 }),
+      c({ type: "call", strike: 95, delta: 0.7, openInterest: 18000, impliedVolatility: 0.25, gamma: 0.03, dte: 20 }),
+      c({ type: "call", strike: 112, delta: 0.15, openInterest: 4000, impliedVolatility: 0.25, gamma: 0.01, dte: 20 }),
+    ];
+    const neg = buildGexPine("NEG", itmCalls, 100);
+    expect(neg.code).toMatch(/"VEX- [^"]*"/);
+    expect(neg.code).toContain("VANNA WALL (most NEGATIVE vanna)");
+    expect(neg.code).toContain("NEGATIVE): a +1 vol-point move costs dealers");
+    // every level's tooltip carries a signed per-strike VEX so gamma and vanna read together
+    expect(r.code).toMatch(/VEX [+-]\$[^|"]*\/volpt/);
+    expect(r.code).toContain('GEX answers "how do dealers hedge a SPOT move?"');
+  });
+
+  it("merges coincident levels into the survivor's tooltip instead of dropping them", () => {
+    const r = buildGexPine("MERGE", multiChain(), 100);
+    expect(r.code).toContain("ALSO "); // a level that shares a price is folded in, not lost
+    // and prices stay unique (one line per price)
+    const ps = pricesOf(r.code).sort((a, b) => a - b);
+    for (let i = 1; i < ps.length; i++) expect(ps[i] - ps[i - 1]).toBeGreaterThan(0.05);
   });
 
   it("targets a chosen expiration when one is passed (e.g. 0DTE)", () => {

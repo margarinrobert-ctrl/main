@@ -7,6 +7,7 @@ import type { OptionContract } from "@/lib/barchart/types";
 import { deltaCallWall, deltaFlip, deltaPutWall, dexByStrike, fmtUsd, netDex } from "@/lib/flow/analytics";
 import { AXIS_PROPS, CHART, CHART_TICK, TOOLTIP_CURSOR, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
 import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
+import { useChartFrame } from "./chartFrame";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -69,16 +70,21 @@ export function DexProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
 
   const height = Math.min(720, Math.max(380, data.length * 22));
 
+  const frame = useChartFrame(`${symbol} delta`);
+
   return (
-    <div className="glass glass-hover fade-up p-4 sm:p-5">
+    <div ref={frame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${frame.expandedClass}`}>
       <SectionHeader
         eyebrow="Delta exposure"
         title={symbol}
         right={
-          <span className="lbl">
-            $Δ of OI by strike · {exp === "ALL" ? "all expirations" : exp}
-            {ndex != null ? ` · net ${fmtUsd(ndex)}` : ""}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="lbl">
+              $Δ of OI by strike · {exp === "ALL" ? "all expirations" : exp}
+              {ndex != null ? ` · net ${fmtUsd(ndex)}` : ""}
+            </span>
+            {frame.controls}
+          </div>
         }
       />
       {state === "loading" && <Loading label="Loading delta exposure…" />}
@@ -86,7 +92,7 @@ export function DexProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: stri
       {state === "empty" && <EmptyState label="Greeks unavailable for this chain." hint="Delta exposure requires per-contract delta; it appears once greeks are present." />}
       {state === "ok" && (
         <>
-          <div style={{ height }} className="w-full">
+          <div style={{ height: frame.expanded ? "calc(100vh - 200px)" : height }} className="w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} layout="vertical" stackOffset="sign" margin={{ top: 8, right: 40, left: 4, bottom: 8 }} barCategoryGap={1}>
                 <defs>

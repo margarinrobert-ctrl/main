@@ -15,6 +15,47 @@ const FOCUS = [
 /** Terminal modules — each motif is a hand-drawn miniature of the analytic it opens. */
 const MODULES: { tab: string; title: string; desc: string; motif: JSX.Element }[] = [
   {
+    tab: "BS Lab",
+    title: "Black-Scholes lab",
+    desc: "Interactive pricer verified against textbook values — full greeks with rates and dividends, implied vol solved from live quotes, and the value-vs-payoff curve.",
+    motif: (
+      <svg viewBox="0 0 84 36" className="h-9 w-full" aria-hidden>
+        <path d="M4 30 L46 30 C 60 30, 66 20, 80 6" fill="none" stroke="rgba(52,211,153,0.85)" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M4 28 C 24 27, 40 24, 46 20 C 56 13, 66 8, 80 5" fill="none" stroke="rgba(34,211,238,0.5)" strokeWidth="1.5" strokeDasharray="3 3" strokeLinecap="round" />
+        <line x1="46" y1="4" x2="46" y2="32" stroke="rgba(255,255,255,0.15)" strokeWidth="1" strokeDasharray="2 3" />
+        <text x="49" y="9" fill="rgba(255,255,255,0.35)" fontSize="6" fontFamily="monospace">K</text>
+      </svg>
+    ),
+  },
+  {
+    tab: "Edge",
+    title: "Edge engine",
+    desc: "Documented risk-premium edges — variance risk premium (HAR-RV vs implied), term-structure carry, and a cross-sectional rich-vs-cheap vol factor across the watchlist.",
+    motif: (
+      <svg viewBox="0 0 84 36" className="h-9 w-full" aria-hidden>
+        <path d="M4 26 C 24 22, 40 12, 80 8" fill="none" stroke="rgba(52,211,153,0.8)" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M4 30 C 24 28, 40 24, 80 22" fill="none" stroke="rgba(34,211,238,0.55)" strokeWidth="1.6" strokeLinecap="round" strokeDasharray="3 3" />
+        <path d="M4 26 L 4 30 M 80 8 L 80 22" stroke="rgba(255,255,255,0.18)" strokeWidth="1" />
+        <text x="82" y="7" fill="rgba(52,211,153,0.7)" fontSize="5" textAnchor="end" fontFamily="monospace">IV</text>
+      </svg>
+    ),
+  },
+  {
+    tab: "Range",
+    title: "Vol index & day range",
+    desc: "A CBOE-methodology 30d vol index for the symbol, Brownian-motion day high/low projections, and a walk-forward scoreboard of implied vs realized range.",
+    motif: (
+      <svg viewBox="0 0 84 36" className="h-9 w-full" aria-hidden>
+        <rect x="10" y="16" width="64" height="4" rx="2" fill="rgba(255,255,255,0.08)" />
+        <rect x="26" y="16" width="32" height="4" rx="2" fill="rgba(52,211,153,0.35)" />
+        <line x1="10" y1="12" x2="10" y2="24" stroke="rgba(248,113,113,0.8)" strokeWidth="1.6" />
+        <line x1="74" y1="12" x2="74" y2="24" stroke="rgba(52,211,153,0.8)" strokeWidth="1.6" />
+        <line x1="42" y1="10" x2="42" y2="26" stroke="rgba(255,255,255,0.7)" strokeWidth="1.2" strokeDasharray="2 2" />
+        <text x="42" y="33" fill="rgba(148,163,184,0.8)" fontSize="5.5" textAnchor="middle" fontFamily="monospace">1.596σ</text>
+      </svg>
+    ),
+  },
+  {
     tab: "Gamma",
     title: "Gamma exposure",
     desc: "Dealer GEX by strike — call and put walls, the gamma flip, and the pinning field around spot.",
@@ -188,7 +229,7 @@ export default function Home() {
       {/* ── Capability strip ─────────────────────────────────────────────── */}
       <section aria-label="Capabilities" className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
-          { v: "22", k: "Analytics modules", d: "Signals to surfaces, one terminal" },
+          { v: "25", k: "Analytics modules", d: "Signals to surfaces, one terminal" },
           { v: "GEX · DEX", k: "Exposure engines", d: "Gamma, delta, vanna & charm by strike" },
           { v: "±100", k: "Pressure model", d: "Six-factor dealer-hedging score" },
           { v: "Pine v6", k: "Level export", d: "ETF levels converted onto ES / NQ" },

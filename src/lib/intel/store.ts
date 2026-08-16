@@ -2,6 +2,7 @@ import { cached } from "../cache/store";
 import type { GexSample } from "../gex-history";
 import type { PredictionRecord } from "./journal";
 import { HIST_CAP, JOURNAL_CAP } from "./merge";
+import { SNAPSHOT_CAP, type DaySnapshot } from "./snapshot";
 
 // Durable server-side store for the intelligence layer, so history accrues even when no browser is
 // open. Three backends, in priority order:
@@ -16,6 +17,8 @@ import { HIST_CAP, JOURNAL_CAP } from "./merge";
 const JOURNAL_KEY = "intel:journal";
 const histKey = (sym: string) => `intel:hist:${sym.toUpperCase()}`;
 const histFile = (sym: string) => `history-${sym.toUpperCase()}.json`;
+const snapKey = (sym: string) => `intel:snap:${sym.toUpperCase()}`;
+const snapFile = (sym: string) => `snapshots-${sym.toUpperCase()}.json`;
 
 function kvEnv(): { url: string; token: string } | null {
   const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL ?? "";
@@ -103,6 +106,17 @@ export async function loadServerHistory(sym: string): Promise<GexSample[]> {
 export async function saveServerHistory(sym: string, hist: GexSample[]): Promise<void> {
   await kvSet(histKey(sym), hist.slice(-HIST_CAP));
 }
+/** Daily per-strike positioning snapshots — the shape of past days, which expired chains can't restore. */
+export async function loadServerSnapshots(sym: string): Promise<DaySnapshot[]> {
+  if (kvEnv()) return (await kvGet<DaySnapshot[]>(snapKey(sym))) ?? [];
+  const git = await gitReadJson<DaySnapshot[]>(snapFile(sym));
+  if (git) return git;
+  return (mem.get(snapKey(sym)) as DaySnapshot[]) ?? [];
+}
+export async function saveServerSnapshots(sym: string, snaps: DaySnapshot[]): Promise<void> {
+  await kvSet(snapKey(sym), snaps.slice(-SNAPSHOT_CAP));
+}
+
 export async function loadServerJournal(): Promise<PredictionRecord[]> {
   if (kvEnv()) return (await kvGet<PredictionRecord[]>(JOURNAL_KEY)) ?? [];
   const git = await gitReadJson<PredictionRecord[]>("journal.json");

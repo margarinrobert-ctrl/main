@@ -4,15 +4,21 @@ import { useEffect, useState } from "react";
 import { alertsEnabled, crossings, fireNotify } from "@/lib/alerts";
 import type { OptionContract } from "@/lib/barchart/types";
 import { loadChain, loadHistory, pullServerData } from "@/lib/client-data";
-import { atmIv, callWall, gammaFlip, gexByStrike, netGex, putCallRatio, putWall } from "@/lib/flow/analytics";
+import { atmIv, callWall, gammaFlip, gexByStrike, netDex, netGex, putCallRatio, putWall } from "@/lib/flow/analytics";
 import { anomalyIntel } from "@/lib/flow/anomalyPro";
 import { buildSignals } from "@/lib/flow/signals";
 import { mmHedge } from "@/lib/flow/mmhedge";
-import { appendSample } from "@/lib/gex-history";
+import { appendSample, readHistory } from "@/lib/gex-history";
 import { collectAndResolve } from "@/lib/intel/journal";
+import { groupByDay } from "@/lib/flow/historyDays";
+import { loadSnapshotDays } from "@/lib/client-data";
+import { buildSnapshot } from "@/lib/intel/snapshot";
+import { appendLocalSnapshot, localSnapshotDays } from "@/lib/snapshot-local";
 import { DexProfile } from "./DexProfile";
+import { EdgeBoard } from "./EdgeBoard";
 import { GammaProfile } from "./GammaProfile";
 import { AnomalyIntel } from "./AnomalyIntel";
+import { BsLab } from "./BsLab";
 import { AnomalyLive } from "./AnomalyLive";
 import { AnomalyScan } from "./AnomalyScan";
 import { GexHistory } from "./GexHistory";
@@ -33,14 +39,17 @@ import { PriceChart } from "./PriceChart";
 import { QuoteCard } from "./QuoteCard";
 import { Scenario } from "./Scenario";
 import { SignalBoard } from "./SignalBoard";
+import { TimeMachine } from "./TimeMachine";
 import { SkewChart } from "./SkewChart";
 import { VannaCharmProfile } from "./VannaCharmProfile";
+import { VixRange } from "./VixRange";
 import { VolEdge } from "./VolEdge";
 import { VolSmile } from "./VolSmile";
 
 const TABS = [
   "Overview",
   "Signals",
+  "Edge",
   "MM Hedge",
   "Playbook",
   "Options Flow",
@@ -56,6 +65,8 @@ const TABS = [
   "OI",
   "Skew",
   "Smile",
+  "Range",
+  "BS Lab",
   "Vol Edge",
   "Harvest",
   "Anomaly",
@@ -66,9 +77,9 @@ type Tab = (typeof TABS)[number];
 
 // Sidebar navigation groups.
 const GROUPS: { label: string; tabs: Tab[] }[] = [
-  { label: "Overview", tabs: ["Overview", "Signals", "MM Hedge", "Playbook"] },
+  { label: "Overview", tabs: ["Overview", "Signals", "Edge", "MM Hedge", "Playbook"] },
   { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Scenario", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
-  { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Vol Edge"] },
+  { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Range", "BS Lab", "Vol Edge"] },
   { label: "Flow", tabs: ["Options Flow", "Chain", "Anomaly", "Harvest", "History", "Pine"] },
 ];
 
@@ -96,6 +107,8 @@ export function TickerTabs({ symbol }: { symbol: string }) {
   const [tab, setTab] = useState<Tab>("Overview");
   const [exp, setExp] = useState("ALL");
   const [expOptions, setExpOptions] = useState<ExpOption[]>([{ value: "ALL", label: "All expirations" }]);
+  const [asOf, setAsOf] = useState("LIVE"); // "LIVE" or a recorded YYYY-MM-DD
+  const [recordedDays, setRecordedDays] = useState<{ key: string; label: string; pts: number; snap: boolean }[]>([]);
 
   // Deep-link: honor ?tab= on mount (validated against the tab list).
   useEffect(() => {
@@ -110,9 +123,29 @@ export function TickerTabs({ symbol }: { symbol: string }) {
     window.history.replaceState(null, "", url.toString());
   };
 
-  // Reset the expiration filter when the ticker changes.
+  // Reset the expiration filter and any past-day selection when the ticker changes.
   useEffect(() => {
     setExp("ALL");
+    setAsOf("LIVE");
+  }, [symbol]);
+
+  // Days available to browse: every day the round-the-clock collector recorded, flagged with whether a
+  // per-strike snapshot exists for it. Refreshed as new samples merge in.
+  useEffect(() => {
+    let cancelled = false;
+    const build = async () => {
+      const snapDays = await loadSnapshotDays(symbol).catch(() => [] as string[]);
+      if (cancelled) return;
+      const snapSet = new Set([...snapDays, ...localSnapshotDays(symbol)]);
+      const days = groupByDay(readHistory(symbol)).map((d) => ({ key: d.key, label: d.label, pts: d.samples.length, snap: snapSet.has(d.key) }));
+      setRecordedDays(days);
+    };
+    build();
+    const id = setInterval(build, 120_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [symbol]);
 
   // Pull anything the 24/7 server collector recorded while the site was closed and merge it locally, so
@@ -150,7 +183,10 @@ export function TickerTabs({ symbol }: { symbol: string }) {
         const exps = [...new Set(chain.map((c) => c.expiration))].sort();
         const frontExp = exps.find((e) => (chain.find((c) => c.expiration === e)?.dte ?? -1) >= 0) ?? exps[0];
         const iv = frontExp ? atmIv(chain, spot, frontExp) : null;
-        const samples = appendSample(symbol, { t: Date.now(), spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol });
+        const samples = appendSample(symbol, { t: Date.now(), spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol, dex: netDex(chain, spot) });
+        // Per-strike snapshot for today — expired chains can never be re-fetched, so capture it live
+        // here too rather than depending solely on the scheduled collector.
+        appendLocalSnapshot(symbol, buildSnapshot(chain, spot, Date.now()));
         if (alertsEnabled(symbol) && prevSpot != null && spot != null) {
           const crossed = crossings(prevSpot, spot, [
             { name: "γ-flip", value: flip },
@@ -209,7 +245,50 @@ export function TickerTabs({ symbol }: { symbol: string }) {
     </div>
   );
 
-  const content = (
+  const past = asOf !== "LIVE";
+  const asOfSelect = (
+    <div className="relative">
+      <select
+        value={asOf}
+        onChange={(e) => setAsOf(e.target.value)}
+        aria-label="View data as of a past day"
+        className={`w-full appearance-none rounded-lg border py-2 pl-3 pr-8 text-xs outline-none transition ${
+          past ? "border-amber-400/40 bg-amber-400/10 text-amber-200" : "border-white/10 bg-white/[0.03] text-neutral-100 hover:border-white/20 focus:border-accent/50"
+        }`}
+      >
+        <option value="LIVE" className="bg-neutral-900">
+          Live · now
+        </option>
+        {[...recordedDays].reverse().map((d) => (
+          <option key={d.key} value={d.key} className="bg-neutral-900">
+            {d.label}{d.snap ? " ·\u00a0strikes" : ""} · {d.pts} pts
+          </option>
+        ))}
+        {recordedDays.length === 0 && (
+          <option value="LIVE" disabled className="bg-neutral-900">
+            No past days recorded yet
+          </option>
+        )}
+      </select>
+      <svg aria-hidden viewBox="0 0 12 12" className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-500">
+        <path fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" d="m2.5 4.5 3.5 3.5 3.5-3.5" />
+      </svg>
+    </div>
+  );
+
+  const content = past ? (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-amber-400/30 bg-amber-400/[0.07] px-3 py-2 text-[11px] text-neutral-300">
+        <span className="lbl shrink-0 text-amber-300">Past day</span>
+        <span className="font-medium text-neutral-100">{recordedDays.find((d) => d.key === asOf)?.label ?? asOf}</span>
+        <span className="text-neutral-400">— showing what was recorded that day. The KPI ribbon above stays live.</span>
+        <button onClick={() => setAsOf("LIVE")} className="ml-auto shrink-0 rounded-md border border-white/10 px-2 py-1 font-semibold uppercase tracking-wider text-neutral-300 transition hover:border-white/25 hover:text-neutral-100">
+          Back to live
+        </button>
+      </div>
+      <TimeMachine symbol={symbol} day={asOf} onLive={() => setAsOf("LIVE")} />
+    </div>
+  ) : (
     <>
       {scoped && (
         <div className="flex items-center gap-2.5 rounded-lg border border-accent/25 bg-accent/[0.05] px-3 py-2 text-[11px] text-neutral-400">
@@ -229,6 +308,7 @@ export function TickerTabs({ symbol }: { symbol: string }) {
         </div>
       )}
       {tab === "Signals" && <SignalBoard symbol={symbol} exp={validExp} />}
+      {tab === "Edge" && <EdgeBoard symbol={symbol} exp={validExp} />}
       {tab === "MM Hedge" && <MMHedge symbol={symbol} exp={validExp} />}
       {tab === "Playbook" && <Playbook symbol={symbol} exp={validExp} />}
       {tab === "Options Flow" && <OptionsFlow symbol={symbol} exp={validExp} />}
@@ -244,6 +324,8 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "OI" && <OiProfile symbol={symbol} exp={validExp} />}
       {tab === "Skew" && <SkewChart symbol={symbol} exp={validExp} />}
       {tab === "Smile" && <VolSmile symbol={symbol} exp={validExp} />}
+      {tab === "Range" && <VixRange symbol={symbol} />}
+      {tab === "BS Lab" && <BsLab symbol={symbol} />}
       {tab === "Vol Edge" && <VolEdge symbol={symbol} />}
       {tab === "Harvest" && <HarvestPanel symbol={symbol} exp={validExp} />}
       {tab === "Anomaly" && (
@@ -264,7 +346,10 @@ export function TickerTabs({ symbol }: { symbol: string }) {
 
       {/* Mobile: expiration + horizontal module scroller (sticky under the header). */}
       <div className="sticky top-[53px] z-10 -mx-4 space-y-2 border-b border-white/[0.06] bg-[#05060a]/85 px-4 py-2 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:hidden">
-        {expSelect}
+        <div className="grid grid-cols-2 gap-2">
+          {asOfSelect}
+          {expSelect}
+        </div>
         <div className="tabs-scroll -mx-1 px-1 pb-0.5">
           {GROUPS.map((g, gi) => (
             <div key={g.label} className="flex items-center gap-1">
@@ -290,6 +375,10 @@ export function TickerTabs({ symbol }: { symbol: string }) {
         {/* Desktop: section rail */}
         <aside className="hidden lg:block lg:w-48 lg:shrink-0">
           <div className="glass p-2.5 lg:sticky lg:top-16">
+            <label className="mb-2.5 block">
+              <span className="lbl px-1">Date</span>
+              <div className="mt-1.5">{asOfSelect}</div>
+            </label>
             <label className="mb-3 block">
               <span className="lbl px-1">Expiration</span>
               <div className="mt-1.5">{expSelect}</div>

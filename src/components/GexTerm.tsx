@@ -7,6 +7,7 @@ import type { OptionContract } from "@/lib/barchart/types";
 import { fmtUsd, gexByExpiration } from "@/lib/flow/analytics";
 import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR, TOOLTIP_PROPS } from "@/lib/chartTheme";
 import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
+import { useChartFrame } from "./chartFrame";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -15,6 +16,7 @@ export function GexTerm({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
   const [spot, setSpot] = useState<number | null>(null);
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
+  const frame = useChartFrame(`${symbol} GEX term`);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,15 +51,24 @@ export function GexTerm({ symbol, exp = "ALL" }: { symbol: string; exp?: string 
   );
 
   return (
-    <div className="glass glass-hover fade-up p-4 sm:p-5">
-      <SectionHeader eyebrow="Gamma term structure" title={symbol} right={<span className="lbl">Net GEX by expiration ($/1%)</span>} />
+    <div ref={frame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${frame.expandedClass}`}>
+      <SectionHeader
+        eyebrow="Gamma term structure"
+        title={symbol}
+        right={
+          <div className="flex items-center gap-2">
+            <span className="lbl">Net GEX by expiration ($/1%)</span>
+            {frame.controls}
+          </div>
+        }
+      />
       {state === "loading" && <Loading label="Loading term structure…" />}
       {state === "error" && <ErrorState message={error} />}
       {state === "empty" && <EmptyState label="Greeks unavailable for this chain." />}
       {state === "ok" && (
         <>
           <div className={data.length > 14 ? "overflow-x-auto" : ""}>
-            <div className="h-[320px] w-full" style={data.length > 14 ? { minWidth: data.length * 44 } : undefined}>
+            <div className={`${frame.expanded ? "h-[calc(100vh-200px)]" : "h-[320px]"} w-full`} style={data.length > 14 ? { minWidth: data.length * 44 } : undefined}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
                   <defs>

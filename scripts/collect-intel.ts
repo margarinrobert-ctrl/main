@@ -15,7 +15,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { config } from "../src/lib/barchart/config";
 import { fetchInputs, stepSymbol, type CollectResult } from "../src/lib/intel/collect";
-import { loadServerHistory, loadServerJournal, storeMode } from "../src/lib/intel/store";
+import { buildSnapshot, mergeSnapshots } from "../src/lib/intel/snapshot";
+import { loadServerHistory, loadServerJournal, loadServerSnapshots, storeMode } from "../src/lib/intel/store";
 import type { PredictionRecord } from "../src/lib/intel/journal";
 
 loadEnv({ path: ".env.local" });
@@ -31,16 +32,20 @@ async function main() {
 
   for (const sym of symbols) {
     let hist = await loadServerHistory(sym).catch(() => []);
+    let snaps = await loadServerSnapshots(sym).catch(() => []);
     try {
       const inputs = await fetchInputs(sym);
       const r = stepSymbol(sym, inputs, journal, hist, Date.now());
       journal = r.journal;
       hist = r.history;
+      // Per-strike snapshot for the day — expired chains can't be re-fetched, so record it live.
+      snaps = mergeSnapshots(snaps, buildSnapshot(inputs.chain, inputs.spot, Date.now()));
       results.push(r.result);
     } catch (e) {
       results.push({ symbol: sym, source: "error", spot: null, samples: hist.length, added: 0, resolved: 0, open: 0, error: e instanceof Error ? e.message : "failed" });
     }
     await writeFile(path.join(OUT, `history-${sym}.json`), JSON.stringify(hist));
+    await writeFile(path.join(OUT, `snapshots-${sym}.json`), JSON.stringify(snaps));
   }
 
   await writeFile(path.join(OUT, "journal.json"), JSON.stringify(journal));
