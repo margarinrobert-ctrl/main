@@ -57,7 +57,7 @@ endDate   = input.time(timestamp("01 Jan 2035 00:00 +0000"), "End",   group = gW
 
 gSes = "2 - Session / killzone"
 useKZ   = input.bool(true,  "Take entries only inside a killzone", group = gSes)
-useLon  = input.bool(false, "London  02:00-05:00 ET", group = gSes)
+useLon  = input.bool(true,  "London  02:00-05:00 ET", group = gSes)
 useAM   = input.bool(true,  "NY AM   09:30-11:00 ET", group = gSes)
 usePM   = input.bool(true,  "NY PM   13:30-16:00 ET", group = gSes)
 lonSess = input.session("0200-0500", "London killzone", group = gSes)
@@ -75,35 +75,36 @@ maxPool = input.int(24,  "Max untapped pools kept per side", minval = 4, maxval 
 gHTF = "4 - HTF PD arrays"
 htfTf = input.timeframe("60", "HTF timeframe", group = gHTF)
 htfPv = input.int(3, "HTF pivot strength", minval = 1, group = gHTF)
-usePD = input.bool(true, "Longs only in HTF discount, shorts only in HTF premium", group = gHTF)
+usePD = input.bool(false, "Longs only in HTF discount, shorts only in HTF premium", group = gHTF)
 
 gSwp = "5 - Manipulation: sweep + market structure shift"
-sweepSrc  = input.string("HTF PD arrays + engineered", "A sweep only counts on",
+sweepSrc  = input.string("Any untapped pool", "A sweep only counts on",
      options = ["Any untapped pool", "Engineered (equal highs/lows) only", "HTF PD arrays only", "HTF PD arrays + engineered"], group = gSwp)
 needClose = input.bool(true, "Require close back inside the level (rejection)", group = gSwp)
-mssBars   = input.int(12, "Max bars from sweep to MSS", minval = 1, group = gSwp)
+mssBars   = input.int(20, "Max bars from sweep to MSS", minval = 1, group = gSwp)
 atrLen    = input.int(14, "ATR length", minval = 2, group = gSwp)
-dispMult  = input.float(1.3, "Displacement: MSS bar range >= ATR x", minval = 0, step = 0.1, group = gSwp)
-needFVG   = input.bool(true, "Require an FVG inside the displacement leg", group = gSwp)
-needCont  = input.bool(true, "Require a continuation leg after MSS (inducement forms)", group = gSwp)
+dispMult  = input.float(0.8, "Displacement: MSS bar range >= ATR x", minval = 0, step = 0.1, group = gSwp)
+needFVG   = input.bool(false, "Require an FVG inside the displacement leg", group = gSwp)
+needCont  = input.bool(false, "Require a continuation leg after MSS (inducement forms)", group = gSwp)
 
 gPOI = "6 - POI: order block / rejection block"
-rbClust  = input.int(2, "Rejection block cluster (bars sharing the wick)", minval = 1, maxval = 5, group = gPOI)
-poiPref  = input.string("Order block, fall back to rejection block", "POI preference",
+rbClust  = input.int(1, "Rejection block cluster (bars sharing the wick)", minval = 1, maxval = 5, group = gPOI)
+poiPref  = input.string("Rejection block only", "POI preference",
      options = ["Order block, fall back to rejection block", "Rejection block only", "Order block only"], group = gPOI)
 entryAt  = input.string("Proximal edge", "Limit sits at the POI's",
      options = ["Proximal edge", "50% (mean threshold)", "Distal edge"], group = gPOI)
-fillBars = input.int(24, "Cancel the limit if unfilled after N bars", minval = 1, group = gPOI)
+fillBars = input.int(30, "Cancel the limit if unfilled after N bars", minval = 1, group = gPOI)
 
 gRsk = "7 - Stop / target"
 stopRef    = input.string("Rejection block wick tip", "Stop sits beyond the",
-     options = ["Rejection block wick tip", "POI extreme (tighter)"], group = gRsk)
+     options = ["Rejection block wick tip", "POI extreme (tighter)",
+     "Auto - RB stop for RB entries, POI stop for OB entries"], group = gRsk)
 slBuf      = input.float(4, "Stop buffer beyond that level (ticks)", minval = 0, step = 1, group = gRsk)
 minR       = input.float(2.0, "Minimum reward : risk", minval = 0.5, step = 0.1, group = gRsk)
-tgtMode    = input.string("Liquidity >= min R, else skip", "Target",
+tgtMode    = input.string("Liquidity >= min R, else fixed R", "Target",
      options = ["Liquidity >= min R, else skip", "Liquidity >= min R, else fixed R", "Fixed R multiple"], group = gRsk)
-minStopPts = input.float(6,   "Min stop distance (points)", minval = 0, group = gRsk)
-maxStopPts = input.float(120, "Max stop distance (points)", minval = 1, group = gRsk)
+minStopPts = input.float(2,   "Min stop distance (points)", minval = 0, group = gRsk)
+maxStopPts = input.float(200, "Max stop distance (points)", minval = 1, group = gRsk)
 usePart    = input.bool(false, "Scale out at min R, then stop to breakeven", group = gRsk)
 partPct    = input.float(50, "Scale-out size (%)", minval = 1, maxval = 99, group = gRsk)
 
@@ -115,7 +116,7 @@ riskUsd   = input.float(500, "Risk $ per trade", minval = 1, group = gSz)
 fixedQty  = input.int(1,  "Contracts", minval = 1, group = gSz)
 maxQty    = input.int(20, "Max contracts", minval = 1, group = gSz)
 allowMin  = input.bool(false, "Take 1 contract even if it exceeds the risk budget", group = gSz)
-maxTrades = input.int(3, "Max entries per day", minval = 1, group = gSz)
+maxTrades = input.int(5, "Max entries per day", minval = 1, group = gSz)
 useDL     = input.bool(false, "Halt for the day after a % equity loss", group = gSz)
 dlPct     = input.float(3.0, "Daily loss limit (% equity)", minval = 0.1, step = 0.1, group = gSz)
 
@@ -451,18 +452,23 @@ if stage == 2 and barstate.isconfirmed and na(entryPx) and not rst
             => dir < 0 ? poiB : poiT
 
         // ---- stop: beyond the rejection block wick tip (or the POI extreme) --
-        float slRef = stopRef == "POI extreme (tighter)" ? (dir < 0 ? poiT : poiB)
-             : (dir < 0 ? rbTop : rbBot)
+        // Pairing an order-block entry with a rejection-block stop is the worst of
+        // both: the entry sits deep in the leg while the stop stays back at the
+        // swept extreme. "Auto" keeps the RB stop for RB entries (as intended) and
+        // uses the POI extreme when an order block is the POI.
+        bool poiStop = stopRef == "POI extreme (tighter)"
+             or (stopRef == "Auto - RB stop for RB entries, POI stop for OB entries" and useOB)
+        float slRef   = poiStop ? (dir < 0 ? poiT : poiB) : (dir < 0 ? rbTop : rbBot)
         float sl      = dir < 0 ? slRef + slBuf * tick : slRef - slBuf * tick
         float stopPts = math.abs(px - sl)
 
-        bool retraceLeft = dir < 0 ? px > close + tick : px < close - tick
         bool sizeOK      = stopPts >= minStopPts and stopPts <= maxStopPts
         bool sane        = dir < 0 ? sl > px : sl < px
+        bool retraceLeft = dir < 0 ? px > close + tick : px < close - tick
 
-        if not (poiOK and retraceLeft and sizeOK and sane)
-            rst := true
-        else
+        if not (poiOK and sizeOK and sane)
+            rst := true                 // geometry is broken - this setup can never work
+        else if retraceLeft             // else price is still inside the POI: keep waiting
             // ---- target: nearest liquidity that still pays min R ------------
             float tp = dir > 0 ? f_target(bslP, bslE, bslW, bslH, px, sl, true, true)
                  : f_target(sslP, sslE, sslW, sslH, px, sl, false, true)
@@ -538,10 +544,12 @@ if stage == 2 and not na(entryPx) and flat
             strategy.exit("RB-TP1", from_entry = eid, qty_percent = partPct, stop = stopPx, limit = tp1Px)
         strategy.exit("RB-TP2", from_entry = eid, stop = stopPx, limit = tgtPx)
 
-    // cancel: unfilled too long, stop already run, or the target already reached
+    // Cancel only on expiry, an invalidated stop, or a closed trading window.
+    // Deliberately NOT on "price already reached the target": the displacement leg
+    // routinely covers 2R before the retracement fills, and cancelling there kills
+    // the very setups the model exists to trade.
     bool stopRun = dir > 0 ? low <= stopPx : high >= stopPx
-    bool tgtRun  = dir > 0 ? high >= tgtPx : low <= tgtPx
-    if bar_index - armBar > fillBars or stopRun or tgtRun or not tradeOK
+    if bar_index - armBar > fillBars or stopRun or not tradeOK
         strategy.cancel_all()
         stage   := 0
         dir     := 0

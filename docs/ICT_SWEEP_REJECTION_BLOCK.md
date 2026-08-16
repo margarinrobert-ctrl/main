@@ -28,14 +28,28 @@ you want the classic OB stop instead.
 
 ## Defaults
 
-Tuned for **NQ1! on the 5-minute chart**:
+Tuned for **NQ1! on the 5-minute chart**, and deliberately set to *produce a usable sample first*
+so you can tighten against real numbers rather than guess at an empty report:
 
-- HTF PD arrays from the **1H**, longs only in HTF discount / shorts only in HTF premium.
-- Sweeps only count on **HTF PD arrays + engineered liquidity** — not on every internal pivot.
-- NY AM (09:30–11:00) and NY PM (13:30–16:00) killzones, flat at the RTH close.
-- Risk **1% of equity** per trade, max 3 entries/day, position size derived from the actual stop distance
+- **Rejection block only** as the POI. This keeps the entry and the stop on the same zone: enter at the
+  RB's body edge, stop just beyond its wick tip, risk ≈ the height of the sweep wick. Order blocks are
+  available via `poiPref`, but see the geometry warning below.
+- Sweeps count on **any untapped pool**. Engineered / weak / HTF tags still drive *target* preference.
+- London + NY AM + NY PM killzones, flat at the RTH close.
+- Displacement ≥ **0.8 × ATR**, MSS within 20 bars. FVG and continuation-leg filters **off**.
+- Target = nearest liquidity paying ≥ 2R, **falling back to a clean 2R** when no pool qualifies.
+- Risk **1% of equity** per trade, max 5 entries/day, position size derived from the actual stop distance
   (`riskCash / (stopPoints × pointvalue)`), so a wide stop buys fewer contracts rather than more risk.
 - $2.25/contract commission and 1 tick of slippage.
+
+### Geometry warning: order-block entry + rejection-block stop
+
+These two do not belong together. An order block sits deep inside the displacement leg while the
+rejection block sits back at the swept extreme, so pairing them gives the widest possible stop with the
+shortest possible reward — almost nothing clears 2R and every setup gets discarded.
+
+If you switch `poiPref` to an order block, set `stopRef` to **`Auto`** (or `POI extreme`). Auto keeps the
+rejection-block stop for RB entries and moves the stop to the order block's own extreme for OB entries.
 
 ## Reading the funnel table
 
@@ -55,17 +69,25 @@ If `limits armed` collapses into `no 2.0R target`, your stop is too wide for the
 `POI extreme` stop reference, or a larger `pvLen` so pools sit further apart.
 If `filled` is a small fraction of `limits armed`, move the entry to the proximal edge and raise `fillBars`.
 
-## Suggested loosening order
+## Suggested tightening order
 
-The defaults are deliberately strict — expect a handful of A+ setups per month, not per day. To widen:
+The defaults trade relatively freely so the report has data in it. Once you can see a sample, tighten
+toward the A+ version one filter at a time and watch what each one costs you in trade count:
 
-1. `sweepSrc` → `Any untapped pool`
-2. killzones → add London, or turn `useKZ` off
-3. `needFVG` → off
-4. `dispMult` → 1.0
-5. `usePD` → off
+1. `sweepSrc` → `HTF PD arrays + engineered` — only sweeps of genuinely key zones
+2. `needFVG` → on — displacement must leave a gap
+3. `usePD` → on — longs only in HTF discount, shorts only in HTF premium
+4. `dispMult` → 1.3
+5. `needCont` → on — the leg must extend, so an inducement actually forms
+6. `tgtMode` → `Liquidity >= min R, else skip` — never take a synthetic target
+7. killzones → NY AM only
 
-Change one at a time and watch the funnel, not just net profit.
+Each step raises average quality and cuts frequency. Stop where the sample is still large enough to
+mean anything — step 6 in particular can empty the report, which is exactly what it did in the first
+version of this script.
+
+If a step drops you to zero, read the funnel table before changing anything else: it names the filter
+that killed the setups.
 
 ## Honest limitations
 
