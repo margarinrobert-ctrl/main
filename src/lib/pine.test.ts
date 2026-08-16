@@ -235,6 +235,47 @@ describe("buildGexPine", () => {
     expect(mean - priceOf("Day Min 1SD")).toBeCloseTo(priceOf("Day Max 1SD") - mean, 1);
   });
 
+  it("adds VEX (vanna) levels alongside GEX, always signed, with the hedging read spelled out", () => {
+    const r = buildGexPine("VEX", multiChain(), 100);
+    // signed net exposure for BOTH greeks, in the header and in the on-chart table
+    expect(r.code).toContain("NET GEX");
+    expect(r.code).toContain("NET VEX");
+    expect(r.code).toMatch(/NET VEX [+-]\$/); // sign is always printed
+    expect(r.code).toContain("/vol-pt");
+    // the sign is translated into what dealers actually DO — and the phrase must MATCH the sign
+    const m = /NET VEX ([+-])\$/.exec(r.code)!;
+    expect(m).not.toBeNull();
+    const positive = m[1] === "+";
+    expect(r.code).toContain(positive ? "IV up => dealers SELL" : "IV up => dealers BUY");
+    expect(r.code).not.toContain(positive ? "IV up => dealers BUY" : "IV up => dealers SELL");
+    expect(r.code).toContain(positive ? "POSITIVE" : "NEGATIVE");
+    // the positive vanna wall is drawn as its own level
+    expect(r.code).toMatch(/"VEX\+ [^"]*"/);
+    expect(r.code).toContain("VANNA WALL (most POSITIVE vanna)");
+    // a book carrying negative dealer vanna draws the negative wall and flips the hedging read
+    // ITM calls (strike below spot ⇒ d2 > 0) carry NEGATIVE dealer vanna
+    const itmCalls = [
+      c({ type: "call", strike: 90, delta: 0.85, openInterest: 25000, impliedVolatility: 0.25, gamma: 0.02, dte: 20 }),
+      c({ type: "call", strike: 95, delta: 0.7, openInterest: 18000, impliedVolatility: 0.25, gamma: 0.03, dte: 20 }),
+      c({ type: "call", strike: 112, delta: 0.15, openInterest: 4000, impliedVolatility: 0.25, gamma: 0.01, dte: 20 }),
+    ];
+    const neg = buildGexPine("NEG", itmCalls, 100);
+    expect(neg.code).toMatch(/"VEX- [^"]*"/);
+    expect(neg.code).toContain("VANNA WALL (most NEGATIVE vanna)");
+    expect(neg.code).toContain("NEGATIVE): a +1 vol-point move costs dealers");
+    // every level's tooltip carries a signed per-strike VEX so gamma and vanna read together
+    expect(r.code).toMatch(/VEX [+-]\$[^|"]*\/volpt/);
+    expect(r.code).toContain('GEX answers "how do dealers hedge a SPOT move?"');
+  });
+
+  it("merges coincident levels into the survivor's tooltip instead of dropping them", () => {
+    const r = buildGexPine("MERGE", multiChain(), 100);
+    expect(r.code).toContain("ALSO "); // a level that shares a price is folded in, not lost
+    // and prices stay unique (one line per price)
+    const ps = pricesOf(r.code).sort((a, b) => a - b);
+    for (let i = 1; i < ps.length; i++) expect(ps[i] - ps[i - 1]).toBeGreaterThan(0.05);
+  });
+
   it("targets a chosen expiration when one is passed (e.g. 0DTE)", () => {
     const chain = [
       c({ expiration: "2026-06-16", dte: 0, strike: 100, gamma: 0.03, openInterest: 7000 }),
