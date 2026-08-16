@@ -1,105 +1,77 @@
-# ICT Sweep → Rejection Block — NQ1! backtest
+# ICT Sweep → Rejection Block — NQ1!
 
-`ICTSweepRejectionBlock.pine` — a Pine v6 **strategy** (not an indicator) that mechanises the
-liquidity-sweep → rejection-block model on NQ futures. Paste it into TradingView's Pine editor,
-"Add to chart" on `NQ1!`, and read the Strategy Tester.
+`ICTSweepRejectionBlock.pine` — a Pine v6 **strategy**. Paste into TradingView's Pine editor,
+add to chart on `NQ1!`, read the Strategy Tester.
 
-The stop is placed beyond the **rejection block's wick tip** and the target is **resting liquidity**,
-filtered so only setups paying **≥ 2R** are ever taken.
+The script implements five steps and nothing else. Every input below maps to one of them.
 
----
+## The five steps
 
-## The five steps, and where each one lives in the code
+**1. Mark out POI / liquidity pools.** Confirmed swing highs are buy-side liquidity, swing lows are
+sell-side. Each pool is tagged as it forms:
 
-| # | Step | Implementation |
-|---|------|----------------|
-| 1 | **Mark POI / liquidity pools** | Every confirmed `ta.pivothigh`/`ta.pivotlow` becomes a pool: BSL above highs, SSL below lows. Each is tagged `engineered` (equal high/low within a tick tolerance), `weak` (a failed swing — a lower high or higher low), or `HTF` (a swing from the higher-timeframe PD array). Pools are drawn as rays and retired the moment price trades through them. |
-| 2 | **Manipulation sweeping a key zone** | A bar whose *wick* pierces a qualifying pool but whose *close* returns inside it. The level was respected, not broken. The wick that did it becomes the rejection block: `[wick tip … farthest body edge]` across a small candle cluster, exactly as the ICT definition draws it. |
-| 3 | **New internal level + retracement** | Within `mssBars` the close must break the last internal swing in the opposite direction, with displacement (`bar range ≥ ATR × mult`) and an FVG inside the leg. That break is the new internal level. The script then waits for the leg to *extend* — so an inducement actually forms below/above the POI — before arming anything. |
-| 4 | **OB / RB inside the POI** | The order block is the last opposing candle inside the displacement leg; the rejection block is the sweep wick. A limit order is placed at the POI's proximal edge (or 50% / distal). No market entries — price must come back. |
-| 5 | **Target liquidity, ≥ 2R** | The target scan walks the opposite pool book for the *nearest* level that still pays `minR`, preferring failed swings, engineered liquidity and HTF PD arrays. If nothing qualifies the setup is discarded rather than downgraded. |
+- **failed swing** — a lower high or higher low, i.e. a swing that failed to take the previous one
+- **engineered** — equal highs/lows within `eqTicks`
+- **HTF PD array** — a swing from the higher timeframe (`htfTf`, default 1H)
 
-**Stop:** `rejection block wick tip ± buffer`. Because the RB sits at the 80–90% retracement of the
-setup leg, this stop is materially tighter than the equivalent order-block stop — which is the only
-reason a nearby liquidity target can clear 2R at all. A `POI extreme (tighter)` option is available if
-you want the classic OB stop instead.
+Pools are drawn as rays and retired the moment price trades through them.
 
----
+**2. Manipulation sweeps a key zone.** A bar whose *wick* pierces a pool but whose *close* returns
+inside it — the level was respected, not broken. That candle becomes the **rejection block**: wick tip
+to body edge. Set `keyOnly` to restrict sweeps to HTF PD arrays and engineered liquidity only.
 
-## Defaults
+**3. New internal level, then the retracement.** Within `mssBars`, a close must break the last internal
+swing in the opposite direction (the MSS). That break is the new internal level. The script then waits
+up to `fillBars` for price to retrace back into the POI. Entries are limit orders only — price has to
+come back.
 
-Tuned for **NQ1! on the 5-minute chart**, and deliberately set to *produce a usable sample first*
-so you can tighten against real numbers rather than guess at an empty report:
+**4. Inside the POI: an OB or the RB.** If an order block (the last opposing candle in the leg) sits
+*inside* the rejection block, the limit goes there for a tighter entry. Otherwise it goes at the
+rejection block's body edge. Turn off with `useOB`.
 
-- **Rejection block only** as the POI. This keeps the entry and the stop on the same zone: enter at the
-  RB's body edge, stop just beyond its wick tip, risk ≈ the height of the sweep wick. Order blocks are
-  available via `poiPref`, but see the geometry warning below.
-- Sweeps count on **any untapped pool**. Engineered / weak / HTF tags still drive *target* preference.
-- London + NY AM + NY PM killzones, flat at the RTH close.
-- Displacement ≥ **0.8 × ATR**, MSS within 20 bars. FVG and continuation-leg filters **off**.
-- Target = nearest liquidity paying ≥ 2R, **falling back to a clean 2R** when no pool qualifies.
-- Risk **1% of equity** per trade, max 5 entries/day, position size derived from the actual stop distance
-  (`riskCash / (stopPoints × pointvalue)`), so a wide stop buys fewer contracts rather than more risk.
-- $2.25/contract commission and 1 tick of slippage.
+**5. Target liquidity, ≥ 2R.** The target is the nearest untapped pool paying at least `minR`,
+preferring failed swings, engineered liquidity and HTF PD arrays. If no pool qualifies it falls back to
+a clean `minR` target.
 
-### Geometry warning: order-block entry + rejection-block stop
+## Stop and target
 
-These two do not belong together. An order block sits deep inside the displacement leg while the
-rejection block sits back at the swept extreme, so pairing them gives the widest possible stop with the
-shortest possible reward — almost nothing clears 2R and every setup gets discarded.
+- **Stop** — beyond the rejection block's wick tip: above it on shorts (the "top of the RB"), below it
+  on longs. Risk is therefore the height of the sweep wick plus `slBuf`, which is what keeps 2R
+  reachable from nearby liquidity.
+- **Target** — the liquidity pool, minimum 2R.
 
-If you switch `poiPref` to an order block, set `stopRef` to **`Auto`** (or `POI extreme`). Auto keeps the
-rejection-block stop for RB entries and moves the stop to the order block's own extreme for OB entries.
+## Inputs
 
-## Reading the funnel table
+| Input | Step | Meaning |
+|---|---|---|
+| `pvLen` | 1 | Swing strength — larger = fewer, more significant pools |
+| `eqTicks` | 1 | Tolerance for calling two swings equal (engineered) |
+| `htfTf`, `htfPv` | 1 | Higher timeframe and swing strength for PD arrays |
+| `keyOnly` | 2 | Only sweeps of HTF PD arrays / engineered liquidity count |
+| `mssBars` | 3 | Max bars from the sweep to the structure shift |
+| `fillBars` | 3 | Max bars to wait for the retracement to fill |
+| `useOB` | 4 | Refine the entry to an order block inside the rejection block |
+| `slBuf` | — | Ticks past the rejection block wick tip for the stop |
+| `minR` | 5 | Minimum reward:risk |
+| `qtyC` | — | Contracts per trade |
 
-The bottom-right table is the tuning instrument:
+## If the report is empty
 
-```
-sweeps          how many qualifying sweeps fired
-MSS confirmed   how many survived displacement + FVG
-limits armed    how many produced a valid POI, stop and ≥2R target
-filled          how many the retracement actually reached
-no 2.0R target  killed because no liquidity paid the minimum
-risk too large  killed because one contract exceeded the risk budget
-```
+Work back through the chain — the chart shows where it breaks:
 
-If `sweeps` is healthy but `MSS confirmed` is near zero, loosen `dispMult` or raise `mssBars`.
-If `limits armed` collapses into `no 2.0R target`, your stop is too wide for the nearby pools — try the
-`POI extreme` stop reference, or a larger `pvLen` so pools sit further apart.
-If `filled` is a small fraction of `limits armed`, move the entry to the proximal edge and raise `fillBars`.
+1. No `sweep` labels → pools are never swept with a close back inside. Lower `pvLen`, or turn `keyOnly` off.
+2. `sweep` but no `MSS` labels → structure never shifts in time. Raise `mssBars`.
+3. `MSS` but no fills → the retracement never reaches the POI. Raise `fillBars`.
 
-## Suggested tightening order
+## Limitations
 
-The defaults trade relatively freely so the report has data in it. Once you can see a sample, tighten
-toward the A+ version one filter at a time and watch what each one costs you in trade count:
+- TradingView fills from OHLC only. Exits are attached to the pending entry so a same-bar stop-out is
+  modelled, but enable **Bar Magnifier** for trustworthy fill sequencing.
+- `NQ1!` is continuous — roll gaps sit in the series. Backtest inside a single quarter for a clean sample.
+- HTF pivots publish `htfPv` HTF bars after the fact (`lookahead_off`, so nothing repaints, but levels
+  appear later than a human would draw them).
+- With Deep Backtesting on, trades appear only in the Strategy report, not on the chart. The pool rays,
+  zone boxes and sweep/MSS labels still draw.
 
-1. `sweepSrc` → `HTF PD arrays + engineered` — only sweeps of genuinely key zones
-2. `needFVG` → on — displacement must leave a gap
-3. `usePD` → on — longs only in HTF discount, shorts only in HTF premium
-4. `dispMult` → 1.3
-5. `needCont` → on — the leg must extend, so an inducement actually forms
-6. `tgtMode` → `Liquidity >= min R, else skip` — never take a synthetic target
-7. killzones → NY AM only
-
-Each step raises average quality and cuts frequency. Stop where the sample is still large enough to
-mean anything — step 6 in particular can empty the report, which is exactly what it did in the first
-version of this script.
-
-If a step drops you to zero, read the funnel table before changing anything else: it names the filter
-that killed the setups.
-
-## Honest limitations
-
-- **Intrabar sequencing.** TradingView fills from OHLC only. When a bar contains both the limit and the
-  stop, the tester guesses the order. Exits are attached to the *pending* entry so same-bar stop-outs are
-  at least modelled, but enable **Bar Magnifier** (paid plans) for trustworthy fill sequencing.
-- **`NQ1!` is a continuous contract.** Roll gaps sit in the series; levels mapped before a roll refer to a
-  different contract's prices. For a clean sample, backtest a single quarter between rolls, or run on a
-  back-adjusted continuous symbol.
-- **HTF pivots are confirmed, not predicted.** `request.security` uses `lookahead_off` and the pivot only
-  publishes `htfPv` HTF bars after the fact, so nothing repaints — but an HTF level appears on the chart
-  later than a human would have drawn it.
-- **Pool book is capped** at `maxPool` levels per side; the oldest untapped levels are dropped.
-- Backtest results are not forward results. Size the sample by the funnel's `filled` count — a strategy
-  with 20 trades has told you nothing.
+A fuller version with killzones, displacement/FVG filters, HTF premium-discount gating, risk-based
+sizing and a setup funnel table is in this branch's git history (commit `0bc1968`).

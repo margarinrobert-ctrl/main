@@ -1,224 +1,103 @@
 //@version=6
 // =============================================================================
-//  ICT Sweep -> Rejection Block  |  NQ1! futures backtest
+//  ICT Sweep -> Rejection Block  |  NQ1! futures
 // =============================================================================
-//  The model, in the order the chart prints it:
+//  Exactly the five steps, nothing else:
 //
-//   1. MAP        Every confirmed swing high / low is a liquidity pool (BSL above
-//                 highs, SSL below lows). Equal highs/lows are tagged "engineered",
-//                 lower-highs / higher-lows are tagged "weak" (failed swings), and
-//                 HTF swings are tagged as HTF PD arrays. All three are premium
-//                 draw-on-liquidity targets.
-//   2. MANIPULATE Price wicks THROUGH a key pool and closes back inside it. That is
-//                 the sweep: the level was respected, not broken. The wick that did
-//                 it is the REJECTION BLOCK (wick tip -> farthest body edge).
-//   3. SHIFT      Within N bars price must break the last internal swing in the
-//                 opposite direction, with displacement (ATR-scaled) and an FVG.
-//                 That break is the new internal level; the leg leaves a POI behind.
-//   4. RETRACE    Wait for the pullback into the POI - an order block if the leg
-//                 built one, otherwise the rejection block itself. Limit order only,
-//                 armed only after the leg extends (so the inducement exists).
-//   5. TARGET     Draw to the nearest opposing pool that still pays >= min R,
-//                 preferring failed swings, engineered liquidity and HTF PD arrays.
+//   1. Mark out POI / liquidity pools      -> swing highs = BSL, swing lows = SSL,
+//                                             tagged failed / engineered / HTF PD array
+//   2. Manipulation sweeps a key zone      -> wick through the level, close back inside
+//                                             (respected, not broken) = REJECTION BLOCK
+//   3. New internal level, wait retracement-> close breaks the last internal swing (MSS),
+//                                             then wait for price to come back to the POI
+//   4. Inside the POI: an OB or the RB     -> limit entry at the order block if one sits
+//                                             inside the rejection block, else at the RB
+//   5. Target liquidity, 2R                -> failed swings, HTF PD arrays, engineered
+//                                             liquidity; only setups paying >= 2R
 //
-//  STOP  = beyond the rejection block's wick tip (the "top of the RB" on shorts,
-//          the mirror on longs). The RB sits at the 80-90% retracement of the
-//          setup leg, so the stop is tighter than the equivalent order-block stop
-//          - that is the whole reason this model can reach 2R.
-//  TARGET= resting liquidity, filtered to >= 2R by default.
-//
-//  Written for NQ1!. Defaults tuned for the 5m chart.
+//  STOP = the top of the rejection block (its wick tip) on shorts, the mirror on longs.
+//  TP   = the liquidity pool.
 // =============================================================================
 
-strategy(
-     title                   = "ICT Sweep -> Rejection Block (NQ1!)",
-     shorttitle              = "ICT-RB",
-     overlay                 = true,
-     initial_capital         = 100000,
-     currency                = currency.USD,
-     default_qty_type        = strategy.fixed,
-     default_qty_value       = 1,
-     pyramiding              = 0,
-     calc_on_every_tick      = false,
-     commission_type         = strategy.commission.cash_per_contract,
-     commission_value        = 2.25,
-     slippage                = 1,
-     max_bars_back           = 5000,
-     max_boxes_count         = 500,
-     max_lines_count         = 500,
-     max_labels_count        = 500)
+strategy("ICT Sweep -> Rejection Block (NQ1!)", "ICT-RB", overlay = true,
+     initial_capital  = 100000,
+     default_qty_type = strategy.fixed,
+     default_qty_value = 1,
+     pyramiding       = 0,
+     commission_type  = strategy.commission.cash_per_contract,
+     commission_value = 2.25,
+     slippage         = 1,
+     max_lines_count  = 500,
+     max_boxes_count  = 500,
+     max_labels_count = 500)
 
 // =============================================================================
 //  Inputs
 // =============================================================================
-gWin = "1 - Backtest window"
-startDate = input.time(timestamp("01 Jan 2023 00:00 +0000"), "Start", group = gWin)
-endDate   = input.time(timestamp("01 Jan 2035 00:00 +0000"), "End",   group = gWin)
+pvLen    = input.int(5,   "Swing strength (bars each side)", minval = 1)
+eqTicks  = input.float(8, "Equal high/low tolerance, ticks", minval = 0, step = 1)
+htfTf    = input.timeframe("60", "HTF for PD arrays")
+htfPv    = input.int(3,   "HTF swing strength", minval = 1)
+keyOnly  = input.bool(false, "Step 2: only sweep HTF PD arrays / engineered liquidity")
+mssBars  = input.int(20,  "Step 3: max bars from sweep to MSS", minval = 1)
+fillBars = input.int(30,  "Step 3: max bars to wait for the retracement", minval = 1)
+useOB    = input.bool(true, "Step 4: enter at an order block inside the rejection block")
+slBuf    = input.float(4, "Stop buffer past the rejection block wick, ticks", minval = 0, step = 1)
+minR     = input.float(2.0, "Step 5: minimum R", minval = 0.5, step = 0.1)
+qtyC     = input.int(1,   "Contracts", minval = 1)
+showViz  = input.bool(true, "Draw pools, zones and labels")
 
-gSes = "2 - Session / killzone"
-useKZ   = input.bool(true,  "Take entries only inside a killzone", group = gSes)
-useLon  = input.bool(true,  "London  02:00-05:00 ET", group = gSes)
-useAM   = input.bool(true,  "NY AM   09:30-11:00 ET", group = gSes)
-usePM   = input.bool(true,  "NY PM   13:30-16:00 ET", group = gSes)
-lonSess = input.session("0200-0500", "London killzone", group = gSes)
-amSess  = input.session("0930-1100", "NY AM killzone",  group = gSes)
-pmSess  = input.session("1330-1600", "NY PM killzone",  group = gSes)
-useEOD  = input.bool(true,  "Flatten at RTH close", group = gSes)
-rthSess = input.session("0930-1600", "RTH session",  group = gSes)
-TZ = "America/New_York"
-
-gLiq = "3 - Liquidity pools / POI mapping"
-pvLen   = input.int(5,   "Swing pivot strength (bars each side)", minval = 1, group = gLiq)
-eqTicks = input.float(8, "Equal high/low tolerance (ticks)", minval = 0, step = 1, group = gLiq)
-maxPool = input.int(24,  "Max untapped pools kept per side", minval = 4, maxval = 60, group = gLiq)
-
-gHTF = "4 - HTF PD arrays"
-htfTf = input.timeframe("60", "HTF timeframe", group = gHTF)
-htfPv = input.int(3, "HTF pivot strength", minval = 1, group = gHTF)
-usePD = input.bool(false, "Longs only in HTF discount, shorts only in HTF premium", group = gHTF)
-
-gSwp = "5 - Manipulation: sweep + market structure shift"
-sweepSrc  = input.string("Any untapped pool", "A sweep only counts on",
-     options = ["Any untapped pool", "Engineered (equal highs/lows) only", "HTF PD arrays only", "HTF PD arrays + engineered"], group = gSwp)
-needClose = input.bool(true, "Require close back inside the level (rejection)", group = gSwp)
-mssBars   = input.int(20, "Max bars from sweep to MSS", minval = 1, group = gSwp)
-atrLen    = input.int(14, "ATR length", minval = 2, group = gSwp)
-dispMult  = input.float(0.8, "Displacement: MSS bar range >= ATR x", minval = 0, step = 0.1, group = gSwp)
-needFVG   = input.bool(false, "Require an FVG inside the displacement leg", group = gSwp)
-needCont  = input.bool(false, "Require a continuation leg after MSS (inducement forms)", group = gSwp)
-
-gPOI = "6 - POI: order block / rejection block"
-rbClust  = input.int(1, "Rejection block cluster (bars sharing the wick)", minval = 1, maxval = 5, group = gPOI)
-poiPref  = input.string("Rejection block only", "POI preference",
-     options = ["Order block, fall back to rejection block", "Rejection block only", "Order block only"], group = gPOI)
-entryAt  = input.string("Proximal edge", "Limit sits at the POI's",
-     options = ["Proximal edge", "50% (mean threshold)", "Distal edge"], group = gPOI)
-fillBars = input.int(30, "Cancel the limit if unfilled after N bars", minval = 1, group = gPOI)
-
-gRsk = "7 - Stop / target"
-stopRef    = input.string("Rejection block wick tip", "Stop sits beyond the",
-     options = ["Rejection block wick tip", "POI extreme (tighter)",
-     "Auto - RB stop for RB entries, POI stop for OB entries"], group = gRsk)
-slBuf      = input.float(4, "Stop buffer beyond that level (ticks)", minval = 0, step = 1, group = gRsk)
-minR       = input.float(2.0, "Minimum reward : risk", minval = 0.5, step = 0.1, group = gRsk)
-tgtMode    = input.string("Liquidity >= min R, else fixed R", "Target",
-     options = ["Liquidity >= min R, else skip", "Liquidity >= min R, else fixed R", "Fixed R multiple"], group = gRsk)
-minStopPts = input.float(2,   "Min stop distance (points)", minval = 0, group = gRsk)
-maxStopPts = input.float(200, "Max stop distance (points)", minval = 1, group = gRsk)
-usePart    = input.bool(false, "Scale out at min R, then stop to breakeven", group = gRsk)
-partPct    = input.float(50, "Scale-out size (%)", minval = 1, maxval = 99, group = gRsk)
-
-gSz = "8 - Sizing and guardrails"
-sizeMode  = input.string("Risk % of equity", "Position size",
-     options = ["Risk % of equity", "Risk fixed $", "Fixed contracts"], group = gSz)
-riskPct   = input.float(1.0, "Risk % per trade", minval = 0.05, step = 0.05, group = gSz)
-riskUsd   = input.float(500, "Risk $ per trade", minval = 1, group = gSz)
-fixedQty  = input.int(1,  "Contracts", minval = 1, group = gSz)
-maxQty    = input.int(20, "Max contracts", minval = 1, group = gSz)
-allowMin  = input.bool(false, "Take 1 contract even if it exceeds the risk budget", group = gSz)
-maxTrades = input.int(5, "Max entries per day", minval = 1, group = gSz)
-useDL     = input.bool(false, "Halt for the day after a % equity loss", group = gSz)
-dlPct     = input.float(3.0, "Daily loss limit (% equity)", minval = 0.1, step = 0.1, group = gSz)
-
-gViz = "9 - Visuals"
-showPools = input.bool(true, "Liquidity pools", group = gViz)
-showZones = input.bool(true, "Rejection / order block zones", group = gViz)
-showMarks = input.bool(true, "Sweep, MSS and target labels", group = gViz)
-showTable = input.bool(true, "Setup funnel table", group = gViz)
+tick  = syminfo.mintick
+eqTol = eqTicks * tick
 
 // =============================================================================
-//  Context
-// =============================================================================
-inWindow = time >= startDate and time <= endDate
-tick     = syminfo.mintick
-atr      = ta.atr(atrLen)
-
-f_inSess(s) => not na(time(timeframe.period, s, TZ))
-
-rthNow  = f_inSess(rthSess)
-kzOK    = not useKZ or ((useLon and f_inSess(lonSess)) or (useAM and f_inSess(amSess)) or (usePM and f_inSess(pmSess)))
-eodFlat = useEOD and rthNow[1] and not rthNow
-
-newDay = dayofmonth != dayofmonth[1]
-var int tradesToday = 0
-if newDay
-    tradesToday := 0
-
-strategy.risk.max_intraday_loss(useDL ? dlPct : 100.0, strategy.percent_of_equity)
-
-// -- HTF PD arrays ------------------------------------------------------------
-htfPH = request.security(syminfo.tickerid, htfTf, ta.pivothigh(htfPv, htfPv), lookahead = barmerge.lookahead_off)
-htfPL = request.security(syminfo.tickerid, htfTf, ta.pivotlow(htfPv, htfPv),  lookahead = barmerge.lookahead_off)
-
-newHtfPH = not na(htfPH) and (na(htfPH[1]) or htfPH != htfPH[1])
-newHtfPL = not na(htfPL) and (na(htfPL[1]) or htfPL != htfPL[1])
-
-var float htfSwH = na
-var float htfSwL = na
-if newHtfPH
-    htfSwH := htfPH
-if newHtfPL
-    htfSwL := htfPL
-
-htfEq  = na(htfSwH) or na(htfSwL) ? na : (htfSwH + htfSwL) / 2.0
-inDisc = not usePD or na(htfEq) or close <= htfEq   // discount -> longs allowed
-inPrem = not usePD or na(htfEq) or close >= htfEq   // premium  -> shorts allowed
-
-// =============================================================================
-//  Liquidity pool book
-//   Parallel arrays: price | origin bar | engineered | weak (failed swing) | HTF | line
+//  Step 1 - liquidity pools
+//    price | engineered (equal) | failed swing | HTF PD array | ray
 // =============================================================================
 var array<float> bslP = array.new<float>()
-var array<int>   bslB = array.new<int>()
 var array<bool>  bslE = array.new<bool>()
 var array<bool>  bslW = array.new<bool>()
 var array<bool>  bslH = array.new<bool>()
 var array<line>  bslL = array.new<line>()
 
 var array<float> sslP = array.new<float>()
-var array<int>   sslB = array.new<int>()
 var array<bool>  sslE = array.new<bool>()
 var array<bool>  sslW = array.new<bool>()
 var array<bool>  sslH = array.new<bool>()
 var array<line>  sslL = array.new<line>()
 
-f_push(array<float> aP, array<int> aB, array<bool> aE, array<bool> aW, array<bool> aH, array<line> aL,
+f_push(array<float> aP, array<bool> aE, array<bool> aW, array<bool> aH, array<line> aL,
      px, bidx, isEq, isWk, isHt, col) =>
     line ln = na
-    if showPools
+    if showViz
         ln := line.new(bidx, px, bar_index, px, extend = extend.right, color = col,
              style = isEq ? line.style_solid : line.style_dotted, width = isEq or isHt ? 2 : 1)
     array.push(aP, px)
-    array.push(aB, bidx)
     array.push(aE, isEq)
     array.push(aW, isWk)
     array.push(aH, isHt)
     array.push(aL, ln)
-    if array.size(aP) > maxPool
-        line old = array.shift(aL)
-        line.delete(old)
+    if array.size(aP) > 30
+        line.delete(array.shift(aL))
         array.shift(aP)
-        array.shift(aB)
         array.shift(aE)
         array.shift(aW)
         array.shift(aH)
     0
 
-f_retire(array<float> aP, array<int> aB, array<bool> aE, array<bool> aW, array<bool> aH, array<line> aL, i) =>
+f_retire(array<float> aP, array<bool> aE, array<bool> aW, array<bool> aH, array<line> aL, i) =>
     line ln = array.get(aL, i)
     if not na(ln)
         line.set_extend(ln, extend.none)
         line.set_x2(ln, bar_index)
-        line.set_color(ln, color.new(color.gray, 55))
+        line.set_color(ln, color.new(color.gray, 60))
     array.remove(aP, i)
-    array.remove(aB, i)
     array.remove(aE, i)
     array.remove(aW, i)
     array.remove(aH, i)
     array.remove(aL, i)
     0
 
-// -- chart-timeframe pivots ---------------------------------------------------
 ph = ta.pivothigh(pvLen, pvLen)
 pl = ta.pivotlow(pvLen, pvLen)
 
@@ -227,364 +106,204 @@ var float prevPH = na
 var float lastPL = na
 var float prevPL = na
 
-eqTol = eqTicks * tick
-
 if not na(ph)
     prevPH := lastPH
     lastPH := ph
-    bool isEqH = not na(prevPH) and math.abs(ph - prevPH) <= eqTol
-    bool isWkH = not na(prevPH) and ph < prevPH - eqTol          // failed to take the prior high
-    f_push(bslP, bslB, bslE, bslW, bslH, bslL, ph, bar_index - pvLen, isEqH, isWkH, false,
-         color.new(isEqH ? color.orange : color.red, 30))
+    bool isEq = not na(prevPH) and math.abs(ph - prevPH) <= eqTol      // engineered
+    bool isWk = not na(prevPH) and ph < prevPH - eqTol                 // failed swing high
+    f_push(bslP, bslE, bslW, bslH, bslL, ph, bar_index - pvLen, isEq, isWk, false,
+         color.new(isEq ? color.orange : color.red, 30))
 
 if not na(pl)
     prevPL := lastPL
     lastPL := pl
-    bool isEqL = not na(prevPL) and math.abs(pl - prevPL) <= eqTol
-    bool isWkL = not na(prevPL) and pl > prevPL + eqTol          // failed to take the prior low
-    f_push(sslP, sslB, sslE, sslW, sslH, sslL, pl, bar_index - pvLen, isEqL, isWkL, false,
-         color.new(isEqL ? color.orange : color.teal, 30))
+    bool isEq = not na(prevPL) and math.abs(pl - prevPL) <= eqTol      // engineered
+    bool isWk = not na(prevPL) and pl > prevPL + eqTol                 // failed swing low
+    f_push(sslP, sslE, sslW, sslH, sslL, pl, bar_index - pvLen, isEq, isWk, false,
+         color.new(isEq ? color.orange : color.teal, 30))
 
-if newHtfPH and not na(htfPH)
-    f_push(bslP, bslB, bslE, bslW, bslH, bslL, htfPH, bar_index, false, false, true, color.new(color.maroon, 10))
-if newHtfPL and not na(htfPL)
-    f_push(sslP, sslB, sslE, sslW, sslH, sslL, htfPL, bar_index, false, false, true, color.new(color.navy, 10))
+// HTF PD arrays
+htfPH = request.security(syminfo.tickerid, htfTf, ta.pivothigh(htfPv, htfPv), lookahead = barmerge.lookahead_off)
+htfPL = request.security(syminfo.tickerid, htfTf, ta.pivotlow(htfPv, htfPv),  lookahead = barmerge.lookahead_off)
+
+if not na(htfPH) and (na(htfPH[1]) or htfPH != htfPH[1])
+    f_push(bslP, bslE, bslW, bslH, bslL, htfPH, bar_index, false, false, true, color.new(color.maroon, 10))
+if not na(htfPL) and (na(htfPL[1]) or htfPL != htfPL[1])
+    f_push(sslP, sslE, sslW, sslH, sslL, htfPL, bar_index, false, false, true, color.new(color.navy, 10))
 
 // =============================================================================
-//  Step 2 - sweep: wick through a key pool, close back inside it
+//  Step 2 - the sweep: wick through the level, close back inside it
 // =============================================================================
-f_qualifies(isEq, isHt) =>
-    switch sweepSrc
-        "Any untapped pool"                  => true
-        "Engineered (equal highs/lows) only" => isEq
-        "HTF PD arrays only"                 => isHt
-        "HTF PD arrays + engineered"         => isHt or isEq
-        => true
+float sweptHigh = na
+float sweptLow  = na
 
-float sweptHigh = na    // highest BSL taken AND rejected this bar -> bearish setup
-float sweptLow  = na    // lowest  SSL taken AND rejected this bar -> bullish setup
-
-int bi = array.size(bslP) - 1
-while bi >= 0
-    float lvl = array.get(bslP, bi)
+int i = array.size(bslP) - 1
+while i >= 0
+    float lvl = array.get(bslP, i)
     if high > lvl
-        bool rejected = not needClose or close < lvl
-        if rejected and f_qualifies(array.get(bslE, bi), array.get(bslH, bi))
+        if close < lvl and (not keyOnly or array.get(bslE, i) or array.get(bslH, i))
             sweptHigh := na(sweptHigh) ? lvl : math.max(sweptHigh, lvl)
-        f_retire(bslP, bslB, bslE, bslW, bslH, bslL, bi)
-    bi -= 1
+        f_retire(bslP, bslE, bslW, bslH, bslL, i)
+    i -= 1
 
-int si = array.size(sslP) - 1
-while si >= 0
-    float lvl = array.get(sslP, si)
+int j = array.size(sslP) - 1
+while j >= 0
+    float lvl = array.get(sslP, j)
     if low < lvl
-        bool rejected = not needClose or close > lvl
-        if rejected and f_qualifies(array.get(sslE, si), array.get(sslH, si))
+        if close > lvl and (not keyOnly or array.get(sslE, j) or array.get(sslH, j))
             sweptLow := na(sweptLow) ? lvl : math.min(sweptLow, lvl)
-        f_retire(sslP, sslB, sslE, sslW, sslH, sslL, si)
-    si -= 1
+        f_retire(sslP, sslE, sslW, sslH, sslL, j)
+    j -= 1
 
 // =============================================================================
-//  Helpers - FVG in the leg | order block in the leg | liquidity target scan
+//  Step 5 helper - nearest pool that still pays min R, liquidity first
 // =============================================================================
-f_hasFVG(legLen, bear) =>
-    bool found = false
-    int n = math.min(legLen, 60)
-    for i = 0 to n
-        if (bear ? low[i + 2] > high[i] : high[i + 2] < low[i])
-            found := true
-            break
-    found
+f_target(array<float> aP, array<bool> aE, array<bool> aW, array<bool> aH,
+     ePx, sPx, isLong, priorityOnly) =>
+    float best = na
+    float bestDist = 99999999.0
+    float risk = math.abs(ePx - sPx)
+    if risk > 0 and array.size(aP) > 0
+        for k = 0 to array.size(aP) - 1
+            float px = array.get(aP, k)
+            bool ok = not priorityOnly or array.get(aE, k) or array.get(aW, k) or array.get(aH, k)
+            if ok
+                float dist = isLong ? px - ePx : ePx - px
+                if dist > 0 and dist / risk >= minR and dist < bestDist
+                    bestDist := dist
+                    best := px
+    best
 
-// last opposing candle inside the displacement leg [startOff .. endOff] bars back
+// last opposing candle between the MSS bar and the sweep bar
 f_findOB(startOff, endOff, bear) =>
     float t = na
     float b = na
     int lo = math.max(startOff, 0)
     int hi = math.min(endOff, lo + 60)
     if hi >= lo
-        for i = lo to hi
-            if (bear ? close[i] > open[i] : close[i] < open[i])
-                t := high[i]
-                b := low[i]
+        for k = lo to hi
+            if (bear ? close[k] > open[k] : close[k] < open[k])
+                t := high[k]
+                b := low[k]
                 break
     [t, b]
 
-f_target(array<float> aP, array<bool> aE, array<bool> aW, array<bool> aH,
-     ePx, sPx, isLong, priorityOnly) =>
-    float best     = na
-    float bestDist = 99999999.0
-    float risk     = math.abs(ePx - sPx)
-    if risk > 0 and array.size(aP) > 0
-        for i = 0 to array.size(aP) - 1
-            float px = array.get(aP, i)
-            bool ok = not priorityOnly or array.get(aE, i) or array.get(aW, i) or array.get(aH, i)
-            if ok
-                float dist = isLong ? px - ePx : ePx - px
-                if dist > 0 and dist / risk >= minR and dist < bestDist
-                    bestDist := dist
-                    best     := px
-    best
-
 // =============================================================================
-//  Setup state machine
-//    stage 0 idle | 1 swept, awaiting MSS | 2 armed, awaiting fill | 3 in trade
+//  Steps 3 + 4 - MSS, then the retracement into the POI
+//    stage 0 idle | 1 swept, waiting for MSS | 2 limit resting | 3 in trade
 // =============================================================================
 var int   stage    = 0
-var int   dir      = 0        // +1 long, -1 short
-var float rbTop    = na
+var int   dir      = 0
+var float rbTop    = na      // rejection block: wick tip .. body edge
 var float rbBot    = na
-var float mssLvl   = na       // the internal swing that must break
+var float mssLvl   = na
 var int   sweepBar = 0
 var int   mssBar   = 0
-var float legExt   = na       // running extreme of the displacement leg
-var bool  contOK   = false
 var float entryPx  = na
 var float stopPx   = na
 var float tgtPx    = na
-var float tp1Px    = na
-var int   armBar   = 0
-var float initQty  = na
-var bool  tp1Done  = false
 
-var int nSweep  = 0
-var int nMSS    = 0
-var int nArm    = 0
-var int nFill   = 0
-var int nSkipR  = 0
-var int nSkipSz = 0
-
-bool rst  = false                                  // deferred reset flag
+bool rst  = false
 bool flat = strategy.position_size == 0
 
-// -- 2a. a sweep arms the setup ----------------------------------------------
-bool canHunt = inWindow and flat and stage == 0 and barstate.isconfirmed
-
-if canHunt and not na(sweptHigh) and inPrem
-    // bearish rejection block: highest wick tip -> lowest body edge of the cluster
-    float t = high
-    float b = math.max(open, close)
-    for i = 0 to rbClust - 1
-        t := math.max(t, high[i])
-        b := math.min(b, math.max(open[i], close[i]))
-    rbTop    := t
-    rbBot    := b
+// -- 2: a sweep builds the rejection block ------------------------------------
+if flat and stage == 0 and not na(sweptHigh)
+    rbTop    := high                      // the wick tip that did the sweeping
+    rbBot    := math.max(open, close)     // the body edge of the same candle
     dir      := -1
     stage    := 1
     sweepBar := bar_index
     mssLvl   := lastPL
-    nSweep   += 1
-    if showMarks
+    if showViz
         label.new(bar_index, high, "sweep", style = label.style_label_down,
              color = color.new(color.red, 20), textcolor = color.white, size = size.tiny)
 
-if canHunt and stage == 0 and not na(sweptLow) and inDisc
-    // bullish rejection block: lowest wick tip -> highest body edge of the cluster
-    float b = low
-    float t = math.min(open, close)
-    for i = 0 to rbClust - 1
-        b := math.min(b, low[i])
-        t := math.max(t, math.min(open[i], close[i]))
-    rbTop    := t
-    rbBot    := b
+if flat and stage == 0 and not na(sweptLow)
+    rbBot    := low
+    rbTop    := math.min(open, close)
     dir      := 1
     stage    := 1
     sweepBar := bar_index
     mssLvl   := lastPH
-    nSweep   += 1
-    if showMarks
+    if showViz
         label.new(bar_index, low, "sweep", style = label.style_label_up,
              color = color.new(color.teal, 20), textcolor = color.white, size = size.tiny)
 
-// -- 3. market structure shift with displacement -----------------------------
-if stage == 1 and barstate.isconfirmed
-    bool expired = bar_index - sweepBar > mssBars
-    bool invalid = na(mssLvl) or (dir < 0 ? close > rbTop : close < rbBot)
-    if expired or invalid
+// -- 3: market structure shift = a new internal level -------------------------
+if stage == 1
+    if bar_index - sweepBar > mssBars or na(mssLvl) or (dir < 0 ? close > rbTop : close < rbBot)
         rst := true
-    else
-        bool broke = dir < 0 ? close < mssLvl : close > mssLvl
-        bool disp  = (high - low) >= atr * dispMult
-        bool fvg   = not needFVG or f_hasFVG(bar_index - sweepBar, dir < 0)
-        if broke and disp and fvg
-            stage  := 2
-            mssBar := bar_index
-            legExt := dir < 0 ? low : high
-            contOK := not needCont
-            nMSS   += 1
-            if showMarks
-                label.new(bar_index, dir < 0 ? low : high, "MSS",
-                     style = dir < 0 ? label.style_label_up : label.style_label_down,
-                     color = color.new(color.blue, 25), textcolor = color.white, size = size.tiny)
-                line.new(sweepBar, mssLvl, bar_index, mssLvl, color = color.new(color.blue, 40),
-                     style = line.style_dashed)
+    else if (dir < 0 ? close < mssLvl : close > mssLvl)
+        stage  := 2
+        mssBar := bar_index
+        if showViz
+            label.new(bar_index, dir < 0 ? low : high, "MSS",
+                 style = dir < 0 ? label.style_label_up : label.style_label_down,
+                 color = color.new(color.blue, 25), textcolor = color.white, size = size.tiny)
 
-// -- 4. leg extends (inducement forms), then arm the limit at the POI --------
-if stage == 2 and barstate.isconfirmed and na(entryPx) and not rst
-    if dir < 0 and low < legExt
-        legExt := low
-        contOK := true
-    if dir > 0 and high > legExt
-        legExt := high
-        contOK := true
-
+// -- 4: place the limit in the POI (order block inside the RB, else the RB) ---
+if stage == 2 and na(entryPx) and not rst
     if bar_index - mssBar > fillBars
         rst := true
-    else if contOK
-        // ---- POI -----------------------------------------------------------
+    else
         [obT, obB] = f_findOB(bar_index - mssBar, bar_index - sweepBar, dir < 0)
-        bool hasOB = not na(obT) and not na(obB)
-        bool obOnly = poiPref == "Order block only"
-        bool rbOnly = poiPref == "Rejection block only"
-        // the OB must sit on the protected side of the RB, else the stop is inside it
-        bool obSane = hasOB and (dir < 0 ? obT < rbTop : obB > rbBot)
-        bool useOB  = not rbOnly and obSane
-        bool poiOK  = not (obOnly and not obSane)
+        // an order block only refines the entry when it sits inside the rejection block
+        bool obIn = useOB and not na(obT) and (dir < 0 ? obB > rbBot and obB < rbTop
+             : obT < rbTop and obT > rbBot)
+        float px = dir < 0 ? (obIn ? obB : rbBot) : (obIn ? obT : rbTop)
+        float sl = dir < 0 ? rbTop + slBuf * tick : rbBot - slBuf * tick
 
-        float poiT = useOB ? obT : rbTop
-        float poiB = useOB ? obB : rbBot
-
-        // ---- limit price ----------------------------------------------------
-        float px = switch entryAt
-            "Proximal edge"        => dir < 0 ? poiB : poiT
-            "50% (mean threshold)" => (poiT + poiB) / 2.0
-            "Distal edge"          => dir < 0 ? poiT : poiB
-            => dir < 0 ? poiB : poiT
-
-        // ---- stop: beyond the rejection block wick tip (or the POI extreme) --
-        // Pairing an order-block entry with a rejection-block stop is the worst of
-        // both: the entry sits deep in the leg while the stop stays back at the
-        // swept extreme. "Auto" keeps the RB stop for RB entries (as intended) and
-        // uses the POI extreme when an order block is the POI.
-        bool poiStop = stopRef == "POI extreme (tighter)"
-             or (stopRef == "Auto - RB stop for RB entries, POI stop for OB entries" and useOB)
-        float slRef   = poiStop ? (dir < 0 ? poiT : poiB) : (dir < 0 ? rbTop : rbBot)
-        float sl      = dir < 0 ? slRef + slBuf * tick : slRef - slBuf * tick
-        float stopPts = math.abs(px - sl)
-
-        bool sizeOK      = stopPts >= minStopPts and stopPts <= maxStopPts
-        bool sane        = dir < 0 ? sl > px : sl < px
-        bool retraceLeft = dir < 0 ? px > close + tick : px < close - tick
-
-        if not (poiOK and sizeOK and sane)
-            rst := true                 // geometry is broken - this setup can never work
-        else if retraceLeft             // else price is still inside the POI: keep waiting
-            // ---- target: nearest liquidity that still pays min R ------------
+        if (dir < 0 ? px > close + tick : px < close - tick)   // retracement still pending
             float tp = dir > 0 ? f_target(bslP, bslE, bslW, bslH, px, sl, true, true)
                  : f_target(sslP, sslE, sslW, sslH, px, sl, false, true)
             if na(tp)
                 tp := dir > 0 ? f_target(bslP, bslE, bslW, bslH, px, sl, true, false)
                      : f_target(sslP, sslE, sslW, sslH, px, sl, false, false)
-            if (na(tp) and tgtMode == "Liquidity >= min R, else fixed R") or tgtMode == "Fixed R multiple"
-                tp := dir > 0 ? px + stopPts * minR : px - stopPts * minR
-
             if na(tp)
-                nSkipR += 1
-                rst    := true
-            else
-                // ---- size ---------------------------------------------------
-                float riskCash = sizeMode == "Risk % of equity" ? strategy.equity * riskPct / 100.0 : riskUsd
-                float q = sizeMode == "Fixed contracts" ? fixedQty * 1.0
-                     : math.floor(riskCash / (stopPts * syminfo.pointvalue))
-                if q < 1 and allowMin
-                    q := 1
-                q := math.min(q, maxQty)
+                tp := dir > 0 ? px + math.abs(px - sl) * minR : px - math.abs(px - sl) * minR
+            entryPx := px
+            stopPx  := sl
+            tgtPx   := tp
+            if showViz
+                box.new(sweepBar, rbTop, bar_index + fillBars, rbBot,
+                     border_color = color.new(dir < 0 ? color.red : color.teal, 20),
+                     bgcolor = color.new(dir < 0 ? color.red : color.teal, 82))
+                line.new(bar_index, tp, bar_index + fillBars, tp,
+                     color = color.new(color.green, 20), style = line.style_dashed, width = 2)
 
-                if q < 1
-                    nSkipSz += 1
-                    rst     := true
-                else
-                    entryPx := px
-                    stopPx  := sl
-                    tgtPx   := tp
-                    tp1Px   := dir > 0 ? px + stopPts * minR : px - stopPts * minR
-                    initQty := q
-                    armBar  := bar_index
-                    tp1Done := false
-                    nArm    += 1
-                    if showZones
-                        box.new(sweepBar, rbTop, bar_index + fillBars, rbBot,
-                             border_color = color.new(dir < 0 ? color.red : color.teal, 20),
-                             bgcolor = color.new(dir < 0 ? color.red : color.teal, 82))
-                        if useOB
-                            box.new(bar_index - math.min(bar_index - sweepBar, 60), poiT,
-                                 bar_index + fillBars, poiB,
-                                 border_color = color.new(color.yellow, 30),
-                                 bgcolor = color.new(color.yellow, 88))
-                    if showMarks
-                        line.new(bar_index, tp, bar_index + fillBars * 2, tp,
-                             color = color.new(color.green, 20), style = line.style_dashed, width = 2)
-
-// -- deferred reset -----------------------------------------------------------
 if rst
     stage   := 0
     dir     := 0
     rbTop   := na
     rbBot   := na
     mssLvl  := na
-    legExt  := na
-    contOK  := false
     entryPx := na
     stopPx  := na
     tgtPx   := na
-    tp1Px   := na
 
 // =============================================================================
-//  Orders
+//  Orders - limit into the POI, stop at the rejection block, TP at liquidity
 // =============================================================================
-bool tradeOK = inWindow and kzOK and tradesToday < maxTrades
-
 if stage == 2 and not na(entryPx) and flat
-    if tradeOK
-        string eid = dir > 0 ? "LONG" : "SHORT"
-        strategy.entry(eid, dir > 0 ? strategy.long : strategy.short, qty = initQty,
-             limit = entryPx, comment = dir > 0 ? "RB long" : "RB short")
-        // exits are attached to the pending entry so a same-bar stop-out is modelled
-        if usePart
-            strategy.exit("RB-TP1", from_entry = eid, qty_percent = partPct, stop = stopPx, limit = tp1Px)
-        strategy.exit("RB-TP2", from_entry = eid, stop = stopPx, limit = tgtPx)
-
-    // Cancel only on expiry, an invalidated stop, or a closed trading window.
-    // Deliberately NOT on "price already reached the target": the displacement leg
-    // routinely covers 2R before the retracement fills, and cancelling there kills
-    // the very setups the model exists to trade.
-    bool stopRun = dir > 0 ? low <= stopPx : high >= stopPx
-    if bar_index - armBar > fillBars or stopRun or not tradeOK
+    string eid = dir > 0 ? "LONG" : "SHORT"
+    strategy.entry(eid, dir > 0 ? strategy.long : strategy.short, qty = qtyC, limit = entryPx)
+    strategy.exit("X", from_entry = eid, stop = stopPx, limit = tgtPx)
+    if bar_index - mssBar > fillBars or (dir > 0 ? low <= stopPx : high >= stopPx)
         strategy.cancel_all()
         stage   := 0
         dir     := 0
         rbTop   := na
         rbBot   := na
         mssLvl  := na
-        legExt  := na
-        contOK  := false
         entryPx := na
         stopPx  := na
         tgtPx   := na
-        tp1Px   := na
 
-if strategy.position_size != 0 and not na(stopPx)
+if strategy.position_size != 0
     if stage == 2
-        stage       := 3
-        nFill       += 1
-        tradesToday += 1
-    string oid = strategy.position_size > 0 ? "LONG" : "SHORT"
-    if usePart and not tp1Done and math.abs(strategy.position_size) < initQty
-        tp1Done := true
-    float curStop = usePart and tp1Done ? strategy.position_avg_price : stopPx
-    if usePart and not tp1Done
-        strategy.exit("RB-TP1", from_entry = oid, qty_percent = partPct, stop = stopPx, limit = tp1Px)
-    strategy.exit("RB-TP2", from_entry = oid, stop = curStop, limit = tgtPx)
-
-if eodFlat
-    strategy.close_all("EOD")
-    strategy.cancel("LONG")
-    strategy.cancel("SHORT")
-    if stage == 2
-        stage   := 0
-        entryPx := na
-        stopPx  := na
-        tgtPx   := na
+        stage := 3
+    strategy.exit("X", from_entry = strategy.position_size > 0 ? "LONG" : "SHORT",
+         stop = stopPx, limit = tgtPx)
 
 if stage == 3 and strategy.position_size == 0
     stage   := 0
@@ -592,45 +311,10 @@ if stage == 3 and strategy.position_size == 0
     rbTop   := na
     rbBot   := na
     mssLvl  := na
-    legExt  := na
-    contOK  := false
     entryPx := na
     stopPx  := na
     tgtPx   := na
-    tp1Px   := na
 
-// =============================================================================
-//  Plots
-// =============================================================================
-plot(usePD ? htfEq : na, "HTF equilibrium", color = color.new(color.gray, 45), style = plot.style_stepline)
-plot(stage >= 2 and not na(entryPx) ? entryPx : na, "Limit",  color = color.new(color.yellow, 0), style = plot.style_linebr, linewidth = 2)
-plot(stage >= 2 and not na(stopPx)  ? stopPx  : na, "Stop",   color = color.new(color.red, 0),    style = plot.style_linebr, linewidth = 2)
-plot(stage >= 2 and not na(tgtPx)   ? tgtPx   : na, "Target", color = color.new(color.green, 0),  style = plot.style_linebr, linewidth = 2)
-
-// =============================================================================
-//  Setup funnel - shows where candidates die, so the filters can be tuned
-// =============================================================================
-if showTable and barstate.islast
-    var table t = table.new(position.bottom_right, 2, 8, border_width = 1)
-    table.cell(t, 0, 0, "ICT-RB funnel", bgcolor = color.new(color.blue, 30), text_color = color.white, text_size = size.small)
-    table.cell(t, 1, 0, "", bgcolor = color.new(color.blue, 30))
-    table.cell(t, 0, 1, "sweeps",        text_size = size.small)
-    table.cell(t, 1, 1, str.tostring(nSweep),  text_size = size.small)
-    table.cell(t, 0, 2, "MSS confirmed", text_size = size.small)
-    table.cell(t, 1, 2, str.tostring(nMSS),    text_size = size.small)
-    table.cell(t, 0, 3, "limits armed",  text_size = size.small)
-    table.cell(t, 1, 3, str.tostring(nArm),    text_size = size.small)
-    table.cell(t, 0, 4, "filled",        text_size = size.small)
-    table.cell(t, 1, 4, str.tostring(nFill),   text_size = size.small)
-    table.cell(t, 0, 5, "no " + str.tostring(minR, "#.#") + "R target", text_size = size.small)
-    table.cell(t, 1, 5, str.tostring(nSkipR),  text_size = size.small)
-    table.cell(t, 0, 6, "risk too large", text_size = size.small)
-    table.cell(t, 1, 6, str.tostring(nSkipSz), text_size = size.small)
-    table.cell(t, 0, 7, "fill rate", text_size = size.small)
-    table.cell(t, 1, 7, nArm > 0 ? str.tostring(100.0 * nFill / nArm, "#.#") + "%" : "-", text_size = size.small)
-
-// =============================================================================
-//  Alerts
-// =============================================================================
-alertcondition(not na(sweptHigh), "BSL swept", "Buy-side liquidity swept and rejected")
-alertcondition(not na(sweptLow),  "SSL swept", "Sell-side liquidity swept and rejected")
+plot(stage >= 2 and not na(entryPx) ? entryPx : na, "Entry",  color.yellow, style = plot.style_linebr, linewidth = 2)
+plot(stage >= 2 and not na(stopPx)  ? stopPx  : na, "Stop",   color.red,    style = plot.style_linebr, linewidth = 2)
+plot(stage >= 2 and not na(tgtPx)   ? tgtPx   : na, "Target", color.green,  style = plot.style_linebr, linewidth = 2)
