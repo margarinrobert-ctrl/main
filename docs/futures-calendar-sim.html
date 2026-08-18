@@ -1,0 +1,1648 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulador de Calendario — Trading de Futuros</title>
+<style>
+:root {
+  --ground:#0a0e17; --surface:#12151c; --surface-2:#171b24; --surface-3:#1c2230;
+  --ink:#e7e9ef; --ink-2:#97a2b3; --ink-3:#6b7482;
+  --rule:rgba(255,255,255,.09); --rule-2:rgba(255,255,255,.05);
+  /* data-encoding palette — validated (dark surface #12151c): */
+  --win:#059669; --loss:#ef4444; --info:#0284c7; --warn:#c98500;
+  /* chrome accents (headers/badges, not data marks) */
+  --win-hi:#34d399; --loss-hi:#f87171; --cyan-hi:#38bdf8; --amber-hi:#fbbf24;
+  --mono:ui-monospace,'SF Mono','JetBrains Mono','Cascadia Code',Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background:
+  radial-gradient(900px 420px at 15% -6%, rgba(52,211,153,.05), transparent 60%),
+  radial-gradient(760px 400px at 92% 4%, rgba(56,189,248,.04), transparent 55%);}
+.wrap{position:relative;z-index:1;max-width:1500px;margin:0 auto;padding:26px 22px 60px}
+
+header{text-align:center;margin-bottom:22px}
+h1{margin:0;font-size:clamp(22px,3.4vw,34px);letter-spacing:.04em;font-weight:800}
+.sub{display:flex;justify-content:center;align-items:center;gap:14px;flex-wrap:wrap;margin-top:10px}
+.sub-label{color:var(--cyan-hi);font-weight:700;letter-spacing:.08em;font-size:13px}
+.badge-dd{border:1.5px solid var(--win-hi);color:var(--win-hi);border-radius:8px;padding:4px 12px;font-weight:700;font-size:13px;letter-spacing:.05em;box-shadow:0 0 14px rgba(52,211,153,.18)}
+
+.panel{background:var(--surface);border:1px solid var(--rule);border-radius:14px;padding:16px 18px;margin-bottom:16px}
+.panel h2{margin:0 0 12px;font-size:13px;letter-spacing:.1em;color:var(--ink-2);font-weight:700;text-transform:uppercase}
+.panel h2 .hl{color:var(--cyan-hi)}
+
+/* Controls */
+.controls{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:11px;letter-spacing:.07em;color:var(--ink-2);font-weight:700;text-transform:uppercase}
+.field input{background:var(--surface-2);border:1px solid var(--rule);color:var(--ink);border-radius:8px;padding:7px 10px;font-family:var(--mono);font-size:14px;width:110px}
+.field input:focus{outline:none;border-color:var(--info)}
+.field input:disabled{opacity:.35}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{background:var(--surface-2);border:1px solid var(--rule);color:var(--ink-2);border-radius:8px;padding:7px 12px;font-weight:700;font-size:12.5px;cursor:pointer;letter-spacing:.03em}
+.chip:hover{color:var(--ink);border-color:var(--ink-3)}
+.chip.on{background:rgba(5,150,105,.16);border-color:var(--win-hi);color:var(--win-hi)}
+.btn{background:rgba(2,132,199,.15);border:1px solid var(--cyan-hi);color:var(--cyan-hi);border-radius:8px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer;letter-spacing:.03em}
+.btn:hover{background:rgba(2,132,199,.28)}
+.btn.on{background:rgba(5,150,105,.18);border-color:var(--win-hi);color:var(--win-hi)}
+.note-inline{font-size:11.5px;color:var(--ink-3);margin-top:10px}
+
+/* Stat tiles */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.tile{background:var(--surface-2);border:1px solid var(--rule-2);border-radius:10px;padding:10px 12px}
+.tile .k{font-size:10.5px;letter-spacing:.08em;color:var(--ink-2);font-weight:700;text-transform:uppercase}
+.tile .v{font-family:var(--mono);font-size:19px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+.tile .v.sm{font-size:13.5px;line-height:1.5}
+.tile .s{font-size:11px;color:var(--ink-3);margin-top:2px;font-variant-numeric:tabular-nums}
+.v.good{color:var(--win-hi)} .v.bad{color:var(--loss-hi)} .v.warn{color:var(--amber-hi)} .v.info{color:var(--cyan-hi)}
+
+.grid-2{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px}
+@media (max-width:980px){.grid-2{grid-template-columns:1fr}}
+.chart-box{position:relative;overflow-x:auto}
+svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-3)}
+.mc-tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px}
+
+/* Backtest de liquidación */
+.ltab{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+.ltab th{text-align:right;color:var(--ink-2);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;border-bottom:1px solid var(--rule);font-family:var(--sans)}
+.ltab td{text-align:right;padding:6px 10px;border-bottom:1px solid var(--rule-2);color:var(--ink);white-space:nowrap}
+.ltab th:first-child,.ltab td:first-child{text-align:left}
+.ltab tr.sel td{background:rgba(2,132,199,.12)}
+.ltab tr.kelly td{background:rgba(5,150,105,.08)}
+.ltab td.dim{color:var(--ink-3)}
+.subh{font-size:12px;letter-spacing:.09em;color:var(--ink-2);font-weight:700;text-transform:uppercase;margin:18px 0 8px}
+.subh .hl{color:var(--cyan-hi)}
+.subh .sub{color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600}
+
+/* Calendar */
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:var(--ink-2)}
+.legend .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.yearbar{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;border-bottom:1px solid var(--rule);margin:20px 0 12px;padding-bottom:8px}
+.yearbar:first-child{margin-top:0}
+.yearbar .y{font-size:20px;font-weight:800;letter-spacing:.06em}
+.yearbar .yt{font-family:var(--mono);font-weight:700;font-size:15px;font-variant-numeric:tabular-nums}
+.yearbar .yd{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.months{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:12px}
+#cal.cmp .months{grid-template-columns:repeat(auto-fill,minmax(310px,1fr))}
+.month{background:var(--surface-2);border:1px solid var(--rule-2);border-radius:12px;padding:10px 10px 8px}
+.month h3{margin:0 0 8px;font-size:12px;letter-spacing:.09em;color:var(--ink);font-weight:800;text-transform:uppercase;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.month h3 .mt{font-family:var(--mono);font-size:11.5px;font-weight:700;white-space:nowrap}
+.mgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:3px}
+.dow{font-size:9.5px;color:var(--ink-3);text-align:center;font-weight:700;padding-bottom:2px}
+.cell{border-radius:6px;min-height:44px;padding:3px 4px 2px;position:relative;background:var(--surface-3);border:1px solid transparent}
+#cal.cmp .cell{min-height:66px}
+.cell .d{font-size:9px;color:var(--ink-3);line-height:1}
+.cell .p{font-family:var(--mono);font-size:11px;font-weight:700;line-height:1.25;margin-top:2px;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cell .pc{font-family:var(--mono);font-size:9.5px;color:var(--ink-2);line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cell .ab{font-family:var(--mono);font-size:9.5px;color:var(--ink-2);line-height:1.35;margin-top:1px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cell .ab b{color:var(--ink);font-weight:700}
+.cell.trade{cursor:default}
+.cell.trade:hover{border-color:var(--ink-3)}
+.cell.blank{background:transparent}
+.cell.holiday{background:repeating-linear-gradient(45deg,var(--surface-3) 0 5px,rgba(255,255,255,.028) 5px 10px)}
+.cell.holiday .p{color:var(--ink-3);font-size:9px;font-weight:600;letter-spacing:.04em}
+.cell.dead{background:transparent;border:1px dashed rgba(239,68,68,.35)}
+.cell.dead .p{color:var(--ink-3)}
+.cell.ruin{outline:2px solid var(--loss-hi);outline-offset:-1px}
+.mfoot{display:flex;justify-content:space-between;gap:8px;margin-top:7px;font-size:10.5px;color:var(--ink-3);font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+.foot-notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.fnote{display:flex;gap:10px;font-size:12px;color:var(--ink-2)}
+.fnote .bar{width:3px;border-radius:2px;flex:none}
+
+#tip{position:fixed;z-index:50;pointer-events:none;background:#070a12;border:1px solid var(--rule);border-radius:8px;padding:8px 11px;font-size:12px;line-height:1.5;display:none;max-width:300px;box-shadow:0 6px 24px rgba(0,0,0,.55)}
+#tip .t1{font-weight:700;color:var(--ink)}
+#tip .t2{color:var(--ink-2);font-family:var(--mono);font-variant-numeric:tabular-nums}
+#tip .t2 b{color:var(--ink)}
+#tip .t3{color:var(--loss-hi);font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:4px">
+      <div class="chips" id="langChips">
+        <button class="chip on" data-l="es">ES</button>
+        <button class="chip" data-l="en">EN</button>
+      </div>
+    </div>
+    <h1 data-i18n="title">SIMULACIÓN DE CALENDARIO — TRADING DE FUTUROS</h1>
+    <div class="sub">
+      <span class="sub-label" data-i18n="subtitle">RESULTADOS DIARIOS BASADOS EN TIEMPO · DE 20 DÍAS A 5 AÑOS</span>
+      <span class="badge-dd" id="badgeDD">CON $1,400 DE DRAWDOWN DISPONIBLE</span>
+    </div>
+  </header>
+
+  <section class="panel">
+    <h2>Parámetros <span class="hl">de entrada</span></h2>
+    <div class="controls" style="margin-bottom:14px">
+      <div class="field">
+        <label>Reglas de prop firm (rellena drawdown, modo, objetivo, límite diario y días mínimos — todo editable)</label>
+        <div class="chips" id="presetChips">
+          <button class="chip on" data-p="custom">PERSONALIZADO</button>
+          <button class="chip" data-p="mffu_r25">MFFU RAPID 25K</button>
+          <button class="chip" data-p="mffu_r50">MFFU RAPID 50K</button>
+          <button class="chip" data-p="mffu_b50">MFFU BUILDER 50K</button>
+          <button class="chip" data-p="apex_25">APEX 25K</button>
+          <button class="chip" data-p="apex_50">APEX 50K</button>
+          <button class="chip" data-p="topstep_50">TOPSTEP 50K</button>
+        </div>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="field"><label for="inWr">Win rate %</label><input id="inWr" type="number" value="73" min="1" max="99" step="1"></div>
+      <div class="field"><label for="inWin">Ganancia / trade $</label><input id="inWin" type="number" value="250" min="1" step="10"></div>
+      <div class="field"><label for="inLoss">Pérdida / trade $</label><input id="inLoss" type="number" value="300" min="1" step="10"></div>
+      <div class="field"><label for="inTpd">Trades / día (A)</label><input id="inTpd" type="number" value="2" min="1" max="20" step="1"></div>
+      <div class="field"><label for="inDD">Drawdown disp. $</label><input id="inDD" type="number" value="1400" min="100" step="100"></div>
+      <div class="field"><label for="inCost">Costes $/trade</label><input id="inCost" type="number" value="0" min="0" step="1" title="Comisión + deslizamiento por operación (resta a la ganancia, suma a la pérdida)"></div>
+      <div class="field"><label for="inSeed">Semilla</label><input id="inSeed" type="number" value="20260712" step="1"></div>
+      <button class="btn" id="btnRoll">🎲 Nueva simulación</button>
+    </div>
+    <div class="controls" style="margin-top:14px">
+      <div class="field">
+        <label>Horizonte (días de trading)</label>
+        <div class="chips" id="chips">
+          <button class="chip" data-d="20">20 DÍAS</button>
+          <button class="chip" data-d="21">1 MES</button>
+          <button class="chip" data-d="63">3 MESES</button>
+          <button class="chip" data-d="126">6 MESES</button>
+          <button class="chip on" data-d="252">1 AÑO</button>
+          <button class="chip" data-d="504">2 AÑOS</button>
+          <button class="chip" data-d="1260">5 AÑOS</button>
+        </div>
+      </div>
+      <div class="field"><label for="inDays">Personalizado</label><input id="inDays" type="number" value="252" min="20" max="1260" step="1"></div>
+      <div class="field">
+        <label>Límite de drawdown</label>
+        <div class="chips" id="modeChips">
+          <button class="chip on" data-m="static" title="El límite queda fijo en −DD desde el inicio">ESTÁTICO</button>
+          <button class="chip" data-m="trail" title="El límite sigue al pico de equidad para siempre (trailing intradía perpetuo)">TRAILING</button>
+          <button class="chip" data-m="cap" title="El límite sigue al pico intradía y se bloquea al alcanzar el nivel de bloqueo">TRAILING · LOCK</button>
+          <button class="chip" data-m="eod" title="El límite solo sube con el cierre diario (end-of-day) y se bloquea en el nivel de bloqueo — estilo Topstep">TRAILING EOD</button>
+        </div>
+      </div>
+      <div class="field"><label for="inLock" title="Nivel (en $ de PnL) donde el trailing se bloquea: 0 = breakeven, 100 = inicial+$100 (MFFU)">Lock trailing +$</label><input id="inLock" type="number" value="0" min="0" step="50"></div>
+      <div class="field"><label for="inDLL" title="Límite de pérdida diaria (soft): al tocarlo se deja de operar ese día. 0 = sin límite">Pérdida diaria máx. $</label><input id="inDLL" type="number" value="0" min="0" step="100"></div>
+      <div class="field"><label for="inMinDays">Días mín. evaluación</label><input id="inMinDays" type="number" value="1" min="1" max="30" step="1"></div>
+      <button class="btn" id="btnCmp">⚖ Comparar trades/día: OFF</button>
+      <div class="field"><label for="inTpdB">Trades / día (B)</label><input id="inTpdB" type="number" value="4" min="1" max="20" step="1" disabled></div>
+    </div>
+    <div class="note-inline">Modelo basado únicamente en tiempo: N operaciones por día de mercado (lun–vie, excluye festivos CME), sin dependencia del precio. La cuenta se liquida si la pérdida acumulada toca el límite de drawdown. En modo comparación, A y B viven el mismo día: los primeros min(A,B) trades de cada día son idénticos en ambos escenarios — la diferencia Δ muestra exactamente lo que aportan (o cuestan) los trades adicionales.</div>
+  </section>
+
+  <section class="panel">
+    <h2>Resultados <span class="hl">de esta simulación</span> <span id="runRange" style="color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600"></span></h2>
+    <div class="tiles" id="runTiles"></div>
+  </section>
+
+  <div class="grid-2">
+    <section class="panel">
+      <h2>Curva de <span class="hl">equidad diaria</span></h2>
+      <div class="legend" id="eqLegend" style="display:none;margin-bottom:8px"></div>
+      <div class="chart-box"><svg id="eq" viewBox="0 0 860 280" width="100%" height="280" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Curva de equidad diaria de la simulación"></svg></div>
+    </section>
+    <section class="panel">
+      <h2>Monte Carlo <span class="hl" id="mcN"></span></h2>
+      <div class="mc-tiles" id="mcTiles"></div>
+      <div class="legend" id="histLegend" style="display:none;margin-bottom:6px"></div>
+      <div class="chart-box"><svg id="hist" viewBox="0 0 520 150" width="100%" height="150" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Distribución de resultados finales Monte Carlo"></svg></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>Backtest <span class="hl">de liquidación</span> <span id="liqN" style="color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600"></span></h2>
+    <div class="tiles" id="liqTiles" style="margin-bottom:14px"></div>
+    <div class="legend" id="liqLegend" style="display:none;margin-bottom:6px"></div>
+    <div class="chart-box"><svg id="liq" viewBox="0 0 860 250" width="100%" height="250" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Porcentaje acumulado de cuentas liquidadas por día de trading"></svg></div>
+    <div id="liqTable" style="margin-top:14px;overflow-x:auto"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Cálculos <span class="hl">avanzados</span></h2>
+    <div class="tiles" id="advTiles"></div>
+    <div class="grid-2" style="margin-top:16px">
+      <div>
+        <div class="subh" data-k="pct">Evolución del capital <span class="hl">(percentiles Monte Carlo)</span> <span class="sub" id="pctN"></span></div>
+        <div class="legend" id="pctLegend" style="margin-bottom:6px"></div>
+        <div class="chart-box"><svg id="pct" viewBox="0 0 860 260" width="100%" height="260" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bandas de percentiles del capital por día"></svg></div>
+      </div>
+      <div>
+        <div class="subh" data-k="streak">Rachas perdedoras <span class="hl">(cálculo exacto)</span> <span class="sub" id="stN"></span></div>
+        <div class="controls" style="margin-bottom:10px">
+          <div class="field">
+            <label>Nº de trades del cálculo</label>
+            <div class="chips" id="stChips">
+              <button class="chip on" data-n="auto" title="Usa los trades del horizonte seleccionado: días × trades por día">AUTO (HORIZONTE)</button>
+              <button class="chip" data-n="50">50</button>
+              <button class="chip" data-n="100">100</button>
+              <button class="chip" data-n="252">252</button>
+              <button class="chip" data-n="500">500</button>
+              <button class="chip" data-n="1000">1000</button>
+            </div>
+          </div>
+          <div class="field"><label for="inStN" title="Nº de trades sobre el que se calcula la probabilidad de racha (independiente del horizonte)">Trades personalizado</label><input id="inStN" type="number" value="252" min="2" max="100000" step="10"></div>
+        </div>
+        <div style="overflow-x:auto"><div id="streakTable"></div></div>
+      </div>
+    </div>
+    <div class="subh" data-k="risk" style="margin-top:20px">Explorador de riesgo por trade <span class="hl">(Kelly y ruina)</span> <span class="sub" id="rkN"></span></div>
+    <div id="riskTable" style="overflow-x:auto"></div>
+    <div class="subh" data-k="sens" style="margin-top:20px">Sensibilidad <span class="hl">y riesgo de estimación</span> <span class="sub" id="sensN"></span></div>
+    <div class="controls" style="margin-bottom:10px">
+      <div class="field"><label for="inHist" title="Número de trades reales sobre los que mediste tu win rate — cuantifica la incertidumbre de la estimación (0 = omitir)">Trades en tu histórico</label><input id="inHist" type="number" value="300" min="0" step="50"></div>
+    </div>
+    <div class="tiles" id="bayesTiles" style="margin-bottom:12px"></div>
+    <div id="sensTable" style="overflow-x:auto"></div>
+    <div class="subh" data-k="race" style="margin-top:20px">Evaluación: <span class="hl">objetivo vs liquidación</span> <span class="sub" id="raceN"></span></div>
+    <div class="controls" style="margin-bottom:10px">
+      <div class="field"><label for="inTarget">Objetivo de beneficio $</label><input id="inTarget" type="number" value="3000" min="100" step="100"></div>
+    </div>
+    <div class="tiles" id="raceTiles"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Payouts <span class="hl">— fase financiada</span> <span id="payN" style="color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600"></span></h2>
+    <div class="controls" style="margin-bottom:12px">
+      <div class="field"><label for="inSplit" title="Porcentaje del payout que se queda el trader">Split trader %</label><input id="inSplit" type="number" value="90" min="1" max="100" step="1"></div>
+      <div class="field"><label for="inFullUp" title="Primeros $ de beneficio que son 100% para el trader (Apex: $25,000)">100% primeros $</label><input id="inFullUp" type="number" value="0" min="0" step="1000"></div>
+      <div class="field"><label for="inCad" title="Días de trading mínimos entre payouts">Cadencia (días)</label><input id="inCad" type="number" value="1" min="0" max="30" step="1"></div>
+      <div class="field"><label for="inWDn" title="Días ganadores requeridos desde el último payout (0 = sin requisito)">Días ganadores req.</label><input id="inWDn" type="number" value="0" min="0" max="20" step="1"></div>
+      <div class="field"><label for="inWDmin" title="PnL mínimo del día para contar como día ganador">Día ganador ≥ $</label><input id="inWDmin" type="number" value="150" min="0" step="50"></div>
+      <div class="field"><label for="inPayMin" title="Importe mínimo por payout">Payout mín. $</label><input id="inPayMin" type="number" value="0" min="0" step="100"></div>
+      <div class="field"><label for="inPayMax" title="Importe máximo por payout (0 = sin máximo)">Payout máx. $</label><input id="inPayMax" type="number" value="0" min="0" step="500"></div>
+      <div class="field"><label for="inRet" title="PnL que debe quedar en la cuenta tras el payout (colchón / safety net). Apex: drawdown + $100">Retención $</label><input id="inRet" type="number" value="1400" min="0" step="100"></div>
+      <div class="field"><label for="inCons" title="Regla de consistencia al pedir payout: mejor día ≤ X% del beneficio desde el último payout (0 = sin regla)">Consistencia %</label><input id="inCons" type="number" value="0" min="0" max="100" step="5"></div>
+    </div>
+    <div class="tiles" id="payTiles"></div>
+    <div class="legend" id="payLegend" style="display:none;margin:10px 0 6px"></div>
+    <div class="chart-box" style="margin-top:12px"><svg id="payHist" viewBox="0 0 860 150" width="100%" height="150" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Distribución del neto cobrado por el trader"></svg></div>
+    <div class="note-inline">Estrategia simulada: retirar el máximo permitido en cuanto la cuenta es elegible, dejando la retención. La consistencia se evalúa sobre lo acumulado desde el último payout (aproximación — cada firma la calcula distinto). En fase financiada el trailing se considera bloqueado en su nivel de lock (así funcionan Apex PA y MFFU); las reglas de evaluación siguen aplicando al límite de drawdown.</div>
+  </section>
+
+  <section class="panel">
+    <h2>Calendario <span class="hl">de PnL diario</span></h2>
+    <div class="legend" id="calLegend"></div>
+    <div id="cal"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Notas <span class="hl">del modelo</span></h2>
+    <div class="foot-notes" id="notes"></div>
+  </section>
+</div>
+
+<div id="tip"></div>
+
+<script>
+'use strict';
+/* ───────────────────────── RNG ───────────────────────── */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+/* Un stream independiente por día de calendario: el día i produce la misma
+   secuencia de resultados sin importar cuántos trades tome cada escenario. */
+function dayStream(seed,i){
+  let h=(seed>>>0)^Math.imul(i+1,0x9E3779B1);
+  h=Math.imul(h^h>>>16,0x85EBCA6B);h=Math.imul(h^h>>>13,0xC2B2AE35);h^=h>>>16;
+  return mulberry32(h>>>0);
+}
+
+/* ─────────────── Calendario CME (festivos) ─────────────── */
+function easterSunday(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=(h+l-7*m+114)%31+1;return new Date(y,mo-1,da)}
+function observed(d){const w=d.getDay();if(w===6)return new Date(d.getFullYear(),d.getMonth(),d.getDate()-1);if(w===0)return new Date(d.getFullYear(),d.getMonth(),d.getDate()+1);return d}
+function key(d){return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate()}
+const holidayCache=new Map();
+function cmeHolidays(y){
+  if(holidayCache.has(y))return holidayCache.get(y);
+  const m=new Map();
+  const add=(d,name)=>m.set(key(d),name);
+  add(observed(new Date(y,0,1)),'Año Nuevo');
+  const es=easterSunday(y);add(new Date(y,es.getMonth(),es.getDate()-2),'Viernes Santo');
+  let mem=new Date(y,4,31);while(mem.getDay()!==1)mem.setDate(mem.getDate()-1);add(mem,'Memorial Day');
+  add(observed(new Date(y,5,19)),'Juneteenth');
+  add(observed(new Date(y,6,4)),'Día de la Independencia');
+  let lab=new Date(y,8,1);while(lab.getDay()!==1)lab.setDate(lab.getDate()+1);add(lab,'Labor Day');
+  let th=new Date(y,10,1);let count=0;while(true){if(th.getDay()===4){count++;if(count===4)break}th.setDate(th.getDate()+1)}add(th,'Acción de Gracias');
+  add(observed(new Date(y,11,25)),'Navidad');
+  holidayCache.set(y,m);return m;
+}
+function isHoliday(d){return cmeHolidays(d.getFullYear()).get(key(d))||null}
+function isTradingDay(d){const w=d.getDay();return w>=1&&w<=5&&!isHoliday(d)}
+function nextTradingDay(d){const x=new Date(d);while(!isTradingDay(x))x.setDate(x.getDate()+1);return x}
+function tradingDays(start,n){const out=[];const d=new Date(start);while(out.length<n){if(isTradingDay(d))out.push(new Date(d));d.setDate(d.getDate()+1)}return out}
+
+/* ───────────────────── Simulación ───────────────────── */
+/* Reglas de planes de evaluación reales (verificadas jul 2026; siempre editables).
+   mode/lock: cap+100 = trailing intradía que se bloquea en inicial+$100 (MFFU);
+   eod+0 = trailing de cierre diario que se bloquea en el balance inicial (Topstep). */
+const PRESETS={
+  custom:  {name:'Personalizado'},
+  mffu_r25:{name:'MyFundedFutures Rapid 25k', size:25000, dd:1000, mode:'cap', lock:100, dll:0,    target:1500, minDays:2,
+            pay:{split:90,fullUp:0,cad:1,wdN:0,wdMin:0,min:100,max:0,ret:1100,cons:0}},
+  mffu_r50:{name:'MyFundedFutures Rapid 50k', size:50000, dd:2000, mode:'cap', lock:100, dll:0,    target:3000, minDays:2,
+            pay:{split:90,fullUp:0,cad:1,wdN:0,wdMin:0,min:100,max:0,ret:2100,cons:0}},
+  mffu_b50:{name:'MyFundedFutures Builder 50k',size:50000,dd:2000, mode:'static',lock:0, dll:0,    target:3000, minDays:1,
+            pay:{split:90,fullUp:0,cad:2,wdN:0,wdMin:0,min:500,max:2000,ret:2000,cons:50}},
+  apex_25: {name:'Apex 25k',                  size:25000, dd:1500, mode:'trail',lock:0,  dll:0,    target:1500, minDays:1,
+            pay:{split:90,fullUp:25000,cad:0,wdN:5,wdMin:200,min:500,max:0,ret:1600,cons:50}},
+  apex_50: {name:'Apex 50k',                  size:50000, dd:2500, mode:'trail',lock:0,  dll:0,    target:3000, minDays:1,
+            pay:{split:90,fullUp:25000,cad:0,wdN:5,wdMin:200,min:500,max:0,ret:2600,cons:50}},
+  topstep_50:{name:'Topstep 50k',             size:50000, dd:2000, mode:'eod', lock:0,   dll:1000, target:3000, minDays:2,
+            pay:{split:90,fullUp:0,cad:0,wdN:5,wdMin:150,min:250,max:2000,ret:0,cons:50}},
+};
+function readParams(){
+  const cost=Math.max(0,+el('inCost').value||0);
+  const rawWin=Math.max(1,+el('inWin').value||250);
+  const rawLoss=Math.max(1,+el('inLoss').value||300);
+  return {
+    wr: Math.min(99,Math.max(1,+el('inWr').value||73))/100,
+    win: Math.max(1,rawWin-cost),   /* efectivo, neto de costes */
+    loss: rawLoss+cost,             /* efectivo, neto de costes */
+    rawWin,rawLoss,cost,
+    mode: curMode,
+    lock: Math.max(0,+el('inLock').value||0),
+    dll: Math.max(0,+el('inDLL').value||0),
+    minDays: Math.min(30,Math.max(1,Math.round(+el('inMinDays').value||1))),
+    target: Math.max(100,+el('inTarget').value||3000),
+    tpd: Math.min(20,Math.max(1,Math.round(+el('inTpd').value||2))),
+    tpdB: Math.min(20,Math.max(1,Math.round(+el('inTpdB').value||4))),
+    dd: Math.max(100,+el('inDD').value||1400),
+    days: Math.min(1260,Math.max(20,Math.round(+el('inDays').value||252))),
+    /* Nº de trades del cálculo de rachas: AUTO = días × trades/día, o un nº fijo elegido a mano */
+    stAuto,
+    stTrades: Math.min(100000,Math.max(2,Math.round(+el('inStN').value||252))),
+    pay:{
+      split: Math.min(100,Math.max(1,+el('inSplit').value||90))/100,
+      fullUp: Math.max(0,+el('inFullUp').value||0),
+      cad: Math.min(30,Math.max(0,Math.round(+el('inCad').value||0))),
+      wdN: Math.min(20,Math.max(0,Math.round(+el('inWDn').value||0))),
+      wdMin: Math.max(0,+el('inWDmin').value||0),
+      min: Math.max(0,+el('inPayMin').value||0),
+      max: Math.max(0,+el('inPayMax').value||0),
+      ret: Math.max(0,+el('inRet').value||0),
+      cons: Math.min(100,Math.max(0,+el('inCons').value||0))
+    }
+  };
+}
+/* Suelo de liquidación según el modo.
+   peak = máximo intradía de equidad; eodPeak = máximo de cierres diarios;
+   lock = nivel de PnL donde el trailing se bloquea. */
+function floorOf(mode,peak,eodPeak,dd,lock){
+  if(mode==='static')return -dd;
+  if(mode==='trail')return peak-dd;
+  if(mode==='cap')return Math.min(peak-dd,lock);
+  return Math.min(eodPeak-dd,lock); /* eod */
+}
+/* Parada suave por pérdida diaria: true = no se opera más ese día. */
+function dllHit(p,dayPnl){return p.dll>0&&dayPnl<=-p.dll}
+function simulateRun(p,tpd,seed,dates){
+  const days=[];let equity=0,peak=0,eodPeak=0,maxDD=0,ruinDay=-1;
+  let best=-Infinity,worst=Infinity,greens=0,reds=0,flats=0,streak=0,maxStreak=0,dllStops=0;
+  for(let i=0;i<dates.length;i++){
+    if(ruinDay>=0){days.push({date:dates[i],active:false,pnl:0});continue}
+    const rnd=dayStream(seed,i);
+    let wins=0,losses=0,pnl=0,ruinedToday=false,dllToday=false;
+    for(let t=0;t<tpd;t++){
+      if(rnd()<p.wr){wins++;pnl+=p.win}else{losses++;pnl-=p.loss}
+      const eqNow=equity+pnl;
+      if(eqNow>peak)peak=eqNow;
+      if(eqNow<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){ruinedToday=true;break}
+      if(dllHit(p,pnl)){dllToday=true;dllStops++;break}
+    }
+    equity+=pnl;
+    if(equity>peak)peak=equity;
+    if(peak-equity>maxDD)maxDD=peak-equity;
+    if(pnl>best)best=pnl;
+    if(pnl<worst)worst=pnl;
+    if(pnl>0){greens++;streak=0}else if(pnl<0){reds++;streak++;if(streak>maxStreak)maxStreak=streak}else{flats++;streak=0}
+    const floorNow=floorOf(p.mode,peak,eodPeak,p.dd,p.lock);
+    if(equity>eodPeak)eodPeak=equity; /* cierre del día */
+    days.push({date:dates[i],active:true,pnl,wins,losses,equity,ruined:ruinedToday,dllStop:dllToday,floor:floorNow});
+    if(ruinedToday)ruinDay=i;
+  }
+  const traded=days.filter(d=>d.active).length;
+  return {tpd,days,final:equity,maxDD,ruinDay,best,worst,greens,reds,flats,maxStreak,traded,dllStops,
+          avgDaily:traded?equity/traded:0};
+}
+function simulateMC(p,tpd,sims,seedBase){
+  const finals=new Float64Array(sims);let ruins=0,pos=0;
+  for(let s=0;s<sims;s++){
+    const rnd=mulberry32(seedBase+s*7919);
+    let eq=0,peak=0,eodPeak=0,dead=false;
+    for(let i=0;i<p.days&&!dead;i++){
+      let dayPnl=0;
+      for(let t=0;t<tpd;t++){
+        const x=rnd()<p.wr?p.win:-p.loss;
+        eq+=x;dayPnl+=x;
+        if(eq>peak)peak=eq;
+        if(eq<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){dead=true;break}
+        if(dllHit(p,dayPnl))break;
+      }
+      if(eq>eodPeak)eodPeak=eq;
+    }
+    finals[s]=eq;if(dead)ruins++;if(eq>0)pos++;
+  }
+  const sorted=Array.from(finals).sort((a,b)=>a-b);
+  const q=f=>sorted[Math.min(sims-1,Math.floor(f*sims))];
+  const mean=sorted.reduce((a,b)=>a+b,0)/sims;
+  return {tpd,finals:sorted,ruins,pos,sims,mean,p5:q(.05),p50:q(.5),p95:q(.95)};
+}
+
+/* ───────────────────── Formato e idioma ───────────────────── */
+const el=id=>document.getElementById(id);
+function money(v,signed=true){const a=Math.abs(Math.round(v)).toLocaleString('en-US');return(v<0?'−$':(signed&&v>0?'+$':'$'))+a}
+function pct(v,dec=1,signed=true){return(v<0?'−':(signed&&v>0?'+':''))+Math.abs(v).toFixed(dec)+'%'}
+
+const DICT={
+es:{
+  mes:['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'],
+  mesS:['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'],
+  dowS:['dom','lun','mar','mié','jue','vie','sáb'],
+  dowH:['L','M','X','J','V'],
+  modeLabel:{static:'límite estático',trail:'límite trailing (perpetuo)',cap:'límite trailing con lock',eod:'límite trailing EOD'},
+  day:'día',days:'días',trades:'trades',sims:'sims',
+  badgeCustom:d=>'CON $'+d+' DE DRAWDOWN DISPONIBLE',
+  static:{
+    title:'SIMULACIÓN DE CALENDARIO — TRADING DE FUTUROS',
+    subtitle:'RESULTADOS DIARIOS BASADOS EN TIEMPO · DE 20 DÍAS A 5 AÑOS',
+    h2:['Parámetros <span class="hl">de entrada</span>','Resultados <span class="hl">de esta simulación</span> <span id="runRange" style="color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600"></span>','Curva de <span class="hl">equidad diaria</span>','Monte Carlo <span class="hl" id="mcN"></span>','Backtest <span class="hl">de liquidación</span> <span id="liqN" style="color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600"></span>','Cálculos <span class="hl">avanzados</span>','Payouts <span class="hl">— fase financiada</span> <span id="payN" style="color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600"></span>','Calendario <span class="hl">de PnL diario</span>','Notas <span class="hl">del modelo</span>'],
+    labels:{inWr:'Win rate %',inWin:'Ganancia / trade $',inLoss:'Pérdida / trade $',inTpd:'Trades / día (A)',inDD:'Drawdown disp. $',inCost:'Costes $/trade',inSeed:'Semilla',inDays:'Personalizado',inTpdB:'Trades / día (B)',inLock:'Lock trailing +$',inDLL:'Pérdida diaria máx. $',inMinDays:'Días mín. evaluación',inTarget:'Objetivo de beneficio $',inSplit:'Split trader %',inFullUp:'100% primeros $',inCad:'Cadencia (días)',inWDn:'Días ganadores req.',inWDmin:'Día ganador ≥ $',inPayMin:'Payout mín. $',inPayMax:'Payout máx. $',inRet:'Retención $',inCons:'Consistencia %',inHist:'Trades en tu histórico',inStN:'Trades personalizado'},
+    groupLabels:{preset:'Reglas de prop firm (rellena drawdown, modo, objetivo, límite diario y días mínimos — todo editable)',horizon:'Horizonte (días de trading)',mode:'Límite de drawdown',stn:'Nº de trades del cálculo'},
+    stChips:{auto:'AUTO (HORIZONTE)'},
+    horizon:{'20':'20 DÍAS','21':'1 MES','63':'3 MESES','126':'6 MESES','252':'1 AÑO','504':'2 AÑOS','1260':'5 AÑOS'},
+    modeChips:{static:'ESTÁTICO',trail:'TRAILING',cap:'TRAILING · LOCK',eod:'TRAILING EOD'},
+    customChip:'PERSONALIZADO',
+    btnRoll:'🎲 Nueva simulación',
+    btnCmp:on=>'⚖ Comparar trades/día: '+(on?'ON':'OFF'),
+    paramsNote:'Modelo basado únicamente en tiempo: N operaciones por día de mercado (lun–vie, excluye festivos CME), sin dependencia del precio. La cuenta se liquida si la pérdida acumulada toca el límite de drawdown. En modo comparación, A y B viven el mismo día: los primeros min(A,B) trades de cada día son idénticos en ambos escenarios — la diferencia Δ muestra exactamente lo que aportan (o cuestan) los trades adicionales.',
+    payNote:'Estrategia simulada: retirar el máximo permitido en cuanto la cuenta es elegible, dejando la retención. La consistencia se evalúa sobre lo acumulado desde el último payout (aproximación — cada firma la calcula distinto). En fase financiada el trailing se considera bloqueado en su nivel de lock (así funcionan Apex PA y MFFU); las reglas de evaluación siguen aplicando al límite de drawdown.',
+    subh:{pct:'Evolución del capital <span class="hl">(percentiles Monte Carlo)</span>',streak:'Rachas perdedoras <span class="hl">(cálculo exacto)</span>',risk:'Explorador de riesgo por trade <span class="hl">(Kelly y ruina)</span>',race:'Evaluación: <span class="hl">objetivo vs liquidación</span>',sens:'Sensibilidad <span class="hl">y riesgo de estimación</span>'},
+  },
+  dyn:{
+    pnlTotal:'PnL total',avgDay:'Promedio / día',greenDays:'Días verdes',bestDay:'Mejor día',worstDay:'Peor día',maxDD:'Máx. drawdown',redStreak:'Racha roja máx.',acctState:'Estado de la cuenta',liq:'LIQUIDADA',active:'ACTIVA ✓',hitOn:d=>'límite tocado el día '+d,neverHit:x=>'nunca tocó el límite −'+x,overDD:'sobre el drawdown',daysTraded:'días operados',ofDays:'de los días',ofDD:'del drawdown',fromPeak:'desde el pico de equidad',consecLosses:'pérdidas consecutivas',pnlA:t=>'PnL total A ('+t+' t/d)',pnlB:t=>'PnL total B ('+t+' t/d)',diffBA:'Diferencia (B − A)',perDayTraded:'por día operado',state:'Estado',liqDay:d=>'LIQUIDADA día '+d,
+    ddLimitLbl:x=>'LÍMITE DE DRAWDOWN −$'+x,trailLbl:{trail:'LÍMITE TRAILING',eod:'LÍMITE TRAILING EOD',cap:'LÍMITE TRAILING·LOCK'},tpdLegend:t=>t+' trades/día',dayN:'Día',pnlDay:'PnL día',equity:'Equidad',limit:'límite',dEq:'Δ equidad (B−A)',axisDay:'día',
+    simsN:(n,ab)=>'· '+n+' simulaciones'+(ab?' (A + B)':''),probRuin:'Prob. de ruina',hitsLimit:m=>'toca el límite ('+m+')',probPos:'Prob. de terminar +',finalPos:'PnL final > $0',avgRes:'Resultado promedio',median:'Mediana',pctile:n=>'percentil '+n,worst5:'Peor escenario (5%)',best5:'Mejor escenario (95%)',cvar:'CVaR 5%',cvarSub:'media del peor 5% de resultados',p1:'Peor 1%',medianAxis:'mediana',
+    liqHead:(m,n)=>'· primera pasada por el límite · '+m+' · '+n+' sims · horizonte fijo de 5 años',liq5y:'Liquidación a 5 años',liq5ySub:m=>'cuentas que tocan el límite ('+m+')',boundT:'Cota teórica (horizonte ∞)',boundSub:'Lundberg e^(−θ·DD) — igual para A y B',negEv:'expectativa por trade ≤ 0: la liquidación es segura a largo plazo',trailInf:'Horizonte ∞ (trailing)',trailInfSub:'el límite persigue al pico: la liquidación es cuestión de tiempo',capInfSub:'sin fórmula cerrada con lock: el límite sube y se bloquea',medLiqDay:'Día mediano de liquidación',amongLiq:'entre las cuentas liquidadas',first20:'Liq. en los primeros 20 días',first20Sub:'% de todas las liquidaciones (5 años)',curHorizon:d=>'horizonte actual ('+d+' días)',liquidated:'liquidadas',tradingDay:'Día de trading',sameCurve:r=>'misma curva de riesgo en el eje de trades — B la recorre '+r+'× más rápido',diffCurve:'con límite EOD o pérdida diaria máx., el corte por días hace que A y B ya no compartan la curva exacta',thH:['Horizonte','Días de trading','Trades','% liquidación'],thHC:(a,b)=>['Horizonte','Días','% liq. A ('+a+' t/d)','% liq. B ('+b+' t/d)','Δ (B−A)'],cpLabels:['20 días','1 mes','3 meses','6 meses','1 año','2 años','3 años','4 años','5 años'],
+    sharpeT:'Sharpe anualizado',sharpeSub:'√252 · μ_día / σ_día — exacto de la binomial',sortinoT:'Sortino anualizado',sortinoSub:'desviación solo de días negativos',pfT:'Profit factor diario',perTrade:'por trade',expT:'Expectancia / trade',expSub:(r,base,c)=>r+' R por trade (R = $'+base+(c>0?', neto de $'+c+' de costes':'')+')',kellyT:'Kelly óptimo',noEdge:'sin ventaja',kellySub:(k,l,pc)=>'riesgo Kelly ≈ '+k+' — usas $'+l+' = '+pc+'% del Kelly',kellyNeg:'f* ≤ 0: expectativa negativa',calmarT:'Calmar (esta simulación)',calmarSub:'retorno anualizado / máx. drawdown',sigT:'Días para validar el edge',sigSub:s=>'para t ≥ 2, con Sharpe diario '+s,
+    pctHead:(n)=>'· '+n+' sims · horizonte seleccionado',bandA1:'A banda 5–95%',bandA2:'A banda 25–75%',medA:'A mediana',medB:'B mediana (P5/P95 punteadas)',
+    stHead:(a,b)=>'· '+a+' trades'+(b?' (A) / '+b+' (B)':''),stHeadMan:(n,c)=>'· '+n+' trades · manual'+(c?' (mismo nº para A y B)':''),stThMan:['Racha de pérdidas','Pérdida acumulada','P(ocurre en N trades)'],stTh:['Racha de pérdidas','Pérdida acumulada','P(ocurre en el horizonte)'],stThC:['Racha de pérdidas','Pérdida acumulada','P(ocurre) A','P(ocurre) B'],inARow:k=>k+' trades seguidos',geLimit:'≥ límite',
+    rkHead:(t,m,c)=>'· mismo win rate y R:B, con '+t+' trades/día · ruina medida a 3 años · '+m+(c?' · valores efectivos netos de costes':''),rkTh:['Tamaño','Riesgo / trade','Objetivo / trade','EV / día','Cota ∞ (Lundberg)','% ruina (MC)','Mediana 1 año'],curRow:'Actual (1×)',to100:'→ 100%',
+    raceHead:(pre,t,md,m,dll,sims)=>'· '+(pre?pre+' · ':'')+'objetivo +'+t+' · mín. '+md+' · '+m+(dll?' · pérdida diaria máx. '+dll:'')+' · '+sims+' sims',passT:'P(pasar la evaluación)',passSub:'alcanza el objetivo antes de tocar el límite',lbT:'Cota inferior (fórmula cerrada)',lbSub:'(e^(θ·DD)−1)/(e^(θ·DD)−e^(−θ·T)) sin corregir el overshoot — el MC queda un poco por encima',lbNo:'solo en modo estático, sin límite diario y con EV > 0',medPassT:'Mediana de días a pasar',inclMin:'incluye los días mínimos',inclMinN:(n,d)=>'incluye mín. '+n+' · '+d,failT:'Falla la evaluación',failSub:t=>'toca el límite antes de +'+t,dayW:d=>'día '+d,amongPass:'entre las cuentas que llegan',p2575:(a,b)=>'(P25 '+a+' · P75 '+b+')',minDays:n=>n+' día'+(n>1?'s':''),
+    sensHead:n=>'· cerrado en fórmula — sin muestreo'+(n>0?' · CI del 90% con N = '+n.toLocaleString('en-US')+' trades':''),ciT:'Win rate real (CI 90%)',ciSub:n=>'con N = '+n.toLocaleString('en-US')+' trades medidos',evCiT:'EV/día en ese CI',evCiSub:'del percentil 5 al 95 del win rate',ruinCiT:'Cota de ruina en ese CI',ruinCiSub:'Lundberg en los extremos del CI',pNoEdgeT:'P(tu edge no existe)',pNoEdgeSub:be=>'prob. de que el win rate real ≤ breakeven ('+be+'%)',sensTh:['Win rate','EV / trade','EV / día','Sharpe anual','Cota ruina ∞','P(objetivo antes que ruina)'],baseRow:'base',needN:'introduce el nº de trades de tu histórico para cuantificar la incertidumbre',
+    payHead:(d,s,f,r,n)=>'· horizonte '+d+' días · split '+s+'%'+(f?' (100% primeros '+f+')':'')+' · retención '+r+' · '+n+' sims',payAnyT:'P(≥ 1 payout)',payAnySub:'cobra al menos una vez en el horizonte',firstPayT:'Mediana días al 1er payout',firstPaySub:'entre las cuentas que cobran',netMedT:'Neto mediano p/ trader',netMedSub:f=>'tras split'+(f?' y tramo 100%':''),netMeanT:'Neto medio (esperanza)',netMeanSub:'promedio sobre todas las cuentas',aliveT:'Cuentas vivas al final',aliveSub:'no tocaron el límite en el horizonte',planT:'Esperanza del plan completo',planSub:'P(pasar eval) × neto medio financiado',histZero:'$0 (el bin rojo = nunca cobró)',
+    calLegend:'<span><span class="sw" style="background:rgba(5,150,105,.55)"></span>Día ganador (+$ / +%)</span><span><span class="sw" style="background:rgba(239,68,68,.55)"></span>Día perdedor (−$ / −%)</span><span><span class="sw" style="background:repeating-linear-gradient(45deg,#1c2230 0 4px,rgba(255,255,255,.08) 4px 8px)"></span>Festivo CME</span><span><span class="sw" style="border:1px dashed rgba(239,68,68,.6);background:transparent"></span>Post-liquidación</span><span style="color:var(--ink-3)">% = PnL del día sobre el drawdown disponible</span>',
+    calLegendC:'<span><span class="sw" style="background:rgba(5,150,105,.55)"></span>Δ positivo — B gana más ese día</span><span><span class="sw" style="background:rgba(239,68,68,.55)"></span>Δ negativo — B pierde más ese día</span><span><span class="sw" style="background:repeating-linear-gradient(45deg,#1c2230 0 4px,rgba(255,255,255,.08) 4px 8px)"></span>Festivo CME</span><span><span class="sw" style="border:1px dashed rgba(239,68,68,.6);background:transparent"></span>Post-liquidación</span><span style="color:var(--ink-3)">Cada celda: PnL de A, PnL de B y Δ = B − A (% sobre el drawdown) — mismo día, mismos primeros trades</span>',
+    holiday:'FESTIVO',holidayTip:n=>'Festivo CME: '+n+' — sin operaciones',deadTip:'Cuenta liquidada — sin operaciones restantes',vr:(g,r)=>g+'V / '+r+'R',yrOverDD:'sobre el drawdown',yrImproves:(g,r)=>'B mejora '+g+' días · empeora '+r+' días',tradesGP:(w,l)=>'Trades: '+w+'G / '+l+'P',pnlOfDay:'PnL del día',cumEq:'Equidad acumulada',dayLimit:'Límite del día',dllStopped:'⏸ paró el día por pérdida diaria máx.',ruinTip:'⚠ LÍMITE DE DRAWDOWN ALCANZADO — CUENTA LIQUIDADA',ruinTipC:'⚠ un escenario tocó el límite de drawdown este día',scLine:(l,t)=>'<b>'+l+'</b> ('+t+' t/d): ',scDead:l=>'<b>'+l+'</b>: cuenta liquidada — sin trades',dDay:'Δ del día (B−A)',eq:'eq'
+  }
+},
+en:{
+  mes:['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'],
+  mesS:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+  dowS:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
+  dowH:['M','T','W','T','F'],
+  modeLabel:{static:'static limit',trail:'trailing limit (perpetual)',cap:'trailing limit with lock',eod:'EOD trailing limit'},
+  day:'day',days:'days',trades:'trades',sims:'sims',
+  badgeCustom:d=>'WITH $'+d+' OF DRAWDOWN AVAILABLE',
+  static:{
+    title:'CALENDAR SIMULATION — FUTURES TRADING',
+    subtitle:'TIME-BASED DAILY RESULTS · FROM 20 DAYS TO 5 YEARS',
+    h2:['Input <span class="hl">parameters</span>','Results <span class="hl">of this simulation</span> <span id="runRange" style="color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600"></span>','Daily <span class="hl">equity curve</span>','Monte Carlo <span class="hl" id="mcN"></span>','Liquidation <span class="hl">backtest</span> <span id="liqN" style="color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600"></span>','Advanced <span class="hl">calculations</span>','Payouts <span class="hl">— funded phase</span> <span id="payN" style="color:var(--ink-3);text-transform:none;letter-spacing:0;font-weight:600"></span>','Daily PnL <span class="hl">calendar</span>','Model <span class="hl">notes</span>'],
+    labels:{inWr:'Win rate %',inWin:'Win / trade $',inLoss:'Loss / trade $',inTpd:'Trades / day (A)',inDD:'Drawdown avail. $',inCost:'Costs $/trade',inSeed:'Seed',inDays:'Custom',inTpdB:'Trades / day (B)',inLock:'Trailing lock +$',inDLL:'Max daily loss $',inMinDays:'Min. eval days',inTarget:'Profit target $',inSplit:'Trader split %',inFullUp:'100% of first $',inCad:'Cadence (days)',inWDn:'Winning days req.',inWDmin:'Winning day ≥ $',inPayMin:'Min payout $',inPayMax:'Max payout $',inRet:'Retention $',inCons:'Consistency %',inHist:'Trades in your track record',inStN:'Custom trades'},
+    groupLabels:{preset:'Prop firm rules (fills drawdown, mode, target, daily limit and min days — all editable)',horizon:'Horizon (trading days)',mode:'Drawdown limit',stn:'Trade count of the calculation'},
+    stChips:{auto:'AUTO (HORIZON)'},
+    horizon:{'20':'20 DAYS','21':'1 MONTH','63':'3 MONTHS','126':'6 MONTHS','252':'1 YEAR','504':'2 YEARS','1260':'5 YEARS'},
+    modeChips:{static:'STATIC',trail:'TRAILING',cap:'TRAILING · LOCK',eod:'EOD TRAILING'},
+    customChip:'CUSTOM',
+    btnRoll:'🎲 New simulation',
+    btnCmp:on=>'⚖ Compare trades/day: '+(on?'ON':'OFF'),
+    paramsNote:'Time-based-only model: N trades per market day (Mon–Fri, excluding CME holidays), no price dependence. The account is liquidated when the cumulative loss touches the drawdown limit. In compare mode A and B live through the same day: each day\'s first min(A,B) trades are identical in both scenarios — the Δ difference shows exactly what the extra trades add (or cost).',
+    payNote:'Simulated strategy: withdraw the maximum allowed as soon as the account is eligible, leaving the retention. Consistency is evaluated on profit accumulated since the last payout (an approximation — each firm computes it differently). In the funded phase, trailing is treated as locked at its lock level (this is how Apex PA and MFFU work); the drawdown rules still apply.',
+    subh:{pct:'Capital evolution <span class="hl">(Monte Carlo percentiles)</span>',streak:'Losing streaks <span class="hl">(exact calculation)</span>',risk:'Per-trade risk explorer <span class="hl">(Kelly & ruin)</span>',race:'Evaluation: <span class="hl">target vs liquidation</span>',sens:'Sensitivity <span class="hl">& estimation risk</span>'},
+  },
+  dyn:{
+    pnlTotal:'Total PnL',avgDay:'Average / day',greenDays:'Green days',bestDay:'Best day',worstDay:'Worst day',maxDD:'Max drawdown',redStreak:'Max red streak',acctState:'Account status',liq:'LIQUIDATED',active:'ACTIVE ✓',hitOn:d=>'limit hit on day '+d,neverHit:x=>'never touched the −'+x+' limit',overDD:'of the drawdown',daysTraded:'days traded',ofDays:'of days',ofDD:'of the drawdown',fromPeak:'from the equity peak',consecLosses:'consecutive losing days',pnlA:t=>'Total PnL A ('+t+' t/d)',pnlB:t=>'Total PnL B ('+t+' t/d)',diffBA:'Difference (B − A)',perDayTraded:'per day traded',state:'Status',liqDay:d=>'LIQUIDATED day '+d,
+    ddLimitLbl:x=>'DRAWDOWN LIMIT −$'+x,trailLbl:{trail:'TRAILING LIMIT',eod:'EOD TRAILING LIMIT',cap:'TRAILING·LOCK LIMIT'},tpdLegend:t=>t+' trades/day',dayN:'Day',pnlDay:'Day PnL',equity:'Equity',limit:'limit',dEq:'Δ equity (B−A)',axisDay:'day',
+    simsN:(n,ab)=>'· '+n+' simulations'+(ab?' (A + B)':''),probRuin:'Ruin probability',hitsLimit:m=>'touches the limit ('+m+')',probPos:'Prob. of finishing +',finalPos:'final PnL > $0',avgRes:'Average result',median:'Median',pctile:n=>'percentile '+n,worst5:'Worst case (5%)',best5:'Best case (95%)',cvar:'CVaR 5%',cvarSub:'mean of the worst 5% of outcomes',p1:'Worst 1%',medianAxis:'median',
+    liqHead:(m,n)=>'· first passage of the limit · '+m+' · '+n+' sims · fixed 5-year window',liq5y:'Liquidated within 5 years',liq5ySub:m=>'accounts touching the limit ('+m+')',boundT:'Theoretical bound (∞ horizon)',boundSub:'Lundberg e^(−θ·DD) — same for A and B',negEv:'per-trade expectancy ≤ 0: liquidation is certain long-term',trailInf:'∞ horizon (trailing)',trailInfSub:'the limit chases the peak: liquidation is a matter of time',capInfSub:'no closed form with a lock: the limit rises then freezes',medLiqDay:'Median liquidation day',amongLiq:'among liquidated accounts',first20:'Liq. within first 20 days',first20Sub:'% of all liquidations (5 years)',curHorizon:d=>'current horizon ('+d+' days)',liquidated:'liquidated',tradingDay:'Trading day',sameCurve:r=>'same risk curve on the trade axis — B runs it '+r+'× faster',diffCurve:'with an EOD limit or a daily loss cap, day boundaries mean A and B no longer share the exact curve',thH:['Horizon','Trading days','Trades','% liquidated'],thHC:(a,b)=>['Horizon','Days','% liq. A ('+a+' t/d)','% liq. B ('+b+' t/d)','Δ (B−A)'],cpLabels:['20 days','1 month','3 months','6 months','1 year','2 years','3 years','4 years','5 years'],
+    sharpeT:'Annualized Sharpe',sharpeSub:'√252 · μ_day / σ_day — exact from the binomial',sortinoT:'Annualized Sortino',sortinoSub:'deviation of negative days only',pfT:'Daily profit factor',perTrade:'per trade',expT:'Expectancy / trade',expSub:(r,base,c)=>r+' R per trade (R = $'+base+(c>0?', net of $'+c+' costs':'')+')',kellyT:'Optimal Kelly',noEdge:'no edge',kellySub:(k,l,pc)=>'Kelly risk ≈ '+k+' — you use $'+l+' = '+pc+'% of Kelly',kellyNeg:'f* ≤ 0: negative expectancy',calmarT:'Calmar (this run)',calmarSub:'annualized return / max drawdown',sigT:'Days to validate the edge',sigSub:s=>'for t ≥ 2, with daily Sharpe '+s,
+    pctHead:(n)=>'· '+n+' sims · selected horizon',bandA1:'A band 5–95%',bandA2:'A band 25–75%',medA:'A median',medB:'B median (dashed P5/P95)',
+    stHead:(a,b)=>'· '+a+' trades'+(b?' (A) / '+b+' (B)':''),stHeadMan:(n,c)=>'· '+n+' trades · manual'+(c?' (same count for A and B)':''),stThMan:['Losing streak','Cumulative loss','P(occurs in N trades)'],stTh:['Losing streak','Cumulative loss','P(occurs in horizon)'],stThC:['Losing streak','Cumulative loss','P(occurs) A','P(occurs) B'],inARow:k=>k+' trades in a row',geLimit:'≥ limit',
+    rkHead:(t,m,c)=>'· same win rate and R:R, at '+t+' trades/day · ruin measured at 3 years · '+m+(c?' · effective values net of costs':''),rkTh:['Size','Risk / trade','Target / trade','EV / day','∞ bound (Lundberg)','% ruin (MC)','Median 1 year'],curRow:'Current (1×)',to100:'→ 100%',
+    raceHead:(pre,t,md,m,dll,sims)=>'· '+(pre?pre+' · ':'')+'target +'+t+' · min. '+md+' · '+m+(dll?' · max daily loss '+dll:'')+' · '+sims+' sims',passT:'P(pass the evaluation)',passSub:'reaches the target before touching the limit',lbT:'Lower bound (closed form)',lbSub:'(e^(θ·DD)−1)/(e^(θ·DD)−e^(−θ·T)) without overshoot correction — MC sits slightly above',lbNo:'only in static mode, without a daily loss cap and with EV > 0',medPassT:'Median days to pass',inclMin:'includes the minimum days',inclMinN:(n,d)=>'includes min. '+n+' · '+d,failT:'Fails the evaluation',failSub:t=>'touches the limit before +'+t,dayW:d=>'day '+d,amongPass:'among accounts that make it',p2575:(a,b)=>'(P25 '+a+' · P75 '+b+')',minDays:n=>n+' day'+(n>1?'s':''),
+    sensHead:n=>'· closed form — no sampling'+(n>0?' · 90% CI with N = '+n.toLocaleString('en-US')+' trades':''),ciT:'True win rate (90% CI)',ciSub:n=>'with N = '+n.toLocaleString('en-US')+' measured trades',evCiT:'EV/day across that CI',evCiSub:'from the 5th to the 95th percentile of win rate',ruinCiT:'Ruin bound across that CI',ruinCiSub:'Lundberg at the CI endpoints',pNoEdgeT:'P(your edge doesn\'t exist)',pNoEdgeSub:be=>'prob. that the true win rate ≤ breakeven ('+be+'%)',sensTh:['Win rate','EV / trade','EV / day','Annual Sharpe','∞ ruin bound','P(target before ruin)'],baseRow:'base',needN:'enter your track-record trade count to quantify estimation uncertainty',
+    payHead:(d,s,f,r,n)=>'· horizon '+d+' days · split '+s+'%'+(f?' (100% of first '+f+')':'')+' · retention '+r+' · '+n+' sims',payAnyT:'P(≥ 1 payout)',payAnySub:'collects at least once in the horizon',firstPayT:'Median days to 1st payout',firstPaySub:'among accounts that collect',netMedT:'Median net to trader',netMedSub:f=>'after split'+(f?' and 100% tier':''),netMeanT:'Mean net (expectation)',netMeanSub:'average over all accounts',aliveT:'Accounts alive at the end',aliveSub:'did not touch the limit in the horizon',planT:'Full-plan expectation',planSub:'P(pass eval) × mean funded net',histZero:'$0 (red bin = never collected)',
+    calLegend:'<span><span class="sw" style="background:rgba(5,150,105,.55)"></span>Winning day (+$ / +%)</span><span><span class="sw" style="background:rgba(239,68,68,.55)"></span>Losing day (−$ / −%)</span><span><span class="sw" style="background:repeating-linear-gradient(45deg,#1c2230 0 4px,rgba(255,255,255,.08) 4px 8px)"></span>CME holiday</span><span><span class="sw" style="border:1px dashed rgba(239,68,68,.6);background:transparent"></span>Post-liquidation</span><span style="color:var(--ink-3)">% = day PnL over the available drawdown</span>',
+    calLegendC:'<span><span class="sw" style="background:rgba(5,150,105,.55)"></span>Positive Δ — B wins more that day</span><span><span class="sw" style="background:rgba(239,68,68,.55)"></span>Negative Δ — B loses more that day</span><span><span class="sw" style="background:repeating-linear-gradient(45deg,#1c2230 0 4px,rgba(255,255,255,.08) 4px 8px)"></span>CME holiday</span><span><span class="sw" style="border:1px dashed rgba(239,68,68,.6);background:transparent"></span>Post-liquidation</span><span style="color:var(--ink-3)">Each cell: A PnL, B PnL and Δ = B − A (% of drawdown) — same day, same first trades</span>',
+    holiday:'HOLIDAY',holidayTip:n=>'CME holiday: '+n+' — no trading',deadTip:'Account liquidated — no trades remaining',vr:(g,r)=>g+'W / '+r+'L',yrOverDD:'of the drawdown',yrImproves:(g,r)=>'B improves '+g+' days · worsens '+r+' days',tradesGP:(w,l)=>'Trades: '+w+'W / '+l+'L',pnlOfDay:'Day PnL',cumEq:'Cumulative equity',dayLimit:'Day\'s limit',dllStopped:'⏸ stopped the day at the max daily loss',ruinTip:'⚠ DRAWDOWN LIMIT HIT — ACCOUNT LIQUIDATED',ruinTipC:'⚠ one scenario touched the drawdown limit this day',scLine:(l,t)=>'<b>'+l+'</b> ('+t+' t/d): ',scDead:l=>'<b>'+l+'</b>: account liquidated — no trades',dDay:'Day Δ (B−A)',eq:'eq'
+  }
+}
+};
+let LANG='es',TXT=DICT.es;
+let MES=TXT.mes,MES_S=TXT.mesS,DOW_S=TXT.dowS,MODE_LABEL=TXT.modeLabel;
+function fmtDate(d){return DOW_S[d.getDay()]+' '+d.getDate()+' '+MES_S[d.getMonth()]+' '+d.getFullYear()}
+function applyLang(l){
+  LANG=l;TXT=DICT[l];
+  MES=TXT.mes;MES_S=TXT.mesS;DOW_S=TXT.dowS;MODE_LABEL=TXT.modeLabel;
+  document.documentElement.lang=l;
+  document.querySelectorAll('#langChips .chip').forEach(c=>c.classList.toggle('on',c.dataset.l===l));
+  const S=TXT.static;
+  document.querySelector('h1').textContent=S.title;
+  document.querySelector('.sub-label').textContent=S.subtitle;
+  document.querySelectorAll('.panel > h2').forEach((h,i)=>{if(S.h2[i])h.innerHTML=S.h2[i]});
+  for(const[id,txt]of Object.entries(S.labels)){const lb=document.querySelector('label[for='+id+']');if(lb)lb.textContent=txt}
+  const gl=document.querySelectorAll('#presetChips,#chips,#modeChips');
+  document.querySelector('#presetChips').closest('.field').querySelector('label').textContent=S.groupLabels.preset;
+  document.querySelector('#chips').closest('.field').querySelector('label').textContent=S.groupLabels.horizon;
+  document.querySelector('#modeChips').closest('.field').querySelector('label').textContent=S.groupLabels.mode;
+  document.querySelector('#stChips').closest('.field').querySelector('label').textContent=S.groupLabels.stn;
+  document.querySelector('#stChips .chip[data-n=auto]').textContent=S.stChips.auto;
+  document.querySelectorAll('#chips .chip').forEach(c=>{c.textContent=S.horizon[c.dataset.d]||c.textContent});
+  document.querySelectorAll('#modeChips .chip').forEach(c=>{c.textContent=S.modeChips[c.dataset.m]});
+  document.querySelector('#presetChips .chip[data-p=custom]').textContent=S.customChip;
+  el('btnRoll').textContent=S.btnRoll;
+  el('btnCmp').textContent=S.btnCmp(cmpOn);
+  const notes=document.querySelectorAll('.note-inline');
+  if(notes[0])notes[0].textContent=S.paramsNote;
+  if(notes[1])notes[1].textContent=S.payNote;
+  const subs=document.querySelectorAll('.subh');
+  const order=['pct','streak','risk','sens','race'];
+  subs.forEach((sh,i)=>{
+    const key=sh.dataset.k;
+    if(key&&S.subh[key]){
+      const tail=sh.querySelector('.sub');
+      sh.innerHTML=S.subh[key]+' ';
+      if(tail)sh.appendChild(tail);
+    }
+  });
+  recompute();
+}
+const signCls=v=>v>0?'good':v<0?'bad':'warn';
+const COL_A='#059669',COL_B='#0284c7';
+
+/* ───────────────────── Render: tiles ───────────────────── */
+function tile(k,v,cls,s){return `<div class="tile"><div class="k">${k}</div><div class="v ${cls||''}">${v}</div>${s?`<div class="s">${s}</div>`:''}</div>`}
+function renderRunTiles(runA,runB,p){
+  const s=TXT.dyn;
+  el('runRange').textContent='· '+fmtDate(runA.days[0].date)+' → '+fmtDate(runA.days[runA.days.length-1].date);
+  if(!runB){
+    const retPct=runA.final/p.dd*100;
+    const gdPct=runA.traded?runA.greens/runA.traded*100:0;
+    el('runTiles').innerHTML=
+      tile(s.pnlTotal,money(runA.final),signCls(runA.final),pct(retPct)+' '+s.overDD)+
+      tile(s.avgDay,money(runA.avgDaily),signCls(runA.avgDaily),runA.traded+' '+s.daysTraded)+
+      tile(s.greenDays,runA.greens+' / '+runA.traded,'info',pct(gdPct,1,false)+' '+s.ofDays)+
+      tile(s.bestDay,money(runA.best),'good',pct(runA.best/p.dd*100)+' '+s.ofDD)+
+      tile(s.worstDay,money(runA.worst),'bad',pct(runA.worst/p.dd*100)+' '+s.ofDD)+
+      tile(s.maxDD,money(-runA.maxDD),'warn',s.fromPeak)+
+      tile(s.redStreak,runA.maxStreak+' '+TXT.days,'warn',s.consecLosses)+
+      tile(s.acctState,runA.ruinDay>=0?s.liq:s.active,runA.ruinDay>=0?'bad':'good',
+           runA.ruinDay>=0?s.hitOn(runA.ruinDay+1):s.neverHit(money(p.dd,false).slice(1)));
+    return;
+  }
+  const dif=runB.final-runA.final;
+  const estado=r=>r.ruinDay>=0?s.liqDay(r.ruinDay+1):s.active;
+  el('runTiles').innerHTML=
+    tile(s.pnlA(runA.tpd),money(runA.final),signCls(runA.final),pct(runA.final/p.dd*100)+' '+s.overDD)+
+    tile(s.pnlB(runB.tpd),money(runB.final),signCls(runB.final),pct(runB.final/p.dd*100)+' '+s.overDD)+
+    tile(s.diffBA,money(dif),signCls(dif),pct(dif/p.dd*100)+' '+s.ofDD)+
+    tile(s.avgDay,`A ${money(runA.avgDaily)}<br>B ${money(runB.avgDaily)}`,'sm',s.perDayTraded)+
+    tile(s.greenDays,`A ${runA.greens}/${runA.traded} (${pct(runA.traded?runA.greens/runA.traded*100:0,0,false)})<br>B ${runB.greens}/${runB.traded} (${pct(runB.traded?runB.greens/runB.traded*100:0,0,false)})`,'sm','')+
+    tile(s.maxDD,`A ${money(-runA.maxDD)}<br>B ${money(-runB.maxDD)}`,'sm',s.fromPeak)+
+    tile(s.redStreak,`A ${runA.maxStreak} ${TXT.days}<br>B ${runB.maxStreak} ${TXT.days}`,'sm',s.consecLosses)+
+    tile(s.state,`A: ${estado(runA)}<br>B: ${estado(runB)}`,'sm '+((runA.ruinDay>=0||runB.ruinDay>=0)?'bad':'good'),'');
+}
+
+/* ───────────────────── Render: curva de equidad ───────────────────── */
+function renderEquity(runs,p){
+  const svg=el('eq');const W=860,H=280,L=64,R=26,T=14,B=30;
+  const series=runs.map((r,si)=>({label:si===0?'A':'B',color:si===0?COL_A:COL_B,days:r.days.filter(d=>d.active),run:r}));
+  const n=Math.max(...series.map(s=>s.days.length));
+  const allY=series.flatMap(s=>s.days.map(d=>d.equity));
+  const yMin=Math.min(-p.dd*1.15,Math.min(...allY)*1.05);
+  const yMax=Math.max(...allY,p.dd*0.2)*1.06;
+  const x=i=>L+(W-L-R)*(n===1?0.5:i/(n-1));
+  const y=v=>T+(H-T-B)*(1-(v-yMin)/(yMax-yMin));
+  let g='';
+  const ticks=5;
+  for(let i=0;i<=ticks;i++){
+    const v=yMin+(yMax-yMin)*i/ticks;
+    g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,.06)"/>`+
+       `<text x="${L-8}" y="${y(v)+3}" text-anchor="end">${v>=0?'':'−'}$${Math.abs(Math.round(v)).toLocaleString('en-US')}</text>`;
+  }
+  const xt=Math.min(6,n-1);
+  for(let i=0;i<=xt;i++){
+    const idx=Math.round((n-1)*i/xt);
+    const anchor=i===xt?'end':'middle';
+    g+=`<text x="${x(idx)}" y="${H-10}" text-anchor="${anchor}">${TXT.dyn.axisDay} ${idx+1}</text>`;
+  }
+  if(y(0)>T&&y(0)<H-B)g+=`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="rgba(255,255,255,.18)"/>`;
+  if(p.mode==='static'){
+    g+=`<line x1="${L}" x2="${W-R}" y1="${y(-p.dd)}" y2="${y(-p.dd)}" stroke="#ef4444" stroke-dasharray="6 4" stroke-width="1.4"/>`+
+       `<text x="${W-R}" y="${y(-p.dd)-5}" text-anchor="end" fill="#f87171">${TXT.dyn.ddLimitLbl(p.dd.toLocaleString('en-US'))}</text>`;
+  }else{
+    /* suelo móvil del escenario A */
+    const fA=series[0].days;
+    const fpts=fA.map((d,i)=>`${x(i).toFixed(1)},${y(d.floor).toFixed(1)}`).join(' ');
+    g+=`<polyline points="${x(0)},${y(-p.dd)} ${fpts}" fill="none" stroke="#ef4444" stroke-dasharray="6 4" stroke-width="1.4"/>`+
+       `<text x="${W-R}" y="${Math.max(T+10,y(fA[fA.length-1].floor)-6)}" text-anchor="end" fill="#f87171">${TXT.dyn.trailLbl[p.mode]}${p.mode!=='trail'?' +$'+p.lock:''}${series.length>1?' (A)':''}</text>`;
+  }
+  for(const s of series){
+    const pts=s.days.map((d,i)=>`${x(i).toFixed(1)},${y(d.equity).toFixed(1)}`);
+    if(series.length===1)g+=`<polygon points="${x(0)},${y(0)} ${pts.join(' ')} ${x(s.days.length-1)},${y(0)}" fill="rgba(5,150,105,.10)"/>`;
+    g+=`<polyline points="${pts.join(' ')}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`;
+    const li=s.days.length-1;
+    if(series.length>1)g+=`<text x="${Math.min(x(li)+5,W-8)}" y="${y(s.days[li].equity)+3}" fill="${s.color}" font-weight="700">${s.label}</text>`;
+    if(s.run.ruinDay>=0)g+=`<circle cx="${x(li)}" cy="${y(s.days[li].equity)}" r="4.5" fill="#ef4444" stroke="#070a12" stroke-width="2"/>`;
+  }
+  g+=`<line id="eqCross" x1="0" x2="0" y1="${T}" y2="${H-B}" stroke="rgba(255,255,255,.35)" visibility="hidden"/>`;
+  series.forEach((s,si)=>{g+=`<circle id="eqDot${si}" r="4" fill="${s.color}" stroke="#070a12" stroke-width="2" visibility="hidden"/>`});
+  g+=`<rect id="eqHit" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/>`;
+  svg.innerHTML=g;
+  const lg=el('eqLegend');
+  if(series.length>1){
+    lg.style.display='flex';
+    lg.innerHTML=series.map(s=>`<span><span class="sw" style="background:${s.color}"></span>${s.label} · ${TXT.dyn.tpdLegend(s.run.tpd)}</span>`).join('');
+  }else{lg.style.display='none'}
+  const hit=el('eqHit'),cross=el('eqCross');
+  hit.onmousemove=e=>{
+    const sd=TXT.dyn;
+    const r=svg.getBoundingClientRect();
+    const px=(e.clientX-r.left)*(W/r.width);
+    const i=Math.max(0,Math.min(n-1,Math.round((px-L)/(W-L-R)*(n-1))));
+    cross.setAttribute('x1',x(i));cross.setAttribute('x2',x(i));cross.setAttribute('visibility','visible');
+    let rows='';
+    series.forEach((s,si)=>{
+      const dot=el('eqDot'+si);
+      const d=s.days[Math.min(i,s.days.length-1)];
+      dot.setAttribute('cx',x(Math.min(i,s.days.length-1)));dot.setAttribute('cy',y(d.equity));dot.setAttribute('visibility','visible');
+      rows+=`<div class="t2">${series.length>1?('<b>'+s.label+'</b> '):''}${sd.pnlDay}: ${money(i<s.days.length?s.days[i].pnl:0)} · ${sd.equity}: <b>${money(d.equity)}</b>${p.mode!=='static'?' · '+sd.limit+': '+money(d.floor):''}</div>`;
+    });
+    if(series.length>1){
+      const eA=series[0].days[Math.min(i,series[0].days.length-1)].equity;
+      const eB=series[1].days[Math.min(i,series[1].days.length-1)].equity;
+      rows+=`<div class="t2"><b>${sd.dEq}: ${money(eB-eA)}</b></div>`;
+    }
+    const date=series[0].days[Math.min(i,series[0].days.length-1)].date;
+    showTip(e,`<div class="t1">${sd.dayN} ${i+1} · ${fmtDate(date)}</div>`+rows);
+  };
+  hit.onmouseleave=()=>{cross.setAttribute('visibility','hidden');series.forEach((s,si)=>el('eqDot'+si).setAttribute('visibility','hidden'));hideTip()};
+}
+
+/* ───────────────────── Render: Monte Carlo ───────────────────── */
+function renderMC(mcs,p){
+  const s=TXT.dyn;
+  const cmp=mcs.length>1;
+  const totalSims=mcs.reduce((a,m)=>a+m.sims,0);
+  el('mcN').textContent=s.simsN(totalSims.toLocaleString('en-US'),cmp);
+  const cvar=m=>{const k=Math.max(1,Math.floor(m.sims*0.05));return money(m.finals.slice(0,k).reduce((a,b)=>a+b,0)/k)};
+  const p1=m=>money(m.finals[Math.max(0,Math.floor(m.sims*0.01)-0)]);
+  const f={
+    ruina:m=>pct(m.ruins/m.sims*100,1,false),
+    pos:m=>pct(m.pos/m.sims*100,1,false),
+    mean:m=>money(m.mean), p50:m=>money(m.p50), p5:m=>money(m.p5), p95:m=>money(m.p95),
+    cvar, p1
+  };
+  if(!cmp){
+    const m=mcs[0];
+    el('mcTiles').innerHTML=
+      tile(s.probRuin,f.ruina(m),m.ruins/m.sims>0.05?'bad':'good',s.hitsLimit(MODE_LABEL[p.mode]))+
+      tile(s.probPos,f.pos(m),'good',s.finalPos)+
+      tile(s.avgRes,f.mean(m),signCls(m.mean),pct(m.mean/p.dd*100)+' '+s.overDD)+
+      tile(s.median,f.p50(m),signCls(m.p50),s.pctile(50))+
+      tile(s.worst5,f.p5(m),signCls(m.p5),s.pctile(5))+
+      tile(s.best5,f.p95(m),'good',s.pctile(95))+
+      tile(s.cvar,f.cvar(m),'bad',s.cvarSub)+
+      tile(s.p1,f.p1(m),'bad',s.pctile(1));
+  }else{
+    const [a,b]=mcs;
+    const pair=(k,fn,sub)=>tile(k,`A ${fn(a)}<br>B ${fn(b)}`,'sm',sub||'');
+    el('mcTiles').innerHTML=
+      pair(s.probRuin,f.ruina,s.hitsLimit(MODE_LABEL[p.mode]))+
+      pair(s.probPos,f.pos,s.finalPos)+
+      pair(s.avgRes,f.mean,'')+
+      pair(s.median,f.p50,s.pctile(50))+
+      pair(s.worst5,f.p5,s.pctile(5))+
+      pair(s.best5,f.p95,s.pctile(95))+
+      pair(s.cvar,f.cvar,s.cvarSub)+
+      pair(s.p1,f.p1,s.pctile(1));
+  }
+  /* Histograma */
+  const svg=el('hist');const W=520,H=150,L=10,R=10,T=8,B=22;
+  const lo=Math.min(...mcs.map(m=>m.finals[0]));
+  const hi=Math.max(...mcs.map(m=>m.finals[m.finals.length-1]));
+  const span=Math.max(1,hi-lo);
+  const bins=26,bw=(W-L-R)/bins;
+  const countSets=mcs.map(m=>{
+    const c=new Array(bins).fill(0);
+    for(const v of m.finals)c[Math.min(bins-1,Math.floor((v-lo)/span*bins))]++;
+    return c.map(x=>x/m.sims);
+  });
+  const maxC=Math.max(...countSets.flat());
+  let g='';
+  if(!cmp){
+    const c=countSets[0];
+    for(let i=0;i<bins;i++){
+      const mid=lo+span*(i+0.5)/bins;
+      const h=(H-T-B)*c[i]/maxC;
+      const col=mid>=0?'#059669':'#ef4444';
+      g+=`<rect x="${(L+i*bw+1).toFixed(1)}" y="${(H-B-h).toFixed(1)}" width="${(bw-2).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${col}"><title>${money(lo+span*i/bins)} – ${money(lo+span*(i+1)/bins)} · ${(c[i]*100).toFixed(1)}% ${TXT.sims}</title></rect>`;
+    }
+    el('histLegend').style.display='none';
+  }else{
+    countSets.forEach((c,si)=>{
+      const col=si===0?COL_A:COL_B;
+      let pts='';
+      for(let i=0;i<bins;i++){
+        const x0=L+i*bw,x1=L+(i+1)*bw,yv=H-B-(H-T-B)*c[i]/maxC;
+        pts+=`${x0.toFixed(1)},${yv.toFixed(1)} ${x1.toFixed(1)},${yv.toFixed(1)} `;
+      }
+      g+=`<polyline points="${L},${H-B} ${pts}${W-R},${H-B}" fill="none" stroke="${col}" stroke-width="2"/>`;
+    });
+    const lg=el('histLegend');
+    lg.style.display='flex';
+    lg.innerHTML=mcs.map((m,si)=>`<span><span class="sw" style="background:${si===0?COL_A:COL_B}"></span>${si===0?'A':'B'} · ${TXT.dyn.tpdLegend(m.tpd)}</span>`).join('');
+  }
+  const med=cmp?null:mcs[0].p50;
+  g+=`<text x="${L}" y="${H-8}" text-anchor="start">${money(lo)}</text>`+
+     (med!==null?`<text x="${W/2}" y="${H-8}" text-anchor="middle">${TXT.dyn.medianAxis} ${money(med)}</text>`:'')+
+     `<text x="${W-R}" y="${H-8}" text-anchor="end">${money(hi)}</text>`;
+  svg.innerHTML=g;
+}
+
+/* ─────────────── Backtest de liquidación ───────────────
+   El riesgo de tocar −DD depende SOLO de la secuencia de trades (cada trade
+   suma +win o resta −loss contra el límite); los días solo marcan el ritmo.
+   Por eso se simula la primera pasada por −DD en el eje de trades y cada
+   escenario (tpd distinto) lee la misma curva a su propia velocidad. */
+const LIQ_DAYS=1260;
+const LIQ_CHECKPOINTS=[['20 días',20],['1 mes',21],['3 meses',63],['6 meses',126],['1 año',252],['2 años',504],['3 años',756],['4 años',1008],['5 años',1260]];
+/* Coeficiente de ajuste de Lundberg: θ>0 con E[e^(−θ·X)]=1, X = PnL de un trade.
+   Da la cota clásica de ruina con barrera −DD: P(liq, horizonte ∞) ≤ e^(−θ·DD). */
+function solveTheta(p){
+  const ev=p.wr*p.win-(1-p.wr)*p.loss;
+  if(ev<=0)return null;
+  const f=t=>p.wr*Math.exp(-t*p.win)+(1-p.wr)*Math.exp(t*p.loss)-1;
+  let hi=1e-6;
+  while(f(hi)<0&&hi<10)hi*=2;
+  if(f(hi)<0)return null;
+  let lo=hi/2;
+  for(let i=0;i<80;i++){const m=(lo+hi)/2;if(f(m)<0)lo=m;else hi=m}
+  return (lo+hi)/2;
+}
+function simulateLiq(p,tpds,seedBase){
+  const theta=solveTheta(p);
+  /* Salida temprana: válida cuando el suelo está acotado por arriba (todo menos
+     trailing perpetuo): residual < 1/(100·sims) por la cota exponencial. */
+  const canExit=theta!==null&&p.mode!=='trail';
+  const curves=tpds.map((tpd,si)=>{
+    const sims=canExit?12000:Math.max(1000,Math.min(12000,Math.round(20e6/(LIQ_DAYS*tpd))));
+    const safeEq=canExit?p.lock+p.dd+Math.log(sims*100)/theta:Infinity;
+    const c=new Float64Array(LIQ_DAYS+1);
+    for(let s=0;s<sims;s++){
+      const rnd=mulberry32((seedBase+si*611953+s*104729)>>>0);
+      let eq=0,peak=0,eodPeak=0,dead=false;
+      for(let d=1;d<=LIQ_DAYS&&!dead;d++){
+        let dayPnl=0;
+        for(let t=0;t<tpd;t++){
+          const x=rnd()<p.wr?p.win:-p.loss;
+          eq+=x;dayPnl+=x;
+          if(eq>peak)peak=eq;
+          if(eq<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){c[d]++;dead=true;break}
+          if(dllHit(p,dayPnl))break;
+        }
+        if(eq>eodPeak)eodPeak=eq;
+        if(!dead&&eq>=safeEq)break;
+      }
+    }
+    for(let d=1;d<=LIQ_DAYS;d++)c[d]+=c[d-1];
+    for(let d=0;d<=LIQ_DAYS;d++)c[d]=c[d]/sims*100;
+    const total=c[LIQ_DAYS];
+    let median=null;
+    if(total>0){for(let d=1;d<=LIQ_DAYS;d++)if(c[d]>=total/2){median=d;break}}
+    return {tpd,c,total,median,early20:total>0?c[20]/total*100:null,sims};
+  });
+  return {sims:curves.reduce((a,c)=>a+c.sims,0),theta,
+    bound:(theta!==null&&p.mode==='static')?Math.exp(-theta*p.dd)*100:null,curves};
+}
+function renderLiq(liq,p,cmp){
+  const s=TXT.dyn;
+  el('liqN').textContent=s.liqHead(MODE_LABEL[p.mode],liq.sims.toLocaleString('en-US'));
+  const [a,b]=liq.curves;
+  const fmtP=v=>v.toFixed(2)+'%';
+  const pairV=(fa,fb)=>cmp?`A ${fa}<br>B ${fb}`:fa;
+  const medTxt=c=>c.median!==null?(TXT.day+' '+c.median):'—';
+  const earlyTxt=c=>c.early20!==null?fmtP(c.early20):'—';
+  const boundTile=p.mode==='static'
+    ?tile(s.boundT,liq.bound!==null?'≤ '+fmtP(liq.bound):s.to100,liq.bound!==null?'info':'bad',
+          liq.bound!==null?s.boundSub:s.negEv)
+    :(p.mode==='trail'
+      ?tile(s.trailInf,s.to100,'bad',s.trailInfSub)
+      :tile(s.boundT,'—','info',s.capInfSub));
+  el('liqTiles').innerHTML=
+    tile(s.liq5y,pairV(fmtP(a.total),cmp?fmtP(b.total):''),cmp?'sm':(a.total>5?'bad':'good'),s.liq5ySub(MODE_LABEL[p.mode]))+
+    boundTile+
+    tile(s.medLiqDay,pairV(medTxt(a),cmp?medTxt(b):''),cmp?'sm':'warn',s.amongLiq)+
+    tile(s.first20,pairV(earlyTxt(a),cmp?earlyTxt(b):''),cmp?'sm':'warn',s.first20Sub);
+  /* Curva acumulada */
+  const svg=el('liq');const W=860,H=250,L=64,R=26,T=12,B=34;
+  const yMax=Math.max(0.02,...liq.curves.map(c=>c.total))*1.28;
+  const x=d=>L+(W-L-R)*d/LIQ_DAYS;
+  const y=v=>T+(H-T-B)*(1-v/yMax);
+  let g='';
+  for(let i=0;i<=4;i++){
+    const v=yMax*i/4;
+    g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,.06)"/>`+
+       `<text x="${L-8}" y="${y(v)+3}" text-anchor="end">${v.toFixed(2)}%</text>`;
+  }
+  for(const [d,lbl] of [[20,'20d'],[63,'3m'],[126,'6m'],[252,'1a'],[504,'2a'],[756,'3a'],[1008,'4a'],[1260,'5a']]){
+    g+=`<text x="${x(d)}" y="${H-8}" text-anchor="${d===1260?'end':'middle'}">${lbl}</text>`+
+       `<line x1="${x(d)}" x2="${x(d)}" y1="${H-B}" y2="${H-B+4}" stroke="rgba(255,255,255,.2)"/>`;
+  }
+  if(p.days<LIQ_DAYS){
+    g+=`<line x1="${x(p.days)}" x2="${x(p.days)}" y1="${T}" y2="${H-B}" stroke="#c98500" stroke-dasharray="5 4" stroke-width="1.3"/>`+
+       `<text x="${Math.min(x(p.days)+5,W-120)}" y="${T+10}" fill="#fbbf24">${s.curHorizon(p.days)}</text>`;
+  }
+  const labelYs=[];
+  liq.curves.forEach((c,si)=>{
+    const col=si===0?COL_A:COL_B;
+    let pts=`${x(0)},${y(0)}`;
+    for(let d=1;d<=LIQ_DAYS;d++)pts+=` ${x(d).toFixed(1)},${y(c.c[d]).toFixed(1)}`;
+    g+=`<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>`;
+    if(cmp){
+      let ly=y(c.total)+3;
+      for(const py of labelYs)if(Math.abs(ly-py)<11)ly=py+11;
+      labelYs.push(ly);
+      g+=`<text x="${W-R+3}" y="${ly}" fill="${col}" font-weight="700">${si===0?'A':'B'}</text>`;
+    }
+  });
+  g+=`<line id="liqCross" x1="0" x2="0" y1="${T}" y2="${H-B}" stroke="rgba(255,255,255,.35)" visibility="hidden"/>`+
+     `<rect id="liqHit" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/>`;
+  svg.innerHTML=g;
+  const lg=el('liqLegend');
+  if(cmp){
+    lg.style.display='flex';
+    const tradeAxis=p.mode!=='eod'&&!(p.dll>0);
+    lg.innerHTML=liq.curves.map((c,si)=>`<span><span class="sw" style="background:${si===0?COL_A:COL_B}"></span>${si===0?'A':'B'} · ${s.tpdLegend(c.tpd)}</span>`).join('')+
+      '<span style="color:var(--ink-3)">'+(tradeAxis?s.sameCurve((b.tpd/a.tpd).toFixed(1).replace(/\.0$/,'')):s.diffCurve)+'</span>';
+  }else{lg.style.display='none'}
+  const hit=el('liqHit'),cross=el('liqCross');
+  hit.onmousemove=e=>{
+    const sd=TXT.dyn;
+    const r=svg.getBoundingClientRect();
+    const px=(e.clientX-r.left)*(W/r.width);
+    const d=Math.max(1,Math.min(LIQ_DAYS,Math.round((px-L)/(W-L-R)*LIQ_DAYS)));
+    cross.setAttribute('x1',x(d));cross.setAttribute('x2',x(d));cross.setAttribute('visibility','visible');
+    let rows=`<div class="t2">A (${a.tpd} t/d, ${(d*a.tpd).toLocaleString('en-US')} ${TXT.trades}): <b>${fmtP(a.c[d])}</b> ${sd.liquidated}</div>`;
+    if(cmp)rows+=`<div class="t2">B (${b.tpd} t/d, ${(d*b.tpd).toLocaleString('en-US')} ${TXT.trades}): <b>${fmtP(b.c[d])}</b> ${sd.liquidated}</div>`+
+      `<div class="t2"><b>Δ: ${(b.c[d]-a.c[d]>=0?'+':'−')+Math.abs(b.c[d]-a.c[d]).toFixed(2)} pp</b></div>`;
+    showTip(e,`<div class="t1">${sd.tradingDay} ${d}</div>`+rows);
+  };
+  hit.onmouseleave=()=>{cross.setAttribute('visibility','hidden');hideTip()};
+  /* Tabla de checkpoints */
+  const head=cmp
+    ?'<tr>'+s.thHC(a.tpd,b.tpd).map(h=>`<th>${h}</th>`).join('')+'</tr>'
+    :'<tr>'+s.thH.map(h=>`<th>${h}</th>`).join('')+'</tr>';
+  const rows=LIQ_CHECKPOINTS.map(([_,d],ci)=>{
+    const lbl=s.cpLabels[ci];
+    const sel=d===p.days?' class="sel"':'';
+    if(!cmp)return `<tr${sel}><td>${lbl}</td><td>${d}</td><td class="dim">${(d*a.tpd).toLocaleString('en-US')}</td><td>${fmtP(a.c[d])}</td></tr>`;
+    const dif=b.c[d]-a.c[d];
+    return `<tr${sel}><td>${lbl}</td><td>${d}</td><td>${fmtP(a.c[d])}</td><td>${fmtP(b.c[d])}</td><td>${(dif>=0?'+':'−')+Math.abs(dif).toFixed(2)} pp</td></tr>`;
+  }).join('');
+  el('liqTable').innerHTML=`<table class="ltab">${head}${rows}</table>`;
+}
+
+/* ─────────────── Cálculos avanzados ───────────────
+   Métricas cerradas (sin muestreo) a partir de la distribución binomial
+   exacta del resultado diario, DP exacto para rachas, y MC dirigido para
+   percentiles y tamaños de riesgo alternativos. */
+function dayMoments(p,tpd){
+  /* distribución exacta del PnL de un día. Sin límite diario: j ganadas ~
+     Binomial(tpd, wr). Con límite diario: DP sobre trades con absorción al
+     tocar −DLL (el orden importa, la binomial ya no aplica). */
+  let dist;
+  if(!(p.dll>0)){
+    dist=[];let c=1;
+    for(let j=0;j<=tpd;j++){
+      if(j>0)c=c*(tpd-j+1)/j;
+      dist.push([j*p.win-(tpd-j)*p.loss,c*Math.pow(p.wr,j)*Math.pow(1-p.wr,tpd-j)]);
+    }
+  }else{
+    let states=new Map([[0,1]]);const finals=new Map();
+    const add=(m,k,v)=>m.set(k,(m.get(k)||0)+v);
+    for(let t=0;t<tpd;t++){
+      const nx=new Map();
+      for(const[pnl,pr]of states){
+        add(nx,pnl+p.win,pr*p.wr);
+        const l=pnl-p.loss;
+        if(l<=-p.dll)add(finals,l,pr*(1-p.wr));else add(nx,l,pr*(1-p.wr));
+      }
+      states=nx;
+    }
+    for(const[k,v]of states)add(finals,k,v);
+    dist=[...finals.entries()];
+  }
+  let mu=0,ex2=0,neg2=0,pos=0,neg=0;
+  for(const[pnl,prob]of dist){
+    mu+=prob*pnl;ex2+=prob*pnl*pnl;
+    if(pnl<0){neg2+=prob*pnl*pnl;neg+=prob*(-pnl)}else pos+=prob*pnl;
+  }
+  const sd=Math.sqrt(Math.max(0,ex2-mu*mu));
+  return {mu,sd,ddev:Math.sqrt(neg2),pf:neg>1e-12?pos/neg:Infinity};
+}
+/* P(al menos una racha de ≥k pérdidas consecutivas en n trades) — DP exacto:
+   f(i)=P(sin racha de k en i trades); f(i)=1 para i<k;
+   f(i)=Σ_{j=0..k-1} q^j·p·f(i−1−j) condicionando en la primera ganancia. */
+function probLosingStreak(wr,n,k){
+  if(k>n)return 0;
+  const q=1-wr,f=new Float64Array(n+1);
+  for(let i=0;i<k&&i<=n;i++)f[i]=1;
+  const qp=new Float64Array(k);for(let j=0;j<k;j++)qp[j]=Math.pow(q,j);
+  for(let i=k;i<=n;i++){let s=0;for(let j=0;j<k;j++)s+=qp[j]*f[i-1-j];f[i]=wr*s}
+  return 1-f[n];
+}
+function simulatePct(p,tpd,sims,seedBase,days){
+  const stride=Math.max(1,Math.ceil(days/64));
+  const xs=[];for(let d=stride;d<days;d+=stride)xs.push(d);xs.push(days);
+  const store=xs.map(()=>new Float64Array(sims));
+  for(let s=0;s<sims;s++){
+    const rnd=mulberry32((seedBase+s*31337)>>>0);
+    let eq=0,peak=0,eodPeak=0,dead=false,xi=0;
+    for(let d=1;d<=days;d++){
+      if(!dead){
+        let dayPnl=0;
+        for(let t=0;t<tpd;t++){
+          const x=rnd()<p.wr?p.win:-p.loss;
+          eq+=x;dayPnl+=x;
+          if(eq>peak)peak=eq;
+          if(eq<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){dead=true;break}
+          if(dllHit(p,dayPnl))break;
+        }
+        if(eq>eodPeak)eodPeak=eq;
+      }
+      if(xi<xs.length&&d===xs[xi]){store[xi][s]=eq;xi++}
+    }
+  }
+  const q=(arr,f)=>{const a=Array.from(arr).sort((x,y)=>x-y);return a[Math.min(sims-1,Math.floor(f*sims))]};
+  return {tpd,sims,xs,
+    q05:store.map(a=>q(a,.05)),q25:store.map(a=>q(a,.25)),q50:store.map(a=>q(a,.5)),
+    q75:store.map(a=>q(a,.75)),q95:store.map(a=>q(a,.95))};
+}
+/* Una fila del explorador: mismo win rate y misma relación R:B, riesgo escalado. */
+function riskRow(p,label,loss,win,seedBase){
+  const pp={wr:p.wr,win,loss,dd:p.dd};
+  const theta=solveTheta(pp);
+  const RD=756; /* 3 años: la curva de ruina es plana mucho antes */
+  const canExit=theta!==null&&p.mode!=='trail';
+  const sims=canExit?1500:Math.max(400,Math.min(1500,Math.round(4e6/(RD*p.tpd))));
+  const safeEq=canExit?p.lock+p.dd+Math.log(sims*100)/theta:Infinity;
+  let ruin=0;const med=new Float64Array(sims);
+  for(let s=0;s<sims;s++){
+    const rnd=mulberry32((seedBase+s*7127)>>>0);
+    let eq=0,peak=0,eodPeak=0,dead=false;
+    for(let d=1;d<=RD;d++){
+      if(!dead){
+        let dayPnl=0;
+        for(let t=0;t<p.tpd;t++){
+          const x=rnd()<p.wr?win:-loss;
+          eq+=x;dayPnl+=x;
+          if(eq>peak)peak=eq;
+          if(eq<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){dead=true;ruin++;break}
+          if(p.dll>0&&dayPnl<=-p.dll)break;
+        }
+        if(eq>eodPeak)eodPeak=eq;
+      }
+      if(d===252)med[s]=eq;
+      if(d>=252&&(dead||eq>=safeEq))break;
+    }
+  }
+  const sorted=Array.from(med).sort((a,b)=>a-b);
+  return {label,loss,win,sims,
+    evDay:p.tpd*(p.wr*win-(1-p.wr)*loss),
+    bound:theta!==null?Math.exp(-theta*p.dd)*100:null,
+    ruin:ruin/sims*100,
+    med252:sorted[Math.floor(sims/2)]};
+}
+/* Carrera de dos barreras: ¿la equidad alcanza +objetivo antes de tocar el
+   límite de liquidación? En modo estático existe fórmula cerrada (parada
+   opcional sobre la martingala e^(−θ·S)):
+   P(objetivo primero) = (e^(θ·DD) − 1) / (e^(θ·DD) − e^(−θ·T)). */
+function simulateRace(p,tpd,sims,seedBase){
+  const T=p.target;
+  let hits=0,ruins=0;const daysTo=[];
+  for(let s=0;s<sims;s++){
+    const rnd=mulberry32((seedBase+s*4241)>>>0);
+    let eq=0,peak=0,eodPeak=0,done=false;
+    for(let d=1;d<=LIQ_DAYS&&!done;d++){
+      let dayPnl=0;
+      for(let t=0;t<tpd;t++){
+        const x=rnd()<p.wr?p.win:-p.loss;
+        eq+=x;dayPnl+=x;
+        if(eq>peak)peak=eq;
+        if(eq>=T){hits++;daysTo.push(Math.max(d,p.minDays));done=true;break}
+        if(eq<=floorOf(p.mode,peak,eodPeak,p.dd,p.lock)){ruins++;done=true;break}
+        if(dllHit(p,dayPnl))break;
+      }
+      if(!done&&eq>eodPeak)eodPeak=eq;
+    }
+  }
+  daysTo.sort((a,b)=>a-b);
+  const q=f=>daysTo.length?daysTo[Math.min(daysTo.length-1,Math.floor(f*daysTo.length))]:null;
+  return {tpd,sims,hit:hits/sims*100,ruin:ruins/sims*100,d25:q(.25),d50:q(.5),d75:q(.75)};
+}
+/* ─────────────── Payouts (fase financiada) ───────────────
+   Cuenta financiada desde PnL 0 con las mismas reglas de límite (el trailing
+   se considera bloqueado en su lock — Apex PA / MFFU lo hacen). Estrategia:
+   retirar el máximo permitido en cuanto se es elegible, dejando la retención. */
+function payNet(gross,pay){
+  return Math.min(gross,pay.fullUp)+Math.max(0,gross-pay.fullUp)*pay.split;
+}
+function simulatePayout(p,tpd,sims,seedBase){
+  const y=p.pay;
+  const mode=p.mode==='trail'?'cap':p.mode;
+  const grossArr=new Float64Array(sims);
+  let any=0,aliveN=0;const firstDays=[];
+  for(let s=0;s<sims;s++){
+    const rnd=mulberry32((seedBase+s*9973)>>>0);
+    let eq=0,peak=0,eodPeak=0,dead=false;
+    let gross=0,lastPay=0,sincePnl=0,bestDay=0,winDays=0,first=null;
+    for(let d=1;d<=p.days&&!dead;d++){
+      let dayPnl=0;
+      for(let t=0;t<tpd;t++){
+        const x=rnd()<p.wr?p.win:-p.loss;
+        eq+=x;dayPnl+=x;
+        if(eq>peak)peak=eq;
+        if(eq<=floorOf(mode,peak,eodPeak,p.dd,p.lock)){dead=true;break}
+        if(dllHit(p,dayPnl))break;
+      }
+      if(dead)break;
+      if(eq>eodPeak)eodPeak=eq;
+      sincePnl+=dayPnl;
+      if(dayPnl>bestDay)bestDay=dayPnl;
+      if(dayPnl>=Math.max(1,y.wdMin))winDays++;
+      /* elegibilidad al cierre del día */
+      if(d-lastPay>=y.cad&&(y.wdN===0||winDays>=y.wdN)){
+        let amt=eq-y.ret;
+        if(y.max>0)amt=Math.min(amt,y.max);
+        const consOk=y.cons===0||(sincePnl>0&&bestDay<=y.cons/100*sincePnl);
+        if(amt>=Math.max(1,y.min)&&consOk){
+          eq-=amt;gross+=amt;
+          if(first===null)first=d;
+          lastPay=d;sincePnl=0;bestDay=0;winDays=0;
+          /* el suelo NO baja con el payout (los umbrales no se reducen) */
+        }
+      }
+    }
+    grossArr[s]=gross;
+    if(gross>0)any++;
+    if(!dead)aliveN++;
+    if(first!==null)firstDays.push(first);
+  }
+  const nets=Array.from(grossArr,g=>payNet(g,y)).sort((a,b)=>a-b);
+  firstDays.sort((a,b)=>a-b);
+  const q=(arr,f)=>arr.length?arr[Math.min(arr.length-1,Math.floor(f*arr.length))]:null;
+  return {tpd,sims,
+    pAny:any/sims*100,alive:aliveN/sims*100,
+    firstMed:q(firstDays,.5),
+    netMed:q(nets,.5),netMean:nets.reduce((a,b)=>a+b,0)/sims,
+    netP95:q(nets,.95),nets};
+}
+function renderPayout(pays,races,p,cmp){
+  const s=TXT.dyn;
+  const y=p.pay;
+  const [pA,pB]=pays;
+  const pair=(fa,fb)=>cmp?`A ${fa}<br>B ${fb}`:fa;
+  el('payN').textContent=s.payHead(p.days,Math.round(y.split*100),y.fullUp>0?money(y.fullUp,false):null,money(y.ret,false),pays.map(r=>r.sims.toLocaleString('en-US')).join(' + '));
+  const planA=races[0].hit/100*pA.netMean;
+  const planB=cmp?races[1].hit/100*pB.netMean:null;
+  el('payTiles').innerHTML=
+    tile(s.payAnyT,pair(pA.pAny.toFixed(1)+'%',cmp?pB.pAny.toFixed(1)+'%':''),cmp?'sm':(pA.pAny>90?'good':'warn'),s.payAnySub)+
+    tile(s.firstPayT,pair(pA.firstMed!==null?s.dayW(pA.firstMed):'—',cmp?(pB.firstMed!==null?s.dayW(pB.firstMed):'—'):''),cmp?'sm':'info',s.firstPaySub)+
+    tile(s.netMedT,pair(money(pA.netMed),cmp?money(pB.netMed):''),cmp?'sm':signCls(pA.netMed),s.netMedSub(y.fullUp>0))+
+    tile(s.netMeanT,pair(money(pA.netMean),cmp?money(pB.netMean):''),cmp?'sm':signCls(pA.netMean),s.netMeanSub)+
+    tile(s.aliveT,pair(pA.alive.toFixed(1)+'%',cmp?pB.alive.toFixed(1)+'%':''),cmp?'sm':(pA.alive>50?'good':'bad'),s.aliveSub)+
+    tile(s.planT,pair(money(planA),cmp?money(planB):''),cmp?'sm':'info',s.planSub);
+  /* Histograma del neto cobrado */
+  const svg=el('payHist');const W=860,H=150,L=10,R=10,T=8,B=22;
+  const lo=0,hi=Math.max(1,...pays.map(r=>r.nets[r.nets.length-1]));
+  const bins=30,bw=(W-L-R)/bins;
+  const sets=pays.map(r=>{
+    const c=new Array(bins).fill(0);
+    for(const v of r.nets)c[Math.min(bins-1,Math.floor((v-lo)/(hi-lo)*bins))]++;
+    return c.map(x=>x/r.sims);
+  });
+  const maxC=Math.max(...sets.flat());
+  let g='';
+  if(!cmp){
+    sets[0].forEach((v,i)=>{
+      const h=(H-T-B)*v/maxC;
+      const col=i===0?'#ef4444':'#059669'; /* bin 0 = nunca cobró */
+      g+=`<rect x="${(L+i*bw+1).toFixed(1)}" y="${(H-B-h).toFixed(1)}" width="${(bw-2).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${col}"><title>${money(lo+(hi-lo)*i/bins,false)} – ${money(lo+(hi-lo)*(i+1)/bins,false)} · ${(v*100).toFixed(1)}%</title></rect>`;
+    });
+    el('payLegend').style.display='none';
+  }else{
+    sets.forEach((c,si)=>{
+      const col=si===0?COL_A:COL_B;
+      let pts='';
+      for(let i=0;i<bins;i++){const x0=L+i*bw,x1=L+(i+1)*bw,yv=H-B-(H-T-B)*c[i]/maxC;pts+=`${x0.toFixed(1)},${yv.toFixed(1)} ${x1.toFixed(1)},${yv.toFixed(1)} `}
+      g+=`<polyline points="${L},${H-B} ${pts}${W-R},${H-B}" fill="none" stroke="${col}" stroke-width="2"/>`;
+    });
+    const lg=el('payLegend');lg.style.display='flex';
+    lg.innerHTML=pays.map((r,si)=>`<span><span class="sw" style="background:${si===0?COL_A:COL_B}"></span>${si===0?'A':'B'} · ${s.tpdLegend(r.tpd)}</span>`).join('');
+  }
+  g+=`<text x="${L}" y="${H-8}" text-anchor="start">${s.histZero}</text>`+
+     `<text x="${W-R}" y="${H-8}" text-anchor="end">${money(hi,false)}</text>`;
+  svg.innerHTML=g;
+}
+function raceAnalytic(p){
+  if(p.mode!=='static'||p.dll>0)return null; /* la fórmula asume caminata sin pausas ni suelo móvil */
+  const theta=solveTheta(p);
+  if(theta===null)return null;
+  const a=Math.exp(theta*p.dd);
+  return (a-1)/(a-Math.exp(-theta*p.target))*100;
+}
+function renderAdv(p,cmp,runA,runB,pcts,races){
+  const s=TXT.dyn;
+  const mA=dayMoments(p,p.tpd),mB=cmp?dayMoments(p,p.tpdB):null;
+  const sharpe=m=>Math.sqrt(252)*m.mu/m.sd;
+  const sortino=m=>m.ddev>1e-9?Math.sqrt(252)*m.mu/m.ddev:Infinity;
+  const muT=p.wr*p.win-(1-p.wr)*p.loss;
+  const b=p.win/p.loss;
+  const kellyF=p.wr-(1-p.wr)/b;
+  const kellyRisk=kellyF*p.dd;
+  const calmar=r=>r.maxDD>0?(r.final/p.days*252)/r.maxDD:Infinity;
+  const f2=v=>isFinite(v)?v.toFixed(2):'∞';
+  const pair=(fa,fb)=>cmp?`A ${fa}<br>B ${fb}`:fa;
+  /* días de trading para que el edge sea estadísticamente significativo (t≥2) */
+  const sigDays=m=>m.mu>0?Math.ceil(Math.pow(2/(m.mu/m.sd),2)):null;
+  const sigTxt=m=>{const n=sigDays(m);return n!==null?(TXT.day+' '+n):'—'};
+  el('advTiles').innerHTML=
+    tile(s.sharpeT,pair(f2(sharpe(mA)),cmp?f2(sharpe(mB)):''),cmp?'sm':'info',s.sharpeSub)+
+    tile(s.sortinoT,pair(f2(sortino(mA)),cmp?f2(sortino(mB)):''),cmp?'sm':'info',s.sortinoSub)+
+    tile(s.pfT,pair(f2(mA.pf),cmp?f2(mB.pf):''),cmp?'sm':'good',s.perTrade+': '+f2(p.wr*p.win/((1-p.wr)*p.loss)))+
+    tile(s.expT,money(muT),signCls(muT),s.expSub((muT/p.loss).toFixed(2),p.loss.toLocaleString('en-US'),p.cost))+
+    tile(s.kellyT,kellyF>0?(kellyF*100).toFixed(1)+'%':s.noEdge,kellyF>0?(p.loss<=kellyRisk?'good':'bad'):'bad',
+         kellyF>0?s.kellySub(money(kellyRisk,false),p.loss.toLocaleString('en-US'),(p.loss/kellyRisk*100).toFixed(0)):s.kellyNeg)+
+    tile(s.calmarT,pair(f2(calmar(runA)),cmp?f2(calmar(runB)):''),cmp?'sm':'warn',s.calmarSub)+
+    tile(s.sigT,pair(sigTxt(mA),cmp?sigTxt(mB):''),cmp?'sm':'info',s.sigSub(f2(mA.mu/mA.sd)));
+  /* ── Percentiles ── */
+  el('pctN').textContent=s.pctHead(pcts.map(x=>x.sims.toLocaleString('en-US')).join(' + '));
+  const svg=el('pct');const W=860,H=260,L=64,R=26,T=12,B=30;
+  const A=pcts[0],Bp=pcts[1]||null;
+  const yMin=Math.min(-p.dd*1.15,...A.q05,...(Bp?Bp.q05:[]));
+  const yMax=Math.max(p.dd*0.2,...A.q95,...(Bp?Bp.q95:[]))*1.06;
+  const days=p.days;
+  const x=d=>L+(W-L-R)*d/days;
+  const y=v=>T+(H-T-B)*(1-(v-yMin)/(yMax-yMin));
+  let g='';
+  for(let i=0;i<=4;i++){
+    const v=yMin+(yMax-yMin)*i/4;
+    g+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(255,255,255,.06)"/>`+
+       `<text x="${L-8}" y="${y(v)+3}" text-anchor="end">${v>=0?'':'−'}$${Math.abs(Math.round(v)).toLocaleString('en-US')}</text>`;
+  }
+  const xt=Math.min(6,days-1);
+  for(let i=0;i<=xt;i++){
+    const d=Math.round(days*i/xt)||1;
+    g+=`<text x="${x(d)}" y="${H-8}" text-anchor="${i===xt?'end':'middle'}">${s.axisDay} ${d}</text>`;
+  }
+  if(y(0)>T&&y(0)<H-B)g+=`<line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="rgba(255,255,255,.18)"/>`;
+  g+=`<line x1="${L}" x2="${W-R}" y1="${y(-p.dd)}" y2="${y(-p.dd)}" stroke="#ef4444" stroke-dasharray="6 4" stroke-width="1.3"/>`;
+  const path=(xsArr,ys)=>xsArr.map((d,i)=>`${x(d).toFixed(1)},${y(ys[i]).toFixed(1)}`).join(' ');
+  const band=(lo,hi,op)=>`<polygon points="${x(0)},${y(0)} ${path(A.xs,hi)} ${[...A.xs].reverse().map((d,i)=>`${x(d).toFixed(1)},${y(lo[A.xs.length-1-i]).toFixed(1)}`).join(' ')} ${x(0)},${y(0)}" fill="rgba(5,150,105,${op})"/>`;
+  g+=band(A.q05,A.q95,'.10')+band(A.q25,A.q75,'.16');
+  g+=`<polyline points="${x(0)},${y(0)} ${path(A.xs,A.q50)}" fill="none" stroke="${COL_A}" stroke-width="2"/>`;
+  if(Bp){
+    g+=`<polyline points="${x(0)},${y(0)} ${path(Bp.xs,Bp.q50)}" fill="none" stroke="${COL_B}" stroke-width="2"/>`+
+       `<polyline points="${x(0)},${y(0)} ${path(Bp.xs,Bp.q05)}" fill="none" stroke="${COL_B}" stroke-width="1.2" stroke-dasharray="4 4"/>`+
+       `<polyline points="${x(0)},${y(0)} ${path(Bp.xs,Bp.q95)}" fill="none" stroke="${COL_B}" stroke-width="1.2" stroke-dasharray="4 4"/>`;
+  }
+  g+=`<line id="pctCross" x1="0" x2="0" y1="${T}" y2="${H-B}" stroke="rgba(255,255,255,.35)" visibility="hidden"/>`+
+     `<rect id="pctHit" x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent"/>`;
+  svg.innerHTML=g;
+  el('pctLegend').innerHTML=
+    `<span><span class="sw" style="background:rgba(5,150,105,.35)"></span>${s.bandA1}</span>`+
+    `<span><span class="sw" style="background:rgba(5,150,105,.6)"></span>${s.bandA2}</span>`+
+    `<span><span class="sw" style="background:${COL_A}"></span>${s.medA}</span>`+
+    (Bp?`<span><span class="sw" style="background:${COL_B}"></span>${s.medB}</span>`:'');
+  const hit=el('pctHit'),cross=el('pctCross');
+  hit.onmousemove=e=>{
+    const sd=TXT.dyn;
+    const r=svg.getBoundingClientRect();
+    const px=(e.clientX-r.left)*(W/r.width);
+    const d=Math.max(1,Math.min(days,Math.round((px-L)/(W-L-R)*days)));
+    let xi=0;for(let i=0;i<A.xs.length;i++){if(Math.abs(A.xs[i]-d)<Math.abs(A.xs[xi]-d))xi=i}
+    cross.setAttribute('x1',x(A.xs[xi]));cross.setAttribute('x2',x(A.xs[xi]));cross.setAttribute('visibility','visible');
+    let html=`<div class="t1">${sd.dayN} ${A.xs[xi]}</div>`+
+      `<div class="t2">A — P95: ${money(A.q95[xi])} · P75: ${money(A.q75[xi])}</div>`+
+      `<div class="t2">A — <b>${sd.medianAxis}: ${money(A.q50[xi])}</b></div>`+
+      `<div class="t2">A — P25: ${money(A.q25[xi])} · P5: ${money(A.q05[xi])}</div>`;
+    if(Bp)html+=`<div class="t2">B — <b>${sd.medianAxis}: ${money(Bp.q50[xi])}</b> (P5 ${money(Bp.q05[xi])} · P95 ${money(Bp.q95[xi])})</div>`;
+    showTip(e,html);
+  };
+  hit.onmouseleave=()=>{cross.setAttribute('visibility','hidden');hideTip()};
+  /* ── Rachas ── */
+  /* AUTO: los trades del horizonte (días × trades/día). Manual: el nº elegido en #stChips / #inStN,
+     que al ser el mismo para A y B colapsa la tabla a una sola columna de probabilidad. */
+  const autoA=p.days*p.tpd,autoB=cmp?p.days*p.tpdB:0;
+  const stCmp=cmp&&p.stAuto;
+  const nA=p.stAuto?autoA:p.stTrades,nB=stCmp?autoB:0;
+  if(p.stAuto)el('inStN').value=autoA;
+  el('stN').textContent=p.stAuto
+    ?s.stHead(nA.toLocaleString('en-US'),cmp?nB.toLocaleString('en-US'):null)
+    :s.stHeadMan(nA.toLocaleString('en-US'),cmp);
+  let sh='<tr>'+(stCmp?s.stThC:p.stAuto?s.stTh:s.stThMan).map(h=>`<th>${h}</th>`).join('')+'</tr>';
+  let srows='';
+  for(let k=3;k<=10;k++){
+    const pa=probLosingStreak(p.wr,nA,k)*100;
+    const cum=k*p.loss;
+    const danger=cum>=p.dd;
+    srows+=`<tr><td>${s.inARow(k)}${danger?' ⚠':''}</td><td class="${danger?'':'dim'}">${money(-cum)}${danger?' '+s.geLimit:''}</td><td>${pa<0.005?'<0.01%':pa.toFixed(2)+'%'}</td>`+
+      (stCmp?`<td>${(probLosingStreak(p.wr,nB,k)*100).toFixed(2)}%</td>`:'')+'</tr>';
+  }
+  el('streakTable').innerHTML=`<table class="ltab">${sh}${srows}</table>`;
+  /* ── Explorador de riesgo ── */
+  const ratio=p.win/p.loss;
+  const rows=[];
+  for(const m of [0.5,0.75,1,1.25,1.5]){
+    rows.push(riskRow(p,(m===1?s.curRow:m+'×'),Math.round(p.loss*m),Math.round(p.win*m),900007+((seed*7)>>>0)+Math.round(m*1000)));
+  }
+  if(kellyF>0)rows.push(riskRow(p,'Kelly (f*)',Math.round(kellyRisk),Math.round(kellyRisk*ratio),900007+((seed*7)>>>0)+99));
+  el('rkN').textContent=s.rkHead(p.tpd,MODE_LABEL[p.mode],p.cost>0);
+  const rh='<tr>'+s.rkTh.map(h=>`<th>${h}</th>`).join('')+'</tr>';
+  const rrows=rows.map((r,i)=>{
+    const cls=r.label===s.curRow?' class="sel"':(r.label.startsWith('Kelly')?' class="kelly"':'');
+    return `<tr${cls}><td>${r.label}</td><td>${money(-r.loss)}</td><td>${money(r.win)}</td><td>${money(r.evDay)}</td>`+
+      `<td>${r.bound!==null?'≤ '+r.bound.toFixed(2)+'%':s.to100}</td><td>${r.ruin.toFixed(2)}%</td><td>${money(r.med252)}</td></tr>`;
+  }).join('');
+  el('riskTable').innerHTML=`<table class="ltab">${rh}${rrows}</table>`;
+  renderSens(p);
+  /* ── Carrera objetivo vs liquidación ── */
+  const [rA,rB]=races;
+  const anal=raceAnalytic(p);
+  const preset=PRESETS[curPreset];
+  el('raceN').textContent=s.raceHead(curPreset!=='custom'?preset.name:null,money(p.target,false),s.minDays(p.minDays),MODE_LABEL[p.mode],p.dll>0?money(-p.dll):null,races.map(r=>r.sims.toLocaleString('en-US')).join(' + '));
+  const dTxt=r=>r.d50!==null?(s.dayW(r.d50)+' '+s.p2575(r.d25,r.d75)):'—';
+  el('raceTiles').innerHTML=
+    tile(s.passT,pair(rA.hit.toFixed(1)+'%',cmp?rB.hit.toFixed(1)+'%':''),cmp?'sm':(rA.hit>90?'good':'warn'),s.passSub)+
+    tile(s.lbT,anal!==null?'≥ '+anal.toFixed(1)+'%':'—','info',anal!==null?s.lbSub:s.lbNo)+
+    tile(s.medPassT,pair(rA.d50!==null?s.dayW(rA.d50):'—',cmp?(rB.d50!==null?s.dayW(rB.d50):'—'):''),cmp?'sm':'info',cmp?s.inclMin:s.inclMinN(s.minDays(p.minDays),dTxt(rA)))+
+    tile(s.failT,pair(rA.ruin.toFixed(1)+'%',cmp?rB.ruin.toFixed(1)+'%':''),cmp?'sm':(rA.ruin>10?'bad':'warn'),s.failSub(money(p.target,false)));
+}
+/* ─────────────── Sensibilidad y riesgo de estimación ───────────────
+   Todo en fórmula cerrada. CI del win rate por aproximación normal del
+   posterior Beta; P(sin edge) = Φ((wr* − wr)/se) con wr* = breakeven. */
+function normCdf(z){
+  const t=1/(1+0.2316419*Math.abs(z));
+  const d=0.3989423*Math.exp(-z*z/2);
+  const pr=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));
+  return z>=0?1-pr:pr;
+}
+function renderSens(p){
+  const s=TXT.dyn;
+  const N=Math.max(0,Math.round(+el('inHist').value||0));
+  el('sensN').textContent=s.sensHead(N);
+  const be=p.loss/(p.win+p.loss); /* win rate de breakeven */
+  const evT=w=>w*p.win-(1-w)*p.loss;
+  const shp=w=>{const m=dayMoments({...p,wr:w},p.tpd);return m.sd>0?Math.sqrt(252)*m.mu/m.sd:Infinity};
+  const bnd=w=>{const th=solveTheta({wr:w,win:p.win,loss:p.loss,dd:p.dd});return th!==null?Math.exp(-th*p.dd)*100:null};
+  const race=w=>{const q=raceAnalytic({...p,wr:w});return q};
+  /* tiles bayesianos */
+  if(N>0){
+    const se=Math.sqrt(p.wr*(1-p.wr)/N);
+    const lo=Math.max(0.01,p.wr-1.645*se),hi=Math.min(0.99,p.wr+1.645*se);
+    const z=(be-p.wr)/se;
+    const pNo=normCdf(z)*100;
+    const bLo=bnd(lo),bHi=bnd(hi);
+    el('bayesTiles').innerHTML=
+      tile(s.ciT,(lo*100).toFixed(1)+'% – '+(hi*100).toFixed(1)+'%','info',s.ciSub(N))+
+      tile(s.evCiT,money(evT(lo)*p.tpd)+' – '+money(evT(hi)*p.tpd),evT(lo)>0?'good':'warn',s.evCiSub)+
+      tile(s.ruinCiT,(bHi!==null?'≤ '+bHi.toFixed(2)+'%':s.to100)+' – '+(bLo!==null?'≤ '+bLo.toFixed(2)+'%':s.to100),'warn',s.ruinCiSub)+
+      tile(s.pNoEdgeT,pNo<0.005?'<0.01%':pNo.toFixed(2)+'%',pNo>5?'bad':'good',s.pNoEdgeSub((be*100).toFixed(1)));
+  }else{
+    el('bayesTiles').innerHTML=tile(s.pNoEdgeT,'—','info',s.needN);
+  }
+  /* tabla de sensibilidad al win rate */
+  const deltas=[-0.08,-0.04,0,0.04];
+  const head='<tr>'+s.sensTh.map(h=>`<th>${h}</th>`).join('')+'</tr>';
+  const rows=deltas.map(d=>{
+    const w=Math.min(0.99,Math.max(0.01,p.wr+d));
+    const bb=bnd(w),rr=race(w);
+    const sel=d===0?' class="sel"':'';
+    const f2=v=>isFinite(v)?v.toFixed(2):'∞';
+    return `<tr${sel}><td>${(w*100).toFixed(0)}%${d===0?' ('+s.baseRow+')':''}</td><td>${money(evT(w))}</td><td>${money(evT(w)*p.tpd)}</td>`+
+      `<td>${f2(shp(w))}</td><td>${bb!==null?'≤ '+bb.toFixed(2)+'%':s.to100}</td><td>${rr!==null?'≥ '+rr.toFixed(1)+'%':'—'}</td></tr>`;
+  }).join('');
+  el('sensTable').innerHTML=`<table class="ltab">${head}${rows}</table>`;
+}
+
+/* ───────────────────── Render: calendario ───────────────────── */
+function baseLegend(cmp){
+  el('calLegend').innerHTML=cmp?TXT.dyn.calLegendC:TXT.dyn.calLegend;
+}
+function renderCalendar(runA,runB,p){
+  const cmp=!!runB;
+  el('cal').classList.toggle('cmp',cmp);
+  baseLegend(cmp);
+  const first=runA.days[0].date,last=runA.days[runA.days.length-1].date;
+  const kFirst=key(first),kLast=key(last);
+  const idxByKey=new Map();runA.days.forEach((d,i)=>idxByKey.set(key(d.date),i));
+  const years=new Map(),yearTotA=new Map(),yearTotB=new Map(),yearG=new Map(),yearR=new Map();
+  let cur=new Date(first.getFullYear(),first.getMonth(),1);
+  const endM=new Date(last.getFullYear(),last.getMonth(),1);
+  while(cur<=endM){
+    const y=cur.getFullYear(),m=cur.getMonth();
+    const dim=new Date(y,m+1,0).getDate();
+    let row=[],rows=[];
+    const flush=()=>{if(row.length){while(row.length<5)row.push('<div class="cell blank"></div>');rows.push(row.join(''));row=[]}};
+    let mTotA=0,mTotB=0,mG=0,mR=0,hasData=false;
+    for(let dd=1;dd<=dim;dd++){
+      const dt=new Date(y,m,dd),w=dt.getDay();
+      if(w===0||w===6)continue;
+      if(w===1)flush();
+      if(row.length===0){for(let f=0;f<w-1;f++)row.push('<div class="cell blank"></div>')}
+      const k=key(dt);
+      const hol=isHoliday(dt);
+      if(k<kFirst||k>kLast){row.push(`<div class="cell blank"><div class="d">${dd}</div></div>`)}
+      else if(hol){row.push(`<div class="cell holiday" data-hol="${hol}" data-date="${fmtDate(dt)}"><div class="d">${dd}</div><div class="p">${TXT.dyn.holiday}</div></div>`)}
+      else{
+        const idx=idxByKey.get(k);
+        if(idx===undefined){row.push(`<div class="cell blank"><div class="d">${dd}</div></div>`)}
+        else{
+          const rA=runA.days[idx],rB=cmp?runB.days[idx]:null;
+          if(!rA.active&&(!cmp||!rB.active)){
+            row.push(`<div class="cell dead" data-dead="1"><div class="d">${dd}</div><div class="p">✕</div></div>`);
+          }else if(!cmp){
+            hasData=true;mTotA+=rA.pnl;if(rA.pnl>0)mG++;else if(rA.pnl<0)mR++;
+            const inten=Math.min(1,Math.abs(rA.pnl)/(p.dd*0.45));
+            const bg=rA.pnl>0?`rgba(5,150,105,${(0.14+0.5*inten).toFixed(2)})`:rA.pnl<0?`rgba(239,68,68,${(0.14+0.5*inten).toFixed(2)})`:'var(--surface-3)';
+            row.push(`<div class="cell trade${rA.ruined?' ruin':''}" data-i="${idx}" style="background:${bg}">`+
+              `<div class="d">${dd}</div><div class="p">${money(rA.pnl)}</div><div class="pc">${pct(rA.pnl/p.dd*100)}</div></div>`);
+          }else{
+            hasData=true;
+            const pA=rA.active?rA.pnl:0,pB=rB.active?rB.pnl:0;
+            const dif=pB-pA;
+            mTotA+=pA;mTotB+=pB;if(dif>0)mG++;else if(dif<0)mR++;
+            const inten=Math.min(1,Math.abs(dif)/(p.dd*0.45));
+            const bg=dif>0?`rgba(5,150,105,${(0.12+0.5*inten).toFixed(2)})`:dif<0?`rgba(239,68,68,${(0.12+0.5*inten).toFixed(2)})`:'var(--surface-3)';
+            const lA=rA.active?money(pA)+(rA.ruined?' ⚠':''):'✕';
+            const lB=rB.active?money(pB)+(rB.ruined?' ⚠':''):'✕';
+            row.push(`<div class="cell trade${(rA.ruined||rB.ruined)?' ruin':''}" data-i="${idx}" style="background:${bg}">`+
+              `<div class="d">${dd}</div><div class="ab">A ${lA}</div><div class="ab">B ${lB}</div>`+
+              `<div class="p">Δ ${money(dif)}</div><div class="pc">${pct(dif/p.dd*100)}</div></div>`);
+          }
+        }
+      }
+      if(row.length===5)flush();
+    }
+    flush();
+    const html=(()=>{
+      const head=cmp
+        ?`<span class="mt" style="color:${mTotB-mTotA>0?'var(--win-hi)':mTotB-mTotA<0?'var(--loss-hi)':'var(--ink-3)'}">${hasData?'Δ '+money(mTotB-mTotA):''}</span>`
+        :`<span class="mt" style="color:${mTotA>0?'var(--win-hi)':mTotA<0?'var(--loss-hi)':'var(--ink-3)'}">${hasData?money(mTotA):''}</span>`;
+      const foot=cmp
+        ?`<span>A ${hasData?money(mTotA):'—'}</span><span>B ${hasData?money(mTotB):'—'}</span>`
+        :`<span>${hasData?TXT.dyn.vr(mG,mR):'—'}</span><span>${hasData?pct(mTotA/p.dd*100):''}</span>`;
+      const dowHead=TXT.dowH.map(dh=>`<div class="dow">${dh}</div>`).join('');
+      return `<div class="month"><h3><span>${MES[m]} ${y}</span>${head}</h3>`+
+        `<div class="mgrid">${dowHead}${rows.join('')}</div>`+
+        `<div class="mfoot">${foot}</div></div>`;
+    })();
+    if(!years.has(y))years.set(y,[]);
+    years.get(y).push(html);
+    yearTotA.set(y,(yearTotA.get(y)||0)+mTotA);
+    yearTotB.set(y,(yearTotB.get(y)||0)+mTotB);
+    yearG.set(y,(yearG.get(y)||0)+mG);
+    yearR.set(y,(yearR.get(y)||0)+mR);
+    cur=new Date(y,m+1,1);
+  }
+  let out='';
+  for(const [y,months] of years){
+    const tA=yearTotA.get(y)||0,tB=yearTotB.get(y)||0;
+    if(!cmp){
+      out+=`<div class="yearbar"><span class="y">${y}</span>`+
+           `<span class="yt" style="color:${tA>0?'var(--win-hi)':tA<0?'var(--loss-hi)':'var(--ink-3)'}">${money(tA)}</span>`+
+           `<span class="yd">${pct(tA/p.dd*100)} ${TXT.dyn.yrOverDD} · ${TXT.dyn.vr(yearG.get(y),yearR.get(y))}</span></div>`;
+    }else{
+      const dif=tB-tA;
+      out+=`<div class="yearbar"><span class="y">${y}</span>`+
+           `<span class="yt" style="color:${COL_A}">A ${money(tA)}</span>`+
+           `<span class="yt" style="color:${COL_B}">B ${money(tB)}</span>`+
+           `<span class="yt" style="color:${dif>0?'var(--win-hi)':dif<0?'var(--loss-hi)':'var(--ink-3)'}">Δ ${money(dif)}</span>`+
+           `<span class="yd">${TXT.dyn.yrImproves(yearG.get(y),yearR.get(y))}</span></div>`;
+    }
+    out+=`<div class="months">${months.join('')}</div>`;
+  }
+  el('cal').innerHTML=out;
+}
+
+/* ───────────────────── Tooltip ───────────────────── */
+const tip=el('tip');
+function showTip(e,html){tip.innerHTML=html;tip.style.display='block';moveTip(e)}
+function moveTip(e){
+  const w=tip.offsetWidth,h=tip.offsetHeight;
+  let x=e.clientX+14,y=e.clientY+14;
+  if(x+w>innerWidth-8)x=e.clientX-w-14;
+  if(y+h>innerHeight-8)y=e.clientY-h-14;
+  tip.style.left=x+'px';tip.style.top=y+'px';
+}
+function hideTip(){tip.style.display='none'}
+document.addEventListener('mousemove',e=>{if(tip.style.display==='block')moveTip(e)});
+el('cal').addEventListener('mouseover',e=>{
+  const c=e.target.closest('.cell');if(!c)return;
+  if(c.dataset.i!==undefined){
+    const s=TXT.dyn;
+    const i=+c.dataset.i;
+    const dA=curRunA.days[i];
+    let html=`<div class="t1">${fmtDate(dA.date)} · ${s.dayN} ${i+1}</div>`;
+    if(!curRunB){
+      html+=`<div class="t2">${s.tradesGP(dA.wins,dA.losses)}</div>`+
+        `<div class="t2">${s.pnlOfDay}: <b>${money(dA.pnl)}</b> (${pct(dA.pnl/curP.dd*100)})</div>`+
+        `<div class="t2">${s.cumEq}: ${money(dA.equity)}</div>`+
+        (curP.mode!=='static'?`<div class="t2">${s.dayLimit}: ${money(dA.floor)}</div>`:'')+
+        (dA.dllStop?'<div class="t2" style="color:var(--amber-hi)">'+s.dllStopped+'</div>':'')+
+        (dA.ruined?'<div class="t3">'+s.ruinTip+'</div>':'');
+    }else{
+      const dB=curRunB.days[i];
+      const line=(lbl,d,tpd)=>d.active
+        ?`<div class="t2">${s.scLine(lbl,tpd)}${s.tradesGP(d.wins,d.losses).replace(/^[^:]+: /,'')} · <b>${money(d.pnl)}</b> (${pct(d.pnl/curP.dd*100)}) · ${s.eq} ${money(d.equity)}${d.ruined?' ⚠':''}</div>`
+        :`<div class="t2">${s.scDead(lbl)}</div>`;
+      const pA=dA.active?dA.pnl:0,pB=dB.active?dB.pnl:0;
+      html+=line('A',dA,curRunA.tpd)+line('B',dB,curRunB.tpd)+
+        `<div class="t2"><b>${s.dDay}: ${money(pB-pA)} (${pct((pB-pA)/curP.dd*100)})</b></div>`+
+        ((dA.ruined||dB.ruined)?'<div class="t3">'+s.ruinTipC+'</div>':'');
+    }
+    showTip(e,html);
+  }else if(c.dataset.hol){showTip(e,`<div class="t1">${c.dataset.date}</div><div class="t2">${TXT.dyn.holidayTip(c.dataset.hol)}</div>`)}
+  else if(c.dataset.dead){showTip(e,'<div class="t2">'+TXT.dyn.deadTip+'</div>')}
+});
+el('cal').addEventListener('mouseout',e=>{if(e.target.closest('.cell'))hideTip()});
+
+/* ───────────────────── Notas ───────────────────── */
+function renderNotes(mcs,p,cmp,liq){
+  const es=LANG==='es';
+  const evd=t=>t*(p.wr*p.win-(1-p.wr)*p.loss);
+  const m=mcs[0];
+  const liq5=liq.curves[0].total.toFixed(2);
+  const notes=[
+    ['#38bdf8',cmp
+      ?(es?`Expectativa matemática: A ${money(evd(p.tpd))}/día (${p.tpd} trades) vs B ${money(evd(p.tpdB))}/día (${p.tpdB} trades), con ${(p.wr*100).toFixed(0)}% win rate, +$${p.win} / −$${p.loss}.`
+          :`Mathematical expectancy: A ${money(evd(p.tpd))}/day (${p.tpd} trades) vs B ${money(evd(p.tpdB))}/day (${p.tpdB} trades), at ${(p.wr*100).toFixed(0)}% win rate, +$${p.win} / −$${p.loss}.`)
+      :(es?`Expectativa matemática: ${money(evd(p.tpd))} por día (${p.tpd} trades · ${(p.wr*100).toFixed(0)}% win rate, +$${p.win} / −$${p.loss}).`
+          :`Mathematical expectancy: ${money(evd(p.tpd))} per day (${p.tpd} trades · ${(p.wr*100).toFixed(0)}% win rate, +$${p.win} / −$${p.loss}).`)],
+    ['#34d399',cmp
+      ?(es?`Monte Carlo a ${p.days} días — prob. de ruina: A ${pct(mcs[0].ruins/mcs[0].sims*100,1,false)} vs B ${pct(mcs[1].ruins/mcs[1].sims*100,1,false)}. Más trades por día aceleran el retorno pero también la velocidad a la que se puede tocar el límite en una mala racha.`
+          :`Monte Carlo at ${p.days} days — ruin probability: A ${pct(mcs[0].ruins/mcs[0].sims*100,1,false)} vs B ${pct(mcs[1].ruins/mcs[1].sims*100,1,false)}. More trades per day speed up returns but also how fast a bad streak can reach the limit.`)
+      :(es?`En ${m.sims.toLocaleString('en-US')} simulaciones de ${p.days} días, la probabilidad de ruina es ${pct(m.ruins/m.sims*100,1,false)} y el ${pct(m.pos/m.sims*100,1,false)} termina en positivo.`
+          :`Across ${m.sims.toLocaleString('en-US')} simulations of ${p.days} days, ruin probability is ${pct(m.ruins/m.sims*100,1,false)} and ${pct(m.pos/m.sims*100,1,false)} finish positive.`)],
+    ['#fbbf24',es
+      ?`El calendario usa días reales de mercado de futuros: lunes a viernes, excluyendo los 8 festivos de cierre completo del CME (Año Nuevo, Viernes Santo, Memorial Day, Juneteenth, 4 de Julio, Labor Day, Acción de Gracias y Navidad).`
+      :`The calendar uses real futures market days: Monday–Friday, excluding the 8 CME full-closure holidays (New Year's, Good Friday, Memorial Day, Juneteenth, July 4th, Labor Day, Thanksgiving and Christmas).`],
+    ['#f87171',cmp
+      ?(es?`En modo comparación ambos escenarios comparten la misma secuencia de resultados por día (los primeros min(A,B) trades son idénticos); Δ aísla el efecto de los trades adicionales. Modelo idealizado: sin cambios de régimen.`
+          :`In compare mode both scenarios share the same per-day outcome sequence (the first min(A,B) trades are identical); Δ isolates the effect of the extra trades. Idealized model: no regime changes.`)
+      :(es?`Modelo idealizado: resultados de trade independientes y de tamaño fijo, sin cambios de régimen. La racha real puede ser peor que la simulada.`
+          :`Idealized model: independent, fixed-size trade outcomes, no regime changes. Real streaks can be worse than simulated.`)],
+    ['#0284c7',(()=>{
+      const base=es
+        ?`Backtest de liquidación (${MODE_LABEL[p.mode]}): el riesgo vive en el eje de trades, no en el calendario${cmp?` — B recorre la misma curva de riesgo que A, ${(p.tpdB/p.tpd).toFixed(1).replace(/\.0$/,'')}× más rápido en días`:''}. `
+        :`Liquidation backtest (${MODE_LABEL[p.mode]}): risk lives on the trade axis, not the calendar${cmp?` — B runs the same risk curve as A, ${(p.tpdB/p.tpd).toFixed(1).replace(/\.0$/,'')}× faster in days`:''}. `;
+      if(p.mode==='trail')return base+(es
+        ?`Con trailing perpetuo el límite persigue al pico: a horizonte infinito la liquidación es segura; lo que se mide es cuándo (a 5 años: ${liq5}%).`
+        :`With perpetual trailing the limit chases the peak: liquidation is certain at infinite horizon; what's measured is when (5-year: ${liq5}%).`);
+      if(p.mode==='cap'||p.mode==='eod')return base+(es
+        ?`El límite sube hasta bloquearse en su lock: sobrevivir la fase inicial es lo crítico. A 5 años: ${liq5}%.`
+        :`The limit rises until it locks: surviving the early phase is what matters. 5-year: ${liq5}%.`);
+      return liq.bound!==null
+        ?base+(es?`Verificación analítica (cota de Lundberg): P(liquidación) ≤ e^(−θ·DD) = ${liq.bound.toFixed(2)}%; el backtest a 5 años mide ${liq5}%, por debajo de la cota.`
+                 :`Analytic cross-check (Lundberg bound): P(liquidation) ≤ e^(−θ·DD) = ${liq.bound.toFixed(2)}%; the 5-year backtest measures ${liq5}%, below the bound.`)
+        :base+(es?`Con expectativa por trade ≤ $0 no existe cota de Lundberg — a horizonte infinito la liquidación es segura (100%).`
+                 :`With per-trade expectancy ≤ $0 there is no Lundberg bound — liquidation is certain at infinite horizon (100%).`);
+    })()],
+  ];
+  el('notes').innerHTML=notes.map(([c,t])=>`<div class="fnote"><div class="bar" style="background:${c}"></div><div>${t}</div></div>`).join('');
+}
+
+/* ───────────────────── Orquestación ───────────────────── */
+let curP=null,curRunA=null,curRunB=null,seed=20260712,cmpOn=false,curMode='static',curPreset='custom',stAuto=true;
+function setModeChips(){document.querySelectorAll('#modeChips .chip').forEach(x=>x.classList.toggle('on',x.dataset.m===curMode))}
+function setPresetChips(){document.querySelectorAll('#presetChips .chip').forEach(x=>x.classList.toggle('on',x.dataset.p===curPreset))}
+function applyPreset(key){
+  curPreset=key;setPresetChips();
+  const pr=PRESETS[key];
+  if(key==='custom'||!pr.size)return;
+  el('inDD').value=pr.dd;
+  el('inLock').value=pr.lock;
+  el('inDLL').value=pr.dll;
+  el('inMinDays').value=pr.minDays;
+  el('inTarget').value=pr.target;
+  el('inSplit').value=pr.pay.split;
+  el('inFullUp').value=pr.pay.fullUp;
+  el('inCad').value=pr.pay.cad;
+  el('inWDn').value=pr.pay.wdN;
+  el('inWDmin').value=pr.pay.wdMin;
+  el('inPayMin').value=pr.pay.min;
+  el('inPayMax').value=pr.pay.max;
+  el('inRet').value=pr.pay.ret;
+  el('inCons').value=pr.pay.cons;
+  curMode=pr.mode;setModeChips();
+  recompute();
+}
+function markCustom(){if(curPreset!=='custom'){curPreset='custom';setPresetChips()}}
+function recompute(){
+  curP=readParams();
+  seed=Math.round(+el('inSeed').value)||seed;
+  const start=nextTradingDay(new Date());
+  const dates=tradingDays(start,curP.days);
+  curRunA=simulateRun(curP,curP.tpd,seed,dates);
+  curRunB=cmpOn?simulateRun(curP,curP.tpdB,seed,dates):null;
+  const sims=(curP.days>600?1000:2500)>>(cmpOn?1:0);
+  const mcs=[simulateMC(curP,curP.tpd,sims,100003+((seed*31)>>>0))];
+  if(cmpOn)mcs.push(simulateMC(curP,curP.tpdB,sims,100003+((seed*31)>>>0)));
+  const liq=simulateLiq(curP,cmpOn?[curP.tpd,curP.tpdB]:[curP.tpd],700003+((seed*13)>>>0));
+  const preset=PRESETS[curPreset];
+  el('badgeDD').textContent=curPreset!=='custom'
+    ?preset.name.toUpperCase()+' · $'+curP.dd.toLocaleString('en-US')+' '+(curP.mode==='static'?(LANG==='es'?'ESTÁTICO':'STATIC'):curP.mode==='eod'?'TRAILING EOD':'TRAILING'+(curP.mode==='cap'?' (LOCK +$'+curP.lock+')':''))
+    :TXT.badgeCustom(curP.dd.toLocaleString('en-US'));
+  const pctSims=cmpOn?500:800;
+  const pcts=[simulatePct(curP,curP.tpd,pctSims,500009+((seed*11)>>>0),curP.days)];
+  if(cmpOn)pcts.push(simulatePct(curP,curP.tpdB,pctSims,500009+((seed*11)>>>0),curP.days));
+  const raceSims=cmpOn?2500:4000;
+  const races=[simulateRace(curP,curP.tpd,raceSims,300007+((seed*23)>>>0))];
+  if(cmpOn)races.push(simulateRace(curP,curP.tpdB,raceSims,300007+((seed*23)>>>0)));
+  const paySims=cmpOn?1500:2500;
+  const pays=[simulatePayout(curP,curP.tpd,paySims,810007+((seed*29)>>>0))];
+  if(cmpOn)pays.push(simulatePayout(curP,curP.tpdB,paySims,810007+((seed*29)>>>0)));
+  renderRunTiles(curRunA,curRunB,curP);
+  renderEquity(curRunB?[curRunA,curRunB]:[curRunA],curP);
+  renderMC(mcs,curP);
+  renderLiq(liq,curP,cmpOn);
+  renderAdv(curP,cmpOn,curRunA,curRunB,pcts,races);
+  renderPayout(pays,races,curP,cmpOn);
+  renderCalendar(curRunA,curRunB,curP);
+  renderNotes(mcs,curP,cmpOn,liq);
+}
+let deb=null;
+function queue(){clearTimeout(deb);deb=setTimeout(recompute,180)}
+['inWr','inWin','inLoss','inTpd','inTpdB','inDD','inSeed','inDays','inCost','inTarget','inLock','inDLL','inMinDays',
+ 'inSplit','inFullUp','inCad','inWDn','inWDmin','inPayMin','inPayMax','inRet','inCons','inHist'].forEach(id=>el(id).addEventListener('input',queue));
+el('langChips').addEventListener('click',e=>{
+  const c=e.target.closest('.chip');if(!c||c.dataset.l===LANG)return;
+  try{localStorage.setItem('simLang',c.dataset.l)}catch(_){}
+  applyLang(c.dataset.l);
+});
+/* editar una regla a mano te saca del preset */
+['inDD','inLock','inDLL','inMinDays','inTarget','inSplit','inFullUp','inCad','inWDn','inWDmin','inPayMin','inPayMax','inRet','inCons'].forEach(id=>el(id).addEventListener('input',markCustom));
+el('modeChips').addEventListener('click',e=>{
+  const c=e.target.closest('.chip');if(!c)return;
+  curMode=c.dataset.m;
+  setModeChips();
+  markCustom();
+  recompute();
+});
+el('presetChips').addEventListener('click',e=>{
+  const c=e.target.closest('.chip');if(!c)return;
+  applyPreset(c.dataset.p);
+});
+el('inDays').addEventListener('input',()=>{
+  document.querySelectorAll('#chips .chip').forEach(c=>c.classList.toggle('on',+c.dataset.d===+el('inDays').value));
+});
+function setStChips(){
+  const v=+el('inStN').value;
+  document.querySelectorAll('#stChips .chip').forEach(c=>{
+    c.classList.toggle('on',c.dataset.n==='auto'?stAuto:(!stAuto&&+c.dataset.n===v));
+  });
+}
+el('stChips').addEventListener('click',e=>{
+  const c=e.target.closest('.chip');if(!c)return;
+  if(c.dataset.n==='auto')stAuto=true;
+  else{stAuto=false;el('inStN').value=c.dataset.n}
+  setStChips();
+  recompute();
+});
+el('inStN').addEventListener('input',()=>{stAuto=false;setStChips();queue()});
+el('chips').addEventListener('click',e=>{
+  const c=e.target.closest('.chip');if(!c)return;
+  el('inDays').value=c.dataset.d;
+  document.querySelectorAll('#chips .chip').forEach(x=>x.classList.toggle('on',x===c));
+  recompute();
+});
+el('btnRoll').addEventListener('click',()=>{
+  el('inSeed').value=(Math.random()*2**31)|0;
+  recompute();
+});
+el('btnCmp').addEventListener('click',()=>{
+  cmpOn=!cmpOn;
+  el('btnCmp').textContent=TXT.static.btnCmp(cmpOn);
+  el('btnCmp').classList.toggle('on',cmpOn);
+  el('inTpdB').disabled=!cmpOn;
+  recompute();
+});
+(function(){
+  let saved=null;
+  try{saved=localStorage.getItem('simLang')}catch(_){}
+  if(saved==='en')applyLang('en');else recompute();
+})();
+</script>
+</body>
+</html>
