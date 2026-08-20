@@ -1,0 +1,366 @@
+//@version=6
+// OptionsFlow — VIX σ Expected Move + ATR (ES / MES futures)
+//
+// WHAT IT DOES
+//   Turns VIX (30-day annualized implied vol on SPX) into a standard-deviation move measured in
+//   ES points, cross-checks it against a range-based estimate derived from daily ATR, and draws the
+//   ±0.5 / 1 / 2 / 3σ envelope around a session anchor. The table reports how much of the expected
+//   move price has already spent — the number that matters for fading vs. following a move.
+//
+// THE MATH
+//   σ_session = P x (VIX / 100) / sqrt(252)   annualized vol -> one session, in price points
+//   σ_horizon = σ_session x sqrt(N)           sqrt-time scaling out to N sessions
+//   σ_ATR     = ATR(14, daily) / 1.5958       E[range] = σ·sqrt(8/π) under GBM, so range -> σ
+//   RV        = close-to-close stdev, Parkinson, and Garman-Klass, annualized — the realized side
+//   VRP       = VIX − RV. Positive (the usual state) means implied is richer than what price
+//               actually delivers, so the raw VIX band runs wide; the VRP factor scales it back.
+//
+// WHY BOTH VIX AND ATR
+//   They disagree in useful ways. VIX is forward-looking, priced by option demand, and carries the
+//   variance risk premium; ATR is backward-looking and gap-aware. When σ_VIX >> σ_ATR the market is
+//   paying up for protection it has not needed — mean-reversion setups fade the 2σ tags. When
+//   σ_ATR > σ_VIX realized is outrunning the hedge bid — the 1σ band breaks and keeps going.
+//
+// PROXY NOTE
+//   VIX prices SPX options, not ES. Percentage vol transfers cleanly between the two, so applying
+//   VIX% to the ES price is standard practice; the basis and the ES/SPX dividend drift are not
+//   modeled. On any chart that is not an S&P instrument (NQ, CL, ZB) set σ source to "ATR (range)"
+//   or point the VIX symbol at that market's own vol index (VXN, OVX, ...).
+//
+// NON-REPAINTING
+//   Every higher-timeframe read uses lookahead_off and a [1] offset, so bands are built from
+//   yesterday's settled VIX, ATR, and RV and stay frozen for the whole session. Turning off
+//   "Lock to prior daily close" lets the VIX read drift with the live tape — intentional, but the
+//   bands then move under you intrabar.
+indicator("OptionsFlow VIX σ • Expected Move (ES)", shorttitle = "VIX-σ", overlay = true,
+     max_labels_count = 100)
+
+// ============================================================
+// Inputs
+// ============================================================
+gVol      = "σ source"
+srcMode   = input.string("VIX implied", "Band source", options = ["VIX implied", "ATR (range)", "Blend"], group = gVol)
+blendW    = input.float(0.6, "Blend weight on VIX (0 = all ATR)", minval = 0.0, maxval = 1.0, step = 0.05, group = gVol)
+annBasis  = input.int(252, "Annualization basis", options = [252, 365], group = gVol, tooltip = "252 trading days is the desk convention for a session move. 365 matches VIX's own calendar-day construction and produces a smaller daily σ.")
+hzDays    = input.float(1.0, "Horizon (sessions)", minval = 0.05, maxval = 60.0, step = 0.25, group = gVol, tooltip = "1 = today's expected move. 5 = the week. Scaled by sqrt(N).")
+vrpMode   = input.string("Off (raw VIX)", "Variance-risk-premium adjustment", options = ["Off (raw VIX)", "Auto (rolling RV/IV)", "Manual factor"], group = gVol)
+vrpManual = input.float(0.85, "Manual VRP factor", minval = 0.3, maxval = 1.5, step = 0.01, group = gVol)
+vrpLen    = input.int(60, "Auto VRP lookback (days)", minval = 10, maxval = 252, group = gVol)
+
+gVix     = "VIX"
+vixSym   = input.symbol("CBOE:VIX", "VIX symbol", group = gVix, tooltip = "TVC:VIX works too. Use VXN for NQ, OVX for CL.")
+lockVix  = input.bool(true, "Lock to prior daily close (no intraday drift)", group = gVix)
+showTerm = input.bool(false, "Read term structure (VIX9D / VIX3M)", group = gVix)
+vix9Sym  = input.symbol("CBOE:VIX9D", "Short-dated symbol", group = gVix)
+vix3Sym  = input.symbol("CBOE:VIX3M", "Long-dated symbol", group = gVix)
+
+gAtr     = "ATR / realized vol"
+atrLen   = input.int(14, "Daily ATR length", minval = 1, group = gAtr)
+rangeDiv = input.float(1.5958, "Range→σ divisor", minval = 1.0, maxval = 2.5, step = 0.0001, group = gAtr, tooltip = "sqrt(8/π) = 1.5958 is E[range]/σ for a driftless random walk. ATR uses TRUE range, so it absorbs gaps and reads slightly high — raise the divisor to compensate.")
+rvLen    = input.int(20, "Realized-vol lookback (days)", minval = 5, maxval = 252, group = gAtr)
+
+gB        = "Bands"
+bandMode  = input.string("Session (flat)", "Band mode", options = ["Session (flat)", "Cone (√time decay)"], group = gB, tooltip = "Flat: one static envelope for the session, anchored below. Cone: remaining expected move from the current price, shrinking as sqrt(time left).")
+show05    = input.bool(false, "±0.5σ", group = gB)
+show1     = input.bool(true, "±1σ  (~68% of sessions)", group = gB)
+show2     = input.bool(true, "±2σ  (~95% of sessions)", group = gB)
+show3     = input.bool(false, "±3σ", group = gB)
+shadeZone = input.bool(true, "Shade zones", group = gB)
+showAnchor= input.bool(true, "Plot anchor", group = gB)
+showLbls  = input.bool(true, "Price tags at right edge", group = gB)
+onlyInSess= input.bool(true, "Draw inside session only", group = gB)
+
+gS         = "Session & anchor"
+sessStr    = input.session("0930-1600", "RTH session", group = gS)
+tzStr      = input.string("America/New_York", "Session timezone", group = gS)
+anchorMode = input.string("Prior session close", "Anchor", options = ["Prior session close", "Session open", "Current price"], group = gS, tooltip = "Prior session close is the settlement-style reference the expected move is quoted from.")
+
+gD       = "Display"
+showTab  = input.bool(true, "Stats table", group = gD)
+tabPos   = input.string("Top right", "Table position", options = ["Top right", "Top left", "Bottom right", "Bottom left", "Middle right"], group = gD)
+tabSize  = input.string("small", "Table text size", options = ["tiny", "small", "normal"], group = gD)
+ptValue  = input.float(50.0, "$ per point", minval = 0.01, group = gD, tooltip = "ES 50, MES 5, NQ 20, MNQ 2, SPX 100.")
+
+cUp   = input.color(#26a69a, "1σ color", group = gD, inline = "col")
+cUp2  = input.color(#ef9a00, "2σ color", group = gD, inline = "col")
+cUp3  = input.color(#e91e63, "3σ color", group = gD, inline = "col")
+cAnch = input.color(#9598a1, "Anchor", group = gD, inline = "col")
+
+// ============================================================
+// Realized-vol estimators (evaluated in the daily context)
+// ============================================================
+// All three return an ANNUALIZED percentage, directly comparable to VIX.
+f_rvClose(len) =>
+    r = math.log(close / nz(close[1], close))
+    ta.stdev(r, len) * math.sqrt(annBasis) * 100.0
+
+// Parkinson — uses the high/low range, ~5x more efficient than close-to-close, blind to gaps.
+f_rvPark(len) =>
+    hl = math.pow(math.log(high / low), 2)
+    math.sqrt(math.max(ta.sma(hl, len), 0.0) / (4.0 * math.log(2))) * math.sqrt(annBasis) * 100.0
+
+// Garman-Klass — adds the open-to-close term; the best of the three when bars are clean.
+f_rvGk(len) =>
+    a = 0.5 * math.pow(math.log(high / low), 2)
+    b = (2.0 * math.log(2) - 1.0) * math.pow(math.log(close / open), 2)
+    math.sqrt(math.max(ta.sma(a - b, len), 0.0)) * math.sqrt(annBasis) * 100.0
+
+// ============================================================
+// Higher-timeframe reads (settled values only)
+// ============================================================
+[dAtr, dRvC, dRvP, dRvG, dRvAvg, dPrevClose] = request.security(syminfo.tickerid, "D",
+     [ta.atr(atrLen)[1], f_rvClose(rvLen)[1], f_rvPark(rvLen)[1], f_rvGk(rvLen)[1],
+      ta.sma(f_rvClose(rvLen), vrpLen)[1], close[1]], lookahead = barmerge.lookahead_off)
+
+[vixLive, vixSettled, vixRank, vixAvg] = request.security(vixSym, "D",
+     [close, close[1], ta.percentrank(close, 252)[1], ta.sma(close, vrpLen)[1]],
+     lookahead = barmerge.lookahead_off)
+
+// Term structure is optional; when off both requests point at the main VIX symbol so a missing
+// CBOE subscription can never break the script.
+s9 = showTerm ? vix9Sym : vixSym
+s3 = showTerm ? vix3Sym : vixSym
+vix9 = request.security(s9, "D", close[1], lookahead = barmerge.lookahead_off)
+vix3 = request.security(s3, "D", close[1], lookahead = barmerge.lookahead_off)
+
+vix = lockVix ? vixSettled : vixLive
+
+// ============================================================
+// Session tracking + anchor
+// ============================================================
+isIntra = timeframe.isintraday
+inSess  = isIntra ? not na(time(timeframe.period, sessStr, tzStr)) : true
+newSess = isIntra ? (inSess and not inSess[1]) : true
+
+var float sessOpen  = na
+var float prevClose = na
+var float lastClose = na
+var float sessHi    = na
+var float sessLo    = na
+
+if isIntra
+    if newSess
+        prevClose := lastClose
+        sessOpen  := open
+        sessHi    := high
+        sessLo    := low
+    if inSess
+        lastClose := close
+        sessHi    := math.max(nz(sessHi, high), high)
+        sessLo    := math.min(nz(sessLo, low), low)
+else
+    prevClose := close[1]
+    sessOpen  := open
+    sessHi    := high
+    sessLo    := low
+
+anchor = anchorMode == "Session open"  ? nz(sessOpen, open) :
+         anchorMode == "Current price" ? close :
+         nz(prevClose, nz(dPrevClose, close))
+
+// ============================================================
+// Session clock — how much of the session is left (for the cone)
+// ============================================================
+// Normalizing away ":" lets both "0930-1600" and "09:30-16:00" parse, and leaves any
+// ":1234567" day mask past the characters we read.
+f_sessMinutes(s) =>
+    t     = str.replace_all(s, ":", "")
+    valid = str.length(t) >= 9
+    sh = valid ? nz(str.tonumber(str.substring(t, 0, 2)), 9.0)  : 9.0
+    sm = valid ? nz(str.tonumber(str.substring(t, 2, 4)), 30.0) : 30.0
+    eh = valid ? nz(str.tonumber(str.substring(t, 5, 7)), 16.0) : 16.0
+    em = valid ? nz(str.tonumber(str.substring(t, 7, 9)), 0.0)  : 0.0
+    st = sh * 60.0 + sm
+    en = eh * 60.0 + em
+    en := en <= st ? en + 1440.0 : en
+    [st, en - st]
+
+[sessStartMin, sessLenMin] = f_sessMinutes(sessStr)
+nowMin  = hour(time, tzStr) * 60.0 + minute(time, tzStr)
+adjNow  = nowMin < sessStartMin ? nowMin + 1440.0 : nowMin
+elapsed = math.max(0.0, math.min(adjNow - sessStartMin, sessLenMin))
+remFrac = sessLenMin > 0 ? (sessLenMin - elapsed) / sessLenMin : 1.0
+
+// ============================================================
+// σ construction
+// ============================================================
+refPx = anchor > 0 ? anchor : close
+
+// VRP: implied is systematically richer than subsequent realized. The auto factor is the ratio of
+// average realized to average implied over the lookback — contemporaneous, so it is a proxy for the
+// textbook forward-realized-vs-implied spread, not the same statistic. Clamped to keep a data gap
+// from collapsing or exploding the bands.
+autoK = vixAvg > 0 and not na(dRvAvg) ? math.min(math.max(dRvAvg / vixAvg, 0.5), 1.5) : 1.0
+vrpK  = vrpMode == "Manual factor" ? vrpManual : vrpMode == "Auto (rolling RV/IV)" ? autoK : 1.0
+
+sigVix = refPx * (vix / 100.0) / math.sqrt(annBasis) * vrpK
+sigAtr = dAtr / rangeDiv
+
+sigDay = srcMode == "VIX implied" ? sigVix :
+         srcMode == "ATR (range)" ? sigAtr :
+         blendW * sigVix + (1.0 - blendW) * sigAtr
+
+sigH     = sigDay * math.sqrt(hzDays)                                     // full-horizon σ
+isCone   = bandMode == "Cone (√time decay)" and isIntra
+sigBand  = isCone ? sigDay * math.sqrt(math.max(remFrac, 0.01)) : sigH    // σ actually drawn
+baseline = isCone ? close : anchor
+
+// ============================================================
+// Bands
+// ============================================================
+visible = (not isIntra) or (not onlyInSess) or inSess
+ok      = visible and not na(sigBand) and sigBand > 0
+
+u05 = ok and show05 ? baseline + 0.5 * sigBand : na
+d05 = ok and show05 ? baseline - 0.5 * sigBand : na
+u1  = ok and show1  ? baseline + 1.0 * sigBand : na
+d1  = ok and show1  ? baseline - 1.0 * sigBand : na
+u2  = ok and show2  ? baseline + 2.0 * sigBand : na
+d2  = ok and show2  ? baseline - 2.0 * sigBand : na
+u3  = ok and show3  ? baseline + 3.0 * sigBand : na
+d3  = ok and show3  ? baseline - 3.0 * sigBand : na
+
+plot(ok and showAnchor ? baseline : na, "Anchor", color = cAnch, linewidth = 1, style = plot.style_linebr)
+plot(u05, "+0.5σ", color = color.new(cUp, 45), linewidth = 1, style = plot.style_linebr)
+plot(d05, "-0.5σ", color = color.new(cUp, 45), linewidth = 1, style = plot.style_linebr)
+plot(u3,  "+3σ",   color = color.new(cUp3, 20), linewidth = 1, style = plot.style_linebr)
+plot(d3,  "-3σ",   color = color.new(cUp3, 20), linewidth = 1, style = plot.style_linebr)
+p1u = plot(u1, "+1σ", color = cUp,  linewidth = 2, style = plot.style_linebr)
+p1d = plot(d1, "-1σ", color = cUp,  linewidth = 2, style = plot.style_linebr)
+p2u = plot(u2, "+2σ", color = cUp2, linewidth = 2, style = plot.style_linebr)
+p2d = plot(d2, "-2σ", color = cUp2, linewidth = 2, style = plot.style_linebr)
+
+fill(p1u, p1d, color = shadeZone ? color.new(cUp,  93) : na, title = "Inside 1σ")
+fill(p2u, p1u, color = shadeZone ? color.new(cUp2, 90) : na, title = "1σ→2σ up")
+fill(p1d, p2d, color = shadeZone ? color.new(cUp2, 90) : na, title = "1σ→2σ down")
+
+// ============================================================
+// Right-edge tags
+// ============================================================
+f_mkTag() => label.new(bar_index, close, "", style = label.style_label_left, color = color.new(color.black, 100), size = size.small)
+
+var label lb1u = showLbls ? f_mkTag() : na
+var label lb1d = showLbls ? f_mkTag() : na
+var label lb2u = showLbls ? f_mkTag() : na
+var label lb2d = showLbls ? f_mkTag() : na
+var label lbAn = showLbls ? f_mkTag() : na
+
+f_tag(lb, px, txt, col) =>
+    if not na(lb)
+        label.set_xy(lb, bar_index + 3, nz(px, close))
+        label.set_text(lb, na(px) ? "" : txt)
+        label.set_textcolor(lb, col)
+
+if barstate.islast and showLbls
+    f_tag(lb1u, u1, "+1σ  " + str.tostring(u1, format.mintick), cUp)
+    f_tag(lb1d, d1, "-1σ  " + str.tostring(d1, format.mintick), cUp)
+    f_tag(lb2u, u2, "+2σ  " + str.tostring(u2, format.mintick), cUp2)
+    f_tag(lb2d, d2, "-2σ  " + str.tostring(d2, format.mintick), cUp2)
+    f_tag(lbAn, ok and showAnchor ? baseline : na, "anchor " + str.tostring(baseline, format.mintick), cAnch)
+
+// ============================================================
+// Diagnostics
+// ============================================================
+travel   = sigH > 0 ? (close - anchor) / sigH : na                  // σ spent, signed
+rangeUse = sigH > 0 ? (nz(sessHi, high) - nz(sessLo, low)) / (2.0 * sigH) * 100.0 : na
+ivDaily  = vix / math.sqrt(annBasis)                                // daily σ, in vol points
+ivRv     = dRvC > 0 ? vix / dRvC : na
+vrpSpread= vix - dRvC
+termFast = vix > 0 ? vix9 / vix : na
+termSlow = vix3 > 0 ? vix / vix3 : na
+
+regime = na(vixRank) ? "—" :
+         vixRank >= 90 ? "panic" :
+         vixRank >= 70 ? "elevated" :
+         vixRank >= 30 ? "normal" : "compressed"
+
+srcLabel = srcMode == "Blend" ? "blend " + str.tostring(blendW * 100, "#") + "/" + str.tostring((1 - blendW) * 100, "#") : srcMode
+
+// ============================================================
+// Table
+// ============================================================
+tPos = tabPos == "Top left"      ? position.top_left :
+       tabPos == "Bottom right"  ? position.bottom_right :
+       tabPos == "Bottom left"   ? position.bottom_left :
+       tabPos == "Middle right"  ? position.middle_right : position.top_right
+tSz  = tabSize == "tiny" ? size.tiny : tabSize == "normal" ? size.normal : size.small
+
+var table tb = table.new(tPos, 2, 16, border_width = 1, border_color = color.new(color.gray, 70),
+     frame_width = 1, frame_color = color.new(color.gray, 60), bgcolor = color.new(#131722, 12))
+
+f_row(t, r, k, v, vcol, tip) =>
+    table.cell(t, 0, r, k, text_color = color.new(color.gray, 15), text_size = tSz, text_halign = text.align_left, tooltip = tip)
+    table.cell(t, 1, r, v, text_color = vcol, text_size = tSz, text_halign = text.align_right, tooltip = tip)
+
+f_pts(x) => na(x) ? "—" : str.tostring(x, "#.##")
+f_pct(x) => na(x) ? "—" : str.tostring(x, "#.##") + "%"
+
+if showTab and barstate.islast
+    table.cell(tb, 0, 0, "VIX σ  ·  " + srcLabel, text_color = color.white, text_size = tSz, text_halign = text.align_left)
+    table.cell(tb, 1, 0, str.tostring(hzDays, "#.##") + (hzDays == 1 ? " session" : " sessions"), text_color = color.new(color.gray, 20), text_size = tSz, text_halign = text.align_right)
+
+    f_row(tb, 1, "VIX" + (lockVix ? " (settled)" : " (live)"), str.tostring(vix, "#.##"),
+         vix >= 30 ? color.red : vix >= 20 ? color.orange : color.new(cUp, 0), "Annualized 30-day implied vol on SPX.")
+    f_row(tb, 2, "VIX %ile (1y)", na(vixRank) ? "—" : str.tostring(vixRank, "#") + "  " + regime,
+         color.new(color.white, 20), "Percentile rank of today's VIX against the last 252 daily closes.")
+
+    r = 3
+    if showTerm
+        termTxt = na(termFast) or na(termSlow) ? "—" :
+             str.tostring(termFast, "#.##") + " / " + str.tostring(termSlow, "#.##") +
+             (termFast > 1.0 ? "  backwardated" : "  contango")
+        f_row(tb, r, "VIX9D/VIX · VIX/3M", termTxt,
+             na(termFast) ? color.gray : termFast > 1.0 ? color.red : color.new(cUp, 0),
+             "Front-end stress vs. the belly. Above 1.0 the short end is bid — event risk is being priced now, not later.")
+        r += 1
+
+    f_row(tb, r, "σ implied / session", f_pts(sigVix) + " pt", color.new(color.white, 10),
+         "VIX converted to points: price x (VIX/100) / sqrt(" + str.tostring(annBasis) + ")" +
+         (vrpK != 1.0 ? ", x VRP " + str.tostring(vrpK, "#.##") : "") +
+         ".  Daily implied vol = " + str.tostring(ivDaily, "#.##") + " vol pts.")
+    r += 1
+    f_row(tb, r, "σ from ATR(" + str.tostring(atrLen) + ")", f_pts(sigAtr) + " pt", color.new(color.white, 10),
+         "Daily ATR " + f_pts(dAtr) + " pt divided by " + str.tostring(rangeDiv, "#.####") + " to convert an expected range into a standard deviation.")
+    r += 1
+    f_row(tb, r, "σ used  ·  horizon", f_pts(sigH) + " pt  (" + f_pct(refPx > 0 ? sigH / refPx * 100 : na) + ")", color.new(cUp, 0), "The σ the bands are drawn from, scaled by sqrt(horizon).")
+    r += 1
+    f_row(tb, r, "1σ per contract", "$" + str.tostring(sigH * ptValue, "#,###"), color.new(color.white, 10),
+         "Dollar value of a one-sigma move at $" + str.tostring(ptValue, "#.##") + "/point.")
+    r += 1
+    f_row(tb, r, "±1σ", f_pts(anchor - sigH) + "  /  " + f_pts(anchor + sigH), color.new(cUp, 0), "~68% of sessions finish inside this band.")
+    r += 1
+    f_row(tb, r, "±2σ", f_pts(anchor - 2 * sigH) + "  /  " + f_pts(anchor + 2 * sigH), cUp2, "~95% of sessions finish inside this band.")
+    r += 1
+    f_row(tb, r, "anchor", f_pts(anchor) + "  · " + (anchorMode == "Prior session close" ? "prior close" : anchorMode == "Session open" ? "session open" : "spot"), color.new(color.gray, 10), "")
+    r += 1
+    f_row(tb, r, "σ travelled", na(travel) ? "—" : (travel >= 0 ? "+" : "") + str.tostring(travel, "#.##") + "σ",
+         na(travel) ? color.gray : math.abs(travel) >= 2 ? color.red : math.abs(travel) >= 1 ? color.orange : color.new(cUp, 0),
+         "Distance from the anchor in sigmas. Past 2σ the move is a 1-in-20 session — statistically stretched, not automatically wrong.")
+    r += 1
+    f_row(tb, r, "range used", na(rangeUse) ? "—" : str.tostring(rangeUse, "#") + "% of 2σ",
+         na(rangeUse) ? color.gray : rangeUse >= 100 ? color.red : rangeUse >= 70 ? color.orange : color.new(cUp, 0),
+         "Session high-low as a share of the full expected 2σ range. Near 100% the day has already paid out its vol.")
+    r += 1
+    f_row(tb, r, "RV" + str.tostring(rvLen) + " c2c · Park · GK",
+         f_pct(dRvC) + " · " + str.tostring(dRvP, "#.#") + " · " + str.tostring(dRvG, "#.#"), color.new(color.white, 20),
+         "Realized vol, annualized, three ways. Parkinson and Garman-Klass use the bar range and are the more efficient estimators; the c2c number is the one VIX is directly comparable to.")
+    r += 1
+    f_row(tb, r, "IV/RV  ·  VRP", (na(ivRv) ? "—" : str.tostring(ivRv, "#.##")) + "  ·  " + (na(vrpSpread) ? "—" : (vrpSpread >= 0 ? "+" : "") + str.tostring(vrpSpread, "#.#") + " vol"),
+         na(ivRv) ? color.gray : ivRv >= 1.3 ? cUp2 : ivRv <= 0.9 ? color.red : color.new(cUp, 0),
+         "IV/RV above ~1.3: options are rich, expected-move bands run wide, fades at 2σ have an edge. Below 1.0: realized is outrunning implied — bands are too tight, breaks tend to extend.")
+    r += 1
+    if isCone
+        f_row(tb, r, "session left", str.tostring(remFrac * 100, "#") + "%  ·  σ now " + f_pts(sigBand),
+             color.new(color.white, 20), "Cone mode: remaining expected move from spot, decayed by sqrt(time left).")
+
+// ============================================================
+// Alerts
+// ============================================================
+alertcondition(ta.crossover(close, u1),  "Tag +1σ", "ES tagged the +1σ expected move")
+alertcondition(ta.crossunder(close, d1), "Tag -1σ", "ES tagged the -1σ expected move")
+alertcondition(ta.crossover(close, u2),  "Tag +2σ", "ES tagged the +2σ expected move — 1-in-20 session extension")
+alertcondition(ta.crossunder(close, d2), "Tag -2σ", "ES tagged the -2σ expected move — 1-in-20 session extension")
+alertcondition(ta.crossunder(close, u1), "Reject +1σ", "ES rejected back inside +1σ")
+alertcondition(ta.crossover(close, d1),  "Reject -1σ", "ES rejected back inside -1σ")
+alertcondition(not na(rangeUse) and rangeUse >= 100 and nz(rangeUse[1]) < 100, "Expected range spent", "ES has traded its full 2σ expected range for the session")
+alertcondition(not na(ivRv) and ivRv <= 1.0 and nz(ivRv[1], 2.0) > 1.0, "IV/RV below 1", "Realized vol has caught implied — expected-move bands are running tight")
