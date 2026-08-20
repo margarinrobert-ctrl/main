@@ -1,0 +1,372 @@
+//@version=6
+// NQ — Initial Balance (IB) LIVE entry / TP / SL indicator, Edgeful-style rules
+//
+// Companion to NQInitialBalance.pine (the strategy() backtest). Identical rules, but this is
+// an indicator() built for trading the setup in real time: it plans the trade the moment the
+// first hour closes, tracks it tick by tick, and alerts you at every step.
+//
+// THE RULES:
+//   1. Initial Balance = the high and low of 9:30–10:30 ET.
+//   2. Wait for that hour to CLOSE.
+//   3. Wait for a break of the IB high (long) or IB low (short).
+//   4. Enter on the retracement back INTO the range, 25% of the IB range inside the edge.
+//   5. Stop at 60% of the IB range from the broken edge.
+//   6. Target 50% of the IB range beyond the broken edge.
+//   7. Flat by 15:55 ET regardless.
+//
+// WHY THE LEVELS DON'T REPAINT: entry, stop and target are pure functions of the IB, and the
+// IB is final at 10:30. So the instant the first hour closes, BOTH the long plan and the short
+// plan are fully known and fixed — the break only decides which one goes live. Turn on "Show
+// both plans before the break" and you can place resting orders at 10:31 and walk away.
+//
+// WHAT IS NECESSARILY LIVE: which side breaks, and whether entry/stop/target gets touched.
+// Those are evaluated on the forming bar by default, because a resting limit order really does
+// fill the moment price trades through it — waiting for the bar to close would report fills
+// late. The cost is that on the forming bar a state can flicker until the bar closes. Switch
+// "Confirm signals on bar close" on if you would rather have slower but final signals.
+//
+// ALERTS: create ONE alert on this indicator with condition "Any alert() function call" to get
+// every event (IB set, break, entry filled, target hit, stop hit, EOD flat) with live prices in
+// the message. The individual alertcondition() entries below are also available if you want to
+// wire up one specific event on its own.
+
+indicator("NQ Initial Balance — Live Entry / TP / SL", "NQ IB Live", overlay = true)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inputs
+// ─────────────────────────────────────────────────────────────────────────────
+TZ = "America/New_York"   // handles EST/EDT automatically
+
+gS = "Session (New York wall-clock)"
+ibStartH = input.int(9,  "IB starts — hour", minval = 0, maxval = 23, group = gS, inline = "a")
+ibStartM = input.int(30, ":",                minval = 0, maxval = 59, group = gS, inline = "a")
+ibEndH   = input.int(10, "IB ends — hour",   minval = 0, maxval = 23, group = gS, inline = "b")
+ibEndM   = input.int(30, ":",                minval = 0, maxval = 59, group = gS, inline = "b")
+exitH    = input.int(15, "Flatten — hour",   minval = 0, maxval = 23, group = gS, inline = "c")
+exitM    = input.int(55, ":",                minval = 0, maxval = 59, group = gS, inline = "c", tooltip = "After this time the plan is abandoned for the day and you are flat.")
+
+gR = "Strategy rules"
+retrPct = input.float(25, "Entry — retracement into IB (% of range)", minval = 0,   maxval = 99,  step = 1,   group = gR, tooltip = "edgeful's documented entry: 25% of the IB range back inside the broken edge.")
+stopPct = input.float(60, "Stop — from broken edge (% of range)",     minval = 1,   maxval = 200, step = 1,   group = gR, tooltip = "edgeful's documented stop: 60% of the IB range from the broken edge. Must exceed the entry retracement.")
+useRR   = input.bool(false, "Use fixed R:R target instead of % target",                                       group = gR)
+tgtPct  = input.float(50, "Target — beyond broken edge (% of range)", minval = 1,   maxval = 500, step = 1,   group = gR, tooltip = "edgeful's documented target: 50% of the IB range beyond the broken edge.")
+rrMult  = input.float(2.0, "Risk : Reward (when fixed R:R is on)",    minval = 0.1, maxval = 20,  step = 0.1, group = gR)
+
+gF = "Filters"
+allowLong  = input.bool(true, "Allow longs",  group = gF)
+allowShort = input.bool(true, "Allow shorts", group = gF)
+minIB      = input.float(0, "Min IB range (points, 0 = off)", minval = 0, step = 5, group = gF)
+maxIB      = input.float(0, "Max IB range (points, 0 = off)", minval = 0, step = 5, group = gF)
+
+gL = "Live behaviour"
+confirmClose = input.bool(false, "Confirm signals on bar close", group = gL, tooltip = "Off (default): breaks and fills register the moment price trades through the level, like a real resting order. On: slower, but a signal can never flicker on the forming bar.")
+showBoth     = input.bool(true,  "Show both plans before the break", group = gL, tooltip = "Draws the long plan and the short plan faintly as soon as the IB closes, so you can rest both orders and let the market choose.")
+qty          = input.int(1, "Contracts (for $ figures)", minval = 1, group = gL)
+
+gV = "Display"
+showTable = input.bool(true, "Show live panel", group = gV)
+showLbls  = input.bool(true, "Show price labels on levels", group = gV)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session — wall-clock New York, independent of the symbol's session definition
+// ─────────────────────────────────────────────────────────────────────────────
+nyMin   = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow   = dayofweek(time, TZ)
+weekday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+
+ibFrom = ibStartH * 60 + ibStartM
+ibTo   = ibEndH   * 60 + ibEndM
+exitAt = exitH    * 60 + exitM
+
+inIB    = weekday and nyMin >= ibFrom and nyMin < ibTo
+inTrade = weekday and nyMin >= ibTo   and nyMin < exitAt
+
+ibStart  = inIB and not inIB[1]
+ibClosed = not inIB and inIB[1]
+tradeEnd = not inTrade and inTrade[1]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+//   0 = waiting for the IB to finish
+//   1 = IB set, waiting for a break
+//   2 = broke, waiting for the retracement entry
+//   3 = in the trade
+//   4 = finished for the day
+// ─────────────────────────────────────────────────────────────────────────────
+var int   state   = 0
+var float ibH     = na
+var float ibL     = na
+var int   dir     = 0        // 1 long, -1 short
+var float ePrice  = na
+var float sPrice  = na
+var float tPrice  = na
+var string outcome = ""
+
+// Both-plan preview levels, known the moment the IB closes
+var float pLongE = na
+var float pLongS = na
+var float pLongT = na
+var float pShrtE = na
+var float pShrtS = na
+var float pShrtT = na
+
+evalNow = not confirmClose or barstate.isconfirmed
+
+if ibStart
+    ibH     := high
+    ibL     := low
+    state   := 0
+    dir     := 0
+    ePrice  := na
+    sPrice  := na
+    tPrice  := na
+    outcome := ""
+    pLongE  := na
+    pLongS  := na
+    pLongT  := na
+    pShrtE  := na
+    pShrtS  := na
+    pShrtT  := na
+else if inIB
+    ibH := math.max(ibH, high)
+    ibL := math.min(ibL, low)
+
+ibRange = state >= 1 or ibClosed ? ibH - ibL : na
+sizeOK  = not na(ibRange) and ibRange > 0 and (minIB <= 0 or ibRange >= minIB) and (maxIB <= 0 or ibRange <= maxIB)
+geomOK  = stopPct > retrPct
+
+// IB closes → compute both plans and arm
+if ibClosed and sizeOK and geomOK
+    state  := 1
+    pLongE := math.round_to_mintick(ibH - ibRange * retrPct / 100)
+    pLongS := math.round_to_mintick(ibH - ibRange * stopPct / 100)
+    pLongT := math.round_to_mintick(useRR ? pLongE + rrMult * (pLongE - pLongS) : ibH + ibRange * tgtPct / 100)
+    pShrtE := math.round_to_mintick(ibL + ibRange * retrPct / 100)
+    pShrtS := math.round_to_mintick(ibL + ibRange * stopPct / 100)
+    pShrtT := math.round_to_mintick(useRR ? pShrtE - rrMult * (pShrtS - pShrtE) : ibL - ibRange * tgtPct / 100)
+    alert("IB SET  " + syminfo.ticker + "  high " + str.tostring(ibH, format.mintick) + "  low " + str.tostring(ibL, format.mintick) + "  range " + str.tostring(ibRange, format.mintick) + " pts" + "\nLong plan: entry " + str.tostring(pLongE, format.mintick) + " / stop " + str.tostring(pLongS, format.mintick) + " / target " + str.tostring(pLongT, format.mintick) + "\nShort plan: entry " + str.tostring(pShrtE, format.mintick) + " / stop " + str.tostring(pShrtS, format.mintick) + " / target " + str.tostring(pShrtT, format.mintick), alert.freq_once_per_bar)
+else if ibClosed
+    state := 4
+    outcome := not geomOK ? "Stop % must exceed entry %" : "IB range filtered out"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live transitions
+// ─────────────────────────────────────────────────────────────────────────────
+bool evBreak = false
+bool evFill  = false
+bool evTP    = false
+bool evSL    = false
+bool evEOD   = false
+
+if evalNow and inTrade
+    // 1 → 2 : the break
+    if state == 1
+        bool up = high > ibH
+        bool dn = low  < ibL
+        int  pick = up and (not dn or close >= open) ? 1 : dn ? -1 : 0
+        if pick == 1 and not allowLong
+            pick := 0
+            state := 4
+            outcome := "Long break, longs disabled"
+        if pick == -1 and not allowShort
+            pick := 0
+            state := 4
+            outcome := "Short break, shorts disabled"
+        if pick != 0
+            dir    := pick
+            ePrice := pick == 1 ? pLongE : pShrtE
+            sPrice := pick == 1 ? pLongS : pShrtS
+            tPrice := pick == 1 ? pLongT : pShrtT
+            state  := 2
+            evBreak := true
+
+    // 2 → 3 : the retracement fills the resting order.
+    // Never on the break bar itself: that bar's low/high spans time BEFORE the break, so a bar
+    // that dipped to the entry and then rallied through the IB high would otherwise report a
+    // break and a fill that never happened in that order.
+    if state == 2 and not evBreak
+        bool filled = dir == 1 ? low <= ePrice : high >= ePrice
+        if filled
+            state  := 3
+            evFill := true
+
+    // 3 → 4 : stop or target. If one bar covers both, assume the stop — the pessimistic read.
+    // Skipped on the fill bar for the same reason as above: intrabar data cannot order the
+    // fill against a same-bar stop or target.
+    if state == 3 and not evFill
+        bool hitS = dir == 1 ? low  <= sPrice : high >= sPrice
+        bool hitT = dir == 1 ? high >= tPrice : low  <= tPrice
+        if hitS
+            state   := 4
+            outcome := "Stop hit"
+            evSL    := true
+        else if hitT
+            state   := 4
+            outcome := "Target hit"
+            evTP    := true
+
+// End of day
+if tradeEnd and state != 4
+    if state == 3
+        outcome := "Flat at session end"
+        evEOD   := true
+    else if state == 2
+        outcome := "Entry never filled"
+    else if state == 1
+        outcome := "No break"
+    state := 4
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Alerts
+// ─────────────────────────────────────────────────────────────────────────────
+f_side() => dir == 1 ? "LONG" : "SHORT"
+f_px(float p) => str.tostring(p, format.mintick)
+afreq = confirmClose ? alert.freq_once_per_bar_close : alert.freq_once_per_bar
+
+if evBreak
+    alert("IB BREAK " + f_side() + "  " + syminfo.ticker + "\nRest a limit at " + f_px(ePrice) + "  ·  stop " + f_px(sPrice) + "  ·  target " + f_px(tPrice), afreq)
+if evFill
+    alert("IB ENTRY FILLED " + f_side() + "  " + syminfo.ticker + " @ " + f_px(ePrice) + "\nStop " + f_px(sPrice) + "  ·  target " + f_px(tPrice), afreq)
+if evTP
+    alert("IB TARGET HIT " + f_side() + "  " + syminfo.ticker + " @ " + f_px(tPrice), afreq)
+if evSL
+    alert("IB STOP HIT " + f_side() + "  " + syminfo.ticker + " @ " + f_px(sPrice), afreq)
+if evEOD
+    alert("IB SESSION END — close " + f_side() + " " + syminfo.ticker + " at market (" + f_px(close) + ")", afreq)
+
+alertcondition(evBreak, "IB break",        "Initial Balance broken — rest the retracement order")
+alertcondition(evFill,  "IB entry filled", "Initial Balance entry filled")
+alertcondition(evTP,    "IB target hit",   "Initial Balance target hit")
+alertcondition(evSL,    "IB stop hit",     "Initial Balance stop hit")
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Plots
+// ─────────────────────────────────────────────────────────────────────────────
+dayLive  = inIB or (state >= 1 and inTrade)
+planLive = state >= 2 and inTrade                     // the chosen plan
+prevLive = showBoth and state == 1 and inTrade        // both plans, pre-break
+
+cIB   = color.new(color.teal,  0)
+cEnt  = color.new(color.blue,  0)
+cStop = color.new(color.red,   0)
+cTgt  = color.new(color.green, 0)
+cFade = 65
+
+plot(dayLive ? ibH : na, "IB High", color = cIB, linewidth = 2, style = plot.style_linebr)
+plot(dayLive ? ibL : na, "IB Low",  color = cIB, linewidth = 2, style = plot.style_linebr)
+
+plot(planLive ? ePrice : na, "Entry",  color = cEnt,  linewidth = 2, style = plot.style_linebr)
+plot(planLive ? sPrice : na, "Stop",   color = cStop, linewidth = 2, style = plot.style_linebr)
+plot(planLive ? tPrice : na, "Target", color = cTgt,  linewidth = 2, style = plot.style_linebr)
+
+plot(prevLive ? pLongE : na, "Long plan entry",  color = color.new(color.blue,  cFade), style = plot.style_linebr)
+plot(prevLive ? pLongS : na, "Long plan stop",   color = color.new(color.red,   cFade), style = plot.style_linebr)
+plot(prevLive ? pLongT : na, "Long plan target", color = color.new(color.green, cFade), style = plot.style_linebr)
+plot(prevLive ? pShrtE : na, "Short plan entry", color = color.new(color.blue,  cFade), style = plot.style_linebr)
+plot(prevLive ? pShrtS : na, "Short plan stop",  color = color.new(color.red,   cFade), style = plot.style_linebr)
+plot(prevLive ? pShrtT : na, "Short plan target",color = color.new(color.green, cFade), style = plot.style_linebr)
+
+bgcolor(inIB ? color.new(color.teal, 92) : na, title = "IB window")
+
+plotshape(evBreak and dir ==  1, title = "Break up",   style = shape.triangleup,   location = location.belowbar, color = cIB,   size = size.tiny,  text = "BRK")
+plotshape(evBreak and dir == -1, title = "Break down", style = shape.triangledown, location = location.abovebar, color = cIB,   size = size.tiny,  text = "BRK")
+plotshape(evFill and dir ==  1,  title = "Long fill",  style = shape.triangleup,   location = location.belowbar, color = cEnt,  size = size.small, text = "ENTRY")
+plotshape(evFill and dir == -1,  title = "Short fill", style = shape.triangledown, location = location.abovebar, color = cEnt,  size = size.small, text = "ENTRY")
+plotshape(evTP ? tPrice : na, title = "Target hit", style = shape.circle, location = location.absolute, color = cTgt,  size = size.tiny)
+plotshape(evSL ? sPrice : na, title = "Stop hit",   style = shape.xcross, location = location.absolute, color = cStop, size = size.tiny)
+
+// Price tags on the active levels, at the right edge only. Hidden by turning fully
+// transparent rather than by an na coordinate, which labels do not accept cleanly.
+var label lblE = label.new(bar_index, close, "", style = label.style_label_left, size = size.small)
+var label lblS = label.new(bar_index, close, "", style = label.style_label_left, size = size.small)
+var label lblT = label.new(bar_index, close, "", style = label.style_label_left, size = size.small)
+
+f_tag(label id, bool on, float px, string name, color base) =>
+    label.set_xy(id, bar_index + 2, on ? px : close)
+    label.set_text(id, on ? name + " " + f_px(px) : "")
+    label.set_color(id, on ? color.new(base, 20) : color.new(base, 100))
+    label.set_textcolor(id, on ? color.white : color.new(color.white, 100))
+
+if barstate.islast
+    bool on = showLbls and planLive
+    f_tag(lblE, on, ePrice, "Entry",  color.blue)
+    f_tag(lblS, on, sPrice, "Stop",   color.red)
+    f_tag(lblT, on, tPrice, "Target", color.green)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live panel
+// ─────────────────────────────────────────────────────────────────────────────
+f_money(float x) => (x < 0 ? "-$" : "$") + str.tostring(math.abs(x), "0.00")
+f_pts(float x)   => (x >= 0 ? "+" : "") + str.tostring(x, format.mintick)
+
+var table tp = table.new(position.top_right, 2, 9, border_width = 1, frame_width = 1, frame_color = color.new(color.gray, 50))
+
+if showTable and barstate.islast
+    string sName = ""
+    color  sCol  = color.new(color.teal, 0)
+    if state == 0
+        sName := inIB ? "IB forming…" : "Waiting for 9:30"
+    else if state == 1
+        sName := "IB set — waiting for break"
+    else if state == 2
+        sName := f_side() + " break — waiting for entry"
+        sCol  := color.new(color.orange, 0)
+    else if state == 3
+        sName := "IN TRADE " + f_side()
+        sCol  := color.new(color.blue, 0)
+    else
+        sName := "Done — " + outcome
+        sCol  := color.new(color.gray, 0)
+
+    float riskPts = na
+    float rewPts  = na
+    float rr      = na
+    if state >= 2
+        riskPts := math.abs(ePrice - sPrice)
+        rewPts  := math.abs(tPrice - ePrice)
+        rr      := riskPts > 0 ? rewPts / riskPts : na
+
+    float openPts = state == 3 ? (dir == 1 ? close - ePrice : ePrice - close) : na
+    float ptVal   = syminfo.pointvalue * qty
+
+    table.cell(tp, 0, 0, "IB LIVE",        text_color = color.white, bgcolor = color.new(color.teal, 20), text_size = size.small)
+    table.cell(tp, 1, 0, timeframe.period, text_color = color.white, bgcolor = color.new(color.teal, 20), text_size = size.small)
+
+    table.cell(tp, 0, 1, "State", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 1, sName,   text_size = size.small, text_color = sCol)
+
+    table.cell(tp, 0, 2, "IB high / low", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 2, na(ibH) ? "—" : f_px(ibH) + "  /  " + f_px(ibL), text_size = size.small)
+
+    table.cell(tp, 0, 3, "IB range", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 3, na(ibRange) ? "—" : str.tostring(ibRange, format.mintick) + " pts", text_size = size.small)
+
+    table.cell(tp, 0, 4, "Entry", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 4, state < 2 ? "—" : f_px(ePrice) + (state == 2 ? "   (" + f_pts(close - ePrice) + " away)" : ""), text_size = size.small)
+
+    table.cell(tp, 0, 5, "Stop", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 5, state < 2 ? "—" : f_px(sPrice) + "   " + str.tostring(riskPts, format.mintick) + " pts / " + f_money(riskPts * ptVal), text_size = size.small)
+
+    table.cell(tp, 0, 6, "Target", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 6, state < 2 ? "—" : f_px(tPrice) + "   " + str.tostring(rewPts, format.mintick) + " pts / " + f_money(rewPts * ptVal), text_size = size.small)
+
+    table.cell(tp, 0, 7, "Risk : Reward", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 7, na(rr) ? "—" : "1 : " + str.tostring(rr, "#.##"), text_size = size.small)
+
+    table.cell(tp, 0, 8, "Open P/L", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 8, na(openPts) ? "—" : f_pts(openPts) + " pts / " + f_money(openPts * ptVal), text_size = size.small, text_color = na(openPts) ? color.gray : openPts >= 0 ? color.new(color.green, 0) : color.new(color.red, 0))
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SOURCE NOTES — verified vs. modelling choice
+//
+// Verified from edgeful's public writing: IB = 9:30–10:30 ET first hour; wait for the hour to
+// close; enter on a 25%-of-range retracement back inside the broken edge rather than on the
+// breakout; stop at 60% of the range from that edge; target 50% of the range beyond it; one
+// trade a day; exit at the close of trading if neither level is hit.
+//
+// Modelling choices here (all adjustable above): the 15:55 ET flatten time (edgeful says only
+// "close of trading"); a break counts as a wick through the edge, not a close beyond it; if one
+// bar spans both stop and target the stop is assumed; if one bar breaks both IB sides the bar's
+// close direction decides. edgeful's day-selection filters (which side broke first, where the
+// first hour closed within its range) come from their subscription reports, not public rules,
+// so none are applied — every session is planned.
