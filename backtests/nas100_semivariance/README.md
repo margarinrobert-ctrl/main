@@ -254,6 +254,37 @@ best version is therefore **long-only plateau ensemble W 2..30, 1x, never
 re-optimized** — `../../SemivarianceContrarianBest.pine` (single-window W=8
 and split-entry 1/3 sizing kept as options).
 
+## Futures adaptation (`futures_granularity.py`)
+
+The CFD/spot builds show **no trades at all** on a futures symbol. They size
+positions as `equity / close`, a count of *index units*; on futures
+TradingView reads that as **contracts**, and one contract is worth
+`close × pointvalue`. At NAS100 = 24,000 on $100k:
+
+| | requested | notional | leverage | result |
+|---|---|---|---|---|
+| NQ1! (`$20/pt`) | 4.17 contracts | $2,000,000 | 20x | every order margin-rejected |
+| MNQ1! (`$2/pt`) | 4.17 contracts | $200,000 | 2x | rejected at 1x margin |
+
+Nothing fills, so the Strategy Tester stays empty — a silent failure, not a
+signal problem. A second cause: the fixed `minBars = 20` threshold rejects
+*every* session on a regular-hours chart (~13 bars per day at 30m).
+
+**Contract granularity changes which mode is correct.** A futures position is
+whole contracts, and the plateau ensemble's edge *is* its graded position, so
+rounding degrades it — while the binary W=8 signal (0 or full size) is immune:
+
+| max contracts at full size | 1 | 2 | 3 | 5 | 10 | fractional |
+|---|---|---|---|---|---|---|
+| ensemble W2–30 Sharpe | 0.45 | 0.69 | 0.73 | 0.84 | 0.84 | 0.83 |
+| single W=8 Sharpe | **1.02** | **1.02** | **1.02** | **1.02** | **1.02** | **1.02** |
+
+The ensemble only recovers at ≥5 contracts (≈$240k on MNQ, ≈$2.4M on NQ), so
+`../../SemivarianceContrarianFutures.pine` **defaults to the binary W=8
+signal**, sizes in real contracts via `syminfo.pointvalue`, auto-calibrates the
+session bar-count threshold, and prints a diagnostics panel naming the blocking
+reason whenever it cannot trade.
+
 ## Reproduce
 
 ```bash
@@ -264,4 +295,5 @@ python3 robustness_analysis.py # param stability, MC per set, clusters, walk-for
 python3 martingale_analysis.py # sizing schemes on W=1 (historical + MC)
 python3 walk_forward_optimization.py  # five selection processes head-to-head
 python3 final_selection.py     # sizing sweep across W + final bake-off
+python3 futures_granularity.py # whole-contract rounding per mode (futures build)
 ```
