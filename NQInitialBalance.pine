@@ -102,6 +102,15 @@ minIB      = input.float(0, "Min IB range (points, 0 = off)", minval = 0, step =
 maxIB      = input.float(0, "Max IB range (points, 0 = off)", minval = 0, step = 5, group = gF, tooltip = "Skips news-blowout first hours where the 60% stop is enormous.")
 allow2nd   = input.bool(false, "Allow a second trade (double-break days)", group = gF, tooltip = "Default off — the documented strategy is one trade per day. On: after the first trade closes, a break of the OPPOSITE side can be traded too.")
 
+dMon = input.bool(true, "Mon", group = gF, inline = "wd")
+dTue = input.bool(true, "Tue", group = gF, inline = "wd")
+dWed = input.bool(true, "Wed", group = gF, inline = "wd")
+dThu = input.bool(true, "Thu", group = gF, inline = "wd")
+dFri = input.bool(true, "Fri", group = gF, inline = "wd", tooltip = "Weekdays to trade. edgeful's double-break-by-weekday analysis puts Tuesday as the highest double-break day on NQ and ES (the days the rejection bias is most likely to fail) and Monday as the cleanest across every ticker.")
+
+gJ = "IB by rejection (edgeful subreport)"
+rejMode = input.string("Off", "Rejection bias filter", options = ["Off", "Trade only with the bias", "Trade only against the bias"], group = gJ, tooltip = "Which side of the IB printed FIRST implies which side breaks next. Low first = bullish (expect the high to break). High first = bearish (expect the low to break). edgeful reports ~78% / ~77% on NQ over 6 months.\n\n'With the bias' takes only the aligned break. 'Against the bias' is the falsification test — if it scores about the same, the edge is not in your data window. When the high and low both print in the same bar there is no bias and the day is skipped while a filter is active.")
+
 gV = "Display"
 showLevels = input.bool(true, "Plot IB / entry / stop / target", group = gV)
 showTable  = input.bool(true, "Show statistics table",           group = gV)
@@ -112,6 +121,7 @@ showTable  = input.bool(true, "Show statistics table",           group = gV)
 nyMin = hour(time, TZ) * 60 + minute(time, TZ)
 nyDow = dayofweek(time, TZ)
 weekday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+dayOK   = nyDow == dayofweek.monday ? dMon : nyDow == dayofweek.tuesday ? dTue : nyDow == dayofweek.wednesday ? dWed : nyDow == dayofweek.thursday ? dThu : nyDow == dayofweek.friday ? dFri : false
 
 ibFrom = ibStartH * 60 + ibStartM
 ibTo   = ibEndH   * 60 + ibEndM
@@ -128,6 +138,20 @@ var float ibH   = na
 var float ibL   = na
 var bool  ready = false      // IB finalised for today
 
+// IB by rejection: the timestamps at which the FINAL high and low were printed.
+// Whichever is earlier is the side that "formed first".
+var int  tHi  = na
+var int  tLo  = na
+var int  bias = 0            // 1 = low formed first (bullish), -1 = high formed first (bearish), 0 = same bar
+
+// Raw statistics, tallied regardless of any filter, so the table can verify the claim.
+var int firstBrk = 0         // which IB side broke first today: 1 high, -1 low
+var bool tallied = false
+var int nLoFirst = 0
+var int nLoHit   = 0
+var int nHiFirst = 0
+var int nHiHit   = 0
+
 var int   dir       = 0      // 0 = no break taken yet, 1 = long taken, -1 = short taken
 var int   doneDir   = 0      // sides already used today (so a 'second trade' must be the other side)
 var int   tradesDay = 0
@@ -142,6 +166,11 @@ var bool  armed     = false  // a resting entry order exists
 if ibStart
     ibH       := high
     ibL       := low
+    tHi       := time
+    tLo       := time
+    bias      := 0
+    firstBrk  := 0
+    tallied   := false
     ready     := false
     dir       := 0
     doneDir   := 0
@@ -152,27 +181,56 @@ if ibStart
     curStop   := na
     armed     := false
 else if inIB
-    ibH := math.max(ibH, high)
-    ibL := math.min(ibL, low)
+    if high > ibH
+        ibH := high
+        tHi := time
+    if low < ibL
+        ibL := low
+        tLo := time
 
 if ibClosed
     ready := true
+    // Low printed earlier than the high -> bullish (expect the high to break), and vice versa.
+    // Equal timestamps mean both extremes landed in the same bar, so the order is unknowable.
+    bias := tLo < tHi ? 1 : tHi < tLo ? -1 : 0
 
 ibRange = ready ? ibH - ibL : na
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Setup detection — break, then retracement entry
 // ─────────────────────────────────────────────────────────────────────────────
+// Which side actually broke first today. Tallied whatever the filters say, so the table
+// reports the real base rate rather than the rate among trades we happened to take.
+if ready and inTrade and firstBrk == 0
+    bool rawUp = high > ibH
+    bool rawDn = low  < ibL
+    firstBrk := rawUp and (not rawDn or close >= open) ? 1 : rawDn ? -1 : 0
+    if firstBrk != 0 and not tallied and bias != 0
+        tallied := true
+        if bias == 1
+            nLoFirst += 1
+            nLoHit   += firstBrk ==  1 ? 1 : 0
+        else
+            nHiFirst += 1
+            nHiHit   += firstBrk == -1 ? 1 : 0
+
+// Does a break in direction d agree with the rejection filter?
+f_biasOK(int d) =>
+    bool ok = true
+    if rejMode != "Off"
+        ok := bias == 0 ? false : rejMode == "Trade only with the bias" ? d == bias : d != bias
+    ok
+
 sizeOK  = not na(ibRange) and ibRange > 0 and (minIB <= 0 or ibRange >= minIB) and (maxIB <= 0 or ibRange <= maxIB)
 geomOK  = stopPct > retrPct     // otherwise the stop would sit on the wrong side of the entry
-canScan = ready and inTrade and dir == 0 and sizeOK and geomOK and strategy.position_size == 0
+canScan = ready and inTrade and dayOK and dir == 0 and sizeOK and geomOK and strategy.position_size == 0
 
 brokeUp = canScan and high > ibH and doneDir !=  1
 brokeDn = canScan and low  < ibL and doneDir != -1
 
 // If a single bar takes out both sides, follow the direction that bar closed in.
-goLong  = brokeUp and (not brokeDn or close >= open) and allowLong
-goShort = brokeDn and (not brokeUp or close <  open) and allowShort
+goLong  = brokeUp and (not brokeDn or close >= open) and allowLong  and f_biasOK( 1)
+goShort = brokeDn and (not brokeUp or close <  open) and allowShort and f_biasOK(-1)
 
 if goLong
     dir     := 1
@@ -266,7 +324,7 @@ plotshape(justFilled and inShort, title = "Short entry", style = shape.triangled
 f_money(float x) =>
     (x < 0 ? "-$" : "$") + str.tostring(math.abs(x), "0.00")
 
-var table st = table.new(position.top_right, 2, 8, border_width = 1, frame_width = 1, frame_color = color.new(color.gray, 50))
+var table st = table.new(position.top_right, 2, 10, border_width = 1, frame_width = 1, frame_color = color.new(color.gray, 50))
 
 var int ibDays = 0
 if ibClosed
@@ -314,11 +372,23 @@ if showTable and barstate.islast
     table.cell(st, 0, 5, "Max drawdown", text_size = size.small, text_color = color.gray)
     table.cell(st, 1, 5, f_money(strategy.max_drawdown) + " (" + str.tostring(ddPct, "#.#") + "%)", text_size = size.small)
 
-    table.cell(st, 0, 6, "Instrument",   text_size = size.small, text_color = color.gray)
-    table.cell(st, 1, 6, syminfo.type,   text_size = size.small)
+    // IB-by-rejection base rates measured on THIS chart's data, so the published ~78% / ~77%
+    // on NQ can be checked rather than assumed. These count every session, including the ones
+    // the filters excluded from trading.
+    string loTxt = nLoFirst == 0 ? "—" : str.tostring(100.0 * nLoHit / nLoFirst, "#.#") + "%  (" + str.tostring(nLoFirst) + " days)"
+    string hiTxt = nHiFirst == 0 ? "—" : str.tostring(100.0 * nHiHit / nHiFirst, "#.#") + "%  (" + str.tostring(nHiFirst) + " days)"
 
-    table.cell(st, 0, 7, diag, text_size = size.tiny, text_color = diagC)
-    table.cell(st, 1, 7, "",   text_size = size.tiny)
+    table.cell(st, 0, 6, "Low first → high broke", text_size = size.tiny, text_color = color.gray)
+    table.cell(st, 1, 6, loTxt, text_size = size.tiny)
+
+    table.cell(st, 0, 7, "High first → low broke", text_size = size.tiny, text_color = color.gray)
+    table.cell(st, 1, 7, hiTxt, text_size = size.tiny)
+
+    table.cell(st, 0, 8, "Instrument",   text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 8, syminfo.type,   text_size = size.small)
+
+    table.cell(st, 0, 9, diag, text_size = size.tiny, text_color = diagC)
+    table.cell(st, 1, 9, "",   text_size = size.tiny)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SOURCE NOTES — what is verified vs. what is a modelling choice
@@ -346,7 +416,30 @@ if showTable and barstate.islast
 //   • Bar-close order submission: if a break and its retracement complete inside one bar,
 //     that entry is missed. This is conservative and avoids intrabar lookahead.
 //   • If one bar breaks both sides, the bar's close direction decides.
-//   • edgeful's own reports layer probability filters (which side broke first, where the
-//     first hour closed in its range) on top of this geometry to pick days. Those are
-//     subscription data, not public rules, so no day filter is applied here — this
-//     measures the raw mechanical edge on every session.
+//   • edgeful's other day-selection filters (where the first hour closed within its range)
+//     remain subscription data and are not applied — every session is still measured.
+//
+// IB BY REJECTION (the "Rejection bias filter" input):
+//   Rule, from edgeful's "IB by rejection" subreport write-up: whichever side of the IB
+//   prints FIRST implies the OTHER side breaks next. Low first = bullish, expect the high to
+//   break. High first = bearish, expect the low to break. edgeful's published figures are
+//   78.46% and 77.42% on NQ over 6 months (NY session, 5m, by wick).
+//
+//   Measured here exactly that way: the timestamp of the final IB high is compared against
+//   the timestamp of the final IB low, using wicks, and the earlier one is "first". When both
+//   extremes land in the same bar the order is unknowable, so there is no bias and the day is
+//   skipped whenever a filter is active.
+//
+//   Those percentages are edgeful's, over their window, not a guarantee — so the stats table
+//   recomputes both base rates on whatever chart and date range you actually load, counting
+//   every session including filtered ones. Run the filter on "Trade only against the bias" as
+//   a falsification check: if it performs about as well as trading with the bias, the edge is
+//   not present in your data.
+//
+//   The weekday toggles come from the same source's double-break-by-weekday analysis —
+//   Tuesday the worst day on NQ and ES, Monday the cleanest — and default to all days on.
+//
+//   Not implemented: edgeful's third suggested usage, entering before the IB closes. That one
+//   explicitly depends on discretionary price-action reading (VWAP, FVGs) on a still-forming
+//   IB whose final high and low are not yet known, so it cannot be stated as a mechanical rule
+//   and any backtest of it would be fiction.

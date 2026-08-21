@@ -25,6 +25,12 @@
 // late. The cost is that on the forming bar a state can flicker until the bar closes. Switch
 // "Confirm signals on bar close" on if you would rather have slower but final signals.
 //
+// IB BY REJECTION: whichever side of the IB prints FIRST implies the OTHER side breaks next.
+// Low first = bullish (expect the high to break), high first = bearish. edgeful publishes
+// 78.46% / 77.42% on NQ over 6 months. The bias is known BEFORE the break, so the panel and the
+// IB-set alert always show it; the "Rejection bias filter" input decides whether a break in the
+// contrary direction is still planned. Both extremes in the same bar means no bias.
+//
 // ALERTS: create ONE alert on this indicator with condition "Any alert() function call" to get
 // every event (IB set, break, entry filled, target hit, stop hit, EOD flat) with live prices in
 // the message. The individual alertcondition() entries below are also available if you want to
@@ -57,6 +63,9 @@ allowLong  = input.bool(true, "Allow longs",  group = gF)
 allowShort = input.bool(true, "Allow shorts", group = gF)
 minIB      = input.float(0, "Min IB range (points, 0 = off)", minval = 0, step = 5, group = gF)
 maxIB      = input.float(0, "Max IB range (points, 0 = off)", minval = 0, step = 5, group = gF)
+
+gJ = "IB by rejection (edgeful subreport)"
+rejMode = input.string("Off", "Rejection bias filter", options = ["Off", "Trade only with the bias", "Trade only against the bias"], group = gJ, tooltip = "Which side of the IB printed FIRST implies which side breaks next. Low first = bullish (expect the high to break). High first = bearish (expect the low to break). edgeful reports ~78% / ~77% on NQ over 6 months.\n\nThe bias is shown in the panel and the IB-set alert whatever this is set to; this input only decides whether a contrary break is still traded.")
 
 gL = "Live behaviour"
 confirmClose = input.bool(false, "Confirm signals on bar close", group = gL, tooltip = "Off (default): breaks and fills register the moment price trades through the level, like a real resting order. On: slower, but a signal can never flicker on the forming bar.")
@@ -110,11 +119,21 @@ var float pShrtE = na
 var float pShrtS = na
 var float pShrtT = na
 
+// IB by rejection — timestamps of the final high and low; the earlier one formed first.
+var int tHi  = na
+var int tLo  = na
+var int bias = 0     // 1 = low first (bullish), -1 = high first (bearish), 0 = same bar
+
+f_biasTxt() => bias == 1 ? "BULLISH (low formed first)" : bias == -1 ? "BEARISH (high formed first)" : "none (both extremes in one bar)"
+
 evalNow = not confirmClose or barstate.isconfirmed
 
 if ibStart
     ibH     := high
     ibL     := low
+    tHi     := time
+    tLo     := time
+    bias    := 0
     state   := 0
     dir     := 0
     ePrice  := na
@@ -128,8 +147,12 @@ if ibStart
     pShrtS  := na
     pShrtT  := na
 else if inIB
-    ibH := math.max(ibH, high)
-    ibL := math.min(ibL, low)
+    if high > ibH
+        ibH := high
+        tHi := time
+    if low < ibL
+        ibL := low
+        tLo := time
 
 ibRange = state >= 1 or ibClosed ? ibH - ibL : na
 sizeOK  = not na(ibRange) and ibRange > 0 and (minIB <= 0 or ibRange >= minIB) and (maxIB <= 0 or ibRange <= maxIB)
@@ -138,13 +161,14 @@ geomOK  = stopPct > retrPct
 // IB closes → compute both plans and arm
 if ibClosed and sizeOK and geomOK
     state  := 1
+    bias   := tLo < tHi ? 1 : tHi < tLo ? -1 : 0
     pLongE := math.round_to_mintick(ibH - ibRange * retrPct / 100)
     pLongS := math.round_to_mintick(ibH - ibRange * stopPct / 100)
     pLongT := math.round_to_mintick(useRR ? pLongE + rrMult * (pLongE - pLongS) : ibH + ibRange * tgtPct / 100)
     pShrtE := math.round_to_mintick(ibL + ibRange * retrPct / 100)
     pShrtS := math.round_to_mintick(ibL + ibRange * stopPct / 100)
     pShrtT := math.round_to_mintick(useRR ? pShrtE - rrMult * (pShrtS - pShrtE) : ibL - ibRange * tgtPct / 100)
-    alert("IB SET  " + syminfo.ticker + "  high " + str.tostring(ibH, format.mintick) + "  low " + str.tostring(ibL, format.mintick) + "  range " + str.tostring(ibRange, format.mintick) + " pts" + "\nLong plan: entry " + str.tostring(pLongE, format.mintick) + " / stop " + str.tostring(pLongS, format.mintick) + " / target " + str.tostring(pLongT, format.mintick) + "\nShort plan: entry " + str.tostring(pShrtE, format.mintick) + " / stop " + str.tostring(pShrtS, format.mintick) + " / target " + str.tostring(pShrtT, format.mintick), alert.freq_once_per_bar)
+    alert("IB SET  " + syminfo.ticker + "  high " + str.tostring(ibH, format.mintick) + "  low " + str.tostring(ibL, format.mintick) + "  range " + str.tostring(ibRange, format.mintick) + " pts" + "\nRejection bias: " + f_biasTxt() + "\nLong plan: entry " + str.tostring(pLongE, format.mintick) + " / stop " + str.tostring(pLongS, format.mintick) + " / target " + str.tostring(pLongT, format.mintick) + "\nShort plan: entry " + str.tostring(pShrtE, format.mintick) + " / stop " + str.tostring(pShrtS, format.mintick) + " / target " + str.tostring(pShrtT, format.mintick), alert.freq_once_per_bar)
 else if ibClosed
     state := 4
     outcome := not geomOK ? "Stop % must exceed entry %" : "IB range filtered out"
@@ -172,6 +196,12 @@ if evalNow and inTrade
             pick := 0
             state := 4
             outcome := "Short break, shorts disabled"
+        if pick != 0 and rejMode != "Off"
+            bool okB = bias == 0 ? false : rejMode == "Trade only with the bias" ? pick == bias : pick != bias
+            if not okB
+                pick    := 0
+                state   := 4
+                outcome := bias == 0 ? "No rejection bias — day skipped" : "Break filtered by rejection bias"
         if pick != 0
             dir    := pick
             ePrice := pick == 1 ? pLongE : pShrtE
@@ -299,7 +329,7 @@ if barstate.islast
 f_money(float x) => (x < 0 ? "-$" : "$") + str.tostring(math.abs(x), "0.00")
 f_pts(float x)   => (x >= 0 ? "+" : "") + str.tostring(x, format.mintick)
 
-var table tp = table.new(position.top_right, 2, 9, border_width = 1, frame_width = 1, frame_color = color.new(color.gray, 50))
+var table tp = table.new(position.top_right, 2, 10, border_width = 1, frame_width = 1, frame_color = color.new(color.gray, 50))
 
 if showTable and barstate.islast
     string sName = ""
@@ -341,20 +371,23 @@ if showTable and barstate.islast
     table.cell(tp, 0, 3, "IB range", text_size = size.small, text_color = color.gray)
     table.cell(tp, 1, 3, na(ibRange) ? "—" : str.tostring(ibRange, format.mintick) + " pts", text_size = size.small)
 
-    table.cell(tp, 0, 4, "Entry", text_size = size.small, text_color = color.gray)
-    table.cell(tp, 1, 4, state < 2 ? "—" : f_px(ePrice) + (state == 2 ? "   (" + f_pts(close - ePrice) + " away)" : ""), text_size = size.small)
+    table.cell(tp, 0, 4, "Rejection bias", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 4, state < 1 ? "—" : f_biasTxt(), text_size = size.small, text_color = bias == 1 ? color.new(color.green, 0) : bias == -1 ? color.new(color.red, 0) : color.gray)
 
-    table.cell(tp, 0, 5, "Stop", text_size = size.small, text_color = color.gray)
-    table.cell(tp, 1, 5, state < 2 ? "—" : f_px(sPrice) + "   " + str.tostring(riskPts, format.mintick) + " pts / " + f_money(riskPts * ptVal), text_size = size.small)
+    table.cell(tp, 0, 5, "Entry", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 5, state < 2 ? "—" : f_px(ePrice) + (state == 2 ? "   (" + f_pts(close - ePrice) + " away)" : ""), text_size = size.small)
 
-    table.cell(tp, 0, 6, "Target", text_size = size.small, text_color = color.gray)
-    table.cell(tp, 1, 6, state < 2 ? "—" : f_px(tPrice) + "   " + str.tostring(rewPts, format.mintick) + " pts / " + f_money(rewPts * ptVal), text_size = size.small)
+    table.cell(tp, 0, 6, "Stop", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 6, state < 2 ? "—" : f_px(sPrice) + "   " + str.tostring(riskPts, format.mintick) + " pts / " + f_money(riskPts * ptVal), text_size = size.small)
 
-    table.cell(tp, 0, 7, "Risk : Reward", text_size = size.small, text_color = color.gray)
-    table.cell(tp, 1, 7, na(rr) ? "—" : "1 : " + str.tostring(rr, "#.##"), text_size = size.small)
+    table.cell(tp, 0, 7, "Target", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 7, state < 2 ? "—" : f_px(tPrice) + "   " + str.tostring(rewPts, format.mintick) + " pts / " + f_money(rewPts * ptVal), text_size = size.small)
 
-    table.cell(tp, 0, 8, "Open P/L", text_size = size.small, text_color = color.gray)
-    table.cell(tp, 1, 8, na(openPts) ? "—" : f_pts(openPts) + " pts / " + f_money(openPts * ptVal), text_size = size.small, text_color = na(openPts) ? color.gray : openPts >= 0 ? color.new(color.green, 0) : color.new(color.red, 0))
+    table.cell(tp, 0, 8, "Risk : Reward", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 8, na(rr) ? "—" : "1 : " + str.tostring(rr, "#.##"), text_size = size.small)
+
+    table.cell(tp, 0, 9, "Open P/L", text_size = size.small, text_color = color.gray)
+    table.cell(tp, 1, 9, na(openPts) ? "—" : f_pts(openPts) + " pts / " + f_money(openPts * ptVal), text_size = size.small, text_color = na(openPts) ? color.gray : openPts >= 0 ? color.new(color.green, 0) : color.new(color.red, 0))
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SOURCE NOTES — verified vs. modelling choice
@@ -363,6 +396,13 @@ if showTable and barstate.islast
 // close; enter on a 25%-of-range retracement back inside the broken edge rather than on the
 // breakout; stop at 60% of the range from that edge; target 50% of the range beyond it; one
 // trade a day; exit at the close of trading if neither level is hit.
+//
+// IB by rejection is measured as edgeful describes it: the timestamp of the final IB high
+// against the timestamp of the final IB low, by wick, earlier one wins. Their 78%/77% figures
+// are from their 6-month NQ window — load the strategy() companion to recompute both base rates
+// on your own chart and date range instead of taking the numbers on trust. Not implemented:
+// entering before the IB closes, which edgeful describes as discretionary price-action reading
+// on a still-forming IB, so it has no mechanical form.
 //
 // Modelling choices here (all adjustable above): the 15:55 ET flatten time (edgeful says only
 // "close of trading"); a break counts as a wick through the edge, not a close beyond it; if one
