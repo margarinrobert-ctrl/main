@@ -153,6 +153,66 @@ This is worth flagging beyond this study: the previous version was giving false 
 `initial-balance`, `opening-range` and `value-area` — the three stateful strategies, which are also
 the three most look-ahead-prone.
 
+## 5b. The constructs the first pass left untested
+
+"Do not assume the common strategies are optimal" means testing the ones that make specific,
+falsifiable claims — not just the popular ones. Two remained, both now built and tested on **both
+timeframes**, with the entry delay matched in wall-clock terms:
+
+### Naked (virgin) points of control
+
+A prior session's POC that price has not traded through since. Auction theory calls it unfinished
+business and argues it acts as a magnet. It is one of the few Market Profile ideas that names a
+specific price rather than a zone, which is what makes it testable.
+
+| variant | 5m full sample | 1m full sample |
+| --- | --- | --- |
+| trade toward nearest naked POC, 1:1 | R −0.006, PF 0.96, CI [−0.07, 0.06] | R 0.004, PF 0.98, CI [−0.06, 0.06] |
+| same, 1.33:1 | R −0.020, PF 0.91 | R 0.012, PF 1.01 |
+| same, 2:1 | R 0.020, PF 1.01 | R 0.006, PF 1.00 |
+| **fresh naked POCs only (≤ 5 sessions)** | R 0.053, PF 1.09, t 1.26 | R 0.049, PF 1.12, t 1.29 |
+
+**The magnet claim is not supported.** Around 730 trades per timeframe and every confidence interval
+contains zero. Freshness helps in the expected direction — a POC left naked for a week is weaker
+than one left naked yesterday — but the research half is roughly ten times the holdout half on 1m
+(0.063 → 0.006), so even that is not carried out of sample.
+
+### Low-volume nodes
+
+Two incompatible stories are told about thin prices inside value: that price **rejects** from them
+(the auction failed there before), and that price **accelerates** through them (nothing to slow it
+down). Both are tested; they cannot both be right.
+
+| variant | 5m full sample | 1m full sample |
+| --- | --- | --- |
+| LVN rejection → target the POC, 1:1 | R 0.008, PF 1.50, win 17% | R −0.075, PF 0.81, **1m holdout t = −1.97, CI [−0.36, −0.01]** |
+| LVN acceleration, 1:1 | R −0.055, PF 0.87 | R −0.091, PF 0.81 |
+| **LVN acceleration, 2:1** | R −0.166, PF 0.73, t −1.73 | **R −0.185, PF 0.71, t −2.24, CI [−0.35, −0.02]** |
+
+**Neither story works, and the acceleration story is significantly wrong.** Trading breaks through
+low-volume nodes loses on both timeframes, in both halves, at both reward-to-risk settings, and on
+1-minute data the full-sample confidence interval excludes zero. This is the strongest *negative*
+result in the whole repository, and like the other consistent negatives — pullback entries, the ORB
+retracement, the 50-MA pullback — it is more reliable than any of the marginal positives, because it
+replicates everywhere it is tested.
+
+The rejection story is merely unsupported rather than significantly wrong, but it too degrades on
+the finer timeframe.
+
+### The complete Market Profile search
+
+Seven distinct constructs, all with a 40-point minimum target and at least 1:1 reward-to-risk:
+
+| construct | verdict |
+| --- | --- |
+| **fade to near value-area edge** | **the only positive; ~0.07 R on 1m, CI containing zero** |
+| 80% rule traverse | positive in research, negative in holdout |
+| POC rotation from an in-value open | highest raw hit rate (80%) but unusable at 40 points; fails holdout |
+| acceptance / trend-day continuation | negative in both halves |
+| naked POC magnet | flat; every CI contains zero |
+| low-volume node rejection | negative, significantly so on 1m holdout |
+| low-volume node acceleration | **significantly negative, CI excluding zero on 1m** |
+
 ## 6. Next steps that would actually settle it
 
 1. **ES and CL.** The concentration in 2025 and the NQ-only sample are the two biggest weaknesses.

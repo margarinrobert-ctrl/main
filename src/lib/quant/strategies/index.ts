@@ -2,6 +2,7 @@ import { initialBalance } from "./initialBalance";
 import { movingAverage } from "./movingAverage";
 import { openingRange } from "./openingRange";
 import { orb, volBreakout } from "./orb";
+import { profileLevels } from "./profileLevels";
 import { ouReversion, sweepReversal, vwapFade } from "./reversion";
 import { timeOfDayControl, trendPullback } from "./trend";
 import { valueArea } from "./valueArea";
@@ -9,7 +10,7 @@ import { vwapBands } from "./vwapBands";
 import type { Strategy } from "../types";
 
 /** The candidate universe. Order is fixed so seeded studies are reproducible run to run. */
-export const STRATEGIES: Strategy[] = [orb, volBreakout, initialBalance, openingRange, movingAverage, valueArea, vwapBands, vwapFade, ouReversion, sweepReversal, trendPullback, timeOfDayControl];
+export const STRATEGIES: Strategy[] = [orb, volBreakout, initialBalance, openingRange, movingAverage, valueArea, profileLevels, vwapBands, vwapFade, ouReversion, sweepReversal, trendPullback, timeOfDayControl];
 
 /** Candidates only — the control is excluded from portfolio construction by design. */
 export const ALPHA_CANDIDATES = STRATEGIES.filter((s) => s.id !== "tod-control");
@@ -20,4 +21,4 @@ export function strategy(id: string): Strategy {
   return s;
 }
 
-export { orb, volBreakout, initialBalance, openingRange, movingAverage, valueArea, vwapBands, vwapFade, ouReversion, sweepReversal, trendPullback, timeOfDayControl };
+export { orb, volBreakout, initialBalance, openingRange, movingAverage, valueArea, profileLevels, vwapBands, vwapFade, ouReversion, sweepReversal, trendPullback, timeOfDayControl };

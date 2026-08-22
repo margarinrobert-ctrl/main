@@ -194,3 +194,58 @@ export function sessionProfiles(bars: Bar[], inst: Instrument, binSizeTicks = 4,
   }
   return out;
 }
+
+
+export interface NakedPoc {
+  price: number;
+  /** Session the POC was formed in. */
+  fromDay: number;
+  /** Sessions elapsed since it formed, as of the session it is being read in. */
+  age: number;
+}
+
+/**
+ * Naked (virgin) points of control: a prior session's POC that price has NOT traded through since.
+ *
+ * Auction theory calls these unfinished business. The POC is where the most volume changed hands,
+ * so it represents a price both sides accepted; if the market has since left it untouched, the
+ * argument is that it remains a magnet and price will eventually return to it. It is one of the few
+ * Market Profile ideas that makes a falsifiable directional claim about a specific price, which
+ * makes it worth testing properly rather than assuming.
+ *
+ * Returns, per session, the list of naked POCs as they stood AT THAT SESSION'S OPEN — so a strategy
+ * reading it is using only information available before the session traded.
+ */
+export function nakedPocsBySession(bars: Bar[], sessions: SessionProfile[]): Map<number, NakedPoc[]> {
+  const out = new Map<number, NakedPoc[]>();
+  let live: NakedPoc[] = [];
+
+  for (const s of sessions) {
+    // Snapshot BEFORE this session trades: this is what a strategy may condition on.
+    out.set(s.day, live.map((p) => ({ ...p, age: s.day - p.fromDay })));
+
+    let hi = -Infinity;
+    let lo = Infinity;
+    for (let i = s.from; i < s.to; i++) {
+      if (bars[i].h > hi) hi = bars[i].h;
+      if (bars[i].l < lo) lo = bars[i].l;
+    }
+    // Anything this session traded through is no longer naked.
+    live = live.filter((p) => p.price > hi || p.price < lo);
+    live.push({ price: s.profile.poc, fromDay: s.day, age: 0 });
+    // Keep the list bounded; very old naked POCs are usually far away and rarely relevant.
+    if (live.length > 40) live = live.slice(-40);
+  }
+  return out;
+}
+
+/** The nearest naked POC above and below a reference price. */
+export function nearestNaked(list: NakedPoc[], price: number): { above: NakedPoc | null; below: NakedPoc | null } {
+  let above: NakedPoc | null = null;
+  let below: NakedPoc | null = null;
+  for (const p of list) {
+    if (p.price > price && (!above || p.price < above.price)) above = p;
+    if (p.price < price && (!below || p.price > below.price)) below = p;
+  }
+  return { above, below };
+}
