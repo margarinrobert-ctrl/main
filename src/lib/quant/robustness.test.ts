@@ -76,7 +76,9 @@ describe("subPeriodConsistency", () => {
 describe("verdict gates", () => {
   const base = {
     oos: { trades: 500, netEdgeTicks: 4, tStat: 3.1 } as never,
-    pbo: 0.1, dsr: 0.99, costMargin: 2.5, plateau: "plateau",
+    pbo: 0.1, dsr: 0.99,
+    cost: { survivesSweep: false, breakEvenMultiple: 2.5, verdict: "dies at 2.50x modelled costs" },
+    plateau: "plateau",
     consistency: 0.83, bestYearShare: 0.4, wfEfficiency: 0.8,
   };
 
@@ -85,6 +87,22 @@ describe("verdict gates", () => {
     expect(v.tradeable).toBe(true);
     expect(v.failures).toHaveLength(0);
     expect(v.score).toBe(1);
+  });
+
+  it("passes the cost gate when the edge outlived the whole sweep", () => {
+    // The regression this pins: survivesSweep is the PASS case, even though breakEvenMultiple is
+    // Infinity — a naive numeric check could read that either way, and once did.
+    const v = verdict({ ...base, cost: { survivesSweep: true, breakEvenMultiple: Infinity, verdict: "survives every cost level tested" } });
+    expect(v.tradeable).toBe(true);
+    expect(v.passes.some((p) => p.includes("survives every cost level"))).toBe(true);
+  });
+
+  it("reports an undefined walk-forward efficiency in words, never as NaN", () => {
+    const v = verdict({ ...base, wfEfficiency: NaN });
+    expect(v.tradeable).toBe(false);
+    const line = v.failures.find((f) => f.includes("walk-forward efficiency"))!;
+    expect(line).toContain("undefined");
+    expect(line).not.toContain("NaN");
   });
 
   it("fails the specific gate that is breached and no others", () => {

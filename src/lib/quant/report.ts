@@ -4,8 +4,13 @@ import type { PerfSummary } from "./stats";
 // numbers and its caveats, and anything that makes a weak result look decorative is a liability.
 
 export const pct = (x: number, dp = 1): string => (Number.isFinite(x) ? `${(x * 100).toFixed(dp)}%` : "n/a");
-export const num = (x: number, dp = 2): string => (Number.isFinite(x) ? x.toFixed(dp) : x > 0 ? "inf" : "n/a");
-export const usd = (x: number): string => (Number.isFinite(x) ? `${x < 0 ? "-" : ""}$${Math.abs(x).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "n/a");
+// Non-finite values carry meaning and the three cases are NOT interchangeable: +inf is an unbounded
+// win (no losing trades, an edge that outlived the cost sweep), -inf is a rejected candidate, and
+// NaN is "undefined". Collapsing them into one label is what produced an inverted headline once.
+const nonFinite = (x: number): string => (Number.isNaN(x) ? "n/a" : x > 0 ? "inf" : "-inf");
+export const num = (x: number, dp = 2): string => (Number.isFinite(x) ? x.toFixed(dp) : nonFinite(x));
+export const usd = (x: number): string =>
+  Number.isFinite(x) ? `${x < 0 ? "-" : ""}$${Math.abs(x).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : nonFinite(x);
 
 export function table(headers: string[], rows: (string | number)[][]): string {
   const head = `| ${headers.join(" | ")} |`;

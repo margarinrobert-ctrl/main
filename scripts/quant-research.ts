@@ -594,7 +594,7 @@ function main() {
       oos: r.oos,
       pbo: pboById.get(s.id) ?? 1,
       dsr: dsrById.get(s.id) ?? 0,
-      costMargin: cs.breakEvenMultiple,
+      cost: cs,
       plateau: plateauReport(searches.get(s.id)!, s.space).verdict,
       consistency: cons.profitableShare,
       bestYearShare: regimes.bestYearShare,

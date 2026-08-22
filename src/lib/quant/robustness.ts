@@ -209,10 +209,12 @@ export function verdict(input: {
   oos: PerfSummary;
   pbo: number;
   dsr: number;
-  costMargin: number;
+  /** The cost sweep's own result, passed whole so this gate cannot re-derive it and get it wrong. */
+  cost: Pick<CostSensitivity, "survivesSweep" | "breakEvenMultiple" | "verdict">;
   plateau: string;
   consistency: number;
   bestYearShare: number;
+  /** NaN when walk-forward efficiency is undefined (the in-sample median was not positive). */
   wfEfficiency: number;
 }): RobustnessVerdict {
   const passes: string[] = [];
@@ -224,11 +226,14 @@ export function verdict(input: {
   check(input.oos.tStat > 2, `HAC t-stat > 2 (${input.oos.tStat.toFixed(2)})`);
   check(input.dsr > 0.95, `deflated Sharpe > 0.95 (${input.dsr.toFixed(3)})`);
   check(input.pbo < 0.3, `PBO < 0.30 (${input.pbo.toFixed(2)})`);
-  check(input.costMargin >= 1.5, `survives >=1.5x modelled costs (${Number.isFinite(input.costMargin) ? input.costMargin.toFixed(2) : "inf"}x)`);
+  check(input.cost.survivesSweep || input.cost.breakEvenMultiple >= 1.5, `survives >=1.5x modelled costs — ${input.cost.verdict}`);
   check(input.plateau !== "spike", `parameter surface is not a mined spike (${input.plateau})`);
   check(input.consistency >= 0.6, `profitable in >=60% of sub-periods (${(input.consistency * 100).toFixed(0)}%)`);
   check(input.bestYearShare <= 0.6, `no single year carries >60% of P&L (${(input.bestYearShare * 100).toFixed(0)}%)`);
-  check(input.wfEfficiency >= 0.4, `walk-forward efficiency >=0.4 (${input.wfEfficiency.toFixed(2)})`);
+  check(
+    Number.isFinite(input.wfEfficiency) && input.wfEfficiency >= 0.4,
+    `walk-forward efficiency >=0.4 (${Number.isFinite(input.wfEfficiency) ? input.wfEfficiency.toFixed(2) : "undefined — the in-sample median was not positive, so the ratio is meaningless"})`,
+  );
 
   const score = passes.length / (passes.length + failures.length);
   return { passes, failures, score, tradeable: failures.length === 0 };
