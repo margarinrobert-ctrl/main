@@ -68,7 +68,7 @@ def main() -> None:
     for j in range(total):
         ibm, retr, stop, rr, side, buf, ex = combos[j]
         res = simulate(o, h, l, c, sess, mso, atr,
-                       int(ibm), retr, stop, rr, int(side), int(buf), 0, 1.5, 40.0, int(ex),
+                       int(ibm), retr, stop, rr, int(side), int(buf), 0, 1.5, 40.0, 0, 10.0, 50.0, int(ex),
                        TICK, POINT_VALUE, TAKER_SIDE, COMMISSION_PTS)
         ei, pnl, rr_ = res[1], res[5], res[6]
         if len(ei) == 0:

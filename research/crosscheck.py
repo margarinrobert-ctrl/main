@@ -28,7 +28,7 @@ atr = np.zeros(len(seg))
 print(f"python segment bars = {len(seg):,}")
 
 res = simulate(o, h, l, c, sess, mso, atr,
-               60, RETR, STOP, RR, 0, 0, 0, 1.5, 40.0, 149,
+               60, RETR, STOP, RR, 0, 0, 0, 1.5, 40.0, 0, 10.0, 50.0, 149,
                TICK, POINT_VALUE, TAKER_SIDE, COMMISSION_PTS)
 py = pd.DataFrame({
     "entryIndex": res[0], "exitIndex": res[1], "side": res[2],

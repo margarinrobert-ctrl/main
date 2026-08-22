@@ -99,6 +99,35 @@
 //      THE ES SCALE — roughly 4-6 points, not 20 — and re-check it as volatility moves. An
 //      absolute distance is the one setting guaranteed to mean something different here.
 //
+// THE 10 / 10 PRESET — a flat, range-independent geometry
+//
+//   Set "Stop loss method" AND "Take profit method" both to "Fixed points from entry", with 10
+//   and 10. That gives a flat 1:1 in absolute points: risk 10 ES points ($500), target 10 ES
+//   points ($500), regardless of how wide or narrow the first hour was.
+//
+//   Measured on NQ at 1:1 in absolute points, retr 50, flatten 11:59, 167 trades — and the number
+//   you choose IS the result, because a fixed distance does not scale with anything:
+//
+//     stop = target   $ risk   win%     E      total $   research $   holdout $
+//        5 pts         $100   47.9%  -0.197    -3,298      -3,098        -200
+//       10 pts         $200   55.1%  +0.014       424         557        -132
+//       25 pts         $500   57.5%  +0.129    10,697       6,132       4,565
+//       40 pts         $800   60.5%  +0.179    23,930      17,987       5,942
+//
+//   The tight end loses because the cost is a fifth of the risk at 5 points. THE SCALE IS WHAT
+//   MATTERS, AND IT DOES NOT TRANSFER BETWEEN CONTRACTS: 10 NQ points is $200 of risk and roughly
+//   break-even; 10 ES points is $500 of risk, the same dollar scale as 25 NQ points, which earned
+//   +0.129R and was positive in BOTH halves. So 10/10 on ES sits at the workable end of that
+//   curve, not the losing end — but it is an inference from NQ, not an ES measurement.
+//
+//   Against the default geometry over the same bars: %-of-range/R:R earned +0.257R, roughly double
+//   the flat 1:1's +0.129R. But it did it with research $26,374 against holdout -$598, while the
+//   flat version split $6,132 / $4,565. Lower expectancy, far more even. That is a real trade-off,
+//   not a worse option, and it is why the flat preset is offered rather than buried.
+//
+//   Widening the target while holding the stop at 10 points moves expectancy +0.014R (1:1) to
+//   +0.223R (1:3) as the win rate falls 55% to 37% — the same trade the stop table shows.
+//
 // BUILT FOR FUTURES (ES1! / MES1! on CME_MINI):
 //   • MARGIN — Pine v6 ENFORCES margin_long/short and defaults them to 100%. ES at ~5,600 is
 //     ~$280,000 notional per contract, so at 100% a $50,000 account can never afford one and
@@ -158,8 +187,10 @@ stopMode = input.string("% of IB range from broken edge", "Stop loss method", op
 stopPct  = input.float(80, "  ...% of range from broken edge", minval=1, maxval=200, step=1, group=gR, tooltip="Must exceed the entry retracement — at retr 50 a stop below 50 gives zero valid trades. On NQ: 60% gives 0.388R (t=2.02), 70% gives 0.377R (t=3.15, res 0.394 / hold 0.338), 80% gives 0.325R (t=3.84, res 0.414 / hold 0.116), 100% gives 0.134R.")
 atrLen   = input.int(30, "  ...ATR length", minval=2, maxval=200, group=gR, tooltip="ATR(30) measured slightly better than ATR(14) at every multiple tested — a longer average is a less noisy estimate of the same thing.")
 atrMult  = input.float(1.5, "  ...ATR multiple", minval=0.1, maxval=10, step=0.1, group=gR, tooltip="On NQ with ATR(30): 1.0x gives 0.435R (t=3.02), 1.5x gives 0.398R (t=3.54, res 0.450 / hold 0.277), 2x gives 0.338R, 3x gives 0.226R. This is the method whose mechanism is easiest to defend and the one most likely to survive the move to ES, because it never has to be told what a point is worth.")
-stopPts  = input.float(5, "  ...fixed points from entry", minval=0.25, maxval=200, step=0.25, group=gR, tooltip="RESCALED FOR ES. The NQ study's best was 20 points, which is $400 of risk there and $1,000 here. 5 ES points is roughly the equivalent dollar risk. Treat it with suspicion either way: an absolute distance is not scale-free and index ranges drift.")
-useRR    = input.bool(true, "Use fixed R:R target instead of % target", group=gR, tooltip="Default ON. A percent-of-range target scales with the IB range while the risk does too, so wide-range days demand a much larger absolute move for the same R. A parameter search that knew nothing about this setting chose the fixed target in 88% of folds.")
+stopPts  = input.float(10, "  ...fixed points from entry", minval=0.25, maxval=500, step=0.25, group=gR, tooltip="Selecting \"Fixed points from entry\" on BOTH this and the target method gives a flat, range-independent geometry — the 10/10 preset. Measured on NQ at 1:1 in absolute points, the number is the whole result: 5 pts loses (-0.197R, cost is a fifth of the risk), 10 pts is break-even (+0.014R), 25 pts earns +0.129R positive in both halves. 10 ES points is $500 of risk, the same dollar scale as 25 NQ points — so on ES this is the sensible end of that curve, not the losing end.")
+tgtMode  = input.string("Fixed R:R multiple of the risk", "Take profit method", options=["Fixed R:R multiple of the risk", "Fixed points from entry", "% of IB range beyond edge"], group=gR, tooltip="Set this AND the stop method to \"Fixed points\" for a flat 10-point / 10-point geometry. Default stays on the validated R:R target: on NQ over the same bars the %-of-range/R:R geometry earned +0.257R against the flat 1:1's +0.129R at equivalent scale — but the flat version split far more evenly across research and holdout, so it is the more conservative choice, not the worse one.")
+tgtPts   = input.float(10, "  ...fixed points from entry", minval=0.25, maxval=500, step=0.25, group=gR, tooltip="A third convention, not a variant of the other two: it scales neither with the day's range nor with the trade's own risk. Paired with a fixed points stop at the same distance it is a flat 1:1. On NQ, holding the stop at 10 points and widening the target moved expectancy +0.014R (1:1) to +0.223R (1:3) while the win rate fell 55% to 37% — the usual trade.")
+useRR    = input.bool(true, "  ...(legacy) use R:R instead of % of range", group=gR, tooltip="Default ON. A percent-of-range target scales with the IB range while the risk does too, so wide-range days demand a much larger absolute move for the same R. A parameter search that knew nothing about this setting chose the fixed target in 88% of folds.")
 tgtPct   = input.float(50, "Target — beyond broken edge (% of range)", minval=1, maxval=500, step=1, group=gR, tooltip="edgeful's documented target, used when fixed R:R is off.")
 rrMult   = input.float(2.0, "Risk : Reward (when fixed R:R is on)", minval=0.1, maxval=20, step=0.1, group=gR, tooltip="On NQ 1:2 measured best (0.325R, t=3.84, 8.8% max drawdown) against 1:1 (0.246R, t=3.37, 10.8%). 1:1 wins more often (60.5% vs 55.7%) and makes less. 1:3 is worse than both. Across 225,792 configurations, higher R:R was monotonically WORSE in dollars while looking better in R.")
 useBE    = input.bool(false, "Move stop to breakeven", group=gR, tooltip="Published as a separate variant. Off by default so the base rules are measured first.")
@@ -265,6 +296,15 @@ f_stopPrice(int side, float edge, float entry, float rng, float oppEdge) =>
         => edge - side * rng * stopPct / 100
     st
 
+// The target, by the selected convention. A fixed point distance scales with neither the
+// day's range nor the trade's own risk, which is exactly why the NUMBER carries the result.
+f_targetPrice(int side, float edge, float entry, float stop, float rng) =>
+    float tp = switch tgtMode
+        "Fixed points from entry"   => entry + side * tgtPts
+        "% of IB range beyond edge" => edge + side * rng * tgtPct / 100
+        => useRR ? entry + side * rrMult * math.abs(entry - stop) : edge + side * rng * tgtPct / 100
+    tp
+
 absOK  = (minIB <= 0 or ibRange >= minIB) and (maxIB <= 0 or ibRange <= maxIB)
 pctOK  = not usePctFilter or (not na(rangePctile) and rangePctile >= minPctile and rangePctile <= maxPctile)
 sizeOK = not na(ibRange) and ibRange > 0 and absOK and pctOK
@@ -289,7 +329,7 @@ if goLong
     if st < e and not na(st)
         ePrice  := e
         sPrice  := st
-        tPrice  := math.round_to_mintick(useRR ? e + rrMult * (e - st) : ibH + ibRange * tgtPct / 100)
+        tPrice  := math.round_to_mintick(f_targetPrice(1, ibH, e, st, ibRange))
         curStop := st
         armed   := true
         strategy.entry("IB Long", strategy.long, limit = ePrice, comment = "IB long")
@@ -301,7 +341,7 @@ else if goShort
     if st > e and not na(st)
         ePrice  := e
         sPrice  := st
-        tPrice  := math.round_to_mintick(useRR ? e - rrMult * (st - e) : ibL - ibRange * tgtPct / 100)
+        tPrice  := math.round_to_mintick(f_targetPrice(-1, ibL, e, st, ibRange))
         curStop := st
         armed   := true
         strategy.entry("IB Short", strategy.short, limit = ePrice, comment = "IB short")

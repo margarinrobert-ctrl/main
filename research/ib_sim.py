@@ -40,6 +40,7 @@ def simulate(
     o, h, l, c, sess, mso, atr,
     ib_minutes, retr_pct, stop_pct, rr_mult,
     side_mode, break_buffer, stop_mode, atr_mult, stop_pts,
+    target_mode, target_pts, target_pct,
     exit_mso,
     tick, point_value, taker_side, commission_pts,
 ):
@@ -206,7 +207,16 @@ def simulate(
                                     pend_side = side
                                     pend_limit = _snap(entry, side != 1, tick)
                                     pend_stop_raw = stop
-                                    pend_tgt_raw = entry + side * rr_mult * abs(entry - stop)
+                                    # Three target conventions, and they are different trades:
+                                    #   0 a fixed multiple of the actual risk
+                                    #   1 a fixed number of points from the entry
+                                    #   2 a percent of the IB range beyond the broken edge
+                                    if target_mode == 1:
+                                        pend_tgt_raw = entry + side * target_pts
+                                    elif target_mode == 2:
+                                        pend_tgt_raw = edge + side * (rng * target_pct) / 100.0
+                                    else:
+                                        pend_tgt_raw = entry + side * rr_mult * abs(entry - stop)
                                     pend_sess = sess[i]
 
     return (t_entry[:nt], t_exit[:nt], t_side[:nt], t_epx[:nt], t_xpx[:nt], t_pnl[:nt], t_r[:nt], t_tgt[:nt])

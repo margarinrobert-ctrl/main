@@ -44,7 +44,7 @@ def main() -> None:
 
     # A higher-frequency primary than the 11:59 variant: meta-labelling needs samples, and 167
     # trades is not a training set. Full session, shallower entry, both sides.
-    res = simulate(*arrs, 60, 25.0, 80.0, 2.0, 0, 0, 0, 1.5, 40.0, 389,
+    res = simulate(*arrs, 60, 25.0, 80.0, 2.0, 0, 0, 0, 1.5, 40.0, 0, 10.0, 50.0, 389,
                    TICK, POINT_VALUE, TAKER_SIDE, COMMISSION_PTS)
     t = pd.DataFrame({"entryIndex": res[0], "exitIndex": res[1], "side": res[2],
                       "pnl": res[5], "r": res[6]})

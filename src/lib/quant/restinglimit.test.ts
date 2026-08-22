@@ -209,3 +209,45 @@ describe("initial balance strategy", () => {
     }
   });
 });
+
+describe("initial balance — fixed point target", () => {
+  const session = (dayOffset: number): Bar[] => {
+    const base = Date.UTC(2024, 0, 2 + dayOffset, 0, 0);
+    const rows: Bar[] = [];
+    for (let k = 0; k < 12; k++) rows.push({ t: base + k * 300_000, o: 100, h: 110, l: 90, c: 100, v: 1 });
+    rows.push({ t: base + 12 * 300_000, o: 100, h: 115, l: 100, c: 114, v: 1 });
+    rows.push({ t: base + 13 * 300_000, o: 114, h: 114, l: 103, c: 104, v: 1 });
+    rows.push({ t: base + 14 * 300_000, o: 104, h: 122, l: 104, c: 121, v: 1 });
+    for (let k = 15; k < 24; k++) rows.push({ t: base + k * 300_000, o: 120, h: 121, l: 119, c: 120, v: 1 });
+    return rows;
+  };
+  const bars = [0, 1, 2].flatMap(session);
+  const ibInst: Instrument = { ...inst, session: [0, 120] };
+
+  it("targets a fixed distance from the entry, ignoring both the range and the risk", () => {
+    // Entry is 105. A 7-point target is 112 — not a fraction of the 20-point range, and not a
+    // multiple of the risk, both of which would give something else.
+    const p = { ...initialBalance.defaults, targetMode: 1, targetPts: 7 };
+    const r = runStrategy(initialBalance, bars, p, { inst: ibInst });
+    expect(r.trades.length).toBeGreaterThan(0);
+    expect(r.trades[0].entryPx).toBeCloseTo(105, 6);
+    expect(r.trades[0].exitPx).toBeCloseTo(112, 6);
+    expect(r.trades[0].reason).toBe("target");
+  });
+
+  it("overrides the R:R target rather than combining with it", () => {
+    // rrMult is set to something that would be obvious if it leaked through.
+    const p = { ...initialBalance.defaults, targetMode: 1, targetPts: 7, rrMode: 1, rrMult: 9 };
+    const r = runStrategy(initialBalance, bars, p, { inst: ibInst });
+    expect(r.trades[0].exitPx).toBeCloseTo(112, 6);
+  });
+
+  it("pairs with a fixed point stop to give a flat 1:1 in points", () => {
+    // Stop 6 points below 105 is 99; target 6 above is 111. Equal distances, so the R multiple on
+    // a win is 1 before costs regardless of how wide the IB happened to be.
+    const p = { ...initialBalance.defaults, stopMode: 2, stopPts: 6, targetMode: 1, targetPts: 6 };
+    const r = runStrategy(initialBalance, bars, p, { inst: ibInst });
+    expect(r.trades[0].exitPx).toBeCloseTo(111, 6);
+    expect(r.trades[0].reason).toBe("target");
+  });
+});

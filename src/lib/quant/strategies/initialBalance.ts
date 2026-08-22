@@ -43,6 +43,8 @@ export const initialBalance: Strategy = {
     breakBuffer: 0,
     rrMode: 0,
     rrMult: 2,
+    targetMode: 0,
+    targetPts: 10,
     stopMode: 0,
     atrLen: 14,
     atrMult: 1.5,
@@ -69,6 +71,12 @@ export const initialBalance: Strategy = {
     rrMode: { values: [0, 1] },
     /** Reward-to-risk multiple, used only when rrMode is 1. */
     rrMult: { values: [1, 1.5, 2, 3] },
+    /**
+     * 0 = the rrMode conventions above (percent of range, or a multiple of the risk);
+     * 1 = a fixed number of points from the entry, which scales with nothing at all.
+     */
+    targetMode: { values: [0, 1] },
+    targetPts: { values: [5, 10, 20, 40] },
     /**
      * Where the stop comes from. These are genuinely different trades, not the same trade with a
      * different number: 0 and 3 scale with the day's own auction, 1 scales with recent volatility,
@@ -202,10 +210,16 @@ export const initialBalance: Strategy = {
       // Two target conventions: a percent of the IB range beyond the broken edge, or a fixed
       // multiple of the actual risk. They are NOT the same trade — the second makes reward scale
       // with the entry-to-stop distance, so widening the stop also widens the target.
+      // A fixed point target is a third convention, not a variant of the other two: it scales
+      // neither with the day's range nor with the trade's own risk. On NQ that made it strongly
+      // scale-dependent — a 5-point target loses (-0.197R, the cost is a fifth of the risk) while
+      // 25 points earns +0.129R — so the number carries the whole result.
       const target =
-        p.rrMode === 1
-          ? entry + side * p.rrMult * Math.abs(entry - stop)
-          : edge + side * (range * p.targetPct) / 100;
+        p.targetMode === 1
+          ? entry + side * p.targetPts
+          : p.rrMode === 1
+            ? entry + side * p.rrMult * Math.abs(entry - stop)
+            : edge + side * (range * p.targetPct) / 100;
 
       return {
         side,

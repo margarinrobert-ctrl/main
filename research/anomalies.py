@@ -105,7 +105,7 @@ def main() -> None:
     arrs = (seg["open"].to_numpy(float), seg["high"].to_numpy(float),
             seg["low"].to_numpy(float), seg["close"].to_numpy(float), sess, mso, np.zeros(len(seg)))
 
-    res = simulate(*arrs, IB_MIN, 50.0, 80.0, 2.0, 0, 0, 0, 1.5, 40.0, EXIT_MSO,
+    res = simulate(*arrs, IB_MIN, 50.0, 80.0, 2.0, 0, 0, 0, 1.5, 40.0, 0, 10.0, 50.0, EXIT_MSO,
                    TICK, POINT_VALUE, TAKER_SIDE, COMMISSION_PTS)
     t = pd.DataFrame({"entryIndex": res[0], "exitIndex": res[1], "side": res[2],
                       "pnl": res[5], "r": res[6]})

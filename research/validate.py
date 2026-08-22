@@ -76,7 +76,7 @@ for metric in ("r", "dollars"):
 # 2. Stationary block bootstrap on the validated configuration. Resampling BLOCKS rather than
 #    individual trades keeps the serial dependence that an i.i.d. bootstrap destroys.
 # ---------------------------------------------------------------------------------------------
-res = simulate(*bars, 60, 50.0, 80.0, 2.0, 0, 0, 0, 1.5, 40.0, *CONST)
+res = simulate(*bars, 60, 50.0, 80.0, 2.0, 0, 0, 0, 1.5, 40.0, 0, 10.0, 50.0, 149, *CONST)
 r = res[6]
 print(f"\n  validated config (ib60 / retr50 / stop80 / 1:2 / both): n={len(r)}, mean {r.mean():+.4f}R")
 
