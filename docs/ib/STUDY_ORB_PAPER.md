@@ -118,13 +118,32 @@ Re-optimising the geometry on a rolling window and trading the next block with w
 | | folds | stitched n | E | P&L | efficiency | fold hit rate |
 | --- | --- | --- | --- | --- | --- | --- |
 | rolling 250d / 60d | 8 | 152 | +0.086R | +$21,020 | **0.412** | 63% |
+| anchored 250d / 60d | 8 | 99 | +0.158R | +$30,989 | 1.136 | 63% |
 
-Efficiency 0.412 is below the ~0.5 threshold at which a fit is considered to transfer: the median
-out-of-sample objective is under half the median in-sample one. The stitched P&L is positive, which
-is worth noting honestly — unlike the IB study, where re-optimisation destroyed value outright — but
-it comes with only 152 trades and a fit that demonstrably decays between folds.
+Both are positive, which is worth stating plainly — unlike the IB study, where re-optimisation
+destroyed value outright. But rolling efficiency of 0.412 is below the ~0.5 at which a fit is
+considered to transfer, the two disagree by a factor of nearly three on efficiency, and they rest on
+152 and 99 trades. Two small samples pointing different distances in the same direction is weak
+evidence, not strong.
 
-## 6. Bottom line
+## 6. Monte Carlo — the path is the problem
+
+20,000 paths on $50,000, one contract, on the paper's specification:
+
+| method | median drawdown | 95th percentile | P(losing) | median P&L | 5th percentile |
+| --- | --- | --- | --- | --- | --- |
+| order reshuffle | **33.2%** | **60.8%** | 0.0% | — | — |
+| resample with replacement | **35.1%** | **80.5%** | 8.4% | $56,620 | −$11,290 |
+
+**This is the finding that ends the discussion for a retail account.** A 35% median drawdown and an
+80.5% figure at the 95th percentile is not a survivable path at one contract on $50k, regardless of
+the positive expectancy. It is the direct consequence of the geometry: a tight stop, no target, and
+a long right tail means the equity curve is carried by a small number of very large winners, and any
+reordering that clusters the losses first is ruinous.
+
+By year: 2023 +$22,319, 2024 +$26,836, 2025 +$8,325 — the profit is real and decaying.
+
+## 7. Bottom line
 
 - **The paper is not wrong, and this is not a replication failure.** It is a cross-sectional
   strategy whose selector cannot exist on a single future. Removing "Stocks in Play" removes the
