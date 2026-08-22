@@ -86,6 +86,21 @@ export const INSTRUMENTS: Record<string, Instrument> = {
     tz: "America/New_York", session: [570, 960], // 09:30-16:00 ET regular trading hours
     ...DEFAULTS,
   },
+  // The micro. Same tick size and the same one-tick spread, but a tenth of the tick value against a
+  // commission that only falls by a factor of three — so the round turn costs 1.42 points instead of
+  // NQ's 0.95, half as much edge again. Prop-firm evaluations at $50k are usually traded here, which
+  // is exactly where that 50% cost premium does the most damage.
+  MNQ: {
+    id: "MNQ",
+    label: "Micro E-mini Nasdaq 100",
+    tickSize: 0.25,
+    tickValue: 0.5,
+    spreadTicks: 1,
+    slippageTicks: 1,
+    commissionRoundTurn: 1.34,
+    tz: "America/New_York", session: [570, 960],
+    ...DEFAULTS,
+  },
 };
 
 export function instrument(id: string): Instrument {

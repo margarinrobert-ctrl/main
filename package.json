@@ -12,7 +12,8 @@
     "test": "vitest run",
     "quant:ingest": "tsx scripts/quant-ingest.ts",
     "quant:research": "tsx scripts/quant-research.ts",
-    "quant:smoke": "tsx scripts/quant-smoke.ts"
+    "quant:smoke": "tsx scripts/quant-smoke.ts",
+    "quant:prop": "tsx scripts/quant-prop-firm.ts"
   },
   "dependencies": {
     "lightweight-charts": "^4.1.3",
