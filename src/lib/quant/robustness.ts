@@ -18,8 +18,19 @@ export interface CostPoint {
 
 export interface CostSensitivity {
   points: CostPoint[];
-  /** Cost multiple at which expectancy crosses zero (linear interpolation). */
+  /**
+   * Cost multiple at which expectancy crosses zero (linear interpolation).
+   *
+   * `Infinity` means the edge stayed positive across every multiple tested — it OUTLIVED the sweep —
+   * while `0` means it was already unprofitable with costs switched off entirely. Those are opposite
+   * verdicts and both are non-finite-ish edge cases, so read `verdict` or `survivesSweep` rather
+   * than testing this value for finiteness.
+   */
   breakEvenMultiple: number;
+  /** True when expectancy never crossed zero in the tested range: the edge survived the whole sweep. */
+  survivesSweep: boolean;
+  /** Ready-to-print verdict, so a caller cannot invert the meaning of `breakEvenMultiple`. */
+  verdict: string;
   /** Round-turn cost in ticks the strategy could absorb before dying. */
   breakEvenCostTicks: number;
   /** Cost assumed in the base study, in ticks. */
@@ -63,9 +74,18 @@ export function costSensitivity(
   if (points[0].expectancyUsd <= 0) breakEven = 0;
 
   const baseTicks = base / cfg.inst.tickSize;
+  const maxMultiple = Math.max(...multiples);
+  const survivesSweep = breakEven === Infinity;
+  const verdict = survivesSweep
+    ? `survives every cost level tested — still profitable at ${maxMultiple}x (${(maxMultiple * baseTicks).toFixed(2)} ticks)`
+    : breakEven === 0
+      ? "unprofitable even with costs switched off — the rule loses on its own, not because of the cost model"
+      : `dies at ${breakEven.toFixed(2)}x modelled costs (${(breakEven * baseTicks).toFixed(2)} ticks)`;
   return {
     points,
     breakEvenMultiple: breakEven,
+    survivesSweep,
+    verdict,
     breakEvenCostTicks: breakEven === Infinity ? Infinity : breakEven * baseTicks,
     baseCostTicks: baseTicks,
     margin: breakEven,

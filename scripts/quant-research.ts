@@ -562,10 +562,7 @@ function main() {
       ),
     );
     say();
-    say(
-      `Break-even cost multiple: **${Number.isFinite(cs.breakEvenMultiple) ? `${cs.breakEvenMultiple.toFixed(2)}x` : "never profitable"}** ` +
-        `(${Number.isFinite(cs.breakEvenCostTicks) ? `${cs.breakEvenCostTicks.toFixed(2)} ticks` : "—"} vs ${cs.baseCostTicks.toFixed(2)} modelled).`,
-    );
+    say(`Cost tolerance: **${cs.verdict}** (modelled cost ${cs.baseCostTicks.toFixed(2)} ticks).`);
     say();
 
     const regimes = regimeBreakdown(r.oosTrades, research);
