@@ -75,6 +75,7 @@ interface PendingOrder {
   stopDist: number;
   targetDist: number;
   maxBars: number;
+  holdWhile?: (i: number) => boolean;
   /** Bar index after which the order is cancelled. */
   expiresAt: number;
   placedDay: number;
@@ -90,6 +91,8 @@ interface OpenPos {
   stopDist: number;
   maxBars: number;
   units: number;
+  /** The strategy's own exit condition, when it has one. See EntryIntent.holdWhile. */
+  holdWhile?: (i: number) => boolean;
   tag?: string;
 }
 
@@ -173,7 +176,7 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
     index: number,
     side: 1 | -1,
     entryPx: number,
-    intent: { stopDist: number; targetDist: number; maxBars: number; stopPx?: number; targetPx?: number; tag?: string },
+    intent: { stopDist: number; targetDist: number; maxBars: number; stopPx?: number; targetPx?: number; holdWhile?: (i: number) => boolean; tag?: string },
   ): OpenPos => {
     const stopPx = intent.stopPx ?? entryPx - side * Math.max(intent.stopDist, inst.tickSize);
     const targetPx = intent.targetPx ?? entryPx + side * intent.targetDist;
@@ -192,6 +195,7 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
       stopDist,
       maxBars: Math.max(1, Math.round(intent.maxBars)),
       units,
+      holdWhile: intent.holdWhile,
       tag: intent.tag,
     };
   };
@@ -223,6 +227,10 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
         close(i, bar.o, "target");
       } else if (hitTarget) {
         close(i, pos.targetPx, "target");
+      } else if (pos.holdWhile && i > pos.entryIndex && !pos.holdWhile(i)) {
+        // The strategy's own exit condition. Checked after the protective levels, so a bar that
+        // hits the stop is still booked as a stop rather than being rescued by a signal exit.
+        close(i, bar.c, "signal");
       } else if (i - pos.entryIndex >= pos.maxBars) {
         close(i, bar.c, "time");
       } else if (sessionOnly && (!inSession(i) || i + 1 >= bars.length || dayOf(i + 1) !== d)) {
@@ -271,6 +279,7 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
               stopDist: intent.stopDist,
               targetDist: intent.targetDist,
               maxBars: intent.maxBars,
+              holdWhile: intent.holdWhile,
               expiresAt: i + (intent.validBars ?? bars.length),
               placedDay: d,
               tag: intent.tag,

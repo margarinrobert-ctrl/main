@@ -65,10 +65,20 @@ export interface EntryIntent {
   stopPrice?: number;
   /** Absolute target price. Takes precedence over `targetDist`. */
   targetPrice?: number;
+  /**
+   * Optional per-bar hold predicate. While it returns true the position stays open; the first bar
+   * it returns false, the position is closed at that bar's close with reason `signal`.
+   *
+   * This exists because a whole family of strategies is defined by its EXIT rather than by a target
+   * — a moving-average system is "long while fast is above slow", and forcing it into a fixed
+   * stop-and-target measures a different strategy that happens to share an entry. Like the entry
+   * signal, the predicate may only read bars up to `i`.
+   */
+  holdWhile?: (i: number) => boolean;
   tag?: string;
 }
 
-export type ExitReason = "stop" | "target" | "time" | "session" | "eod";
+export type ExitReason = "stop" | "target" | "time" | "session" | "eod" | "signal";
 
 export interface Trade {
   side: Side;
