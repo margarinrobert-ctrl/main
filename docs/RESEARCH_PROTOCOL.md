@@ -240,6 +240,23 @@ value:
 What is *not* a productive response is widening the parameter grid until something passes. That is
 precisely what stages 3–7 exist to detect, and they will detect it.
 
+### 4a. An event study must difference out the cost, or it measures the cost
+
+When testing "does event X predict a move", never test whether the event arm's mean P&L differs from
+zero. Both arms pay the round turn, so at large *n* a fair coin with a spread reports a huge
+significant negative and the thing it is significant about is the commission. `research/smc_events.py`
+demonstrates the size of the error: **28 of 30 event tests "survive" Benjamini-Hochberg at q<0.10
+against zero, and 0 of 30 survive when the same events are tested against the non-event bars.**
+
+The correct estimator is the lift — regress the outcome on an event dummy, or equivalently take
+mean(event) − mean(not event). Two further requirements:
+
+- **HAC lag must cover the label overlap.** With a triple barrier of *H* bars, neighbouring
+  observations share up to *H* bars of outcome, so a Newey-West lag chosen by the automatic
+  `4(n/100)^(2/9)` rule is far too short. Set it to *H*.
+- **Report the net, not the lift.** A lift that does not exceed the round turn is a true finding and
+  an untradeable one. Both facts belong in the table.
+
 ---
 
 ## 4b. Fill models
