@@ -16,7 +16,8 @@
     "quant:prop": "tsx scripts/quant-prop-firm.ts",
     "quant:asia": "tsx scripts/quant-asia-study.ts",
     "quant:stops": "tsx scripts/quant-stop-modes.ts",
-    "quant:rmultiple": "tsx scripts/quant-rmultiple.ts"
+    "quant:rmultiple": "tsx scripts/quant-rmultiple.ts",
+    "quant:orb": "tsx scripts/quant-orb-paper.ts"
   },
   "dependencies": {
     "lightweight-charts": "^4.1.3",

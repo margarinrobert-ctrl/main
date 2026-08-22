@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { runBacktest, runStrategy } from "./backtest";
 import { instrument } from "./instruments";
 import { ibDays } from "./ibFeatures";
-import { initialBalance } from "./strategies";
+import { initialBalance, openingRange } from "./strategies";
 import type { Bar, EntryIntent, Instrument } from "./types";
 
 const inst: Instrument = {
@@ -249,5 +249,52 @@ describe("initial balance — fixed point target", () => {
     const r = runStrategy(initialBalance, bars, p, { inst: ibInst });
     expect(r.trades[0].exitPx).toBeCloseTo(111, 6);
     expect(r.trades[0].reason).toBe("target");
+  });
+});
+
+describe("opening range — the Zarattini/Barbon/Aziz specification", () => {
+  // 5-minute bars. Opening range is the first bar; then a break, then a run.
+  const mk = (dayOffset: number, orOpen: number, orClose: number): Bar[] => {
+    const base = Date.UTC(2024, 0, 2 + dayOffset, 0, 0);
+    const rows: Bar[] = [];
+    rows.push({ t: base, o: orOpen, h: 110, l: 90, c: orClose, v: 1 }); // the opening range candle
+    rows.push({ t: base + 300_000, o: 100, h: 112, l: 100, c: 111, v: 1 }); // closes above the OR high
+    rows.push({ t: base + 600_000, o: 111, h: 125, l: 111, c: 124, v: 1 }); // runs
+    for (let k = 3; k < 12; k++) rows.push({ t: base + k * 300_000, o: 124, h: 125, l: 123, c: 124, v: 1 });
+    return rows;
+  };
+  const orInst: Instrument = { ...inst, session: [0, 60] };
+  const base = { ...openingRange.defaults, orMinutes: 5, entryMode: 0, targetPct: 0, sideMode: 0, breakBuffer: 0 };
+
+  it("dirMode 1 refuses an upside break when the opening candle closed bearish", () => {
+    // Identical price action; only the opening candle's BODY differs.
+    const bullish = [0, 1, 2].flatMap((d) => mk(d, 95, 105));  // closed up
+    const bearish = [0, 1, 2].flatMap((d) => mk(d, 105, 95));  // closed down
+    const p = { ...base, dirMode: 1, stopMode: 0 };
+    expect(runStrategy(openingRange, bullish, p, { inst: orInst }).trades.length).toBeGreaterThan(0);
+    expect(runStrategy(openingRange, bearish, p, { inst: orInst }).trades.length).toBe(0);
+  });
+
+  it("dirMode 0 takes the same break regardless of the opening candle's body", () => {
+    const bearish = [0, 1, 2].flatMap((d) => mk(d, 105, 95));
+    const p = { ...base, dirMode: 0, stopMode: 0 };
+    expect(runStrategy(openingRange, bearish, p, { inst: orInst }).trades.length).toBeGreaterThan(0);
+  });
+
+  it("stopMode 2 sizes the stop off the trailing ATR, not the opening range", () => {
+    // Enough sessions for the ATR to warm up, then compare two ATR fractions. A wider fraction must
+    // put the stop further away, so the same move books a smaller R multiple.
+    const bars = Array.from({ length: 20 }, (_, d) => mk(d, 95, 105)).flat();
+    const tight = runStrategy(openingRange, bars, { ...base, dirMode: 1, stopMode: 2, atrFrac: 10 }, { inst: orInst });
+    const wide = runStrategy(openingRange, bars, { ...base, dirMode: 1, stopMode: 2, atrFrac: 50 }, { inst: orInst });
+    expect(tight.trades.length).toBeGreaterThan(0);
+    expect(wide.trades.length).toBe(tight.trades.length);
+    expect(Math.abs(tight.trades[0].r)).toBeGreaterThan(Math.abs(wide.trades[0].r));
+  });
+
+  it("refuses to trade before the ATR has any history, rather than inventing a stop", () => {
+    const bars = [0, 1].flatMap((d) => mk(d, 95, 105)); // only two sessions
+    const r = runStrategy(openingRange, bars, { ...base, dirMode: 1, stopMode: 2, atrFrac: 10 }, { inst: orInst });
+    expect(r.trades.length).toBe(0);
   });
 });

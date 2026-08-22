@@ -39,6 +39,9 @@ export const openingRange: Strategy = {
     maxRangePct: 100,
     sideMode: 0,
     breakBuffer: 0,
+    dirMode: 0,
+    atrFrac: 10,
+    atrDays: 14,
   },
   space: {
     orMinutes: { values: [15] }, // fixed for this study; the question is the 9:30-9:45 range
@@ -51,6 +54,18 @@ export const openingRange: Strategy = {
     maxRangePct: { values: [50, 75, 100] },
     sideMode: { values: [0, 1, -1] },
     breakBuffer: { values: [0, 1, 2] },
+    /**
+     * Who decides the side.
+     *   0 = whichever edge broke (the usual reading of an ORB)
+     *   1 = the OPENING CANDLE'S OWN BODY — a bullish opening range permits only longs, a bearish
+     *       one only shorts, regardless of which edge is breached. This is the parameter Zarattini,
+     *       Barbon & Aziz call crucial, and it is a genuinely different strategy: on a bearish
+     *       opening candle it refuses the upside break outright rather than trading it.
+     */
+    dirMode: { values: [0, 1] },
+    /** stopMode 2 only: stop distance as a PERCENT of the trailing daily ATR. The paper uses 10. */
+    atrFrac: { values: [5, 10, 20, 33, 50] },
+    atrDays: { values: [14] },
   },
   build(bars: Bar[], p: Params, inst: Instrument) {
     const clock = clockFor(bars, inst.tz);
@@ -82,6 +97,74 @@ export const openingRange: Strategy = {
         orHigh[i] = hi;
         orLow[i] = lo;
         ready[i] = 1;
+      }
+    }
+
+    // ---- pass 1b: the opening candle's own direction, and a trailing daily ATR ----
+    // Both are per-session and both use only information available once the opening range closes.
+    const orOpen = new Float64Array(n).fill(NaN);
+    const orClose = new Float64Array(n).fill(NaN);
+    {
+      let d = -1;
+      let seenOpen = false;
+      for (let i = 0; i < n; i++) {
+        const m = clock.minuteOfDay[i];
+        if (clock.dayIndex[i] !== d) {
+          d = clock.dayIndex[i];
+          seenOpen = false;
+        }
+        if (m >= start && m < orEnd) {
+          if (!seenOpen) {
+            orOpen[i] = bars[i].o;
+            seenOpen = true;
+          }
+          orClose[i] = bars[i].c;
+        }
+      }
+    }
+    /** Opening-candle direction per session: +1 bullish body, -1 bearish, 0 doji. */
+    const orBody = new Map<number, number>();
+    {
+      let d = -1;
+      let open = NaN;
+      let close = NaN;
+      for (let i = 0; i < n; i++) {
+        if (clock.dayIndex[i] !== d) {
+          if (d >= 0 && Number.isFinite(open) && Number.isFinite(close)) orBody.set(d, Math.sign(close - open));
+          d = clock.dayIndex[i];
+          open = NaN;
+          close = NaN;
+        }
+        if (Number.isFinite(orOpen[i]) && !Number.isFinite(open)) open = orOpen[i];
+        if (Number.isFinite(orClose[i])) close = orClose[i];
+      }
+      if (d >= 0 && Number.isFinite(open) && Number.isFinite(close)) orBody.set(d, Math.sign(close - open));
+    }
+
+    // Trailing daily ATR from COMPLETED prior sessions only. Built from the session-filtered bars,
+    // so it is an ATR of the traded window rather than of the 24-hour day — the right reference for
+    // a stop sized inside that window, and it never sees today.
+    const sessH = new Map<number, number>();
+    const sessL = new Map<number, number>();
+    const sessC = new Map<number, number>();
+    for (let i = 0; i < n; i++) {
+      const d = clock.dayIndex[i];
+      sessH.set(d, Math.max(sessH.get(d) ?? -Infinity, bars[i].h));
+      sessL.set(d, Math.min(sessL.get(d) ?? Infinity, bars[i].l));
+      sessC.set(d, bars[i].c);
+    }
+    const atrByDay = new Map<number, number>();
+    {
+      const days = [...sessH.keys()].sort((a, b) => a - b);
+      const trs: number[] = [];
+      const len = Math.max(2, Math.round(p.atrDays));
+      for (let k = 0; k < days.length; k++) {
+        // The ATR recorded against day k uses only days strictly before it.
+        atrByDay.set(days[k], trs.length >= 5 ? trs.slice(-len).reduce((a, b) => a + b, 0) / Math.min(len, trs.length) : NaN);
+        const h = sessH.get(days[k])!;
+        const l = sessL.get(days[k])!;
+        const pc = k > 0 ? sessC.get(days[k - 1])! : NaN;
+        trs.push(Number.isFinite(pc) ? Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)) : h - l);
       }
     }
 
@@ -127,9 +210,25 @@ export const openingRange: Strategy = {
       const side: 1 | -1 = upBreak ? 1 : -1;
       used = side; // the day is spent whether or not this side is enabled
       if (p.sideMode !== 0 && p.sideMode !== side) return null;
+      // dirMode 1: the opening candle's body vetoes the break. A bearish opening range refuses the
+      // upside break entirely rather than trading it, which is what makes it a different strategy
+      // and not a filter on the same one.
+      if (p.dirMode === 1) {
+        const body = orBody.get(day) ?? 0;
+        if (body === 0 || body !== side) return null;
+      }
 
       const edge = side === 1 ? h : l;
-      const stop = p.stopMode === 0 ? (side === 1 ? l : h) : edge - side * (range * p.stopPct) / 100;
+      let stop: number;
+      if (p.stopMode === 2) {
+        const atr = atrByDay.get(day) ?? NaN;
+        if (!(atr > 0)) return null; // no ATR history yet: refuse rather than invent a stop
+        stop = edge - side * (atr * p.atrFrac) / 100;
+      } else if (p.stopMode === 1) {
+        stop = edge - side * (range * p.stopPct) / 100;
+      } else {
+        stop = side === 1 ? l : h;
+      }
       // targetPct 0 means "no target" — ride it to the session close.
       const target = p.targetPct > 0 ? edge + side * (range * p.targetPct) / 100 : edge + side * range * 50;
 
