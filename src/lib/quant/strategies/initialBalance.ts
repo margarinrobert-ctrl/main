@@ -1,4 +1,5 @@
 import { clockFor, minutesSinceOpen, sessionIndex } from "../clock";
+import { atr } from "../series";
 import type { Bar, EntryIntent, Instrument, Params, Strategy } from "../types";
 
 /**
@@ -42,6 +43,10 @@ export const initialBalance: Strategy = {
     breakBuffer: 0,
     rrMode: 0,
     rrMult: 2,
+    stopMode: 0,
+    atrLen: 14,
+    atrMult: 1.5,
+    stopPts: 40,
   },
   space: {
     /** Length of the initial-balance window in minutes, from the session open. */
@@ -64,6 +69,19 @@ export const initialBalance: Strategy = {
     rrMode: { values: [0, 1] },
     /** Reward-to-risk multiple, used only when rrMode is 1. */
     rrMult: { values: [1, 1.5, 2, 3] },
+    /**
+     * Where the stop comes from. These are genuinely different trades, not the same trade with a
+     * different number: 0 and 3 scale with the day's own auction, 1 scales with recent volatility,
+     * and 2 does not scale at all.
+     *   0 = a percent of the IB range measured from the broken edge (stopPct)
+     *   1 = a multiple of ATR measured from the entry (atrLen, atrMult)
+     *   2 = a fixed number of points from the entry (stopPts)
+     *   3 = the opposite edge of the initial balance
+     */
+    stopMode: { values: [0, 1, 2, 3] },
+    atrLen: { values: [14, 30] },
+    atrMult: { values: [1, 1.5, 2, 3] },
+    stopPts: { values: [20, 40, 60, 80] },
   },
   build(bars: Bar[], p: Params, inst: Instrument) {
     const clock = clockFor(bars, inst.tz);
@@ -122,6 +140,10 @@ export const initialBalance: Strategy = {
       if (history.length > 60) history.shift();
     }
 
+    // ATR for the volatility stop. Computed on the segment handed in, so on a session-filtered
+    // series it is an ATR of session bars only — which is what a session strategy should use.
+    const atrSeries = atr(bars, Math.max(2, Math.round(p.atrLen)));
+
     const buffer = p.breakBuffer * inst.tickSize;
     // Day-scoped state: which side has already been used, so the day is one trade only.
     let stateDay = -1;
@@ -155,8 +177,28 @@ export const initialBalance: Strategy = {
 
       const edge = side === 1 ? h : l;
       const entry = edge - side * (range * p.retrPct) / 100;
-      const stop = edge - side * (range * p.stopPct) / 100;
-      if (p.stopPct <= p.retrPct) return null; // the stop would sit on the wrong side of the entry
+
+      let stop: number;
+      switch (p.stopMode) {
+        case 1: {
+          const a = atrSeries[i];
+          if (!(a > 0)) return null; // no ATR yet: refuse the trade rather than invent a stop
+          stop = entry - side * p.atrMult * a;
+          break;
+        }
+        case 2:
+          stop = entry - side * p.stopPts;
+          break;
+        case 3:
+          stop = side === 1 ? l : h; // the far edge of the range
+          break;
+        default:
+          stop = edge - side * (range * p.stopPct) / 100;
+      }
+
+      // Whatever produced it, a stop on the wrong side of the entry is not a stop. This catches
+      // stopPct <= retrPct, an ATR too small to clear the retracement, and a zero fixed distance.
+      if (side * (entry - stop) <= 0) return null;
       // Two target conventions: a percent of the IB range beyond the broken edge, or a fixed
       // multiple of the actual risk. They are NOT the same trade — the second makes reward scale
       // with the entry-to-stop distance, so widening the stop also widens the target.

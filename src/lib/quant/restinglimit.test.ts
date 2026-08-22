@@ -142,6 +142,52 @@ describe("initial balance strategy", () => {
     expect(r.trades[0].exitPx).toBeCloseTo(120, 6); // 110 + 50% x 20
   });
 
+  it("stopMode 2 puts the stop a fixed number of points from the ENTRY, not the edge", () => {
+    // Entry 105, fixed 6-point stop -> 99. The percent-of-range stop would be measured from 110.
+    const p = { ...initialBalance.defaults, stopMode: 2, stopPts: 6, rrMode: 1, rrMult: 1 };
+    const r = runStrategy(initialBalance, bars, p, { inst: ibInst });
+    expect(r.trades.length).toBeGreaterThan(0);
+    const t = r.trades[0];
+    expect(t.entryPx).toBeCloseTo(105, 6);
+    expect(t.exitPx).toBeCloseTo(111, 6); // 1R above entry on a 6-point risk
+  });
+
+  it("stopMode 3 uses the opposite edge of the range", () => {
+    // IB 90-110, long entry 105, stop at the LOW = 90, so risk is 15 and a 1:1 target is 120.
+    const p = { ...initialBalance.defaults, stopMode: 3, rrMode: 1, rrMult: 1 };
+    const r = runStrategy(initialBalance, bars, p, { inst: ibInst });
+    expect(r.trades.length).toBeGreaterThan(0);
+    expect(r.trades[0].exitPx).toBeCloseTo(120, 6);
+  });
+
+  it("stopMode 1 scales the stop with ATR", () => {
+    // The synthetic IB bars have a 20-point true range, so ATR is ~20. Multiples are kept small
+    // enough that both 1:1 targets sit inside the day's move — otherwise the wider one exits on
+    // the session flat and the comparison measures the synthetic data, not the stop rule.
+    const near = runStrategy(initialBalance, bars, { ...initialBalance.defaults, stopMode: 1, atrLen: 5, atrMult: 0.25, rrMode: 1, rrMult: 1 }, { inst: ibInst });
+    const far = runStrategy(initialBalance, bars, { ...initialBalance.defaults, stopMode: 1, atrLen: 5, atrMult: 0.5, rrMode: 1, rrMult: 1 }, { inst: ibInst });
+    expect(near.trades[0].reason).toBe("target");
+    expect(far.trades[0].reason).toBe("target");
+    expect(near.trades.length).toBeGreaterThan(0);
+    expect(far.trades.length).toBeGreaterThan(0);
+    // At 1:1 the target sits exactly 1R above the entry, so the target distance IS the risk.
+    const risk = (t: { entryPx: number; exitPx: number }) => t.exitPx - t.entryPx;
+    expect(risk(far.trades[0])).toBeGreaterThan(risk(near.trades[0]));
+    expect(risk(far.trades[0]) / risk(near.trades[0])).toBeCloseTo(2, 1);
+  });
+
+  it("refuses a trade whose stop would land on the wrong side of the entry", () => {
+    // Entry is 105 and a zero-distance fixed stop is not a stop. No trade, rather than a trade
+    // with a negative or zero risk that would produce an infinite R.
+    const r = runStrategy(initialBalance, bars, { ...initialBalance.defaults, stopMode: 2, stopPts: 0 }, { inst: ibInst });
+    expect(r.trades.length).toBe(0);
+  });
+
+  it("still refuses when the percent stop sits inside the retracement", () => {
+    const r = runStrategy(initialBalance, bars, { ...initialBalance.defaults, retrPct: 50, stopPct: 40 }, { inst: ibInst });
+    expect(r.trades.length).toBe(0);
+  });
+
   it("takes at most one trade per session", () => {
     const r = runStrategy(initialBalance, bars, initialBalance.defaults, { inst: ibInst });
     const perDay = new Map<number, number>();

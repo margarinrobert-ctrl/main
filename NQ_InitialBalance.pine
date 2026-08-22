@@ -116,6 +116,52 @@
 //   direction in both halves, and it was motivated before it was measured.
 //   It is still not significant (t = 1.16 and 1.20). It is an improvement, not a fix.
 //
+// STOP LOSS SELECTION — measured, all four methods
+//
+//   Four stops that are genuinely different trades, not one trade with a different number. Held at
+//   the v3 geometry (IB 60, retr 50, fixed 1:2, both sides, flatten 11:59) so the stop is the only
+//   thing moving. 167 trades, 1-minute NQ, realistic fills. mcDD95 is the 95th percentile drawdown
+//   over 5,000 Monte Carlo resamples — the number to size against, not the realised one.
+//
+//     method                    win     E      PF     t     DD   mcDD95   research  holdout
+//     % of range,  60%         43.7%  0.388   1.37  2.02   3.1%   13.0%    0.438     0.272
+//     % of range,  70%         50.9%  0.377   1.64  3.15   4.4%   14.4%    0.394     0.338
+//     % of range,  80% (dflt)  55.7%  0.325   1.66  3.84   5.6%   17.6%    0.414     0.116
+//     % of range, 100%         58.1%  0.134   1.24  2.08  10.2%   33.4%    0.205    -0.032
+//     ATR(30) x 1.0            47.3%  0.435   1.41  3.02   3.5%   14.5%    0.506     0.269
+//     ATR(30) x 1.5            52.1%  0.398   1.44  3.54   4.8%   18.5%    0.450     0.277
+//     ATR(30) x 2.0            53.9%  0.338   1.51  3.54   5.4%   20.4%    0.414     0.161
+//     ATR(14) x 2.0            53.3%  0.356   1.51  3.62   5.1%   20.0%    0.406     0.241
+//     fixed  20 points         52.1%  0.381   1.82  3.52   2.4%    9.3%    0.399     0.342
+//     fixed  40 points         57.5%  0.193   1.58  2.62   4.5%   16.8%    0.257     0.043
+//     opposite IB edge         58.1%  0.134   1.24  2.08  10.2%   33.4%    0.205    -0.032
+//
+//   FOUR THINGS TO READ OUT OF THAT TABLE:
+//
+//   1. WIDER STOPS BUY WIN RATE AND SELL EVERYTHING ELSE. Win rate climbs monotonically with stop
+//      width, 43.7% to 58.1%, while expectancy falls 0.388 to 0.134 and the Monte Carlo drawdown
+//      nearly triples. A higher win rate is not a better strategy; here it is the receipt for
+//      paying more per loss.
+//   2. THE OPPOSITE-EDGE STOP IS EXACTLY THE 100% STOP. Identical to three decimals, as it must be
+//      — at any retracement, the far edge is 100% of the range from the broken one. It is in the
+//      list because people ask for it, and it is the worst option in the table.
+//   3. THE DEFAULT IS NOT THE TOP ROW, DELIBERATELY. Stop 80% has the best t (3.84) but its
+//      holdout half (0.116) is a quarter of its research half (0.414). Stop 70%, ATR(30)x1.5 and
+//      the 20-point stop all hold up far better across the split. This sweep is itself a search
+//      over 22 configurations that has now touched the holdout, so moving the default on the
+//      strength of it would be the exact mistake this file documents elsewhere. The options are
+//      here, measured; the default stays where it was independently validated.
+//   4. THE BEST-SCORING OPTION IS THE LEAST DEFENSIBLE. The 20-point stop wins on profit factor
+//      (1.82), realised drawdown (2.4%) and Monte Carlo drawdown (9.3%), with a holdout of 0.342.
+//      It is still an absolute distance on an instrument whose range roughly doubled across this
+//      sample — the same objection that got fixed-POINT range filters replaced by percentile ones
+//      in v2. If you use it, re-check the number as volatility moves; it will not re-check itself.
+//
+//   At the 25% retracement the ranking changes: the 40-point fixed stop leads on 349 trades
+//   (0.145R, t = 2.39, $40,252, research 0.104 / holdout 0.222) and the ATR stop is the weakest
+//   (0.068R, t = 0.93). Stop choice and entry depth are not independent — re-measure the pair if
+//   you change either. Full report: docs/ib/STUDY_STOPS.md.
+//
 // SIZING THIS ON A PROP-FIRM ACCOUNT — simulated, not guessed
 //
 //   A backtest sums P&L. An evaluation is a RACE between a profit target and a threshold that
@@ -199,7 +245,11 @@ exitM    = input.int(59, ":",               minval=0, maxval=59, group=gS, inlin
 
 gR = "Strategy rules"
 retrPct = input.float(50, "Entry — retracement into IB (% of range)", minval=0,   maxval=99,  step=1,   group=gR, tooltip="edgeful's documented entry is 25%. v3 defaults to 50% because three independent walk-forward configurations picked 50% in every stable fold, and a direct test doubles expectancy (0.096R to 0.246R, t 2.46 to 3.37) while HALVING drawdown. A 25% pullback is barely inside the range; a 50% one buys the same resolution at the middle of the auction, closer to the stop.")
-stopPct = input.float(80, "Stop — from broken edge (% of range)",     minval=1,   maxval=200, step=1,   group=gR, tooltip="edgeful documents 60%. v3 defaults to 80%: a 60% stop sits INSIDE the range the entry is a pullback into, so the trade is stopped by the same oscillation that filled it. Win rate goes 38% to 49% on this change alone. Must exceed the entry retracement — at retr 50 a stop below 50 produces zero valid trades.")
+stopMode = input.string("% of IB range from broken edge", "Stop loss method", options=["% of IB range from broken edge", "ATR multiple from entry", "Fixed points from entry", "Opposite IB edge"], group=gR, tooltip="Four genuinely different trades, not one trade with a different number. Measured on the v3 geometry (retr 50, fixed 1:2, both sides) over 167 trades, research/holdout split — see STOP LOSS SELECTION in the header for the full table. Short version: the % of range and ATR methods scale with volatility and are the defensible ones; fixed points scored best on this sample but is the least defensible, for exactly the reason a fixed-POINT range filter was rejected in v2 — it silently becomes a different rule as NQ's volatility drifts.")
+stopPct = input.float(80, "  ...% of range from broken edge",  minval=1,   maxval=200, step=1,   group=gR, tooltip="Used by the '% of IB range' method. edgeful documents 60%. v3 defaults to 80%: a 60% stop sits INSIDE the range the entry is a pullback into, so the trade is stopped by the same oscillation that filled it. Must exceed the entry retracement — at retr 50 a stop below 50 produces zero valid trades. Measured at retr 50: 60% gives 0.388R (t=2.02, 43.7% wins), 70% gives 0.377R (t=3.15, res 0.394 / hold 0.338), 80% gives 0.325R (t=3.84, res 0.414 / hold 0.116), 100% gives 0.134R. 70% and 80% are hard to separate: 80% has the better t, 70% much the better holdout.")
+atrLen   = input.int(30,   "  ...ATR length",                   minval=2,   maxval=200,           group=gR, tooltip="Used by the 'ATR multiple' method. ATR(30) measured slightly better than ATR(14) at every multiple tested, which is what you would expect — a longer average is a less noisy estimate of the same thing.")
+atrMult  = input.float(1.5, "  ...ATR multiple",                minval=0.1, maxval=10, step=0.1,  group=gR, tooltip="Used by the 'ATR multiple' method. Measured at retr 50 with ATR(30): 1.0x gives 0.435R (t=3.02, res 0.506 / hold 0.269), 1.5x gives 0.398R (t=3.54, res 0.450 / hold 0.277), 2x gives 0.338R (t=3.54), 3x gives 0.226R. This is the method whose mechanism is easiest to defend: the stop widens when the market is wide and tightens when it is quiet, without being told what a point is worth.")
+stopPts  = input.float(20, "  ...fixed points from entry",      minval=1,   maxval=500, step=1,   group=gR, tooltip="Used by the 'Fixed points' method. Measured at retr 50: 20 pts gives 0.381R at PF 1.82 with a 2.4% drawdown and a 9.3% Monte Carlo 95th percentile — the best profit factor and by far the smallest drawdown in the whole study, with research 0.399 against holdout 0.342. 30 pts 0.273R, 40 pts 0.193R, 80 pts 0.061R. TREAT THE 20 WITH SUSPICION: an absolute point distance is not scale-free, and NQ's daily range roughly doubled across this sample.")
 useRR   = input.bool(true,  "Use fixed R:R target instead of % target",                                 group=gR, tooltip="v3 default ON. The percent-of-range target scales with the IB range while the risk does too, so wide-range days demand a much larger absolute move for the same R. A parameter search that knew nothing about this setting chose the fixed target in 88% of folds.")
 tgtPct  = input.float(50, "Target — beyond broken edge (% of range)", minval=1,   maxval=500, step=1,   group=gR, tooltip="edgeful's documented target: 50% of the IB range beyond the broken edge.")
 rrMult  = input.float(2.0, "Risk : Reward (when fixed R:R is on)",    minval=0.1, maxval=20,  step=0.1, group=gR, tooltip="1:2 measured best (0.325R, t = 3.84, 8.8% max drawdown) against 1:1 (0.246R, t = 3.37, 10.8%). 1:1 wins more often (60.5% vs 55.7%) and makes less. 1:3 is worse than both.")
@@ -224,6 +274,9 @@ showTable  = input.bool(true, "Show statistics table",           group=gV)
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Session state — wall-clock New York
 // ─────────────────────────────────────────────────────────────────────────────────────────────
+// ta.atr() must be evaluated on every bar, so it is computed here rather than inside a branch.
+atrVal = ta.atr(atrLen)
+
 nyMin = hour(time, TZ) * 60 + minute(time, TZ)
 nyDow = dayofweek(time, TZ)
 weekday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
@@ -296,10 +349,21 @@ ibRange = ready ? ibH - ibL : na
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Setup detection — break, then retracement entry
 // ─────────────────────────────────────────────────────────────────────────────────────────────
+// Resolve the selected stop method into a price. `side` is 1 for a long, -1 for a short.
+f_stopPrice(int side, float edge, float entry, float rng, float oppEdge) =>
+    float st = switch stopMode
+        "ATR multiple from entry"  => entry - side * atrMult * atrVal
+        "Fixed points from entry"  => entry - side * stopPts
+        "Opposite IB edge"         => oppEdge
+        => edge - side * rng * stopPct / 100
+    st
+
 absOK  = (minIB <= 0 or ibRange >= minIB) and (maxIB <= 0 or ibRange <= maxIB)
 pctOK  = not usePctFilter or (not na(rangePctile) and rangePctile >= minPctile and rangePctile <= maxPctile)
 sizeOK = not na(ibRange) and ibRange > 0 and absOK and pctOK
-geomOK = stopPct > retrPct
+// Only the percent-of-range method can be invalidated by the inputs alone; the other three are
+// checked against the actual entry once it is known.
+geomOK = stopMode != "% of IB range from broken edge" or stopPct > retrPct
 canScan = ready and inTrade and dir == 0 and sizeOK and geomOK and strategy.position_size == 0
 
 brokeUp = canScan and high > ibH and doneDir !=  1
@@ -311,21 +375,29 @@ goShort = brokeDn and (not brokeUp or close <  open) and allowShort
 if goLong
     dir     := 1
     doneDir := 1
-    ePrice  := math.round_to_mintick(ibH - ibRange * retrPct / 100)
-    sPrice  := math.round_to_mintick(ibH - ibRange * stopPct / 100)
-    tPrice  := math.round_to_mintick(useRR ? ePrice + rrMult * (ePrice - sPrice) : ibH + ibRange * tgtPct / 100)
-    curStop := sPrice
-    armed   := true
-    strategy.entry("IB Long", strategy.long, limit = ePrice, comment = "IB long")
+    float e = math.round_to_mintick(ibH - ibRange * retrPct / 100)
+    float st = math.round_to_mintick(f_stopPrice(1, ibH, e, ibRange, ibL))
+    // A stop at or above a long's entry is not a stop. Refuse the trade rather than send an order
+    // with zero or negative risk, which would report an absurd R multiple.
+    if st < e and not na(st)
+        ePrice  := e
+        sPrice  := st
+        tPrice  := math.round_to_mintick(useRR ? e + rrMult * (e - st) : ibH + ibRange * tgtPct / 100)
+        curStop := st
+        armed   := true
+        strategy.entry("IB Long", strategy.long, limit = ePrice, comment = "IB long")
 else if goShort
     dir     := -1
     doneDir := -1
-    ePrice  := math.round_to_mintick(ibL + ibRange * retrPct / 100)
-    sPrice  := math.round_to_mintick(ibL + ibRange * stopPct / 100)
-    tPrice  := math.round_to_mintick(useRR ? ePrice - rrMult * (sPrice - ePrice) : ibL - ibRange * tgtPct / 100)
-    curStop := sPrice
-    armed   := true
-    strategy.entry("IB Short", strategy.short, limit = ePrice, comment = "IB short")
+    float e = math.round_to_mintick(ibL + ibRange * retrPct / 100)
+    float st = math.round_to_mintick(f_stopPrice(-1, ibL, e, ibRange, ibH))
+    if st > e and not na(st)
+        ePrice  := e
+        sPrice  := st
+        tPrice  := math.round_to_mintick(useRR ? e - rrMult * (st - e) : ibL - ibRange * tgtPct / 100)
+        curStop := st
+        armed   := true
+        strategy.entry("IB Short", strategy.short, limit = ePrice, comment = "IB short")
 else if brokeUp or brokeDn
     dir     := brokeUp ? 1 : -1
     doneDir := dir
