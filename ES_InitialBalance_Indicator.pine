@@ -1,0 +1,338 @@
+//@version=6
+// =============================================================================================
+// ES — Initial Balance (IB), LIVE INDICATOR
+// The trading companion to ES_InitialBalance.pine. Same rules, same geometry, no backtester.
+// =============================================================================================
+//
+// WHAT THIS IS FOR: watching the setup form in real time and being told when something happens.
+// The strategy version answers "did this work historically". This one answers "what is the
+// level right now, am I in a trade, and what do I do next".
+//
+// It plots the same five levels, tracks the same state machine, and fires alerts at every
+// decision point. It places no orders — you do.
+//
+// IDENTICAL LOGIC, ONE DELIBERATE DIFFERENCE: the strategy version fills a resting limit when
+// TradingView says price touched it. Here a fill is recorded when a bar's low trades BELOW the
+// long entry (or high ABOVE the short entry) — a trade-THROUGH, which is what the research
+// engine requires and what actually gets a resting order filled. So this indicator is slightly
+// stricter about calling a fill than the backtest is. If it says you are filled, you are.
+//
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// THE NUMBERS BEHIND THE DEFAULTS WERE MEASURED ON NQ, NOT ES
+//
+//   Three years of 1-minute NQ, realistic fills, full costs. Nothing re-measured on ES, because
+//   the research repository has no ES data. Carried over, these defaults are a HYPOTHESIS.
+//
+//   ES is not a smaller NQ. An ES tick is worth $12.50 against NQ's $5, so every tick of spread
+//   and slippage costs 2.5x more, while the first hour is worth roughly HALF as much in dollars
+//   (~$1,250 against ~$2,460). The estimated cost hurdle is ~0.06R per trade against NQ's
+//   measured 0.026R. The COST HURDLE row in the table measures the real figure from your chart.
+//   Above ~0.05R the geometry is fighting its own costs.
+//
+//   What ported from NQ with evidence behind it:
+//     • flatten in the late morning rather than at the close  (0.036R -> 0.070R)
+//     • a stop deeper than the entry retracement              (win rate 38% -> 49%)
+//     • a fixed reward-to-risk target rather than % of range  (chosen in 88% of search folds)
+//     • a 50% retracement rather than 25%                     (0.096R -> 0.246R, smaller drawdown)
+//     • BOTH SIDES. Longs-only scored -0.006 research / +0.255 holdout — an index uptrend being
+//       fitted, not an edge. Every search that was handed direction chose longs. Keep shorts on.
+//
+//   And the finding that matters most for live use: DO NOT RETUNE THIS. Across 225,792
+//   configurations with a locked holdout, a RANDOM configuration landed at the 51.5th percentile
+//   of out-of-sample P&L and the best-in-sample landed at the 13.4th, monotonically, with no
+//   reversal. Correlation between in-sample and locked-holdout P&L: -0.079. If you find a
+//   setting that backtests better, that is the most likely thing to lose you money.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+indicator("ES Initial Balance — live", shorttitle="ES IB live", overlay=true, max_lines_count=500, max_labels_count=500)
+
+TZ = "America/New_York"
+
+gS = "Session (New York wall-clock)"
+ibStartH = input.int(9,  "IB starts — hour", minval=0, maxval=23, group=gS, inline="a")
+ibStartM = input.int(30, ":",               minval=0, maxval=59, group=gS, inline="a")
+ibEndH   = input.int(10, "IB ends — hour",  minval=0, maxval=23, group=gS, inline="b")
+ibEndM   = input.int(30, ":",               minval=0, maxval=59, group=gS, inline="b")
+exitH    = input.int(11, "Flatten — hour",  minval=0, maxval=23, group=gS, inline="c")
+exitM    = input.int(59, ":",               minval=0, maxval=59, group=gS, inline="c", tooltip="Orders are live from the IB close until this time. At this time cancel anything unfilled and close anything open.")
+
+gR = "Strategy rules"
+retrPct  = input.float(50, "Entry — retracement into IB (% of range)", minval=0, maxval=99, step=1, group=gR, tooltip="Default 50%, not the published 25%: three independent walk-forwards picked 50% in every stable fold, and it doubled expectancy while halving drawdown on NQ.")
+stopMode = input.string("% of IB range from broken edge", "Stop loss method", options=["% of IB range from broken edge", "ATR multiple from entry", "Fixed points from entry", "Opposite IB edge"], group=gR, tooltip="The % of range and ATR methods scale with volatility and are the defensible ones. FIXED POINTS DOES NOT PORT FROM NQ — 20 NQ points is $400 of risk, 20 ES points is $1,000. Start from 4-6 ES points.")
+stopPct  = input.float(80, "  ...% of range from broken edge", minval=1, maxval=200, step=1, group=gR, tooltip="Must exceed the entry retracement. On NQ: 70% gave the most consistent split (research 0.394 / holdout 0.338); 80% the best t-statistic (3.84) but a weaker holdout.")
+atrLen   = input.int(30, "  ...ATR length", minval=2, maxval=200, group=gR)
+atrMult  = input.float(1.5, "  ...ATR multiple", minval=0.1, maxval=10, step=0.1, group=gR, tooltip="The method most likely to survive the move to ES: it never has to be told what a point is worth.")
+stopPts  = input.float(5, "  ...fixed points from entry", minval=0.25, maxval=200, step=0.25, group=gR, tooltip="Rescaled for ES from the NQ study's 20 points, which would be $1,000 of risk here.")
+useRR    = input.bool(true, "Use fixed R:R target instead of % target", group=gR)
+tgtPct   = input.float(50, "Target — beyond broken edge (% of range)", minval=1, maxval=500, step=1, group=gR)
+rrMult   = input.float(2.0, "Risk : Reward (when fixed R:R is on)", minval=0.1, maxval=20, step=0.1, group=gR, tooltip="1:2 measured best on NQ. Note that across 225,792 configurations higher R:R was monotonically WORSE in dollars while looking better in R.")
+useBE    = input.bool(false, "Move stop to breakeven", group=gR)
+bePct    = input.float(25, "Breakeven trigger (% of range beyond edge)", minval=1, maxval=500, step=1, group=gR)
+
+gF = "Filters"
+allowLong  = input.bool(true, "Allow longs",  group=gF)
+allowShort = input.bool(true, "Allow shorts", group=gF, tooltip="LEAVE THIS ON — see the header. Longs-only is the index trend, not an edge.")
+minIB = input.float(0, "Min IB range (points, 0 = off)", minval=0, step=1, group=gF)
+maxIB = input.float(0, "Max IB range (points, 0 = off)", minval=0, step=1, group=gF)
+
+gV = "Display"
+showLevels  = input.bool(true, "Plot levels", group=gV)
+showTable   = input.bool(true, "Show live panel", group=gV)
+showHistory = input.bool(false, "Keep prior sessions' levels on the chart", group=gV, tooltip="Off by default so the chart shows only what is actionable now.")
+contracts   = input.int(1, "Contracts (for the risk figures in the panel)", minval=1, group=gV)
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Session state
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+atrVal = ta.atr(atrLen)
+
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow = dayofweek(time, TZ)
+weekday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+
+ibFrom = ibStartH * 60 + ibStartM
+ibTo   = ibEndH   * 60 + ibEndM
+exitAt = exitH    * 60 + exitM
+
+inIB    = weekday and nyMin >= ibFrom and nyMin < ibTo
+inTrade = weekday and nyMin >= ibTo   and nyMin < exitAt
+
+ibStart  = inIB and not inIB[1]
+ibClosed = not inIB and inIB[1]
+tradeEnd = not inTrade and inTrade[1]
+
+var float ibH = na
+var float ibL = na
+var bool  ready = false
+
+// State machine. 0 waiting for the IB, 1 IB formed, 2 broken and order resting, 3 in a trade,
+// 4 done for the day (target, stop, flat, or the day burned on a disabled side).
+var int   state   = 0
+var int   dir     = 0
+var int   doneDir = 0
+var float ePrice  = na
+var float sPrice  = na
+var float tPrice  = na
+var float curStop = na
+var float fillPx  = na
+var string lastOutcome = ""
+var array<float> allRanges = array.new_float()
+
+if ibStart
+    ibH := high
+    ibL := low
+    ready := false
+    state := 0
+    dir := 0
+    doneDir := 0
+    ePrice := na
+    sPrice := na
+    tPrice := na
+    curStop := na
+    fillPx := na
+    lastOutcome := ""
+else if inIB
+    ibH := math.max(ibH, high)
+    ibL := math.min(ibL, low)
+
+if ibClosed
+    ready := true
+    state := 1
+    array.push(allRanges, ibH - ibL)
+
+ibRange = ready ? ibH - ibL : na
+
+f_stopPrice(int side, float edge, float entry, float rng, float oppEdge) =>
+    float st = switch stopMode
+        "ATR multiple from entry"  => entry - side * atrMult * atrVal
+        "Fixed points from entry"  => entry - side * stopPts
+        "Opposite IB edge"         => oppEdge
+        => edge - side * rng * stopPct / 100
+    st
+
+sizeOK = not na(ibRange) and ibRange > 0 and (minIB <= 0 or ibRange >= minIB) and (maxIB <= 0 or ibRange <= maxIB)
+geomOK = stopMode != "% of IB range from broken edge" or stopPct > retrPct
+canScan = ready and inTrade and state == 1 and sizeOK and geomOK
+
+brokeUp = canScan and high > ibH and doneDir !=  1
+brokeDn = canScan and low  < ibL and doneDir != -1
+goLong  = brokeUp and (not brokeDn or close >= open) and allowLong
+goShort = brokeDn and (not brokeUp or close <  open) and allowShort
+
+// ---- the break: compute and publish the levels ----
+newSetup = false
+if goLong or goShort
+    int side = goLong ? 1 : -1
+    float edge = side == 1 ? ibH : ibL
+    float opp  = side == 1 ? ibL : ibH
+    float e = math.round_to_mintick(edge - side * ibRange * retrPct / 100)
+    float st = math.round_to_mintick(f_stopPrice(side, edge, e, ibRange, opp))
+    if not na(st) and side * (e - st) > 0
+        dir := side
+        doneDir := side
+        ePrice := e
+        sPrice := st
+        curStop := st
+        tPrice := math.round_to_mintick(useRR ? e + side * rrMult * math.abs(e - st) : edge + side * ibRange * tgtPct / 100)
+        state := 2
+        newSetup := true
+    else
+        // The selected stop lands on the wrong side of the entry — no valid trade today.
+        doneDir := side
+        state := 4
+        lastOutcome := "invalid stop"
+else if brokeUp or brokeDn
+    dir := brokeUp ? 1 : -1
+    doneDir := dir
+    state := 4
+    lastOutcome := "side disabled"
+
+// ---- the fill: a trade-THROUGH of the resting limit, not a touch ----
+filled = false
+if state == 2 and inTrade
+    bool through = dir == 1 ? low < ePrice : high > ePrice
+    if through
+        fillPx := dir == 1 ? math.min(ePrice, open) : math.max(ePrice, open)
+        state := 3
+        filled := true
+
+// ---- managing the open trade ----
+hitStop = false
+hitTgt = false
+if state == 3
+    if useBE
+        if dir == 1 and high >= ibH + ibRange * bePct / 100
+            curStop := math.max(curStop, ePrice)
+        if dir == -1 and low <= ibL - ibRange * bePct / 100
+            curStop := math.min(curStop, ePrice)
+    bool sHit = dir == 1 ? low <= curStop : high >= curStop
+    bool tHit = dir == 1 ? high >= tPrice : low <= tPrice
+    // The stop wins any bar that contains both. The path inside a bar is unknown, and assuming
+    // the good one is how a backtest lies to you — the same rule the research engine uses.
+    if sHit
+        hitStop := true
+        state := 4
+        lastOutcome := "STOPPED"
+    else if tHit
+        hitTgt := true
+        state := 4
+        lastOutcome := "TARGET"
+
+flattened = false
+if tradeEnd
+    if state == 3
+        flattened := true
+        lastOutcome := "flat at time"
+    if state == 2
+        lastOutcome := "never filled"
+    state := 4
+    ready := false
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Plots
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+showDay  = showLevels and (showHistory or inIB or (ready and inTrade))
+showTrad = showLevels and (showHistory or state == 2 or state == 3)
+
+plot(showDay  ? ibH     : na, "IB High",     color=color.new(color.teal, 0), linewidth=2, style=plot.style_linebr)
+plot(showDay  ? ibL     : na, "IB Low",      color=color.new(color.teal, 0), linewidth=2, style=plot.style_linebr)
+plot(showTrad ? ePrice  : na, "Entry",       color=color.new(color.blue, 0), linewidth=1, style=plot.style_linebr)
+plot(showTrad ? curStop : na, "Stop loss",   color=color.new(color.red, 0), linewidth=1, style=plot.style_linebr)
+plot(showTrad ? tPrice  : na, "Take profit", color=color.new(color.green, 0), linewidth=1, style=plot.style_linebr)
+
+bgcolor(inIB and showLevels ? color.new(color.teal, 92) : na, title="IB window")
+bgcolor(showLevels and state == 3 ? color.new(dir == 1 ? color.green : color.red, 93) : na, title="In trade")
+
+plotshape(newSetup and dir == 1,  title="Long setup",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.blue, 0), size=size.tiny, text="setup")
+plotshape(newSetup and dir == -1, title="Short setup", style=shape.triangledown, location=location.abovebar, color=color.new(color.blue, 0), size=size.tiny, text="setup")
+plotshape(filled and dir == 1,    title="Long fill",   style=shape.labelup,   location=location.belowbar, color=color.new(color.green, 0), size=size.small, text="FILL", textcolor=color.white)
+plotshape(filled and dir == -1,   title="Short fill",  style=shape.labeldown, location=location.abovebar, color=color.new(color.red, 0),   size=size.small, text="FILL", textcolor=color.white)
+plotshape(hitTgt,  title="Target hit", style=shape.xcross, location=location.absolute, color=color.new(color.green, 0), size=size.small)
+plotshape(hitStop, title="Stop hit",   style=shape.xcross, location=location.absolute, color=color.new(color.red, 0),   size=size.small)
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Alerts
+//
+// alertcondition() gives one checkbox per event in the alert dialog. alert() additionally fires
+// a single dynamic message carrying the actual prices, which is what you want on a phone.
+// Both are bar-close events: nothing here fires on an unconfirmed bar.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+alertcondition(ibClosed,           title="IB formed",       message="ES IB: first hour closed — levels are set")
+alertcondition(newSetup,           title="Break / setup",   message="ES IB: break detected — limit order is live")
+alertcondition(filled,             title="Entry filled",    message="ES IB: entry FILLED")
+alertcondition(hitTgt,             title="Target hit",      message="ES IB: TARGET hit")
+alertcondition(hitStop,            title="Stop hit",        message="ES IB: STOPPED out")
+alertcondition(flattened,          title="Flatten at time", message="ES IB: session exit — close the position")
+
+f_px(float x) => str.tostring(x, format.mintick)
+
+if barstate.isconfirmed
+    if ibClosed
+        alert("ES IB " + syminfo.ticker + ": first hour closed. Range " + f_px(ibH - ibL) +
+              " pts (" + f_px(ibH) + " / " + f_px(ibL) + ").", alert.freq_once_per_bar)
+    if newSetup
+        alert("ES IB " + syminfo.ticker + ": " + (dir == 1 ? "LONG" : "SHORT") + " setup. Limit " +
+              f_px(ePrice) + ", stop " + f_px(sPrice) + ", target " + f_px(tPrice) +
+              ". Risk " + f_px(math.abs(ePrice - sPrice)) + " pts.", alert.freq_once_per_bar)
+    if filled
+        alert("ES IB " + syminfo.ticker + ": FILLED " + (dir == 1 ? "long" : "short") + " at " +
+              f_px(fillPx) + ". Stop " + f_px(curStop) + ", target " + f_px(tPrice) + ".", alert.freq_once_per_bar)
+    if hitTgt
+        alert("ES IB " + syminfo.ticker + ": TARGET at " + f_px(tPrice) + ".", alert.freq_once_per_bar)
+    if hitStop
+        alert("ES IB " + syminfo.ticker + ": STOPPED at " + f_px(curStop) + ".", alert.freq_once_per_bar)
+    if flattened
+        alert("ES IB " + syminfo.ticker + ": session exit — flatten now.", alert.freq_once_per_bar)
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Live panel
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+f_money(float x) => (x < 0 ? "-$" : "$") + str.tostring(math.abs(x), "0.00")
+
+var table p = table.new(position.top_right, 2, 10, border_width=1, frame_width=1, frame_color=color.new(color.gray, 50))
+
+if showTable and barstate.islast
+    string sTxt = switch state
+        0 => inIB ? "IB forming" : "waiting for 09:30"
+        1 => "IB set — waiting for a break"
+        2 => (dir == 1 ? "LONG" : "SHORT") + " limit resting"
+        3 => "IN TRADE (" + (dir == 1 ? "long" : "short") + ")"
+        => "done" + (lastOutcome == "" ? "" : " — " + lastOutcome)
+    color sCol = switch state
+        0 => color.new(color.gray, 0)
+        1 => color.new(color.teal, 0)
+        2 => color.new(color.blue, 0)
+        3 => color.new(dir == 1 ? color.green : color.red, 0)
+        => color.new(color.gray, 0)
+
+    float riskPts = na(ePrice) or na(curStop) ? na : math.abs(ePrice - curStop)
+    float rewPts  = na(ePrice) or na(tPrice)  ? na : math.abs(tPrice - ePrice)
+    float medRange = array.size(allRanges) > 4 ? array.median(allRanges) : na
+    // The hurdle: one round turn as a fraction of the risk on a typical day. Computed from THIS
+    // chart, so it replaces the estimate in the header with your symbol's real figure.
+    float typRisk = na(medRange) ? na : medRange * math.max(stopPct - retrPct, 1) / 100
+    float rtPts   = syminfo.mintick + 2 * syminfo.mintick + 4.0 / syminfo.pointvalue
+    float hurdle  = na(typRisk) or typRisk <= 0 ? na : rtPts / typRisk
+    color hCol = na(hurdle) ? color.gray : hurdle > 0.05 ? color.new(color.red, 0) : hurdle > 0.035 ? color.new(color.orange, 0) : color.new(color.green, 0)
+
+    table.cell(p, 0, 0, "ES IB live", text_color=color.white, bgcolor=color.new(color.teal, 20), text_size=size.small)
+    table.cell(p, 1, 0, timeframe.period, text_color=color.white, bgcolor=color.new(color.teal, 20), text_size=size.small)
+    table.cell(p, 0, 1, "State", text_size=size.small, text_color=color.gray)
+    table.cell(p, 1, 1, sTxt, text_size=size.small, text_color=sCol)
+    table.cell(p, 0, 2, "IB high / low", text_size=size.small, text_color=color.gray)
+    table.cell(p, 1, 2, na(ibH) ? "—" : f_px(ibH) + " / " + f_px(ibL), text_size=size.small)
+    table.cell(p, 0, 3, "IB range", text_size=size.small, text_color=color.gray)
+    table.cell(p, 1, 3, na(ibRange) ? "—" : str.tostring(ibRange, "#.##") + " pt · " + f_money(ibRange * syminfo.pointvalue), text_size=size.small)
+    table.cell(p, 0, 4, "Entry", text_size=size.small, text_color=color.gray)
+    table.cell(p, 1, 4, na(ePrice) ? "—" : f_px(ePrice) + (state == 3 ? "  (filled " + f_px(fillPx) + ")" : ""), text_size=size.small)
+    table.cell(p, 0, 5, "Stop", text_size=size.small, text_color=color.gray)
+    table.cell(p, 1, 5, na(curStop) ? "—" : f_px(curStop), text_size=size.small, text_color=color.new(color.red, 0))
+    table.cell(p, 0, 6, "Target", text_size=size.small, text_color=color.gray)
+    table.cell(p, 1, 6, na(tPrice) ? "—" : f_px(tPrice), text_size=size.small, text_color=color.new(color.green, 0))
+    table.cell(p, 0, 7, "Risk / reward", text_size=size.small, text_color=color.gray)
+    table.cell(p, 1, 7, na(riskPts) ? "—" : f_money(riskPts * syminfo.pointvalue * contracts) + " → " + f_money(rewPts * syminfo.pointvalue * contracts) + "  (1:" + str.tostring(rewPts / riskPts, "#.##") + ")", text_size=size.small)
+    table.cell(p, 0, 8, "Cost hurdle", text_size=size.small, text_color=color.gray)
+    table.cell(p, 1, 8, na(hurdle) ? "—" : str.tostring(hurdle, "#.###") + "R  (median IB " + str.tostring(medRange, "#.#") + " pt)", text_size=size.small, text_color=hCol)
+    string warn = timeframe.in_seconds() > 900 ? "Timeframe too coarse — use 1–5m" : (allowShort ? "" : "Shorts OFF — that filter was NQ's uptrend, not an edge")
+    table.cell(p, 0, 9, warn, text_size=size.tiny, text_color=color.new(color.orange, 0))
+    table.cell(p, 1, 9, "", text_size=size.tiny)

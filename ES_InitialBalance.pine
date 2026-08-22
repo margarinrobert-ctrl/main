@@ -1,0 +1,475 @@
+//@version=6
+// =============================================================================================
+// ES — Initial Balance (IB) breakout-retracement, edgeful-style rules
+// Ported from the NQ v3 script, with the stop-loss selector and ES contract specifics.
+// =============================================================================================
+//
+// THE RULES
+//   1. Initial Balance = high/low of the first hour of the NY session, 09:30–10:30 ET.
+//   2. Wait for that hour to CLOSE. Nothing trades while the IB forms.
+//   3. Wait for a break of the IB high (long bias) or IB low (short bias).
+//   4. Do NOT chase. Rest a limit back INSIDE the broken edge, at a % of the IB range.
+//   5. Stop by the selected method (see STOP LOSS SELECTION below).
+//   6. Target either a % of the IB range beyond the edge, or a fixed multiple of the risk.
+//   7. Flatten at the session exit time if neither is hit. One trade per day.
+//
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// READ THIS FIRST: THE NUMBERS IN THIS FILE WERE MEASURED ON NQ, NOT ON ES
+//
+//   Every statistic quoted below comes from three years of 1-minute NQ (Dec 2022 – Dec 2025),
+//   modelled with realistic fills and full costs. NONE of it has been re-measured on ES,
+//   because the research repository has no ES data. Carried over unchanged, those numbers are
+//   a HYPOTHESIS about ES, not a result.
+//
+//   That matters more than usual here, because ES is not a smaller NQ. It is a different cost
+//   environment, and the difference runs against you:
+//
+//     contract   $/point   round-turn cost        IB range (first hour)
+//     NQ          $20      0.95 pts  = $19.00     ~123 pts = ~$2,460   (measured)
+//     ES          $50      0.46 pts  = $22.75     ~25 pts  = ~$1,250   (ESTIMATED)
+//
+//   An ES tick is worth $12.50 against NQ's $5, so every tick of spread and slippage costs 2.5x
+//   more, while the first hour is worth about HALF as much in dollars. On those estimates the
+//   cost hurdle is roughly 0.06R per trade against NQ's measured 0.026R — about 2.3x worse.
+//
+//   The IB range figure for ES is an ESTIMATE. The statistics table below measures the real one
+//   on your chart and prints the implied hurdle, so you can replace my guess with your data.
+//   If the hurdle reads much above 0.05R, this geometry is fighting its own costs and the
+//   honest move is to widen the stop (which lowers the hurdle) or trade a different session.
+//
+//   The one finding that ports with confidence is a NEGATIVE one, because it is about
+//   arithmetic rather than about NQ: a fixed dollar cost against a smaller range is a larger
+//   hurdle. That is exactly why the same geometry failed on the Asia session — ranges a quarter
+//   the size against identical costs — and ES sits partway along the same axis.
+//
+// WHAT WAS MEASURED ON NQ, AND WHY THE DEFAULTS ARE WHAT THEY ARE
+//
+//   Decomposing a settings configuration against the published one, reading the research half
+//   against the holdout half rather than the headline:
+//
+//     configuration                              n    win     E     t   research  holdout
+//     published (15:55 / stop 60 / tgt 50%)     529   38%  0.036  0.61    0.004    0.107
+//     + flatten 11:59 only                      349   47%  0.070  1.25    0.060    0.089
+//     + stop 80% only                           529   49%  0.074  1.64    0.088    0.044
+//     + fixed 1:1 target only                   529   53%  0.037  0.80    0.031    0.049
+//     + LONGS ONLY                              261   42%  0.082  0.96   -0.006   +0.255   <-- fails
+//     flatten + stop 80% + fixed 1:1            349   56%  0.096  2.46    0.086    0.115
+//
+//   The three STRUCTURAL changes hold 0.086 research against 0.115 holdout — same sign, same
+//   size, on a split they were not chosen on. The DIRECTION FILTER does not: -0.006 research
+//   against +0.255 holdout is an index uptrend being fitted, not an edge. Shorts stay on.
+//
+//   The 50% retracement was picked by every stable fold of three independent walk-forwards, and
+//   tests at 0.246R / t=3.37 against the 25% entry's 0.096R / t=2.46, with a SMALLER drawdown.
+//   At 1:2 it reaches 0.325R / t=3.84. Those are the defaults here.
+//
+//   DO NOT RE-OPTIMISE THIS. Over identical out-of-sample bars:
+//     re-optimised, rolling 250d/60d   $14,580   t = 1.19   CI [-0.042, 0.274]
+//     FIXED geometry, no optimisation  $27,253   t = 2.14   CI [ 0.016, 0.181]
+//   And at 225,792 configurations with a locked holdout, search width was monotonically
+//   harmful: a RANDOM configuration landed at the 51.5th percentile of locked-holdout P&L, the
+//   best-of-143,536 landed at the 13.4th, with no reversal anywhere in between. The correlation
+//   between in-sample and locked-holdout P&L was -0.079. The single best in-sample geometry used
+//   a 0% retracement — entering at the break, the thing this strategy exists to avoid.
+//
+// STOP LOSS SELECTION — measured on NQ, at retr 50 / fixed 1:2 / both sides, 167 trades
+//
+//     method                    win     E      PF     t     DD   mcDD95   research  holdout
+//     % of range,  60%         43.7%  0.388   1.37  2.02   3.1%   13.0%    0.438     0.272
+//     % of range,  70%         50.9%  0.377   1.64  3.15   4.4%   14.4%    0.394     0.338
+//     % of range,  80% (dflt)  55.7%  0.325   1.66  3.84   5.6%   17.6%    0.414     0.116
+//     % of range, 100%         58.1%  0.134   1.24  2.08  10.2%   33.4%    0.205    -0.032
+//     ATR(30) x 1.0            47.3%  0.435   1.41  3.02   3.5%   14.5%    0.506     0.269
+//     ATR(30) x 1.5            52.1%  0.398   1.44  3.54   4.8%   18.5%    0.450     0.277
+//     ATR(14) x 2.0            53.3%  0.356   1.51  3.62   5.1%   20.0%    0.406     0.241
+//     fixed  20 points         52.1%  0.381   1.82  3.52   2.4%    9.3%    0.399     0.342
+//     fixed  40 points         57.5%  0.193   1.58  2.62   4.5%   16.8%    0.257     0.043
+//     opposite IB edge         58.1%  0.134   1.24  2.08  10.2%   33.4%    0.205    -0.032
+//
+//   1. WIDER STOPS BUY WIN RATE AND SELL EVERYTHING ELSE. Win rate climbs monotonically with
+//      stop width, 43.7% to 58.1%, while expectancy falls 0.388 to 0.134 and the Monte Carlo
+//      drawdown nearly triples. A higher win rate is the receipt for paying more per loss.
+//   2. THE OPPOSITE-EDGE STOP IS EXACTLY THE 100% STOP — identical to three decimals, as it must
+//      be, since the far edge is 100% of the range from the broken one. It is the worst option.
+//   3. THE DEFAULT IS NOT THE TOP ROW, DELIBERATELY. Stop 80% has the best t but a holdout a
+//      quarter of its research half. Moving the default on the strength of a 22-way sweep that
+//      has now touched the holdout is the exact mistake this file documents elsewhere.
+//   4. THE FIXED-POINT STOP DOES NOT PORT TO ES AT ALL. "20 points" on NQ is $400 of risk; on
+//      ES it is $1,000, against a first hour worth half as much. If you select it, START FROM
+//      THE ES SCALE — roughly 4-6 points, not 20 — and re-check it as volatility moves. An
+//      absolute distance is the one setting guaranteed to mean something different here.
+//
+// BUILT FOR FUTURES (ES1! / MES1! on CME_MINI):
+//   • MARGIN — Pine v6 ENFORCES margin_long/short and defaults them to 100%. ES at ~5,600 is
+//     ~$280,000 notional per contract, so at 100% a $50,000 account can never afford one and
+//     every order is silently cancelled — the tester just shows zero trades. Set to 1% below
+//     (~$2,800), conservative next to the $500–$1,500 intraday margin brokers charge. This
+//     strategy is flat by the session exit daily, so overnight initial margin never applies.
+//   • POINT VALUE comes from the symbol: ES $50/pt, MES $5/pt. Only commission needs changing.
+//   • SLIPPAGE is set to 1 tick per side. The research assumes 0.25 ticks for ES, which Pine
+//     cannot express (slippage is an integer number of ticks), so this script is MORE
+//     pessimistic than the study it inherits — deliberately.
+//   • PRICES SNAP TO THE TICK with math.round_to_mintick().
+//   • SESSION TIMES ARE WALL-CLOCK NEW YORK via hour()/minute(), immune to the chart's ETH/RTH
+//     toggle and to daylight saving.
+//
+// ONE DIFFERENCE FROM THE RESEARCH ENGINE: TradingView fills a resting limit when price TOUCHES
+// it. The research engine requires price to trade THROUGH it, on the grounds that at a touch you
+// are behind everyone already queued at that level. Expect slightly more fills here.
+//
+// NO REPAINTING: the IB is final only after 09:30–10:30 has closed, all levels come from
+// completed bars, orders go in at bar close, no higher-timeframe requests.
+//
+// TIMEFRAME: 1–5 minute ES1!. Above 15m the IB window is not measured cleanly and the table warns.
+// =============================================================================================
+
+strategy(
+     title                   = "ES Initial Balance (Edgeful-style)",
+     shorttitle              = "ES IB",
+     overlay                 = true,
+     pyramiding              = 0,
+     initial_capital         = 50000,
+     default_qty_type        = strategy.fixed,
+     default_qty_value       = 1,
+     commission_type         = strategy.commission.cash_per_contract,
+     commission_value        = 2.00,      // ~$4 round turn on ES. Use ~0.67 for MES.
+     slippage                = 1,         // ticks per side; ES tick = 0.25 pt = $12.50
+     margin_long             = 1,         // % of notional — see the MARGIN note above
+     margin_short            = 1,
+     calc_on_every_tick      = false,
+     process_orders_on_close = false)
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Inputs
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+TZ = "America/New_York"
+
+gS = "Session (New York wall-clock)"
+ibStartH = input.int(9,  "IB starts — hour", minval=0, maxval=23, group=gS, inline="a")
+ibStartM = input.int(30, ":",               minval=0, maxval=59, group=gS, inline="a")
+ibEndH   = input.int(10, "IB ends — hour",  minval=0, maxval=23, group=gS, inline="b")
+ibEndM   = input.int(30, ":",               minval=0, maxval=59, group=gS, inline="b")
+exitH    = input.int(11, "Flatten — hour",  minval=0, maxval=23, group=gS, inline="c")
+exitM    = input.int(59, ":",               minval=0, maxval=59, group=gS, inline="c", tooltip="Entries are armed from the IB close until this time; then any unfilled order is cancelled and any open position closed. Default 11:59, not the published 15:55 — holding a morning-auction position into the afternoon trades against a reference level that is six hours stale. On NQ this alone moved expectancy 0.036 to 0.070.")
+
+gR = "Strategy rules"
+retrPct  = input.float(50, "Entry — retracement into IB (% of range)", minval=0, maxval=99, step=1, group=gR, tooltip="edgeful documents 25%. Default here is 50%: three independent walk-forwards picked 50% in every stable fold, and a direct test doubles expectancy (0.096R to 0.246R, t 2.46 to 3.37) while HALVING drawdown. Measured on NQ.")
+stopMode = input.string("% of IB range from broken edge", "Stop loss method", options=["% of IB range from broken edge", "ATR multiple from entry", "Fixed points from entry", "Opposite IB edge"], group=gR, tooltip="Four genuinely different trades. The % of range and ATR methods scale with volatility and are the defensible ones. FIXED POINTS DOES NOT PORT FROM NQ TO ES — see the note in the header; start from roughly 4-6 ES points, not 20.")
+stopPct  = input.float(80, "  ...% of range from broken edge", minval=1, maxval=200, step=1, group=gR, tooltip="Must exceed the entry retracement — at retr 50 a stop below 50 gives zero valid trades. On NQ: 60% gives 0.388R (t=2.02), 70% gives 0.377R (t=3.15, res 0.394 / hold 0.338), 80% gives 0.325R (t=3.84, res 0.414 / hold 0.116), 100% gives 0.134R.")
+atrLen   = input.int(30, "  ...ATR length", minval=2, maxval=200, group=gR, tooltip="ATR(30) measured slightly better than ATR(14) at every multiple tested — a longer average is a less noisy estimate of the same thing.")
+atrMult  = input.float(1.5, "  ...ATR multiple", minval=0.1, maxval=10, step=0.1, group=gR, tooltip="On NQ with ATR(30): 1.0x gives 0.435R (t=3.02), 1.5x gives 0.398R (t=3.54, res 0.450 / hold 0.277), 2x gives 0.338R, 3x gives 0.226R. This is the method whose mechanism is easiest to defend and the one most likely to survive the move to ES, because it never has to be told what a point is worth.")
+stopPts  = input.float(5, "  ...fixed points from entry", minval=0.25, maxval=200, step=0.25, group=gR, tooltip="RESCALED FOR ES. The NQ study's best was 20 points, which is $400 of risk there and $1,000 here. 5 ES points is roughly the equivalent dollar risk. Treat it with suspicion either way: an absolute distance is not scale-free and index ranges drift.")
+useRR    = input.bool(true, "Use fixed R:R target instead of % target", group=gR, tooltip="Default ON. A percent-of-range target scales with the IB range while the risk does too, so wide-range days demand a much larger absolute move for the same R. A parameter search that knew nothing about this setting chose the fixed target in 88% of folds.")
+tgtPct   = input.float(50, "Target — beyond broken edge (% of range)", minval=1, maxval=500, step=1, group=gR, tooltip="edgeful's documented target, used when fixed R:R is off.")
+rrMult   = input.float(2.0, "Risk : Reward (when fixed R:R is on)", minval=0.1, maxval=20, step=0.1, group=gR, tooltip="On NQ 1:2 measured best (0.325R, t=3.84, 8.8% max drawdown) against 1:1 (0.246R, t=3.37, 10.8%). 1:1 wins more often (60.5% vs 55.7%) and makes less. 1:3 is worse than both. Across 225,792 configurations, higher R:R was monotonically WORSE in dollars while looking better in R.")
+useBE    = input.bool(false, "Move stop to breakeven", group=gR, tooltip="Published as a separate variant. Off by default so the base rules are measured first.")
+bePct    = input.float(25, "Breakeven trigger (% of range beyond edge)", minval=1, maxval=500, step=1, group=gR)
+
+gF = "Filters"
+allowLong  = input.bool(true, "Allow longs",  group=gF)
+allowShort = input.bool(true, "Allow shorts", group=gF, tooltip="LEAVE THIS ON. Every parameter search on 2022-2025 NQ wanted longs only, including all eight folds of an anchored walk-forward. It is the index's uptrend, not an edge in the setup: longs-only scored -0.006 in the research half against +0.255 in the holdout. The shorts it removes were mildly profitable in both halves.")
+usePctFilter = input.bool(false, "Filter by IB range PERCENTILE (adaptive)", group=gF, tooltip="Compares today's first hour to the trailing distribution instead of to a fixed number of points, so it keeps meaning as volatility drifts. OFF by default: the geometry was validated without it, and stacking two separately-fitted adjustments is how backtests stop meaning anything.")
+pctWindow  = input.int(60, "Percentile lookback (sessions)", minval=20, maxval=250, group=gF)
+minPctile  = input.float(0, "Min IB range percentile", minval=0, maxval=100, step=5, group=gF)
+maxPctile  = input.float(100, "Max IB range percentile", minval=0, maxval=100, step=5, group=gF)
+minIB = input.float(0, "Min IB range (points, 0 = off)", minval=0, step=1, group=gF, tooltip="Absolute fallback. Prefer the percentile filter. Note ES ranges are roughly a fifth of NQ's in points.")
+maxIB = input.float(0, "Max IB range (points, 0 = off)", minval=0, step=1, group=gF)
+allow2nd = input.bool(false, "Allow a second trade (double-break days)", group=gF, tooltip="Default off — the documented strategy is one trade per day.")
+
+gV = "Display"
+showLevels = input.bool(true, "Plot IB / entry / stop / target", group=gV)
+showTable  = input.bool(true, "Show statistics table", group=gV)
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Session state — wall-clock New York
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+atrVal = ta.atr(atrLen)   // must be evaluated every bar, so it is computed unconditionally
+
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow = dayofweek(time, TZ)
+weekday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+
+ibFrom = ibStartH * 60 + ibStartM
+ibTo   = ibEndH   * 60 + ibEndM
+exitAt = exitH    * 60 + exitM
+
+inIB    = weekday and nyMin >= ibFrom and nyMin < ibTo
+inTrade = weekday and nyMin >= ibTo   and nyMin < exitAt
+
+ibStart  = inIB and not inIB[1]
+ibClosed = not inIB and inIB[1]
+tradeEnd = not inTrade and inTrade[1]
+
+var float ibH   = na
+var float ibL   = na
+var bool  ready = false
+
+var int   dir       = 0
+var int   doneDir   = 0
+var int   tradesDay = 0
+var float ePrice    = na
+var float sPrice    = na
+var float tPrice    = na
+var float curStop   = na
+var bool  armed     = false
+
+var array<float> pastRanges = array.new_float()
+var float rangePctile = na
+var array<float> allRanges = array.new_float()   // for the cost-hurdle diagnostic
+
+if ibStart
+    ibH       := high
+    ibL       := low
+    ready     := false
+    dir       := 0
+    doneDir   := 0
+    tradesDay := 0
+    ePrice    := na
+    sPrice    := na
+    tPrice    := na
+    curStop   := na
+    armed     := false
+    rangePctile := na
+else if inIB
+    ibH := math.max(ibH, high)
+    ibL := math.min(ibL, low)
+
+if ibClosed
+    ready := true
+    float todayRange = ibH - ibL
+    int n = array.size(pastRanges)
+    if n >= 20
+        int below = 0
+        for i = 0 to n - 1
+            if array.get(pastRanges, i) < todayRange
+                below += 1
+        rangePctile := 100.0 * below / n
+    else
+        rangePctile := 50.0
+    array.push(pastRanges, todayRange)
+    if array.size(pastRanges) > pctWindow
+        array.shift(pastRanges)
+    array.push(allRanges, todayRange)
+
+ibRange = ready ? ibH - ibL : na
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Setup detection — break, then retracement entry
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Resolve the selected stop method into a price. `side` is 1 for a long, -1 for a short.
+f_stopPrice(int side, float edge, float entry, float rng, float oppEdge) =>
+    float st = switch stopMode
+        "ATR multiple from entry"  => entry - side * atrMult * atrVal
+        "Fixed points from entry"  => entry - side * stopPts
+        "Opposite IB edge"         => oppEdge
+        => edge - side * rng * stopPct / 100
+    st
+
+absOK  = (minIB <= 0 or ibRange >= minIB) and (maxIB <= 0 or ibRange <= maxIB)
+pctOK  = not usePctFilter or (not na(rangePctile) and rangePctile >= minPctile and rangePctile <= maxPctile)
+sizeOK = not na(ibRange) and ibRange > 0 and absOK and pctOK
+// Only the percent-of-range method can be invalidated by the inputs alone; the other three are
+// checked against the actual entry once it is known.
+geomOK = stopMode != "% of IB range from broken edge" or stopPct > retrPct
+canScan = ready and inTrade and dir == 0 and sizeOK and geomOK and strategy.position_size == 0
+
+brokeUp = canScan and high > ibH and doneDir !=  1
+brokeDn = canScan and low  < ibL and doneDir != -1
+
+goLong  = brokeUp and (not brokeDn or close >= open) and allowLong
+goShort = brokeDn and (not brokeUp or close <  open) and allowShort
+
+if goLong
+    dir     := 1
+    doneDir := 1
+    float e = math.round_to_mintick(ibH - ibRange * retrPct / 100)
+    float st = math.round_to_mintick(f_stopPrice(1, ibH, e, ibRange, ibL))
+    // A stop at or above a long's entry is not a stop. Refuse the trade rather than send an order
+    // with zero or negative risk, which would report an absurd R multiple.
+    if st < e and not na(st)
+        ePrice  := e
+        sPrice  := st
+        tPrice  := math.round_to_mintick(useRR ? e + rrMult * (e - st) : ibH + ibRange * tgtPct / 100)
+        curStop := st
+        armed   := true
+        strategy.entry("IB Long", strategy.long, limit = ePrice, comment = "IB long")
+else if goShort
+    dir     := -1
+    doneDir := -1
+    float e = math.round_to_mintick(ibL + ibRange * retrPct / 100)
+    float st = math.round_to_mintick(f_stopPrice(-1, ibL, e, ibRange, ibH))
+    if st > e and not na(st)
+        ePrice  := e
+        sPrice  := st
+        tPrice  := math.round_to_mintick(useRR ? e - rrMult * (st - e) : ibL - ibRange * tgtPct / 100)
+        curStop := st
+        armed   := true
+        strategy.entry("IB Short", strategy.short, limit = ePrice, comment = "IB short")
+else if brokeUp or brokeDn
+    dir     := brokeUp ? 1 : -1
+    doneDir := dir
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Position management
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+inLong  = strategy.position_size > 0
+inShort = strategy.position_size < 0
+justFilled = strategy.position_size != 0 and strategy.position_size[1] == 0
+
+if justFilled
+    armed     := false
+    tradesDay += 1
+
+if useBE and strategy.position_size != 0
+    if inLong and high >= ibH + ibRange * bePct / 100
+        curStop := math.max(curStop, ePrice)
+    if inShort and low <= ibL - ibRange * bePct / 100
+        curStop := math.min(curStop, ePrice)
+
+if inLong
+    strategy.exit("IB Long X", from_entry = "IB Long", stop = curStop, limit = tPrice, comment_loss = "stop", comment_profit = "target")
+if inShort
+    strategy.exit("IB Short X", from_entry = "IB Short", stop = curStop, limit = tPrice, comment_loss = "stop", comment_profit = "target")
+
+justClosed = strategy.position_size == 0 and strategy.position_size[1] != 0
+if justClosed
+    if allow2nd and tradesDay < 2 and inTrade
+        dir     := 0
+        ePrice  := na
+        sPrice  := na
+        tPrice  := na
+        curStop := na
+    else
+        armed := false
+
+if tradeEnd
+    strategy.cancel_all()
+    if strategy.position_size != 0
+        strategy.close_all(comment = "EOD flat")
+    armed := false
+    ready := false
+
+// Belt and braces: if a session ends without producing a tradeEnd bar (a data gap, a holiday
+// half-day), clear the armed state anyway so nothing leaks into the next session.
+if not inIB and not inTrade and ready
+    ready := false
+    armed := false
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Plots
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+liveDay  = showLevels and (inIB or (ready and inTrade))
+liveTrad = showLevels and (armed or strategy.position_size != 0)
+
+plot(liveDay  ? ibH     : na, "IB High",     color=color.new(color.teal,  0), linewidth=2, style=plot.style_linebr)
+plot(liveDay  ? ibL     : na, "IB Low",      color=color.new(color.teal,  0), linewidth=2, style=plot.style_linebr)
+plot(liveTrad ? ePrice  : na, "Entry",       color=color.new(color.blue,  0), linewidth=1, style=plot.style_linebr)
+plot(liveTrad ? curStop : na, "Stop loss",   color=color.new(color.red,   0), linewidth=1, style=plot.style_linebr)
+plot(liveTrad ? tPrice  : na, "Take profit", color=color.new(color.green, 0), linewidth=1, style=plot.style_linebr)
+
+bgcolor(inIB and showLevels ? color.new(color.teal, 92) : na, title="IB window")
+bgcolor(showLevels and ready and inTrade and not sizeOK ? color.new(color.orange, 90) : na, title="Filtered out")
+
+plotshape(justFilled and inLong,  title="Long entry",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.green, 0), size=size.small, text="IB")
+plotshape(justFilled and inShort, title="Short entry", style=shape.triangledown, location=location.abovebar, color=color.new(color.red,   0), size=size.small, text="IB")
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Statistics table — including the cost hurdle, measured on YOUR data rather than assumed
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+f_money(float x) =>
+    (x < 0 ? "-$" : "$") + str.tostring(math.abs(x), "0.00")
+
+var table st = table.new(position.top_right, 2, 11, border_width=1, frame_width=1, frame_color=color.new(color.gray, 50))
+
+var int ibDaysSeen = 0
+var int ibDaysSkipped = 0
+if ibClosed
+    ibDaysSeen += 1
+if tradeEnd and ready[1] and not sizeOK[1]
+    ibDaysSkipped += 1
+
+if showTable and barstate.islast
+    int closed = strategy.closedtrades
+    float winRt = closed > 0 ? 100.0 * strategy.wintrades / closed : 0.0
+    float pf = na
+    if strategy.grossloss > 0
+        pf := strategy.grossprofit / strategy.grossloss
+    float ddPct = strategy.initial_capital > 0 ? 100.0 * strategy.max_drawdown / strategy.initial_capital : 0.0
+    float perTrade = closed > 0 ? strategy.netprofit / closed : 0.0
+    color npCol = strategy.netprofit >= 0 ? color.new(color.green, 0) : color.new(color.red, 0)
+
+    // Median IB range over the whole chart, and the cost hurdle it implies. This replaces the
+    // ESTIMATE in the header with the real number for this symbol and period.
+    float medRange = na
+    int nR = array.size(allRanges)
+    if nR > 4
+        medRange := array.median(allRanges)
+    float riskPts = na(medRange) ? na : medRange * math.max(stopPct - retrPct, 1) / 100
+    // One round turn: the spread plus two sides of slippage, plus commission, all in points.
+    float rtPts = syminfo.mintick + 2 * 1 * syminfo.mintick + 4.0 / syminfo.pointvalue
+    float hurdleR = na(riskPts) or riskPts <= 0 ? na : rtPts / riskPts
+    color hurdleC = na(hurdleR) ? color.gray : hurdleR > 0.05 ? color.new(color.red, 0) : hurdleR > 0.035 ? color.new(color.orange, 0) : color.new(color.green, 0)
+
+    string diag  = ""
+    color  diagC = color.new(color.gray, 0)
+    if ibDaysSeen == 0
+        diag  := "No IB window found — check the timeframe and that the symbol trades 09:30 ET"
+        diagC := color.new(color.red, 0)
+    else if timeframe.in_seconds() > 900
+        diag  := "Timeframe " + timeframe.period + " is too coarse to measure the IB — use 1–5m"
+        diagC := color.new(color.orange, 0)
+    else if closed == 0
+        diag  := "IB found on " + str.tostring(ibDaysSeen) + " days but 0 trades — check Properties → Margin"
+        diagC := color.new(color.orange, 0)
+    else if closed < 100
+        diag  := str.tostring(closed) + " trades is too few to conclude anything — 100 is a bare minimum"
+        diagC := color.new(color.orange, 0)
+    else
+        diag  := str.tostring(ibDaysSeen) + " IB days · " + str.tostring(ibDaysSkipped) + " filtered · " + syminfo.ticker
+
+    table.cell(st, 0, 0, "ES IB backtest", text_color=color.white, bgcolor=color.new(color.teal, 20), text_size=size.small)
+    table.cell(st, 1, 0, timeframe.period, text_color=color.white, bgcolor=color.new(color.teal, 20), text_size=size.small)
+    table.cell(st, 0, 1, "Net profit",    text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 1, f_money(strategy.netprofit), text_size=size.small, text_color=npCol)
+    table.cell(st, 0, 2, "Per trade",     text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 2, f_money(perTrade), text_size=size.small, text_color=npCol)
+    table.cell(st, 0, 3, "Win rate",      text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 3, str.tostring(winRt, "#.##") + "%", text_size=size.small)
+    table.cell(st, 0, 4, "Profit factor", text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 4, na(pf) ? "—" : str.tostring(pf, "#.###"), text_size=size.small)
+    table.cell(st, 0, 5, "Trades",        text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 5, str.tostring(closed), text_size=size.small)
+    table.cell(st, 0, 6, "Max drawdown",  text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 6, f_money(strategy.max_drawdown) + " (" + str.tostring(ddPct, "#.#") + "%)", text_size=size.small)
+    table.cell(st, 0, 7, "Median IB range", text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 7, na(medRange) ? "—" : str.tostring(medRange, "#.##") + " pt · " + f_money(medRange * syminfo.pointvalue), text_size=size.small)
+    table.cell(st, 0, 8, "Cost hurdle",   text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 8, na(hurdleR) ? "—" : str.tostring(hurdleR, "#.###") + "R per trade", text_size=size.small, text_color=hurdleC)
+    table.cell(st, 0, 9, "Instrument",    text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 9, syminfo.type + " · " + f_money(syminfo.pointvalue) + "/pt", text_size=size.small)
+    table.cell(st, 0, 10, diag, text_size=size.tiny, text_color=diagC)
+    table.cell(st, 1, 10, "",  text_size=size.tiny)
+
+// =============================================================================================
+// SOURCE NOTES — what is verified, what is a modelling choice, what is unverified on ES
+//
+// Verified from edgeful's public writing (posts on the IB breakout strategy, the GC IB algo,
+// the YM IB strategy, the IB breakeven stop algo):
+//   • IB = high/low of the first hour of the NY session, 09:30–10:30 ET.
+//   • Wait for the first hour to close before trading.
+//   • Entry is a retracement back into the range at 25% of the IB distance, not the break.
+//   • Stop at 60% of the IB range; target 50% of the IB range from the broken edge.
+//   • One trade per day; exit at the close of trading if neither level is hit.
+//   • Breakeven-stop management exists as a separate published variant.
+//
+// Modelling choices (NOT edgeful specifications — all are inputs):
+//   • Trade window ends 11:59 ET by default; edgeful says "close of trading" without a minute.
+//   • A break is a wick through the level; whether a CLOSE beyond it is required is not stated.
+//   • Bar-close order submission: a break and retracement completing inside one bar is missed.
+//   • A bar breaking both sides is resolved by its close direction.
+//   • edgeful layers subscription-only probability filters on top to pick days. None is applied.
+//
+// UNVERIFIED ON ES: every statistic in this file was measured on NQ. The defaults are a
+// hypothesis for ES, not a result. The cost-hurdle row in the table is the thing to watch —
+// it is computed from your chart, and it is the mechanism most likely to break the port.
+// =============================================================================================
