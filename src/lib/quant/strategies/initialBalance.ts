@@ -1,4 +1,4 @@
-import { clockFor } from "../clock";
+import { clockFor, minutesSinceOpen, sessionIndex } from "../clock";
 import type { Bar, EntryIntent, Instrument, Params, Strategy } from "../types";
 
 /**
@@ -68,8 +68,10 @@ export const initialBalance: Strategy = {
   build(bars: Bar[], p: Params, inst: Instrument) {
     const clock = clockFor(bars, inst.tz);
     const sessionStart = inst.session[0];
-    const ibEnd = sessionStart + p.ibMinutes;
     const n = bars.length;
+    // Session-relative time and a session id whose boundary is the open, so an overnight session
+    // (Asia, 18:00-03:00) is one session rather than two halves split at midnight.
+    const sess = sessionIndex(clock, sessionStart);
 
     // ---- pass 1: build each session's initial balance, forward only ----
     const ibHigh = new Float64Array(n).fill(NaN);
@@ -80,18 +82,18 @@ export const initialBalance: Strategy = {
     let lo = Infinity;
     let sawWindow = false;
     for (let i = 0; i < n; i++) {
-      if (clock.dayIndex[i] !== curDay) {
-        curDay = clock.dayIndex[i];
+      if (sess[i] !== curDay) {
+        curDay = sess[i];
         hi = -Infinity;
         lo = Infinity;
         sawWindow = false;
       }
-      const m = clock.minuteOfDay[i];
-      if (m >= sessionStart && m < ibEnd) {
+      const m = minutesSinceOpen(clock.minuteOfDay[i], sessionStart);
+      if (m < p.ibMinutes) {
         hi = Math.max(hi, bars[i].h);
         lo = Math.min(lo, bars[i].l);
         sawWindow = true;
-      } else if (m >= ibEnd && sawWindow && hi > -Infinity) {
+      } else if (sawWindow && hi > -Infinity) {
         // The window has closed: from here on the IB is final and safe to trade against.
         ibHigh[i] = hi;
         ibLow[i] = lo;
@@ -104,7 +106,7 @@ export const initialBalance: Strategy = {
     // distribution — that would be a look-ahead the truncation test would not catch, because the
     // percentile of the last day barely moves when the series is cut there.
     const dayRange = new Map<number, number>();
-    for (let i = 0; i < n; i++) if (ibReady[i] && !dayRange.has(clock.dayIndex[i])) dayRange.set(clock.dayIndex[i], ibHigh[i] - ibLow[i]);
+    for (let i = 0; i < n; i++) if (ibReady[i] && !dayRange.has(sess[i])) dayRange.set(sess[i], ibHigh[i] - ibLow[i]);
     const days = [...dayRange.keys()].sort((a, b) => a - b);
     const rangePercentile = new Map<number, number>();
     const history: number[] = [];
@@ -126,7 +128,7 @@ export const initialBalance: Strategy = {
     let usedSide = 0;
 
     return (i: number): EntryIntent | null => {
-      const day = clock.dayIndex[i];
+      const day = sess[i];
       if (day !== stateDay) {
         stateDay = day;
         usedSide = 0;

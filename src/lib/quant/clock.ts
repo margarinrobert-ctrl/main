@@ -102,6 +102,38 @@ export function clockFor(bars: Bar[], tz: ExchangeTz = "America/New_York"): Cloc
   return clock;
 }
 
+/**
+ * Minutes elapsed since the session opened, as a 0..1439 coordinate.
+ *
+ * Turns "is this bar in the first hour" into a comparison that works identically for a session
+ * inside one calendar day (09:30) and one that wraps past midnight (18:00 to 03:00). Comparing raw
+ * minute-of-day against `start + length` silently breaks for the second case, because the sum runs
+ * past 1440 and every post-midnight bar reads as being before the open.
+ */
+export function minutesSinceOpen(minuteOfDay: number, startMin: number): number {
+  return (minuteOfDay - startMin + 1440) % 1440;
+}
+
+/**
+ * Session id for a series, with the day boundary moved to the session open.
+ *
+ * `dayIndex` rolls at local midnight, which cuts an overnight session in half: an 18:00–03:00
+ * session would be two sessions, its initial balance rebuilt at midnight and its one-trade-per-day
+ * state reset in the middle. This labels every bar with the session it belongs to instead.
+ *
+ * For a session that does not wrap (RTH, start 09:30) and a series already filtered to that window,
+ * this returns dayIndex unchanged.
+ */
+export function sessionIndex(clock: Clock, startMin: number): Int32Array {
+  const n = clock.dayIndex.length;
+  const out = new Int32Array(n);
+  for (let i = 0; i < n; i++) {
+    // A bar earlier in the calendar day than the open belongs to the session that began yesterday.
+    out[i] = clock.dayIndex[i] - (clock.minuteOfDay[i] < startMin ? 1 : 0);
+  }
+  return out;
+}
+
 /** Is a local minute-of-day inside [start, end)? Handles windows that wrap past local midnight. */
 export function inWindow(minuteOfDay: number, startMin: number, endMin: number): boolean {
   return startMin <= endMin ? minuteOfDay >= startMin && minuteOfDay < endMin : minuteOfDay >= startMin || minuteOfDay < endMin;

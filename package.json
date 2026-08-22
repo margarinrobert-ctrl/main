@@ -13,7 +13,8 @@
     "quant:ingest": "tsx scripts/quant-ingest.ts",
     "quant:research": "tsx scripts/quant-research.ts",
     "quant:smoke": "tsx scripts/quant-smoke.ts",
-    "quant:prop": "tsx scripts/quant-prop-firm.ts"
+    "quant:prop": "tsx scripts/quant-prop-firm.ts",
+    "quant:asia": "tsx scripts/quant-asia-study.ts"
   },
   "dependencies": {
     "lightweight-charts": "^4.1.3",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clockFor, inWindow, localToUtc, nyOffsetMinutes } from "./clock";
+import { clockFor, inWindow, localToUtc, minutesSinceOpen, nyOffsetMinutes, sessionIndex } from "./clock";
 import type { Bar } from "./types";
 
 // The DST rule is hand-rolled for speed, so it is checked against the platform's own tz database
@@ -75,5 +75,67 @@ describe("inWindow", () => {
     expect(inWindow(960, 570, 960)).toBe(false);
     expect(inWindow(30, 1320, 120)).toBe(true);
     expect(inWindow(600, 1320, 120)).toBe(false);
+  });
+});
+
+describe("minutesSinceOpen", () => {
+  it("counts forward from a session that stays inside one day", () => {
+    expect(minutesSinceOpen(570, 570)).toBe(0);
+    expect(minutesSinceOpen(630, 570)).toBe(60);
+    expect(minutesSinceOpen(960, 570)).toBe(390);
+  });
+
+  it("counts forward across midnight for an overnight session", () => {
+    // 18:00 open. 18:30 is 30 minutes in; 00:30 is 390; 03:00 is 540.
+    expect(minutesSinceOpen(1080, 1080)).toBe(0);
+    expect(minutesSinceOpen(1110, 1080)).toBe(30);
+    expect(minutesSinceOpen(30, 1080)).toBe(390);
+    expect(minutesSinceOpen(180, 1080)).toBe(540);
+  });
+
+  it("is what makes an IB window test correct past midnight", () => {
+    // A 120-minute IB from 23:00 ends at 01:00. Raw arithmetic (1380 + 120 = 1500) would put every
+    // post-midnight bar outside the window.
+    const start = 1380;
+    expect(minutesSinceOpen(1380, start) < 120).toBe(true); // 23:00 in
+    expect(minutesSinceOpen(30, start) < 120).toBe(true);   // 00:30 in
+    expect(minutesSinceOpen(90, start) < 120).toBe(false);  // 01:30 out
+  });
+});
+
+describe("sessionIndex", () => {
+  const mk = (times: string[]): Bar[] => times.map((t) => ({ t: Date.parse(t), o: 1, h: 1, l: 1, c: 1, v: 1 }));
+
+  it("keeps an overnight session together across the midnight boundary", () => {
+    // 18:00, 20:00, 23:00 ET Monday and 00:30, 02:00 ET Tuesday are ONE session.
+    const bars = mk([
+      "2024-03-04T23:00:00Z", // 18:00 ET Mon
+      "2024-03-05T01:00:00Z", // 20:00 ET Mon
+      "2024-03-05T04:00:00Z", // 23:00 ET Mon
+      "2024-03-05T05:30:00Z", // 00:30 ET Tue
+      "2024-03-05T07:00:00Z", // 02:00 ET Tue
+    ]);
+    const clock = clockFor(bars, "America/New_York");
+    const sess = sessionIndex(clock, 1080);
+    expect(new Set([...sess]).size).toBe(1);
+    // dayIndex, by contrast, splits them.
+    expect(new Set([...clock.dayIndex]).size).toBe(2);
+  });
+
+  it("starts a new session at the next open", () => {
+    const bars = mk([
+      "2024-03-05T01:00:00Z", // 20:00 ET Mon
+      "2024-03-05T05:30:00Z", // 00:30 ET Tue — same session
+      "2024-03-05T23:30:00Z", // 18:30 ET Tue — next session
+    ]);
+    const sess = sessionIndex(clockFor(bars, "America/New_York"), 1080);
+    expect(sess[0]).toBe(sess[1]);
+    expect(sess[2]).toBe(sess[0] + 1);
+  });
+
+  it("is identical to dayIndex for a session already filtered to a non-wrapping window", () => {
+    const bars = mk(["2024-03-05T14:30:00Z", "2024-03-05T18:00:00Z", "2024-03-05T20:59:00Z"]); // 09:30-15:59 ET
+    const clock = clockFor(bars, "America/New_York");
+    expect([...sessionIndex(clock, 570)]).toEqual([...clock.dayIndex]);
   });
 });
