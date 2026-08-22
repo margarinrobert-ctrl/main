@@ -104,7 +104,7 @@ export function walkForward(strategy: Strategy, bars: Bar[], cfg: BacktestConfig
 
   const testBarsAll = folds.length ? bars.slice(folds[0].testRange[0], folds[folds.length - 1].testRange[1]) : [];
   const oos = summarize(
-    { trades: oosTrades, equity: stitchedEquity, dailyPnl, costPoints: 0, bars: testBarsAll.length, config: cfg, ambiguousExits: 0, unfilledLimits: 0 },
+    { trades: oosTrades, equity: stitchedEquity, dailyPnl, costPoints: 0, bars: testBarsAll.length, config: cfg, ambiguousExits: 0, unfilledLimits: 0, cancelledOrders: 0 },
     testBarsAll,
     cfg.inst,
   );

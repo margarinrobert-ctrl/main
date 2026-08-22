@@ -44,12 +44,27 @@ export type Side = 1 | -1;
 /** What a strategy wants to do at the close of bar `i`, executed at the open of `i+1`. */
 export interface EntryIntent {
   side: Side;
-  /** Protective stop distance in price units (must be > 0). */
+  /** Protective stop distance in price units (must be > 0). Ignored when `stopPrice` is set. */
   stopDist: number;
-  /** Profit target distance in price units (must be > 0). */
+  /** Profit target distance in price units (must be > 0). Ignored when `targetPrice` is set. */
   targetDist: number;
   /** Hard time stop, in bars held. */
   maxBars: number;
+  /**
+   * Rest a LIMIT order at this absolute price instead of taking the next open.
+   *
+   * Some strategies are defined by a price that has to come to you — a retracement entry after a
+   * breakout, for instance — and modelling that as a market order at the next open measures a
+   * completely different trade. The order works until it fills, `validBars` elapses, or the
+   * session ends.
+   */
+  limitPrice?: number;
+  /** Bars a resting limit stays working before it is cancelled. Defaults to the rest of the session. */
+  validBars?: number;
+  /** Absolute stop price. Takes precedence over `stopDist` — used when the level is structural. */
+  stopPrice?: number;
+  /** Absolute target price. Takes precedence over `targetDist`. */
+  targetPrice?: number;
   tag?: string;
 }
 

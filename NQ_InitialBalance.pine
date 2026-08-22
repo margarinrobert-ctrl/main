@@ -1,0 +1,407 @@
+//@version=6
+// =============================================================================================
+// NQ — Initial Balance (IB) breakout-retracement, edgeful-style rules
+// v2: adds a volatility-adaptive range filter and the results of a full statistical study.
+// =============================================================================================
+//
+// THE RULES (unchanged from v1 — see SOURCE NOTES at the bottom):
+//   1. Initial Balance = high/low of the first hour of the NY session, 9:30–10:30 ET.
+//   2. Wait for that hour to CLOSE. Nothing trades while the IB forms.
+//   3. Wait for a break of the IB high (long bias) or IB low (short bias).
+//   4. Do NOT chase. Rest a limit at 25% of the IB range back INSIDE the broken edge.
+//   5. Stop at 60% of the IB range from the broken edge.
+//   6. Target 50% of the IB range beyond the broken edge.
+//   7. Flatten at the end of the session if neither is hit.
+//   Fixed geometry: risk 35% of range, reward 75% → ~2.14R before costs.
+//
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// WHAT A FULL STATISTICAL STUDY OF THESE RULES FOUND — read before sizing anything
+//
+// Three years of 5-minute NQ (Dec 2022 – Dec 2025, 751 sessions, 09:30–16:00 ET), modelled with
+// 1 tick spread + 1 tick slippage per side + $4 commission, entries as REAL resting limits that
+// only fill if price trades through them. Full report: docs/ib/STUDY_IB.md in this repo.
+//
+//   PUBLISHED GEOMETRY, WHOLE SAMPLE:  533 trades, +7.1 ticks/trade, PF 1.067, t = 0.57
+//   Mildly profitable, NOT statistically significant.
+//
+//   THE SAME RULES, SPLIT BY PERIOD — this is the finding that matters:
+//     Dec 2022 – Jan 2025 :  366 trades,  -4.3 ticks/trade, PF 0.96, t = -0.37   (loses)
+//     Jan 2025 – Dec 2025 :  167 trades, +32.1 ticks/trade, PF 1.25, t =  1.06   (wins)
+//   The strategy's result is dominated by REGIME, not by the geometry. Two years of losses
+//   followed by one good year is not an edge you can size against; it is a coin that landed
+//   heads recently.
+//
+//   OPTIMISING IT MAKES IT WORSE, MEASURABLY:
+//     best of 1,200 parameter sets, in-sample  : Sharpe 1.95, +71.9 ticks/trade
+//     the same procedure, walk-forward         : Sharpe -0.71, -16.9 ticks/trade
+//     probability of backtest overfitting      : 0.567  (above 0.5 = selecting noise)
+//     deflated Sharpe                          : 0.000
+//   And a warning about a diagnostic many people trust: that in-sample optimum sat on a
+//   PLATEAU — 0.90 neighbour stability, 100% of adjacent parameter sets also profitable — and
+//   still lost money out of sample. A smooth surface is necessary, not sufficient.
+//
+//   MONTE CARLO on the walk-forward trades (20,000 reshuffles, $50k account):
+//     median max drawdown 35%, 95th percentile 47%, P(ending below start) 100%.
+//
+//   ANOMALY SEARCH — 20 slices of the day tested (weekday, gap, where the first hour closed,
+//   whether it took the prior session's extreme, range vs prior day, range percentile).
+//   NOTHING survived false-discovery control. The strongest single result was that WIDE first
+//   hours are worse (-0.33R lift, t = -2.18, raw p = 0.029, q = 0.588), which is the one
+//   effect below that also has a reason to exist rather than being a slice that happened to win.
+//
+// WHAT CHANGED IN v2 (one change, and it is deliberately the only one):
+//   The IB range filter is now a ROLLING PERCENTILE instead of absolute points. A 100-point
+//   first hour meant something very different in 2023 than in 2025, so a fixed points threshold
+//   silently becomes a different filter as volatility drifts. The percentile version adapts.
+//   Economically it is the defensible filter: a wide IB makes the 60% stop enormous, so the same
+//   geometry risks far more for the same 50% target. Adding it moved the losing research half
+//   from -4.3 to +14.7 ticks/trade while leaving the holdout half at +30.4. Consistent
+//   direction in both halves, and it was motivated before it was measured.
+//   It is still not significant (t = 1.16 and 1.20). It is an improvement, not a fix.
+//
+// HOW TO USE THIS HONESTLY: paper-trade it, and judge it on whether the loss regime returns —
+// not on the equity curve of the last year.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+//
+// BUILT FOR FUTURES (NQ1! / MNQ1! on CME_MINI):
+//   • MARGIN — Pine v6 ENFORCES margin_long/short and defaults them to 100%. NQ at ~24,000 is
+//     ~$480,000 notional per contract, so at 100% a $50,000 account can never afford one and
+//     every order is silently cancelled — the tester just shows zero trades. Set to 1% below
+//     (~$4,800), conservative next to the $500–$2,000 intraday margin brokers charge. This
+//     strategy is flat by 15:55 ET daily, so overnight initial margin never applies.
+//   • POINT VALUE comes from the symbol: NQ $20/pt, MNQ $2/pt. Only commission needs changing.
+//     Note that MNQ is NOT cheaper per tick — $0.50/side on a $0.50 tick is 2.0 ticks of
+//     commission against NQ's 0.8. Micros cut dollar risk, not the per-tick hurdle.
+//   • PRICES SNAP TO THE TICK with math.round_to_mintick().
+//   • SESSION TIMES ARE WALL-CLOCK NEW YORK via hour()/minute(), immune to the chart's ETH/RTH
+//     toggle and to daylight saving.
+//
+// ONE DIFFERENCE FROM THE RESEARCH ENGINE: TradingView fills a resting limit when price TOUCHES
+// it. The research engine requires price to trade THROUGH it, on the grounds that at a touch you
+// are behind everyone already queued at that level. Expect this script to show slightly more
+// fills, at slightly better prices, than the study above.
+//
+// NO REPAINTING: the IB is final only after 9:30–10:30 has closed, all levels come from completed
+// bars, orders go in at bar close, no higher-timeframe requests.
+//
+// TIMEFRAME: 1–5 minute NQ1!. Above 15m the IB window is not measured cleanly and the table warns.
+// =============================================================================================
+
+strategy(
+     title                   = "NQ Initial Balance (Edgeful-style) v2",
+     shorttitle              = "NQ IB v2",
+     overlay                 = true,
+     pyramiding              = 0,
+     initial_capital         = 50000,
+     default_qty_type        = strategy.fixed,
+     default_qty_value       = 1,
+     commission_type         = strategy.commission.cash_per_contract,
+     commission_value        = 2.50,      // ~$5 round turn on NQ. Use ~0.50 for MNQ.
+     slippage                = 2,         // ticks per side; NQ tick = 0.25 pt = $5
+     margin_long             = 1,         // % of notional — see the MARGIN note above
+     margin_short            = 1,
+     calc_on_every_tick      = false,
+     process_orders_on_close = false)
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Inputs
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+TZ = "America/New_York"
+
+gS = "Session (New York wall-clock)"
+ibStartH = input.int(9,  "IB starts — hour", minval=0, maxval=23, group=gS, inline="a")
+ibStartM = input.int(30, ":",               minval=0, maxval=59, group=gS, inline="a")
+ibEndH   = input.int(10, "IB ends — hour",  minval=0, maxval=23, group=gS, inline="b")
+ibEndM   = input.int(30, ":",               minval=0, maxval=59, group=gS, inline="b")
+exitH    = input.int(15, "Flatten — hour",  minval=0, maxval=23, group=gS, inline="c")
+exitM    = input.int(55, ":",               minval=0, maxval=59, group=gS, inline="c", tooltip="Entries are armed from the IB close until this time. At this time any unfilled order is cancelled and any open position is closed.")
+
+gR = "Strategy rules"
+retrPct = input.float(25, "Entry — retracement into IB (% of range)", minval=0,   maxval=99,  step=1,   group=gR, tooltip="edgeful's documented entry: 25% of the IB range back inside the broken edge.")
+stopPct = input.float(60, "Stop — from broken edge (% of range)",     minval=1,   maxval=200, step=1,   group=gR, tooltip="edgeful's documented stop: 60% of the IB range from the broken edge. Must exceed the entry retracement.")
+useRR   = input.bool(false, "Use fixed R:R target instead of % target",                                 group=gR)
+tgtPct  = input.float(50, "Target — beyond broken edge (% of range)", minval=1,   maxval=500, step=1,   group=gR, tooltip="edgeful's documented target: 50% of the IB range beyond the broken edge.")
+rrMult  = input.float(2.0, "Risk : Reward (when fixed R:R is on)",    minval=0.1, maxval=20,  step=0.1, group=gR)
+useBE   = input.bool(false, "Move stop to breakeven",                                                   group=gR, tooltip="edgeful publishes this as a separate variant. Off by default so the base rules are measured first.")
+bePct   = input.float(25, "Breakeven trigger (% of range beyond edge)", minval=1, maxval=500, step=1,  group=gR)
+
+gF = "Filters"
+allowLong  = input.bool(true, "Allow longs",  group=gF)
+allowShort = input.bool(true, "Allow shorts", group=gF, tooltip="A parameter search on 2022-2025 NQ wanted longs only. That is the index's uptrend, not an edge in the setup — the same setting lost money in the first two years. Leave both on unless you have a reason that is not a backtest.")
+usePctFilter = input.bool(true, "Filter by IB range PERCENTILE (adaptive)", group=gF, tooltip="v2's one addition. Compares today's first-hour range to the trailing distribution instead of to a fixed number of points, so it keeps meaning as volatility drifts.")
+pctWindow  = input.int(60,  "Percentile lookback (sessions)", minval=20, maxval=250, group=gF)
+minPctile  = input.float(0,  "Min IB range percentile", minval=0, maxval=100, step=5, group=gF)
+maxPctile  = input.float(60, "Max IB range percentile", minval=0, maxval=100, step=5, group=gF, tooltip="Default 60 skips the widest 40% of first hours. Wide IB = enormous 60% stop for the same 50% target. This was the strongest effect in the anomaly search (-0.33R, t=-2.18) and the only one with a reason to exist beforehand.")
+minIB = input.float(0, "Min IB range (points, 0 = off)", minval=0, step=5, group=gF, tooltip="Absolute fallback. Prefer the percentile filter above.")
+maxIB = input.float(0, "Max IB range (points, 0 = off)", minval=0, step=5, group=gF)
+allow2nd = input.bool(false, "Allow a second trade (double-break days)", group=gF, tooltip="Default off — the documented strategy is one trade per day.")
+
+gV = "Display"
+showLevels = input.bool(true, "Plot IB / entry / stop / target", group=gV)
+showTable  = input.bool(true, "Show statistics table",           group=gV)
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Session state — wall-clock New York
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow = dayofweek(time, TZ)
+weekday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+
+ibFrom = ibStartH * 60 + ibStartM
+ibTo   = ibEndH   * 60 + ibEndM
+exitAt = exitH    * 60 + exitM
+
+inIB    = weekday and nyMin >= ibFrom and nyMin < ibTo
+inTrade = weekday and nyMin >= ibTo   and nyMin < exitAt
+
+ibStart  = inIB and not inIB[1]
+ibClosed = not inIB and inIB[1]
+tradeEnd = not inTrade and inTrade[1]
+
+var float ibH   = na
+var float ibL   = na
+var bool  ready = false
+
+var int   dir       = 0
+var int   doneDir   = 0
+var int   tradesDay = 0
+var float ePrice    = na
+var float sPrice    = na
+var float tPrice    = na
+var float curStop   = na
+var bool  armed     = false
+
+// Trailing distribution of past IB ranges, for the adaptive filter. Only COMPLETED prior
+// sessions go in, so today is never ranked against itself.
+var array<float> pastRanges = array.new_float()
+var float rangePctile = na
+
+if ibStart
+    ibH       := high
+    ibL       := low
+    ready     := false
+    dir       := 0
+    doneDir   := 0
+    tradesDay := 0
+    ePrice    := na
+    sPrice    := na
+    tPrice    := na
+    curStop   := na
+    armed     := false
+    rangePctile := na
+else if inIB
+    ibH := math.max(ibH, high)
+    ibL := math.min(ibL, low)
+
+if ibClosed
+    ready := true
+    float todayRange = ibH - ibL
+    // Rank today against the trailing window BEFORE adding it.
+    int n = array.size(pastRanges)
+    if n >= 20
+        int below = 0
+        for i = 0 to n - 1
+            if array.get(pastRanges, i) < todayRange
+                below += 1
+        rangePctile := 100.0 * below / n
+    else
+        rangePctile := 50.0        // not enough history to filter on — treat as neutral
+    array.push(pastRanges, todayRange)
+    if array.size(pastRanges) > pctWindow
+        array.shift(pastRanges)
+
+ibRange = ready ? ibH - ibL : na
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Setup detection — break, then retracement entry
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+absOK  = (minIB <= 0 or ibRange >= minIB) and (maxIB <= 0 or ibRange <= maxIB)
+pctOK  = not usePctFilter or (not na(rangePctile) and rangePctile >= minPctile and rangePctile <= maxPctile)
+sizeOK = not na(ibRange) and ibRange > 0 and absOK and pctOK
+geomOK = stopPct > retrPct
+canScan = ready and inTrade and dir == 0 and sizeOK and geomOK and strategy.position_size == 0
+
+brokeUp = canScan and high > ibH and doneDir !=  1
+brokeDn = canScan and low  < ibL and doneDir != -1
+
+goLong  = brokeUp and (not brokeDn or close >= open) and allowLong
+goShort = brokeDn and (not brokeUp or close <  open) and allowShort
+
+if goLong
+    dir     := 1
+    doneDir := 1
+    ePrice  := math.round_to_mintick(ibH - ibRange * retrPct / 100)
+    sPrice  := math.round_to_mintick(ibH - ibRange * stopPct / 100)
+    tPrice  := math.round_to_mintick(useRR ? ePrice + rrMult * (ePrice - sPrice) : ibH + ibRange * tgtPct / 100)
+    curStop := sPrice
+    armed   := true
+    strategy.entry("IB Long", strategy.long, limit = ePrice, comment = "IB long")
+else if goShort
+    dir     := -1
+    doneDir := -1
+    ePrice  := math.round_to_mintick(ibL + ibRange * retrPct / 100)
+    sPrice  := math.round_to_mintick(ibL + ibRange * stopPct / 100)
+    tPrice  := math.round_to_mintick(useRR ? ePrice - rrMult * (sPrice - ePrice) : ibL - ibRange * tgtPct / 100)
+    curStop := sPrice
+    armed   := true
+    strategy.entry("IB Short", strategy.short, limit = ePrice, comment = "IB short")
+else if brokeUp or brokeDn
+    dir     := brokeUp ? 1 : -1
+    doneDir := dir
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Position management
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+inLong  = strategy.position_size > 0
+inShort = strategy.position_size < 0
+justFilled = strategy.position_size != 0 and strategy.position_size[1] == 0
+
+if justFilled
+    armed     := false
+    tradesDay += 1
+
+if useBE and strategy.position_size != 0
+    if inLong and high >= ibH + ibRange * bePct / 100
+        curStop := math.max(curStop, ePrice)
+    if inShort and low <= ibL - ibRange * bePct / 100
+        curStop := math.min(curStop, ePrice)
+
+if inLong
+    strategy.exit("IB Long X", from_entry = "IB Long", stop = curStop, limit = tPrice, comment_loss = "stop", comment_profit = "target")
+if inShort
+    strategy.exit("IB Short X", from_entry = "IB Short", stop = curStop, limit = tPrice, comment_loss = "stop", comment_profit = "target")
+
+justClosed = strategy.position_size == 0 and strategy.position_size[1] != 0
+if justClosed
+    if allow2nd and tradesDay < 2 and inTrade
+        dir     := 0
+        ePrice  := na
+        sPrice  := na
+        tPrice  := na
+        curStop := na
+    else
+        armed := false
+
+if tradeEnd
+    strategy.cancel_all()
+    if strategy.position_size != 0
+        strategy.close_all(comment = "EOD flat")
+    armed := false
+    ready := false
+
+// Belt and braces: if a session ends without producing a tradeEnd bar (a data gap, a holiday
+// half-day), clear the armed state anyway so nothing leaks into the next session.
+if not inIB and not inTrade and ready
+    ready := false
+    armed := false
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Plots
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+liveDay  = showLevels and (inIB or (ready and inTrade))
+liveTrad = showLevels and (armed or strategy.position_size != 0)
+
+plot(liveDay  ? ibH     : na, "IB High",     color=color.new(color.teal,  0), linewidth=2, style=plot.style_linebr)
+plot(liveDay  ? ibL     : na, "IB Low",      color=color.new(color.teal,  0), linewidth=2, style=plot.style_linebr)
+plot(liveTrad ? ePrice  : na, "Entry",       color=color.new(color.blue,  0), linewidth=1, style=plot.style_linebr)
+plot(liveTrad ? curStop : na, "Stop loss",   color=color.new(color.red,   0), linewidth=1, style=plot.style_linebr)
+plot(liveTrad ? tPrice  : na, "Take profit", color=color.new(color.green, 0), linewidth=1, style=plot.style_linebr)
+
+bgcolor(inIB and showLevels ? color.new(color.teal, 92) : na, title="IB window")
+// Amber marks a session the range filter skipped — visible proof the filter is doing something.
+bgcolor(showLevels and ready and inTrade and not sizeOK ? color.new(color.orange, 90) : na, title="Filtered out")
+
+plotshape(justFilled and inLong,  title="Long entry",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.green, 0), size=size.small, text="IB")
+plotshape(justFilled and inShort, title="Short entry", style=shape.triangledown, location=location.abovebar, color=color.new(color.red,   0), size=size.small, text="IB")
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Statistics table
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+f_money(float x) =>
+    (x < 0 ? "-$" : "$") + str.tostring(math.abs(x), "0.00")
+
+var table st = table.new(position.top_right, 2, 10, border_width=1, frame_width=1, frame_color=color.new(color.gray, 50))
+
+var int ibDaysSeen = 0
+var int ibDaysSkipped = 0
+if ibClosed
+    ibDaysSeen += 1
+if tradeEnd and ready[1] and not sizeOK[1]
+    ibDaysSkipped += 1
+
+if showTable and barstate.islast
+    int closed = strategy.closedtrades
+    float winRt = closed > 0 ? 100.0 * strategy.wintrades / closed : 0.0
+    float pf = na
+    if strategy.grossloss > 0
+        pf := strategy.grossprofit / strategy.grossloss
+    float ddPct = strategy.initial_capital > 0 ? 100.0 * strategy.max_drawdown / strategy.initial_capital : 0.0
+    float perTrade = closed > 0 ? strategy.netprofit / closed : 0.0
+    color npCol = strategy.netprofit >= 0 ? color.new(color.green, 0) : color.new(color.red, 0)
+
+    string diag  = ""
+    color  diagC = color.new(color.gray, 0)
+    if ibDaysSeen == 0
+        diag  := "No IB window found — check the timeframe and that the symbol trades 09:30 ET"
+        diagC := color.new(color.red, 0)
+    else if timeframe.in_seconds() > 900
+        diag  := "Timeframe " + timeframe.period + " is too coarse to measure the IB — use 1–5m"
+        diagC := color.new(color.orange, 0)
+    else if closed == 0
+        diag  := "IB found on " + str.tostring(ibDaysSeen) + " days but 0 trades — check Properties → Margin"
+        diagC := color.new(color.orange, 0)
+    else if closed < 100
+        diag  := str.tostring(closed) + " trades is too few to conclude anything — 100 is a bare minimum"
+        diagC := color.new(color.orange, 0)
+    else
+        diag  := str.tostring(ibDaysSeen) + " IB days · " + str.tostring(ibDaysSkipped) + " filtered out · " + syminfo.ticker
+
+    table.cell(st, 0, 0, "IB backtest v2",  text_color=color.white, bgcolor=color.new(color.teal, 20), text_size=size.small)
+    table.cell(st, 1, 0, timeframe.period,  text_color=color.white, bgcolor=color.new(color.teal, 20), text_size=size.small)
+    table.cell(st, 0, 1, "Net profit",    text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 1, f_money(strategy.netprofit), text_size=size.small, text_color=npCol)
+    table.cell(st, 0, 2, "Per trade",     text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 2, f_money(perTrade), text_size=size.small, text_color=npCol)
+    table.cell(st, 0, 3, "Win rate",      text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 3, str.tostring(winRt, "#.##") + "%", text_size=size.small)
+    table.cell(st, 0, 4, "Profit factor", text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 4, na(pf) ? "—" : str.tostring(pf, "#.###"), text_size=size.small)
+    table.cell(st, 0, 5, "Trades",        text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 5, str.tostring(closed), text_size=size.small)
+    table.cell(st, 0, 6, "Max drawdown",  text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 6, f_money(strategy.max_drawdown) + " (" + str.tostring(ddPct, "#.#") + "%)", text_size=size.small)
+    table.cell(st, 0, 7, "IB pctile now", text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 7, na(rangePctile) ? "—" : str.tostring(rangePctile, "#") + "%", text_size=size.small)
+    table.cell(st, 0, 8, "Instrument",    text_size=size.small, text_color=color.gray)
+    table.cell(st, 1, 8, syminfo.type + " · " + f_money(syminfo.pointvalue) + "/pt", text_size=size.small)
+    table.cell(st, 0, 9, diag, text_size=size.tiny, text_color=diagC)
+    table.cell(st, 1, 9, "",   text_size=size.tiny)
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// SOURCE NOTES — what is verified vs. what is a modelling choice
+//
+// Verified from edgeful's public writing (posts on the IB breakout strategy, the GC IB algo, the
+// YM IB strategy, and the IB breakeven stop algo):
+//   • IB = high/low of the first hour of the NY session, 9:30–10:30 ET.
+//   • Wait for the first hour to close before trading.
+//   • "Single break" days break only one side; edgeful cites ~82% single-break on NQ.
+//   • Entry is a retracement back into the range at 25% of the IB distance, not the break itself.
+//   • Stop at 60% of the IB range; target 50% of the IB range from the broken edge.
+//   • One trade per day; exit at the close of trading if neither level is hit.
+//   • Breakeven-stop management exists as a separate published variant.
+//
+// Modelling choices (NOT edgeful specifications — all are inputs):
+//   • Trade window ends 15:55 ET; edgeful says "close of trading" without naming a minute.
+//   • A break is a wick through the level. Whether edgeful requires a candle CLOSE beyond the
+//     edge is not stated publicly.
+//   • Bar-close order submission: a break and retracement completing inside one bar is missed.
+//     Conservative, and avoids intrabar lookahead.
+//   • A bar breaking both sides is resolved by its close direction.
+//   • edgeful layers subscription-only probability filters on top of this geometry to pick days.
+//     Those are not public rules, so none is applied here — this measures the raw mechanical edge
+//     on every session, which is what the study above reports.
+//
+// The percentile range filter in v2 is MY addition, not edgeful's, and the study that motivated
+// it is in docs/ib/STUDY_IB.md. It is off-by-default-worthy scepticism: turn it off and you get
+// the published rules exactly.
+// =============================================================================================

@@ -56,12 +56,29 @@ export interface BacktestResult {
   config: BacktestConfig;
   /** `passive` fill model only: signals that never filled because price did not trade through. */
   unfilledLimits: number;
+  /** Resting limit orders that expired or were cancelled at the session close without filling. */
+  cancelledOrders: number;
   /**
    * Exits where the SAME bar contained both the stop and the target. Rule 2 books those as losses
    * because the intrabar path is unknown. That is the right call, but it is a known conservative
    * bias whose size scales with stop distance relative to bar range — so it is measured, not hidden.
    */
   ambiguousExits: number;
+}
+
+/** A limit order resting in the book, waiting for price to come to it. */
+interface PendingOrder {
+  side: 1 | -1;
+  limitPx: number;
+  stopPx?: number;
+  targetPx?: number;
+  stopDist: number;
+  targetDist: number;
+  maxBars: number;
+  /** Bar index after which the order is cancelled. */
+  expiresAt: number;
+  placedDay: number;
+  tag?: string;
 }
 
 interface OpenPos {
@@ -107,6 +124,8 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
   const dailyPnl = new Map<number, number>();
   let cash = startEquity;
   let pos: OpenPos | null = null;
+  let pending: PendingOrder | null = null;
+  let cancelledOrders = 0;
   let tradesToday = 0;
   let ambiguousExits = 0;
   let unfilledLimits = 0;
@@ -145,6 +164,38 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
     pos = null;
   };
 
+  /**
+   * Build a position at a known fill price, honouring absolute levels when the strategy set them.
+   * It RETURNS the position rather than assigning it, because TypeScript does not track assignments
+   * made inside a closure and would narrow `pos` to null for the rest of the loop if it did.
+   */
+  const open = (
+    index: number,
+    side: 1 | -1,
+    entryPx: number,
+    intent: { stopDist: number; targetDist: number; maxBars: number; stopPx?: number; targetPx?: number; tag?: string },
+  ): OpenPos => {
+    const stopPx = intent.stopPx ?? entryPx - side * Math.max(intent.stopDist, inst.tickSize);
+    const targetPx = intent.targetPx ?? entryPx + side * intent.targetDist;
+    const stopDist = Math.max(Math.abs(entryPx - stopPx), inst.tickSize);
+    const units =
+      cfg.riskPerTradeUsd !== undefined
+        ? Math.max(cfg.riskPerTradeUsd / Math.max(pointsToUsd(inst, stopDist), 1e-9), 0)
+        : cfg.units ?? 1;
+    tradesToday++;
+    return {
+      side,
+      entryIndex: index,
+      entryPx,
+      stopPx: snap(inst, stopPx, side === 1 ? -1 : 1),
+      targetPx: snap(inst, targetPx, side === 1 ? 1 : -1),
+      stopDist,
+      maxBars: Math.max(1, Math.round(intent.maxBars)),
+      units,
+      tag: intent.tag,
+    };
+  };
+
   for (let i = 0; i < bars.length; i++) {
     const bar = bars[i];
     const d = dayOf(i);
@@ -180,13 +231,52 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
       }
     }
 
+    // ---- a resting limit order: does this bar come to it? ----
+    if (pending && !pos) {
+      const stale = i > pending.expiresAt || dayOf(i) !== pending.placedDay || (sessionOnly && !inSession(i));
+      if (stale) {
+        pending = null;
+        cancelledOrders++;
+      } else {
+        const long = pending.side === 1;
+        // Conservative: the bar must trade THROUGH the resting price, not merely touch it. At a
+        // touch you are behind everyone already queued at that level and would not have been filled.
+        const through = long ? bar.l < pending.limitPx : bar.h > pending.limitPx;
+        if (through) {
+          // Fill at the limit, or better if the bar gapped past it.
+          const fill = long ? Math.min(pending.limitPx, bar.o) : Math.max(pending.limitPx, bar.o);
+          pos = open(i, pending.side, fill, pending);
+          pending = null;
+        }
+      }
+    }
+
     // ---- decide on this close, fill on the next open ----
-    if (!pos && i + 1 < bars.length) {
+    if (!pos && !pending && i + 1 < bars.length) {
       const next = bars[i + 1];
       const capOk = cfg.maxTradesPerDay === undefined || tradesToday < cfg.maxTradesPerDay;
       if (capOk && inSession(i + 1) && dayOf(i + 1) === d) {
         const intent = signal(i);
-        if (intent && intent.stopDist > 0 && intent.targetDist > 0) {
+        if (intent && intent.limitPrice !== undefined) {
+          // A resting order. It is placed now and works until filled, expired, or the session ends,
+          // so the decision bar and the fill bar can be hours apart.
+          const sideOk =
+            allowed === "both" || (allowed === "long" && intent.side === 1) || (allowed === "short" && intent.side === -1);
+          if (sideOk) {
+            pending = {
+              side: intent.side,
+              limitPx: snap(inst, intent.limitPrice, intent.side === 1 ? -1 : 1),
+              stopPx: intent.stopPrice,
+              targetPx: intent.targetPrice,
+              stopDist: intent.stopDist,
+              targetDist: intent.targetDist,
+              maxBars: intent.maxBars,
+              expiresAt: i + (intent.validBars ?? bars.length),
+              placedDay: d,
+              tag: intent.tag,
+            };
+          }
+        } else if (intent && intent.stopDist > 0 && intent.targetDist > 0) {
           const sideOk =
             allowed === "both" || (allowed === "long" && intent.side === 1) || (allowed === "short" && intent.side === -1);
           if (sideOk) {
@@ -205,23 +295,7 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
               // Fill at the limit, or better if the bar opened past it.
               entryPx = intent.side === 1 ? Math.min(limitPx, next.o) : Math.max(limitPx, next.o);
             }
-            const stopDist = Math.max(intent.stopDist, inst.tickSize);
-            const units =
-              cfg.riskPerTradeUsd !== undefined
-                ? Math.max(cfg.riskPerTradeUsd / Math.max(pointsToUsd(inst, stopDist), 1e-9), 0)
-                : cfg.units ?? 1;
-            pos = {
-              side: intent.side,
-              entryIndex: i + 1,
-              entryPx,
-              stopPx: snap(inst, entryPx - intent.side * stopDist, intent.side === 1 ? -1 : 1),
-              targetPx: snap(inst, entryPx + intent.side * intent.targetDist, intent.side === 1 ? 1 : -1),
-              stopDist,
-              maxBars: Math.max(1, Math.round(intent.maxBars)),
-              units,
-              tag: intent.tag,
-            };
-            tradesToday++;
+            pos = open(i + 1, intent.side, entryPx, { ...intent, stopPx: intent.stopPrice, targetPx: intent.targetPrice });
             // No index fiddling: the next loop iteration lands on bar i+1, which is the entry bar,
             // and manages it from the top — so an entry can be stopped out on its own bar.
           }
@@ -232,7 +306,7 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
 
   if (pos) close(bars.length - 1, bars[bars.length - 1].c, "eod");
 
-  return { trades, equity, dailyPnl, costPoints: referenceCost, bars: bars.length, config: cfg, ambiguousExits, unfilledLimits };
+  return { trades, equity, dailyPnl, costPoints: referenceCost, bars: bars.length, config: cfg, ambiguousExits, unfilledLimits, cancelledOrders };
 }
 
 /** Convenience: build a strategy on a series and run it. */
