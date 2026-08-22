@@ -28,7 +28,7 @@ import { gridSearch, plateauReport } from "../src/lib/quant/optimize";
 import { cumulative, num, pct, sparkline, table, usd } from "../src/lib/quant/report";
 import { costSensitivity, regimeBreakdown, subPeriodConsistency, verdict } from "../src/lib/quant/robustness";
 import { dailySeries, sharpeRatio, summarize } from "../src/lib/quant/stats";
-import { initialBalance } from "../src/lib/quant/strategies";
+import { strategy as strategyById } from "../src/lib/quant/strategies";
 import { walkForward } from "../src/lib/quant/walkforward";
 import type { Params, Trade } from "../src/lib/quant/types";
 
@@ -43,6 +43,9 @@ const FILL = (arg("fill", "realistic") ?? "realistic") as "taker" | "realistic" 
 const HOLDOUT = Number(arg("holdout", "0.3"));
 const COMBOS = Number(arg("combos", "1200"));
 const SEED = Number(arg("seed", "20250822"));
+const STRATEGY = arg("strategy", "initial-balance")!;
+/** Window length in minutes for the day-feature table — the IB/OR window being studied. */
+const WINDOW = Number(arg("window", "60"));
 
 const md: string[] = [];
 const say = (s = "") => {
@@ -54,7 +57,7 @@ function main() {
   const t0 = Date.now();
   const inst = instrument(SYMBOL);
   const cfg: BacktestConfig = { inst, fillModel: FILL };
-  const S = initialBalance;
+  const S = strategyById(STRATEGY);
 
   const all = parseCsv(readFileSync(DATA, "utf8"));
   const audit = auditBars(all, inst.tz);
@@ -65,7 +68,7 @@ function main() {
   const holdout = bars.slice(splitIdx);
   const costTicks = roundTurnCostTicks(inst);
 
-  say(`# Initial Balance — deep study (${SYMBOL})`);
+  say(`# ${S.label} — deep study (${SYMBOL})`);
   say();
   say(`> Generated ${new Date().toISOString()} · seed \`${SEED}\` · fill model \`${FILL}\` · reproducible from this repo.`);
   say(`> Research output, not financial advice.`);
@@ -77,6 +80,7 @@ function main() {
         ["data", `\`${DATA}\` · ${audit.bars.toLocaleString()} bars @ ${audit.timeframeMinutes}m`],
         ["range", `${audit.first.slice(0, 10)} → ${audit.last.slice(0, 10)}`],
         ["session", `${hhmm(inst.session[0])}–${hhmm(inst.session[1])} ${inst.tz}`],
+        ["opening window studied", `${hhmm(inst.session[0])}–${hhmm(inst.session[0] + WINDOW)} (${WINDOW} min)`],
         ["research bars / sessions", `${research.length.toLocaleString()} / ${new Set(clockFor(research, inst.tz).dayIndex).size}`],
         ["holdout bars / sessions", `${holdout.length.toLocaleString()} / ${new Set(clockFor(holdout, inst.tz).dayIndex).size}`],
         ["round-turn cost", `${costTicks.toFixed(2)} ticks ($${(costTicks * inst.tickValue).toFixed(2)})`],
@@ -89,8 +93,8 @@ function main() {
   say(`## 1. Baseline — the published geometry, untouched`);
   say();
   say(
-    `25% retracement entry, 60% stop, 50% target, all as fractions of the first hour's range, both sides, every session. ` +
-      `No filtering, no tuning. This is the number every improvement below has to beat.`,
+    `The strategy's published / default geometry, both sides, every session. No filtering, no tuning. ` +
+      `This is the number every improvement below has to beat.`,
   );
   say();
   const baseRes = runStrategy(S, research, S.defaults, cfg);
@@ -135,7 +139,7 @@ function main() {
       `purely because the strategy is profitable overall. "Tuesdays make money" is not a finding when every day makes money.`,
   );
   say();
-  const days = ibDays(research, inst, S.defaults.ibMinutes);
+  const days = ibDays(research, inst, WINDOW);
   const edges = conditionalEdges(baseRes.trades, days, ibBucketers());
   say(
     table(
@@ -358,7 +362,7 @@ function main() {
   // ---------------------------------------------------------------- 8. holdout
   say(`## 8. Locked holdout — evaluated once`);
   say();
-  const hDays = ibDays(holdout, inst, modal.ibMinutes);
+  const hDays = ibDays(holdout, inst, WINDOW);
   const rows: (string | number)[][] = [];
   for (const [label, params] of [["published geometry", S.defaults], ["in-sample optimum", bp], ["walk-forward modal", modal]] as [string, Params][]) {
     const r = runStrategy(S, holdout, params, cfg);
