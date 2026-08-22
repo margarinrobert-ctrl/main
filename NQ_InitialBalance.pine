@@ -1,7 +1,7 @@
 //@version=6
 // =============================================================================================
 // NQ — Initial Balance (IB) breakout-retracement, edgeful-style rules
-// v2: adds a volatility-adaptive range filter and the results of a full statistical study.
+// v3: defaults move to the geometry that survived decomposition, walk-forward and Monte Carlo.
 // =============================================================================================
 //
 // THE RULES (unchanged from v1 — see SOURCE NOTES at the bottom):
@@ -13,6 +13,8 @@
 //   6. Target 50% of the IB range beyond the broken edge.
 //   7. Flatten at the end of the session if neither is hit.
 //   Fixed geometry: risk 35% of range, reward 75% → ~2.14R before costs.
+//   v3 CHANGES 4, 5, 6 AND 7 — see WHAT CHANGED IN v3 below. The rules above are the published
+//   ones, kept here because every one of them is still reachable from the settings panel.
 //
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // WHAT A FULL STATISTICAL STUDY OF THESE RULES FOUND — read before sizing anything
@@ -49,7 +51,62 @@
 //   hours are worse (-0.33R lift, t = -2.18, raw p = 0.029, q = 0.588), which is the one
 //   effect below that also has a reason to exist rather than being a slice that happened to win.
 //
-// WHAT CHANGED IN v2 (one change, and it is deliberately the only one):
+// WHAT CHANGED IN v3 — and why the defaults above are no longer the published ones
+//
+//   A settings screenshot arrived using flatten 11:59, an 80% stop, a fixed 1:1 target and longs
+//   only. Run properly (1-minute NQ, research/holdout split, realistic fills) that configuration
+//   gives 168 trades, 62.5% wins, +0.146R, PF 1.52, t = 2.77. Much better than the published
+//   geometry's t = 0.61. So the whole question is WHICH of the four changes earned it.
+//   Decomposing them, and reading the research half against the holdout half rather than the
+//   headline:
+//
+//     configuration                              n    win     E     t   research  holdout
+//     published (15:55 / stop 60 / tgt 50%)     529   38%  0.036  0.61    0.004    0.107
+//     + flatten 11:59 only                      349   47%  0.070  1.25    0.060    0.089
+//     + stop 80% only                           529   49%  0.074  1.64    0.088    0.044
+//     + fixed 1:1 target only                   529   53%  0.037  0.80    0.031    0.049
+//     + LONGS ONLY                              261   42%  0.082  0.96   -0.006   +0.255   <-- fails
+//     flatten + stop 80% + fixed 1:1            349   56%  0.096  2.46    0.086    0.115
+//     all four (the screenshot)                 168   63%  0.146  2.77    0.163    0.118
+//
+//   THE THREE STRUCTURAL CHANGES ARE REAL. Each is positive alone, each has a mechanism that
+//   existed before the number did, and together they hold 0.086 in the research half against
+//   0.115 in the holdout — same sign, same size, on a split they were not chosen on. They are
+//   now the defaults.
+//
+//   THE DIRECTION FILTER IS NOT, AND IS NOT A DEFAULT. Longs-only scores -0.006 research and
+//   +0.255 holdout. That is not an edge that strengthened, it is NQ's own uptrend being fitted,
+//   and it is where the screenshot's entire advantage over the structural trio comes from. The
+//   shorts it excludes are mildly PROFITABLE (0.050R, positive in both halves). Turning the
+//   filter off costs 0.050R per trade and earns $37,410 instead of $24,206, because it doubles
+//   the sample. Both sides stay on.
+//
+//   THE 50% RETRACEMENT is the one setting a blind search consistently disagreed with the
+//   screenshot about, picking it in every stable fold of all three walk-forward configurations.
+//   Tested directly: 0.246R at t = 3.37, 60.5% wins, drawdown 10.8% against 14.4% — double the
+//   expectancy of the 25% entry, higher win rate, smaller drawdown, both sides, no direction
+//   filter. Its research half (0.303) is nearly 3x its holdout (0.112), so 0.246R is an
+//   OPTIMISTIC point estimate, and the search that found it has now touched the holdout.
+//
+//   DO NOT RE-OPTIMISE THIS ON A ROLLING WINDOW. Over identical out-of-sample bars:
+//     re-optimised, rolling 250d/60d   $14,580   t = 1.19   CI [-0.042, 0.274]
+//     re-optimised, anchored 250d/60d  $ 1,423   t = 1.82   CI [ 0.013, 0.317]
+//     FIXED geometry, no optimisation  $27,253   t = 2.14   CI [ 0.016, 0.181]
+//   Walk-forward efficiency 0.376 and 0.359. The search is not finding better parameters, it is
+//   finding the previous 250 days' noise and paying for it 60 days at a time. Anchored is worse
+//   than rolling because it always contains the sample's early uptrend — every one of its eight
+//   folds picked longs only, which is precisely the parameter the decomposition rejects.
+//
+//   MONTE CARLO, 20,000 paths, $50k, 1 contract, on the v3 geometry: median drawdown 8.4%, 95th
+//   percentile 16.5%, P(losing) 0.8%, median $22,677, 5th percentile $6,742. Note the realised
+//   backtest drawdown is smaller than the median RESHUFFLE of the same trades — the actual
+//   sequence was a lucky ordering. Size against the 16.5%, not the equity curve.
+//   Quarterly: 11 of 13 positive, but with a -$8,076 in 2025Q4 that the 25% entry does not have.
+//   Deeper retracements mean fewer, larger trades and a worse worst quarter.
+//
+//   Full report: docs/ib/STUDY_IB_SCREENSHOT.md.
+//
+// WHAT CHANGED IN v2 (superseded by v3 above; the percentile filter now defaults OFF):
 //   The IB range filter is now a ROLLING PERCENTILE instead of absolute points. A 100-point
 //   first hour meant something very different in 2023 than in 2025, so a fixed points threshold
 //   silently becomes a different filter as volatility drifts. The percentile version adapts.
@@ -68,7 +125,7 @@
 //     ~$480,000 notional per contract, so at 100% a $50,000 account can never afford one and
 //     every order is silently cancelled — the tester just shows zero trades. Set to 1% below
 //     (~$4,800), conservative next to the $500–$2,000 intraday margin brokers charge. This
-//     strategy is flat by 15:55 ET daily, so overnight initial margin never applies.
+//     strategy is flat by 11:59 ET daily (v3 default), so overnight initial margin never applies.
 //   • POINT VALUE comes from the symbol: NQ $20/pt, MNQ $2/pt. Only commission needs changing.
 //     Note that MNQ is NOT cheaper per tick — $0.50/side on a $0.50 tick is 2.0 ticks of
 //     commission against NQ's 0.8. Micros cut dollar risk, not the per-tick hurdle.
@@ -88,8 +145,8 @@
 // =============================================================================================
 
 strategy(
-     title                   = "NQ Initial Balance (Edgeful-style) v2",
-     shorttitle              = "NQ IB v2",
+     title                   = "NQ Initial Balance (Edgeful-style) v3",
+     shorttitle              = "NQ IB v3",
      overlay                 = true,
      pyramiding              = 0,
      initial_capital         = 50000,
@@ -113,25 +170,25 @@ ibStartH = input.int(9,  "IB starts — hour", minval=0, maxval=23, group=gS, in
 ibStartM = input.int(30, ":",               minval=0, maxval=59, group=gS, inline="a")
 ibEndH   = input.int(10, "IB ends — hour",  minval=0, maxval=23, group=gS, inline="b")
 ibEndM   = input.int(30, ":",               minval=0, maxval=59, group=gS, inline="b")
-exitH    = input.int(15, "Flatten — hour",  minval=0, maxval=23, group=gS, inline="c")
-exitM    = input.int(55, ":",               minval=0, maxval=59, group=gS, inline="c", tooltip="Entries are armed from the IB close until this time. At this time any unfilled order is cancelled and any open position is closed.")
+exitH    = input.int(11, "Flatten — hour",  minval=0, maxval=23, group=gS, inline="c")
+exitM    = input.int(59, ":",               minval=0, maxval=59, group=gS, inline="c", tooltip="Entries are armed from the IB close until this time. At this time any unfilled order is cancelled and any open position is closed. v3 default is 11:59, not the published 15:55 — see WHAT CHANGED IN v3. Holding a morning-auction position into the afternoon trades against a reference level that is six hours stale.")
 
 gR = "Strategy rules"
-retrPct = input.float(25, "Entry — retracement into IB (% of range)", minval=0,   maxval=99,  step=1,   group=gR, tooltip="edgeful's documented entry: 25% of the IB range back inside the broken edge.")
-stopPct = input.float(60, "Stop — from broken edge (% of range)",     minval=1,   maxval=200, step=1,   group=gR, tooltip="edgeful's documented stop: 60% of the IB range from the broken edge. Must exceed the entry retracement.")
-useRR   = input.bool(false, "Use fixed R:R target instead of % target",                                 group=gR)
+retrPct = input.float(50, "Entry — retracement into IB (% of range)", minval=0,   maxval=99,  step=1,   group=gR, tooltip="edgeful's documented entry is 25%. v3 defaults to 50% because three independent walk-forward configurations picked 50% in every stable fold, and a direct test doubles expectancy (0.096R to 0.246R, t 2.46 to 3.37) while HALVING drawdown. A 25% pullback is barely inside the range; a 50% one buys the same resolution at the middle of the auction, closer to the stop.")
+stopPct = input.float(80, "Stop — from broken edge (% of range)",     minval=1,   maxval=200, step=1,   group=gR, tooltip="edgeful documents 60%. v3 defaults to 80%: a 60% stop sits INSIDE the range the entry is a pullback into, so the trade is stopped by the same oscillation that filled it. Win rate goes 38% to 49% on this change alone. Must exceed the entry retracement — at retr 50 a stop below 50 produces zero valid trades.")
+useRR   = input.bool(true,  "Use fixed R:R target instead of % target",                                 group=gR, tooltip="v3 default ON. The percent-of-range target scales with the IB range while the risk does too, so wide-range days demand a much larger absolute move for the same R. A parameter search that knew nothing about this setting chose the fixed target in 88% of folds.")
 tgtPct  = input.float(50, "Target — beyond broken edge (% of range)", minval=1,   maxval=500, step=1,   group=gR, tooltip="edgeful's documented target: 50% of the IB range beyond the broken edge.")
-rrMult  = input.float(2.0, "Risk : Reward (when fixed R:R is on)",    minval=0.1, maxval=20,  step=0.1, group=gR)
+rrMult  = input.float(2.0, "Risk : Reward (when fixed R:R is on)",    minval=0.1, maxval=20,  step=0.1, group=gR, tooltip="1:2 measured best (0.325R, t = 3.84, 8.8% max drawdown) against 1:1 (0.246R, t = 3.37, 10.8%). 1:1 wins more often (60.5% vs 55.7%) and makes less. 1:3 is worse than both.")
 useBE   = input.bool(false, "Move stop to breakeven",                                                   group=gR, tooltip="edgeful publishes this as a separate variant. Off by default so the base rules are measured first.")
 bePct   = input.float(25, "Breakeven trigger (% of range beyond edge)", minval=1, maxval=500, step=1,  group=gR)
 
 gF = "Filters"
 allowLong  = input.bool(true, "Allow longs",  group=gF)
-allowShort = input.bool(true, "Allow shorts", group=gF, tooltip="A parameter search on 2022-2025 NQ wanted longs only. That is the index's uptrend, not an edge in the setup — the same setting lost money in the first two years. Leave both on unless you have a reason that is not a backtest.")
-usePctFilter = input.bool(true, "Filter by IB range PERCENTILE (adaptive)", group=gF, tooltip="v2's one addition. Compares today's first-hour range to the trailing distribution instead of to a fixed number of points, so it keeps meaning as volatility drifts.")
+allowShort = input.bool(true, "Allow shorts", group=gF, tooltip="LEAVE THIS ON. Every parameter search on 2022-2025 NQ wanted longs only, including all eight folds of the anchored walk-forward. It is the index's uptrend, not an edge in the setup: longs-only scores -0.006 in the research half and +0.255 in the holdout. The shorts it removes are mildly profitable (0.050R, positive in both halves) and turning them off halves the sample and cuts total P&L from $37,410 to $24,206.")
+usePctFilter = input.bool(false, "Filter by IB range PERCENTILE (adaptive)", group=gF, tooltip="v2's one addition. Compares today's first-hour range to the trailing distribution instead of to a fixed number of points, so it keeps meaning as volatility drifts.")
 pctWindow  = input.int(60,  "Percentile lookback (sessions)", minval=20, maxval=250, group=gF)
 minPctile  = input.float(0,  "Min IB range percentile", minval=0, maxval=100, step=5, group=gF)
-maxPctile  = input.float(60, "Max IB range percentile", minval=0, maxval=100, step=5, group=gF, tooltip="Default 60 skips the widest 40% of first hours. Wide IB = enormous 60% stop for the same 50% target. This was the strongest effect in the anomaly search (-0.33R, t=-2.18) and the only one with a reason to exist beforehand.")
+maxPctile  = input.float(100, "Max IB range percentile", minval=0, maxval=100, step=5, group=gF, tooltip="60 skips the widest 40% of first hours, which was v2's one addition and was motivated by the 60% stop scaling badly on wide days. v3 turns the filter OFF by default because the v3 geometry was validated WITHOUT it and stacking two separately-fitted adjustments is how backtests stop meaning anything. Turn it on only if you re-validate the pair together.")
 minIB = input.float(0, "Min IB range (points, 0 = off)", minval=0, step=5, group=gF, tooltip="Absolute fallback. Prefer the percentile filter above.")
 maxIB = input.float(0, "Max IB range (points, 0 = off)", minval=0, step=5, group=gF)
 allow2nd = input.bool(false, "Allow a second trade (double-break days)", group=gF, tooltip="Default off — the documented strategy is one trade per day.")

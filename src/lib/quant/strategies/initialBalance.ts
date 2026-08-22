@@ -40,6 +40,8 @@ export const initialBalance: Strategy = {
     maxRangePct: 100,
     sideMode: 0,
     breakBuffer: 0,
+    rrMode: 0,
+    rrMult: 2,
   },
   space: {
     /** Length of the initial-balance window in minutes, from the session open. */
@@ -58,6 +60,10 @@ export const initialBalance: Strategy = {
     sideMode: { values: [0, 1, -1] },
     /** Ticks beyond the edge required to count as a break. */
     breakBuffer: { values: [0, 2, 4] },
+    /** 0 = target a percent of the IB range beyond the edge; 1 = a fixed multiple of the risk. */
+    rrMode: { values: [0, 1] },
+    /** Reward-to-risk multiple, used only when rrMode is 1. */
+    rrMult: { values: [1, 1.5, 2, 3] },
   },
   build(bars: Bar[], p: Params, inst: Instrument) {
     const clock = clockFor(bars, inst.tz);
@@ -148,8 +154,14 @@ export const initialBalance: Strategy = {
       const edge = side === 1 ? h : l;
       const entry = edge - side * (range * p.retrPct) / 100;
       const stop = edge - side * (range * p.stopPct) / 100;
-      const target = edge + side * (range * p.targetPct) / 100;
       if (p.stopPct <= p.retrPct) return null; // the stop would sit on the wrong side of the entry
+      // Two target conventions: a percent of the IB range beyond the broken edge, or a fixed
+      // multiple of the actual risk. They are NOT the same trade — the second makes reward scale
+      // with the entry-to-stop distance, so widening the stop also widens the target.
+      const target =
+        p.rrMode === 1
+          ? entry + side * p.rrMult * Math.abs(entry - stop)
+          : edge + side * (range * p.targetPct) / 100;
 
       return {
         side,

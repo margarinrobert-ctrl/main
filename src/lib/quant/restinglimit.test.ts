@@ -115,6 +115,33 @@ describe("initial balance strategy", () => {
     expect(t.exitPx).toBeCloseTo(120, 6);
   });
 
+  it("targets a fixed multiple of the actual risk when rrMode is on", () => {
+    // IB 90-110, range 20. Entry = 110 - 25% x 20 = 105. Stop at 80% = 110 - 16 = 94, so the risk
+    // is 11 points. A 1:1 target is 105 + 11 = 116 — NOT 110 + some fraction of the range, which is
+    // what the percent-of-range target would give. The two orders are genuinely different.
+    const p = { ...initialBalance.defaults, stopPct: 80, rrMode: 1, rrMult: 1 };
+    const r = runStrategy(initialBalance, bars, p, { inst: ibInst });
+    expect(r.trades.length).toBeGreaterThan(0);
+    const t = r.trades[0];
+    expect(t.entryPx).toBeCloseTo(105, 6);
+    expect(t.reason).toBe("target");
+    expect(t.exitPx).toBeCloseTo(116, 6);
+  });
+
+  it("scales the fixed target by rrMult", () => {
+    const p = { ...initialBalance.defaults, stopPct: 80, rrMode: 1, rrMult: 1.5 };
+    const r = runStrategy(initialBalance, bars, p, { inst: ibInst });
+    // Same 11-point risk, so 1.5R is 105 + 16.5 = 121.5.
+    expect(r.trades[0].exitPx).toBeCloseTo(121.5, 6);
+  });
+
+  it("leaves the percent-of-range target untouched when rrMode is off", () => {
+    // rrMult is set to something that would be obvious if it leaked through, and must be ignored.
+    const p = { ...initialBalance.defaults, rrMode: 0, rrMult: 3 };
+    const r = runStrategy(initialBalance, bars, p, { inst: ibInst });
+    expect(r.trades[0].exitPx).toBeCloseTo(120, 6); // 110 + 50% x 20
+  });
+
   it("takes at most one trade per session", () => {
     const r = runStrategy(initialBalance, bars, initialBalance.defaults, { inst: ibInst });
     const perDay = new Map<number, number>();
