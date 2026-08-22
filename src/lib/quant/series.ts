@@ -140,6 +140,83 @@ export function sessionVwap(bars: Bar[], sessionId: ArrayLike<number>): number[]
   return out;
 }
 
+/**
+ * Session-anchored VWAP together with its volume-weighted standard deviation.
+ *
+ * This is the construction "VWAP bands" actually refers to: sigma is the volume-weighted dispersion
+ * of typical price around VWAP so far this session, so the bands widen when heavy volume trades away
+ * from the average and stay tight when it does not. That is a different object from VWAP plus an
+ * ATR multiple — ATR measures bar range and knows nothing about where the volume traded — and the
+ * two disagree most exactly when it matters, on a heavy directional open.
+ */
+export function sessionVwapBands(bars: Bar[], sessionId: ArrayLike<number>): { vwap: number[]; sigma: number[] } {
+  const vwap = nan(bars.length);
+  const sigma = nan(bars.length);
+  let pv = 0;
+  let vv = 0;
+  let pv2 = 0;
+  let cur = NaN;
+  for (let i = 0; i < bars.length; i++) {
+    if (sessionId[i] !== cur) {
+      cur = sessionId[i];
+      pv = 0;
+      vv = 0;
+      pv2 = 0;
+    }
+    const typical = (bars[i].h + bars[i].l + bars[i].c) / 3;
+    const vol = bars[i].v > 0 ? bars[i].v : 1;
+    pv += typical * vol;
+    vv += vol;
+    pv2 += typical * typical * vol;
+    const mean = pv / vv;
+    vwap[i] = mean;
+    const variance = pv2 / vv - mean * mean;
+    sigma[i] = variance > 0 ? Math.sqrt(variance) : 0;
+  }
+  return { vwap, sigma };
+}
+
+/**
+ * ROLLING volume-weighted mean and dispersion over the last `n` bars.
+ *
+ * The session-anchored version aggregates everything since the open, so by mid-afternoon it
+ * describes six hours of trade. If the reversion that actually exists in the data lives at a
+ * 10-20 bar horizon — which is what the variance ratios say — then the session anchor is measuring
+ * a stretch away from the wrong timescale. This is the same statistic computed over a window that
+ * matches the horizon, so the two can be compared directly.
+ */
+export function rollingVwapBands(bars: Bar[], n: number): { vwap: number[]; sigma: number[] } {
+  const vwap = nan(bars.length);
+  const sigma = nan(bars.length);
+  if (n < 2) return { vwap, sigma };
+  let pv = 0;
+  let vv = 0;
+  let pv2 = 0;
+  const typicalOf = (i: number) => (bars[i].h + bars[i].l + bars[i].c) / 3;
+  const volOf = (i: number) => (bars[i].v > 0 ? bars[i].v : 1);
+  for (let i = 0; i < bars.length; i++) {
+    const t = typicalOf(i);
+    const v = volOf(i);
+    pv += t * v;
+    vv += v;
+    pv2 += t * t * v;
+    if (i >= n) {
+      const to = typicalOf(i - n);
+      const vo = volOf(i - n);
+      pv -= to * vo;
+      vv -= vo;
+      pv2 -= to * to * vo;
+    }
+    if (i >= n - 1 && vv > 0) {
+      const mean = pv / vv;
+      vwap[i] = mean;
+      const variance = pv2 / vv - mean * mean;
+      sigma[i] = variance > 0 ? Math.sqrt(variance) : 0;
+    }
+  }
+  return { vwap, sigma };
+}
+
 /** Rolling z-score of x against its own trailing window (current value included). */
 export function zscore(x: number[], n: number): number[] {
   const m = sma(x, n);
