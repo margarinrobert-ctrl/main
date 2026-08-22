@@ -249,3 +249,81 @@ export function nearestNaked(list: NakedPoc[], price: number): { above: NakedPoc
   }
   return { above, below };
 }
+
+
+/**
+ * TPO (Time Price Opportunity) profile — the ORIGINAL Market Profile construction.
+ *
+ * A volume profile weights each price by how much traded there. A TPO profile weights it by how
+ * much TIME the market spent there: the session is cut into 30-minute periods, and each price a
+ * period touches earns exactly one TPO regardless of the volume that changed hands. The two answer
+ * different questions — "where did business get done" versus "where did the market spend time" —
+ * and they can disagree sharply on a session with one heavy, fast move.
+ *
+ * This matters for testing published Market Profile rules, because those rules were written for the
+ * TPO value area. Measuring them against a volume value area tests a related but different claim.
+ */
+export function buildTpoProfile(bars: Bar[], inst: Instrument, minuteOfDay: ArrayLike<number>, from: number, to: number, binSizeTicks = 4, valueAreaPct = 70): Profile | null {
+  if (to <= from) return null;
+  const binSize = binSizeTicks * inst.tickSize;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = from; i < to; i++) {
+    if (bars[i].l < lo) lo = bars[i].l;
+    if (bars[i].h > hi) hi = bars[i].h;
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi < lo) return null;
+
+  const first = Math.floor(lo / binSize);
+  const count = Math.max(1, Math.floor(hi / binSize) - first + 1);
+  if (count > 20_000) return null;
+  const tpo = new Float64Array(count);
+
+  // One count per price per 30-minute period, no matter how many bars or contracts touched it.
+  const periods = new Map<number, number[]>();
+  for (let i = from; i < to; i++) {
+    const k = Math.floor(minuteOfDay[i] / 30);
+    const arr = periods.get(k);
+    if (arr) arr.push(i);
+    else periods.set(k, [i]);
+  }
+  for (const idx of periods.values()) {
+    let pLo = Infinity;
+    let pHi = -Infinity;
+    for (const i of idx) {
+      if (bars[i].l < pLo) pLo = bars[i].l;
+      if (bars[i].h > pHi) pHi = bars[i].h;
+    }
+    const a = Math.floor(pLo / binSize) - first;
+    const b = Math.floor(pHi / binSize) - first;
+    for (let k = a; k <= b; k++) tpo[k] += 1;
+  }
+
+  let pocIdx = 0;
+  let total = 0;
+  for (let k = 0; k < count; k++) {
+    total += tpo[k];
+    if (tpo[k] > tpo[pocIdx]) pocIdx = k;
+  }
+  if (total <= 0) return null;
+
+  const target = total * (valueAreaPct / 100);
+  let lower = pocIdx;
+  let upper = pocIdx;
+  let acc = tpo[pocIdx];
+  while (acc < target && (lower > 0 || upper < count - 1)) {
+    const below = lower > 0 ? tpo[lower - 1] : -1;
+    const above = upper < count - 1 ? tpo[upper + 1] : -1;
+    if (above >= below) { upper++; acc += tpo[upper]; }
+    else { lower--; acc += tpo[lower]; }
+  }
+
+  const priceOf = (k: number) => (first + k) * binSize + binSize / 2;
+  const meanTpo = total / count;
+  const lowVolumeNodes: number[] = [];
+  for (let k = lower; k <= upper; k++) if (tpo[k] < meanTpo * 0.4) lowVolumeNodes.push(priceOf(k));
+  const bins: { price: number; volume: number }[] = [];
+  for (let k = 0; k < count; k++) if (tpo[k] > 0) bins.push({ price: priceOf(k), volume: tpo[k] });
+
+  return { poc: priceOf(pocIdx), vah: priceOf(upper), val: priceOf(lower), high: hi, low: lo, totalVolume: total, bins, lowVolumeNodes, binSize };
+}
