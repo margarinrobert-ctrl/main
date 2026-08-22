@@ -82,6 +82,9 @@ decomposition and risk ratios. Those are well-tested and easy to get subtly wron
 | `anomalies.py` | conditional edge by pre-entry condition, with Benjamini-Hochberg control |
 | `purged_cv.py` | purged, embargoed K-fold (Lopez de Prado ch. 7) |
 | `metalabel.py` | meta-labelling: learn which signals to skip, tested on locked data |
+| `smc.py` | smart-money-concept features — swing pivots, BOS, CHoCH, FVG, order blocks, liquidity sweeps, premium/discount |
+| `test_smc.py` | correctness and causality checks for those features (17 assertions) |
+| `smc_ml.py` | triple-barrier labels + gradient boosting on the SMC features, purged CV, locked holdout |
 
 ## Running it
 
