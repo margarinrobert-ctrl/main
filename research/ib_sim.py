@@ -40,9 +40,15 @@ def simulate(
     o, h, l, c, sess, mso, atr,
     ib_minutes, retr_pct, stop_pct, rr_mult,
     side_mode, break_buffer, stop_mode, atr_mult, stop_pts,
+    exit_mso,
     tick, point_value, taker_side, commission_pts,
 ):
-    """Returns (entry_idx, exit_idx, side, entry_px, exit_px, pnl, r, is_target) for each trade."""
+    """Returns (entry_idx, exit_idx, side, entry_px, exit_px, pnl, r, is_target) for each trade.
+
+    `exit_mso` is the flatten time in minutes since the session open. Making it a parameter rather
+    than a property of the pre-filtered bar series lets the sweep search over it, and lets the whole
+    regular session be loaded once instead of re-slicing per configuration.
+    """
     n = o.shape[0]
     max_trades = n // 4 + 8
     t_entry = np.zeros(max_trades, np.int64)
@@ -106,7 +112,8 @@ def simulate(
             gapped_tgt = (o[i] >= pos_tgt) if long else (o[i] <= pos_tgt)
             hit_stop = (l[i] <= pos_stop) if long else (h[i] >= pos_stop)
             hit_tgt = (h[i] >= pos_tgt) if long else (l[i] <= pos_tgt)
-            last_of_session = (i + 1 >= n) or (sess[i + 1] != sess[i])
+            past_exit = mso[i] >= exit_mso
+            last_of_session = past_exit or (i + 1 >= n) or (sess[i + 1] != sess[i])
 
             exit_px = np.nan
             is_tgt = 0
@@ -142,8 +149,8 @@ def simulate(
 
         # ---- a resting limit: does this bar come to it? ----
         if pend_side != 0 and pos_side == 0:
-            if sess[i] != pend_sess:
-                pend_side = 0                       # cancelled with the session
+            if sess[i] != pend_sess or mso[i] >= exit_mso:
+                pend_side = 0                       # cancelled with the session, or at the flatten time
             else:
                 long = pend_side == 1
                 through = (l[i] < pend_limit) if long else (h[i] > pend_limit)
@@ -162,7 +169,7 @@ def simulate(
 
         # ---- decide on this close, rest the order from the next bar ----
         if pos_side == 0 and pend_side == 0 and i + 1 < n:
-            if sess[i + 1] != sess[i]:
+            if sess[i + 1] != sess[i] or mso[i + 1] >= exit_mso:
                 pass
             else:
                 if sess[i] != state_sess:

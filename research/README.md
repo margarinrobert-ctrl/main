@@ -58,6 +58,12 @@ than in the ratio.
 
 **Select on dollars.** Full write-up: `docs/ib/STUDY_VECTORBT.md`.
 
+Then the same experiment at 225,792 configurations with a properly locked holdout removed the rising
+section entirely: a random pick lands at the 51.5th percentile of locked-holdout P&L, the best of
+143,536 lands at the **13.4th**, and every increase in search width moves the result down without a
+single reversal. Rank correlation between research and locked P&L is **−0.079**. The pre-specified
+geometry beat 57% of the grid on data nobody looked at. See `docs/ib/STUDY_MEGA_SEARCH.md`.
+
 `vectorbt` itself is used for the analytics layer (`pf.py`): the returns accessor, drawdown
 decomposition and risk ratios. Those are well-tested and easy to get subtly wrong by hand.
 
@@ -71,6 +77,11 @@ decomposition and risk ratios. Those are well-tested and easy to get subtly wron
 | `grid.py` | the parameter grid and per-block performance matrices |
 | `pf.py` | trades to a vectorbt Portfolio, and its statistics |
 | `validate.py` | CSCV/PBO, block bootstrap, search-width curve |
+| `mega_sweep.py` | the 225,792-configuration sweep, with a locked holdout |
+| `mega_analyse.py` | what the sweep bought — search width against locked-holdout rank |
+| `anomalies.py` | conditional edge by pre-entry condition, with Benjamini-Hochberg control |
+| `purged_cv.py` | purged, embargoed K-fold (Lopez de Prado ch. 7) |
+| `metalabel.py` | meta-labelling: learn which signals to skip, tested on locked data |
 
 ## Running it
 
@@ -83,6 +94,14 @@ python3 research/crosscheck.py /tmp/ts_trades.csv 50 80 2
 
 # the validation suite
 python3 research/validate.py
+
+# the maximum-width experiment (about 11 minutes), then its analysis
+python3 research/mega_sweep.py --out /tmp/mega.npz
+python3 research/mega_analyse.py /tmp/mega.npz
+
+# conditional anomalies, and meta-labelling
+python3 research/anomalies.py
+python3 research/metalabel.py
 ```
 
 Data files are git-ignored; see `data/README.md` for the ingest command.

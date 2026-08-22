@@ -30,7 +30,8 @@ def run_all(bars, grid: pd.DataFrame):
     for row in grid.itertuples(index=False):
         res = simulate(o, h, l, c, sess, mso, atr,
                        row.ib_minutes, float(row.retr_pct), float(row.stop_pct), float(row.rr_mult),
-                       int(row.side_mode), int(row.break_buffer), 0, 1.5, 40.0, *CONST)
+                       int(row.side_mode), int(row.break_buffer), 0, 1.5, 40.0,
+                       int(getattr(row, "exit_mso", 149)), *CONST)
         out.append((res[1], res[6], res[5]))   # exit index, R, pnl
     return out
 
