@@ -32,3 +32,7 @@ next-env.d.ts
 # recorded in each study's header. Never commit raw or canonical bar files.
 /data/*.csv
 /data/*.json
+
+# Python research layer
+__pycache__/
+*.pyc
