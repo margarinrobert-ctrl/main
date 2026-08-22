@@ -1,4 +1,4 @@
-# Volume / Market Profile on NQ — the first thing that survived
+# Volume / Market Profile on NQ — the only candidate, and its limits
 
 Full report: [`STUDY_VALUEAREA.md`](STUDY_VALUEAREA.md). Code: `src/lib/quant/volumeProfile.ts`,
 `src/lib/quant/strategies/valueArea.ts`.
@@ -84,6 +84,37 @@ this repo — **the long and short sides are both positive in both halves** (res
 holdout L 0.22 / S 0.12 at 1.33:1). Every previous candidate that looked promising had one side
 carrying everything and flipping across the split.
 
+## 3b. Cross-timeframe check — and a material downgrade
+
+The same strategy, same logic, rebuilt from **1-minute** bars. The first comparison was confounded
+(`entryDelayBars: 3` is 15 minutes on 5-minute bars and 3 minutes on 1-minute bars), so the delay is
+matched in wall-clock terms here:
+
+| | trades | win | expectancy | PF | HAC t | per-trade R 95% CI |
+| --- | --- | --- | --- | --- | --- | --- |
+| **5-minute bars**, full sample | 423 | 50.4% | **0.143 R** | 1.260 | **3.00** | **[0.048, 0.234]** |
+| **1-minute bars**, delay matched | 441 | 46.5% | **0.068 R** | 1.170 | 1.35 | **[−0.022, 0.160]** |
+| 1-minute, 3-min delay | 456 | 45.2% | 0.029 R | 1.125 | 0.56 | [−0.074, 0.136] |
+| 1-minute, 30-min delay | 426 | 47.7% | 0.074 R | 1.086 | 1.36 | [−0.036, 0.186] |
+
+**The edge roughly halves on 1-minute bars and loses significance.** Every 1-minute variant has a
+confidence interval containing zero, and every one has a weak research half (PF 0.94–1.04) carried by
+the holdout.
+
+The likely mechanism is not subtle and it does not favour the 5-minute number. **Finer bars resolve
+stop hits more accurately.** On a 5-minute bar, a dip that touches the stop and recovers within the
+bar is only caught if the bar's low reaches the level; on 1-minute bars far more of those dips are
+correctly booked as stop-outs, at the right moment. The engine's pessimistic same-bar rule helps but
+does not close the gap, because it only fires when a single bar contains *both* levels.
+
+**So the 1-minute figure is the better estimate, not the worse one.** The honest restatement:
+expectancy is around **0.07 R with a confidence interval containing zero**, not 0.143 R with an
+interval excluding it. The direction survives on every timeframe and both halves; the significance
+does not.
+
+This is a downgrade of the headline in section 3, and it is stated here rather than buried because
+the 5-minute number was reported first.
+
 ## 4. What still fails, and it matters
 
 **Gates passed: 5 of 10.**
@@ -99,9 +130,10 @@ carrying everything and flipping across the split.
   92 trades.
 - The pooled t=3.00 uses the holdout, so it is not independent evidence.
 
-**The honest status: a credible candidate, not a validated edge.** It is the only thing in this
-repo that is positive in both halves on both sides with a CI excluding zero, and it is also
-concentrated in one year and has not been tested outside NQ.
+**The honest status: a directionally consistent effect that is not statistically established.** It
+is the only thing in this repo positive in both halves on both sides, and on the timeframe that
+measures stops most accurately its confidence interval contains zero. It is also concentrated in one
+year and untested outside NQ.
 
 ## 5. A test-infrastructure defect this study exposed
 
@@ -127,6 +159,7 @@ the three most look-ahead-prone.
    The auction-theory mechanism is instrument-agnostic, so it should appear elsewhere. If it does
    not, this is a 2025 NQ artefact.
 2. **Position sizing.** At the measured drawdown distribution, one NQ contract per $50k is too much.
+   And size against the 1-minute expectancy of ~0.07 R, not the 5-minute 0.143 R.
 3. **Tick-level profiles.** These profiles spread each bar's volume uniformly across its range,
    which is right on average and wrong in detail. A true tick profile would sharpen the POC and the
    value-area edges, and the edge is defined by exactly those levels.
