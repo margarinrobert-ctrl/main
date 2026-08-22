@@ -212,3 +212,30 @@ leaving it fixed.
 - Sessions are resampled with replacement, which assumes they are exchangeable. They are not
   perfectly — volatility clusters — so real paths have somewhat fatter tails than these.
 - All of it inherits the parent limitation: one instrument, four years, a single market regime.
+
+## 8. Correction — the geometry above was not the best one
+
+Sections 1–7 test the *screenshot* geometry (25% retracement, fixed 1:1) because that is what the
+question arrived attached to. It is not the best-performing configuration in this repo. Re-running
+the same simulation against the validated v3 geometry — **50% retracement, 80% stop, fixed 1:2** —
+changes the answer substantially (Apex-style, 90-day budget, 6,000 paths):
+
+| geometry | n | E | signals | size | eval pass | blown | funded → payout | joint | months / fees |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| retr 25, 1:1 | 349 | 0.088R | 45.6% | 3x | 52.1% | 38.0% | 62.2% | 32.4% | 25 mo / $1,240 |
+| retr 50, 1:1 | 167 | 0.229R | 21.8% | 3x | 66.0% | 7.6% | 80.7% | 53.3% | 36 mo / $1,789 |
+| retr 50, 1:1 | 167 | 0.229R | 21.8% | 4x | 73.3% | 18.4% | 80.3% | 58.8% | 28 mo / $1,376 |
+| **retr 50, 1:2** | **167** | **0.308R** | **21.8%** | **3x** | **76.4%** | **10.6%** | **84.3%** | **64.4%** | **27 mo / $1,370** |
+| retr 50, 1:2 | 167 | 0.308R | 21.8% | 4x | 74.7% | 22.4% | 77.4% | 57.8% | 26 mo / $1,286 |
+
+**The v3 geometry roughly doubles the joint probability — 64.4% against 32.4% — at the same calendar
+cost**, and cuts the blow-up rate from 38% to 10.6%. Section 5's claim that frequency beats edge
+quality holds only *within* a fixed geometry; across geometries, an edge large enough (0.308R against
+0.088R) more than compensates for signalling half as often.
+
+3x is the recommendation over 4x: near-identical cost and joint probability, at less than half the
+blow-up rate.
+
+The luck-floor finding in section 6 is unaffected and still the most important line in this document.
+A no-edge strategy passes about 31% of the time, so even at 76.4% roughly two fifths of the pass
+probability is coming from the coin rather than the method.

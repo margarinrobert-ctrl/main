@@ -116,6 +116,30 @@
 //   direction in both halves, and it was motivated before it was measured.
 //   It is still not significant (t = 1.16 and 1.20). It is an improvement, not a fix.
 //
+// SIZING THIS ON A PROP-FIRM ACCOUNT — simulated, not guessed
+//
+//   A backtest sums P&L. An evaluation is a RACE between a profit target and a threshold that
+//   ratchets up behind every equity high. Simulated over 6,000 resampled paths against Apex-style
+//   $50k rules (target $3,000, $2,500 trailing on unrealised equity, 90 trading-day budget), then
+//   chained to a funded account run under the same threshold to a first payout:
+//
+//     size        eval pass   blown   funded->payout   joint
+//     3x MNQ        76.4%     10.6%       84.3%        64.4%   <-- best
+//     4x MNQ        74.7%     22.4%       77.4%        57.8%
+//     5x MNQ        66.4%     32.9%       67.9%        45.1%
+//     8x MNQ        47.9%     52.1%       48.1%        23.0%
+//     1x NQ (=10x)  ~34%      ~65%          --           --
+//
+//   ONE NQ CONTRACT ON A $50k ACCOUNT BLOWS IT ABOUT TWO THIRDS OF THE TIME. The median Monte
+//   Carlo drawdown of this strategy is larger than the whole trailing threshold, so the account
+//   is roughly half the size the strategy needs. Adding contracts is monotonically worse. Trade
+//   MICROS, at 3x, and accept that it is slow.
+//
+//   AND KNOW WHAT YOU ARE BUYING: a strategy with NO EDGE AT ALL passes an Apex-style evaluation
+//   about 31% of the time, because $3,000 against $2,500 over 90 days is close to a fair coin.
+//   Passing is therefore weak evidence that a method works. Expect roughly 27 months and ~$1,370
+//   of monthly fees per first payout at 3x. Full simulation: docs/ib/STUDY_PROP_FIRM.md.
+//
 // HOW TO USE THIS HONESTLY: paper-trade it, and judge it on whether the loss regime returns —
 // not on the equity curve of the last year.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -153,7 +177,7 @@ strategy(
      default_qty_type        = strategy.fixed,
      default_qty_value       = 1,
      commission_type         = strategy.commission.cash_per_contract,
-     commission_value        = 2.50,      // ~$5 round turn on NQ. Use ~0.50 for MNQ.
+     commission_value        = 2.50,      // ~$5 round turn on NQ. Use 0.67 for MNQ ($1.34 RT).
      slippage                = 2,         // ticks per side; NQ tick = 0.25 pt = $5
      margin_long             = 1,         // % of notional — see the MARGIN note above
      margin_short            = 1,
@@ -413,7 +437,7 @@ if showTable and barstate.islast
     else
         diag  := str.tostring(ibDaysSeen) + " IB days · " + str.tostring(ibDaysSkipped) + " filtered out · " + syminfo.ticker
 
-    table.cell(st, 0, 0, "IB backtest v2",  text_color=color.white, bgcolor=color.new(color.teal, 20), text_size=size.small)
+    table.cell(st, 0, 0, "IB backtest v3",  text_color=color.white, bgcolor=color.new(color.teal, 20), text_size=size.small)
     table.cell(st, 1, 0, timeframe.period,  text_color=color.white, bgcolor=color.new(color.teal, 20), text_size=size.small)
     table.cell(st, 0, 1, "Net profit",    text_size=size.small, text_color=color.gray)
     table.cell(st, 1, 1, f_money(strategy.netprofit), text_size=size.small, text_color=npCol)
