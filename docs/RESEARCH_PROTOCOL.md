@@ -175,6 +175,34 @@ overwhelming majority of the time, so the burden of proof sits with the strategy
 
 ---
 
+## 3b. Worked result: what the timeframe does to the arithmetic
+
+The same protocol was run twice over the same three years of NQ, changing only the bar size. The
+comparison is the clearest statement of why scalping is hard, and it is a measurement rather than an
+opinion:
+
+| | 5-minute ([`STUDY_NQ.md`](STUDY_NQ.md)) | 1-minute ([`STUDY_NQ_1m.md`](STUDY_NQ_1m.md)) |
+| --- | --- | --- |
+| bars in session | 58,609 | 292,908 |
+| typical bar, quiet window | 36.4 ticks | 16.6 ticks |
+| typical bar, 09:30 window | 70.2 ticks | 33.7 ticks |
+| round-turn cost | 3.80 ticks | 3.80 ticks |
+| **cost as a share of a quiet bar** | **10%** | **23%** |
+| best walk-forward Sharpe | 0.51 | 0.19 |
+| gates passed, best candidate | 5 / 10 | 4 / 10 |
+| strategies clearing all gates | 0 | 0 |
+
+Halving the bar size halves the move available to capture and leaves the cost untouched, so the
+hurdle rate more than doubles. Nothing about the rules changed; the arithmetic did. Faster is not
+more opportunity, it is the same opportunity with a larger tax — and the tax is the reason the
+1-minute study is uniformly worse across every strategy in the library, including the null benchmark.
+
+The corollary is the practical one: for a marginal strategy, **moving to a cheaper cost regime does
+more than any parameter search**. Going from NQ ($19 round turn) to MNQ, or from taking liquidity to
+posting it, changes the left-hand side of the inequality that actually decides the question.
+
+---
+
 ## 4. Reading a negative result correctly
 
 Most honest studies end with nothing passing. That result says:
