@@ -9,7 +9,10 @@
     "typecheck": "tsc --noEmit",
     "probe": "tsx scripts/probe.ts",
     "collect-intel": "tsx scripts/collect-intel.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "quant:ingest": "tsx scripts/quant-ingest.ts",
+    "quant:research": "tsx scripts/quant-research.ts",
+    "quant:smoke": "tsx scripts/quant-smoke.ts"
   },
   "dependencies": {
     "lightweight-charts": "^4.1.3",

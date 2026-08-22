@@ -27,3 +27,8 @@ next-env.d.ts
 *.log
 .DS_Store
 /coverage
+
+# Research data — large, often licensed, and reproducible from the ingest command
+# recorded in each study's header. Never commit raw or canonical bar files.
+/data/*.csv
+/data/*.json
