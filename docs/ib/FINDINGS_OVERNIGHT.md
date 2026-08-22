@@ -102,12 +102,72 @@ flip on almost all of them — "overnight strong close → follow" is +6.5 point
 −21.2 in the holdout. A clean null, and a useful check that the machinery is not simply generating
 positives.
 
+## 7. The full protocol — and it is largely unfavourable
+
+Run through the standard gates on 1-minute bars with the full 23-hour series retained:
+
+| | result |
+| --- | --- |
+| walk-forward OOS | 116 trades, +18.4 ticks, PF 1.106, Sharpe 0.35, **t = 0.53** |
+| walk-forward efficiency | **−0.16** |
+| folds profitable | 44% |
+| **PBO** | **0.968** |
+| deflated Sharpe | 0.315 |
+| **gates passed** | **3 / 10** |
+
+**PBO of 0.968 is the worst number in this repository.** It says that when the procedure picks a
+best configuration in-sample, that configuration lands in the bottom half out-of-sample almost every
+time. The parameter space around this strategy is noise-dominated and must not be searched.
+
+The holdout table shows the same thing from the other side:
+
+| configuration | trades | win | E(R) | PF | t |
+| --- | --- | --- | --- | --- | --- |
+| **pre-specified (0.6 threshold, 2:1)** | 60 | 55% | **0.483** | **2.119** | **2.71** |
+| in-sample optimum | 44 | 48% | 0.154 | 1.672 | 1.45 |
+| walk-forward modal | 75 | 52% | 0.063 | 1.493 | 1.51 |
+
+**The pre-specified rule beats both optimised versions by a wide margin.** That is the same pattern
+as every other study here, in its most extreme form: the economically motivated single threshold
+carries the result and searching around it destroys it.
+
+## 8. Robustness to entry timing — the one probe it passes cleanly
+
+The original measurement entered at the cash open, which nobody can actually fill. Re-run at
+increasing delays (1-minute bars):
+
+| delay | full-sample E(R) | t | long | short |
+| --- | --- | --- | --- | --- |
+| 1 min | +0.207 | 1.89 | +0.172 | +0.239 |
+| 2 min | +0.146 | 1.36 | +0.111 | +0.180 |
+| 5 min | +0.139 | 1.62 | +0.141 | +0.136 |
+| 10 min | +0.123 | 1.31 | +0.086 | +0.158 |
+| 15 min | +0.191 | 2.29 | +0.219 | +0.165 |
+| 30 min | +0.202 | 2.34 | +0.280 | +0.129 |
+
+Positive at every delay across a thirty-fold range, with both sides positive throughout. **The
+result is not an artefact of filling at the opening print**, which was the obvious objection.
+
+But the split tells the rest: the research half is positive and insignificant at *every* delay
+(E between +0.023 and +0.130, t between 0.19 and 1.16), while the holdout is strong at every delay
+(E +0.240 to +0.483, t 1.86 to 3.50). The effect is carried by the recent period at every setting.
+
 ## Status
 
-The large-gap fade is **the best-supported candidate in this repository**: significant after FDR
-across its own search grid, positive in both halves, and — uniquely — balanced across long and short
-in both halves. It is still a 187-trade result concentrated in one year, sitting exactly on the
-significance boundary, on one instrument.
+
+The large-gap fade is **the best-supported candidate in this repository and still not a validated
+edge.** In its favour: it survives FDR across its own search grid at q = 0.098, it is positive in
+both halves, it is uniquely balanced across long and short in both halves, and it is robust to entry
+timing across a thirty-fold range of delays.
+
+Against it, and decisively: it **passes 3 of 10 gates**, its walk-forward t is 0.53 with negative
+efficiency, and its **PBO is 0.968** — the worst in this repo. The parameter space is noise. The only
+version that works is the single pre-specified threshold, its research half is insignificant at every
+setting tested, and roughly three quarters of the P&L falls in 2025.
+
+The defensible reading is that there is a real mechanism here — large overnight gaps are priced in
+thin liquidity and the cash session drags them back — that shows up consistently in sign and is too
+small, too recent and too sample-limited to call established.
 
 Next: run it through the full protocol (walk-forward, PBO, deflated Sharpe), and test it on ES or CL,
 where the auction mechanism should appear if it is real and will not if it is a 2025 NQ artefact.

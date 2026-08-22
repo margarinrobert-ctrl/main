@@ -46,6 +46,12 @@ const SEED = Number(arg("seed", "20250822"));
 const STRATEGY = arg("strategy", "initial-balance")!;
 /** Window length in minutes for the day-feature table — the IB/OR window being studied. */
 const WINDOW = Number(arg("window", "60"));
+/**
+ * Keep the full 23-hour series instead of filtering to the cash session. Required by any strategy
+ * whose signal is formed OUTSIDE the cash session — a gap is created overnight, so filtering it away
+ * leaves the strategy with nothing to read. Entries are still gated to the session by the engine.
+ */
+const FULL_SESSION = process.argv.includes("--full-session");
 
 const md: string[] = [];
 const say = (s = "") => {
@@ -62,7 +68,7 @@ function main() {
   const all = parseCsv(readFileSync(DATA, "utf8"));
   const audit = auditBars(all, inst.tz);
   const clockAll = clockFor(all, inst.tz);
-  const bars = all.filter((_, i) => inWindow(clockAll.minuteOfDay[i], inst.session[0], inst.session[1]));
+  const bars = FULL_SESSION ? all : all.filter((_, i) => inWindow(clockAll.minuteOfDay[i], inst.session[0], inst.session[1]));
   const splitIdx = Math.floor(bars.length * (1 - HOLDOUT));
   const research = bars.slice(0, splitIdx);
   const holdout = bars.slice(splitIdx);
@@ -79,7 +85,7 @@ function main() {
       [
         ["data", `\`${DATA}\` · ${audit.bars.toLocaleString()} bars @ ${audit.timeframeMinutes}m`],
         ["range", `${audit.first.slice(0, 10)} → ${audit.last.slice(0, 10)}`],
-        ["session", `${hhmm(inst.session[0])}–${hhmm(inst.session[1])} ${inst.tz}`],
+        ["session", `${hhmm(inst.session[0])}–${hhmm(inst.session[1])} ${inst.tz}${FULL_SESSION ? " (entries); full 23h series retained for signal formation" : ""}`],
         ["opening window studied", `${hhmm(inst.session[0])}–${hhmm(inst.session[0] + WINDOW)} (${WINDOW} min)`],
         ["research bars / sessions", `${research.length.toLocaleString()} / ${new Set(clockFor(research, inst.tz).dayIndex).size}`],
         ["holdout bars / sessions", `${holdout.length.toLocaleString()} / ${new Set(clockFor(holdout, inst.tz).dayIndex).size}`],
