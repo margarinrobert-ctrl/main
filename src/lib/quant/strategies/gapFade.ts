@@ -29,13 +29,13 @@ export const gapFade: Strategy = {
   defaults: { minGapRatio: 0.6, maxGapRatio: 99, rrStop: 0.5, entryDelayBars: 1, minGapPts: 5, sideMode: 0, maxBars: 999 },
   space: {
     /** Minimum gap as a fraction of the prior cash range. The whole strategy lives here. */
-    minGapRatio: { values: [0.25, 0.4, 0.6, 0.8] },
-    maxGapRatio: { values: [99] },
+    minGapRatio: { values: [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 1.0] },
+    maxGapRatio: { values: [0.8, 1.2, 2.0, 99] },
     /** Stop as a multiple of the gap. 0.5 is 2:1 reward-to-risk, 1.0 is 1:1. */
-    rrStop: { values: [0.5, 0.75, 1.0] },
+    rrStop: { values: [0.25, 0.4, 0.5, 0.75, 1.0, 1.5] },
     /** Bars after the cash open before entering; the measurement used the open itself. */
-    entryDelayBars: { values: [1, 3, 6] },
-    minGapPts: { values: [5, 20, 40] },
+    entryDelayBars: { values: [1, 2, 5, 10, 15, 30] },
+    minGapPts: { values: [5, 15, 30, 50] },
     sideMode: { values: [0, 1, -1] },
     maxBars: { values: [999] },
   },
