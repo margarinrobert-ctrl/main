@@ -94,6 +94,16 @@ export function instrument(id: string): Instrument {
   return { ...inst };
 }
 
+/** Cost of TAKING liquidity on one side, in price units: half the spread plus slippage. */
+export function takerSideCostPoints(inst: Instrument): number {
+  return (inst.spreadTicks / 2) * inst.tickSize + inst.slippageTicks * inst.tickSize;
+}
+
+/** Commission for a round turn, expressed in price units. */
+export function commissionPoints(inst: Instrument): number {
+  return inst.commissionRoundTurn / (inst.tickValue / inst.tickSize);
+}
+
 /** Round-turn cost for one unit, in PRICE units — spread crossed once, slippage both sides. */
 export function roundTurnCostPoints(inst: Instrument): number {
   const spread = inst.spreadTicks * inst.tickSize;

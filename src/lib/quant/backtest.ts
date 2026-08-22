@@ -1,5 +1,5 @@
 import { clockFor, inWindow } from "./clock";
-import { pointsToUsd, roundTurnCostPoints, snap } from "./instruments";
+import { commissionPoints, pointsToUsd, roundTurnCostPoints, snap, takerSideCostPoints } from "./instruments";
 import type { Bar, EntryIntent, ExitReason, Instrument, Strategy, Params, Trade } from "./types";
 
 // Bar-by-bar backtester built around three anti-self-deception rules:
@@ -25,6 +25,23 @@ export interface BacktestConfig {
   startEquity?: number;
   /** Override the modelled round-turn cost (price units). Used by the cost-sensitivity sweep. */
   costPointsOverride?: number;
+  /**
+   * How orders reach the market. This is the single biggest lever on a scalping result, so it is an
+   * explicit modelling choice rather than a hidden assumption:
+   *
+   *  - `taker`     every trade pays the full round turn, entry and exit. Conservative, and what a
+   *                market-order system actually experiences. This is the default.
+   *  - `realistic` entry takes liquidity, a target exit is a resting limit and pays no spread, a
+   *                stop exit takes liquidity. This is how a competent discretionary desk trades.
+   *  - `passive`   entry is a resting limit that only fills if price trades THROUGH it, targets are
+   *                passive, stops take liquidity. Cheapest, but see the adverse-selection caveat:
+   *                bars are not order books, so a limit that fills in this model always fills, while
+   *                a real resting order fills preferentially when the market is about to move
+   *                against it. Treat `passive` as an upper bound on what execution can buy you.
+   */
+  fillModel?: "taker" | "realistic" | "passive";
+  /** For `passive` entries: how many ticks BETTER than the signal close to rest the order. */
+  limitOffsetTicks?: number;
 }
 
 export interface BacktestResult {
@@ -33,9 +50,12 @@ export interface BacktestResult {
   equity: number[];
   /** Net USD P&L keyed by UTC day index — the series used for Sharpe and cross-strategy correlation. */
   dailyPnl: Map<number, number>;
+  /** Reference round-turn cost, for reporting. Per-trade cost lives on each `Trade`. */
   costPoints: number;
   bars: number;
   config: BacktestConfig;
+  /** `passive` fill model only: signals that never filled because price did not trade through. */
+  unfilledLimits: number;
   /**
    * Exits where the SAME bar contained both the stop and the target. Rule 2 books those as losses
    * because the intrabar path is unknown. That is the right call, but it is a known conservative
@@ -62,7 +82,21 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
   const sessionOnly = cfg.sessionOnly ?? true;
   const allowed = cfg.allowedSides ?? "both";
   const startEquity = cfg.startEquity ?? 100_000;
-  const costPoints = cfg.costPointsOverride ?? roundTurnCostPoints(inst);
+  const fillModel = cfg.fillModel ?? "taker";
+  const referenceCost = cfg.costPointsOverride ?? roundTurnCostPoints(inst);
+  // When a cost override is supplied (the sensitivity sweep), scale every component by the same
+  // factor so the sweep stays meaningful under any fill model.
+  const costScale = referenceCost / Math.max(roundTurnCostPoints(inst), 1e-12);
+  const takerSide = takerSideCostPoints(inst) * costScale;
+  const commission = commissionPoints(inst) * costScale;
+
+  /** Cost actually charged to a trade, given how it entered and how it left. */
+  const costFor = (reason: ExitReason): number => {
+    if (fillModel === "taker") return referenceCost;
+    const entry = fillModel === "passive" ? 0 : takerSide;
+    const exit = reason === "target" ? 0 : takerSide; // a target rests; a stop must take liquidity
+    return entry + exit + commission;
+  };
 
   // Sessions and day boundaries are exchange-local: an ET trading day, not a UTC day.
   const clock = clockFor(bars, inst.tz);
@@ -75,6 +109,7 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
   let pos: OpenPos | null = null;
   let tradesToday = 0;
   let ambiguousExits = 0;
+  let unfilledLimits = 0;
   let curDay = bars.length ? dayOf(0) : 0;
 
   const inSession = (i: number): boolean => (sessionOnly ? inWindow(clock.minuteOfDay[i], inst.session[0], inst.session[1]) : true);
@@ -82,6 +117,7 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
   const close = (exitIndex: number, exitPx: number, reason: ExitReason) => {
     if (!pos) return;
     const gross = pos.side * (exitPx - pos.entryPx);
+    const costPoints = costFor(reason);
     const net = gross - costPoints;
     const pnl = pointsToUsd(inst, net) * pos.units;
     const riskUsd = pointsToUsd(inst, pos.stopDist) * pos.units;
@@ -154,7 +190,21 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
           const sideOk =
             allowed === "both" || (allowed === "long" && intent.side === 1) || (allowed === "short" && intent.side === -1);
           if (sideOk) {
-            const entryPx = next.o;
+            let entryPx = next.o;
+            if (fillModel === "passive") {
+              // Rest the order a tick or two better than the close and require the next bar to
+              // trade through it. A touch is not a fill: at the front of the queue you are behind
+              // everyone already resting there.
+              const offset = (cfg.limitOffsetTicks ?? 1) * inst.tickSize;
+              const limitPx = bars[i].c - intent.side * offset;
+              const through = intent.side === 1 ? next.l < limitPx : next.h > limitPx;
+              if (!through) {
+                unfilledLimits++;
+                continue;
+              }
+              // Fill at the limit, or better if the bar opened past it.
+              entryPx = intent.side === 1 ? Math.min(limitPx, next.o) : Math.max(limitPx, next.o);
+            }
             const stopDist = Math.max(intent.stopDist, inst.tickSize);
             const units =
               cfg.riskPerTradeUsd !== undefined
@@ -182,7 +232,7 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
 
   if (pos) close(bars.length - 1, bars[bars.length - 1].c, "eod");
 
-  return { trades, equity, dailyPnl, costPoints, bars: bars.length, config: cfg, ambiguousExits };
+  return { trades, equity, dailyPnl, costPoints: referenceCost, bars: bars.length, config: cfg, ambiguousExits, unfilledLimits };
 }
 
 /** Convenience: build a strategy on a series and run it. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runBacktest } from "./backtest";
-import { instrument, roundTurnCostPoints } from "./instruments";
+import { instrument, roundTurnCostPoints, takerSideCostPoints } from "./instruments";
 import { neweyWestT } from "./stats";
 import { STRATEGIES } from "./strategies";
 import { syntheticSeries } from "./synth";
@@ -92,6 +92,54 @@ describe("execution model", () => {
       maxTradesPerDay: 3,
     });
     expect(r.trades.length).toBeLessThanOrEqual(3);
+  });
+});
+
+describe("fill models", () => {
+  const costed: Instrument = { ...inst, spreadTicks: 1, slippageTicks: 1, commissionRoundTurn: 4 };
+
+  it("taker charges the full round turn regardless of how the trade exited", () => {
+    const bars = mk([[100, 100, 100, 100], [100, 100, 100, 100], [100, 110, 100, 110]]);
+    const r = runBacktest(bars, always(1, 50, 5), { inst: costed, sessionOnly: false, fillModel: "taker" });
+    expect(r.trades[0].reason).toBe("target");
+    expect(r.trades[0].costPoints).toBeCloseTo(roundTurnCostPoints(costed), 9);
+  });
+
+  it("realistic charges no spread on a target exit but full taker cost on a stop", () => {
+    const win = mk([[100, 100, 100, 100], [100, 100, 100, 100], [100, 110, 100, 110]]);
+    const lose = mk([[100, 100, 100, 100], [100, 100, 100, 100], [100, 100, 90, 90]]);
+    const onTarget = runBacktest(win, always(1, 50, 5), { inst: costed, sessionOnly: false, fillModel: "realistic" });
+    const onStop = runBacktest(lose, always(1, 5, 50), { inst: costed, sessionOnly: false, fillModel: "realistic" });
+    expect(onTarget.trades[0].reason).toBe("target");
+    expect(onStop.trades[0].reason).toBe("stop");
+    expect(onTarget.trades[0].costPoints).toBeLessThan(onStop.trades[0].costPoints);
+    // Target exit pays one taker side plus commission; the stop pays two taker sides plus commission.
+    expect(onStop.trades[0].costPoints - onTarget.trades[0].costPoints).toBeCloseTo(takerSideCostPoints(costed), 9);
+  });
+
+  it("passive only fills when price trades THROUGH the resting order", () => {
+    // Signal closes at 100, so a long limit rests at 99.75. The next bar's low never reaches it.
+    const noFill = mk([[100, 100, 100, 100], [100, 101, 99.75, 100]]);
+    const r1 = runBacktest(noFill, always(1, 5, 5), { inst: costed, sessionOnly: false, fillModel: "passive", limitOffsetTicks: 1 });
+    expect(r1.trades).toHaveLength(0);
+    expect(r1.unfilledLimits).toBe(1);
+
+    // Same setup, but the bar trades below the limit — now it fills, at the limit price.
+    const fill = mk([[100, 100, 100, 100], [100, 101, 99.0, 100], [100, 100, 100, 100]]);
+    const r2 = runBacktest(fill, always(1, 5, 5), { inst: costed, sessionOnly: false, fillModel: "passive", limitOffsetTicks: 1 });
+    expect(r2.trades).toHaveLength(1);
+    expect(r2.trades[0].entryPx).toBeCloseTo(99.75, 9);
+  });
+
+  it("orders the three models by cost, cheapest last", () => {
+    // Bar 1 dips to 99 so the passive limit at 99.75 genuinely trades through; bar 2 reaches the
+    // target under all three models, so only the charged cost differs.
+    const bars = mk([[100, 100, 100, 100], [100, 101, 99, 100], [100, 110, 100, 110]]);
+    const taker = runBacktest(bars, always(1, 50, 5), { inst: costed, sessionOnly: false, fillModel: "taker" });
+    const realistic = runBacktest(bars, always(1, 50, 5), { inst: costed, sessionOnly: false, fillModel: "realistic" });
+    const passive = runBacktest(bars, always(1, 50, 5), { inst: costed, sessionOnly: false, fillModel: "passive" });
+    expect(taker.trades[0].costPoints).toBeGreaterThan(realistic.trades[0].costPoints);
+    expect(realistic.trades[0].costPoints).toBeGreaterThan(passive.trades[0].costPoints);
   });
 });
 

@@ -198,8 +198,22 @@ more opportunity, it is the same opportunity with a larger tax — and the tax i
 1-minute study is uniformly worse across every strategy in the library, including the null benchmark.
 
 The corollary is the practical one: for a marginal strategy, **moving to a cheaper cost regime does
-more than any parameter search**. Going from NQ ($19 round turn) to MNQ, or from taking liquidity to
-posting it, changes the left-hand side of the inequality that actually decides the question.
+more than any parameter search**. But be careful which lever you reach for — micro contracts are the
+wrong one, and the arithmetic is counter-intuitive:
+
+| | tick value | commission (round turn) | commission **in ticks** |
+| --- | --- | --- | --- |
+| NQ | $5.00 | $4.00 | 0.80 |
+| MNQ | $0.50 | $1.20 | **2.40** |
+| ES | $12.50 | $4.00 | 0.32 |
+| MES | $1.25 | $1.20 | **0.96** |
+
+Micros cut the dollar risk per contract by 10x but only cut commission by ~3x, so the **per-tick
+hurdle roughly triples**. They are the right tool for position sizing on a small account and the
+wrong tool for making a marginal edge viable.
+
+The lever that genuinely works is **execution**: not crossing the spread. That is why `--fill` is an
+explicit modelling choice rather than a buried assumption — see below.
 
 ---
 
@@ -213,8 +227,9 @@ Most honest studies end with nothing passing. That result says:
 It does **not** say the market is unpredictable. The productive responses, in order of expected
 value:
 
-1. **Change the cost regime.** Move from NQ to MNQ, or from taking liquidity to posting it. Halving
-   the cost line does more for a marginal strategy than any parameter search.
+1. **Change the cost regime.** Post liquidity instead of taking it — *not* by switching to micro
+   contracts, which raise the per-tick hurdle (see §3b). Halving the cost line does more for a
+   marginal strategy than any parameter search.
 2. **Change the session.** The report's time-of-day profile shows where range actually is.
 3. **Add information the price series does not contain** — order flow, book imbalance, positioning,
    the options-derived dealer state this repo already computes elsewhere. Rules built from OHLC alone
@@ -224,6 +239,26 @@ value:
 
 What is *not* a productive response is widening the parameter grid until something passes. That is
 precisely what stages 3–7 exist to detect, and they will detect it.
+
+---
+
+## 4b. Fill models
+
+Execution assumptions move a scalping result more than any parameter, so they are a first-class,
+named choice (`--fill`) rather than something buried in a cost constant:
+
+| model | entry | target exit | stop exit | use it for |
+| --- | --- | --- | --- | --- |
+| `taker` (default) | crosses spread | full round turn charged | full round turn charged | the conservative baseline — what a market-order system really gets |
+| `realistic` | crosses spread | rests, pays no spread | crosses spread | a competent desk working orders |
+| `passive` | rests, fills only if price trades **through** it | rests | crosses spread | an upper bound on what execution can buy |
+
+**The `passive` caveat matters and is not a formality.** Bars are not order books. In this model a
+limit that price trades through always fills; in reality you are behind everyone already resting at
+that price, and a resting order fills preferentially precisely when the market is about to move
+against it. The engine captures the first effect (requiring a trade-through, not a touch) and cannot
+capture the second. So `passive` results are a **ceiling**, not a forecast — if a strategy fails
+even there, no execution improvement will save it, which is the useful direction of that inference.
 
 ---
 

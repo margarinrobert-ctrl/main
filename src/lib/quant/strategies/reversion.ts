@@ -1,5 +1,5 @@
 import { clockFor } from "../clock";
-import { atr, closes, percentRank, rsi, sessionVwap } from "../series";
+import { atr, closes, percentRank, rsi, sessionVwap, sma, zscore } from "../series";
 import type { Bar, EntryIntent, Instrument, Params, Strategy } from "../types";
 
 /**
@@ -94,6 +94,58 @@ export const sweepReversal: Strategy = {
         return { side: -1, stopDist: stop, targetDist: stop * p.rr, maxBars: p.maxBars, tag: "sweep-short" };
       if (b.l < lo - minPierce && b.c > lo)
         return { side: 1, stopDist: stop, targetDist: stop * p.rr, maxBars: p.maxBars, tag: "sweep-long" };
+      return null;
+    };
+  },
+};
+
+/**
+ * Rolling-mean (Ornstein-Uhlenbeck style) reversion, horizon-matched to the variance-ratio finding.
+ *
+ * The alpha-discovery stage on NQ reported VR(10) = 0.928 (z = -2.81) and VR(20) = 0.918 — the
+ * series covers less ground over 10-20 bars than a random walk would, which is mean reversion at
+ * roughly the 50-100 minute horizon. This strategy is written to trade exactly that and nothing
+ * else: it measures displacement from an N-bar mean in standard deviations, targets the mean rather
+ * than a fixed reward multiple, and times out near the horizon where the effect was measured.
+ *
+ * It is deliberately the narrowest possible expression of a specific measured statistic. If a
+ * significant variance ratio does not survive contact with costs here, the honest reading is that
+ * the effect is real but too small to trade — which is a different and more useful conclusion than
+ * "mean reversion does not work".
+ */
+export const ouReversion: Strategy = {
+  id: "ou-reversion",
+  label: "Rolling-mean reversion (VR-matched horizon)",
+  family: "mean-reversion",
+  rationale:
+    "Variance ratios below 1 at the 10-20 bar horizon say displacement from the local mean is partly transitory; this trades that displacement back to the mean.",
+  defaults: { lookback: 20, entryZ: 2.0, stopAtr: 1.5, targetFrac: 1.0, maxBars: 20, minVolPct: 0.0, volLookback: 100 },
+  space: {
+    lookback: { values: [10, 20, 30, 40] },
+    entryZ: { values: [1.5, 2.0, 2.5, 3.0] },
+    stopAtr: { values: [1.0, 1.5, 2.0] },
+    /** Fraction of the displacement targeted — 1.0 aims at the mean itself. */
+    targetFrac: { values: [0.5, 0.75, 1.0] },
+    maxBars: { values: [10, 20, 30] },
+    minVolPct: { values: [0.0, 0.3] },
+    volLookback: { values: [100] },
+  },
+  build(bars: Bar[], p: Params) {
+    const c = closes(bars);
+    const a = atr(bars, 14);
+    const z = zscore(c, p.lookback);
+    const m = sma(c, p.lookback);
+    const volPct = percentRank(a, p.volLookback);
+    return (i: number): EntryIntent | null => {
+      const av = a[i];
+      if (!Number.isFinite(av) || av <= 0 || !Number.isFinite(z[i]) || !Number.isFinite(m[i])) return null;
+      if (p.minVolPct > 0 && (!Number.isFinite(volPct[i]) || volPct[i] < p.minVolPct)) return null;
+      const displacement = Math.abs(c[i] - m[i]);
+      const target = displacement * p.targetFrac;
+      if (target <= 0) return null;
+      const stop = p.stopAtr * av;
+      if (z[i] >= p.entryZ) return { side: -1, stopDist: stop, targetDist: target, maxBars: p.maxBars, tag: "ou-short" };
+      if (z[i] <= -p.entryZ) return { side: 1, stopDist: stop, targetDist: target, maxBars: p.maxBars, tag: "ou-long" };
       return null;
     };
   },

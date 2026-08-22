@@ -186,7 +186,9 @@ export function summarize(result: BacktestResult, bars: Bar[], inst: Instrument)
   const years = days / perYear;
   const cagrLike = years > 0 ? totalPnl / years : 0;
   const grossTicks = t.length ? mean(t.map((x) => (x.side * (x.exitPx - x.entryPx)) / inst.tickSize)) : 0;
-  const costTicks = result.costPoints / inst.tickSize;
+  // Under the `realistic` and `passive` fill models the cost charged depends on how each trade
+  // exited (a target rests, a stop takes liquidity), so the reported figure is the realised mean.
+  const costTicks = t.length ? mean(t.map((x) => x.costPoints)) / inst.tickSize : result.costPoints / inst.tickSize;
   const barsHeld = t.reduce((s, x) => s + x.barsHeld, 0);
 
   return {

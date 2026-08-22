@@ -104,13 +104,10 @@ export function walkForward(strategy: Strategy, bars: Bar[], cfg: BacktestConfig
 
   const testBarsAll = folds.length ? bars.slice(folds[0].testRange[0], folds[folds.length - 1].testRange[1]) : [];
   const oos = summarize(
-    { trades: oosTrades, equity: stitchedEquity, dailyPnl, costPoints: 0, bars: testBarsAll.length, config: cfg, ambiguousExits: 0 },
+    { trades: oosTrades, equity: stitchedEquity, dailyPnl, costPoints: 0, bars: testBarsAll.length, config: cfg, ambiguousExits: 0, unfilledLimits: 0 },
     testBarsAll,
     cfg.inst,
   );
-  // costPoints is per-trade bookkeeping from the fold runs; restate it for the stitched summary.
-  oos.costTicks = oosTrades.length ? oosTrades[0].costPoints / cfg.inst.tickSize : 0;
-  oos.netEdgeTicks = oos.grossEdgeTicks - oos.costTicks;
 
   const med = (xs: number[]) => {
     const v = xs.filter(Number.isFinite).sort((a, b) => a - b);

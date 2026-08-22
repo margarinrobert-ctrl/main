@@ -51,6 +51,10 @@ const OUT = arg("out", `docs/STUDY_${SYMBOL}.md`)!;
 const HOLDOUT = Number(arg("holdout", "0.3"));
 const MAX_COMBOS = Number(arg("combos", "400"));
 const SEED = Number(arg("seed", "20250822"));
+const FILL = (arg("fill", "taker") ?? "taker") as "taker" | "realistic" | "passive";
+/** Override the instrument's session, as local `HH:MM-HH:MM`, e.g. --session 09:30-10:30. */
+const SESSION = arg("session");
+const TAG = arg("tag", "");
 
 const md: string[] = [];
 const say = (s = "") => {
@@ -74,7 +78,7 @@ function nullCalibration(inst: Instrument): { failures: string[]; rows: (string 
   const rows: (string | number)[][] = [];
   const failures: string[] = [];
   for (const s of STRATEGIES) {
-    const res = runStrategy(s, bars, s.defaults, { inst: freeInst, sessionOnly: false });
+    const res = runStrategy(s, bars, s.defaults, { inst: freeInst, sessionOnly: false, fillModel: FILL });
     const sum = summarize(res, bars, freeInst);
     const ambiguous = res.trades.length ? res.ambiguousExits / res.trades.length : 0;
     rows.push([s.id, sum.trades, num(sum.grossEdgeTicks), pct(ambiguous, 0), num(sum.sharpe), num(sum.tStat), num(sum.pValue, 3)]);
@@ -90,7 +94,7 @@ function powerCheck(inst: Instrument): (string | number)[][] {
   for (const ar1 of [0, 0.15, 0.3]) {
     const bars = syntheticSeries(SYMBOL, { days: 400, seed: SEED + 1, barsPerDay: 78, minutesPerBar: 5, sessionStartUtc: 9, ar1 });
     const s = STRATEGIES.find((x) => x.id === "vol-breakout")!;
-    const res = runStrategy(s, bars, { ...s.defaults, minVolPct: 0 }, { inst: synthInst, sessionOnly: false });
+    const res = runStrategy(s, bars, { ...s.defaults, minVolPct: 0 }, { inst: synthInst, sessionOnly: false, fillModel: FILL });
     const sum = summarize(res, bars, synthInst);
     rows.push([`momentum AR(1)=${ar1}`, sum.trades, num(sum.netEdgeTicks), num(sum.sharpe), num(sum.tStat)]);
   }
@@ -98,11 +102,19 @@ function powerCheck(inst: Instrument): (string | number)[][] {
 }
 
 // ---------------------------------------------------------------- main
+function parseSession(spec: string): [number, number] {
+  const m = /^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/.exec(spec.trim());
+  if (!m) throw new Error(`--session must look like 09:30-16:00, got "${spec}"`);
+  return [+m[1] * 60 + +m[2], +m[3] * 60 + +m[4]];
+}
+
 function main() {
   const inst = instrument(SYMBOL);
+  if (SESSION) inst.session = parseSession(SESSION);
+  const cfgBase = { inst, fillModel: FILL } as const;
   const t0 = Date.now();
 
-  say(`# Systematic scalping study — ${SYMBOL}`);
+  say(`# Systematic scalping study — ${SYMBOL}${TAG ? ` (${TAG})` : ""}`);
   say();
   say(`> Generated ${new Date().toISOString()} · seed \`${SEED}\` · every number below is reproducible from this repo.`);
   say(`> Research output, not trading advice. A passed protocol is a licence to paper-trade, not to size up.`);
@@ -125,6 +137,7 @@ function main() {
         ["timeframe", `${audit.timeframeMinutes} min`],
         ["range", `${audit.first} → ${audit.last}`],
         ["session studied", `${hhmm(inst.session[0])}–${hhmm(inst.session[1])} ${inst.tz}`],
+        ["fill model", `\`${FILL}\``],
         ["bars in session", bars.length.toLocaleString()],
         ["sessions", audit.tradingDays.toLocaleString()],
         ["duplicate stamps", audit.duplicateStamps],
@@ -331,7 +344,7 @@ function main() {
   const searchRows: (string | number)[][] = [];
   let totalTrials = 0;
   for (const s of STRATEGIES) {
-    const res = gridSearch(s, research, { inst }, { objective: "sharpe", minTrades: 50, maxCombos: MAX_COMBOS, seed: SEED });
+    const res = gridSearch(s, research, cfgBase, { objective: "sharpe", minTrades: 50, maxCombos: MAX_COMBOS, seed: SEED });
     searches.set(s.id, res);
     totalTrials += res.trialCount;
     const pl = plateauReport(res, s.space);
@@ -377,7 +390,7 @@ function main() {
   const rcDays = [...new Set(rClock.dayIndex)].sort((a, b) => a - b);
   const rcSeries = STRATEGIES.map((s) => {
     const best = searches.get(s.id)!.best;
-    const res = runStrategy(s, research, best.params, { inst });
+    const res = runStrategy(s, research, best.params, cfgBase);
     return rcDays.map((d) => res.dailyPnl.get(d) ?? 0);
   });
   const rc = realityCheck(rcSeries, STRATEGIES.map((s) => s.id), { samples: 2000, seed: SEED });
@@ -416,7 +429,7 @@ function main() {
       continue;
     }
     const series = sample.map((t) => {
-      const res = runStrategy(s, research, t.params, { inst });
+      const res = runStrategy(s, research, t.params, cfgBase);
       return rcDays.map((d) => res.dailyPnl.get(d) ?? 0);
     });
     try {
@@ -450,7 +463,7 @@ function main() {
   const wf = new Map<string, WalkForwardResult>();
   const wfRows: (string | number)[][] = [];
   for (const s of STRATEGIES) {
-    const r = walkForward(s, research, { inst }, { trainBars, testBars, mode: "rolling", objective: "sharpe", minTrades: 20, maxCombos: Math.min(MAX_COMBOS, 200), seed: SEED });
+    const r = walkForward(s, research, cfgBase, { trainBars, testBars, mode: "rolling", objective: "sharpe", minTrades: 20, maxCombos: Math.min(MAX_COMBOS, 200), seed: SEED });
     wf.set(s.id, r);
     totalTrials += r.totalTrials;
     wfRows.push([s.id, r.folds.length, r.oos.trades, num(r.oos.netEdgeTicks), num(r.oos.profitFactor), num(r.oos.sharpe), num(r.oos.tStat), num(r.efficiency), pct(r.foldHitRate, 0), usd(r.oos.totalPnl)]);
@@ -537,7 +550,7 @@ function main() {
     say(`*${s.rationale}*`);
     say();
     const modal = modalParams(r.folds.map((f) => f.params));
-    const cs = costSensitivity(s, research, modal, { inst });
+    const cs = costSensitivity(s, research, modal, cfgBase);
     say(
       table(
         ["cost multiple", ...cs.points.map((p) => `${p.multiple}x`)],
@@ -647,7 +660,7 @@ function main() {
     const r = wf.get(s.id);
     if (!r || !r.folds.length) continue;
     const modal = modalParams(r.folds.map((f) => f.params));
-    const res = runStrategy(s, holdout, modal, { inst });
+    const res = runStrategy(s, holdout, modal, cfgBase);
     const sum = summarize(res, holdout, inst);
     holdRows.push(summaryRow(s.id, sum));
   }
