@@ -144,17 +144,31 @@ describe("fill models", () => {
 });
 
 describe("look-ahead contract", () => {
-  // The decisive structural test: a decision made at bar i must not change when the bars AFTER i are
-  // removed. Any indicator that peeks forward — a centred average, a full-sample normalisation, an
-  // opening range built from the completed day — fails here rather than silently inflating a result.
+  // The decisive structural test: a decision made at bar i must not change when the bars AFTER i
+  // are removed. Any indicator that peeks forward — a centred average, a full-sample normalisation,
+  // an opening range built from the completed day — fails here rather than silently inflating a
+  // result.
+  //
+  // The comparison REPLAYS the signal closure over every bar from 0 to the cut, rather than calling
+  // it once at the cut. That matters: several strategies carry per-session state (one trade per day,
+  // whether a side has been used, how long price has held inside a level) which only exists if the
+  // closure has been called on every prior bar, which is how the backtester calls it. Calling it
+  // out of sequence compares two different states and reports differences that are an artefact of
+  // the test rather than a leak in the strategy. Replaying also makes the test far stricter, since
+  // it compares every decision up to the cut instead of one.
   const bars = syntheticSeries("NQ", { days: 40, seed: 5, barsPerDay: 78, minutesPerBar: 5, sessionStartUtc: 0 });
+
+  const replay = (strategy: (typeof STRATEGIES)[number], data: typeof bars, upTo: number): string[] => {
+    const fn = strategy.build(data, strategy.defaults, inst);
+    const out: string[] = [];
+    for (let i = 0; i <= upTo; i++) out.push(JSON.stringify(fn(i)));
+    return out;
+  };
 
   for (const strategy of STRATEGIES) {
     it(`${strategy.id} makes identical decisions on a truncated series`, () => {
-      const full = strategy.build(bars, strategy.defaults, inst);
       for (const cut of [900, 1500, 2100, 2600]) {
-        const truncated = strategy.build(bars.slice(0, cut + 1), strategy.defaults, inst);
-        expect(JSON.stringify(truncated(cut))).toBe(JSON.stringify(full(cut)));
+        expect(replay(strategy, bars.slice(0, cut + 1), cut), strategy.id).toEqual(replay(strategy, bars, cut));
       }
     });
   }
