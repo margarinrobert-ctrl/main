@@ -210,3 +210,37 @@ is a break inside chop — there is no established trend for it to continue.
 **65% win at 1:1.** Not reachable; see the barrier bound above.
 
 Reproduce with `python research/mnq_deep.py`.
+
+---
+
+## Correction — every Sharpe in this work was annualised over trading days only
+
+Found while auditing the EMA search, where a configuration returned a Sharpe of **31.14** — a
+figure impossible for any real strategy, and therefore a bug rather than a discovery.
+
+The daily-Sharpe helper built its series from `np.unique(sessions_that_had_trades)`. This rule is
+flat on roughly 85% of sessions, so the series contained only the 137-147 days that held a
+position, and `× √252` then annualised it as though every day of the year looked like a trading
+day. The correct construction includes **every session in the evaluation block**, with zero on days
+that did not trade.
+
+| stream | trading days | all days | quoted | **corrected** |
+| --- | --- | --- | --- | --- |
+| BOS 2R target, full sample | 137 | 922 | 2.93 | **1.14** |
+| BOS 2R, research block | 88 | 599 | 1.74 | **0.66** |
+| BOS 2R, LOCKED block | 49 | 323 | 4.52 | **1.70** |
+| BOS CHoCH exit, full sample | 147 | 922 | 2.28 | **0.90** |
+| BOS CHoCH, LOCKED block | 56 | 323 | 3.07 | **1.26** |
+
+**Inflation factor ~2.6×, everywhere Sharpe or Calmar appears in this work.** Dollars, profit
+factor, win rate, trade counts and drawdown are unaffected — they never touched the helper.
+
+The direction of the error is worth noting: it flattered a low-frequency strategy specifically
+*because* it is low-frequency. A rule trading 47 times a year was being scored as though it worked
+252 days a year. Sparse strategies are exactly where this mistake does the most damage, and this is
+a sparse strategy.
+
+Nothing in the conclusions changes — the 2R target still beat the baseline on both blocks and in
+all six walk-forward folds, all on dollars — but the risk-adjusted figures were never as good as
+reported. A locked-block Sharpe of 1.70 is a decent result. 4.52 would have been extraordinary, and
+should have been challenged on sight.

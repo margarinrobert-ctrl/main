@@ -44,3 +44,20 @@ for nm, arr, vals in (("side", side, [-1, 0, 1]), ("timeframe", mins, [15, 30, 6
         base = (arr == v).mean(); got = (arr[win] == v).mean()
         print(f"      {v:>6}  {100*got:>5.1f}% of winners vs {100*base:>5.1f}% of all"
               f"   lift {got/base if base>0 else 0:>4.2f}")
+
+print(); print("="*80)
+print("4. WHAT IS A 'HIGH SHARPE' CELL ACTUALLY MADE OF?"); print("="*80)
+order = np.argsort(-ls)
+print(f"{'rank':>5}{'locked Sh':>11}{'locked $':>10}{'research $':>12}{'trades':>8}"
+      f"{'side':>6}{'fast':>6}{'slow':>6}{'tf':>4}{'$/trade':>9}")
+for r, b in enumerate(order[:12]):
+    print(f"{r+1:>5}{ls[b]:>11.2f}{ln[b]:>10,.0f}{rn[b]:>12,.0f}{int(ntr[b]):>8}"
+          f"{int(side[b]):>6}{int(ef[b]):>6}{int(es[b]):>6}{int(mins[b]):>4}"
+          f"{ln[b]/max(ntr[b],1):>9,.1f}")
+print(f"\n   median trade count among the top 1,000 by locked Sharpe: "
+      f"{np.median(ntr[order[:1000]]):,.0f}")
+print(f"   median trade count across ALL cells                     : {np.median(ntr):,.0f}")
+print(f"   median LOCKED $ among the top 1,000 by locked Sharpe    : "
+      f"${np.median(ln[order[:1000]]):,.0f}")
+print(f"\n   For scale, the BOS/CHoCH book on the SAME locked block: $4,674 (56 trades).")
+print(f"   Best-of-{N:,} EMA cells on that block: ${ln.max():,.0f}.")
