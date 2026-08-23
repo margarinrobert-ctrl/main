@@ -141,3 +141,59 @@ run_all(s)
 direction, any stop and target, any flatten time, and any of the timeframes `prep()` can build.
 Every keyword it takes is something a test can turn, which is the whole design: the tests do not
 re-implement the strategy, they re-run it.
+
+## Addendum: the three execution-mode tests, and what the checkboxes actually change
+
+TradingView's Strategy Tester has four "Script execution" options. The research engine assumes
+exactly one of them: signals are read at the close of a completed bar, the fill is the next
+bar's open, and a bar holding **both** the stop and the target books the stop, because a
+30-minute OHLC bar does not say which came first.
+
+`research/intrabar.py` replaces that last assumption with the answer, by walking the 1-minute
+bars inside each 30-minute bar. Three tests now run in the suite:
+
+| test | what it turns on |
+| --- | --- |
+| Intrabar path | resolve same-bar stop-vs-target by the real 1-minute sequence |
+| Recalculate-on-fill | allow a new entry in the bar that just closed one — TradingView's "On order fill" |
+| Entry timing | fill the same signal at each minute of the fill bar, not only its open |
+
+### The results are not the flattering direction
+
+```
+RSI14<30 AND Williams%R<-80 AND ADX>25       trades    net $     PF   win %
+  A  pessimistic (the engine)                   253   15,587   1.31    28.5
+  B  true 1-minute path                         281   13,546   1.23    27.4
+  C  true path + refill on fill                 288   13,384   1.23    27.4
+```
+
+Resolving the ambiguity honestly costs **13%**, not gains it. The pessimistic rule looked
+conservative and was not: booking the stop ends a trade that the true path sometimes carried to
+the target, but it also frees the strategy to re-enter sooner, and those extra trades lose. The
+same test on `close>EMA10 AND body>60% AND 5-bar momentum>0` costs 8% ($38,254 → $35,157).
+
+Two things this settles:
+
+* **The 1-minute path resolves essentially everything.** 0.0% of trades touch both levels inside
+  a single minute. The residual ambiguity that no OHLC data can resolve is negligible, so the
+  true-path number is the number.
+* **Entry timing is worth more than costs are.** Filling the same signals 10 minutes into the
+  bar instead of at its open takes the RSI strategy from $15,997 to $9,842 — a spread of **45%
+  of the result** from nothing but *when inside the bar* the fill lands. That is larger than the
+  effect of quadrupling commission (−16%) or adding four ticks of slippage (−6%). A result that
+  moves 45% on fill timing is not an edge with a cost problem; it is a result whose sign is
+  decided by execution detail.
+
+### The two boxes that cannot be simulated, and why not
+
+"On history bar tick" and "On realtime bar tick" also re-evaluate the **entry conditions** on
+unfinished bars. A rule reading `close > EMA10` then fires on a partial close that may be gone
+by the bar's end.
+
+That is not a different execution of the same strategy. It is a different strategy, whose
+signals were never measured here, and simulating it would be inventing a result rather than
+checking one. Those two boxes take a generated script outside what any number in this repository
+covers. The suite says so rather than producing a figure for them.
+
+Suite tally on the cross-timeframe survivor is now **PASS 30, WARN 14, FAIL 6, INFO 6, N/A 4**.
+The entry-timing test is one of the new warnings.

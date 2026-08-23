@@ -526,6 +526,74 @@ def _cap(s, part=0.01):
                f"${s.pnl.sum()*cap_lots/yrs:,.0f} a year")
 
 
+_IB = {}
+
+
+def _intrabar(s):
+    """The three execution models, resolved against the real 1-minute path. Cached: it walks a
+    million minute bars."""
+    key = (tuple(s.conds), s.params.get("side"), s.params.get("atr_mult"),
+           s.params.get("tp_r"), s.params.get("flat_min"), s.params.get("tf"))
+    if key not in _IB:
+        try:
+            from intrabar import compare
+            _IB[key] = compare(list(s.conds), side=s.params["side"],
+                               atr_mult=s.params["atr_mult"], tp_r=s.params["tp_r"],
+                               flat_min=s.params["flat_min"], tf=s.params["tf"])
+        except Exception as e:
+            _IB[key] = e
+    return _IB[key]
+
+
+@t("Execution", "Intrabar path test")
+def _ipath(s):
+    """The engine books the stop when one bar holds both levels, because a 30-minute bar does
+    not say which came first. The 1-minute bars inside it do."""
+    r = _intrabar(s)
+    if isinstance(r, Exception) or not s.conds:
+        return ("INFO", f"1-minute data unavailable ({r})" if isinstance(r, Exception)
+                        else "no named conditions")
+    _, out, _ = r
+    a = out["A pessimistic (the engine)"][0]
+    pnl, why, amb = out["B true 1-minute path"]
+    d = 100 * (pnl.sum() - a.sum()) / abs(a.sum()) if a.sum() else np.nan
+    v = "PASS" if pnl.sum() > 0 and abs(d) < 20 else ("WARN" if pnl.sum() > 0 else "FAIL")
+    return (v, f"pessimistic ${a.sum():,.0f} ({len(a)} tr) -> true path ${pnl.sum():,.0f} "
+               f"({len(pnl)} tr), {d:+.0f}%. {100*amb.mean():.1f}% of trades still hit both "
+               f"levels inside one minute, which no OHLC data can resolve")
+
+
+@t("Execution", "Recalculate-on-fill test")
+def _refill(s):
+    """TradingView's "On order fill" re-runs the script the moment an order fills, so a new
+    entry can open in the bar that just closed one."""
+    r = _intrabar(s)
+    if isinstance(r, Exception) or not s.conds:
+        return ("INFO", "1-minute data unavailable")
+    _, out, _ = r
+    b = out["B true 1-minute path"][0]
+    c = out["C true path + refill on fill"][0]
+    d = 100 * (c.sum() - b.sum()) / abs(b.sum()) if b.sum() else np.nan
+    v = "PASS" if c.sum() > 0 and abs(d) < 15 else ("WARN" if c.sum() > 0 else "FAIL")
+    return (v, f"no refill ${b.sum():,.0f} ({len(b)} tr) -> same-bar refill ${c.sum():,.0f} "
+               f"({len(c)} tr), {d:+.0f}%")
+
+
+@t("Execution", "Entry-timing test")
+def _etiming(s):
+    """Fill the same signal at each minute of the bar the engine fills at the open of. Tick-level
+    execution moves the fill around inside that bar; this is how much that is worth."""
+    r = _intrabar(s)
+    if isinstance(r, Exception) or not s.conds:
+        return ("INFO", "1-minute data unavailable")
+    _, _, (offs, tim) = r
+    spread = (tim.max() - tim.min()) / abs(tim[0]) * 100 if tim[0] else np.nan
+    neg = int((tim <= 0).sum())
+    v = "PASS" if spread < 25 and neg == 0 else ("WARN" if neg == 0 else "FAIL")
+    return (v, "filled at minute " + ", ".join(f"{o}: ${x:,.0f}" for o, x in zip(offs, tim))
+               + f"; spread {spread:.0f}% of the at-open result, {neg} timing(s) unprofitable")
+
+
 @t("Execution", "Execution test")
 def _exec(s):
     if s.why is None:
