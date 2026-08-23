@@ -143,3 +143,103 @@ python3 research/sd_tf_sweep.py     # the 590,976-configuration two-phase sweep
 python3 research/sd_tf_analyse.py   # barrier bound, paired intervals, selection, 4c, marginals
 python3 research/sd_tf_best.py      # the marginal-optimal version, plateau check, combination
 ```
+
+---
+
+# The most profitable versions, ranked — and a correction
+
+## Correction to section 4 above
+
+Section 4 reported the marginal-optimal configuration's edge as short-side (locked $6,116 short
+against −$356 long) and called it "the first result on the branch whose edge is on the short
+side". **That was true of that one configuration and false of supply and demand as a family.**
+Across the 85,154 parameter sets for which both a long-only and a short-only variant were scored:
+
+| | positive on **both** blocks | mean net | median net |
+| --- | --- | --- | --- |
+| long side | 31,809 (**37.4%**) | +$1,780 | +$1,078 |
+| short side | 12,707 (**14.9%**) | −$1,499 | −$1,130 |
+| **both sides positive** | 4,829 (**5.7%**) | | |
+
+Among configurations that work on both blocks, long-only is over-represented by a factor of
+**1.67** and short-only under-represented by **0.48**. Supply and demand on 2022–25 NQ is a
+long-biased family, and the earlier claim generalised from a single cell. Section 4c applies here
+exactly as it does everywhere else on this branch.
+
+## 1. The most profitable version
+
+> 4H zones → **60m** confirmation, base 2 bars each under 0.9 ATR, departure over 1.0 ATR, any
+> zone origin, 24h session, stop buffer **0.50 × ATR**, **1.5R** target, no break filter, zones
+> reusable and live **12 days**, both sides.
+
+| | trades | net $ | PF | win % | bound | excess | z | research | LOCKED | maxDD |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **top version** | 479 | **32,413** | 1.43 | 45.9 | 40.0 | **+5.9** | **+2.65** | 18,064 | **14,348** | 4,970 |
+
+Its locked-block P&L of **$14,348 exceeds the entire BOS book's $12,834** on the same block. The
+z-statistic of +2.65 on 479 trades is the strongest excess anywhere in the supply/demand work.
+
+- **Bootstrap**, 10,000 stationary block paths on the locked block: p5 $4,567, median $14,125,
+  p95 $24,709, P(net < 0) = 0.7%.
+- **Walk-forward**, six folds: one negative (fold 1, −$1,355); forward P&L $-1,355 / 1,672 /
+  10,209 / 8,612 / 4,575 / 5,367.
+- **Plateau**: of 23 one-step perturbations, **20 stay positive on the locked block** (median
+  $7,203, worst −$2,116). It is the summit of its neighbourhood, but the neighbourhood floor is
+  high — a broad hill, not the spike the BOS 120m winner sat on.
+
+**And the caveat that matters most:** longs only earns $26,431 (+6.9 excess, z +2.69) while shorts
+only **loses $7,644** (−2.2 excess). The two-sided result is a long book carrying a losing short
+overlay. Most of this number is the index going up.
+
+## 2. Versions that are profitable on both blocks and above the barrier bound
+
+17.3% of the 253,466 scored configurations qualify: positive research, positive locked, win rate
+above `1/(1+R)`, at least 60 trades, drawdown under $4,000. Ranked by the **weaker** of the two
+blocks so nothing can buy its way in on one good half:
+
+| | configuration | n | net $ | PF | win % | excess | research | LOCKED |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 2H→60m k4 b0.9 d1.0 any 24h buf1.00 1.5R reuse **long** | 281 | 30,336 | 1.75 | 50.9 | +10.9 | 15,333 | 15,004 |
+| 2 | 4H→30m k2 b0.9 d1.0 cont 24h buf1.00 3.0R brk reuse **both** | 232 | 29,357 | 1.71 | 33.2 | +8.2 | 14,363 | 14,994 |
+| 3 | 4H→60m k2 b0.9 d1.0 any 24h buf1.00 3.0R 1shot **long** | 134 | 31,372 | 2.09 | 35.8 | +10.8 | 18,081 | 13,291 |
+| 4 | 4H→60m k2 b0.9 d1.0 any 24h buf0.50 3.0R brk reuse **long** | 210 | 27,050 | 1.74 | 34.3 | +9.3 | 14,153 | 12,897 |
+| 5 | 2H→60m k3 b0.9 d1.0 any 24h buf1.00 2.0R reuse **long** | 251 | 25,889 | 1.62 | 41.4 | +8.1 | 13,081 | 12,809 |
+
+Seven of the top ten are long-only. That is the section-4c warning restated as a list.
+
+### What the 43,962 qualifiers have in common
+
+Share among qualifiers ÷ share among all scored configurations:
+
+| parameter | over-represented | under-represented |
+| --- | --- | --- |
+| confirmation interval | **60m ×1.44**, 30m ×1.17 | 5m ×0.65 |
+| zone interval | 4H ×1.18 | 8H ×0.83 |
+| zone reuse | reusable ×1.15 | one-shot ×0.78 |
+| side | **long ×1.67** | **short ×0.48** |
+| zone origin | continuation ×1.12 | any ×0.94 |
+
+Everything else — base width, buffer, target, break filter, session — lands between ×0.9 and
+×1.1, i.e. **it does not matter**. The interval choice and the direction are the whole story.
+
+## 3. The most *robust* version, which is not the most profitable
+
+Only 4,829 parameter sets (5.7%) have **both sides positive on both blocks**. The best-balanced:
+
+> 4H zones → **30m** confirmation, base 3 bars under 0.9 ATR, departure over 1.0 ATR,
+> continuation origin, RTH, **1.0R** target, zones live 12 days
+
+| | research | LOCKED |
+| --- | --- | --- |
+| long only | $4,291 | $4,241 |
+| short only | $3,388 | $3,441 |
+
+Four cells, all between $3,388 and $4,291 — about $15,400 in total and no cell carrying the
+result. It earns less than half of the top version and it is the one that is not a bet on
+direction. On a book that already holds two long-capable legs, that is the more useful property.
+
+## Reproduce
+
+```
+python3 research/sd_top.py     # the three rankings and the qualifier lift table
+```
