@@ -1,0 +1,164 @@
+//@version=6
+// =============================================================================================
+// NQ — Break of Structure / Change of Character, 30-minute
+// The version that survived the battery in docs/ib/STUDY_BOS_CHOCH.md. Read the honest numbers
+// at the bottom of this file BEFORE sizing anything: this is a HYPOTHESIS, not a proven edge.
+// =============================================================================================
+//
+// RULES
+//   1. Swing pivots are fractal, confirmed k bars later. A pivot at t is invisible until t+k —
+//      that delay is real and is the reason this does not work on fast timeframes.
+//   2. Bullish BOS  = close above the last CONFIRMED swing high.
+//      Bearish BOS  = close below the last CONFIRMED swing low.
+//   3. The first BOS establishes structure. Do NOT enter on it.
+//   4. Enter on the SECOND BOS in the same direction, at the next bar's open.
+//   5. Long requires close > EMA(200); short requires close < EMA(200).
+//   6. RANGE FILTER: refuse the trade if |close − EMA200| < 1 × ATR. Breaks taken inside the
+//      range lost $474/trade at t = −5.26 on 5-minute bars — the single strongest statistic in
+//      the whole study, and it is a loss.
+//   7. Stop = 2 × ATR(14). Exit on the opposite BOS (a CHoCH) or on the stop.
+//   8. Entries only when BOTH the signal bar and the fill bar are inside 09:30–16:00 ET.
+//      Without that, 14% of entries filled at 16:00 in post-close liquidity and produced 41% of
+//      all profit — on a 1-tick spread assumption that does not hold there.
+//
+strategy("NQ BOS/CHoCH 30m", overlay = true, initial_capital = 100000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 2.00,
+     slippage = 2, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// ── inputs ───────────────────────────────────────────────────────────────────────────────────
+grpS = "Structure"
+swingK   = input.int(3,   "Swing confirmation bars (k)", minval = 1, maxval = 20, group = grpS,
+     tooltip = "A pivot needs k bars either side. Higher k = later but more reliable. k had a " +
+     "DIFFERENT best value at every timeframe tested, which is why it is left at the neutral 3.")
+nBos     = input.int(2,   "Enter on the Nth BOS", minval = 1, maxval = 5, group = grpS)
+
+grpF = "Filters"
+useEma   = input.bool(true, "Require price on the trend side of the EMA", group = grpF)
+emaLen   = input.int(200, "EMA length", minval = 10, group = grpF)
+minDist  = input.float(1.0, "Refuse entries within N x ATR of the EMA", minval = 0, step = 0.25,
+     group = grpF, tooltip = "The range filter. 0.5–1.5 all improved results at 30m; 1.0 is the " +
+     "middle of that plateau.")
+
+grpR = "Risk"
+atrLen   = input.int(14,  "ATR length", minval = 2, group = grpR)
+atrMult  = input.float(2.0, "Stop = N x ATR", minval = 0.25, step = 0.25, group = grpR)
+useChoch = input.bool(true, "Exit on the opposite BOS (CHoCH)", group = grpR)
+
+grpT = "Session (exchange time)"
+sessStr  = input.session("0930-1600", "Entry session", group = grpT)
+flatEnd  = input.bool(false, "Flatten at the session close", group = grpT,
+     tooltip = "Off by default: the tested specification holds through the close and exits on the " +
+     "stop or the CHoCH. Turning this on is a DIFFERENT strategy and was not validated.")
+
+// ── indicators ───────────────────────────────────────────────────────────────────────────────
+emaV = ta.ema(close, emaLen)
+atrV = ta.atr(atrLen)
+
+// Confirmed fractal pivots. ta.pivothigh(k, k) returns the pivot k bars ago, so referencing it on
+// the current bar is causal — the value only exists once the right-hand bars have printed.
+ph = ta.pivothigh(high, swingK, swingK)
+pl = ta.pivotlow(low,  swingK, swingK)
+var float lastPH = na
+var float lastPL = na
+if not na(ph)
+    lastPH := ph
+if not na(pl)
+    lastPL := pl
+
+// ── structure state ──────────────────────────────────────────────────────────────────────────
+var float brokeHi = na          // the level whose break has already been counted
+var float brokeLo = na
+var int   bias    = 0
+var int   runLen  = 0
+
+bosUp = not na(lastPH) and close > lastPH and (na(brokeHi) or lastPH != brokeHi)
+bosDn = not na(lastPL) and close < lastPL and (na(brokeLo) or lastPL != brokeLo)
+if bosUp
+    brokeHi := lastPH
+if bosDn
+    brokeLo := lastPL
+
+if bosUp
+    if bias == 1
+        runLen += 1
+    else
+        bias := 1
+        runLen := 1
+if bosDn
+    if bias == -1
+        runLen += 1
+    else
+        bias := -1
+        runLen := 1
+
+// ── session gate: the signal bar AND the next bar must both be in session ────────────────────
+// `session.islastbar` is true on the final bar of the session. Refusing it is what guarantees the
+// FILL — which lands on the next bar's open — is still inside the session. An earlier draft tested
+// the same expression twice and gated nothing, which is precisely the defect this rule exists to
+// prevent: 14% of entries filling at 16:00 for 41% of the profit.
+inSess   = not na(time(timeframe.period, sessStr))
+canEnter = inSess and not session.islastbar
+
+// ── filters ──────────────────────────────────────────────────────────────────────────────────
+farEnough = minDist <= 0 or (not na(emaV) and not na(atrV) and math.abs(close - emaV) >= minDist * atrV)
+okLong    = (not useEma or close > emaV) and farEnough
+okShort   = (not useEma or close < emaV) and farEnough
+
+longSig  = bosUp and runLen >= nBos and okLong  and canEnter and not na(atrV) and atrV > 0
+shortSig = bosDn and runLen >= nBos and okShort and canEnter and not na(atrV) and atrV > 0
+
+// ── orders. Signals evaluate on the CLOSE; TradingView fills the market order at the next
+//    bar's open, which is exactly the fill assumption the backtest used. ───────────────────────
+if longSig and strategy.position_size == 0
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", "L", stop = close - atrMult * atrV)
+if shortSig and strategy.position_size == 0
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", "S", stop = close + atrMult * atrV)
+
+if useChoch
+    if strategy.position_size > 0 and bosDn
+        strategy.close("L", comment = "CHoCH")
+    if strategy.position_size < 0 and bosUp
+        strategy.close("S", comment = "CHoCH")
+
+if flatEnd and not inSess and strategy.position_size != 0
+    strategy.close_all(comment = "session end")
+
+// ── plots ────────────────────────────────────────────────────────────────────────────────────
+plot(emaV, "EMA", color.new(color.orange, 0), 2)
+bandU = plot(emaV + minDist * atrV, "no-trade band", color.new(color.gray, 70))
+bandL = plot(emaV - minDist * atrV, "no-trade band", color.new(color.gray, 70))
+fill(bandU, bandL, color.new(color.gray, 92), title = "range — no entries here")
+plotshape(bosUp,  "BOS up",   shape.triangleup,   location.belowbar, color.new(color.teal, 0), size = size.tiny)
+plotshape(bosDn,  "BOS down", shape.triangledown, location.abovebar, color.new(color.maroon, 0), size = size.tiny)
+
+// =============================================================================================
+// WHAT THE STUDY ACTUALLY FOUND — docs/ib/STUDY_BOS_CHOCH.md
+//
+// VERDICT: WEAK EDGE. This is a hypothesis. It is not a validated edge and should not carry
+// risk capital on the strength of these numbers alone.
+//
+// 30-minute NQ, RTH, this exact specification, Dec 2022 – Dec 2025, $19–24 per round turn:
+//     147 trades   +$71,483   $486/trade   PF 1.54   Sharpe 1.00   max DD 15.6%   t = 1.88
+//
+// The t-statistic does not reach 2. The 30-minute timeframe was chosen from 8 and the range
+// filter from 5 values, so the honest hurdle is E[max z] over ~40 cells ≈ 2.7. It does not clear.
+//
+// WHAT FAILED, so you do not rediscover it:
+//   • 1-minute and 2-minute are SIGNIFICANTLY NEGATIVE (t = −2.45 and −2.68). This does not scalp.
+//   • At 5 minutes, coin-flip entries with identical risk management beat it 65% of the time.
+//   • At 60 minutes the headline looks best AND the probability of backtest overfitting is 0.814.
+//   • 94% of the 30-minute profit came from 3 of 12 quarters; one contributed $20k on 7 trades.
+//   • Four of five components flip sign across timeframes in ablation. Only "require more
+//     confirmation" holds everywhere, and that is a statement about trading less.
+//   • There is NO ES DATA in the study. A structural rule should work on the S&P too, and one
+//     instrument in one bull market cannot tell "structure works" from "2023–25 NQ trended".
+//
+// POSITION SIZE: a 2×ATR stop on 30-minute NQ risks about $2,000 per contract. At $100–$300 of
+// risk per trade every signal rounds to zero contracts. Use MNQ, where the same stop is ~$200.
+//
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================

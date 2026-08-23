@@ -88,7 +88,7 @@ def atr(h, l, c, n):
 @njit(cache=True)
 def simulate(o, h, l, c, sess, tradeable, ph, pl, phi, pli, ema_, atr_,
              atr_mult, n_bos, use_ema, use_stop, use_choch, max_hold,
-             pv, tick, comm, spread_t, slip_t, stop_slip_t, side_mode):
+             pv, tick, comm, spread_t, slip_t, stop_slip_t, side_mode, min_ema_dist):
     """One position at a time. Signals read bar i; fills happen at the open of bar i+1.
 
     `n_bos` is how many same-direction breaks are required before entering (the baseline is 2 --
@@ -197,9 +197,19 @@ def simulate(o, h, l, c, sess, tradeable, ph, pl, phi, pli, ema_, atr_,
                 pos = 0
 
         # ---------------- entry on the n-th BOS, filled at the NEXT open ----------------
-        if pos == 0 and i + 1 < n and tradeable[i] == 1 and not new_sess:
+        # The FILL must be in session, not just the signal. A signal on the last RTH bar fills on
+        # the next bar, which is outside the cash session: at 30m that was 14% of entries and 41%
+        # of all profit, taken at 16:00 in thin post-close liquidity where a 1-tick spread is not a
+        # realistic assumption. An intraday RTH strategy has to be able to actually fill in RTH.
+        if pos == 0 and i + 1 < n and tradeable[i] == 1 and tradeable[i + 1] == 1 and not new_sess:
             a = atr_[i]
             if a > 0 and not np.isnan(a):
+                # RANGE FILTER. The regime table's largest statistic anywhere in the study is
+                # -$474/trade at t = -5.26 for a break taken within 1 ATR of the EMA-200. Requiring
+                # a minimum distance refuses those. Derived in-sample -- see the report.
+                if min_ema_dist > 0.0 and not np.isnan(ema_[i]):
+                    if abs(c[i] - ema_[i]) < min_ema_dist * a:
+                        continue
                 want = 0
                 if bos_up == 1 and run >= n_bos:
                     if use_ema == 0 or (not np.isnan(ema_[i]) and c[i] > ema_[i]):
@@ -262,7 +272,7 @@ def prep(minutes: int, swing_k: int = 3, ema_n: int = 200, atr_n: int = 14):
 
 def run(minutes=5, session="rth_0930_1600", swing_k=3, ema_n=200, atr_n=14, atr_mult=2.0,
         n_bos=2, use_ema=1, use_stop=1, use_choch=1, max_hold=0, symbol="NQ", side_mode=0,
-        cost_mult=1.0):
+        cost_mult=1.0, min_ema_dist=0.0):
     d = prep(minutes, swing_k, ema_n, atr_n)
     lo, hi = SESSIONS[session]
     tradeable = in_session(d["mod"], lo, hi).astype(np.uint8)
@@ -272,7 +282,7 @@ def run(minutes=5, session="rth_0930_1600", swing_k=3, ema_n=200, atr_n=14, atr_
                     atr_mult, n_bos, use_ema, use_stop, use_choch, max_hold,
                     s["pv"], s["tick"], s["comm"] * cost_mult,
                     s["spread_t"] * cost_mult, s["slip_t"] * cost_mult,
-                    s["stop_slip_t"] * cost_mult, side_mode)
+                    s["stop_slip_t"] * cost_mult, side_mode, min_ema_dist)
 
 
 def nw_t(x, lag=10):
