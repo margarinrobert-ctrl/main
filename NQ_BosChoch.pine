@@ -17,9 +17,24 @@
 // !! time. On 1m and 2m it is significantly negative (t = -2.45, -2.68). A losing 5-minute
 // !! backtest is not a bug, it is the documented result.
 
+// !! READING A MISMATCHED RESULT. The win rate is a fingerprint of the STOP MULTIPLE, nothing
+// !! else. Measured on my engine over Dec-2022..Dec-2025, 30m, both under this script's exact
+// !! control flow and under the reference engine:
+// !!        stop 2.0 x ATR  ->  win 39-40%   (CHoCH exits 62-75% of closes)   <- the tested spec
+// !!        stop 1.0 x ATR  ->  win 27-29%   (CHoCH exits 37-41% of closes)
+// !!        stop 0.5 x ATR  ->  win 16-17%
+// !! So a backtest printing ~27% win rate is running a 1 x ATR stop, whatever the input box says
+// !! — TradingView caches inputs per chart and a stale value survives a script update. That is
+// !! what "LOCK the tested spec" below is for. Trade COUNT is the fingerprint of nBos: ~150-190
+// !! at nBos=2, ~290-400 at nBos=1, same window. Check both against the diagnostic label.
+
 strategy("NQ BOS/CHoCH book", overlay = true, initial_capital = 100000,
      default_qty_type = strategy.fixed, default_qty_value = 1,
-     commission_type = strategy.commission.cash_per_order, commission_value = 2.00,
+     commission_type = strategy.commission.cash_per_order,
+     commission_value = input.float(2.00, "Commission $ per order", group = "Costs",
+         tooltip = "2.00 is right for NQ (E-mini, $20/pt). On MNQ (Micro, $2/pt) the contract is " +
+                   "10x smaller and this default is ~10x too heavy — use 0.50-1.00 there, or the " +
+                   "cost alone will turn a positive book negative."),
      slippage = 2, pyramiding = 0, calc_on_every_tick = false,
      process_orders_on_close = false)
 
@@ -183,8 +198,11 @@ if useChoch
 if showDiag and barstate.islast
     var label lbl = na
     label.delete(lbl)
-    lbl := label.new(bar_index, high, "position closes: " + str.tostring(nCloses) +
+    lbl := label.new(bar_index, high, "symbol: " + syminfo.ticker + "  tf: " + timeframe.period +
+         "\n$ per point: " + str.tostring(syminfo.pointvalue) + "   (NQ = 20, MNQ = 2)" +
+         "\nposition closes: " + str.tostring(nCloses) +
          "\nCHoCH signals: " + str.tostring(nChoch) +
+         "\nstop-outs (closes - CHoCH): " + str.tostring(nCloses - nChoch) +
          "\nnBos in force: " + str.tostring(nBos) +
          "\nstop mult: " + str.tostring(atrMult) +
          "\nrange filter: " + str.tostring(minDist),
