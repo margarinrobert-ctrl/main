@@ -250,7 +250,7 @@ if usePct
         below = 0
         for k = 0 to n - 1
             if array.get(hist, k) < rng
-                below += 1
+                below := below + 1
         p = 100.0 * below / n
         pctOk := p >= pctLo and p <= pctHi
 
@@ -272,21 +272,27 @@ if flat and ready and canEnter and took < maxTrades and pctOk
     volOk = volMult <= 0 or (ivBars > 0 and volume >= volMult * (ivVol / ivBars))
     if d != 0 and bodyOk and volOk
         lvl = d == 1 ? ivh : ivl
-        st = stopMode == "Opposite edge of the range"          ? (d == 1 ? ivl : ivh) :
-             stopMode == "% of range back from the broken edge" ? lvl - d * (stopPct / 100.0) * rng :
-             stopMode == "ATR multiple from entry"              ? close - d * atrMult * atrV :
-             stopMode == "Midpoint of the range"                ? (ivh + ivl) * 0.5 :
-                                                                  close - d * stopPts
-        if (d == 1 and st < close) or (d == -1 and st > close)
-            risk = math.abs(close - st)
+        stopPx = close - d * stopPts
+        if stopMode == "Opposite edge of the range"
+            stopPx := d == 1 ? ivl : ivh
+        if stopMode == "% of range back from the broken edge"
+            stopPx := lvl - d * (stopPct / 100.0) * rng
+        if stopMode == "ATR multiple from entry"
+            stopPx := close - d * atrMult * atrV
+        if stopMode == "Midpoint of the range"
+            stopPx := (ivh + ivl) * 0.5
+        if (d == 1 and stopPx < close) or (d == -1 and stopPx > close)
+            risk = math.abs(close - stopPx)
             if risk > 0 and risk <= riskCap * atrV
-                tg = tgtMode == "N x risk"              ? close + d * tpR * risk :
-                     tgtMode == "N x the opening range" ? close + d * tpR * rng  :
-                                                          lvl + d * (tgtPct / 100.0) * rng
-                if (d == 1 and tg > close) or (d == -1 and tg < close)
+                tgtPx = lvl + d * (tgtPct / 100.0) * rng
+                if tgtMode == "N x risk"
+                    tgtPx := close + d * tpR * risk
+                if tgtMode == "N x the opening range"
+                    tgtPx := close + d * tpR * rng
+                if (d == 1 and tgtPx > close) or (d == -1 and tgtPx < close)
                     sig := d
-                    sigStop := st
-                    sigTgt := tg
+                    sigStop := stopPx
+                    sigTgt := tgtPx
 
 // Entry and its bracket go in on the SAME bar: the entry fills at the next bar's open and the
 // stop and target are live from that bar. Submitting the exit a bar later would leave the first
@@ -346,20 +352,28 @@ plot(showLevels and inWin ? ivl : na, "IV low", color = color.new(color.red, 0),
 plotshape(sig == 1, "long", shape.triangleup, location.belowbar, color.teal, size = size.tiny)
 plotshape(sig == -1, "short", shape.triangledown, location.abovebar, color.red, size = size.tiny)
 
-var table st = table.new(position.top_right, 2, 7, border_width = 1)
+// Pine will not accept a function declared inside an `if`, which is what CE10156 was pointing
+// at. Declared at global scope instead.
+f_hhmm(int mins) =>
+    str.tostring(math.floor(mins / 60), "#") + ":" + (mins % 60 < 10 ? "0" : "") +
+         str.tostring(mins % 60, "#")
+
+var table diag = table.new(position.top_right, 2, 7, border_width = 1)
 if showTable and barstate.islast
-    f_row(int r, string k, string v) =>
-        table.cell(st, 0, r, k, text_color = color.gray, text_size = size.small)
-        table.cell(st, 1, r, v, text_size = size.small)
-    f_row(0, "timezone", tzIn)
-    f_row(1, "initial value", str.tostring(ivStart / 60, "#") + ":" +
-             (ivStart % 60 < 10 ? "0" : "") + str.tostring(ivStart % 60, "#") + " for " +
-             str.tostring(ivMin) + "m")
-    f_row(2, "entries from", str.tostring((ivStart + ivMin) / 60, "#") + ":" +
-             ((ivStart + ivMin) % 60 < 10 ? "0" : "") + str.tostring((ivStart + ivMin) % 60, "#"))
-    f_row(3, "flatten", useFlat ? str.tostring(flatH) + ":" + (flatM < 10 ? "0" : "") +
-             str.tostring(flatM) : "off")
-    f_row(4, "trades", str.tostring(strategy.closedtrades))
-    f_row(5, "net", str.tostring(strategy.netprofit, "#,###"))
-    f_row(6, "profit factor", str.tostring(strategy.grossloss > 0 ?
-             strategy.grossprofit / strategy.grossloss : 0, "#.00"))
+    entryMin = ivStart + ivMin
+    table.cell(diag, 0, 0, "timezone",      text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 0, tzIn,            text_size = size.small)
+    table.cell(diag, 0, 1, "initial value", text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 1, f_hhmm(ivStart) + " + " + str.tostring(ivMin) + "m",
+         text_size = size.small)
+    table.cell(diag, 0, 2, "entries from",  text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 2, f_hhmm(entryMin), text_size = size.small)
+    table.cell(diag, 0, 3, "flatten",       text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 3, useFlat ? f_hhmm(flatMin) : "off", text_size = size.small)
+    table.cell(diag, 0, 4, "trades",        text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 4, str.tostring(strategy.closedtrades), text_size = size.small)
+    table.cell(diag, 0, 5, "net",           text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 5, str.tostring(strategy.netprofit, "#,###"), text_size = size.small)
+    table.cell(diag, 0, 6, "profit factor", text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 6, str.tostring(strategy.grossloss > 0 ?
+         strategy.grossprofit / strategy.grossloss : 0, "#.00"), text_size = size.small)
