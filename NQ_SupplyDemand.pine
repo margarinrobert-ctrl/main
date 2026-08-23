@@ -329,7 +329,30 @@ if array.size(zBar) > nZonesPeak
 // A signal on this bar fills at the NEXT bar's open, so the next bar must be tradeable too.
 inSess   = not gate or (barMin >= sessStart and barMin < sessEnd)
 nextIn   = not gate or (barMin + tfMin >= sessStart and barMin + tfMin < sessEnd)
-canEnter = inSess and nextIn
+
+// ── backtest window ──────────────────────────────────────────────────────────────────────────
+// TradingView's own date selector only offers the whole loaded history. These inputs restrict
+// the strategy itself, which is the right way to look at a recent stretch: entries are simply
+// not taken outside the window, so the report covers only what you selected.
+grpB = "Backtest window"
+useWin = input.bool(false, "Limit the backtest window", group = grpB,
+     tooltip = "OFF trades everything the chart has loaded. Note that a short window is a SMALL " +
+               "SAMPLE, not a fresh test -- picking the window that looks best is the same " +
+               "mistake as picking the parameter that looks best.")
+winMode = input.string("Last N days", "Window type", options = ["Last N days", "Date range"],
+     group = grpB)
+lookDays = input.int(365, "  ...last N days", minval = 1, maxval = 5000, group = grpB)
+fromT = input.time(timestamp("01 Jan 2024 00:00 +0000"), "  ...from", group = grpB)
+toT   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "  ...to", group = grpB)
+
+inWindow = true
+if useWin
+    if winMode == "Last N days"
+        inWindow := time > timenow - lookDays * 86400000
+    else
+        inWindow := time >= fromT and time <= toT
+
+canEnter = inSess and nextIn and inWindow
 
 flat  = strategy.position_size == 0
 ready = not na(atrV) and atrV > 0 and bar_index > 20

@@ -254,7 +254,30 @@ if usePct
         p = 100.0 * below / n
         pctOk := p >= pctLo and p <= pctHi
 
-canEnter = barMin >= ivStart + ivMin and barMin < flatMin
+
+// ── backtest window ──────────────────────────────────────────────────────────────────────────
+// TradingView's own date selector only offers the whole loaded history. These inputs restrict
+// the strategy itself, which is the right way to look at a recent stretch: entries are simply
+// not taken outside the window, so the report covers only what you selected.
+grpB = "Backtest window"
+useWin = input.bool(false, "Limit the backtest window", group = grpB,
+     tooltip = "OFF trades everything the chart has loaded. Note that a short window is a SMALL " +
+               "SAMPLE, not a fresh test -- picking the window that looks best is the same " +
+               "mistake as picking the parameter that looks best.")
+winMode = input.string("Last N days", "Window type", options = ["Last N days", "Date range"],
+     group = grpB)
+lookDays = input.int(365, "  ...last N days", minval = 1, maxval = 5000, group = grpB)
+fromT = input.time(timestamp("01 Jan 2024 00:00 +0000"), "  ...from", group = grpB)
+toT   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "  ...to", group = grpB)
+
+inWindow = true
+if useWin
+    if winMode == "Last N days"
+        inWindow := time > timenow - lookDays * 86400000
+    else
+        inWindow := time >= fromT and time <= toT
+
+canEnter = barMin >= ivStart + ivMin and barMin < flatMin and inWindow
 ready = not na(atrV) and atrV > 0 and not na(rng) and rng > 0
 flat = strategy.position_size == 0
 
@@ -344,10 +367,10 @@ if useFlat and barMin >= flatMin and strategy.position_size != 0
     strategy.close_all(comment = "session cutoff")
 
 // ── display ──────────────────────────────────────────────────────────────────────────────────
-inWin = ready and barMin >= ivStart and barMin < flatMin
-plot(showLevels and inWin ? ivh : na, "IV high", color = color.new(color.teal, 0),
+drawWin = ready and barMin >= ivStart and barMin < flatMin
+plot(showLevels and drawWin ? ivh : na, "IV high", color = color.new(color.teal, 0),
      style = plot.style_linebr, linewidth = 2)
-plot(showLevels and inWin ? ivl : na, "IV low", color = color.new(color.red, 0),
+plot(showLevels and drawWin ? ivl : na, "IV low", color = color.new(color.red, 0),
      style = plot.style_linebr, linewidth = 2)
 plotshape(sig == 1, "long", shape.triangleup, location.belowbar, color.teal, size = size.tiny)
 plotshape(sig == -1, "short", shape.triangledown, location.abovebar, color.red, size = size.tiny)
@@ -358,7 +381,15 @@ f_hhmm(int mins) =>
     str.tostring(math.floor(mins / 60), "#") + ":" + (mins % 60 < 10 ? "0" : "") +
          str.tostring(mins % 60, "#")
 
-var table diag = table.new(position.top_right, 2, 7, border_width = 1)
+// SCRIPT EXECUTION SELF-CHECK. Pine cannot read the "Script execution" dropdown, but it can
+// count how many times it ran. On "On bar close" only, that is once per bar. Ticking the
+// intrabar options makes the script re-run DURING each bar, which replaces `close` with the
+// running price and fires breakouts that reverse before the bar ends. The table turns this red
+// when it detects it, because it is the single most destructive setting on the page.
+var int nExec = 0
+nExec := nExec + 1
+
+var table diag = table.new(position.top_right, 2, 9, border_width = 1)
 if showTable and barstate.islast
     entryMin = ivStart + ivMin
     table.cell(diag, 0, 0, "timezone",      text_color = color.gray, text_size = size.small)
@@ -377,3 +408,16 @@ if showTable and barstate.islast
     table.cell(diag, 0, 6, "profit factor", text_color = color.gray, text_size = size.small)
     table.cell(diag, 1, 6, str.tostring(strategy.grossloss > 0 ?
          strategy.grossprofit / strategy.grossloss : 0, "#.00"), text_size = size.small)
+    perBar = bar_index > 0 ? nExec / bar_index : 1.0
+    bad = perBar > 1.1
+    table.cell(diag, 0, 7, "runs per bar", text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 7, str.tostring(perBar, "#.00"), text_size = size.small,
+         text_color = bad ? color.white : color.gray,
+         bgcolor = bad ? color.new(color.red, 20) : na)
+    table.cell(diag, 0, 8, "backtest window", text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 8, not useWin ? "all data" :
+         winMode == "Last N days" ? "last " + str.tostring(lookDays) + "d" : "date range",
+         text_size = size.small)
+    if bad
+        table.cell(diag, 0, 7, "SCRIPT EXECUTION", text_color = color.white,
+             text_size = size.small, bgcolor = color.new(color.red, 20))
