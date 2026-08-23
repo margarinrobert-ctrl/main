@@ -113,10 +113,91 @@ hypothesis. The Sharpe of 1.71 should be read as "what this would have been", no
 **The single test that would most change all of this is ES data.** Two uncorrelated NQ strategies in
 one three-year bull market is still one instrument and one regime.
 
+
+## Out-of-sample test — and a correction to the framing above
+
+Run after the fact, because V2 and V3 had **no** clean out-of-sample evidence: the 30-minute
+timeframe was chosen from 8 and the range filter from 5 values, both with the whole sample visible.
+Split on session boundaries at **2024-11-28**: 497 research sessions, **268 locked**.
+
+| version | research $ | research Sharpe | **LOCKED $** | **LOCKED Sharpe** | locked trades |
+| --- | --- | --- | --- | --- | --- |
+| **V1** IB retracement | 29,621 | 2.34 | **36** | **0.00** | 56 |
+| **V2** BOS/CHoCH 30m + filter | 24,411 | 0.71 | **47,072** | **1.39** | 56 |
+| **V3** book (equal $) | 54,032 | 1.45 | 47,108 | 1.32 | 97 |
+
+**This reverses the framing in the sections above, and the reversal is the finding.**
+
+### V1 has decayed to nothing
+
+Half-yearly, V1 earned +$816, +$3,990, +$9,718, +$7,384, +$9,664 — and then **−$408 and −$1,507
+across both halves of 2025.** Its locked-block result is **$36 over 56 trades**.
+
+The bootstrap CI of [+0.1614, +0.4895] quoted earlier is a **full-sample** statistic, and the full
+sample is dominated by 2023–2024. It was not wrong, but it describes a period that has ended. On the
+last 268 sessions the validated edge is indistinguishable from zero. Its earlier documented decay
+(0.414R research → 0.116R holdout) continued to ~0.
+
+### V2 held up, and its parameter surface transfers
+
+| tf | filter | research $ | res Sharpe | **LOCKED $** | **lock Sharpe** |
+| --- | --- | --- | --- | --- | --- |
+| 5m | 1.0 | −16,174 | −0.33 | 12,134 | 0.28 |
+| 15m | 1.0 | 11,294 | 0.27 | 20,403 | 0.60 |
+| **30m** | **1.0** | 24,411 | 0.71 | **47,072** | **1.39** |
+| 30m | 1.5 | 20,100 | 0.59 | 45,737 | 1.46 |
+| 60m | 0.0 | 35,168 | 1.13 | 28,065 | 1.07 |
+
+**Spearman rank correlation research → holdout across the 20 cells: +0.711.** 19 of 20 cells are
+profitable on the holdout; 16 of 20 on both halves.
+
+That is unlike every other search in this project — the IB grid gave −0.079 and the 400,226-cell
+trend search +0.11. A rank correlation of +0.71 means the research half genuinely told you something
+about the holdout half. It is the first time that has happened here.
+
+### The honest simulation
+
+Choosing the timeframe *and* the filter on the research portion only, then opening the holdout once:
+
+```
+chosen on research only:  60m, no range filter   (research $35,168, Sharpe 1.13)
+its LOCKED result:        $28,065, Sharpe 1.07
+V2 as shipped (30m/1.0):  $47,072, Sharpe 1.39 on the same block
+```
+
+The procedure picked a *different* cell than the one shipped, and that cell still returned **Sharpe
+1.07 out of sample**. This is the number to believe: it is what someone following the method, with no
+knowledge of the future, would have got.
+
+### The book, built honestly
+
+| | research | **LOCKED** |
+| --- | --- | --- |
+| book with research-chosen V2 | $64,789, Sharpe 1.90 | **$28,101, Sharpe 1.05** |
+| V1 alone on the same block | — | $36, Sharpe 0.00 |
+
+Correlation on the locked block: **−0.065** — still uncorrelated. But the book's out-of-sample Sharpe
+of 1.05 is **V2 carrying it entirely**, because V1 contributed $36.
+
+### What to conclude
+
+**V2 is not concentrated luck.** Half-yearly it is positive in 5 of its 6 active halves (+$20,537,
++$2,483, +$19,690, +$10,693, +$28,343), with only 2023-H1 negative at −$10,262. Its worst period is
+its earliest.
+
+**But 147 trades is still 147 trades**, one instrument, one bull market, and the parameters were
+chosen with the holdout visible. The clean number is the honest simulation's **Sharpe 1.07**, not the
+1.39 of the shipped cell.
+
+**The corrected ranking, forward-looking:** V2 > book > V1. That inverts what the full-sample
+statistics said, and it is the more useful answer, because the question is what happens next rather
+than what happened on average since 2022.
+
 ## Reproduce
 
 ```bash
 python3 research/best_versions.py    # the three versions, the book, MNQ, and the argmax comparison
 python3 research/bos_report.py       # the battery V2 came out of
-python3 research/validate.py         # re-verifies V1
+python3 research/validate.py         # re-verifies V1 (full-sample)
+python3 research/best_oos.py         # the locked-split test and the honest simulation
 ```
