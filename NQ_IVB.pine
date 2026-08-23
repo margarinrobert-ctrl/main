@@ -82,11 +82,14 @@ grpS = "Session"
 sessStart = input.int(570, "RTH open (minutes after midnight, exchange time)", group = grpS,
      tooltip = "570 = 09:30 New York.")
 ivMin = input.int(15, "Initial value length (minutes)", minval = 5, maxval = 240, group = grpS,
-     tooltip = "15 is the tested value and on a 15-minute chart that makes the initial value a " +
-               "SINGLE BAR, 09:30-09:45. Longer windows were tested and are worse: 30 minutes " +
-               "gives a median locked $41 against $207 for 15, and the 60-minute 'initial " +
-               "balance' of the classic description gives $290 on the marginal but only PF 1.06 " +
-               "when actually built.")
+     tooltip = "TERMINOLOGY, because this is where the confusion is. The classic INITIAL BALANCE " +
+               "on ES and NQ is the first SIXTY minutes, 09:30-10:30 ET. An OPENING RANGE " +
+               "BREAKOUT is the first 5-30 minutes, usually 15. This script defaults to 15 " +
+               "because that is what tested best, not because the definitions say so -- so with " +
+               "the default, entries begin at 09:45, NOT 10:30. Set this to 60 for the textbook " +
+               "Initial Balance. Measured, same rules otherwise: 15 min $13,244 at PF 1.24 " +
+               "(research $6,418 / locked $6,826); 30 min $6,023 at PF 1.10 with a NEGATIVE " +
+               "locked block; 60 min $4,258 at PF 1.09; 90 min $2,332 at PF 1.06.")
 flatMin = input.int(900, "Flatten at (minutes after midnight)", group = grpS,
      tooltip = "900 = 15:00. Holding to 16:00 costs about a quarter of the edge: marginal " +
                "median locked $285 at 15:00 against $41 at 16:00.")
@@ -108,6 +111,24 @@ sideIn = input.string("Both", "Direction", options = ["Both", "Longs only", "Sho
                "$507 over the same period -- and the period is one in which NQ roughly doubled. " +
                "Selecting the winning side after the fact is how every failed study on this " +
                "branch began.")
+grpC = "Breakout confirmations (both tested, both OFF)"
+bodyMin = input.float(0.0, "Breakout candle body must be N of its range", minval = 0.0,
+     maxval = 0.95, step = 0.05, group = grpC,
+     tooltip = "The 'full-bodied candle with small wicks' of the usual description. It HURTS on " +
+               "the 15-minute window: $13,244 unfiltered against $9,434 at 50%, $10,145 at 60% " +
+               "and $4,261 at 70%. On a 60-minute window it helps slightly ($4,258 -> $4,786 at " +
+               "50%) but never reaches the unfiltered 15-minute figure. 0 = off.")
+volMult = input.float(0.0, "Breakout candle volume vs the opening range average", minval = 0.0,
+     step = 0.25, group = grpC,
+     tooltip = "The 'high trading volume' confirmation, quoted online at 1.5x and credited with " +
+               "8-12 points of win rate. It does raise quality and it destroys frequency. On a " +
+               "15-minute window the opening range is ONE bar -- the highest-volume bar of the " +
+               "day -- so almost nothing clears it: 129 trades and $1,464 at 1.0x, too few to " +
+               "score above that. On a 60-minute window 1.5x gives 36 trades, $2,446, PF 1.74 " +
+               "and 58.3% win against 52.6% unfiltered, so the win-rate claim is directionally " +
+               "right (+5.7 points) on a sample of 36. Adding the body filter too gives 26 " +
+               "trades, PF 2.84 and 69.2% win -- about nine trades a year. 0 = off.")
+
 showLevels = input.bool(true, "Draw the initial value range", group = "Display")
 
 // ── ATR, defined the way the research defined it ─────────────────────────────────────────────
@@ -125,17 +146,23 @@ var float ivl = na
 var int took = 0
 var float pStop = na
 var float pTgt = na
+var float ivVol = 0.0
+var int ivBars = 0
 
 newSess = barMin == sessStart and barMin[1] != sessStart
 if newSess
     ivh := na
     ivl := na
+    ivVol := 0.0
+    ivBars := 0
     took := 0
 
 inIV = barMin >= sessStart and barMin < sessStart + ivMin
 if inIV
     ivh := na(ivh) ? high : math.max(ivh, high)
     ivl := na(ivl) ? low : math.min(ivl, low)
+    ivVol := ivVol + volume
+    ivBars := ivBars + 1
 
 canEnter = barMin >= sessStart + ivMin and barMin < flatMin
 ready = not na(atrV) and atrV > 0 and not na(ivh) and not na(ivl) and ivh > ivl
@@ -147,7 +174,9 @@ sigStop = 0.0
 sigTgt = 0.0
 if flat and ready and canEnter and took < 1
     d = close > ivh + bufAtr * atrV ? 1 : close < ivl - bufAtr * atrV ? -1 : 0
-    if d != 0 and (sideMode == 0 or sideMode == d)
+    bodyOk = bodyMin <= 0 or (high - low > 0 and math.abs(close - open) / (high - low) >= bodyMin)
+    volOk = volMult <= 0 or (ivBars > 0 and volume >= volMult * (ivVol / ivBars))
+    if d != 0 and bodyOk and volOk and (sideMode == 0 or sideMode == d)
         st = d == 1 ? ivl : ivh          // the stop is the OTHER side of the range
         if (d == 1 and st < close) or (d == -1 and st > close)
             risk = math.abs(close - st)

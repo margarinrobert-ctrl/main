@@ -183,3 +183,85 @@ leg is nearly uncorrelated with everything and carries a $1,469 drawdown of its 
 python3 research/ivb_ladder.py    # the component ladder, strategy B, the section-10 variant
 python3 research/ivb_leg.py       # the leg's correlation with the book and what it adds
 ```
+
+---
+
+# Addendum — the opening window, and the two confirmations that were never tested
+
+Prompted by a report that the shipped script "starts at 10:30". It does not, and the confusion is
+mine: every message describing this strategy used a **60-minute** initial value, and the script
+that shipped uses **15**, because 15 is what tested best. That change was in a tooltip and not in
+the summary.
+
+## The terminology, checked against the sources
+
+These are two different things and the literature is consistent about it:
+
+- **Opening Range Breakout (ORB)** — the high and low of the first **5–30 minutes**, most often 15.
+- **Initial Balance (IB)** — on ES and NQ, the high and low of the first **60 minutes, 09:30–10:30
+  ET**.
+
+So "10:30" belongs to the Initial Balance definition. With the shipped default of 15 minutes,
+entries begin at **09:45**. `ivMin` is an input; set it to 60 for the textbook version.
+
+## Which window is actually better
+
+Same rules otherwise — close beyond the level by 0.15 ATR, stop at the opposite edge, 1.0R target,
+flat 15:00, both sides:
+
+| opening window | trades | net $ | PF | win % | research | LOCKED | maxDD |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **15 minutes (ORB)** | 752 | **13,244** | **1.24** | 55.7 | **6,418** | **6,826** | 1,978 |
+| 30 minutes | 723 | 6,023 | 1.10 | 54.4 | 7,236 | **−1,212** | 4,180 |
+| 60 minutes (IB) | 646 | 4,258 | 1.09 | 52.6 | 1,094 | 3,164 | 2,977 |
+| 90 minutes | 571 | 2,332 | 1.06 | 51.7 | −1,054 | 3,386 | 2,916 |
+
+**The textbook Initial Balance window earns a third of what the 15-minute window earns**, and the
+30-minute window has a negative locked block. The default stays at 15.
+
+## "A full-bodied candle with small wicks"
+
+| | trades | net $ | PF | research | LOCKED |
+| --- | --- | --- | --- | --- | --- |
+| 15m window, no body filter | 752 | **13,244** | 1.24 | 6,418 | 6,826 |
+| 15m window, body ≥ 50% | 745 | 9,434 | 1.17 | 3,729 | 5,705 |
+| 15m window, body ≥ 60% | 735 | 10,145 | 1.18 | 4,867 | 5,278 |
+| 15m window, body ≥ 70% | 706 | 4,261 | 1.08 | 2,188 | 2,072 |
+| 60m window, no body filter | 646 | 4,258 | 1.09 | 1,094 | 3,164 |
+| 60m window, body ≥ 50% | 626 | 4,786 | 1.11 | 476 | 4,310 |
+
+**It hurts on the window that works.** It helps slightly on the 60-minute window and never gets
+back to the unfiltered 15-minute figure.
+
+## "High trading volume"
+
+Measured the way the sources specify — the breakout bar against the average of the opening range's
+own bars. The commonly quoted threshold is 1.5×, credited with 8–12 points of win rate.
+
+| | trades | net $ | PF | win % | research | LOCKED | maxDD |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 15m window, none | 752 | 13,244 | 1.24 | 55.7 | 6,418 | 6,826 | 1,978 |
+| 15m window, ≥ 1.0× | **129** | 1,464 | 1.12 | 54.3 | 274 | 1,190 | 1,799 |
+| 15m window, ≥ 1.5× | — | | | | | | too few |
+| 60m window, none | 646 | 4,258 | 1.09 | 52.6 | 1,094 | 3,164 | 2,977 |
+| 60m window, ≥ 1.5× | **36** | 2,446 | **1.74** | **58.3** | 149 | 2,298 | **866** |
+| 60m window, body 60% + vol 1.5× | **26** | 3,327 | **2.84** | **69.2** | 642 | 2,686 | **555** |
+
+**The win-rate claim is directionally right and the frequency cost is fatal.** On the 60-minute
+window 1.5× volume takes the win rate from 52.6% to 58.3% — +5.7 points, in the range the sources
+claim — on a sample of **36 trades in three years**. Adding the body filter as well gives PF 2.84
+and 69.2% win on **26 trades**, about nine a year.
+
+There is a structural reason the 15-minute window cannot use this filter at all: with a 15-minute
+opening range on a 15-minute chart the range is **one bar** — the 09:30 bar, routinely the
+highest-volume bar of the session. Almost no later bar clears it.
+
+Both confirmations are now inputs in `NQ_IVB.pine`, defaulted **off**, with these figures in their
+tooltips.
+
+## Sources
+
+- [Best Strategy: Initial Balance or Opening Range Breakout? — Investing.com](https://www.investing.com/analysis/best-strategy-initial-balance-or-opening-range-breakout-200678872)
+- [30-Minute Opening Range Breakout Strategy — NinjaTrader](https://ninjatrader.com/futures/blogs/opening-range-breakout-strategy/)
+- [Initial Balance Trading Strategy, Complete Guide for ES & NQ Futures — Steady Turtle](https://steady-turtle.com/knowledge/initial-balance-trading-strategy)
+- [Opening Range Breakout Strategy: How to Trade the First 30 Minutes — TradeAlgo](https://www.tradealgo.com/trading-guides/day-trading/opening-range-breakout-strategy-how-to-trade-the-first-30-minutes)
