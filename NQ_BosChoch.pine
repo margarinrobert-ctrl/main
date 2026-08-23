@@ -7,8 +7,10 @@
 //     chart 2 — 60 minutes, preset "60m core"   (range filter OFF)
 // The two legs correlate 0.28. Neither is the answer on its own; the pair is.
 //
-// v3 FIXES THE SESSION GATE (see grpT). v2 fixed the stop anchor: the stop was placed at `close - 2*ATR` measured on the SIGNAL bar,
-// but the fill happens at the NEXT bar's open. Every stop sat at the wrong distance. It is now
+// FIX HISTORY: v6 replaced the entry gate (see grpT) — that was the only real logic divergence
+// from the tested engine, and with it corrected this script reproduces the engine exactly. v2
+// fixed the stop anchor: the stop was placed at `close - 2*ATR` measured on the SIGNAL bar, but
+// the fill happens at the NEXT bar's open, so every stop sat at the wrong distance. It is now
 // anchored to strategy.position_avg_price, which is the actual fill.
 // =============================================================================================
 
