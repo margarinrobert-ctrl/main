@@ -217,15 +217,17 @@ n = 147   net $71,483   $486/trade   PF 1.54   Sharpe 1.02   maxDD 15.6%   t = 1
 | 10 | both sides profitable | longs $47,412 (t 2.41), shorts $24,071 (t 1.02) | **PASS** |
 | 11 | half-yearly consistency | 5 of 6 positive | **PASS** |
 | 12 | no look-ahead | 7-bar delay measured, pivots unit-tested | **PASS** |
+| 12b | walk-forward, positive out of sample | all 4 variants positive (+$5,204 to +$60,569) | **PASS** |
 | 13 | **bootstrap CI excludes zero** | **[−$30, +$1,045]**, P(edge≤0) 3.3% | **FAIL** |
 | 14 | **probability of backtest overfitting** | **PBO 0.571** | **FAIL** |
 | 15 | **multiple testing, 40 cells** | t 1.88 vs hurdle 2.72 | **FAIL** |
 | 16 | **multiple testing, 72 cells** | t 1.88 vs hurdle 2.92 | **FAIL** |
 | 17 | **swing-length stability** | different optimum at every timeframe | **FAIL** |
 | 18 | **ablation consistency** | 4 of 5 components flip sign | **FAIL** |
+| 18b | **walk-forward beats the fixed cell** | fixed +$69,311 (Sharpe 1.24) vs best re-selection +$60,569 (0.97) | **FAIL** |
 | 19 | cross-instrument (ES) | no data | **NOT RUN** |
 
-**12 passed, 6 failed, 1 could not be run.**
+**13 passed, 7 failed, 1 could not be run.**
 
 ### The two failures that matter most
 

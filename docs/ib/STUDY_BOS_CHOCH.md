@@ -140,9 +140,14 @@ stable setting.
 
 ---
 
-## 6. Walk-forward, by calendar quarter
+## 6. Quarterly consistency (NOT a walk-forward)
 
-Every out-of-sample block, reported separately.
+**Correction:** this section was originally headed "walk-forward". It is not one. It is a quarterly
+breakdown of a *fixed* configuration, which measures consistency, not selection. A real walk-forward
+re-chooses the parameters on a trailing window and trades the next one blind — that is in §14 below,
+and it was run after this mislabelling was noticed.
+
+Every block, reported separately.
 
 **5m** — 13 quarters, 4 positive, cumulative **−$20,686**. Never above water after 2023-Q1 except a
 brief crossing in 2025-Q3.
@@ -337,8 +342,40 @@ information. It is a hypothesis, not an edge.
 
 ---
 
-## 14. Reproduce
+
+---
+
+## 14. The actual walk-forward (added after §6 was found to be mislabelled)
+
+Parameters re-chosen on a trailing 250 sessions, then traded blind for 60. Two selection spaces:
+timeframe × range filter (20 cells), and EMA × ATR-multiple × swing k at fixed 30m (27 cells).
+
+| run | folds | trades | OOS net $ | $/trade | Sharpe | distinct cells chosen |
+| --- | --- | --- | --- | --- | --- | --- |
+| timeframe × filter, **rolling** | 8 | 172 | **+5,204** | 30 | **0.10** | 6 |
+| timeframe × filter, **anchored** | 8 | 44 | +52,372 | 1,190 | 1.19 | 3 |
+| EMA × ATR × k @30m, **rolling** | 8 | 144 | +60,569 | 421 | 0.97 | 3 |
+| EMA × ATR × k @30m, **anchored** | 8 | 140 | +48,955 | 350 | 0.79 | 4 |
+| **FIXED V2 (30m, filter 1.0), same span** | — | 98 | **+69,311** | **707** | **1.24** | 1 |
+
+**Every walk-forward variant is positive** — unlike the trend-pullback study, where re-selection paid
+−$25.19/trade. The BOS family survives being re-chosen.
+
+**But the fixed cell beats all four of them.** +$69,311 at Sharpe 1.24 against a best re-selection of
++$60,569 at 0.97. Re-selecting the *timeframe* every 60 sessions is the worst of all: **+$5,204 at
+Sharpe 0.10**, which nearly destroys the result.
+
+So: it passes walk-forward in the weak sense (positive out of sample under blind re-selection) and
+fails it in the strong sense (the search adds nothing and mostly subtracts). This is the fourth
+reproduction of this project's central finding, and the practical instruction is unambiguous —
+**fix the parameters and do not re-optimise.**
+
+One detail worth noting: the walk-forward consistently picks **swing k = 2**, not the shipped k = 3,
+and does worse with it. `k` was already flagged as the one fragile axis in §5.
+
+## 15. Reproduce
 
 ```bash
-python3 research/bos_report.py     # baseline, timeframe x session, stability, control, ablation, WF, regime
+python3 research/bos_report.py       # baseline, timeframe x session, stability, control, ablation, regime
+python3 research/bos_walkforward.py  # the real walk-forward, rolling and anchored
 ```
