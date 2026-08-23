@@ -38,10 +38,15 @@
 strategy("NQ BOS/CHoCH book", overlay = true, initial_capital = 100000,
      default_qty_type = strategy.fixed, default_qty_value = 1,
      commission_type = strategy.commission.cash_per_order,
-     commission_value = input.float(2.00, "Commission $ per order", group = "Costs",
-         tooltip = "2.00 is right for NQ (E-mini, $20/pt). On MNQ (Micro, $2/pt) the contract is " +
-                   "10x smaller and this default is ~10x too heavy — use 0.50-1.00 there, or the " +
-                   "cost alone will turn a positive book negative."),
+     commission_value = input.float(2.00, "Commission $ per order  (NQ 2.00 / MNQ 0.50)",
+         group = "Costs",
+         tooltip = "READ THIS IF YOUR RESULT IS NEGATIVE. 2.00 is right for NQ (E-mini, $20/pt). " +
+                   "The sizing note at the bottom of this script tells you to trade MNQ (Micro, " +
+                   "$2/pt) because a 2xATR stop on NQ risks ~$2,000 a contract — but MNQ is 10x " +
+                   "smaller and this fee is NOT, so leaving it at 2.00 on MNQ charges ~10x too " +
+                   "much. Measured: identical trades score 0.5% of gross profit in commission on " +
+                   "NQ and 5.2% on MNQ at 2.00/order, which is enough to flatten the book. Set " +
+                   "0.50 on MNQ. The diagnostic label warns you if this looks wrong."),
      slippage = 2, pyramiding = 0, calc_on_every_tick = false,
      process_orders_on_close = false)
 
@@ -246,7 +251,11 @@ if showDiag and barstate.islast
          "\nentry window: " + str.tostring(math.round(sessStart + tfMin)) + "-" + str.tostring(math.round(sessEnd - tfMin)) +
          " min (exchange)" +
          "\nstop mult: " + str.tostring(atrMult) +
-         "\nrange filter: " + str.tostring(minDist),
+         "\nrange filter: " + str.tostring(minDist) +
+         (syminfo.pointvalue < 10 and strategy.commission.value >= 1.5 ?
+             "\n\n*** COST MISMATCH: this looks like a Micro contract ($" +
+             str.tostring(syminfo.pointvalue) + "/pt) charged an E-mini fee. Set commission to " +
+             "0.50/order or the fee alone will sink the result. ***" : ""),
          style = label.style_label_left, color = color.new(color.black, 20), textcolor = color.white)
 
 // ── plots ────────────────────────────────────────────────────────────────────────────────────
@@ -289,7 +298,10 @@ bgcolor(showSess and canEnter ? color.new(color.blue, 94) : na, title = "entry w
 //   • There is NO ES DATA behind any of this. One instrument, one bull market.
 //
 // SIZE: a 2×ATR stop on 30m NQ risks ~$2,000 per contract. At $100–$300 risk per trade every
-// signal rounds to zero contracts. Use MNQ, where the same stop is ~$200.
+// signal rounds to zero contracts. Use MNQ, where the same stop is ~$200 — AND THEN SET THE
+// COMMISSION INPUT TO 0.50. Every dollar figure quoted above is NQ at $20/pt; on MNQ divide them
+// by 10. The two instructions have to be followed together: MNQ sizing with an NQ fee charges ten
+// times the real cost and turns this book negative on its own.
 //
 // Research tooling for education and analysis. Not financial advice.
 // =============================================================================================
