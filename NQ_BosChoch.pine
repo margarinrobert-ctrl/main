@@ -273,12 +273,12 @@ canEnter = inSess and nextIn and not newSess
 kV = ta.stoch(close, high, low, stochLen)
 dV = ta.sma(kV, 3)
 
-adxOk = (not useAdxMin  or (not na(adxV) and adxV >= adxMin)) and
-        (not useAdxRise or (not na(adxV) and not na(adxV[3]) and adxV > adxV[3]))
-stoLongOk  = (not useStochVeto  or (not na(kV) and kV <= stochLim)) and
-             (not useStochAlign or (not na(kV) and not na(dV) and kV > dV))
-stoShortOk = (not useStochVeto  or (not na(kV) and kV >= 100.0 - stochLim)) and
-             (not useStochAlign or (not na(kV) and not na(dV) and kV < dV))
+// One line each. Pine treats a continuation line indented by a MULTIPLE OF 4 as a new block, so
+// `... and\n        (...)` is a syntax error (CE10156) while an odd indent happens to work. Not
+// worth relying on that distinction -- these stay on single lines.
+adxOk = (not useAdxMin or (not na(adxV) and adxV >= adxMin)) and (not useAdxRise or (not na(adxV) and not na(adxV[3]) and adxV > adxV[3]))
+stoLongOk = (not useStochVeto or (not na(kV) and kV <= stochLim)) and (not useStochAlign or (not na(kV) and not na(dV) and kV > dV))
+stoShortOk = (not useStochVeto or (not na(kV) and kV >= 100.0 - stochLim)) and (not useStochAlign or (not na(kV) and not na(dV) and kV < dV))
 
 // ── filters ──────────────────────────────────────────────────────────────────────────────────
 farEnough = minDist <= 0 or (not na(emaV) and not na(atrV) and math.abs(close - emaV) >= minDist * atrV)
@@ -286,10 +286,8 @@ okLong  = (not useEma or close > emaV) and farEnough
 okShort = (not useEma or close < emaV) and farEnough
 ready   = not na(atrV) and atrV > 0 and not na(emaV)
 
-longSig  = bosUp and runLen >= nBos and okLong  and canEnter and ready and sideMode >= 0
-     and adxOk and stoLongOk
-shortSig = bosDn and runLen >= nBos and okShort and canEnter and ready and sideMode <= 0
-     and adxOk and stoShortOk
+longSig = bosUp and runLen >= nBos and okLong and canEnter and ready and sideMode >= 0 and adxOk and stoLongOk
+shortSig = bosDn and runLen >= nBos and okShort and canEnter and ready and sideMode <= 0 and adxOk and stoShortOk
 
 // ── volatility-targeted size: bigger when quiet, smaller when wild. Causal. ──────────────────
 avgAtr = ta.sma(atrV, vtLook)
@@ -355,9 +353,9 @@ if showDiag and barstate.islast
          "\n$ per point " + str.tostring(syminfo.pointvalue) + "  (NQ 20 / MNQ 2)" +
          "\ncommission $" + str.tostring(commPerOrder) + "/order" +
          (syminfo.pointvalue >= 10 and commPerOrder < 1.5 ?
-            "  <<< TOO LOW for an E-mini: set commission_value AND commPerOrder to 2.00" :
+             "  <<< TOO LOW for an E-mini: set commission_value AND commPerOrder to 2.00" :
           syminfo.pointvalue < 10 and commPerOrder >= 1.5 ?
-            "  <<< TOO HIGH for a Micro: set commission_value AND commPerOrder to 0.50" : "  ok") +
+             "  <<< TOO HIGH for a Micro: set commission_value AND commPerOrder to 0.50" : "  ok") +
          "\n— gates in force —" +
          "\nside " + (sideMode == 0 ? "both" : sideMode == 1 ? "LONGS ONLY (a regime bet)" :
                        "SHORTS ONLY (a regime bet)") +
