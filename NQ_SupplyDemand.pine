@@ -178,8 +178,22 @@ sideMode = sideIn == "Longs only" ? 1 : sideIn == "Shorts only" ? -1 : 0
 // EMA of true range, alpha = 2/15. NOT ta.atr, which is Wilder's RMA at alpha = 1/14.
 atrV = ta.ema(ta.tr(true), 14)
 
+
+// ── TIMEZONE ─────────────────────────────────────────────────────────────────────────────────
+// Pine's bare `hour` and `minute` are in the EXCHANGE timezone. For CME products that is
+// America/CHICAGO, so `hour * 60 + minute == 570` is 09:30 in Chicago and 10:30 in New York.
+// Every session time in this script, and every figure it was validated against, is NEW YORK
+// time. Using the bare built-ins ran the whole strategy an hour late. Do not change this input
+// unless you also re-derive the numbers in the header.
+tzIn = input.string("America/New_York", "Timezone for all session times",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"],
+     tooltip = "New York is correct for the research in this file. 'exchange' reproduces the " +
+               "old, wrong behaviour and is here only so the difference can be seen.")
+f_barMin() =>
+    tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
+
 tfMin  = timeframe.in_seconds(timeframe.period) / 60
-barMin = hour * 60 + minute
+barMin = f_barMin()
 ageBars = int(ageDays * 1440 / tfMin)
 
 // ── build the 4-hour bars by hand, anchored to LOCAL MIDNIGHT in exchange time ────────────────
