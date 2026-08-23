@@ -7,10 +7,15 @@
 //     chart 2 — 60 minutes, preset "60m core"   (range filter OFF)
 // The two legs correlate 0.28. Neither is the answer on its own; the pair is.
 //
-// v2 FIXES A REAL BUG in v1: the stop was placed at `close - 2*ATR` measured on the SIGNAL bar,
+// v3 FIXES THE SESSION GATE (see grpT). v2 fixed the stop anchor: the stop was placed at `close - 2*ATR` measured on the SIGNAL bar,
 // but the fill happens at the NEXT bar's open. Every stop sat at the wrong distance. It is now
 // anchored to strategy.position_avg_price, which is the actual fill.
 // =============================================================================================
+
+// !! TIMEFRAME MATTERS MORE THAN ANY SETTING. Use 30m or 60m. On 5m this rule LOSES: my own
+// !! engine gives PF 0.96-0.99 there, and coin-flip entries with the same stop beat it 65% of the
+// !! time. On 1m and 2m it is significantly negative (t = -2.45, -2.68). A losing 5-minute
+// !! backtest is not a bug, it is the documented result.
 
 strategy("NQ BOS/CHoCH book", overlay = true, initial_capital = 100000,
      default_qty_type = strategy.fixed, default_qty_value = 1,
@@ -49,7 +54,16 @@ vtCap   = input.float(2.0, "Maximum size multiplier", minval = 1.0, step = 0.5, 
 baseQty = input.float(1.0, "Base contracts", minval = 0.1, step = 0.1, group = grpV)
 
 grpT = "Session (exchange time)"
-sessStr = input.session("0930-1600", "Entry session", group = grpT)
+sessStr  = input.session("0930-1600", "Trading session", group = grpT)
+// The FILL happens on the bar AFTER the signal, so the entry window must end one bar before the
+// session does. v2 used `session.islastbar` for this, which was WRONG: that variable refers to the
+// SYMBOL's session, not to this custom string. On a 24-hour futures chart it is true only at 17:00
+// ET, so the gate never fired and entries could fill after the cash close.
+entryStr = input.session("0930-1530", "ENTRY window (must end >=1 bar before the session)",
+     group = grpT,
+     tooltip = "30m chart -> 0930-1530.  60m chart -> 0930-1500.  5m chart -> 0930-1555. " +
+               "If this equals the trading session, entries on the last bar fill after the close.")
+showSess = input.bool(true, "Tint the entry window", group = grpT)
 
 minDist = preset == "30m core" ? 1.0 : preset == "60m core" ? 0.0 : mdIn
 
@@ -96,9 +110,9 @@ if bosDn
         bias   := -1
         runLen := 1
 
-// ── session gate: the FILL bar must be in session too, so refuse the session's last bar ──────
+// ── session gate ─────────────────────────────────────────────────────────────────────────────
 inSess   = not na(time(timeframe.period, sessStr))
-canEnter = inSess and not session.islastbar
+canEnter = not na(time(timeframe.period, entryStr))
 
 // ── filters ──────────────────────────────────────────────────────────────────────────────────
 farEnough = minDist <= 0 or (not na(emaV) and not na(atrV) and math.abs(close - emaV) >= minDist * atrV)
@@ -152,8 +166,11 @@ bU = plot(minDist > 0 ? emaV + minDist * atrV : na, "no-trade band", color.new(c
 bL = plot(minDist > 0 ? emaV - minDist * atrV : na, "no-trade band", color.new(color.gray, 70))
 fill(bU, bL, color.new(color.gray, 92), title = "range — no entries here")
 plot(stopLevel, "stop", color.new(color.red, 0), 1, plot.style_linebr)
-plotshape(bosUp,  "BOS up",   shape.triangleup,   location.belowbar, color.new(color.teal, 0),   size = size.tiny)
-plotshape(bosDn,  "BOS down", shape.triangledown, location.abovebar, color.new(color.maroon, 0), size = size.tiny)
+// Structure markers only inside the session -- v2 plotted them on all 24 hours, which made an
+// RTH-only strategy look like it was signalling overnight.
+plotshape(bosUp and inSess, "BOS up",   shape.triangleup,   location.belowbar, color.new(color.teal, 0),   size = size.tiny)
+plotshape(bosDn and inSess, "BOS down", shape.triangledown, location.abovebar, color.new(color.maroon, 0), size = size.tiny)
+bgcolor(showSess and canEnter ? color.new(color.blue, 94) : na, title = "entry window")
 
 // =============================================================================================
 // THE NUMBERS THESE RULES PRODUCED — docs/ib/STUDY_BOS_CHOCH.md, STUDY_LOWER_DD.md
