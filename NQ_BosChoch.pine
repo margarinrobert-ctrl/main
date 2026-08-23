@@ -56,6 +56,10 @@ strategy("NQ BOS/CHoCH book", overlay = true, initial_capital = 100000,
      slippage = 2, pyramiding = 0, calc_on_every_tick = false,
      process_orders_on_close = false)
 
+// Same expression as the commission argument above, kept as a variable so the diagnostic label
+// can report it. Pine has no runtime accessor for the configured commission.
+commPerOrder = syminfo.pointvalue < 10 ? 0.50 : 2.00
+
 // ── preset ───────────────────────────────────────────────────────────────────────────────────
 preset = input.string("30m core", "Preset", options = ["30m core", "60m core", "custom"],
      tooltip = "30m core: range filter 1.0 ATR.  60m core: range filter off. " +
@@ -243,7 +247,7 @@ if showDiag and barstate.islast
     lbl := label.new(bar_index, high,
          "symbol " + syminfo.ticker + "   tf " + timeframe.period +
          "\n$ per point " + str.tostring(syminfo.pointvalue) + "  (NQ 20 / MNQ 2)" +
-         "\ncommission $" + str.tostring(strategy.commission.value) + "/order  (auto)" +
+         "\ncommission $" + str.tostring(commPerOrder) + "/order  (auto)" +
          "\n— gates in force —" +
          "\nnBos " + str.tostring(nBos) + "    stop " + str.tostring(atrMult) + " x ATR" +
          "\nrange filter " + str.tostring(minDist) + " x ATR" +
