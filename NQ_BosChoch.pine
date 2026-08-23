@@ -324,6 +324,27 @@ if showDiag and barstate.islast
          "\nIf either looks wrong, Script execution must be ON BAR CLOSE ONLY.",
          style = label.style_label_left, color = color.new(color.black, 15), textcolor = color.white)
 
+// ── LIVE ALERTS ──────────────────────────────────────────────────────────────────────────────
+// alert() inside a bar-close-only script fires ONCE, when the bar closes. Create the alert in
+// TradingView with "Once per bar close" -- any other frequency reintroduces the intrabar problem
+// the header warns about, because it would fire on an unconfirmed break.
+//
+// The alert tells you the level to work with; the FILL is the next bar's open, so you place a
+// market order when it arrives and take the open. Do not chase, and do not enter mid-bar: an
+// entry taken 20 minutes into the bar is not this strategy.
+if longSig
+    alert("BOS LONG  " + syminfo.ticker + " " + timeframe.period +
+          "  |  fill at next open  |  stop " + str.tostring(math.round_to_mintick(close - atrMult * atrV)) +
+          "  |  target " + str.tostring(math.round_to_mintick(close + tpR * atrMult * atrV)) +
+          "  |  risk " + str.tostring(math.round_to_mintick(atrMult * atrV)) + " pts",
+          alert.freq_once_per_bar_close)
+if shortSig
+    alert("BOS SHORT " + syminfo.ticker + " " + timeframe.period +
+          "  |  fill at next open  |  stop " + str.tostring(math.round_to_mintick(close + atrMult * atrV)) +
+          "  |  target " + str.tostring(math.round_to_mintick(close - tpR * atrMult * atrV)) +
+          "  |  risk " + str.tostring(math.round_to_mintick(atrMult * atrV)) + " pts",
+          alert.freq_once_per_bar_close)
+
 // ── plots ────────────────────────────────────────────────────────────────────────────────────
 plot(emaV, "EMA 200", color.new(color.orange, 0), 2)
 bU = plot(minDist > 0 ? emaV + minDist * atrV : na, "no-trade band", color.new(color.gray, 70))
