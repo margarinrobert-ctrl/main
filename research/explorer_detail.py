@@ -115,7 +115,9 @@ def main(tf=30):
     D["detail"] = det
     # the expression map, prelude and header travel with the page so the browser emits
     # exactly what pine_export.py emits; only the string assembly is duplicated in JS
-    D["pine"] = {"P": PX.P, "prelude": PX.PRELUDE, "header": PX._HEADER, "tf": tf}
+    D["pine"] = {"P": PX.P, "header": PX._HEADER, "tf": tf,
+                 "prims": [[list(a), list(b), c] for a, b, c in PX.PRIMS],
+                 "window": PX.WINDOW, "range": PX.RANGE_TABLE}
     blob = json.dumps(D, separators=(",", ":"))
     html = html[:m.start(1)] + blob + html[m.end(1):]
     open(ART, "w").write(html)

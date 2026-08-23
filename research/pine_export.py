@@ -11,60 +11,63 @@ worth restating at the top of every file this emits:
 """
 from __future__ import annotations
 
-# Shared prelude expressions, emitted once and referenced by the conditions below.
-PRELUDE = """
-// ---- primitives, defined to match the research exactly -------------------------------------
-tzIn   = input.string("America/New_York", "Timezone for clock conditions",
+# The prelude, as dependency-tracked blocks rather than one wall of text.
+#
+# Emitting all forty primitives into every script made two strategies with completely different
+# logic look 91% identical, which is indistinguishable from a copy-paste bug and was reported as
+# one. Each block declares what it defines and what it needs, so a rule gets exactly the
+# primitives it references and nothing else.
+#
+# (defines, requires, code)
+PRIMS = [
+    (("tzIn",), (), '''tzIn   = input.string("America/New_York", "Timezone for clock conditions",
      options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"],
-     group = "Setup", tooltip = "Pine's bare hour/minute are in the EXCHANGE timezone, which is " +
+     group = "Setup", tooltip = "Pine\'s bare hour/minute are in the EXCHANGE timezone, which is " +
      "Chicago for CME. The research is New York time. Getting this wrong runs the strategy an " +
-     "hour late -- it has happened here before.")
-barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
-
-atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
-ema10  = ta.ema(close, 10)
-ema20  = ta.ema(close, 20)
-ema50  = ta.ema(close, 50)
-ema100 = ta.ema(close, 100)
-ema200 = ta.ema(close, 200)
-sma10  = ta.sma(close, 10)
-sma20  = ta.sma(close, 20)
-sma50  = ta.sma(close, 50)
-sma100 = ta.sma(close, 100)
-sma200 = ta.sma(close, 200)
-rsi14  = ta.rsi(close, 14)
-rsi7   = ta.rsi(close, 7)
-stK    = ta.stoch(close, high, low, 14)
-stD    = ta.sma(stK, 3)
-[macdL, macdS, _mh] = ta.macd(close, 12, 26, 9)
-cci20  = ta.cci(hlc3, 20)   // typical price, matching the research -- NOT ta.cci(close, 20)
-wr14   = ta.wpr(14)
-mfi14  = ta.mfi(hlc3, 14)
-[dip, dim, adx14] = ta.dmi(14, 14)
-bbBasis = ta.sma(close, 20)
-bbDev   = 2.0 * ta.stdev(close, 20)
-bbUpper = bbBasis + bbDev
-bbLower = bbBasis - bbDev
-bbWidth = 2.0 * bbDev / bbBasis
-kcBasis = ta.ema(close, 20)
-kcRange = ta.ema(ta.tr(true), 20)
-kcUpper = kcBasis + 1.5 * kcRange
-kcLower = kcBasis - 1.5 * kcRange
-atrMean20 = ta.sma(atrV, 20)
-volMean20 = ta.sma(volume, 20)
-volSd20   = ta.stdev(volume, 20)
-barRange  = math.max(high - low, syminfo.mintick)
-bodyFrac  = math.abs(close - open) / barRange
-newDay    = ta.change(time("D")) != 0
-var float sVwapNum = 0.0
+     "hour late -- it has happened here before.")'''),
+    (("barMin",), ("tzIn",),
+     'barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)'),
+    (("atrV",), (), "atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header"),
+]
+for _n in (10, 20, 50, 100, 200):
+    PRIMS.append(((f"ema{_n}",), (), f"ema{_n:<3}  = ta.ema(close, {_n})"))
+for _n in (10, 20, 50, 100, 200):
+    PRIMS.append(((f"sma{_n}",), (), f"sma{_n:<3}  = ta.sma(close, {_n})"))
+PRIMS += [
+    (("rsi14",), (), "rsi14  = ta.rsi(close, 14)"),
+    (("rsi7",), (), "rsi7   = ta.rsi(close, 7)"),
+    (("stK",), (), "stK    = ta.stoch(close, high, low, 14)"),
+    (("stD",), ("stK",), "stD    = ta.sma(stK, 3)"),
+    (("macdL", "macdS"), (), "[macdL, macdS, _mh] = ta.macd(close, 12, 26, 9)"),
+    (("cci20",), (),
+     "cci20  = ta.cci(hlc3, 20)   // typical price, matching the research -- NOT ta.cci(close, 20)"),
+    (("wr14",), (), "wr14   = ta.wpr(14)"),
+    (("mfi14",), (), "mfi14  = ta.mfi(hlc3, 14)"),
+    (("dip", "dim", "adx14"), (), "[dip, dim, adx14] = ta.dmi(14, 14)"),
+    (("bbBasis",), (), "bbBasis = ta.sma(close, 20)"),
+    (("bbDev",), (), "bbDev   = 2.0 * ta.stdev(close, 20)"),
+    (("bbUpper",), ("bbBasis", "bbDev"), "bbUpper = bbBasis + bbDev"),
+    (("bbLower",), ("bbBasis", "bbDev"), "bbLower = bbBasis - bbDev"),
+    (("bbWidth",), ("bbBasis", "bbDev"), "bbWidth = 2.0 * bbDev / bbBasis"),
+    (("kcBasis",), (), "kcBasis = ta.ema(close, 20)"),
+    (("kcRange",), (), "kcRange = ta.ema(ta.tr(true), 20)"),
+    (("kcUpper",), ("kcBasis", "kcRange"), "kcUpper = kcBasis + 1.5 * kcRange"),
+    (("kcLower",), ("kcBasis", "kcRange"), "kcLower = kcBasis - 1.5 * kcRange"),
+    (("atrMean20",), ("atrV",), "atrMean20 = ta.sma(atrV, 20)"),
+    (("volMean20",), (), "volMean20 = ta.sma(volume, 20)"),
+    (("volSd20",), (), "volSd20   = ta.stdev(volume, 20)"),
+    (("barRange",), (), "barRange  = math.max(high - low, syminfo.mintick)"),
+    (("bodyFrac",), ("barRange",), "bodyFrac  = math.abs(close - open) / barRange"),
+    (("newDay",), (), 'newDay    = ta.change(time("D")) != 0'),
+    (("sVwap",), ("newDay",), '''var float sVwapNum = 0.0
 var float sVwapDen = 0.0
 if newDay
     sVwapNum := 0.0
     sVwapDen := 0.0
 sVwapNum := sVwapNum + hlc3 * volume
 sVwapDen := sVwapDen + volume
-sVwap = sVwapDen > 0 ? sVwapNum / sVwapDen : na
-var float pdHigh = na
+sVwap = sVwapDen > 0 ? sVwapNum / sVwapDen : na'''),
+    (("pdHigh", "pdLow", "pdClose"), ("newDay",), '''var float pdHigh = na
 var float pdLow  = na
 var float pdClose = na
 var float curH = na
@@ -77,12 +80,40 @@ if newDay
     curL := low
 else
     curH := math.max(nz(curH, high), high)
-    curL := math.min(nz(curL, low), low)
-obvV   = ta.obv
-trixV  = ta.roc(ta.ema(ta.ema(ta.ema(close, 15), 15), 15), 1)
-lr20   = ta.linreg(close, 20, 0) - ta.linreg(close, 20, 1)
-lr50   = ta.linreg(close, 50, 0) - ta.linreg(close, 50, 1)
-"""
+    curL := math.min(nz(curL, low), low)'''),
+    (("obvV",), (), "obvV   = ta.obv"),
+    (("trixV",), (), "trixV  = ta.roc(ta.ema(ta.ema(ta.ema(close, 15), 15), 15), 1)"),
+    (("lr20",), (), "lr20   = ta.linreg(close, 20, 0) - ta.linreg(close, 20, 1)"),
+    (("lr50",), (), "lr50   = ta.linreg(close, 50, 0) - ta.linreg(close, 50, 1)"),
+]
+
+_DEFINED = {n for d, _, _ in PRIMS for n in d}
+_IDENT = __import__("re").compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def prelude_for(exprs, extra=()):
+    """Only the primitives these expressions actually reference, in declaration order."""
+    need = set(extra)
+    for e in exprs:
+        need |= {t for t in _IDENT.findall(e) if t in _DEFINED}
+    changed = True
+    while changed:                       # pull in dependencies until it closes
+        changed = False
+        for defines, requires, _ in PRIMS:
+            if need & set(defines):
+                for r in requires:
+                    if r not in need:
+                        need.add(r); changed = True
+    out = ["// ---- primitives, defined to match the research exactly "
+           + "-" * 43]
+    for defines, _, code in PRIMS:
+        if need & set(defines):
+            out.append(code)
+    return "\n".join(out) + "\n"
+
+
+PRELUDE = prelude_for([], extra=_DEFINED)
+
 
 # name -> Pine boolean expression. Keys match research/alpha_factory2.build_conditions exactly.
 P = {}
@@ -171,36 +202,56 @@ def missing(names):
     return [n for n in names if n not in P]
 
 
+
+WINDOW = """
+// ---- backtest window -------------------------------------------------------------------------
+// This can only NARROW what TradingView already loaded. How far back an intraday chart goes is
+// set by your plan and by the symbol, not by any script -- the table at the bottom left shows
+// the range you actually got, so you can tell a plan limit from a filter.
+winMode  = input.string("All available history", "Backtest window", group = "Backtest window",
+     options = ["All available history", "Last 90 days", "Last 365 days", "Last 3 years", "Custom dates"])
+fromDate = input.time(timestamp("01 Jan 2023 00:00 +0000"), "Custom from", group = "Backtest window")
+toDate   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "Custom to", group = "Backtest window")
+daysBack = winMode == "Last 90 days" ? 90 : winMode == "Last 365 days" ? 365 : winMode == "Last 3 years" ? 1095 : 0
+inWindow = winMode == "Custom dates" ? (time >= fromDate and time <= toDate) : daysBack == 0 ? true : (time >= timenow - daysBack * 86400000)
+"""
+
+RANGE_TABLE = """
+// ---- what history this chart actually gave you ------------------------------------------------
+var int firstBarT = na
+if inWindow and na(firstBarT)
+    firstBarT := time
+var table dr = table.new(position.bottom_left, 1, 2, border_width = 1)
+if barstate.islast
+    table.cell(dr, 0, 0, "backtested " + str.format_time(firstBarT, "yyyy-MM-dd") + "  to  " +
+         str.format_time(time, "yyyy-MM-dd"), text_size = size.small, text_color = color.gray)
+    table.cell(dr, 0, 1, str.tostring(bar_index + 1) + " bars loaded on this chart",
+         text_size = size.small, text_color = color.gray)
+"""
+
+
 # ---- emitters ---------------------------------------------------------------------------------
 _HEADER = '''//@version=6
 // =============================================================================================
-// {title}
+// {human}
+//   {sidetxt}, stop {am} x ATR, target {tp} x that risk{flat}, {tf}-minute bars.
+//   Stop and target are measured from the FILL -- the open of the bar after the signal --
+//   using the ATR of the signal bar.
 //
-// Generated by research/pine_export.py from a rule the strategy generator found:
-//
-//     {human}
-//
-// EXIT GEOMETRY: stop {am} x ATR, target {tp} x that risk{flat}. Both are measured from
-// the FILL -- the open of the bar after the signal -- using the ATR of the signal bar.
-// DIRECTION: {sidetxt}.
-//
-// MEASURED ON MNQ, {tf}-minute bars, 2022-12 to 2025-12, 1 contract, $1.00 commission per round
-// turn, 1 tick spread + 1 tick slip each side, 1 extra tick on stops:
+// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, $1.00 commission per round turn, 1 tick
+// spread + 1 tick slip each side, 1 extra tick on stops:
 {stats}
 //
-// TWO DEFINITIONS THAT ARE EASY TO GET WRONG, AND WERE, HERE, BEFORE:
-//   * ATR is ta.ema(ta.tr(true), 14) -- an EMA of true range at alpha 2/15. Pine's ta.atr is
-//     Wilder's RMA at alpha 1/14 and would move every stop in this script.
-//   * Clock conditions go through an explicit timezone input. Pine's bare hour and minute are in
-//     the EXCHANGE timezone, America/Chicago for CME, while the research is New York time.
+// THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
+//   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14.
+//   * Clock conditions go through an explicit timezone. Pine's bare hour/minute are EXCHANGE
+//     time -- Chicago for CME -- and the research is New York.
+//   * CCI is on hlc3, not close.
 //
-// Pine built-ins are used for RSI, Stochastic, CCI (on hlc3), Williams %R, MFI, DMI/ADX, OBV,
-// linreg and Bollinger. Their definitions were checked against the research implementations, but
-// they are library code and have not been executed side by side.
+// Pine built-ins are used for RSI, Stochastic, CCI, Williams %R, MFI, DMI/ADX, OBV, linreg and
+// Bollinger. They were checked against the research definitions, not executed side by side.
 //
-// NOT COMPILED BY TRADINGVIEW. The logic is transcribed from a verified engine; the syntax is not
-// verified. A compiler error is a typo, not a changed strategy.
-//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
 // Research tooling for education and analysis. Not financial advice.
 // =============================================================================================
 '''
@@ -220,16 +271,34 @@ def _cond_block(rule):
     return "\n".join(lines), " and ".join(f"c{i}" for i in range(len(rule)))
 
 
+def _rule_table(rule, pos):
+    rows = []
+    for i, nm in enumerate(rule):
+        rows.append('    table.cell(rt, 0, %d, "%s", text_size = size.small, text_color = color.gray)' % (i, nm))
+        rows.append('    table.cell(rt, 1, %d, c%d ? "yes" : "no", text_size = size.small,' % (i, i))
+        rows.append('         text_color = c%d ? color.teal : color.gray)' % i)
+    return ("\n// ---- which rule is loaded ---------------------------------------------------------\n"
+            'var table rt = table.new(%s, 2, %d, border_width = 1)\n'
+            "if barstate.islast\n" % (pos, len(rule)) + "\n".join(rows))
+
+
+def _title(rule, side, am, tp):
+    """The chart legend and the Strategy Tester tab both show this, so it has to say which rule
+    is loaded. Every generated script used to be called "Generated strategy"."""
+    return (" + ".join(rule) + " | " + ("long" if side == 1 else "short")
+            + f" | {_f(am)}xATR {_f(tp)}R")
+
+
 def _f(x):
     return f"{float(x):.1f}" if float(x) == int(float(x)) else f"{float(x)}"
 
 
 def emit_strategy(rule, side, am, tp, flat, tf=30, stats=None, title=None):
     """side: 1 long only, -1 short only, 0 both directions on the same trigger."""
-    title = title or "Generated strategy"
+    title = title or _title(rule, side, am, tp)
     human = " AND ".join(rule)
     sidetxt = {1: "long only", -1: "short only", 0: "both directions on the same trigger"}[side]
-    hdr = _HEADER.format(title=title, human=human, am=am, tp=tp,
+    hdr = _HEADER.format(human=human, am=_f(am), tp=_f(tp),
                          flat=(f", flat at {flat // 60}:00" if flat else ", no time stop"),
                          sidetxt=sidetxt, tf=tf, stats=_stats_block(stats))
     conds, joined = _cond_block(rule)
@@ -243,7 +312,8 @@ def emit_strategy(rule, side, am, tp, flat, tf=30, stats=None, title=None):
              "     commission_type = strategy.commission.cash_per_order, commission_value = 0.50,",
              "     slippage = 2, pyramiding = 0, calc_on_every_tick = false,",
              "     process_orders_on_close = false)",
-             PRELUDE,
+             prelude_for([P[nm] for nm in rule], extra=("atrV",) + (("barMin",) if flat else ())),
+             WINDOW,
              'allowLong  = input.bool(%s, "Allow longs", group = "Direction")' % str(side >= 0).lower(),
              'allowShort = input.bool(%s, "Allow shorts", group = "Direction",' % str(side <= 0).lower(),
              '     tooltip = "This rule was selected because it works in BOTH directions on the " +',
@@ -263,7 +333,7 @@ def emit_strategy(rule, side, am, tp, flat, tf=30, stats=None, title=None):
              "// the signal -- not from the signal bar's close. `loss` and `profit` are in ticks",
              "// relative to the actual entry price, which is the only Pine primitive that matches.",
              "// Whole ticks are the one unavoidable difference: at most half a tick per side.",
-             "if trig and ready and isFlat",
+             "if trig and ready and isFlat and inWindow",
              "    riskTicks = math.max(math.round(atrMult * atrV / syminfo.mintick), 1)",
              "    if allowLong",
              '        strategy.entry("L", strategy.long)',
@@ -272,17 +342,22 @@ def emit_strategy(rule, side, am, tp, flat, tf=30, stats=None, title=None):
              '        strategy.entry("S", strategy.short)',
              '        strategy.exit("Sx", "S", loss = riskTicks, profit = tpR * riskTicks)',
              flat_code,
+             "if strategy.position_size != 0 and not inWindow",
+             '    strategy.close_all(comment = "outside backtest window")',
+             "",
              'plotshape(trig and allowLong,  "long",  shape.triangleup,   location.belowbar, color.teal, size = size.tiny)',
              'plotshape(trig and allowShort, "short", shape.triangledown, location.abovebar, color.red,  size = size.tiny)',
+             RANGE_TABLE,
+             _rule_table(rule, "position.top_right"),
              ""]
     return "\n".join(parts)
 
 
 def emit_indicator(rule, side, am, tp, flat, tf=30, stats=None, title=None):
-    title = title or "Generated signal"
+    title = title or _title(rule, side, am, tp) + " | signal"
     human = " AND ".join(rule)
     sidetxt = {1: "long only", -1: "short only", 0: "both directions"}[side]
-    hdr = _HEADER.format(title=title + " (indicator)", human=human, am=am, tp=tp,
+    hdr = _HEADER.format(human=human, am=_f(am), tp=_f(tp),
                          flat=(f", flat at {flat // 60}:00" if flat else ", no time stop"),
                          sidetxt=sidetxt, tf=tf, stats=_stats_block(stats))
     conds, joined = _cond_block(rule)
@@ -293,7 +368,7 @@ def emit_indicator(rule, side, am, tp, flat, tf=30, stats=None, title=None):
         rows.append('         text_color = c%d ? color.teal : color.gray)' % i)
     parts = [hdr,
              'indicator("%s (signal)", overlay = true)' % title,
-             PRELUDE,
+             prelude_for([P[nm] for nm in rule], extra=("atrV",)),
              "// ---- the rule -------------------------------------------------------------------",
              conds,
              "trig = " + joined,
