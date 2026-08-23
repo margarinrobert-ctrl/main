@@ -24,10 +24,11 @@
 //
 // FIX HISTORY — every one of these was a real defect, found by diffing this script against the
 // Python engine the research was done on:
-//   v7  commission now scales with the contract. The sizing note below says to trade MNQ (a 2×ATR
-//       stop on NQ risks ~$2,000); the fee was hardcoded at $2.00/order, right for the E-mini and
-//       10× too heavy on a Micro, where it ate ~5% of gross profit. Following both instructions
-//       as written was self-defeating.
+//   v7  commission defaults to the MICRO fee. The sizing note below says to trade MNQ (a 2×ATR
+//       stop on NQ risks ~$2,000); the fee was set at $2.00/order, right for the E-mini and 10×
+//       too heavy on a Micro, where it ate ~5% of gross profit. Following both instructions as
+//       written was self-defeating. TradingView will not let this be derived or made an input
+//       (commission_value demands a const), so the label now checks it against the chart instead.
 //   v6  THE ENTRY GATE (see grpT). A session-string window admitted the session's FIRST bar,
 //       which the engine excludes. Worth 35 extra trades and −$8,318 on 30m. With it corrected
 //       this script reproduces the engine exactly.
@@ -50,15 +51,20 @@
 strategy("NQ BOS/CHoCH book", overlay = true, initial_capital = 100000,
      default_qty_type = strategy.fixed, default_qty_value = 1,
      commission_type = strategy.commission.cash_per_order,
-     // Auto by contract size. Deliberately NOT an input: a hand-set fee is exactly the footgun
-     // v7 exists to remove. Edit this line if your broker differs.
-     commission_value = syminfo.pointvalue < 10 ? 0.50 : 2.00,
+     // TradingView requires a CONST here. It cannot be derived from syminfo.pointvalue and it
+     // cannot even be an input -- both are rejected as "simple float" where "const float" is
+     // expected. So it is set by hand, and the diagnostic label checks it against the chart:
+     //     MNQ / MES  (Micro,  $2 / $5  per point) ....  0.50
+     //     NQ  / ES   (E-mini, $20 / $50 per point) ...  2.00
+     // Defaulted to the Micro because the sizing note at the foot of this file tells you to trade
+     // it -- a 2xATR stop on full-size NQ risks ~$2,000 a contract.
+     commission_value = 0.50,
      slippage = 2, pyramiding = 0, calc_on_every_tick = false,
      process_orders_on_close = false)
 
-// Same expression as the commission argument above, kept as a variable so the diagnostic label
-// can report it. Pine has no runtime accessor for the configured commission.
-commPerOrder = syminfo.pointvalue < 10 ? 0.50 : 2.00
+// KEEP IN SYNC with commission_value above. Pine has no runtime accessor for the configured
+// commission, so the label needs its own copy in order to check it against the contract.
+commPerOrder = 0.50
 
 // ── preset ───────────────────────────────────────────────────────────────────────────────────
 preset = input.string("30m core", "Preset", options = ["30m core", "60m core", "custom"],
@@ -247,7 +253,11 @@ if showDiag and barstate.islast
     lbl := label.new(bar_index, high,
          "symbol " + syminfo.ticker + "   tf " + timeframe.period +
          "\n$ per point " + str.tostring(syminfo.pointvalue) + "  (NQ 20 / MNQ 2)" +
-         "\ncommission $" + str.tostring(commPerOrder) + "/order  (auto)" +
+         "\ncommission $" + str.tostring(commPerOrder) + "/order" +
+         (syminfo.pointvalue >= 10 and commPerOrder < 1.5 ?
+            "  <<< TOO LOW for an E-mini: set commission_value AND commPerOrder to 2.00" :
+          syminfo.pointvalue < 10 and commPerOrder >= 1.5 ?
+            "  <<< TOO HIGH for a Micro: set commission_value AND commPerOrder to 0.50" : "  ok") +
          "\n— gates in force —" +
          "\nnBos " + str.tostring(nBos) + "    stop " + str.tostring(atrMult) + " x ATR" +
          "\nrange filter " + str.tostring(minDist) + " x ATR" +
@@ -306,8 +316,9 @@ bgcolor(showSess and canEnter ? color.new(color.blue, 94) : na, title = "entry w
 //     profitable and out-of-sample positive; it is NOT a statistically established edge.
 //   • There is NO ES DATA behind any of this. One instrument, one bull market, three years.
 //
-// SIZE: a 2×ATR stop on 30m NQ risks ~$2,000 per contract; on MNQ ~$200. The commission above
-// scales with the contract automatically, so the two decisions no longer fight each other.
+// SIZE: a 2×ATR stop on 30m NQ risks ~$2,000 per contract; on MNQ ~$200. If you switch to
+// full-size NQ or ES, change BOTH `commission_value` (line ~55) and `commPerOrder` to 2.00 —
+// the label will tell you if you forget.
 //
 // Research tooling for education and analysis. Not financial advice.
 // =============================================================================================
