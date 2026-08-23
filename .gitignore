@@ -36,3 +36,11 @@ next-env.d.ts
 # Python research layer
 __pycache__/
 *.pyc
+
+# ML layer artifacts: local experiment store, exported platform data, model caches
+research/mlruns.db
+research/mlruns/
+research/qlib_data/
+research/lean_data/
+research/**/__pycache__/
+catboost_info/

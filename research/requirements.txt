@@ -1,6 +1,33 @@
-# The Python research layer. Install with:  pip3 install -r research/requirements.txt
+# The Python research layer.  Install with:  pip3 install -r research/requirements.txt
+#
+# Two pins are load-bearing:
+#   * nautilus_trader requires pandas < 3, which downgrades pandas from 3.x. vectorbt 1.1.0 prints
+#     an incompatibility warning about this and works anyway -- verified: it imports, and every
+#     study in docs/ib/ reproduces to the digit under pandas 2.3.3.
+#   * torch must come from PyPI. download.pytorch.org is blocked by this environment's egress
+#     policy (403 on CONNECT), so `--index-url https://download.pytorch.org/whl/cpu` fails here.
+
+# --- core engine ---
 vectorbt>=1.1.0
 numpy>=2.0
-pandas>=2.2
+pandas>=2.2,<3.0
 numba>=0.60
 pyarrow>=15.0
+scipy>=1.11
+
+# --- models ---
+scikit-learn>=1.5
+lightgbm>=4.5
+xgboost>=2.1
+catboost>=1.2
+torch>=2.4
+
+# --- search, tracking, parallelism ---
+optuna>=4.0
+mlflow>=3.0
+ray[tune]>=2.30
+
+# --- third-party backtest / research platforms (research/platforms/) ---
+nautilus_trader>=1.200
+pyqlib>=0.9
+lean>=1.0            # CLI only; the engine itself runs in Docker, which this container lacks

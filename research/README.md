@@ -108,3 +108,82 @@ python3 research/metalabel.py
 ```
 
 Data files are git-ignored; see `data/README.md` for the ingest command.
+
+---
+
+# The model layer (`research/ml/`) and platform adapters (`research/platforms/`)
+
+Added on request: LightGBM, XGBoost, CatBoost, PyTorch, scikit-learn, Optuna, MLflow, Ray, plus
+Qlib, LEAN and NautilusTrader.
+
+## The problem with adding these
+
+Every library in that list makes it cheaper to search, and this repository has *measured* search as
+harmful on this data. On 225,792 initial-balance configurations a **random** pick landed at the
+51.5th percentile of locked-holdout P&L and the **best-of-143,536** landed at the **13.4th**, with
+in-sample/out-of-sample rank correlation of **−0.079**. Optuna with 500 trials is that experiment
+with a nicer API.
+
+So the discipline is inside the API rather than beside it. The things easiest to skip are the
+things that are not optional:
+
+| built in | why |
+| --- | --- |
+| purged + embargoed folds | triple-barrier labels overlap; plain K-fold leaks the answer |
+| scoring in **dollars after costs** | AUC 0.51 is worth money or nothing depending on the round turn |
+| **within-session paired lift**, not level | on 2023–25 NQ the unconditional long earns +$9.17/trade, so any long-biased rule clears zero |
+| **day-clustered t** | bars inside a session share an outcome; ignoring that turned −$95 at t=−2.70 into +$201 at t=+5.60 |
+| an automatic **shuffled-label control** | the reader always sees what the same pipeline produces on noise |
+| **trial count logged with every tuned metric** | `track.log_result` *raises* on a tuned score with no denominator |
+| a **locked holdout** split on sessions | opened once, never straddling a day |
+
+`deflate(t, n_trials)` reports the hurdle a searched result must clear — E[max z] ≈ √(2 ln n) — so
+a t of 2.0 clears a 1-trial hurdle and fails a 500-trial one, and the table says so rather than
+leaving it to the reader.
+
+## Modules
+
+```
+research/ml/
+  dataset.py   causal features + the barrier label, with presence flags for optional signals
+  splits.py    PurgedKFold, session-aware locked_split, session_folds
+  zoo.py       one interface over 7 model families incl. a PyTorch MLP
+  metrics.py   auc, day_paired_lift, evaluate, deflate
+  tune.py      Optuna search with the search cost priced; study_pbo via CSCV
+  track.py     MLflow to a local SQLite store
+  runner.py    the driver: all families in parallel via Ray, then tuning, then the holdout
+  test_ml.py   26 checks on the properties that fail silently
+```
+
+Run it:
+
+```bash
+python3 research/ml/runner.py --trials 20 --splits 5     # full experiment
+python3 research/ml/runner.py --no-ray --no-mlflow       # same numbers, no infrastructure
+python3 research/ml/test_ml.py                           # 26 checks
+mlflow ui --backend-store-uri sqlite:///research/mlruns.db
+```
+
+### One trap worth naming
+
+`dataset.py` gives every optional feature a **presence flag and a sentinel** instead of a NaN. A
+fair-value gap exists on ~30% of bars and an opening-range position does not exist before 10:00;
+dropping incomplete rows requires an unfilled gap on *both* sides at once and cuts 292,908 bars to
+**4,347** — 1.5% of the sample, and a badly biased 1.5%. This is the identical mistake that cut the
+SMC study to 6,091 bars, made twice, six hours apart. Absence is information.
+
+## Platforms
+
+| platform | status here |
+| --- | --- |
+| **NautilusTrader** 1.221 | **runs.** Real order lifecycle and nanosecond clock; NQ RTH bars load into its matching engine. Worth having because it resolves a same-bar stop-and-target from its own rules, where this repo books the stop — a genuine cross-check. |
+| **Qlib** 0.9.7 | **runs**, narrowly. Qlib's unit is (instrument, date) for cross-sectional daily equity work; this is one instrument on a minute calendar. Its model layer is used; its handler and splits are **not** — the default splits on a daily calendar and would mis-purge a minute-bar barrier label. |
+| **LEAN** | **does not run in this container.** The `lean` CLI installs, but the engine runs in Docker and this container has the Docker *client* with no daemon, and no dotnet/mono. `lean_export.py` writes correctly formatted minute data and `lean_algorithm.py` is a complete algorithm; both are untested against the engine and nothing here claims a LEAN result. |
+
+## Two environment facts
+
+- **`download.pytorch.org` is blocked** by the egress policy (403 on CONNECT). Install torch from
+  PyPI; `--index-url https://download.pytorch.org/whl/cpu` fails here.
+- **NautilusTrader requires pandas < 3**, which downgrades pandas from 3.0.5 to 2.3.3 and makes
+  vectorbt print an incompatibility warning. Verified harmless: vectorbt imports, and the studies in
+  `docs/ib/` reproduce to the digit.
