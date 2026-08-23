@@ -28,15 +28,18 @@ def sim(atr_mult=2.0, n_bos=2, md=1.0, buf=0.0, be_at=0.0, tod=None):
             pos=pend; entry=o[i]; ei=i; pend=0
             risk=atr_mult*aSig; stopL=entry-pos*risk; be=False
         if pos!=0:
-            if be_at>0 and not be:
-                prog = pos*(h[i]-entry) if pos==1 else pos*(l[i]-entry)
-                if prog >= be_at*risk:
-                    stopL = entry; be=True          # armed on THIS bar, effective from here
+            # Check the stop FIRST, against the level that was already resting. Arming breakeven
+            # from bar i's high and then testing bar i's low against it assumes the high came
+            # first -- an intrabar ordering we do not know. Breakeven is armed for bar i+1.
             hit=(l[i]<=stopL) if pos==1 else (h[i]>=stopL)
             if hit:
                 px=o[i] if ((pos==1 and o[i]<stopL) or (pos==-1 and o[i]>stopL)) else stopL
                 px += -se if pos==1 else se
                 pnl.append(pos*(px-entry)*PV-2*ec*PV-COMM); ent.append(ei); pos=0; stopL=np.nan
+            elif be_at>0 and not be:
+                prog = pos*(h[i]-entry) if pos==1 else pos*(l[i]-entry)
+                if prog >= be_at*risk:
+                    stopL = entry; be=True          # effective from the NEXT bar onward
         a=atr_[i]
         thr = buf*a if (buf>0 and not np.isnan(a)) else 0.0
         bU=(not np.isnan(ph[i])) and c[i]>ph[i]+thr and (np.isnan(bh) or ph[i]!=bh)

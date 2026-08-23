@@ -47,19 +47,32 @@ Every candidate was named before it was run and all are reported.
 | no entries after 14:00 | **1.90** (best) | 3.21 |
 | breakeven stop at +1.5R | 1.82 | 2.46 |
 | baseline | 1.64 | 3.07 |
+| breakeven stop at +1.0R | 1.32 | 2.67 |
 | confirm buffer 0.10 ATR | 1.23 | 3.23 |
-| breakeven stop at +1.0R | 1.17 | 1.37 |
 | confirm buffer 0.25 ATR | 1.16 | 2.87 |
 | no entries before 11:00 | **0.63** (worst) | **3.70** (best) |
 
-**Spearman rho = −0.179 (p = 0.70).** The research ranking carries no information about the locked
-ranking — if anything it is mildly inverted. The variant that looked *worst* in research is the
-*best* out of sample. Selecting on the research block is not merely useless here; acting on it
-would have picked the wrong rule.
+**Spearman rho = −0.429 (p = 0.34).** The research ranking carries no information about the locked
+ranking — it is mildly *inverted*. The variant that looked *worst* in research is the *best* out of
+sample. Selecting on the research block is not merely useless here; acting on it would have picked
+the wrong rule.
 
-The one directionally consistent result is negative: **a breakeven stop hurts** — worst or
-second-worst on both blocks. It converts trades that would have run into scratches while leaving
-the losers intact.
+No variant beats the baseline on **both** blocks. Every one of them is noise around it.
+
+### A correction, because the first run of this table was wrong
+
+The breakeven rows originally read 1.17 / 1.37, and were reported as the one consistent finding —
+"a breakeven stop hurts". That was an artefact of the test harness, not a property of the strategy.
+The implementation armed breakeven from bar *i*'s high and then tested bar *i*'s low against the
+new stop, inside the same bar. That assumes the high came before the low, an intrabar ordering
+nobody knows, and it scratches trades on the very bar they reach the target. Breakeven is now armed
+for bar *i+1* and the resting stop is checked first.
+
+Corrected, breakeven at +1.0R is fourth of seven on both blocks — mildly below baseline, and
+indistinguishable from the rest of the noise. The claim that it "hurts" does not survive its own
+bug fix. Note the direction of the error: the harness was biased *against* the variant being
+tested, which is the direction that produces false negatives rather than false discoveries, but it
+is a bug either way.
 
 ## 4. Monte Carlo — stationary block bootstrap, 5,000 paths, daily P&L blocks
 
