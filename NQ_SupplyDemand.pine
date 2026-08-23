@@ -64,6 +64,13 @@
 // If it throws a compiler error, send it to me -- those are mechanical to fix and they do not
 // mean the strategy changed.
 //
+// WHAT THE NUMBERS ABOVE COVER: 2022-12-26 to 2025-12-11. Nothing later. If your chart is
+// showing 2026 you are running a genuine forward test on data the research has never seen, and
+// the two figures are not comparable. For scale, inside the tested period every rolling 150-day
+// window produced between 40 and 85 trades and between -$283 and +$12,549 — one losing quarter
+// is well inside that distribution, and a materially HIGHER trade count than 85 per 150 days is
+// not. Use the diagnostic table to tell those two cases apart.
+//
 // Research tooling for education and analysis. Not financial advice.
 // =============================================================================================
 
@@ -104,6 +111,24 @@ originIn = input.string("any", "Zone origin", options = ["any", "reversal", "con
 ageDaysIn = input.int(12, "Zones expire after N days", minval = 1, maxval = 60, group = grpZ,
      tooltip = "12 in both presets. Shorter is worse: at 5 days preset A earns $14,394 instead " +
                "of $32,413, and at 2 days $9,494. Old zones are not stale zones here.")
+oneShot = input.bool(false, "One entry per zone", group = grpZ,
+     tooltip = "A zone is retired the first time it is traded. This looks obviously right and it " +
+               "is EXPENSIVE on the tested data, so the number is here rather than buried: " +
+               "preset A goes $32,413 -> $10,648 and its RESEARCH block collapses from $18,064 " +
+               "to $1,245; preset B goes $14,284 -> $1,836 and its locked block turns NEGATIVE. " +
+               "Most of this strategy's profit comes from re-trading the same zone, which makes " +
+               "it closer to a mean-reversion band than to supply/demand doctrine. Turning this " +
+               "on is a defensible choice; believing it is free is not.")
+dropBroken = input.bool(false, "Retire a zone once price CLOSES through it", group = grpZ,
+     tooltip = "A demand zone dies when a bar closes below its low, a supply zone when one " +
+               "closes above its high. Also expensive: preset A $32,413 -> $11,278 with the " +
+               "locked block falling from $14,638 to $735; preset B $14,284 -> $2,475 with the " +
+               "research block going negative. Same lesson as above.")
+showDiag = input.bool(true, "Show the diagnostic table", group = grpZ,
+     tooltip = "Compare these against the research figures over 2022-12-26 to 2025-12-11: 560 " +
+               "zones built, at most 15 alive at once, 479 trades, 0.86 trades per zone. If your " +
+               "zone count or trades-per-zone is far from those, the divergence is in the ZONE " +
+               "BUILDER (bucket alignment or ATR), not in the entry rule.")
 maxZones = input.int(50, "Zone array capacity", minval = 10, maxval = 500, group = grpZ,
      tooltip = "At most 15 zones were ever alive at once over three years, and results are " +
                "identical at 50, 100, 200 and 400. This exists so the array cannot grow forever.")
@@ -162,6 +187,11 @@ ageBars = int(ageDays * 1440 / tfMin)
 // bar of a new bucket the PREVIOUS bucket is complete, so that is when its zone is tested and
 // becomes available -- the same instant `request.security(..., lookahead_off)` would deliver it,
 // without depending on how TradingView chose to aggregate.
+// The 4H buckets only line up if the chart interval divides 240 minutes. 60m and 30m do; 45m
+// and 90m do not, and on those this script would silently build the wrong bars. Refuse instead.
+if barstate.islast and (tfMin <= 0 or 240 % tfMin != 0)
+    runtime.error("Chart interval must divide 240 minutes. Use 60m for preset A, 30m for preset B.")
+
 newBucket = barMin % 240 == 0
 
 var float bO = na
@@ -182,6 +212,9 @@ var float[] zLo = array.new_float(0)
 var float[] zHi = array.new_float(0)
 var int[]   zDir = array.new_int(0)
 var int[]   zBar = array.new_int(0)
+var int[]   zUsed = array.new_int(0)
+var int nZonesMade = 0
+var int nZonesPeak = 0
 
 if newBucket and not na(bC)
     // ---- the previous 4H bar has just closed: finish it, update its ATR, test it for a zone ----
@@ -226,6 +259,8 @@ if newBucket and not na(bC)
                     array.push(zHi, bh)
                     array.push(zDir, d)
                     array.push(zBar, bar_index)
+                    array.push(zUsed, 0)
+                    nZonesMade += 1
                     if showZones
                         box.new(bar_index, bh, bar_index + math.min(ageBars, 480), bl, border_width = 1,
                              border_color = d == 1 ? color.new(color.teal, 40)
@@ -250,11 +285,31 @@ while array.size(zBar) > 0 and bar_index - array.get(zBar, 0) > ageBars
     array.shift(zHi)
     array.shift(zDir)
     array.shift(zBar)
+    array.shift(zUsed)
 while array.size(zBar) > maxZones
     array.shift(zLo)
     array.shift(zHi)
     array.shift(zDir)
     array.shift(zBar)
+    array.shift(zUsed)
+
+// a zone price has closed straight through is a broken zone
+if dropBroken
+    kk = 0
+    while kk < array.size(zBar)
+        dz = array.get(zDir, kk)
+        dead = (dz == 1 and close < array.get(zLo, kk)) or (dz == -1 and close > array.get(zHi, kk))
+        if dead
+            array.remove(zLo, kk)
+            array.remove(zHi, kk)
+            array.remove(zDir, kk)
+            array.remove(zBar, kk)
+            array.remove(zUsed, kk)
+        else
+            kk += 1
+
+if array.size(zBar) > nZonesPeak
+    nZonesPeak := array.size(zBar)
 
 // ── the entry gate ───────────────────────────────────────────────────────────────────────────
 // A signal on this bar fills at the NEXT bar's open, so the next bar must be tradeable too.
@@ -276,9 +331,9 @@ if flat and ready and canEnter and nZ > 0
             zl = array.get(zLo, z)
             zh = array.get(zHi, z)
             d  = array.get(zDir, z)
-            ok = true
+            ok = not (oneShot and array.get(zUsed, z) == 1)
             st = 0.0
-            if d == 1
+            if ok and d == 1
                 // the bar must penetrate the zone without closing through it, and close bullish
                 if low > zh or low < zl
                     ok := false
@@ -287,7 +342,7 @@ if flat and ready and canEnter and nZ > 0
                 if ok and brkReq and high <= high[1]
                     ok := false
                 st := zl - buf * atrV
-            else
+            else if ok
                 if high < zl or high > zh
                     ok := false
                 if ok and (close >= open or close >= zh)
@@ -301,6 +356,7 @@ if flat and ready and canEnter and nZ > 0
                     sig := d
                     sigStop := st
                     sigTgt := close + d * tpR * risk
+                    array.set(zUsed, z, 1)
 
 // ── orders ───────────────────────────────────────────────────────────────────────────────────
 // entry and exit are submitted on the SAME bar. The entry fills at the next bar's open and the
@@ -315,6 +371,36 @@ if sig == -1
 
 // TradingView books the STOP when a single bar contains both the stop and the target, which is
 // the same pessimistic assumption the research engine makes. Nothing here needs to force it.
+
+// ── diagnostics ──────────────────────────────────────────────────────────────────────────────
+// The point of this table is to localise a disagreement instead of arguing about the P&L. The
+// research figures over 2022-12-26 to 2025-12-11, on a 60m chart with preset A, were:
+//     560 zones built, at most 15 alive at once, 479 trades, 0.86 trades per zone.
+// If your ZONE COUNT is far off, the disagreement is in the bucket alignment or the ATR, and the
+// entry rule is innocent. If the zone count matches but TRADES PER ZONE is much higher, the
+// disagreement is in how often a zone is allowed to fire again.
+var table diag = table.new(position.top_right, 2, 8, border_width = 1)
+if showDiag and barstate.islast
+    nTr = strategy.closedtrades + (strategy.position_size != 0 ? 1 : 0)
+    table.cell(diag, 0, 0, "chart interval",   text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 0, str.tostring(tfMin, "#") + "m", text_size = size.small)
+    table.cell(diag, 0, 1, "4H buckets closed", text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 1, str.tostring(nFin), text_size = size.small)
+    table.cell(diag, 0, 2, "zones built",       text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 2, str.tostring(nZonesMade), text_size = size.small)
+    table.cell(diag, 0, 3, "peak zones alive",  text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 3, str.tostring(nZonesPeak), text_size = size.small)
+    table.cell(diag, 0, 4, "zones alive now",   text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 4, str.tostring(array.size(zBar)), text_size = size.small)
+    table.cell(diag, 0, 5, "trades",            text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 5, str.tostring(nTr), text_size = size.small)
+    table.cell(diag, 0, 6, "trades per zone",   text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 6, nZonesMade > 0 ? str.tostring(nTr / nZonesMade, "#.00") : "-",
+         text_size = size.small,
+         text_color = nZonesMade > 0 and nTr / nZonesMade > 1.4 ? color.red : color.gray)
+    table.cell(diag, 0, 7, "ATR  4H / chart",   text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 7, str.tostring(h4atr, "#") + " / " + str.tostring(atrV, "#"),
+         text_size = size.small)
 
 plot(showZones ? atrV : na, "ATR (EMA of TR, 14)", color = color.new(color.gray, 70),
      display = display.data_window)
