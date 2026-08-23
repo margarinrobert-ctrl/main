@@ -76,7 +76,19 @@ swingK  = input.int(3, "Swing confirmation bars (k)", minval = 1, maxval = 20, g
      tooltip = "A pivot needs k bars either side, so it is invisible until k bars later. " +
                "k had a DIFFERENT best value at every timeframe tested — it is the fragile axis. " +
                "Left at the neutral 3 deliberately.")
-nBosIn  = input.int(2, "Enter on the Nth BOS", minval = 1, maxval = 5, group = grpS)
+nBosIn  = input.int(2, "Enter on the Nth BOS", minval = 1, maxval = 5, group = grpS,
+     tooltip = "2 is the TESTED value and the lock forces it. But nBos was validated under the " +
+               "CHoCH exit, where a second break protected against whipsaw; with a fixed 2R target " +
+               "that protection is redundant and the two were never tested jointly. Re-tested, " +
+               "nBos=1 with the 2R target wins on nearly everything: research $6,319 vs $2,747, " +
+               "LOCKED $11,748 vs $8,932, walk-forward $16,313 vs $11,481 taking 5 of 6 folds, " +
+               "Monte Carlo median $18,236 vs $11,558, P(net<0) 0.2% vs 0.7%, paired t +1.55. It " +
+               "loses on ONE thing: max drawdown is ~26% deeper (MC median $2,888 vs $2,278, p95 " +
+               "$5,166 vs $4,093). Not made the default because t=1.55 is not significant, it came " +
+               "from a 9-cell sweep, and it would be the second spec change in a row -- each one " +
+               "erodes the claim this rule was not tuned, which is most of why the out-of-sample " +
+               "result is believable. Turn OFF the lock to run nBos=1 knowingly. See " +
+               "docs/ib/STUDY_CORRELATION_MATRIX.md.")
 lockSpec= input.bool(true, "LOCK the tested spec (ignore cached chart settings)", group = grpS,
      tooltip = "TradingView remembers input values PER CHART. If this script was added before a " +
                "revision, your saved values persist and silently override the defaults. With this " +
