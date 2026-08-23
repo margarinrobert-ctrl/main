@@ -22,6 +22,26 @@
 // 1m and 2m it is significantly negative (t = −2.45, −2.68). A losing 5-minute backtest is not a
 // bug, it is the documented result.
 //
+// 248,832 CONFIGURATIONS ACROSS 15m / 30m / 60m / 120m say the same thing, and say something new.
+// Holding every other parameter identical and moving ONLY the interval, over the 10,032 parameter
+// sets tradeable on all four, out-of-sample P&L against 30m:
+//        15m  −$815/set, wins 45.4% of pairs, paired t = −16.05
+//        60m  −$1,425/set, wins 35.0% of pairs, paired t = −32.31
+//       120m  −$2,772/set, wins 27.2% of pairs, paired t = −53.78
+// In DOLLARS 30m wins, and it is not close. But the 1-hour chart is not worse per trade — it is
+// better per trade and rarer. At a 2R target a driftless path wins 33.3% by geometry alone; the
+// excess over that bound is the only part of a win rate the ENTRY earned:
+//        30m core   141 trades   44.0% win   +10.6 excess
+//        60m core    45 trades   55.6% win   +22.2 excess
+// The 60m edge is a PLATEAU, not a mined spike: all twelve one-step perturbations of it (nBos,
+// stop multiple, k, EMA length, range filter) keep a positive excess, +8.9 to +25.3.
+// So run BOTH — see the preset note. 45 trades in three years is not a strategy on its own.
+//
+// The search's own winner was 120m / k5 / EMA50 / nBos 1 / 3R / 24h, at $17,665 research and
+// $10,741 locked — nominally beating this spec. It is a spike: moving nBos to 2 turns it into
+// −$5,557, and 120m has the WORST distribution of any interval (median locked −$1,145) and no
+// measurable entry information (excess +0.06 at 2R). It was not adopted. See docs/ib/STUDY_TIMEFRAME.md.
+//
 // FIX HISTORY — every one of these was a real defect, found by diffing this script against the
 // Python engine the research was done on:
 //   v7  commission defaults to the MICRO fee. The sizing note below says to trade MNQ (a 2×ATR
@@ -69,7 +89,15 @@ commPerOrder = 0.50
 // ── preset ───────────────────────────────────────────────────────────────────────────────────
 preset = input.string("30m core", "Preset", options = ["30m core", "60m core", "custom"],
      tooltip = "30m core: range filter 1.0 ATR.  60m core: range filter off. " +
-               "Run BOTH on separate charts — that is the tested book. They correlate 0.28.")
+               "RUN BOTH ON SEPARATE CHARTS — that is the tested book, and the combination is " +
+               "the better half of it. They share only 23 of 163 trading days and their daily " +
+               "P&L correlates +0.25, so the second leg adds return without adding drawdown. " +
+               "MNQ, 1 contract, full sample:  30m alone $11,679, maxDD $2,865, Sharpe 1.13.  " +
+               "60m alone $7,574, maxDD $1,196, Sharpe 1.21.  BOTH $19,253, maxDD $1,912, " +
+               "Sharpe 1.43 — more money and a SMALLER worst drawdown than 30m on its own. " +
+               "On the locked holdout, never used to choose anything: $8,932 -> $12,834, " +
+               "Sharpe 1.70 -> 2.00. Nothing was refitted for the 60m leg; it is this same " +
+               "spec with the range filter off, which is what this preset already was.")
 
 grpS = "Structure"
 swingK  = input.int(3, "Swing confirmation bars (k)", minval = 1, maxval = 20, group = grpS,
