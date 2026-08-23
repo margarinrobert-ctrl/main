@@ -141,10 +141,15 @@ flatEOD  = input.bool(false, "Flatten at the session close (intraday-only varian
      tooltip = "OFF = the tested spec: a position is held until its stop or a CHoCH, which on 30m " +
                "means a 12.5h median hold and 35% of trades crossing the close. ON = forced flat " +
                "daily. Measured over Dec-2022..Dec-2025 on 30m: holding gives $63,165 / PF 1.38 / " +
-               "39.0% win, flattening gives $47,997 / PF 1.29 / 44.4% win. Flattening keeps 76% of " +
-               "the P&L, raises the win rate, removes all overnight gap risk, and is what a " +
-               "prop-firm flat-by-close rule requires. It is NOT the tested spec — turn it on " +
-               "knowingly.")
+               "39.0% win, flattening gives $47,997 / PF 1.29 / 44.4% win. BUT that is the full " +
+               "sample. Split on the same research/locked-holdout boundary used elsewhere in this " +
+               "work, the ranking FLIPS: on research, flattening wins (Sharpe 1.96 vs 1.68); on the " +
+               "LOCKED third, holding wins decisively ($32,642 / Sharpe 1.87 vs $15,182 / 0.95). " +
+               "Flattening is in-sample-attractive and out-of-sample-inferior, so turn it on for " +
+               "RISK reasons only — no overnight gap exposure, day-trade margin, a prop-firm " +
+               "flat-by-close rule — and expect it to COST roughly half the P&L and half the " +
+               "Sharpe, not the 24% the full sample suggests. It is not the tested spec, and it is " +
+               "not a free improvement. (Locked block is 69-76 trades: directional, not decisive.)")
 inSess   = not na(time(timeframe.period, sessStr))
 canEnter = not na(time(timeframe.period, entryStr))
 

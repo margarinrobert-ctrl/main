@@ -134,3 +134,33 @@ uncollateralised overnight gap risk on a third of their trades without being tol
 The methodological point is the same one as the fingerprints above, in a different costume: the
 conditional split (178%) and the interventional test (24%) disagree by 7×, and only one of them
 answers the question anyone actually has.
+
+### Correction — the intraday-only variant does not survive the holdout
+
+The comparison above (+$47,997 flat vs +$63,165 held, "flattening keeps 76% of the P&L and raises
+the win rate") was measured on the **full sample**, which is the error this repository exists to
+document. Split on the same 0.65 research / locked-holdout boundary on session boundaries used in
+`best_oos.py`:
+
+| variant | block | n | net | PF | win % | Sharpe |
+| --- | --- | --- | --- | --- | --- | --- |
+| hold overnight | research | 113 | $30,522 | 1.35 | 41.6% | 1.68 |
+| hold overnight | **LOCKED** | 69 | **$32,642** | 1.41 | 34.8% | **1.87** |
+| flat at 16:00 | research | 122 | $32,815 | 1.40 | 46.7% | 1.96 |
+| flat at 16:00 | **LOCKED** | 76 | **$15,182** | 1.18 | 40.8% | **0.95** |
+
+**The ranking flips across the boundary.** On the research block flattening wins on every measure,
+which is what the full-sample comparison was partly picking up. On held-back data holding wins
+decisively — more than twice the P&L and twice the Sharpe. The intraday-only variant is
+in-sample-attractive and out-of-sample-inferior: the same signature found in the IB search curve,
+the Asia R-multiple candidate, the meta-labelling attempt and the tuned LightGBM.
+
+So `flatEOD` stays in the script, but as a **risk** control rather than an improvement: take it if
+overnight gap exposure is unacceptable, if the account is on day-trade margin, or if a prop-firm
+rule forces flat by the close — and price it at roughly **half the P&L and half the Sharpe**, not
+the 24% the full sample implied. The locked block holds 69-76 trades, so this is directional
+rather than decisive, but the direction agrees with every other holdout in this work.
+
+The general lesson is the one the fingerprints taught in miniature, at a larger scale: a
+full-sample comparison between two rule variants is a *selection*, and selections have to be
+priced on data that did not inform them. Reproduce with `python research/pine_flatten_oos.py`.
