@@ -1,7 +1,12 @@
 # The book under a live-fill execution model, and every test that follows from it
 
-Five legs, each selected and validated separately: **BOS 30m**, **BOS 60m**, **supply/demand
-preset A**, **supply/demand preset B**, **IVB**. This study charges them what a live account would
+**Four** legs, each selected and validated separately: **BOS 30m**, **BOS 60m**, **supply/demand
+preset A**, **supply/demand preset B**.
+
+> **Revised 2026-08-23.** This study originally carried a fifth leg, IVB. It was removed when its
+> edge turned out to be a look-ahead — see the retraction at the top of `STUDY_IVB.md`. Every
+> number below has been recomputed on the remaining four legs. The book's locked-block P&L falls
+> from $39,767 to **$35,690** and its Sharpe from 2.77 to **2.58**. This study charges them what a live account would
 actually pay, then runs out-of-sample, walk-forward, three different Monte Carlos and portfolio
 construction through that cost model rather than around it.
 
@@ -27,7 +32,7 @@ Every charge makes every result worse; none is a free parameter.
 | BOS 60m | 45 | 7,574 | 7,565 | −9 | 7,511 | −63 | 0% |
 | S/D A | 479 | 32,413 | 32,082 | **−331** | 31,272 | **−1,141** | **49%** |
 | S/D B | 294 | 14,284 | 14,225 | −59 | 13,872 | −412 | 0% |
-| IVB | 211 | 10,013 | 9,971 | −42 | 9,718 | −295 | 0% |
+
 | **BOOK** | 1,170 | **75,962** | **75,493** | −469 | **73,854** | −2,108 | |
 
 **Realistic fills cost the book 0.6%. Doubling the overlay and doubling commission costs 2.8%.**
@@ -59,8 +64,8 @@ on this book.** Selection bias is.
 | BOS 60m | 3,670 | 1,196 | 1.05 | 3,895 | 974 | 1.46 |
 | S/D A | 17,608 | 3,773 | 1.68 | 14,474 | 4,672 | 1.60 |
 | S/D B | 5,814 | 2,691 | 0.87 | 8,411 | 4,947 | 1.43 |
-| IVB | 5,894 | 1,471 | 1.87 | 4,077 | 806 | 1.87 |
-| **BOOK** | **35,726** | 4,371 | **2.26** | **39,767** | 6,477 | **2.77** |
+
+| **BOOK** | **29,832** | 4,371 | **1.97** | **35,690** | 6,217 | **2.58** |
 
 Every leg is positive on both blocks.
 

@@ -1,4 +1,41 @@
-# Initial Value Breakout — which component actually carries the edge
+# Initial Value Breakout — a look-ahead, found and removed
+
+> ## RETRACTION, 2026-08-23
+>
+> **The headline result of this study was a look-ahead bug. IVB has no measurable edge and is not
+> in the book.**
+>
+> `session_index` runs a session from 09:30 to 09:30, so a 60-minute bar at 08:00 on calendar day
+> D carries the session id of day **D−1**. Keying the higher-timeframe trend filter by that bar's
+> own session id therefore handed each session a bar that closed at **09:00 the following
+> morning** — after its entire trading window. It applied to **609 of 609 sessions**, a roughly
+> 23-hour look-ahead.
+>
+> It was caught by building a Python mirror of the intended Pine script and finding it could not
+> reproduce the engine: with both filters off the two matched exactly (675 trades, $2,586), and
+> with the trend filter on they read **$17,890 against −$1,474**. The trend filter was the only
+> place they could disagree, and the reason it disagreed is that the Pine could only see this
+> morning's bar.
+>
+> | | as published | **corrected** |
+> | --- | --- | --- |
+> | ladder step 4 (+ trend filter) | $4,086 | **$574** |
+> | ladder step 5 (+ range filter) | $4,164 | **−$105** |
+> | best version | **$10,013**, PF 1.95 | **−$1,287**, PF 0.91 |
+> | shuffle test | beat 99.7% of shuffles, p = 0.0035 | beat **18.1%**, **p = 0.82** |
+> | trend must DISAGREE | −$4,043 | **+$1,984** |
+>
+> The shuffle test was a correct null and it did its job — it detected a variable that genuinely
+> predicted the trading day, because the variable was measured after the trading day. **A correct
+> null cannot tell you the data is from the future.** Only reconstructing the rule bar-by-bar,
+> the way an execution engine would have to, exposed it.
+>
+> The corrected engine is in `research/ivb.py` with the fix and its reasoning inline. Everything
+> below the line is the original study, kept so the failure is legible; **every figure in it that
+> involves the trend filter is wrong.**
+
+---
+
 
 The specification asked for exactly the right test: **IVB alone vs IVB + retest vs IVB + retest +
 trend filter**, so that it is possible to see whether each component adds an edge rather than

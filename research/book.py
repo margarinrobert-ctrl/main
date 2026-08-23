@@ -76,14 +76,24 @@ def leg_ivb():
     return _pack(B["tf"], pnl, ent, side)
 
 
-def all_legs():
-    return {
+def all_legs(include_ivb=False):
+    """IVB is EXCLUDED by default and the default is not a style choice.
+
+    Its edge came from a look-ahead: `session_index` runs a session 09:30 -> 09:30, so the 60m
+    bar used for the trend filter belonged to the session by its own id but closed the NEXT
+    morning -- on 609 of 609 sessions. With that corrected the leg earns -$1,287 and its trend
+    filter beats only 18% of random shuffles (p = 0.82). It is kept importable so the correction
+    can be reproduced, not because it belongs in a book.
+    """
+    legs = {
         "BOS 30m": leg_bos(30),
         "BOS 60m": leg_bos(60, dn=0.0),
         "S/D A": leg_sd(SD_A, 60),
         "S/D B": leg_sd(SD_B, 30),
-        "IVB": leg_ivb(),
     }
+    if include_ivb:
+        legs["IVB"] = leg_ivb()
+    return legs
 
 
 if __name__ == "__main__":

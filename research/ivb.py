@@ -121,7 +121,15 @@ def session_context(iv_min: int, bin_ticks: int = 4, va_pct: float = 0.70):
         if len(w) >= 30 and not np.isnan(rng[i]):
             pct[i] = (w < rng[i]).mean()
 
-    # higher-timeframe trend: the last 60m bar to CLOSE before 09:30, against its own 50 EMA
+    # Higher-timeframe trend: the last 60m bar to CLOSE at or before this session's own 09:30,
+    # against its own 50 EMA.
+    #
+    # THE TRAP THIS FIXES. `session_index` runs a session from 09:30 to 09:30, so a bar at 08:00
+    # on calendar day D belongs to session D-1. Keying the trend by that bar's own session id
+    # therefore hands session D-1 a bar that closes at 09:00 on day D -- the morning AFTER its
+    # trading window. That is a ~23-hour look-ahead and it applied to 609 of 609 sessions. The
+    # pre-open bars of a session describe the NEXT session's morning, so the value has to be
+    # carried forward by one session.
     d60 = prep(60)
     e60 = d60["df"]["close"].ewm(span=50, adjust=False).mean().to_numpy()
     c60, mod60, s60 = d60["c"], d60["mod"], d60["sess"]
@@ -131,9 +139,10 @@ def session_context(iv_min: int, bin_ticks: int = 4, va_pct: float = 0.70):
     for j in range(len(c60)):
         if mod60[j] + 60 <= RTH:                     # closed at or before 09:30
             last[s60[j]] = j
-    for s, j in last.items():
-        if s in idx and not np.isnan(e60[j]):
-            trend[idx[s]] = 1 if c60[j] > e60[j] else -1
+    for i in range(1, n):
+        j = last.get(us[i - 1])                      # the PREVIOUS session's pre-open tail
+        if j is not None and not np.isnan(e60[j]):
+            trend[i] = 1 if c60[j] > e60[j] else -1
     return us, poc, vah, val, ivh, ivl, pct, trend
 
 
