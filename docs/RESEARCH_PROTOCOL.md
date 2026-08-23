@@ -259,6 +259,49 @@ mean(event) − mean(not event). Two further requirements:
 
 ---
 
+### 4c. A chronological holdout does not protect against a regime bet
+
+Seven times in this work, widening a parameter search made the out-of-sample result worse. The
+eighth attempt — a 777,600-cell crossing of eleven axes on MNQ (`docs/ib/STUDY_MEGASEARCH_MNQ.md`)
+— appeared to reverse it: the research-block winner's **locked** Sharpe *rose* with search width,
+from 0.09 at K=1 to 1.06 at K=658,003, and its probability of losing money out of sample fell from
+36% to zero.
+
+That reversal was not real, and the way it failed is worth building into the protocol.
+
+Of the cells beating the reasoned specification on **both** blocks, **76.5% were long-only** (lift
+2.38 over base rate) and **0.3% were short-only** (lift 0.01). The search was not finding a better
+rule. It was finding the direction of the 2022-2025 NASDAQ bull market. Restricting the same
+search to cells that trade both sides inverts the curve completely:
+
+| K cells | all cells → locked Sharpe | both-sides only → locked Sharpe | P(locked < 0) |
+| --- | --- | --- | --- |
+| 10,000 | 0.25 | −1.10 | 98% |
+| 100,000 | 0.78 | −1.53 | 100% |
+| 231,504 | 0.92 | **−1.54** | **100%** |
+
+**The mechanism.** A chronological research/locked split protects against fitting *noise*, because
+noise does not repeat across the boundary. It gives no protection at all against fitting a
+*regime*, because a regime spanning both blocks repeats by construction. A long-only bet on a
+three-year bull market passes every holdout, walk-forward fold and bootstrap in this stack, and
+none of them are wrong — they are answering a question that does not distinguish beta from alpha.
+
+**The rule this adds.** Whenever a search is allowed to vary direction, side, or any axis that can
+express a directional bias, the holdout result is uninterpretable on its own. Either
+
+1. hold direction fixed and re-run the search curve (as above), or
+2. report the long-only and short-only sub-results separately and require the edge to survive on
+   the side the regime was *against*,
+
+before any claim that searching found something. Gate 9 ("no single year > 60% of P&L") catches
+the crude version of this; it does not catch a bias spread evenly across a uniformly trending
+sample.
+
+**Where the corresponding real improvement came from.** The one change in this work that survived
+a holdout — a 2R take-profit — was not found by search. It came from the barrier identity
+`P(+R before −R) = R_down/(R_up+R_down)`, by measuring the signal's excess over that bound at each
+ratio and noticing it peaked at 2:1. Six pre-specified candidates, one mechanism, no grid.
+
 ## 4b. Fill models
 
 Execution assumptions move a scalping result more than any parameter, so they are a first-class,
