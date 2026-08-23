@@ -80,7 +80,10 @@ nBosIn  = input.int(2, "Enter on the Nth BOS", minval = 1, maxval = 5, group = g
 lockSpec= input.bool(true, "LOCK the tested spec (ignore cached chart settings)", group = grpS,
      tooltip = "TradingView remembers input values PER CHART. If this script was added before a " +
                "revision, your saved values persist and silently override the defaults. With this " +
-               "on, nBos, the stop multiple and volatility sizing are forced to the tested values.")
+               "on, nBos, the stop multiple and volatility sizing are forced to the tested values. " +
+               "It deliberately does NOT touch the trade-side dropdown or the take-profit: those " +
+               "are deliberate choices, and overriding a deliberate choice is the very bug this " +
+               "lock exists to catch.")
 nBos    = lockSpec ? 2 : nBosIn
 
 sideIn  = input.string("Both", "Trade side", options = ["Both", "Longs only", "Shorts only"],
@@ -95,9 +98,14 @@ sideIn  = input.string("Both", "Trade side", options = ["Both", "Longs only", "S
                "the same regime. Restricting the same search to both-sides cells inverts its " +
                "result completely: locked Sharpe -1.54, losing money out of sample 100% of the " +
                "time. Pick a single side only if you have a reason outside this backtest, and " +
-               "size it as a directional bet, not as an edge."
+               "size it as a directional bet, not as an edge. This setting is NOT overridden by " +
+               "the spec lock -- it takes effect immediately, and the diagnostic label reports it."
 )
-sideMode = lockSpec ? 0 : (sideIn == "Longs only" ? 1 : sideIn == "Shorts only" ? -1 : 0)
+// NOT under lockSpec. The lock exists to defend against values you did not knowingly set --
+// TradingView's per-chart input cache. Picking a side from a dropdown is a deliberate act, and
+// silently ignoring it would be the same silent-override bug the lock was built to prevent.
+// The setting takes effect; the label calls it what it is.
+sideMode = sideIn == "Longs only" ? 1 : sideIn == "Shorts only" ? -1 : 0
 
 grpF = "Filters"
 useEma  = input.bool(true, "Require price on the trend side of the EMA", group = grpF)
