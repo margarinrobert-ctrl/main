@@ -137,6 +137,14 @@ if bosDn
         runLen := 1
 
 // ── session gate ─────────────────────────────────────────────────────────────────────────────
+flatEOD  = input.bool(false, "Flatten at the session close (intraday-only variant)", group = grpT,
+     tooltip = "OFF = the tested spec: a position is held until its stop or a CHoCH, which on 30m " +
+               "means a 12.5h median hold and 35% of trades crossing the close. ON = forced flat " +
+               "daily. Measured over Dec-2022..Dec-2025 on 30m: holding gives $63,165 / PF 1.38 / " +
+               "39.0% win, flattening gives $47,997 / PF 1.29 / 44.4% win. Flattening keeps 76% of " +
+               "the P&L, raises the win rate, removes all overnight gap risk, and is what a " +
+               "prop-firm flat-by-close rule requires. It is NOT the tested spec — turn it on " +
+               "knowingly.")
 inSess   = not na(time(timeframe.period, sessStr))
 canEnter = not na(time(timeframe.period, entryStr))
 
@@ -186,6 +194,9 @@ var int nChoch = 0
 wasIn = strategy.position_size[1] != 0
 if wasIn and strategy.position_size == 0
     nCloses += 1
+
+if flatEOD and strategy.position_size != 0 and not inSess
+    strategy.close_all(comment = "EOD flat")
 
 if useChoch
     if strategy.position_size > 0 and bosDn

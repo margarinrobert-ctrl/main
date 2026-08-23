@@ -92,3 +92,45 @@ everything denominated in dollars. Net P&L, the number everyone looks at first, 
 diagnostic available — it moves with all of them at once and identifies none.
 
 Reproduce with `python research/pine_sim.py` and `python research/pine_fingerprints.py`.
+
+## Addendum — the strategy is not intraday, and the obvious reading of that is wrong
+
+Chasing the residual turned up a structural fact neither engine had ever reported. Both the
+reference engine and the Pine hold a position until its stop or a CHoCH; the session gates
+**entries only** ("a stop does not stop existing at 16:01"). On 30m that means a **12.5h median
+hold**, 34.7% of trades crossing the close, 20.4% running two or more sessions, and one running 67
+hours. The rule is an overnight-swing rule wearing intraday clothes.
+
+Splitting the tested spec's 147 trades by whether they crossed a close:
+
+| | trades | net | per trade | win % |
+| --- | --- | --- | --- | --- |
+| closed same session | 96 | **−$55,585** | −$579 | 29.2% |
+| held past 16:00 | 51 | **+$127,068** | +$2,492 | 60.8% |
+
+Read naively this says the entire edge is overnight and the intraday portion is a loser. **That
+reading is wrong, and wrong in the specific way this project keeps documenting.** A trade is
+"held overnight" only if it did not hit its stop during the day, so conditioning on overnight
+holding conditions on not having already lost. The 60.8% is survivorship. Nothing here can be
+traded, because the split is only knowable after the fact.
+
+The causal question — *what happens if the rule is changed to flatten at the close* — has to be
+asked by intervening, not conditioning:
+
+| | trades | net | PF | win % |
+| --- | --- | --- | --- | --- |
+| hold overnight (tested spec, and what the Pine does) | 182 | +$63,165 | 1.38 | 39.0% |
+| **forced flat at 16:00 daily** | 198 | **+$47,997** | 1.29 | **44.4%** |
+
+Overnight holding is worth about **24%** of the P&L, not 178%. The strategy survives a forced
+flatten with a *higher* win rate and no overnight gap exposure at all.
+
+That is decision-relevant in both directions. The intraday-only variant is viable and is now a
+documented input (`flatEOD`, default off to preserve the tested spec) — it is what day-trade
+margin and a prop-firm flat-by-close rule require, under which the spec **as tested would not have
+been tradeable**. And anyone sizing the tested spec on day-trade margin has been carrying
+uncollateralised overnight gap risk on a third of their trades without being told.
+
+The methodological point is the same one as the fingerprints above, in a different costume: the
+conditional split (178%) and the interventional test (24%) disagree by 7×, and only one of them
+answers the question anyone actually has.
