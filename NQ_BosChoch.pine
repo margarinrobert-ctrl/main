@@ -33,7 +33,12 @@ swingK  = input.int(3, "Swing confirmation bars (k)", minval = 1, maxval = 20, g
      tooltip = "A pivot needs k bars either side, so it is invisible until k bars later. " +
                "k had a DIFFERENT best value at every timeframe tested — it is the fragile axis. " +
                "Left at the neutral 3 deliberately.")
-nBos    = input.int(2, "Enter on the Nth BOS", minval = 1, maxval = 5, group = grpS)
+nBosIn  = input.int(2, "Enter on the Nth BOS", minval = 1, maxval = 5, group = grpS)
+lockSpec= input.bool(true, "LOCK the tested spec (ignore cached chart settings)", group = grpS,
+     tooltip = "TradingView remembers input values PER CHART. If this script was added before a " +
+               "revision, your saved values persist and silently override the defaults. With this " +
+               "on, the entry count and stop multiple are forced to the tested values.")
+nBos    = lockSpec ? 2 : nBosIn
 
 grpF = "Filters"
 useEma  = input.bool(true, "Require price on the trend side of the EMA", group = grpF)
@@ -42,7 +47,8 @@ mdIn    = input.float(1.0, "Refuse entries within N x ATR of the EMA", minval = 
 
 grpR = "Risk"
 atrLen  = input.int(14, "ATR length", minval = 2, group = grpR)
-atrMult = input.float(2.0, "Stop = N x ATR", minval = 0.25, step = 0.25, group = grpR)
+atrMultIn = input.float(2.0, "Stop = N x ATR", minval = 0.25, step = 0.25, group = grpR)
+atrMult   = lockSpec ? 2.0 : atrMultIn
 useChoch= input.bool(true, "Exit on the opposite BOS (CHoCH)", group = grpR)
 
 grpV = "Volatility-targeted sizing"
@@ -64,6 +70,11 @@ entryStr = input.session("0930-1530", "ENTRY window (must end >=1 bar before the
      tooltip = "30m chart -> 0930-1530.  60m chart -> 0930-1500.  5m chart -> 0930-1555. " +
                "If this equals the trading session, entries on the last bar fill after the close.")
 showSess = input.bool(true, "Tint the entry window", group = grpT)
+
+showDiag = input.bool(false, "Show diagnostics (run counter, entries, settings in force)",
+     group = "Diagnostics",
+     tooltip = "Turn this on to confirm the gates are actually gating. The label on the last bar " +
+               "reports the values IN FORCE, which is the only way to catch a cached input.")
 
 minDist = preset == "30m core" ? 1.0 : preset == "60m core" ? 0.0 : mdIn
 
@@ -154,11 +165,30 @@ if strategy.position_size > 0 and not na(stopLevel)
 if strategy.position_size < 0 and not na(stopLevel)
     strategy.exit("Sx", "S", stop = stopLevel)
 
+// Track why positions close, so a win-rate mismatch can be attributed rather than guessed at.
+var int nCloses = 0
+var int nChoch = 0
+wasIn = strategy.position_size[1] != 0
+if wasIn and strategy.position_size == 0
+    nCloses += 1
+
 if useChoch
     if strategy.position_size > 0 and bosDn
         strategy.close("L", comment = "CHoCH")
+        nChoch += 1
     if strategy.position_size < 0 and bosUp
         strategy.close("S", comment = "CHoCH")
+        nChoch += 1
+
+if showDiag and barstate.islast
+    var label lbl = na
+    label.delete(lbl)
+    lbl := label.new(bar_index, high, "position closes: " + str.tostring(nCloses) +
+         "\nCHoCH signals: " + str.tostring(nChoch) +
+         "\nnBos in force: " + str.tostring(nBos) +
+         "\nstop mult: " + str.tostring(atrMult) +
+         "\nrange filter: " + str.tostring(minDist),
+         style = label.style_label_left, color = color.new(color.black, 20), textcolor = color.white)
 
 // ── plots ────────────────────────────────────────────────────────────────────────────────────
 plot(emaV, "EMA 200", color.new(color.orange, 0), 2)
@@ -168,6 +198,10 @@ fill(bU, bL, color.new(color.gray, 92), title = "range — no entries here")
 plot(stopLevel, "stop", color.new(color.red, 0), 1, plot.style_linebr)
 // Structure markers only inside the session -- v2 plotted them on all 24 hours, which made an
 // RTH-only strategy look like it was signalling overnight.
+// DIAGNOSTICS — turn these on to see whether the gates are actually gating.
+plotchar(showDiag ? runLen : na, "BOS run counter", "", location.top, color.new(color.yellow, 0), size = size.tiny)
+plotchar(showDiag ? (longSig or shortSig ? 1 : na) : na, "entry fired", "E", location.bottom, color.new(color.lime, 0), size = size.tiny)
+
 plotshape(bosUp and inSess, "BOS up",   shape.triangleup,   location.belowbar, color.new(color.teal, 0),   size = size.tiny)
 plotshape(bosDn and inSess, "BOS down", shape.triangledown, location.abovebar, color.new(color.maroon, 0), size = size.tiny)
 bgcolor(showSess and canEnter ? color.new(color.blue, 94) : na, title = "entry window")
