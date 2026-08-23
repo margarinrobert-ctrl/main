@@ -45,6 +45,26 @@ first constraint measured here that carries information about the future rather 
 The effect is modest — 20.7% against 13.2% is a lift of 1.57, not a licence — but it is the right
 sign, which nothing else here has been.
 
+### Addendum: the 5-minute sweep finished, and it tightens the same result
+
+`research/alpha_multi.py` globs whatever sweeps exist in `/tmp`, so the numbers above are the
+**three-timeframe** run (15m, 30m, 60m). The 5-minute sweep completed afterwards and the same
+script now reads four:
+
+| | three timeframes | four timeframes |
+| --- | --- | --- |
+| pairs profitable both ways on every research block | 2,043 | **131** |
+| still positive on every locked block | 422 (20.7%) | **20 (15.3%)** |
+| chance if the timeframes were independent | 13.2% | **5.1%** |
+| lift | ×1.57 | **×3.00** |
+
+Adding a fourth bar size makes the filter much stricter and roughly doubles the lift. Treat the
+×3.00 with care: it rests on 20 survivors out of 131 against an expected 6.7, which is a real
+excess but a small sample. Both runs point the same way; the four-timeframe run points harder.
+
+Reproduce either by removing or restoring `/tmp/af2_5m.npz`. The sweeps are not committed — each
+is regenerated in about 93 seconds by `python3 research/alpha_factory2.py <tf>`.
+
 ## 2. The twelve-test battery
 
 `research/validation.py` runs all of them from one input: per-trade P&L plus the session each trade
