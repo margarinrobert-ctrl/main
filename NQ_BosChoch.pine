@@ -17,6 +17,13 @@
 // !! time. On 1m and 2m it is significantly negative (t = -2.45, -2.68). A losing 5-minute
 // !! backtest is not a bug, it is the documented result.
 
+// v6 FIXES THE ENTRY GATE, which was the only real logic divergence from the tested engine.
+// With it corrected this script reproduces the reference engine EXACTLY on 30m over
+// Dec-2022..Dec-2025: 147 trades, $71,483, PF 1.54, 40.1% win. The previous session-string entry
+// window admitted the session's FIRST bar, which the engine excludes; that one extra bar per day
+// was worth 35 extra trades and -$8,318. The `strategy.position_size` one-bar lag and the
+// statement ordering, which earlier versions of this comment blamed, contribute nothing.
+//
 // !! READING A MISMATCHED RESULT. The win rate is a fingerprint of the STOP MULTIPLE, nothing
 // !! else. Measured on my engine over Dec-2022..Dec-2025, 30m, both under this script's exact
 // !! control flow and under the reference engine:
@@ -67,23 +74,34 @@ atrMult   = lockSpec ? 2.0 : atrMultIn
 useChoch= input.bool(true, "Exit on the opposite BOS (CHoCH)", group = grpR)
 
 grpV = "Volatility-targeted sizing"
-useVT   = input.bool(true, "Size inversely to recent volatility", group = grpV,
-     tooltip = "The single largest drawdown reducer in testing: max drawdown fell from 36.3% to " +
-               "10.5% while Sharpe ROSE from 1.31 to 1.60. It changes size only, never direction.")
+useVTIn = input.bool(false, "Size inversely to recent volatility", group = grpV,
+     tooltip = "OFF by default because the headline result this script is meant to reproduce " +
+               "($71,483 / PF 1.54 / 40.1% win, 147 trades, 30m) was measured at a FIXED 1 " +
+               "contract. Turning this on is a separate, separately-validated overlay: max " +
+               "drawdown fell from 36.3% to 10.5% while Sharpe ROSE from 1.31 to 1.60. It changes " +
+               "size only, never direction — so trade count and win rate are unaffected, but the " +
+               "P&L will no longer match the reference figures.")
+useVT   = lockSpec ? false : useVTIn
 vtLook  = input.int(60, "Volatility lookback (bars)", minval = 10, group = grpV)
 vtCap   = input.float(2.0, "Maximum size multiplier", minval = 1.0, step = 0.5, group = grpV)
 baseQty = input.float(1.0, "Base contracts", minval = 0.1, step = 0.1, group = grpV)
 
 grpT = "Session (exchange time)"
-sessStr  = input.session("0930-1600", "Trading session", group = grpT)
-// The FILL happens on the bar AFTER the signal, so the entry window must end one bar before the
-// session does. v2 used `session.islastbar` for this, which was WRONG: that variable refers to the
-// SYMBOL's session, not to this custom string. On a 24-hour futures chart it is true only at 17:00
-// ET, so the gate never fired and entries could fill after the cash close.
-entryStr = input.session("0930-1530", "ENTRY window (must end >=1 bar before the session)",
-     group = grpT,
-     tooltip = "30m chart -> 0930-1530.  60m chart -> 0930-1500.  5m chart -> 0930-1555. " +
-               "If this equals the trading session, entries on the last bar fill after the close.")
+// THE ENTRY GATE. This is the one place a previous version diverged from the tested engine, and
+// it was worth 35 extra trades and -$8,318 on 30m. The engine admits an entry only when ALL THREE
+// hold, and the third is the one that was missing:
+//     1. the signal bar is in session
+//     2. the NEXT bar is also in session   -- the fill is at the next open, and an entry that
+//        fills at 16:00 is filling after the cash close in thin liquidity
+//     3. the signal bar is NOT the session's first bar
+// Expressed as clock arithmetic on the bar's OPEN time in exchange timezone, which is exact and
+// involves no look-ahead: the calendar is known in advance, the prices are not. At 30m this
+// admits 10:00 through 15:00. Do not replace it with an input.session() window — a session string
+// cannot express "the next bar is also inside", which is condition 2.
+sessStart = input.int(570, "Session start (minutes after midnight, exchange time)", group = grpT,
+     tooltip = "570 = 09:30. Change only to test a different session.")
+sessEnd   = input.int(960, "Session end (minutes after midnight, exchange time)", group = grpT,
+     tooltip = "960 = 16:00.")
 showSess = input.bool(true, "Tint the entry window", group = grpT)
 
 showDiag = input.bool(false, "Show diagnostics (run counter, entries, settings in force)",
@@ -150,8 +168,12 @@ flatEOD  = input.bool(false, "Flatten at the session close (intraday-only varian
                "flat-by-close rule — and expect it to COST roughly half the P&L and half the " +
                "Sharpe, not the 24% the full sample suggests. It is not the tested spec, and it is " +
                "not a free improvement. (Locked block is 69-76 trades: directional, not decisive.)")
-inSess   = not na(time(timeframe.period, sessStr))
-canEnter = not na(time(timeframe.period, entryStr))
+tfMin    = timeframe.in_seconds(timeframe.period) / 60
+barMin   = hour * 60 + minute                          // bar OPEN, exchange timezone
+inSess   = barMin >= sessStart and barMin < sessEnd
+nextIn   = barMin + tfMin >= sessStart and barMin + tfMin < sessEnd
+newSess  = inSess and not inSess[1]
+canEnter = inSess and nextIn and not newSess
 
 // ── filters ──────────────────────────────────────────────────────────────────────────────────
 farEnough = minDist <= 0 or (not na(emaV) and not na(atrV) and math.abs(close - emaV) >= minDist * atrV)
@@ -220,6 +242,9 @@ if showDiag and barstate.islast
          "\nCHoCH signals: " + str.tostring(nChoch) +
          "\nstop-outs (closes - CHoCH): " + str.tostring(nCloses - nChoch) +
          "\nnBos in force: " + str.tostring(nBos) +
+         "\nvol-targeted sizing: " + (useVT ? "ON (P&L will not match reference)" : "off") +
+         "\nentry window: " + str.tostring(math.round(sessStart + tfMin)) + "-" + str.tostring(math.round(sessEnd - tfMin)) +
+         " min (exchange)" +
          "\nstop mult: " + str.tostring(atrMult) +
          "\nrange filter: " + str.tostring(minDist),
          style = label.style_label_left, color = color.new(color.black, 20), textcolor = color.white)
