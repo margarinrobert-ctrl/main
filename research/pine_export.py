@@ -213,8 +213,15 @@ def _stats_block(st):
 
 
 def _cond_block(rule):
-    lines = [f"    c{i} = {P[nm]}    // {nm}" for i, nm in enumerate(rule)]
+    """Column 0, always. These assignments sit at global scope, and Pine reads a leading space
+    at global scope as a line continuation -- CE10013, "expecting end of line without line
+    continuation". That is what shipped once."""
+    lines = [f"c{i} = {P[nm]}    // {nm}" for i, nm in enumerate(rule)]
     return "\n".join(lines), " and ".join(f"c{i}" for i in range(len(rule)))
+
+
+def _f(x):
+    return f"{float(x):.1f}" if float(x) == int(float(x)) else f"{float(x)}"
 
 
 def emit_strategy(rule, side, am, tp, flat, tf=30, stats=None, title=None):
@@ -242,8 +249,8 @@ def emit_strategy(rule, side, am, tp, flat, tf=30, stats=None, title=None):
              '     tooltip = "This rule was selected because it works in BOTH directions on the " +',
              '     "research block. Turning one side off is exactly the direction-fitting the " +',
              '     "selection was designed to avoid.")',
-             'atrMult = input.float(%s, "Stop = N x ATR", minval = 0.25, step = 0.25, group = "Risk")' % am,
-             'tpR     = input.float(%s, "Target = N x risk", minval = 0.25, step = 0.25, group = "Risk")' % tp,
+             'atrMult = input.float(%s, "Stop = N x ATR", minval = 0.25, step = 0.25, group = "Risk")' % _f(am),
+             'tpR     = input.float(%s, "Target = N x risk", minval = 0.25, step = 0.25, group = "Risk")' % _f(tp),
              "",
              "// ---- the rule -------------------------------------------------------------------",
              conds,
@@ -292,13 +299,13 @@ def emit_indicator(rule, side, am, tp, flat, tf=30, stats=None, title=None):
              "trig = " + joined,
              "ready = not na(atrV) and atrV > 0 and bar_index > 300",
              "",
-             "risk = %s * atrV" % am,
+             "risk = %s * atrV" % _f(am),
              "// drawn on the bar AFTER the signal and measured from its open, because that open is",
              "// where the strategy fills -- the same anchor the engine uses.",
              "fired = trig[1] and ready[1]",
              'plot(fired ? open - risk[1] : na, "stop, long side",',
              "     color = color.new(color.red, 0), style = plot.style_circles)",
-             'plot(fired ? open + %s * risk[1] : na, "target, long side",' % tp,
+             'plot(fired ? open + %s * risk[1] : na, "target, long side",' % _f(tp),
              "     color = color.new(color.teal, 0), style = plot.style_circles)",
              'plotshape(trig and ready, "signal", shape.diamond, location.belowbar,',
              "     color.new(color.teal, 0), size = size.tiny)",
