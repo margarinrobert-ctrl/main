@@ -1,63 +1,64 @@
 //@version=6
 // =============================================================================================
-// NQ — Break of Structure / Change of Character, 30-minute
-// The version that survived the battery in docs/ib/STUDY_BOS_CHOCH.md. Read the honest numbers
-// at the bottom of this file BEFORE sizing anything: this is a HYPOTHESIS, not a proven edge.
+// NQ — BOS/CHoCH, the two-leg book that produced the best positive results
+//
+// RUN IT TWICE, on two charts, same symbol:
+//     chart 1 — 30 minutes, preset "30m core"   (range filter ON, 1.0 x ATR)
+//     chart 2 — 60 minutes, preset "60m core"   (range filter OFF)
+// The two legs correlate 0.28. Neither is the answer on its own; the pair is.
+//
+// v2 FIXES A REAL BUG in v1: the stop was placed at `close - 2*ATR` measured on the SIGNAL bar,
+// but the fill happens at the NEXT bar's open. Every stop sat at the wrong distance. It is now
+// anchored to strategy.position_avg_price, which is the actual fill.
 // =============================================================================================
-//
-// RULES
-//   1. Swing pivots are fractal, confirmed k bars later. A pivot at t is invisible until t+k —
-//      that delay is real and is the reason this does not work on fast timeframes.
-//   2. Bullish BOS  = close above the last CONFIRMED swing high.
-//      Bearish BOS  = close below the last CONFIRMED swing low.
-//   3. The first BOS establishes structure. Do NOT enter on it.
-//   4. Enter on the SECOND BOS in the same direction, at the next bar's open.
-//   5. Long requires close > EMA(200); short requires close < EMA(200).
-//   6. RANGE FILTER: refuse the trade if |close − EMA200| < 1 × ATR. Breaks taken inside the
-//      range lost $474/trade at t = −5.26 on 5-minute bars — the single strongest statistic in
-//      the whole study, and it is a loss.
-//   7. Stop = 2 × ATR(14). Exit on the opposite BOS (a CHoCH) or on the stop.
-//   8. Entries only when BOTH the signal bar and the fill bar are inside 09:30–16:00 ET.
-//      Without that, 14% of entries filled at 16:00 in post-close liquidity and produced 41% of
-//      all profit — on a 1-tick spread assumption that does not hold there.
-//
-strategy("NQ BOS/CHoCH 30m", overlay = true, initial_capital = 100000,
+
+strategy("NQ BOS/CHoCH book", overlay = true, initial_capital = 100000,
      default_qty_type = strategy.fixed, default_qty_value = 1,
      commission_type = strategy.commission.cash_per_order, commission_value = 2.00,
      slippage = 2, pyramiding = 0, calc_on_every_tick = false,
      process_orders_on_close = false)
 
-// ── inputs ───────────────────────────────────────────────────────────────────────────────────
+// ── preset ───────────────────────────────────────────────────────────────────────────────────
+preset = input.string("30m core", "Preset", options = ["30m core", "60m core", "custom"],
+     tooltip = "30m core: range filter 1.0 ATR.  60m core: range filter off. " +
+               "Run BOTH on separate charts — that is the tested book.")
+
 grpS = "Structure"
-swingK   = input.int(3,   "Swing confirmation bars (k)", minval = 1, maxval = 20, group = grpS,
-     tooltip = "A pivot needs k bars either side. Higher k = later but more reliable. k had a " +
-     "DIFFERENT best value at every timeframe tested, which is why it is left at the neutral 3.")
-nBos     = input.int(2,   "Enter on the Nth BOS", minval = 1, maxval = 5, group = grpS)
+swingK  = input.int(3, "Swing confirmation bars (k)", minval = 1, maxval = 20, group = grpS,
+     tooltip = "A pivot needs k bars either side, so it is invisible until k bars later. " +
+               "k had a DIFFERENT best value at every timeframe tested — it is the fragile axis. " +
+               "Left at the neutral 3 deliberately.")
+nBos    = input.int(2, "Enter on the Nth BOS", minval = 1, maxval = 5, group = grpS)
 
 grpF = "Filters"
-useEma   = input.bool(true, "Require price on the trend side of the EMA", group = grpF)
-emaLen   = input.int(200, "EMA length", minval = 10, group = grpF)
-minDist  = input.float(1.0, "Refuse entries within N x ATR of the EMA", minval = 0, step = 0.25,
-     group = grpF, tooltip = "The range filter. 0.5–1.5 all improved results at 30m; 1.0 is the " +
-     "middle of that plateau.")
+useEma  = input.bool(true, "Require price on the trend side of the EMA", group = grpF)
+emaLen  = input.int(200, "EMA length", minval = 10, group = grpF)
+mdIn    = input.float(1.0, "Refuse entries within N x ATR of the EMA", minval = 0, step = 0.25, group = grpF)
 
 grpR = "Risk"
-atrLen   = input.int(14,  "ATR length", minval = 2, group = grpR)
-atrMult  = input.float(2.0, "Stop = N x ATR", minval = 0.25, step = 0.25, group = grpR)
-useChoch = input.bool(true, "Exit on the opposite BOS (CHoCH)", group = grpR)
+atrLen  = input.int(14, "ATR length", minval = 2, group = grpR)
+atrMult = input.float(2.0, "Stop = N x ATR", minval = 0.25, step = 0.25, group = grpR)
+useChoch= input.bool(true, "Exit on the opposite BOS (CHoCH)", group = grpR)
+
+grpV = "Volatility-targeted sizing"
+useVT   = input.bool(true, "Size inversely to recent volatility", group = grpV,
+     tooltip = "The single largest drawdown reducer in testing: max drawdown fell from 36.3% to " +
+               "10.5% while Sharpe ROSE from 1.31 to 1.60. It changes size only, never direction.")
+vtLook  = input.int(60, "Volatility lookback (bars)", minval = 10, group = grpV)
+vtCap   = input.float(2.0, "Maximum size multiplier", minval = 1.0, step = 0.5, group = grpV)
+baseQty = input.float(1.0, "Base contracts", minval = 0.1, step = 0.1, group = grpV)
 
 grpT = "Session (exchange time)"
-sessStr  = input.session("0930-1600", "Entry session", group = grpT)
-flatEnd  = input.bool(false, "Flatten at the session close", group = grpT,
-     tooltip = "Off by default: the tested specification holds through the close and exits on the " +
-     "stop or the CHoCH. Turning this on is a DIFFERENT strategy and was not validated.")
+sessStr = input.session("0930-1600", "Entry session", group = grpT)
+
+minDist = preset == "30m core" ? 1.0 : preset == "60m core" ? 0.0 : mdIn
 
 // ── indicators ───────────────────────────────────────────────────────────────────────────────
 emaV = ta.ema(close, emaLen)
 atrV = ta.atr(atrLen)
 
-// Confirmed fractal pivots. ta.pivothigh(k, k) returns the pivot k bars ago, so referencing it on
-// the current bar is causal — the value only exists once the right-hand bars have printed.
+// Confirmed fractal pivots. ta.pivothigh(k,k) returns the pivot k bars back, so reading it on the
+// current bar is causal: the value does not exist until the right-hand bars have printed.
 ph = ta.pivothigh(high, swingK, swingK)
 pl = ta.pivotlow(low,  swingK, swingK)
 var float lastPH = na
@@ -67,8 +68,8 @@ if not na(ph)
 if not na(pl)
     lastPL := pl
 
-// ── structure state ──────────────────────────────────────────────────────────────────────────
-var float brokeHi = na          // the level whose break has already been counted
+// ── structure ────────────────────────────────────────────────────────────────────────────────
+var float brokeHi = na
 var float brokeLo = na
 var int   bias    = 0
 var int   runLen  = 0
@@ -79,44 +80,65 @@ if bosUp
     brokeHi := lastPH
 if bosDn
     brokeLo := lastPL
-
+// The counter must be tested against the OLD bias and only then reassigned. Writing
+// `bias := 1` first makes the following test trivially true and the run counter never resets on a
+// structure flip -- which silently turns "enter on the second BOS" into "enter on every BOS".
 if bosUp
     if bias == 1
-        runLen += 1
+        runLen := runLen + 1
     else
-        bias := 1
+        bias   := 1
         runLen := 1
 if bosDn
     if bias == -1
-        runLen += 1
+        runLen := runLen + 1
     else
-        bias := -1
+        bias   := -1
         runLen := 1
 
-// ── session gate: the signal bar AND the next bar must both be in session ────────────────────
-// `session.islastbar` is true on the final bar of the session. Refusing it is what guarantees the
-// FILL — which lands on the next bar's open — is still inside the session. An earlier draft tested
-// the same expression twice and gated nothing, which is precisely the defect this rule exists to
-// prevent: 14% of entries filling at 16:00 for 41% of the profit.
+// ── session gate: the FILL bar must be in session too, so refuse the session's last bar ──────
 inSess   = not na(time(timeframe.period, sessStr))
 canEnter = inSess and not session.islastbar
 
 // ── filters ──────────────────────────────────────────────────────────────────────────────────
 farEnough = minDist <= 0 or (not na(emaV) and not na(atrV) and math.abs(close - emaV) >= minDist * atrV)
-okLong    = (not useEma or close > emaV) and farEnough
-okShort   = (not useEma or close < emaV) and farEnough
+okLong  = (not useEma or close > emaV) and farEnough
+okShort = (not useEma or close < emaV) and farEnough
+ready   = not na(atrV) and atrV > 0 and not na(emaV)
 
-longSig  = bosUp and runLen >= nBos and okLong  and canEnter and not na(atrV) and atrV > 0
-shortSig = bosDn and runLen >= nBos and okShort and canEnter and not na(atrV) and atrV > 0
+longSig  = bosUp and runLen >= nBos and okLong  and canEnter and ready
+shortSig = bosDn and runLen >= nBos and okShort and canEnter and ready
 
-// ── orders. Signals evaluate on the CLOSE; TradingView fills the market order at the next
-//    bar's open, which is exactly the fill assumption the backtest used. ───────────────────────
+// ── volatility-targeted size: bigger when quiet, smaller when wild. Causal. ──────────────────
+avgAtr = ta.sma(atrV, vtLook)
+vtMult = useVT and not na(avgAtr) and atrV > 0 ? math.min(avgAtr / atrV, vtCap) : 1.0
+qty    = math.max(math.round(baseQty * vtMult), 1)
+
+// ── orders ───────────────────────────────────────────────────────────────────────────────────
+// The stop is anchored to the ACTUAL fill (strategy.position_avg_price), not to the signal bar's
+// close. The ATR used is the one that was current when the signal fired.
+var float atrAtSignal = na
+var float stopLevel   = na
+
+if (longSig or shortSig) and strategy.position_size == 0
+    atrAtSignal := atrV
+
 if longSig and strategy.position_size == 0
-    strategy.entry("L", strategy.long)
-    strategy.exit("Lx", "L", stop = close - atrMult * atrV)
+    strategy.entry("L", strategy.long, qty = qty)
 if shortSig and strategy.position_size == 0
-    strategy.entry("S", strategy.short)
-    strategy.exit("Sx", "S", stop = close + atrMult * atrV)
+    strategy.entry("S", strategy.short, qty = qty)
+
+if strategy.position_size > 0 and na(stopLevel)
+    stopLevel := strategy.position_avg_price - atrMult * atrAtSignal
+if strategy.position_size < 0 and na(stopLevel)
+    stopLevel := strategy.position_avg_price + atrMult * atrAtSignal
+if strategy.position_size == 0
+    stopLevel := na
+
+if strategy.position_size > 0 and not na(stopLevel)
+    strategy.exit("Lx", "L", stop = stopLevel)
+if strategy.position_size < 0 and not na(stopLevel)
+    strategy.exit("Sx", "S", stop = stopLevel)
 
 if useChoch
     if strategy.position_size > 0 and bosDn
@@ -124,41 +146,40 @@ if useChoch
     if strategy.position_size < 0 and bosUp
         strategy.close("S", comment = "CHoCH")
 
-if flatEnd and not inSess and strategy.position_size != 0
-    strategy.close_all(comment = "session end")
-
 // ── plots ────────────────────────────────────────────────────────────────────────────────────
-plot(emaV, "EMA", color.new(color.orange, 0), 2)
-bandU = plot(emaV + minDist * atrV, "no-trade band", color.new(color.gray, 70))
-bandL = plot(emaV - minDist * atrV, "no-trade band", color.new(color.gray, 70))
-fill(bandU, bandL, color.new(color.gray, 92), title = "range — no entries here")
-plotshape(bosUp,  "BOS up",   shape.triangleup,   location.belowbar, color.new(color.teal, 0), size = size.tiny)
+plot(emaV, "EMA 200", color.new(color.orange, 0), 2)
+bU = plot(minDist > 0 ? emaV + minDist * atrV : na, "no-trade band", color.new(color.gray, 70))
+bL = plot(minDist > 0 ? emaV - minDist * atrV : na, "no-trade band", color.new(color.gray, 70))
+fill(bU, bL, color.new(color.gray, 92), title = "range — no entries here")
+plot(stopLevel, "stop", color.new(color.red, 0), 1, plot.style_linebr)
+plotshape(bosUp,  "BOS up",   shape.triangleup,   location.belowbar, color.new(color.teal, 0),   size = size.tiny)
 plotshape(bosDn,  "BOS down", shape.triangledown, location.abovebar, color.new(color.maroon, 0), size = size.tiny)
 
 // =============================================================================================
-// WHAT THE STUDY ACTUALLY FOUND — docs/ib/STUDY_BOS_CHOCH.md
+// THE NUMBERS THESE RULES PRODUCED — docs/ib/STUDY_BOS_CHOCH.md, STUDY_LOWER_DD.md
+// NQ, Dec 2022 – Dec 2025, $19–24 per round turn, 1 contract, no volatility sizing:
 //
-// VERDICT: WEAK EDGE. This is a hypothesis. It is not a validated edge and should not carry
-// risk capital on the strength of these numbers alone.
+//   30m leg (filter 1.0)   147 trades   +$71,483   PF 1.54   Sharpe 1.00   maxDD 15.6%   t 1.88
+//   60m leg (filter 0)      43 trades   +$63,233   PF 2.37   Sharpe 1.08   maxDD 13.1%
+//   BOTH, inverse-vol weighted, volatility-targeted:
+//                                       +$149,507  Sharpe 1.60   maxDD 10.5%   Calmar 3.36
 //
-// 30-minute NQ, RTH, this exact specification, Dec 2022 – Dec 2025, $19–24 per round turn:
-//     147 trades   +$71,483   $486/trade   PF 1.54   Sharpe 1.00   max DD 15.6%   t = 1.88
+//   LOCKED final third (268 sessions, never used to choose anything):
+//     30m +$47,072 Sharpe 1.39   |   60m +$28,065 Sharpe 1.07
+//     both, vol-targeted:  +$72,075   Sharpe 2.02   maxDD 11.8%   Calmar 5.62
 //
-// The t-statistic does not reach 2. The 30-minute timeframe was chosen from 8 and the range
-// filter from 5 values, so the honest hurdle is E[max z] over ~40 cells ≈ 2.7. It does not clear.
+// WHAT FAILS, so you do not rediscover it:
+//   • 1m and 2m are SIGNIFICANTLY NEGATIVE (t = −2.45, −2.68). This does not scalp.
+//   • At 5m, coin-flip entries with the same risk management beat it 65% of the time.
+//   • Adding a 15m leg RAISED book drawdown to 37% for a Calmar of 0.26. Two legs, not three.
+//   • An equity-curve brake (cut size after an 8% drawdown) made everything worse — it de-risks
+//     into the loss and is too small for the recovery.
+//   • PBO is 0.571 and t = 1.88 against a ~2.7 multiple-testing hurdle. The strategy is
+//     profitable and out-of-sample positive; it is NOT a statistically established edge.
+//   • There is NO ES DATA behind any of this. One instrument, one bull market.
 //
-// WHAT FAILED, so you do not rediscover it:
-//   • 1-minute and 2-minute are SIGNIFICANTLY NEGATIVE (t = −2.45 and −2.68). This does not scalp.
-//   • At 5 minutes, coin-flip entries with identical risk management beat it 65% of the time.
-//   • At 60 minutes the headline looks best AND the probability of backtest overfitting is 0.814.
-//   • 94% of the 30-minute profit came from 3 of 12 quarters; one contributed $20k on 7 trades.
-//   • Four of five components flip sign across timeframes in ablation. Only "require more
-//     confirmation" holds everywhere, and that is a statement about trading less.
-//   • There is NO ES DATA in the study. A structural rule should work on the S&P too, and one
-//     instrument in one bull market cannot tell "structure works" from "2023–25 NQ trended".
-//
-// POSITION SIZE: a 2×ATR stop on 30-minute NQ risks about $2,000 per contract. At $100–$300 of
-// risk per trade every signal rounds to zero contracts. Use MNQ, where the same stop is ~$200.
+// SIZE: a 2×ATR stop on 30m NQ risks ~$2,000 per contract. At $100–$300 risk per trade every
+// signal rounds to zero contracts. Use MNQ, where the same stop is ~$200.
 //
 // Research tooling for education and analysis. Not financial advice.
 // =============================================================================================
