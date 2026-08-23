@@ -119,8 +119,10 @@ atrMult   = lockSpec ? 2.0 : atrMultIn
 tpR     = input.float(2.0, "Take-profit at N x risk  (0 = off)", minval = 0, step = 0.5, group = grpR,
      tooltip = "THE ONE VALIDATED IMPROVEMENT found in this work, and the only change that beat " +
                "the baseline on BOTH the research block and the locked holdout. MNQ 30m: net " +
-               "$7,060 -> $11,679, PF 1.53 -> 1.64, win 40.1% -> 44.0%, Sharpe 2.28 -> 2.93, " +
-               "Calmar 3.40 -> 4.08 (see the Sharpe note in the footer). Picked in ALL SIX folds. It also has a mechanism " +
+               "$7,060 -> $11,679, PF 1.53 -> 1.64, win 40.1% -> 44.0%, Sharpe 0.90 -> 1.14 " +
+               "(annualised over EVERY session, not just the ~15% that hold a trade -- earlier " +
+               "revisions of this file quoted 2.28 -> 2.93, which was inflated ~2.6x). " +
+               "Picked in ALL SIX walk-forward folds. It also has a mechanism " +
                "rather than just a number: measured against the driftless barrier bound " +
                "R_down/(R_up+R_down), this signal's excess win rate PEAKS at the 2:1 barrier " +
                "(+10.7 points, vs +6.0 at 1:1 and +8.6 at 3:1). BUT: max drawdown RISES from " +
