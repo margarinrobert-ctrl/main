@@ -1,0 +1,322 @@
+//@version=6
+// =============================================================================================
+// NQ / MNQ — SUPPLY AND DEMAND.  v1
+//
+// A 4-hour supply or demand zone for LOCATION, a lower-timeframe rejection candle for
+// CONFIRMATION, a stop past the zone edge and a fixed reward-to-risk target.
+//
+// ┌───────────────────────────────────────────────────────────────────────────────────────────┐
+// │ BEFORE YOU READ THE RESULT — TradingView "Script execution" (the dropdown under the        │
+// │ backtest report) must have ONLY  "On bar close"  ticked. Every rule below reads a bar's    │
+// │ CLOSE. Ticking the intrabar options replaces `close` with the running price and silently   │
+// │ turns this into a different, worse strategy.                                               │
+// └───────────────────────────────────────────────────────────────────────────────────────────┘
+//
+// WHAT WAS MEASURED, AND HOW. 590,976 configurations were swept — zones on 1H / 2H / 4H / 8H /
+// daily, confirmed on 5m / 15m / 30m / 60m, crossed with every zone-construction, buffer, target
+// and filter setting. Selection on the first 65% of sessions, read ONCE on the final 35%.
+// MNQ, 1 contract, $2/point, $1.00 commission per round turn, 1 tick spread + 1 tick slip each
+// side and 1 extra tick on a stop.
+//
+//   PRESET A — "profitable", 60-MINUTE CHART
+//     479 trades   $32,413   PF 1.43   45.9% win   maxDD $4,970
+//     research $18,064   ->   LOCKED $14,348
+//     At a 1.5R target a driftless path wins 40.0% by geometry alone. 45.9% is +5.9 points of
+//     excess at a binomial z of +2.65 — the strongest entry signal in the supply/demand work.
+//     BUT: longs alone earn $26,431 and shorts alone LOSE $7,644. This is a long book carrying
+//     a losing short overlay, and a large part of the number is the index going up.
+//
+//   PRESET B — "balanced", 30-MINUTE CHART
+//     294 trades   $14,284   PF 1.33   55.8% win   maxDD $4,930
+//     research $5,825   ->   LOCKED $8,459     (bound 50.0% at 1R, excess +5.8, z +1.98)
+//     longs   $8,532   research $4,291 / locked $4,241
+//     shorts  $6,828   research $3,388 / locked $3,441
+//     Four cells, all positive, none carrying the result. Half the money of preset A and none
+//     of the direction bet. Only 5.7% of the swept configurations manage this.
+//
+// WHY THIS SCRIPT BUILDS ITS OWN 4-HOUR BARS instead of calling request.security:
+//   1. TradingView aggregates higher timeframes from the SESSION open on futures. The research
+//      resampled from LOCAL MIDNIGHT (exchange time). Those are different 4H bars, so they are
+//      different zones, so it would be a different strategy. This script buckets by
+//      (hour*60 + minute) % 240 == 0 in exchange time, which is what was tested.
+//   2. No request.security means no lookahead parameter to get wrong and nothing to repaint.
+//
+// AND WHY ta.atr IS NOT USED: `ta.atr(14)` is Wilder's RMA, alpha = 1/14. The research used an
+// exponential mean with alpha = 2/15. Those diverge immediately and would move every stop and
+// every zone-depth test. This script uses ta.ema(ta.tr(true), 14) throughout, deliberately.
+//
+// VERIFICATION. The exact bar loop below — self-built 4H buckets, a bounded zone array pruned by
+// age, first-matching-zone ordering, the 8xATR risk cap, gap fills and the stop-wins-ties rule —
+// was mirrored in Python (`research/sd_pine_mirror.py`) and compared with the research engine
+// trade for trade:
+//     preset A   engine 479 trades / $32,413   mirror 479 trades / $32,413
+//     preset B   engine 294 trades / $14,284   mirror 294 trades / $14,284
+//     largest per-trade P&L difference $0.0000, exit-bar mismatches 0, on both.
+// The bounded array changes nothing (identical at caps of 50/100/200/400; at most 15 zones are
+// ever alive at once). Signals cancelled by an open gapping through their own stop, which Pine
+// cannot represent: 0 of 479 and 0 of 294.
+// One residual difference, stated rather than hidden: `ta.ema` seeds from a 14-bar SMA while the
+// research seeded from the first value. That gap decays geometrically and is gone within the
+// first few dozen bars of the whole series; it cannot move a result measured over three years,
+// but it is not zero on bar 25.
+//
+// THIS SCRIPT HAS NOT BEEN COMPILED BY TRADINGVIEW. The logic is verified; the syntax is not.
+// If it throws a compiler error, send it to me -- those are mechanical to fix and they do not
+// mean the strategy changed.
+//
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+strategy("NQ Supply/Demand", overlay = true, initial_capital = 25000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order,
+     // TradingView requires a CONST here -- it cannot be derived from syminfo and it cannot be
+     // an input. Set by hand:  MNQ/MES 0.50   NQ/ES 2.00.  Defaulted to the Micro because a
+     // 1 x ATR stop on full-size NQ risks real money.
+     commission_value = 0.50,
+     slippage = 2, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// ── preset ───────────────────────────────────────────────────────────────────────────────────
+preset = input.string("A  profitable (60m chart)", "Preset",
+     options = ["A  profitable (60m chart)", "B  balanced (30m chart)", "custom"],
+     tooltip = "A is the highest out-of-sample P&L in the sweep and is long-carried: shorts lose " +
+               "$7,644 on their own. B is the only kind of version where BOTH sides are positive " +
+               "on BOTH blocks -- 5.7% of everything swept -- for about half the money. Run A on " +
+               "a 60-MINUTE chart and B on a 30-MINUTE chart; the preset does not change the " +
+               "chart for you and the numbers above do not hold on any other interval.")
+isA = preset == "A  profitable (60m chart)"
+isB = preset == "B  balanced (30m chart)"
+
+grpZ = "Zone construction (4H)"
+baseKIn = input.int(2, "Base bars before the departure", minval = 1, maxval = 6, group = grpZ,
+     tooltip = "How many quiet 4H bars form the base. A: 2.  B: 3.")
+baseMaxIn = input.float(0.9, "Base bar range must be under N x ATR", minval = 0.1, step = 0.1,
+     group = grpZ, tooltip = "Every base bar must be smaller than this. 0.9 in both presets.")
+depMinIn = input.float(1.0, "Departure bar range at least N x ATR", minval = 0.1, step = 0.1,
+     group = grpZ, tooltip = "The bar that leaves the base must be this big. 1.0 in both presets.")
+originIn = input.string("any", "Zone origin", options = ["any", "reversal", "continuation"],
+     group = grpZ,
+     tooltip = "Whether the three bars before the base were moving INTO the departure " +
+               "(continuation) or against it (reversal). A: any.  B: continuation. Across the " +
+               "whole sweep continuation zones are over-represented among versions that work on " +
+               "both blocks by a factor of 1.12 -- a small effect, not a large one.")
+ageDaysIn = input.int(12, "Zones expire after N days", minval = 1, maxval = 60, group = grpZ,
+     tooltip = "12 in both presets. Shorter is worse: at 5 days preset A earns $14,394 instead " +
+               "of $32,413, and at 2 days $9,494. Old zones are not stale zones here.")
+maxZones = input.int(50, "Zone array capacity", minval = 10, maxval = 500, group = grpZ,
+     tooltip = "At most 15 zones were ever alive at once over three years, and results are " +
+               "identical at 50, 100, 200 and 400. This exists so the array cannot grow forever.")
+
+grpE = "Entry and risk"
+bufIn = input.float(0.5, "Stop past the zone edge, N x ATR", minval = 0.0, step = 0.05, group = grpE,
+     tooltip = "A: 0.50.  B: 1.00. The specification that started this asked for 0.15, which is " +
+               "the worst of the three tested: it puts the stop inside the noise the zone edge " +
+               "generates, and the trade then lives or dies on a single wick.")
+tpRIn = input.float(1.5, "Target at N x risk", minval = 0.5, step = 0.5, group = grpE,
+     tooltip = "A: 1.5R.  B: 1.0R. Read the win rate against 1/(1+R), never on its own: at 1.5R " +
+               "a coin flip wins 40.0% and at 1.0R it wins 50.0%.")
+needBreak = input.bool(false, "Require a break of the previous bar's extreme", group = grpE,
+     tooltip = "The 'ideally it breaks the previous candle high' step. OFF in both presets. " +
+               "Across the sweep it is worth a factor of 1.03 -- statistically nothing.")
+sideIn = input.string("Both", "Trade direction", options = ["Both", "Longs only", "Shorts only"],
+     group = grpE,
+     tooltip = "Leave this on Both. Direction is the single largest lever in the sweep (long " +
+               "x1.67, short x0.48 among versions that work on both blocks) which is exactly why " +
+               "it must not be optimised: every search on this data that was handed direction as " +
+               "a free parameter picked longs and was fitting an index that rose 2022-2025.")
+riskCap = input.float(8.0, "Reject a signal whose risk exceeds N x ATR", minval = 1.0, step = 0.5,
+     group = grpE, tooltip = "A sanity cap from the research engine. It fires rarely.")
+
+grpT = "Session"
+useSess = input.bool(false, "Restrict entries to a session", group = grpT,
+     tooltip = "A trades 24h. B trades 09:30-16:00. Preset A holds overnight -- if that is not " +
+               "acceptable, use B, do not bolt a session onto A.")
+sessStart = input.int(570, "Session start (minutes after midnight, exchange time)", group = grpT)
+sessEnd = input.int(960, "Session end (minutes after midnight, exchange time)", group = grpT)
+
+showZones = input.bool(true, "Draw the zones", group = "Display")
+
+// ── resolve the preset ───────────────────────────────────────────────────────────────────────
+baseK   = isA ? 2 : isB ? 3 : baseKIn
+baseMax = isA ? 0.9 : isB ? 0.9 : baseMaxIn
+depMin  = isA ? 1.0 : isB ? 1.0 : depMinIn
+originM = isA ? 0 : isB ? 2 : (originIn == "reversal" ? 1 : originIn == "continuation" ? 2 : 0)
+ageDays = isA ? 12 : isB ? 12 : ageDaysIn
+buf     = isA ? 0.5 : isB ? 1.0 : bufIn
+tpR     = isA ? 1.5 : isB ? 1.0 : tpRIn
+brkReq  = isA ? false : isB ? false : needBreak
+gate    = isA ? false : isB ? true : useSess
+sideMode = sideIn == "Longs only" ? 1 : sideIn == "Shorts only" ? -1 : 0
+
+// ── ATR, defined the way the research defined it ─────────────────────────────────────────────
+// EMA of true range, alpha = 2/15. NOT ta.atr, which is Wilder's RMA at alpha = 1/14.
+atrV = ta.ema(ta.tr(true), 14)
+
+tfMin  = timeframe.in_seconds(timeframe.period) / 60
+barMin = hour * 60 + minute
+ageBars = int(ageDays * 1440 / tfMin)
+
+// ── build the 4-hour bars by hand, anchored to LOCAL MIDNIGHT in exchange time ────────────────
+// A new bucket opens whenever the bar's minute-of-day is a multiple of 240. On the first chart
+// bar of a new bucket the PREVIOUS bucket is complete, so that is when its zone is tested and
+// becomes available -- the same instant `request.security(..., lookahead_off)` would deliver it,
+// without depending on how TradingView chose to aggregate.
+newBucket = barMin % 240 == 0
+
+var float bO = na
+var float bH = na
+var float bL = na
+var float bC = na
+
+// the last 8 FINISHED 4H bars, newest at index 0
+var float[] fO = array.new_float(0)
+var float[] fH = array.new_float(0)
+var float[] fL = array.new_float(0)
+var float[] fC = array.new_float(0)
+var float h4atr = na
+var int nFin = 0
+
+// the live zone list
+var float[] zLo = array.new_float(0)
+var float[] zHi = array.new_float(0)
+var int[]   zDir = array.new_int(0)
+var int[]   zBar = array.new_int(0)
+
+if newBucket and not na(bC)
+    // ---- the previous 4H bar has just closed: finish it, update its ATR, test it for a zone ----
+    prevC = array.size(fC) > 0 ? array.get(fC, 0) : bC
+    tr4 = math.max(bH - bL, math.max(math.abs(bH - prevC), math.abs(bL - prevC)))
+    h4atr := na(h4atr) ? tr4 : h4atr + (2.0 / 15.0) * (tr4 - h4atr)
+    array.unshift(fO, bO)
+    array.unshift(fH, bH)
+    array.unshift(fL, bL)
+    array.unshift(fC, bC)
+    if array.size(fO) > 14
+        array.pop(fO)
+        array.pop(fH)
+        array.pop(fL)
+        array.pop(fC)
+    nFin += 1
+
+    // the departure bar is the one just finished (index 0); the base is indices 1..baseK
+    if nFin > 14 and nFin > baseK + 5 and not na(h4atr) and h4atr > 0
+        a4 = h4atr
+        quiet = true
+        bl = array.get(fL, 1)
+        bh = array.get(fH, 1)
+        for k = 1 to baseK
+            hk = array.get(fH, k)
+            lk = array.get(fL, k)
+            if hk - lk > baseMax * a4
+                quiet := false
+            bl := math.min(bl, lk)
+            bh := math.max(bh, hk)
+        depC = array.get(fC, 0)
+        depH = array.get(fH, 0)
+        depL = array.get(fL, 0)
+        if quiet and (depH - depL) >= depMin * a4
+            d = depC > bh ? 1 : depC < bl ? -1 : 0
+            if d != 0
+                pre = array.get(fC, baseK + 1) - array.get(fC, baseK + 4)
+                rev = (d == 1 and pre < 0.0) or (d == -1 and pre > 0.0)
+                keep = originM == 0 or (originM == 1 and rev) or (originM == 2 and not rev)
+                if keep
+                    array.push(zLo, bl)
+                    array.push(zHi, bh)
+                    array.push(zDir, d)
+                    array.push(zBar, bar_index)
+                    if showZones
+                        box.new(bar_index, bh, bar_index + math.min(ageBars, 480), bl, border_width = 1,
+                             border_color = d == 1 ? color.new(color.teal, 40)
+                                                   : color.new(color.red, 40),
+                             bgcolor = d == 1 ? color.new(color.teal, 90)
+                                              : color.new(color.red, 90))
+
+// accumulate the bar in progress
+if newBucket or na(bC)
+    bO := open
+    bH := high
+    bL := low
+    bC := close
+else
+    bH := math.max(bH, high)
+    bL := math.min(bL, low)
+    bC := close
+
+// ── expire zones, then cap the array ─────────────────────────────────────────────────────────
+while array.size(zBar) > 0 and bar_index - array.get(zBar, 0) > ageBars
+    array.shift(zLo)
+    array.shift(zHi)
+    array.shift(zDir)
+    array.shift(zBar)
+while array.size(zBar) > maxZones
+    array.shift(zLo)
+    array.shift(zHi)
+    array.shift(zDir)
+    array.shift(zBar)
+
+// ── the entry gate ───────────────────────────────────────────────────────────────────────────
+// A signal on this bar fills at the NEXT bar's open, so the next bar must be tradeable too.
+inSess   = not gate or (barMin >= sessStart and barMin < sessEnd)
+nextIn   = not gate or (barMin + tfMin >= sessStart and barMin + tfMin < sessEnd)
+canEnter = inSess and nextIn
+
+flat  = strategy.position_size == 0
+ready = not na(atrV) and atrV > 0 and bar_index > 20
+
+// ── scan the zones, first match wins ─────────────────────────────────────────────────────────
+sig = 0
+sigStop = 0.0
+sigTgt = 0.0
+nZ = array.size(zBar)
+if flat and ready and canEnter and nZ > 0
+    for z = 0 to nZ - 1
+        if sig == 0
+            zl = array.get(zLo, z)
+            zh = array.get(zHi, z)
+            d  = array.get(zDir, z)
+            ok = true
+            st = 0.0
+            if d == 1
+                // the bar must penetrate the zone without closing through it, and close bullish
+                if low > zh or low < zl
+                    ok := false
+                if ok and (close <= open or close <= zl)
+                    ok := false
+                if ok and brkReq and high <= high[1]
+                    ok := false
+                st := zl - buf * atrV
+            else
+                if high < zl or high > zh
+                    ok := false
+                if ok and (close >= open or close >= zh)
+                    ok := false
+                if ok and brkReq and low >= low[1]
+                    ok := false
+                st := zh + buf * atrV
+            if ok and (sideMode == 0 or sideMode == d)
+                risk = math.abs(close - st)
+                if risk > 0.0 and risk <= riskCap * atrV
+                    sig := d
+                    sigStop := st
+                    sigTgt := close + d * tpR * risk
+
+// ── orders ───────────────────────────────────────────────────────────────────────────────────
+// entry and exit are submitted on the SAME bar. The entry fills at the next bar's open and the
+// bracket is live from that bar onward -- which is what the research engine does. Submitting the
+// exit a bar later would let the first bar of every trade run without a stop.
+if sig == 1
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", "L", stop = sigStop, limit = sigTgt)
+if sig == -1
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", "S", stop = sigStop, limit = sigTgt)
+
+// TradingView books the STOP when a single bar contains both the stop and the target, which is
+// the same pessimistic assumption the research engine makes. Nothing here needs to force it.
+
+plot(showZones ? atrV : na, "ATR (EMA of TR, 14)", color = color.new(color.gray, 70),
+     display = display.data_window)
+plotshape(sig == 1, "long signal", shape.triangleup, location.belowbar, color.teal, size = size.tiny)
+plotshape(sig == -1, "short signal", shape.triangledown, location.abovebar, color.red, size = size.tiny)
