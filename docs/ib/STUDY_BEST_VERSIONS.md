@@ -193,6 +193,63 @@ chosen with the holdout visible. The clean number is the honest simulation's **S
 statistics said, and it is the more useful answer, because the question is what happens next rather
 than what happened on average since 2022.
 
+
+## Test scorecard — V2 as shipped
+
+Run against the exact specification (30m, EMA 200, 2×ATR, k=3, refuse within 1 ATR, in-session
+fills). `research/bos_scorecard.py`.
+
+```
+n = 147   net $71,483   $486/trade   PF 1.54   Sharpe 1.02   maxDD 15.6%   t = 1.88
+```
+
+| # | test | result | verdict |
+| --- | --- | --- | --- |
+| 1 | profitable after full costs | +$71,483, PF 1.54 | **PASS** |
+| 2 | positive gross *and* net | both | **PASS** |
+| 3 | random-entry control | 95.3rd percentile | **PASS** |
+| 4 | Monte Carlo, 20k paths | P(loss) 0.0%, median DD 15.1% | **PASS** |
+| 5 | cost sensitivity | still profitable at 6× costs | **PASS** |
+| 6 | locked holdout | $47,072, Sharpe 1.39 | **PASS** |
+| 7 | honest simulation (select on research only) | Sharpe 1.07 OOS | **PASS** |
+| 8 | research→holdout rank correlation | **+0.711** | **PASS** |
+| 9 | parameter plateau (EMA × ATR multiple) | 36/36 cells positive | **PASS** |
+| 10 | both sides profitable | longs $47,412 (t 2.41), shorts $24,071 (t 1.02) | **PASS** |
+| 11 | half-yearly consistency | 5 of 6 positive | **PASS** |
+| 12 | no look-ahead | 7-bar delay measured, pivots unit-tested | **PASS** |
+| 13 | **bootstrap CI excludes zero** | **[−$30, +$1,045]**, P(edge≤0) 3.3% | **FAIL** |
+| 14 | **probability of backtest overfitting** | **PBO 0.571** | **FAIL** |
+| 15 | **multiple testing, 40 cells** | t 1.88 vs hurdle 2.72 | **FAIL** |
+| 16 | **multiple testing, 72 cells** | t 1.88 vs hurdle 2.92 | **FAIL** |
+| 17 | **swing-length stability** | different optimum at every timeframe | **FAIL** |
+| 18 | **ablation consistency** | 4 of 5 components flip sign | **FAIL** |
+| 19 | cross-instrument (ES) | no data | **NOT RUN** |
+
+**12 passed, 6 failed, 1 could not be run.**
+
+### The two failures that matter most
+
+**PBO = 0.571.** The configuration that looks best in-sample lands in the *bottom half* out of sample
+57% of the time — worse than a coin flip. Adding the range filter made this *worse* (0.471 → 0.571).
+Whatever is working here, the procedure for finding it does not generalise.
+
+**t = 1.88 against a hurdle of 2.72.** The 30-minute timeframe was chosen from 8 and the filter from
+5. A best-of-40 search draws E[max z] ≈ 2.72 from noise alone. This does not clear it.
+
+### The tension, stated rather than resolved
+
+Tests 6–8 are genuinely strong: the holdout returned Sharpe 1.39, the honest selection procedure
+returned 1.07, and the research→holdout rank correlation of **+0.711** is unlike anything else in this
+repository (the IB grid gave −0.079; the 400,226-cell trend search +0.11).
+
+Tests 13–16 are genuinely damning: the confidence interval crosses zero and the selection procedure
+is worse than random.
+
+Both are true. The reconciliation is probably that the *level* of performance in any single cell is
+noisy (hence PBO and the wide CI), while the *ordering* across cells carries real information (hence
++0.711). That is consistent with a small real effect buried in a lot of variance — which is exactly
+what 147 trades on one instrument in one bull market cannot settle.
+
 ## Reproduce
 
 ```bash
@@ -200,4 +257,5 @@ python3 research/best_versions.py    # the three versions, the book, MNQ, and th
 python3 research/bos_report.py       # the battery V2 came out of
 python3 research/validate.py         # re-verifies V1 (full-sample)
 python3 research/best_oos.py         # the locked-split test and the honest simulation
+python3 research/bos_scorecard.py    # the 19-test scorecard on the shipped spec
 ```
