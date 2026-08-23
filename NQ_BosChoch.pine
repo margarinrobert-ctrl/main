@@ -135,6 +135,44 @@ useChoch= input.bool(false, "Exit on the opposite BOS (CHoCH)", group = grpR,
                "CHoCH cuts winners before they reach the target. Use ONE of them. " +
                "CHoCH-only (tpR = 0, this ON) is the older tested spec.")
 
+grpX = "ADX / Stochastic  (TESTED — none of these help)"
+// Both were tested against this exact book on MNQ 30m and both LOST. They are here so the result
+// can be reproduced on your own chart, not because they are recommended. Every default is OFF.
+//
+//                              research $   LOCKED $      (baseline: $2,747 / $8,932)
+//   ADX(14) > 20                    1,661      7,496
+//   ADX(14) > 25                    1,016      5,110
+//   ADX(14) > 30                     -877      5,014
+//   ADX(14) rising 3 bars           3,168      6,262   <- BEST on research, worse on locked
+//   Stoch veto K>80 / K<20            902       -711   <- destroys the sample, see below
+//   Stoch %K > %D                   3,345      5,370   <- BEST on research, worse on locked
+//   a 476-cell sweep of both        3,190      2,138   <- best-on-research; searching cost $6,794
+//
+// WHY THE STOCHASTIC CANNOT WORK HERE. Measured at the moment each signal fires: LONG signals
+// have a median %K of 95.7 with 91.8% above 80; SHORT signals a median of 5.4 with 95.6% below 20.
+// A break of structure IS a new extreme of the recent range, and %K measures exactly where the
+// close sits in that range, so a bullish BOS prints %K near 100 almost mechanically. Vetoing
+// "overbought" longs does not filter this strategy, it DELETES it: 92 research trades become 9,
+// and 49 locked trades become 2. The oscillator is measuring the same quantity the entry rule is
+// built on. No threshold fixes that.
+//
+// WHY ADX DOES NOT HELP. As the threshold rises the COUNT falls sharply (92 -> 77 -> 63 -> 43)
+// while profit factor and win rate barely move. A filter that changes n without changing the
+// profile of what survives is sampling, not selecting -- and randomly sampling a
+// positive-expectancy set can only reduce the total. A filter earns its place by making the
+// surviving trades BETTER, not fewer.
+useAdxMin   = input.bool(false, "Require ADX above a threshold", group = grpX)
+adxLen      = input.int(14, "ADX length", minval = 2, group = grpX)
+adxMin      = input.float(20.0, "ADX minimum", minval = 0, step = 1, group = grpX)
+useAdxRise  = input.bool(false, "Require ADX rising over 3 bars", group = grpX)
+useStochVeto= input.bool(false, "Veto overbought longs / oversold shorts", group = grpX,
+     tooltip = "This is the one that deletes the strategy. At 80 it cuts 92 trades to 9.")
+stochLen    = input.int(14, "Stochastic length", minval = 2, group = grpX)
+stochLim    = input.float(80.0, "Veto longs above this %K (mirrored for shorts)", minval = 50,
+     maxval = 100, step = 5, group = grpX)
+useStochAlign = input.bool(false, "Require %K above %D (mirrored for shorts)", group = grpX)
+showOsc     = input.bool(false, "Plot ADX and %K in a pane", group = grpX)
+
 grpV = "Volatility-targeted sizing"
 useVTIn = input.bool(false, "Size inversely to recent volatility", group = grpV,
      tooltip = "OFF by default: the reference figures were measured at a FIXED 1 contract, so " +
@@ -230,6 +268,18 @@ nextIn   = barMin + tfMin >= sessStart and barMin + tfMin < sessEnd
 newSess  = inSess and not inSess[1]
 canEnter = inSess and nextIn and not newSess
 
+// ── ADX / Stochastic ─────────────────────────────────────────────────────────────────────────
+[diPlusV, diMinusV, adxV] = ta.dmi(adxLen, adxLen)
+kV = ta.stoch(close, high, low, stochLen)
+dV = ta.sma(kV, 3)
+
+adxOk = (not useAdxMin  or (not na(adxV) and adxV >= adxMin)) and
+        (not useAdxRise or (not na(adxV) and not na(adxV[3]) and adxV > adxV[3]))
+stoLongOk  = (not useStochVeto  or (not na(kV) and kV <= stochLim)) and
+             (not useStochAlign or (not na(kV) and not na(dV) and kV > dV))
+stoShortOk = (not useStochVeto  or (not na(kV) and kV >= 100.0 - stochLim)) and
+             (not useStochAlign or (not na(kV) and not na(dV) and kV < dV))
+
 // ── filters ──────────────────────────────────────────────────────────────────────────────────
 farEnough = minDist <= 0 or (not na(emaV) and not na(atrV) and math.abs(close - emaV) >= minDist * atrV)
 okLong  = (not useEma or close > emaV) and farEnough
@@ -237,7 +287,9 @@ okShort = (not useEma or close < emaV) and farEnough
 ready   = not na(atrV) and atrV > 0 and not na(emaV)
 
 longSig  = bosUp and runLen >= nBos and okLong  and canEnter and ready and sideMode >= 0
+     and adxOk and stoLongOk
 shortSig = bosDn and runLen >= nBos and okShort and canEnter and ready and sideMode <= 0
+     and adxOk and stoShortOk
 
 // ── volatility-targeted size: bigger when quiet, smaller when wild. Causal. ──────────────────
 avgAtr = ta.sma(atrV, vtLook)
@@ -317,6 +369,14 @@ if showDiag and barstate.islast
          "\nentry window " + str.tostring(math.round(sessStart + tfMin)) + "-" +
              str.tostring(math.round(sessEnd - tfMin)) + " (exchange minutes)" +
          "\nvol sizing " + (useVT ? "ON — P&L will not match reference" : "off") +
+         "\nADX filter " + (useAdxMin ? ">" + str.tostring(adxMin) : "off") +
+             (useAdxRise ? " + rising" : "") +
+             "    Stoch " + (useStochVeto ? "veto " + str.tostring(stochLim) : "off") +
+             (useStochAlign ? " + K>D" : "") +
+             ((useAdxMin or useAdxRise or useStochVeto or useStochAlign) ?
+                 "   <<< a tested LOSER is engaged" : "") +
+         "\n  ADX now " + (na(adxV) ? "--" : str.tostring(math.round(adxV))) +
+             "   %K now " + (na(kV) ? "--" : str.tostring(math.round(kV))) +
          "\n— exits —" +
          "\nposition closes " + str.tostring(nCloses) +
          "\n  of which CHoCH " + str.tostring(nChoch) +
@@ -357,6 +417,14 @@ plot(tpLevel, "target", color.new(color.green, 0), 1, plot.style_linebr)
 plotshape(bosUp and inSess, "BOS up",   shape.triangleup,   location.belowbar, color.new(color.teal, 0),   size = size.tiny)
 plotshape(bosDn and inSess, "BOS down", shape.triangledown, location.abovebar, color.new(color.maroon, 0), size = size.tiny)
 bgcolor(showSess and canEnter ? color.new(color.blue, 94) : na, title = "entry window")
+
+// Optional oscillator pane. Off by default -- these are diagnostics for reproducing the negative
+// result above, not inputs to the rule.
+plot(showOsc ? adxV : na, "ADX", color.new(color.yellow, 0), 1, display = display.pane)
+plot(showOsc ? kV : na, "Stoch %K", color.new(color.aqua, 0), 1, display = display.pane)
+plot(showOsc ? dV : na, "Stoch %D", color.new(color.fuchsia, 0), 1, display = display.pane)
+hline(showOsc ? 80 : na, "80", color.new(color.gray, 60))
+hline(showOsc ? 20 : na, "20", color.new(color.gray, 60))
 
 // =============================================================================================
 // WHAT THESE RULES PRODUCED — docs/ib/STUDY_BOS_CHOCH.md, STUDY_LOWER_DD.md, STUDY_MNQ_LIVE.md
