@@ -61,7 +61,9 @@ usess=np.unique(sess); cut=usess[int(0.65*len(usess))]
 def row(tag,p,e):
     w=p[p>0]; ls=p[p<=0]; eq=np.cumsum(p)
     dd=(np.maximum.accumulate(np.r_[0,eq])-np.r_[0,eq]).max()
-    ds=np.bincount(sess[e]-sess[e].min(),weights=p); sh=ds.mean()/ds.std()*np.sqrt(252)
+    u=np.unique(sess); ds=np.zeros(len(u)); ix={q:j for j,q in enumerate(u)}
+    for v,q in zip(p,sess[e]): ds[ix[q]] += v
+    sh=ds.mean()/ds.std()*np.sqrt(252)      # ALL sessions, zero on non-trading days
     m=sess[e]<cut
     print(f"{tag:<34}{len(p):>5}{p.sum():>10,.0f}{w.sum()/-ls.sum():>7.2f}{100*len(w)/len(p):>7.1f}"
           f"{dd:>9,.0f}{sh:>8.2f}{p[~m].sum():>11,.0f}")

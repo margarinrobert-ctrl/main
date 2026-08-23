@@ -180,10 +180,17 @@ for tag,kw in (("baseline: CHoCH only",dict(tp_r=0.0,keep_choch=True)),
 print(); print("="*82)
 print("6. WALK-FORWARD, 6 expanding folds, re-selecting the exit each fold"); print("="*82)
 folds=np.array_split(usess,7)
-def dsh(p,e,mask):
+# SHARPE: the series must span EVERY session in the block, with zero on days that did not trade.
+# Building it from sessions that HELD a trade and then multiplying by sqrt(252) annualises a
+# ~140-day series as though every day of the year were a trading day. This rule is flat on ~85%
+# of sessions, so that inflated Sharpe by ~2.6x (see docs/ib/STUDY_MNQ_LIVE.md).
+def dsh(p,e,mask,universe=None):
     x=p[mask]; s=sess[e][mask]
     if len(x)<5: return -9
-    u=np.unique(s); ds=np.array([x[s==q].sum() for q in u])
+    if universe is None: universe = np.unique(sess)
+    ds = np.zeros(len(universe)); idx = {q:j for j,q in enumerate(universe)}
+    for v,q in zip(x,s):
+        if q in idx: ds[idx[q]] += v
     return ds.mean()/ds.std()*np.sqrt(252) if ds.std()>0 else 0
 sel=[];bas=[];fix=[]
 for k in range(1,7):
@@ -209,7 +216,8 @@ pT,eT,sT = sim2(tp_r=2.0,keep_choch=False)
 def full(tag,p,e):
     w=p[p>0]; ls=p[p<=0]; eq=np.cumsum(p)
     dd=(np.maximum.accumulate(np.r_[0,eq])-np.r_[0,eq]).max()
-    s=sess[e]; u=np.unique(s); ds=np.array([p[s==q].sum() for q in u])
+    u=np.unique(sess); ds=np.zeros(len(u)); ix={q:j for j,q in enumerate(u)}
+    for v,q in zip(p,sess[e]): ds[ix[q]] += v
     sh=ds.mean()/ds.std()*np.sqrt(252)
     print(f"{tag:<26}{len(p):>5}{p.sum():>10,.0f}{w.sum()/-ls.sum():>7.2f}"
           f"{100*len(w)/len(p):>7.1f}{dd:>9,.0f}{sh:>8.2f}{p.sum()/dd:>8.2f}")

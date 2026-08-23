@@ -66,23 +66,32 @@ def stats(p):
     return dict(n=len(p), net=p.sum(), pf=(w.sum()/-ls.sum()) if len(ls) else np.inf,
                 win=100*len(w)/len(p), dd=dd)
 
-def daily_sharpe(p,e):
-    s=sess[e]; u=np.unique(s); ds=np.array([p[s==x].sum() for x in u])
+# SHARPE: the series must span EVERY session in the block, with zero on days that did not trade.
+# Building it from sessions that HELD a trade and then multiplying by sqrt(252) annualises a
+# ~140-day series as though every day of the year were a trading day. This rule is flat on ~85%
+# of sessions, so that inflated Sharpe by ~2.6x (see docs/ib/STUDY_MNQ_LIVE.md).
+def daily_sharpe(p,e,universe=None):
+    if universe is None: universe = np.unique(sess)
+    ds = np.zeros(len(universe)); idx = {q:j for j,q in enumerate(universe)}
+    for v,q in zip(p, sess[e]):
+        if q in idx: ds[idx[q]] += v
     return ds.mean()/ds.std()*np.sqrt(252) if ds.std()>0 else 0.0
 
-def line(tag,p,e):
+def line(tag,p,e,universe=None):
     st=stats(p)
     return (f"{tag:<40}{st['n']:>5}{st['net']:>10,.0f}{st['pf']:>7.2f}{st['win']:>7.1f}"
-            f"{st['dd']:>9,.0f}{daily_sharpe(p,e):>8.2f}")
+            f"{st['dd']:>9,.0f}{daily_sharpe(p,e,universe):>8.2f}")
 
 HDR=f"{'':<40}{'n':>5}{'net $':>10}{'PF':>7}{'win%':>7}{'maxDD':>9}{'Sharpe':>8}"
 usess=np.unique(sess); cut=usess[int(0.65*len(usess))]
 
 print("="*86); print("1. BASELINE — v6 spec, MNQ, $0.50/order"); print("="*86); print(HDR)
-p0,e0=sim(); print(line("full sample",p0,e0))
+RES_U = usess[usess <  cut]          # the sessions each block actually spans -- a Sharpe for the
+LOCK_U = usess[usess >= cut]         # research block must be annualised over research days only
+p0,e0=sim(); print(line("full sample",p0,e0,usess))
 m=sess[e0]<cut
-print(line("  research block (first 65%)",p0[m],e0[m]))
-print(line("  LOCKED block  (final 35%)",p0[~m],e0[~m]))
+print(line("  research block (first 65%)",p0[m],e0[m],RES_U))
+print(line("  LOCKED block  (final 35%)",p0[~m],e0[~m],LOCK_U))
 
 print(); print("="*86)
 print("2. PRE-SPECIFIED VARIANTS — chosen before running, all reported"); print("="*86)
@@ -99,12 +108,12 @@ cands={
 res={}
 for k,kw in cands.items():
     p,e=sim(**kw); res[k]=(p,e); mm=sess[e]<cut
-    print(line(k+"  [research]", p[mm], e[mm]))
+    print(line(k+"  [research]", p[mm], e[mm], RES_U))
 print()
 print("   ... the SAME variants on the LOCKED block (never used to choose):")
 for k,(p,e) in res.items():
     mm=sess[e]<cut
-    print(line(k+"  [LOCKED]", p[~mm], e[~mm]))
+    print(line(k+"  [LOCKED]", p[~mm], e[~mm], LOCK_U))
 
 # ---------------------------------------------------------------------------------------------
 from scipy.stats import spearmanr
@@ -113,7 +122,7 @@ print("3. DID SELECTING ON RESEARCH HELP? rank correlation research -> locked");
 names=list(res); rs=[];ls=[]
 for k in names:
     p,e=res[k]; mm=sess[e]<cut
-    rs.append(daily_sharpe(p[mm],e[mm])); ls.append(daily_sharpe(p[~mm],e[~mm]))
+    rs.append(daily_sharpe(p[mm],e[mm],RES_U)); ls.append(daily_sharpe(p[~mm],e[~mm],LOCK_U))
 rho,pv_=spearmanr(rs,ls)
 for k,a,b in sorted(zip(names,rs,ls), key=lambda t:-t[1]):
     print(f"   {k:<26} research Sharpe {a:5.2f}   ->   LOCKED {b:5.2f}")
