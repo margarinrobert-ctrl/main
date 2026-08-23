@@ -119,3 +119,94 @@ And one thing not to do: leave TradingView's extra script-execution modes on. Th
 PF 1.58 into PF 0.559.
 
 Reproduce with `python research/mnq_validate.py`.
+
+---
+
+# The take-profit — the first change in this work that survives a holdout
+
+Prompted by a request to target 65% win at 1:1 RR. That target is unreachable, and the reason it
+is unreachable pointed at something that works.
+
+## The barrier bound, and the anomaly it exposes
+
+For a price path with no drift the probability of touching +R before −R is exactly
+`R_down / (R_up + R_down)`. It is a property of the barriers, not of the signal. Measuring this
+rule's actual win rate against that bound, with the stop fixed at 2 × ATR and the CHoCH exit off:
+
+| RR | driftless bound | observed | excess |
+| --- | --- | --- | --- |
+| 0.5:1 | 66.7% | 70.9% | +4.2 |
+| 0.75:1 | 57.1% | 61.3% | +4.2 |
+| 1:1 | 50.0% | 56.0% | +6.0 |
+| 1.5:1 | 40.0% | 49.0% | +9.0 |
+| **2:1** | **33.3%** | **44.0%** | **+10.7** |
+| 3:1 | 25.0% | 33.6% | +8.6 |
+
+Positive at every ratio — the signal carries real directional information — and the excess **peaks
+at 2:1**. That is a mechanism, not a fitted parameter: the bound is fixed by geometry, so the
+excess cannot be tuned into existence.
+
+On the original question: 65% at 1:1 is not available. 1:1 pays **56.0%**. Above 65% is reachable
+only at 0.5:1 (70.9%), which nets $2,287 against the baseline's $7,060 — a high win rate bought by
+giving away the payoff.
+
+## It survives every test that killed the other six
+
+| | research net | research PF | LOCKED net | LOCKED PF |
+| --- | --- | --- | --- | --- |
+| baseline (CHoCH exit) | $2,387 | 1.34 | $4,674 | 1.75 |
+| take-profit 1.5R | $609 | 1.06 | $7,273 | 2.08 |
+| **take-profit 2.0R** | **$2,747** | 1.25 | **$8,932** | **2.23** |
+| take-profit 3.0R | $4,019 | 1.36 | $8,180 | 1.97 |
+
+All four beat the baseline out of sample, so it is not a knife-edge. Walk-forward over six
+expanding folds picked "TP 2R, no CHoCH" in **all six**, stitching to **$11,481** against the fixed
+baseline's $8,242 — the first time in this project that re-selection has *added* value rather than
+destroyed it (it cost −$3,857 on the earlier variant set).
+
+The take-profit and the CHoCH exit **conflict**: running both gives $8,405 stitched OOS versus
+$11,481 for the target alone. A CHoCH cuts winners before they reach the target.
+
+## Full comparison
+
+| | trades | net | PF | win % | maxDD | Sharpe | Calmar |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| baseline (CHoCH) | 147 | $7,060 | 1.53 | 40.1% | **$2,074** | 2.28 | 3.40 |
+| TP 2R, no CHoCH | 141 | **$11,679** | **1.64** | **44.0%** | $2,865 | **2.93** | **4.08** |
+
+Longs 79 trades, $7,990, PF 1.95, 48.1% win. Shorts 62 trades, $3,689, PF 1.38, 38.7% win — the
+long advantage is most likely the 2022-25 bull regime rather than skill, and shorts staying above
+PF 1.3 through it is the more reassuring half.
+
+Monte Carlo, 5,000 block-bootstrap paths: median net $11,427 (p5 $2,685, p95 $21,685), median
+drawdown $2,400 (p95 $4,532), **P(net < 0) = 1.5%** against the baseline's 1.8%.
+
+## What holds this back from being called established
+
+- **The paired same-session difference against the baseline is t = +1.22.** Favourable on every
+  summary statistic; not significant. This is the number that matters and it does not clear a bar.
+- Max drawdown **rises** $2,074 → $2,865. Calmar improves anyway, but anyone who chose this rule
+  for its shallow drawdown is trading some of that away.
+- 49 locked trades. Walk-forward folds 3 and 4 were negative (−$177, −$1,516).
+- Roughly ten exit variants were examined in total, so some multiple-testing haircut applies —
+  smaller than the usual one here because the whole family moved together and the barrier-bound
+  mechanism was predicted before the P&L was looked at.
+
+## Two hypotheses tested and rejected in the same pass
+
+**Entering at or near the 200 EMA.** The opposite of the current filter, and the data is emphatic:
+
+| distance from EMA at signal | trades | net | PF | win % | $/trade |
+| --- | --- | --- | --- | --- | --- |
+| 0.0-0.5 ATR | 15 | −$1,607 | 0.27 | 20.0% | −$107 |
+| 0.5-1.0 ATR | 10 | −$524 | 0.55 | 40.0% | −$52 |
+| 1.0-1.5 ATR | 11 | $1,036 | 1.92 | 45.5% | +$94 |
+| 1.5-2.5 ATR | 34 | $3,666 | 2.18 | 35.3% | +$108 |
+| ≥ 2.5 ATR | 107 | $2,919 | 1.32 | 42.1% | +$27 |
+
+Near-EMA only: 25 trades, **−$2,131**, PF 0.36. A break that occurs while price sits on the 200 EMA
+is a break inside chop — there is no established trend for it to continue.
+
+**65% win at 1:1.** Not reachable; see the barrier bound above.
+
+Reproduce with `python research/mnq_deep.py`.

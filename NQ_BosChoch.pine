@@ -92,7 +92,22 @@ grpR = "Risk"
 atrLen  = input.int(14, "ATR length", minval = 2, group = grpR)
 atrMultIn = input.float(2.0, "Stop = N x ATR", minval = 0.25, step = 0.25, group = grpR)
 atrMult   = lockSpec ? 2.0 : atrMultIn
-useChoch= input.bool(true, "Exit on the opposite BOS (CHoCH)", group = grpR)
+tpR     = input.float(2.0, "Take-profit at N x risk  (0 = off)", minval = 0, step = 0.5, group = grpR,
+     tooltip = "THE ONE VALIDATED IMPROVEMENT found in this work, and the only change that beat " +
+               "the baseline on BOTH the research block and the locked holdout. MNQ 30m: net " +
+               "$7,060 -> $11,679, PF 1.53 -> 1.64, win 40.1% -> 44.0%, Sharpe 2.28 -> 2.93, " +
+               "Calmar 3.40 -> 4.08. Picked in ALL SIX walk-forward folds. It also has a mechanism " +
+               "rather than just a number: measured against the driftless barrier bound " +
+               "R_down/(R_up+R_down), this signal's excess win rate PEAKS at the 2:1 barrier " +
+               "(+10.7 points, vs +6.0 at 1:1 and +8.6 at 3:1). BUT: max drawdown RISES from " +
+               "$2,074 to $2,865, and the paired same-session difference against the baseline is " +
+               "only t = +1.22 — favourable on every summary statistic, not statistically " +
+               "established. Set 0 to reproduce the older reference figures.")
+useChoch= input.bool(false, "Exit on the opposite BOS (CHoCH)", group = grpR,
+     tooltip = "The original exit. It CONFLICTS with the take-profit above: running both gives " +
+               "$8,405 stitched out-of-sample against $11,481 for the target alone, because a " +
+               "CHoCH cuts winners before they reach the target. Use ONE of them. " +
+               "CHoCH-only (tpR = 0, this ON) is the older tested spec.")
 
 grpV = "Volatility-targeted sizing"
 useVTIn = input.bool(false, "Size inversely to recent volatility", group = grpV,
@@ -224,10 +239,17 @@ if strategy.position_size < 0 and na(stopLevel)
 if strategy.position_size == 0
     stopLevel := na
 
+// Target at tpR x the risk actually taken. Both barriers ride on one exit order, so whichever
+// price touches first wins -- and when a single bar spans both, TradingView resolves it the
+// conservative way (the stop).
+tpLevel = na(stopLevel) or tpR <= 0 ? na :
+     strategy.position_size > 0 ? strategy.position_avg_price + tpR * (strategy.position_avg_price - stopLevel) :
+     strategy.position_avg_price - tpR * (stopLevel - strategy.position_avg_price)
+
 if strategy.position_size > 0 and not na(stopLevel)
-    strategy.exit("Lx", "L", stop = stopLevel)
+    strategy.exit("Lx", "L", stop = stopLevel, limit = tpLevel)
 if strategy.position_size < 0 and not na(stopLevel)
-    strategy.exit("Sx", "S", stop = stopLevel)
+    strategy.exit("Sx", "S", stop = stopLevel, limit = tpLevel)
 
 // Track why positions close, so a win-rate mismatch can be attributed rather than guessed at.
 var int nCloses = 0
@@ -260,6 +282,9 @@ if showDiag and barstate.islast
             "  <<< TOO HIGH for a Micro: set commission_value AND commPerOrder to 0.50" : "  ok") +
          "\n— gates in force —" +
          "\nnBos " + str.tostring(nBos) + "    stop " + str.tostring(atrMult) + " x ATR" +
+         "\ntake-profit " + (tpR > 0 ? str.tostring(tpR) + " R" : "off") +
+             "    CHoCH exit " + (useChoch ? "ON" : "off") +
+             (tpR > 0 and useChoch ? "   <<< BOTH ON: they conflict, use one" : "") +
          "\nrange filter " + str.tostring(minDist) + " x ATR" +
          "\nentry window " + str.tostring(math.round(sessStart + tfMin)) + "-" +
              str.tostring(math.round(sessEnd - tfMin)) + " (exchange minutes)" +
@@ -279,6 +304,7 @@ bU = plot(minDist > 0 ? emaV + minDist * atrV : na, "no-trade band", color.new(c
 bL = plot(minDist > 0 ? emaV - minDist * atrV : na, "no-trade band", color.new(color.gray, 70))
 fill(bU, bL, color.new(color.gray, 92), title = "range — no entries here")
 plot(stopLevel, "stop", color.new(color.red, 0), 1, plot.style_linebr)
+plot(tpLevel, "target", color.new(color.green, 0), 1, plot.style_linebr)
 plotshape(bosUp and inSess, "BOS up",   shape.triangleup,   location.belowbar, color.new(color.teal, 0),   size = size.tiny)
 plotshape(bosDn and inSess, "BOS down", shape.triangledown, location.abovebar, color.new(color.maroon, 0), size = size.tiny)
 bgcolor(showSess and canEnter ? color.new(color.blue, 94) : na, title = "entry window")
