@@ -31,6 +31,12 @@ class Score:
     threshold: float
 
     def line(self, label: str) -> str:
+        # A model that never clears any threshold has no selected bucket, so threshold is NaN and
+        # there is nothing to index. That happens routinely to shuffled controls and must print,
+        # not raise.
+        if not np.isfinite(self.threshold):
+            return (f"  {label:<28}{self.n:>9,}{self.auc:>8.4f}{self.take_all:>11.2f}"
+                    f"{'--':>8}{'--':>9}{'--':>11}{'--':>9}{'--':>8}")
         return (f"  {label:<28}{self.n:>9,}{self.auc:>8.4f}{self.take_all:>11.2f}"
                 f"{self.threshold:>8.2f}{self.at_threshold[self.threshold][0]:>9,}"
                 f"{self.at_threshold[self.threshold][1]:>11.2f}{self.best_lift:>9.2f}{self.t_day:>8.2f}")
@@ -72,6 +78,15 @@ def day_paired_lift(dollars: np.ndarray, sess: np.ndarray, picked: np.ndarray):
     return float(per.mean()), float(t), len(per)
 
 
+# A selected bucket has to be big enough for its mean to mean anything. At the old floor of 30 the
+# "best threshold" could be chosen from a 34-row bucket, and the maximum over thresholds of a noisy
+# mean is itself a search: shuffled-label controls duly reported lifts of +$450/trade at t = 2.70,
+# beating every real model. The floor below is in ROWS, and a bucket must also span enough sessions
+# for the day-clustered t to exist at all.
+MIN_BUCKET_ROWS = 500
+MIN_BUCKET_SESSIONS = 30
+
+
 def evaluate(proba, dollars, sess, thresholds=(0.50, 0.52, 0.55, 0.60, 0.65)) -> Score:
     """Score a probability vector against the dollar outcome of acting on it."""
     proba = np.asarray(proba, float)
@@ -86,7 +101,7 @@ def evaluate(proba, dollars, sess, thresholds=(0.50, 0.52, 0.55, 0.60, 0.65)) ->
     at = {}
     for th in thresholds:
         m = proba >= th
-        if m.sum() >= 30:
+        if m.sum() >= MIN_BUCKET_ROWS and len(np.unique(sess[m])) >= MIN_BUCKET_SESSIONS:
             at[th] = (int(m.sum()), float(dollars[m].mean()), float(dollars[m].sum()),
                       float(100 * (dollars[m] > 0).mean()))
         else:
