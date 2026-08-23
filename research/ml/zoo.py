@@ -175,6 +175,26 @@ REGISTRY: dict[str, Spec] = {
 }
 
 
+# Each booster takes its thread budget under a different keyword, and all of them default to "use
+# every core". Under Ray that is a bug: N tasks x C threads on C cores is heavy oversubscription --
+# six families on four cores produced a load average of 8 and made the parallel run SLOWER than the
+# sequential one. Setting OMP_NUM_THREADS does not reach them, because the explicit n_jobs /
+# thread_count arguments win.
+THREAD_KWARG = {
+    "lightgbm": "n_jobs",
+    "xgboost": "n_jobs",
+    "catboost": "thread_count",
+    "random_forest": "n_jobs",
+}
+
+
+def thread_kwargs(name: str, n_threads=None) -> dict:
+    """Per-family keyword pinning the thread budget. Empty when the family has no such knob."""
+    if n_threads is None or name not in THREAD_KWARG:
+        return {}
+    return {THREAD_KWARG[name]: int(n_threads)}
+
+
 def make(name: str, **kw):
     if name not in REGISTRY:
         raise KeyError(f"unknown model {name!r}; have {sorted(REGISTRY)}")

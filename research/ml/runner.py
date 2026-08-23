@@ -24,9 +24,12 @@ from ml.zoo import REGISTRY, predict_proba
 
 
 def fit_oof(model_name, params, X, y_dollars, sess, horizon, n_splits=5, shuffle_labels=False,
-            seed=20250822):
+            seed=20250822, n_threads=None):
     """Out-of-fold probabilities on purged, embargoed folds."""
+    from ml.zoo import thread_kwargs
     spec = REGISTRY[model_name]
+    params = dict(params or {})
+    params.update(thread_kwargs(model_name, n_threads))
     cv = PurgedKFold(n_splits=n_splits, horizon=horizon, embargo=0.01)
     Xv = np.asarray(X, float)
     lab = (y_dollars > 0).astype(int)
@@ -34,26 +37,33 @@ def fit_oof(model_name, params, X, y_dollars, sess, horizon, n_splits=5, shuffle
         lab = np.random.default_rng(seed).permutation(lab)
     oof = np.full(len(Xv), np.nan)
     for tr, te in cv.split(len(Xv)):
-        m = spec.build(**(params or {}))
+        m = spec.build(**params)
         m.fit(Xv[tr], lab[tr])
         oof[te] = predict_proba(m, Xv[te])
     return oof
 
 
-def _one_family(model_name, Xr, yr, sr, horizon, n_splits):
+def _one_family(model_name, Xr, yr, sr, horizon, n_splits, n_threads=None):
     """Real fit + shuffled control for one family. Returns a dict, picklable for Ray."""
     t0 = time.time()
-    oof = fit_oof(model_name, None, Xr, yr, sr, horizon, n_splits)
+    oof = fit_oof(model_name, None, Xr, yr, sr, horizon, n_splits, n_threads=n_threads)
     s_real = evaluate(oof, yr, sr)
-    oof_s = fit_oof(model_name, None, Xr, yr, sr, horizon, n_splits, shuffle_labels=True)
+    oof_s = fit_oof(model_name, None, Xr, yr, sr, horizon, n_splits, shuffle_labels=True,
+                    n_threads=n_threads)
     s_ctrl = evaluate(oof_s, yr, sr)
     return dict(model=model_name, real=s_real, control=s_ctrl, secs=time.time() - t0)
 
 
 def run_families(models, Xr, yr, sr, horizon, n_splits=5, use_ray=True):
     """Fit every family. Ray when available, sequential otherwise -- identical results."""
+    import os
+    n_cpu = max(1, os.cpu_count() or 1)
     if not use_ray:
-        return [_one_family(m, Xr, yr, sr, horizon, n_splits) for m in models]
+        # Sequential: give each family every core.
+        return [_one_family(m, Xr, yr, sr, horizon, n_splits, n_cpu) for m in models]
+    # Parallel: divide the cores among concurrently running families so the machine sees n_cpu
+    # threads in total rather than n_families x n_cpu.
+    per = max(1, n_cpu // min(len(models), n_cpu))
     import os
     import ray
     if not ray.is_initialized():
@@ -62,14 +72,14 @@ def run_families(models, Xr, yr, sr, horizon, n_splits=5, use_ray=True):
         # because the worker's cwd is not guaranteed to be the repo root.
         research_dir = str((__import__("pathlib").Path(__file__).resolve().parent.parent))
         ray.init(ignore_reinit_error=True, log_to_driver=False, include_dashboard=False,
-                 num_cpus=max(1, os.cpu_count() or 1),
+                 num_cpus=n_cpu,
                  runtime_env={"env_vars": {
                      "PYTHONPATH": research_dir + os.pathsep + os.environ.get("PYTHONPATH", ""),
                      "OMP_NUM_THREADS": "1",     # families run in parallel; don't oversubscribe
                  }})
     remote = ray.remote(_one_family)
     Xr_ref = ray.put(Xr); yr_ref = ray.put(yr); sr_ref = ray.put(sr)
-    futures = [remote.remote(m, Xr_ref, yr_ref, sr_ref, horizon, n_splits) for m in models]
+    futures = [remote.remote(m, Xr_ref, yr_ref, sr_ref, horizon, n_splits, per) for m in models]
     return ray.get(futures)
 
 
