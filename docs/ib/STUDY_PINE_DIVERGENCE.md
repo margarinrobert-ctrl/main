@@ -1,5 +1,32 @@
 # Why a TradingView run of `NQ_BosChoch.pine` disagreed with the engine
 
+> **CORRECTION, read first.** The investigation below concluded that the reported run's *inputs*
+> were at odds with the tested spec. Three of its findings hold as methods and two of its
+> attributions were right, but its **conclusion was wrong**: the dominant cause was a **bug in the
+> Pine script itself**, plus two defaults that made the reference figures unreachable. In order of
+> size:
+>
+> 1. **The entry gate was wrong** (`docs` section "The gate"). The engine admits an entry only when
+>    the signal bar is in session, *the next bar is also in session*, and the bar is *not the
+>    session's first*. The script used an `input.session()` window, which cannot express the second
+>    condition and admitted the opening bar. Worth **35 extra trades and −$8,318** on 30m. With it
+>    fixed the script reproduces the engine exactly: **147 trades, $71,483, PF 1.54, 40.1% win**.
+> 2. **Volatility-targeted sizing defaulted ON.** The reference figures were measured at a fixed 1
+>    contract, so the P&L could not match regardless of anything else.
+> 3. **The script told the reader to trade MNQ and shipped an NQ commission.** The sizing note at
+>    the foot of the script recommends the Micro because a 2×ATR stop on NQ risks ~$2,000 a
+>    contract; the commission default was $2.00/order, correct for the E-mini and ~10× too heavy on
+>    a Micro. Following both instructions as written charges ten times the real cost — which is
+>    what fingerprint 4 below actually detected.
+>
+> The methodological lesson stands and is strengthened: a fingerprint identifies *a difference*,
+> not *whose fault it is*. Fingerprint 4 correctly detected an MNQ-scaled cost and was read as
+> "the user is on the wrong instrument" when the script itself had told them to be. Three separate
+> reports of "it does not match" were attributed to configuration before the source was re-read
+> line by line against the engine. Read the fingerprints below as diagnostics; do not read their
+> original conclusion as the answer.
+
+
 A reported TradingView backtest (30m, Dec-2022..Dec-2025) came back **287 trades, −$12,387,
 PF 0.488, win 27.18%**, against the reference engine's **147 trades, +$71,483, PF 1.54, win
 40.1%** on what was meant to be the same specification. This note records how the gap was
@@ -164,3 +191,37 @@ rather than decisive, but the direction agrees with every other holdout in this 
 The general lesson is the one the fingerprints taught in miniature, at a larger scale: a
 full-sample comparison between two rule variants is a *selection*, and selections have to be
 priced on data that did not inform them. Reproduce with `python research/pine_flatten_oos.py`.
+
+
+## The gate — the actual bug, and how it was isolated
+
+Each candidate cause was switched on and off independently against the reference engine
+(`research/pine_gate_proof.py`):
+
+| entry gate | same-bar reversal | trades | net | PF | win % |
+| --- | --- | --- | --- | --- | --- |
+| script's session window | off | 182 | $63,165 | 1.38 | 39.0% |
+| script's session window | on | 182 | $63,165 | 1.38 | 39.0% |
+| **engine's gate** | off | **147** | **$71,483** | **1.54** | **40.1%** |
+| **engine's gate** | on | **147** | **$71,483** | **1.54** | **40.1%** |
+| reference engine | — | 147 | $71,483 | 1.54 | 40.1% |
+
+The gate accounts for **the entire difference**. The `strategy.position_size` one-bar lag and the
+statement ordering — which the earlier write-up named as the cause of the 182-vs-147 gap —
+contribute **nothing**: same-bar reversals never occur in this rule, so the two rows are identical.
+That earlier attribution was a guess that happened to sit next to the right number.
+
+The gate is now clock arithmetic on the bar's open time in exchange timezone, which is exact and
+involves no look-ahead — the calendar is known in advance, the prices are not:
+
+```pine
+tfMin    = timeframe.in_seconds(timeframe.period) / 60
+barMin   = hour * 60 + minute
+inSess   = barMin >= sessStart and barMin < sessEnd
+nextIn   = barMin + tfMin >= sessStart and barMin + tfMin < sessEnd
+newSess  = inSess and not inSess[1]
+canEnter = inSess and nextIn and not newSess
+```
+
+At 30m this admits 10:00 through 15:00. An `input.session()` string cannot express `nextIn`, which
+is why the original formulation could not be patched and had to be replaced.
