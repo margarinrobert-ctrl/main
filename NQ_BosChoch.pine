@@ -88,7 +88,7 @@ nBos    = lockSpec ? 2 : nBosIn
 
 sideIn  = input.string("Both", "Trade side", options = ["Both", "Longs only", "Shorts only"],
      group = grpS,
-     tooltip = "DEFAULT BOTH, AND THE LOCK FORCES IT. Long-only looks better on this data -- " +
+     tooltip = "DEFAULTS TO BOTH, AND SHOULD STAY THERE. Long-only looks better on this data -- " +
                "under the 2R target, longs are 79 trades / $7,990 / PF 1.95 / 48.1% win against " +
                "shorts at 62 trades / $3,689 / PF 1.38 / 38.7%. Do not read that as skill. A " +
                "777,600-cell search over 11 axes found that of every configuration beating the " +
