@@ -240,7 +240,7 @@ def sweep(B, combos, nbars, EB, EP, OK, sidx, cut, res_net, res_n, lok_net, lok_
             res_n[k] = rn; res_net[k] = rs; lok_n[k] = ln; lok_net[k] = ls
 
 
-def main(tf=30, seed=20260823):
+def main(tf=30, seed=20260823, out_path=None):
     t0 = time.time()
     d = prep(tf)
     names, M = build_conditions(d)
@@ -286,11 +286,16 @@ def main(tf=30, seed=20260823):
     sweep(B, combos, nbars, EB, EP, OK, sidx, cut, res_net, res_n, lok_net, lok_n)
     print(f"   sweep done, {time.time()-t0:.0f}s", flush=True)
 
-    np.savez_compressed("/tmp/af2.npz", res_net=res_net, res_n=res_n,
+    path = out_path or f"/tmp/af2_{tf}m.npz"
+    np.savez_compressed(path, res_net=res_net, res_n=res_n,
                         lok_net=lok_net, lok_n=lok_n, combos=combos,
-                        names=np.array(names), exits=np.array(EXITS))
-    print(f"saved. total {time.time()-t0:.0f}s")
+                        names=np.array(names), exits=np.array(EXITS), tf=np.array([tf]))
+    print(f"saved {path}. total {time.time()-t0:.0f}s")
 
 
 if __name__ == "__main__":
-    main()
+    import sys as _s
+    tfs = [int(x) for x in _s.argv[1:]] or [30]
+    for _tf in tfs:
+        print(f"\n===== {_tf}-minute bars =====", flush=True)
+        main(_tf)
