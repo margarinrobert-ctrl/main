@@ -209,9 +209,13 @@ print(f"   ADX where |close-EMA| >= 1 ATR     : median {np.median(A[sel & (dist>
 print(f"   ADX where |close-EMA| <  1 ATR     : median {np.median(A[sel & (dist<1.0)]):.1f}   "
       f"share > 25: {100*(A[sel & (dist<1.0)]>25).mean():.1f}%")
 print("""
-   The range filter already selects the high-ADX half of the tape. Requiring ADX on top of it is
-   asking the same question twice: it removes trades without changing what kind of trade is left,
-   which is why every ADX threshold cut the locked result while leaving the profile intact.""")
+   The range filter DOES tilt toward higher ADX -- 58.8% of bars it admits are above 25 against
+   46.3% of the bars it rejects -- so ADX is partly redundant with a filter already in the rule.
+   But that is a 12-point shift, not a decisive one, and it does not by itself explain why every
+   ADX threshold cut the locked result. The simpler reading is that ADX removes trades without
+   removing systematically worse trades: the win rate and profit factor of what remains barely
+   move, only the count falls. A filter that changes n without changing the profile is not
+   selecting anything.""")
 
 print(); print("="*94)
 print("WIDER SEARCH — 3 ADX periods x 13 thresholds x rising on/off x 3 stoch periods x 6 vetos")
