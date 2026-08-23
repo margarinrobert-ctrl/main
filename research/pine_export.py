@@ -180,7 +180,8 @@ _HEADER = '''//@version=6
 //
 //     {human}
 //
-// EXIT GEOMETRY: stop {am} x ATR from entry, target {tp} x that risk{flat}.
+// EXIT GEOMETRY: stop {am} x ATR, target {tp} x that risk{flat}. Both are measured from
+// the FILL -- the open of the bar after the signal -- using the ATR of the signal bar.
 // DIRECTION: {sidetxt}.
 //
 // MEASURED ON MNQ, {tf}-minute bars, 2022-12 to 2025-12, 1 contract, $1.00 commission per round
@@ -251,14 +252,18 @@ def emit_strategy(rule, side, am, tp, flat, tf=30, stats=None, title=None):
              "ready = not na(atrV) and atrV > 0 and bar_index > 300",
              "isFlat = strategy.position_size == 0",
              "",
+             "// The engine measures the stop and target from the FILL -- the open of the bar after",
+             "// the signal -- not from the signal bar's close. `loss` and `profit` are in ticks",
+             "// relative to the actual entry price, which is the only Pine primitive that matches.",
+             "// Whole ticks are the one unavoidable difference: at most half a tick per side.",
              "if trig and ready and isFlat",
-             "    risk = atrMult * atrV",
+             "    riskTicks = math.max(math.round(atrMult * atrV / syminfo.mintick), 1)",
              "    if allowLong",
              '        strategy.entry("L", strategy.long)',
-             '        strategy.exit("Lx", "L", stop = close - risk, limit = close + tpR * risk)',
+             '        strategy.exit("Lx", "L", loss = riskTicks, profit = tpR * riskTicks)',
              "    if allowShort",
              '        strategy.entry("S", strategy.short)',
-             '        strategy.exit("Sx", "S", stop = close + risk, limit = close - tpR * risk)',
+             '        strategy.exit("Sx", "S", loss = riskTicks, profit = tpR * riskTicks)',
              flat_code,
              'plotshape(trig and allowLong,  "long",  shape.triangleup,   location.belowbar, color.teal, size = size.tiny)',
              'plotshape(trig and allowShort, "short", shape.triangledown, location.abovebar, color.red,  size = size.tiny)',
@@ -288,9 +293,12 @@ def emit_indicator(rule, side, am, tp, flat, tf=30, stats=None, title=None):
              "ready = not na(atrV) and atrV > 0 and bar_index > 300",
              "",
              "risk = %s * atrV" % am,
-             'plot(trig and ready ? close - risk : na, "stop, long side",',
+             "// drawn on the bar AFTER the signal and measured from its open, because that open is",
+             "// where the strategy fills -- the same anchor the engine uses.",
+             "fired = trig[1] and ready[1]",
+             'plot(fired ? open - risk[1] : na, "stop, long side",',
              "     color = color.new(color.red, 0), style = plot.style_circles)",
-             'plot(trig and ready ? close + %s * risk : na, "target, long side",' % tp,
+             'plot(fired ? open + %s * risk[1] : na, "target, long side",' % tp,
              "     color = color.new(color.teal, 0), style = plot.style_circles)",
              'plotshape(trig and ready, "signal", shape.diamond, location.belowbar,',
              "     color.new(color.teal, 0), size = size.tiny)",
