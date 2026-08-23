@@ -83,6 +83,22 @@ lockSpec= input.bool(true, "LOCK the tested spec (ignore cached chart settings)"
                "on, nBos, the stop multiple and volatility sizing are forced to the tested values.")
 nBos    = lockSpec ? 2 : nBosIn
 
+sideIn  = input.string("Both", "Trade side", options = ["Both", "Longs only", "Shorts only"],
+     group = grpS,
+     tooltip = "DEFAULT BOTH, AND THE LOCK FORCES IT. Long-only looks better on this data -- " +
+               "under the 2R target, longs are 79 trades / $7,990 / PF 1.95 / 48.1% win against " +
+               "shorts at 62 trades / $3,689 / PF 1.38 / 38.7%. Do not read that as skill. A " +
+               "777,600-cell search over 11 axes found that of every configuration beating the " +
+               "tested spec on BOTH the research and locked blocks, 76.5% were long-only and 0.3% " +
+               "short-only. What the search was finding is the direction of the 2022-2025 bull " +
+               "market. A chronological holdout CANNOT catch that, because both blocks sit inside " +
+               "the same regime. Restricting the same search to both-sides cells inverts its " +
+               "result completely: locked Sharpe -1.54, losing money out of sample 100% of the " +
+               "time. Pick a single side only if you have a reason outside this backtest, and " +
+               "size it as a directional bet, not as an edge."
+)
+sideMode = lockSpec ? 0 : (sideIn == "Longs only" ? 1 : sideIn == "Shorts only" ? -1 : 0)
+
 grpF = "Filters"
 useEma  = input.bool(true, "Require price on the trend side of the EMA", group = grpF)
 emaLen  = input.int(200, "EMA length", minval = 10, group = grpF)
@@ -210,8 +226,8 @@ okLong  = (not useEma or close > emaV) and farEnough
 okShort = (not useEma or close < emaV) and farEnough
 ready   = not na(atrV) and atrV > 0 and not na(emaV)
 
-longSig  = bosUp and runLen >= nBos and okLong  and canEnter and ready
-shortSig = bosDn and runLen >= nBos and okShort and canEnter and ready
+longSig  = bosUp and runLen >= nBos and okLong  and canEnter and ready and sideMode >= 0
+shortSig = bosDn and runLen >= nBos and okShort and canEnter and ready and sideMode <= 0
 
 // ── volatility-targeted size: bigger when quiet, smaller when wild. Causal. ──────────────────
 avgAtr = ta.sma(atrV, vtLook)
@@ -281,6 +297,8 @@ if showDiag and barstate.islast
           syminfo.pointvalue < 10 and commPerOrder >= 1.5 ?
             "  <<< TOO HIGH for a Micro: set commission_value AND commPerOrder to 0.50" : "  ok") +
          "\n— gates in force —" +
+         "\nside " + (sideMode == 0 ? "both" : sideMode == 1 ? "LONGS ONLY (a regime bet)" :
+                       "SHORTS ONLY (a regime bet)") +
          "\nnBos " + str.tostring(nBos) + "    stop " + str.tostring(atrMult) + " x ATR" +
          "\ntake-profit " + (tpR > 0 ? str.tostring(tpR) + " R" : "off") +
              "    CHoCH exit " + (useChoch ? "ON" : "off") +
