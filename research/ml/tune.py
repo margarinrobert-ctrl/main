@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .metrics import day_cluster_t, deflate, evaluate
+from .metrics import day_paired_lift, deflate, evaluate
 from .splits import PurgedKFold
 from .zoo import REGISTRY, predict_proba
 
