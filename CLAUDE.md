@@ -106,6 +106,15 @@ does not complement one. What works is short-horizon mean reversion at the execu
 little as a signal (0.28 ticks vs a 6-tick round turn) and a lot as a better fill on a trade you
 were making anyway. See `docs/ib/STUDY_LIMIT_ENTRY.md`.
 
+**Tune with `research/tune.py`, not by editing a module.** A trade's outcome depends only on its
+signal bar and the geometry, so the price walk is cached per bar and every exit knob — stop,
+target, flatten time, max hold, entry mechanic, cost model — becomes an array index: 0.4 us per
+geometry against `sim_core`'s 1.3 ms, and a 2,000-draw matched control in 6 ms, which is what
+finally makes the control affordable as a GATE. Verified trade-for-trade against `sim_core` on
+4.6M trades. It will not show you the locked block from a sweep — `reveal(df, k)` is the only way,
+it states the multiplicity first, and it flags anything better on locked than on research as the
+wrong shape. See `docs/ib/STUDY_TUNER.md`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -140,6 +149,10 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/trendpool.py`, `trendpool_search.py` | the 5.7M-combination trend-pullback search |
 | `research/limit_entry.py` | limit-order entries, bar-level and true 1-minute, with pessimism knobs |
 | `research/allstrats.py` | the nine shipped strategies in one registry |
+| `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
+| `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
+| `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
+| `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
 
 ## Pine
 
