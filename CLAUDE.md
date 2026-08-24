@@ -94,6 +94,18 @@ expected by chance. The window baseline itself is negative (-$22 to -$5/trade). 
 four rules reach a holdout they then "passed" while failing research. In front, it is the cheapest
 way to stop a family that is really just "be in the market at these times".
 
+**The ENTRY MECHANIC was the biggest lever found on this branch, and it cuts both ways.** A resting
+limit 0.75 x ATR(5) in your favour, versus a market order at the next open, on EVERY bar with no
+rule at all: market entry loses $0.6-$16.8/trade, the limit makes $4.3-$37.7, on both blocks, both
+SIDES (so it is not drift), all timeframes and windows, robust to requiring price to trade through
+by 4 ticks, and NOT explained by barrier placement -- a market entry given the same absolute
+barriers earns nothing. But applied to the nine validated strategies it takes the book from
+$55,424 to $13,415, because a good signal's edge is in the IMMEDIACY of the move and waiting for a
+0.75 ATR adverse excursion discards exactly those trades. The mechanic SUBSTITUTES for a signal; it
+does not complement one. What works is short-horizon mean reversion at the execution layer -- worth
+little as a signal (0.28 ticks vs a 6-tick round turn) and a lot as a better fill on a trade you
+were making anyway. See `docs/ib/STUDY_LIMIT_ENTRY.md`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -126,6 +138,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/pullback.py`, `pullback_search.py` | trend-following pullback family, direction dictated |
 | `research/trendind.py` | Supertrend, Ichimoku, PSAR, Hull, KAMA, DEMA/TEMA, Vortex, Aroon, Heikin |
 | `research/trendpool.py`, `trendpool_search.py` | the 5.7M-combination trend-pullback search |
+| `research/limit_entry.py` | limit-order entries, bar-level and true 1-minute, with pessimism knobs |
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 
 ## Pine
