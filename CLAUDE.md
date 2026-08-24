@@ -82,6 +82,18 @@ are in a daily uptrend and 7% in a downtrend, so the short side is close to unte
 research on 44% fewer trades, and the cost model does not widen the pre-RTH spread so the gap is
 larger than measured. See `docs/ib/STUDY_TREND_PULLBACK.md`.
 
+**The trend-pullback structure is exhausted on this data. Do not re-run it.** Two passes: 161,280
+then 5,723,136 combinations, 15 EMA periods, 13 crossover pairs, Supertrend/Ichimoku/PSAR/KAMA/
+Hull/Vortex/Aroon/MACD/ADX, in 07:00-11:00 New York with direction dictated by the daily trend.
+Second pass: 127 rules beat a time-matched control ON RESEARCH, 0 survived the holdout, 6.4
+expected by chance. The window baseline itself is negative (-$22 to -$5/trade). See
+`docs/ib/STUDY_TREND_PULLBACK_2.md`. What would move it: more history (this sample is one regime,
+81% daily uptrend), cross-asset files, a second instrument.
+
+**Run the matched control as a RESEARCH gate, not a final check.** Running it only at the end let
+four rules reach a holdout they then "passed" while failing research. In front, it is the cheapest
+way to stop a family that is really just "be in the market at these times".
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -112,6 +124,8 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/features3.py` | spread/variance/order-flow-proxy/structure/session/anomaly families |
 | `research/daily_trend.py` | causal daily trend states, keyed on the daily close timestamp |
 | `research/pullback.py`, `pullback_search.py` | trend-following pullback family, direction dictated |
+| `research/trendind.py` | Supertrend, Ichimoku, PSAR, Hull, KAMA, DEMA/TEMA, Vortex, Aroon, Heikin |
+| `research/trendpool.py`, `trendpool_search.py` | the 5.7M-combination trend-pullback search |
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 
 ## Pine
