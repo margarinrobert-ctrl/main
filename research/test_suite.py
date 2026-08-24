@@ -1166,8 +1166,8 @@ def sim_core(o, h, l, c, atr_, mod, trig, side, atr_mult, tp_r, flat_min, lag,
     k = 0; free = -1
     for tt in range(m):
         i = trig[tt]
-        if i <= free:
-            continue
+        if i < free:            # a signal ON the exit bar is legal: the position closed during
+            continue            # that bar, so its close finds the book flat
         a = atr_[i]
         if np.isnan(a) or a <= 0.0:
             continue
