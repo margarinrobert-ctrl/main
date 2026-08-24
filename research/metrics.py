@@ -206,6 +206,10 @@ WEIGHTS = {
 
 
 def _clip(x, lo, hi):
+    """A missing or infinite input scores 0 for that term rather than poisoning the whole
+    composite with a nan."""
+    if x is None or not np.isfinite(x):
+        return 0.0
     return float(np.clip((x - lo) / (hi - lo), 0, 1)) if hi > lo else 0.0
 
 
