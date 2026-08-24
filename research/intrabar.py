@@ -167,10 +167,15 @@ def _entry_timing(o1, c1, h1, l1, lo, atr_, trig, side, atr_mult, tp_r, offs, ou
         out[oi] = tot
 
 
-def compare(conds, side=1, atr_mult=2.5, tp_r=3.0, flat_min=0, tf=30):
-    """The engine's model, the true 1-minute path, and the path with same-bar refills."""
+def compare(conds, side=1, atr_mult=2.5, tp_r=3.0, flat_min=0, tf=30, trig=None):
+    """The engine's model, the true 1-minute path, and the path with same-bar refills.
+
+    `trig` takes an explicit list of signal bars, for rules whose conditions are thresholds the
+    shared pool does not carry a rung for. The 1-minute walk only ever needs the bars, so the
+    condition names are then labels."""
     from test_suite import build
-    s = build(conds, side=side, atr_mult=atr_mult, tp_r=tp_r, flat_min=flat_min, tf=tf)
+    s = build(conds, side=side, atr_mult=atr_mult, tp_r=tp_r, flat_min=flat_min, tf=tf,
+              trig=trig, pool=trig is None)
     m = minute_map(tf)
     d = m["d"]
     args = (m["o"], m["h"], m["l"], m["c"], m["mod"], m["lo"], m["hi"], d["atr"],

@@ -29,6 +29,18 @@ neighbourhood, the obvious over-correction, cost $18,970. See `docs/ib/STUDY_1R_
 
 **Sizing creates no edge.** Fixed one contract per leg, AVA across legs. See §9.
 
+**A win rate that exists at only one threshold is not a mechanism.** Parameterise every shipped
+rule and sweep its own neighbourhood on research; a real edge decays smoothly. V1's 70.9% falls to
+its base rate two rungs away, while V3 *gained* holdout significance when loosened (matched-control
+p 0.384 → 0.040) because it finally had enough trades. Corollary, learned the hard way: over a
+monotone threshold grid a union **is its loosest member**, so gate on the SIZE of the excess, never
+its sign. See `docs/ib/STUDY_1R_MORE.md`.
+
+**Score against a matched control, not a population mean.** Random entries with the same side,
+geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
+once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
+TIME stop is a direction bet, not a barrier edge.
+
 ## Tooling
 
 | module | what it does |
@@ -40,6 +52,9 @@ neighbourhood, the obvious over-correction, cost $18,970. See `docs/ib/STUDY_1R_
 | `research/intrabar.py` | true 1-minute path execution modelling |
 | `research/pine_export.py` | Pine strategy + indicator emitters |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here |
+| `research/alpha_ladder.py` | the 198-condition pool (83 threshold rungs), Pine attached |
+| `research/oner_union.py` | threshold neighbourhoods and the trade-count / win-rate frontier |
+| `research/oner_anom.py` | exit split, matched control, corner table, FDR slices |
 
 ## Pine
 

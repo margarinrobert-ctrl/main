@@ -26,9 +26,14 @@ from oner_robust import CALENDAR, _rowmap
 
 MIN_WIN = 58.0
 
+# which Phase 1 output to read. "mega" is the 27,386,100-combination sweep on the 115-condition
+# pool; "mega2" is the 139,740,876-combination sweep on the 198-rung ladder. The gates are the
+# same either way -- a finer grid does not earn a laxer bar, it needs the same one.
+PREFIX = "mega"
+
 
 def load(tf):
-    Z = np.load(f"/tmp/mega_{tf}m.npz", allow_pickle=True)
+    Z = np.load(f"/tmp/{PREFIX}_{tf}m.npz", allow_pickle=True)
     return {k: Z[k] for k in Z.files}
 
 
@@ -139,14 +144,16 @@ def phase3(P, verbose=True):
 
 
 if __name__ == "__main__":
-    print("PHASE 2 -- GATE")
+    if len(sys.argv) > 1:
+        PREFIX = sys.argv[1]
+    print(f"PHASE 2 -- GATE   (reading /tmp/{PREFIX}_*.npz)")
     allo = []
     for tf in (15, 30, 60):
         P = phase2(tf)
         print("PHASE 3 -- TUNE")
         allo += phase3(P)
     allo.sort(key=lambda x: -x["exc_r"])
-    np.save("/tmp/phase3.npy", np.array(allo, dtype=object), allow_pickle=True)
+    np.save(f"/tmp/phase3_{PREFIX}.npy", np.array(allo, dtype=object), allow_pickle=True)
     print(f"\nPHASE 3 DONE: {len(allo):,} tuned rule/direction pairs carried forward")
     print(f"  {'rule':<48}{'tf':>4}{'dir':>6}{'stop':>5}{'flat':>6}{'n':>5}{'win%':>7}"
           f"{'base':>6}{'exc':>7}{'geos':>6}")

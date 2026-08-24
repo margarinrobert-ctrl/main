@@ -1272,9 +1272,16 @@ def build(conds, side=1, atr_mult=2.5, tp_r=3.0, flat_min=0, tf=30,
               flat_min=flat_min, tf=tf)
 
     def again(**over):
+        # Overrides that change the BARS (truncate, noise, a different timeframe) have to
+        # re-derive the trigger bars from the conditions. Everything else -- costs, lag, stop
+        # width -- leaves the signal alone, so the explicit trigger list is carried through.
+        # Without this a strategy built from a trigger list rather than from pool condition
+        # names could not be re-simulated at all, and the cost and lag tests raised KeyError.
         a = dict(kw); a.update(over)
+        rebar = bool(over.get("truncate")) or over.get("noise") is not None \
+            or over.get("tf", kw["tf"]) != kw["tf"]
         return build(a.pop("conds"), name=name, n_trials=n_trials, family=family,
-                     pool=False, **a)
+                     pool=False, trig=None if rebar else trig, **a)
 
     s = Strategy(pnl=pnl, ent_bar=eb, ex_bar=xb,
                  ent_sess=si[eb], ex_sess=si[xb], side=np.full(len(pnl), side, np.int64),
