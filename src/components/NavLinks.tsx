@@ -41,6 +41,9 @@ export function NavLinks() {
         </span>
         Live
       </a>
+      <a href={withBase("/quant/tune")} className={linkCls(isActive(pathname, "/quant/tune"))}>
+        Tuner
+      </a>
       {TICKERS.map((s) => (
         <a key={s} href={withBase(`/ticker/${s}`)} className={linkCls(isActive(pathname, `/ticker/${s}`))}>
           {s}
@@ -87,6 +90,12 @@ export function NavLinks() {
               className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition ${isActive(pathname, "/live") ? "bg-accent/10 text-accent-bright" : "text-neutral-300 hover:bg-white/5"}`}
             >
               Live tape
+            </a>
+            <a
+              href={withBase("/quant/tune")}
+              className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition ${isActive(pathname, "/quant/tune") ? "bg-accent/10 text-accent-bright" : "text-neutral-300 hover:bg-white/5"}`}
+            >
+              Strategy tuner
             </a>
             <div className="lbl px-3 pb-1 pt-3">Terminals</div>
             <div className="grid grid-cols-2 gap-1">

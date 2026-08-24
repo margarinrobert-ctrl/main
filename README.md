@@ -31,6 +31,33 @@ npm run build        # production build
 
 ---
 
+## Systematic futures research (`src/lib/quant/`)
+
+A separate, self-contained research stack for **intraday futures strategies** — NQ, ES, CL, gold —
+built to answer one question honestly: *does this scalping rule have a statistically valid edge, or
+does it just have a good backtest?*
+
+```bash
+npm run quant:ingest   -- --in raw_1min.csv --out data/NQ_5m.csv --tf 5 --tz America/New_York
+npm run quant:research -- --data data/NQ_5m.csv --symbol NQ --out docs/STUDY_NQ.md
+```
+
+One command runs the full protocol and writes a markdown study: engine null-calibration on simulated
+data, a data-integrity audit, alpha discovery (autocorrelation, Lo-MacKinlay variance ratios,
+drift-adjusted event studies), parameter search with plateau-vs-spike diagnosis, White's Reality
+Check and Hansen's SPA, probability of backtest overfitting, walk-forward, Deflated Sharpe with
+Benjamini-Hochberg control, cost/regime/Monte-Carlo robustness, portfolio combination, and a locked
+holdout evaluated exactly once.
+
+Everything is denominated in **ticks against the round-turn cost**, because at scalping horizons that
+comparison decides the question before any parameter does.
+
+- Methodology and how to add instruments or strategies: [`docs/RESEARCH_PROTOCOL.md`](docs/RESEARCH_PROTOCOL.md)
+- Worked study on 3 years of 1-minute NQ: [`docs/STUDY_NQ.md`](docs/STUDY_NQ.md)
+- Data format and ingest: [`data/README.md`](data/README.md)
+
+> Research tooling, not financial advice.
+
 ## Deploy — click and open
 
 This is a standard Next.js app, so the fastest path to a live URL is **Vercel** (it signs in with
