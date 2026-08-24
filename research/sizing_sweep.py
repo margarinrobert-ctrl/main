@@ -167,13 +167,15 @@ def build_grid():
 
 def prep(conds, side, am, tp, fl, tf):
     s = build(list(conds), side=side, atr_mult=am, tp_r=tp, flat_min=fl, tf=tf)
-    atr_ = s.bars["atr"][s.ent_bar]
+    from test_suite import sig_bar
+    _sb = sig_bar(s)
+    atr_ = s.bars["atr"][_sb]
     risk_d = am * atr_ * PV
     us = np.unique(s.bars["sess"])
     ret = np.r_[0.0, np.diff(s.bars["c"])]
     VOLS = np.zeros((len(VOL_LB), len(s.pnl)))
     for i, lb in enumerate(VOL_LB):
-        rv = np.array([ret[max(0, b - lb):b].std() if b > lb else np.nan for b in s.ent_bar])
+        rv = np.array([ret[max(0, b - lb):b].std() if b > lb else np.nan for b in _sb])
         VOLS[i] = np.nan_to_num(rv / np.nanmedian(rv), nan=1.0)
     r = s.ent_sess < s.cut
     p = s.pnl[r]

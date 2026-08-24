@@ -49,13 +49,17 @@ METHODS = ["fixed", "VAPS", "DVS", "RSPS", "VTM", "VRS", "VRSP", "DRS"]
 def dispersion(s, atr_mult):
     """Coefficient of variation of per-trade dollar risk. Below ~0.15 no sizing method can do
     anything, because every trade already risks nearly the same."""
-    risk = atr_mult * s.bars["atr"][s.ent_bar] * PV
+    from test_suite import sig_bar
+    sb = sig_bar(s)
+    risk = atr_mult * s.bars["atr"][sb] * PV
     return float(np.std(risk) / max(np.mean(risk), 1e-9)), risk
 
 
 def _fast_vol(s, lb=10):
+    """Realised bar volatility ahead of each entry, using bars strictly before the SIGNAL bar."""
+    from test_suite import sig_bar
     ret = np.r_[0.0, np.diff(s.bars["c"])]
-    v = np.array([ret[max(0, b - lb):b].std() if b > lb else np.nan for b in s.ent_bar])
+    v = np.array([ret[max(0, b - lb):b].std() if b > lb else np.nan for b in sig_bar(s)])
     return np.nan_to_num(v, nan=np.nanmedian(v))
 
 

@@ -174,7 +174,8 @@ class Constraints:
 
     def check(self, s, M):
         risk = float(np.nanmedian(s.params.get("atr_mult", np.nan)
-                                  * s.bars["atr"][s.ent_bar] * PV)) if len(s.ent_bar) else np.nan
+                                  * s.bars["atr"][np.maximum(s.ent_bar - 1, 0)] * PV))
+           if len(s.ent_bar) else np.nan
         oos = float(s.pnl[s.ent_sess >= s.cut].sum())
         tests = [
             ("max drawdown", M["max drawdown $"], "<=", self.max_drawdown),

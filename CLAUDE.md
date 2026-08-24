@@ -36,6 +36,17 @@ p 0.384 → 0.040) because it finally had enough trades. Corollary, learned the 
 monotone threshold grid a union **is its loosest member**, so gate on the SIZE of the excess, never
 its sign. See `docs/ib/STUDY_1R_MORE.md`.
 
+**`ent_bar` is the FILL bar, not the signal bar.** Read any condition, feature, regime label or
+ATR at `ent_bar` and you are reading a bar that closes after the order is sent — for a rule whose
+median hold is 0 bars, the bar the trade resolves on. Use `test_suite.sig_bar`. This produced a
+holdout result at p 0.0005 that replicated across 9 of 9 independently-found strategies, and was
+pure leakage; it also faked V2's "edge lives below the 200 EMA". A conditional split of realised
+trades is not a filter test — filter the TRIGGERS and re-simulate. See `docs/ib/STUDY_AUCTION.md`.
+
+**Volume profile adds nothing here.** 29 auction conditions x 9 strategies: 4 of 121 tests passed
+on research (fewer than chance), 0 survived the holdout. Low-volume nodes are revisited at exactly
+the rate of a distance-matched random level, 42.8% against 42.8%. Do not re-run this.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -55,6 +66,9 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/alpha_ladder.py` | the 198-condition pool (83 threshold rungs), Pine attached |
 | `research/oner_union.py` | threshold neighbourhoods and the trade-count / win-rate frontier |
 | `research/oner_anom.py` | exit split, matched control, corner table, FDR slices |
+| `research/volprofile.py` | session + developing volume profile, nodes, naked POCs |
+| `research/auction.py` | 29 auction-theory conditions, all leakage-checked |
+| `research/allstrats.py` | the nine shipped strategies in one registry |
 
 ## Pine
 

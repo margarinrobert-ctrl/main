@@ -24,7 +24,12 @@ PV = 2.0; TICK = 0.25
 @dataclass
 class Strategy:
     pnl: np.ndarray            # per trade, net of costs
-    ent_bar: np.ndarray        # bar index of entry
+    ent_bar: np.ndarray        # bar index of the FILL, which is the bar AFTER the signal.
+                               # Anything that asks "what was true when this trade was decided"
+                               # must read ent_bar - 1 - lag, not ent_bar. Reading a condition at
+                               # ent_bar uses that bar's own high, low, close and volume, none of
+                               # which exist when the order is sent at its open. This was got
+                               # wrong once and produced a spectacular, entirely fake, result.
     ex_bar: np.ndarray         # bar index of exit
     ent_sess: np.ndarray       # session index of entry
     ex_sess: np.ndarray        # session index of exit
@@ -46,6 +51,21 @@ class Strategy:
     n_trials: int = 1                               # how many strategies the search looked at
     why: object = None                              # 1 stop, 2 target, 3 time stop
     gap: object = None                              # exit filled through the level, not at it
+
+
+def sig_bar(s_or_arr, lag=0):
+    """The bar a trade was DECIDED on, given the bar it FILLED on.
+
+    `sim_core` fills at the open of ent_bar, so ent_bar's own high, low, close and volume are all
+    in the future at decision time. Anything describing the entry -- an indicator level, a regime
+    label, the ATR that sized the stop -- must be read here.
+
+    This was got wrong across seven call sites and produced one spectacular fake result: an
+    auction-theory filter that "lifted" a book from 61.4% to 72.0% on the holdout at p 0.0005,
+    entirely because it was reading the fill bar's own close. Read causally it does nothing.
+    """
+    eb = getattr(s_or_arr, "ent_bar", s_or_arr)
+    return np.maximum(np.asarray(eb) - 1 - lag, 0)
 
 
 R = []
@@ -246,9 +266,9 @@ def _regime(s):
     lab = np.where(up, 1, -1)
     out = []
     for k, nm in ((1, "above EMA200"), (-1, "below EMA200")):
-        m = lab[s.ent_bar] == k
+        m = lab[sig_bar(s)] == k
         out.append(f"{nm} ${s.pnl[m].sum():,.0f} ({m.sum()} tr)")
-    vals = [s.pnl[lab[s.ent_bar] == k].sum() for k in (1, -1)]
+    vals = [s.pnl[lab[sig_bar(s)] == k].sum() for k in (1, -1)]
     v = "PASS" if all(x > 0 for x in vals) else ("WARN" if sum(vals) > 0 else "FAIL")
     return (v, "; ".join(out))
 
@@ -258,7 +278,7 @@ def _voltest(s):
     atr_ = s.bars.get("atr")
     if atr_ is None:
         return ("INFO", "no ATR series supplied")
-    a = atr_[s.ent_bar]
+    a = atr_[sig_bar(s)]
     q = np.nanpercentile(a, [33.3, 66.7])
     lab = np.digitize(a, q)
     out = [f"{nm} ${s.pnl[lab == k].sum():,.0f} ({(lab==k).sum()} tr)"
@@ -484,7 +504,7 @@ def _impact(s):
     """Slippage that grows with size: one extra tick per sqrt(size / 1% of bar volume)."""
     if s.sim is None or s.bars.get("v") is None:
         return ("INFO", "no re-simulation hook or no volume series")
-    v_ = s.bars["v"]; med = np.median(v_[s.ent_bar]) if len(s.ent_bar) else 0
+    v_ = s.bars["v"]; med = np.median(v_[sig_bar(s)]) if len(s.ent_bar) else 0
     out = []
     for size in (1, 5, 10, 25, 50):
         cap = max(0.01 * med, 1.0)
@@ -501,8 +521,8 @@ def _liq(s):
     v_ = s.bars.get("v"); c = s.bars.get("c")
     if v_ is None:
         return ("INFO", "no volume series supplied")
-    ev = v_[s.ent_bar]
-    notional = np.median(ev) * np.median(c[s.ent_bar]) * PV
+    ev = v_[sig_bar(s)]
+    notional = np.median(ev) * np.median(c[sig_bar(s)]) * PV
     thin = 100 * (ev < 100).mean()
     v = "PASS" if thin < 5 else ("WARN" if thin < 15 else "FAIL")
     return (v, f"entry-bar volume: median {np.median(ev):,.0f} contracts "
@@ -515,7 +535,7 @@ def _cap(s, part=0.01):
     v_ = s.bars.get("v")
     if v_ is None:
         return ("INFO", "no volume series supplied")
-    ev = v_[s.ent_bar]
+    ev = v_[sig_bar(s)]
     lots = np.floor(part * np.minimum(ev, v_[s.ex_bar]))
     lots = np.maximum(lots, 0)
     yrs = s.n_sess / 252.0
@@ -1011,7 +1031,8 @@ def _size(s, start=50000.0, risk=0.01):
         parts.append(f"fixed-fractional {100*risk:.0f}% of ${start:,.0f}: "
                      f"${curve[-1]-start:,.0f}, maxDD ${mdd:,.0f}")
         # volatility targeting: size inversely to ATR, normalised to average one lot
-        w = np.nanmedian(atr_[s.ent_bar]) / atr_[s.ent_bar]
+        sb_ = sig_bar(s)
+        w = np.nanmedian(atr_[sb_]) / atr_[sb_]
         parts.append(f"volatility-targeted 1 lot average: ${float((s.pnl*w).sum()):,.0f}, "
                      f"maxDD ${_dd(s.pnl*w):,.0f}")
     v = "INFO"
@@ -1298,16 +1319,23 @@ def build(conds, side=1, atr_mult=2.5, tp_r=3.0, flat_min=0, tf=30,
               flat_min=flat_min, tf=tf)
 
     def again(**over):
-        # Overrides that change the BARS (truncate, noise, a different timeframe) have to
-        # re-derive the trigger bars from the conditions. Everything else -- costs, lag, stop
-        # width -- leaves the signal alone, so the explicit trigger list is carried through.
-        # Without this a strategy built from a trigger list rather than from pool condition
-        # names could not be re-simulated at all, and the cost and lag tests raised KeyError.
+        # The explicit trigger list is carried through for overrides that leave the SIGNAL alone
+        # -- costs, lag, stop width -- so that a strategy built from a trigger list rather than
+        # from pool condition names can be re-simulated at all; without that the cost and lag
+        # tests raised KeyError.
+        #
+        # It must NOT be carried through when the override changes what fires. Changing `conds`
+        # is the obvious case and carrying the old triggers through made the drop-one feature
+        # importance test report $+0 for every condition, because removing a condition no longer
+        # removed anything. An explicit `trig=` in the override wins over both.
         a = dict(kw); a.update(over)
-        rebar = bool(over.get("truncate")) or over.get("noise") is not None \
-            or over.get("tf", kw["tf"]) != kw["tf"]
+        rebar = (bool(over.get("truncate")) or over.get("noise") is not None
+                 or over.get("tf", kw["tf"]) != kw["tf"]
+                 or list(over.get("conds", kw["conds"])) != list(kw["conds"]))
+        use = over["trig"] if "trig" in over else (None if rebar else trig)
+        a.pop("trig", None)
         return build(a.pop("conds"), name=name, n_trials=n_trials, family=family,
-                     pool=False, trig=None if rebar else trig, **a)
+                     pool=False, trig=use, **a)
 
     s = Strategy(pnl=pnl, ent_bar=eb, ex_bar=xb,
                  ent_sess=si[eb], ex_sess=si[xb], side=np.full(len(pnl), side, np.int64),

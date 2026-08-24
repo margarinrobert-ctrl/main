@@ -238,15 +238,19 @@ V2 and V4 both show the intended corner alone in profit, with every other corner
 Per-year and per-regime slices, Newey-West t (trades cluster by session), Benjamini-Hochberg
 across every slice, read on the locked block.
 
-* **V1, V3, V4: no slice survives FDR at q < 0.10.** The edge is not one year and not one
-  volatility regime — which is the good outcome for this test.
-* **V2 shipped: the edge lives below the 200 EMA** (q = 0.004; $67/trade below versus $0/trade
-  above, and it holds in *both* blocks — $63 research, $80 locked). That is a named mechanism, not
-  an artifact: V2 requires `EMA20 > EMA50` and pays below the 200 EMA, so it is a short-term
-  bounce inside a longer downtrend, faded. It also means V2-shipped was partly a bet that
-  downtrends would occur.
-* **V2 re-set: that concentration weakens to q = 0.171.** On 201 trades instead of 120 the edge is
-  more evenly spread and less contingent on the regime showing up.
+* **No slice survives FDR at q < 0.10, for any of the four.** The edge is not one year and not
+  one volatility regime — which is the good outcome for this test.
+
+> **Correction (see `STUDY_AUCTION.md` §5).** This section originally reported that V2's edge
+> "lives below the 200 EMA", at q = 0.004 with the same sign in both blocks, and called it a
+> named mechanism. That was wrong. The regime label was read at `ent_bar`, which `sim_core`
+> sets to the **fill** bar — the bar *after* the signal — so `close > EMA200` was being evaluated
+> on a bar whose close comes after the trade is already open. V2's median hold is 0 bars, so that
+> bar is usually the one the trade resolves on: a winning short means price fell during it, which
+> makes "below the 200 EMA" more likely. The split was conditioned on its own outcome. Read at
+> the signal bar the slice is t = 1.12, p = 0.263, **q = 0.474** — nothing. The bug is fixed in
+> `test_suite.sig_bar` and every call site; the four versions' own figures are unaffected,
+> because a strategy is defined by its trigger bars and those were never wrong.
 
 ---
 
@@ -385,7 +389,7 @@ favour of V2\*, which has the same rule at more entries.
    walk-forward folds. And it only became demonstrable when it was loosened.
 2. **V2 and V4 hold.** Both keep ~16 points of excess on the holdout with every condition proven.
    V2 nearly doubles its entries in the process; V4 could not be loosened at all and stays where
-   it was.
+   it was. (V2 has no measurable regime dependence — see the correction in §7d.)
 3. **V1 is the weakest and the relaxation is why we know.** One of three conditions proven, +1.9
    points of locked excess after re-setting, and a 15% bootstrap chance of a losing holdout. Its
    shipped setting scores far better and was chosen on the same block it is measured on.

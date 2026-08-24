@@ -22,7 +22,7 @@ from test_suite import build
 def win_null(s, draws=400, seed=31):
     rng = np.random.default_rng(seed)
     mod = s.bars["mod"]; n = len(s.bars["c"])
-    used = mod[s.ent_bar]
+    used = mod[np.maximum(s.ent_bar - 1, 0)]
     lo, hi = used.min(), used.max()
     pool = np.flatnonzero((mod >= lo) & (mod <= hi))
     pool = pool[(pool > 300) & (pool < n - 2)]

@@ -87,7 +87,7 @@ def _matched_null(s, draws=150, seed=17):
     drift, session and geometry fixed isolates the one thing under test: which bars it picked."""
     rng = np.random.default_rng(seed)
     mod = s.bars["mod"]; n = len(s.bars["c"])
-    used = mod[s.ent_bar]
+    used = mod[np.maximum(s.ent_bar - 1, 0)]
     lo, hi = used.min(), used.max()
     pool = np.flatnonzero((mod >= lo) & (mod <= hi))
     pool = pool[(pool > 300) & (pool < n - 2)]
@@ -144,7 +144,8 @@ class SignalModel:
         from sklearn.ensemble import GradientBoostingClassifier
         from sklearn.metrics import roc_auc_score
         self.keys = [k for v in COMPONENTS.values() for k in v]
-        X = np.column_stack([np.nan_to_num(F[k][s.ent_bar], nan=0.0, posinf=0.0, neginf=0.0)
+        _sb = np.maximum(s.ent_bar - 1, 0)      # features at the SIGNAL bar, not the fill
+        X = np.column_stack([np.nan_to_num(F[k][_sb], nan=0.0, posinf=0.0, neginf=0.0)
                              for k in self.keys])
         y = (s.pnl > 0).astype(int)
         tr = s.ent_sess < s.cut; te = ~tr

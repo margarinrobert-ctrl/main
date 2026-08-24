@@ -214,12 +214,13 @@ def slices(key, setting=None, verbose=True):
     F, d, si, cut, trig, p = _pick(key, setting)
     pnl, eb, _x, why, _g = _sim(d, trig, F["side"], F["am"], F["flat"])
     idx = d["df"].index
+    sb = np.maximum(eb - 1, 0)      # eb is the FILL bar; regime at decision time is one earlier
     yr = np.array([idx[b].year for b in eb])
     mod = d["mod"].astype(np.int64)[eb]
     atr_ = d["atr"]; a20 = I.sma(atr_, 20)
-    vr = (atr_ / np.maximum(a20, 1e-12))[eb]
+    vr = (atr_ / np.maximum(a20, 1e-12))[sb]
     e200 = I.ema(d["c"], 200)
-    up = (d["c"] > e200)[eb]
+    up = (d["c"] > e200)[sb]
     lok = si[eb] >= cut
     base = float(pnl.mean())
     tests = []
