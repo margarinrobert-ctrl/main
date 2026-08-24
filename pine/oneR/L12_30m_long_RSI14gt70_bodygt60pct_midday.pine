@@ -1,0 +1,120 @@
+//@version=6
+// =============================================================================================
+// RSI14>70 AND body>60% AND midday
+//   long only, stop 2.0 x ATR, target 1.0 x that risk, flat at 16:00, 30-minute bars.
+//   Stop and target are measured from the FILL -- the open of the bar after the signal --
+//   using the ATR of the signal bar.
+//
+// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, $1.00 commission per round turn, 1 tick
+// spread + 1 tick slip each side, 1 extra tick on stops:
+//     trades                      101
+//     net P&L                     $4,674
+//     win rate                    71.3% (geometry base 48.3%)
+//     locked block                $1,415
+//
+// THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
+//   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14.
+//   * Clock conditions go through an explicit timezone. Pine's bare hour/minute are EXCHANGE
+//     time -- Chicago for CME -- and the research is New York.
+//   * CCI is on hlc3, not close.
+//
+// Pine built-ins are used for RSI, Stochastic, CCI, Williams %R, MFI, DMI/ADX, OBV, linreg and
+// Bollinger. They were checked against the research definitions, not executed side by side.
+//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+strategy("RSI14>70 + body>60% + midday | long | 2.0xATR 1.0R", overlay = true, initial_capital = 25000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.50,
+     slippage = 2, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+// ---- primitives, defined to match the research exactly -------------------------------------------
+tzIn   = input.string("America/New_York", "Timezone for clock conditions",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"],
+     group = "Setup", tooltip = "Pine's bare hour/minute are in the EXCHANGE timezone, which is " +
+     "Chicago for CME. The research is New York time. Getting this wrong runs the strategy an " +
+     "hour late -- it has happened here before.")
+barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
+atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
+rsi14  = ta.rsi(close, 14)
+barRange  = math.max(high - low, syminfo.mintick)
+bodyFrac  = math.abs(close - open) / barRange
+
+
+// ---- backtest window -------------------------------------------------------------------------
+// This can only NARROW what TradingView already loaded. How far back an intraday chart goes is
+// set by your plan and by the symbol, not by any script -- the table at the bottom left shows
+// the range you actually got, so you can tell a plan limit from a filter.
+winMode  = input.string("All available history", "Backtest window", group = "Backtest window",
+     options = ["All available history", "Last 90 days", "Last 365 days", "Last 3 years", "Custom dates"])
+fromDate = input.time(timestamp("01 Jan 2023 00:00 +0000"), "Custom from", group = "Backtest window")
+toDate   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "Custom to", group = "Backtest window")
+daysBack = winMode == "Last 90 days" ? 90 : winMode == "Last 365 days" ? 365 : winMode == "Last 3 years" ? 1095 : 0
+inWindow = winMode == "Custom dates" ? (time >= fromDate and time <= toDate) : daysBack == 0 ? true : (time >= timenow - daysBack * 86400000)
+
+allowLong  = input.bool(true, "Allow longs", group = "Direction")
+allowShort = input.bool(false, "Allow shorts", group = "Direction",
+     tooltip = "This rule was measured in ONE direction against that direction's own " +
+     "base rate. Flipping it does not give you the mirror-image edge -- longs and " +
+     "shorts start from different base rates on a market that trended, and the other " +
+     "side of this rule was not tested.")
+atrMult = input.float(2.0, "Stop = N x ATR", minval = 0.25, step = 0.25, group = "Risk")
+tpR     = input.float(1.0, "Target = N x risk", minval = 0.25, step = 0.25, group = "Risk")
+
+// ---- the rule -------------------------------------------------------------------
+c0 = rsi14 > 70    // RSI14>70
+c1 = bodyFrac > 0.6    // body>60%
+c2 = barMin >= 690 and barMin < 810    // midday
+trig = c0 and c1 and c2
+
+ready = not na(atrV) and atrV > 0 and bar_index > 300
+isFlat = strategy.position_size == 0
+
+// The engine measures the stop and target from the FILL -- the open of the bar after
+// the signal -- not from the signal bar's close. `loss` and `profit` are in ticks
+// relative to the actual entry price, which is the only Pine primitive that matches.
+// Whole ticks are the one unavoidable difference: at most half a tick per side.
+if trig and ready and isFlat and inWindow
+    riskTicks = math.max(math.round(atrMult * atrV / syminfo.mintick), 1)
+    if allowLong
+        strategy.entry("L", strategy.long)
+        strategy.exit("Lx", "L", loss = riskTicks, profit = tpR * riskTicks)
+    if allowShort
+        strategy.entry("S", strategy.short)
+        strategy.exit("Sx", "S", loss = riskTicks, profit = tpR * riskTicks)
+
+if barMin >= 960 and strategy.position_size != 0
+    strategy.close_all(comment = "session cutoff")
+
+if strategy.position_size != 0 and not inWindow
+    strategy.close_all(comment = "outside backtest window")
+
+plotshape(trig and allowLong,  "long",  shape.triangleup,   location.belowbar, color.teal, size = size.tiny)
+plotshape(trig and allowShort, "short", shape.triangledown, location.abovebar, color.red,  size = size.tiny)
+
+// ---- what history this chart actually gave you ------------------------------------------------
+var int firstBarT = na
+if inWindow and na(firstBarT)
+    firstBarT := time
+var table dr = table.new(position.bottom_left, 1, 2, border_width = 1)
+if barstate.islast
+    table.cell(dr, 0, 0, "backtested " + str.format_time(firstBarT, "yyyy-MM-dd") + "  to  " +
+         str.format_time(time, "yyyy-MM-dd"), text_size = size.small, text_color = color.gray)
+    table.cell(dr, 0, 1, str.tostring(bar_index + 1) + " bars loaded on this chart",
+         text_size = size.small, text_color = color.gray)
+
+
+// ---- which rule is loaded ---------------------------------------------------------
+var table rt = table.new(position.top_right, 2, 3, border_width = 1)
+if barstate.islast
+    table.cell(rt, 0, 0, "RSI14>70", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 1, 0, c0 ? "yes" : "no", text_size = size.small,
+         text_color = c0 ? color.teal : color.gray)
+    table.cell(rt, 0, 1, "body>60%", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 1, 1, c1 ? "yes" : "no", text_size = size.small,
+         text_color = c1 ? color.teal : color.gray)
+    table.cell(rt, 0, 2, "midday", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 1, 2, c2 ? "yes" : "no", text_size = size.small,
+         text_color = c2 ? color.teal : color.gray)
