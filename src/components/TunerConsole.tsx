@@ -138,6 +138,7 @@ export function TunerConsole() {
 
   const [symbol, setSymbol] = useState("MNQ");
   const [timeframe, setTimeframe] = useState(30);
+  const [broker, setBroker] = useState("discount");
 
   const [rule, setRule] = useState("close>ema200 and close<ema20");
   const [liveRule, setLiveRule] = useState("close>ema200 and close<ema20");
@@ -163,7 +164,7 @@ export function TunerConsole() {
     setBusy("generating synthetic bars");
     setError(null);
     try {
-      const i = await call<LoadedInfo>({ kind: "load", source: { type: "demo", days: 400 }, symbol, timeframe });
+      const i = await call<LoadedInfo>({ kind: "load", source: { type: "demo", days: 400 }, symbol, timeframe, broker });
       setInfo(i);
       setSweep(null);
       setReveal(null);
@@ -172,7 +173,7 @@ export function TunerConsole() {
     } finally {
       setBusy(null);
     }
-  }, [call, symbol, timeframe]);
+  }, [call, symbol, timeframe, broker]);
 
   const loadFile = useCallback(
     async (file: File) => {
@@ -180,7 +181,7 @@ export function TunerConsole() {
       setError(null);
       try {
         const text = await file.text();
-        const i = await call<LoadedInfo>({ kind: "load", source: { type: "csv", text }, symbol, timeframe });
+        const i = await call<LoadedInfo>({ kind: "load", source: { type: "csv", text }, symbol, timeframe, broker });
         setInfo(i);
         setSweep(null);
         setReveal(null);
@@ -190,7 +191,7 @@ export function TunerConsole() {
         setBusy(null);
       }
     },
-    [call, symbol, timeframe],
+    [call, symbol, timeframe, broker],
   );
 
   const axes = useMemo(() => {
@@ -294,6 +295,20 @@ export function TunerConsole() {
             </select>
           </label>
           <label className="flex flex-col gap-1">
+            <span className="text-[10px] uppercase tracking-micro text-neutral-500">Broker</span>
+            <select
+              value={broker}
+              onChange={(e) => setBroker(e.target.value)}
+              className="min-h-9 rounded border border-white/10 bg-black/40 px-2 py-1.5 text-[12px] text-neutral-100 outline-none focus:border-accent/60"
+            >
+              {["discount", "ibkr", "propfirm", "premium"].map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
             <span className="text-[10px] uppercase tracking-micro text-neutral-500">CSV</span>
             <input
               type="file"
@@ -325,6 +340,7 @@ export function TunerConsole() {
             <span>
               research {info.researchSessions.toLocaleString()} / locked {info.lockedSessions.toLocaleString()} sessions
             </span>
+            <span className="text-neutral-300">round turn {info.roundTurnTicks.toFixed(2)} ticks</span>
             {info.synthetic ? (
               <span className="rounded border border-put/40 bg-put/10 px-1.5 py-0.5 text-put">
                 SYNTHETIC — no edge exists in these bars by construction
@@ -337,6 +353,20 @@ export function TunerConsole() {
             <span className="text-neutral-300">Synthetic demo</span> to try the controls against bars with no edge in them.
           </p>
         )}
+        {info ? (
+          <details className="mt-2">
+            <summary className="cursor-pointer text-[10px] uppercase tracking-micro text-neutral-500">
+              What a round turn costs
+            </summary>
+            <pre className="mt-1.5 overflow-x-auto whitespace-pre rounded border border-white/10 bg-black/40 p-2.5 text-[11px] leading-relaxed text-neutral-400">
+{info.costs}
+            </pre>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-neutral-500">
+              Fee values are dated assumptions, not quotes. Slippage is a model, not a measurement — bars are not order books. Replace both with your own
+              statement before sizing real risk.
+            </p>
+          </details>
+        ) : null}
       </Panel>
 
       {/* ---------------- rule ---------------- */}

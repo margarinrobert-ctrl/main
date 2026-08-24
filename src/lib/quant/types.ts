@@ -1,4 +1,5 @@
 import type { ExchangeTz } from "./clock";
+import type { FeeSchedule, SlippageModel } from "./costs";
 
 // Core types for the systematic futures research stack.
 //
@@ -27,8 +28,26 @@ export interface Instrument {
   spreadTicks: number;
   /** Extra adverse fill, in ticks, per side — the market-order tax beyond half-spread. */
   slippageTicks: number;
-  /** USD commission for a round turn of one unit. */
+  /**
+   * USD commission for a round turn of one unit.
+   *
+   * Retained as the headline figure and as the fallback for instruments that have not been given a
+   * `fees` breakdown, but `fees` is the authority when present. Keep the two consistent:
+   * `commissionRoundTurn` should equal `feesRoundTurn(fees)`, and `instruments.test.ts` asserts it.
+   */
   commissionRoundTurn: number;
+  /**
+   * The itemised per-side charges behind `commissionRoundTurn`. Present on every instrument that
+   * has been costed properly; absent means the lumped number is all that is known, and
+   * `legacyFees` reads it as broker commission with no exchange or regulatory line — which
+   * understates the truth. See `costs.ts`.
+   */
+  fees?: FeeSchedule;
+  /**
+   * How slippage behaves. Omitted means a flat `slippageTicks` on every fill, which is the
+   * assumption that most flatters a stop-loss strategy. See `costs.ts`.
+   */
+  slippage?: SlippageModel;
   /** Exchange wall clock the session is defined in. */
   tz: ExchangeTz;
   /** Local trading window as [startMinuteOfDay, endMinuteOfDay) — e.g. [570, 960] is 09:30-16:00. */

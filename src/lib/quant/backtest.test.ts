@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runBacktest } from "./backtest";
-import { instrument, roundTurnCostPoints, takerSideCostPoints } from "./instruments";
+import { fillFrictionPoints } from "./costs";
+import { instrument, roundTurnCostPoints } from "./instruments";
 import { neweyWestT } from "./stats";
 import { STRATEGIES } from "./strategies";
 import { syntheticSeries } from "./synth";
@@ -113,8 +114,13 @@ describe("fill models", () => {
     expect(onTarget.trades[0].reason).toBe("target");
     expect(onStop.trades[0].reason).toBe("stop");
     expect(onTarget.trades[0].costPoints).toBeLessThan(onStop.trades[0].costPoints);
-    // Target exit pays one taker side plus commission; the stop pays two taker sides plus commission.
-    expect(onStop.trades[0].costPoints - onTarget.trades[0].costPoints).toBeCloseTo(takerSideCostPoints(costed), 9);
+    // A target rests, so it pays fees only. A stop takes liquidity AND pays the stop premium on
+    // top, because it becomes a market order exactly when the book is thinnest. The gap between
+    // them is therefore one taker side PLUS that premium -- under the old flat model it was one
+    // taker side, and the missing premium is the specific way a flat tick flatters a stop system.
+    // Fees are paid on both, so the gap is pure friction: one taker side of spread and slippage,
+    // plus the stop premium.
+    expect(onStop.trades[0].costPoints - onTarget.trades[0].costPoints).toBeCloseTo(fillFrictionPoints(costed, "stop"), 9);
   });
 
   it("passive only fills when price trades THROUGH the resting order", () => {
@@ -200,7 +206,14 @@ describe("null calibration", () => {
       if (paid.trades.length < 100) continue;
       const freePerTrade = free.trades.reduce((a, t) => a + t.pnl, 0) / free.trades.length;
       const paidPerTrade = paid.trades.reduce((a, t) => a + t.pnl, 0) / paid.trades.length;
-      expect(freePerTrade - paidPerTrade).toBeCloseTo(19, 0); // 3.8 ticks x $5
+      // The REALISED cost per trade now sits ABOVE the calm-bar reference and never below it.
+      // That is the point of the model: stops trigger preferentially in fast bars -- that is why
+      // they trigger -- so charging every bar the same tick understates what a stop system pays.
+      // The band is wide because how far above depends on the strategy's own exit mix.
+      const calmReference = 19; // 3.8 ticks x $5, market in, market out, median bar
+      const realised = freePerTrade - paidPerTrade;
+      expect(realised, `${s.id} realised cost fell below the calm-bar reference`).toBeGreaterThanOrEqual(calmReference - 0.5);
+      expect(realised, `${s.id} realised cost is implausibly far above the reference`).toBeLessThan(2 * calmReference);
     }
   });
 });

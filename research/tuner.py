@@ -303,8 +303,26 @@ def _tensor(o, h, l, c, atr_s, mod, fbar, fpx, stops, targs, flats, holds, side,
                 j += 1
 
 
+@njit(cache=True, inline="always")
+def _cost(why, ebar, xbar, f_taker, f_stop, fee_rt, maker_target):
+    """What one trade paid: fees both sides, plus the friction each fill met on its own bar.
+
+    Friction is indexed by the FILL BAR, not stored per trade, because it depends only on the bar
+    a fill landed on and the role it played -- and the tensor already knows both. That is what
+    keeps a bar-dependent slippage model compatible with every knob being a read-time lookup."""
+    c = fee_rt + f_taker[ebar]
+    if why == STOP:
+        c += f_stop[xbar]
+    elif why == TARGET and maker_target == 1:
+        c += 0.0                     # a resting target is hit; it pays no spread and no slippage
+    else:
+        c += f_taker[xbar]
+    return c
+
+
 @njit(cache=True)
-def _walk_one(trig, xb, why, raw, se_pv, fixed, si, cut, pnl, eb, xbo, wo):
+def _walk_one(trig, xb, why, raw, f_taker, f_stop, fee_rt, maker_target, si, cut,
+              pnl, eb, xbo, wo):
     """The no-overlap scan for one geometry: take a signal only if the book is flat.
 
     A signal ON the exit bar is legal -- the position closed during that bar, so its close finds
@@ -317,16 +335,14 @@ def _walk_one(trig, xb, why, raw, se_pv, fixed, si, cut, pnl, eb, xbo, wo):
         x = xb[i]
         if x < 0:
             continue
-        p = raw[i] - fixed
-        if why[i] == STOP:
-            p -= se_pv
+        p = raw[i] - _cost(why[i], i + 1, x, f_taker, f_stop, fee_rt, maker_target)
         pnl[k] = p; eb[k] = i; xbo[k] = x; wo[k] = why[i]
         free = x; k += 1
     return k
 
 
 @njit(cache=True, parallel=True)
-def _walk_many(trig, xb, why, raw, se_pv, fixed, si, cut, out):
+def _walk_many(trig, xb, why, raw, f_taker, f_stop, fee_rt, maker_target, si, cut, out):
     """Every geometry at once. Returns the 16 aggregates each geometry needs, and nothing else,
     so a 300-cell grid does not allocate 300 trade arrays."""
     ng = xb.shape[0]
@@ -345,9 +361,8 @@ def _walk_many(trig, xb, why, raw, se_pv, fixed, si, cut, out):
             if x < 0:
                 continue
             w = why[g, i]
-            p = raw[g, i] - fixed
+            p = raw[g, i] - _cost(w, i + 1, x, f_taker, f_stop, fee_rt, maker_target)
             if w == STOP:
-                p -= se_pv
                 nst += 1.0
             elif w == TARGET:
                 ntg += 1.0
@@ -380,8 +395,8 @@ def _walk_many(trig, xb, why, raw, se_pv, fixed, si, cut, out):
 
 
 @njit(cache=True, parallel=True)
-def _control(mod_ptr, mod_idx, slot, trig, xb, why, raw, se_pv, fixed, si, cut,
-             reps, seed, res_per, lok_per, all_per):
+def _control(mod_ptr, mod_idx, slot, trig, xb, why, raw, f_taker, f_stop, fee_rt, maker_target,
+             si, cut, reps, seed, res_per, lok_per, all_per):
     """The matched control: random entries with the SAME minute-of-day distribution.
 
     Sampling minute-of-day rather than uniformly is what makes this a control rather than a
@@ -413,9 +428,7 @@ def _control(mod_ptr, mod_idx, slot, trig, xb, why, raw, se_pv, fixed, si, cut,
             x = xb[i]
             if x < 0:
                 continue
-            p = raw[i] - fixed
-            if why[i] == STOP:
-                p -= se_pv
+            p = raw[i] - _cost(why[i], i + 1, x, f_taker, f_stop, fee_rt, maker_target)
             free = x
             n += 1.0; net += p
             if si[i] < cut:
@@ -444,23 +457,65 @@ class Entry:
         return f"limit {self.k}xATR{self.atr_lim} exp{self.expiry} thru{self.thru:g}t"
 
 
+_FRICTION: dict = {}
+
+
 @dataclass(frozen=True)
 class Costs:
-    """Every cost is affine in the gross move, so these are applied at read time, for free."""
-    comm: float = COMM
-    spread_t: float = 2.0         # ticks each side
-    stop_slip_t: float = 1.0      # extra ticks when the exit is a stop
+    """The cost model, itemised in `research/costs.py`, applied at read time.
+
+    Fees are a constant per trade, so a different broker costs nothing to try. Spread and slippage
+    depend on the bar a fill landed on, so they are precomputed once per bar as two arrays -- the
+    friction a TAKER fill meets there and the friction a STOP fill meets there -- and the walk
+    looks up whichever the trade actually paid. Both halves therefore stay read-time, which is what
+    keeps a bar-dependent slippage model compatible with the tuner's whole premise.
+
+    `broker="legacy"` reproduces the old model exactly (COMM 1.00 broker-only, flat ticks), so a
+    before/after comparison never has to be reconstructed from memory.
+    """
+    symbol: str = "MNQ"
+    broker: str = "discount"
+    fill_model: str = "taker"     # "taker" charges the spread on a target too; "realistic" rests it
     mult: float = 1.0
+    legacy: bool = False          # the pre-change model, exactly, for a like-for-like comparison
 
-    def fixed(self):
-        return self.comm * self.mult + 2.0 * self.spread_t * TICK * self.mult * PV
+    def model(self):
+        import costs as C
+        if self.legacy:
+            return C.model(self.symbol, "legacy", fill_model=self.fill_model, mult=self.mult,
+                           slip=C.LEGACY_SLIP, spread_ticks=C.LEGACY_SPREAD_TICKS)
+        return C.model(self.symbol, self.broker, fill_model=self.fill_model, mult=self.mult,
+                       slip=C.REALISTIC)
 
-    def se_pv(self):
-        return self.stop_slip_t * TICK * self.mult * PV
+    def fee_rt(self):
+        """Both sides' fees, in DOLLARS -- the same units the tensor's `raw` is in."""
+        m = self.model()
+        return m.fees.round_turn() * m.mult
+
+    def maker_target(self):
+        return np.int64(0 if self.fill_model == "taker" else 1)
+
+    def friction(self, d):
+        """Per-bar taker and stop friction, in DOLLARS, cached per bar set and cost model."""
+        import costs as C
+        key = (d["_key"], self.symbol, self.broker, self.mult, self.legacy, self.fill_model)
+        hit = _FRICTION.get(key)
+        if hit is None:
+            m = self.model()
+            ft, fs = C.friction_arrays(m, d["h"], d["l"], d["c"], d["mod"])
+            hit = (np.ascontiguousarray(ft * m.pv), np.ascontiguousarray(fs * m.pv))
+            _FRICTION[key] = hit
+        return hit
 
     def tag(self):
-        return (f"${self.comm:g}/rt + {self.spread_t:g}t each side + {self.stop_slip_t:g}t on stops"
+        f = self.model().fees
+        return (f"{self.symbol}/{self.broker} ${f.round_turn():.2f}rt"
+                + ("" if self.fill_model == "taker" else f" {self.fill_model}")
+                + (" legacy" if self.legacy else "")
                 + (f" x{self.mult:g}" if self.mult != 1.0 else ""))
+
+
+LEGACY_COSTS = Costs(broker="legacy", legacy=True)
 
 
 _ATR: dict = {}
@@ -651,8 +706,9 @@ class Result:
 
 def _control_stats(T, g, trig, costs, reps, seed, actual_res, actual_lok, actual_all):
     res = np.zeros(reps); lok = np.zeros(reps); alw = np.zeros(reps)
-    _control(T.mod_ptr, T.mod_idx, T.slot, trig, T.xb[g], T.why[g], T.raw[g],
-             costs.se_pv(), costs.fixed(), T.d["si"], np.int64(T.d["cut"]),
+    ft, fs = costs.friction(T.d)
+    _control(T.mod_ptr, T.mod_idx, T.slot, trig, T.xb[g], T.why[g], T.raw[g], ft, fs,
+             costs.fee_rt(), costs.maker_target(), T.d["si"], np.int64(T.d["cut"]),
              np.int64(reps), np.int64(seed), res, lok, alw)
     def p(sample, act):
         return float((np.sum(sample >= act) + 1.0) / (reps + 1.0))
@@ -672,8 +728,9 @@ def run(rule="always", tf=30, side=1, win="09:30-11:00", stop=2.0, target=1.0,
     g = T.gi(stop, target, flat, hold)
     trig = np.flatnonzero(mask(d, rule) & wm).astype(np.int64)
     out = np.zeros((1, NCOL))
-    _walk_many(trig, T.xb[g:g + 1], T.why[g:g + 1], T.raw[g:g + 1],
-               costs.se_pv(), costs.fixed(), d["si"], np.int64(d["cut"]), out)
+    ft, fs = costs.friction(d)
+    _walk_many(trig, T.xb[g:g + 1], T.why[g:g + 1], T.raw[g:g + 1], ft, fs,
+               costs.fee_rt(), costs.maker_target(), d["si"], np.int64(d["cut"]), out)
     r = Result(rule=rule, tf=tf, side=side, win=window(win), geom=T.label(g),
                entry=entry.tag(), costs=costs.tag(), row=out[0], n_trig=len(trig), seen=seen)
     if control and r.n > 3:
@@ -728,8 +785,9 @@ def sweep(rule="always", tf=30, side=1, win="09:30-11:00", stop=(1.0, 1.5, 2.0, 
                         trig = np.flatnonzero(mask(d, rl) & wm).astype(np.int64)
                         for cs in costl:
                             out = np.zeros((T.ng, NCOL))
-                            _walk_many(trig, T.xb, T.why, T.raw, cs.se_pv(), cs.fixed(),
-                                       d["si"], np.int64(d["cut"]), out)
+                            ft, fs = cs.friction(d)
+                            _walk_many(trig, T.xb, T.why, T.raw, ft, fs, cs.fee_rt(),
+                                       cs.maker_target(), d["si"], np.int64(d["cut"]), out)
                             for g in range(T.ng):
                                 if out[g, C_N] < min_trades:
                                     dropped += 1

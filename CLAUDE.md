@@ -27,6 +27,16 @@ neighbourhood, the obvious over-correction, cost $18,970. See `docs/ib/STUDY_1R_
 (which fails every restrictive condition) and not against per-trade edge (which passes every one).
 `research/dropone.py`. The research p-value is decoration; read the locked one.
 
+**COMM = 1.00 was broker commission only.** No CME exchange fee, no NFA line, so every result in
+`docs/ib/` was measured ~44% light on fees — real MNQ is $1.44/round turn. And a flat slippage tick
+is charged in the calm bars where it is not paid and understated in the fast ones where it is,
+which is precisely where a stop system exits. `research/costs.py` / `src/lib/quant/costs.ts` itemise
+fees per side and scale slippage by bar speed, exit role and session. Cost realism punishes
+TURNOVER, not edge: the nine shipped legs give back 3% and none flip, while two high-frequency TS
+strategies cross to unprofitable — one of them the time-of-day control. Note the direction is not
+uniform on the Python side (calm-bar friction FELL from 2t to 1.5t per side while fees rose), so
+read the decomposition, not the total. See `docs/ib/STUDY_COSTS.md`.
+
 **Sizing creates no edge.** Fixed one contract per leg, AVA across legs. See §9.
 
 **A win rate that exists at only one threshold is not a mechanism.** Parameterise every shipped
@@ -156,6 +166,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
+| `research/costs.py` | itemised fees, broker presets, bar-dependent slippage; `real_costs.py` reports the damage |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine
