@@ -137,3 +137,81 @@ Measured on MNQ, 2022-12-27 → 2025-12-11, one contract, $1.00 commission per r
 spread plus one tick slippage each side, one extra tick on stops. The entry cost is charged at the
 **full market rate** even for the limit entry, which is conservative. Research tooling for
 education and analysis, not financial advice.
+
+---
+
+# Addendum — is it more profitable *with* EMASTRETCH, and what the tests say
+
+Asked directly. Two formulas:
+
+```
+EMASTRETCH = 100 * (C / EMA(C, 10) - 1)      // % distance from the 10-EMA
+BUYLEVEL   = C - ATR(5) * 0.75               // the resting limit price
+```
+
+They were tested separately, because they do different jobs: `BUYLEVEL` is an **execution** change
+(where the order rests), `EMASTRETCH` is an **entry filter** (whether an order rests at all).
+
+## A. The threshold sweep — market vs limit, 2 x 2
+
+Long, 2.0xATR stop, 1R target, 6-bar expiry, `BUYLEVEL` = C − ATR(5)*0.75, 2-tick through-fill
+required, resolved on the true 1-minute path. Total net dollars, full sample.
+
+| EMASTRETCH gate | 30m, 07:00–11:00 ET, limit | 5m, 09:30–16:00 ET, limit |
+| --- | ---: | ---: |
+| none (every bar) | 17,759 | 49,927 |
+| < −0.5% | 1,433 | −947 |
+| < −0.3% | 2,743 | 1,624 |
+| < −0.2% | 6,294 | −3,560 |
+| < −0.1% | 4,721 | −1,798 |
+| < 0 | −2,969 | 7,581 |
+| **> 0** | **17,960** | **44,272** |
+| **> +0.2%** | **9,058** | **17,888** |
+
+Market-entry baselines, no EMASTRETCH: 30m **−3,599**, 5m **−6,526**.
+
+Two things fall straight out.
+
+1. **`BUYLEVEL` is where all the money is.** −3,599 → 17,759 on 30m and −6,526 → 49,927 on 5m,
+   from changing nothing but the fill price. The same flip is in §3–§5 above with the pessimism
+   knobs turned up.
+2. **`EMASTRETCH` in the direction the formula intends (negative — price stretched *below* the
+   10-EMA) makes it worse at every rung, on both configurations.** The only side of zero that
+   helps per-trade is the *positive* one: price **above** the 10-EMA. That inverts the formula's
+   reading. It is trend-following, not stretch-fading.
+
+## B. The random-filter test, on the locked block, for the survivors
+
+Total dollars reward big samples, so a filter that keeps everything always "wins". The informative
+test is `research/dropone.filter_null`: compare a filter's per-trade dollars against **random
+subsets of the same size** drawn from the unfiltered limit-entry trades. Read on the locked block
+(the last 35% of sessions), which none of this was selected on.
+
+| config | gate | n | $/trade | random control | p |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 30m 07:00–11:00 | > +0.2% | 117 | 41.8 | 12.2 | **0.056** |
+| 30m 07:00–11:00 | > 0 | 309 | 17.0 | 12.3 | 0.263 |
+| 30m 07:00–11:00 | < −0.2% | 134 | 36.7 | 12.1 | 0.083 |
+| 5m 09:30–16:00 | > +0.2% | 319 | 32.2 | 15.6 | **0.022** |
+| 5m 09:30–16:00 | > 0 | 1,069 | 22.0 | 15.5 | **0.006** |
+| 5m 09:30–16:00 | < −0.2% | 296 | −4.3 | 15.4 | 0.985 |
+
+Multiplicity: 7 thresholds x 2 configurations = **14 comparisons**, so ~0.7 expected at p<0.05 by
+chance. Two land there, both on the positive side.
+
+`< −0.2%` is the honest caution in this table. On 30m it reads p 0.083 and looks like something;
+on 5m the *same* gate is the worst cell in the study (p 0.985, negative per-trade). A gate that
+reverses sign between two configurations of the same idea is noise, not a mechanism — the rule from
+`STUDY_1R_MORE.md`, that an edge existing at one setting only is not an edge.
+
+## C. Verdict
+
+* **With `BUYLEVEL`: yes, and it is not close** — on unsignalled entries. Losing to solidly
+  profitable, symmetric across sides, surviving 4-tick through-fill.
+* **With `EMASTRETCH` as written (negative): no.** Worse at every rung, both configurations.
+* **With `EMASTRETCH` inverted (> +0.2%, price above the 10-EMA): yes, modestly**, and it is the
+  only filter here that holds against a size-matched random control on the block it was not
+  selected on. Note what that combination is: enter *with* the trend, fill on the pullback. It is
+  the trend-plus-pullback structure, with the pullback moved out of the signal and into the fill.
+* **On a validated signal, `BUYLEVEL` still hurts** (§6: the shipped book falls 55,424 → 13,415).
+  It substitutes for an edge; it does not stack with one.
