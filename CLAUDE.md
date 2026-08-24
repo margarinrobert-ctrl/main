@@ -68,6 +68,20 @@ a 6.0-tick round turn, with the opposite sign on 30m. 134 features are 28 princi
 Rank feature importance on RESEARCH ONLY: ranking over both blocks produced a family that failed
 research (p 0.08) and "passed" locked (p 0.02). See `docs/ib/STUDY_FEATURES.md`.
 
+**Passing on the holdout while FAILING on research is the wrong shape.** A rule chosen on research
+should look better there; the holdout is where an edge decays, not where it appears. Seen twice
+now: a feature family (ranked over both blocks by mistake) and the whole daily-trend pullback
+family. Treat it as a defect, not a result.
+
+**The daily trend can dictate DIRECTION so the optimiser never picks it.** Worth keeping as a
+protocol even though the pullback family failed: `research/daily_trend.py` keys the daily state on
+a known-at timestamp so an intraday bar sees the last RTH close and nothing after. Note 81% of bars
+are in a daily uptrend and 7% in a downtrend, so the short side is close to untestable here.
+
+**If trading 07:00-11:00 New York, trade 09:30-11:00.** Same rule, 4x the per-trade result on
+research on 44% fewer trades, and the cost model does not widen the pre-RTH spread so the gap is
+larger than measured. See `docs/ib/STUDY_TREND_PULLBACK.md`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -95,6 +109,9 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/sam_phases.py` | its five phases, same gates as everything else |
 | `research/features2.py` | microstructure, semivariance, auction feature families |
 | `research/feature_eval.py` | IC with Newey-West + BH, redundancy clustering, trade separation |
+| `research/features3.py` | spread/variance/order-flow-proxy/structure/session/anomaly families |
+| `research/daily_trend.py` | causal daily trend states, keyed on the daily close timestamp |
+| `research/pullback.py`, `pullback_search.py` | trend-following pullback family, direction dictated |
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 
 ## Pine

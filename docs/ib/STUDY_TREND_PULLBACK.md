@@ -1,264 +1,166 @@
-# Intraday trend → pullback → continuation on NQ: a 400,226-configuration search
+# Follow the daily trend, buy the pullback, 07:00–11:00 — built and measured
 
-**Task:** develop and validate a robust intraday trend-following edge for NQ/MNQ over EMA lengths,
-VWAP deviation, ATR/realised-vol filters, time-of-day, trend regime, pullback depth, momentum,
-entry timing, stops, targets and cross-market inputs; search systematically; validate out of
-sample; return the strongest statistically defensible specification.
+*Built exactly as specified:* daily trend from EMA200 and EMA crossovers → intraday pullback →
+resumption trigger → entries only 07:00–11:00 New York. Direction dictated by the daily trend,
+never chosen by the optimiser. No mean reversion: a rule that bought a dip in a daily *downtrend*
+cannot be expressed in this family.
 
-**Answer: there isn't one.** Ten pre-specified variants all lose. A 400,226-configuration search
-produces winners that are *negative* out of sample. Walk-forward re-selection loses $27.19/trade.
-35 of 37 immediate parameter neighbours flip sign between research and holdout, and the two that
-don't are consistently *negative*. The search curve falls monotonically: best-of-300,000 lands at
-the **9.2nd percentile** of out-of-sample outcomes.
+*Measured result:* **161,280 combinations, 1,158 clear every research-block gate, 4 pass the
+holdout drop-one test — and all four fail the matched control on the research block while passing
+it on the holdout.** That is the wrong shape and it is not selectable. The plain version of the
+idea is worse than a time-matched random long on research and better on the holdout, with the sign
+flipping between blocks.
 
-Code: `research/trend_pullback.py` (engine), `research/trend_search.py` (search),
-`research/trend_validate.py` (battery).
+---
 
-## 0. What could not be tested
+## 1. The one structural improvement worth keeping
 
-**Cross-market ES inputs were not tested — there is no ES data in this repository.** `data/` holds
-`NQ_1m.csv` and `NQ_5m.csv` only. The engine has the hook and the study is ready to re-run when ES
-minute data is added; nothing below uses a cross-market input, and no claim is made about one. This
-is the one requested dimension that is missing.
+Every previous search on this branch let the optimiser choose long or short. That is the most
+dangerous free parameter on this sample: NQ rose 91%, so a search allowed to pick a side picks
+long and gets paid for existing (`RESEARCH_PROTOCOL.md` §4c). It is why every rule has to be
+scored against the base rate of its own side.
 
-## 1. Design, and what was fixed before searching
+Here **the daily trend fixes the side**. The rule is not long because long worked; it is long
+because the daily trend is up, and it is short when the daily trend is down. Direction stops being
+fitted. That is a better place to search from and it should be kept regardless of this result.
 
-**Structure** (fixed, because the structure is the hypothesis):
+Two honest limits of the sample, stated before the numbers:
 
-1. **Trend** — a fast/slow EMA relationship, optionally confirmed by slow-EMA slope or session VWAP.
-2. **Pullback** — price retraces into a zone around the fast EMA in ATR units, or back inside a VWAP
-   deviation band, or gives back a fraction of the impulse.
-3. **Continuation** — an explicit momentum trigger; the fill is the **next bar's open**.
+* **81% of intraday bars sit in a daily uptrend and 7% in a daily downtrend.** The short side has
+  almost no data here. Its results deserve very little weight.
+* **07:00–09:30 is pre-RTH.** Volume is a fraction of the cash session and the real spread is wider
+  than the cost model assumes, so pre-market figures are optimistic by an unmodelled amount.
 
-**Searched space** — 5,038,848 cells:
+## 2. Causality, which was the hard part
 
-| axis | settings |
+A daily bar's close is not known until the session ends. The first version keyed the daily state
+on the repository's 09:30 session index and shifted it one session — which is causal but throws
+away a whole day: at Tuesday 07:00 it would have shown the trend as of Monday 09:29, when a real
+trader plainly knows Monday's 16:00 close.
+
+The daily bar is now the RTH session with an explicit **known-at** timestamp, and an intraday bar
+takes the most recent daily bar that has *already closed*. Tuesday 07:00 sees Monday's 16:00 close
+and nothing after it. `leakage_check` rebuilds from truncated 1-minute history and confirms:
+**CLEAN**.
+
+## 3. The search
+
+| | |
 | --- | --- |
-| EMA fast / slow | 9, 21, 34 / 50, 100, 200 |
-| trend regime | EMA stack; + slope; + session VWAP |
-| pullback mode | ATR band round fast EMA; VWAP σ-band; impulse give-back |
-| pullback depth | 0.25, 0.5, 1.0, 1.5 (ATR or σ) |
-| momentum / entry trigger | close through EMA; prior-bar extreme; close in top/bottom third |
-| ATR / realised-vol regime | percentile windows [0,1], [0,0.5], [0.5,1], [0.25,0.75] |
-| time of day | full RTH; first 2h; first 3.5h; from 11:00 |
-| stop | 1.0/1.5/2.0 × ATR, or beyond the pullback extreme |
-| target | 1.0/1.5/2.0/3.0 R, ATR multiple, or ride to the close |
-| entry timing | max 1/2/3 trades per session; 5/15/30-bar cooldown |
+| daily trend states | 7 per side — close vs EMA200, EMA20/50, EMA50/200, the stacked triple, uptrend + ADX>20, 50-bar slope, ±DI |
+| pullback conditions | 16 per side — below EMA20 / EMA50 / by 0.5 and 1 ATR, below session VWAP, at 5/10/20-bar low, RSI<35/40/45, Stoch<20/30, 2 and 3 down closes, retrace >1 ATR from the 20-bar high |
+| resumption triggers | 10 per side — cross back above EMA20, close > prior high, close > 3-bar high, bullish engulfing, first up close, RSI back above 40/50, Stoch back above 20, bullish bar, close in top third |
+| geometry | 6 stop widths × 4 flatten times (none, 11:00, 12:00, 16:00) |
+| timeframes | 5m, 15m, 30m |
+| **combinations** | **161,280** |
 
-**Three decisions were pre-registered and not searched:**
+Gates unchanged: base-rate excess against the population mean of the rule's own side and geometry,
+subset coherence on singletons and pairs, geometry tuned on research, then each condition against a
+random filter of the same selectivity **on the locked block**.
 
-- **Direction is not a free parameter.** Every search in this project handed a side switch returns
-  "longs only" and is fitting the index — eight sightings. Both sides always trade. §7 reports what
-  a side switch *would* have bought, as a diagnostic.
-- **Selection is on dollars, not R.** Maximising mean R converges on tiny-stop configurations; an
-  Asia candidate once reached E = +0.351R while losing $707.
-- **Costs are charged before selection:** $19.00/round turn on NQ (1 tick spread + 1 tick slippage
-  per side + $4), $3.30 on MNQ. Every figure below is net.
+    1,158  rule/geometry pairs clear every research gate
+       60  after collapsing rules that share two or more conditions
+        4  have 2 of 3 conditions beating a random filter on the LOCKED block, profitable and
+           above base there
 
-**Splits, on session boundaries:** research 382 sessions / validation 191 / **locked holdout 192**,
-from 292,908 RTH 1-minute bars, Dec 2022 – Dec 2025.
+| | rule | trades | win % | base | locked n | locked win % | locked $ | PF |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| P1 | D close>EMA200 + at 5-bar low + close in top third | 47 | 59.6 | 50.3 | 17 | 64.7 | 1,676 | 2.13 |
+| P2 | D uptrend+ADX>20 + below VWAP + bullish engulfing | 301 | 52.5 | 50.3 | 75 | 56.0 | 4,116 | 1.24 |
+| P3 | D uptrend+ADX>20 + retrace >1 ATR + top third | **654** | 53.1 | 50.3 | 151 | 52.3 | 4,716 | 1.15 |
+| P4 | D uptrend+ADX>20 + Stoch K<30 + close > prior high | 154 | 52.6 | 49.3 | 29 | 62.1 | 1,277 | 1.27 |
 
-## 2. The pre-specified set: all ten lose
+P3 fires 654 times — more than anything else on this branch.
 
-Run before any search, holdout closed. Full table in `research/trend_pullback.py --stage prespec`.
+## 4. The matched control, which stops all of it
 
-| variant | n | $/trade | PF | t | E[R] |
-| --- | --- | --- | --- | --- | --- |
-| A textbook 21/50, 0.5×ATR pullback, 1:2 | 1,526 | −53.06 | 0.859 | −2.78 | −0.058 |
-| B slower trend 34/100 | 1,526 | −62.93 | 0.830 | −3.43 | −0.070 |
-| C slope-confirmed trend | 1,526 | −30.95 | 0.916 | −1.52 | −0.015 |
-| D VWAP-confirmed trend | 1,526 | −30.96 | 0.912 | −1.61 | −0.020 |
-| E VWAP-band pullback (1σ) | 1,526 | −37.14 | 0.901 | −1.91 | −0.052 |
-| F deeper pullback, wider stop | 1,515 | −46.42 | 0.906 | −1.80 | −0.049 |
-| G swing stop | 1,525 | −22.65 | 0.906 | −1.64 | **+0.017** |
-| H morning only | 1,516 | −55.11 | 0.853 | −2.89 | −0.065 |
-| I high-volatility regime only | 1,465 | −58.30 | 0.850 | −2.92 | −0.060 |
-| J ride to the close | 1,400 | −10.09 | 0.979 | −0.26 | **+0.008** |
+Random entries with the same side, geometry and minute-of-day distribution:
 
-Every one loses. Two (G, J) show **positive E[R] with negative dollars** — the R-versus-dollars
-trap, and the reason selection here is on dollars.
+| | research win p | research net p | locked win p | locked net p |
+| --- | --- | --- | --- | --- |
+| P1 | 0.274 | 0.157 | 0.102 | **0.043** |
+| P2 | 0.491 | 0.591 | **0.005** | **0.030** |
+| P3 | **0.025** | 0.723 | **0.005** | **0.005** |
+| P4 | 0.651 | 0.354 | **0.015** | 0.107 |
 
-An earlier draft of this table ran without the entry-timing controls (`max_per_sess`, `cooldown`)
-and took ~19 trades a session, spending $361/day on round turns before the rule had said anything.
-Adding those controls cut frequency to ~2/day and is what the figures above reflect; it did not
-change the sign of any variant.
+**Every one of them fails on research and passes on the holdout.** That is backwards. A rule
+selected on the research block should look *better* there — the holdout is where an edge decays,
+not where it appears. The same diagnostic caught a fake feature result earlier in this branch.
 
-## 3. The search, and what it cost
+The plain version of the idea shows why, with no rule search at all — just *be long in the window
+when the daily trend is up and ADX > 20*:
 
-400,226 evaluable configurations, uniformly sampled from the 5,038,848-cell grid.
-
-```
-research $/trade: mean -18.83, sd 21.37, best +175.04, 14.2% profitable
-holdout  $/trade: mean -26.38, sd 47.10, best +438.70, 25.8% profitable
-Spearman rank correlation research -> holdout: +0.1139
-```
-
-### The search curve
-
-Take the best configuration out of K on research; look up where it landed on the holdout.
-
-| K | holdout percentile | mean holdout $/trade |
-| --- | --- | --- |
-| 1 | 47.4% | −30.48 |
-| 10 | 49.6% | −27.75 |
-| 100 | 43.9% | −38.75 |
-| 1,000 | 42.6% | −40.07 |
-| 10,000 | 38.3% | −54.66 |
-| 30,000 | 31.3% | −71.99 |
-| 100,000 | 24.1% | −88.38 |
-| **300,000** | **23.2%** | **−74.22** |
-
-**Searching harder makes the answer monotonically worse.** A random pick lands at the 47th
-percentile; the best of 300,000 lands at the 23rd. Restricting to configurations with ≥200 research
-trades — a fairer search that excludes small-sample flukes — the collapse is sharper still: **9.2nd
-percentile at K = 300,000, mean −$150.37/trade.**
-
-This is the third independent reproduction of this curve in this repository, after 225,792 IB
-configurations and 2,400 ORB configurations.
-
-### The winners
-
-| selected by | research | validation | **LOCKED holdout** |
+| block | rule | matched control | p |
 | --- | --- | --- | --- |
-| best on research (n=86, t=3.20) | **+$175.04** | +$83.43 | **−$94.35** |
-| best on research **and** validation | +$93.49 | +$343.79 | **−$109.83** |
-| *all 27,929* configs profitable on both | — | — | **mean −$26.62, median −$20.52, 32.4% profitable** |
+| **research** | 677 trades, 50.4% win, **−$2,848** | +$3,646 | **1.000** |
+| **locked** | 229 trades, 53.3% win, **+$3,885** | −$6,151 | **0.003** |
 
-A best-of-400,226 search draws **E[max z] ≈ 5.08** from noise alone. The research winner reaches
-t = 3.20. It does not clear its own search.
+The daily-trend filter is **worse than a random long** at the same times on the research block and
+**better** on the holdout. The sign flips completely. That is regime instability across 2023–24
+versus 2024–25, not an edge — and no amount of pullback and resumption structure fixed it, because
+all four survivors inherit it.
 
-The third row is the one that settles it: requiring profitability on *two* independent periods still
-leaves 27,929 candidates, and that whole set averages **−$26.62/trade** on the holdout. The double
-filter selects nothing.
+## 5. What is actionable anyway
 
-## 4. Parameter stability: 35 of 37 neighbours flip sign
+**The cash-session half of your window is the better half.** Same rule, different entry windows:
 
-Every immediate neighbour of the finalist, one axis at a time, run fresh:
+| entry window | trades | research $/trade | locked n | locked $ |
+| --- | --- | --- | --- | --- |
+| 07:00–11:00 | 906 | $1.1 | 229 | 3,885 |
+| 08:00–11:00 | 803 | $1.4 | 203 | 3,615 |
+| **09:30–11:00** | 509 | **$4.2** | 132 | 3,633 |
+| 07:00–09:30 | 641 | $1.9 | 154 | 1,580 |
+| 09:30–16:00 | 743 | $0.9 | 180 | 750 |
 
-```
-axis            setting      n   research  validation    HOLDOUT
-ema_fast              9    746      93.49      343.79    -109.83  <- finalist
-ema_fast             21    740      39.33       26.72    -160.71
-ema_fast             34    727     -79.32      -22.40    -207.51
-trend_mode            0    746      80.82      230.86    -130.74
-trend_mode            2    744      56.65      241.82     -68.42
-entry_mode            1    746      53.62      279.07     -61.35
-stop_mode             1    746      49.42      275.73     -32.91
-stop_mult           1.0    746      30.09      405.71    -121.02
-stop_mult           2.0    746      18.70      300.04     -37.67
-target_mode           0    746     -30.28      122.38     +58.08
-target_mode           1    746     -22.61       73.72     +34.62
-max_per_sess          3  1,795       1.75      113.78     -81.14
-```
+09:30–11:00 gives roughly **four times the per-trade result of the full 07:00–11:00 window on
+research**, on 44% fewer trades, and nearly all of the locked dollars. Every one of the four
+candidates shows the same split individually — pre-RTH earns $7.2, $15.5 and $12.9 per trade
+against $15.3, $20.5 and $17.0 in the cash session. And the cost model does **not** widen the
+spread before 09:30, so the true pre-market gap is larger than these numbers show.
 
-**35 of 37 neighbours flip sign between research and holdout.** The only two that hold their sign
-(`ema_fast=34`, `pull_mode=1`) are consistently **negative**. Note `target_mode` 0 and 1: negative on
-research, positive on holdout — the surface is not a plateau with a peak, it is noise.
+If you trade this structure, **trade 09:30–11:00, not 07:00–11:00.** That is the one recommendation
+in this document I would stand behind, and it is a window choice rather than an edge claim.
 
-## 5. Walk-forward
+## 6. Feature engineering: what was built and what needs a file
 
-Re-select from the top 4,000 on a rolling 250-session window, trade the next 60:
+167 features now, across every family requested. Three were added in this pass:
 
-```
-stitched out-of-sample: 402 trades, -$10,929, -$27.19/trade, PF 0.942, t = -0.39
-8 folds; the procedure re-picked 8 DISTINCT configurations
-fixed finalist over the whole sample: +$104.72/trade
-```
-
-Eight folds, eight different winners, and the procedure loses money. That is the definition of a
-selection rule carrying no information.
-
-## 6. Costs, contract, and Monte Carlo
-
-| cost × | $/round turn | $/trade |
+| family | n | notes |
 | --- | --- | --- |
-| 0.0 | 0.00 | +123.72 |
-| 1.0 | 19.00 | +104.72 |
-| 2.0 | 38.00 | +85.72 |
+| spread | 2 | Corwin-Schultz (2012) high-low, Roll (1984) autocovariance — **estimators, not quotes** |
+| variance | 7 | Parkinson, Garman-Klass, Rogers-Satchell, realised vol, vol-of-vol, ATR expansion and compression |
+| order flow | 8 | **tick-rule proxies**: delta, delta/volume, delta z-score, absorption, aggressive buy and sell, trade intensity, Kyle lambda proxy |
+| market structure | 7 | swing distances, break of structure up/down, liquidity sweeps of highs and lows, swing range |
+| session | 5 | NY open hour, London/NY overlap, pre-RTH, the 07:00–11:00 window, minutes from the open |
+| anomalies | 4 | volume, return and ATR shock z-scores, absolute return in ATRs |
 
-The finalist is nearly cost-insensitive — it trades only 746 times — so **costs are not why it
-fails.** It fails because it is fitted. On **MNQ** the same trades net **$9.07/trade** ($6,768
-total): a $2/point contract cannot carry a $3.30 round turn on this geometry.
+Leakage check: **CLEAN**.
 
-Monte Carlo on the finalist's trade list (20,000 paths, $50k) gives median drawdown 33.8%, 95th
-percentile 64.1%, P(ruin) 1.5% on resampling. **This is reported for completeness and is not
-evidence:** the trade list is two-thirds in-sample, and reshuffling an in-sample equity curve cannot
-tell you whether the edge is real. Monte Carlo tests path sensitivity, never selection bias.
+**Named as proxies on purpose.** A feature called `delta` that is really a tick-rule guess from
+1-minute bars will be trusted like real delta, and it should not be — the tick rule's error grows
+with bar size, and a 5-minute bar is a long time to guess an aggressor side over.
 
-## 7. The side-switch diagnostic
+**Not buildable here, and exactly what each would need:**
 
-What allowing direction to be searched would have bought:
+| | what it needs |
+| --- | --- |
+| options / IV / GEX / gamma regime | an NQ or SPX chain with strikes, expiries and greeks; or at minimum a VIX/VXN daily series for the IV-level features |
+| cross-asset — NQ/ES correlation, DXY, bonds, VIX | ES, DX, ZN and VX bar files on the same clock in `data/`. Rolling correlation, beta and lead-lag are then one function each |
+| true bid/ask spread and depth | quote data. The two spread features are bar estimators |
+| true delta and absorption | trade-side data. The order-flow features are tick-rule proxies |
 
-| | research | holdout |
-| --- | --- | --- |
-| longs only | +$39.50 | **−$100.33** |
-| shorts only | +$31.23 | **+$154.05** |
+Drop those files into `data/` and the cross-asset family is an afternoon's work; the options family
+needs a chain and is a larger job.
 
-The sides disagree between halves, as they have in every prior study here — except that this time
-**shorts** win the holdout, where earlier studies had longs winning. That reversal is itself the
-point: the side that "works" is a property of the period, not of the setup. Keeping direction fixed
-was the right pre-registration.
+## Files
 
-## 8. The strongest statistically defensible specification
+| | |
+| --- | --- |
+| `research/daily_trend.py` | daily RTH bars with known-at timestamps, 14 trend states, leakage check |
+| `research/pullback.py` | the pullback and resumption pools, 07:00–11:00 window |
+| `research/pullback_search.py` | the five phases with direction dictated by the daily trend |
+| `research/features3.py` | spread, variance, order-flow proxy, structure, session and anomaly families; `NEEDS_DATA` registry |
 
-Not from this search. The strongest defensible trend → pullback → continuation rule in this
-repository remains the one already validated here, re-verified live for this study:
-
-> **Initial-balance retracement.** Build the initial balance 09:30–10:30 ET. On a *close* beyond
-> either edge, rest a limit at a **50% retracement** of that range. Stop at **80%** of the range from
-> the broken edge. Fixed **1:2** target. **Both sides.** Flat at 11:59. One trade per session.
->
-> `n = 167, mean +0.3248R`, block bootstrap (10,000 paths, mean block 5)
-> **95% CI [+0.1614, +0.4895], P(mean ≤ 0) = 0.0000**, PBO 0.17–0.24 across S = 10/12/16.
-
-It is the same three-part structure — trend identification, pullback, continuation entry — but
-anchored to a **session event** rather than to a continuously-armed EMA state machine. That
-difference is most of the story: the IB rule is armed once per day by a specific event, takes ≤1
-trade, and its parameters are read off a range that exists independently of the rule. The EMA
-version is armed continuously, and a continuously-armed condition on 1-minute bars is a machine for
-finding coincidences.
-
-Caveats that belong with it: re-optimising it destroys value ($14,580 rolling re-optimisation vs
-$27,253 fixed over identical out-of-sample bars), its research/holdout split is 0.414R vs 0.116R, and
-a longs-only filter looks like its largest improvement while scoring −0.006 research / +0.255
-holdout — i.e. the same direction trap.
-
-## 9. Evidence the absence of an edge is not itself an artifact
-
-The honest failure mode of a negative result is a broken engine. Four checks:
-
-1. **The engine finds the effects it should.** The same code reproduces the IB configuration above to
-   the digit against a separately written TypeScript engine (1,413 trades across five
-   configurations, matching on every field).
-2. **A real signal is detectable.** In the metric layer used here, a synthetic within-day signal
-   scores $285/trade at t = 78 while a pure day-selector scores $2.58 at t = 0.69.
-3. **The search does find in-sample winners** — best-on-research reaches +$175.04/trade at t = 3.20.
-   The machinery works; the winners just do not survive.
-4. **25.8% of configurations are profitable on the holdout** — the holdout is not degenerate, it is
-   simply uncorrelated with research (ρ = +0.11).
-
-## 10. Conclusions
-
-1. **No statistically defensible EMA-based intraday trend-pullback specification was found on NQ
-   2022–25** at realistic costs.
-2. **The search actively destroys value here.** Best-of-K degrades monotonically to the 23rd
-   percentile (9.2nd on the higher-trade-count subset).
-3. **Profitability on two independent periods is not sufficient.** 27,929 configurations passed that
-   filter and averaged −$26.62/trade on the holdout.
-4. **The surface is not a plateau.** 35 of 37 immediate neighbours flip sign out of sample.
-5. **Costs are not the binding constraint** for the finalist — it fails at zero cost too. On MNQ they
-   are: $9.07/trade.
-6. **Continuous arming is the structural problem.** The rule that survives is armed once per session
-   by an event; the rules that fail are armed on every bar.
-7. **ES cross-market inputs remain untested** for want of data, and are the most informative
-   remaining test — a trend filter from a correlated index is the one requested feature that could
-   not be tried.
-
-## 11. Reproduce
-
-```bash
-python3 research/trend_pullback.py --stage prespec   # the ten pre-specified variants
-python3 research/trend_search.py --workers 4 --sample 400000
-python3 research/trend_validate.py                   # curve, stability, WF, MC, costs, holdout
-python3 research/validate.py                         # re-verifies the IB configuration in S8
-```
+Measured on MNQ, 2022-12-27 → 2025-12-11, one contract, $1.00 commission per round turn, one tick
+spread plus one tick slippage each side, one extra tick on stops. **The cost model does not widen
+the spread before 09:30.** Research tooling for education and analysis, not financial advice.
