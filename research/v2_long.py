@@ -267,6 +267,65 @@ def validate():
     return full
 
 
+def both_sides():
+    """The arithmetic reason "V2 with Allow longs ticked" cannot be the better strategy.
+
+    A 1R barrier trade is very nearly zero-sum between its two sides: the same bars, the same
+    stop, the same target, one long and one short. If one side wins 60.7% the other must win
+    close to 39.3%, and the small gap is the handful of trades that reach the time stop plus
+    costs, which are paid by BOTH sides. So the two sides cannot both be good, and no amount of
+    chart history changes that -- it is a property of the geometry, not of the sample.
+    """
+    d = bars(TF)
+    si, cut, _ = _cut(d)
+    M = masks(d)
+    trig = np.flatnonzero(M["V2 as shipped (short)"][0]).astype(np.int64)
+    bm = np.ones(len(d["c"]), bool)
+    for x in b_masks(d):
+        bm &= x
+    bm[:300] = False
+    print("V2 WITH \"ALLOW LONGS\" TICKED, AT V2's OWN GEOMETRY (1.0 x ATR, 1R, flat 16:00)\n")
+    print(f"  {'':<40}{'dir':>6}{'trades':>7}{'win%':>8}{'base':>7}{'excess':>8}{'net $':>10}"
+          f"{'PF':>7}{'maxDD':>9}{'lok win%':>10}{'lok $':>9}")
+    rows = [("V2 as shipped, shorts only", trig, -1, 1.0, 960),
+            ("V2 with Allow longs ticked", trig, 1, 1.0, 960),
+            ("V2-long at its own best geometry", trig, 1, 4.0, 900),
+            ("V2L the mirror, its own geometry", np.flatnonzero(bm).astype(np.int64), 1, 2.5, 900),
+            ("V2L at V2's geometry", np.flatnonzero(bm).astype(np.int64), 1, 1.0, 960)]
+    keep = {}
+    for lab, tg, side, am, flat in rows:
+        pnl, eb, _x, why, _g = _sim(d, tg, side, am, flat)
+        m = si[eb] >= cut
+        w = pnl > 0
+        eq = np.cumsum(pnl)
+        dd = float((np.maximum.accumulate(np.r_[0, eq]) - np.r_[0, eq]).max())
+        b = base_rate(d, side, am, flat)
+        keep[lab] = (pnl, why)
+        print(f"  {lab:<40}{'long' if side==1 else 'short':>6}{len(pnl):>7}{100*w.mean():>8.1f}"
+              f"{b:>7.1f}{100*w.mean()-b:>+8.1f}{pnl.sum():>10,.0f}"
+              f"{pnl[w].sum()/max(-pnl[~w].sum(),1e-9):>7.2f}{dd:>9,.0f}"
+              f"{100*(pnl[m]>0).mean():>10.1f}{pnl[m].sum():>9,.0f}")
+    ps = keep["V2 as shipped, shorts only"][0]
+    pl = keep["V2 with Allow longs ticked"][0]
+    print(f"\n  THE ZERO-SUM CHECK -- one trigger, both sides, identical bars and barriers")
+    print(f"     short wins {100*(ps>0).mean():.1f}%, long wins {100*(pl>0).mean():.1f}%, "
+          f"sum {100*(ps>0).mean()+100*(pl>0).mean():.1f}%")
+    print(f"     the two sides together net ${ps.sum()+pl.sum():,.0f}, which is what it costs to "
+          f"trade both\n     sides of the same signal. They cannot both be good.")
+    for lab in ("V2 as shipped, shorts only", "V2 with Allow longs ticked"):
+        pn, wy = keep[lab]
+        print(f"     {lab:<32}" + "  ".join(
+            f"{k} {int((wy==v).sum())} (${pn[wy==v].sum():,.0f})"
+            for k, v in (("target", 2), ("stop", 1), ("time", 3))))
+    print(f"\n  If BOTH direction boxes are left ticked, the script places a long and a short on the")
+    print(f"  same bar; the short reverses the long, so the position that survives is the SHORT and")
+    print(f"  you have paid one extra round turn. Check the Strategy Tester's trade list: if the")
+    print(f"  direction column says Short, \"Allow shorts\" is still on.")
+
+
 if __name__ == "__main__":
-    main()
-    validate()
+    if "--both" in sys.argv:
+        both_sides()
+    else:
+        main()
+        validate()

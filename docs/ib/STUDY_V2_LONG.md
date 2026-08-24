@@ -148,7 +148,51 @@ but its exact opposite, and loses accordingly.
 The clock condition is not decoration: outside 09:30–11:30 the same setup loses money on both
 sides (V2's corner table, and B's `yes yes NO` corner at −$5,913).
 
-## 7. What to run
+---
+
+## 8. "But V2 with longs ticked looks better on my chart"
+
+It cannot be, and the reason is arithmetic rather than a modelling opinion.
+
+A 1R barrier trade is very nearly **zero-sum between its two sides**: same bars, same stop
+distance, same target distance, one long and one short. Measured on the identical 201 signals at
+V2's own geometry:
+
+| | dir | trades | win % | base | excess | net $ | PF | maxDD | locked win % | locked $ |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| V2 as shipped, shorts only | short | 201 | 60.7 | 43.9 | +16.8 | 4,391 | 1.60 | 619 | 60.5 | 2,549 |
+| **V2 with "Allow longs" ticked** | long | 201 | **36.8** | 47.5 | **−10.7** | **−6,690** | 0.49 | 6,925 | 35.5 | −3,648 |
+| V2-long at its own best geometry | long | 171 | 48.0 | 48.4 | −0.4 | −7,717 | 0.62 | 9,309 | 40.0 | −5,928 |
+| **V2L the mirror** | long | 139 | **67.6** | 48.9 | **+18.8** | **9,575** | 2.12 | 1,367 | 71.7 | 4,868 |
+| V2L at V2's geometry | long | 163 | 59.5 | 47.5 | +12.0 | 2,613 | 1.30 | 2,013 | 62.7 | 709 |
+
+60.7% + 36.8% = 97.5%. The missing 2.5 points are the two trades that reach the time stop, where
+both sides can lose. The two sides together net **−$2,299** — the cost of trading both sides of
+the same signal. Exit counts mirror exactly: the short reaches its target 122 times and its stop
+77; the long reaches its target 72 and its stop 127.
+
+This does not depend on the sample. Median hold on V2 is **0 bars** — most trades resolve inside
+the fill bar — so there is no room for drift to rescue the long side over thirty minutes.
+
+### Four things that would produce a good-looking chart anyway
+
+1. **"Allow shorts" is still ticked.** The script places a long *and* a short on the same bar; the
+   short reverses the long, so the position that survives is the short and you have paid one extra
+   round turn (~$600 over 201 signals). You are still running V2. **Check the Strategy Tester's
+   List of Trades — if the direction column says Short, this is it.**
+2. **The chart span is not the research window.** Every header figure is MNQ 2022-12-26 →
+   2025-12-12. "All available history" on a 30-minute chart can reach well past that, and a
+   different span is a different sample.
+3. **The chart is not on 30-minute bars.** Both scripts are 30m. On any other timeframe the EMAs,
+   the engulfing bar and the ATR are all computed on different bars.
+4. **V2L simply trades less.** 139 trades against V2's 201, because it needs `EMA20 < EMA50` — the
+   minority regime on a market that rose 89%. Fewer trades looks thinner on a chart without being
+   a worse edge. Note the last row above: V2L still clears its base by 12 points at V2's *own*
+   geometry, so the mirror is not an artifact of its tuned stop.
+
+Reproduce any of this with `python3 research/v2_long.py --both`.
+
+## 9. What to run
 
 * **`pine/more1R/V2L_strategy.pine`** — the long side, ready to load. 139 trades, 67.6% win
   against a 48.9% long base, PF 2.12, 71.7% on the holdout, breakeven at 30.9× costs.
