@@ -47,6 +47,7 @@ def _register():
     PX.P.update(LADDER_PINE)
     for a, b in ((10, 20), (20, 50), (20, 100), (50, 100), (10, 50), (50, 200)):
         PX.P[f"EMA{a}>EMA{b}"] = f"ema{a} > ema{b}"
+        PX.P[f"EMA{a}<EMA{b}"] = f"ema{a} < ema{b}"
     for w in (30, 60, 90, 120, 150, 180):
         end = 570 + w
         PX.P[f"first {w}m"] = f"barMin >= 570 and barMin < {end}"
@@ -115,6 +116,30 @@ def mega2(path="/tmp/phase5_mega2.npy", outdir=Path("pine/mega2_1R")):
         bad += emit(names, r["side"], r["am"], r["flat"], r["tf"], st,
                     f"M{i+1} 1R | " + " + ".join(_pretty(n) for n in names),
                     f"M{i+1}", outdir)
+    print("all clean" if not bad else f"{bad} problem(s)")
+
+
+def mirror(outdir=Path("pine/more1R")):
+    """B from `v2_long` -- V2's mechanism mirrored onto the long side, which is not the same
+    thing as ticking "Allow longs" on V2 and is the only one of three long variants that works."""
+    import numpy as _np
+    from v2_long import B_CONDS, B_GEO, b_strategy
+    _register()
+    s = b_strategy()
+    m = s.ent_sess >= s.cut
+    w = s.pnl > 0
+    st = {
+        "trades": f"{len(s.pnl)}  ({int((~m).sum())} research / {int(m.sum())} locked)",
+        "win rate": f"{100*w.mean():.1f}%   base rate for a LONG at this geometry 48.9%",
+        "net": f"${s.pnl.sum():,.0f}   profit factor "
+               f"{s.pnl[w].sum()/max(-s.pnl[~w].sum(),1e-9):.2f}",
+        "locked block only": f"{int(m.sum())} trades, {100*(s.pnl[m]>0).mean():.1f}% win, "
+                             f"${s.pnl[m].sum():,.0f}",
+        "chosen on": "the research block only; the locked figures above were read once",
+        "not a flipped V2": "V2's own trigger taken long loses $7,717. See STUDY_V2_LONG.md",
+    }
+    bad = emit(B_CONDS, 1, B_GEO["am"], B_GEO["flat"], 30, st,
+               "V2L 1R | " + " + ".join(_pretty(n) for n in B_CONDS), "V2L", outdir)
     print("all clean" if not bad else f"{bad} problem(s)")
 
 

@@ -1,0 +1,79 @@
+//@version=6
+// =============================================================================================
+// EMA20<EMA50 AND bullish engulfing, body>=20% AND 09:30-11:30 New York
+//   long only, stop 2.5 x ATR, target 1.0 x that risk, flat at 15:00, 30-minute bars.
+//   Stop and target are measured from the FILL -- the open of the bar after the signal --
+//   using the ATR of the signal bar.
+//
+// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, $1.00 commission per round turn, 1 tick
+// spread + 1 tick slip each side, 1 extra tick on stops:
+//     trades                      139  (86 research / 53 locked)
+//     win rate                    67.6%   base rate for a LONG at this geometry 48.9%
+//     net                         $9,575   profit factor 2.12
+//     locked block only           53 trades, 71.7% win, $4,868
+//     chosen on                   the research block only; the locked figures above were read once
+//     not a flipped V2            V2's own trigger taken long loses $7,717. See STUDY_V2_LONG.md
+//
+// THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
+//   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14.
+//   * Clock conditions go through an explicit timezone. Pine's bare hour/minute are EXCHANGE
+//     time -- Chicago for CME -- and the research is New York.
+//   * CCI is on hlc3, not close.
+//
+// Pine built-ins are used for RSI, Stochastic, CCI, Williams %R, MFI, DMI/ADX, OBV, linreg and
+// Bollinger. They were checked against the research definitions, not executed side by side.
+//
+// TICK-SETTING IMMUNE: entries require barstate.isconfirmed, so the Strategy Tester's
+// "On order fill" / "On history bar tick" / "On realtime bar tick" boxes cannot change
+// the result. Leave them on or off; the numbers are the same.
+//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+indicator("V2L 1R | EMA20<EMA50 + bullish engulfing, body>=20% + 09:30-11:30 New York | signal (signal)", overlay = true)
+// ---- primitives, defined to match the research exactly -------------------------------------------
+tzIn   = input.string("America/New_York", "Timezone for clock conditions",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"],
+     group = "Setup", tooltip = "Pine's bare hour/minute are in the EXCHANGE timezone, which is " +
+     "Chicago for CME. The research is New York time. Getting this wrong runs the strategy an " +
+     "hour late -- it has happened here before.")
+barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
+atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
+ema20   = ta.ema(close, 20)
+ema50   = ta.ema(close, 50)
+barRange  = math.max(high - low, syminfo.mintick)
+bodyFrac  = math.abs(close - open) / barRange
+
+// ---- the rule -------------------------------------------------------------------
+c0 = ema20 < ema50    // EMA20<EMA50
+c1 = close > open[1] and open < close[1] and close > open and bodyFrac >= 0.2    // bullish engulfing, body>=20%
+c2 = barMin >= 570 and barMin < 690    // 09:30-11:30 New York
+trig = c0 and c1 and c2
+ready = not na(atrV) and atrV > 0 and bar_index > 300
+
+risk = 2.5 * atrV
+// drawn on the bar AFTER the signal and measured from its open, because that open is
+// where the strategy fills -- the same anchor the engine uses.
+fired = trig[1] and ready[1]
+plot(fired ? open - risk[1] : na, "stop, long side",
+     color = color.new(color.red, 0), style = plot.style_circles)
+plot(fired ? open + 1.0 * risk[1] : na, "target, long side",
+     color = color.new(color.teal, 0), style = plot.style_circles)
+plotshape(trig and ready, "signal", shape.diamond, location.belowbar,
+     color.new(color.teal, 0), size = size.tiny)
+bgcolor(trig and ready ? color.new(color.teal, 88) : na)
+
+alertcondition(trig, "Rule fires", "EMA20<EMA50 AND bullish engulfing, body>=20% AND 09:30-11:30 New York")
+
+var table t = table.new(position.bottom_right, 2, 3, border_width = 1)
+if barstate.islast
+    table.cell(t, 0, 0, "EMA20<EMA50", text_size = size.small, text_color = color.gray)
+    table.cell(t, 1, 0, c0 ? "yes" : "no", text_size = size.small,
+         text_color = c0 ? color.teal : color.gray)
+    table.cell(t, 0, 1, "bullish engulfing, body>=20%", text_size = size.small, text_color = color.gray)
+    table.cell(t, 1, 1, c1 ? "yes" : "no", text_size = size.small,
+         text_color = c1 ? color.teal : color.gray)
+    table.cell(t, 0, 2, "09:30-11:30 New York", text_size = size.small, text_color = color.gray)
+    table.cell(t, 1, 2, c2 ? "yes" : "no", text_size = size.small,
+         text_color = c2 ? color.teal : color.gray)
