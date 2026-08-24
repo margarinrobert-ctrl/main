@@ -1,0 +1,79 @@
+//@version=6
+// =============================================================================================
+// SAZb16 x-below 1.5 AND outside bar
+//   short only, stop 2.0 x ATR, target 1.0 x that risk, flat at 16:00, 15-minute bars.
+//   Stop and target are measured from the FILL -- the open of the bar after the signal --
+//   using the ATR of the signal bar.
+//
+// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, $1.00 commission per round turn, 1 tick
+// spread + 1 tick slip each side, 1 extra tick on stops:
+//     trades                      95  (61 research / 34 locked)
+//     win rate                    56.8%   base rate for this side and geometry 43.7%
+//     net                         $3,549   profit factor 2.29
+//     locked block only           34 trades, 55.9% win, $1,787
+//     chosen on                   the research block only; the locked figures were read once
+//     searched                    47,615,040 combinations at this timeframe; see STUDY_SAM_SCALP.md
+//
+// THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
+//   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14.
+//   * Clock conditions go through an explicit timezone. Pine's bare hour/minute are EXCHANGE
+//     time -- Chicago for CME -- and the research is New York.
+//   * CCI is on hlc3, not close.
+//
+// Pine built-ins are used for RSI, Stochastic, CCI, Williams %R, MFI, DMI/ADX, OBV, linreg and
+// Bollinger. They were checked against the research definitions, not executed side by side.
+//
+// TICK-SETTING IMMUNE: entries require barstate.isconfirmed, so the Strategy Tester's
+// "On order fill" / "On history bar tick" / "On realtime bar tick" boxes cannot change
+// the result. Leave them on or off; the numbers are the same.
+//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+indicator("SF2 | SAZb16 x-below 1.5 + outside bar | signal (signal)", overlay = true)
+// ---- primitives, defined to match the research exactly -------------------------------------------
+atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
+
+// ---- realized semivariance from bar returns ------------------------------------
+// RS+ is the variance contributed by up bars, RS- by down bars. The paper builds
+// these from 30-minute returns inside a day; this is the same estimator with the
+// bar as the unit, which is what makes it computable without lower-timeframe data.
+logR  = math.log(close / close[1])
+rsPos = logR > 0 ? logR * logR : 0.0
+rsNeg = logR < 0 ? logR * logR : 0.0
+sP16  = math.sum(rsPos, 16)
+sN16  = math.sum(rsNeg, 16)
+sam16 = sP16 - sN16
+sar16 = (sP16 + sN16) > 0 ? sam16 / (sP16 + sN16) : na
+sd16  = ta.stdev(sam16, 100)
+saz16 = sd16 > 0 ? (sam16 - ta.sma(sam16, 100)) / sd16 : na
+
+// ---- the rule -------------------------------------------------------------------
+c0 = saz16 < 1.5 and saz16[1] >= 1.5    // SAZb16 x-below 1.5
+c1 = high > high[1] and low < low[1]    // outside bar
+trig = c0 and c1
+ready = not na(atrV) and atrV > 0 and bar_index > 300
+
+risk = 2.0 * atrV
+// drawn on the bar AFTER the signal and measured from its open, because that open is
+// where the strategy fills -- the same anchor the engine uses.
+fired = trig[1] and ready[1]
+plot(fired ? open - risk[1] : na, "stop, long side",
+     color = color.new(color.red, 0), style = plot.style_circles)
+plot(fired ? open + 1.0 * risk[1] : na, "target, long side",
+     color = color.new(color.teal, 0), style = plot.style_circles)
+plotshape(trig and ready, "signal", shape.diamond, location.belowbar,
+     color.new(color.teal, 0), size = size.tiny)
+bgcolor(trig and ready ? color.new(color.teal, 88) : na)
+
+alertcondition(trig, "Rule fires", "SAZb16 x-below 1.5 AND outside bar")
+
+var table t = table.new(position.bottom_right, 2, 2, border_width = 1)
+if barstate.islast
+    table.cell(t, 0, 0, "SAZb16 x-below 1.5", text_size = size.small, text_color = color.gray)
+    table.cell(t, 1, 0, c0 ? "yes" : "no", text_size = size.small,
+         text_color = c0 ? color.teal : color.gray)
+    table.cell(t, 0, 1, "outside bar", text_size = size.small, text_color = color.gray)
+    table.cell(t, 1, 1, c1 ? "yes" : "no", text_size = size.small,
+         text_color = c1 ? color.teal : color.gray)

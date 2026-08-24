@@ -53,6 +53,12 @@ time-matched control's 59.9%. Do not re-run this.
 the book's net profit, cut its Sharpe 3.73 -> 3.23 and more than doubled its drawdown. A
 correlation matrix alone will talk you into that trade. See `docs/ib/STUDY_SEMIVARIANCE.md`.
 
+**Normalise a signal before deciding it is dead.** SAM looked null over 4,032 combinations
+because only the paper's reading was tried. Adding a scale-free ratio, a trailing z-score and the
+CROSS as well as the state -- 1,440 conditions, 95M combinations -- produced three scalps that
+beat a matched control on the holdout and lift book Sharpe 3.73 -> 4.39. See
+`docs/ib/STUDY_SAM_SCALP.md`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -75,6 +81,9 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/volprofile.py` | session + developing volume profile, nodes, naked POCs |
 | `research/auction.py` | 47 auction-theory conditions, all leakage-checked |
 | `research/newsignals.py` | semivariance asymmetry and efficiency-flip signal families |
+| `research/sam_pool.py` | 1,440 SAM conditions (2 estimators x 12 windows x 3 normalisations) |
+| `research/sam_mega.py` | the 95,230,080-combination SAM-anchored sweep, chunked |
+| `research/sam_phases.py` | its five phases, same gates as everything else |
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 
 ## Pine
