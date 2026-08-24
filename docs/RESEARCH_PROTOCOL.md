@@ -419,3 +419,91 @@ Every bootstrap, permutation and Monte Carlo path is seeded (`--seed`, default `
 reported p-value is reproducible to the digit. Data files are **not** committed — they are large and
 usually licensed — so a study is reproduced by re-running the ingest command against the source file
 named in the study's own header.
+
+---
+
+## 9. Volatility sizing: the eight named methods, and which one to reach for
+
+`research/vol_sizing.py` implements all of these. `research/vol_sizing_test.py` runs them across
+the book. **Read §9a before applying any of them.**
+
+Several of the names in circulation describe the same arithmetic. Testing eight labels for one
+formula and reporting eight results is eight ways of reporting one, so they are grouped by what
+they compute:
+
+| group | method | what actually differs |
+| --- | --- | --- |
+| **A** risk-normalising<br>`lots = budget / stop-distance-$` | **VAPS** Volatility-Adjusted Position Sizing | σ = ATR(14) at entry; budget from **starting** capital |
+| | **DVS** Dynamic Volatility Sizing | σ = fast realised vol (10 bars); budget from starting capital |
+| | **RSPS** Risk-Scaled Position Sizing | σ = ATR(14); budget = % of **current** equity, so it compounds |
+| **B** output-vol targeting | **VTM** Volatility Targeting Model | ignores the instrument's vol entirely; scales so the **strategy's own** realised P&L volatility hits a target |
+| **C** budget scaling | **VRS** Volatility Risk Scaling | budget × (reference vol ÷ current vol), clamped |
+| | **VRSP** Volatility-Responsive Sizing | discrete step by volatility tercile, not continuous |
+| | **DRS** Dynamic Risk Scaling | budget scaled by **drawdown state**, not by volatility |
+| **D** cross-sectional | **AVA** Adaptive Volatility Allocation | across **legs**: weight ∝ 1/σ_leg on a rolling window |
+
+VAPS, DVS and RSPS are one formula with different vol estimators and different compounding.
+Report them as such.
+
+### 9a. Run the dispersion check first
+
+`vol_sizing.dispersion()` returns the coefficient of variation of per-trade dollar risk.
+
+* **CV < 0.15** — every trade already risks nearly the same. No Group A method can change
+  anything, and a flat result means *nothing to fix*, not *the method failed*. Say so.
+* **CV > 0.30** — sizing has something to work with.
+
+Measured on this repository's strategies: CV runs **0.36 to 0.68**, so the check passes and the
+results below are real rather than arithmetic.
+
+### 9b. What the methods actually delivered
+
+Six strategies, $50,000, 1% risk, 10-lot cap, ranked on **MAR** (net ÷ max drawdown) because it is
+scale-invariant and dollars are not — more leverage buys dollars for free.
+
+```
+best method by MAR, among those still profitable on the locked block:
+
+    fixed one contract   3 of 6
+    VAPS                 1 of 6
+    VTM                  1 of 6
+    VRS                  1 of 6
+```
+
+**No method beats fixed lots consistently, and picking the best method per strategy is another
+search.** This agrees with the 173,340-configuration sweep in `STUDY_SIZING_PORTFOLIO.md`, where
+fixed one contract had the best median Sharpe and MAR of any scheme.
+
+Two specific traps found:
+
+* **VTM floors to zero lots.** Targeting 10% annualised against per-trade P&L volatility routinely
+  produced mean lots of 0.0–0.7, i.e. the strategy stops trading. It scored best on two strategies
+  purely by trading almost nothing. Always print mean lots and the share of zero-lot trades.
+* **Compounding schemes (RSPS, DRS) amplify the sequence.** They looked best in dollars and worst
+  in MAR on several legs. Rank on MAR, and bootstrap the trade order — a compounding rule is
+  path-dependent and one ordering is not evidence.
+
+### 9c. Where the volatility adjustment does pay: the book, not the trade
+
+```
+                  net $     Sharpe   maxDD $    MAR
+equal lots      132,084       2.30    14,571   9.06
+AVA (1/sigma)   100,320       2.43     9,620  10.43
+```
+
+**AVA is the one that earns its place.** Less money, better Sharpe, a third off the drawdown, and
+a higher MAR. That is the correct shape of a sizing improvement: it does not add edge, it takes
+risk out.
+
+**Default: fixed one contract per leg at trade level, AVA across legs at book level.** Deviate
+only when the dispersion check and a locked-block read both support it.
+
+### 9d. The rule that governs all of it
+
+Sizing creates no edge. It reshapes one. So:
+
+1. Never rank sizing configurations on net dollars.
+2. Select on research, read locked once — a sizing sweep is a search like any other.
+3. Report the median configuration alongside the best; the gap is the selection problem.
+4. Futures are not divisible. On a $10,000 account **31%** of risk-based configurations cannot
+   afford a single MNQ contract at a 2.5×ATR stop and never trade at all.
