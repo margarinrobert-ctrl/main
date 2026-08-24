@@ -42,7 +42,23 @@ type SweepRowLite = {
 };
 
 type SweepLite = { rows: SweepRowLite[]; evaluated: number; dropped: number; minTrades: number; ms: number; tensorMs: number };
+type EdgeLite = {
+  winPct: number;
+  baseRatePct: number | null;
+  excessWinPct: number | null;
+  perTrade: number;
+  controlPerTrade: number | null;
+  excessPerTrade: number | null;
+  timeStopShare: number;
+  searched: number;
+  bonferroni: number;
+  warnings: string[];
+};
+
 type RevealLite = {
+  hurdle: { ticks: number; usd: number; worstTicks: number; shareOfBar: number | null };
+  exits: { reason: string; n: number; share: number }[];
+  edge: EdgeLite;
   row: SweepRowLite;
   window: string;
   locked: { n: number; perTrade: number; netUsd: number; winPct: number };
@@ -575,6 +591,75 @@ export function TunerConsole() {
               </tbody>
             </table>
           </div>
+          {/* ---- edge diagnostics: the questions that decide whether this is an edge at all ---- */}
+          {reveal.map((r) => (
+            <div key={`edge-${r.row.key}`} className="mt-3 rounded-lg border border-white/[0.08] bg-black/30 p-3">
+              <h3 className="text-[10px] uppercase tracking-micro text-neutral-500">
+                Edge report · {r.row.rule} · {r.row.stop}×/{r.row.target}R
+              </h3>
+
+              <div className="mt-2 grid gap-3 sm:grid-cols-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-micro text-neutral-500">Cost hurdle</div>
+                  <div className="mt-0.5 text-[12px] text-neutral-200">
+                    {r.hurdle.ticks.toFixed(2)} ticks <span className="text-neutral-500">= ${r.hurdle.usd.toFixed(2)}</span>
+                  </div>
+                  <div className="text-[11px] text-neutral-500">
+                    {r.hurdle.shareOfBar !== null ? `${(100 * r.hurdle.shareOfBar).toFixed(0)}% of a median bar` : "median bar unknown"} ·
+                    worst {r.hurdle.worstTicks.toFixed(1)}t
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] uppercase tracking-micro text-neutral-500">Win rate vs its base rate</div>
+                  <div className="mt-0.5 text-[12px] text-neutral-200">
+                    {r.edge.winPct.toFixed(1)}%
+                    {r.edge.baseRatePct !== null ? <span className="text-neutral-500"> vs {r.edge.baseRatePct.toFixed(1)}% base</span> : null}
+                  </div>
+                  <div className={`text-[11px] ${(r.edge.excessWinPct ?? 0) > 0 ? "text-call" : "text-put"}`}>
+                    {r.edge.excessWinPct === null ? "no control" : `${r.edge.excessWinPct >= 0 ? "+" : ""}${r.edge.excessWinPct.toFixed(1)} pts excess`}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[10px] uppercase tracking-micro text-neutral-500">Where the exits landed</div>
+                  <div className="mt-0.5 flex h-2 overflow-hidden rounded-full bg-white/5">
+                    {r.exits.map((e) => (
+                      <span
+                        key={e.reason}
+                        title={`${e.reason} ${e.n} (${Math.round(100 * e.share)}%)`}
+                        style={{ width: `${100 * e.share}%` }}
+                        className={
+                          e.reason === "target" ? "bg-call/70" : e.reason === "stop" ? "bg-put/70" : "bg-amber-400/60"
+                        }
+                      />
+                    ))}
+                  </div>
+                  <div className="mt-1 text-[11px] text-neutral-500">
+                    {r.exits.filter((e) => e.n > 0).map((e) => `${e.reason} ${Math.round(100 * e.share)}%`).join(" · ")}
+                  </div>
+                </div>
+              </div>
+
+              {r.edge.warnings.length ? (
+                <ul className="mt-2.5 space-y-1 border-t border-white/5 pt-2">
+                  {r.edge.warnings.map((w) => (
+                    <li key={w} className="flex gap-2 text-[11px] leading-relaxed text-amber-200/90">
+                      <span aria-hidden className="text-amber-400">
+                        ▸
+                      </span>
+                      <span>{w}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2.5 border-t border-white/5 pt-2 text-[11px] leading-relaxed text-neutral-400">
+                  No diagnostic fired. That means nothing objectionable was found — not that this is an edge.
+                </p>
+              )}
+            </div>
+          ))}
+
           <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
             The shape to want is a research number that <span className="text-neutral-300">decays</span>. A configuration that is better on the holdout than on
             research is the wrong shape — the holdout is where an edge decays, not where it appears — and has twice been a defect in this project rather than a

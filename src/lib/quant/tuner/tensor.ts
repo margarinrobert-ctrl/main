@@ -393,6 +393,18 @@ export interface ControlResult {
   pAll: number;
   pResearch: number;
   pLocked: number;
+  /**
+   * The BASE RATE: what fraction of trades a random entry wins under this exact geometry.
+   *
+   * A win rate means nothing without it. The driftless bound for an R-multiple target is
+   * 1/(1+R), but the real base rate is not that -- costs push it down, a wider barrier pushes it
+   * back up, and drift lifts longs and sinks shorts. Measuring it from the same matched draws
+   * that price the dollars means a rule is always scored against its own geometry rather than
+   * against 50%.
+   */
+  meanWinPct: number;
+  /** One-sided p on the win rate specifically. */
+  pWin: number;
 }
 
 /**
@@ -409,7 +421,7 @@ export function matchedControl(
   costs: CostModel,
   lockedFromSession: number,
   sessionOfBar: ArrayLike<number>,
-  actual: { all: number; research: number; locked: number },
+  actual: { all: number; research: number; locked: number; winPct?: number },
   draws = 2000,
   seed = 7,
 ): ControlResult {
@@ -418,6 +430,7 @@ export function matchedControl(
   const perAll = new Float64Array(draws);
   const perRes = new Float64Array(draws);
   const perLok = new Float64Array(draws);
+  const winPct = new Float64Array(draws);
   const pick = new Int32Array(triggers.length);
   for (let d = 0; d < draws; d++) {
     let m = 0;
@@ -434,6 +447,7 @@ export function matchedControl(
     perAll[d] = st.n ? st.netUsd / st.n : 0;
     perRes[d] = st.nResearch ? st.netResearch / st.nResearch : 0;
     perLok[d] = st.nLocked ? st.netLocked / st.nLocked : 0;
+    winPct[d] = st.n ? (100 * st.wins) / st.n : 0;
   }
   const mean = (a: Float64Array) => a.reduce((x, y) => x + y, 0) / Math.max(a.length, 1);
   const p = (a: Float64Array, act: number) => {
@@ -449,5 +463,7 @@ export function matchedControl(
     pAll: p(perAll, actual.all),
     pResearch: p(perRes, actual.research),
     pLocked: p(perLok, actual.locked),
+    meanWinPct: mean(winPct),
+    pWin: actual.winPct === undefined ? NaN : p(winPct, actual.winPct),
   };
 }
