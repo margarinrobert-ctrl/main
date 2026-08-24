@@ -68,9 +68,23 @@ def main(tf, out=None, chunk=None, nchunk=1):
     its order are identical, only the loop is split.
     """
     t0 = time.time()
-    d, sam_names, lad_names, M = build_pool(tf)
-    names = sam_names + lad_names
-    nbars = M.shape[1]
+    import os
+    cache = f"/tmp/sambits_{tf}m.npy"
+    ncache = f"/tmp/sambits_{tf}m_names.npy"
+    if os.path.exists(cache) and os.path.exists(ncache):
+        # the bitsets and the name list are all a later chunk needs; rebuilding the boolean
+        # condition matrix from 1-minute semivariances is the expensive part and is skipped
+        d = prep(tf)
+        meta = np.load(ncache, allow_pickle=True)
+        names = list(meta[0]); n_sam_cached = int(meta[1])
+        sam_names, lad_names = names[:n_sam_cached], names[n_sam_cached:]
+        M = None
+        nbars = len(d["c"])
+    else:
+        d, sam_names, lad_names, M = build_pool(tf)
+        names = sam_names + lad_names
+        nbars = M.shape[1]
+        np.save(ncache, np.array([names, len(sam_names)], dtype=object), allow_pickle=True)
     combos_all = enumerate_rules(len(sam_names), len(lad_names))
     if chunk is None:
         combos, lo = combos_all, 0
@@ -88,11 +102,8 @@ def main(tf, out=None, chunk=None, nchunk=1):
 
     # the bitsets are identical for every chunk of a timeframe, and building them from the
     # 1-minute semivariances is a third of the run time, so they are cached to disk
-    import os
-    cache = f"/tmp/sambits_{tf}m.npy"
-    if os.path.exists(cache):
+    if M is None:
         B = np.load(cache)
-        del M
     else:
         nw = (nbars + 63) // 64
         B = np.zeros((len(names), nw), np.uint64)

@@ -55,8 +55,10 @@ correlation matrix alone will talk you into that trade. See `docs/ib/STUDY_SEMIV
 
 **Normalise a signal before deciding it is dead.** SAM looked null over 4,032 combinations
 because only the paper's reading was tried. Adding a scale-free ratio, a trailing z-score and the
-CROSS as well as the state -- 1,440 conditions, 95M combinations -- produced three scalps that
-beat a matched control on the holdout and lift book Sharpe 3.73 -> 4.39. See
+CROSS as well as the state -- 1,440 conditions, 142.8M combinations -- produced four scalps that
+beat a matched control on the holdout and lift book Sharpe 3.73 -> 4.57. On 5-minute bars the edge
+is specifically in the INTRABAR estimator: the best bar-return-only 5m rule fails the matched
+control at p 0.354, and TradingView cannot supply intrabar data at that scale. See
 `docs/ib/STUDY_SAM_SCALP.md`.
 
 **Score against a matched control, not a population mean.** Random entries with the same side,
@@ -82,7 +84,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/auction.py` | 47 auction-theory conditions, all leakage-checked |
 | `research/newsignals.py` | semivariance asymmetry and efficiency-flip signal families |
 | `research/sam_pool.py` | 1,440 SAM conditions (2 estimators x 12 windows x 3 normalisations) |
-| `research/sam_mega.py` | the 95,230,080-combination SAM-anchored sweep, chunked |
+| `research/sam_mega.py` | the 142,845,120-combination SAM-anchored sweep (5m/15m/30m) |
 | `research/sam_phases.py` | its five phases, same gates as everything else |
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 
