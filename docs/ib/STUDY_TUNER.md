@@ -115,10 +115,52 @@ rewritten on the parse **tree**, not textually, because `c>ema200 & rsi14<40` pa
 `{name}` placeholders become sweep axes. Geometry axes are free; rule axes cost one vectorised
 indicator pass per distinct value. So widen the geometry first and the rule last.
 
+## 6. In the app
+
+The same harness is a page in the Next.js terminal at **`/quant/tune`**, written in TypeScript
+against `src/lib/quant/` rather than shelling out to the Python layer. Three constraints forced
+that shape and it turned out to be the right one anyway:
+
+* `data/*.csv` is git-ignored — large, often licensed — so there is no bar file on the server to
+  read. The page takes a file from a picker and **nothing is uploaded**; the engine runs in the
+  tab.
+* the repo also builds as a static export, where there is no server to ask at all.
+* a tensor build over a few hundred thousand bars would freeze the tab, so the whole session lives
+  in a **Web Worker** which also owns the caches — that caching is the entire reason the second
+  question is faster than the first, and any per-request design would throw it away.
+
+Measured in the browser: **450 configurations in 0.05 s**, 0.04 s of that building the exit
+tensor, 0.02 ms each after.
+
+The TypeScript engine is verified the same way the Python one is, against the engine already in
+the repo: `src/lib/quant/tuner/tuner.test.ts` asserts the tensor reproduces **`runBacktest` trade
+for trade** — same count, same entry bar, same exit bar, same P&L — across every rule x geometry x
+side, plus cost equivalence, indicator causality under truncation, and the parser's precedence and
+safety properties. 17 tests, and the repository's suite is green at 338.
+
+Two differences from the Python layer are deliberate and worth knowing before comparing numbers to
+the dollar. ATR in the app is **Wilder's**, matching `series.atr` and therefore matching what
+`runBacktest` sizes every stop in; the research layer uses `ema(tr, n)`. And costs come from the
+`Instrument` record (NQ/MNQ tick values and commissions) rather than the Python constants. Compare
+the two on **shape**, not on the last digit.
+
+The guardrails are structural in the UI too. The results table is research-block only; the locked
+block has no column, no sort and no hover — it takes selecting rows and pressing a button captioned
+*"Reading it is a one-way door"*, and what comes back leads with the configuration count and the
+Bonferroni threshold that count implies. A rule with too few trades gets a sentence saying so
+rather than a one-row table to read.
+
+One thing the app does **not** have: the limit-entry mechanic from §1–§5 of this document. The
+browser tensor models market entry only, because the resting-limit fill model is the part most
+sensitive to queue position and the least honest to expose behind a knob that looks as
+authoritative as the others. Use `research/tune.py --entry limit:0.75` for that.
+
 ## Files
 
 | | |
 | --- | --- |
+| `src/lib/quant/tuner/` | the TypeScript port: indicators, rule parser, exit tensor, session API, worker |
+| `src/components/TunerConsole.tsx`, `src/app/quant/tune/` | the page |
 | `research/fastbars.py` | disk-cached bar arrays keyed on the source file's mtime and size; 4.5 s -> 0.1 s cold start |
 | `research/indpool.py` | 42 indicators with the period as an argument, memoised, built on `indicators.py` and `trendind.py` |
 | `research/tuner.py` | the exit tensor, the rule language, `run`, `sweep`, `reveal` |

@@ -113,7 +113,10 @@ geometry against `sim_core`'s 1.3 ms, and a 2,000-draw matched control in 6 ms, 
 finally makes the control affordable as a GATE. Verified trade-for-trade against `sim_core` on
 4.6M trades. It will not show you the locked block from a sweep — `reveal(df, k)` is the only way,
 it states the multiplicity first, and it flags anything better on locked than on research as the
-wrong shape. See `docs/ib/STUDY_TUNER.md`.
+wrong shape. It is also a page in the app at `/quant/tune`, engine ported to TypeScript and
+asserted trade-for-trade against `runBacktest`; note the app sizes stops in WILDER's ATR (what
+`runBacktest` uses) while the research layer uses `ema(tr, n)`, so compare the two on shape, not to
+the dollar. See `docs/ib/STUDY_TUNER.md`.
 
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
@@ -153,6 +156,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
+| `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine
 
