@@ -41,7 +41,7 @@ PV = 2.0
 
 # =============================================================== 1. ANALYSE
 def analyse(conds, side=1, atr_mult=2.5, tp_r=3.0, flat_min=0, tf=30,
-            constraints=None, R=None, book_corr=None):
+            constraints=None, R=None, book_corr=None, fast=False):
     s = build(conds, side=side, atr_mult=atr_mult, tp_r=tp_r, flat_min=flat_min, tf=tf)
     if len(s.pnl) < 10:
         return None
@@ -57,7 +57,8 @@ def analyse(conds, side=1, atr_mult=2.5, tp_r=3.0, flat_min=0, tf=30,
     grid = [s.sim(atr_mult=a, tp_r=t).pnl.sum()
             for a in (1.0, 1.5, 2.0, 2.5, 3.0) for t in (1.0, 1.5, 2.0, 2.5, 3.0)]
     rng = np.random.default_rng(9)
-    noise = [s.sim(noise=(0.125, int(rng.integers(1 << 31)))).pnl.sum() for _ in range(12)]
+    n_noise = 4 if fast else 12
+    noise = [s.sim(noise=(0.125, int(rng.integers(1 << 31)))).pnl.sum() for _ in range(n_noise)]
     e = np.linspace(0, s.n_sess, 9).astype(int)
     folds = [s.pnl[(s.ent_sess >= e[k]) & (s.ex_sess < e[k + 1])].sum() for k in range(1, 8)]
     six = np.array_split(np.arange(s.n_sess), 6)
@@ -68,7 +69,7 @@ def analyse(conds, side=1, atr_mult=2.5, tp_r=3.0, flat_min=0, tf=30,
         "cost 4x survives": 1.0 if s.sim(cost_mult=4.0).pnl.sum() > 0 else 0.0,
         "noise draws profitable %": 100 * np.mean([x > 0 for x in noise]),
         "positive periods": periods,
-        "matched null p": _matched_null(s),
+        "matched null p": _matched_null(s, draws=80 if fast else 150),
         "walk-forward positive folds": sum(1 for f in folds if f > 0),
         "oos retention": (per_lok / per_res) if per_res > 0 else 0.0,
         "max book correlation": book_corr if book_corr is not None else _book_corr(s, d),
