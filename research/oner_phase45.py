@@ -19,7 +19,7 @@ import pandas as pd
 
 sys.path.insert(0, "research")
 from dropone import filter_null
-from test_suite import build, _daily, _dd, _sharpe
+from test_suite import build, use_pool, _daily, _dd, _sharpe
 
 TOP = 150
 
@@ -101,6 +101,8 @@ def phase5(ok, n=4, max_corr=0.25, verbose=True):
 
 if __name__ == "__main__":
     pref = sys.argv[1] if len(sys.argv) > 1 else "mega"
+    # the mega2 sweep enumerated the 198-rung ladder, so its rule names only resolve there
+    use_pool("ladder" if pref == "mega2" else "factory")
     rows = list(np.load(f"/tmp/phase3_{pref}.npy", allow_pickle=True))
     out, ok = phase4(rows)
     np.save(f"/tmp/phase4_{pref}.npy", np.array(

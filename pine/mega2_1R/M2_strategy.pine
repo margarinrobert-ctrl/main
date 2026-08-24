@@ -1,16 +1,16 @@
 //@version=6
 // =============================================================================================
-// close>5-bar high AND outside bar AND 09:30-12:30 New York
-//   long only, stop 4.0 x ATR, target 1.0 x that risk, flat at 16:00, 15-minute bars.
+// EMA20>EMA50 AND bearish engulfing AND first hour
+//   short only, stop 1.0 x ATR, target 1.0 x that risk, flat at 15:00, 30-minute bars.
 //   Stop and target are measured from the FILL -- the open of the bar after the signal --
 //   using the ATR of the signal bar.
 //
 // MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, $1.00 commission per round turn, 1 tick
 // spread + 1 tick slip each side, 1 extra tick on stops:
-//     trades                      158  (105 research / 53 locked)
-//     win rate                    65.8%   base rate for this geometry 46.1%
-//     net                         $10,981   profit factor 2.04
-//     locked block only           53 trades, 66.0% win, $7,387
+//     trades                      120  (76 research / 44 locked)
+//     win rate                    63.3%   base rate for this geometry 43.5%
+//     net                         $2,638   profit factor 1.71
+//     locked block only           44 trades, 54.5% win, $745
 //     chosen on                   the research block only; the locked figures above were read once
 //
 // THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
@@ -30,7 +30,7 @@
 // Research tooling for education and analysis. Not financial advice.
 // =============================================================================================
 
-strategy("V3 1R | close>5-bar high + outside bar + 09:30-12:30 New York", overlay = true, initial_capital = 25000,
+strategy("M2 1R | EMA20>EMA50 + bearish engulfing + first hour", overlay = true, initial_capital = 25000,
      default_qty_type = strategy.fixed, default_qty_value = 1,
      commission_type = strategy.commission.cash_per_order, commission_value = 0.50,
      slippage = 2, pyramiding = 0, calc_on_every_tick = false,
@@ -43,6 +43,8 @@ tzIn   = input.string("America/New_York", "Timezone for clock conditions",
      "hour late -- it has happened here before.")
 barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
 atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
+ema20   = ta.ema(close, 20)
+ema50   = ta.ema(close, 50)
 
 
 // ---- backtest window -------------------------------------------------------------------------
@@ -56,19 +58,19 @@ toDate   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "Custom to", group =
 daysBack = winMode == "Last 90 days" ? 90 : winMode == "Last 365 days" ? 365 : winMode == "Last 3 years" ? 1095 : 0
 inWindow = winMode == "Custom dates" ? (time >= fromDate and time <= toDate) : daysBack == 0 ? true : (time >= timenow - daysBack * 86400000)
 
-allowLong  = input.bool(true, "Allow longs", group = "Direction")
-allowShort = input.bool(false, "Allow shorts", group = "Direction",
+allowLong  = input.bool(false, "Allow longs", group = "Direction")
+allowShort = input.bool(true, "Allow shorts", group = "Direction",
      tooltip = "This rule was measured in ONE direction against that direction's own " +
      "base rate. Flipping it does not give you the mirror-image edge -- longs and " +
      "shorts start from different base rates on a market that trended, and the other " +
      "side of this rule was not tested.")
-atrMult = input.float(4.0, "Stop = N x ATR", minval = 0.25, step = 0.25, group = "Risk")
+atrMult = input.float(1.0, "Stop = N x ATR", minval = 0.25, step = 0.25, group = "Risk")
 tpR     = input.float(1.0, "Target = N x risk", minval = 0.25, step = 0.25, group = "Risk")
 
 // ---- the rule -------------------------------------------------------------------
-c0 = close > ta.highest(high, 5)[1]    // close>5-bar high
-c1 = high > high[1] and low < low[1]    // outside bar
-c2 = barMin >= 570 and barMin < 750    // 09:30-12:30 New York
+c0 = ema20 > ema50    // EMA20>EMA50
+c1 = close < open[1] and open > close[1] and close < open    // bearish engulfing
+c2 = barMin >= 570 and barMin < 630    // first hour
 trig = c0 and c1 and c2
 
 ready = not na(atrV) and atrV > 0 and bar_index > 300
@@ -96,7 +98,7 @@ if trig and ready and isFlat and inWindow and barstate.isconfirmed
         strategy.entry("S", strategy.short)
         strategy.exit("Sx", "S", loss = riskTicks, profit = tpR * riskTicks)
 
-if barMin >= 960 and strategy.position_size != 0 and barstate.isconfirmed
+if barMin >= 900 and strategy.position_size != 0 and barstate.isconfirmed
     strategy.close_all(comment = "session cutoff")
 
 if strategy.position_size != 0 and not inWindow and barstate.isconfirmed
@@ -120,12 +122,12 @@ if barstate.islast
 // ---- which rule is loaded ---------------------------------------------------------
 var table rt = table.new(position.top_right, 2, 3, border_width = 1)
 if barstate.islast
-    table.cell(rt, 0, 0, "close>5-bar high", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 0, 0, "EMA20>EMA50", text_size = size.small, text_color = color.gray)
     table.cell(rt, 1, 0, c0 ? "yes" : "no", text_size = size.small,
          text_color = c0 ? color.teal : color.gray)
-    table.cell(rt, 0, 1, "outside bar", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 0, 1, "bearish engulfing", text_size = size.small, text_color = color.gray)
     table.cell(rt, 1, 1, c1 ? "yes" : "no", text_size = size.small,
          text_color = c1 ? color.teal : color.gray)
-    table.cell(rt, 0, 2, "09:30-12:30 New York", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 0, 2, "first hour", text_size = size.small, text_color = color.gray)
     table.cell(rt, 1, 2, c2 ? "yes" : "no", text_size = size.small,
          text_color = c2 ? color.teal : color.gray)

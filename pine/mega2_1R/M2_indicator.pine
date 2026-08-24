@@ -1,16 +1,16 @@
 //@version=6
 // =============================================================================================
-// EMA20>EMA50 AND bearish engulfing, body>=20% AND 09:30-11:30 New York
-//   short only, stop 1.0 x ATR, target 1.0 x that risk, flat at 16:00, 30-minute bars.
+// EMA20>EMA50 AND bearish engulfing AND first hour
+//   short only, stop 1.0 x ATR, target 1.0 x that risk, flat at 15:00, 30-minute bars.
 //   Stop and target are measured from the FILL -- the open of the bar after the signal --
 //   using the ATR of the signal bar.
 //
 // MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, $1.00 commission per round turn, 1 tick
 // spread + 1 tick slip each side, 1 extra tick on stops:
-//     trades                      201  (125 research / 76 locked)
-//     win rate                    60.7%   base rate for this geometry 43.9%
-//     net                         $4,391   profit factor 1.60
-//     locked block only           76 trades, 60.5% win, $2,549
+//     trades                      120  (76 research / 44 locked)
+//     win rate                    63.3%   base rate for this geometry 43.5%
+//     net                         $2,638   profit factor 1.71
+//     locked block only           44 trades, 54.5% win, $745
 //     chosen on                   the research block only; the locked figures above were read once
 //
 // THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
@@ -30,7 +30,7 @@
 // Research tooling for education and analysis. Not financial advice.
 // =============================================================================================
 
-indicator("V2 1R | EMA20>EMA50 + bearish engulfing, body>=20% + 09:30-11:30 New York | signal (signal)", overlay = true)
+indicator("M2 1R | EMA20>EMA50 + bearish engulfing + first hour | signal (signal)", overlay = true)
 // ---- primitives, defined to match the research exactly -------------------------------------------
 tzIn   = input.string("America/New_York", "Timezone for clock conditions",
      options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"],
@@ -41,13 +41,11 @@ barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minut
 atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
 ema20   = ta.ema(close, 20)
 ema50   = ta.ema(close, 50)
-barRange  = math.max(high - low, syminfo.mintick)
-bodyFrac  = math.abs(close - open) / barRange
 
 // ---- the rule -------------------------------------------------------------------
 c0 = ema20 > ema50    // EMA20>EMA50
-c1 = close < open[1] and open > close[1] and close < open and bodyFrac >= 0.2    // bearish engulfing, body>=20%
-c2 = barMin >= 570 and barMin < 690    // 09:30-11:30 New York
+c1 = close < open[1] and open > close[1] and close < open    // bearish engulfing
+c2 = barMin >= 570 and barMin < 630    // first hour
 trig = c0 and c1 and c2
 ready = not na(atrV) and atrV > 0 and bar_index > 300
 
@@ -63,16 +61,16 @@ plotshape(trig and ready, "signal", shape.diamond, location.belowbar,
      color.new(color.teal, 0), size = size.tiny)
 bgcolor(trig and ready ? color.new(color.teal, 88) : na)
 
-alertcondition(trig, "Rule fires", "EMA20>EMA50 AND bearish engulfing, body>=20% AND 09:30-11:30 New York")
+alertcondition(trig, "Rule fires", "EMA20>EMA50 AND bearish engulfing AND first hour")
 
 var table t = table.new(position.bottom_right, 2, 3, border_width = 1)
 if barstate.islast
     table.cell(t, 0, 0, "EMA20>EMA50", text_size = size.small, text_color = color.gray)
     table.cell(t, 1, 0, c0 ? "yes" : "no", text_size = size.small,
          text_color = c0 ? color.teal : color.gray)
-    table.cell(t, 0, 1, "bearish engulfing, body>=20%", text_size = size.small, text_color = color.gray)
+    table.cell(t, 0, 1, "bearish engulfing", text_size = size.small, text_color = color.gray)
     table.cell(t, 1, 1, c1 ? "yes" : "no", text_size = size.small,
          text_color = c1 ? color.teal : color.gray)
-    table.cell(t, 0, 2, "09:30-11:30 New York", text_size = size.small, text_color = color.gray)
+    table.cell(t, 0, 2, "first hour", text_size = size.small, text_color = color.gray)
     table.cell(t, 1, 2, c2 ? "yes" : "no", text_size = size.small,
          text_color = c2 ? color.teal : color.gray)

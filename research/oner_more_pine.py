@@ -28,6 +28,21 @@ from oner_union import FAMILIES, score
 OUT = Path("pine/more1R")
 
 
+def _pretty(name):
+    """Grid labels are terse on purpose; the chart legend is not the place for them."""
+    if name.startswith("outside r>="):
+        r = float(name.split(">=")[1])
+        return "outside bar" if r <= 0 else f"outside bar, range>={r:g}xATR"
+    if name.startswith("first ") and name.endswith("m"):
+        end = 570 + int(name[6:-1])
+        return f"09:30-{end//60:02d}:{end%60:02d} New York"
+    if "engulf b>=" in name:
+        q = float(name.split(">=")[1])
+        side = "bearish" if name.startswith("bear") else "bullish"
+        return f"{side} engulfing" if q <= 0 else f"{side} engulfing, body>={q*100:.0f}%"
+    return name
+
+
 def _register():
     PX.P.update(LADDER_PINE)
     for a, b in ((10, 20), (20, 50), (20, 100), (50, 100), (10, 50), (50, 200)):
@@ -46,6 +61,61 @@ def _register():
         PX.P[f"outside r>={r:g}"] = (
             "high > high[1] and low < low[1]"
             + ("" if r <= 0 else f" and (high - low) >= {r:g} * atrV"))
+
+
+def emit(names, side, am, flat, tf, st, title, stem, outdir):
+    """One rule -> a strategy and an indicator, both linted before anything is written."""
+    from pine_lint import lint
+    show = [_pretty(n) for n in names]
+    for a, b in zip(names, show):
+        PX.P[b] = PX.P[a]
+    bad = 0
+    outdir.mkdir(parents=True, exist_ok=True)
+    for kind, fn in (("strategy", PX.emit_strategy), ("indicator", PX.emit_indicator)):
+        src = fn(show, side, am, 1.0, flat, tf=tf, stats=st,
+                 title=title + ("" if kind == "strategy" else " | signal"))
+        errs = lint(src)
+        path = outdir / f"{stem}_{kind}.pine"
+        if errs:
+            bad += 1
+            print(f"  {path}: {len(errs)} lint error(s)")
+            for e in errs[:5]:
+                print(f"      {e}")
+            continue
+        path.write_text(src)
+        print(f"  wrote {path}  ({len(src.splitlines())} lines, lint clean)")
+    return bad
+
+
+def mega2(path="/tmp/phase5_mega2.npy", outdir=Path("pine/mega2_1R")):
+    """The four the 139,740,876-combination sweep returned."""
+    from test_suite import build, use_pool, _daily, _sharpe
+    _register()
+    use_pool("ladder")
+    rows = list(np.load(path, allow_pickle=True))
+    bad = 0
+    for i, r in enumerate(rows):
+        names = list(r["rule"])
+        miss = [n for n in names if n not in PX.P]
+        if miss:
+            print(f"  M{i+1}: no Pine expression for {miss}"); bad += 1; continue
+        s = build(names, side=r["side"], atr_mult=r["am"], tp_r=1.0, flat_min=r["flat"],
+                  tf=r["tf"])
+        m = s.ent_sess >= s.cut
+        w = s.pnl > 0
+        st = {
+            "trades": f"{len(s.pnl)}  ({int((~m).sum())} research / {int(m.sum())} locked)",
+            "win rate": f"{100*w.mean():.1f}%   base rate for this geometry {r['base']:.1f}%",
+            "net": f"${s.pnl.sum():,.0f}   profit factor "
+                   f"{s.pnl[w].sum()/max(-s.pnl[~w].sum(),1e-9):.2f}",
+            "locked block only": f"{int(m.sum())} trades, {100*(s.pnl[m]>0).mean():.1f}% win, "
+                                 f"${s.pnl[m].sum():,.0f}",
+            "chosen on": "the research block only; the locked figures above were read once",
+        }
+        bad += emit(names, r["side"], r["am"], r["flat"], r["tf"], st,
+                    f"M{i+1} 1R | " + " + ".join(_pretty(n) for n in names),
+                    f"M{i+1}", outdir)
+    print("all clean" if not bad else f"{bad} problem(s)")
 
 
 def main():
@@ -70,6 +140,10 @@ def main():
                                  f"${lp.sum():,.0f}",
             "chosen on": "the research block only; the locked figures above were read once",
         }
+        show = [_pretty(n) for n in names]
+        for a, b in zip(names, show):
+            PX.P[b] = PX.P[a]
+        names = show
         title = f"{key} 1R | " + " + ".join(names)
         for kind, fn in (("strategy", PX.emit_strategy), ("indicator", PX.emit_indicator)):
             src = fn(names, S["side"], S["am"], 1.0, S["flat"], tf=S["tf"], stats=st,

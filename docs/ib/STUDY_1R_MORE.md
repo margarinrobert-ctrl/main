@@ -302,7 +302,82 @@ $4,450; V1's is −$1,176.
 
 ---
 
-## 9. What to take from this
+---
+
+## 10. What the bigger search actually returned
+
+Phases 2–5 were then run on the 139,740,876-combination sweep with the *same* gates as before —
+calendar ban, base-rate excess per geometry, subset coherence, geometry tuning on research, then
+each condition against a random filter of the same selectivity on the locked block.
+
+    139,740,876 combinations generated
+     25,293,881 clear the minimal bar (50+ research trades, 20+ locked, research-profitable)
+     22,481,597 contain no calendar condition
+      1,739,098 also reach a 58% research win rate with positive excess over their geometry
+        255,313 also survive subset coherence
+        167,985 unique rule/direction pairs after tuning geometry on research
+            150 after collapsing rules that share two or more conditions
+             29 have at least one condition beating a random filter on the LOCKED block
+             27 are also profitable there
+              4 selected, pairwise |rho| below 0.25
+
+| | rule | tf | dir | stop | n | win % | base | net $ | locked $ | PF | proven |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| M1 | ATR>1.2× mean · bullish engulfing · upper wick>60% | 30m | long | 1.0 | 85 | 71.8 | 48.0 | 3,331 | 1,509 | 2.79 | 3/3 |
+| M2 | EMA20>EMA50 · bearish engulfing · first hour | 30m | short | 1.0 | 120 | 63.3 | 43.5 | 2,638 | 745 | 1.71 | 3/3 |
+| M3 | close>SMA100 · first hour · Stoch K<25 | 15m | short | 2.0 | 92 | 65.2 | 43.5 | 3,593 | 1,351 | 1.79 | 3/3 |
+| M4 | body<30% · first hour · ATR>1.8× mean | 30m | long | 4.0 | 88 | **73.9** | 49.5 | 9,005 | 2,796 | 3.49 | 2/3 |
+
+M2 is the shipped V2 rediscovered, so the finer grid confirmed it rather than adding to it.
+
+### And what the anomaly battery says about them
+
+**M4 has the highest 1R win rate this branch has produced — 73.9% — and the weakest mechanism.**
+
+| M4 exit | n | share | net $ | of net |
+| --- | --- | --- | --- | --- |
+| target | 15 | 17% | +4,889 | 54% |
+| stop | 6 | 7% | −2,298 | −26% |
+| **time stop** | **67** | **76%** | **+6,414** | **71%** |
+
+Three quarters of its trades never touch either barrier. It is long, on a 4×ATR stop, held to the
+16:00 flatten, on days that opened quiet and volatile — which on a market that rose 89% is a
+direction bet, not a 1-to-1 race won 74% of the time. Its matched control agrees: the control's
+own win rate for that geometry is 55.9%, not 50%, and M4's locked net separates at only p = 0.080.
+
+The exit split is the test that catches this, and it caught nothing else — every other version on
+both lists earns at the target and gives it back at the stop.
+
+Matched control, locked block:
+
+| | locked n | win % | control | p | net $ | p |
+| --- | --- | --- | --- | --- | --- | --- |
+| M1 | 30 | 66.7 | 48.6 | **0.047** | 1,509 | **0.017** |
+| M2 | 44 | 54.5 | 45.4 | 0.127 | 745 | 0.087 |
+| M3 | 33 | 60.6 | 48.4 | **0.045** | 1,351 | 0.135 |
+| M4 | 25 | 72.0 | 55.9 | **0.022** | 2,796 | 0.080 |
+
+### The two sets side by side
+
+| book | trades | win % | net $ | locked $ | Sharpe | maxDD | MAR |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| the big sweep, M1–M4 | 385 | **68.1** | 18,567 | 6,401 | 3.01 | $997 | 18.63 |
+| the relaxation, V1\*–V4\* | **688** | 61.6 | **27,282** | **14,258** | 2.80 | $1,082 | **25.21** |
+| all eight | 1,073 | 63.9 | 45,849 | 20,659 | **3.50** | $1,118 | **41.01** |
+
+**5.1× the candidates bought a higher fitted win rate and less money on the holdout.** That is the
+multiple-comparisons tax arriving exactly where theory says it should: a larger search finds a
+more extreme fitted statistic, and the statistic it was ranked on — the win rate — is the one that
+inflates. Relaxing four already-validated rules cost 83 threshold points of search and returned
+more than twice the locked dollars on nearly twice the entries.
+
+Correlations across all eight are low apart from two expected pairs: M2/V2\* at 0.58, because M2
+*is* V2 at its shipped setting, and M1/V3\* at 0.44, both being long momentum-continuation rules
+on the same clock. Running all eight means running six distinct bets, and M2 should be dropped in
+favour of V2\*, which has the same rule at more entries.
+
+
+## 11. What to take from this
 
 1. **V3 is the strongest thing this branch has produced.** 158 trades, 65.8% win against a 46.1%
    base, PF 2.04, locked 66.0% on 53 trades, every condition a real filter on the holdout,
@@ -317,6 +392,13 @@ $4,450; V1's is −$1,176.
 4. **A win rate that only exists at one threshold is not a mechanism.** This is the generalisable
    finding, and it is now cheap to test: parameterise, sweep the neighbourhood on research, and
    see whether the edge decays smoothly or falls off a cliff.
+5. **Split the P&L by exit reason before believing any 1R win rate.** M4 wins 73.9% of its trades
+   and takes 71% of its money at the time stop. A barrier win rate that is really a holding-period
+   return will pass a walk-forward, a Monte Carlo and a bootstrap, because all three resample the
+   same drift.
+6. **A 5.1× bigger search returned a better-looking book and a worse holdout.** Both sets are kept
+   and both are reported; the eight-leg book is the best of the three, but that is six distinct
+   bets, not eight.
 
 ## Files
 
@@ -328,8 +410,10 @@ $4,450; V1's is −$1,176.
 | `research/oner_more.py` | the stated selection rule, correlation matrices, the book |
 | `research/oner_anom.py` | exit decomposition, matched control, corners, FDR slices |
 | `research/oner_more_tests.py` | drop-one, execution path, costs, bootstrap, walk-forward |
+| `research/mega2_check.py` | the big sweep's four, same battery, both sets correlated |
 | `research/oner_more_pine.py` | emitters, lint-clean |
-| `pine/more1R/V1..V4_{strategy,indicator}.pine` | the eight scripts |
+| `pine/more1R/V1..V4_{strategy,indicator}.pine` | the re-set four |
+| `pine/mega2_1R/M1..M4_{strategy,indicator}.pine` | the big sweep's four |
 
 Measured on MNQ, 2022-12-26 → 2025-12-12, one contract, $1.00 commission per round turn, one tick
 spread plus one tick slippage each side, one extra tick on stops. Research tooling for education

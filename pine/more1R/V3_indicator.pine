@@ -1,6 +1,6 @@
 //@version=6
 // =============================================================================================
-// close>5-bar high AND outside r>=0 AND first 180m
+// close>5-bar high AND outside bar AND 09:30-12:30 New York
 //   long only, stop 4.0 x ATR, target 1.0 x that risk, flat at 16:00, 15-minute bars.
 //   Stop and target are measured from the FILL -- the open of the bar after the signal --
 //   using the ATR of the signal bar.
@@ -30,7 +30,7 @@
 // Research tooling for education and analysis. Not financial advice.
 // =============================================================================================
 
-indicator("V3 1R | close>5-bar high + outside r>=0 + first 180m | signal (signal)", overlay = true)
+indicator("V3 1R | close>5-bar high + outside bar + 09:30-12:30 New York | signal (signal)", overlay = true)
 // ---- primitives, defined to match the research exactly -------------------------------------------
 tzIn   = input.string("America/New_York", "Timezone for clock conditions",
      options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"],
@@ -42,8 +42,8 @@ atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
 
 // ---- the rule -------------------------------------------------------------------
 c0 = close > ta.highest(high, 5)[1]    // close>5-bar high
-c1 = high > high[1] and low < low[1]    // outside r>=0
-c2 = barMin >= 570 and barMin < 750    // first 180m
+c1 = high > high[1] and low < low[1]    // outside bar
+c2 = barMin >= 570 and barMin < 750    // 09:30-12:30 New York
 trig = c0 and c1 and c2
 ready = not na(atrV) and atrV > 0 and bar_index > 300
 
@@ -59,16 +59,16 @@ plotshape(trig and ready, "signal", shape.diamond, location.belowbar,
      color.new(color.teal, 0), size = size.tiny)
 bgcolor(trig and ready ? color.new(color.teal, 88) : na)
 
-alertcondition(trig, "Rule fires", "close>5-bar high AND outside r>=0 AND first 180m")
+alertcondition(trig, "Rule fires", "close>5-bar high AND outside bar AND 09:30-12:30 New York")
 
 var table t = table.new(position.bottom_right, 2, 3, border_width = 1)
 if barstate.islast
     table.cell(t, 0, 0, "close>5-bar high", text_size = size.small, text_color = color.gray)
     table.cell(t, 1, 0, c0 ? "yes" : "no", text_size = size.small,
          text_color = c0 ? color.teal : color.gray)
-    table.cell(t, 0, 1, "outside r>=0", text_size = size.small, text_color = color.gray)
+    table.cell(t, 0, 1, "outside bar", text_size = size.small, text_color = color.gray)
     table.cell(t, 1, 1, c1 ? "yes" : "no", text_size = size.small,
          text_color = c1 ? color.teal : color.gray)
-    table.cell(t, 0, 2, "first 180m", text_size = size.small, text_color = color.gray)
+    table.cell(t, 0, 2, "09:30-12:30 New York", text_size = size.small, text_color = color.gray)
     table.cell(t, 1, 2, c2 ? "yes" : "no", text_size = size.small,
          text_color = c2 ? color.teal : color.gray)

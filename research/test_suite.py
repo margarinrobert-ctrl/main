@@ -946,7 +946,10 @@ def _leak(s, cuts=(0.4, 0.7)):
     d = s.bars.get("d")
     if d is None or not s.conds:
         return ("INFO", "no bar dictionary supplied")
-    from alpha_factory2 import build_conditions
+    if _POOL == "ladder":
+        from alpha_ladder import build_ladder as build_conditions
+    else:
+        from alpha_factory2 import build_conditions
     names, M = build_conditions(d)
     ix = {n: i for i, n in enumerate(names)}
     bad = []
@@ -1204,13 +1207,33 @@ def sim_core(o, h, l, c, atr_, mod, trig, side, atr_mult, tp_r, flat_min, lag,
 _CACHE = {}
 
 
+_POOL = "factory"
+
+
+def use_pool(which):
+    """Which condition pool `build` resolves names against.
+
+    "factory" is alpha_factory2's 115 conditions, one threshold per feature. "ladder" is
+    alpha_ladder's 198, the same features at several thresholds. The ladder is a strict superset,
+    so a name that resolves under "factory" resolves identically under "ladder" -- but the default
+    stays "factory" so that a random family sample (`sample_family`) draws from the same pool it
+    always did."""
+    global _POOL
+    if which != _POOL:
+        _POOL = which
+        _CACHE.clear()
+
+
 def bars_for(tf):
     """prep() plus the whole condition pool, computed once per timeframe."""
     if tf not in _CACHE:
         from bos_choch import prep
-        from alpha_factory2 import build_conditions
+        if _POOL == "ladder":
+            from alpha_ladder import build_ladder as _conds
+        else:
+            from alpha_factory2 import build_conditions as _conds
         d = prep(tf)
-        names, M = build_conditions(d)
+        names, M = _conds(d)
         _CACHE[tf] = (d, names, M)
     return _CACHE[tf]
 
@@ -1226,7 +1249,6 @@ def build(conds, side=1, atr_mult=2.5, tp_r=3.0, flat_min=0, tf=30,
           trig=None, name=None, n_trials=1, family=None, pool=True):
     """One strategy, fully instrumented. Every keyword is something a test can turn."""
     from bos_choch import atr as _atr
-    from alpha_factory2 import build_conditions
     d0, names, M = bars_for(tf)
     d = d0; nb = len(d0["c"])
     if truncate:
@@ -1245,7 +1267,11 @@ def build(conds, side=1, atr_mult=2.5, tp_r=3.0, flat_min=0, tf=30,
     if trig is None:
         if recompute:
             dd = dict(d); dd["o"], dd["h"], dd["l"], dd["c"], dd["atr"] = o, h, l, c, atr_
-            nm2, M2 = build_conditions(dd)
+            if _POOL == "ladder":
+                from alpha_ladder import build_ladder as _conds
+            else:
+                from alpha_factory2 import build_conditions as _conds
+            nm2, M2 = _conds(dd)
             ix = {q: i for i, q in enumerate(nm2)}
             msk = np.ones(nb, bool)
             for q in conds:

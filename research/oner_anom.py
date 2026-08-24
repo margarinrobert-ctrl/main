@@ -49,9 +49,8 @@ def _pick(key, setting=None):
 
 
 # ---- 1. where the money comes from -------------------------------------------------------------
-def exits(key, setting=None, verbose=True):
-    F, d, si, cut, trig, p = _pick(key, setting)
-    pnl, eb, xb, why, gap = _sim(d, trig, F["side"], F["am"], F["flat"])
+def exits_from(d, trig, side, am, flat, label="", verbose=True):
+    pnl, eb, xb, why, gap = _sim(d, trig, side, am, flat)
     rows = []
     for w in (2, 1, 3):
         m = why == w
@@ -60,7 +59,7 @@ def exits(key, setting=None, verbose=True):
         rows.append((WHY[w], int(m.sum()), 100 * m.mean(), float(pnl[m].sum()),
                      float(pnl[m].mean()), 100 * pnl[m].sum() / pnl.sum() if pnl.sum() else np.nan))
     if verbose:
-        print(f"  1. WHERE THE MONEY COMES FROM   {key} {p}")
+        print(f"  1. WHERE THE MONEY COMES FROM   {label}")
         print(f"     {'exit':<8}{'n':>5}{'share':>8}{'net $':>10}{'per trade':>11}{'of net':>9}")
         for r in rows:
             print(f"     {r[0]:<8}{r[1]:>5}{r[2]:>7.0f}%{r[3]:>10,.0f}{r[4]:>11,.0f}{r[5]:>8.0f}%")
@@ -70,11 +69,15 @@ def exits(key, setting=None, verbose=True):
     return rows, pnl, eb, why
 
 
-# ---- 2. the matched control --------------------------------------------------------------------
-def control(key, setting=None, draws=400, seed=7, verbose=True):
-    """Random entries matched on side, geometry and minute of day. The base rate that counts."""
+def exits(key, setting=None, verbose=True):
     F, d, si, cut, trig, p = _pick(key, setting)
-    pnl, eb, _xb, _w, _g = _sim(d, trig, F["side"], F["am"], F["flat"])
+    return exits_from(d, trig, F["side"], F["am"], F["flat"], f"{key} {p}", verbose)
+
+
+# ---- 2. the matched control --------------------------------------------------------------------
+def control_from(d, si, cut, trig, side, am, flat, draws=400, seed=7, verbose=True):
+    """Random entries matched on side, geometry and minute of day. The base rate that counts."""
+    pnl, eb, _xb, _w, _g = _sim(d, trig, side, am, flat)
     mod = d["mod"].astype(np.int64)
     rng = np.random.default_rng(seed)
 
@@ -103,7 +106,7 @@ def control(key, setting=None, draws=400, seed=7, verbose=True):
                 continue
             pick.append(rng.choice(pool, size=min(n, len(pool)), replace=False))
         t2 = np.sort(np.concatenate(pick)).astype(np.int64)
-        q, e2, _x, _w2, _g2 = _sim(d, t2, F["side"], F["am"], F["flat"])
+        q, e2, _x, _w2, _g2 = _sim(d, t2, side, am, flat)
         mm = si[e2] < cut
         for blk, sel in (("research", mm), ("locked", ~mm)):
             if sel.sum() >= 10:
@@ -130,6 +133,11 @@ def control(key, setting=None, draws=400, seed=7, verbose=True):
             print(f"     {blk:<10}{r['n']:>5}{r['win']:>7.1f}{r['c_win']:>7.1f}{r['p_win']:>7.3f}"
                   f"{r['net']:>9,.0f}{r['c_net']:>9,.0f}{r['p_net']:>7.3f}")
     return out
+
+
+def control(key, setting=None, draws=400, seed=7, verbose=True):
+    F, d, si, cut, trig, p = _pick(key, setting)
+    return control_from(d, si, cut, trig, F["side"], F["am"], F["flat"], draws, seed, verbose)
 
 
 # ---- 3. the corner table -------------------------------------------------------------------------

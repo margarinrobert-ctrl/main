@@ -1,6 +1,6 @@
 //@version=6
 // =============================================================================================
-// EMA20>EMA50 AND bear engulf b>=0.2 AND first 120m
+// EMA20>EMA50 AND bearish engulfing, body>=20% AND 09:30-11:30 New York
 //   short only, stop 1.0 x ATR, target 1.0 x that risk, flat at 16:00, 30-minute bars.
 //   Stop and target are measured from the FILL -- the open of the bar after the signal --
 //   using the ATR of the signal bar.
@@ -30,7 +30,7 @@
 // Research tooling for education and analysis. Not financial advice.
 // =============================================================================================
 
-strategy("V2 1R | EMA20>EMA50 + bear engulf b>=0.2 + first 120m", overlay = true, initial_capital = 25000,
+strategy("V2 1R | EMA20>EMA50 + bearish engulfing, body>=20% + 09:30-11:30 New York", overlay = true, initial_capital = 25000,
      default_qty_type = strategy.fixed, default_qty_value = 1,
      commission_type = strategy.commission.cash_per_order, commission_value = 0.50,
      slippage = 2, pyramiding = 0, calc_on_every_tick = false,
@@ -71,8 +71,8 @@ tpR     = input.float(1.0, "Target = N x risk", minval = 0.25, step = 0.25, grou
 
 // ---- the rule -------------------------------------------------------------------
 c0 = ema20 > ema50    // EMA20>EMA50
-c1 = close < open[1] and open > close[1] and close < open and bodyFrac >= 0.2    // bear engulf b>=0.2
-c2 = barMin >= 570 and barMin < 690    // first 120m
+c1 = close < open[1] and open > close[1] and close < open and bodyFrac >= 0.2    // bearish engulfing, body>=20%
+c2 = barMin >= 570 and barMin < 690    // 09:30-11:30 New York
 trig = c0 and c1 and c2
 
 ready = not na(atrV) and atrV > 0 and bar_index > 300
@@ -127,9 +127,9 @@ if barstate.islast
     table.cell(rt, 0, 0, "EMA20>EMA50", text_size = size.small, text_color = color.gray)
     table.cell(rt, 1, 0, c0 ? "yes" : "no", text_size = size.small,
          text_color = c0 ? color.teal : color.gray)
-    table.cell(rt, 0, 1, "bear engulf b>=0.2", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 0, 1, "bearish engulfing, body>=20%", text_size = size.small, text_color = color.gray)
     table.cell(rt, 1, 1, c1 ? "yes" : "no", text_size = size.small,
          text_color = c1 ? color.teal : color.gray)
-    table.cell(rt, 0, 2, "first 120m", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 0, 2, "09:30-11:30 New York", text_size = size.small, text_color = color.gray)
     table.cell(rt, 1, 2, c2 ? "yes" : "no", text_size = size.small,
          text_color = c2 ? color.teal : color.gray)
