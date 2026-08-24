@@ -61,6 +61,13 @@ is specifically in the INTRABAR estimator: the best bar-return-only 5m rule fail
 control at p 0.354, and TradingView cannot supply intrabar data at that scale. See
 `docs/ib/STUDY_SAM_SCALP.md`.
 
+**Features do not predict here; the harness is the asset.** 134 causal features (86 base + intrabar
+microstructure, semivariance, auction position) x 4 horizons x 2 timeframes = 1,072 IC tests. ONE
+survives FDR -- `close position in bar` at h=1 -- and its research-block edge is 0.28 ticks against
+a 6.0-tick round turn, with the opposite sign on 30m. 134 features are 28 principal components.
+Rank feature importance on RESEARCH ONLY: ranking over both blocks produced a family that failed
+research (p 0.08) and "passed" locked (p 0.02). See `docs/ib/STUDY_FEATURES.md`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -86,6 +93,8 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/sam_pool.py` | 1,440 SAM conditions (2 estimators x 12 windows x 3 normalisations) |
 | `research/sam_mega.py` | the 142,845,120-combination SAM-anchored sweep (5m/15m/30m) |
 | `research/sam_phases.py` | its five phases, same gates as everything else |
+| `research/features2.py` | microstructure, semivariance, auction feature families |
+| `research/feature_eval.py` | IC with Newey-West + BH, redundancy clustering, trade separation |
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 
 ## Pine
