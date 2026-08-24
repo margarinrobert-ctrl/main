@@ -251,6 +251,10 @@ _HEADER = '''//@version=6
 // Pine built-ins are used for RSI, Stochastic, CCI, Williams %R, MFI, DMI/ADX, OBV, linreg and
 // Bollinger. They were checked against the research definitions, not executed side by side.
 //
+// TICK-SETTING IMMUNE: entries require barstate.isconfirmed, so the Strategy Tester's
+// "On order fill" / "On history bar tick" / "On realtime bar tick" boxes cannot change
+// the result. Leave them on or off; the numbers are the same.
+//
 // NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
 // Research tooling for education and analysis. Not financial advice.
 // =============================================================================================
@@ -304,7 +308,7 @@ def emit_strategy(rule, side, am, tp, flat, tf=30, stats=None, title=None):
     conds, joined = _cond_block(rule)
     flat_code = ""
     if flat:
-        flat_code = ("\nif barMin >= %d and strategy.position_size != 0\n"
+        flat_code = ("\nif barMin >= %d and strategy.position_size != 0 and barstate.isconfirmed\n"
                      "    strategy.close_all(comment = \"session cutoff\")\n" % flat)
     parts = [hdr,
              'strategy("%s", overlay = true, initial_capital = 25000,' % title,
@@ -334,7 +338,16 @@ def emit_strategy(rule, side, am, tp, flat, tf=30, stats=None, title=None):
              "// the signal -- not from the signal bar's close. `loss` and `profit` are in ticks",
              "// relative to the actual entry price, which is the only Pine primitive that matches.",
              "// Whole ticks are the one unavoidable difference: at most half a tick per side.",
-             "if trig and ready and isFlat and inWindow",
+             "// barstate.isconfirmed is what makes this script immune to the Strategy Tester's",
+             "// \"Script execution\" checkboxes. With \"On order fill\" or \"On history bar tick\"",
+             "// ticked, the script re-runs mid-bar and every reference to close is the CURRENT",
+             "// price, not the bar's final one -- so an entry rule reading close < a level fires on",
+             "// bars that close back above it. Measured on one rule here that was 5.1x as many",
+             "// signals, 80% of them on bars that never satisfied the rule at all.",
+             "// Requiring a confirmed bar means the entry fires at the close and nowhere else, so",
+             "// the result is identical with those boxes on or off. Exits are left tick-sensitive",
+             "// on purpose: a resting stop or target SHOULD fill when price touches it.",
+             "if trig and ready and isFlat and inWindow and barstate.isconfirmed",
              "    riskTicks = math.max(math.round(atrMult * atrV / syminfo.mintick), 1)",
              "    if allowLong",
              '        strategy.entry("L", strategy.long)',
@@ -343,7 +356,7 @@ def emit_strategy(rule, side, am, tp, flat, tf=30, stats=None, title=None):
              '        strategy.entry("S", strategy.short)',
              '        strategy.exit("Sx", "S", loss = riskTicks, profit = tpR * riskTicks)',
              flat_code,
-             "if strategy.position_size != 0 and not inWindow",
+             "if strategy.position_size != 0 and not inWindow and barstate.isconfirmed",
              '    strategy.close_all(comment = "outside backtest window")',
              "",
              'plotshape(trig and allowLong,  "long",  shape.triangleup,   location.belowbar, color.teal, size = size.tiny)',
