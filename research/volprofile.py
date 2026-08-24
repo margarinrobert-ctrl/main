@@ -251,7 +251,27 @@ def build(path="data/NQ_1m.csv", window=RTH, max_nodes=24, src_tf=1):
             if not touched[j] and not np.isnan(poc[j]) and lo_[r] <= poc[j] <= hi_[r]:
                 touched[j] = True           # a LATER session traded through it
 
-    out = dict(sess=us, poc=poc, vah=vah, val=val, hi=hi_, lo=lo_, vol=vol,
+    # naked value-area edges: a VAH or VAL that no LATER session has traded through. Same
+    # forward scan as the naked POC, and the same rule -- a session cannot un-nake its own edge,
+    # which is the bug that made the naked-POC conditions fire zero times on the first build.
+    nvah = np.zeros((n, n), bool); nval = np.zeros((n, n), bool)
+    for lvl, mat in ((vah, nvah), (val, nval)):
+        seen = np.zeros(n, bool)
+        for r in range(n):
+            mat[r] = ~seen
+            for j in range(r):
+                if not seen[j] and not np.isnan(lvl[j]) and lo_[r] <= lvl[j] <= hi_[r]:
+                    seen[j] = True
+
+    # the session's opening price, for the open-relative-to-value classification
+    op = np.full(n, np.nan)
+    for r in range(n):
+        sel = sess_row == r
+        if sel.any():
+            op[r] = o[np.flatnonzero(sel)[0]]
+
+    out = dict(sess=us, poc=poc, vah=vah, val=val, hi=hi_, lo=lo_, vol=vol, open_px=op,
+               naked_vah=nvah, naked_val=nval,
                poor_hi=poor_hi, poor_lo=poor_lo, LVN=LVN, HVN=HVN, H=H, base=base,
                dev_poc=dp, dev_vah=dva, dev_val=dvl, bar_sess=sess, bar_mod=mod,
                bar_idx=d.index, bar_o=o, bar_h=h, bar_l=l, bar_c=c, naked=naked)
@@ -316,5 +336,7 @@ if __name__ == "__main__":
           f"poor low {100*P['poor_lo'].mean():.0f}%")
     nk = P["naked"].sum(1)
     print(f"  naked POCs carried  median {np.median(nk):.0f}, max {nk.max()}")
+    print(f"  naked VAHs carried  median {np.median(P['naked_vah'].sum(1)):.0f}, "
+          f"naked VALs {np.median(P['naked_val'].sum(1)):.0f}")
     bad = leakage_check(P)
     print(f"  leakage check: {'CLEAN' if not bad else bad}")

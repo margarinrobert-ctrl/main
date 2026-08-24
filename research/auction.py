@@ -110,6 +110,55 @@ def _naked_dist(c, P, own, above):
     return out
 
 
+def _armed(d, pv_h, pv_l, own):
+    """The 80% rule's armed state, built forward through each session from completed periods."""
+    c, mod, sess = d["c"], d["mod"], d["sess"]
+    n = len(c)
+    out = np.zeros(n, bool)
+    inside = np.isfinite(pv_h) & (c >= pv_l) & (c <= pv_h)
+    period = (mod // 30).astype(np.int64)
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and sess[j + 1] == sess[i]:
+            j += 1
+        if own[i] > 0 and np.isfinite(pv_h[i]):
+            # did it OPEN outside value? the first bar of the session settles that
+            if not inside[i]:
+                run_p, last_p, live = 0, -1, False
+                for k in range(i, j + 1):
+                    if inside[k]:
+                        if period[k] != last_p:
+                            run_p += 1; last_p = period[k]
+                    else:
+                        run_p, last_p = 0, -1
+                    if run_p >= 2:
+                        live = True
+                    out[k] = live
+        i = j + 1
+    return out
+
+
+def _naked_level(c, P, own, tab, lvl, above):
+    """Distance to the nearest still-untested VAH or VAL from an earlier session."""
+    out = np.full(len(c), np.inf)
+    for r in np.unique(own[own > 0]):
+        rows = np.flatnonzero(tab[r])
+        rows = rows[rows < r]
+        if not len(rows):
+            continue
+        v = lvl[rows]
+        v = v[np.isfinite(v)]
+        if not len(v):
+            continue
+        for k in np.flatnonzero(own == r):
+            x = c[k]
+            w = v[v > x] if above else v[v < x]
+            if len(w):
+                out[k] = (w.min() - x) if above else (x - w.max())
+    return out
+
+
 def conditions(d, P=None, src_tf=1):
     """{name: bool array} aligned to d's bars. `d` is a bos_choch.prep dictionary."""
     P = P if P is not None else VP.build(src_tf=src_tf)
@@ -156,6 +205,62 @@ def conditions(d, P=None, src_tf=1):
     S["inside developing value"] = np.isfinite(dvh) & (c >= dvl_) & (c <= dvh)
     S["above developing POC"] = np.isfinite(dvp) & (c > dvp)
     S["below developing POC"] = np.isfinite(dvp) & (c < dvp)
+
+    # ---- the value-area EDGES as levels, not just as a container --------------------------------
+    # Above/below/inside prior value answers "where is price relative to value". These answer
+    # "is price AT the edge", which is the question every value-area setup actually asks: VAH and
+    # VAL are where responsive sellers and buyers are supposed to be waiting.
+    dh = np.abs(c - pv_h) / atr_
+    dl = np.abs(c - pv_l) / atr_
+    S["at prior VAH"] = np.isfinite(dh) & (dh <= NEAR)
+    S["at prior VAL"] = np.isfinite(dl) & (dl <= NEAR)
+    S["above prior VAH by 1 ATR"] = have & (c > pv_h + atr_)
+    S["below prior VAL by 1 ATR"] = have & (c < pv_l - atr_)
+
+    ddh = np.abs(c - dvh) / atr_
+    ddl = np.abs(c - dvl_) / atr_
+    S["at developing VAH"] = np.isfinite(ddh) & (ddh <= NEAR)
+    S["at developing VAL"] = np.isfinite(ddl) & (ddl <= NEAR)
+
+    # crossing the developing edges. `shift` is one bar of the STRATEGY timeframe, so both the
+    # previous state and the current close are known at this bar's close.
+    prev_above = np.r_[False, (c[:-1] > dvh[:-1])]
+    prev_below = np.r_[False, (c[:-1] < dvl_[:-1])]
+    prev_in = np.r_[False, ((c[:-1] >= dvl_[:-1]) & (c[:-1] <= dvh[:-1]))]
+    same_sess = np.r_[False, d["sess"][1:] == d["sess"][:-1]]
+    inside_now = np.isfinite(dvh) & (c >= dvl_) & (c <= dvh)
+    S["re-entered value from above"] = same_sess & prev_above & inside_now
+    S["re-entered value from below"] = same_sess & prev_below & inside_now
+    S["broke above developing VAH"] = same_sess & prev_in & np.isfinite(dvh) & (c > dvh)
+    S["broke below developing VAL"] = same_sess & prev_in & np.isfinite(dvl_) & (c < dvl_)
+
+    # ---- how the session OPENED relative to prior value -----------------------------------------
+    # Constant within a session and known from its first bar. Auction theory treats opening
+    # outside value as the fundamental classification of a day.
+    op = _pick(P["open_px"], own)
+    S["open above prior VAH"] = have & np.isfinite(op) & (op > pv_h)
+    S["open below prior VAL"] = have & np.isfinite(op) & (op < pv_l)
+    S["open inside prior value"] = have & np.isfinite(op) & (op >= pv_l) & (op <= pv_h)
+
+    # ---- today's value against yesterday's -------------------------------------------------------
+    S["developing value above prior"] = have & np.isfinite(dvl_) & (dvl_ > pv_h)
+    S["developing value below prior"] = have & np.isfinite(dvh) & (dvh < pv_l)
+    S["developing value overlaps prior"] = (have & np.isfinite(dvh) & np.isfinite(dvl_)
+                                            & (dvl_ <= pv_h) & (dvh >= pv_l))
+
+    # ---- the 80% rule ------------------------------------------------------------------------------
+    # "Open outside value, trade back inside, and hold two consecutive 30-minute periods inside,
+    # and the market has about an 80% chance of traversing the whole value area." Armed state is
+    # built forward through the session from completed periods only. `inefficiency.eighty_rule`
+    # measures whether the 80% is anywhere near true here.
+    S["80% rule armed"] = _armed(d, pv_h, pv_l, own)
+
+    # ---- naked value-area edges ---------------------------------------------------------------------
+    for nm, tab, above in (("naked VAH within 2 ATR above", P["naked_vah"], True),
+                           ("naked VAH within 2 ATR below", P["naked_vah"], False),
+                           ("naked VAL within 2 ATR above", P["naked_val"], True),
+                           ("naked VAL within 2 ATR below", P["naked_val"], False)):
+        S[nm] = _naked_level(c, P, own, tab, P["vah"] if "VAH" in nm else P["val"], above) / atr_ <= 2.0
 
     # ---- inefficiency: low-volume nodes ---------------------------------------------------------
     tolN = NEAR * atr_

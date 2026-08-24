@@ -193,7 +193,94 @@ def h2(verbose=True):
     return L
 
 
+# ---- H3: the 80% rule ----------------------------------------------------------------------------
+def eighty_rule(P=None, verbose=True):
+    """"Open outside value, trade back inside, hold two consecutive 30-minute periods inside, and
+    the market has an ~80% chance of traversing the whole value area."
+
+    The control is the part that decides the answer. Being inside yesterday's value area at 11:00
+    with five hours left gives you a decent chance of reaching either edge whatever the rule says,
+    so the control is every session that was ALSO inside value at the SAME time of day -- matched
+    on how much session is left and on where price sits relative to value -- without having opened
+    outside it. What the rule claims to add is the opening context.
+    """
+    P = P if P is not None else VP.build()
+    us = P["sess"]; sess = P["bar_sess"]; mod = P["bar_mod"]
+    c = P["bar_c"]; h = P["bar_h"]; l = P["bar_l"]
+    vah, val, op = P["vah"], P["val"], P["open_px"]
+    armed, ctrl = [], []
+    for r in range(1, len(us)):
+        if not (np.isfinite(vah[r - 1]) and np.isfinite(val[r - 1])):
+            continue
+        sel = np.flatnonzero(sess == us[r])
+        if len(sel) < 60:
+            continue
+        hi_, lo_ = vah[r - 1], val[r - 1]
+        cc, hh, ll, mm = c[sel], h[sel], l[sel], mod[sel]
+        inside = (cc >= lo_) & (cc <= hi_)
+        opened_out = not (lo_ <= op[r] <= hi_)
+        above = op[r] > hi_
+        # first bar at which two consecutive completed 30-minute periods have closed inside
+        per = mm // 30
+        run, last, tidx = 0, -1, None
+        for i in range(len(sel)):
+            if inside[i]:
+                if per[i] != last:
+                    run += 1; last = per[i]
+            else:
+                run, last = 0, -1
+            if run >= 2:
+                tidx = i; break
+        if tidx is None:
+            continue
+        far = lo_ if above else hi_          # the OPPOSITE edge, which the rule says gets reached
+        # for a control session we do not know a direction, so score both edges and take the one
+        # matching the armed session it is being compared against
+        rest_h, rest_l = hh[tidx:], ll[tidx:]
+        hit_lo = bool((rest_l <= lo_).any()); hit_hi = bool((rest_h >= hi_).any())
+        rec = dict(t=int(mm[tidx]), hit_lo=hit_lo, hit_hi=hit_hi,
+                   trav=(hit_lo if above else hit_hi), above=above,
+                   left=len(sel) - tidx)
+        (armed if opened_out else ctrl).append(rec)
+
+    if not armed:
+        return None
+    A = armed
+    # time-matched control: for each armed session, controls that reached "inside value" at a
+    # similar time of day and with a similar amount of session left
+    rate = []
+    for a in A:
+        pool = [x for x in ctrl if abs(x["t"] - a["t"]) <= 30]
+        if len(pool) < 10:
+            continue
+        got = np.mean([(x["hit_lo"] if a["above"] else x["hit_hi"]) for x in pool])
+        rate.append(got)
+    obs = float(np.mean([a["trav"] for a in A]))
+    exp = float(np.mean(rate)) if rate else np.nan
+    if verbose:
+        from scipy import stats as st
+        n = len(A)
+        print("\n\nH3  THE 80% RULE")
+        print(f"    {n} sessions opened outside the prior value area and then held two "
+              f"consecutive\n    30-minute periods inside it")
+        print(f"    {'':<44}{'traversed':>11}")
+        print(f"    {'the 80% rule, as claimed':<44}{'80%':>11}")
+        print(f"    {'measured on these sessions':<44}{100*obs:>10.1f}%")
+        print(f"    {'time-matched control (opened INSIDE value)':<44}{100*exp:>10.1f}%")
+        if np.isfinite(exp):
+            k = int(round(obs * n))
+            pv = st.binomtest(k, n, exp, alternative="greater").pvalue
+            print(f"\n    lift over the matched control {100*(obs-exp):+.1f} points, "
+                  f"binomial p = {pv:.3f}"
+                  + ("   <- holds" if pv < 0.05 else "   <- does not hold"))
+            print(f"    and against the claimed 80%: "
+                  f"p = {st.binomtest(k, n, 0.80, alternative='less').pvalue:.4f} that the true "
+                  f"rate is below 80%")
+    return obs, exp, len(A)
+
+
 if __name__ == "__main__":
     P = VP.build()
     revisit(P)
     h2()
+    eighty_rule(P)

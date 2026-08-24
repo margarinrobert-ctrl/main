@@ -43,9 +43,15 @@ holdout result at p 0.0005 that replicated across 9 of 9 independently-found str
 pure leakage; it also faked V2's "edge lives below the 200 EMA". A conditional split of realised
 trades is not a filter test — filter the TRIGGERS and re-simulate. See `docs/ib/STUDY_AUCTION.md`.
 
-**Volume profile adds nothing here.** 29 auction conditions x 9 strategies: 4 of 121 tests passed
-on research (fewer than chance), 0 survived the holdout. Low-volume nodes are revisited at exactly
-the rate of a distance-matched random level, 42.8% against 42.8%. Do not re-run this.
+**Volume profile adds nothing here.** 47 auction conditions (POC, value area, VAH/VAL as levels,
+opening classification, naked edges, LVN/HVN) x 9 strategies: 7 of 172 tests passed on research
+(fewer than chance), 0 survived the holdout. Low-volume nodes are revisited at exactly the rate of
+a distance-matched random level, 42.8% against 42.8%. The 80% rule measures **50.6%**, worse than a
+time-matched control's 59.9%. Do not re-run this.
+
+**A decorrelated leg still has to have an edge.** Adding a coin-flip signal at |rho| 0.25 raised
+the book's net profit, cut its Sharpe 3.73 -> 3.23 and more than doubled its drawdown. A
+correlation matrix alone will talk you into that trade. See `docs/ib/STUDY_SEMIVARIANCE.md`.
 
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
@@ -67,7 +73,8 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/oner_union.py` | threshold neighbourhoods and the trade-count / win-rate frontier |
 | `research/oner_anom.py` | exit split, matched control, corner table, FDR slices |
 | `research/volprofile.py` | session + developing volume profile, nodes, naked POCs |
-| `research/auction.py` | 29 auction-theory conditions, all leakage-checked |
+| `research/auction.py` | 47 auction-theory conditions, all leakage-checked |
+| `research/newsignals.py` | semivariance asymmetry and efficiency-flip signal families |
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 
 ## Pine

@@ -23,7 +23,7 @@ Node detection smooths the histogram over five bins first. Without that, the fir
 a median of **24** low-volume nodes per session, which is not structure, it is sampling noise;
 smoothed, it is 7.
 
-`research/auction.py` — 29 boolean conditions on any strategy timeframe, in the same vocabulary as
+`research/auction.py` — 47 boolean conditions on any strategy timeframe, in the same vocabulary as
 the rest of the condition pool so they can be ANDed onto an existing rule.
 
 | family | conditions |
@@ -33,6 +33,12 @@ the rest of the condition pool so they can be ANDed onto an existing rule.
 | the developing auction | above / below / inside developing value, above / below developing POC |
 | inefficiency | at a prior LVN, at a prior HVN, LVN within 1 ATR above / below, no LVN within 1 ATR, HVN within 1 ATR above / below |
 | naked POC | naked POC within 2 ATR above / below |
+| **VAH / VAL as levels** | at prior VAH, at prior VAL, above prior VAH by 1 ATR, below prior VAL by 1 ATR, at developing VAH, at developing VAL |
+| **crossing the edges** | re-entered value from above / below, broke above developing VAH, broke below developing VAL |
+| **how the session opened** | open above prior VAH, open below prior VAL, open inside prior value |
+| **today's value vs yesterday's** | developing value above / below / overlapping prior |
+| **the 80% rule** | 80% rule armed |
+| **naked value-area edges** | naked VAH / VAL within 2 ATR above / below |
 
 Both modules carry a `leakage_check()` that rebuilds from truncated data and compares everything
 before the cut. Both are clean. Two bugs were caught by building the checks first: the naked-POC
@@ -76,26 +82,52 @@ The full-sample column trends the right way by 3.6 points; the locked column tre
 way by 5.1. The stop-price version is flatter still. Per strategy the gap is positive on four of
 nine and negative on five. Nothing.
 
-## 4. The 261-test sweep
+## 3b. H3 — the 80% rule
 
-29 conditions × 9 strategies. At a 5% threshold, 13 pass by chance, so that number goes first.
+The most quoted claim in value-area trading: *open outside value, trade back inside, hold two
+consecutive 30-minute periods inside, and the market has about an 80% chance of traversing the
+whole value area.* The control decides the answer — being inside yesterday's value at 11:00 with
+five hours left gives you a fair chance of reaching either edge whatever the rule says — so it is
+matched on time of day and on session remaining, against sessions that reached inside value
+without opening outside it. What the rule claims to add is the opening context.
+
+231 qualifying sessions:
+
+| | traversed the value area |
+| --- | --- |
+| the 80% rule, as claimed | 80% |
+| **measured on these sessions** | **50.6%** |
+| time-matched control (opened *inside* value) | 59.9% |
+
+The rule is **9.2 points worse than the control** (binomial p = 0.998 in the claimed direction),
+and p < 0.0001 that its true rate is below 80%. On NQ over this sample the 80% rule is a coin flip
+that underperforms simply being inside value at the same hour.
+
+## 4. The 450-test sweep
+
+47 conditions × 9 strategies. At a 5% threshold, 23 pass by chance, so that number goes first.
 Protocol fixed in advance: a condition must keep ≥25 research trades and beat a **random filter of
 the same selectivity** on both per-trade dollars and win rate at p < 0.05 on the research block;
 survivors are then read once on the locked block and put through Benjamini-Hochberg.
 
-    121 of 261 pairs keep enough research trades
-      4 beat a random filter on both statistics at p < 0.05   (about 6 expected on either alone)
+    172 of 450 pairs keep enough research trades
+      7 beat a random filter on both statistics at p < 0.05   (about 9 expected on either alone)
       0 survive Benjamini-Hochberg at q < 0.10 on the locked block
 
 | | condition | research p$ | pW | **locked p$** | **pW** | q |
 | --- | --- | --- | --- | --- | --- | --- |
-| M3 | far from prior POC | 0.009 | 0.005 | 0.156 | 0.263 | 0.526 |
-| V4 | no LVN within 1 ATR | 0.010 | 0.045 | 0.211 | 0.240 | 0.526 |
-| V2 | LVN within 1 ATR below | 0.016 | 0.016 | 0.642 | 0.617 | 0.806 |
-| M2 | LVN within 1 ATR below | 0.019 | 0.045 | 0.765 | 0.806 | 0.806 |
+| V2L | open inside prior value | 0.002 | 0.011 | 0.471 | 0.468 | 0.863 |
+| M3 | far from prior POC | 0.009 | 0.005 | 0.156 | 0.263 | 0.863 |
+| V4 | no LVN within 1 ATR | 0.010 | 0.045 | 0.211 | 0.240 | 0.863 |
+| V2 | LVN within 1 ATR below | 0.016 | 0.016 | 0.642 | 0.617 | 0.863 |
+| M2 | LVN within 1 ATR below | 0.019 | 0.045 | 0.765 | 0.806 | 0.863 |
+| V1 | open inside prior value | 0.021 | 0.026 | 0.592 | 0.863 | 0.863 |
+| V2L | naked VAL within 2 ATR below | 0.045 | 0.050 | 0.813 | 0.737 | 0.863 |
 
-Four survivors from 121 tests is fewer than chance would give. **Volume profile adds nothing to
-these nine strategies on this instrument.**
+Seven survivors from 172 tests is fewer than chance would give, and **no VAH/VAL condition ranks
+any higher than the POC and LVN ones did**. Adding the value-area edges as levels, the crossing
+events, the opening classification and the naked edges — 18 more conditions — moved nothing.
+**Volume profile adds nothing to these nine strategies on this instrument.**
 
 ---
 
