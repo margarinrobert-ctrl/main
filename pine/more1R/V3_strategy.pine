@@ -31,6 +31,10 @@
 // Pine built-ins are used for RSI, Stochastic, CCI, Williams %R, MFI, DMI/ADX, OBV, linreg and
 // Bollinger. They were checked against the research definitions, not executed side by side.
 //
+// CONFIGURATION LOCK: the "Configuration" input defaults to "Best measured (locked)", which
+// overrides every other input with the configuration above and refuses to trade off its design
+// timeframe. The figures in this header describe that setting and no other.
+//
 // TICK-SETTING IMMUNE: entries require barstate.isconfirmed, so the Strategy Tester's
 // "On order fill" / "On history bar tick" / "On realtime bar tick" boxes cannot change
 // the result. Leave them on or off; the numbers are the same.
@@ -44,13 +48,51 @@ strategy("V3 1R | close>5-bar high + outside bar + 09:30-12:30 New York", overla
      commission_type = strategy.commission.cash_per_order, commission_value = 0.50,
      slippage = 2, pyramiding = 0, calc_on_every_tick = false,
      process_orders_on_close = false)
+// ---- configuration preset --------------------------------------------------------------------
+// EVERY number in the header belongs to ONE configuration: 15-minute bars, a 4.0 x ATR stop, a
+// 1.0R target, signals 930-1230 New York, flat at 1600, long only, fixed target, one contract,
+// no partials and no circuit breakers.
+//
+// "Best measured (locked)" is the default and it OVERRIDES every input below with that
+// configuration. It exists because settings that each look harmless in the Settings dialog
+// silently produce a different strategy: the chart timeframe, the stop-loss method, the signal
+// window, the sizing mode. Two of these scripts were run that way and lost money the measured
+// configuration made -- a 15-minute rule on a 30-minute chart, and a 2.5 x ATR stop replaced by
+// 0.5%-of-price, which is 46% tighter. Neither change announces itself in the Strategy Tester.
+// See docs/ib/STUDY_PINE_CONFIG.md.
+//
+// "Custom (untested)" hands you the knobs and voids every figure in the header.
+preset = input.string("Best measured (locked)", "Configuration", group = "Configuration",
+     options = ["Best measured (locked)", "Custom (untested)"],
+     tooltip = "Locked reproduces the header exactly and ignores every input below it. " +
+     "Custom lets the inputs through and the header's statistics no longer describe what runs.")
+locked = preset == "Best measured (locked)"
+
+// The measured configuration, as constants. These are the authority; the inputs are not.
+M_TFMIN   = 15
+M_SIGFROM = 930
+M_SIGTO   = 1230
+M_FLATAT  = 1600
+M_ATRMULT = 4.0
+M_TPR     = 1.0
+M_LONG    = true
+M_SHORT   = false
+
+// A 15-minute rule on any other chart is a different rule: every lookback covers a different
+// span, ATR changes scale, and the signal window holds a different number of bars. Locked
+// refuses to trade off its design timeframe rather than quietly producing numbers that mean
+// nothing.
+tfOK    = timeframe.in_seconds() == M_TFMIN * 60
+tfBlock = locked and not tfOK
+
 // ---- primitives, defined to match the research exactly -------------------------------------------
 tzIn   = input.string("America/New_York", "Timezone for clock conditions",
      options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"],
      group = "Setup", tooltip = "Pine's bare hour/minute are in the EXCHANGE timezone, which is " +
      "Chicago for CME. The research is New York time. Getting this wrong runs the strategy an " +
      "hour late -- it has happened here before.")
-barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
+tzEff  = locked ? "America/New_York" : tzIn
+barMin = tzEff == "exchange" ? hour * 60 + minute : hour(time, tzEff) * 60 + minute(time, tzEff)
 
 // ---- session: when signals are allowed ------------------------------------------------------
 // Times are HHMM in the timezone selected above -- 930 is 09:30, 1230 is 12:30. The defaults are
@@ -64,13 +106,16 @@ sigFromIn = input.int(930, "Signals start (HHMM)", minval = 0, maxval = 2359, gr
 sigToIn   = input.int(1230, "Signals stop (HHMM)", minval = 0, maxval = 2400, group = "Session",
      tooltip = "Half-open: a bar exactly at this time does NOT signal. Set it BEFORE the start to " +
      "wrap past midnight, e.g. 2000 to 0400.")
-sigFrom   = hhmmToMin(sigFromIn)
-sigTo     = hhmmToMin(sigToIn)
+sigFromEff = locked ? M_SIGFROM : sigFromIn
+sigToEff   = locked ? M_SIGTO : sigToIn
+sigFrom   = hhmmToMin(sigFromEff)
+sigTo     = hhmmToMin(sigToEff)
 inSession = sigFrom <= sigTo ? (barMin >= sigFrom and barMin < sigTo) : (barMin >= sigFrom or barMin < sigTo)
 flatAtIn  = input.int(1600, "Flatten open trades at (HHMM, 0 = never)", minval = 0, maxval = 2400,
      group = "Session", tooltip = "The research flattened at 16:00. 0 disables it and lets a "
      + "position run to its stop or target.")
-flatAt    = flatAtIn > 0 ? hhmmToMin(flatAtIn) : -1
+flatAtEff = locked ? M_FLATAT : flatAtIn
+flatAt    = flatAtEff > 0 ? hhmmToMin(flatAtEff) : -1
 atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
 
 
@@ -151,6 +196,25 @@ dayGainUsd = input.float(0.0, "Stop for the day after making $N (0 = off)", minv
      tooltip = "UNMEASURED, and the evidence on this data is that cutting a day short removes " +
      "winners as readily as losers. Off by default.")
 
+// ---- what actually runs ----------------------------------------------------------------------
+// In locked mode every knob above is replaced by its measured constant. Each input is referenced
+// in exactly two places -- its own definition and its assignment here -- so nothing downstream
+// can read an unlocked value.
+stopModeEff  = locked ? "ATR multiple" : stopMode
+exitModeEff  = locked ? "Fixed target" : exitMode
+atrMultEff   = locked ? M_ATRMULT : atrMult
+tpREff       = locked ? M_TPR : tpR
+floorEff     = locked ? 0.0 : floorATR
+capEff       = locked ? 0.0 : capATR
+longEff      = locked ? M_LONG : allowLong
+shortEff     = locked ? M_SHORT : allowShort
+partPctEff   = locked ? 0.0 : partPct
+sizeModeEff  = locked ? "Fixed contracts" : sizeMode
+fixedQtyEff  = locked ? 1.0 : fixedQty
+maxPerDayEff = locked ? 0 : maxPerDay
+dayLossEff   = locked ? 0.0 : dayLossUsd
+dayGainEff   = locked ? 0.0 : dayGainUsd
+
 var float dayStartEquity = na
 var int   entriesToday   = 0
 newDay = ta.change(time("D")) != 0
@@ -158,9 +222,9 @@ if newDay
     dayStartEquity := strategy.equity
     entriesToday := 0
 dayPnl = strategy.equity - nz(dayStartEquity, strategy.equity)
-lossHalt = dayLossUsd > 0 and dayPnl <= -dayLossUsd
-gainHalt = dayGainUsd > 0 and dayPnl >= dayGainUsd
-countHalt = maxPerDay > 0 and entriesToday >= maxPerDay
+lossHalt = dayLossEff > 0 and dayPnl <= -dayLossEff
+gainHalt = dayGainEff > 0 and dayPnl >= dayGainEff
+countHalt = maxPerDayEff > 0 and entriesToday >= maxPerDayEff
 canTrade = not lossHalt and not gainHalt and not countHalt
 
 maStop = maKind == "EMA" ? ta.ema(close, maLen) : ta.sma(close, maLen)
@@ -187,15 +251,15 @@ isFlat = strategy.position_size == 0
 // Requiring a confirmed bar means the entry fires at the close and nowhere else, so
 // the result is identical with those boxes on or off. Exits are left tick-sensitive
 // on purpose: a resting stop or target SHOULD fill when price touches it.
-if trig and ready and isFlat and inWindow and canTrade and barstate.isconfirmed
+if trig and ready and isFlat and inWindow and canTrade and not tfBlock and barstate.isconfirmed
     // Stop DISTANCE in price units, by the selected method, computed SEPARATELY for each side.
     // Structural stops are not symmetric: a long's stop belongs below the swing low, a short's
     // above the swing high, and collapsing them to one number puts the short's stop in the wrong
     // place. They are measured from the SIGNAL bar's close -- the last price known when the order
     // is sent -- not from the fill, which has not happened yet.
     buf = bufTicks * syminfo.mintick
-    stopL = switch stopMode
-        "ATR multiple"               => atrMult * atrV
+    stopL = switch stopModeEff
+        "ATR multiple"               => atrMultEff * atrV
         "Fixed points"               => stopPts
         "Fixed ticks"                => stopTks * syminfo.mintick
         "Fixed dollars per contract" => stopUsd / syminfo.pointvalue
@@ -203,9 +267,9 @@ if trig and ready and isFlat and inWindow and canTrade and barstate.isconfirmed
         "Moving-average distance"    => math.abs(close - maStop) + buf
         "Swing high/low"             => close - ta.lowest(low, swingLen) + buf
         "Previous bar extreme"       => close - low[1] + buf
-        => atrMult * atrV
-    stopS = switch stopMode
-        "ATR multiple"               => atrMult * atrV
+        => atrMultEff * atrV
+    stopS = switch stopModeEff
+        "ATR multiple"               => atrMultEff * atrV
         "Fixed points"               => stopPts
         "Fixed ticks"                => stopTks * syminfo.mintick
         "Fixed dollars per contract" => stopUsd / syminfo.pointvalue
@@ -213,54 +277,54 @@ if trig and ready and isFlat and inWindow and canTrade and barstate.isconfirmed
         "Moving-average distance"    => math.abs(close - maStop) + buf
         "Swing high/low"             => ta.highest(high, swingLen) - close + buf
         "Previous bar extreme"       => high[1] - close + buf
-        => atrMult * atrV
+        => atrMultEff * atrV
     // A structural level can sit on the WRONG side of price -- a long whose close gapped below
     // the previous bar's low gives a negative distance, which would round to a one-tick stop and
     // be liquidated instantly. Floor everything at a fraction of ATR so that cannot happen; the
     // user floor and cap are applied on top.
     stopL := math.max(stopL, 0.10 * atrV)
     stopS := math.max(stopS, 0.10 * atrV)
-    if floorATR > 0
-        stopL := math.max(stopL, floorATR * atrV)
-        stopS := math.max(stopS, floorATR * atrV)
-    if capATR > 0
-        stopL := math.min(stopL, capATR * atrV)
-        stopS := math.min(stopS, capATR * atrV)
+    if floorEff > 0
+        stopL := math.max(stopL, floorEff * atrV)
+        stopS := math.max(stopS, floorEff * atrV)
+    if capEff > 0
+        stopL := math.min(stopL, capEff * atrV)
+        stopS := math.min(stopS, capEff * atrV)
     riskL = math.max(math.round(stopL / syminfo.mintick), 1)
     riskS = math.max(math.round(stopS / syminfo.mintick), 1)
-    useTarget = exitMode != "Trailing stop"
-    useTrail  = exitMode != "Fixed target"
+    useTarget = exitModeEff != "Trailing stop"
+    useTrail  = exitModeEff != "Fixed target"
     // Contracts, by the selected sizing rule. Risk-based sizing divides the dollars at risk by
     // what one contract loses if the stop is hit -- riskTicks x tick value -- so it adapts to the
     // stop the method above produced, which is the whole point of sizing off risk rather than
     // off price.
     tickUsd = syminfo.pointvalue * syminfo.mintick
-    qtyL = switch sizeMode
-        "Fixed contracts"          => fixedQty
+    qtyL = switch sizeModeEff
+        "Fixed contracts"          => fixedQtyEff
         "Percent of equity risked" => (strategy.equity * riskPct / 100.0) / math.max(riskL * tickUsd, 1e-9)
         "Fixed dollars risked"     => riskUsd / math.max(riskL * tickUsd, 1e-9)
-        => fixedQty
-    qtyS = switch sizeMode
-        "Fixed contracts"          => fixedQty
+        => fixedQtyEff
+    qtyS = switch sizeModeEff
+        "Fixed contracts"          => fixedQtyEff
         "Percent of equity risked" => (strategy.equity * riskPct / 100.0) / math.max(riskS * tickUsd, 1e-9)
         "Fixed dollars risked"     => riskUsd / math.max(riskS * tickUsd, 1e-9)
-        => fixedQty
+        => fixedQtyEff
     qtyL := math.min(math.max(math.floor(qtyL), 1), maxQty)
     qtyS := math.min(math.max(math.floor(qtyS), 1), maxQty)
-    if allowLong
+    if longEff
         strategy.entry("L", strategy.long, qty = qtyL)
         entriesToday += 1
-        if partPct > 0
-            strategy.exit("Lp", "L", qty_percent = partPct, loss = riskL, profit = partR * riskL)
-        strategy.exit("Lx", "L", loss = riskL, profit = useTarget ? tpR * riskL : na,
+        if partPctEff > 0
+            strategy.exit("Lp", "L", qty_percent = partPctEff, loss = riskL, profit = partR * riskL)
+        strategy.exit("Lx", "L", loss = riskL, profit = useTarget ? tpREff * riskL : na,
              trail_points = useTrail ? trailStartR * riskL : na,
              trail_offset = useTrail ? trailOffR * riskL : na)
-    if allowShort
+    if shortEff
         strategy.entry("S", strategy.short, qty = qtyS)
         entriesToday += 1
-        if partPct > 0
-            strategy.exit("Sp", "S", qty_percent = partPct, loss = riskS, profit = partR * riskS)
-        strategy.exit("Sx", "S", loss = riskS, profit = useTarget ? tpR * riskS : na,
+        if partPctEff > 0
+            strategy.exit("Sp", "S", qty_percent = partPctEff, loss = riskS, profit = partR * riskS)
+        strategy.exit("Sx", "S", loss = riskS, profit = useTarget ? tpREff * riskS : na,
              trail_points = useTrail ? trailStartR * riskS : na,
              trail_offset = useTrail ? trailOffR * riskS : na)
 
@@ -270,8 +334,8 @@ if flatAt >= 0 and barMin >= flatAt and strategy.position_size != 0 and barstate
 if strategy.position_size != 0 and not inWindow and barstate.isconfirmed
     strategy.close_all(comment = "outside backtest window")
 
-plotshape(trig and allowLong,  "long",  shape.triangleup,   location.belowbar, color.teal, size = size.tiny)
-plotshape(trig and allowShort, "short", shape.triangledown, location.abovebar, color.red,  size = size.tiny)
+plotshape(trig and longEff,  "long",  shape.triangleup,   location.belowbar, color.teal, size = size.tiny)
+plotshape(trig and shortEff, "short", shape.triangledown, location.abovebar, color.red,  size = size.tiny)
 
 // ---- what history this chart actually gave you ------------------------------------------------
 var int firstBarT = na
@@ -297,3 +361,23 @@ if barstate.islast
     table.cell(rt, 0, 2, "09:30-12:30 New York", text_size = size.small, text_color = color.gray)
     table.cell(rt, 1, 2, c2 ? "yes" : "no", text_size = size.small,
          text_color = c2 ? color.teal : color.gray)
+
+// ---- configuration banner ---------------------------------------------------------------------
+// The readout that would have caught both failures at a glance, before reading a single statistic.
+var table cfg = table.new(position.top_center, 1, 2, border_width = 1)
+if barstate.islast
+    string msg = ""
+    color bg = color.teal
+    if not tfOK
+        msg := "WRONG TIMEFRAME - this is a " + str.tostring(M_TFMIN) + "m strategy, chart is " + timeframe.period
+        bg := color.red
+        if locked
+            msg := msg + " - TRADING BLOCKED"
+    else if locked
+        msg := "AS MEASURED - header figures apply"
+    else
+        msg := "CUSTOM - header figures do NOT apply"
+        bg := color.orange
+    table.cell(cfg, 0, 0, msg, text_size = size.normal, text_color = color.white, bgcolor = bg)
+    det = "stop " + stopModeEff + (stopModeEff == "ATR multiple" ? " " + str.tostring(atrMultEff) + "x" : "") + "   target " + str.tostring(tpREff) + "R   " + exitModeEff + "   signals " + str.tostring(sigFromEff) + "-" + str.tostring(sigToEff) + "   flat " + str.tostring(flatAtEff) + "   size " + sizeModeEff
+    table.cell(cfg, 0, 1, det, text_size = size.small, text_color = color.gray)
