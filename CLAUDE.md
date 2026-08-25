@@ -191,6 +191,39 @@ is essentially UNCHANGED from the overlap (+8.4, +7.8). RW, M4 and M1 fail, M4 f
 and M1 +8.2 -> +1.2. The two that survive are the MEAN-REVERSION and COUNTER-TREND legs, which is
 the same story trend-following has told all along here.
 
+**COSTS SET A FLOOR ON THE WIN RATE, and at a scalping stop the floor is above 100%-ish.** On
+US100 15m the round trip is a FIXED number of points, so the tighter the stop the larger it looms:
+break-even at 1:1 needs **95.1% at a 0.25xATR stop, 71.5% at 0.5x, 61.9% at 1.0x, 54.8% at 2.5x**,
+against base rates of 27-51%. Before searching for a win-rate target, compute the break-even the
+geometry implies -- an 80%-at-1:1 brief is arithmetically dead at a 4-point stop and merely hard at
+a 28-point one. `research/edgelab/analysis.stop_sweep` prints cost-in-R next to every row.
+
+**A 15-MINUTE BAR CANNOT RESOLVE A TIGHT BARRIER PAIR.** When low<=stop and high>=target in the
+same bar, OHLC cannot say which came first. Resolve it as a STOP always, and REPORT THE AMBIGUOUS
+SHARE: it is **47.4% at a 0.25xATR stop**, 16.7% at 0.5x, 4.0% at 1.5x. Any sub-0.5xATR result on
+this file is set by the tie-break, not by the market, whichever way it points.
+
+**TRADES INSIDE ONE SESSION ARE NOT INDEPENDENT, and a bar-resampled control does not know that.**
+Rules here fire 2-3 times a day on the same move, so 260 trades are ~101 days. Scoring bar-wise
+made **17,121 of 27,786 tests "pass" BH at q=0.10** -- a symptom, not a discovery. `fast.score_days`
+makes the DAY the unit and resamples days. And collapse near-duplicates by trade-set Jaccard: the
+top 25 was one rule wearing 25 hats.
+
+**A WALK-FORWARD IS CONTAMINATED IF THE THRESHOLDS WERE CHOSEN ON THE WHOLE TRAINING SPAN.** Rolling
+folds inside the discovery block showed 5/6 positive at +0.33R; only the two folds that POSTDATE
+threshold selection were meaningful, and they were the two weakest. Fold the search into the fold,
+or read only the post-selection folds.
+
+**PERMUTING TRADES CANNOT CHANGE THE ENDPOINT.** A Monte Carlo that reorders the realised sequence
+answers a DRAWDOWN question only; reporting an endpoint distribution from it is meaningless (an
+earlier version here printed a 5th-95th spread of 0.6R on +27R). Bootstrap WITH REPLACEMENT for
+edge uncertainty, permute for path risk. `validate.monte_carlo` does both.
+
+**THE TRUNCATION TEST IS THE ONLY HONEST LEAKAGE AUDIT.** Recompute every feature on history that
+ENDS at bar i and require the value to match. It caught two real leaks here that inspection missed
+-- overnight aggregates reading their own group's LAST close, and prev-day stats dropping out of a
+groupby index. `research/edgelab/audit.py`.
+
 **A second instrument on the SAME INDEX over the SAME CALENDAR is not a second test.** US100
 2023-2025 gave the long-only trend rule +10.9 excess at p 0.0011 and it meant nothing: **68% of
 NQ's triggers fire on the EXACT SAME 15-minute bar on US100** (79% within +-2 bars). It is the
@@ -258,6 +291,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |
 | `research/us100.py` | the second instrument: audit, NY timezone, NQ alignment, unseen split |
 | `research/trend_long.py`, `trend_long_xmkt.py` | the long-only regime battery, and it on NQ + US100 with the overlap measured |
+| `research/edgelab/` | the US100 morning-session lab: 101 causal features, triple-barrier labels, day-clustered control, purged walk-forward, `run_all.py` |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
