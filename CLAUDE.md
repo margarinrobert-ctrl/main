@@ -128,6 +128,23 @@ asserted trade-for-trade against `runBacktest`; note the app sizes stops in WILD
 `runBacktest` uses) while the research layer uses `ema(tr, n)`, so compare the two on shape, not to
 the dollar. See `docs/ib/STUDY_TUNER.md`.
 
+**A high 1R win rate can be a day filter wearing a barrier costume.** M4 wins 73.9% and none of
+its machinery earns it: widening the stop to INFINITY is worth more than the shipped 4xATR
+($9,030 vs $9,005, zero barriers touched), and on the same days a RANDOM first-hour entry does as
+well (p 0.187 win, 0.556 net). It selects sessions that drift up -- its days travel +$96.3 against
++$14.6 for all days -- and it does beat a minute-matched control doing that (research p 0.001).
+Before believing any barrier strategy, widen the stop until the barriers stop binding and re-enter
+at a random bar on the same days; whatever survives both is what you actually own. Its `body<30%`
+is a real monotone mechanism (small bodies +$86..111/trade, large bodies NEGATIVE); its
+`ATR>1.8x mean` is a threshold sitting just above a dead [1.6,1.8) band. See
+`docs/ib/STUDY_M4_ANATOMY.md`.
+
+**The Initial Balance adds nothing here either.** 14 causal IB features x 8 pre-declared
+candidates, matched control as the gate, BH at FDR 0.10: 3 passed research, 2 LOST money on the
+holdout and the third decayed to barely above the do-nothing baseline. The two that looked best on
+locked both failed research -- the wrong shape. M4's own condition restated at day scale fails its
+research control at p 0.305. `research/ib_features.py`. Do not re-run it.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -162,6 +179,8 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/trendpool.py`, `trendpool_search.py` | the 5.7M-combination trend-pullback search |
 | `research/limit_entry.py` | limit-order entries, bar-level and true 1-minute, with pessimism knobs |
 | `research/allstrats.py` | the nine shipped strategies in one registry |
+| `research/m4_anatomy.py` | why M4 is profitable: exit split, barrier sweep, day-vs-bar, bands |
+| `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
