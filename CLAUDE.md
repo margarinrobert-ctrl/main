@@ -404,6 +404,36 @@ range has to be walked at a finer resolution before its number means anything. A
 perturbation Monte Carlo can and cannot say: P(mean ≤ 0) = 0 prices execution noise on the trades
 you selected, never the selection. See `docs/ib/STUDY_ATME_LIVE.md`.
 
+**THERE IS A FIFTH INSTRUMENT, AND IT IS THE FIRST ONE THAT CANNOT BE ACCUSED OF OVERLAP.** EURUSD
+30-minute, 230,400 bars, **2003-07-21 to 2022-02-22** — it ends before NQ's sample begins, so not
+one shared bar exists and the `STUDY_TREND_LONG.md` objection (68% of NQ's triggers firing on the
+identical US100 bar) cannot be raised against it. Its clock was derived from FX's OWN anchors, all
+three agreeing on NY+7 and all DST-stable: the weekly open (Sunday 17:00 NY) lands at file 00:00 in
+964 of 984 weeks; tick volume bottoms at file hour 0 = the 17:00 rollover; and |30m return| peaks
+at file 16 = 09:00 NY with the London/NY overlap at 14-17. A FIFTH export format — comma-separated
+with an unnamed index column. `research/edgelab/fx.py`.
+
+**THE SPREAD IS FLAT AND ATR IS WHAT MOVES — the cost model gets the right answer by the wrong
+mechanism.** EURUSD is the first feed here carrying a MEASURED spread, and it falsifies the session
+step: `Costs.spread_at` charges RTH/pre/off at ratios up to **3x**, and the real spread is **1.46 to
+1.62 pips across all 24 hours**, a 10% range. But `spread/ATR` runs **0.073 at 10:00 NY to 0.139 at
+22:00**, nearly 2x — entirely from the DENOMINATOR. Model a fixed spread over a varying ATR, not a
+stepped spread. Two things survive: spread does NOT widen with bar speed (Q1 1.28, Q3 1.66, Q5 1.40
+pips — an inverted U), so scaling slippage but not spread is right; and the assumed magnitudes were
+about correct in ATR terms — measured break-even at 1:1 is **92.3% / 71.2% / 60.6% / 54.2%** at
+0.25/0.5/1.0/2.5xATR against US100's assumed 95.1/71.5/61.9/54.8. That is the first empirical
+support the scalping rejections have had. **Use `fx.usable_span()`, never the raw column** — a
+quoted zero is a missing value and 2017/2020/2021/2022 run 25-88% zeros. See
+`docs/ib/STUDY_SPREAD_TRUTH.md`.
+
+**`research/datasets.py` IS THE DURABLE MEMORY OF THE DATA.** `data/*.csv` is git-ignored and does
+not survive a container recycle; seven files, 382 MB, five distinct export formats, all arriving by
+upload. The registry commits everything EXCEPT the bars — format, delimiter, column meanings, exact
+row count and span, derived clock and its evidence, measured defects, owning loader, provenance and
+a sha256 prefix. `python research/datasets.py` inventories and verifies, distinguishing MISSING from
+SIZE MISMATCH from CONTENT MISMATCH so a re-uploaded file can be PROVED identical to the copy the
+studies ran on. Run it first in any session that touches data.
+
 ## Tooling
 
 | module | what it does |
@@ -437,6 +467,9 @@ you selected, never the selection. See `docs/ib/STUDY_ATME_LIVE.md`.
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
 | `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
 | `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |
+| `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
+| `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
+| `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
 | `research/us100.py` | the second instrument: audit, NY timezone, NQ alignment, unseen split |
 | `research/trend_long.py`, `trend_long_xmkt.py` | the long-only regime battery, and it on NQ + US100 with the overlap measured |
 | `research/edgelab/` | the US100 morning-session lab: 101 causal features, triple-barrier labels, day-clustered control, purged walk-forward, `run_all.py` |

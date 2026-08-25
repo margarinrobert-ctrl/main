@@ -1,0 +1,238 @@
+"""THE DATASET REGISTRY -- the durable memory of every price file this branch has been given.
+
+WHY THIS FILE EXISTS. `data/*.csv` is git-ignored (the files are large and often licensed) and the
+container's disk is reclaimed between sessions. Three times now a study has restarted against an
+empty `data/` with no record of what had been there, what format it was in, or what had already
+been established about it. The bars themselves cannot live in git; everything ELSE about them can,
+and that is what this is: format, delimiter, column meanings, exact row count and span, the derived
+clock and how it was derived, the measured defects, the loader that owns it, and a sha256 so a
+re-uploaded file can be proved identical to the one the studies were run on.
+
+`verify()` checks what is on disk against this registry and names the discrepancy. `missing()`
+lists what has to be re-attached. `inventory()` prints the lot.
+
+RE-ATTACHING. Every entry records `restore_to`, the exact path the loaders search for. Uploads land
+in a directory that is NOT durable and has been cleared mid-study more than once, so a file is only
+safe once it is at its `restore_to` path -- and even then only until the container is recycled.
+"""
+from __future__ import annotations
+
+import hashlib
+import os
+import sys
+from dataclasses import dataclass, field
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
+@dataclass
+class Dataset:
+    key: str
+    instrument: str
+    timeframe_min: int
+    restore_to: str
+    rows: int
+    span: str
+    bytes: int
+    sha256_16: str                  # first 16 hex chars; enough to catch a different file
+    fmt: str                        # delimiter and column layout, as delivered
+    columns: str
+    order: str                      # ascending / descending, as delivered
+    clock: str                      # the derived offset and the evidence for it
+    volume: str                     # what the activity column actually is
+    defects: str                    # measured, not guessed
+    loader: str
+    provenance: str
+    notes: str = ""
+    extras: dict = field(default_factory=dict)
+
+
+REGISTRY = {
+
+    "NQ_1m": Dataset(
+        key="NQ_1m", instrument="NQ", timeframe_min=1, restore_to="data/NQ_1m.csv",
+        rows=1_048_575, span="2022-12-26 18:01 -> 2025-12-11 20:52 New York",
+        bytes=63_534_510, sha256_16="7a81549ba8967fc7",
+        fmt="comma-separated, header `timestamp,open,high,low,close,volume`",
+        columns="timestamp (UTC ISO-8601 with Z), open, high, low, close, volume",
+        order="ascending",
+        clock="stamped in UTC; loaders convert to New York. No derivation needed.",
+        volume="real exchange volume (contracts), not a tick count",
+        defects="LEVELS ARE SYNTHETIC -- a back-adjusted continuous contract. The 2022-12-31 close "
+                "reads 13,696.75 where NQ front month was near 11,000, decaying to zero at the "
+                "right edge. Returns, R-multiples, win rates and ATR-unit measurements are "
+                "unaffected; percent-of-price stops and early-sample dollar magnitudes are not.",
+        loader="research/oner_union.bars(tf) via research/edgelab/feeds.bars('NQ', tf)",
+        provenance="this repository's own futures file, present before this branch began",
+        notes="The research/locked split is the first 65% of SESSIONS. Four independent checks "
+              "confirm it is real market data (tick grid, the double-hump volume profile, the CME "
+              "weekday calendar with zero Saturday bars, and the eight largest moves landing on "
+              "the correctly-dated 2025 tariff selloff)."),
+
+    "NQ_5m": Dataset(
+        key="NQ_5m", instrument="NQ", timeframe_min=5, restore_to="data/NQ_5m.csv",
+        rows=210_516, span="2022-12-26 18:00 -> 2025-12-11 20:50 New York",
+        bytes=12_903_907, sha256_16="4db7770f9d632411",
+        fmt="comma-separated, header `timestamp,open,high,low,close,volume`",
+        columns="timestamp (UTC ISO-8601 with Z), open, high, low, close, volume",
+        order="ascending", clock="stamped in UTC; loaders convert to New York.",
+        volume="real exchange volume", defects="same synthetic-level caveat as NQ_1m",
+        loader="research/oner_union.bars(5)",
+        provenance="this repository's own futures file",
+        notes="The 5-minute file is the one most studies run on; NQ_1m is used to walk the true "
+              "intrabar path when a barrier pair sits inside one 5-minute bar."),
+
+    "US100_15m": Dataset(
+        key="US100_15m", instrument="US100", timeframe_min=15, restore_to="data/US100_15m.csv",
+        rows=206_703, span="2016-11-14 23:30 -> 2025-10-01 00:00 New York",
+        bytes=11_971_933, sha256_16="c449dddfbc06a943",
+        fmt="TAB-separated, header `DateTime Open High Low Close Volume TickVolume`",
+        columns="DateTime `YYYY.MM.DD HH:MM:SS`, Open, High, Low, Close, Volume, TickVolume",
+        order="DESCENDING as delivered",
+        clock="New York + 7, DERIVED: the RTH volume jump sits at 16:30 file time in both Dec-Feb "
+              "and Jun-Aug, so the broker follows US daylight saving and a fixed -7h shift is "
+              "right year round.",
+        volume="`Volume` is identically ZERO. `TickVolume` is the only activity proxy.",
+        defects="1.40% of gaps are not 15 minutes (650 over two hours: weekends and holidays); "
+                "0.09% zero-range bars; 0 duplicates, 0 OHLC violations.",
+        loader="research/us100.py (and research/edgelab/feeds.bars('US100', tf))",
+        provenance="user upload, 2026-08-25 (re-uploaded; an earlier copy was lost to a recycle)",
+        notes="Its value is the part BEFORE 2022-12-26 -- 71,074 30-minute bars covering 2018, "
+              "COVID and the 2022 bear, none of which the NQ sample contains. Over the OVERLAP it "
+              "is not an independent test: 68% of NQ's triggers fire on the identical 15m bar."),
+
+    "US30_1m": Dataset(
+        key="US30_1m", instrument="US30", timeframe_min=1, restore_to="data/US30_1m.csv",
+        rows=2_880_287, span="2016-10-26 18:30 -> 2025-07-15 13:34 New York",
+        bytes=168_054_005, sha256_16="a11aefddfd6e9d22",
+        fmt="TAB-separated, header `DateTime Open High Low Close Volume TickVolume`",
+        columns="DateTime `YYYY.MM.DD HH:MM:SS`, Open, High, Low, Close, Volume, TickVolume",
+        order="DESCENDING as delivered",
+        clock="New York + 7, DERIVED SEPARATELY from US100's -- `derive_offset` locates the 09:30 "
+              "step in winter and summer independently and refuses a constant shift if they "
+              "disagree. They agreed.",
+        volume="`Volume` zero; `TickVolume` is the proxy",
+        defects="measured by research/edgelab/audit.py; passes the truncation audit",
+        loader="research/edgelab/feeds.bars('US30', tf)",
+        provenance="user upload, 2026-08-25, as a 7z archive (extract needs `pip install py7zr`)",
+        notes="The most INDEPENDENT index here: 15m return correlation 0.758 vs US100 and 0.679 "
+              "vs NQ, against NQ/US100's 0.874. No lead-lag at any offset."),
+
+    "US30_5m": Dataset(
+        key="US30_5m", instrument="US30", timeframe_min=5, restore_to="data/US30_5m.csv",
+        rows=581_195, span="2016-10-26 18:30 -> 2025-07-15 13:30 New York",
+        bytes=34_308_074, sha256_16="c76601a1a2b54878",
+        fmt="TAB-separated, header `DateTime Open High Low Close Volume TickVolume`",
+        columns="DateTime `YYYY.MM.DD HH:MM:SS`, Open, High, Low, Close, Volume, TickVolume",
+        order="DESCENDING as delivered", clock="New York + 7, derived as for US30_1m",
+        volume="`Volume` zero; `TickVolume` is the proxy",
+        defects="none beyond the usual weekend gaps",
+        loader="research/edgelab/feeds.bars('US30', 5)",
+        provenance="user upload, 2026-08-25, as a 7z archive",
+        notes="The scalp studies run here; US30_1m is for true-path re-simulation."),
+
+    "XAUUSD_5m": Dataset(
+        key="XAUUSD_5m", instrument="XAUUSD", timeframe_min=5, restore_to="data/XAUUSD_5m.csv",
+        rows=1_443_451, span="2004-06-11 00:15 -> 2026-01-30 16:55 New York",
+        bytes=74_361_143, sha256_16="9b0f8e72f8688da0",
+        fmt="SEMICOLON-separated, header `Date;Open;High;Low;Close;Volume`",
+        columns="Date `YYYY.MM.DD HH:MM` (no seconds), Open, High, Low, Close, Volume",
+        order="ascending",
+        clock="New York + 7, DERIVED FROM GOLD'S OWN ANCHOR -- it does not key on the 09:30 equity "
+              "open. The summer peak in mean |5m return| lands at raw 15:30 = 08:30 New York to "
+              "the minute, and corr(US30, XAU) spikes to +0.057 at a 7h shift against ~0 at 5/6/8.",
+        volume="a TICK COUNT, not exchange volume; there is no TickVolume column",
+        defects="PRE-2010 IS EXCLUDED WITH CAUSE: 10.06% zero-range bars and a median 5-minute "
+                "volume of 14 ticks. That is a quote feed idling, not a market.",
+        loader="research/edgelab/feeds.bars('XAUUSD', 5)",
+        provenance="user upload, 2026-08-25, as a 7z archive",
+        notes="The only genuinely UNCORRELATED market here: contemporaneous 5m correlation with "
+              "the three indices is 0.057-0.070. Its four-way split reserves an UNTOUCHED final "
+              "period (2025-01-01 -> 2026-01-30) that no search has ever read.",
+        extras=dict(split="research 2010->2017, validation ->2021, test ->2024, untouched 2025+")),
+
+    "EURUSD_M30": Dataset(
+        key="EURUSD_M30", instrument="EURUSD", timeframe_min=30, restore_to="data/EURUSD_M30.csv",
+        rows=230_400, span="2003-07-21 08:00 -> 2022-02-22 04:00 New York",
+        bytes=16_546_557, sha256_16="671f407f6f4d7371",
+        fmt="comma-separated with an UNNAMED integer index column",
+        columns="index, time `YYYY-MM-DD HH:MM:SS`, open, high, low, close, tick_volume, "
+                "SPREAD, real_volume",
+        order="ascending",
+        clock="New York + 7, DERIVED FROM FX'S OWN ANCHORS -- three of them, all agreeing and all "
+              "DST-stable: the weekly open (Sunday 17:00 New York) lands at file 00:00 in 964 of "
+              "984 weeks and separately in winter and summer; mean tick volume bottoms at file "
+              "hour 0 = the 17:00 rollover lull; and mean |30m return| peaks at file 16 = 09:00 "
+              "New York with the 14-17 block being the London/New York overlap.",
+        volume="`tick_volume` is the proxy; `real_volume` is populated on only 10.5% of bars",
+        defects="0 duplicates, 0 OHLC violations, 0 non-positive, 0.023% zero-range, 989 gaps over "
+                "two hours (weekends). THE SPREAD COLUMN IS THE CAVEAT: a quoted spread of exactly "
+                "zero is a missing value, and the zero share is 0% every year to 2013 then rises "
+                "erratically to 25.2% (2017), 36.0% (2020), 74.6% (2021) and 87.7% (2022 stub).",
+        loader="research/edgelab/fx.py",
+        provenance="user upload, 2026-08-25, as EURUSD_M30.csv.zip",
+        notes="TWO THINGS NOTHING ELSE HERE HAS. (1) It does NOT overlap the NQ sample by a single "
+              "bar -- it ends 2022-02-22 and NQ starts 2022-12-26 -- so the 'same trades on a "
+              "second feed' objection cannot be raised against it. (2) It reports a MEASURED "
+              "SPREAD, the first on this branch; see docs/ib/STUDY_SPREAD_TRUTH.md.",
+        extras=dict(spread_units="5th-decimal points; 10 points = 1 pip",
+                    usable_years="all except 2017, 2020, 2021, 2022 (>20% zeros); "
+                                 "190,319 of 230,400 bars = 82.6%")),
+}
+
+
+def sha16(path, chunk=1 << 20):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            b = f.read(chunk)
+            if not b:
+                break
+            h.update(b)
+    return h.hexdigest()[:16]
+
+
+def verify(check_hash=True, verbose=True):
+    """Compare what is on disk with the registry. Returns {key: status}."""
+    out = {}
+    for k, d in REGISTRY.items():
+        if not os.path.exists(d.restore_to):
+            out[k] = "MISSING"
+        elif os.path.getsize(d.restore_to) != d.bytes:
+            out[k] = f"SIZE MISMATCH ({os.path.getsize(d.restore_to):,} vs {d.bytes:,})"
+        elif check_hash and sha16(d.restore_to) != d.sha256_16:
+            out[k] = "CONTENT MISMATCH (same size, different bytes)"
+        else:
+            out[k] = "ok"
+    if verbose:
+        for k, v in out.items():
+            mark = "  " if v == "ok" else "!!"
+            print(f"{mark} {k:<12} {v}")
+        n = sum(1 for v in out.values() if v == "ok")
+        print(f"   {n}/{len(out)} datasets present and identical to the studied copy")
+    return out
+
+
+def missing():
+    return [k for k, v in verify(check_hash=False, verbose=False).items() if v != "ok"]
+
+
+def inventory(verbose=True):
+    if not verbose:
+        return REGISTRY
+    total = sum(d.bytes for d in REGISTRY.values())
+    print(f"{len(REGISTRY)} datasets, {total/1e6:,.0f} MB, five distinct export formats\n")
+    for d in REGISTRY.values():
+        here = "on disk" if os.path.exists(d.restore_to) else "ABSENT -- re-attach"
+        print(f"  {d.key:<12} {d.instrument:<7} {d.timeframe_min:>3}m  {d.rows:>10,} bars  "
+              f"{d.bytes/1e6:6.1f} MB  [{here}]")
+        print(f"               {d.span}")
+        print(f"               {d.fmt}")
+        print(f"               clock: {d.clock.splitlines()[0][:96]}")
+    return REGISTRY
+
+
+if __name__ == "__main__":
+    inventory()
+    print()
+    verify()

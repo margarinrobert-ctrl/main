@@ -92,3 +92,55 @@ a fixed −7h shift is right year round. `Volume` is all zeros; `TickVolume` is 
 Keep it at `data/US100_15m.csv`. It arrives by upload, and an upload directory is not durable —
 it has been cleared mid-study once already, which is why `us100.find_raw()` searches several
 locations and why this path is the one to restore it to.
+
+## EURUSD_M30.csv — a fifth format, an independent era, and the first measured spread
+
+Audited 2026-08-25 from the file itself. 230,400 30-minute bars,
+2003-07-21 08:00 → 2022-02-22 04:00 New York. 0 duplicates, 0 OHLC violations, 0 non-positive
+prices, 0.023% zero-range bars, 989 gaps over two hours (weekends).
+
+A **fifth distinct export format**: comma-separated with an **unnamed integer index column**, then
+`time,open,high,low,close,tick_volume,spread,real_volume`, stamped `YYYY-MM-DD HH:MM:SS`, sorted
+ascending. `real_volume` is populated on only 10.5% of bars, so `tick_volume` is the activity
+proxy. `research/edgelab/fx.py` owns this file; nothing else should parse it.
+
+**Its clock was derived from FX's own anchors, not inherited.** There is no 09:30 cash equity open
+in EURUSD, so the index feeds' anchor is meaningless here. Three independent measurements agree on
+**New York + 7**, and all three are stable across daylight saving:
+
+* the **weekly open** — FX opens Sunday 17:00 New York, and the bar after each weekend gap lands at
+  file 00:00 in 964 of 984 weeks, separately 240/241 in winter and 241/242 in summer
+* the **daily activity minimum** — mean tick volume bottoms at file hour 0 = 17:00 New York, the
+  rollover lull to the minute
+* the **volatility profile** — mean |30-minute return| peaks at file hour 16 = 09:00 New York, with
+  the whole 14–17 block being the London/New York overlap and a secondary hump at file 9–11 =
+  02:00–04:00 New York, the London open. That shape only appears at this offset.
+
+**Two things nothing else here has.**
+
+It does **not overlap the NQ sample by a single bar** — it ends 2022-02-22 and NQ starts
+2022-12-26. `STUDY_TREND_LONG.md` established that a second instrument over the same calendar is
+not a second test (68% of NQ's triggers fired on the identical 15-minute bar on US100). That
+objection cannot be raised here.
+
+And it reports a **measured spread**, the first on this branch. Use it through
+`fx.usable_span()`, never raw: a quoted spread of exactly zero is a missing value, and the zero
+share is 0% every year to 2013 but reaches 25.2% in 2017, 36.0% in 2020, 74.6% in 2021 and 87.7%
+in the 2022 stub. Those four years are dropped whole and individual zero bars are dropped
+elsewhere, leaving 190,319 of 230,400 bars (82.6%). See `docs/ib/STUDY_SPREAD_TRUTH.md`.
+
+## The registry is the durable part
+
+`research/datasets.py` records every dataset's format, delimiter, column meanings, exact row count
+and span, derived clock and the evidence for it, measured defects, owning loader, provenance and a
+sha256 prefix. It is committed; the bars are not.
+
+```bash
+python research/datasets.py        # inventory + verify what is on disk
+```
+
+`verify()` distinguishes MISSING from SIZE MISMATCH from CONTENT MISMATCH, so a re-uploaded file
+can be proved identical to the copy every study was run on rather than assumed to be.
+
+**Nothing in `data/` survives a container recycle.** Seven files, 382 MB, and all of them arrive by
+upload. The registry is what makes re-attaching them mechanical instead of archaeological.
