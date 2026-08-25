@@ -42,13 +42,39 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-RAW = "/root/.claude/uploads/e473d7de-e277-515e-b24b-75724aaa9da5/0d17f54f-15m_data.csv"
+# The upload directory is not durable -- this file was cleared from it mid-study once already,
+# which is why `find_raw` searches rather than hard-coding, and why the error names the fix.
+SEARCH = ("data/US100_15m.csv",
+          "/root/.claude/uploads/*/0d17f54f-15m_data.csv",
+          "/root/.claude/uploads/*/*15m_data.csv",
+          "/root/.claude/uploads/*/*US100*.csv",
+          "/root/.claude/uploads/*/*us100*.csv")
 NY_OFFSET_H = 7          # file clock = New York + 7, verified stable across DST
 _C = {}
 
 
-def load(path=RAW):
+def find_raw(path=None):
+    """Locate the US100 file, or say exactly what to do about it."""
+    import glob, os
+    if path and os.path.exists(path):
+        return path
+    for pat in SEARCH:
+        hits = sorted(glob.glob(pat))
+        if hits:
+            return hits[-1]
+    raise FileNotFoundError(
+        "US100 15-minute data not found. It was uploaded once and the upload directory has "
+        "since been cleared, so it needs re-attaching. Searched: " + ", ".join(SEARCH) + ". "
+        "Dropping the file at data/US100_15m.csv makes it durable across session resets, which "
+        "the upload directory is not.")
+
+
+RAW = None               # resolved lazily by find_raw so an absent file fails with a useful message
+
+
+def load(path=None):
     """15-minute bars indexed by NEW YORK time, oldest first."""
+    path = find_raw(path)
     if ("raw", path) in _C:
         return _C[("raw", path)]
     d = pd.read_csv(path, sep="\t")
@@ -65,7 +91,7 @@ def load(path=RAW):
     return out
 
 
-def audit(path=RAW, verbose=True):
+def audit(path=None, verbose=True):
     d = load(path)
     gap = pd.Series(d.index).diff().dt.total_seconds().div(60)
     r = dict(bars=len(d), start=d.index.min(), end=d.index.max(),
@@ -84,7 +110,7 @@ def audit(path=RAW, verbose=True):
     return r
 
 
-def resample(tf, path=RAW):
+def resample(tf, path=None):
     """Aggregate to a coarser timeframe. `tf` in minutes and a multiple of 15."""
     if tf % 15:
         raise ValueError("US100 source is 15-minute; tf must be a multiple of 15")
@@ -99,7 +125,7 @@ def resample(tf, path=RAW):
     return out
 
 
-def to_bars(tf, path=RAW, atr_n=14):
+def to_bars(tf, path=None, atr_n=14):
     """The dict shape the rest of this repository's engines expect."""
     import indicators as I
     d = resample(tf, path)
