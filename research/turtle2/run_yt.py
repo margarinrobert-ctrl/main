@@ -118,57 +118,74 @@ if __name__ == "__main__":
 
 
 # --------------------------------------------------------------------- controls
-def random_entry(market, chart, mode, block="is", seed=0, cost_mult=1.0):
-    """The same trade management with a RANDOM entry bar, filters kept.
+def random_entry(market, chart, mode, block="is", seed=0, cost_mult=1.0, band=0.15):
+    """The same trade management with a RISK-MATCHED random entry. Filters kept.
 
-    `STUDY_TURTLE.md` established the decisive test for a breakout system on this branch: a
-    coin-flip entry with the same exits scored +0.601 against the breakout's +0.595. The control
-    keeps the 4H EMA filter, the avoid-resistance rule, the 10-bar stop and the R:R ladder, and
-    replaces ONLY the channel trigger -- so what it isolates is the breakout itself.
+    `STUDY_TURTLE.md` established the decisive test for a breakout system here: a coin-flip entry
+    with the same exits scored +0.601 against the breakout's +0.595, i.e. the channel added
+    nothing. This control keeps the 4H EMA filter, the avoid-resistance rule, the 10-bar stop and
+    the R:R ladder, and replaces ONLY the channel trigger.
 
-    Implemented by rewriting the trigger levels: a chosen long bar gets an unreachable-low `hi20`
-    so the entry condition is satisfied there and nowhere else.
+    WHY A NAIVE VERSION OF THIS IS WRONG, and it was wrong here first. Matching the EXITS is not
+    enough, because the entry determines the RISK. A breakout bar sits by construction at the top
+    of its recent range, so its 10-bar channel stop is far away; a random bar's is not. Measured on
+    US30 60m: median risk 0.693% of price at a breakout bar against 0.372% at a random bar, with
+    6.8% of random bars under a TENTH of the breakout median. A near-zero denominator turns any
+    adverse move into an enormous R-multiple, and the first version of this control duly printed
+    -0.97 to -2.08 R -- arithmetically impossible for a stop-loss system.
 
-    !! THIS CONTROL IS NOT VALID AS WRITTEN AND ITS OUTPUT MUST NOT BE REPORTED. !!
-
-    Measured on US30 60m: the 10-bar-channel stop sits a median 0.693% of price away at a BREAKOUT
-    bar and only 0.372% at a RANDOM bar, and 6.8% of random bars have less than a TENTH of the
-    breakout median. A near-zero risk denominator turns any adverse move into an enormous
-    R-multiple, which is why this printed control means of -0.97 to -2.08 R -- arithmetically
-    impossible for a stop-loss system and a clear sign the control, not the market, produced them.
-
-    A breakout bar is BY CONSTRUCTION at the top of its recent range, so the channel stop is far;
-    a random bar is not. The control therefore compares two different geometries and measures the
-    stop placement rather than the entry.
-
-    THE FIX, not yet applied: match the RISK DISTRIBUTION, not just the exits -- either draw random
-    entries only from bars whose channel risk falls inside the rule's own observed range, or give
-    both the rule and the control an ATR-based stop so the denominator cannot collapse. Until then
-    the breakout remains UNTESTED against a random entry on this variant.
+    THE FIX IS TRADE-FOR-TRADE RISK MATCHING. For each real trade, a random bar is drawn from those
+    whose channel risk (as a fraction of price) lies within `band` of that trade's own risk, on the
+    same side. The control then differs from the rule in WHEN it enters and in nothing else, which
+    is what makes the comparison about the breakout.
     """
     b = prep(market, chart)
     if b is None:
         return None
     cut, _ = ytdata.split(b)
     sl = slice(0, cut) if block == "is" else slice(cut, b["n"])
-    n = len(b["c"][sl])
     real = go(market, chart, mode, block, cost_mult)
     if real is None or len(real[0]) < 20:
         return None
-    want = len(real[0])
-    frac_long = float((real[1] == 1).mean())
+    c = b["c"][sl]; lo10 = b["lo10"][sl]; hi10 = b["hi10"][sl]
+    hi20 = b["hi20"][sl]; lo20 = b["lo20"][sl]
+    n = len(c)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        q_long = (c - lo10) / c
+        q_short = (hi10 - c) / c
+    okL = np.isfinite(q_long) & (q_long > 0)
+    okS = np.isfinite(q_short) & (q_short > 0)
+
+    # the risk each REAL trade actually carried, from its own entry bar
+    ent = real[5]
+    sides = real[1]
+    qreal = np.where(sides == 1, q_long[ent], q_short[ent])
+
     rng = np.random.default_rng(seed)
-    pick = rng.choice(np.arange(30, n - 2), size=min(want * 3, n - 40), replace=False)
-    side = np.where(rng.random(len(pick)) < frac_long, 1, -1)
-    hi20 = np.full(n, np.inf); lo20 = np.full(n, -np.inf)
-    hi20[pick[side == 1]] = -1e18
-    lo20[pick[side == 1]] = -1e18
-    lo20[pick[side == -1]] = 1e18
-    hi20[pick[side == -1]] = 1e18
+    newhi = np.full(n, np.inf); newlo = np.full(n, -np.inf)
+    idxL = np.flatnonzero(okL); idxS = np.flatnonzero(okS)
+    placed = 0
+    for k in range(len(qreal)):
+        q = qreal[k]
+        if not np.isfinite(q) or q <= 0:
+            continue
+        pool = idxL if sides[k] == 1 else idxS
+        qq = q_long if sides[k] == 1 else q_short
+        cand = pool[(qq[pool] >= q * (1 - band)) & (qq[pool] <= q * (1 + band))]
+        if not len(cand):
+            continue
+        j = int(rng.choice(cand))
+        if sides[k] == 1:
+            newhi[j] = -1e18; newlo[j] = -1e18
+        else:
+            newlo[j] = 1e18; newhi[j] = 1e18
+        placed += 1
+    if placed < 20:
+        return None
     import ytturtle as T
     return T.run(b["o"][sl], b["h"][sl], b["l"][sl], b["c"][sl],
                  b["start"][sl], b["end"][sl], b["io"], b["ih"], b["il"], b["ic"],
-                 hi20, lo20, b["hi10"][sl], b["lo10"][sl],
+                 newhi, newlo, b["hi10"][sl], b["lo10"][sl],
                  b["ema"][sl], b["res_hi"][sl], b["res_lo"][sl],
                  True, True, mode, COST_BP[market] * cost_mult,
                  SLIP_BP[market] * cost_mult, 1.0)

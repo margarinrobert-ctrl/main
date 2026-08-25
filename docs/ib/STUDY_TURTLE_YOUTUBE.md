@@ -86,11 +86,46 @@ the original Turtle, where removing BTC alone took the out-of-sample block from 
 
 So the *sample mean* is not fragile. What remains unestablished is the **attribution**, below.
 
-## The control does not work, and the number it printed is not a result
+## THE BREAKOUT CONTRIBUTES NOTHING — the control now works, and it says no
 
-`STUDY_TURTLE.md` established that the decisive test for a breakout system here is a random entry
-with identical exits. My first attempt printed a control mean of **−0.97 to −2.08 R**, which is
-arithmetically impossible for a stop-loss system and is a defect, not a finding.
+The first attempt at this control was broken and is documented below, because the fix is the
+finding's foundation. **Risk-matched** now: for each real trade, the control draws a random bar
+whose 10-bar channel risk lies within ±15% of that trade's own risk, on the same side, keeping the
+4H EMA filter, the avoid-resistance rule, the stop and the R:R ladder. It differs from the rule in
+**when it enters and in nothing else**.
+
+| | rule E[R] | control E[R] | excess | p |
+| --- | ---: | ---: | ---: | ---: |
+| Option 1, in-sample | +0.151 | **+0.186** | −0.035 | 0.750 |
+| Option 1, out-of-sample | +0.102 | **+0.133** | −0.031 | 0.625 |
+| Option 2, in-sample | +0.166 | **+0.205** | −0.039 | 0.750 |
+| Option 2, out-of-sample | +0.097 | **+0.197** | **−0.100** | 0.875 |
+
+**A random entry at matched risk beats the Donchian breakout in all four cells.** The excess is
+negative everywhere and largest out of sample. Whatever this configuration earns comes from the
+**4H EMA regime filter, the avoid-resistance rule and the 1R/2R/3R geometry** — not from the
+20-bar channel.
+
+This is the third independent time on this branch that a breakout trigger has failed against its
+own random-entry control: the Turtle channel scored +0.595 against a coin flip's +0.601
+(`STUDY_TURTLE.md`), the eight-hypothesis programme found H1/H6/H7 to be one rule wearing three
+hats, and now this.
+
+**It also explains the live result.** A TradingView run of the shipped Pine lost money (PF 0.94,
+−10.2%). If the trigger adds nothing, the strategy reduces to "be long above the 4H EMA with a
+scale-out", which is thin enough that an implementation difference — and there was one, a broken
+avoid-resistance gate taking 2.3× the trades — flips the sign.
+
+One caveat on the control's own construction: the ±15% risk band means some real trades have no
+matching candidate bar, so the control carries fewer trades than the rule (102 against 328 on US30
+in-sample) and its mean is noisier. The direction is consistent across all four cells and eight
+draws, and the control sits *above* the rule rather than below, so sample size is not what produced
+the sign.
+
+## Appendix: how the first control was wrong
+
+My first attempt printed a control mean of **−0.97 to −2.08 R**, arithmetically impossible for a
+stop-loss system and a defect rather than a finding.
 
 **Diagnosis, measured on US30 60m:** the 10-bar channel stop sits a median **0.693% of price** from
 a breakout bar and only **0.372%** from a random bar, and **6.8% of random bars have less than a
@@ -98,8 +133,7 @@ tenth of the breakout median**. A breakout bar is by construction at the top of 
 channel stop is far away; a random bar's is not. A near-zero risk denominator turns any adverse
 move into an enormous R-multiple. The control was measuring **stop placement, not entry**.
 
-**So the breakout in this variant is still UNTESTED against a random entry.** The fix is to match
-the risk *distribution* as well as the exits — restrict random draws to bars whose channel risk
-falls inside the rule's observed range, or give both an ATR stop so the denominator cannot
-collapse. Until that runs, the 1H result above should be read as promising and unvalidated: a
-meaningful part of it may be the filters and the R:R geometry rather than the Donchian trigger.
+The fix was trade-for-trade risk matching, and the result is the section above. Recording the
+defect matters because the broken control's numbers looked *favourable* to the rule — a control
+that loses 2R per trade makes any strategy look brilliant by comparison. **A control that flatters
+the thing it is testing is the one to distrust most.**

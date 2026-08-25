@@ -471,6 +471,27 @@ M1 and V4 are cost artifacts and V1 is not. V1 is again the best-behaved -- the 
 zero cost -- but misses BH at nine tests (p 0.020 vs a 0.011 threshold), so BTC is CONSISTENT with
 V1, not a fourth confirmation. See `docs/ib/STUDY_BTC_LEGS.md`.
 
+**A RANDOM ENTRY AT MATCHED RISK BEATS THE DONCHIAN BREAKOUT -- the third breakout to fail its own
+control here.** The YouTube Turtle variant (20-bar entry, 10-bar stop, 4H 50 EMA filter, avoid
+daily/weekly/monthly majors, 1R/2R/3R exits) scores +0.097 R out of sample on 1H, and a random
+entry keeping every filter and exit scores **+0.197**. Excess is NEGATIVE in all four cells
+(-0.031 to -0.100). Whatever it earns is the REGIME FILTER and the R:R GEOMETRY, not the channel.
+**And the control had to be fixed first**: matching the exits is not enough, because the entry
+determines the RISK -- a breakout bar sits at the top of its range so its channel stop is far
+(median 0.693% of price on US30 60m) while a random bar's is near (0.372%, with 6.8% under a tenth
+of the breakout median). The near-zero denominator made the first control print -2.08 R, which
+FLATTERED the rule. **A control that flatters the thing it is tests is the one to distrust most.**
+Match the risk distribution trade-for-trade, not just the exits. See
+`docs/ib/STUDY_TURTLE_YOUTUBE.md`.
+
+**SCORE A PROP-FIRM STRATEGY ON P(PASS), NOT EXPECTANCY, AND SWEEP THE RISK.** An evaluation is one
+path with two absorbing barriers, so drawdown SHAPE decides it, not the mean. `research/vbt/prop.py`
+models the trailing form -- target, a floor that ratchets up with equity highs and never comes back
+down, a daily loss limit -- and reports P(pass)/P(bust)/P(timeout) separately, because "did not
+fail" is not "passed". On the 1H candidate: P(pass) peaks at **48.1% at 0.50% risk**, falling to
+30.1% at 1% and 16.8% at 2%, while 0.25% almost never busts and TIMES OUT 42% of the time. Risk per
+trade is the dominant variable, not a preference.
+
 ## Tooling
 
 | module | what it does |
@@ -507,6 +528,9 @@ V1, not a fourth confirmation. See `docs/ib/STUDY_BTC_LEGS.md`.
 | `research/edgelab/crypto.py` | BTC 15m: the sixth instrument, a UTC clock, real taker-side flow |
 | `research/btc_legs.py`, `run_btc_legs.py` | all nine shipped legs on BTC, with the volatility-artifact diagnostic |
 | `research/eurusd_legs.py`, `run_eurusd_legs.py` | the shipped 30m legs on EURUSD, matched control, BH |
+| `research/vbt/prop.py` | prop-firm evaluation: trailing DD, daily loss, P(pass) by day-block bootstrap |
+| `research/vbt/mae_mfe.py` | per-trade MFE/MAE in R on the finest series; capture and heat |
+| `research/turtle2/` | the original Turtle and the YouTube variant, frozen, with risk-matched controls |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
