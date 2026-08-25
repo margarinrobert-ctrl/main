@@ -5,13 +5,31 @@
 //   Stop and target are measured from the FILL -- the open of the bar after the signal --
 //   using the ATR of the signal bar.
 //
-// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, $1.00 commission per round turn, 1 tick
-// spread + 1 tick slip each side, 1 extra tick on stops:
+// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, itemised fees ($1.44 per round turn:
+// broker + CME exchange + NFA) and bar-speed-scaled slippage with a stop premium:
 //     trades                      249  (176 research / 73 locked)
 //     win rate                    59.8%   base rate for this geometry 48.7%
-//     net                         $8,935   profit factor 1.53
-//     locked block only           73 trades, 50.7% win, $2,303
+//     net                         $8,606   $34.6 per trade   profit factor 1.53
+//     research block              176 trades, 63.6% win, $6,632  ($37.7/trade)
+//     locked block                 73 trades, 50.7% win, $2,187  ($30.0/trade)
 //     chosen on                   the research block only; the locked figures above were read once
+//
+// IT DECAYS FROM RESEARCH TO LOCKED, WHICH IS THE RIGHT SHAPE. Five of the nine legs shipped on
+// this branch grew on the locked block, which is the signature of a selection reaching into the
+// holdout. This one does not: $37.7 per trade on the block it was chosen on, $30.0 on the block
+// it had never seen.
+//
+// AND IT IS THE ONLY LEG WITH AN INDEPENDENT SECOND-MARKET TEST BEHIND IT. Run unchanged on
+// US100 BEFORE 2022-12-26 -- nine years, 71,074 bars, an era this rule has never touched, and
+// the only cross-instrument sample here that is not just the same trades on a second feed --
+// it scores +9.2 excess over its geometry's own base rate at p 0.0001, essentially unchanged
+// from the +8.4 it earns on the overlapping period. Five of the nine legs fail that test.
+//
+// WHAT IT IS. A mean-reversion entry: an unusually WIDE true range (ATR above 1.2x its own
+// 20-bar mean) at the same moment Bollinger width is unusually NARROW (below 0.7x its 50-bar
+// mean), on a bar closing under the prior 5-bar low. Wide bars inside a compressing band, taken
+// long into the flush. Every trend-following brief on this branch has resolved into mean
+// reversion; this is the leg that says so most directly.
 //
 // THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
 //   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14.
@@ -32,7 +50,7 @@
 
 strategy("V1 1R | ATR>1.2x mean + BB width<0.7x mean + close<5-bar low", overlay = true, initial_capital = 25000,
      default_qty_type = strategy.fixed, default_qty_value = 1,
-     commission_type = strategy.commission.cash_per_order, commission_value = 0.50,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72,
      slippage = 2, pyramiding = 0, calc_on_every_tick = false,
      process_orders_on_close = false)
 // ---- primitives, defined to match the research exactly -------------------------------------------
