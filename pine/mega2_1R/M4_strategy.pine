@@ -5,13 +5,22 @@
 //   Stop and target are measured from the FILL -- the open of the bar after the signal --
 //   using the ATR of the signal bar.
 //
-// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, $1.00 commission per round turn, 1 tick
-// spread + 1 tick slip each side, 1 extra tick on stops:
+// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, under the LIVE cost model:
+//   itemised fees $1.44/round turn (broker $0.35 + CME exchange $0.35 + NFA $0.02, per side),
+//   bar-dependent slippage, plus overnight / open-close / high-volatility spread widening.
 //     trades                      88  (63 research / 25 locked)
-//     win rate                    73.9%   base rate for this geometry 49.5%
-//     net                         $9,005   profit factor 3.49
-//     locked block only           25 trades, 72.0% win, $2,796
-//     chosen on                   the research block only; the locked figures above were read once
+//     win rate                    72.7%
+//     net                         $8,815
+//     research block              $6,090   ($96.7/trade)
+//     locked block                $2,725   ($109.0/trade)
+//     chosen on                   the research block only; the locked figures were read once
+//
+//   READ THIS BEFORE THE NUMBERS ABOVE. The locked block earns MORE per trade than research. That is the WRONG SHAPE --
+//     an edge decays out of sample, it does not grow. Read the RESEARCH figure as the
+//     forward expectation; the later period was simply kinder to this strategy.
+//
+//   Earlier versions of this header quoted a $1.00 flat-cost model. Those figures were about
+//   4% optimistic and are superseded.
 //
 // THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
 //   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14.

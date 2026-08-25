@@ -5,13 +5,22 @@
 //   Stop and target are measured from the FILL -- the open of the bar after the signal --
 //   using the ATR of the signal bar.
 //
-// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, $1.00 commission per round turn, 1 tick
-// spread + 1 tick slip each side, 1 extra tick on stops:
+// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, under the LIVE cost model:
+//   itemised fees $1.44/round turn (broker $0.35 + CME exchange $0.35 + NFA $0.02, per side),
+//   bar-dependent slippage, plus overnight / open-close / high-volatility spread widening.
 //     trades                      139  (86 research / 53 locked)
-//     win rate                    67.6%   base rate for a LONG at this geometry 48.9%
-//     net                         $9,575   profit factor 2.12
-//     locked block only           53 trades, 71.7% win, $4,868
-//     chosen on                   the research block only; the locked figures above were read once
+//     win rate                    67.6%
+//     net                         $9,361
+//     research block              $4,603   ($53.5/trade)
+//     locked block                $4,758   ($89.8/trade)
+//     chosen on                   the research block only; the locked figures were read once
+//
+//   READ THIS BEFORE THE NUMBERS ABOVE. The locked block earns MORE per trade than research. That is the WRONG SHAPE --
+//     an edge decays out of sample, it does not grow. Read the RESEARCH figure as the
+//     forward expectation; the later period was simply kinder to this strategy.
+//
+//   Earlier versions of this header quoted a $1.00 flat-cost model. Those figures were about
+//   4% optimistic and are superseded.
 //     not a flipped V2            V2's own trigger taken long loses $7,717. See STUDY_V2_LONG.md
 //
 // THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
