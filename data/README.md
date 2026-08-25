@@ -79,3 +79,16 @@ the sample, where the adjustment is smallest — so the locked-block dollar figu
 ones every conclusion rests on, are the least exposed of any number here.
 
 Resolving it needs the raw contract-by-contract file, which is not in this repository.
+
+## US100_15m.csv — a non-canonical file, kept as delivered
+
+The US100 15-minute file does **not** use the canonical format above and is deliberately not
+converted, so it stays byte-identical to what was delivered. It is tab-separated, headed
+`DateTime Open High Low Close Volume TickVolume`, stamped `YYYY.MM.DD HH:MM:SS`, sorted
+**descending**, and its clock is **New York + 7 hours** — an offset that is stable across DST, so
+a fixed −7h shift is right year round. `Volume` is all zeros; `TickVolume` is the usable one.
+`research/us100.py` handles all of that; nothing else should parse this file directly.
+
+Keep it at `data/US100_15m.csv`. It arrives by upload, and an upload directory is not durable —
+it has been cleared mid-study once already, which is why `us100.find_raw()` searches several
+locations and why this path is the one to restore it to.

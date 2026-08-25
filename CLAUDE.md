@@ -191,6 +191,22 @@ is essentially UNCHANGED from the overlap (+8.4, +7.8). RW, M4 and M1 fail, M4 f
 and M1 +8.2 -> +1.2. The two that survive are the MEAN-REVERSION and COUNTER-TREND legs, which is
 the same story trend-following has told all along here.
 
+**A second instrument on the SAME INDEX over the SAME CALENDAR is not a second test.** US100
+2023-2025 gave the long-only trend rule +10.9 excess at p 0.0011 and it meant nothing: **68% of
+NQ's triggers fire on the EXACT SAME 15-minute bar on US100** (79% within +-2 bars). It is the
+same trades on a second data feed. Only US100 BEFORE 2022-12-26 is an independent test of anything
+selected on NQ. `trend_long_xmkt.overlap()` measures this; run it before believing a cross-
+instrument confirmation. See `docs/ib/STUDY_TREND_LONG.md`.
+
+**A minute-of-day matched control is not VOLATILITY-matched, and an ADX filter exploits that.**
+Swept on US100's unseen years the rule's excess climbed monotonically with ADX -- +2.2, +4.6,
++8.3, +10.6, +10.6 at 22/25/28/30/35, dollar excess to +$19.67 -- because the filter concentrates
+trades in high-ATR bars while the control draws average-ATR bars at the same minutes, and a fixed
+round turn is a smaller fraction of a wider barrier. Against the harder null -- **the REGIME
+BASELINE, entering every eligible bar the regime admits** -- the same gradient adds +$15.50/trade
+on US100's unseen years and **subtracts $29.65 on NQ's holdout**. It inverts hardest where it
+looked best. Score a regime filter against the regime, not against the clock.
+
 **NQ does not lead US100.** corr(NQ at t-k, US100 at t) is a clean spike at k=0 (0.8815) with
 -0.022/+0.044/-0.015/+0.010 either side. At 15m the transfer is complete inside the bar.
 
@@ -241,6 +257,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
 | `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |
 | `research/us100.py` | the second instrument: audit, NY timezone, NQ alignment, unseen split |
+| `research/trend_long.py`, `trend_long_xmkt.py` | the long-only regime battery, and it on NQ + US100 with the overlap measured |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
