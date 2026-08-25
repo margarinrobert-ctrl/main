@@ -66,9 +66,18 @@ strategy("HP MA(1,2) low-frequency momentum | lambda 100 | MEASURED NEGATIVE", o
 W      = input.int(100, "HP window (bars re-solved each bar)", minval = 20, maxval = 300,
      group = "Filter", tooltip = "The trailing window the filter is re-solved over. 60 to 200 " +
      "changes the result by under $400 on the measured sample; it is not a tuning knob.")
-lam    = input.float(100.0, "lambda", minval = 0.1, step = 10.0, group = "Filter",
-     tooltip = "Hodrick and Prescott's own daily-data suggestion via the note is 100. Larger " +
-     "lambda gives a smoother trend and fewer turns.")
+lam    = input.float(100.0, "lambda (HP / L2 penalty -- NOT an EWMA lambda)", minval = 0.1,
+     step = 10.0, group = "Filter",
+     tooltip = "SCALE WARNING. This lambda weights the SQUARED SECOND DIFFERENCE in the HP " +
+     "objective, so it lives in (0, infinity) -- NOT the 0..1 of an EWMA lambda and not the " +
+     "lambda/lambda_max of an L1 trend filter. Typical values are 100 (the note's choice), " +
+     "1600 (quarterly) and 129600 (monthly). Setting it to 0.95 does almost nothing: measured " +
+     "on 30m MNQ the trend still tracks price to within 0.46 of one bar-move and reverses " +
+     "direction on 20% of bars, against 0.95 and 6% at lambda=100.\n\n" +
+     "Timescale, via the half-power cutoff 4*lambda*(1-cos w)^2 = 1:\n" +
+     "  lambda 1 -> 6 bars   10 -> 11   100 -> 20   1600 -> 40   129600 -> 119\n" +
+     "An EMA matched to the same cutoff is much shorter (lambda 100 <-> EMA 6) because the HP " +
+     "gain rolls off far more sharply, so the two are not interchangeable.")
 allowLong  = input.bool(true,  "Allow longs",  group = "Direction")
 allowShort = input.bool(true,  "Allow shorts", group = "Direction")
 
