@@ -166,6 +166,21 @@ zero, so they are extrapolators, not lagging averages, and cannot be lag-matched
 group (they ARE a real separate axis); and KAMA's lag is 1.25 regardless of window, so its period
 is INERT on a trending series. `research/ma_lag.py`. See `docs/ib/STUDY_MA_LAG.md`.
 
+**Eight conditions in the pool are literally duplicates, and three pairs are a theorem.**
+Zakamulin Part 4: every MA timing rule is a weighted average of price CHANGES, so rules whose
+change-weighting coincides are one rule with two names. Verified EXACT here, 0 disagreements in
+35,471 bars at every window: SMA change of direction == Momentum(n); LMA(n-1) change == Price-SMA(n)
+(the n-1 is the article's convention -- at LMA(n) it is 97-99.7%, an off-by-one masquerading as
+"approximately true"); EMA change == Price-EMA(n), because both are positive multiples of
+(P_t - EMA_{t-1}). Auditing our own pools found that third identity sitting there as six separate
+conditions: `close>EMA20 == EMA20 rising`, and the same for 50 and 200, plus Stoch K<20 ==
+Williams%R<-80 and Donchian/ROC naming duplicates. factory 115 -> 107 effective, ladder 198 -> 184;
+a 3-condition search overstates its configuration count ~24%. The direction is CONSERVATIVE (a
+Bonferroni threshold only gets stricter) so nothing published needs revising, and none of the nine
+shipped rules contains a duplicate pair -- but a drop-one test on a rule that did would report a
+condition contributing nothing when it was never a second condition. `ma_lag.pool_duplicates()`.
+See `docs/ib/STUDY_RULE_ANATOMY.md`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the

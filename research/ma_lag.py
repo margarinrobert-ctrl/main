@@ -174,3 +174,65 @@ def turning_point_delay(seg=60):
         print(f"    {k:<8}{n:>5}{lag_of(FAMILY[k], n):>10.2f}{at:>19}{at-peak:>8}")
     print("    (all three carry the same AVERAGE LAG of 5, yet the turn delays differ --")
     print("     which is the article's closing point: average lag does not predict turn delay)")
+
+
+# ================================================================= rule equivalences (Part 4)
+def rule_identities(tf=30, windows=(10, 20, 30, 50, 100)):
+    """Zakamulin Part 4 claims three trading rules are the SAME rule. Tested as sign agreement.
+
+    Every technical timing rule can be written as a weighted moving average of price CHANGES, so
+    two rules whose change-weighting functions coincide are one rule wearing two names. The
+    n-1 window on the change-of-direction side is the article's own convention, and it is what
+    makes the second identity exact rather than merely close.
+    """
+    from oner_union import bars
+    c = bars(tf)["c"]
+    print(f"--- rule identities, {tf}m closes, sign agreement bar by bar ---")
+    print(f"    {'n':>5}{'identity':<48}{'bars':>9}{'disagree':>10}")
+    for n in windows:
+        sma, ema = I.sma(c, n), I.ema(c, n)
+        lma1 = I.wma(c, n - 1)
+        for lab, a, b in (
+                ("SMA(n) change of direction == Momentum(n)",
+                 np.sign(sma - I.shift(sma)), np.sign(c - I.shift(c, n))),
+                ("LMA(n-1) change of direction == Price - SMA(n)",
+                 np.sign(lma1 - I.shift(lma1)), np.sign(c - sma)),
+                ("EMA(n) change of direction == Price - EMA(n)",
+                 np.sign(ema - I.shift(ema)), np.sign(c - ema))):
+            k = ~(np.isnan(a) | np.isnan(b)); k[:250] = False
+            print(f"    {n:>5}{lab:<48}{k.sum():>9}{int((a[k]!=b[k]).sum()):>10}")
+
+
+def pool_duplicates(tf=30, pool="ladder", near=0.99, verbose=True):
+    """Which conditions in the search pool are provably the same condition?
+
+    A duplicate pair costs twice: it makes a two-condition rule look like a three-condition one,
+    and it makes a search count hypotheses it does not have. The inflation is CONSERVATIVE for
+    p-values -- an overstated configuration count only makes the Bonferroni threshold stricter --
+    but it is wrong, and a drop-one test on a rule containing a duplicate will report a condition
+    contributing nothing when the truth is that it was never a second condition.
+    """
+    from test_suite import bars_for, use_pool
+    use_pool(pool)
+    _d, names, M = bars_for(tf)
+    v = np.asarray(M)[:, 300:]
+    n = len(names)
+    dup, close = [], []
+    for i in range(n):
+        for j in range(i + 1, n):
+            a = float((v[i] == v[j]).mean())
+            if a == 1.0:
+                dup.append((names[i], names[j]))
+            elif a > near:
+                close.append((names[i], names[j], a))
+    if verbose:
+        print(f"\n--- pool {pool!r}: {n} conditions, {v.shape[1]:,} bars ---")
+        print(f"    IDENTICAL pairs: {len(dup)}")
+        for a, b in dup:
+            print(f"      {a:<28} == {b}")
+        print(f"    >{100*near:.0f}% agreement: {len(close)}")
+        eff = n - len(dup)
+        print(f"    {n} nominal -> {eff} effective conditions ({100*(1-eff/n):.1f}% inflated); "
+              f"a 3-condition search overstates its configuration count by "
+              f"{((n/eff)**3-1)*100:.1f}%")
+    return dup, close
