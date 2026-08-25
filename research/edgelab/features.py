@@ -197,10 +197,12 @@ def _session(d, atr):
     ondf = pd.DataFrame({"onh": onh, "onl": onl, "ono": ono, "onc": onc})
     key = (df.index + pd.Timedelta(hours=6)).normalize()
     jo = ondf.reindex(key).to_numpy()
-    # The overnight aggregate is only COMPLETE once the window opens at 07:00. Read earlier, its
-    # high/low/last-close include bars still in the future -- the truncation audit catches this.
-    # NaN before 07:00 rather than a leaky value; nothing here trades before then anyway.
-    done = mod >= 420
+    # The overnight aggregate is complete only BETWEEN 07:00 and 18:00. Before 07:00 it is still
+    # forming; from 18:00 the NEXT overnight has already begun, and a bar inside it reads its own
+    # group's running high/low/last-close -- which is future data. An earlier version masked only
+    # `mod >= 420` and therefore leaked on every evening bar; the truncation audit caught it on
+    # US30 at bars stamped 18:30-23:15. NaN outside the complete window rather than a leaky value.
+    done = (mod >= 420) & (mod < 1080)
     with np.errstate(divide="ignore", invalid="ignore"):
         F["dist_onh_atr"] = np.where(done, (c - jo[:, 0]) / atr, np.nan)
         F["dist_onl_atr"] = np.where(done, (c - jo[:, 1]) / atr, np.nan)
