@@ -9,7 +9,39 @@ Everything runs locally. The application makes **no network requests of any
 kind**, collects no telemetry, and stores your data, strategies and results only
 in a workspace folder on your own machine.
 
-![The main chart with candles, indicator overlays, trade markers and the volume panel](docs/images/chart.png)
+![The main window after a run: candles with indicator overlays and trade markers, statistics on the right, the trade blotter below](docs/images/app_main.png)
+
+<details>
+<summary>More screenshots</summary>
+
+**Comparing two saved runs** — equity curves indexed to 100 at the first common
+bar, drawdowns beneath, and a metric matrix with the best value in each row
+highlighted.
+
+![Comparison view](docs/images/app_comparison.png)
+
+**Importing a CSV** — the raw rows the parser sees, a column mapping guessed
+from the file, and a Validate button that names the row and column when
+something is wrong.
+
+![Import wizard](docs/images/import_wizard.png)
+
+**Building a strategy** — a rule tree of nested AND/OR groups, an editor for the
+selected node, and the rule rendered back into English underneath.
+
+![Strategy editor](docs/images/strategy_editor.png)
+
+**Optimising** — a heat map over two parameters, with a robustness column and a
+note that says plainly whether the winner sits on a plateau or a spike.
+
+![Optimiser](docs/images/optimizer.png)
+
+**The exported HTML report** — one self-contained file, charts drawn as inline
+SVG, no external assets and no network requests.
+
+![HTML report](docs/images/report_top.png)
+
+</details>
 
 ---
 

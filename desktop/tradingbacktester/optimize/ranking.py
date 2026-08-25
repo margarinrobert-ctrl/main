@@ -122,8 +122,15 @@ def _sort_value(row: OptimizationRow, metric: str, maximise: bool) -> float:
 
 
 def rank(results: OptimizationResults, metric: str, minimum_trades: int = 0,
-         maximise: bool = True) -> list[OptimizationRow]:
+         maximise: bool | None = None) -> list[OptimizationRow]:
     """Rows sorted best-first by ``metric``.
+
+    ``maximise`` defaults to the metric's own direction, so ranking by
+    ``max_drawdown_pct`` puts the *shallowest* drawdown first.  Defaulting to
+    True instead would have every drawdown ranking silently inverted -- the
+    worst result presented as the best -- which is the kind of mistake nobody
+    notices until they have traded it.  Pass the flag explicitly only to
+    override that.
 
     Rows that failed, rows whose metric is missing, and rows with fewer than
     ``minimum_trades`` trades are excluded rather than sorted to the bottom: a
@@ -133,6 +140,8 @@ def rank(results: OptimizationResults, metric: str, minimum_trades: int = 0,
     Ties are broken by trade count (more trades is more evidence) and then by
     grid position, so the ordering is stable between runs.
     """
+    if maximise is None:
+        maximise = default_maximise(metric)
     keep: list[OptimizationRow] = []
     for row in results.rows:
         if not row.ok:

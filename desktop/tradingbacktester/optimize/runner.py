@@ -26,6 +26,8 @@ from __future__ import annotations
 import concurrent.futures
 import math
 import os
+import sys
+import threading
 import time
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -66,6 +68,11 @@ CancelFn = Callable[[], bool]
 #: worker processes and shipping the bars to them is seconds of work, and a
 #: handful of backtests is usually less than that.
 MIN_COMBINATIONS_FOR_POOL = 6
+
+#: Seconds to wait for the first worker process to answer before giving up on
+#: processes.  Spawning a child that imports NumPy and pandas is not instant,
+#: but it is not thirty seconds either.
+POOL_STARTUP_TIMEOUT = 30.0
 
 #: Hard ceiling on worker processes.  More than this and the memory cost of one
 #: copy of the bar series per worker starts to matter on an ordinary desktop.
@@ -554,6 +561,11 @@ class OptimizationRunner:
         True when processes turned out to be unusable, which is the caller's cue
         to finish the job on threads.
         """
+        if not spawn_can_reimport_main():
+            log.info("This process has no importable __main__, so spawned workers "
+                     "cannot start; running the sweep on threads instead.")
+            return jobs, False, True
+
         context = _start_context()
         try:
             executor = ProcessPoolExecutor(
@@ -563,6 +575,13 @@ class OptimizationRunner:
         except (OSError, ValueError, ImportError, RuntimeError,
                 NotImplementedError) as exc:
             log.warning("Could not start worker processes (%r); using threads.", exc)
+            return jobs, False, True
+
+        if not _probe_pool(executor, POOL_STARTUP_TIMEOUT):
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except Exception:             # pragma: no cover - best effort
+                pass
             return jobs, False, True
         try:
             with executor:
@@ -662,6 +681,67 @@ class OptimizationRunner:
         for future in list(futures):
             future.cancel()
         futures.clear()
+
+
+def spawn_can_reimport_main() -> bool:
+    """Can a spawned child re-import ``__main__``?
+
+    ``spawn`` starts a child by re-importing the parent's ``__main__`` module.
+    When the program was started from stdin, from ``-c``, or from an embedded
+    interpreter, there is no file to import: the child dies with
+    ``FileNotFoundError`` and the parent blocks forever inside ``submit`` waiting
+    for a worker that will never arrive.  A hung Optimise dialog with a dead
+    Cancel button is far worse than a slower thread pool, so this is checked
+    before a pool is created rather than discovered afterwards.
+    """
+    main = sys.modules.get("__main__")
+    if main is None:
+        return False
+    if getattr(main, "__spec__", None) is not None:
+        return True                       # started with -m, always re-importable
+    path = getattr(main, "__file__", None)
+    if not path:
+        return False                      # interactive, -c, or stdin
+    try:
+        return os.path.isfile(path)
+    except (OSError, TypeError):          # pragma: no cover - defensive
+        return False
+
+
+def _probe_pool(executor: Any, timeout: float) -> bool:
+    """Confirm the pool can actually run something, within ``timeout`` seconds.
+
+    ``ProcessPoolExecutor`` starts its workers lazily inside ``submit``, so a
+    pool that cannot start does not fail until the first job -- and it fails by
+    blocking.  The probe therefore runs on a daemon thread: if it has not come
+    back in time the pool is abandoned rather than waited on, and the caller
+    falls back to threads.
+    """
+    outcome: dict[str, Any] = {}
+
+    def attempt() -> None:
+        try:
+            outcome["value"] = executor.submit(_worker_alive).result(timeout)
+        except BaseException as exc:      # noqa: BLE001 - any failure means "no"
+            outcome["error"] = exc
+
+    thread = threading.Thread(target=attempt, name="pool-probe", daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        log.warning("The worker pool did not start within %.1fs; using threads.",
+                    timeout)
+        return False
+    if "error" in outcome:
+        log.warning("The worker pool failed its start-up check (%r); using threads.",
+                    outcome["error"])
+        return False
+    return outcome.get("value") is True
+
+
+def _worker_alive() -> bool:
+    """Trivial task used to prove a worker process is running."""
+    return True
 
 
 def _start_context() -> Any:

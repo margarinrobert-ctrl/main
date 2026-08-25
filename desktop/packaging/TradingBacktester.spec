@@ -17,6 +17,7 @@ from PyInstaller.utils.hooks import collect_submodules
 
 SPEC_DIR = Path(SPECPATH).resolve()
 ROOT = SPEC_DIR.parent
+IS_WINDOWS = sys.platform.startswith("win")
 
 block_cipher = None
 
@@ -41,7 +42,19 @@ EXCLUDED_OTHER = [
     "tkinter", "matplotlib", "IPython", "notebook", "jupyter", "scipy",
     "sklearn", "torch", "PyQt5", "PyQt6", "PIL.ImageQt", "setuptools._distutils",
     "pytest", "_pytest", "sphinx", "numpy.f2py", "numpy.distutils",
+    # Only things nothing in the dependency graph reaches for.  Trimming
+    # pandas' own subpackages looks tempting and is not safe: excluding
+    # pandas._testing drops pandas._config.localization with it and pandas then
+    # fails to import inside the bundle.  The frozen self-test caught that;
+    # leave this list conservative.
+    "pydoc_data", "lib2to3", "idlelib", "turtledemo", "ensurepip",
 ]
+
+# What is left is Qt's core/gui/widgets libraries, NumPy's bundled BLAS and
+# pandas.  None of the three is optional for an application that draws charts
+# and does array maths, so a bundle of this size is the floor rather than a sign
+# that something went wrong.  Measured on Linux with this spec: about 250 MB on
+# disk unpacked; the Inno Setup installer compresses it substantially.
 
 hidden = [
     # pandas resolves these lazily, so the analyser cannot see them.
@@ -97,9 +110,14 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=str(ROOT / "assets" / "app.ico") if (ROOT / "assets" / "app.ico").exists() else None,
-    version=str(SPEC_DIR / "version_info.txt")
-    if (SPEC_DIR / "version_info.txt").exists() else None,
+    # The icon and the version resource are Windows-only concepts.  Guarding
+    # them keeps the spec runnable on Linux and macOS, which is how it gets
+    # exercised before it ever reaches a Windows runner -- and a spec that only
+    # parses on the target platform is a spec nobody tests.
+    icon=(str(ROOT / "assets" / "app.ico")
+          if IS_WINDOWS and (ROOT / "assets" / "app.ico").exists() else None),
+    version=(str(SPEC_DIR / "version_info.txt")
+             if IS_WINDOWS and (SPEC_DIR / "version_info.txt").exists() else None),
 )
 
 coll = COLLECT(

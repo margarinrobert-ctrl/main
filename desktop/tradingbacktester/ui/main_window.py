@@ -684,9 +684,31 @@ class MainWindow(QMainWindow):
         self.settings.last_strategy = strategy_id
         self.settings.save()
         self.strategy_panel.set_spec(spec)
-        self.risk_panel.apply_config(self._config_from_spec(spec))
+        self._apply_strategy_config(spec)
         self._show_strategy_indicators()
         self._update_actions()
+
+    def _apply_strategy_config(self, spec: StrategySpec) -> None:
+        """Load the strategy's own risk and cost settings into the panel.
+
+        With one exception: a strategy that carries no cost model at all -- as
+        every built-in one does, because costs depend on the instrument and the
+        broker, not on the rules -- must not wipe the costs the user has set.
+        Silently zeroing commission and spread when someone switches strategy
+        would make every subsequent run look better for no reason, which is
+        exactly the kind of quiet flattery this application is built to avoid.
+        """
+        config = self._config_from_spec(spec)
+        if _costs_are_empty(spec.costs):
+            try:
+                config.costs = self.risk_panel.build_config().costs
+                if not _costs_are_empty(config.costs):
+                    self.status(
+                        f"'{spec.name}' carries no cost model, so the commission, "
+                        f"spread and slippage already set have been kept.")
+            except BacktesterError:
+                pass
+        self.risk_panel.apply_config(config)
 
     def _config_from_spec(self, spec: StrategySpec) -> Any:
         from ..core.types import BacktestConfig
@@ -1346,6 +1368,14 @@ class MainWindow(QMainWindow):
 def _slug(text: str) -> str:
     keep = [c if c.isalnum() or c in "-_" else "_" for c in (text or "backtest")]
     return "".join(keep).strip("_")[:60] or "backtest"
+
+
+def _costs_are_empty(costs: Any) -> bool:
+    """True when a cost model charges nothing at all."""
+    return (float(getattr(costs, "commission_value", 0.0) or 0.0) == 0.0
+            and float(getattr(costs, "min_commission", 0.0) or 0.0) == 0.0
+            and float(getattr(costs, "spread_points", 0.0) or 0.0) == 0.0
+            and float(getattr(costs, "slippage_value", 0.0) or 0.0) == 0.0)
 
 
 def _symbol_from_sample_name(stem: str) -> str:
