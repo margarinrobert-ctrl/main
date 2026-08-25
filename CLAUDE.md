@@ -191,6 +191,32 @@ is essentially UNCHANGED from the overlap (+8.4, +7.8). RW, M4 and M1 fail, M4 f
 and M1 +8.2 -> +1.2. The two that survive are the MEAN-REVERSION and COUNTER-TREND legs, which is
 the same story trend-following has told all along here.
 
+**THE ENTRY MECHANIC IS WORTH TEN TIMES THE ENTRY SIGNAL, and it is MEAN REVERSION.** 293,760
+ATME evaluations, four markets. Isolating the mechanic by re-running the same configuration as a
+market order: a resting limit 1.0xATR below is worth **+0.24 to +0.43 R/trade**, against a
+best-ever SIGNAL on this branch of +0.043 R. Every market is negative as a market order. And the
+response is a monotone MIRROR IMAGE on all four markets: buying dips improves as the limit gets
+deeper (-0.074 -> -0.051 NQ, -0.130 -> -0.062 US100), while buying strength via a STOP entry
+degrades as it gets further (-0.111 -> -0.204 NQ, -0.137 -> -0.279 US100). **Chasing a breakout is
+the single most reliably destructive choice in the whole search.** `research/atme/`.
+
+**THE COST OF THE LIMIT MECHANIC IS THE FILL RATE: about two thirds of signals never trade** (35%
+fill at 1.0xATR). That is why it cannot be bolted onto a signal whose edge is immediacy -- the
+`STUDY_LIMIT_ENTRY.md` finding, now confirmed from the other direction: it is ADDITIVE on a null
+signal and SUBSTITUTIVE on a good one.
+
+**STILL 0 OF 64,800 CONFIGURATIONS ARE PROFITABLE ON ALL FOUR MARKETS** (279 reach three). The
+three indices hold out of sample at PF 1.68-2.03 with P(edge<=0) 0.0% over 6,585 trades; XAUUSD
+fails at P(edge<=0) 99.9%. And two of the three die at 2x the assumed spread, which is inside the
+error bar of an assumption -- bid/ask is unavailable in all four feeds.
+
+**CHECK CONCURRENCY BEFORE CALLING AN EVERY-BAR CONFIGURATION A STRATEGY.** An entry on every bar
+can silently be a portfolio of dozens of overlapping positions. Measured here: median 1 concurrent
+position, max 3, because a 35% fill rate and short holds keep it there. It was checked, not assumed.
+
+**FIVE TREND-FOLLOWING BRIEFS HAVE NOW RESOLVED INTO MEAN REVERSION.** Build the next hypothesis on
+that rather than against it.
+
 **A HYPOTHESIS COUNT IS NOT A DIVERSIFICATION COUNT.** Eight breakout hypotheses on US30: H1
 Donchian, H6 MTF-aligned and H7 participation-confirmed correlate **0.87-0.96** in daily strategy
 returns -- adding an MTF or volume filter to a breakout does not make a new strategy, it makes the
@@ -407,6 +433,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/turtle/` | Turtle long-only, verified against a literal transliteration; random-entry control, ~100k sweep, entry gating |
 | `research/scalp/` | intraday trend-following scalp on US30/US100/NQ: chop regime measures, cross-market, frozen rule |
 | `research/hypo/` | the eight-hypothesis programme: library with rationales, full metric suite, robustness score, portfolio correlation |
+| `research/atme/` | adaptive trade management: entry mechanics, trailing/breakeven stops, partials, mechanic isolation |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
