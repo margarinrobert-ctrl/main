@@ -20,6 +20,13 @@ import us100
 from alpha_factory2 import price_one, sweep
 from alpha_ladder import build_ladder
 
+# CLAUDE.md: "Ban calendar conditions from rule search. Weekday and month conditions partition the
+# sample five or twelve ways and hand the search a free lottery. Removing them was worth $8,771 on
+# the holdout." The first run of this module did NOT exclude them and the damage was immediately
+# visible: "Fri" appeared 878 times in the top 10,000 by research, and the sixth-best rule overall
+# (outside bar AND last hour AND Fri) made $90.0/trade on research and LOST $110.9 on the holdout.
+CALENDAR = {"Mon", "Tue", "Wed", "Thu", "Fri", "first half of month", "month end (last 3d)"}
+
 # a deliberately small geometry set -- the point of this run is CONDITIONS, and every extra
 # geometry multiplies the multiplicity that every p-value here has to pay for
 EXITS = [(2.0, 1.0, 960), (3.0, 1.0, 960), (4.0, 1.0, 960), (2.5, 1.0, 0)]
@@ -31,6 +38,10 @@ def run(tf=30, max_k=3, out="/tmp/us100_search.npz"):
     d = us100.to_bars(tf)
     names, M = build_ladder(d)
     M = np.asarray(M)
+    keep = [i for i, n in enumerate(names) if str(n) not in CALENDAR]
+    dropped = len(names) - len(keep)
+    names = [names[i] for i in keep]; M = M[keep]
+    print(f"dropped {dropped} calendar conditions before searching")
     nbars = M.shape[1]
     idx = d["df"].index
     print(f"{len(names)} conditions on {nbars:,} US100 {tf}m bars")
