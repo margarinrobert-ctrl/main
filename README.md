@@ -248,6 +248,24 @@ the Pine export recompute for the chosen expiration; axis views (heatmap / term 
 
 ---
 
+## Standalone Pine scripts
+
+Copy-paste TradingView scripts that stand on their own — no site, no API key.
+
+| File | Type | What it does |
+|------|------|--------------|
+| `GEXLevels.pine` | indicator | Canonical template for the per-ticker GEX level export above |
+| `MeanReversionMulti.pine` | indicator | Session VWAP + σ bands, volume profile, RSI/ADX/ATR, CVD |
+| `DivergencePlusCVDAbsorption.pine` | indicator | Divergence scanner with CVD absorption confirmation |
+| `ICTSweepRejectionBlock.pine` | **strategy** | ICT liquidity-sweep → rejection-block model for `NQ1!` — see [docs/ICT_SWEEP_REJECTION_BLOCK.md](docs/ICT_SWEEP_REJECTION_BLOCK.md) |
+
+`ICTSweepRejectionBlock.pine` is a backtestable strategy: it maps liquidity pools and HTF PD arrays,
+requires a sweep that *rejects* the level, waits for a market-structure shift with displacement, enters
+on the retracement into the resulting order block / rejection block, stops beyond the rejection block's
+wick tip and targets resting liquidity — taking only setups that pay ≥ 2R.
+
+---
+
 ## Project layout
 
 ```
