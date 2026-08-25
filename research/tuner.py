@@ -538,7 +538,7 @@ class Tensor:
     """Exit outcomes for a geometry grid, built once and reused for every rule."""
 
     def __init__(self, tf, side, stops, targets, flats=(0,), holds=(0,), atr_n=14,
-                 entry=Entry(), only=None, verbose=False):
+                 entry=Entry(), only=None, verbose=False, stop_series=None, tag=""):
         d = bars(tf)
         self.tf = tf; self.side = int(side); self.d = d; self.entry = entry; self.atr_n = atr_n
         self.stops = np.asarray(stops, float); self.targets = np.asarray(targets, float)
@@ -551,7 +551,15 @@ class Tensor:
         self.ng = len(self.gs)
         self.only = (np.ones(d["n"], bool) if only is None else np.asarray(only, bool))
         n = d["n"]
-        atr_s = _stop_atr(d, atr_n)
+        # The unit the stop is measured in. Normally ATR, so a geometry's `stop` is an ATR
+        # multiple. `stop_series` replaces that unit with an arbitrary per-bar distance -- the gap
+        # to a moving average, a swing low, anything -- and then a `stop` of 1.0 means "exactly
+        # that distance" and the target stays a multiple of the realised risk. That is what makes
+        # a 50-EMA stop testable on the same footing as an ATR stop, rather than approximated.
+        atr_s = _stop_atr(d, atr_n) if stop_series is None else np.ascontiguousarray(
+            np.asarray(stop_series, float))
+        if stop_series is not None and len(atr_s) != d["n"]:
+            raise ValueError(f"stop_series has {len(atr_s)} values, bars have {d['n']}")
         atr_l = _stop_atr(d, entry.atr_lim)
         self.fbar = np.empty(n, np.int64); self.fpx = np.zeros(n, float)
         t0 = time.time()
@@ -605,15 +613,20 @@ _TENSORS: dict = {}
 
 
 def tensor(tf, side, stops, targets, flats=(0,), holds=(0,), atr_n=14, entry=Entry(),
-           only=None, verbose=False):
+           only=None, verbose=False, stop_series=None, tag=""):
+    """`tag` names a custom `stop_series` for the cache key -- two different stop definitions must
+    not collide on it, and hashing a million-element float array on every call would cost more than
+    the tensor it is protecting."""
+    if stop_series is not None and not tag:
+        raise ValueError("a custom stop_series needs a `tag` so the tensor cache can tell them apart")
     key = (tf, int(side), tuple(np.atleast_1d(stops).tolist()),
            tuple(np.atleast_1d(targets).tolist()),
            tuple(str(f) for f in np.atleast_1d(flats).tolist()),
-           tuple(np.atleast_1d(holds).tolist()), int(atr_n), entry,
+           tuple(np.atleast_1d(holds).tolist()), int(atr_n), entry, tag,
            None if only is None else hashlib.md5(np.asarray(only, bool)).hexdigest())
     if key not in _TENSORS:
         _TENSORS[key] = Tensor(tf, side, stops, targets, flats, holds, atr_n, entry,
-                               only, verbose)
+                               only, verbose, stop_series, tag)
     return _TENSORS[key]
 
 
