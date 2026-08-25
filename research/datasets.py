@@ -178,6 +178,38 @@ REGISTRY = {
         extras=dict(spread_units="5th-decimal points; 10 points = 1 pip",
                     usable_years="all except 2017, 2020, 2021, 2022 (>20% zeros); "
                                  "190,319 of 230,400 bars = 82.6%")),
+    "BTC_15m": Dataset(
+        key="BTC_15m", instrument="BTC", timeframe_min=15, restore_to="data/BTC_15m.csv",
+        rows=295_882, span="2017-12-31 19:00 -> 2026-06-15 19:15 New York",
+        bytes=44860708, sha256_16="94ebac4008268627",
+        fmt="comma-separated, a raw BINANCE KLINES dump",
+        columns="Open time, Open, High, Low, Close, Volume, Close time, Quote asset volume, "
+                "Number of trades, TAKER BUY BASE ASSET VOLUME, Taker buy quote asset volume, "
+                "Ignore. Timestamps carry six decimals AND TRAILING WHITESPACE; `Ignore` is "
+                "Binance's documented placeholder and is all zeros.",
+        order="ascending",
+        clock="UTC -- and this is the ONLY feed here where a CONSTANT SHIFT IS WRONG. Every other "
+              "file is a broker export whose server follows US daylight saving, so a fixed -7h "
+              "held year round. Measured against US30, winter prefers -5h (corr 0.1289) and "
+              "summer -4h (0.1625): they disagree by exactly one hour, the DST signature. A true "
+              "UTC -> America/New_York conversion scores each season's own best and 0.1337 pooled, "
+              "against 0.0908 for the best single shift. The loader CONVERTS; the fall-back hour's "
+              "duplicate local timestamps are dropped.",
+        volume="real base-asset volume, plus `Number of trades` (median 10,986) and TAKER BUY "
+               "volume -- an ACTUAL order-flow imbalance rather than the proxy `features3.py` had "
+               "to construct. Taker-buy share centres at 0.4965 mean / 0.4967 median.",
+        defects="THE FINAL ROW IS MALFORMED -- both timestamps empty, OHLCV present -- and is "
+                "dropped; 2 duplicate timestamps dropped. 14 bars have zero volume, zero trades "
+                "and zero range together, which is an exchange outage, not a quiet market. "
+                "0 OHLC violations, 0 non-positive, 39 non-15m gaps (19 over two hours). Note the "
+                "file NAME says 2018-2025 and the data runs to 2026-06-15.",
+        loader="research/edgelab/crypto.py",
+        provenance="user upload, 2026-08-25, as btc_15m_data_2018_to_2025.7z",
+        notes="IT IS 24/7: weekday bar counts run 42,184 to 42,370, flat. Every other instrument "
+              "here has a weekend hole and every session condition on this branch was written "
+              "against one. Correlation with US30 at 15m is only +0.13 -- partially independent, "
+              "well above gold's ~0.06 but far below the indices' 0.68-0.87.",
+        extras=dict(order_flow="taker_share = Taker buy base asset volume / Volume")),
 }
 
 
