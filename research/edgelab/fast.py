@@ -146,3 +146,57 @@ def score_days(P, mask, block, days, day_pools=None, draws=400, min_days=25, see
                 excess_day_R=stat - float(ctrl_stat.mean()),
                 p_day=float((ctrl_stat >= stat).mean()),
                 ambig=100.0 * float(P["ambig"][sel].mean()))
+
+
+# --------------------------------------------------------------- day-block, trade-weighted
+def score_block_bootstrap(P, mask, block, days, day_pools=None, draws=400, min_days=25,
+                          seed=29, rng=None):
+    """Day-BLOCK bootstrap of the TRADE-WEIGHTED mean R -- the statistic that is the economics.
+
+    `score_days` compares the mean of per-day means. That is a valid unit of inference, but it
+    weights a one-trade day equally with a twelve-trade day, and on a trend-following intraday
+    system those are not the same thing: the profitable days are precisely the high-activity
+    trending ones, so a per-day mean can be strongly negative while the account is positive.
+
+    This resamples whole DAYS with all of their trades attached -- so clustering is respected --
+    and computes the trade-weighted mean of the resampled set. The control does the same from
+    random days at matched per-day counts. It answers "does this rule earn more per trade than
+    entering the same number of times on random days", which is the question a trader has.
+    """
+    sel = np.flatnonzero(P["valid"] & np.asarray(mask, bool) & np.asarray(block, bool))
+    if len(sel) < min_days:
+        return None
+    sd = days[sel]
+    uniq, inv = np.unique(sd, return_inverse=True)
+    nd = len(uniq)
+    if nd < min_days:
+        return None
+    R = P["R"][sel]
+    by_day = [R[inv == j] for j in range(nd)]
+    per_day = np.array([len(x) for x in by_day])
+    stat = float(R.mean())
+
+    rng = rng or np.random.default_rng(seed)
+    boot = np.empty(draws)
+    for k in range(draws):
+        pick = rng.integers(0, nd, nd)
+        boot[k] = float(np.concatenate([by_day[j] for j in pick]).mean())
+
+    day_pools = day_pools if day_pools is not None else _day_pools(P, block, days)
+    keys = np.array(list(day_pools.keys()))
+    ctrl = np.empty(draws)
+    for k in range(draws):
+        take = keys[rng.integers(0, len(keys), nd)]
+        parts = []
+        for j, dk in enumerate(take):
+            pool = day_pools[int(dk)]
+            parts.append(pool[rng.integers(0, len(pool), min(per_day[j], len(pool)))])
+        ctrl[k] = float(P["R"][np.concatenate(parts)].mean())
+    return dict(n=len(R), days=nd, expR=stat,
+                boot_p05=float(np.percentile(boot, 5)),
+                boot_p50=float(np.percentile(boot, 50)),
+                boot_p95=float(np.percentile(boot, 95)),
+                p_self_negative=float((boot <= 0).mean()),
+                ctrl_expR=float(ctrl.mean()),
+                excess=stat - float(ctrl.mean()),
+                p_vs_ctrl=float((ctrl >= stat).mean()))

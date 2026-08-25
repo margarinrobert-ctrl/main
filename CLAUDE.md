@@ -191,6 +191,42 @@ is essentially UNCHANGED from the overlap (+8.4, +7.8). RW, M4 and M1 fail, M4 f
 and M1 +8.2 -> +1.2. The two that survive are the MEAN-REVERSION and COUNTER-TREND legs, which is
 the same story trend-following has told all along here.
 
+**THERE IS A THIRD INSTRUMENT NOW, AND IT IS THE FIRST INDEPENDENT ONE.** US30 (Dow), 2.88M
+1-minute bars 2016-10 to 2025-07, `research/edgelab/feeds.py`. 15m return correlation US30/US100
+**0.758** and US30/NQ **0.679** against NQ/US100's **0.874** -- materially more independent than
+the pair this branch already had, with NO lead-lag at any offset (every cross-correlation peaks at
+k=0). Its clock was DERIVED, not inherited from US100: `derive_offset` locates the 09:30 step
+separately in winter and summer and refuses a constant shift if they disagree. Also NY+7.
+
+**TRADE-WEIGHTED AND DAY-WEIGHTED EXPECTANCY DISAGREE IN SIGN ON AN INTRADAY TREND SYSTEM.**
+`day_R` (mean of per-day means) is the right unit of INFERENCE because triggers cluster, but it
+weights a 1-trade day like a 12-trade day -- and a trend follower's profitable days are precisely
+the high-activity ones. The gated breakout scores **positive trade-weighted and strongly negative
+day-weighted**; scoring on `day_R` alone rejects the whole family for the wrong reason. Use
+`fast.score_block_bootstrap`: resample whole DAYS WITH THEIR TRADES ATTACHED, then take the
+trade-weighted mean. Report both.
+
+**CHOP FILTERING GENUINELY RESCUES A BREAKOUT -- and it is worth about +0.05 R, which is not
+enough.** Gating a 20-bar breakout on trend quality lifts US30 5m from **-0.111 to +0.002** in
+07:00-12:00 and -0.008 to +0.038 in 09:30-12:00, MONOTONE in gate strength and on a broad
+robustness plateau (18 of 20 geometry cells positive). It still fails out of sample on US30 and NQ;
+US100 survives at P(edge<=0) 25.8%. The filter closes the cost gap, it does not open one.
+`research/scalp/regime.py` -- eleven causal measures, all oriented higher = trending.
+
+**ADX AND THE EFFICIENCY RATIO ARE THE SAME FILTER (corr 0.642).** Stacking them cut US30 5m from
++0.0165/+0.0196 alone to +0.0102 together -- sample halved, no information added. A directional
++DI>-DI filter contributed nothing. One chop filter is the whole effect.
+
+**07:00-09:00 IS THE WORST PART OF THE DAY ON ALL THREE INSTRUMENTS** (-0.18 to -0.43 R/trade),
+and 10:00-11:00 is the only positive hour. Third independent confirmation on this branch. 09:00-09:30
+also carries a 6-10% intrabar-ambiguity spike from the pre-open.
+
+**THE OVERNIGHT MASK NEEDS BOTH ENDS.** Masking overnight aggregates to NaN before 07:00 is only
+half the condition: FROM 18:00 THE NEXT OVERNIGHT HAS BEGUN, so an evening bar reads its own
+still-forming group's running high/low/last-close -- future data. The truncation audit caught it on
+US30 at bars stamped 18:30-23:15. Correct window is 07:00-18:00. No published result changed (all
+prior work sits inside 07:00-11:00), but the audit earned its keep again.
+
 **THE RIGHT NULL FOR A BREAKOUT SYSTEM IS THE SAME TRADE MANAGEMENT WITH A RANDOM ENTRY.** Turtle
 (20/55-bar channel, 2xATR stop, 0.5N pyramid to 4 units) earns +0.595 R/trade on US100 240m; the
 identical exits, stop, ladder and costs with a COIN-FLIP entry earn **+0.601**. Excess -0.005,
@@ -314,6 +350,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/trend_long.py`, `trend_long_xmkt.py` | the long-only regime battery, and it on NQ + US100 with the overlap measured |
 | `research/edgelab/` | the US100 morning-session lab: 101 causal features, triple-barrier labels, day-clustered control, purged walk-forward, `run_all.py` |
 | `research/turtle/` | Turtle long-only, verified against a literal transliteration; random-entry control, ~100k sweep, entry gating |
+| `research/scalp/` | intraday trend-following scalp on US30/US100/NQ: chop regime measures, cross-market, frozen rule |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
