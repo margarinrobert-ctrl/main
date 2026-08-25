@@ -191,6 +191,36 @@ is essentially UNCHANGED from the overlap (+8.4, +7.8). RW, M4 and M1 fail, M4 f
 and M1 +8.2 -> +1.2. The two that survive are the MEAN-REVERSION and COUNTER-TREND legs, which is
 the same story trend-following has told all along here.
 
+**A HYPOTHESIS COUNT IS NOT A DIVERSIFICATION COUNT.** Eight breakout hypotheses on US30: H1
+Donchian, H6 MTF-aligned and H7 participation-confirmed correlate **0.87-0.96** in daily strategy
+returns -- adding an MTF or volume filter to a breakout does not make a new strategy, it makes the
+same one with fewer trades. Only the squeeze (0.14-0.39) and prior-session-high (0.17-0.37) are
+distinct. Third time this branch has caught its own pool duplicating (`STUDY_RULE_ANATOMY.md`,
+and ADX/efficiency-ratio at 0.642). Combining the eight took US30 Sharpe from 0.30 to **0.11**.
+
+**THE DIVERSIFICATION IS ACROSS MARKETS, NOT ACROSS INDICATORS -- and it is still small.** Daily
+strategy returns across markets correlate **~0.00** (US30/US100 0.29) even though PRICES correlate
+0.68-0.87, because the trades fire at different moments. But combining the three indices moved
+Sharpe only 0.37 -> **0.38**: return and volatility rose together. Adding gold destroyed it
+(0.38 -> 0.01).
+
+**COMPRESSION SETUPS SELECT THE BARS WHERE COSTS ARE WORST.** The squeeze breakout -- require a
+tight range, then trade its resolution -- was the most promising untested "avoid chop structurally"
+idea and it ranked LAST of eight: **1.2% parameter plateau**, OOS -0.135, PF 0.64. Diagnosis: on
+5-minute bars compression selects LOW-ATR bars, and a low-ATR bar is exactly where a fixed round
+turn is largest relative to the stop. A chop-avoidance setup can be anti-selective on cost.
+
+**THE INTRADAY SCALPING CONSTRAINT IS WHAT FAILS, replicated four times now.** Every positive cell
+across the US100 edge lab, the US30/US100/NQ scalp study, the XAUUSD study and the eight-hypothesis
+programme sits at WIDE stops (3-4xATR) with hour-plus holds. The best surviving candidate -- H5
+break-and-retest, robustness 74/100, +0.0435 R over 845 OOS trades on three indices, P(edge<=0)
+4.2% -- has a 4xATR stop and a four-hour hold. It is not a scalp. Stop asking for one.
+
+**EVERY CANDIDATE ON THIS BRANCH DIES AT 1.5x THE ASSUMED SPREAD.** H5 +0.0207 -> +0.0032, H6
++0.0221 -> +0.0022, all negative at 2x. Bid/ask is unavailable in ALL FOUR feeds, so the spread is
+assumed, not measured -- which means no result here is distinguishable from zero on execution
+grounds. Getting bid/ask data is worth more than any further parameter search.
+
 **XAUUSD IS THE FOURTH INSTRUMENT AND THE ONLY UNCORRELATED ONE.** 5-minute, 2004-2026, 1.44M
 bars, `data/XAUUSD_5m.csv` -- a DIFFERENT export format (semicolon, `Date;OHLC;Volume`, ascending,
 no TickVolume column). Contemporaneous 5m correlation with the indices is only **0.057-0.070**, so
@@ -376,6 +406,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/edgelab/` | the US100 morning-session lab: 101 causal features, triple-barrier labels, day-clustered control, purged walk-forward, `run_all.py` |
 | `research/turtle/` | Turtle long-only, verified against a literal transliteration; random-entry control, ~100k sweep, entry gating |
 | `research/scalp/` | intraday trend-following scalp on US30/US100/NQ: chop regime measures, cross-market, frozen rule |
+| `research/hypo/` | the eight-hypothesis programme: library with rationales, full metric suite, robustness score, portfolio correlation |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
