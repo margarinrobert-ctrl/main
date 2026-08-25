@@ -127,6 +127,44 @@ exitMode  = input.string("Fixed target", "Exit style", options = ["Fixed target"
      "found moving a stop early can damage expectancy, so treat trailing as an experiment.")
 trailStartR = input.float(1.0, "  Trail activates at N x risk", minval = 0.1, step = 0.1, group = "Risk")
 trailOffR   = input.float(0.5, "  Trail distance, N x risk", minval = 0.1, step = 0.1, group = "Risk")
+partPct     = input.float(0.0, "  Take N% off at the partial level (0 = off)", minval = 0.0, maxval = 99.0,
+     step = 5.0, group = "Risk")
+partR       = input.float(1.0, "  Partial level, N x risk", minval = 0.1, step = 0.1, group = "Risk")
+
+// ---- position sizing -----------------------------------------------------------------------
+// Sizing creates no edge -- it is a monotone transform of the same trade sequence -- but it
+// decides survival. Measured on this book: 1% of equity risked per trade is the practical
+// ceiling; at 2% there is a 28% chance of a 30% drawdown and at 4% a coin-flip chance of losing
+// half. See docs/ib/STUDY_PHASE2.md.
+sizeMode = input.string("Fixed contracts", "Position sizing", group = "Sizing",
+     options = ["Fixed contracts", "Percent of equity risked", "Fixed dollars risked"])
+fixedQty = input.float(1.0, "  Contracts", minval = 0.01, step = 1.0, group = "Sizing")
+riskPct  = input.float(0.5, "  Percent of equity risked per trade", minval = 0.01, maxval = 5.0,
+     step = 0.05, group = "Sizing")
+riskUsd  = input.float(250.0, "  Dollars risked per trade", minval = 1.0, step = 25.0, group = "Sizing")
+maxQty   = input.float(50.0, "  Hard cap on contracts", minval = 1.0, step = 1.0, group = "Sizing")
+
+// ---- circuit breakers ----------------------------------------------------------------------
+// A backtest has no bad days it must stop trading through. A live account does.
+maxPerDay  = input.int(0, "Max entries per day (0 = no limit)", minval = 0, group = "Circuit breakers")
+dayLossUsd = input.float(0.0, "Stop for the day after losing $N (0 = off)", minval = 0.0,
+     step = 50.0, group = "Circuit breakers")
+dayGainUsd = input.float(0.0, "Stop for the day after making $N (0 = off)", minval = 0.0,
+     step = 50.0, group = "Circuit breakers",
+     tooltip = "UNMEASURED, and the evidence on this data is that cutting a day short removes " +
+     "winners as readily as losers. Off by default.")
+
+var float dayStartEquity = na
+var int   entriesToday   = 0
+newDay = ta.change(time("D")) != 0
+if newDay
+    dayStartEquity := strategy.equity
+    entriesToday := 0
+dayPnl = strategy.equity - nz(dayStartEquity, strategy.equity)
+lossHalt = dayLossUsd > 0 and dayPnl <= -dayLossUsd
+gainHalt = dayGainUsd > 0 and dayPnl >= dayGainUsd
+countHalt = maxPerDay > 0 and entriesToday >= maxPerDay
+canTrade = not lossHalt and not gainHalt and not countHalt
 
 maStop = maKind == "EMA" ? ta.ema(close, maLen) : ta.sma(close, maLen)
 
@@ -152,7 +190,7 @@ isFlat = strategy.position_size == 0
 // Requiring a confirmed bar means the entry fires at the close and nowhere else, so
 // the result is identical with those boxes on or off. Exits are left tick-sensitive
 // on purpose: a resting stop or target SHOULD fill when price touches it.
-if trig and ready and isFlat and inWindow and barstate.isconfirmed
+if trig and ready and isFlat and inWindow and canTrade and barstate.isconfirmed
     // Stop DISTANCE in price units, by the selected method, computed SEPARATELY for each side.
     // Structural stops are not symmetric: a long's stop belongs below the swing low, a short's
     // above the swing high, and collapsing them to one number puts the short's stop in the wrong
@@ -195,13 +233,36 @@ if trig and ready and isFlat and inWindow and barstate.isconfirmed
     riskS = math.max(math.round(stopS / syminfo.mintick), 1)
     useTarget = exitMode != "Trailing stop"
     useTrail  = exitMode != "Fixed target"
+    // Contracts, by the selected sizing rule. Risk-based sizing divides the dollars at risk by
+    // what one contract loses if the stop is hit -- riskTicks x tick value -- so it adapts to the
+    // stop the method above produced, which is the whole point of sizing off risk rather than
+    // off price.
+    tickUsd = syminfo.pointvalue * syminfo.mintick
+    qtyL = switch sizeMode
+        "Fixed contracts"          => fixedQty
+        "Percent of equity risked" => (strategy.equity * riskPct / 100.0) / math.max(riskL * tickUsd, 1e-9)
+        "Fixed dollars risked"     => riskUsd / math.max(riskL * tickUsd, 1e-9)
+        => fixedQty
+    qtyS = switch sizeMode
+        "Fixed contracts"          => fixedQty
+        "Percent of equity risked" => (strategy.equity * riskPct / 100.0) / math.max(riskS * tickUsd, 1e-9)
+        "Fixed dollars risked"     => riskUsd / math.max(riskS * tickUsd, 1e-9)
+        => fixedQty
+    qtyL := math.min(math.max(math.floor(qtyL), 1), maxQty)
+    qtyS := math.min(math.max(math.floor(qtyS), 1), maxQty)
     if allowLong
-        strategy.entry("L", strategy.long)
+        strategy.entry("L", strategy.long, qty = qtyL)
+        entriesToday += 1
+        if partPct > 0
+            strategy.exit("Lp", "L", qty_percent = partPct, loss = riskL, profit = partR * riskL)
         strategy.exit("Lx", "L", loss = riskL, profit = useTarget ? tpR * riskL : na,
              trail_points = useTrail ? trailStartR * riskL : na,
              trail_offset = useTrail ? trailOffR * riskL : na)
     if allowShort
-        strategy.entry("S", strategy.short)
+        strategy.entry("S", strategy.short, qty = qtyS)
+        entriesToday += 1
+        if partPct > 0
+            strategy.exit("Sp", "S", qty_percent = partPct, loss = riskS, profit = partR * riskS)
         strategy.exit("Sx", "S", loss = riskS, profit = useTarget ? tpR * riskS : na,
              trail_points = useTrail ? trailStartR * riskS : na,
              trail_offset = useTrail ? trailOffR * riskS : na)
