@@ -181,6 +181,27 @@ shipped rules contains a duplicate pair -- but a drop-one test on a rule that di
 condition contributing nothing when it was never a second condition. `ma_lag.pool_duplicates()`.
 See `docs/ib/STUDY_RULE_ANATOMY.md`.
 
+**There is a second instrument now, and two legs survive it.** `research/us100.py` loads a
+US100 15-minute file, 2016-11 to 2025-10, NINE years against NQ's three. Its clock is New York + 7
+and that offset is STABLE across DST (the RTH volume jump sits at 16:30 file time in both Dec-Feb
+and Jun-Aug), so a fixed -7h shift is right year round. US100 before 2022-12-26 is 71,074 30m bars
+nothing here has ever seen -- 2018, COVID, the 2022 bear. Running the shipped legs there unchanged:
+V1 +9.2 excess over base (p 0.0001) and V2L +8.5 (p 0.0050) both PASS at FDR 0.10, and their excess
+is essentially UNCHANGED from the overlap (+8.4, +7.8). RW, M4 and M1 fail, M4 falling +16.7 -> +4.3
+and M1 +8.2 -> +1.2. The two that survive are the MEAN-REVERSION and COUNTER-TREND legs, which is
+the same story trend-following has told all along here.
+
+**NQ does not lead US100.** corr(NQ at t-k, US100 at t) is a clean spike at k=0 (0.8815) with
+-0.022/+0.044/-0.015/+0.010 either side. At 15m the transfer is complete inside the bar.
+
+**OUR NQ PRICE LEVELS ARE SYNTHETIC.** The stored series reads 13,915.8 on 2023-01-10 where the
+real Nasdaq-100 was near 11,100 and US100 reads 11,184.6; the raw CSV carries it, so it is in the
+source. The ratio decays smoothly 1.253 -> 1.036 (median 2 pts/day, ONE jump over 50 pts in three
+years) so it is not roll back-adjustment. RETURNS are usable, LEVELS are not: percent-of-price
+stops and ATR/price ratios are affected, and dollar magnitudes are inflated EARLY in the sample --
+which is the research block, so correcting it makes the grew-on-locked flag larger, not smaller.
+Win rates, R-multiples and ATR-unit measurements are unaffected. See `docs/ib/STUDY_US100.md`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -219,6 +240,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
 | `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
 | `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |
+| `research/us100.py` | the second instrument: audit, NY timezone, NQ alignment, unseen split |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
