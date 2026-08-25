@@ -446,6 +446,31 @@ filter. The qualification: V1's excess is positive in ALL FOUR EURUSD sub-period
 only in the last two, and its P&L splits 57/43 between the barrier pair and the time exit. See
 `docs/ib/STUDY_EURUSD_LEGS.md`.
 
+**THERE IS A SIXTH INSTRUMENT, AND IT IS THE FIRST WHOSE CLOCK IS NOT A FIXED OFFSET.** BTCUSDT
+15-minute, 295,882 bars 2017-12-31 to 2026-06-15, raw Binance klines (a SIXTH export format). Every
+other feed here is a broker server that FOLLOWS US daylight saving, which is why -7h held year
+round; BTC is stamped UTC, so winter prefers -5h and summer -4h against US30 (corr 0.1289 / 0.1625)
+and `derive_offset`'s disagree-guard fires correctly for the first time. A true
+UTC -> America/New_York CONVERSION scores each season's own best and 0.1337 pooled against 0.0908
+for the best single shift. Three defects handled, not assumed: a MALFORMED FINAL ROW (empty
+timestamps, prices present), 2 duplicate timestamps, and 14 bars with zero volume/trades/range
+together -- an exchange outage. It is 24/7 (weekday counts flat 42,184-42,370), so every session
+condition on this branch selects an arbitrary slice of a continuous tape. It also carries REAL
+taker-side flow (`Taker buy base / Volume`, centred 0.4965) -- an actual order-flow imbalance, not
+the proxy `features3.py` built. `research/edgelab/crypto.py`.
+
+**BTC IS THE FIRST INSTRUMENT WHOSE COST IS NOT AN ASSUMPTION, AND THE COST KILLS THE GEOMETRY.**
+Binance's 0.10%/side taker fee is published and exact; only 1bp of spread is assumed, 5% of the
+total. All NINE shipped legs run there (the 15m source makes the 15m legs native and the 30m legs a
+resample) and NONE transfers -- **every leg is NEGATIVE in absolute terms**. A 1xATR barrier on a
+0.202% round turn needs **64.2-66.5%** to break even against actuals of 37-41%. **AND THE ZERO-COST
+VARIANT INVERTS THE RANKING**, which is the warning: three legs pass BH WITH fees and none without,
+because a minute-of-day control is not VOLATILITY-matched and a fixed percentage cost is a smaller
+fraction of a wider barrier. Measured: M1's ATR ratio 1.20 and V4's 1.43 against V1's **1.01**, so
+M1 and V4 are cost artifacts and V1 is not. V1 is again the best-behaved -- the only leg positive at
+zero cost -- but misses BH at nine tests (p 0.020 vs a 0.011 threshold), so BTC is CONSISTENT with
+V1, not a fourth confirmation. See `docs/ib/STUDY_BTC_LEGS.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -479,6 +504,8 @@ only in the last two, and its P&L splits 57/43 between the barrier pair and the 
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
 | `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
 | `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |
+| `research/edgelab/crypto.py` | BTC 15m: the sixth instrument, a UTC clock, real taker-side flow |
+| `research/btc_legs.py`, `run_btc_legs.py` | all nine shipped legs on BTC, with the volatility-artifact diagnostic |
 | `research/eurusd_legs.py`, `run_eurusd_legs.py` | the shipped 30m legs on EURUSD, matched control, BH |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |

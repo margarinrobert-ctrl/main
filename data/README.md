@@ -129,6 +129,37 @@ share is 0% every year to 2013 but reaches 25.2% in 2017, 36.0% in 2020, 74.6% i
 in the 2022 stub. Those four years are dropped whole and individual zero bars are dropped
 elsewhere, leaving 190,319 of 230,400 bars (82.6%). See `docs/ib/STUDY_SPREAD_TRUTH.md`.
 
+
+## BTC_15m.csv — a sixth format, a UTC clock, and real taker-side flow
+
+Audited 2026-08-25 from the file itself. Raw **Binance BTCUSDT klines**, 15-minute, 295,882 bars
+after cleaning, 2017-12-31 19:00 → 2026-06-15 19:15 New York. The file *name* says 2018–2025; the
+data runs eighteen months further.
+
+Comma-separated, headed `Open time,Open,High,Low,Close,Volume,Close time,Quote asset volume,Number
+of trades,Taker buy base asset volume,Taker buy quote asset volume,Ignore`. Timestamps carry six
+decimal places **and trailing whitespace**; `Ignore` is Binance's documented placeholder and is all
+zeros. `research/edgelab/crypto.py` owns this file.
+
+**Three defects, found rather than assumed.** The **final row is malformed** — both timestamps empty
+with OHLCV present — and is dropped on the timestamp, because a bar that cannot be placed in time is
+not a bar. Two timestamps are duplicated. And 14 bars carry zero volume, zero trades and zero range
+*together*, which is an exchange outage, not a quiet market.
+
+**Its clock is UTC, and this is the only feed here where a constant shift is wrong.** Every other
+file is a broker export whose server follows US daylight saving. Measured against US30, winter
+prefers −5h (corr 0.1289) and summer −4h (0.1625) — a one-hour disagreement, which is the DST
+signature. A true `UTC → America/New_York` conversion scores each season's own best and +0.1337
+pooled, against +0.0908 for the best single shift. The loader converts rather than shifts, and the
+autumn fall-back hour's duplicate local timestamps are dropped.
+
+**It is 24/7** — weekday bar counts run 42,184 to 42,370, flat. Every other instrument here has a
+weekend hole, and every session condition on this branch was written against one.
+
+**It carries real order flow.** `Taker buy base asset volume / Volume` is the share of volume that
+lifted the offer — an *actual* imbalance rather than a constructed proxy — centred at 0.4965 mean /
+0.4967 median. Exposed as `taker_share`. See `docs/ib/STUDY_BTC_LEGS.md`.
+
 ## The registry is the durable part
 
 `research/datasets.py` records every dataset's format, delimiter, column meanings, exact row count
@@ -142,5 +173,5 @@ python research/datasets.py        # inventory + verify what is on disk
 `verify()` distinguishes MISSING from SIZE MISMATCH from CONTENT MISMATCH, so a re-uploaded file
 can be proved identical to the copy every study was run on rather than assumed to be.
 
-**Nothing in `data/` survives a container recycle.** Seven files, 382 MB, and all of them arrive by
+**Nothing in `data/` survives a container recycle.** Eight files, 427 MB, and all of them arrive by
 upload. The registry is what makes re-attaching them mechanical instead of archaeological.
