@@ -2,6 +2,13 @@
 // YouTube Turtle -- 1-HOUR chart, Option 2 (scale out in thirds). Long and short.
 //
 // ============================ READ THIS BEFORE RUNNING IT ============================
+// STATUS: A LIVE TRADINGVIEW RUN OF THE FIRST VERSION OF THIS SCRIPT LOST MONEY
+// (PF 0.94, -10.2%, 1,594 fills). Two defects were found and are fixed here: the
+// nearest-major-level logic could return `na` when a level existed, which disabled the
+// avoid-resistance gate entirely and made the script take ~2.3x the research engine's
+// trades; and a missing level waved trades through instead of blocking them. The figures
+// below are from the RESEARCH engine and have NOT yet been reproduced on TradingView.
+// Treat this as unvalidated until they are.
 // WHAT IS MEASURED. Frozen rules, no parameter searched, per-market 65/35 split, the
 // out-of-sample block read once. Pooled across US30, US100, NQ, XAUUSD, EURUSD and BTC:
 //
@@ -85,18 +92,34 @@ wLow   = request.security(syminfo.tickerid, "W", low[1],  lookahead = barmerge.l
 mHigh  = request.security(syminfo.tickerid, "M", high[1], lookahead = barmerge.lookahead_off)
 mLow   = request.security(syminfo.tickerid, "M", low[1],  lookahead = barmerge.lookahead_off)
 
-// nearest major level above and below the current close
-resAbove = na(dHigh) ? na : dHigh
-resAbove := (not na(wHigh) and wHigh > close and (na(resAbove) or resAbove <= close or wHigh < resAbove)) ? wHigh : resAbove
-resAbove := (not na(mHigh) and mHigh > close and (na(resAbove) or resAbove <= close or mHigh < resAbove)) ? mHigh : resAbove
-resAbove := (not na(dHigh) and dHigh > close and (na(resAbove) or resAbove <= close or dHigh < resAbove)) ? dHigh : resAbove
-resAbove := (na(resAbove) or resAbove <= close) ? na : resAbove
+// nearest major level above and below the current close.
+// REWRITTEN: the first version chained conditional reassignments and could leave these `na`
+// when a valid level existed, which silently DISABLED the avoid-resistance gate (`room` fell
+// back to a huge sentinel and every trade passed). That is the defect that made this script
+// take ~2.3x the research engine's trades. A plain minimum-above / maximum-below is correct
+// and is obviously correct, which the chain was not.
+nearestAbove(a, b, d, px) =>
+    r = float(na)
+    if not na(a) and a > px
+        r := a
+    if not na(b) and b > px and (na(r) or b < r)
+        r := b
+    if not na(d) and d > px and (na(r) or d < r)
+        r := d
+    r
 
-supBelow = na(dLow) ? na : dLow
-supBelow := (not na(wLow) and wLow < close and (na(supBelow) or supBelow >= close or wLow > supBelow)) ? wLow : supBelow
-supBelow := (not na(mLow) and mLow < close and (na(supBelow) or supBelow >= close or mLow > supBelow)) ? mLow : supBelow
-supBelow := (not na(dLow) and dLow < close and (na(supBelow) or supBelow >= close or dLow > supBelow)) ? dLow : supBelow
-supBelow := (na(supBelow) or supBelow >= close) ? na : supBelow
+nearestBelow(a, b, d, px) =>
+    r = float(na)
+    if not na(a) and a < px
+        r := a
+    if not na(b) and b < px and (na(r) or b > r)
+        r := b
+    if not na(d) and d < px and (na(r) or d > r)
+        r := d
+    r
+
+resAbove = nearestAbove(dHigh, wHigh, mHigh, close)
+supBelow = nearestBelow(dLow, wLow, mLow, close)
 
 // ------------------------------------------------------------------ the channels
 hi20 = ta.highest(high, entLen)[1]
@@ -111,11 +134,11 @@ flat  = strategy.position_size == 0
 // deterministic before the order is sent
 longRisk  = hi20 - lo10
 shortRisk = hi10 - lo20
-longRoom  = na(resAbove) ? 1e12 : resAbove - hi20
-shortRoom = na(supBelow) ? 1e12 : lo20 - supBelow
+longRoom  = na(resAbove) ? na : resAbove - hi20
+shortRoom = na(supBelow) ? na : lo20 - supBelow
 
-longOK  = useLong  and ready and close[1] > htfEma and longRisk  > 0 and longRoom  >= tolR * longRisk
-shortOK = useShort and ready and close[1] < htfEma and shortRisk > 0 and shortRoom >= tolR * shortRisk
+longOK  = useLong  and ready and close[1] > htfEma and longRisk  > 0 and not na(longRoom)  and longRoom  >= tolR * longRisk
+shortOK = useShort and ready and close[1] < htfEma and shortRisk > 0 and not na(shortRoom) and shortRoom >= tolR * shortRisk
 
 var float riskPts = na
 var bool  movedBE = false
