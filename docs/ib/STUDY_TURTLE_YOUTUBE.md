@@ -62,6 +62,30 @@ far better spread than the original Turtle, whose entire out-of-sample result wa
 Cost sensitivity, 1H Option 2 pooled: OOS **+0.170** at zero cost, **+0.097** at the assumed cost,
 +0.046 at 1.5×, +0.025 at 2×, **+0.002 at 3×**. It survives to 2× and is gone by 3×.
 
+## How solid is the 1H Option 2 number?
+
+Day-block bootstrap of the pooled out-of-sample mean — whole days resampled with their trades
+attached, 5,000 draws, because trades cluster within a session and a trade-wise resample would
+overstate the precision:
+
+**95% CI [+0.0344, +0.1643], P(mean ≤ 0) = 0.0020.**
+
+Leave-one-market-out, which is the test the original Turtle failed badly:
+
+| dropped | n | E[R] |
+| --- | ---: | ---: |
+| BTC | 1,164 | +0.1039 |
+| EURUSD | 1,040 | +0.0947 |
+| NQ | 1,347 | +0.1063 |
+| US100 | 1,207 | +0.1066 |
+| US30 | 1,216 | +0.0867 |
+| XAUUSD | 1,111 | +0.0789 |
+
+**No single market carries it** — the spread is +0.079 to +0.107 against a pooled +0.097. Compare
+the original Turtle, where removing BTC alone took the out-of-sample block from +0.018 to −0.052.
+
+So the *sample mean* is not fragile. What remains unestablished is the **attribution**, below.
+
 ## The control does not work, and the number it printed is not a result
 
 `STUDY_TURTLE.md` established that the decisive test for a breakout system here is a random entry

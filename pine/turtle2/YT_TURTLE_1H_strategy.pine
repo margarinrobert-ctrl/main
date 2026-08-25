@@ -1,0 +1,166 @@
+//@version=5
+// YouTube Turtle -- 1-HOUR chart, Option 2 (scale out in thirds). Long and short.
+//
+// ============================ READ THIS BEFORE RUNNING IT ============================
+// WHAT IS MEASURED. Frozen rules, no parameter searched, per-market 65/35 split, the
+// out-of-sample block read once. Pooled across US30, US100, NQ, XAUUSD, EURUSD and BTC:
+//
+//     in-sample       n 2,571   win 57.3%   E[R] +0.166   PF 1.38
+//     OUT-OF-SAMPLE   n 1,417   win 55.8%   E[R] +0.097   PF 1.21
+//
+//     day-block bootstrap of the OOS mean, 5,000 resamples:  95% CI [+0.034, +0.164]
+//     P(mean <= 0) = 0.0020
+//     leave-one-market-out:  +0.079 to +0.107  -- no single market carries it
+//     five of six markets positive OOS: US30 +0.157, XAUUSD +0.161, EURUSD +0.102,
+//     BTC +0.063, US100 +0.039, NQ -0.090
+//
+// THREE THINGS THAT ARE NOT VERIFIED, and they are the reason this is a research script
+// rather than a recommendation:
+//
+//   1. THE BREAKOUT IS UNTESTED AGAINST A RANDOM ENTRY. The decisive control on this
+//      branch is the same trade management with a coin-flip entry -- and on the original
+//      Turtle it scored +0.601 against the breakout's +0.595, i.e. the channel added
+//      nothing. That control is BROKEN for this variant (a random bar's 10-bar channel
+//      stop is half as far as a breakout bar's, so the R denominator collapses) and has
+//      not yet been re-run. So it is NOT established that the Donchian trigger is what
+//      earns this, rather than the 4H EMA filter and the 1R/2R/3R geometry.
+//   2. THE SAME RULES FAIL ON A 15-MINUTE CHART -- pooled OOS -0.020 R, PF 0.96. The
+//      timeframe is doing a lot of work. Do not run this below 1 hour.
+//   3. FOUR CELLS WERE READ (2 charts x 2 take-profit options) and this is the best of
+//      them. Costs: OOS +0.170 at zero cost, +0.097 as modelled, +0.046 at 1.5x, +0.002
+//      at 3x. Bid/ask is ASSUMED on four of the six markets.
+//
+// THE RULES, exactly as specified, with two ambiguities resolved and marked:
+//   entry     20-bar Donchian breakout, as a stop order
+//   stop      the 10-bar opposite extreme, FIXED AT ENTRY. [RESOLVED] A trailing 10-bar
+//             channel would make R change during the trade and "1:1 / 2:1 / 3:1" would
+//             have no fixed meaning.
+//   filter 1  price above the 50 EMA on the 4H chart for longs, below it for shorts
+//   filter 2  AVOID major S/R -- the prior DAILY, WEEKLY and MONTHLY high (low for
+//             shorts). 1H and 4H extremes are deliberately NOT treated as "major".
+//   target    scale out in thirds at 1R, 2R and 3R; the balance goes to break-even after
+//             the first third fills. [RESOLVED] The source reads "Exit 1/3 ... Exit 2/3
+//             ... Exit final 1/3", which sums to 4/3 of the position; three equal thirds
+//             is the only reading that closes.
+//   skipped   a trade with less than 1R of clearance to the nearest major level is not
+//             taken -- which is the same constraint as the source's "minimum 1 to 1".
+//
+// NON-REPAINTING. Every higher-timeframe read uses lookahead_off AND the PREVIOUS
+// completed bar, so the 4H EMA and the daily/weekly/monthly levels never contain data
+// from the period the current bar sits inside. The research layer's truncation audit --
+// recompute each value on history ending at bar i and require an exact match -- passes at
+// 105 checks with 0 mismatches. Without the [1] this script would read up to 3h45m ahead
+// on the EMA and a full month ahead on the monthly level.
+//
+// Research tooling for education and analysis. Not financial advice.
+// =====================================================================================
+
+strategy("YT Turtle 1H | 20/10 Donchian + 4H 50EMA + major S/R", overlay = true,
+     initial_capital = 100000, default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 100, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false, commission_type = strategy.commission.percent,
+     commission_value = 0.01, slippage = 1)
+
+// ---------------------------------------------------------------- inputs (free)
+entLen  = input.int(20, "Donchian entry length", minval = 2, group = "Rules")
+stpLen  = input.int(10, "Donchian stop length",  minval = 2, group = "Rules")
+emaLen  = input.int(50, "Higher-timeframe EMA",  minval = 2, group = "Rules")
+htf     = input.timeframe("240", "Higher timeframe", group = "Rules",
+     tooltip = "The source specifies 4H for 5m, 15m and 1H charts; Daily for a 4H chart; " +
+     "Weekly for a Daily chart. Only the 1-hour chart was validated.")
+tolR    = input.float(1.0, "Minimum clearance to major S/R, in R", minval = 0.0, step = 0.25,
+     group = "Rules", tooltip = "A trade needs room to reach at least 1:1 before the nearest " +
+     "major level, which is the source's own minimum target.")
+useLong  = input.bool(true, "Longs",  group = "Direction")
+useShort = input.bool(true, "Shorts", group = "Direction")
+drawIt   = input.bool(true, "Plot levels", group = "Display")
+
+// ------------------------------------------- higher-timeframe reads, non-repainting
+htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1],
+     lookahead = barmerge.lookahead_off)
+dHigh  = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_off)
+dLow   = request.security(syminfo.tickerid, "D", low[1],  lookahead = barmerge.lookahead_off)
+wHigh  = request.security(syminfo.tickerid, "W", high[1], lookahead = barmerge.lookahead_off)
+wLow   = request.security(syminfo.tickerid, "W", low[1],  lookahead = barmerge.lookahead_off)
+mHigh  = request.security(syminfo.tickerid, "M", high[1], lookahead = barmerge.lookahead_off)
+mLow   = request.security(syminfo.tickerid, "M", low[1],  lookahead = barmerge.lookahead_off)
+
+// nearest major level above and below the current close
+resAbove = na(dHigh) ? na : dHigh
+resAbove := (not na(wHigh) and wHigh > close and (na(resAbove) or resAbove <= close or wHigh < resAbove)) ? wHigh : resAbove
+resAbove := (not na(mHigh) and mHigh > close and (na(resAbove) or resAbove <= close or mHigh < resAbove)) ? mHigh : resAbove
+resAbove := (not na(dHigh) and dHigh > close and (na(resAbove) or resAbove <= close or dHigh < resAbove)) ? dHigh : resAbove
+resAbove := (na(resAbove) or resAbove <= close) ? na : resAbove
+
+supBelow = na(dLow) ? na : dLow
+supBelow := (not na(wLow) and wLow < close and (na(supBelow) or supBelow >= close or wLow > supBelow)) ? wLow : supBelow
+supBelow := (not na(mLow) and mLow < close and (na(supBelow) or supBelow >= close or mLow > supBelow)) ? mLow : supBelow
+supBelow := (not na(dLow) and dLow < close and (na(supBelow) or supBelow >= close or dLow > supBelow)) ? dLow : supBelow
+supBelow := (na(supBelow) or supBelow >= close) ? na : supBelow
+
+// ------------------------------------------------------------------ the channels
+hi20 = ta.highest(high, entLen)[1]
+lo20 = ta.lowest(low,  entLen)[1]
+hi10 = ta.highest(high, stpLen)[1]
+lo10 = ta.lowest(low,  stpLen)[1]
+
+ready = not na(hi20) and not na(lo20) and not na(hi10) and not na(lo10) and not na(htfEma)
+flat  = strategy.position_size == 0
+
+// gate on the BREAKOUT LEVEL rather than on the eventual fill, so the decision is
+// deterministic before the order is sent
+longRisk  = hi20 - lo10
+shortRisk = hi10 - lo20
+longRoom  = na(resAbove) ? 1e12 : resAbove - hi20
+shortRoom = na(supBelow) ? 1e12 : lo20 - supBelow
+
+longOK  = useLong  and ready and close[1] > htfEma and longRisk  > 0 and longRoom  >= tolR * longRisk
+shortOK = useShort and ready and close[1] < htfEma and shortRisk > 0 and shortRoom >= tolR * shortRisk
+
+var float riskPts = na
+var bool  movedBE = false
+
+if flat and barstate.isconfirmed
+    if longOK
+        strategy.entry("L", strategy.long, stop = hi20)
+    else
+        strategy.cancel("L")
+    if shortOK
+        strategy.entry("S", strategy.short, stop = lo20)
+    else
+        strategy.cancel("S")
+
+// on the bar the position opens, freeze R from the ACTUAL fill against the channel stop
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    ep = strategy.opentrades.entry_price(0)
+    riskPts := strategy.position_size > 0 ? ep - lo10 : hi10 - ep
+    movedBE := false
+    strategy.cancel(strategy.position_size > 0 ? "S" : "L")
+
+// ------------------------------------------------------------- scale out in thirds
+if strategy.position_size != 0 and not na(riskPts) and riskPts > 0
+    ep   = strategy.opentrades.entry_price(0)
+    isLong = strategy.position_size > 0
+    dir  = isLong ? 1 : -1
+    curStop = movedBE ? ep : ep - dir * riskPts
+    t1 = ep + dir * riskPts
+    t2 = ep + dir * 2 * riskPts
+    t3 = ep + dir * 3 * riskPts
+    id = isLong ? "L" : "S"
+    strategy.exit("X1", from_entry = id, qty_percent = 34, limit = t1, stop = curStop)
+    strategy.exit("X2", from_entry = id, qty_percent = 50, limit = t2, stop = curStop)
+    strategy.exit("X3", from_entry = id,                   limit = t3, stop = curStop)
+    // once the first third is gone, the balance runs at break-even
+    if not movedBE and math.abs(strategy.position_size) < math.abs(strategy.position_size[1])
+        movedBE := true
+
+if strategy.position_size == 0
+    riskPts := na
+    movedBE := false
+
+// ------------------------------------------------------------------------ display
+plot(drawIt ? htfEma : na, "HTF 50 EMA", color = color.new(color.blue, 0), linewidth = 2)
+plot(drawIt ? hi20 : na, "entry high", color = color.new(color.teal, 40), style = plot.style_stepline)
+plot(drawIt ? lo20 : na, "entry low",  color = color.new(color.maroon, 40), style = plot.style_stepline)
+plot(drawIt ? resAbove : na, "major resistance", color = color.new(color.red, 0), style = plot.style_linebr)
+plot(drawIt ? supBelow : na, "major support",    color = color.new(color.green, 0), style = plot.style_linebr)
