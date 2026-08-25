@@ -155,6 +155,17 @@ leaky 30/30. A real edge is a ridge on a noisy surface; a leak is a plateau. Sam
 `filtfilt`, `rolling(center=True)`, Savitzky-Golay, symmetric wavelets, STL. A filter is a signal
 only if bar t's value is unchanged had the series ended at bar t. See `docs/ib/STUDY_HP_FILTER.md`.
 
+**MA TYPE is not a degree of freedom; MA LAG is.** Zakamulin's claim replicates exactly here.
+SMA(11), LMA(16) and EMA(11) all carry average lag 5 (closed forms verified to 1e-13), their
+values correlate 0.9999+, their trigger sets overlap 89.5-97.3% and their win rates sit inside one
+point (52.5-53.5%). Net dollars vary up to 54%, but that is noise on the 5-10% of trades that
+differ, not a property of the weighting. Do not expect a rule that fails with SMA to work with
+EMA. Three things the article does not say, measured: SMA and EMA have IDENTICAL lag at every
+window by construction; DEMA and TEMA have exactly ZERO ramp lag at every window and Hull near
+zero, so they are extrapolators, not lagging averages, and cannot be lag-matched to the first
+group (they ARE a real separate axis); and KAMA's lag is 1.25 regardless of window, so its period
+is INERT on a trending series. `research/ma_lag.py`. See `docs/ib/STUDY_MA_LAG.md`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -192,6 +203,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/m4_anatomy.py` | why M4 is profitable: exit split, barrier sweep, day-vs-bar, bands |
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
 | `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
+| `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |

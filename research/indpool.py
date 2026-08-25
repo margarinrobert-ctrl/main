@@ -52,6 +52,10 @@ def _ema(d, n): return I.ema(d["c"], int(n))
 def _sma(d, n): return I.sma(d["c"], int(n))
 
 
+@ind("wma", "linearly weighted moving average of close (LMA)")
+def _wma(d, n): return I.wma(d["c"], int(n))
+
+
 @ind("atr", "average true range, ema(tr, n)")
 def _atr_r(d, n): return _atr(d, n)
 
