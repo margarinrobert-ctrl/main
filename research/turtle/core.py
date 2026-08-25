@@ -87,7 +87,7 @@ def _atr_wilder(h, l, c, n):
 @njit(cache=True)
 def run(o, h, l, c, hi1, hi2, lo1, lo2, atr, start,
         atr_mult, pyramid_step, max_units, skip_after_winner, allow_s1, allow_s2,
-        cost_pts, slip_pts, gate):
+        cost_pts, slip_pts, gate, path_exit):
     """One pass of the state machine. Returns per-trade arrays.
 
     P&L is in INDEX POINTS summed over units, and `risk` is the initial one-unit risk
@@ -115,7 +115,17 @@ def run(o, h, l, c, hi1, hi2, lo1, lo2, atr, start,
             if l[i] < lo_since:
                 lo_since = l[i]
             why = 0; px = 0.0
-            if l[i] <= stop:
+            chan = lo1[i - 1] if system == 1 else lo2[i - 1]
+            if path_exit:
+                # Path-accurate: as price falls it reaches the HIGHER level first, so the
+                # effective exit is max(stop, channel). This is what a single Pine stop order
+                # does. The spec's own ordering (below) checks the ATR stop first and therefore
+                # books the WORSE of the two whenever one bar pierces both.
+                lvl = stop if stop > chan else chan
+                if l[i] <= lvl:
+                    why = STOP_EXIT if stop > chan else (S1_EXIT if system == 1 else S2_EXIT)
+                    px = (o[i] if o[i] < lvl else lvl) - slip_pts
+            elif l[i] <= stop:
                 why = STOP_EXIT
                 px = o[i] if o[i] < stop else stop
                 px -= slip_pts
@@ -189,7 +199,7 @@ def channels(d, e1, e2, x1, x2, an):
 def backtest(d, entry1=20, entry2=55, exit1=10, exit2=20, atr_len=20, atr_mult=2.0,
              pyramid_step=0.5, max_units=4, skip_after_winner=True,
              allow_s1=True, allow_s2=True, cost_pts=0.0, slip_pts=0.0, cache=None,
-             gate=None):
+             gate=None, path_exit=False):
     key = (entry1, entry2, exit1, exit2, atr_len)
     if cache is not None and key in cache:
         hi1, hi2, lo1, lo2, atr = cache[key]
@@ -204,7 +214,7 @@ def backtest(d, entry1=20, entry2=55, exit1=10, exit2=20, atr_len=20, atr_mult=2
         d["o"], d["h"], d["l"], d["c"], hi1, hi2, lo1, lo2, atr, start,
         float(atr_mult), float(pyramid_step), int(max_units),
         bool(skip_after_winner), bool(allow_s1), bool(allow_s2),
-        float(cost_pts), float(slip_pts), g)
+        float(cost_pts), float(slip_pts), g, bool(path_exit))
     return dict(pnl=p, risk=r, units=u, system=s, why=w, bar_in=bi, bar_out=bo,
                 mfe=mfe, mae=mae, R=np.where(r > 0, p / np.maximum(r, 1e-9), 0.0))
 

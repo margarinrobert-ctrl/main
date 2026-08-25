@@ -206,6 +206,63 @@ A median drawdown of **27.8 R** is the number to plan around, not the expectancy
 own 1%-per-unit risk that is a ~28% equity drawdown in the median case and 45% at the 95th
 percentile.
 
+## 9. The four best versions
+
+Ranked on **out-of-sample expectancy**, subject to a non-negative research excess and at least 60
+out-of-sample trades, deduplicated by timeframe. All four are US100 — no NQ configuration meets
+the bar, at any timeframe or gate.
+
+| | timeframe | gate | research n / E[R] / exc | **out-of-sample n / E[R] / PF / exc / p** | max DD | P(edge≤0) |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| **T1** | 240m | ADX<22 and `dist_ema100 < 3.964` ATR | 90 / +1.307 / +0.77 | **64 / +1.486 / 2.79 / +1.55 / 0.008** | 8.6R | 0.2% |
+| **T2** | 240m | ADX<22 | 122 / +0.784 / +0.22 | **79 / +1.055 / 2.09 / +1.11 / 0.016** | 10.0R | 0.8% |
+| **T3** | 120m | ADX<22 | 228 / +0.449 / +0.07 | **144 / +0.694 / 1.64 / +0.60 / 0.056** | 31.2R | 3.2% |
+| **T4** | 60m | ADX<22 and `dist_ema100 < 3.193` ATR | 313 / +0.523 / +0.19 | **225 / +0.397 / 1.39 / +0.40 / 0.088** | 36.1R | 9.0% |
+
+*All use the spec's geometry: 20/55-bar entries, 10/20-bar exits, 2.0×ATR(20) stop, 0.5N pyramid
+to 4 units, skip-after-winner on. Only the regime gate and the timeframe differ.*
+
+T1 is the only one positive **and** control-beating on all three blocks separately — research
++0.77 (p 0.064), validation +1.19 (p 0.048), production +1.96 (p 0.008). It is also the smallest
+sample. **T4 is the opposite trade**: 225 out-of-sample trades and the most reliable statistics,
+at a third of T1's per-trade edge and a 36R drawdown.
+
+Read the ladder as sample size against effect size, and read all four against §3: every one of
+them carries the same caveat that a coin-flip entry with these exits performs comparably, and
+against §7 that the ADX family grows out of sample and fails on NQ.
+
+**Exit ordering.** The spec checks the ATR stop *before* the channel low, so when one bar pierces
+both it books the worse of the two. A single stop order at `max(ATR stop, channel low)` — which is
+what the Pine script places, and what price actually reaches first on the way down — is worth
+**+0.05 to +0.13 R/trade** on all four. **The figures above are the conservative ones.**
+
+## 10. The entry session, measured — and left unlocked
+
+US100 240m, spec geometry, entries restricted to a window while **exits run unrestricted** (a
+Turtle position is held for days; forcing it flat at a session boundary would be a different
+strategy):
+
+| entry window | research E[R] | out-of-sample E[R] |
+| --- | ---: | ---: |
+| all hours | +0.595 | +0.398 |
+| **08:00–20:00** | +0.595 | **+0.462** |
+| 09:00–20:00 | +0.618 | +0.524 |
+| 04:00–12:00 | +0.713 | +0.322 |
+| 18:00–04:00 | +0.321 | +0.347 |
+| **09:00–16:00 (RTH only)** | +0.701 | **−0.017** |
+
+**Restricting to the cash session destroys the system.** It is a multi-day trend follower and the
+breakouts it needs occur across the extended hours; RTH-only takes research expectancy *up* and
+out-of-sample expectancy to zero, which is the shape of a window fitted to the wrong half of the
+sample.
+
+Because the answer is broker- and instrument-dependent rather than a constant, `pine/turtle/`
+**locks every structural parameter to its measured value and leaves the session start and stop as
+free inputs** — the one deliberate exception to the configuration lock this branch adopted after
+`STUDY_PINE_CONFIG.md`. The script's on-chart panel marks any non-default session so a changed
+window can never be invisible in a screenshot, and the timeframe lock still refuses to run a
+preset off its design timeframe.
+
 ## 9. Verdict
 
 | claim | status |
@@ -238,6 +295,7 @@ this one.
 | `research/turtle/run_sweep.py` | ~100,000 configurations per instrument, research block only |
 | `research/turtle/run_validate.py` | control, deduplication, out of sample |
 | `research/turtle/run_report.py` | walk-forward, Monte Carlo, feature separation |
+| `pine/turtle/TURTLE_LONG_strategy.pine` | the four presets, structurally locked, session left free |
 
 Measured on NQ futures (5-minute source, synthetic price levels — see `research/us100.py`) and
 US100 CFD 15-minute, one unit per Turtle unit, costs as stated in §1 and assumed rather than

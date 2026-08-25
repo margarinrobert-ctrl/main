@@ -1,0 +1,207 @@
+//@version=5
+// Turtle Trading, long only -- four measured presets, with the SESSION LEFT FREE.
+//
+// WHAT IS LOCKED AND WHAT IS NOT
+// ------------------------------
+// Every structural parameter -- channel lengths, ATR multiple, pyramid step, unit cap, the
+// skip-after-winner rule, the regime gate and the design timeframe -- is OVERRIDDEN by the
+// preset's measured constant. That lock exists because two scripts on this branch lost money
+// purely from being run on the wrong chart or with an edited stop (see STUDY_PINE_CONFIG.md).
+//
+// The ENTRY SESSION is deliberately exempt. Start and stop are free inputs and a preset never
+// touches them, because the session that suits a broker's US100 feed is not the session that
+// suits a futures chart, and the measurement below shows the choice matters and is not a
+// one-size constant. What the research DOES say about it:
+//
+//     all hours     research +0.595 R/trade   out-of-sample +0.398
+//     08:00-20:00   research +0.595           out-of-sample +0.462   <- best measured
+//     09:00-16:00   research +0.701           out-of-sample -0.017   <- RTH ONLY IS HARMFUL
+//
+// A cash-session-only window destroys this system: it is a multi-day trend follower and it needs
+// the extended hours in which the breakouts actually occur. The default below is therefore
+// "all hours", and the plot marks any window that differs from it so a changed session is never
+// invisible in a screenshot.
+//
+// ATR NOTE. This script uses ta.atr(), which is Wilder's RMA. That is CORRECT here and is a
+// deliberate departure from this repo's usual ta.ema(ta.tr(true), n): the Turtle definition and
+// the Python engine this was validated against both use Wilder.
+//
+// Measured on US100 CFD 15-minute source data resampled to the preset timeframe, one unit per
+// Turtle unit, ~1.0 point spread and 0.25 point slippage assumed. Research 2016-2021,
+// out-of-sample 2022-2025. See docs/ib/STUDY_TURTLE.md -- including the finding that a RANDOM
+// entry with these same exits performs as well as the breakout itself.
+strategy("Turtle Long-Only (measured presets)", overlay = true, pyramiding = 4,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, calc_on_every_tick = false,
+         process_orders_on_close = false)
+
+// ----------------------------------------------------------------- preset (locks everything)
+presetName = input.string("T1  240m  ADX<22 + not extended", "Preset", options = [
+     "T1  240m  ADX<22 + not extended",
+     "T2  240m  ADX<22",
+     "T3  120m  ADX<22",
+     "T4   60m  ADX<22 + not extended",
+     "Spec defaults (no gate)",
+     "Custom"])
+
+// ----------------------------------------------------------------- SESSION: FREE, NEVER LOCKED
+sessOn    = input.bool(false, "Restrict entries to a session", group = "Entry session (free)")
+sessStart = input.session("0000-0000", "Entry session", group = "Entry session (free)",
+     tooltip = "Exchange-independent: evaluated in America/New_York. Exits are NEVER gated -- a Turtle position is held for days, so only the decision to OPEN is restricted. Measured: 08:00-20:00 was best out of sample; 09:00-16:00 (RTH only) was harmful.")
+sessTZ    = input.string("America/New_York", "Session timezone", group = "Entry session (free)",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "UTC"])
+
+// ----------------------------------------------------------------- custom (used only by Custom)
+cEntry1   = input.int(20,  "Custom entry 1 (bars)", minval = 2, group = "Custom only")
+cEntry2   = input.int(55,  "Custom entry 2 (bars)", minval = 2, group = "Custom only")
+cExit1    = input.int(10,  "Custom exit 1 (bars)",  minval = 2, group = "Custom only")
+cExit2    = input.int(20,  "Custom exit 2 (bars)",  minval = 2, group = "Custom only")
+cAtrMult  = input.float(2.0, "Custom ATR stop multiple", minval = 0.1, group = "Custom only")
+cPyrStep  = input.float(0.5, "Custom pyramid step (N)", minval = 0.0, group = "Custom only")
+cMaxUnits = input.int(4,   "Custom max units", minval = 1, maxval = 4, group = "Custom only")
+cAdxMax   = input.float(0, "Custom ADX ceiling (0 = off)", minval = 0, group = "Custom only")
+cExtMax   = input.float(0, "Custom max distance above EMA100 in ATR (0 = off)", minval = 0, group = "Custom only")
+
+// ----------------------------------------------------------------- resolved, locked constants
+isCustom = presetName == "Custom"
+entry1   = isCustom ? cEntry1   : 20
+entry2   = isCustom ? cEntry2   : 55
+exit1    = isCustom ? cExit1    : 10
+exit2    = isCustom ? cExit2    : 20
+atrLen   = 20
+atrMult  = isCustom ? cAtrMult  : 2.0
+pyrStep  = isCustom ? cPyrStep  : 0.5
+maxUnits = isCustom ? cMaxUnits : 4
+skipWin  = true
+
+adxMax = switch presetName
+    "T1  240m  ADX<22 + not extended" => 22.0
+    "T2  240m  ADX<22"                => 22.0
+    "T3  120m  ADX<22"                => 22.0
+    "T4   60m  ADX<22 + not extended" => 22.0
+    "Spec defaults (no gate)"         => 0.0
+    => cAdxMax
+
+extMax = switch presetName
+    "T1  240m  ADX<22 + not extended" => 3.964
+    "T2  240m  ADX<22"                => 0.0
+    "T3  120m  ADX<22"                => 0.0
+    "T4   60m  ADX<22 + not extended" => 3.193
+    "Spec defaults (no gate)"         => 0.0
+    => cExtMax
+
+designTF = switch presetName
+    "T1  240m  ADX<22 + not extended" => "240"
+    "T2  240m  ADX<22"                => "240"
+    "T3  120m  ADX<22"                => "120"
+    "T4   60m  ADX<22 + not extended" => "60"
+    => timeframe.period
+
+// ----------------------------------------------------------------- timeframe lock
+onDesignTF = isCustom or presetName == "Spec defaults (no gate)" or timeframe.period == designTF
+
+// ----------------------------------------------------------------- series
+atrN   = ta.atr(atrLen)
+chanHi1 = ta.highest(high, entry1)
+chanHi2 = ta.highest(high, entry2)
+chanLo1 = ta.lowest(low,  exit1)
+chanLo2 = ta.lowest(low,  exit2)
+ema100  = ta.ema(close, 100)
+[diPlus, diMinus, adxVal] = ta.dmi(14, 14)
+distEma = atrN > 0 ? (close - ema100) / atrN : 0.0
+
+// ----------------------------------------------------------------- gates
+adxOk  = adxMax <= 0 or adxVal < adxMax
+extOk  = extMax <= 0 or distEma < extMax
+inSess = not sessOn or not na(time(timeframe.period, sessStart, sessTZ))
+gateOk = adxOk and extOk and inSess and onDesignTF
+
+// ----------------------------------------------------------------- state
+// The stop and the pyramid ladder are anchored to the ACTUAL FILL, not to the signal bar's
+// close. The research fills every entry and add at the NEXT bar's open, which is unknown when
+// the signal fires, so the anchoring is done one bar later from
+// strategy.opentrades.entry_price() -- the real fill price of the newest unit. Anchoring to
+// `close` instead would shift every stop by one bar's move.
+var float stopLvl   = na
+var float nextAdd   = na
+var float firstFill = na
+var float pendAtr   = na
+var int   unitsOn   = 0
+var int   sysOn     = 0
+var int   lastCount = 0
+var bool  lastWin   = false
+
+// a trade that just closed: record whether it won, so the System 1 skip can read it
+if strategy.position_size == 0 and lastCount > 0
+    lastWin   := close > firstFill
+    unitsOn   := 0
+    sysOn     := 0
+    stopLvl   := na
+    nextAdd   := na
+    lastCount := 0
+
+// a fill just happened: re-anchor the stop and the next add to that fill price
+if strategy.opentrades > lastCount
+    fillPx = strategy.opentrades.entry_price(strategy.opentrades - 1)
+    anchorAtr = na(pendAtr) ? atrN : pendAtr
+    if lastCount == 0
+        firstFill := fillPx
+    stopLvl   := fillPx - atrMult * anchorAtr
+    nextAdd   := fillPx + pyrStep * anchorAtr
+    unitsOn   := strategy.opentrades
+    lastCount := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ----------------------------------------------------------------- entries
+sig2 = high > chanHi2[1]
+sig1 = high > chanHi1[1]
+
+if barstate.isconfirmed and flat and gateOk and atrN > 0
+    if sig2
+        strategy.entry("S2", strategy.long, qty = 1)
+        sysOn   := 2
+        pendAtr := atrN
+    else if sig1
+        if skipWin and lastWin
+            lastWin := false
+        else
+            strategy.entry("S1", strategy.long, qty = 1)
+            sysOn   := 1
+            pendAtr := atrN
+
+// ----------------------------------------------------------------- pyramid adds
+if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
+    if high >= nextAdd
+        strategy.entry("add" + str.tostring(unitsOn + 1), strategy.long, qty = 1)
+        pendAtr := atrN
+
+// ----------------------------------------------------------------- exit
+// One stop order at the HIGHER of the ATR stop and the channel low: falling price reaches that
+// level first, which is what the path-accurate research variant models. It is worth +0.05 to
+// +0.13 R/trade against the spec's own "check the ATR stop first" ordering, so the published
+// research figures are the conservative ones.
+chanExit  = sysOn == 1 ? chanLo1[1] : chanLo2[1]
+exitLevel = na(stopLvl) ? chanExit : (na(chanExit) ? stopLvl : math.max(stopLvl, chanExit))
+
+if not flat and not na(exitLevel)
+    strategy.exit("x", stop = exitLevel)
+
+// ----------------------------------------------------------------- plots
+plot(chanHi1, "Entry 1 (20-bar high)", color = color.new(color.aqua, 40))
+plot(chanHi2, "Entry 2 (55-bar high)", color = color.new(color.blue, 40))
+plot(chanLo1, "Exit 1 (10-bar low)",   color = color.new(color.red, 60))
+plot(chanLo2, "Exit 2 (20-bar low)",   color = color.new(color.purple, 60))
+plot(flat ? na : exitLevel, "Active stop", color = color.fuchsia, style = plot.style_linebr)
+
+// A changed session must never be invisible in a screenshot.
+sessChanged = sessOn and sessStart != "0000-0000"
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, presetName, text_color = color.white,
+         bgcolor = onDesignTF ? color.new(color.teal, 20) : color.new(color.red, 10))
+    table.cell(hud, 0, 1, onDesignTF ? "timeframe OK" : "WRONG TIMEFRAME - needs " + designTF,
+         text_color = color.white, bgcolor = onDesignTF ? color.new(color.teal, 40) : color.red)
+    table.cell(hud, 0, 2, sessChanged ? "session " + sessStart + " " + sessTZ : "session: all hours",
+         text_color = color.white,
+         bgcolor = sessChanged ? color.new(color.orange, 20) : color.new(color.gray, 40))

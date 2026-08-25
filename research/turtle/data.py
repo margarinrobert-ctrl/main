@@ -66,3 +66,25 @@ def stats(res, sel=None, point_value=1.0):
                 if len(losses) and losses.sum() < 0 else np.inf,
                 maxdd_R=dd, dollars=float(P.sum() * point_value),
                 avg_units=float((res["units"] if sel is None else res["units"][sel]).mean()))
+
+
+def session_gate(d, start_min, end_min):
+    """Entries allowed only inside [start, end) minutes-of-day, New York.
+
+    EXITS ARE NOT GATED. A Turtle position is held for days, so forcing it flat at a session
+    boundary would be a different strategy, not a filtered one. Only the decision to OPEN is
+    restricted -- which is also the only thing a session filter can honestly claim to control.
+
+    `start_min > end_min` wraps around midnight (e.g. 1080 -> 240 is 18:00 to 04:00).
+    """
+    import numpy as np
+    mod = np.asarray(d["mod"], int)
+    if start_min == end_min:
+        return np.ones(len(mod), bool)
+    if start_min < end_min:
+        return (mod >= start_min) & (mod < end_min)
+    return (mod >= start_min) | (mod < end_min)
+
+
+def hhmm(minutes):
+    return f"{int(minutes)//60:02d}:{int(minutes)%60:02d}"
