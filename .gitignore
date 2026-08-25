@@ -49,3 +49,6 @@ research/portfolio_daily.parquet
 research/edgelab/_*.parquet
 research/atme/_*.parquet
 research/hypo/_*.parquet
+
+# sweep artefacts are large and regenerable
+research/vbt/_*.npz

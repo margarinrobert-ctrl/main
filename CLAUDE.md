@@ -492,6 +492,24 @@ fail" is not "passed". On the 1H candidate: P(pass) peaks at **48.1% at 0.50% ri
 30.1% at 1% and 16.8% at 2%, while 0.25% almost never busts and TIMES OUT 42% of the time. Risk per
 trade is the dominant variable, not a preference.
 
+**A CHANNEL STOP IS NOT A SAFE UNIT OF RISK, and it has now faked a result twice.** 110,250
+configurations swept on the Turtle/regime family: the grid's own `ent=0` twin (same config, NO
+breakout trigger) appears to show the trigger worth **+0.163 IS / +0.189 OOS**, helping in 89% of
+88,200 pairs -- flatly contradicting the risk-matched control. The contradiction is the artifact:
+`ent=0` enters at arbitrary bars where the channel stop is CLOSE, the R denominator collapses, and
+adverse moves become huge multiples. Split by stop type, because an ATR stop CANNOT collapse:
+channel +0.350/+0.417, **ATR +0.022/+0.018**. So **94% of the apparent contribution is the
+denominator**, and the breakout is worth ~+0.02 R = nothing. Anything measured in R against a
+channel stop must be re-checked with an ATR stop before it is believed.
+
+**110,250 CONFIGURATIONS BOUGHT NOTHING.** Best in-sample config scores **+0.098 R out of sample
+against the un-swept starting point's +0.097**. The top 0.1% is **100% long-only and 100% 5R
+target** against population shares of 33% and 14% -- the sweep found the longest exposure to an
+up-move in a sample where all six markets rose, which is drift, not a rule. Its neighbourhood is
+unstable (rank 5 goes IS +0.424 -> OOS **-0.351**, one channel length from rank 3). And the
+IS/OOS expectancy correlation of **+0.84** is NOT skill: it survives within geometry cells (+0.876)
+because the same six markets rose in both blocks. See `docs/ib/STUDY_SWEEP_110K.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -528,6 +546,7 @@ trade is the dominant variable, not a preference.
 | `research/edgelab/crypto.py` | BTC 15m: the sixth instrument, a UTC clock, real taker-side flow |
 | `research/btc_legs.py`, `run_btc_legs.py` | all nine shipped legs on BTC, with the volatility-artifact diagnostic |
 | `research/eurusd_legs.py`, `run_eurusd_legs.py` | the shipped 30m legs on EURUSD, matched control, BH |
+| `research/vbt/sweep_engine.py`, `run_sweep.py`, `analyse_sweep.py` | the 110,250-config sweep, IS selection, one OOS read |
 | `research/vbt/prop.py` | prop-firm evaluation: trailing DD, daily loss, P(pass) by day-block bootstrap |
 | `research/vbt/mae_mfe.py` | per-trade MFE/MAE in R on the finest series; capture and heat |
 | `research/turtle2/` | the original Turtle and the YouTube variant, frozen, with risk-matched controls |
