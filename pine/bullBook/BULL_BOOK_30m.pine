@@ -59,6 +59,38 @@
 //   * every leg's trigger set diffed against its authoritative research mask:
 //     86/86, 94/94, 310/310, 172/172, 303/303 shared, ZERO on either side
 //
+// A 100,000-CONFIGURATION SEARCH DID NOT BEAT THIS. Each leg's stop, target and flatten was
+// sampled jointly (72 geometries per leg, 72^6 = 1.4e11 possible, 100,000 drawn) and the whole
+// distribution scored on the research block:
+//     book                            res net   res Sh   LOCKED net   LOCKED Sh   maxDD
+//     THIS SCRIPT                     $35,804     5.37      $25,733        4.48   $1,318
+//     argmax research Sharpe /100k    $33,035     5.49      $12,828        2.79   $1,713
+//     argmax per-trade excess         $55,839     4.28      $29,343        1.91   $4,266
+//   Taking the maximum of 100,000 on a research statistic bought 0.12 of research Sharpe and
+//   COST HALF THE HOLDOUT. Optimising per-trade excess instead bought raw dollars and 3.2x the
+//   drawdown, which is the hold-time trap from STUDY_RSI_WICK.md arriving again.
+//
+// AND THE PLATEAU IS PARTLY DRIFT, SO DO NOT READ IT AS ROBUSTNESS. 100.00% of the 100,000
+//   assignments are profitable on research -- but so are 90.04% of MATCHED-CONTROL books built by
+//   replacing every rule with random entries at the same minute of day. Six long legs on an
+//   instrument that rose 89% are profitable at almost any geometry. The statistic that actually
+//   separates them is Sharpe: above 3.0 sits 80.93% of real books and 0.00% of control books, and
+//   the median real book clears its control by $15,688 (p = 0.0042).
+//
+// REAL MARKET TEST -- PASSED. Every exit re-resolved on the TRUE 1-MINUTE PATH:
+//     leg    engine    true 1m   give-back   unresolved   entry-timing spread
+//     M1     $3,331     $3,360       +0.9%         0.0%                   88%
+//     M4     $9,005     $7,743      -14.0%         0.0%                   13%
+//     V1     $8,935     $8,428       -5.7%         0.0%                   86%
+//     V2L    $9,575     $9,470       -1.1%         0.0%                   43%
+//     V3    $10,981    $10,743       -2.2%         0.0%                   44%
+//     RW    $19,710    $19,710        0.0%         0.0%                   12%
+//     BOOK  $61,537    $59,454       -3.4%         0.0%
+//   The book survives real execution, giving back 3.4% with nothing left unresolved. But note the
+//   last column: M1 and V1 change by 88% and 86% of their result depending on WHERE IN THE ENTRY
+//   BAR the fill lands. Those two legs are execution-fragile and should be the first to be paper
+//   traded rather than trusted.
+//
 // THE HONEST CAVEAT, and it is not small: the book earns MORE per day on the locked block
 // ($118.8) than on research ($100.7). That is the WRONG SHAPE -- an edge decays out of sample,
 // it does not appear there -- and it is inherited, since five of the six legs carry the same flag

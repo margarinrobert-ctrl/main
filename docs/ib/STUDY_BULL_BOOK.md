@@ -89,3 +89,69 @@ guessed at.
 `pine/bullBook/BULL_BOOK_30m.pine` — the five 30-minute legs on one chart, with the configuration
 lock, per-leg no-overlap enforced through `strategy.opentrades`, per-leg flatten times, and both
 caveats above stated in the header and on an on-chart banner. V3 needs a separate 15-minute chart.
+
+---
+
+# Addendum: 100,000 book configurations, and a real-execution test
+
+## The search did not beat the shipped configuration
+
+A book's free parameters are one geometry per leg, so the joint space is 72⁶ ≈ 1.4×10¹¹.
+100,000 assignments were drawn and scored on the **research block only**.
+
+| book | res net | res Sharpe | **LOCKED net** | **LOCKED Sharpe** | max DD |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **as shipped** | 35,804 | 5.37 | **25,733** | **4.48** | **1,318** |
+| argmax research Sharpe, of 100,000 | 33,035 | **5.49** | 12,828 | 2.79 | 1,713 |
+| argmax per-trade excess over control | **55,839** | 4.28 | 29,343 | 1.91 | 4,266 |
+
+**Taking the maximum of 100,000 on a research statistic bought 0.12 of research Sharpe and cost
+half the holdout.** Optimising per-trade excess instead bought raw dollars and **3.2× the
+drawdown** — the hold-time trap from `STUDY_RSI_WICK.md`, arriving by a different road.
+
+The Bonferroni threshold at 100,000 configurations is p < 5×10⁻⁷. Nothing here clears it.
+
+## The plateau is partly drift — do not read it as robustness
+
+100.00% of the 100,000 assignments are profitable on research, and 80.96% clear Sharpe 3.0.
+That looks like robustness. `STUDY_HP_FILTER.md` says to distrust exactly this shape, so it was
+tested: the same distribution was rebuilt with **every rule replaced by random entries matched on
+leg, count and minute of day**.
+
+| | real rules | matched control |
+| --- | ---: | ---: |
+| share profitable | 100.00% | **90.04%** |
+| share Sharpe > 2.0 | 99.73% | **2.29%** |
+| share Sharpe > 3.0 | **80.93%** | **0.00%** |
+| median research net | $20,933 | $5,245 |
+
+**Six long legs on an instrument that rose 89% are profitable at almost any geometry** — the
+profitability plateau is drift, and quoting "100% of configurations profitable" as evidence would
+have been wrong. The statistic that separates real from random is **Sharpe**: above 3.0 sits 80.93%
+of real books and **0.00%** of controls. Median excess $15,688, p = 0.0042.
+
+## Real market test — passed
+
+Every exit re-resolved on the **true 1-minute path** rather than assuming bar-level ordering:
+
+| leg | engine $ | true 1-min $ | give-back | unresolved | **entry-timing spread** |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| M1 | 3,331 | 3,360 | +0.9% | 0.0% | **88%** |
+| M4 | 9,005 | 7,743 | −14.0% | 0.0% | 13% |
+| V1 | 8,935 | 8,428 | −5.7% | 0.0% | **86%** |
+| V2L | 9,575 | 9,470 | −1.1% | 0.0% | 43% |
+| V3 | 10,981 | 10,743 | −2.2% | 0.0% | 44% |
+| RW | 19,710 | 19,710 | 0.0% | 0.0% | 12% |
+| **BOOK** | **61,537** | **59,454** | **−3.4%** | **0.0%** | |
+
+The book survives real execution, giving back 3.4% with **nothing unresolved**.
+
+**A new fragility, from the last column.** M1 and V1 swing by 88% and 86% of their result
+depending on *where in the entry bar* the fill lands. Those two legs are execution-fragile and
+should be the first to be paper-traded rather than trusted. M4 (13%) and RW (12%) are the stable
+ones.
+
+## Logic re-verified after the edit
+
+All five 30-minute leg masks re-diffed against their authoritative research trigger sets after the
+header change: **86/86, 94/94, 310/310, 172/172, 303/303 — zero on either side.** Linter clean.
