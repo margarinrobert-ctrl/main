@@ -1,0 +1,90 @@
+name: Build Trading Backtester (Windows)
+
+# Produces TradingBacktesterSetup.exe as a downloadable artifact.
+#
+# A Windows executable cannot be cross-compiled from Linux -- PyInstaller freezes
+# the interpreter it is running on -- so the installer is built here, on a real
+# windows-latest runner, and attached to the run.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-windows-build.yml"
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: desktop/requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pytest
+
+      - name: Run the test suite
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest tests -q
+
+      - name: Generate the application icon
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -c "from PySide6.QtWidgets import QApplication; app=QApplication([]); from tradingbacktester.ui.icons import save_app_icon_ico; save_app_icon_ico('assets/app.ico'); print('icon written')"
+
+      - name: Build the application with PyInstaller
+        run: python -m PyInstaller packaging/TradingBacktester.spec --noconfirm --clean
+
+      - name: Self-test the frozen build
+        run: |
+          $p = Start-Process -FilePath "dist\TradingBacktester\TradingBacktester.exe" -ArgumentList "--self-test" -PassThru -Wait -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "Frozen build failed its self-test (exit $($p.ExitCode))" }
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build the installer
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\installer.iss
+          if (-not (Test-Path "dist\TradingBacktesterSetup.exe")) {
+            throw "Inno Setup did not produce dist\TradingBacktesterSetup.exe"
+          }
+          $size = [math]::Round((Get-Item "dist\TradingBacktesterSetup.exe").Length / 1MB, 1)
+          Write-Host "TradingBacktesterSetup.exe is $size MB"
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: TradingBacktesterSetup
+          path: desktop/dist/TradingBacktesterSetup.exe
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload the unpacked application
+        uses: actions/upload-artifact@v4
+        with:
+          name: TradingBacktester-portable
+          path: desktop/dist/TradingBacktester/
+          if-no-files-found: error
+          retention-days: 30
