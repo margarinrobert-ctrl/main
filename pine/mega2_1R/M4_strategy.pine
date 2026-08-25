@@ -94,8 +94,41 @@ allowShort = input.bool(false, "Allow shorts", group = "Direction",
      "base rate. Flipping it does not give you the mirror-image edge -- longs and " +
      "shorts start from different base rates on a market that trended, and the other " +
      "side of this rule was not tested.")
-atrMult = input.float(4.0, "Stop = N x ATR", minval = 0.25, step = 0.25, group = "Risk")
-tpR     = input.float(1.0, "Target = N x risk", minval = 0.25, step = 0.25, group = "Risk")
+// ---- stop-loss method ----------------------------------------------------------------------
+// The header's statistics were measured on "ATR multiple" at 4.0x with a 1.0R target and nothing
+// else. Every other setting below is a DIFFERENT strategy whose numbers are unknown -- offered
+// because you asked for them, not because they were tested.
+//
+// One of them was tested, and lost: on this instrument an ATR stop beat a 50-EMA-distance stop on
+// win rate, profit factor and Sharpe, and the EMA stop only became competitive once an ATR floor
+// was bolted on -- at which point it is mostly an ATR stop. See docs/ib/STUDY_TREND_BRIEF.md.
+stopMode = input.string("ATR multiple", "Stop-loss method", group = "Risk",
+     options = ["ATR multiple", "Fixed points", "Fixed ticks", "Fixed dollars per contract",
+     "Percent of price", "Moving-average distance", "Swing high/low", "Previous bar extreme"])
+atrMult  = input.float(4.0, "  ATR multiple", minval = 0.25, step = 0.25, group = "Risk")
+stopPts  = input.float(50.0, "  Fixed points", minval = 0.0, step = 1.0, group = "Risk")
+stopTks  = input.int(200, "  Fixed ticks", minval = 1, group = "Risk")
+stopUsd  = input.float(500.0, "  Fixed dollars per contract", minval = 1.0, step = 25.0, group = "Risk")
+stopPct  = input.float(0.5, "  Percent of price", minval = 0.01, step = 0.05, group = "Risk")
+maLen    = input.int(50, "  Moving average length", minval = 2, group = "Risk")
+maKind   = input.string("EMA", "  Moving average type", options = ["EMA", "SMA"], group = "Risk")
+swingLen = input.int(20, "  Swing lookback (bars)", minval = 2, group = "Risk")
+bufTicks = input.int(4, "  Buffer beyond the level (ticks)", minval = 0, group = "Risk")
+floorATR = input.float(0.0, "  Minimum stop, x ATR (0 = none)", minval = 0.0, step = 0.25, group = "Risk",
+     tooltip = "A structural stop can land absurdly close to price. This floors it.")
+capATR   = input.float(0.0, "  Maximum stop, x ATR (0 = none)", minval = 0.0, step = 0.25, group = "Risk",
+     tooltip = "And absurdly far. This caps it. A capped stop changes the R multiple, not the target ratio.")
+tpR      = input.float(1.0, "Target = N x risk", minval = 0.25, step = 0.25, group = "Risk")
+
+// ---- exit management -----------------------------------------------------------------------
+exitMode  = input.string("Fixed target", "Exit style", options = ["Fixed target", "Trailing stop",
+     "Both (whichever fires first)"], group = "Risk",
+     tooltip = "UNMEASURED. The header figures are 'Fixed target' only. Research on this data " +
+     "found moving a stop early can damage expectancy, so treat trailing as an experiment.")
+trailStartR = input.float(1.0, "  Trail activates at N x risk", minval = 0.1, step = 0.1, group = "Risk")
+trailOffR   = input.float(0.5, "  Trail distance, N x risk", minval = 0.1, step = 0.1, group = "Risk")
+
+maStop = maKind == "EMA" ? ta.ema(close, maLen) : ta.sma(close, maLen)
 
 // ---- the rule -------------------------------------------------------------------
 c0 = bodyFrac < 0.3    // body<30%
@@ -120,13 +153,58 @@ isFlat = strategy.position_size == 0
 // the result is identical with those boxes on or off. Exits are left tick-sensitive
 // on purpose: a resting stop or target SHOULD fill when price touches it.
 if trig and ready and isFlat and inWindow and barstate.isconfirmed
-    riskTicks = math.max(math.round(atrMult * atrV / syminfo.mintick), 1)
+    // Stop DISTANCE in price units, by the selected method, computed SEPARATELY for each side.
+    // Structural stops are not symmetric: a long's stop belongs below the swing low, a short's
+    // above the swing high, and collapsing them to one number puts the short's stop in the wrong
+    // place. They are measured from the SIGNAL bar's close -- the last price known when the order
+    // is sent -- not from the fill, which has not happened yet.
+    buf = bufTicks * syminfo.mintick
+    stopL = switch stopMode
+        "ATR multiple"               => atrMult * atrV
+        "Fixed points"               => stopPts
+        "Fixed ticks"                => stopTks * syminfo.mintick
+        "Fixed dollars per contract" => stopUsd / syminfo.pointvalue
+        "Percent of price"           => close * stopPct / 100.0
+        "Moving-average distance"    => math.abs(close - maStop) + buf
+        "Swing high/low"             => close - ta.lowest(low, swingLen) + buf
+        "Previous bar extreme"       => close - low[1] + buf
+        => atrMult * atrV
+    stopS = switch stopMode
+        "ATR multiple"               => atrMult * atrV
+        "Fixed points"               => stopPts
+        "Fixed ticks"                => stopTks * syminfo.mintick
+        "Fixed dollars per contract" => stopUsd / syminfo.pointvalue
+        "Percent of price"           => close * stopPct / 100.0
+        "Moving-average distance"    => math.abs(close - maStop) + buf
+        "Swing high/low"             => ta.highest(high, swingLen) - close + buf
+        "Previous bar extreme"       => high[1] - close + buf
+        => atrMult * atrV
+    // A structural level can sit on the WRONG side of price -- a long whose close gapped below
+    // the previous bar's low gives a negative distance, which would round to a one-tick stop and
+    // be liquidated instantly. Floor everything at a fraction of ATR so that cannot happen; the
+    // user floor and cap are applied on top.
+    stopL := math.max(stopL, 0.10 * atrV)
+    stopS := math.max(stopS, 0.10 * atrV)
+    if floorATR > 0
+        stopL := math.max(stopL, floorATR * atrV)
+        stopS := math.max(stopS, floorATR * atrV)
+    if capATR > 0
+        stopL := math.min(stopL, capATR * atrV)
+        stopS := math.min(stopS, capATR * atrV)
+    riskL = math.max(math.round(stopL / syminfo.mintick), 1)
+    riskS = math.max(math.round(stopS / syminfo.mintick), 1)
+    useTarget = exitMode != "Trailing stop"
+    useTrail  = exitMode != "Fixed target"
     if allowLong
         strategy.entry("L", strategy.long)
-        strategy.exit("Lx", "L", loss = riskTicks, profit = tpR * riskTicks)
+        strategy.exit("Lx", "L", loss = riskL, profit = useTarget ? tpR * riskL : na,
+             trail_points = useTrail ? trailStartR * riskL : na,
+             trail_offset = useTrail ? trailOffR * riskL : na)
     if allowShort
         strategy.entry("S", strategy.short)
-        strategy.exit("Sx", "S", loss = riskTicks, profit = tpR * riskTicks)
+        strategy.exit("Sx", "S", loss = riskS, profit = useTarget ? tpR * riskS : na,
+             trail_points = useTrail ? trailStartR * riskS : na,
+             trail_offset = useTrail ? trailOffR * riskS : na)
 
 if flatAt >= 0 and barMin >= flatAt and strategy.position_size != 0 and barstate.isconfirmed
     strategy.close_all(comment = "session cutoff")
