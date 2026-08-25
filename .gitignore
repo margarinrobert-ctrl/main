@@ -47,3 +47,5 @@ catboost_info/
 research/trend_search_results.parquet
 research/portfolio_daily.parquet
 research/edgelab/_*.parquet
+research/atme/_*.parquet
+research/hypo/_*.parquet
