@@ -191,6 +191,27 @@ is essentially UNCHANGED from the overlap (+8.4, +7.8). RW, M4 and M1 fail, M4 f
 and M1 +8.2 -> +1.2. The two that survive are the MEAN-REVERSION and COUNTER-TREND legs, which is
 the same story trend-following has told all along here.
 
+**THE RIGHT NULL FOR A BREAKOUT SYSTEM IS THE SAME TRADE MANAGEMENT WITH A RANDOM ENTRY.** Turtle
+(20/55-bar channel, 2xATR stop, 0.5N pyramid to 4 units) earns +0.595 R/trade on US100 240m; the
+identical exits, stop, ladder and costs with a COIN-FLIP entry earn **+0.601**. Excess -0.005,
+p 0.475, and no block on either instrument reaches p<0.05. Across 120 UNSELECTED grid points per
+timeframe the median excess is +0.02 to +0.07, and daily bars are NEGATIVE on both instruments --
+while the top of the same ~100k sweep is all daily. `turtle/core.run_random`. Ranking on research
+expectancy bought 30-trade configurations, again.
+
+**A TRAILING-STOP SYSTEM IS A DRIFT HARVESTER, so score it against the drift it is harvesting.**
+The random-entry control earns **+0.586 R/trade where the index rose 247.6%** and **-0.005 where it
+rose 49.6%**. That single fact explains why excess over the control GREW out of sample here: the
+control weakened, not the rule. Before reading a trend system's excess, print what the control
+earned per block next to the index move.
+
+**BREAKOUTS PAY EARLY IN A TREND AND FAIL LATE, and ADX has the conventional sign backwards.**
+Separating winning from losing Turtle trades at the SIGNAL bar: winners sit closer to the 50-bar
+low (d -0.50), less extended above EMA100 (d -0.38), with LOWER slope and **LOWER ADX (21.3 vs
+23.6)**. Gating on ADX<22 and re-simulating lifts US100 at 60/120/240m out of sample -- and makes
+NQ worse at all three. Coherent, consistent on one instrument, non-transferring. Candle shape
+separates nothing (`body_atr` d 0.014).
+
 **COSTS SET A FLOOR ON THE WIN RATE, and at a scalping stop the floor is above 100%-ish.** On
 US100 15m the round trip is a FIXED number of points, so the tighter the stop the larger it looms:
 break-even at 1:1 needs **95.1% at a 0.25xATR stop, 71.5% at 0.5x, 61.9% at 1.0x, 54.8% at 2.5x**,
@@ -292,6 +313,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/us100.py` | the second instrument: audit, NY timezone, NQ alignment, unseen split |
 | `research/trend_long.py`, `trend_long_xmkt.py` | the long-only regime battery, and it on NQ + US100 with the overlap measured |
 | `research/edgelab/` | the US100 morning-session lab: 101 causal features, triple-barrier labels, day-clustered control, purged walk-forward, `run_all.py` |
+| `research/turtle/` | Turtle long-only, verified against a literal transliteration; random-entry control, ~100k sweep, entry gating |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
