@@ -191,6 +191,31 @@ is essentially UNCHANGED from the overlap (+8.4, +7.8). RW, M4 and M1 fail, M4 f
 and M1 +8.2 -> +1.2. The two that survive are the MEAN-REVERSION and COUNTER-TREND legs, which is
 the same story trend-following has told all along here.
 
+**XAUUSD IS THE FOURTH INSTRUMENT AND THE ONLY UNCORRELATED ONE.** 5-minute, 2004-2026, 1.44M
+bars, `data/XAUUSD_5m.csv` -- a DIFFERENT export format (semicolon, `Date;OHLC;Volume`, ascending,
+no TickVolume column). Contemporaneous 5m correlation with the indices is only **0.057-0.070**, so
+gold genuinely cannot be voted on by NQ/US100/US30. Its clock was derived from its OWN anchor
+(gold does not key on 09:30 equities): the summer peak in mean |5m return| lands at raw 15:30 =
+**08:30 New York to the minute**, and corr(US30, XAU) spikes to +0.057 at a 7h shift against ~0 at
+5/6/8. Also NY+7. **Pre-2010 is EXCLUDED: 10.06% zero-range bars and a median 5-minute volume of
+14 ticks.** `research/scalp/inventory.py` prints the whole inventory with a transparent quality score.
+
+**GOLD'S COST FLOOR IS ~3x THE INDICES', and it decides the answer.** XAUUSD 5m ATR is ~1.5 USD
+against an assumed 0.30 spread, so break-even at 1:1 needs **100.8% at a 0.35xATR stop**, 73.7% at
+0.75x, 55.9% at 3.0x -- against actuals of 30.7/46.0/38.7%. No stop distance closes it. Bid/ask is
+unavailable in EVERY feed here, so every cost number is an assumption; on gold the difference
+between 0.30 and 0.13 USD/oz is the difference between -0.08 and break-even.
+
+**BUT THE GOLD BREAKOUT IS NEGATIVE *GROSS*, so it is not a cost problem.** At ZERO cost every
+trend-following entry is negative at a scalping stop (-0.061 to -0.020), the mirrored SHORT side is
+negative too (-0.047), and only `breakout + not-chop p95` turns positive (+0.067 at 1.5xATR). Always
+run the zero-cost variant before blaming execution.
+
+**THE XAUUSD FROZEN RULE DECAYED MONOTONICALLY ACROSS FOUR ORDERED BLOCKS** -- gross +0.0669
+research, +0.0421 validation, -0.0163 test, **-0.0199 untouched**, with control excess following
++0.149 -> -0.035. An untouched final block is worth more than any amount of walk-forward: it is
+the only test that cannot be contaminated by having looked. Reserve one.
+
 **THERE IS A THIRD INSTRUMENT NOW, AND IT IS THE FIRST INDEPENDENT ONE.** US30 (Dow), 2.88M
 1-minute bars 2016-10 to 2025-07, `research/edgelab/feeds.py`. 15m return correlation US30/US100
 **0.758** and US30/NQ **0.679** against NQ/US100's **0.874** -- materially more independent than

@@ -31,6 +31,11 @@ from edgelab.data import Costs
 # near 12,000 with 14.9; NQ near 20,200 with 11.8. The values below are mid-range retail CFD
 # assumptions for the two CFD feeds and the itemised futures cost for NQ, expressed in points.
 COSTS = {
+    # Gold: a retail XAUUSD CFD spread is roughly 0.20-0.50 USD/oz. 0.30 is a mid assumption and
+    # it is LARGE relative to a 5-minute ATR of ~1.2, so the cost floor dominates gold scalping
+    # even more than it does the indices. Every sweep prints cost_R next to expectancy.
+    "XAUUSD": Costs(spread_rth=0.30, spread_pre=0.45, spread_off=0.70,
+                    slip_entry=0.05, slip_stop=0.15, slip_target=0.0),
     "US30":  Costs(spread_rth=2.0, spread_pre=4.0, spread_off=6.0,
                    slip_entry=0.5, slip_stop=1.5, slip_target=0.0),
     "US100": Costs(spread_rth=1.0, spread_pre=2.0, spread_off=3.0,
@@ -44,11 +49,35 @@ COSTS = {
 SPLITS = {"US30":  ("2022-01-01", "2024-01-01"),
           "US100": ("2022-01-01", "2024-01-01")}
 
+# XAUUSD is the PRIMARY instrument and gets a four-way split with a genuinely untouched tail.
+#
+#   pre-2010 is EXCLUDED entirely: 10.06% zero-range bars and a median 5-minute volume of 14
+#   ticks. That is not a market, it is a quote feed idling, and no barrier result computed on it
+#   would mean anything.
+#
+#   research    2010-01-01 -> 2017-12-31   search, features, every parameter choice
+#   validation  2018-01-01 -> 2021-12-31   frozen rules only
+#   test        2022-01-01 -> 2024-12-31   read after freezing
+#   UNTOUCHED   2025-01-01 -> 2026-01-30   READ ONCE, AT THE END, NEVER FED BACK
+XAU_SPLIT = dict(start="2010-01-01", research_end="2018-01-01",
+                 validation_end="2022-01-01", test_end="2025-01-01")
+
 
 def blocks(inst, d):
     ix = pd.DatetimeIndex(d["idx"])
     if ix.tz is not None:
         ix = ix.tz_localize(None)
+    if inst == "XAUUSD":
+        S = XAU_SPLIT
+        usable = np.asarray(ix >= pd.Timestamp(S["start"]))
+        res = usable & np.asarray(ix < pd.Timestamp(S["research_end"]))
+        val = np.asarray((ix >= pd.Timestamp(S["research_end"]))
+                         & (ix < pd.Timestamp(S["validation_end"])))
+        tst = np.asarray((ix >= pd.Timestamp(S["validation_end"]))
+                         & (ix < pd.Timestamp(S["test_end"])))
+        unt = np.asarray(ix >= pd.Timestamp(S["test_end"]))
+        return dict(research=res, validation=val, test=tst, untouched=unt,
+                    oos=val | tst, excluded_pre2010=np.asarray(ix < pd.Timestamp(S["start"])))
     if inst == "NQ":
         from oner_union import _cut
         si, cut, _ = _cut(d)
