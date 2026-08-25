@@ -171,6 +171,115 @@ def test_import_wizard_ok_is_disabled_until_validated(qapp, tmp_path, registry):
     wizard.close()
 
 
+MT5_ROWS = "".join(
+    f"2023.01.{d:02d} 09:30:00\t100.0\t101.0\t99.0\t100.5\t0\t{1000 + d}\n"
+    for d in range(28, 0, -1))
+MT5 = "DateTime\tOpen\tHigh\tLow\tClose\tVolume\tTickVolume\n" + MT5_ROWS
+
+
+def _mapping_text(wizard) -> dict:
+    return {key: box.currentText() for key, box in wizard._column_boxes.items()}
+
+
+def test_import_wizard_repairs_a_scrambled_mapping(qapp, tmp_path, registry):
+    """A mapping that does not match the file is corrected, not rejected.
+
+    The combo values here are the ones a stray mouse wheel leaves behind: each
+    box moved a step or two down its list.  The file is unchanged and still
+    perfectly readable, so the dialog must read it.
+    """
+    from tradingbacktester.ui.dialogs.import_dialog import ImportWizard
+
+    wizard = ImportWizard(registry)
+    wizard._load_file(_csv(tmp_path, "5m_data.csv", MT5))
+    assert _mapping_text(wizard)["close"] == "Close"
+
+    for key, index in (("datetime", 4), ("high", 4), ("low", 4), ("close", 1)):
+        wizard._column_boxes[key].setCurrentIndex(index)
+    assert _mapping_text(wizard)["close"] == "DateTime"
+
+    wizard._validate()
+    assert wizard._validated, wizard.status.text()
+    fixed = _mapping_text(wizard)
+    assert fixed["datetime"] == "DateTime"
+    assert (fixed["open"], fixed["high"], fixed["low"], fixed["close"]) == (
+        "Open", "High", "Low", "Close")
+    assert "corrected" in wizard.status.text().lower()
+    wizard.close()
+
+
+def test_import_wizard_auto_detect_button_rebuilds_the_mapping(qapp, tmp_path,
+                                                               registry):
+    from tradingbacktester.ui.dialogs.import_dialog import ImportWizard
+
+    wizard = ImportWizard(registry)
+    wizard._load_file(_csv(tmp_path, "5m_data.csv", MT5))
+    for key in ("open", "high", "low", "close"):
+        wizard._column_boxes[key].setCurrentIndex(0)
+    assert _mapping_text(wizard)["close"] == "— none —"
+
+    wizard._auto_detect()
+    fixed = _mapping_text(wizard)
+    assert (fixed["open"], fixed["high"], fixed["low"], fixed["close"]) == (
+        "Open", "High", "Low", "Close")
+    # An MT5 export writes zeros in Volume and the real figure in TickVolume.
+    assert fixed["volume"] == "TickVolume"
+    assert wizard._validated, wizard.status.text()
+    wizard.close()
+
+
+def test_import_wizard_imports_newest_first_rows_oldest_first(qapp, tmp_path,
+                                                              registry):
+    from tradingbacktester.data.csv_loader import load_csv
+    from tradingbacktester.ui.dialogs.import_dialog import ImportWizard
+
+    path = _csv(tmp_path, "5m_data.csv", MT5)
+    wizard = ImportWizard(registry)
+    wizard._load_file(path)
+    wizard._validate()
+    assert wizard._validated, wizard.status.text()
+    bars = load_csv(path, wizard.mapping, wizard.instrument)
+    assert bool(np.all(np.diff(bars.ts) > 0))
+    assert float(bars.volume.sum()) > 0.0
+    wizard.close()
+
+
+def test_mapping_combo_ignores_the_mouse_wheel_unless_focused(qapp, tmp_path,
+                                                              registry):
+    """Scrolling a dialog must not silently rewrite the column mapping."""
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtGui import QWheelEvent
+
+    from tradingbacktester.ui.dialogs.import_dialog import ImportWizard
+
+    wizard = ImportWizard(registry)
+    wizard._load_file(_csv(tmp_path, "plain.csv",
+                           "Date,Open,High,Low,Close,Volume\n" + ROWS))
+    box = wizard._column_boxes["close"]
+    before = box.currentIndex()
+    event = QWheelEvent(
+        QPoint(5, 5), box.mapToGlobal(QPoint(5, 5)), QPoint(0, -120),
+        QPoint(0, -120), Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.NoScrollPhase, False)
+    box.wheelEvent(event)
+    assert box.currentIndex() == before
+    assert not event.isAccepted()
+    wizard.close()
+
+
+def test_import_wizard_preview_names_the_mapped_field(qapp, tmp_path, registry):
+    from tradingbacktester.ui.dialogs.import_dialog import ImportWizard
+
+    wizard = ImportWizard(registry)
+    wizard._load_file(_csv(tmp_path, "plain.csv",
+                           "Date,Open,High,Low,Close,Volume\n" + ROWS))
+    labels = [wizard.preview.horizontalHeaderItem(i).text()
+              for i in range(wizard.preview.columnCount())]
+    assert labels[0] == "Date\nDate/time"
+    assert labels[4] == "Close\nClose"
+    wizard.close()
+
+
 def test_import_wizard_survives_a_junk_file(qapp, tmp_path, registry):
     from tradingbacktester.ui.dialogs.import_dialog import ImportWizard
 

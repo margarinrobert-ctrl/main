@@ -131,12 +131,55 @@ sudo apt install libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
 
 **File → Import CSV**, or the **Import CSV** button.
 
-The import dialog inspects your file and guesses everything it can: the
+The import dialog inspects your file and works out everything it can: the
 delimiter, whether there is a header, which column holds which field, the
 timestamp format, and whether dates are day-first. You correct anything it got
 wrong, press **Validate** to parse the first few hundred rows, and see either
 the parsed date range and inferred timeframe or the exact row and column that
 failed.
+
+### Working out the column order
+
+Header names are a claim about a file, not a proof, so the importer checks them
+against the values before it trusts them. Two facts make that possible without
+guessing:
+
+* a timestamp column parses as timestamps, and moves in one direction;
+* an OHLC quartet satisfies `high >= max(open, close)` and
+  `low <= min(open, close)` on essentially every bar.
+
+The second is the whole test. It is a falsifiable statement about four columns:
+a wrong assignment fails it on the first few bars, and the right one cannot
+fail it. So the importer reads a sample of the rows and:
+
+* keeps the mapping the names imply when it satisfies that relation — names are
+  usually right, and second-guessing them would be its own bug;
+* replaces it when it does not, matching the columns to the values instead.
+  This is what reads a file whose columns are in an unusual order, whose
+  headers are in another language, or whose headers are simply wrong;
+* tells the open from the close by continuity — the close of one bar and the
+  open of the next are the same trade — which is the only thing that
+  distinguishes them in a file with no usable header;
+* notices that the rows are newest first, and sorts them oldest first on
+  import;
+* moves the volume off a column that is zero on every row when a real one
+  exists. An MT5 export writes zeros in `Volume` and the true figure in
+  `TickVolume`; importing the zeros is silently wrong, because every
+  volume-based indicator then goes flat.
+
+Everything it changes is stated in plain language in the dialog, and the
+preview above the mapping labels each column with the field it is mapped to, so
+the mapping can be checked against the values without cross-referencing eight
+drop-downs.
+
+**Auto-detect columns** re-runs all of this on demand. And if **Validate**
+fails, the mapping is checked against the data and, when the two disagree,
+corrected and tried once more — a wrong mapping is the most common reason an
+import fails, and the file itself holds the evidence for what the right one is.
+
+Nothing here overrides you: change a drop-down and the dialog uses your choice.
+Mapping drop-downs also ignore the mouse wheel unless they are focused, so
+scrolling the dialog cannot silently rewrite the mapping.
 
 ### What it accepts
 
@@ -149,7 +192,9 @@ failed.
 | Timezone | tz-aware input converted to UTC; tz-naive input localised to a timezone you choose |
 | Numbers | `1234.56`, `1,234.56`, `1.234,56` |
 | Encoding | UTF-8, UTF-8 with BOM, Latin-1 fallback |
-| Volume | optional — missing volume is filled with zero and flagged |
+| Volume | optional — missing volume is filled with zero and flagged; an all-zero column loses to a real one |
+| Column order | any — matched to the values when the header names do not fit |
+| Row order | oldest first or newest first; newest-first files are sorted on import |
 | Extras | unknown columns ignored, `#` comment lines skipped, blank lines skipped |
 
 A minimal file looks like this:
@@ -468,7 +513,8 @@ import that works from source is missing from the bundle.
 ```
 tradingbacktester/
 ├── core/         value types, timeframes, the error hierarchy
-├── data/         CSV loading, validation, resampling, instruments, storage
+├── data/         CSV loading, column auto-detection, validation, resampling,
+│                instruments, storage
 ├── indicators/   the registry and the 48-indicator library
 ├── strategy/     the declarative strategy definition and its compiler
 ├── engine/       cost model, position sizing, the simulated broker, the loop

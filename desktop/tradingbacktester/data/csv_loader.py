@@ -54,6 +54,10 @@ ProgressFn = Callable[[int, int], None]
 DELIMITERS: tuple[str, ...] = (",", ";", "\t", "|")
 
 _PROBE_BYTES = 262_144
+#: Sample rows kept on the profile.  The preview shows the first sixty; the
+#: rest are what lets the import dialog re-run the column audit without
+#: touching the file again.
+_PROFILE_SAMPLE_ROWS = 200
 _MAX_SAMPLE_ROWS = 5000
 _MAX_FORMAT_SAMPLES = 250
 _PROGRESS_STEPS = 100
@@ -244,6 +248,8 @@ class CsvProfile:
     dayfirst_proven: bool = False
     decimal: str = "."
     thousands: str = ""
+    row_order: int = 0
+    """``+1`` oldest first, ``-1`` newest first, ``0`` when it could not be told."""
     problems: list[str] = field(default_factory=list)
 
     @property
@@ -868,6 +874,25 @@ def _find_datetime_by_content(headers: Sequence[str], rows: Sequence[Sequence[st
     return None, None
 
 
+def _price_text(headers: Sequence[str], rows: Sequence[Sequence[str]],
+                mapping: "ColumnMapping") -> list[str]:
+    """Sample values to read the number format from.
+
+    The close is the right column to look at.  When nothing is mapped yet --
+    a headerless file, or names in a language the priority lists do not cover
+    -- every column is offered instead: the detector counts patterns, so the
+    columns that are not numbers contribute nothing either way.
+    """
+    for key in (mapping.close, mapping.open, mapping.high, mapping.low):
+        index = _column_index([str(h) for h in headers], key)
+        if index is not None:
+            return _column_samples(rows, index)
+    out: list[str] = []
+    for index in range(len(headers)):
+        out.extend(_column_samples(rows, index)[:20])
+    return out
+
+
 def _column_index(headers: Sequence[str], key: str | None) -> int | None:
     """Index of a mapping reference within a header list, or ``None``."""
     if key is None or str(key) == "":
@@ -884,6 +909,17 @@ def _column_index(headers: Sequence[str], key: str | None) -> int | None:
     except ValueError:
         return None
     return idx if 0 <= idx < len(headers) else None
+
+
+def resolve_column(headers: Sequence[Any], key: str | None) -> int | None:
+    """Which column a mapping reference points at, or ``None``.
+
+    A reference is a header name or a stringified index, and matching a name is
+    forgiving of case and punctuation, so this is the only correct way to turn
+    one into a position.  Public because the import dialog has to resolve
+    references exactly as the loader will.
+    """
+    return _column_index([str(h) for h in headers], key)
 
 
 def _column_samples(rows: Sequence[Sequence[str]], index: int | None) -> list[str]:
@@ -977,7 +1013,8 @@ def sniff_csv(path: str | Path) -> CsvProfile:
                 "(datetime, open, high, low, close, volume)."
             )
         profile.column_count = len(profile.headers)
-        profile.sample_rows = [[str(c) for c in r] for r in data_rows[:20]]
+        profile.sample_rows = [[str(c) for c in r]
+                               for r in data_rows[:_PROFILE_SAMPLE_ROWS]]
 
         tail_rows: list[list[str]] = []
         if tail:
@@ -1003,6 +1040,29 @@ def sniff_csv(path: str | Path) -> CsvProfile:
                     "These columns were matched by position because their names "
                     "were not recognised: " + ", ".join(filled) +
                     ". Check the mapping before importing.")
+
+        # How this file writes numbers has to be settled before the audit,
+        # because the audit reads the price columns as numbers: told that
+        # "100,5" is not a number, it would conclude the price columns hold
+        # text and go looking for prices that are not there.
+        mapping.decimal, mapping.thousands = _detect_number_format(
+            _price_text(profile.headers, data_rows, mapping))
+
+        # Names are a claim; the values are the proof.  The audit checks the
+        # guess against the data and repairs it when the two disagree, so a
+        # file whose columns are in an unusual order, named in another
+        # language, or labelled misleadingly still maps correctly.  It runs
+        # here, before the timestamp format is worked out, so the format is
+        # read from whichever column the audit settled on.
+        from .autodetect import audit_mapping
+
+        audit = audit_mapping(mapping, profile.headers, data_rows,
+                              profile.has_header)
+        mapping = audit.mapping
+        profile.row_order = audit.direction
+        profile.problems.extend(audit.changes)
+        profile.problems.extend(audit.notes)
+
         mapping.delimiter = delimiter
         mapping.has_header = profile.has_header
         mapping.encoding = encoding
@@ -1058,11 +1118,10 @@ def sniff_csv(path: str | Path) -> CsvProfile:
                 "'day first' setting if that is wrong."
             )
 
-        price_index = next((i for i in (_column_index(profile.headers, mapping.close),
-                                        _column_index(profile.headers, mapping.open))
-                            if i is not None), None)
-        price_samples = _column_samples(data_rows, price_index)
-        decimal, thousands = _detect_number_format(price_samples)
+        # Read it again from whichever column the audit settled on: if the
+        # close moved, the first reading was of the wrong column.
+        decimal, thousands = _detect_number_format(
+            _price_text(profile.headers, data_rows, mapping))
         profile.decimal, profile.thousands = decimal, thousands
         mapping.decimal, mapping.thousands = decimal, thousands
 

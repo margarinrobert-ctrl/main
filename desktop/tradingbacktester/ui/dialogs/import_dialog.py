@@ -25,7 +25,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
 from ...core.errors import BacktesterError, CsvImportError
 from ...core.timeframe import Timeframe
 from ...core.types import AssetClass
-from ...data.csv_loader import ColumnMapping, load_csv, sniff_csv
+from ...data.autodetect import audit_mapping
+from ...data.csv_loader import (ColumnMapping, load_csv, resolve_column,
+                                sniff_csv)
 from ...data.models import Instrument
 from ...logging_setup import get_logger
 from ..theme import PALETTE, Fonts
@@ -38,6 +40,32 @@ log = get_logger(__name__)
 VALIDATE_ROWS = 500
 
 _NONE = "— none —"
+
+#: Short names for the mapping fields, used to label the preview columns.
+_FIELD_LABELS = {"datetime": "Date/time", "date": "Date", "time": "Time",
+                 "open": "Open", "high": "High", "low": "Low",
+                 "close": "Close", "volume": "Volume"}
+
+
+class _SteadyComboBox(QComboBox):
+    """A combo box that ignores the mouse wheel unless it is focused.
+
+    Qt's default is to change the selection on any wheel event over the widget,
+    focused or not.  In a dialog this one is in -- eight combo boxes stacked in
+    a grid -- one scroll gesture across them silently rewrites the column
+    mapping, and the only symptom is a parse error twenty rows into the file.
+    Scrolling a *focused* box is still deliberate, so that keeps working.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def wheelEvent(self, event: Any) -> None:      # noqa: N802 - Qt naming
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
 
 _TIMEZONES = ("UTC", "America/New_York", "America/Chicago", "America/Los_Angeles",
               "Europe/London", "Europe/Berlin", "Europe/Zurich", "Europe/Moscow",
@@ -152,7 +180,7 @@ class ImportWizard(QDialog):
             name.setStyleSheet(f"color:{PALETTE.text_dim};")
             if tip:
                 name.setToolTip(tip)
-            box = QComboBox()
+            box = _SteadyComboBox()
             box.currentIndexChanged.connect(self._on_mapping_changed)
             if tip:
                 box.setToolTip(tip)
@@ -169,7 +197,7 @@ class ImportWizard(QDialog):
         form.setVerticalSpacing(5)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        self.format_box = QComboBox()
+        self.format_box = _SteadyComboBox()
         self.format_box.setEditable(True)
         for text, value in _FORMATS:
             self.format_box.addItem(text, value)
@@ -180,7 +208,7 @@ class ImportWizard(QDialog):
         self.format_box.lineEdit().editingFinished.connect(self._on_mapping_changed)
         form.addRow(self._label("Timestamp format"), self.format_box)
 
-        self.timezone_box = QComboBox()
+        self.timezone_box = _SteadyComboBox()
         self.timezone_box.setEditable(True)
         for zone in _TIMEZONES:
             self.timezone_box.addItem(zone)
@@ -194,13 +222,13 @@ class ImportWizard(QDialog):
         self.dayfirst.toggled.connect(self._on_mapping_changed)
         form.addRow("", self.dayfirst)
 
-        self.decimal_box = QComboBox()
+        self.decimal_box = _SteadyComboBox()
         self.decimal_box.addItem("Point   1234.56", ".")
         self.decimal_box.addItem("Comma   1234,56", ",")
         self.decimal_box.currentIndexChanged.connect(self._on_mapping_changed)
         form.addRow(self._label("Decimal separator"), self.decimal_box)
 
-        self.thousands_box = QComboBox()
+        self.thousands_box = _SteadyComboBox()
         self.thousands_box.addItem("None", "")
         self.thousands_box.addItem("Comma   1,234", ",")
         self.thousands_box.addItem("Point   1.234", ".")
@@ -213,7 +241,7 @@ class ImportWizard(QDialog):
 
         inst_row = QHBoxLayout()
         inst_row.setSpacing(6)
-        self.instrument_box = QComboBox()
+        self.instrument_box = _SteadyComboBox()
         self.instrument_box.setToolTip(
             "The instrument decides tick size and point value, which decide "
             "what a price move is worth in cash.")
@@ -246,6 +274,14 @@ class ImportWizard(QDialog):
         outer.addWidget(self.status)
 
         buttons = QHBoxLayout()
+        self.detect_button = QPushButton("  Auto-detect columns")
+        self.detect_button.setIcon(icon("search", 15))
+        self.detect_button.setToolTip(
+            "Read the file again and work out the columns from the values: "
+            "which one holds the timestamps, which four are the candle, and "
+            "which holds a volume that is not all zeros.")
+        self.detect_button.clicked.connect(self._auto_detect)
+        buttons.addWidget(self.detect_button)
         self.validate_button = QPushButton("  Validate")
         self.validate_button.setIcon(icon("check", 15))
         self.validate_button.setToolTip(
@@ -329,7 +365,8 @@ class ImportWizard(QDialog):
         self.preview.setColumnCount(width)
         headers = list(self._profile.headers or [])
         headers += [f"Column {i + 1}" for i in range(len(headers), width)]
-        self.preview.setHorizontalHeaderLabels(headers[:width])
+        self.preview.setHorizontalHeaderLabels(
+            [f"{h}\n·" for h in headers[:width]])
         self.preview.setVerticalHeaderLabels([str(i + 1) for i in range(len(rows))])
         for r, row in enumerate(rows):
             for c in range(width):
@@ -361,18 +398,66 @@ class ImportWizard(QDialog):
             out.append((display, reference))
         return out
 
-    def _fill_columns(self) -> None:
+    def _fill_columns(self, mapping: ColumnMapping | None = None) -> None:
         choices = self._column_choices()
-        guess = self._profile.mapping
+        guess = mapping if mapping is not None else self._profile.mapping
         for key, box in self._column_boxes.items():
             box.blockSignals(True)
             box.clear()
             for display, value in choices:
                 box.addItem(display, value)
-            wanted = getattr(guess, key, None)
-            index = box.findData(str(wanted)) if wanted else 0
-            box.setCurrentIndex(max(0, index))
+            box.setCurrentIndex(self._choice_index(box, getattr(guess, key, None)))
             box.blockSignals(False)
+        self._annotate_preview()
+
+    def _choice_index(self, box: QComboBox, wanted: Any) -> int:
+        """Which entry of *box* a mapping reference means.
+
+        ``findData`` alone is not enough: a mapping may address a column by
+        name where the combo holds indices, or the other way round, and a
+        silent fall back to "none" would look exactly like a column the
+        sniffer failed to find.  The loader resolves a reference either way,
+        so this resolves it the same way the loader will.
+        """
+        if wanted in (None, ""):
+            return 0
+        found = box.findData(str(wanted))
+        if found >= 0:
+            return found
+        headers = [str(h) for h in (self._profile.headers or [])]
+        index = resolve_column(headers, str(wanted))
+        if index is not None and 0 <= index + 1 < box.count():
+            return index + 1
+        return 0
+
+    def _annotate_preview(self) -> None:
+        """Write each column's mapped field into the preview header.
+
+        Reading a mapping off eight combo boxes and checking it against the
+        rows above them is exactly the kind of cross-referencing people get
+        wrong.  Putting the field on the column says it once, where the values
+        are.
+        """
+        if self._profile is None:
+            return
+        assigned: dict[int, list[str]] = {}
+        headers = [str(h) for h in (self._profile.headers or [])]
+        for key, box in self._column_boxes.items():
+            reference = box.currentData()
+            if not reference:
+                continue
+            index = resolve_column(headers, str(reference))
+            if index is None:
+                continue
+            assigned.setdefault(index, []).append(_FIELD_LABELS.get(key, key))
+        labels: list[str] = []
+        for index in range(self.preview.columnCount()):
+            name = (headers[index] if index < len(headers)
+                    else f"Column {index + 1}")
+            fields = assigned.get(index)
+            labels.append(f"{name}\n{' + '.join(fields)}" if fields
+                          else f"{name}\n·")
+        self.preview.setHorizontalHeaderLabels(labels)
 
     def _apply_profile_options(self) -> None:
         p = self._profile
@@ -506,7 +591,15 @@ class ImportWizard(QDialog):
                 setattr(mapping, attribute, getattr(p, attribute, None))
         return mapping
 
-    def _validate(self) -> None:
+    def _validate(self, prefix_message: str = "") -> None:
+        """Parse a prefix of the file with the settings on screen.
+
+        If that fails, the mapping is checked against the values and, when the
+        two disagree, corrected and tried once more.  A wrong mapping is the
+        single most common reason an import fails, and the file itself holds
+        the evidence for what the right one is -- so the dialog uses it rather
+        than handing the user a parse error and a grid of eight combo boxes.
+        """
         if self._profile is None:
             self._set_status("Choose a file first.", PALETTE.warning)
             return
@@ -526,31 +619,22 @@ class ImportWizard(QDialog):
                 PALETTE.danger)
             return
 
-        prefix = _write_prefix(self.path, VALIDATE_ROWS,
-                               getattr(self._profile, "encoding", "utf-8"))
-        try:
-            bars = load_csv(prefix, mapping, self.instrument)
-        except CsvImportError as exc:
+        bars, failure = self._try_load(mapping)
+        repaired: list[str] = []
+        if bars is None:
+            candidate, changes = self._repair_mapping(mapping)
+            if changes:
+                retry, retry_failure = self._try_load(candidate)
+                if retry is not None:
+                    bars, mapping, repaired = retry, candidate, changes
+                    self._apply_mapping(mapping)
+                else:
+                    log.info("Repaired mapping also failed: %s", retry_failure)
+        if bars is None:
             self._validated = False
             self._update_ok()
-            detail = f"\n{exc.detail}" if exc.detail else ""
-            self._set_status(f"{exc.user_message}{detail}", PALETTE.danger)
+            self._set_status(failure, PALETTE.danger)
             return
-        except BacktesterError as exc:
-            self._validated = False
-            self._update_ok()
-            self._set_status(exc.user_message, PALETTE.danger)
-            return
-        except Exception as exc:            # pragma: no cover - defensive
-            log.exception("Validation failed unexpectedly")
-            self._validated = False
-            self._update_ok()
-            self._set_status(f"This file could not be read: {exc}", PALETTE.danger)
-            return
-        finally:
-            import shutil
-
-            shutil.rmtree(Path(prefix).parent, ignore_errors=True)
 
         self.mapping = mapping
         self.timeframe = bars.timeframe
@@ -563,14 +647,92 @@ class ImportWizard(QDialog):
         last = pd.Timestamp(bars.end_ts, tz="UTC")
         warnings = list(bars.meta.get("warnings") or [])
         message = (
-            f"Parsed {len(bars):,} of the first {VALIDATE_ROWS:,} rows. "
-            f"Timeframe looks like {bars.timeframe.display_name}. "
-            f"First bar {first:%Y-%m-%d %H:%M} UTC, last {last:%Y-%m-%d %H:%M} UTC.")
-        if warnings:
+            f"{prefix_message}Parsed {len(bars):,} of the first "
+            f"{VALIDATE_ROWS:,} rows. Timeframe looks like "
+            f"{bars.timeframe.display_name}. First bar {first:%Y-%m-%d %H:%M} "
+            f"UTC, last {last:%Y-%m-%d %H:%M} UTC.")
+        if repaired:
+            self._set_status(
+                "The column mapping did not match the file and was corrected: "
+                + "  ".join(repaired) + "  " + message, PALETTE.warning)
+        elif warnings:
             self._set_status(message + "  " + "  ".join(warnings[:2]),
                              PALETTE.warning)
         else:
             self._set_status(message + "  Ready to import.", PALETTE.success)
+
+    def _try_load(self, mapping: ColumnMapping) -> tuple[Any, str]:
+        """Parse the prefix with *mapping*: ``(bars, "")`` or ``(None, why)``."""
+        prefix = _write_prefix(self.path, VALIDATE_ROWS,
+                               getattr(self._profile, "encoding", "utf-8"))
+        try:
+            return load_csv(prefix, mapping, self.instrument), ""
+        except CsvImportError as exc:
+            detail = f"\n{exc.detail}" if exc.detail else ""
+            return None, f"{exc.user_message}{detail}"
+        except BacktesterError as exc:
+            return None, exc.user_message
+        except Exception as exc:            # pragma: no cover - defensive
+            log.exception("Validation failed unexpectedly")
+            return None, f"This file could not be read: {exc}"
+        finally:
+            import shutil
+
+            shutil.rmtree(Path(prefix).parent, ignore_errors=True)
+
+    def _auto_detect(self) -> None:
+        """Re-read the file and take the mapping the values imply.
+
+        This is the same code path the dialog uses when a file is first
+        chosen, so pressing it can only ever produce a mapping the importer
+        itself would have produced -- there is no second, parallel guesser to
+        disagree with the first.
+        """
+        if self._profile is None or not self.path:
+            self._set_status("Choose a file first.", PALETTE.warning)
+            return
+        try:
+            self._profile = sniff_csv(self.path)
+        except Exception as exc:            # pragma: no cover - defensive
+            log.exception("Re-sniffing failed")
+            self._set_status(f"This file could not be inspected: {exc}",
+                             PALETTE.danger)
+            return
+        self._describe_profile()
+        self._fill_preview()
+        self._fill_columns()
+        self._apply_profile_options()
+        self._validated = False
+        self._update_ok()
+        notes = list(self._profile.problems or [])
+        if self.instrument is not None:
+            self._validate(prefix_message="Columns detected from the file. ")
+        elif notes:
+            self._set_status("  ".join(notes[:3]), PALETTE.warning)
+        else:
+            self._set_status("Columns detected from the file. Press Validate.",
+                             PALETTE.text_dim)
+
+    def _repair_mapping(self, mapping: ColumnMapping) -> tuple[ColumnMapping, list[str]]:
+        """Check a mapping against the sample rows and correct what is wrong.
+
+        Returns the mapping to try instead and the sentences describing every
+        change.  An empty list means the mapping already agreed with the data
+        and nothing was touched.
+        """
+        candidate = ColumnMapping.from_dict(mapping.to_dict())
+        try:
+            audit = audit_mapping(candidate, self._profile.headers or [],
+                                  self._profile.sample_rows or [],
+                                  bool(self._profile.has_header))
+        except Exception:                   # pragma: no cover - defensive
+            log.exception("Column audit failed")
+            return mapping, []
+        return audit.mapping, list(audit.changes)
+
+    def _apply_mapping(self, mapping: ColumnMapping) -> None:
+        """Show *mapping* in the combo boxes without re-reading the file."""
+        self._fill_columns(mapping)
 
     def _set_status(self, text: str, colour: str) -> None:
         self.status.setText(text)

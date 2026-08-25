@@ -99,8 +99,30 @@ O(n). Export `register_all()` (idempotent) and make importing the module enough.
   `%d/%m/%Y %H:%M`, `%m/%d/%Y`, and vendor formats like `20230102 093000`.
   Support tz-naive input interpreted in `mapping.timezone` and converted to UTC.
 - `guess_mapping(headers) -> ColumnMapping`.
+- `resolve_column(headers, key) -> int | None` — turn a mapping reference (a
+  header name or a stringified index) into a column position, the same way the
+  loader will.
+- `CsvProfile.row_order` — `+1` oldest first, `-1` newest first, `0` unknown.
 Handle: BOM, quoted fields, blank lines, thousands separators, comma decimals,
 extra columns, files where volume is missing entirely (fill 0 and warn).
+
+### `tradingbacktester/data/autodetect.py`
+Deciding the column layout from the values, not the header names. Called by
+`sniff_csv` after the name-based guess, so every import path gets it.
+- `analyse_columns(headers, rows, decimal, thousands) -> list[ColumnFacts]` —
+  per column: `kind` in `datetime|time|numeric|text|empty`, parsed values,
+  median, `all_zero`, `integral`, `monotone`, detected datetime format.
+- `ohlc_pass_rate(open, high, low, close) -> float` — fraction of bars that can
+  really be one candle. This is the falsifiable test the module rests on.
+- `price_groups(facts) -> list[list[int]]` — numeric columns clustered by
+  row-wise closeness, which separates prices from volume.
+- `row_direction(facts) -> int` — `+1`, `-1` or `0`.
+- `detect_mapping(headers, rows, has_header, decimal, thousands, base=None)
+  -> Detection` — the layout the values imply, names used only to break ties.
+- `audit_mapping(mapping, headers, rows, has_header) -> Detection` — the
+  conservative entry point: keep a mapping that satisfies the OHLC relation,
+  replace one that does not, and only with one that passes. Modifies the
+  mapping in place; `Detection.changes` lists every change in plain language.
 
 ### `tradingbacktester/data/validation.py`
 - `DataIssue(severity, code, message, count, example_index, example_text)`
