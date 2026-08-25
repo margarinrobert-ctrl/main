@@ -394,6 +394,16 @@ geometry and minute-of-day distribution price in drift, costs, barrier width and
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
 TIME stop is a direction bet, not a barrier edge.
 
+**A 5-minute engine cannot score a limit-entry strategy.** Re-running the selected NQ ATME
+configuration against the TRUE 1-minute path left the fills identical (35.7% both ways) and cut the
+result fivefold — research +0.331 R → **−0.003**, validation +0.340 → **+0.070** — purely from exit
+ORDERING, which bar-level code resolves by rule and the minute path resolves by sequence. The
+mechanic still beats a market entry on the same bars by +0.07/+0.16 R on both blocks, so the
+finding holds; the LEVEL does not. Any barrier system whose stop and target sit inside one bar's
+range has to be walked at a finer resolution before its number means anything. And note what the
+perturbation Monte Carlo can and cannot say: P(mean ≤ 0) = 0 prices execution noise on the trades
+you selected, never the selection. See `docs/ib/STUDY_ATME_LIVE.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -434,6 +444,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/scalp/` | intraday trend-following scalp on US30/US100/NQ: chop regime measures, cross-market, frozen rule |
 | `research/hypo/` | the eight-hypothesis programme: library with rationales, full metric suite, robustness score, portfolio correlation |
 | `research/atme/` | adaptive trade management: entry mechanics, trailing/breakeven stops, partials, mechanic isolation |
+| `research/atme/livesim.py` | true 1-minute path re-simulation of a 5-minute config, plus perturbation Monte Carlo |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
