@@ -434,6 +434,18 @@ a sha256 prefix. `python research/datasets.py` inventories and verifies, disting
 SIZE MISMATCH from CONTENT MISMATCH so a re-uploaded file can be PROVED identical to the copy the
 studies ran on. Run it first in any session that touches data.
 
+**V1 IS THE ONLY RULE ON THIS BRANCH WITH THREE INDEPENDENT CONFIRMATIONS.** Run unchanged on
+EURUSD 30m -- a DIFFERENT ASSET CLASS over a period sharing NOT ONE BAR with the NQ file -- it
+scores **+0.0716 R excess over a minute-of-day matched control at p 0.000** on 1,501 trades, and
+tripling the stop slippage moves it to +0.0736. Of the six 30-minute legs testable there, it is the
+ONLY one to pass BH at 0.10. That is three footings: NQ (where it decays across the split, the right
+shape), US100's nine unseen years (+9.2, p 0.0001) and now FX. **V2L does NOT transfer (p 0.367)
+despite passing on US100** -- which retrospectively suggests its US100 pass owed something to being
+the same index. M4 collapses to 98 trades at -0.103 R, as `STUDY_M4_ANATOMY.md` predicts of a day
+filter. The qualification: V1's excess is positive in ALL FOUR EURUSD sub-periods but significant
+only in the last two, and its P&L splits 57/43 between the barrier pair and the time exit. See
+`docs/ib/STUDY_EURUSD_LEGS.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -467,6 +479,7 @@ studies ran on. Run it first in any session that touches data.
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
 | `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
 | `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |
+| `research/eurusd_legs.py`, `run_eurusd_legs.py` | the shipped 30m legs on EURUSD, matched control, BH |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
