@@ -144,6 +144,16 @@ candidates, matched control as the gate, BH at FDR 0.10: 3 passed research, 2 LO
 holdout and the third decayed to barely above the do-nothing baseline. The two that looked best on
 locked both failed research -- the wrong shape. M4's own condition restated at day scale fails its
 research control at p 0.305. `research/ib_features.py`. Do not re-run it.
+**A two-sided filter is an answer key, not a signal.** The HP filter (Harris & Yilmaz momentum,
+QuantConnect 2018) solves for its trend JOINTLY over the whole series, so x_t depends on y_{t+1}...
+Run once over a price history it leaks: daily MNQ goes $8,893 -> $83,789 and Sharpe 0.43 -> 3.95,
+and on 30m it goes from LOSING $7,480 at Sharpe -0.18 to +$519,532 at Sharpe 12.96 with the max
+drawdown collapsing 93% to $1,031. Applied causally the published null replicates -- it loses to
+buy-and-hold ($8,893 vs $24,796), fails a flip-matched control at p 0.238, and 19 of 30 cells of
+its own parameter grid are negative. THE DIAGNOSTIC IS THE SURFACE: causal 11/30 cells positive,
+leaky 30/30. A real edge is a ridge on a noisy surface; a leak is a plateau. Same trap in
+`filtfilt`, `rolling(center=True)`, Savitzky-Golay, symmetric wavelets, STL. A filter is a signal
+only if bar t's value is unchanged had the series ended at bar t. See `docs/ib/STUDY_HP_FILTER.md`.
 
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
@@ -181,6 +191,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 | `research/m4_anatomy.py` | why M4 is profitable: exit split, barrier sweep, day-vs-bar, bands |
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
+| `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
