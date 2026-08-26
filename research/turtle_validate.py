@@ -339,5 +339,105 @@ def reveal(s, p: P, spec: dict, name: str, cut: int, n_trials: int, trial_sd: fl
     return out
 
 
-__all__ = ["daily_series", "daily_matrix", "deflated_sharpe", "expected_max_sharpe", "pbo_cscv",
-           "walk_forward", "stationary_bootstrap_ci", "neighbourhood", "full_control", "reveal"]
+__all__ = ["daily_series", "daily_matrix", "deflated_sharpe", "expected_max_sharpe",
+           "pbo_cscv", "walk_forward", "stationary_bootstrap_ci", "neighbourhood",
+           "neighbourhood_direct", "step_neighbours", "full_control", "reveal"]
+
+
+# ================================================================= direct neighbourhood
+
+STEP_AXES = {
+    "entry1": (4, 6, 8, 10, 14, 20, 28),
+    "entry2": (8, 12, 16, 24, 40, 60),
+    "exit1": (2, 3, 4, 6, 8, 12),
+    "exit2": (2, 3, 4, 6, 8, 12),
+    "atr_mult": (1.0, 1.5, 2.0, 2.5, 3.0),
+    "atr_len": (10, 14, 20, 28),
+    "tp_r": (0.0, 1.0, 2.0, 3.0),
+    "sess_start": (420, 450, 480, 510, 540, 570, 600),
+    "sess_end": (600, 630, 660),
+    "max_hold": (0, 2, 4, 8),
+    "adx_max": (0.0, 18.0, 22.0, 26.0, 30.0),
+    "ext_max": (0.0, 2.0, 3.0, 4.0, 6.0),
+}
+
+
+def step_neighbours(p: P) -> list[tuple[str, P]]:
+    """Every configuration one grid step from `p` along a single axis."""
+    out = []
+    for k, grid in STEP_AXES.items():
+        v = getattr(p, k)
+        cand = [g for g in grid if type(g)(v) == v] if False else list(grid)
+        try:
+            pos = cand.index(type(cand[0])(v))
+        except (ValueError, TypeError):
+            continue
+        for d in (-1, 1):
+            q = pos + d
+            if 0 <= q < len(cand):
+                nv = cand[q]
+                if k in ("entry2",) and nv < p.entry1:
+                    continue
+                if k in ("entry1",) and nv > p.entry2:
+                    continue
+                if k == "sess_end" and nv <= p.sess_start:
+                    continue
+                if k == "sess_start" and nv >= p.sess_end:
+                    continue
+                out.append((f"{k} {v}->{nv}", T.replace(p, **{k: nv})))
+    return out
+
+
+def neighbourhood_direct(name: str, tf: int, p: P, metric: str = "sharpe",
+                         verbose: bool = True) -> dict:
+    """Re-simulate the winner's one-step neighbours instead of looking them up in a saved grid.
+
+    A saved sweep keeps only its best rows, so most of a winner's neighbours are simply absent
+    from it and a lookup-based stability ratio silently measures whichever few survived the cut.
+    Re-running them costs a few dozen simulations and answers the question the protocol actually
+    asks: does the objective survive perturbation, or is this a spike mined out of noise?
+
+    Reported, never optimised.  `CLAUDE.md`: ranking by a minimum over a neighbourhood is the
+    obvious over-correction and it cost $18,970 on that study's holdout.
+    """
+    spec = B.INSTRUMENTS[name]
+    full = B.load(name, tf)
+    cut = B.split_session(full)
+    s = full.window(S.WIN_LO, S.WIN_HI).slice_sessions(0, cut)
+    spy = M.SESSIONS_PER_YEAR[name]
+    daily = np.zeros(cut)
+    out = np.zeros(11)
+
+    def score(q: P) -> dict:
+        legs = {e: X.build_leg(s, q, e) for e in {q.exit1, q.exit2}}
+        t = T.signal_bars(s, q)
+        idx = np.flatnonzero(t).astype(np.int64)
+        if len(idx) < 20:
+            return {"n": 0, metric: float("nan")}
+        S._scan_daily(idx, t[idx].astype(np.int64), s.sess, s.c, legs[q.exit1], legs[q.exit2],
+                      q.skip_win, q.one_shot, q.side, spec["cost_abs"], spec["cost_bp"],
+                      spec["stop_slip"], q.tp_rests, spec.get("comm", 0.0), spec["point_value"],
+                      daily, out)
+        return S._stats(daily, out, spy)
+
+    base = score(p)
+    rows = []
+    for label, q in step_neighbours(p):
+        st = score(q)
+        rows.append({"step": label, "n": st["n"], "sharpe": st["sharpe"], "pf": st["pf"],
+                     "per_trade": st["per_trade"]})
+    df = pd.DataFrame(rows)
+    vals = df[metric].to_numpy()
+    vals = vals[np.isfinite(vals)]
+    b = base[metric]
+    ratio = float(np.median(vals) / b) if (b > 0 and len(vals)) else float("nan")
+    verdict = "spike" if (not np.isfinite(ratio) or ratio < 0.5) else \
+              ("ridge" if ratio < 0.8 else "plateau")
+    if verbose:
+        print(f"  neighbourhood of the winner on {name} {tf}m: base {metric} {b:.3f}, "
+              f"{len(vals)} neighbours, median {np.median(vals):.3f} "
+              f"({ratio:.2f}) -> {verdict}")
+        print(f"    worst neighbour {vals.min():.3f}   best {vals.max():.3f}   "
+              f"share above zero {float((vals > 0).mean()):.0%}")
+    return {"base": b, "neighbours": len(vals), "median": float(np.median(vals)) if len(vals) else
+            float("nan"), "stability": ratio, "verdict": verdict, "table": df}

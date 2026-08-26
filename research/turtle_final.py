@@ -117,6 +117,27 @@ def cost_sensitivity(s, p: P, spec: dict, name: str, lo: int, hi: int,
     return pd.DataFrame(rows)
 
 
+def breakeven_cost(cost: pd.DataFrame) -> dict:
+    """The cost multiple at which the per-trade result reaches zero.
+
+    Net per-trade is affine in the cost multiplier -- `per_trade(m) = gross - m * cost` -- because
+    every cost term scales with the unit count and none of them changes a decision.  Two points on
+    the curve therefore give the whole line, and the intercept is the number that matters most for
+    a marginal scalping result: `RESEARCH_PROTOCOL.md` calls it the safety margin, and on an
+    instrument where the edge is real but smaller than the spread it is the difference between "no
+    edge" and "wrong venue".
+    """
+    a = cost[cost.cost_x == 1.0]
+    b = cost[cost.cost_x == 2.0]
+    if not len(a) or not len(b):
+        return {}
+    p1, p2 = float(a.per_trade.iloc[0]), float(b.per_trade.iloc[0])
+    c = p1 - p2                                  # cost charged per trade at 1x
+    if c <= 0:
+        return {"cost_per_trade": c, "breakeven_x": float("nan")}
+    return {"cost_per_trade": c, "gross_per_trade": p1 + c, "breakeven_x": (p1 + c) / c}
+
+
 def gates(research: dict, locked: dict, pbo: float, wf_eff: float, nb: dict,
           cost: pd.DataFrame, years: pd.DataFrame, hac_t: float) -> pd.DataFrame:
     """The protocol's ten gates, evaluated on the OUT-OF-SAMPLE record."""
@@ -212,6 +233,12 @@ def final(name: str, tf: int, p: P, n_trials: int, trial_sd: float,
     cost = cost_sensitivity(s, p, spec, name, cut, n_sess)
     print("\n  --- locked block, cost sensitivity ---")
     print(cost.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
+    be = breakeven_cost(cost)
+    if be:
+        print(f"    gross ${be.get('gross_per_trade', 0):.2f}/trade against "
+              f"${be['cost_per_trade']:.2f} of modelled cost -> break-even at "
+              f"{be.get('breakeven_x', float('nan')):.2f}x the modelled round turn")
+    res["breakeven"] = be
 
     years = by_year(s, sc, net, cut, n_sess)
     print("\n  --- locked block, by year ---")
@@ -240,4 +267,5 @@ def final(name: str, tf: int, p: P, n_trials: int, trial_sd: float,
     return res
 
 
-__all__ = ["final", "gates", "cost_sensitivity", "by_year", "monte_carlo", "newey_west_t"]
+__all__ = ["final", "gates", "cost_sensitivity", "breakeven_cost", "by_year",
+           "monte_carlo", "newey_west_t"]

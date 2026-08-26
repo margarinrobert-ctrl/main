@@ -75,6 +75,19 @@ def phase1() -> None:
     print("  are among the kept rows -- so the bar is an upper bound and a best Sharpe below it is")
     print("  decisive in one direction only: it cannot be called a finding.")
 
+    print("\n--- which axes actually carry the result (median over the kept rows) ---")
+    for nm, tf in sorted({(r["instrument"], r["tf"]) for r in rows if r["side"] == "long"}):
+        f = os.path.join(OUT, f"{nm}_{tf}m_long.parquet")
+        df = pd.read_parquet(f)
+        parts = []
+        for ax in ("chan_shift", "armed_stop", "use_chan_exit", "skip_win", "pyr_step", "tp_r",
+                   "atr_mult"):
+            g = df.groupby(ax).sharpe.median()
+            parts.append(ax + ": " + "  ".join(f"{k}={v:+.2f}" for k, v in g.items()))
+        print(f"  {nm} {tf}m")
+        for line in parts:
+            print("     " + line)
+
     print("\n--- direction control: what a search of the same size finds on each side ---")
     piv = t.pivot_table(index=["instrument", "tf"], columns="side",
                         values=["best_sharpe", "best_excess"])
@@ -105,8 +118,23 @@ def phase2(per_instrument: int = 2500, min_trades: int = 150) -> None:
             print("   no configuration is evaluable on every instrument")
             continue
         ok = j[j.all_positive_excess & j.all_positive_sharpe & j.all_enough_trades]
-        print(f"   {len(j):,} scored on all {len(insts)};  {len(ok):,} clear every instrument's "
-              f"own control with a positive Sharpe and >= {min_trades} trades")
+        exonly = j[j.all_positive_excess & j.all_enough_trades]
+        print(f"   {len(j):,} scored on all {len(insts)}")
+        print(f"   {len(exonly):,} beat their own matched control on EVERY instrument "
+              f"({len(exonly) / max(len(j), 1):.1%})")
+        print(f"   {len(ok):,} of those are also net profitable on every instrument")
+        # The two are different questions and separating them is the point.  Beating the control
+        # says the entry rule carries information; being net profitable additionally requires that
+        # information to be worth more than the instrument's round turn.  A rule can clear the
+        # first on all three and the second on one, and then the thing that differs is the cost
+        # line, not the signal.
+        for nm in insts:
+            sub = j[j.all_positive_excess]
+            if len(sub):
+                print(f"     {nm:<5} median excess ${sub[f'ex_per_trade__{nm}'].median():>8.2f}"
+                      f"/trade   median net/trade "
+                      f"${sub[f'per_trade__{nm}'].median():>8.2f}   median Sharpe "
+                      f"{sub[f'sharpe__{nm}'].median():>6.2f}")
         # A three-way agreement is the goal, but its absence is a result rather than a dead end:
         # report which pairs agree so the study can say whether the structure travels at all.
         for a in insts:
@@ -118,10 +146,13 @@ def phase2(per_instrument: int = 2500, min_trades: int = 150) -> None:
                             & (j[f"n__{a}"] >= min_trades) & (j[f"n__{b}"] >= min_trades)]
                 print(f"     pair {a}+{b}: {len(pair_ok):,} agree "
                       f"({len(pair_ok) / max(len(j), 1):.1%} of scored)")
-        if len(ok):
+        show = ok if len(ok) else exonly
+        if len(show):
+            tag = "net profitable everywhere" if len(ok) else "control-beating everywhere"
+            print(f"   top by median Sharpe among the {tag} set:")
             cols = SEL.KEY + [f"sharpe__{nm}" for nm in insts] + \
                    [f"ex_per_trade__{nm}" for nm in insts] + ["median_sharpe", "worst_sharpe"]
-            print(ok.sort_values("median_sharpe", ascending=False).head(12)[cols]
+            print(show.sort_values("median_sharpe", ascending=False).head(12)[cols]
                   .to_string(index=False, float_format=lambda v: f"{v:.3f}"))
         store[tf] = j
         j.to_parquet(os.path.join(OUT, f"coherence_{tf}m.parquet"), index=False)

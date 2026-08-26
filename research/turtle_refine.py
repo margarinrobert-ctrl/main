@@ -39,13 +39,17 @@ ADX_MAX = (0.0, 18.0, 22.0, 26.0, 30.0)
 EXT_MAX = (0.0, 2.0, 3.0, 4.0, 6.0)
 MAX_HOLD = (0, 2, 4, 8)
 ONE_SHOT = (False, True)
-BREAK_TICKS = (0.0, 1.0, 2.0)          # in instrument ticks, resolved per instrument
+# How far price must trade THROUGH the channel before the break counts, as a fraction of ATR.
+# Expressed in ATR rather than ticks because a tick is not comparable across these three: one US30
+# tick is 0.25 bp of the index, one BTC tick is 0.0025 bp of the price.  A fraction of ATR asks the
+# same question of all of them.
+BREAK_ATR = (0.0, 0.05, 0.15)
 FLATTEN = 660
 
 
 def grid_size() -> int:
     return (len([1 for a in SESS_START for b in SESS_END if b > a]) * len(ADX_MAX) * len(EXT_MAX)
-            * len(MAX_HOLD) * len(ONE_SHOT) * len(BREAK_TICKS))
+            * len(MAX_HOLD) * len(ONE_SHOT) * len(BREAK_ATR))
 
 
 def refine(name: str, tf: int, base: P, min_trades: int = 120,
@@ -60,7 +64,7 @@ def refine(name: str, tf: int, base: P, min_trades: int = 120,
     out = np.zeros(11)
     minutes = np.unique(s.ny_min)
     mslot = np.searchsorted(minutes, s.ny_min)
-    tick = spec["tick"]
+    med_atr = float(np.nanmedian(s.atr(base.atr_len)))
 
     rows = []
     # `max_hold` is the only refined axis that changes the exit tensor, so it is the outer loop.
@@ -70,11 +74,11 @@ def refine(name: str, tf: int, base: P, min_trades: int = 120,
         mus = {e: S.bucket_means(s, legs[e], spec, mslot, len(minutes), cost_mult, b.tp_rests)
                for e in legs}
         for ss, se, adx, ext, bt in itertools.product(SESS_START, SESS_END, ADX_MAX, EXT_MAX,
-                                                      BREAK_TICKS):
+                                                      BREAK_ATR):
             if se <= ss:
                 continue
             p = T.replace(b, sess_start=ss, sess_end=se, adx_max=adx, ext_max=ext,
-                          break_ticks=bt * tick)
+                          break_ticks=bt * med_atr)
             t = T.signal_bars(s, p)
             idx = np.flatnonzero(t).astype(np.int64)
             if len(idx) < min_trades:
@@ -94,7 +98,8 @@ def refine(name: str, tf: int, base: P, min_trades: int = 120,
                     continue
                 st = S._stats(daily, out, spy)
                 rows.append({"sess_start": ss, "sess_end": se, "adx_max": adx, "ext_max": ext,
-                             "break_ticks": bt, "max_hold": mh, "one_shot": osx, **st,
+                             "break_atr": bt, "break_ticks": bt * med_atr,
+                             "max_hold": mh, "one_shot": osx, **st,
                              "ctrl_per_trade": ctrl,
                              "ex_per_trade": st["per_trade"] - ctrl,
                              "instrument": name, "tf": tf, "flatten_min": FLATTEN})
@@ -115,4 +120,5 @@ def summarise_axis(df: pd.DataFrame, axis: str, metric: str = "sharpe") -> pd.Da
     return g
 
 
-__all__ = ["refine", "summarise_axis", "grid_size", "SESS_START", "SESS_END", "FLATTEN"]
+__all__ = ["refine", "summarise_axis", "grid_size", "SESS_START", "SESS_END",
+           "BREAK_ATR", "FLATTEN"]
