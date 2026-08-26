@@ -97,8 +97,13 @@ express. Ranks of the seven Kalman features among 124:
 | `kf_dist_atr` | 61 | +4.23 | 0.293 |
 
 **None survives correction for 47 effective tests.** The two slope features separate *negatively*,
-consistent with the mean-reversion finding. `kf_slope_atr` returned z exactly 0.00, which is more
-likely a degenerate scaling than a result and needs checking before that row is cited.
+consistent with the mean-reversion finding.
+
+`kf_slope_atr` returned z of exactly 0.00, which I first flagged as probably a degenerate scaling.
+It is not: the feature has 70,671 unique values, sd 0.118 and a range of −0.60 to +0.84. Both
+deciles simply contain **n = 307 with exactly 150 wins each** — 48.8599% against 48.8599%, an exact
+tie rather than a bug. Recorded because the wrong guess is the more instructive half: a suspicious
+zero deserves the two-minute check before it is either cited or dismissed.
 
 ## Verdict
 
