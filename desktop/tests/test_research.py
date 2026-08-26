@@ -367,3 +367,24 @@ def test_cli_scans_for_anomalies(tmp_path, capsys):
     assert len(payload["findings"]) == len(DETECTORS)
     assert payload["quality"], "the data-quality section was empty"
     assert all(f["verdict"] for f in payload["findings"])
+
+
+def test_a_trend_feature_that_agrees_with_the_drift_is_flagged(us30_30m):
+    """US30 tripled over the shipped sample; that has to be said out loud."""
+    from tradingbacktester.data.bundled import find as find_bundled
+
+    dataset = find_bundled("US30 15m")
+    bars = load_csv(str(dataset.path()), sniff_csv(str(dataset.path())).mapping,
+                    default_instrument_for("US30"))
+    study = study_features(bars, style("swing"), timeframe="1h")
+    assert study.baseline > 0, "expected a rising market in this sample"
+    text = " ".join(format_study(study, top=40).split())
+    assert "measuring the drift rather than predicting" in text
+
+    trend = [f for f in study.findings
+             if f.feature.family == "trend" and f.research.significant
+             and f.research.ic > 0]
+    assert trend, "expected some significant trend features on this sample"
+    for finding in trend:
+        assert any("same way the market went" in c for c in finding.concerns), \
+            f"{finding.name} was not flagged as possible drift"

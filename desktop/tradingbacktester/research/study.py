@@ -229,6 +229,9 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
         _judge(finding, cost_per_trade)
         findings.append(finding)
 
+    for finding in findings:
+        _drift_caveat(finding, baseline, side)
+
     findings.sort(key=lambda f: (-abs(f.research.ic) if f.research.significant
                                  else 1.0, f.research.q_value))
     significant = sum(1 for f in findings if f.research.significant)
@@ -247,6 +250,18 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
         f"length of the trade. Without that correction a persistent indicator "
         f"against an overlapping outcome reads about three times more "
         f"significant than it is.")
+    if (baseline > 0 and side > 0) or (baseline < 0 and side < 0):
+        way = "rose" if side > 0 else "fell"
+        notes.append(
+            f"The market {way} over this period: a trade opened on every bar "
+            f"and held to the same barriers made {baseline:+,.2f} "
+            f"{getattr(instrument, 'currency', 'USD')} on average. The decile "
+            f"spreads below are measured against that, so a feature only "
+            f"counts if it separates good trades from bad ones beyond the "
+            f"drift -- but a trend feature ranking highly is still the single "
+            f"most likely thing here to be measuring the drift rather than "
+            f"predicting anything, and the only way to settle it is a second "
+            f"instrument or a period that went the other way.")
     notes.append(
         f"A round turn costs about {cost_per_trade:,.2f} "
         f"{getattr(instrument, 'currency', 'USD')} on this instrument. A "
@@ -271,6 +286,26 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
         independent=len(clusters), significant=significant,
         findings=findings, clusters=clusters, notes=notes,
         elapsed=time.time() - started)
+
+
+def _drift_caveat(finding: FeatureFinding, baseline: float, side: int) -> None:
+    """Flag a trend feature that agrees with the direction the market went.
+
+    US30 tripled over the period this application ships data for. "Buy when
+    price is above the 200 EMA" would have worked on that sample whether or not
+    it means anything, and no amount of statistics inside one rising market can
+    tell the two apart.
+    """
+    if not finding.research.significant:
+        return
+    if finding.feature.family != "trend":
+        return
+    drifted = (baseline > 0 and side > 0) or (baseline < 0 and side < 0)
+    if drifted and np.sign(finding.research.ic) == np.sign(side):
+        finding.concerns.append(
+            "this is a trend feature pointing the same way the market went "
+            "over this sample, which is the most likely thing here to be "
+            "drift rather than prediction; test it on an instrument that fell")
 
 
 def _judge(finding: FeatureFinding, cost: float) -> None:
