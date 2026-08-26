@@ -48,9 +48,16 @@ def total_trials() -> int:
 
 
 def pick(name: str, tf: int, top: int = 40, min_trades: int = 250, min_pf: float = 1.05,
-         verbose: bool = True) -> tuple[P, pd.DataFrame]:
-    """The best candidate whose neighbourhood is not a spike."""
-    df = pd.read_parquet(os.path.join(OUT, f"{name}_{tf}m_long.parquet"))
+         verbose: bool = True, side: int = 1) -> tuple[P, pd.DataFrame]:
+    """The best candidate whose neighbourhood is not a spike.
+
+    `side = -1` runs the identical procedure on the short mirror.  That is not a strategy: it is a
+    control on the PROCEDURE.  Everything downstream -- the spike test, the marginal-supported
+    refinement, the locked read -- is applied to it unchanged, so whatever it produces is what this
+    pipeline extracts from a side the sample was against.
+    """
+    tag = "long" if side > 0 else "short"
+    df = pd.read_parquet(os.path.join(OUT, f"{name}_{tf}m_{tag}.parquet"))
     spec = B.INSTRUMENTS[name]
     g = df[(df.n >= min_trades) & (df.ex_per_trade > 0) & (df.pf >= min_pf)]
     if not len(g):
@@ -63,7 +70,7 @@ def pick(name: str, tf: int, top: int = 40, min_trades: int = 250, min_pf: float
     g = g.drop_duplicates(subset=["n", "net"]).head(top)
     rows = []
     for _, r in g.iterrows():
-        p = S.to_params(_row(r, tf), spec)
+        p = S.to_params(_row(r, tf, side), spec)
         nb = V.neighbourhood_direct(name, tf, p, verbose=False)
         rows.append({**{k: r[k] for k in SEL.KEY}, "sharpe": r.sharpe, "pf": r.pf, "n": r.n,
                      "per_trade": r.per_trade, "ex_per_trade": r.ex_per_trade,
@@ -78,13 +85,13 @@ def pick(name: str, tf: int, top: int = 40, min_trades: int = 250, min_pf: float
     if not len(ok):
         raise SystemExit(f"{name} {tf}m: every top candidate is a spike")
     best = ok.sort_values("sharpe", ascending=False).iloc[0]
-    return S.to_params(_row(best, tf), spec), tbl
+    return S.to_params(_row(best, tf, side), spec), tbl
 
 
-def _row(r, tf: int) -> pd.Series:
+def _row(r, tf: int, side: int = 1) -> pd.Series:
     d = {k: r[k] for k in SEL.KEY}
     d.update(sess_start=int(r.get("sess_start", 420)), sess_end=int(r.get("sess_end", 660)),
-             flatten_min=int(r.get("flatten_min", 660)), side=1, tf=tf,
+             flatten_min=int(r.get("flatten_min", 660)), side=side, tf=tf,
              adx_max=float(r.get("adx_max", 0.0)), ext_max=float(r.get("ext_max", 0.0)),
              break_ticks=float(r.get("break_ticks", 0.0)))
     return pd.Series(d)
@@ -178,7 +185,8 @@ def candidates_for_pbo(name: str, tf: int, n: int = 400, seed: int = 20250822) -
 def main() -> None:
     name, tf = sys.argv[1], int(sys.argv[2])
     reveal = "--reveal" in sys.argv
-    base, tbl = pick(name, tf)
+    side = -1 if "--short" in sys.argv else 1
+    base, tbl = pick(name, tf, side=side)
     print(f"\n  geometry chosen: {base}")
     final_p, argmax_p, rf = refine_pick(name, tf, base)
     print(f"\n  marginal-supported: {final_p}")
@@ -188,9 +196,10 @@ def main() -> None:
     print(f"\n  configurations evaluated across the whole study: {k:,}")
     meta = SEL.load_meta()
     sd = float(meta[(meta.instrument == name) & (meta.tf == tf) &
-                    (meta.side == 1)].trial_sharpe_sd.iloc[0])
+                    (meta.side == side)].trial_sharpe_sd.iloc[0])
 
-    with open(os.path.join(OUT, f"chosen_{name}_{tf}m.json"), "w") as fh:
+    tag = "" if side > 0 else "_short"
+    with open(os.path.join(OUT, f"chosen_{name}_{tf}m{tag}.json"), "w") as fh:
         json.dump({"params": final_p.as_dict(), "argmax": argmax_p.as_dict(),
                    "base": base.as_dict(), "instrument": name, "tf": tf,
                    "n_trials": k, "trial_sd": sd}, fh, indent=1)
@@ -198,8 +207,11 @@ def main() -> None:
         print("\n  (research only -- re-run with --reveal to read the locked block)")
         return
     cand = candidates_for_pbo(name, tf)
+    if side < 0:
+        cand["side"] = -1
     F.final(name, tf, final_p, k, sd, candidates=cand, sweep_df=None,
-            label=f"{name} {tf}m Turtle scalp 07:00-11:00")
+            label=f"{name} {tf}m Turtle scalp 07:00-11:00"
+                  + ("" if side > 0 else "  [SHORT MIRROR -- procedure control]"))
 
 
 if __name__ == "__main__":
