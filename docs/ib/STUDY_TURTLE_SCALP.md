@@ -23,7 +23,8 @@ both sides, the answer is a **negative result with one weak survivor**:
 
 Two methodological results are worth more than the strategy. Running the identical pipeline on the
 **short mirror** showed that a matched-control p-value computed on a selected winner is not a
-p-value — the short side scored the *larger* excess at the same significance (§4.2). And the mirror
+p-value — the short side, on the side the sample was against, scored the *larger* control excess
+(+$122.17 a trade against +$69.10) and both then lost money out of sample (§4.2). And the mirror
 test **predicted the holdout ranking exactly**, where PBO and walk-forward got it backwards (§4.1).
 
 ```bash
@@ -259,13 +260,15 @@ everywhere else in this repository.
 
 | | US30 5m | US30 15m | US30 30m | US30 60m |
 | --- | --- | --- | --- | --- |
-| best Sharpe of 645,120 | 0.28 | 0.47 | 0.78 | **0.81** |
+| best Sharpe of 645,120 | 0.281 | 0.466 | 0.783 | **0.808** |
 | **mean** Sharpe over the grid | **−1.59** | −0.45 | −0.08 | −0.06 |
-| best config: units per trade | 2.51 | 2.65 | 1.65 | 1.00 |
-| gross $/trade | 73.19 | 73.19 | 69.06 | 55.57 |
-| modelled cost $/trade | 34.84 | 34.84 | 22.34 | **13.56** |
-| break-even cost multiple | ~1.1× | 2.10× | 3.09× | **4.10×** |
-| median hold | 65 min | 75 min | 75 min | 84 min |
+| best config: trades | 1,998 | 1,347 | 1,200 | 542 |
+| best config: units per trade | 2.51 | 2.65 | 1.65 | **1.00** |
+| gross $/trade | 53.65 | 73.19 | 69.06 | 55.57 |
+| modelled cost $/trade | 35.15 | 34.84 | 22.34 | **13.56** |
+| net $/trade | 18.50 | 38.35 | **46.72** | 42.01 |
+| break-even cost multiple | 1.53× | 2.10× | 3.09× | **4.10×** |
+| median hold | 65 min | 75 min | 74 min | 84 min |
 
 Three readings, in increasing order of usefulness.
 
@@ -273,12 +276,14 @@ Three readings, in increasing order of usefulness.
 the bars get longer: −1.59 Sharpe at 5 minutes, −0.06 at 60. That is the protocol's §3b arithmetic
 happening in front of the strategy — halving the bar halves the move and leaves the cost alone.
 
-**The gross edge per trade barely moves; the cost per trade triples.** $73 of gross at 5 minutes
-against $73 at 15, $69 at 30 and $56 at 60 — but the cost goes 34.84 → 34.84 → 22.34 → 13.56,
-because the pyramid fills more units on faster bars. Speed is not buying opportunity here; it is
-buying turnover.
+**The cost per trade falls monotonically with the bar size, and the gross edge does not rise to
+meet it.** Cost goes 35.15 → 34.84 → 22.34 → 13.56, tracking the unit count almost exactly (2.51 →
+2.65 → 1.65 → 1.00): the pyramid ladder is spaced in ATR, so a faster chart fills more of it and
+pays another round turn for each fill. Gross, meanwhile, is humped — $54 at 5 minutes, peaking at
+$73 at 15, back to $56 at 60 — so the break-even multiple, which is the ratio of the two, climbs
+monotonically from 1.53× to 4.10×. Speed is not buying opportunity here; it is buying turnover.
 
-**The trade has a natural length of about 75 minutes, at every timeframe.** 65, 75, 75, 84 minutes
+**The trade has a natural length of about 75 minutes, at every timeframe.** 65, 75, 74, 84 minutes
 of median hold across a 12× range of bar sizes. The bar size is not choosing how long the trade
 lasts — the move is — so a faster chart is subdividing the same trade into more decisions and
 paying for each of them.
@@ -313,8 +318,8 @@ and their mirrors 0.58 and 0.60 — a search of that size, on those bars, on the
 
 **And the matched control does not rescue them.** Put the short mirror through the identical
 pipeline — spike test, marginal-supported refinement — and its research-block winner beats *its*
-matched control by **+$95.39 a trade at p = 0.0025**, against the long winner's +$68.99 at the same
-p. The side this sample was against scores the larger excess with the same significance.
+matched control by **+$122.17 a trade at p = 0.008**, against the long winner's **+$69.10 at
+p = 0.002**. The side this sample was against scores the larger excess, and both are emphatic.
 
 That is not a defect in the control. It is what a p-value means after selection: the excess and the
 objective are correlated, so choosing the maximum of 645,120 cells on either side produces a
@@ -535,10 +540,11 @@ beats the out-of-sample median of a uniformly bad field every time.
 
 ### 4.2 The control p-value did not survive selection, and the short mirror shows why
 
-On the research block the 60-minute long winner beat its matched control by $69.10 a trade at
-p = 0.002. The **short** winner, chosen by the identical procedure on the side the sample was
-against, beat *its* control by $115.71 a trade at p = 0.005. Both were emphatic; both were wrong.
-On the holdout the long went to −$35.21 of excess (p = 0.86) and the short to −$40.49 (p = 0.76).
+On the research block the 60-minute long winner beat its matched control by **$69.10 a trade at
+p = 0.002**. The **short** winner, chosen by the identical procedure on the side the sample was
+against, beat *its* control by **$122.17 a trade at p = 0.008**. Both were emphatic; both were
+wrong. On the holdout the long went to −$35.21 of excess (p = 0.86) and the short to −$40.49
+(p = 0.76).
 
 The control is not the problem — §3.4's grid-wide result is entirely built on it and is the
 strongest evidence here. What fails is quoting a control p-value for a configuration the search

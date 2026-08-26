@@ -77,7 +77,7 @@ family. Treat it as a defect, not a result.
 the right instrument -- it is what makes an individual configuration interpretable -- but the
 objective and the excess are correlated, so the maximum of a large grid is extreme in both. Proof:
 run the identical pipeline on the SHORT MIRROR. On US30 60m the short winner beat its own control
-by $115.71/trade at p 0.005, against the long winner's $69.10 at p 0.002 -- the side the sample was
+by $122.17/trade at p 0.008, against the long winner's $69.10 at p 0.002 -- the side the sample was
 *against* scored the larger excess. Both then lost money on the holdout. Compute the control
 BEFORE selection, over the space: `share of a uniform grid sample that beats its own control` is a
 number nothing was selected to produce. See `docs/ib/STUDY_TURTLE_SCALP.md`.
