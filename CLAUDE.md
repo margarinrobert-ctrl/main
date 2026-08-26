@@ -112,6 +112,21 @@ crossovers on research (p 0.005, PF 1.48) and decays to p 0.258 / PF 1.07 with 8
 top 1% of trades; over a 6x7 length grid the surface rises monotonically with the KAMA period, so
 the 9 is not the mechanism. `docs/ib/STUDY_KAMA_ENTRY.md`.
 
+**A COST IS A FRACTION OF RISK, NOT A NUMBER OF POINTS — and the 15m Turtle gate transfers.** On 15m
+NQ the Turtle's ADX ceiling and EMA100 not-extended ceiling are both INVERTED: as floors (ADX>=20,
+EMA distance >=3.0 ATR) plus a new ATR-expansion gate (>=1.10) and 3 units instead of 4, PF goes
+0.94 -> 1.58 research and **1.56 holdout**. The three gates are near-independent (|rho| <= 0.23) and
+counting them gives a monotone chop score (3/3 PF 1.58, 0/3 0.63). Frozen and applied to US30 and
+XAUUSD -- markets that had no part in finding it -- both flip from negative to positive: pooled in
+ATR-normalised units, baseline -0.0655 against improved **+0.1469** per trade over 17,073 vs 2,889
+trades. **But the first cross-market run charged NQ's 1.72-point round turn in GOLD's points, which
+is 54.2% of gold's 2N stop against 3.7% of NQ's**, and reported PF 0.35 as a decisive failure. Always
+express cost as a fraction of the stop before comparing markets. Caveats that stay attached: NQ
+holdout n=88 with a bootstrap of [-23.9, +140.7]; the EMA-distance ridge runs off the grid so 3.0 was
+taken from the interior; the holdout's 2-of-3 bucket earned more than 3-of-3 and was left unacted;
+gold is improved but straddles break-even; ES has never been supplied.
+`docs/ib/STUDY_TURTLE_15M.md`, `research/turtle15/`.
+
 **A published indicator stack can be a random entry, and the grid hides it.** Donchian 20 + EMA 50
 + ADX>20 + CHOP<40 with a 3xATR trail, on the 1-hour chart it is published for: **0 of 384 scorable
 combinations** of its own 432-parameter grid beat a matched control at p<0.05, against 19 expected

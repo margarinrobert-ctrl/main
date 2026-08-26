@@ -153,3 +153,60 @@ judging.
 **No cross-market anything.** The correlation matrix, the ES/YM confirmation test, the equity/gold
 regime work and the per-market comparison table all require data this environment does not have.
 They are not negative results; they are unrun.
+
+## Cross-market: the gate transfers, and a units error nearly hid it
+
+`research/turtle15/markets.py`. US30 15-minute (2016-10 → 2025-07, 193,942 bars) and XAUUSD
+15-minute resampled from 5m (2004-06 → 2026-01, 494,235 bars) arrived after the study above was
+finished. **Every constant stayed frozen** — ADX ≥ 20, EMA distance ≥ 3.0 ATR, ATR ratio ≥ 1.10,
+three units, all chosen on NQ. Nothing was refitted, which is the point: a rule needing new
+constants per market has not transferred, it has been fitted twice.
+
+Note these two markets have no research/holdout distinction of their own here. The gate was fitted
+on NQ, so **both of their blocks are out-of-sample** — they are two independent samples, not a
+selection pair.
+
+### The units error, found in my own first run
+
+The first pass charged the NQ round turn — 1.72 points — in each market's own points, and gold came
+back at PF 0.35 to 0.74: a decisive-looking failure. It was arithmetic.
+
+| market | median close | median ATR(20) | 2N stop | 1.72 points as % of risk |
+| --- | ---: | ---: | ---: | ---: |
+| NQ | 20,227 | 23.24 | 46.49 | 3.7% |
+| US30 | 31,023 | 31.21 | 62.42 | 2.8% |
+| XAUUSD | 1,306 | **1.59** | **3.17** | **54.2%** |
+
+**Gold was paying more than half its stop distance in fees on every trade.** A cost is not a number,
+it is a *fraction of the risk being taken*, and the two only coincide inside one instrument. Re-run
+with each market paying the same fraction of its own ATR that NQ pays:
+
+| market | block | baseline PF | **improved PF** | improved pts/trade | selectivity p |
+| --- | --- | ---: | ---: | ---: | ---: |
+| US30 | first 65% | 0.98 | **1.07** | +5.75 | 0.303 |
+| US30 | last 35% | 0.86 | **1.30** | +33.82 | **0.0097** |
+| XAUUSD | first 65% | 0.90 | **0.94** | −0.26 | 0.371 |
+| XAUUSD | last 35% | 1.04 | **1.18** | +1.32 | 0.148 |
+
+Pooled in ATR-normalised units so two instruments can be added at all:
+
+| | trades | 2N-units per trade |
+| --- | ---: | ---: |
+| baseline, both markets | 17,073 | **−0.0655** |
+| improved, both markets | 2,889 | **+0.1469** |
+
+**Both markets flip from negative to positive, and the shipped gate is worse than no gate on US30
+too** (PF 0.97 research / 0.79 locked against a 1.00 / 0.87 baseline) — the inversion replicates on
+8.7 years of data that had no part in finding it.
+
+**What it does not establish.** Only US30 clears significance on its own, and only in one of its two
+blocks. Gold is *improved* but lands either side of break-even (0.94 and 1.18) — consistent with
+`STUDY_XAUUSD_SCALP.md` finding no robust edge there by any route. **ES was requested and has still
+not been supplied**, so the four-market comparison the brief asked for remains three markets. And
+the BTC file supplied alongside these is **daily bars over thirteen months** — it cannot inform
+15-minute work at all.
+
+**The durable lesson is the units one.** Every cost figure on this branch is quoted in points, and
+points are not comparable across instruments. Before any cross-market cost comparison, express the
+cost as a fraction of the stop distance. Had that check not been run, this study would have
+concluded that the gate fails on gold — with a table to prove it.
