@@ -59,11 +59,18 @@ def _fmt(v) -> str:
 
 
 def _switch(name: str, presets: dict, field: str, custom: str, kind: str) -> str:
-    """A Pine `switch` mapping the preset name to one resolved constant."""
+    """A Pine `switch` mapping the preset name to one resolved constant.
+
+    `kind` matters: Pine's `switch` arms must all be the same type, and a bool coerced through
+    `float()` emits `1` where the script needs `true`.  A silent type change like that is exactly
+    what `verify()` re-reads the generated text to catch.
+    """
     lines = [f"{name} = switch presetName"]
     for label, p in presets.items():
         v = getattr(p, field) if isinstance(p, P) else p[field]
-        if kind == "float":
+        if kind == "bool":
+            v = bool(v)
+        elif kind == "float":
             v = float(v)
         elif kind == "int":
             v = int(v)
@@ -126,7 +133,10 @@ cExtMax   = input.float(0, "Custom max distance above EMA100 in ATR (0 = off)", 
      group = "Custom only")
 cSkipWin  = input.bool(true,  "Custom: skip System 1 after a win", group = "Custom only")
 cChanExit = input.bool(true,  "Custom: trailing channel exit",     group = "Custom only")
+cArmed    = input.bool(false, "Custom: stop live on the entry bar", group = "Custom only")
 cOneShot  = input.bool(false, "Custom: at most one trade per session", group = "Custom only")
+cChanShift = input.int(1, "Custom: trailing channel lag (bars)", minval = 0, maxval = 3,
+     group = "Custom only")
 
 // ----------------------------------------------------------------- resolved constants
 isCustom = presetName == "Custom"
@@ -142,9 +152,11 @@ isCustom = presetName == "Custom"
 {sw("maxHoldP", "max_hold", "cMaxHold", "int")}
 {sw("adxMaxP", "adx_max", "cAdxMax")}
 {sw("extMaxP", "ext_max", "cExtMax")}
-{sw("skipWinP", "skip_win", "cSkipWin")}
-{sw("chanExitP", "use_chan_exit", "cChanExit")}
-{sw("oneShotP", "one_shot", "cOneShot")}
+{sw("skipWinP", "skip_win", "cSkipWin", "bool")}
+{sw("chanExitP", "use_chan_exit", "cChanExit", "bool")}
+{sw("armedStopP", "armed_stop", "cArmed", "bool")}
+{sw("oneShotP", "one_shot", "cOneShot", "bool")}
+{sw("chanShiftP", "chan_shift", "cChanShift", "int")}
 {chr(10).join(sess_sw)}
 {chr(10).join(tf_sw)}
 
@@ -162,7 +174,9 @@ adxMax   = adxMaxP
 extMax   = extMaxP
 skipWin  = skipWinP
 chanExit = chanExitP
+armedStp = armedStopP
 oneShot  = oneShotP
+chanLag  = chanShiftP
 sessUsed = entrySess == "" ? entrySessDef : entrySess
 
 onDesignTF = isCustom or timeframe.period == designTF
@@ -221,24 +235,56 @@ if strategy.opentrades > lastCount
         entryBar  := bar_index
         initRisk  := atrMult * anchorAtr
         tpLvl     := tpR > 0 ? fillPx + tpR * initRisk : na
-        sessTrade := dayofmonth * 100 + month
+        sessTrade := dayofmonth(time, sessTZ) * 100 + month(time, sessTZ)
     stopLvl   := fillPx - atrMult * anchorAtr
     nextAdd   := fillPx + pyrStep * anchorAtr
     unitsOn   := strategy.opentrades
     lastCount := strategy.opentrades
 
 flat = strategy.position_size == 0
-sameSess = not na(sessTrade) and sessTrade == dayofmonth * 100 + month
+// Bare `dayofmonth` / `month` are EXCHANGE time.  For a CFD feed that is neither New York
+// nor anything the session strings use, so a one-trade-per-session rule keyed on them would
+// roll over at the wrong hour.  Both are read in the session timezone instead.
+sameSess = not na(sessTrade)
+     and sessTrade == dayofmonth(time, sessTZ) * 100 + month(time, sessTZ)
 
 // ----------------------------------------------------------------- entries
 sig2 = high > chanHi2[1]
 sig1 = high > chanHi1[1]
 
+// ----------------------------------------------------------------- exit level
+// One stop at the HIGHER of the ATR stop and the trailing channel low: a falling price reaches
+// that level first.  The channel is read as of the PREVIOUS bar when chanLag is 1, which is what
+// the original script's `chanLo1[1]` does; chanLag 0 uses this bar's, which trails looser because
+// including the current bar can only push the low down.  When a bar contains both this stop and
+// the take-profit, TradingView's broker emulator assumes the least favourable intrabar path and
+// fills the stop -- the same pessimism the research engine applies, so the two agree there.
+chanRaw1    = chanLag == 1 ? chanLo1[1] : chanLo1
+chanRaw2    = chanLag == 1 ? chanLo2[1] : chanLo2
+chanExitLvl = sysOn == 1 ? chanRaw1 : chanRaw2
+stopOnly    = na(stopLvl) ? chanExitLvl : stopLvl
+exitLevel   = not chanExit ? stopOnly
+     : (na(chanExitLvl) ? stopOnly : (na(stopLvl) ? chanExitLvl : math.max(stopLvl, chanExitLvl)))
+
+heldTooLong = maxHold > 0 and not na(entryBar) and (bar_index - entryBar) >= maxHold
+
+// ----------------------------------------------------------------- entries
+// Every entry is bracketed on the bar it is ORDERED, not on the bar after it fills.  That is what
+// makes the two behaviours below reproducible in Pine at all:
+//   * `armedStp` -- the stop is live on the entry bar itself, anchored to the signal bar's close
+//     because the fill price does not exist yet.  With armedStp off no bracket is placed with the
+//     order, so the first bar of a position is unprotected, which is what the original script does
+//     (it reads `strategy.opentrades.entry_price`, which needs the fill to have happened).
+//   * a pyramid add is bracketed at the level every other unit is already carrying, so the whole
+//     position exits together on the add's own fill bar rather than leaving the newest unit naked.
 if barstate.isconfirmed and flat and gateOk and atrN > 0 and not (oneShot and sameSess)
+    armLvl = close - atrMult * atrN
     if sig2
         strategy.entry("S2", strategy.long, qty = 1)
         sysOn   := 2
         pendAtr := atrN
+        if armedStp
+            strategy.exit("xS2", from_entry = "S2", stop = armLvl)
     else if sig1
         if skipWin and lastWin
             lastWin := false
@@ -246,34 +292,32 @@ if barstate.isconfirmed and flat and gateOk and atrN > 0 and not (oneShot and sa
             strategy.entry("S1", strategy.long, qty = 1)
             sysOn   := 1
             pendAtr := atrN
+            if armedStp
+                strategy.exit("xS1", from_entry = "S1", stop = armLvl)
 
 // ----------------------------------------------------------------- pyramid adds
 if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
-     and not inFlat
+     and not inFlat and not heldTooLong
     if high >= nextAdd
-        strategy.entry("add" + str.tostring(unitsOn + 1), strategy.long, qty = 1)
+        addId = "add" + str.tostring(unitsOn + 1)
+        strategy.entry(addId, strategy.long, qty = 1)
         pendAtr := atrN
+        if not na(exitLevel)
+            strategy.exit("x" + addId, from_entry = addId, stop = exitLevel,
+                 limit = na(tpLvl) ? na : tpLvl)
 
 // ----------------------------------------------------------------- exit
-// One stop at the HIGHER of the ATR stop and the trailing channel low: a falling price reaches
-// that level first.  When a bar contains both this stop and the take-profit, TradingView's broker
-// emulator assumes the least favourable intrabar path and fills the stop -- which is the same
-// pessimism the research engine applies, so the two agree on the ambiguous bars.
-chanExitLvl = sysOn == 1 ? chanLo1[1] : chanLo2[1]
-stopOnly    = na(stopLvl) ? chanExitLvl : stopLvl
-exitLevel   = not chanExit ? stopOnly
-     : (na(chanExitLvl) ? stopOnly : (na(stopLvl) ? chanExitLvl : math.max(stopLvl, chanExitLvl)))
-
-heldTooLong = maxHold > 0 and not na(entryBar) and (bar_index - entryBar) >= maxHold
-
+// The bracket for every open unit is refreshed each bar with the current level.  Refreshing per
+// entry rather than issuing one position-wide exit keeps the ids stable, so an update replaces an
+// order instead of stacking a second one on the same unit.
 if not flat
     if inFlat or heldTooLong or session.islastbar
         strategy.close_all(comment = "flat")
     else if not na(exitLevel)
-        if na(tpLvl)
-            strategy.exit("x", stop = exitLevel)
-        else
-            strategy.exit("x", stop = exitLevel, limit = tpLvl)
+        for k = 0 to strategy.opentrades - 1
+            eid = strategy.opentrades.entry_id(k)
+            strategy.exit("x" + eid, from_entry = eid, stop = exitLevel,
+                 limit = na(tpLvl) ? na : tpLvl)
 
 // ----------------------------------------------------------------- plots
 plot(chanHi1, "Entry 1", color = color.new(color.aqua, 40))
@@ -315,3 +359,87 @@ def write(path: str, text: str, verbose: bool = True) -> list:
 
 
 __all__ = ["emit", "write"]
+
+
+# ================================================================= read the emitted script back
+
+_SWITCH = None
+
+
+def parse_presets(text: str) -> dict[str, dict]:
+    """Re-read the emitted script's `switch` blocks into {preset: {field: value}}.
+
+    Emitting a script from a parameter object and then trusting it is one step short of the job:
+    a template typo puts a number in the chart that no measurement produced.  This parses the
+    generated text back with no knowledge of what was written, so `verify` compares two
+    independent readings of the same file.
+    """
+    import re
+    fields = {}
+    cur = None
+    for raw in text.split("\n"):
+        m = re.match(r"^(\w+) = switch presetName\s*$", raw)
+        if m:
+            cur = m.group(1)
+            fields[cur] = {}
+            continue
+        if cur is None:
+            continue
+        m = re.match(r'^    "(.+)" => (.+?)\s*$', raw)
+        if m:
+            fields[cur][m.group(1)] = m.group(2)
+            continue
+        if raw.startswith("    => "):
+            cur = None
+            continue
+        if raw.strip() and not raw.startswith("    "):
+            cur = None
+    out: dict[str, dict] = {}
+    for var, arms in fields.items():
+        for label, val in arms.items():
+            out.setdefault(label, {})[var] = val
+    return out
+
+
+FIELD_VAR = {
+    "entry1": "entry1P", "entry2": "entry2P", "exit1": "exit1P", "exit2": "exit2P",
+    "atr_len": "atrLenP", "atr_mult": "atrMultP", "pyr_step": "pyrStepP",
+    "max_units": "maxUnitsP", "tp_r": "tpRP", "max_hold": "maxHoldP",
+    "adx_max": "adxMaxP", "ext_max": "extMaxP", "skip_win": "skipWinP",
+    "use_chan_exit": "chanExitP", "one_shot": "oneShotP", "armed_stop": "armedStopP",
+    "chan_shift": "chanShiftP",
+}
+
+
+def verify(text: str, presets: dict[str, P], sessions: dict[str, tuple[str, str]]) -> list[str]:
+    """Every preset constant in the emitted text must equal the measured parameter."""
+    got = parse_presets(text)
+    problems = []
+    for label, p in presets.items():
+        if label not in got:
+            problems.append(f"{label}: missing from the emitted script")
+            continue
+        for field, var in FIELD_VAR.items():
+            want = getattr(p, field)
+            have = got[label].get(var)
+            if have is None:
+                problems.append(f"{label}.{field}: no `{var}` arm emitted")
+                continue
+            if isinstance(want, bool):
+                ok = have == ("true" if want else "false")
+            else:
+                try:
+                    ok = abs(float(have) - float(want)) < 1e-9
+                except ValueError:
+                    ok = False
+            if not ok:
+                problems.append(f"{label}.{field}: emitted {have!r}, measured {want!r}")
+        sess = got[label].get("entrySessDef", "").strip('"')
+        if sess != sessions[label][0]:
+            problems.append(f"{label}.session: emitted {sess!r}, measured {sessions[label][0]!r}")
+        # The window a preset was measured in must match the string the chart will evaluate.
+        want_sess = f"{p.sess_start // 60:02d}{p.sess_start % 60:02d}-" \
+                    f"{p.sess_end // 60:02d}{p.sess_end % 60:02d}"
+        if sess != want_sess:
+            problems.append(f"{label}.session: emitted {sess!r} but parameters say {want_sess!r}")
+    return problems
