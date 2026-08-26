@@ -344,6 +344,47 @@ def test_cli_imports_and_then_finds(tmp_path, capsys):
     assert any("not a prediction" in note for note in payload["notes"])
 
 
+def test_a_short_dataset_is_not_told_to_use_a_smaller_bar_size():
+    """It was the only advice offered, and on a daily file it is impossible."""
+    from tradingbacktester.core.errors import InsufficientDataError
+    from tradingbacktester.data.bundled import find as find_bundled
+    from tradingbacktester.data.csv_loader import load_csv, sniff_csv
+    from tradingbacktester.data.instruments import default_instrument_for
+    from tradingbacktester.finder import find_strategies, style
+
+    dataset = find_bundled("BTCUSD 1d")
+    assert dataset is not None and dataset.exists()
+    path = str(dataset.path())
+    daily = load_csv(path, sniff_csv(path).mapping,
+                     default_instrument_for("BTCUSD"))
+
+    with pytest.raises(InsufficientDataError) as exc:
+        find_strategies(daily, style("position"))
+    message = exc.value.user_message
+    assert "finest bar size" in message
+    assert "smaller bar size" not in message
+    assert "more history" in message
+
+
+def test_a_resampled_dataset_is_told_the_file_has_finer_bars():
+    from tradingbacktester.core.errors import InsufficientDataError
+    from tradingbacktester.data.bundled import find as find_bundled
+    from tradingbacktester.data.csv_loader import load_csv, sniff_csv
+    from tradingbacktester.data.instruments import default_instrument_for
+    from tradingbacktester.finder import find_strategies, style
+
+    dataset = find_bundled("US30 30m")
+    path = str(dataset.path())
+    bars = load_csv(path, sniff_csv(path).mapping,
+                    default_instrument_for("US30"))
+
+    with pytest.raises(InsufficientDataError) as exc:
+        find_strategies(bars, style("position"))
+    message = exc.value.user_message
+    assert "smaller bar size" in message
+    assert "30m" in message, "the advice must name the file's own bar size"
+
+
 def test_cli_reports_a_missing_dataset_kindly(tmp_path, capsys):
     from tradingbacktester.cli import main
 
@@ -361,6 +402,44 @@ def test_cli_runs_a_builtin_strategy(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "net profit" in out
     assert "max drawdown pct" in out
+
+
+def test_cli_run_prints_the_trade_count(tmp_path, capsys):
+    """It asked for `trade_count`, which is not a metric key, so it printed
+    nothing — and the trade count decides whether the rest means anything."""
+    from tradingbacktester.cli import main
+
+    assert main(["--workspace", str(tmp_path), "run", "MACD Trend",
+                 "--data", "US30 30m"]) == 0
+    out = capsys.readouterr().out
+    assert "total trades" in out
+    # A count, not a count with two decimal places.
+    line = next(l for l in out.splitlines() if "total trades" in l)
+    assert ".00" not in line, line
+
+
+def test_cli_run_flags_metrics_the_sample_cannot_support(tmp_path, capsys):
+    """A profit factor of 4.00 from six trades, printed bare, is a lie."""
+    from tradingbacktester.cli import main
+
+    assert main(["--workspace", str(tmp_path), "run", "SuperTrend Follower",
+                 "--data", "BTCUSD 1d"]) == 0
+    out = capsys.readouterr().out
+    assert "6" in out
+    profit_factor = next(l for l in out.splitlines() if "profit factor" in l)
+    assert "LOW n" in profit_factor
+    assert "LOW n:" in out, "the reason must be given, not just the badge"
+    assert "sampling noise" in out
+
+
+def test_cli_run_does_not_cry_wolf_on_a_long_run(tmp_path, capsys):
+    from tradingbacktester.cli import main
+
+    assert main(["--workspace", str(tmp_path), "run", "MACD Trend",
+                 "--data", "US30 30m"]) == 0
+    out = capsys.readouterr().out
+    assert "405" in out
+    assert "LOW n" not in out
 
 
 def test_cli_walk_forward_reports_every_fold(tmp_path, capsys):

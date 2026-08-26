@@ -23,6 +23,7 @@ from pathlib import Path
 
 from .config import AppSettings, Workspace
 from .core.errors import BacktesterError
+from .core.textfmt import row
 from .core.types import BacktestConfig
 
 
@@ -115,12 +116,18 @@ def cmd_data(args: argparse.Namespace) -> int:
     print("In the workspace:")
     if not rows:
         print("  (nothing imported yet)")
+    # The descriptions run to 130 characters; wrapped under the name they stay
+    # in one column instead of folding across the terminal at an arbitrary
+    # point.
     for meta in rows:
-        print(f"  {meta.name:<28} {meta.describe()}")
+        for line in row(f"  {meta.name:<28} ", meta.describe()):
+            print(line)
     print("\nShipped with the application:")
     for dataset in available():
         size = dataset.path().stat().st_size / (1024 * 1024)
-        print(f"  {dataset.name:<28} {size:5.1f} MB  {dataset.description}")
+        for line in row(f"  {dataset.name:<20} {size:5.1f} MB  ",
+                        dataset.description):
+            print(line)
     return 0
 
 
@@ -167,6 +174,19 @@ def cmd_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _list_styles(geometry: bool = False) -> int:
+    """The trading styles, one block each, fitted to the terminal."""
+    from .finder.styles import STYLES
+
+    for s in STYLES:
+        for line in row(f"{s.key:<10} {s.label:<16} ", s.summary):
+            print(line)
+        if geometry:
+            for line in row(f"{'':<10} ", s.describe()):
+                print(line)
+    return 0
+
+
 def _stderr_progress():
     """A progress callback that draws on a terminal and stays quiet in a pipe."""
     last = [0.0]
@@ -191,13 +211,8 @@ def _clear_progress() -> None:
 
 def cmd_find(args: argparse.Namespace) -> int:
     from .finder import find_strategies, format_report, style as get_style
-    from .finder.styles import STYLES
-
     if args.style == "list":
-        for s in STYLES:
-            print(f"{s.key:<10} {s.label:<16} {s.summary}")
-            print(f"{'':<10} {s.describe()}")
-        return 0
+        return _list_styles(geometry=True)
 
     bars, name = _resolve_bars(args)
     chosen = get_style(args.style)
@@ -236,14 +251,11 @@ def cmd_find(args: argparse.Namespace) -> int:
 
 
 def cmd_indicators(args: argparse.Namespace) -> int:
-    from .finder.styles import STYLES
     from .research import format_study, study_features
     from .finder import style as get_style
 
     if args.style == "list":
-        for s in STYLES:
-            print(f"{s.key:<10} {s.label:<16} {s.summary}")
-        return 0
+        return _list_styles()
 
     bars, name = _resolve_bars(args)
     report = study_features(bars, get_style(args.style),
@@ -312,22 +324,45 @@ def cmd_run(args: argparse.Namespace) -> int:
     result = Backtester(bars, spec, config).run()
 
     stream = sys.stderr if args.json else sys.stdout
-    print(f"{spec.name} on {name} ({len(bars):,} bars, {bars.timeframe.label})",
-          file=stream)
-    print(result.summary_line(), file=stream)
+    for line in row("", f"{spec.name} on {name} ({len(bars):,} bars, "
+                    f"{bars.timeframe.label})"):
+        print(line, file=stream)
+    for line in row("", result.summary_line()):
+        print(line, file=stream)
     metrics = compute_metrics(result)
     if args.json:
         print(json.dumps(metrics, indent=2, default=str))
         return 0
-    for key in ("net_profit", "return_pct", "profit_factor", "win_rate",
-                "expectancy", "max_drawdown_pct", "sharpe_ratio",
-                "sortino_ratio", "trade_count", "avg_trade"):
-        if key in metrics:
-            value = metrics[key]
-            label = key.replace("_", " ")
-            print(f"  {label:<20} "
-                  + (f"{value:,.2f}" if isinstance(value, (int, float))
-                     else str(value)))
+    # `trade_count` is not a metric key -- the metrics layer calls it
+    # `total_trades` -- so asking for it silently printed nothing, and the one
+    # number that decides whether any of the rest means anything was missing.
+    reliability = metrics.get("reliability") or {}
+    notes = metrics.get("reliability_notes") or {}
+    shown = ("total_trades", "net_profit", "return_pct", "profit_factor",
+             "win_rate", "expectancy", "max_drawdown_pct", "sharpe_ratio",
+             "sortino_ratio", "avg_trade")
+    for key in shown:
+        if key not in metrics:
+            continue
+        value = metrics[key]
+        label = key.replace("_", " ")
+        counts = key in ("total_trades", "winning_trades", "losing_trades")
+        text = (f"{value:,.0f}" if counts and isinstance(value, (int, float))
+                else f"{value:,.2f}" if isinstance(value, (int, float))
+                else str(value))
+        # The window badges these; a terminal that prints a profit factor of
+        # 4.00 from six trades with no caveat is worse than one that refuses.
+        flag = "  LOW n" if reliability.get(key) == "low_sample" else ""
+        print(f"  {label:<20} {text:>14}{flag}")
+
+    flagged = [key for key in shown if reliability.get(key) == "low_sample"]
+    if flagged:
+        print()
+        note = next((notes[k] for k in flagged if notes.get(k)), "")
+        for line in row("  ", f"LOW n: {', '.join(k.replace('_', ' ') for k in flagged)}"
+                        f" — {note}" if note else
+                        f"LOW n: {', '.join(flagged)}"):
+            print(line)
     return 0
 
 

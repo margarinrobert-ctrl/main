@@ -446,37 +446,43 @@ def format_walk_forward(result: WalkForwardResult, bars: BarSeries,
     """The whole analysis as plain text."""
     import pandas as pd
 
+    from ..core.textfmt import row as _fit
+
     def stamp(index: int) -> str:
         index = max(0, min(index, len(bars) - 1))
         return str(pd.Timestamp(bars.ts[index], tz="UTC").date())
 
     rule = "-" * width
-    out = [f"Walk-forward — {getattr(bars.instrument, 'symbol', '?')} "
-           f"{bars.timeframe.label}, ranked by {result.metric}", rule]
-    out.append(f"{len(result.windows)} folds, "
-               f"{'anchored' if result.anchored else 'rolling'} windows, "
-               f"{result.combinations:,} combinations per window.  "
-               f"{result.elapsed:.1f}s.")
+    out = _fit("", f"Walk-forward — {getattr(bars.instrument, 'symbol', '?')} "
+               f"{bars.timeframe.label}, ranked by {result.metric}", width)
+    out.append(rule)
+    out.extend(_fit("", f"{len(result.windows)} folds, "
+                    f"{'anchored' if result.anchored else 'rolling'} windows, "
+                    f"{result.combinations:,} combinations per window.  "
+                    f"{result.elapsed:.1f}s.", width))
     out.append("")
+    # The parameter list is the one column with no bound on its width -- four
+    # swept parameters is 60 characters on its own -- so it gets its own line
+    # under the row rather than pushing the numbers off the terminal.
     out.append(f"   {'#':<3} {'train':<23} {'test':<23} {'in-sample':>11} "
-               f"{'out':>11}  parameters")
+               f"{'out':>11}")
     for window in result.windows:
         train = f"{stamp(window.train_start)}–{stamp(window.train_end - 1)}"
         test = f"{stamp(window.test_start)}–{stamp(window.test_end - 1)}"
         if window.error:
-            out.append(f"   {window.index + 1:<3} {train:<23} {test:<23} "
-                       f"{window.error}")
+            out.extend(_fit(f"   {window.index + 1:<3} {train:<23} {test:<23} ",
+                            window.error, width))
             continue
-        params = ", ".join(f"{k}={v}" for k, v in window.params.items())
         out.append(
             f"   {window.index + 1:<3} {train:<23} {test:<23} "
-            f"{window.train_metric:>11,.2f} {window.test_metric:>11,.2f}"
-            f"  {params}")
+            f"{window.train_metric:>11,.2f} {window.test_metric:>11,.2f}")
+        params = ", ".join(f"{k}={v}" for k, v in window.params.items())
+        out.extend(_fit("       ", params, width))
     out.append("")
-    out.append(f"   out of sample: {result.out_of_sample_trades:,} trades, "
-               f"{result.out_of_sample_net:+,.2f} {currency}, "
-               f"{result.winning_windows} of {len(result.completed)} windows "
-               f"profitable")
+    out.extend(_fit("   ", f"out of sample: {result.out_of_sample_trades:,} "
+                    f"trades, {result.out_of_sample_net:+,.2f} {currency}, "
+                    f"{result.winning_windows} of {len(result.completed)} "
+                    f"windows profitable", width))
     import textwrap
 
     verdict = textwrap.wrap(f"verdict: {result.verdict()}", max(40, width - 3))

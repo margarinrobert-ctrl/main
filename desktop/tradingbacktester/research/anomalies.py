@@ -33,7 +33,8 @@ from ..finder.control import ControlResult, analytic_control, benjamini_hochberg
 from ..finder.outcomes import (Geometry, OutcomeCache, build_outcomes,
                                select_sequential, session_entry_mask,
                                session_hold_limit, wilder_atr)
-from ..finder.search import choose_timeframe, default_costs, prepare_bars
+from ..finder.search import (MIN_BARS, choose_timeframe, default_costs,
+                             prepare_bars, too_few_bars)
 from ..finder.styles import TradingStyle
 from .features import rolling_mean, rolling_rank
 
@@ -288,10 +289,9 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
     timeframe = timeframe or choose_timeframe(bars, style)
     working = prepare_bars(bars, timeframe)
     n = len(working)
-    if n < 500:
+    if n < MIN_BARS:
         raise InsufficientDataError(
-            f"An anomaly scan needs at least 500 bars and this dataset has "
-            f"{n:,} at {timeframe}.")
+            too_few_bars("An anomaly scan", bars, working, timeframe))
 
     instrument = working.instrument
     timezone = getattr(instrument, "timezone", "UTC") or "UTC"

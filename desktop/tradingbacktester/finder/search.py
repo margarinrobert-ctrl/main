@@ -226,6 +226,31 @@ def prepare_bars(bars: BarSeries, timeframe: str) -> BarSeries:
     return resample(bars, wanted)
 
 
+#: Every analysis in this package needs at least this many bars before its
+#: research/holdout split leaves enough on either side to mean anything.
+MIN_BARS = 500
+
+
+def too_few_bars(what: str, bars: BarSeries, working: BarSeries,
+                 timeframe: str, minimum: int = MIN_BARS) -> str:
+    """The message for a dataset that is too short, with usable advice.
+
+    "Choose a smaller bar size" is the obvious suggestion and it is wrong
+    whenever the analysis is already running at the dataset's own timeframe --
+    which is exactly the case for a daily file, where it was the only advice
+    being offered.
+    """
+    line = (f"{what} needs at least {minimum:,} bars and this dataset has "
+            f"{len(working):,} at {timeframe}.")
+    finer = bars.timeframe.approx_seconds < working.timeframe.approx_seconds
+    if finer:
+        return (f"{line} Import more history, or choose a smaller bar size — "
+                f"the file itself is {bars.timeframe.label} "
+                f"({len(bars):,} bars).")
+    return (f"{line} {bars.timeframe.label} is the finest bar size this file "
+            f"contains, so only more history will help.")
+
+
 def find_strategies(bars: BarSeries, style: TradingStyle, *,
                     timeframe: str = "", costs: CostModel | None = None,
                     sides: tuple[int, ...] = (1, -1),
@@ -240,10 +265,9 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
     timeframe = timeframe or choose_timeframe(bars, style)
     working = prepare_bars(bars, timeframe)
     n = len(working)
-    if n < 500:
+    if n < MIN_BARS:
         raise InsufficientDataError(
-            f"A search needs at least 500 bars and this dataset has {n:,} at "
-            f"{timeframe}. Import more history, or choose a smaller bar size.")
+            too_few_bars("A search", bars, working, timeframe))
 
     instrument = working.instrument
     timezone = getattr(instrument, "timezone", "UTC") or "UTC"
