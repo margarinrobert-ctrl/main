@@ -21,6 +21,12 @@ both sides, the answer is a **negative result with one weak survivor**:
   either, and over a uniform grid sample their median configuration is *worse* than a matched
   random entry (§3.4).
 
+A second pass (§7) asked whether a more profitable, less market-correlated version exists. It does
+not, and it established something worse about the one that ships: **87% of its holdout profit is
+market beta** — strip the exposure and its Sharpe is 0.032, not 0.222. Optimising directly for
+market-neutrality finds beta 0.17 configurations on the block it optimises on, and the correlation
+between their selection-block and validation-block residual Sharpe is **−0.057**.
+
 Two methodological results are worth more than the strategy. Running the identical pipeline on the
 **short mirror** showed that a matched-control p-value computed on a selected winner is not a
 p-value — the short side, on the side the sample was against, scored the *larger* control excess
@@ -658,3 +664,133 @@ presets that failed the holdout are included and **labelled with the number they
 next person to look at this data does not rediscover them.
 
 It is a paper-trading candidate under §3 of the protocol, and it has not earned more than that.
+
+---
+
+## 7. Second pass: is any of it an edge rather than exposure?
+
+The obvious follow-up question is whether a more profitable, higher-Sharpe, *less market-correlated*
+version exists. Answering it needed a different objective and a different holdout.
+
+### 7.1 What the shipped champion actually is
+
+Regress the strategy's session P&L on the market's own 07:00-11:00 move and the picture changes
+completely:
+
+| block | sessions | trades | net | Sharpe | **residual Sharpe** | beta | **beta's share of P&L** |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| research-A 2016-10 → 2020-10 | 1,230 | 941 | $12,284 | 0.186 | **0.008** | 0.490 | **96%** |
+| research-B 2020-10 → 2022-06 | 527 | 406 | $39,379 | 0.922 | 1.343 | 0.670 | −26% |
+| locked 2022-06 → 2025-07 | 946 | 898 | $16,789 | 0.222 | **0.032** | 0.578 | **87%** |
+
+Two things fall out of that table, and neither is visible in a raw Sharpe.
+
+**On the holdout, 87% of the profit is market exposure.** Strip the beta and the Sharpe goes
+0.222 → **0.032**, and $16,789 becomes **$2,147 of alpha**. The strategy is close to "be long the
+Dow from 07:00 to 11:00 at 0.58 units-equivalent". The matched control differences out *some* of
+this — it is long too — but not all, because a control drawn at random has a different holding
+profile from a breakout's, which is why its excess (+$28.17/trade, p 0.110) reads more favourably
+than the regression does.
+
+**Its research-block Sharpe of 0.466 came from one 20-month window.** research-B is 20% of the
+research sessions and 76% of its profit; on research-A the residual Sharpe is 0.008. The protocol's
+gate 9 (no single period > 60% of P&L) is applied to the *out-of-sample* record; applied to the
+research block it would have flagged this candidate before it was ever chosen. That is a gap in the
+procedure, not in this strategy.
+
+### 7.2 The objective and the split, both changed
+
+`resid_sharpe` — the Sharpe of what remains once the session's market move is regressed out —
+replaces raw Sharpe as the thing being maximised. And because the locked block has already been
+read once, it can no longer arbitrate a new search: the result is known, and knowing it is a channel
+through which the holdout biases what gets chosen. So the research block was split again:
+
+    research-A   sessions 0-1230     2016-10 → 2020-10   select here
+    research-B   sessions 1230-1757  2020-10 → 2022-06   validate, never selected on
+    locked       unchanged           already read once, not used
+
+research-B contains the 2022 bear market, which is what a market-neutral claim has to survive.
+
+**901,120 further configurations** per run, US30 5m and 15m, both sides, scored on research-A.
+
+### 7.3 The search found what was asked for, and it did not transfer
+
+Ranking on residual Sharpe does produce materially less market-coupled configurations:
+
+| | shipped champion | best by residual Sharpe |
+| --- | --- | --- |
+| beta to market | 0.490 | **0.166** |
+| beta's share of P&L | 96% | **30%** |
+| research-A Sharpe | 0.186 | **0.584** |
+| research-A residual Sharpe | 0.008 | **0.454** |
+
+The lever is `max_hold = 4` bars. Capping the hold at an hour cuts time in market, and beta is
+mechanically time-in-market × size. It is a real effect and it is exactly what was wanted.
+
+On **research-B** it is worth nothing:
+
+| | research-A (selected on) | **research-B (untouched)** |
+| --- | --- | --- |
+| trades | 1,062 | 453 |
+| net | +$13,336 | **−$3,658** |
+| Sharpe | 0.584 | **−0.250** |
+| residual Sharpe | 0.454 | **−0.041** |
+| profit factor | 1.134 | **0.952** |
+
+### 7.4 The diagnostic that settles it
+
+One number, computed over a sample of the 4,703 configurations that cleared the research-A gates
+rather than over a winner:
+
+> **The correlation between a configuration's research-A residual Sharpe and its research-B residual
+> Sharpe, within the gate survivors, is −0.057.**
+
+Selection carries no information whatsoever. And the survivors do *worse* out of sample than
+configurations nobody selected — 39.0% of them have a positive research-B residual Sharpe against
+46.0% for a uniform random sample of the same grid. The gates are mildly anti-predictive.
+
+The +0.775 correlation in the *unselected* sample is not a contradiction: it is the broad quality
+axis, bad configurations being bad in both blocks. Condition on being good in research-A and every
+bit of that signal is gone. This is the same lesson as §4.1's PBO result, measured directly on the
+quantity of interest instead of through a rank statistic.
+
+### 7.5 The last mechanism: a resting-limit entry
+
+`CLAUDE.md` records the entry mechanic as the largest single lever found on this repository — a
+resting limit 0.75 × ATR in your favour beats a market order on every bar with no rule at all — and
+also records that it **substitutes for a signal rather than complementing one**. A breakout is the
+case where that should bite hardest, because the edge of a break is in the immediacy of the move.
+
+Implemented (`limit_k`, `limit_bars`; engine, tensor and the literal Pine reference all agree
+across 64 configurations) and measured across four different geometries on research-A:
+
+| limit_k | median trades | median Sharpe | median residual | median beta | median $/trade |
+| --- | --- | --- | --- | --- | --- |
+| 0.00 (market) | 1,115 | −0.022 | −0.218 | 0.363 | **+1.18** |
+| 0.25 | 1,012 | −0.184 | −0.388 | 0.348 | −11.33 |
+| 0.50 | 928 | −0.387 | −0.528 | 0.208 | −12.92 |
+| 0.75 | 821 | −0.156 | −0.318 | 0.186 | −8.31 |
+| 1.00 | 701 | −0.198 | −0.326 | **0.137** | −2.67 |
+
+It does what was hoped to beta — 0.363 down to 0.137, because a limit that never fills is a trade
+never taken — and it destroys the return doing it. No geometry improves consistently. The finding
+replicates on a family it was never measured on.
+
+### 7.6 Verdict on the second pass
+
+Nothing shipped changes. There is no more profitable, higher-Sharpe, lower-correlation version of
+this strategy in this data:
+
+* optimising directly for market-neutrality **works on the block it is optimised on and nowhere
+  else**, and the selection is anti-predictive out of sample;
+* the one untried mechanism with a documented track record on this repository **is destructive
+  here**;
+* and the strategy that does ship is now known to be **87% market exposure on the holdout**, with a
+  research-block record that rests on a single 20-month window.
+
+That last point is the one worth acting on. If the goal is a low-correlation intraday edge, this
+family is the wrong place to look for it: what it has is a small entry-timing effect sitting on top
+of a large directional exposure, and removing the exposure removes the profit. §5's ranking is
+unchanged — more index instruments, or a wider window — with one addition at the top: **rank on
+residual Sharpe from the start**, and apply the sub-period gate to the research block, not only to
+the holdout.

@@ -55,7 +55,7 @@ def reference(s: Series, p: P) -> list[dict]:
     side = p.side
 
     trades: list[dict] = []
-    orders: dict = {"entry": None, "stop": None, "tp": None, "flat": False}
+    orders: dict = {"entry": None, "stop": None, "tp": None, "flat": False, "limit": None}
     pos: dict | None = None
     last_win = False
     sess_traded = -1
@@ -63,14 +63,27 @@ def reference(s: Series, p: P) -> list[dict]:
     for i in range(s.n):
         new_sess = i > 0 and s.sess[i] != s.sess[i - 1]
 
-        # ---- open: market orders issued last bar
+        # ---- open: orders issued last bar.  A market order fills at this bar's open; a resting
+        # limit fills only if this bar trades back through it, and expires after `limit_bars`.
         if orders["entry"] is not None:
             if new_sess and p.flatten_min >= 0:
                 orders["entry"] = None
             else:
                 kind, sysno, a = orders["entry"]
+                lim = orders.get("limit")
+                filled = True
                 fill = s.o[i]
-                if pos is None:
+                if lim is not None and pos is None:
+                    filled = (s.l[i] <= lim[0]) if side > 0 else (s.h[i] >= lim[0])
+                    if filled:
+                        fill = s.o[i] if ((s.o[i] < lim[0]) if side > 0
+                                          else (s.o[i] > lim[0])) else lim[0]
+                    elif i >= lim[1]:
+                        orders["entry"] = None
+                        orders["limit"] = None
+                if not filled:
+                    pass
+                elif pos is None:
                     pos = {"units": 1, "avg": fill, "first": fill, "sys": sysno, "bar": i,
                            "risk": p.atr_mult * a,
                            "stop": fill - side * p.atr_mult * a,
@@ -78,12 +91,14 @@ def reference(s: Series, p: P) -> list[dict]:
                            "tp": fill + side * p.tp_r * p.atr_mult * a if p.tp_r > 0 else None}
                     if p.one_shot:
                         sess_traded = s.sess[i]
-                else:
+                elif filled:
                     pos["avg"] = (pos["avg"] * pos["units"] + fill) / (pos["units"] + 1)
                     pos["units"] += 1
                     pos["stop"] = fill - side * p.atr_mult * a
                     pos["add"] = fill + side * p.pyr_step * a
-                orders["entry"] = None
+                if filled:
+                    orders["entry"] = None
+                    orders["limit"] = None
 
         # ---- intrabar: the stop / take-profit issued last bar
         if pos is not None:
@@ -111,17 +126,20 @@ def reference(s: Series, p: P) -> list[dict]:
                                "sys": pos["sys"]})
                 last_win = side * (s.c[i] - pos["first"]) > 0
                 pos = None
-                orders = {"entry": None, "stop": None, "tp": None, "flat": False}
+                orders = {"entry": None, "stop": None, "tp": None, "flat": False, "limit": None}
 
         # ---- close: the script runs
         orders["stop"] = orders["tp"] = None
         orders["flat"] = False
-        orders["armed"] = None
+        if orders["entry"] is None:
+            orders["armed"] = None
         a = atr[i]
         if np.isnan(a) or a <= 0:
             continue
 
         if pos is None:
+            if orders["entry"] is not None:
+                continue                    # a limit from an earlier bar is still resting
             if p.one_shot and s.sess[i] == sess_traded:
                 continue
             if not (p.sess_start <= s.ny_min[i] < p.sess_end):
@@ -147,8 +165,11 @@ def reference(s: Series, p: P) -> list[dict]:
                     last_win = False
                 else:
                     orders["entry"] = ("new", 1, a)
-            if orders["entry"] is not None and p.armed_stop:
-                orders["armed"] = (s.c[i] - side * p.atr_mult * a, False)
+            if orders["entry"] is not None:
+                if p.armed_stop:
+                    orders["armed"] = (s.c[i] - side * p.atr_mult * a, False)
+                orders["limit"] = ((s.c[i] - side * p.limit_k * a, i + p.limit_bars)
+                                   if p.limit_k > 0 else None)
             continue
 
         if pos["units"] < p.max_units and p.pyr_step > 0:
@@ -164,6 +185,7 @@ def reference(s: Series, p: P) -> list[dict]:
                 orders["flat"], orders["entry"] = "hold", None
         elif want_flat or hold_out or not ok_next:
             orders["entry"] = None
+            orders["limit"] = None
             if ok_next:
                 orders["flat"] = "hold" if (hold_out and not want_flat) else True
             else:
@@ -177,7 +199,8 @@ def reference(s: Series, p: P) -> list[dict]:
                                "risk": pos["risk"], "sys": pos["sys"]})
                 last_win = side * (s.c[i] - pos["first"]) > 0
                 pos = None
-                orders = {"entry": None, "stop": None, "tp": None, "flat": False, "armed": None}
+                orders = {"entry": None, "stop": None, "tp": None, "flat": False, "armed": None,
+                          "limit": None}
                 continue
 
         if not orders["flat"]:
@@ -265,6 +288,12 @@ def check_mirror(series_list) -> list[str]:
         ("no chan exit", P(use_chan_exit=False, sess_start=420, sess_end=660, flatten_min=660,
                            tp_r=1.5)),
         ("chan unlagged", P(chan_shift=0, sess_start=420, sess_end=660, flatten_min=660)),
+        ("limit 0.25", P(sess_start=420, sess_end=660, flatten_min=660, limit_k=0.25,
+                         limit_bars=3, tp_r=2.0)),
+        ("limit 0.75", P(sess_start=420, sess_end=660, flatten_min=660, limit_k=0.75,
+                         limit_bars=6, armed_stop=True, cost_abs=2.0, stop_slip=1.0)),
+        ("limit short", P(side=-1, sess_start=420, sess_end=660, flatten_min=660, limit_k=0.5,
+                          limit_bars=4)),
         ("armed stop", P(armed_stop=True, sess_start=420, sess_end=660, flatten_min=660)),
         ("one shot", P(one_shot=True, sess_start=420, sess_end=660, flatten_min=660, max_hold=12)),
         ("costs on", P(sess_start=420, sess_end=660, flatten_min=660, cost_abs=2.0,
@@ -455,6 +484,12 @@ def check_tensor(s: Series) -> list[str]:
         ("no chan exit", P(sess_start=420, sess_end=660, flatten_min=660, use_chan_exit=False)),
         ("chan unlagged", P(sess_start=420, sess_end=660, flatten_min=660, chan_shift=0)),
         ("chan lag 2", P(sess_start=420, sess_end=660, flatten_min=660, chan_shift=2, tp_r=2.0)),
+        ("limit 0.25", P(sess_start=420, sess_end=660, flatten_min=660, limit_k=0.25,
+                         limit_bars=3)),
+        ("limit 0.75 long", P(sess_start=420, sess_end=660, flatten_min=660, limit_k=0.75,
+                              limit_bars=6, tp_r=2.0, cost_abs=2.0, stop_slip=1.0)),
+        ("limit short", P(side=-1, sess_start=420, sess_end=660, flatten_min=660, limit_k=0.5,
+                          limit_bars=4, armed_stop=True)),
         ("armed", P(sess_start=420, sess_end=660, flatten_min=660, armed_stop=True, tp_r=2.0)),
         ("one shot", P(sess_start=420, sess_end=660, flatten_min=660, one_shot=True, max_hold=10)),
         ("no skipwin", P(sess_start=420, sess_end=660, flatten_min=660, skip_win=False)),

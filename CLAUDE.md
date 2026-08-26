@@ -98,6 +98,34 @@ computed INSIDE the research block, so both answer "does selection work on this 
 sample where the family is a directionless breakout effect, selection works fine and forecasts
 nothing.
 
+**A Sharpe computed on raw dollars cannot tell an edge from leverage.** The shipped 15m Turtle
+scalp reads holdout Sharpe 0.222 and PF 1.04. Regress its session P&L on the market's own
+07:00-11:00 move and **87% of the profit is beta**: strip it and the Sharpe is 0.032, the $16,789
+becomes $2,147 of alpha. The matched control differences out only part of this, because a control
+drawn at random has a different holding profile from a breakout's -- its excess reads +$28/trade
+where the regression says +$2.39. Report `resid_sharpe` and `beta_pnl_share` next to every Sharpe,
+and RANK on the residual. See `docs/ib/STUDY_TURTLE_SCALP.md` §7.
+
+**Apply the sub-period gate to the RESEARCH block, not only to the holdout.** Gate 9 (no single
+period > 60% of P&L) caught nothing on the 15m scalp because it is specified out-of-sample. On
+research, 20% of the sessions (2020-10 -> 2022-06) carried 76% of the profit and the other 80% had
+a residual Sharpe of 0.008. That candidate should never have been selected, and the gate that would
+have said so was pointed at the wrong block.
+
+**Optimising for market-neutrality works only on the block it is optimised on.** Ranking 901,120
+cells on residual Sharpe found configurations with beta 0.166 instead of 0.490 and 30% beta-share
+instead of 96% -- the lever is a hold cap, since beta is time-in-market x size. On an untouched
+validation block they lose money, and the correlation between selection-block and validation-block
+residual Sharpe *within the gate survivors* is **-0.057**. The survivors also do WORSE than
+unselected cells (39% vs 46% positive). The +0.775 correlation in the unselected sample is the
+broad quality axis; condition on being good and none of it is left.
+
+**The limit entry substitutes for a breakout signal too.** `limit_k` from 0 to 1.0 ATR takes the
+median per-trade result from +$1.18 to -$12.92 across four geometries, while cutting beta 0.363 ->
+0.137 (a limit that never fills is a trade never taken). The mechanic's documented behaviour on
+the nine validated NQ strategies replicates on a family it was never measured on: it is a better
+FILL on a trade you were making anyway, never a reason to make one.
+
 **The Turtle confined to 07:00-11:00 New York is exhausted. Do not re-run it.** 14,261,040
 configurations over US30, XAU and BTC at 5/15/30/60m, both sides. Five of six candidates lost money
 out of sample; the survivor is US30 15m at holdout Sharpe 0.22, PF 1.04, 6/10 gates, drawdown 2.4x
@@ -197,6 +225,8 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/turtle_final.py` | the protocol's ten gates, cost sensitivity, Monte Carlo |
 | `research/turtle_ship.py`, `turtle_reveal.py` | pick + refine, then the single locked read |
 | `research/turtle_pine.py`, `turtle_emit.py` | the Pine emitter and its round-trip verifier |
+| `research/turtle_neutral.py` | market-neutralised scoring (beta, residual Sharpe) + the nested split |
+| `research/turtle_nsearch.py`, `turtle_nvalidate.py` | the residual-Sharpe sweep and its research-B validation |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |

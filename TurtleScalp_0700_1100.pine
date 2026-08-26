@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------------
 // READ THIS BEFORE TRADING IT
 //
-// 14,261,040 configurations were evaluated across this study, on the research block
+// 17,865,520 configurations were evaluated across this study, on the research block
 // only, and the locked block was then read once.  FIVE of the six candidates LOST MONEY
 // out of sample -- including the one with the best research numbers (60m: research
 // Sharpe 1.05 and profit factor 1.47, holdout -0.36 and 0.88).  Their holdout Sharpe is
@@ -24,6 +24,12 @@
 // $16,789 gain.  It passes 6 of the protocol's 10 gates and fails the four that matter
 // for a claim of edge -- HAC t 0.42, deflated Sharpe 0.0000, profitable in 50% of years,
 // walk-forward efficiency -0.38.  Its Sharpe 95% confidence interval is [-0.83, 1.31].
+//
+// AND: 87% of that holdout profit is MARKET BETA.  Regress the session P&L on the
+// index's own 07:00-11:00 move and the Sharpe falls 0.222 -> 0.032; $16,789 of profit is
+// $2,147 of alpha.  A second search over 901,120 more configurations, ranked directly on
+// market-neutralised Sharpe, found lower-beta versions that made money only on the block
+// they were selected on -- selection-block to validation-block correlation -0.057.
 //
 // It is a paper-trading candidate.  It has not earned more than that.
 // ---------------------------------------------------------------------------------

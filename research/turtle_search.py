@@ -65,8 +65,8 @@ def _scan_daily(tidx, tval, sess, c, L1, L2,
     `out` receives (n, units_sum, net_sum, tp_exits, stop_exits, flat_exits, hold_bars_sum,
     win_dollars, loss_dollars, n_win, bp_sum).
     """
-    ex1, re1, un1, gr1, rs1, rk1, av1, fi1, su1 = L1
-    ex2, re2, un2, gr2, rs2, rk2, av2, fi2, su2 = L2
+    ex1, re1, un1, gr1, rs1, rk1, av1, fi1, su1, eb1 = L1
+    ex2, re2, un2, gr2, rs2, rk2, av2, fi2, su2, eb2 = L2
     for k in range(out.shape[0]):
         out[k] = 0.0
     for k in range(daily.shape[0]):
@@ -88,12 +88,19 @@ def _scan_daily(tidx, tval, sess, c, L1, L2,
             continue
         if t == 1:
             e = ex1[i]; nxt = re1[i]; u = un1[i]; g = gr1[i]
-            rr = rs1[i]; a = av1[i]; f = fi1[i]; su = su1[i]
+            rr = rs1[i]; a = av1[i]; f = fi1[i]; su = su1[i]; ebx = eb1[i]
         else:
             e = ex2[i]; nxt = re2[i]; u = un2[i]; g = gr2[i]
-            rr = rs2[i]; a = av2[i]; f = fi2[i]; su = su2[i]
+            rr = rs2[i]; a = av2[i]; f = fi2[i]; su = su2[i]; ebx = eb2[i]
         if e < 0:
-            ptr += 1
+            # Same as the tensor scan: a resting limit that never filled still blocked the engine
+            # until it was cancelled, so resume from the bar it could next act on.
+            nxt = re1[i] if t == 1 else re2[i]
+            if nxt > i:
+                while ptr < m and tidx[ptr] < nxt:
+                    ptr += 1
+            else:
+                ptr += 1
             continue
         cost = u * (cost_abs + cost_bp * 1e-4 * a)
         if tp_rests and rr == 2:
@@ -109,7 +116,7 @@ def _scan_daily(tidx, tval, sess, c, L1, L2,
             out[4] += 1.0
         else:
             out[5] += 1.0
-        out[6] += e - (i + 1)
+        out[6] += e - ebx
         if net > 0.0:
             out[7] += net
             out[9] += 1.0
@@ -192,7 +199,7 @@ def bucket_means(s, leg: tuple, spec: dict, mslot: np.ndarray, n_min: int, cost_
     there.  Bars where no trade was possible are excluded from the mean, exactly as they are
     excluded from the draw.
     """
-    ex, re_, un, gr, rs, rk, av, fi, su = leg
+    ex, re_, un, gr, rs, rk, av, fi, su, eb = leg
     ok = ex >= 0
     cost = un * (spec["cost_abs"] * cost_mult + spec["cost_bp"] * cost_mult * 1e-4 * av)
     if tp_rests:

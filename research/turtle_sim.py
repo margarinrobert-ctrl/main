@@ -192,6 +192,8 @@ class P:
     use_chan_exit: bool = True
     chan_shift: int = 1       # bars to lag the trailing exit channel; 1 = the supplied Pine
     armed_stop: bool = False  # stop live on the entry bar, anchored to the signal close
+    limit_k: float = 0.0      # enter on a resting limit limit_k x ATR in your favour, 0 = market
+    limit_bars: int = 3       # bars the limit rests before it is cancelled
     one_shot: bool = False    # at most one position per session
     side: int = 1             # 1 = long (the supplied script), -1 = the short mirror
     # --- costs, in price units unless named _bp
@@ -214,7 +216,8 @@ def params(**kw) -> P:
 def _simulate(o, h, l, c, ny_min, sess, atr, e1, e2, x1, x2,
               adx, ema, forced, use_forced, atr_mult, pyr_step, max_units,
               skip_win, adx_max, ext_max, break_ticks, sess_start, sess_end, flatten_min,
-              flat_grace, tp_r, max_hold, use_chan_exit, armed_stop, one_shot, side,
+              flat_grace, tp_r, max_hold, use_chan_exit, armed_stop, limit_k, limit_bars,
+              one_shot, side,
               cost_abs, cost_bp, stop_slip, tp_rests,
               out_entry_bar, out_exit_bar, out_units, out_pnl, out_reason, out_risk, out_sys):
     """One sequential pass.  Returns the number of closed positions written to the out arrays.
@@ -258,6 +261,8 @@ def _simulate(o, h, l, c, ny_min, sess, atr, e1, e2, x1, x2,
     ord_tp = np.nan
     ord_flat = False          # market exit at the next open
     armed_stop_px = np.nan    # only used when armed_stop is on
+    ord_limit = np.nan        # resting entry limit price, NaN = the order is a market order
+    ord_expiry = -1           # last bar the resting limit may fill on
     stop_from_chan = False    # the live stop came from the trailing channel, not the ATR level
     flat_is_hold = False      # the flatten order was raised by max_hold, not by the clock
 
@@ -270,9 +275,35 @@ def _simulate(o, h, l, c, ny_min, sess, atr, e1, e2, x1, x2,
             # position opened across the overnight gap on a signal from yesterday's close.
             if new_sess and flatten_min >= 0:
                 ord_entry = 0
+                ord_limit = np.nan
             else:
+                # A resting limit enters `limit_k` x ATR BACK from the signal bar's close, which is
+                # a better price on the trades that pull back and no trade at all on the ones that
+                # do not.  `CLAUDE.md` measured that mechanic as the largest single lever on this
+                # repository and also as one that SUBSTITUTES for a signal rather than complementing
+                # it, so a breakout is exactly the case where it should be expected to hurt -- the
+                # edge of a break is in the immediacy of the move.  It is a parameter so the size of
+                # that effect is measured here rather than assumed from another study.
+                filled = True
                 fill = o[i]
-                if units == 0:
+                if not np.isnan(ord_limit) and units == 0:
+                    filled = False
+                    if side > 0:
+                        if l[i] <= ord_limit:
+                            fill = o[i] if o[i] < ord_limit else ord_limit
+                            filled = True
+                    else:
+                        if h[i] >= ord_limit:
+                            fill = o[i] if o[i] > ord_limit else ord_limit
+                            filled = True
+                    if not filled and i >= ord_expiry:
+                        ord_entry = 0
+                        ord_limit = np.nan
+                if filled:
+                    ord_limit = np.nan
+                if not filled:
+                    pass
+                elif units == 0:
                     units = 1
                     avg_px = fill
                     first_fill = fill
@@ -285,12 +316,13 @@ def _simulate(o, h, l, c, ny_min, sess, atr, e1, e2, x1, x2,
                     tp_lvl = fill + side * tp_r * init_risk if tp_r > 0.0 else np.nan
                     if one_shot:
                         sess_traded = sess[i]
-                else:
+                elif filled:
                     avg_px = (avg_px * units + fill) / (units + 1.0)
                     units += 1
                     stop_lvl = fill - side * atr_mult * ord_atr
                     next_add = fill + side * pyr_step * ord_atr
-                ord_entry = 0
+                if filled:
+                    ord_entry = 0
 
         if units > 0:
             # An armed stop is live from the entry bar itself.
@@ -355,13 +387,20 @@ def _simulate(o, h, l, c, ny_min, sess, atr, e1, e2, x1, x2,
         ord_stop = np.nan
         ord_tp = np.nan
         ord_flat = False
-        armed_stop_px = np.nan
+        # The armed stop is wiped each bar -- EXCEPT while an entry order is still resting.  In
+        # Pine an exit registered with an entry stays attached until that entry fills, so a limit
+        # that fills three bars later still arrives with its stop live.  Clearing it here would
+        # silently strip the protection from exactly the trades the limit mechanic creates.
+        if ord_entry == 0:
+            armed_stop_px = np.nan
 
         a = atr[i]
         if np.isnan(a) or a <= 0.0:
             continue
 
         if units == 0:
+            if ord_entry != 0:
+                continue          # a limit from an earlier bar is still resting
             if one_shot and sess[i] == sess_traded:
                 continue
             m = ny_min[i]
@@ -399,6 +438,11 @@ def _simulate(o, h, l, c, ny_min, sess, atr, e1, e2, x1, x2,
                 # armed stop is anchored to this bar's close because the fill is not known yet.
                 if armed_stop:
                     armed_stop_px = c[i] - side * atr_mult * a
+                if limit_k > 0.0:
+                    ord_limit = c[i] - side * limit_k * a
+                    ord_expiry = i + limit_bars
+                else:
+                    ord_limit = np.nan
             continue
 
         # ---- position open: adds, flatten, hold cap, then the trailing stop for the next bar
@@ -428,6 +472,7 @@ def _simulate(o, h, l, c, ny_min, sess, atr, e1, e2, x1, x2,
                 ord_entry = 0
         elif want_flat or hold_out or not ok_next:
             ord_entry = 0
+            ord_limit = np.nan
             flat_is_hold = hold_out and not want_flat
             if ok_next:
                 ord_flat = True
@@ -630,7 +675,7 @@ def run(s: Series, p: P, forced: np.ndarray | None = None,
         p.atr_mult, p.pyr_step, p.max_units,
         p.skip_win, p.adx_max, p.ext_max, p.break_ticks, p.sess_start, p.sess_end,
         p.flatten_min, p.flat_grace, p.tp_r, p.max_hold, p.use_chan_exit, p.armed_stop,
-        p.one_shot, p.side,
+        p.limit_k, p.limit_bars, p.one_shot, p.side,
         p.cost_abs, p.cost_bp, p.stop_slip, p.tp_rests,
         eb, xb, un, pl, rs, rk, sy)
     return Result(eb[:ntr].copy(), xb[:ntr].copy(), un[:ntr].copy(), pl[:ntr].copy(),

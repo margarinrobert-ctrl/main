@@ -44,9 +44,9 @@ NO_TRADE = -1
 
 @njit(cache=True)
 def _build(o, h, l, c, ny_min, sess, atr, x, atr_mult, pyr_step, max_units, flatten_min,
-           flat_grace, tp_r, max_hold, use_chan_exit, armed_stop, side,
+           flat_grace, tp_r, max_hold, use_chan_exit, armed_stop, limit_k, limit_bars, side,
            out_exit, out_reentry, out_units, out_gross, out_reason, out_risk, out_avg,
-           out_first, out_stopunits):
+           out_first, out_stopunits, out_entrybar):
     """For every bar i, walk the position an entry order issued at its close would produce."""
     n = o.shape[0]
     for i in range(n):
@@ -59,6 +59,7 @@ def _build(o, h, l, c, ny_min, sess, atr, x, atr_mult, pyr_step, max_units, flat
         out_avg[i] = 0.0
         out_first[i] = 0.0
         out_stopunits[i] = 0
+        out_entrybar[i] = -1
 
         if i + 1 >= n:
             continue
@@ -68,8 +69,41 @@ def _build(o, h, l, c, ny_min, sess, atr, x, atr_mult, pyr_step, max_units, flat
         if np.isnan(a) or a <= 0.0:
             continue
 
+        # A resting limit moves the entry bar: it fills on the first of the next `limit_bars`
+        # bars that trades back through the level, and on none of them if price never returns.
+        # The tensor is still keyed on the SIGNAL bar, because everything that follows is
+        # determined by it -- including whether a fill happened at all.
         entry_bar = i + 1
-        fill = o[entry_bar]
+        if limit_k > 0.0:
+            lim = c[i] - side * limit_k * a
+            entry_bar = -1
+            jj = i + 1
+            last = i + limit_bars
+            if last >= n:
+                last = n - 1
+            while jj < n:
+                # The engine cancels the resting order on the first bar of a new session, or on
+                # the expiry bar, and can issue a fresh signal on that same bar.  The scan has to
+                # know which bar that is even when NO trade happened, or it will take signals the
+                # engine suppressed while the limit was still resting.
+                if flatten_min >= 0 and sess[jj] != sess[i]:
+                    out_reentry[i] = jj
+                    break
+                if (l[jj] <= lim) if side > 0 else (h[jj] >= lim):
+                    entry_bar = jj
+                    break
+                if jj >= last:
+                    out_reentry[i] = jj
+                    break
+                jj += 1
+            if entry_bar < 0:
+                if jj >= n:
+                    out_reentry[i] = n
+                continue
+            fill = o[entry_bar] if ((o[entry_bar] < lim) if side > 0
+                                    else (o[entry_bar] > lim)) else lim
+        else:
+            fill = o[entry_bar]
         units = 1
         avg = fill
         first = fill
@@ -127,6 +161,7 @@ def _build(o, h, l, c, ny_min, sess, atr, x, atr_mult, pyr_step, max_units, flat
                 out_avg[i] = avg
                 out_first[i] = first
                 out_stopunits[i] = units if (reason == T.EX_STOP or reason == T.EX_CHAN) else 0
+                out_entrybar[i] = entry_bar
                 break
 
             ord_stop = np.nan
@@ -167,6 +202,7 @@ def _build(o, h, l, c, ny_min, sess, atr, x, atr_mult, pyr_step, max_units, flat
                         out_avg[i] = avg
                         out_first[i] = first
                         out_stopunits[i] = 0
+                        out_entrybar[i] = entry_bar
                         closed = True
                 if closed:
                     break
@@ -191,6 +227,7 @@ def _build(o, h, l, c, ny_min, sess, atr, x, atr_mult, pyr_step, max_units, flat
                 out_avg[i] = avg
                 out_first[i] = first
                 out_stopunits[i] = 0
+                out_entrybar[i] = entry_bar
                 break
 
 
@@ -206,6 +243,7 @@ class Exits:
     avg: np.ndarray
     first: np.ndarray
     stopunits: np.ndarray
+    entrybar: np.ndarray      # the bar the position was actually FILLED on, not signal + 1
     n: int
     side: int
 
@@ -227,22 +265,22 @@ def build_leg(s: Series, p: P, exit_len: int) -> tuple:
     """
     n = s.n
     a = lambda dt: np.empty(n, dt)
-    ex, re_, un, gr, rs, rk, av, fi, su = (a(np.int64), a(np.int64), a(np.int64), a(np.float64),
-                                           a(np.int64), a(np.float64), a(np.float64),
-                                           a(np.float64), a(np.int64))
+    ex, re_, un, gr, rs, rk, av, fi, su, eb = (
+        a(np.int64), a(np.int64), a(np.int64), a(np.float64), a(np.int64), a(np.float64),
+        a(np.float64), a(np.float64), a(np.int64), a(np.int64))
     x = s.lo(exit_len) if p.side > 0 else s.hi(exit_len)
     for _ in range(max(0, int(p.chan_shift))):
         x = T._shift1(x)
     _build(s.o, s.h, s.l, s.c, s.ny_min, s.sess, s.atr(p.atr_len), x,
            p.atr_mult, p.pyr_step, p.max_units, p.flatten_min, p.flat_grace, p.tp_r,
-           p.max_hold, p.use_chan_exit, p.armed_stop, p.side,
-           ex, re_, un, gr, rs, rk, av, fi, su)
-    return (ex, re_, un, gr, rs, rk, av, fi, su)
+           p.max_hold, p.use_chan_exit, p.armed_stop, p.limit_k, p.limit_bars, p.side,
+           ex, re_, un, gr, rs, rk, av, fi, su, eb)
+    return (ex, re_, un, gr, rs, rk, av, fi, su, eb)
 
 
 def pair(leg1: tuple, leg2: tuple, n: int, side: int) -> Exits:
     """Assemble a two-system Exits from the System 1 and System 2 legs."""
-    return Exits(*[np.stack((leg1[i], leg2[i])) for i in range(9)], n=n, side=side)
+    return Exits(*[np.stack((leg1[i], leg2[i])) for i in range(10)], n=n, side=side)
 
 
 def build(s: Series, p: P) -> Exits:
@@ -254,7 +292,7 @@ def build(s: Series, p: P) -> Exits:
 
 @njit(cache=True)
 def _scan(trigger, sess, c, exit_bar, reentry, units_a, gross_a, reason_a, risk_a, avg_a,
-          first_a, stopunits_a, skip_win, one_shot, side,
+          first_a, stopunits_a, entry_a, skip_win, one_shot, side,
           out_entry, out_exit, out_units, out_gross, out_reason, out_risk, out_avg,
           out_stopunits, out_sys):
     """Walk the trigger array, taking a position when flat.  No price data is touched."""
@@ -278,9 +316,12 @@ def _scan(trigger, sess, c, exit_bar, reentry, units_a, gross_a, reason_a, risk_
             continue
         e = exit_bar[k, i]
         if e < 0:
-            i += 1
+            # No trade from this signal -- but with a resting limit the engine stayed blocked
+            # until the order was cancelled, so resume from the bar it could next act on.
+            nxt = reentry[k, i]
+            i = nxt if nxt > i else i + 1
             continue
-        out_entry[ntr] = i + 1
+        out_entry[ntr] = entry_a[k, i]
         out_exit[ntr] = e
         out_units[ntr] = units_a[k, i]
         out_gross[ntr] = gross_a[k, i]
@@ -329,7 +370,8 @@ def scan(s: Series, ex: Exits, trigger: np.ndarray, p: P, buf: dict | None = Non
                "a": np.empty(cap, np.float64), "su": np.empty(cap, np.int64),
                "sy": np.empty(cap, np.int64)}
     ntr = _scan(trigger, s.sess, s.c, ex.exit_bar, ex.reentry, ex.units, ex.gross, ex.reason,
-                ex.risk, ex.avg, ex.first, ex.stopunits, p.skip_win, p.one_shot, p.side,
+                ex.risk, ex.avg, ex.first, ex.stopunits, ex.entrybar, p.skip_win, p.one_shot,
+                p.side,
                 buf["e"], buf["x"], buf["u"], buf["g"], buf["r"], buf["k"], buf["a"],
                 buf["su"], buf["sy"])
     return Scan(buf["e"][:ntr].copy(), buf["x"][:ntr].copy(), buf["u"][:ntr].copy(),
