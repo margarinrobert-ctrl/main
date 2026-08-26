@@ -210,3 +210,108 @@ the BTC file supplied alongside these is **daily bars over thirteen months** —
 points are not comparable across instruments. Before any cross-market cost comparison, express the
 cost as a fraction of the stop distance. Had that check not been run, this study would have
 concluded that the gate fails on gold — with a table to prove it.
+
+## The cross-market matrix — run at last, and it does not survive
+
+`research/turtle15/crossmkt.py`. Three markets on one New York index: NQ, US30 and XAUUSD 15-minute,
+58,058 common bars, 2022-12 → 2025-07 (NQ's span is the binding constraint).
+
+### A join error that announced itself
+
+The first panel reported **corr(NQ, US30) = 0.031** for two US equity indices. That number is not a
+weak relationship, it is a wrong one: `fastbars` stamps `ts` in **UTC** while `mod` is already
+**New York**, and the two disagree by 5 hours in winter and 4 in summer. Every engine in this
+repository reads `mod`, so all the strategy work was always correct — but the panel joined on `ts`
+and compared NQ against US30 bars five hours away. A constant shift would have been wrong too, for
+the same reason it was wrong on the BTC feed; only a real DST-aware conversion lands every bar.
+
+Corrected, with the equity-open volatility peak landing at 09:00–10:00 New York in all three series:
+
+| | NQ | US30 | XAU |
+| --- | ---: | ---: | ---: |
+| NQ | 1.000 | **0.683** | 0.077 |
+| US30 | 0.683 | 1.000 | 0.084 |
+| XAU | 0.077 | 0.084 | 1.000 |
+
+And the brief's point about correlations not being constant holds: rolling 500-bar NQ–US30 runs from
+**−0.18 to +0.94**, with a p10–p90 range of +0.25 to +0.82.
+
+*I wrote the alignment warning into that module's docstring and then walked into it in the next
+command. The implausible number is what caught it — which is the argument for having a prior about
+what a correlation should be before reading one.*
+
+### The hypothesis, tested exactly as the brief framed it
+
+Does NQ breaking out **while US30 confirms** continue more often, and does NQ breaking out **alone**
+fail more often? On research the answer is a coherent, monotone yes — 23 gates tested:
+
+| gate on top of the improved NQ setup | n | pts/trade | PF | p |
+| --- | ---: | ---: | ---: | ---: |
+| US30 12-bar momentum ≥ 0.5 | 167 | +50.08 | 1.88 | **0.0075** |
+| US30 12-bar momentum ≥ 0 | 184 | +43.28 | 1.75 | **0.0143** |
+| US30 also breaking its own channel | 124 | +56.94 | 1.97 | 0.0367 |
+| US30 above its own EMA100 | 179 | +42.98 | 1.71 | 0.0398 |
+| **US30 12-bar momentum < 0 (divergence)** | 61 | **−9.79** | **0.86** | 0.9578 |
+
+Every confirmation direction positive, every divergence direction negative, monotone across three
+horizons. Correlation regime does nothing (p 0.31–0.73); gold momentum does nothing (best p 0.10).
+
+### And it fails out of sample
+
+| block | | n | pts/trade | PF | p |
+| --- | --- | ---: | ---: | ---: | ---: |
+| research | improved gate | 204 | +32.90 | 1.53 | — |
+| research | + US30 momentum ≥ 0 | 184 | +43.28 | 1.75 | **0.0138** |
+| **LOCKED** | improved gate | 55 | +35.74 | 1.34 | — |
+| **LOCKED** | + US30 momentum ≥ 0 | 51 | **+25.17** | **1.22** | **0.8067** |
+| **LOCKED** | divergence bucket | 11 | **+85.96** | 2.72 | 0.2973 |
+
+**The sign inverts.** Out of sample the confirmation gate is *worse* than not using it, and the
+divergence bucket — which lost money on research — is the best cell on the board at n=11. Pooled,
+the cross-market gate lowers NQ's result from +0.8516 to +0.8465 2N-units per trade.
+
+So section 5 of the brief has an answer and it is **negative**: on this data, cross-market
+confirmation is an attractive, internally coherent research finding that does not replicate. It is
+**not** shipped in the Pine. Note the shape — strong on research, absent on the holdout — is the
+ordinary way a 23-gate search fails, and the coherence of the research pattern is exactly what makes
+it persuasive enough to be worth stating as a negative.
+
+## Per-market comparison, pooled and ATR-normalised
+
+Points are not comparable across instruments, so results are expressed in **2N-units** — profit
+divided by the trade's own initial risk.
+
+| | trades | 2N-units/trade | win | PF | max DD (2N) | worst streak |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| NQ baseline | 1,854 | −0.0918 | 18.3% | 0.94 | 234.0 | 20 |
+| **NQ improved** | 304 | **+0.8516** | 32.2% | **1.57** | 59.0 | 16 |
+| NQ improved + cross-market | 235 | +0.8465 | 31.5% | 1.56 | 57.5 | 14 |
+| US30 baseline | 4,917 | −0.1134 | 18.8% | 0.93 | 733.2 | 42 |
+| **US30 improved** | 766 | **+0.2922** | 28.1% | **1.19** | 108.2 | 14 |
+| XAUUSD baseline | 12,156 | −0.0461 | 18.4% | 0.97 | 1,743.8 | 39 |
+| **XAUUSD improved** | 2,123 | **+0.0944** | 25.7% | **1.05** | 329.5 | 24 |
+
+All three markets go from negative to positive and every drawdown falls by a factor of three or
+more. **The ordering is the honest part**: NQ is where the gate was fitted, so +0.8516 carries that
+selection. US30's **+0.2922** and gold's **+0.0944** are the unfitted estimates, and they are three
+to nine times smaller. Expect the unfitted number, not the fitted one.
+
+## The session constraint, measured at 15m for the first time
+
+Signals restricted to the window, position forced flat at its end:
+
+| window (New York) | research PF | **LOCKED PF** |
+| --- | ---: | ---: |
+| no session | 1.58 | **1.56** |
+| 09:30–16:00 | 1.49 | **0.90** |
+| 06:00–16:00 | 1.44 | **0.86** |
+| 09:30–12:00 | 1.16 | **0.71** |
+| 06:00–12:00 | 1.04 | **0.64** |
+
+**Every windowed variant is negative out of sample**, and the damage is monotone in window length —
+the shorter the day, the worse it gets. That is the ninth independent time the intraday constraint
+has removed a result on this branch, and the monotonicity names the mechanism: these trades are paid
+by being allowed to run. A 12:00 flatten does not trim the system, it removes what pays for it.
+
+This is a genuine conflict with the standing requirement to be flat by noon, and it is not
+resolvable by tuning: there is no window here that both closes daily and keeps the edge.

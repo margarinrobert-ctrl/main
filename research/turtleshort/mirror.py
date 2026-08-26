@@ -37,7 +37,8 @@ def wilder_atr(h, l, c, n=20):
     return pd.Series(tr).ewm(alpha=1.0 / n, adjust=False).mean().to_numpy()
 
 
-def run(d, side, mask, atr, C, atr_mult=2.0, pyr=0.5, max_units=4, skip_win=True, cost=RT):
+def run(d, side, mask, atr, C, atr_mult=2.0, pyr=0.5, max_units=4, skip_win=True, cost=RT,
+        flat_mod=None):
     """The full Turtle state machine for ONE side, including the skip-after-winner rule.
 
     The skip rule reads the outcome of the LAST trade, so it cannot be evaluated bar-wise -- it
@@ -84,6 +85,12 @@ def run(d, side, mask, atr, C, atr_mult=2.0, pyr=0.5, max_units=4, skip_win=True
                 stop = fill - side * atr_mult * a
                 nxt = fill + side * pyr * a
                 px = (px * (units - 1) + fill) / units   # average entry across the ladder
+            if flat_mod is not None and d["mod"][j] >= flat_mod:
+                pnl += side * (c[j] - px) * units
+                rows.append((i, eb, j, side, sys_on, units, px, c[j], pnl,
+                             pnl / (atr_mult * a * units)))
+                last_win = pnl > 0
+                break
             ch = (C["lo1"][j] if sys_on == 1 else C["lo2"][j]) if side > 0 else \
                  (C["xhi1"][j] if sys_on == 1 else C["xhi2"][j])
             lvl = stop if not np.isfinite(ch) else (max(stop, ch) if side > 0 else min(stop, ch))

@@ -10,9 +10,17 @@ NEWEST-FIRST, which sorts to nonsense if read naively. XAUUSD is semicolon-separ
 minute-resolution timestamp and no seconds. Both are re-sorted ascending and de-duplicated here.
 
 CLOCKS. Neither file is in New York time and neither offset is a guess: `datasets.py` records the
-evidence for each. What matters for this test is only that minute-of-day is CONSISTENT within a
-file, because the gate reads no calendar condition -- so an offset error would shift the session
-boundaries in the reporting but not the rule.
+evidence -- both US30 and XAUUSD are NEW YORK + 7, gold's derived from its own anchor (its summer
+volatility peak lands at raw 15:30 = 08:30 New York to the minute) rather than assumed from the
+equity open. `to_ny` applies that shift.
+
+WHY IT DID NOT MATTER AND NOW DOES. The frozen-gate test reads no calendar condition, so an offset
+error would have moved the session labels in the reporting and left the rule untouched -- the first
+cross-market run was run without the shift for exactly that reason. **Correlation work is the
+opposite case.** Comparing NQ at 09:30 New York against gold at what is really 02:30 does not
+measure a weak relationship, it measures the wrong pair of bars, and the answer would come back
+near zero for a reason that has nothing to do with the markets. Anything that joins two feeds on
+time must apply the shift.
 """
 from __future__ import annotations
 
@@ -29,7 +37,10 @@ def _resample(df, minutes):
     return r
 
 
-def load(name, tf=15):
+NY_OFFSET_HOURS = {"US30": -7, "XAUUSD": -7}   # file time -> New York; see module docstring
+
+
+def load(name, tf=15, to_ny=True):
     """Returns the same dict shape `fastbars.bars` produces, so every engine here just works."""
     if name == "US30":
         df = pd.read_csv("data/US30_15m.csv", sep="\t")
@@ -38,6 +49,8 @@ def load(name, tf=15):
         df = pd.DataFrame({"o": df["Open"], "h": df["High"], "l": df["Low"],
                            "c": df["Close"], "v": df["TickVolume"]}).set_index(idx)
         df = df[~df.index.duplicated(keep="first")].sort_index()
+        if to_ny:
+            df.index = df.index + pd.Timedelta(hours=NY_OFFSET_HOURS["US30"])
         if tf != 15:
             df = _resample(df, tf)
     elif name == "XAUUSD":
@@ -47,6 +60,8 @@ def load(name, tf=15):
         df = pd.DataFrame({"o": df["Open"], "h": df["High"], "l": df["Low"],
                            "c": df["Close"], "v": df["Volume"]}).set_index(idx)
         df = df[~df.index.duplicated(keep="first")].sort_index()
+        if to_ny:
+            df.index = df.index + pd.Timedelta(hours=NY_OFFSET_HOURS["XAUUSD"])
         df = _resample(df, tf)
     else:
         raise ValueError(name)
@@ -62,3 +77,25 @@ def load(name, tf=15):
     us = np.unique(sess)
     si = np.searchsorted(us, sess)
     return d, si, int(0.65 * len(us))
+
+
+def nq_ny(tf=15):
+    """NQ 15m with a NEW YORK index, because `fastbars` gives UTC timestamps and NY minutes.
+
+    THIS BIT NIPPED ME. `fastbars.bars()` returns `ts` stamped in UTC and `mod` already converted
+    to New York -- the two disagree by 5 hours in winter and 4 in summer, which is exactly DST.
+    Every engine here reads `mod`, so the strategy work was always correct; the first correlation
+    panel joined on `ts` and therefore compared NQ against US30 bars five hours away. It reported
+    corr(NQ, US30) = 0.031 for two US equity indices, which is the tell -- a number that
+    implausible is a join error, not a market fact.
+
+    A CONSTANT SHIFT WOULD ALSO BE WRONG, for the same reason it was wrong on the BTC feed: the
+    offset is -5 in winter and -4 in summer, so only a real tz conversion lands every bar.
+    """
+    import sys
+    sys.path.insert(0, "research")
+    import fastbars
+    d = fastbars.bars(tf)
+    ix = pd.DatetimeIndex(pd.to_datetime(d["ts"])).tz_localize("UTC").tz_convert(
+        "America/New_York").tz_localize(None)
+    return d, ix
