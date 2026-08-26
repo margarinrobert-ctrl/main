@@ -461,3 +461,77 @@ def test_import_caveats_survive_the_library_round_trip(tmp_path, simple_instrume
     assert any("low" in w.lower() for w in reloaded.meta.get("warnings", []))
     report = validate_bars(reloaded)
     assert any(i.code == "import_warning" for i in report.issues)
+
+
+# --------------------------------------------------------------------------
+# Compressed files and the shipped data
+# --------------------------------------------------------------------------
+
+def test_gzipped_csv_imports_identically(tmp_path, simple_instrument):
+    """A .csv.gz must give exactly the bars its plain twin gives."""
+    import gzip
+
+    text = ("Date,Open,High,Low,Close,Volume\n" + "".join(
+        f"2023-01-{d:02d} 09:30:00,100,101,99,100.5,{1000 + d}\n"
+        for d in range(1, 29)))
+    plain = tmp_path / "bars.csv"
+    plain.write_text(text, encoding="utf-8")
+    packed = tmp_path / "bars.csv.gz"
+    packed.write_bytes(gzip.compress(text.encode("utf-8")))
+
+    profile = sniff_csv(str(packed))
+    assert profile.delimiter == ","
+    assert profile.mapping.close == "Close"
+
+    a = load_csv(str(plain), sniff_csv(str(plain)).mapping, simple_instrument)
+    b = load_csv(str(packed), profile.mapping, simple_instrument)
+    assert np.array_equal(a.ts, b.ts)
+    assert a.close == pytest.approx(b.close)
+    assert a.volume == pytest.approx(b.volume)
+
+
+def test_bundled_datasets_are_present_and_load():
+    """The shipped data files must exist and import without a hand-made mapping."""
+    from tradingbacktester.data.bundled import available
+    from tradingbacktester.data.instruments import default_instrument_for
+
+    datasets = available()
+    assert datasets, "no market data is shipped"
+    names = {d.name for d in datasets}
+    assert "US30 30m" in names
+
+    smallest = min(datasets, key=lambda d: d.path().stat().st_size)
+    profile = sniff_csv(str(smallest.path()))
+    instrument = default_instrument_for(smallest.symbol)
+    assert instrument is not None, f"no instrument for {smallest.symbol}"
+    bars = load_csv(str(smallest.path()), profile.mapping, instrument)
+    assert len(bars) > 100
+    # Sorted oldest first, and a real candle on every bar.
+    assert bool(np.all(np.diff(bars.ts) > 0))
+    assert bool(np.all(bars.high >= np.maximum(bars.open, bars.close) - 1e-9))
+    assert bool(np.all(bars.low <= np.minimum(bars.open, bars.close) + 1e-9))
+
+
+def test_mt5_export_uses_tick_volume_not_the_zero_column():
+    """The shipped MetaTrader files carry their volume in TickVolume."""
+    from tradingbacktester.data.bundled import find
+    from tradingbacktester.data.instruments import default_instrument_for
+
+    dataset = find("US30 30m")
+    assert dataset is not None and dataset.exists()
+    profile = sniff_csv(str(dataset.path()))
+    assert profile.mapping.volume == "TickVolume"
+    assert profile.row_order == -1
+    bars = load_csv(str(dataset.path()), profile.mapping,
+                    default_instrument_for("US30"))
+    assert float(bars.volume.sum()) > 0.0
+
+
+def test_a_bar_is_stamped_when_it_opened():
+    """A file with both an open time and a close time must use the open."""
+    from tradingbacktester.data.bundled import find
+
+    dataset = find("BTCUSD 1D")
+    assert dataset is not None and dataset.exists()
+    profile = sniff_csv(str(dataset.path()))
+    assert profile.mapping.datetime == "timeOpen"

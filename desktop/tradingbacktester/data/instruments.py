@@ -213,6 +213,34 @@ DEFAULT_INSTRUMENTS: tuple[Instrument, ...] = (
               "gold price.",
     ),
 
+    # -- Index CFDs --------------------------------------------------------
+    # A retail index CFD is quoted in index points and settled in the account
+    # currency at one unit per point, which is what makes point_value 1.0: a
+    # 100-point move on one contract is 100 USD.
+    Instrument(
+        symbol="US30", name="Dow Jones 30 Index CFD", asset_class=AssetClass.INDEX_CFD,
+        tick_size=0.1, point_value=1.0, lot_size=1.0, price_decimals=1,
+        currency="USD", exchange="OTC", timezone="America/New_York",
+        margin_per_unit=200.0, default_commission=0.0, default_spread_points=2.0,
+        notes="One contract is one dollar per index point. The spread is the "
+              "whole cost on most brokers and widens outside the New York "
+              "cash session; margin is indicative and varies by broker.",
+    ),
+    Instrument(
+        symbol="US100", name="Nasdaq 100 Index CFD", asset_class=AssetClass.INDEX_CFD,
+        tick_size=0.1, point_value=1.0, lot_size=1.0, price_decimals=1,
+        currency="USD", exchange="OTC", timezone="America/New_York",
+        margin_per_unit=150.0, default_commission=0.0, default_spread_points=1.5,
+        notes="One contract is one dollar per index point.",
+    ),
+    Instrument(
+        symbol="US500", name="S&P 500 Index CFD", asset_class=AssetClass.INDEX_CFD,
+        tick_size=0.1, point_value=1.0, lot_size=1.0, price_decimals=1,
+        currency="USD", exchange="OTC", timezone="America/New_York",
+        margin_per_unit=50.0, default_commission=0.0, default_spread_points=0.5,
+        notes="One contract is one dollar per index point.",
+    ),
+
     # -- Spot metal --------------------------------------------------------
     # Spot gold is a CFD-style contract rather than an exchange product: one
     # unit is 100 troy ounces, matching GC, and 0.01 lots gets you down to a

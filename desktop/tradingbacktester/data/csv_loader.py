@@ -90,9 +90,15 @@ def _normalise(name: object) -> str:
 # "adj close", and "volume" must beat "volume from".
 _NAME_PRIORITY: dict[str, tuple[str, ...]] = {
     "datetime": (
-        "datetime", "dateandtime", "datetimeutc", "timestamp", "timestamputc",
+        # A bar is stamped with the time it OPENED, so a column that says so
+        # beats a generic "timestamp": an export that carries both (CoinMarket-
+        # Cap writes timeOpen, timeClose, timeHigh, timeLow and timestamp) has
+        # its generic one set to the *close* of the day, and taking it shifts
+        # every bar forward by its own duration.
+        "datetime", "dateandtime", "datetimeutc",
+        "opentime", "timeopen", "opentimestamp", "barstart", "starttime",
+        "bartime", "timestamp", "timestamputc",
         "timestampms", "unixtimestamp", "unixtime", "unix", "epochtime", "epoch",
-        "opentime", "opentimestamp", "bartime", "barstart", "starttime",
         "gmttime", "localtime", "utc", "dt", "ts",
     ),
     # The tail of each list is the same word in the languages a European data
@@ -115,6 +121,13 @@ _NAME_PRIORITY: dict[str, tuple[str, ...]] = {
         "basevolume", "tradedvolume", "volumen", "umsatz",
     ),
 }
+
+#: Names that are a time but never the bar's own timestamp.  A file that
+#: records when the high printed is describing the bar, not stamping it.
+_NOT_A_BAR_STAMP: frozenset[str] = frozenset((
+    "closetime", "timeclose", "closetimestamp", "endtime", "barend",
+    "hightime", "timehigh", "lowtime", "timelow", "settlementtime",
+))
 
 #: Every name that proves a row is a header rather than data.
 _ALL_KNOWN_NAMES: frozenset[str] = frozenset(
@@ -307,6 +320,67 @@ def _decode(raw: bytes, partial_tail: bool = False) -> tuple[str, str]:
         return raw.decode("latin-1"), "latin-1"
 
 
+#: Extensions read through a decompressor.  pandas infers these itself, so
+#: only the sniffer and the error-message readers need to be taught.
+_COMPRESSORS: dict[str, Any] = {}
+
+
+def _compressor(path: Path) -> Any:
+    """The module that opens this file, or ``None`` if it is plain text."""
+    if not _COMPRESSORS:
+        import bz2
+        import gzip
+        import lzma
+
+        _COMPRESSORS.update({".gz": gzip, ".bz2": bz2, ".xz": lzma,
+                             ".lzma": lzma})
+    return _COMPRESSORS.get(path.suffix.lower())
+
+
+def open_binary(path: Path) -> Any:
+    """Open a file for reading bytes, decompressing it if it is compressed.
+
+    A year of one-minute bars is ten times smaller gzipped, and every tool that
+    produces market data can write ``.csv.gz``.  Refusing to read one would
+    make the user decompress a file by hand for no reason.
+    """
+    module = _compressor(path)
+    return module.open(path, "rb") if module else path.open("rb")
+
+
+def open_text(path: Path, encoding: str, errors: str = "replace") -> Any:
+    """Open a file for reading text, decompressing it if it is compressed."""
+    module = _compressor(path)
+    if module is not None:
+        return module.open(path, "rt", encoding=encoding or "utf-8",
+                           errors=errors, newline="")
+    return path.open("r", encoding=encoding or "utf-8", errors=errors,
+                     newline="")
+
+
+def data_size(path: Path) -> int:
+    """Size of the *content*, which is not the file size when it is compressed.
+
+    gzip records the uncompressed length in the last four bytes of the file.
+    It is modulo 2**32, so it is wrong above 4 GB -- acceptable for a progress
+    estimate, which is all it is used for.
+    """
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return 0
+    if path.suffix.lower() != ".gz" or size < 4:
+        return size
+    try:
+        with path.open("rb") as fh:
+            fh.seek(-4, 2)
+            stored = int.from_bytes(fh.read(4), "little")
+    except OSError:  # pragma: no cover - unreadable tail
+        return size
+    # A tiny stored value against a large file means the modulo wrapped.
+    return stored if stored >= size else size * 4
+
+
 def _probe(path: Path) -> tuple[str, str, str]:
     """Read the head and the tail of a file.  Returns ``(head, tail, encoding)``.
 
@@ -315,11 +389,24 @@ def _probe(path: Path) -> tuple[str, str, str]:
     ``05/01`` means the fifth of January or the first of May.  The last 256 KB
     almost always contains a day number above twelve.
     """
+    compressed = _compressor(path) is not None
     size = path.stat().st_size
-    with path.open("rb") as fh:
+    with open_binary(path) as fh:
         head_raw = fh.read(_PROBE_BYTES)
         tail_raw = b""
-        if size > _PROBE_BYTES + 4096:
+        if compressed:
+            # No seeking inside a compressed stream: read through it keeping
+            # only the last window.  A 35 MB file costs a fraction of a second
+            # and buys the same date-order proof a plain file gets by seeking.
+            window = head_raw
+            while True:
+                chunk = fh.read(_PROBE_BYTES)
+                if not chunk:
+                    break
+                window = (window + chunk)[-_PROBE_BYTES:]
+            if window != head_raw:
+                tail_raw = window
+        elif size > _PROBE_BYTES + 4096:
             fh.seek(size - _PROBE_BYTES)
             tail_raw = fh.read(_PROBE_BYTES)
     head, encoding = _decode(head_raw)
@@ -687,11 +774,15 @@ def guess_mapping(headers: Sequence[str]) -> ColumnMapping:
     used: set[int] = set()
 
     def pick(field_name: str) -> str | None:
+        timing = field_name in ("datetime", "date", "time")
         for candidate in _NAME_PRIORITY[field_name]:
             for i, n in enumerate(norm):
-                if n == candidate and i not in used:
-                    used.add(i)
-                    return names[i]
+                if n != candidate or i in used:
+                    continue
+                if timing and n in _NOT_A_BAR_STAMP:
+                    continue
+                used.add(i)
+                return names[i]
         return None
 
     mapping = ColumnMapping()
@@ -1145,8 +1236,10 @@ def sniff_csv(path: str | Path) -> CsvProfile:
         # bar and far cheaper than counting 2,000,000 lines up front.
         used = _strip_noise(raw_lines, profile.comment_char)
         avg = max(1.0, sum(len(l) + 1 for l in used) / max(1, len(used)))
+        # From the *content* length, which is not the file length when the
+        # file is compressed.
         profile.row_estimate = max(len(data_rows),
-                                   int((profile.file_size - profile.skip_rows) / avg))
+                                   int((data_size(p) - profile.skip_rows) / avg))
         profile.mapping = mapping
     except Exception as exc:  # noqa: BLE001 - the sniffer must never raise
         log.exception("sniff_csv failed for %s", path)
@@ -1274,8 +1367,8 @@ def _estimate_rows(path: Path, mapping: ColumnMapping) -> int:
     reports the true count anyway.
     """
     try:
-        size = path.stat().st_size
-        with path.open("rb") as fh:
+        size = data_size(path)
+        with open_binary(path) as fh:
             chunk = fh.read(65_536)
         lines = [l for l in chunk.split(b"\n") if l.strip()]
         if len(lines) < 2:
@@ -1382,8 +1475,7 @@ def _bad_line_message(path: Path, mapping: ColumnMapping, parser_message: str) -
 def _raw_line(path: Path, mapping: ColumnMapping, lineno: int) -> str:
     """Read one physical line, for an error message only."""
     try:
-        with path.open("r", encoding=mapping.encoding or "utf-8",
-                       errors="replace", newline="") as fh:
+        with open_text(path, mapping.encoding or "utf-8") as fh:
             for i, raw in enumerate(fh, start=1):
                 if i == lineno:
                     return raw.rstrip("\r\n")[:300]
@@ -1404,8 +1496,7 @@ def _locate_source_line(path: Path, mapping: ColumnMapping,
     header_pending = bool(mapping.has_header)
     index = 0
     try:
-        with path.open("r", encoding=mapping.encoding or "utf-8",
-                       errors="replace", newline="") as fh:
+        with open_text(path, mapping.encoding or "utf-8") as fh:
             for lineno, raw in enumerate(fh, start=1):
                 if lineno <= skip:
                     continue

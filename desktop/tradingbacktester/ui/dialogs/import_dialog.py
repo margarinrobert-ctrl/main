@@ -313,7 +313,7 @@ class ImportWizard(QDialog):
     def _browse(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Choose a market data file", self.path_edit.text() or "",
-            "Data files (*.csv *.txt *.tsv);;All files (*)")
+            "Data files (*.csv *.txt *.tsv *.csv.gz *.gz);;All files (*)")
         if path:
             self._load_file(path)
 
@@ -762,11 +762,20 @@ def _write_prefix(path: str, rows: int, encoding: str) -> str:
 
     # Keep the original file name: the loader's error messages name the file,
     # and "row 3 of tmp8s2k1.csv" would tell the user nothing.
+    from ...data.csv_loader import open_text
+
     directory = tempfile.mkdtemp(prefix="tb-validate-")
-    target = Path(directory) / (Path(path).name or "data.csv")
+    source_name = Path(path)
+    name = source_name.name or "data.csv"
+    # The prefix is written as plain text, so a compressed source must lose its
+    # suffix or the loader will try to decompress a file that is not compressed.
+    for suffix in (".gz", ".bz2", ".xz", ".lzma"):
+        if name.lower().endswith(suffix):
+            name = name[: -len(suffix)]
+            break
+    target = Path(directory) / (name or "data.csv")
     written = 0
-    with open(path, "r", encoding=encoding or "utf-8", errors="replace",
-              newline="") as source, \
+    with open_text(source_name, encoding or "utf-8") as source, \
             open(target, "w", encoding="utf-8", newline="") as handle:
         for line in source:
             handle.write(line)

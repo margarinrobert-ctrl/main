@@ -74,6 +74,16 @@ datas = [
     (str(ROOT / "docs" / "BACKTEST_ASSUMPTIONS.md"), "docs"),
     (str(ROOT / "README.md"), "."),
 ]
+
+# The shipped market data.  Gzipped, so this adds about nine megabytes to the
+# installer and saves the user finding their own data before they can do
+# anything.
+for _data_file in sorted((ROOT / "data" / "market").glob("*.csv.gz")):
+    datas.append((str(_data_file), "data/market"))
+_market_readme = ROOT / "data" / "market" / "README.md"
+if _market_readme.exists():
+    datas.append((str(_market_readme), "data/market"))
+
 datas = [(src, dst) for src, dst in datas if Path(src).exists()]
 
 a = Analysis(
