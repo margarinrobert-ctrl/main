@@ -38,7 +38,7 @@ def wilder_atr(h, l, c, n=20):
 
 
 def run(d, side, mask, atr, C, atr_mult=2.0, pyr=0.5, max_units=4, skip_win=True, cost=RT,
-        flat_mod=None):
+        flat_mod=None, tp_r=None, e1=20, e2=55):
     """The full Turtle state machine for ONE side, including the skip-after-winner rule.
 
     The skip rule reads the outcome of the LAST trade, so it cannot be evaluated bar-wise -- it
@@ -85,6 +85,23 @@ def run(d, side, mask, atr, C, atr_mult=2.0, pyr=0.5, max_units=4, skip_win=True
                 stop = fill - side * atr_mult * a
                 nxt = fill + side * pyr * a
                 px = (px * (units - 1) + fill) / units   # average entry across the ladder
+            # TAKE PROFIT, checked BEFORE the stop on the same bar only when it is the nearer
+            # level; when both sit inside one bar's range the STOP is taken, because a bar-level
+            # engine cannot know which came first and the pessimistic reading is the honest one.
+            if tp_r is not None:
+                tgt = px + side * tp_r * atr_mult * a
+                hit_tp = (h[j] >= tgt) if side > 0 else (l[j] <= tgt)
+                lvl0 = stop if not np.isfinite(ch0 := (
+                    (C["lo1"][j] if sys_on == 1 else C["lo2"][j]) if side > 0 else
+                    (C["xhi1"][j] if sys_on == 1 else C["xhi2"][j]))) else (
+                    max(stop, ch0) if side > 0 else min(stop, ch0))
+                hit_sl = (l[j] <= lvl0) if side > 0 else (h[j] >= lvl0)
+                if hit_tp and not hit_sl:
+                    pnl += side * (tgt - px) * units
+                    rows.append((i, eb, j, side, sys_on, units, px, tgt, pnl,
+                                 pnl / (atr_mult * a * units)))
+                    last_win = pnl > 0
+                    break
             if flat_mod is not None and d["mod"][j] >= flat_mod:
                 pnl += side * (c[j] - px) * units
                 rows.append((i, eb, j, side, sys_on, units, px, c[j], pnl,

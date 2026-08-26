@@ -99,3 +99,31 @@ def nq_ny(tf=15):
     ix = pd.DatetimeIndex(pd.to_datetime(d["ts"])).tz_localize("UTC").tz_convert(
         "America/New_York").tz_localize(None)
     return d, ix
+
+
+def load_iso(path="data/US30_ISO_15m.csv", tf=15):
+    """The ISO-8601 US30 feed: the FIRST file here whose clock is STATED, not derived.
+
+    Every other feed on this branch had its offset inferred -- gold from its own volatility anchor,
+    US30 and EURUSD from equity-open alignment, BTC from a DST-aware conversion that a constant
+    shift got wrong. This one carries an explicit UTC offset per row, and the offsets present are
+    exactly -4 and -5, i.e. New York with daylight saving. The 09:00 volatility peak confirms it
+    independently. That removes the single largest source of silent error in cross-market work.
+
+    It also matters for a different reason: 27,436 of its 48,937 bars fall AFTER 2025-07-15, where
+    the previously studied US30 file ends. That block has never been read by any study here, which
+    makes it the closest thing available to a genuine forward test.
+    """
+    df = pd.read_csv(path, parse_dates=["ny"]).set_index("ny").sort_index()
+    df = df[~df.index.duplicated(keep="first")]
+    df = df.rename(columns={"open": "o", "high": "h", "low": "l", "close": "c", "volume": "v"})
+    if tf != 15:
+        df = _resample(df, tf)
+    ix = df.index
+    mod = (ix.hour * 60 + ix.minute).to_numpy().astype(np.int64)
+    sess = np.asarray(ix.normalize().values).astype("datetime64[ns]").astype(np.int64)
+    d = dict(o=df["o"].to_numpy(float), h=df["h"].to_numpy(float), l=df["l"].to_numpy(float),
+             c=df["c"].to_numpy(float), v=df["v"].to_numpy(float), mod=mod, sess=sess,
+             ts=ix.values.astype("datetime64[ns]").astype(np.int64), n=len(df))
+    us = np.unique(sess)
+    return d, np.searchsorted(us, sess), int(0.65 * len(us))
