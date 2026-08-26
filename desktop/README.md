@@ -48,6 +48,7 @@ SVG, no external assets and no network requests.
 ## Contents
 
 - [Install and run](#install-and-run)
+- [Simple mode](#simple-mode)
 - [A five-minute tour](#a-five-minute-tour)
 - [Importing data](#importing-data)
 - [Instruments](#instruments)
@@ -55,11 +56,13 @@ SVG, no external assets and no network requests.
 - [Building a strategy](#building-a-strategy)
 - [Running a backtest](#running-a-backtest)
 - [Reading the metrics](#reading-the-metrics)
+- [Finding strategies automatically](#finding-strategies-automatically)
 - [Optimisation](#optimisation)
 - [Comparing runs](#comparing-runs)
 - [Saving and exporting](#saving-and-exporting)
 - [Where your files live](#where-your-files-live)
 - [How orders are simulated](#how-orders-are-simulated)
+- [Using it without the window](#using-it-without-the-window)
 - [Building from source](#building-from-source)
 - [Architecture](#architecture)
 - [Troubleshooting](#troubleshooting)
@@ -107,6 +110,22 @@ sudo apt install libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 \
                  libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
                  libxcb-randr0 libxcb-render-util0 libxcb-shape0
 ```
+
+---
+
+## Simple mode
+
+The application opens in **Simple mode**: the optimiser, the comparison view,
+the risk-settings panel and the drawdown and log tabs are hidden, and a
+three-step guide in the configuration panel says what to do first. Nothing is
+disabled — a greyed-out control still has to be read, understood and dismissed,
+so Simple mode hides rather than disables.
+
+**View ▸ Simple Mode** turns it off and everything comes back. The choice is
+remembered.
+
+The guide ticks its steps off as you do them and hides itself once all three
+are done; **View ▸ Show Start Here** brings it back.
 
 ---
 
@@ -369,6 +388,72 @@ The full formula for every metric is in **Help → Metric Definitions**
 
 ---
 
+## Finding strategies automatically
+
+**Backtest → Find Strategies…**, `Ctrl+F`, or the button on the toolbar.
+
+Pick the data and the kind of trading you want. That is the whole form. Everything
+else — bar size, stop and target geometry, session window, how the result is
+judged — is fixed by the method, because those are exactly the settings that,
+left adjustable, turn a search into a machine for finding coincidences.
+
+| Style | Bars | Session | Stop | Target | Max hold |
+|---|---|---|---|---|---|
+| Scalping | 1m, 5m | 09:30–11:30 NY | 0.5–1× ATR | 1–2R | 12 bars |
+| Day trading | 5m, 15m, 30m | 09:30–16:00 NY | 1–2× ATR | 1–3R | 48 bars |
+| Swing trading | 1h, 4h | all hours | 1.5–3× ATR | 1.5–3R | 60 bars |
+| Position trading | Daily | all hours | 2–4× ATR | 2–4R | 40 bars |
+
+Six families of entry rule — trend pullback, channel breakout, RSI reversion,
+Bollinger reversion, MACD cross, stochastic-with-the-trend — are tried across a
+small parameter grid and every geometry the style allows. That is 630–840
+combinations.
+
+### What makes the answer worth reading
+
+The searching is the easy part. Everything below exists to stop the search
+producing a confident answer that means nothing, which is what a search does by
+default.
+
+1. **The data is split in time.** The first 65% is the research block. Every
+   decision — which rule, which parameters, which geometry — is made there. The
+   last 35% is locked.
+2. **Every candidate is scored against a matched control.** Random entries with
+   the same side, the same geometry, the same distribution of time-of-day, and
+   the same costs. That prices in drift, costs, barrier width and session
+   timing together, so the question stops being "did it make money" and becomes
+   "did it beat entering at random at the same times". A rule that only trades
+   the hours that happened to pay scores as what it is: nothing.
+3. **Multiplicity is stated and corrected.** The number of combinations tried is
+   the number of chances the search had to be lucky. It is printed with every
+   result, and a Benjamini–Hochberg correction is applied to the p-values.
+4. **The neighbourhood is tested.** A real edge decays smoothly as its settings
+   move. One that vanishes a rung away was a coincidence at one setting, and
+   that is the most reliable tell there is.
+5. **The locked block is revealed once**, for the shortlist only, as a check —
+   never as a score to select on.
+6. **A result better on the locked block than on research is flagged as the
+   wrong shape**, not celebrated. An edge decays out of sample; it does not
+   appear there.
+
+Anything shortlisted becomes a real strategy: **Save selected as a strategy**
+puts it in the library, where it can be charted, edited, re-run through the
+engine and exported to Pine like any other.
+
+### It will usually find nothing
+
+That is the point. Run it on the shipped US30 data and it reports, honestly,
+that 840 combinations produced nothing that survives its own multiplicity. A
+search that always finds something is worse than useless, so both halves are
+tested: `tests/test_finder.py` plants a real edge in a synthetic series and
+requires the finder to detect it, then hands it a random walk and requires it
+to recommend nothing.
+
+**Everything it produces is historical analysis, not a prediction.** The report
+says so in those words, on every path, including when nothing was found.
+
+---
+
 ## Optimisation
 
 **Backtest → Optimise Parameters**. Choose which parameters to sweep, their
@@ -461,6 +546,40 @@ The short version; the full document is **Help → Backtesting Assumptions**
 
 ---
 
+## Using it without the window
+
+Everything below the user interface is ordinary Python, so the platform can be
+driven from a terminal, a script or a scheduled job. The CLI reads and writes
+the same workspace as the app: a dataset imported here appears in the window,
+and a strategy the finder saves here opens in the editor.
+
+```bash
+python -m tradingbacktester.cli data                    # what is available
+python -m tradingbacktester.cli import ~/data/5m.csv --symbol US30
+python -m tradingbacktester.cli find --data "US30 15m" --style intraday
+python -m tradingbacktester.cli find --data "US30 15m" --style swing --save
+python -m tradingbacktester.cli run "EMA Cross + RSI" --data "US30 30m"
+```
+
+`--json` on `find` and `run` prints machine-readable output. `--workspace` points
+at a different folder. Nothing here reaches the network.
+
+The engine is also importable directly:
+
+```python
+from tradingbacktester.data.bundled import find
+from tradingbacktester.data.csv_loader import load_csv, sniff_csv
+from tradingbacktester.data.instruments import default_instrument_for
+from tradingbacktester.finder import find_strategies, format_report, style
+
+dataset = find("US30 15m")
+bars = load_csv(str(dataset.path()), sniff_csv(str(dataset.path())).mapping,
+                default_instrument_for("US30"))
+print(format_report(find_strategies(bars, style("intraday"))))
+```
+
+---
+
 ## Building from source
 
 ### Windows installer
@@ -519,6 +638,7 @@ tradingbacktester/
 ├── strategy/     the declarative strategy definition and its compiler
 ├── engine/       cost model, position sizing, the simulated broker, the loop
 ├── analytics/    metrics, equity curves, period returns, comparison
+├── finder/       trading styles, the candidate space, matched controls, search
 ├── optimize/     parameter grids, the parallel runner, ranking
 ├── reports/      CSV, HTML and PDF export
 ├── storage/      the on-disk workspace and saved runs
@@ -549,6 +669,8 @@ print(result.summary_line())
 | A metric | one entry in `analytics/metrics.py` and its row in the panel |
 | A report format | one module in `reports/` |
 | A sizing method | one branch in `engine/risk.PositionSizer` |
+| A rule family for the finder | one `Template` in `finder/candidates.py` |
+| A trading style | one `TradingStyle` in `finder/styles.py` |
 
 Live data, paper trading and broker connections are **not** implemented. The
 provider protocol is the seam they would attach to; nothing in this version

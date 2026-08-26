@@ -118,6 +118,9 @@ class MainWindow(QMainWindow):
             "Import an OHLCV CSV file", self.on_import_csv)
         act("sample", "Load Sample Data", "database", "",
             "Load the bundled synthetic dataset", self.on_load_sample)
+        act("shipped", "Import Shipped Market Data…", "database", "",
+            "Import the real market data that came with the application",
+            self.on_load_shipped)
         act("datasets", "Manage Datasets…", "database", "Ctrl+D",
             "Rename or remove imported datasets", self.on_manage_datasets)
         act("instruments", "Instruments…", "settings", "",
@@ -142,6 +145,10 @@ class MainWindow(QMainWindow):
         act("export_strategy", "Export Strategy…", "export", "",
             "Save the current strategy to a JSON file", self.on_export_strategy)
 
+        act("find", "Find Strategies…", "search", "Ctrl+F",
+            "Search this data for entry rules that beat a matched random "
+            "control", self.on_find_strategies)
+
         act("run", "Run Backtest", "run", "F5",
             "Run the backtest", self.on_run_backtest)
         act("cancel", "Cancel", "stop", "Esc",
@@ -164,6 +171,17 @@ class MainWindow(QMainWindow):
             "Save a full backtest report", self.on_export_report)
         act("export_pdf", "Export PDF Report…", "report", "",
             "Save a printable backtest report", self.on_export_pdf)
+
+        # Connected to `toggled` rather than `triggered` so the mode follows the
+        # checkbox however it was changed -- including from restored settings.
+        act("simple", "Simple Mode", "", "",
+            "Hide the optimiser, comparison and risk panels. Everything still "
+            "works; there is just less of it on screen.",
+            None, checkable=True)
+        self.act_simple.toggled.connect(self.on_toggle_simple)
+        act("start_here", "Show Start Here", "", "",
+            "Bring back the three-step guide in the configuration panel",
+            self.on_show_start_here)
 
         act("workspace", "Change Workspace Folder…", "workspace", "",
             "Choose where data, strategies and results are stored",
@@ -213,10 +231,19 @@ class MainWindow(QMainWindow):
         self.cancel_button.hide()
         tb.addWidget(self.cancel_button)
 
+        self.find_button = QPushButton("  Find Strategies")
+        self.find_button.setIcon(icon("search", 15))
+        self.find_button.setMinimumHeight(28)
+        self.find_button.setToolTip(self.act_find.toolTip())
+        self.find_button.clicked.connect(self.on_find_strategies)
+        tb.addWidget(self.find_button)
+
         tb.addSeparator()
-        tb.addAction(self.act_optimize)
+        # Kept so Simple Mode can take them off the toolbar rather than merely
+        # disabling them: a greyed-out button still has to be understood.
+        self._advanced_toolbar = [tb.addAction(self.act_optimize),
+                                  tb.addAction(self.act_compare)]
         tb.addAction(self.act_save_run)
-        tb.addAction(self.act_compare)
         tb.addSeparator()
         tb.addAction(self.act_export_report)
 
@@ -254,6 +281,7 @@ class MainWindow(QMainWindow):
 
         m = bar.addMenu("&Data")
         m.addAction(self.act_import)
+        m.addAction(self.act_shipped)
         m.addAction(self.act_datasets)
         m.addAction(self.act_quality)
         m.addSeparator()
@@ -269,6 +297,8 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_export_strategy)
 
         m = bar.addMenu("&Backtest")
+        m.addAction(self.act_find)
+        m.addSeparator()
         m.addAction(self.act_run)
         m.addAction(self.act_cancel)
         m.addSeparator()
@@ -279,6 +309,9 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_optimize)
 
         self.view_menu = bar.addMenu("&View")
+        self.view_menu.addAction(self.act_simple)
+        self.view_menu.addAction(self.act_start_here)
+        self.view_menu.addSeparator()
 
         m = bar.addMenu("&Help")
         m.addAction(self.act_assumptions)
@@ -317,6 +350,14 @@ class MainWindow(QMainWindow):
         ll = QVBoxLayout(left)
         ll.setContentsMargins(7, 7, 5, 7)
         ll.setSpacing(7)
+
+        from .widgets.start_here import StartHere
+
+        self.start_here = StartHere()
+        self.start_here.importRequested.connect(self.on_import_csv)
+        self.start_here.findRequested.connect(self.on_find_strategies)
+        self.start_here.dismissed.connect(self._on_start_here_dismissed)
+        ll.addWidget(self.start_here)
 
         self.data_panel = DataPanel()
         self.strategy_panel = StrategyPanel()
@@ -391,6 +432,13 @@ class MainWindow(QMainWindow):
         self.bottom_dock.setWidget(self.bottom_tabs)
         self.bottom_dock.setMinimumHeight(180)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.bottom_dock)
+
+        self.act_simple.blockSignals(True)
+        self.act_simple.setChecked(bool(getattr(self.settings, "simple_mode", True)))
+        self.act_simple.blockSignals(False)
+        self._apply_simple_mode(self.act_simple.isChecked())
+        if not getattr(self.settings, "show_start_here", True):
+            self.start_here.hide()
 
         for dock in (self.left_dock, self.right_dock, self.bottom_dock):
             self.view_menu.addAction(dock.toggleViewAction())
@@ -475,20 +523,91 @@ class MainWindow(QMainWindow):
 
         if not self.datasets.list():
             # A first run with an empty library opens on nothing at all, which
-            # tells a new user nothing about what the application does.  The
-            # synthetic samples are imported so there is something to press Run
-            # on; every surface that shows them says they are not real data.
+            # tells a new user nothing about what the application does.  Real
+            # market data is imported first, so the first thing on screen is a
+            # real chart; the synthetic samples follow, and every surface that
+            # shows them says they are not real data.
+            try:
+                self._import_bundled_datasets(self.STARTUP_IMPORT_LIMIT)
+            except Exception:
+                log.exception("Importing the shipped market data failed")
             try:
                 self._import_sample_datasets()
             except Exception:
                 log.exception("Importing the sample datasets failed")
 
-        self.data_panel.refresh_datasets(self.settings.last_dataset or None)
+        self.data_panel.refresh_datasets(self.settings.last_dataset
+                                         or self._preferred_dataset())
         self.strategy_panel.refresh(self.settings.last_strategy or None)
         self._update_actions()
+        self._update_start_here()
         if self._bars is None:
             self.status("Import a CSV, or press Sample to load the bundled "
                         "synthetic dataset.")
+
+    #: Shipped files larger than this are not imported at start-up.  Half a
+    #: million bars takes twenty seconds to parse, and a first launch that
+    #: hangs for twenty seconds is a worse introduction than a smaller chart.
+    STARTUP_IMPORT_LIMIT = 1_000_000
+
+    def _preferred_dataset(self) -> str | None:
+        """Which dataset to open on when the user has not chosen one yet.
+
+        Real market data before synthetic: the first chart someone sees should
+        be a real instrument, and the samples exist for when there is nothing
+        else, not as the default.
+        """
+        from ..data.bundled import BUNDLED
+
+        shipped = {d.name for d in BUNDLED}
+        rows = self.datasets.list()
+        real = [m for m in rows if m.name in shipped]
+        if real:
+            # The longest one: a four-hundred-bar daily series is real, but it
+            # is not enough to show what the application does.
+            return max(real, key=lambda m: int(getattr(m, "bar_count", 0) or 0)).id
+        return rows[0].id if rows else None
+
+    def _import_bundled_datasets(self, limit: int | None = None,
+                                 progress: Any = None) -> list[Any]:
+        """Import the real market data that ships with the application.
+
+        Skips anything already in the library, so it is safe on every launch.
+        *limit* caps the file size considered, which is how start-up stays
+        quick; ``None`` imports everything and is what the menu item uses.
+        """
+        from ..data.bundled import available
+        from ..data.csv_loader import load_csv, sniff_csv
+
+        existing = {m.name for m in self.datasets.list()}
+        added: list[Any] = []
+        pending = [d for d in available() if d.name not in existing
+                   and (limit is None or d.path().stat().st_size <= limit)]
+        for index, dataset in enumerate(pending):
+            if progress is not None:
+                progress(index, len(pending), f"Importing {dataset.name}")
+            try:
+                instrument = self.instruments.ensure(dataset.symbol,
+                                                     dataset.asset_class)
+                profile = sniff_csv(str(dataset.path()))
+                bars = load_csv(str(dataset.path()), profile.mapping, instrument)
+                meta = self.datasets.add_from_bars(
+                    bars, name=dataset.name, source_path=str(dataset.path()),
+                    notes=dataset.description)
+                added.append(meta)
+                log.info("Imported shipped dataset %s (%d bars)", dataset.name,
+                         len(bars))
+            except BacktesterError as exc:
+                log.warning("Could not import %s: %s", dataset.name,
+                            exc.user_message)
+        if added:
+            try:
+                self.instruments.save()
+            except BacktesterError:
+                log.warning("Could not save the instrument catalogue")
+        if progress is not None:
+            progress(len(pending), len(pending), "")
+        return added
 
     def _import_sample_datasets(self) -> list[Any]:
         """Load every bundled sample CSV into the dataset library.
@@ -561,6 +680,7 @@ class MainWindow(QMainWindow):
             self.status(f"{bars.instrument.symbol}: "
                         f"{len(self._quality.errors)} data problems found — see the "
                         f"quality report before trusting a backtest.")
+        self._update_start_here()
 
     def on_view_changed(self, *_args) -> None:
         """Rebuild the displayed bars after a timeframe or date-range change."""
@@ -687,6 +807,7 @@ class MainWindow(QMainWindow):
         self._apply_strategy_config(spec)
         self._show_strategy_indicators()
         self._update_actions()
+        self._update_start_here()
 
     def _apply_strategy_config(self, spec: StrategySpec) -> None:
         """Load the strategy's own risk and cost settings into the panel.
@@ -980,6 +1101,7 @@ class MainWindow(QMainWindow):
         self.status(f"Finished in {elapsed:.1f}s — {result.trade_count} trades{note}")
         self.tabs.setCurrentIndex(0)
         self._update_actions()
+        self._update_start_here()
 
     def _panels_from_result(self, result: BacktestResult) -> list[dict[str, Any]]:
         if self._spec is None:
@@ -1150,6 +1272,114 @@ class MainWindow(QMainWindow):
                         "Remember that a grid search reports the best result on "
                         "past data, not a prediction.")
             self.on_run_backtest()
+
+    def on_load_shipped(self) -> None:
+        """Import whatever shipped data is not in the library yet."""
+        from ..data.bundled import available
+
+        existing = {m.name for m in self.datasets.list()}
+        pending = [d for d in available() if d.name not in existing]
+        if not pending:
+            show_info(self, "Shipped Market Data",
+                      "All of it has already been imported. It is in the "
+                      "dataset list on the left.")
+            return
+        total = sum(d.path().stat().st_size for d in pending) / (1024 * 1024)
+        if not confirm(self, "Import Shipped Market Data",
+                       f"Import {len(pending)} dataset(s), {total:.1f} MB "
+                       f"compressed?\n\n"
+                       + "\n".join(f"· {d.name} — {d.description}"
+                                    for d in pending)
+                       + "\n\nThe largest is half a million bars and takes a "
+                         "few seconds."):
+            return
+
+        def job(progress=None):
+            return self._import_bundled_datasets(None, progress)
+
+        self._runner.finished.connect(self._finish_shipped_import)
+        self._runner.start(job)
+        self.status("Importing the shipped market data…")
+
+    def _finish_shipped_import(self, added: Any) -> None:
+        try:
+            self._runner.finished.disconnect(self._finish_shipped_import)
+        except (RuntimeError, TypeError):    # pragma: no cover - already gone
+            pass
+        rows = list(added or [])
+        self.data_panel.refresh_datasets(rows[0].id if rows else None)
+        self.status(f"Imported {len(rows)} dataset(s)." if rows
+                    else "Nothing new to import.")
+
+    # ------------------------------------------------------------------
+    # Finding strategies
+    # ------------------------------------------------------------------
+
+    def on_find_strategies(self) -> None:
+        """Open the search. It does not need a dataset loaded to be useful."""
+        from .dialogs.finder_dialog import FinderDialog
+
+        dialog = FinderDialog(self.datasets, self.instruments, self.strategies,
+                              self._view_bars, self)
+        dialog.exec()
+        # A search can save strategies, so the picker has to catch up.
+        self.strategy_panel.refresh(self.strategy_panel.current_strategy_id()
+                                    or None)
+        self._update_start_here()
+
+    # ------------------------------------------------------------------
+    # Simple mode
+    # ------------------------------------------------------------------
+
+    def on_toggle_simple(self, enabled: bool) -> None:
+        self._apply_simple_mode(bool(enabled))
+        self.settings.simple_mode = bool(enabled)
+        self.settings.save()
+        self.status("Simple mode on: the optimiser, comparison and risk "
+                    "settings are hidden. Nothing was disabled — View ▸ Simple "
+                    "Mode brings them back."
+                    if enabled else
+                    "Simple mode off: every panel is available again.")
+
+    def _apply_simple_mode(self, enabled: bool) -> None:
+        """Show or hide the parts a first backtest does not need.
+
+        This hides rather than disables. A disabled control still has to be
+        read, understood and dismissed; a hidden one costs nothing.
+        """
+        self.risk_panel.setVisible(not enabled)
+        for action in getattr(self, "_advanced_toolbar", []):
+            if action is not None:
+                action.setVisible(not enabled)
+        for widget, keep in ((self.comparison, not enabled),):
+            index = self.tabs.indexOf(widget)
+            if index >= 0 and not keep:
+                self.tabs.removeTab(index)
+            elif index < 0 and keep:
+                self.tabs.addTab(self.comparison, icon("compare", 15),
+                                 "Comparison")
+        for index in range(self.bottom_tabs.count() - 1, 0, -1):
+            # Trades always stay; Drawdowns and Log are for when something has
+            # gone wrong, which is not the first thing to show someone.
+            self.bottom_tabs.setTabVisible(index, not enabled)
+
+    def on_show_start_here(self) -> None:
+        self.start_here.show()
+        self.settings.show_start_here = True
+        self.settings.save()
+        self._update_start_here()
+
+    def _on_start_here_dismissed(self) -> None:
+        self.settings.show_start_here = False
+        self.settings.save()
+
+    def _update_start_here(self) -> None:
+        if not hasattr(self, "start_here"):
+            return
+        if getattr(self.settings, "show_start_here", True):
+            self.start_here.set_state(self._bars is not None,
+                                      self._spec is not None,
+                                      self._result is not None)
 
     # ------------------------------------------------------------------
     # Export

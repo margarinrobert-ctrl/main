@@ -1,0 +1,19 @@
+"""Automatic strategy search, with the discipline that makes it worth running.
+
+See :mod:`.search` for the protocol and :mod:`.control` for the reason a
+backtest result on its own is not evidence.
+"""
+
+from .candidates import Candidate, TEMPLATES, all_candidates, build_spec
+from .control import ControlResult, analytic_control, sampled_control
+from .outcomes import Geometry, OutcomeCache, build_outcomes, select_sequential
+from .report import format_report
+from .search import Finding, FinderReport, find_strategies
+from .styles import STYLES, TradingStyle, style
+
+__all__ = [
+    "Candidate", "ControlResult", "Finding", "FinderReport", "Geometry",
+    "OutcomeCache", "STYLES", "TEMPLATES", "TradingStyle", "all_candidates",
+    "analytic_control", "build_outcomes", "build_spec", "find_strategies",
+    "format_report", "sampled_control", "select_sequential", "style",
+]

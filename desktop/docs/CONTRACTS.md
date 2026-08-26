@@ -264,3 +264,43 @@ Every module gets tests in `desktop/tests/`. Use pytest. Prefer *hand-checkable*
 cases: an SMA of `[1..5]` with period 3 is `[nan, nan, 2, 3, 4]`; a single long
 trade entered at 100 and exited at 110 with 2 units, point value 1, commission
 $1/side, gives gross 20, commission 2, net 18. Assert exact numbers.
+
+
+## `tradingbacktester/finder/` — automatic strategy search
+
+The search is affordable because a trade's result depends only on the bar it
+was signalled on and the geometry it was given, never on the rule that produced
+the signal. So the forward walk is done once per geometry, for every bar, and
+cached; after that a candidate rule is a boolean mask and scoring it is a sum.
+
+- `styles.TradingStyle` — the geometry a search may look in: timeframes, stop
+  and target multiples, max hold, session window, minimum trade count.
+  `STYLES` holds scalp / intraday / swing / position.
+- `outcomes.build_outcomes(bars, Geometry, costs, hold_limit) -> OutcomeCache`
+  — per-signal-bar net result, exit reason, bars held, entry/stop/target.
+  Same conservative choices as the engine: fill at the next open, ATR read at
+  the signal bar, a bar reaching both barriers counts as the stop, a gap
+  through the stop fills at the open, costs always adverse.
+- `outcomes.select_sequential(cache, mask)` — thins a mask to the trades one
+  contract could actually have taken. Without it, clustered signals inflate
+  every result.
+- `outcomes.verify_against_engine(...)` — re-runs a result through the real
+  `Backtester` and reports the difference rather than assuming it away.
+- `control.analytic_control(...)` / `control.sampled_control(...)` — random
+  entries matched on time-of-day. The analytic one is closed-form and cheap
+  enough to gate every candidate; the sampled one confirms the shortlist
+  without a distributional assumption.
+- `control.benjamini_hochberg(p_values, alpha)` — the multiplicity correction.
+- `candidates.TEMPLATES` — six entry-rule families, each able to emit a real
+  `StrategySpec` so anything found is runnable, saveable and exportable.
+- `search.find_strategies(bars, style, ...) -> FinderReport` — the protocol:
+  split, gate on the control, correct for multiplicity, test the
+  neighbourhood, reveal the locked block once, judge in plain English.
+- `report.format_report(report)` — plain text, multiplicity and disclaimer
+  included on every path.
+
+## `tradingbacktester/cli.py`
+
+`data`, `import`, `find`, `run`, `strategies`. Reads and writes the same
+workspace as the GUI. `--json` for machine-readable output; `--workspace` to
+point elsewhere. Imports no Qt.

@@ -113,6 +113,10 @@ class AppSettings:
     window_geometry: str = ""
     window_state: str = ""
     log_level: str = "INFO"
+    simple_mode: bool = True
+    """Start with the advanced panels hidden. On by default: the first thing a
+    new user sees should be the short version."""
+    show_start_here: bool = True
     price_scale_right: bool = True
     show_volume: bool = True
     decimal_places: int = 2

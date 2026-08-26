@@ -631,3 +631,136 @@ def test_window_survives_selecting_every_strategy(window, qapp):
         window.strategy_panel.strategy_box.setCurrentIndex(row)
         qapp.processEvents()
         assert window._spec is not None
+
+
+# --------------------------------------------------------------------------
+# Find Strategies
+# --------------------------------------------------------------------------
+
+def test_finder_dialog_offers_the_shipped_data(qapp, tmp_path, registry):
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import FinderDialog
+
+    workspace = Workspace(tmp_path).ensure()
+    dialog = FinderDialog(DatasetRepository(workspace), registry,
+                          StrategyStore(workspace))
+    offered = [dialog.dataset_box.itemText(i)
+               for i in range(dialog.dataset_box.count())]
+    assert any("US30 30m" in text for text in offered)
+    assert len(dialog._style_buttons) == 4
+    # Day trading is the default: it is the style most people mean.
+    assert dialog._selected_style().key == "intraday"
+    dialog.close()
+
+
+def test_finder_dialog_shows_a_result_and_can_save_it(qapp, tmp_path, registry):
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.finder import find_strategies
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import FinderDialog
+
+    workspace = Workspace(tmp_path).ensure()
+    store = StrategyStore(workspace)
+    dialog = FinderDialog(DatasetRepository(workspace), registry, store)
+    for i in range(dialog.dataset_box.count()):
+        if "US30 30m" in dialog.dataset_box.itemText(i):
+            dialog.dataset_box.setCurrentIndex(i)
+            break
+    bars = dialog._load_bars()
+    assert len(bars) > 1000
+
+    report = find_strategies(bars, dialog._selected_style(), control_draws=50)
+    dialog._on_finished(report)
+    qapp.processEvents()
+    assert dialog.table.rowCount() == len(report.shortlist)
+    # Whatever the verdict, the multiplicity has to be on screen.
+    assert f"{report.combinations:,} combinations" in dialog.status.text()
+    assert "not a prediction" in dialog.detail.toPlainText()
+
+    if report.shortlist and report.shortlist[0].spec is not None:
+        dialog.table.selectRow(0)
+        qapp.processEvents()
+        assert dialog.save_button.isEnabled()
+        dialog._save_selected()
+        assert store.list(), "the saved strategy did not reach the workspace"
+        assert "not a recommendation" in dialog.status.text()
+    dialog.close()
+
+
+# --------------------------------------------------------------------------
+# Simple mode and the guided start
+# --------------------------------------------------------------------------
+
+@pytest.fixture
+def window(qapp, tmp_path):
+    from tradingbacktester.config import AppSettings, Workspace
+    from tradingbacktester.ui.main_window import MainWindow
+
+    workspace = Workspace(tmp_path).ensure()
+    settings = AppSettings()
+    settings.workspace_dir = str(tmp_path)
+    win = MainWindow(settings, workspace)
+    win.show()
+    qapp.processEvents()
+    yield win
+    win.close()
+
+
+def test_simple_mode_hides_the_advanced_surfaces(window, qapp):
+    assert window.act_simple.isChecked(), "simple mode should be the default"
+    tabs = [window.tabs.tabText(i) for i in range(window.tabs.count())]
+    assert "Comparison" not in tabs
+    assert not window.risk_panel.isVisible()
+    assert window.bottom_tabs.tabText(0) == "Trades"
+    assert window.bottom_tabs.isTabVisible(0)
+    assert not window.bottom_tabs.isTabVisible(1)
+
+    window.act_simple.setChecked(False)
+    qapp.processEvents()
+    tabs = [window.tabs.tabText(i) for i in range(window.tabs.count())]
+    assert "Comparison" in tabs
+    assert window.risk_panel.isVisible()
+    assert all(window.bottom_tabs.isTabVisible(i)
+               for i in range(window.bottom_tabs.count()))
+
+    # And back again, because a toggle that only works once is not a toggle.
+    window.act_simple.setChecked(True)
+    qapp.processEvents()
+    assert "Comparison" not in [window.tabs.tabText(i)
+                                for i in range(window.tabs.count())]
+
+
+def test_the_app_opens_on_real_data_not_synthetic(window):
+    assert window._bars is not None, "nothing was loaded on first run"
+    assert window._bars.instrument.symbol == "US30"
+    assert len(window._bars) > 10_000
+    names = [m.name for m in window.datasets.list()]
+    assert "US30 30m" in names
+    # The half-million-bar file must NOT be imported at start-up: it takes
+    # twenty seconds and this is someone's first impression.
+    assert "US30 5m" not in names
+
+
+def test_the_start_guide_ticks_itself_off(window, qapp):
+    steps = [label.text() for label in window.start_here._steps]
+    assert steps[0].startswith("✓"), "data was loaded but step one is not ticked"
+    window.on_run_backtest()
+    for _ in range(200):
+        qapp.processEvents()
+        if window._result is not None:
+            break
+    assert window._result is not None
+    qapp.processEvents()
+    assert not window.start_here.isVisible(), "the guide should hide when done"
+
+
+def test_start_here_can_be_dismissed_and_restored(window, qapp):
+    window.start_here._dismiss()
+    qapp.processEvents()
+    assert not window.start_here.isVisible()
+    assert window.settings.show_start_here is False
+    window.on_show_start_here()
+    qapp.processEvents()
+    assert window.start_here.isVisible()
+    assert window.settings.show_start_here is True
