@@ -138,6 +138,9 @@ def test_no_package_below_ui_reaches_into_it_except_the_pdf_renderer():
                 bare = name.lstrip(".")
                 if name.startswith("PySide6") or bare.split(".")[0] == "ui" \
                         or bare.startswith("tradingbacktester.ui"):
-                    offenders.append(str(path.relative_to(ROOT)))
+                    # `as_posix`, not `str`: on Windows the latter gives
+                    # backslashes and this comparison fails on the
+                    # runner for a repository that is perfectly layered.
+                    offenders.append(path.relative_to(ROOT).as_posix())
                     break
     assert offenders == ["tradingbacktester/reports/pdf_report.py"], offenders
