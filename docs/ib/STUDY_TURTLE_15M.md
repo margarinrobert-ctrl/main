@@ -315,3 +315,74 @@ by being allowed to run. A 12:00 flatten does not trim the system, it removes wh
 
 This is a genuine conflict with the standing requirement to be flat by noon, and it is not
 resolvable by tuning: there is no window here that both closes daily and keeps the edge.
+
+## 07:00–11:00 New York, searched on Sharpe and drawdown
+
+`research/turtle15/session_opt.py`. The request was the best Sharpe and the smallest drawdown for a
+07:00–11:00 window on 15 minutes. 102 configurations searched inside it — unit cap, ATR stop
+multiple, exit channel length, all three gate thresholds — ranked by **Sharpe** with drawdown
+reported beside it, never by profit. That objective is also the safer one: the unit cap chosen on
+return-over-drawdown was the one structural choice that held out of sample, while choices made on
+raw profit ran off the edges of their grids.
+
+| configuration (07:00–11:00, flat 11:00) | research PF / Sharpe | **holdout PF / Sharpe** |
+| --- | ---: | ---: |
+| no gate at all | 0.65 / −2.28 | 0.79 / −1.07 |
+| shipped gate, 3 units, 2.0N | 1.03 / +0.06 | **0.44 / −1.00** |
+| best by Sharpe: 1 unit, 1.5N, ADX ≥ 20, dist ≥ 4.0, vol ≥ 0.90 | 1.23 / **+0.57** | **0.85 / −0.39** |
+
+**Nothing in that window survives.** The best research Sharpe of +0.57 becomes −0.39.
+
+### It is the window, not the flatten
+
+Same 07:00–11:00 entries, only the exit policy changed:
+
+| exit policy | holdout PF |
+| --- | ---: |
+| flat at 11:00 (as asked) | 0.44 |
+| flat at 16:00 | 0.53 |
+| no flatten, Turtle exits only | 0.45 |
+| no flatten, one unit | 0.41 |
+| *same gate, entries at any hour* | ***1.56*** |
+
+Removing the clock does not rescue it. The damage is in **which breakouts those hours contain**, not
+in cutting them short — which is a different mechanism from the one found for the 06:00–12:00 window
+on the unconstrained family, where holding was what paid.
+
+### Where the edge actually is
+
+Improved gate, three units, no flatten, by entry window, **both blocks shown**:
+
+| window (New York) | research PF / Sharpe | holdout PF / Sharpe | holdout max DD |
+| --- | ---: | ---: | ---: |
+| all hours | 1.58 / 1.40 | 1.56 / 1.10 | 2,742 |
+| **07:00–11:00** | 1.38 / 0.66 | **0.42 / −1.44** | 2,979 |
+| 11:00–16:00 | 1.94 / 1.60 | 1.85 / 1.10 | 1,343 |
+| 16:00–20:00 | 3.08 / 1.33 | 1.92 / 1.05 | **741** |
+| **11:00–24:00** | 1.90 / **1.68** | 1.85 / **1.38** | 1,408 |
+
+**11:00 onward delivers both things the request asked for** — a better holdout Sharpe than trading
+every hour (1.38 against 1.10) and roughly half the drawdown (1,408 against 2,742). 07:00–11:00 is
+the single worst window tested.
+
+**The caveat is not optional.** That table was read on both blocks, so choosing 11:00–24:00 from it
+is partly a choice made on the holdout, and nothing was held back to check it afterwards. The
+07:00–11:00 result is the clean one precisely because that window came from the request rather than
+from a search.
+
+### Two structural findings the search produced
+
+**The channel exit is inert inside a short window.** Exit lengths of 5, 10 and 20 bars give
+bit-identical results — median hold is **2 bars** and **no trade reaches 15**. A 10-bar channel low
+cannot bind before the clock does. Inside four hours this is not a Turtle system; it is an ATR stop
+and a clock wearing Turtle clothing, the same shape `STUDY_INTRADAY_HEAT.md` found when a
+take-profit stopped binding.
+
+**One unit is the lowest-drawdown answer, by a wide margin** — 318 points against 1,267 for four
+units on the same research trades, and four units scored the worst Sharpe of all 48 risk cells
+(−1.74). If a short window is traded at all, it should be traded small.
+
+`pine/turtle/TURTLE_15M_SESSION_strategy.pine` ships the window free and defaulted to 07:00–11:00 as
+requested, with the measured table in its header and a HUD row that turns **red** for any window
+starting before 11:00, so a window known to fail out of sample can never be invisible in a
+screenshot.
