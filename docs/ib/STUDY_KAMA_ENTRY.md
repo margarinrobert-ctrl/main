@@ -107,3 +107,43 @@ Only NQ was available, so none of this is cross-market evidence.
 `pine/donchian/KAMA_CROSS_strategy.pine` ships the crossover with the tap present and **defaulted
 off**, and carries these numbers in its header. Pine has no built-in KAMA; the recursion is written
 out and seeded to match the research code.
+
+## Addendum — the tap inside the session box, and the script that ships it
+
+The first script shipped for this study had the KAMA × EMA crossover standing on its own, which is
+not where the pullback tap was measured: the tap is always **armed by a Donchian breakout**. That
+mismatch is fixed in `pine/donchian/DCS_KAMA_SESSION_strategy.pine`, which carries the breakout, the
+three filters as individual toggles, the tap, and free session start / last-entry / flatten times.
+
+Measured for those defaults — Donchian 20, EMA 50, ADX > 20, CHOP < 40, 3×ATR trail, signals
+06:00–11:00 New York, flat at 12:00:
+
+| tf | block | n | pts/trade | R | win | PF | max DD |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 5m | research | 453 | +0.69 | +0.0221 | 35.1% | 1.04 | 1,194 |
+| 5m | **LOCKED** | 226 | **−7.75** | −0.0358 | 35.4% | **0.71** | 1,955 |
+| 15m | research | 224 | +1.87 | +0.0494 | 38.4% | 1.07 | 1,037 |
+| 15m | **LOCKED** | 107 | **−2.71** | +0.0483 | 37.4% | **0.93** | 1,446 |
+| 30m | research | 133 | +5.18 | +0.0468 | 49.6% | 1.18 | 932 |
+| 30m | **LOCKED** | 74 | +1.66 | +0.0024 | 41.9% | 1.04 | 764 |
+
+The session box is what costs it: unconstrained, the same rules on 30m return **+26.71 points a
+trade out of sample at PF 1.49**. This is the eighth independent time the intraday constraint has
+removed the result on this branch, and the mechanism is the same one measured in the main study —
+the median winner runs 2.1 hours against a median loser's 0.8, so a 12:00 flatten cuts off the tail
+the trailing stop is paid in.
+
+**The tap's verdict is unchanged inside the session**, which is the point of re-running it there.
+15-minute, the only cell positive on both blocks:
+
+| | research n | research R | LOCKED n | LOCKED R |
+| --- | ---: | ---: | ---: | ---: |
+| take every trade | 308 | +0.0555 | 149 | **+0.1004** |
+| wait for KAMA 9 | 121 | +0.1737 | 49 | +0.0826 |
+| blind limit, same distance (1.98 / 2.12 ×ATR) | 126 | +0.0912 | 52 | **+0.1648** |
+| | | p 0.215 | | p 0.599 |
+
+Out of sample **the blind limit beats the KAMA tap outright**, and in total R — what is actually
+collected — taking every trade wins: **+15.0 R against the tap's +4.0**. Both findings from the main
+study survive the session constraint intact: the distance prices the tap, and the tap loses to not
+waiting.
