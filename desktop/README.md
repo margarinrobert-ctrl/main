@@ -784,9 +784,13 @@ python -m tradingbacktester.cli walkforward "EMA Cross + RSI" --data "US30 30m" 
 python -m tradingbacktester.cli montecarlo "EMA Cross + RSI" --data "US30 30m" \
     --method block --draws 5000
 python -m tradingbacktester.cli mirror "MACD Trend" --data "US30 30m"
+python -m tradingbacktester.cli report "MACD Trend" --data "US30 30m" \
+    --out report.html --trades
 ```
 
-`--mirror` on any command that reads data reflects the series first. `--json`
+`report` writes the same self-contained HTML or PDF the window's File → Export
+menu produces; the suffix chooses the format and the PDF renders with no display
+attached. `--mirror` on any command that reads data reflects the series first. `--json`
 prints machine-readable output on `find`, `indicators`, `anomalies`,
 `run`, `walkforward`, `montecarlo` and `mirror`; everything else then goes to stderr so the output can
 be piped straight into a tool that expects one document. `--workspace` points at

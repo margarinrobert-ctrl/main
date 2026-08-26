@@ -489,6 +489,40 @@ def test_cli_monte_carlo_resamples_a_real_run(tmp_path, capsys):
                for n in payload["notes"])
 
 
+def test_cli_report_writes_html_and_the_trade_list(tmp_path, capsys):
+    from tradingbacktester.cli import main
+
+    target = tmp_path / "report.html"
+    assert main(["--workspace", str(tmp_path), "report", "MACD Trend",
+                 "--data", "US30 30m", "--out", str(target), "--trades"]) == 0
+    assert target.is_file() and target.stat().st_size > 50_000
+    assert (tmp_path / "report.trades.csv").is_file()
+    out = capsys.readouterr().out
+    assert "wrote" in out and "KB" in out
+    assert "What else could have happened" in target.read_text()
+
+
+def test_cli_report_picks_the_format_from_the_suffix(tmp_path, capsys):
+    from tradingbacktester.cli import main
+
+    target = tmp_path / "report.pdf"
+    assert main(["--workspace", str(tmp_path), "report", "MACD Trend",
+                 "--data", "US30 30m", "--out", str(target)]) == 0
+    assert target.read_bytes()[:5] == b"%PDF-"
+    capsys.readouterr()
+
+
+def test_cli_report_format_overrides_the_suffix(tmp_path, capsys):
+    from tradingbacktester.cli import main
+
+    target = tmp_path / "named_wrong.pdf"
+    assert main(["--workspace", str(tmp_path), "report", "MACD Trend",
+                 "--data", "US30 30m", "--out", str(target),
+                 "--format", "html"]) == 0
+    assert target.read_text().lstrip().startswith("<!DOCTYPE html")
+    capsys.readouterr()
+
+
 def test_cli_mirror_runs_both_sides(tmp_path, capsys):
     from tradingbacktester.cli import main
 

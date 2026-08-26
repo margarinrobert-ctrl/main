@@ -391,6 +391,8 @@ what a real trade would have paid rather than against an abstract return.
 - `report.format_study` / `report.format_anomalies` — plain text with the
   caveats beside the numbers.
 
-CLI: `indicators`, `anomalies` and `mirror` subcommands, all with `--json`.
+CLI: `indicators`, `anomalies` and `mirror` subcommands, all with `--json`;
+`report` writes the HTML or PDF report from the terminal, the suffix of `--out`
+choosing the format.
 Every command that reads a dataset also takes `--mirror`, added once over
 `sub.choices` so a new data command cannot forget it.

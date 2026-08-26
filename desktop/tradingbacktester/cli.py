@@ -505,6 +505,44 @@ def cmd_montecarlo(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report(args: argparse.Namespace) -> int:
+    from .engine.backtester import Backtester
+
+    bars, name = _resolve_bars(args)
+    spec = _resolve_spec(args)
+    config = _config_for(spec, args.capital)
+    print(f"{spec.name} on {name} ({len(bars):,} bars, {bars.timeframe.label})")
+    result = Backtester(bars, spec, config).run()
+    for line in row("  ", result.summary_line()):
+        print(line)
+
+    target = Path(args.out).expanduser()
+    kind = args.format
+    if kind == "auto":
+        kind = "pdf" if target.suffix.lower() == ".pdf" else "html"
+    if kind == "pdf":
+        # Works with no display: `ensure_application` selects the offscreen
+        # platform rather than letting Qt abort the process.
+        from .reports.pdf_report import export_pdf_report
+
+        written = export_pdf_report(result, str(target))
+    else:
+        from .reports.html_report import export_html_report
+
+        written = export_html_report(result, str(target))
+    # Deliberately not wrapped. A path is one unbreakable token, so wrapping
+    # only orphans it onto a line of its own; printed whole it can be copied
+    # straight back out, which is the entire point of echoing it.
+    size = Path(written).stat().st_size / 1024.0
+    print(f"  wrote {written}  ({size:,.0f} KB)")
+    if args.trades:
+        from .reports.csv_export import export_trades_csv
+
+        trades = export_trades_csv(result, str(target.with_suffix(".trades.csv")))
+        print(f"  wrote {trades}")
+    return 0
+
+
 def cmd_mirror(args: argparse.Namespace) -> int:
     from .research.mirror import format_mirror, mirror_test
 
@@ -676,6 +714,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")
     p.set_defaults(func=cmd_montecarlo)
+
+    p = sub.add_parser(
+        "report",
+        help="Run a backtest and write a full report to a file",
+        description="Everything the window's File → Export menu writes, from "
+                    "the terminal. The report is self-contained and makes no "
+                    "network request; the PDF renders without a display.")
+    p.add_argument("strategy")
+    p.add_argument("--data", required=True)
+    p.add_argument("--out", required=True, metavar="PATH",
+                   help="Where to write it; the suffix chooses the format")
+    p.add_argument("--format", default="auto", choices=("auto", "html", "pdf"),
+                   help="Override the format implied by --out")
+    p.add_argument("--trades", action="store_true",
+                   help="Also write the trade list beside it as CSV")
+    p.add_argument("--capital", type=float, default=100_000.0)
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_report)
 
     p = sub.add_parser(
         "mirror",
