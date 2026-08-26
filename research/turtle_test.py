@@ -41,9 +41,15 @@ def reference(s: Series, p: P) -> list[dict]:
     # one; mirroring it for shorts means swapping which side each length is measured on, not
     # reusing the same arrays.  Getting that wrong here is what the short-mirror case caught.
     hi1, hi2 = s.hi(p.entry1), s.hi(p.entry2)          # long entry
-    lo1, lo2 = s.lo(p.exit1), s.lo(p.exit2)            # long trailing exit
+    # `chanLo1[1]` in the Pine: the trailing channel as of the PREVIOUS bar.  `chan_shift` makes
+    # the lag explicit so the unlagged variant can be measured against it.
+    def lag(x):
+        for _ in range(max(0, int(p.chan_shift))):
+            x = T._shift1(x)
+        return x
+    lo1, lo2 = lag(s.lo(p.exit1)), lag(s.lo(p.exit2))   # long trailing exit
     slo1, slo2 = s.lo(p.entry1), s.lo(p.entry2)        # short entry
-    shi1, shi2 = s.hi(p.exit1), s.hi(p.exit2)          # short trailing exit
+    shi1, shi2 = lag(s.hi(p.exit1)), lag(s.hi(p.exit2))  # short trailing exit
     adx = s.adx(14) if p.adx_max > 0 else np.zeros(s.n)
     ema = s.ema(p.ema_len) if p.ext_max > 0 else np.zeros(s.n)
     side = p.side
@@ -258,6 +264,7 @@ def check_mirror(series_list) -> list[str]:
         ("no pyramid", P(pyr_step=0.0, max_units=1, sess_start=420, sess_end=660, flatten_min=660)),
         ("no chan exit", P(use_chan_exit=False, sess_start=420, sess_end=660, flatten_min=660,
                            tp_r=1.5)),
+        ("chan unlagged", P(chan_shift=0, sess_start=420, sess_end=660, flatten_min=660)),
         ("armed stop", P(armed_stop=True, sess_start=420, sess_end=660, flatten_min=660)),
         ("one shot", P(one_shot=True, sess_start=420, sess_end=660, flatten_min=660, max_hold=12)),
         ("costs on", P(sess_start=420, sess_end=660, flatten_min=660, cost_abs=2.0,
@@ -429,6 +436,53 @@ def check_forced(s: Series) -> list[str]:
     return out
 
 
+def check_tensor(s: Series) -> list[str]:
+    """A scan over the cached exit tensor must reproduce the bar-walking engine exactly.
+
+    The tensor is an optimisation, not a second definition of the strategy.  If the two ever
+    disagree the search is optimising something the shipped script does not do, so this is checked
+    across the corners -- pyramiding on and off, take-profit on and off, both sides, the
+    skip-after-a-win filter, one-shot sessions, hold caps, and both cost shapes.
+    """
+    import turtle_tensor as X
+    out = []
+    cases = [
+        ("plain", P(sess_start=420, sess_end=660, flatten_min=660)),
+        ("tp+gates", P(sess_start=420, sess_end=660, flatten_min=660, tp_r=2.0, adx_max=22.0,
+                       ext_max=3.9, entry1=10, entry2=30, exit1=4, exit2=8, atr_mult=1.5)),
+        ("no pyramid", P(sess_start=420, sess_end=660, flatten_min=660, pyr_step=0.0,
+                         max_units=1, tp_r=1.5)),
+        ("no chan exit", P(sess_start=420, sess_end=660, flatten_min=660, use_chan_exit=False)),
+        ("chan unlagged", P(sess_start=420, sess_end=660, flatten_min=660, chan_shift=0)),
+        ("chan lag 2", P(sess_start=420, sess_end=660, flatten_min=660, chan_shift=2, tp_r=2.0)),
+        ("armed", P(sess_start=420, sess_end=660, flatten_min=660, armed_stop=True, tp_r=2.0)),
+        ("one shot", P(sess_start=420, sess_end=660, flatten_min=660, one_shot=True, max_hold=10)),
+        ("no skipwin", P(sess_start=420, sess_end=660, flatten_min=660, skip_win=False)),
+        ("costs abs", P(sess_start=420, sess_end=660, flatten_min=660, cost_abs=2.0,
+                        stop_slip=1.0)),
+        ("costs bp", P(sess_start=420, sess_end=660, flatten_min=660, cost_bp=10.0,
+                       stop_slip=0.0005, tp_r=2.0, tp_rests=True)),
+        ("short", P(side=-1, sess_start=420, sess_end=660, flatten_min=660, tp_r=2.0,
+                    cost_abs=1.0, stop_slip=0.5)),
+        ("late start", P(sess_start=570, sess_end=660, flatten_min=660, entry1=8, entry2=16,
+                         exit1=3, exit2=6, atr_len=10, atr_mult=1.0, pyr_step=0.25)),
+    ]
+    for tag, p in cases:
+        a = run(s, p)
+        ex = X.build(s, p)
+        b = X.scan(s, ex, T.signal_bars(s, p), p)
+        net = b.net(p.cost_abs, p.cost_bp, p.stop_slip, p.tp_rests)
+        ok = (len(a) == len(b)
+              and np.array_equal(a.entry_bar, b.entry_bar)
+              and np.array_equal(a.exit_bar, b.exit_bar)
+              and np.array_equal(a.units, b.units)
+              and np.array_equal(a.reason, b.reason)
+              and np.allclose(a.pnl, net, atol=1e-9))
+        out.append(("OK  " if ok else "FAIL") +
+                   f"  tensor {tag:<12} engine {len(a):5,d} trades, scan {len(b):5,d}")
+    return out
+
+
 def main() -> None:
     import turtle_bars as B
 
@@ -440,11 +494,12 @@ def main() -> None:
         series.append(Series(s.o[:k], s.h[:k], s.l[:k], s.c[:k], s.v[:k], s.ny_min[:k],
                              s.sess[:k], s.ts[:k], name=nm, tf=tf))
     fails = 0
-    for line in check_mirror(series):
+    lines = check_mirror(series)
+    for line in lines:
         if line.startswith("FAIL"):
             fails += 1
             print(line)
-    print(f"  {len(series) * 12 - fails} / {len(series) * 12} configurations identical")
+    print(f"  {len(lines) - fails} / {len(lines)} configurations identical")
 
     print("\n" + "=" * 78, "\nStage 0 -- null calibration on a martingale\n", "=" * 78)
     for line in check_null():
@@ -473,6 +528,14 @@ def main() -> None:
             print(f"  {nm} {tf}m  " + line)
             fails += line.startswith("FAIL")
         for line in check_forced(sub):
+            print(f"  {nm} {tf}m  " + line)
+            fails += line.startswith("FAIL")
+
+    print("\n" + "=" * 78, "\nExit tensor == bar-walking engine\n", "=" * 78)
+    for nm, tf in (("US30", 5), ("XAU", 15), ("BTC", 15)):
+        s = B.load(nm, tf).window(420, 720)
+        s = s.slice_sessions(0, 900)
+        for line in check_tensor(s):
             print(f"  {nm} {tf}m  " + line)
             fails += line.startswith("FAIL")
 

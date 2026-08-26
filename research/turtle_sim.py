@@ -190,6 +190,7 @@ class P:
     tp_r: float = 0.0         # take-profit at tp_r x initial risk, 0 = off
     max_hold: int = 0         # bars, 0 = off
     use_chan_exit: bool = True
+    chan_shift: int = 1       # bars to lag the trailing exit channel; 1 = the supplied Pine
     armed_stop: bool = False  # stop live on the entry bar, anchored to the signal close
     one_shot: bool = False    # at most one position per session
     side: int = 1             # 1 = long (the supplied script), -1 = the short mirror
@@ -589,13 +590,32 @@ _ZERO = np.zeros(1)
 _ZEROI = np.zeros(1, np.int64)
 
 
+def exit_levels(s: Series, p: P) -> tuple[np.ndarray, np.ndarray]:
+    """The trailing-exit channels, lagged by `chan_shift`.
+
+    The supplied Pine reads `chanLo1[1]` -- the channel as of the PREVIOUS bar -- not `chanLo1`.
+    Both are causal, and the difference is not cosmetic: including the current bar can only push a
+    long's channel low DOWN, so the unlagged version trails looser and gives back more.  The first
+    version of this engine used the unlagged form and so, independently, did the reference written
+    to check it; the mismatch only surfaced when the emitted Pine was read back against the
+    original.  It is a parameter now, defaulting to the shipped script's `[1]`, so which one is
+    better is measured rather than assumed.
+    """
+    if p.side > 0:
+        a, b = s.lo(p.exit1), s.lo(p.exit2)
+    else:
+        a, b = s.hi(p.exit1), s.hi(p.exit2)
+    for _ in range(max(0, int(p.chan_shift))):
+        a, b = _shift1(a), _shift1(b)
+    return a, b
+
+
 def run(s: Series, p: P, forced: np.ndarray | None = None,
         buf: tuple | None = None) -> Result:
     """Simulate `p` on `s`.  Pass `forced` (0/1/2 per bar) to replace the Donchian signal."""
-    if p.side > 0:
-        e1, e2, x1, x2 = s.ehi(p.entry1), s.ehi(p.entry2), s.lo(p.exit1), s.lo(p.exit2)
-    else:
-        e1, e2, x1, x2 = s.elo(p.entry1), s.elo(p.entry2), s.hi(p.exit1), s.hi(p.exit2)
+    e1, e2 = (s.ehi(p.entry1), s.ehi(p.entry2)) if p.side > 0 else \
+             (s.elo(p.entry1), s.elo(p.entry2))
+    x1, x2 = exit_levels(s, p)
     if buf is None:
         cap = max(1024, s.n // 2 + 16)
         buf = (np.empty(cap, np.int64), np.empty(cap, np.int64), np.empty(cap, np.int64),
@@ -648,5 +668,6 @@ def signal_bars(s: Series, p: P) -> np.ndarray:
 
 
 __all__ = ["P", "params", "Series", "Result", "run", "replace", "signal_bars",
+           "exit_levels",
            "EXIT_NAMES", "EX_STOP", "EX_CHAN", "EX_TP", "EX_FLAT", "EX_HOLD", "EX_EOD",
            "_rma", "_ema", "_dmi", "_highest", "_lowest", "_true_range", "_shift1"]
