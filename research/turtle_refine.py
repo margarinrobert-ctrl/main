@@ -120,5 +120,61 @@ def summarise_axis(df: pd.DataFrame, axis: str, metric: str = "sharpe") -> pd.Da
     return g
 
 
-__all__ = ["refine", "summarise_axis", "grid_size", "SESS_START", "SESS_END",
-           "BREAK_ATR", "FLATTEN"]
+AXIS_ORDER = {
+    "sess_start": SESS_START, "sess_end": SESS_END, "adx_max": ADX_MAX, "ext_max": EXT_MAX,
+    "break_atr": BREAK_ATR, "max_hold": MAX_HOLD, "one_shot": ONE_SHOT,
+}
+
+
+def _monotone(vals: list[float], tol: float = 1e-9) -> bool:
+    up = all(b >= a - tol for a, b in zip(vals, vals[1:]))
+    dn = all(b <= a + tol for a, b in zip(vals, vals[1:]))
+    return up or dn
+
+
+def marginal_refine(df: pd.DataFrame, metric: str = "sharpe",
+                    verbose: bool = True) -> tuple[dict, pd.DataFrame]:
+    """Adopt a refinement only where the axis MARGINAL supports it.
+
+    Taking the argmax of a 12,000-cell refinement grid is how a Sharpe of 0.81 becomes 1.18 by
+    changing five things at once, and `CLAUDE.md` is unambiguous about what that is worth.  The
+    rule here is stated before the locked block is read and applied uniformly:
+
+        adopt the best level of an axis if, and only if, the axis is BINARY, or its marginal --
+        the median objective over every other axis -- is monotone in the axis's natural order.
+
+    A binary axis has no shape to mine.  A monotone marginal is a claim about the axis rather than
+    about one cell: "later entries are worse, and steadily so" is a mechanism, and it survives
+    perturbation by construction.  A marginal that goes down and then up again is a peak, and a
+    peak in a 12,000-cell grid is what this rule exists to refuse.
+
+    Everything else keeps its base value.  The refusals are reported, not silently dropped.
+    """
+    chosen, rows = {}, []
+    for ax, order in AXIS_ORDER.items():
+        if ax not in df.columns:
+            continue
+        g = df.groupby(ax)[metric].median()
+        levels = [lv for lv in order if lv in g.index]
+        if len(levels) < 2:
+            continue
+        vals = [float(g.loc[lv]) for lv in levels]
+        best = levels[int(np.argmax(vals))]
+        binary = len(levels) == 2
+        mono = _monotone(vals)
+        take = binary or mono
+        if take:
+            chosen[ax] = best
+        rows.append({"axis": ax, "levels": len(levels), "best": best,
+                     "best_value": max(vals), "binary": binary, "monotone": mono,
+                     "adopted": take,
+                     "marginal": " ".join(f"{lv}:{v:+.3f}" for lv, v in zip(levels, vals))})
+    tbl = pd.DataFrame(rows)
+    if verbose:
+        print("\n  marginal-supported refinement (adopt only binary or monotone axes):")
+        print(tbl.to_string(index=False))
+    return chosen, tbl
+
+
+__all__ = ["refine", "summarise_axis", "marginal_refine", "grid_size", "SESS_START", "SESS_END",
+           "BREAK_ATR", "FLATTEN", "AXIS_ORDER"]

@@ -198,18 +198,29 @@ def final(name: str, tf: int, p: P, n_trials: int, trial_sd: float,
         ev = np.linalg.eigvalsh(cm)
         ev = ev[ev > 0]
         res["n_eff_candidates"] = float(ev.sum() ** 2 / (ev ** 2).sum()) if len(ev) else 1.0
+        res["mean_corr"] = float((cm.sum() - len(cm)) / max(len(cm) ** 2 - len(cm), 1))
+        usr = mat.mean(axis=0) / mat.std(axis=0, ddof=1) * math.sqrt(spy)
+        res["universe_sharpe"] = {"min": float(usr.min()), "median": float(np.median(usr)),
+                                  "max": float(usr.max()),
+                                  "share_positive": float((usr > 0).mean())}
+        print(f"  universe: {mat.shape[1]:,} uniformly sampled grid cells;  Sharpe "
+              f"min {usr.min():.2f} / median {np.median(usr):.2f} / max {usr.max():.2f}, "
+              f"{float((usr > 0).mean()):.0%} above zero")
+        print(f"  they are one strategy with knobs: mean pairwise daily-P&L correlation "
+              f"{res['mean_corr']:.2f}, effective independent configurations "
+              f"{res['n_eff_candidates']:.1f}")
         print(f"  PBO {res['pbo']['pbo']:.3f} over {res['pbo']['n_splits']} splits   "
               f"walk-forward: {res['wf'].get('folds', 0)} folds, efficiency "
-              f"{res['wf'].get('efficiency', float('nan')):.2f}, "
-              f"OOS Sharpe {res['wf'].get('oos_sharpe_per_sess', 0) * math.sqrt(spy):.2f}, "
-              f"stability {res['wf'].get('param_stability', 0):.0%}")
-        print(f"  effective independent configurations among {mat.shape[1]:,} candidates: "
-              f"{res['n_eff_candidates']:.1f}")
-    nb = V.neighbourhood(sweep_df, sweep_df.iloc[0], "sharpe") if sweep_df is not None \
-        else {"verdict": "unknown"}
+              f"{res['wf'].get('efficiency', float('nan')):.2f}, stitched OOS Sharpe "
+              f"{res['wf'].get('oos_sharpe_per_sess', 0) * math.sqrt(spy):.2f} on "
+              f"{res['wf'].get('oos_sessions', 0):,} sessions (net "
+              f"${res['wf'].get('oos_net', 0):,.0f}), parameter stability "
+              f"{res['wf'].get('param_stability', 0):.0%}")
+    nb = V.neighbourhood_direct(name, tf, p, verbose=False)
     res["neighbourhood"] = nb
-    print(f"  neighbourhood: {nb.get('neighbours', 0)} neighbours, stability "
-          f"{nb.get('stability', float('nan')):.2f} -> {nb.get('verdict')}")
+    print(f"  neighbourhood: {nb.get('neighbours', 0)} one-step neighbours, median "
+          f"{nb.get('median', float('nan')):.3f} against a base of {nb.get('base', 0):.3f} "
+          f"(stability {nb.get('stability', float('nan')):.2f}) -> {nb.get('verdict')}")
 
     # --- the locked read ------------------------------------------------------
     out = V.reveal(s, p, spec, name, cut, n_trials, trial_sd, draws=draws,

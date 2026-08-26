@@ -90,66 +90,89 @@ def _row(r, tf: int) -> pd.Series:
     return pd.Series(d)
 
 
-def refine_pick(name: str, tf: int, base: P, min_trades: int = 200, min_pf: float = 1.05,
-                top: int = 25, verbose: bool = True) -> tuple[P, pd.DataFrame]:
-    """Sweep the session and gate axes around a fixed geometry, then apply the same spike test."""
+def refine_pick(name: str, tf: int, base: P, verbose: bool = True) -> tuple[P, P, pd.DataFrame]:
+    """Refine the session and gate axes around a fixed geometry.
+
+    Returns three things: the marginal-supported configuration (what ships), the grid's argmax
+    (reported as a diagnostic of what the refinement stage would have cost if taken literally),
+    and the grid itself.
+    """
     spec = B.INSTRUMENTS[name]
     rf = R.refine(name, tf, base)
     if verbose:
-        print(f"\n--- {name} {tf}m refine: {len(rf):,} cells scored "
-              f"(grid {R.grid_size():,})")
+        print(f"\n--- {name} {tf}m refine: {len(rf):,} cells scored (grid {R.grid_size():,})")
         for ax in ("sess_start", "sess_end", "adx_max", "ext_max", "break_atr", "max_hold",
                    "one_shot"):
             print(f"\n  marginal effect of {ax} (median over every other axis):")
             print(R.summarise_axis(rf, ax).to_string(float_format=lambda v: f"{v:.3f}"))
-    g = rf[(rf.n >= min_trades) & (rf.ex_per_trade > 0) & (rf.pf >= min_pf)]
-    if not len(g):
-        if verbose:
-            print("\n  nothing in the refine grid clears the gates; keeping the base geometry")
-        return base, rf
-    g = g.sort_values("sharpe", ascending=False).drop_duplicates(subset=["n", "net"]).head(top)
-    rows = []
-    for _, r in g.iterrows():
-        p = T.replace(base, sess_start=int(r.sess_start), sess_end=int(r.sess_end),
-                      adx_max=float(r.adx_max), ext_max=float(r.ext_max),
-                      break_ticks=float(r.break_ticks),
-                      max_hold=int(r.max_hold), one_shot=bool(r.one_shot))
-        nb = V.neighbourhood_direct(name, tf, p, verbose=False)
-        rows.append({"sess_start": r.sess_start, "sess_end": r.sess_end, "adx_max": r.adx_max,
-                     "ext_max": r.ext_max, "break_atr": r.break_atr,
-                     "break_ticks": r.break_ticks, "max_hold": r.max_hold,
-                     "one_shot": r.one_shot, "n": r.n, "sharpe": r.sharpe, "pf": r.pf,
-                     "per_trade": r.per_trade, "ex_per_trade": r.ex_per_trade,
-                     "stability": nb["stability"], "verdict": nb["verdict"]})
-    tbl = pd.DataFrame(rows)
-    ok = tbl[tbl.verdict != "spike"]
+
+    chosen, _ = R.marginal_refine(rf, verbose=verbose)
+    med_atr = float(rf.break_ticks.max() / max(rf.break_atr.max(), 1e-9)) if len(rf) else 0.0
+    kw = {}
+    for ax, v in chosen.items():
+        if ax == "break_atr":
+            kw["break_ticks"] = float(v) * med_atr
+        elif ax == "one_shot":
+            kw["one_shot"] = bool(v)
+        elif ax == "max_hold":
+            kw["max_hold"] = int(v)
+        else:
+            kw[ax] = type(getattr(base, ax))(v)
+    supported = T.replace(base, **kw)
+
+    g = rf[(rf.n >= 200) & (rf.ex_per_trade > 0) & (rf.pf >= 1.05)]
+    argmax = supported
+    if len(g):
+        b = g.sort_values("sharpe", ascending=False).iloc[0]
+        argmax = T.replace(base, sess_start=int(b.sess_start), sess_end=int(b.sess_end),
+                           adx_max=float(b.adx_max), ext_max=float(b.ext_max),
+                           break_ticks=float(b.break_ticks), max_hold=int(b.max_hold),
+                           one_shot=bool(b.one_shot))
     if verbose:
-        print(f"\n  {len(tbl)} distinct refine candidates, {len(ok)} survive the spike test")
-        print(tbl.head(15).to_string(index=False, float_format=lambda v: f"{v:.3f}"))
-    if not len(ok):
-        return base, rf
-    b = ok.sort_values("sharpe", ascending=False).iloc[0]
-    return T.replace(base, sess_start=int(b.sess_start), sess_end=int(b.sess_end),
-                     adx_max=float(b.adx_max), ext_max=float(b.ext_max),
-                     break_ticks=float(b.break_ticks),
-                     max_hold=int(b.max_hold), one_shot=bool(b.one_shot)), rf
+        diff = [k for k in ("sess_start", "sess_end", "adx_max", "ext_max", "break_ticks",
+                            "max_hold", "one_shot")
+                if getattr(supported, k) != getattr(base, k)]
+        print(f"\n  adopted: {diff or 'nothing -- the base geometry is kept'}")
+    return supported, argmax, rf
 
 
-def candidates_for_pbo(name: str, tf: int, n: int = 300) -> pd.DataFrame:
-    """A spread of configurations for the PBO / walk-forward matrix.
+def candidates_for_pbo(name: str, tf: int, n: int = 400, seed: int = 20250822) -> pd.DataFrame:
+    """A DIVERSE universe for PBO and walk-forward: a uniform random sample of the whole grid.
 
-    Deliberately not the top n: PBO asks whether SELECTING the in-sample best carries information,
-    and a universe made only of winners has had that question answered for it.  This takes a
-    stratified slice across the whole kept range instead.
+    The obvious universe -- a slice through the sweep's kept rows -- is the wrong one, and badly
+    so.  Those rows are the top 8,000 of 645,120 ranked on the objective, so they are near-copies
+    of each other: measured on US30 60m their mean pairwise daily-P&L correlation is 0.85 and the
+    eigenvalue participation ratio says 300 of them carry about 1.4 independent bets.  Asking
+    "does picking the in-sample best carry information" of a set whose members are all the same
+    strategy answers a question nobody asked.
+
+    Sampling the grid uniformly restores the question the protocol means: across the space that
+    was actually searched, does the in-sample winner hold up out of sample?
     """
-    df = pd.read_parquet(os.path.join(OUT, f"{name}_{tf}m_long.parquet"))
-    df = df.drop_duplicates(subset=["n", "net"]).sort_values("sharpe", ascending=False)
-    idx = np.unique(np.linspace(0, len(df) - 1, min(n, len(df))).astype(int))
-    out = df.iloc[idx].copy()
-    for c, v in (("sess_start", 420), ("sess_end", 660), ("flatten_min", 660), ("side", 1)):
-        if c not in out.columns:
-            out[c] = v
-    return out
+    import turtle_run_sweep as RS
+    g = RS.GRID
+    rng = np.random.default_rng(seed)
+    rows = []
+    exits = list(g.exit_len)
+    for _ in range(n):
+        e1 = int(rng.choice(exits))
+        e2 = int(rng.choice([e for e in exits if e >= e1]))
+        k1 = int(rng.choice(g.entry1))
+        k2c = [k for k in g.entry2 if k >= k1]
+        k2 = int(rng.choice(k2c)) if k2c else k1
+        ps, mu = g.pyr[int(rng.integers(len(g.pyr)))]
+        rows.append({
+            "atr_len": int(rng.choice(g.atr_len)), "atr_mult": float(rng.choice(g.atr_mult)),
+            "pyr_step": float(ps), "max_units": int(mu), "tp_r": float(rng.choice(g.tp_r)),
+            "use_chan_exit": bool(rng.choice(g.use_chan_exit)),
+            "chan_shift": int(rng.choice(g.chan_shift)),
+            "armed_stop": bool(rng.choice(g.armed_stop)),
+            "max_hold": int(rng.choice(g.max_hold)), "exit1": e1, "exit2": e2,
+            "entry1": k1, "entry2": k2, "skip_win": bool(rng.choice(g.skip_win)),
+            "one_shot": bool(rng.choice(g.one_shot)),
+            "sess_start": g.sess_start, "sess_end": g.sess_end,
+            "flatten_min": g.flatten_min, "side": 1})
+    return pd.DataFrame(rows).drop_duplicates(subset=SEL.KEY).reset_index(drop=True)
 
 
 def main() -> None:
@@ -157,8 +180,9 @@ def main() -> None:
     reveal = "--reveal" in sys.argv
     base, tbl = pick(name, tf)
     print(f"\n  geometry chosen: {base}")
-    final_p, rf = refine_pick(name, tf, base)
-    print(f"\n  after refinement: {final_p}")
+    final_p, argmax_p, rf = refine_pick(name, tf, base)
+    print(f"\n  marginal-supported: {final_p}")
+    print(f"\n  grid argmax (reported, not shipped): {argmax_p}")
 
     k = total_trials() + R.grid_size() * 2 + len(tbl) * 16 + 300
     print(f"\n  configurations evaluated across the whole study: {k:,}")
@@ -167,7 +191,8 @@ def main() -> None:
                     (meta.side == 1)].trial_sharpe_sd.iloc[0])
 
     with open(os.path.join(OUT, f"chosen_{name}_{tf}m.json"), "w") as fh:
-        json.dump({"params": final_p.as_dict(), "instrument": name, "tf": tf,
+        json.dump({"params": final_p.as_dict(), "argmax": argmax_p.as_dict(),
+                   "base": base.as_dict(), "instrument": name, "tf": tf,
                    "n_trials": k, "trial_sd": sd}, fh, indent=1)
     if not reveal:
         print("\n  (research only -- re-run with --reveal to read the locked block)")
