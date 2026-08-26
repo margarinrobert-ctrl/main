@@ -43,6 +43,35 @@ strategy("Turtle Long-Only (measured presets)", overlay = true, pyramiding = 4,
          commission_type = strategy.commission.cash_per_order,
          commission_value = 0.50, slippage = 1)
 
+// ===================== STRATEGY TESTER PROPERTIES -- WHAT TO SET AND WHY =====================
+// The declaration above only supplies DEFAULTS. The Properties tab overrides them per chart, and
+// four of its fields decide whether the report means anything.
+//
+//   Script execution        ON BAR CLOSE, nothing else. The other two re-run the script inside the
+//                           bar; see docs/ib/STUDY_TICK_RECALC.md for what that did here.
+//   Bar detalization        High, with Deep Backtesting. Finer intrabar data is strictly better for
+//                           a stop system, because the stop is what the intrabar path decides.
+//   Order execution delay   One tick. Free realism; leave it on.
+//   Commission              THE DEFAULT IS WRONG FOR ANYTHING THAT IS NOT AN INDEX CFD. 0.50 cash
+//                           per order suits a 1-point-per-unit index. On crypto or FX it rounds to
+//                           nothing -- an ETH run of this script reported Commission load 0.29%,
+//                           i.e. about $520 of fees against $180,206 of gross profit. Switch the
+//                           type to PERCENT and enter your venue's real taker fee (0.05% is a
+//                           common crypto taker rate, and it is charged on EACH side).
+//   Slippage                Also in the instrument's own ticks. One tick is right on a 0.25-point
+//                           future and near-zero on an instrument quoted to 0.01.
+//
+//   Leverage = Infinity is a deliberate choice with a consequence. It stops the broker emulator
+//   silently REJECTING orders the account cannot fund, which is what made the same script report
+//   850 trades at 100K and 4,806 at 1M on US100 -- so for measuring the RULES, Infinity is the
+//   setting you want. But it also means the percentage figures are no longer an account return:
+//   "+47.23%" is the P&L of one to four units divided by an arbitrary 100,000. Read the DOLLAR
+//   drawdown, not the percentage, whenever leverage is unbounded.
+//
+//   Limit order execution = "Requested price" does not affect this script, which exits on STOP
+//   orders. It is optimistic for any script that rests limits -- pine/donchian/ does.
+// ============================================================================================
+
 // ----------------------------------------------------------------- preset (locks everything)
 presetName = input.string("T1  240m  ADX<22 + not extended", "Preset", options = [
      "T1  240m  ADX<22 + not extended",
