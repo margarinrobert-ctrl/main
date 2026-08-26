@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from PySide6.QtCore import Qt
+
+from ..core.textfmt import currency_symbol  # noqa: F401 - re-exported for the UI
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
 
 
@@ -577,22 +579,6 @@ def apply_theme(app) -> None:
 # --------------------------------------------------------------------------
 # Value formatting used across every panel
 # --------------------------------------------------------------------------
-
-#: Currency codes we have a symbol for. Anything else prints as the bare
-#: number: a made-up symbol is worse than none, and prefixing an ISO code
-#: straight onto the digits ("USD99,767.71") reads as a typo.
-_CURRENCY_SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥",
-                     "CHF": "CHF ", "AUD": "A$", "CAD": "C$"}
-
-
-def currency_symbol(code: str) -> str:
-    """The symbol for an ISO currency code, or an empty string.
-
-    :func:`money` takes a *prefix*, not a code, so anything that has an
-    instrument in hand should pass its currency through here first.
-    """
-    return _CURRENCY_SYMBOLS.get(str(code or "").upper(), "")
-
 
 def money(value: float, currency: str = "", decimals: int = 2) -> str:
     """Format cash with a thousands separator and an explicit sign for negatives."""

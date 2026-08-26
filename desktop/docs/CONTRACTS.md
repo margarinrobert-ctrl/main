@@ -245,6 +245,17 @@ Deciding the column layout from the values, not the header names. Called by
   chunks so a long trade list and a large draw count cannot allocate a matrix
   measured in gigabytes. `format_monte_carlo(result)` renders it as text.
 
+### `tradingbacktester/core/textfmt.py`
+- `fit(text, width, hang, indent)` — wrap to a width with a hanging indent,
+  never breaking an identifier in half, never returning an empty list.
+- `row(cells, verdict, width)` — a table row whose trailing free-text column
+  wraps under itself so the numeric columns stay in line.
+- `currency_symbol(code)` — the prefix for an amount: a symbol where one
+  exists, the code and a space where it does not, empty for none. Qt-free, so
+  the reports and the UI share one table.
+Every plain-text formatter is asserted against its own declared width in
+`tests/test_reports.py`, at two widths, on real data.
+
 ### `tradingbacktester/optimize/*`
 - `grid.py` — `ParameterRange(name, start, stop, step)` and
   `build_grid(spec, ranges) -> list[dict]` with a combination count guard.
@@ -266,8 +277,12 @@ Deciding the column layout from the values, not the header names. Called by
 ### `tradingbacktester/reports/*`
 - `csv_export.py` — `export_trades_csv`, `export_equity_csv`, `export_metrics_csv`.
 - `html_report.py` — a single self-contained dark-themed HTML report with inline
-  SVG equity/drawdown charts, the metrics table, monthly returns and the trade
-  list. No external assets, no network requests.
+  SVG equity/drawdown charts, the metrics table, monthly returns, a Monte Carlo
+  section (4,000 block-bootstrap resamples of the run's own trades, with its
+  caveat beside it, and never fatal — a failed resampling costs the section,
+  not the report) and the trade list. No external assets, no network requests.
+  `csv_export.currency_symbol(result)` supplies the money prefix for both
+  visual reports and returns a real symbol, not a bare ISO code.
 - `pdf_report.py` — use Qt's `QPdfWriter`/`QPainter` (always present) to render
   the report; no reportlab dependency.
 

@@ -451,10 +451,11 @@ def test_money_takes_a_symbol_not_a_currency_code():
 
     assert currency_symbol("USD") == "$"
     assert currency_symbol("usd") == "$", "the code's case must not matter"
-    assert currency_symbol("SEK") == "", "an unknown code gets no symbol"
+    # An unknown code keeps its information but gains the space it needs.
+    assert currency_symbol("SEK") == "SEK "
     assert currency_symbol("") == "" and currency_symbol(None) == ""
     assert money(1234.5, currency_symbol("EUR")) == "€1,234.50"
-    assert money(-1234.5, currency_symbol("SEK")) == "-1,234.50"
+    assert money(-1234.5, currency_symbol("SEK")) == "-SEK 1,234.50"
 
 
 def test_every_icon_renders(qapp):

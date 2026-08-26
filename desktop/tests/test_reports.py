@@ -171,3 +171,68 @@ def test_the_dataset_listing_fits(tmp_path, capsys):
 
     assert main(["--workspace", str(tmp_path), "data"]) == 0
     _check(capsys.readouterr().out, DEFAULT_WIDTH, "cli data")
+
+
+# --------------------------------------------------------------------------
+# The exported report
+# --------------------------------------------------------------------------
+
+def test_report_money_reads_as_money_not_as_a_currency_code(run):
+    """Every one of ~860 figures in an exported report read "USD1,534.04"."""
+    import re
+
+    from tradingbacktester.reports.html_report import build_html_report
+
+    _, _, result = run
+    html = build_html_report(result)
+    assert not re.search(r"USD[0-9]", html), "an ISO code jammed onto the digits"
+    assert re.search(r"\$[0-9][0-9,]*\.[0-9]{2}", html), "no money at all?"
+
+
+def test_an_unknown_currency_keeps_its_code_and_gains_a_space():
+    from tradingbacktester.core.textfmt import currency_symbol
+
+    assert currency_symbol("SEK") == "SEK "
+    assert currency_symbol("usd") == "$"
+    assert currency_symbol("") == ""
+    assert currency_symbol(None) == ""
+
+
+def test_the_report_carries_the_monte_carlo_and_its_caveat(run):
+    """The report is what gets shared; a lone equity curve reads as the outcome."""
+    from tradingbacktester.reports.html_report import build_html_report
+
+    _, _, result = run
+    html = build_html_report(result)
+    assert "What else could have happened" in html
+    assert "resampled runs over these" in html
+    assert "cannot tell you whether the strategy has an edge" in html
+    assert "size an account against" in html
+
+
+def test_the_report_still_builds_when_resampling_cannot_run(run, monkeypatch):
+    """A failed resampling must cost a section, never the whole report."""
+    from tradingbacktester.reports.html_report import build_html_report
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("no")
+
+    monkeypatch.setattr("tradingbacktester.analytics.montecarlo.resample_result",
+                        boom)
+    _, _, result = run
+    html = build_html_report(result)
+    assert "What else could have happened" not in html
+    assert "Where the money came from" in html, "the rest must survive"
+
+
+def test_the_report_makes_no_network_requests(run):
+    """A self-contained report is a stated requirement, not an aspiration."""
+    import re
+
+    from tradingbacktester.reports.html_report import build_html_report
+
+    _, _, result = run
+    html = build_html_report(result)
+    assert not re.findall(r'(?:src|href)\s*=\s*["\']https?://', html)
+    assert not re.findall(r'url\(["\']?https?://', html)
+    assert "<script" not in html

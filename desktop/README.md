@@ -703,6 +703,13 @@ on their overlap and the mismatch is stated rather than hidden.
 | Equity curve | File → Export Equity Curve | CSV |
 | Full report | File → Export HTML Report | one self-contained HTML file |
 | Printable report | File → Export PDF Report | A4 PDF |
+
+The HTML and PDF reports carry a **What else could have happened** section: 4,000
+block-bootstrap resamples of that run's trades, with the 5th to 95th percentile
+of final equity, worst drawdown and time under water beside what the backtest
+itself did. The report is the artifact that gets shared, and a single equity
+curve shared on its own reads as the outcome rather than as one draw from a
+distribution. Neither report makes a network request of any kind.
 | Backtest run | Backtest → Save Backtest | in the workspace, reloadable |
 
 The HTML report is a single file with the charts drawn as inline SVG. It has no

@@ -47,3 +47,25 @@ def row(cells: str, verdict: str, width: int = DEFAULT_WIDTH) -> list[str]:
     if not verdict:
         return [cells.rstrip()]
     return fit(f"{cells}{verdict}", width, hang=len(cells))
+
+
+#: Currency codes we have a symbol for. Anything else is prefixed with the code
+#: and a space -- "SEK 1,234.50" -- because an ISO code jammed against the
+#: digits ("SEK1,234.50") reads as a typo, and a made-up symbol would be worse
+#: than either.
+CURRENCY_SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥",
+                    "CHF": "CHF ", "AUD": "A$", "CAD": "C$"}
+
+
+def currency_symbol(code: str) -> str:
+    """The prefix to put in front of an amount in ``code``.
+
+    A symbol where one exists, the code and a space where it does not, and an
+    empty string for no currency at all. :func:`money`-style formatters take a
+    *prefix*, never a code, so anything holding an instrument should pass its
+    currency through here first.
+    """
+    text = str(code or "").strip().upper()
+    if not text:
+        return ""
+    return CURRENCY_SYMBOLS.get(text, f"{text} ")

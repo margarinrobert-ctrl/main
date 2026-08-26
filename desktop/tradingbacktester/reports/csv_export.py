@@ -189,10 +189,19 @@ def price_decimals(result: BacktestResult) -> int:
 
 
 def currency_symbol(result: BacktestResult) -> str:
-    """The instrument's currency code, used as a prefix in the visual reports."""
+    """The prefix to put in front of an amount, for the visual reports.
+
+    It used to return the bare ISO code, which the HTML and PDF reports then
+    concatenated straight onto the digits: every one of the 862 money figures
+    in an exported report read "USD1,534.04". The shared table gives a real
+    symbol where one exists and keeps the code -- with a space -- where it does
+    not. CSV output does not use this; only the visual reports do.
+    """
+    from ..core.textfmt import currency_symbol as prefix_for
+
     bars = getattr(result, "bars", None)
     instrument = getattr(bars, "instrument", None) if bars is not None else None
-    return str(getattr(instrument, "currency", "") or "")
+    return prefix_for(getattr(instrument, "currency", ""))
 
 
 def run_range_ts(result: BacktestResult) -> tuple[int | None, int | None]:

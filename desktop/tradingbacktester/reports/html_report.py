@@ -169,6 +169,7 @@ def build_html_report(result: BacktestResult) -> str:
         _section_metrics(ctx),
         _section_periodic(ctx),
         _section_exits(ctx),
+        _section_montecarlo(ctx),
         _section_trades(ctx),
         _section_assumptions(ctx),
     ))
@@ -450,6 +451,81 @@ def _section_exits(ctx: ReportContext) -> str:
             '<th class="num">Net P&amp;L</th><th class="num">Win rate</th>'
             f'<th class="num">Average</th></tr></thead><tbody>{"".join(rows)}</tbody>'
             '</table></div></section>')
+
+
+#: Draws for the report's own resampling. Enough for a stable 5th and 95th
+#: percentile and still a few hundredths of a second on a normal trade list.
+_REPORT_DRAWS = 4000
+
+
+def _section_montecarlo(ctx: ReportContext) -> str:
+    """What else this trade sequence could have done.
+
+    The report is the artefact that gets shared, and a single equity curve
+    shared on its own reads as the outcome rather than as one draw from a
+    distribution. The block bootstrap is the default here for the same reason
+    it is in the dialog: trades cluster by regime, and drawing them
+    independently reports a gentler drawdown than the strategy will produce.
+
+    Never fatal: a report that cannot be written because a resampling failed
+    would be a worse outcome than a report without this section.
+    """
+    if len(ctx.trades) < 2:
+        return ""
+    try:
+        from ..analytics.montecarlo import resample_result
+
+        mc = resample_result(ctx.result, method="block", draws=_REPORT_DRAWS)
+    except Exception:                       # noqa: BLE001 - see the docstring
+        log.debug("Monte Carlo section skipped", exc_info=True)
+        return ""
+
+    quantiles = (5, 25, 50, 75, 95)
+    rows_by_name = (
+        ("Final equity", mc.percentiles(mc.final_equity, quantiles), ctx.money),
+        ("Worst drawdown", mc.percentiles(mc.max_drawdown, quantiles), ctx.money),
+        ("Worst drawdown %",
+         mc.percentiles(mc.max_drawdown_pct, quantiles), _pct),
+        ("Trades under water",
+         mc.percentiles(mc.longest_drawdown.astype(float), quantiles),
+         lambda v: f"{v:,.0f}"),
+    )
+    rows = []
+    for label, values, render in rows_by_name:
+        cells = "".join(f'<td class="num">{_e(render(values[q]))}</td>'
+                        for q in quantiles)
+        rows.append(f"<tr><td>{_e(label)}</td>{cells}</tr>")
+
+    observed = (
+        f'<tr class="total"><td>This backtest</td>'
+        f'<td class="num" colspan="2">{_e(ctx.money(mc.observed.final_equity))}</td>'
+        f'<td class="num" colspan="3">'
+        f'{_e(ctx.money(mc.observed.max_drawdown))} drawdown '
+        f'({_e(_pct(mc.observed.max_drawdown_pct))})</td></tr>')
+
+    headers = "".join(f'<th class="num">{q}th</th>' for q in quantiles)
+    worst = mc.drawdown_at(95)
+    summary = (
+        f"{_e(f'{mc.losing_probability * 100:.1f}')}% of resampled runs lost "
+        f"money and {_e(f'{mc.ruin_probability * 100:.1f}')}% closed below "
+        f"{_e(ctx.money(mc.ruin_level))} at some point. "
+        f"One run in twenty had a drawdown worse than "
+        f"{_e(ctx.money(worst))} — that is the number to size an account "
+        f"against, not the {_e(ctx.money(mc.observed.max_drawdown))} this "
+        f"backtest happened to produce.")
+    return (
+        '<section class="card"><h2>What else could have happened</h2>'
+        f'<p class="lede">{_REPORT_DRAWS:,} resampled runs over these '
+        f'{len(ctx.trades):,} trades, drawn in contiguous blocks of '
+        f'{mc.block_size} so that losing streaks survive the resampling. '
+        'This describes the range of paths <em>these trades</em> could have '
+        'produced. It cannot tell you whether the strategy has an edge: if '
+        'these trades came from a rule fitted to this data, every draw is '
+        'fitted to it too.</p>'
+        '<div class="scroll"><table class="grid"><thead><tr>'
+        f'<th>Percentile</th>{headers}</tr></thead>'
+        f'<tbody>{"".join(rows)}{observed}</tbody></table></div>'
+        f'<p class="lede">{summary}</p></section>')
 
 
 def _section_trades(ctx: ReportContext) -> str:
