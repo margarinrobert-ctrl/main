@@ -59,10 +59,18 @@ class ControlResult:
         return self.excess_per_trade > 0.0
 
     def describe(self, currency: str = "") -> str:
+        """One line, including what the control itself paid.
+
+        The excess alone reads as nonsense whenever the control is a long way
+        from zero -- "+348 excess" beside "+52 per trade" looks like an error
+        until you can see that random entries lost 295.
+        """
         unit = f" {currency}" if currency else ""
-        return (f"{self.excess_per_trade:+,.2f}{unit} per trade against a "
-                f"matched random control (p={self.p_value:.3f}, "
-                f"{self.method}{f', {self.draws:,} draws' if self.draws else ''})")
+        how = self.method + (f", {self.draws:,} draws" if self.draws else "")
+        return (f"random entries at the same times made "
+                f"{self.expected_per_trade:+,.2f}{unit} per trade, so the "
+                f"edge is {self.excess_per_trade:+,.2f}{unit} "
+                f"(p={self.p_value:.3f}, {how})")
 
 
 def _minute_statistics(minutes: np.ndarray, values: np.ndarray
