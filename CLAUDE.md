@@ -510,6 +510,18 @@ unstable (rank 5 goes IS +0.424 -> OOS **-0.351**, one channel length from rank 
 IS/OOS expectancy correlation of **+0.84** is NOT skill: it survives within geometry cells (+0.876)
 because the same six markets rose in both blocks. See `docs/ib/STUDY_SWEEP_110K.md`.
 
+**THE INTRADAY CONSTRAINT COSTS ~88% OF THE RESULT, and the 06:00 open is the worst part of it.**
+Held to a 06:00-12:00 New York window with a HARD flat at 12:00, the best configuration scores
+**+0.034 R OOS at PF 1.08**, against **+0.279 R at PF 1.35** for the same family allowed to hold for
+days. Seventh independent confirmation. The mechanism is not cost: the exits fire on the CLOCK
+rather than on the trade, so a 5R target mostly never arrives. **Moving the open from 06:00 to 09:30
+raises OOS expectancy 35% on 38% fewer trades** (+0.034 -> +0.046, PF 1.08 -> 1.17) and IS PF
+1.22 -> 1.44 -- the pre-open block is SUBTRACTIVE, and this replicates `STUDY_TREND_PULLBACK.md`'s
+finding that 07:00-09:00 is the worst part of the day on all three indices. The cost model does not
+widen the pre-RTH spread, so the real penalty is LARGER than measured. On 5-minute bars only 1.0% of
+2,160 configurations are positive OOS, against 5.5% on 15-minute. See
+`docs/ib/STUDY_INTRADAY_SESSION.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -547,6 +559,7 @@ because the same six markets rose in both blocks. See `docs/ib/STUDY_SWEEP_110K.
 | `research/btc_legs.py`, `run_btc_legs.py` | all nine shipped legs on BTC, with the volatility-artifact diagnostic |
 | `research/eurusd_legs.py`, `run_eurusd_legs.py` | the shipped 30m legs on EURUSD, matched control, BH |
 | `research/vbt/sweep_engine.py`, `run_sweep.py`, `analyse_sweep.py` | the 110,250-config sweep, IS selection, one OOS read |
+| `research/vbt/intraday.py`, `run_intraday.py` | session-windowed intraday engine; nothing can hold past the flatten |
 | `research/vbt/prop.py` | prop-firm evaluation: trailing DD, daily loss, P(pass) by day-block bootstrap |
 | `research/vbt/mae_mfe.py` | per-trade MFE/MAE in R on the finest series; capture and heat |
 | `research/turtle2/` | the original Turtle and the YouTube variant, frozen, with risk-matched controls |
