@@ -100,6 +100,21 @@ expected by chance. The window baseline itself is negative (-$22 to -$5/trade). 
 `docs/ib/STUDY_TREND_PULLBACK_2.md`. What would move it: more history (this sample is one regime,
 81% daily uptrend), cross-asset files, a second instrument.
 
+**A published indicator stack can be a random entry, and the grid hides it.** Donchian 20 + EMA 50
++ ADX>20 + CHOP<40 with a 3xATR trail, on the 1-hour chart it is published for: **0 of 384 scorable
+combinations** of its own 432-parameter grid beat a matched control at p<0.05, against 19 expected
+by chance, and the median combination earns LESS than its control. Against selectivity-matched
+random filters none of the three filters earns its keep and the full stack scores BELOW the raw
+unfiltered breakout. What does carry is on FASTER charts (5m p 0.006, 30m p 0.026 on research) --
+the opposite of the source's choice. But all five timeframes scored better on LOCKED than on
+research, including two that failed research outright, so read that as a regime in the later block,
+not a rule: 2024 supplies 78% of the 30m points with 2023 negative, and the top 1% of 5m trades
+supply 171% of net P&L. **Every session-constrained variant fails out of sample** -- winners run a
+median 2.1h against losers' 0.8h and overnight trades supply 338% of net P&L, so a 3xATR trail is
+paid in the tail and a daily flatten cuts the tail off. `research/donchian/`,
+`docs/ib/STUDY_DONCHIAN_ADX_CHOP.md`. Pine trap found here: `ta.dmi` returns `[+DI, -DI, ADX]`, so
+destructuring the first element substitutes +DI for ADX silently.
+
 **Run the matched control as a RESEARCH gate, not a final check.** Running it only at the end let
 four rules reach a holdout they then "passed" while failing research. In front, it is the cheapest
 way to stop a family that is really just "be in the market at these times".
@@ -630,6 +645,7 @@ plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
+| `research/donchian/` | the Donchian/EMA/ADX/CHOP reproduction, its control gate and drop-one |
 | `research/costs.py` | itemised fees, broker presets, bar-dependent slippage; `real_costs.py` reports the damage |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
