@@ -551,6 +551,67 @@ def test_optimizer_dialog_runs_a_small_sweep(qapp, bars):
     dialog.close()
 
 
+def test_optimizer_walk_forward_tab_runs_over_the_same_grid(qapp, bars):
+    """The tab reads the sweep's own ranges, so both halves test one strategy."""
+    import time
+
+    from tradingbacktester.ui.dialogs.optimizer_dialog import OptimizerDialog
+
+    spec = BUILTIN_STRATEGIES["EMA Cross + RSI"]()
+    dialog = OptimizerDialog(bars, spec, BacktestConfig(starting_capital=100_000.0))
+    dialog.show()
+    qapp.processEvents()
+    for row in dialog._rows:
+        row["enabled"].setChecked(row["param"].name == "ema_fast")
+    dialog._rows[0]["start"].setValue(10)
+    dialog._rows[0]["stop"].setValue(20)
+    dialog._rows[0]["step"].setValue(10)
+    dialog.min_trades.setValue(1)
+    qapp.processEvents()
+
+    panel = dialog.walkforward
+    assert [r.name for r in panel._ranges_fn()] == ["ema_fast"]
+    panel.folds.setValue(3)
+    panel.run()
+    deadline = time.monotonic() + 240
+    while panel.busy and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.02)
+    for _ in range(10):
+        qapp.processEvents()
+
+    assert panel.table.rowCount() == 3
+    assert "Out of sample:" in panel.headline.text()
+    assert "not chosen with hindsight" in panel.notes.text()
+    # Every window names the parameters it chose, or says why it produced none.
+    for row in range(3):
+        chosen = panel.table.item(row, 6).text()
+        reason = panel.table.item(row, 3).text()
+        assert "ema_fast=" in chosen or "trades" in reason
+    dialog.close()
+
+
+def test_walk_forward_tab_refuses_an_empty_grid(qapp, bars, monkeypatch):
+    """Nothing to choose is a message, not a crash and not a fake result."""
+    from tradingbacktester.ui.dialogs.optimizer_dialog import OptimizerDialog
+
+    said = []
+    monkeypatch.setattr(
+        "tradingbacktester.ui.widgets.walkforward_panel.show_info",
+        lambda parent, title, message: said.append(message))
+
+    spec = BUILTIN_STRATEGIES["EMA Cross + RSI"]()
+    dialog = OptimizerDialog(bars, spec, BacktestConfig(starting_capital=100_000.0))
+    for row in dialog._rows:
+        row["enabled"].setChecked(False)
+    qapp.processEvents()
+    dialog.walkforward.run()
+    qapp.processEvents()
+    assert said and "at least one parameter" in said[0]
+    assert not dialog.walkforward.busy
+    dialog.close()
+
+
 # --------------------------------------------------------------------------
 # The assembled window
 # --------------------------------------------------------------------------

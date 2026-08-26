@@ -20,7 +20,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from .config import AppSettings, Workspace
 from .core.errors import BacktesterError
@@ -260,31 +259,40 @@ def cmd_anomalies(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_run(args: argparse.Namespace) -> int:
-    from .analytics.metrics import compute_metrics
-    from .engine.backtester import Backtester
+def _resolve_spec(args: argparse.Namespace):
+    """Find the strategy named on the command line, saved or built in."""
     from .strategy.builtin import BUILTIN_STRATEGIES
     from .strategy.storage import StrategyStore
 
-    bars, name = _resolve_bars(args)
+    wanted = str(getattr(args, "strategy", "") or "").strip()
     store = StrategyStore(_workspace(args))
-    spec = None
     for entry in store.list():
-        if args.strategy.lower() in (entry.name.lower(), entry.id.lower()):
-            spec = store.load(entry.id)
-            break
-    if spec is None and args.strategy in BUILTIN_STRATEGIES:
-        spec = BUILTIN_STRATEGIES[args.strategy]()
-    if spec is None:
-        known = [e.name for e in store.list()] + list(BUILTIN_STRATEGIES)
-        raise BacktesterError(
-            f"No strategy called '{args.strategy}'. Available: "
-            f"{', '.join(known)}")
+        if wanted.lower() in (entry.name.lower(), entry.id.lower()):
+            return store.load(entry.id)
+    for name, build in BUILTIN_STRATEGIES.items():
+        if wanted.lower() == name.lower():
+            return build()
+    known = [e.name for e in store.list()] + list(BUILTIN_STRATEGIES)
+    raise BacktesterError(
+        f"No strategy called '{wanted}'. Available: {', '.join(known)}")
 
-    config = BacktestConfig(starting_capital=args.capital)
+
+def _config_for(spec, capital: float) -> BacktestConfig:
+    """The strategy's own exits, costs and risk, as a run configuration."""
+    config = BacktestConfig(starting_capital=capital)
     config.exits, config.execution = spec.exits, spec.execution
     config.session, config.costs, config.risk = spec.session, spec.costs, spec.risk
     config.warmup_bars = spec.warmup_bars()
+    return config
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    from .analytics.metrics import compute_metrics
+    from .engine.backtester import Backtester
+
+    bars, name = _resolve_bars(args)
+    spec = _resolve_spec(args)
+    config = _config_for(spec, args.capital)
     result = Backtester(bars, spec, config).run()
 
     print(f"{spec.name} on {name} ({len(bars):,} bars, {bars.timeframe.label})")
@@ -302,6 +310,118 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"  {label:<20} "
                   + (f"{value:,.2f}" if isinstance(value, (int, float))
                      else str(value)))
+    return 0
+
+
+def _parse_param(text: str):
+    """``ema_fast=8:20:2`` -> a :class:`ParameterRange`."""
+    from .optimize.grid import ParameterRange
+
+    name, _, spec = str(text).partition("=")
+    name, spec = name.strip(), spec.strip()
+    if not name or not spec:
+        raise BacktesterError(
+            f"Could not read the swept parameter '{text}'. Write it as "
+            f"name=start:stop:step, for example ema_fast=8:20:2.")
+    parts = spec.split(":")
+    if len(parts) not in (2, 3):
+        raise BacktesterError(
+            f"'{text}' needs a start and a stop, and may have a step: "
+            f"{name}=start:stop:step.")
+    try:
+        numbers = [float(p) for p in parts]
+    except ValueError as exc:
+        raise BacktesterError(
+            f"The range for '{name}' must be numbers, not '{spec}'.") from exc
+    start, stop = numbers[0], numbers[1]
+    step = numbers[2] if len(numbers) == 3 else 1.0
+    return ParameterRange(name, start, stop, step)
+
+
+def _thin(candidate, rungs: int = 3):
+    """The same span in fewer steps, keeping both endpoints.
+
+    Used only to bring an automatic grid down to a size worth running; a range
+    the user typed is never thinned.
+    """
+    from .optimize.grid import ParameterRange
+
+    if candidate.count() <= rungs:
+        return candidate
+    span = abs(float(candidate.stop) - float(candidate.start))
+    step = span / max(1, rungs - 1)
+    if candidate.is_integer:
+        step = max(1.0, round(step))
+    return ParameterRange(candidate.name, candidate.start, candidate.stop, step)
+
+
+def _default_ranges(spec, ceiling: int = 200):
+    """Sweep every numeric parameter around its default, or explain why not.
+
+    A walk-forward searches the whole grid once per fold, so a grid that is
+    merely large for an ordinary sweep is five times that here.  When the
+    obvious grid is too big every range is thinned to its endpoints and centre
+    first; only if that is still too big is the user asked which parameters
+    matter, rather than being left to wait for a run nobody chose.
+    """
+    from .optimize.grid import combination_count, suggested_range
+
+    ranges = []
+    for param in spec.params:
+        if getattr(param, "kind", "") not in ("int", "float"):
+            continue
+        candidate = suggested_range(param)
+        if candidate.count() > 1:
+            ranges.append(candidate)
+    if not ranges:
+        raise BacktesterError(
+            f"'{spec.name}' has no numeric parameter to optimise, so there is "
+            f"nothing for a walk-forward to choose. An ordinary backtest "
+            f"already answers the question.")
+    if combination_count(ranges) > ceiling:
+        ranges = [_thin(r) for r in ranges]
+    total = combination_count(ranges)
+    if total > ceiling:
+        names = ", ".join(r.name for r in ranges)
+        example = ranges[0]
+        raise BacktesterError(
+            f"Sweeping every parameter of '{spec.name}' is {total:,} "
+            f"combinations per fold, which is too many to run by default. "
+            f"Name the ones that matter with --param, for example --param "
+            f"{example.name}={example.start:g}:{example.stop:g}"
+            f":{abs(example.step):g}. Numeric parameters: {names}.")
+    return ranges
+
+
+def cmd_walkforward(args: argparse.Namespace) -> int:
+    from .optimize.walkforward import format_walk_forward, walk_forward
+
+    bars, name = _resolve_bars(args)
+    spec = _resolve_spec(args)
+    config = _config_for(spec, args.capital)
+
+    ranges = ([_parse_param(text) for text in args.param] if args.param
+              else _default_ranges(spec))
+    # Everything but the payload goes to stderr under --json so the output can
+    # be piped straight into a tool that expects one document.
+    stream = sys.stderr if args.json else sys.stdout
+    print(f"{spec.name} on {name} ({len(bars):,} bars, {bars.timeframe.label})",
+          file=stream)
+    for r in ranges:
+        print(f"  sweeping {r.describe()}", file=stream)
+
+    progress = _stderr_progress()
+    result = walk_forward(bars, spec, config, ranges, folds=args.folds,
+                          train_fraction=args.train, anchored=args.anchored,
+                          metric=args.metric, minimum_trades=args.min_trades,
+                          progress=progress)
+    _clear_progress()
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print()
+        print(format_walk_forward(result, bars,
+                                  currency=bars.instrument.currency))
     return 0
 
 
@@ -399,6 +519,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")
     p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser(
+        "walkforward",
+        help="Optimise on the past, trade the future, repeat",
+        description="Choose parameters on one block, trade the next block "
+                    "with them, move both along and stitch the untouched "
+                    "blocks into one equity curve. That curve is the only "
+                    "number here that was not chosen with hindsight.")
+    p.add_argument("strategy")
+    p.add_argument("--data", required=True)
+    p.add_argument("--param", action="append", default=[],
+                   metavar="NAME=START:STOP:STEP",
+                   help="Parameter to sweep; repeat for more than one. "
+                        "Omit to sweep every numeric parameter.")
+    p.add_argument("--folds", type=int, default=5, help="How many train/test pairs")
+    p.add_argument("--train", type=float, default=0.5,
+                   help="Fraction of the series in the first training block")
+    p.add_argument("--anchored", action="store_true",
+                   help="Grow the training block from the start instead of "
+                        "rolling a fixed-length window")
+    p.add_argument("--metric", default="net_profit",
+                   help="What to optimise in each training window")
+    p.add_argument("--min-trades", type=int, default=5, dest="min_trades",
+                   help="Combinations with fewer training trades are ignored")
+    p.add_argument("--capital", type=float, default=100_000.0)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_walkforward)
 
     p = sub.add_parser("strategies", help="List strategies")
     p.set_defaults(func=cmd_strategies)

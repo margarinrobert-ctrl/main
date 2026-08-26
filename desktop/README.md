@@ -60,6 +60,7 @@ SVG, no external assets and no network requests.
 - [Which indicators actually predict anything](#which-indicators-actually-predict-anything)
 - [Finding anomalies](#finding-anomalies)
 - [Optimisation](#optimisation)
+- [Walk-forward: is the optimisation real?](#walk-forward-is-the-optimisation-real)
 - [Comparing runs](#comparing-runs)
 - [Saving and exporting](#saving-and-exporting)
 - [Where your files live](#where-your-files-live)
@@ -537,6 +538,59 @@ Optimisation reports what would have happened on the data you gave it. The
 best combination on a historical sample is, by construction, the one that fitted
 that sample's noise best. Expect it to be worse out of sample.
 
+The **Walk-Forward** tab in the same dialog is how you find out how much worse.
+
+---
+
+## Walk-forward: is the optimisation real?
+
+An optimisation tells you the best parameters *for the data it saw*, which is a
+statement about history. Walk-forward turns it into a question worth asking:
+choose the parameters on one block, trade the **next** block with them without
+looking, move both windows along, and stitch the untouched blocks into a single
+equity curve. Everything the optimiser earned in-sample is excluded from that
+curve by construction, so it cannot contain a parameter chosen with hindsight.
+
+**Backtest → Optimise Parameters → Walk-Forward.** It sweeps the same grid you
+ticked on the left, on purpose: a different grid would answer a question about a
+different strategy. Choose the number of folds, how much of the series the first
+training block covers, and whether the training window **rolls** (fixed length,
+slides forward, adapts to a changing market) or is **anchored** (grows from the
+start, more data, assumes the distant past still applies).
+
+Two numbers make the report worth reading, and both are usually bad:
+
+- **Walk-forward efficiency** — what the chosen parameters earned out of sample
+  divided by what they earned in sample. One means the optimisation found
+  something that persisted. A half or less means most of what it found was the
+  noise of that particular window. It is reported as undefined when the winning
+  combination lost money in training too: *"kept −76% of its in-sample profit"*
+  is not a sentence, and the ratio would flip sign for reasons that have nothing
+  to do with robustness.
+- **Parameter stability** — how often the winner changed between windows. A
+  strategy whose best settings jump every window has no optimum to find; the
+  optimiser is reporting the shape of the last three months.
+
+Each block is handed the bars immediately before it so its indicators start
+settled, and is then only allowed to trade from its own first bar. Without that,
+every test block is blind for as long as its slowest indicator needs, the blocks
+stop tiling, and the trades in the gaps are counted nowhere. The prepended bars
+are strictly in the past — nothing here can see forward.
+
+From the terminal:
+
+```bash
+python -m tradingbacktester.cli walkforward "EMA Cross + RSI" --data "US30 30m" \
+    --param ema_fast=8:20:4 --param ema_slow=40:80:20 --folds 5
+```
+
+Omit `--param` and every numeric parameter is swept around its default, thinned
+to three values each if the grid would otherwise be too large to run once per
+fold. `--anchored` grows the training window instead of rolling it.
+
+A walk-forward that held up is evidence, not a guarantee: it is still one
+instrument over one period.
+
 ---
 
 ## Comparing runs
@@ -627,10 +681,14 @@ python -m tradingbacktester.cli find --data "US30 15m" --style swing --save
 python -m tradingbacktester.cli indicators --data "US30 15m" --style intraday
 python -m tradingbacktester.cli anomalies --data "US30 15m"
 python -m tradingbacktester.cli run "EMA Cross + RSI" --data "US30 30m"
+python -m tradingbacktester.cli walkforward "EMA Cross + RSI" --data "US30 30m" \
+    --param ema_fast=8:20:4 --folds 5
 ```
 
-`--json` on `find` and `run` prints machine-readable output. `--workspace` points
-at a different folder. Nothing here reaches the network.
+`--json` prints machine-readable output on `find`, `indicators`, `anomalies`,
+`run` and `walkforward`; everything else then goes to stderr so the output can
+be piped straight into a tool that expects one document. `--workspace` points at
+a different folder. Nothing here reaches the network.
 
 The engine is also importable directly:
 
@@ -708,7 +766,7 @@ tradingbacktester/
 ├── analytics/    metrics, equity curves, period returns, comparison
 ├── finder/       trading styles, the candidate space, matched controls, search
 ├── research/     engineered features, information coefficients, anomalies
-├── optimize/     parameter grids, the parallel runner, ranking
+├── optimize/     parameter grids, the parallel runner, ranking, walk-forward
 ├── reports/      CSV, HTML and PDF export
 ├── storage/      the on-disk workspace and saved runs
 └── ui/           the PySide6 application

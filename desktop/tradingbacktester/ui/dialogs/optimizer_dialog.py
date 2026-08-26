@@ -25,11 +25,12 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
 from ...core.errors import BacktesterError
 from ...logging_setup import get_logger
 from ...optimize.grid import ParameterRange, combination_count
-from ...optimize.ranking import (RANKING_METRICS, default_maximise, heatmap,
+from ...optimize.ranking import (RANKING_METRICS, heatmap,
                                  metric_label, neighbourhood_mean,
                                  overfitting_note, rank)
 from ..theme import PALETTE, Fonts, money, number, pct
 from ..widgets.common import Card, show_error, show_info
+from ..widgets.walkforward_panel import WalkForwardPanel
 from ..workers import TaskRunner, optimize_task
 
 log = get_logger(__name__)
@@ -233,6 +234,14 @@ class OptimizerDialog(QDialog):
 
         self.heatmap = _HeatmapWidget()
         self.tabs.addTab(self.heatmap, icon("grid", 15), "Heat Map")
+
+        # The walk-forward reads the same grid as the sweep on purpose: a
+        # different grid here would be an answer about a different strategy.
+        self.walkforward = WalkForwardPanel(
+            self._bars, self._spec, self._config, self._ranges,
+            lambda: (self.metric_box.currentData() or "net_profit",
+                     self.min_trades.value()))
+        self.tabs.addTab(self.walkforward, icon("shield", 15), "Walk-Forward")
         rl.addWidget(self.tabs, 1)
 
         self.note = QLabel("")
@@ -529,6 +538,7 @@ class OptimizerDialog(QDialog):
         if self._runner.busy:
             self._runner.cancel()
             self._runner.wait(3000)
+        self.walkforward.shutdown()
         super().closeEvent(event)
 
 

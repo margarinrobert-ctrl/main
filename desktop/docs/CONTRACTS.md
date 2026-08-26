@@ -242,6 +242,15 @@ Deciding the column layout from the values, not the header names. Called by
   progress + cancellation, returning `OptimizationResult` rows.
 - `ranking.py` — rank by any metric, plus a robustness column (neighbourhood
   mean) and an explicit overfitting warning string.
+- `walkforward.py` — `plan_windows(total, folds, train_fraction, anchored)`
+  tiling the tail of the series exactly once, and
+  `walk_forward(bars, spec, config, ranges, ...) -> WalkForwardResult` which
+  optimises on each training block and trades the block that follows.
+  `efficiency` (out-of-sample over in-sample, NaN when the in-sample total is
+  not positive), `stability` (how often the winner survived a window), and
+  `verdict()` in one sentence. Every block is handed `warmup` bars of history
+  and pinned to trade only from its own first bar, so the test blocks neither
+  gap nor overlap. `format_walk_forward(result, bars)` renders it as text.
 
 ### `tradingbacktester/reports/*`
 - `csv_export.py` — `export_trades_csv`, `export_equity_csv`, `export_metrics_csv`.

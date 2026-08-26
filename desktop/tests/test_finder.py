@@ -363,6 +363,44 @@ def test_cli_runs_a_builtin_strategy(tmp_path, capsys):
     assert "max drawdown pct" in out
 
 
+def test_cli_walk_forward_reports_every_fold(tmp_path, capsys):
+    from tradingbacktester.cli import main
+
+    code = main(["--workspace", str(tmp_path), "walkforward", "EMA Cross + RSI",
+                 "--data", "US30 30m", "--param", "ema_fast=10:20:5",
+                 "--folds", "3", "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["combinations"] == 3
+    assert len(payload["windows"]) == 3
+    assert payload["verdict"]
+    assert payload["warmup"] > 0, "blocks must be handed their own warm-up"
+    assert any("not chosen with hindsight" in n for n in payload["notes"])
+
+
+def test_cli_walk_forward_default_grid_is_small_enough_to_run(tmp_path, capsys):
+    """No --param must still do something, or say plainly why it cannot."""
+    from tradingbacktester.cli import main
+
+    code = main(["--workspace", str(tmp_path), "walkforward", "MACD Trend",
+                 "--data", "US30 30m", "--folds", "2", "--json"])
+    out, err = capsys.readouterr()
+    if code == 0:
+        payload = json.loads(out)
+        assert payload["combinations"] <= 200
+    else:
+        assert "--param" in err
+
+
+def test_cli_walk_forward_explains_a_malformed_range(tmp_path, capsys):
+    from tradingbacktester.cli import main
+
+    code = main(["--workspace", str(tmp_path), "walkforward", "EMA Cross + RSI",
+                 "--data", "US30 30m", "--param", "ema_fast=oops"])
+    assert code == 2
+    assert "start:stop:step" in capsys.readouterr().err
+
+
 # --------------------------------------------------------------------------
 # The fast path must be the engine, only faster
 # --------------------------------------------------------------------------

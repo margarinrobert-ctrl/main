@@ -259,3 +259,32 @@ Finally, compare the net result against its costs. If total costs are a large fr
 gross profit, the strategy is a good idea being executed too often, and small errors in
 the cost model — the ones described above, all of which point the same way — are enough to
 erase it.
+
+## How the walk-forward blocks are cut
+
+The walk-forward splits the series into one training block per fold and the block that
+immediately follows it. The test blocks tile the tail of the series exactly once: no gap,
+no overlap, no period counted twice. The training block is everything up to the test block
+— a fixed-length window that slides (**rolling**) or one that grows from the start of the
+data (**anchored**).
+
+Each block is handed the bars immediately before it so its indicators begin settled, and
+is then only allowed to trade from its own first bar. Two things follow, and both matter:
+
+- Without the prepended history, every test block would be blind for as long as its
+  slowest indicator needs — 200 bars of a 200-period EMA — and the trades in those gaps
+  would be counted nowhere while the report still claimed a continuous out-of-sample
+  record.
+- Without the floor on the first tradeable bar, a combination with a *shorter* warm-up
+  than the widest one in the grid would start trading inside the previous test block, and
+  the same period would be counted twice.
+
+The prepended bars are strictly earlier in the series than the block they belong to, so
+nothing here can see forward. The training block is cut the same way for the same reasons.
+
+The out-of-sample total is the sum of the test blocks and nothing else. The in-sample
+figures are reported beside it so the two can be compared; neither is a result on its own.
+Walk-forward efficiency — out-of-sample divided by in-sample — is reported as undefined
+when the in-sample total is not positive, because if the best combination the optimiser
+could find still lost money on the data it was chosen from, there was nothing for the
+out-of-sample block to keep.

@@ -243,3 +243,18 @@ def optimize_task(bars: Any, spec: Any, config: Any, ranges: Any,
 
     runner = OptimizationRunner(bars, spec, config, max_workers=max_workers)
     return runner.run(ranges, progress=report, cancel=cancel)
+
+
+def walk_forward_task(bars: Any, spec: Any, config: Any, ranges: Any,
+                      folds: int = 5, train_fraction: float = 0.5,
+                      anchored: bool = False, metric: str = "net_profit",
+                      minimum_trades: int = 5,
+                      progress: Callable[[int, int, str], None] | None = None,
+                      cancel: Callable[[], bool] | None = None) -> Any:
+    """Optimise on each training block and trade the block that follows it."""
+    from ..optimize.walkforward import walk_forward
+
+    return walk_forward(bars, spec, config, ranges, folds=folds,
+                        train_fraction=train_fraction, anchored=anchored,
+                        metric=metric, minimum_trades=minimum_trades,
+                        progress=progress, cancel=cancel)

@@ -127,6 +127,19 @@ this data. The best combination on a historical sample is the one that fitted it
 noise best; expect it to be worse out of sample. Prefer a broad plateau of decent
 results over an isolated peak."* This is a requirement, not a decoration.
 
+Third tab: **Walk-Forward**, `ui/widgets/walkforward_panel.py` —
+`WalkForwardPanel(bars, spec, config, ranges_fn, settings_fn, parent=None)`.
+It reads the sweep's own ranges and ranking settings through those two callables
+rather than offering its own, so the two halves of the dialog can never disagree
+about which strategy is being tested. Controls: fold count, training share,
+rolling/anchored. One row per window — the dates it trained on, the dates it
+traded, the in-sample and out-of-sample metric, the trade count, and the
+parameters it chose — with the headline stating the out-of-sample total, how
+many windows were profitable, and the verdict in a sentence. A window that
+produced no result shows the reason in place of its numbers rather than being
+dropped. Its own `TaskRunner`, with a working Cancel; `shutdown()` is called
+from the dialog's `closeEvent`.
+
 ### `ui/dialogs/about_dialog.py`
 - `AboutDialog(workspace, parent)` — name, version, Python/Qt versions, the
   workspace path, licence summary, third-party credits, and an explicit
