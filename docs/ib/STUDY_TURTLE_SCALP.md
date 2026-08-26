@@ -264,13 +264,99 @@ near independent (a uniform sample of 500 of them has a mean pairwise daily-P&L 
 and an eigenvalue participation ratio of 1.8: they are one strategy with knobs). The short mirror
 measures the same quantity empirically and puts it at 0.0 to 0.58.
 
-The 30-minute result is the one this test damages. Its long side scores 0.783 and its mirror 0.575
-— a search of that size on those bars finds three quarters of the result with the sign reversed.
+| US30 | best long | best short | gap |
+| --- | --- | --- | --- |
+| 60m | 0.808 | 0.600 | **0.208** |
 
-### 3.4 The cost line, not the signal, is what separates the three instruments
+The 30- and 60-minute results are the ones this test damages. Their long sides score 0.78 and 0.81
+and their mirrors 0.58 and 0.60 — a search of that size, on those bars, on the side the sample was
+*against*, finds three quarters of the result.
 
-The matched control is positive on **every** instrument and every timeframe. Best cell per run,
-research block:
+**And the matched control does not rescue them.** Put the short mirror through the identical
+pipeline — spike test, marginal-supported refinement — and its research-block winner beats *its*
+matched control by **+$95.39 a trade at p = 0.0025**, against the long winner's +$68.99 at the same
+p. The side this sample was against scores the larger excess with the same significance.
+
+That is not a defect in the control. It is what a p-value means after selection: the excess and the
+objective are correlated, so choosing the maximum of 645,120 cells on either side produces a
+winner whose control excess is large by construction. The control remains the right instrument for
+asking whether *a given* configuration carries information — §3.4 is entirely built on it — but it
+cannot be quoted as significance for a configuration the search chose. Only the holdout can.
+
+The version of this test that **is** free of selection scores a uniform grid sample on both sides:
+
+| US30 | long: share excess > 0 | long: mean excess | *t* | short: share > 0 | short: mean excess | *t* |
+| --- | --- | --- | --- | --- | --- | --- |
+| 5m | 72.9% | **+$4.18** | 12.6 | 22.4% | −$3.62 | −13.2 |
+| 15m | 76.2% | **+$5.83** | 13.3 | 45.7% | −$0.89 | −2.6 |
+| 30m | 86.6% | **+$11.06** | 22.0 | 54.7% | +$2.03 | 3.3 |
+| 60m | 59.9% | **+$6.43** | 8.4 | 63.7% | **+$5.96** | 7.8 |
+
+Nothing was selected to make that table, so the *t*-statistics mean what they say. At 5, 15 and 30
+minutes the breakout carries information upward that it does not carry downward — an upside break
+in an index has follow-through, a downside break in a rising index mean-reverts. **At 60 minutes
+the asymmetry vanishes**: +$6.43 long against +$5.96 short. The 60-minute effect is a breakout
+momentum effect that works equally in both directions, and the long side's higher Sharpe there
+comes from the drift the control already prices out of the excess.
+
+That is not a reason to reject the 60-minute configuration — a long-only strategy on the long side
+of a symmetric effect, on an instrument with positive drift, is a coherent thing to trade. It is a
+reason not to claim the 60-minute result demonstrates something the short side lacks.
+
+### 3.3b What survives out of sample *inside* the research block
+
+PBO and walk-forward, over the same uniform 500-cell grid sample (never the sweep's kept rows):
+
+| US30 | PBO | walk-forward efficiency | stitched OOS Sharpe | universe median Sharpe | universe share positive |
+| --- | --- | --- | --- | --- | --- |
+| **60m** | **0.103** ✓ | **0.44** ✓ | **0.31** | −0.045 | 44% |
+| **15m** | **0.266** ✓ | **0.52** ✓ | 0.17 | −0.256 | 20% |
+| 30m | 0.397 ✗ | −0.01 ✗ | 0.17 | −0.047 | 44% |
+| 5m | 0.000 † | −0.31 ✗ | −0.28 | −1.108 | 1% |
+
+† 5m's PBO of zero is not a pass. PBO asks where the in-sample winner lands in the out-of-sample
+ranking, and at 5 minutes only 1% of the universe is profitable at all — the winner is above the
+median of a uniformly bad field every time, which says nothing about selection and everything about
+the field.
+
+**60m and 15m clear both; 30m and 5m clear neither.** That, and not the maximum Sharpe, is what
+decides which timeframes ship as presets.
+
+### 3.4 The entry rule carries information on US30, and does not on gold or BTC
+
+The first version of this section said the opposite, and the way it was wrong is worth keeping.
+Reading the **best cell** of each run, the matched-control excess is positive everywhere — +$15 to
++$56 a trade on all three instruments — which reads as "the signal works everywhere and only the
+cost line differs". That claim does not survive being asked of the parameter space rather than of
+its maximum.
+
+Scored over a **uniform random sample of 500 grid cells** (the same universe the PBO uses, not the
+sweep's kept rows):
+
+| run | share with **positive control excess** | median excess $/trade | median net $/trade | share net-profitable |
+| --- | --- | --- | --- | --- |
+| US30 30m | **86.6%** | +8.93 | −2.08 | 44.5% |
+| US30 15m | **76.2%** | +4.37 | −8.87 | 20.2% |
+| US30 5m | **72.9%** | +2.15 | −20.42 | 1.4% |
+| US30 60m | **59.9%** | +3.24 | −2.90 | 44.1% |
+| XAU 60m | 33.1% | **−3.67** | −26.27 | 0.0% |
+| BTC 60m | 24.4% | **−5.65** | −28.69 | 0.0% |
+| BTC 15m | 14.6% | **−5.10** | −45.13 | 0.0% |
+| XAU 15m | **7.6%** | **−9.85** | −53.12 | 0.0% |
+
+On US30 a randomly chosen configuration of this family beats a random entry at the same clock times
+with the same barriers 60–87% of the time. That is a property of the space, not of a cell someone
+picked, and it is the strongest single piece of evidence in this study.
+
+On gold and BTC the median configuration is **worse than a matched random entry**. The positive
+excess on their best cells was selection: take the maximum of 645,120 draws from a distribution
+centred below zero and it will be above zero. Reporting only that maximum is how a negative result
+gets written up as "the signal is there, the costs are too high" — which is what the first draft of
+this section said.
+
+The costs still matter, and they are why even US30's typical configuration loses money (median net
+−$2 to −$20 a trade). But the ranking of the three instruments is not a cost ranking. Best cell per
+run, research block, for reference:
 
 | instrument | tf | gross $/trade | cost $/trade | net $/trade | control $/trade | **excess** | break-even |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -282,16 +368,16 @@ research block:
 | XAU | 15m | 22.44 | 46.78 | −24.35 | −39.70 | **+15.36** | 0.48× |
 | BTC | 15m | 27.16 | 49.68 | −22.52 | −47.02 | **+24.50** | 0.55× |
 
-Read the excess column and the break-even column together. **The entry rule carries information on
-all three instruments** — it beats random entries at the same clock times with the same barriers by
-$15 to $56 a trade, everywhere. **What differs is whether that information is worth more than the
-round turn.** On US30 the gross edge is 2–4× the cost. On gold it is 0.5–1.05×. On BTC, 0.55×.
+The break-even column is the useful one: gross edge divided by modelled round turn, or how wrong the
+cost model can be before the result dies. On US30 it is 2.1–4.1×. On gold and BTC it is 0.5–1.05×,
+which for a *selected* cell on a space whose median excess is negative means there is nothing there
+at all.
 
-That is not "the strategy works on the Dow and not on gold". It is: the same edge is there, and
-only one of these three is cheap enough to trade it. The gold number is a **retail spot** cost line
-— a 20-cent spread plus 5 cents of stop slippage on a 100 oz lot, $25 per unit per round turn, and
-about $53 a trade at 2.1 units. A futures desk on GC pays roughly half that, which is exactly where
-XAU 60m's 1.05× break-even sits.
+Gold's cost line is a **retail spot** one — a 20-cent spread plus 5 cents of stop slippage on a 100
+oz lot, $25 per unit per round turn, about $53 a trade at 2.1 units — and a futures desk on GC pays
+roughly half. That halving would move XAU 60m's best cell from break-even to marginally profitable.
+It would not change the finding, because the finding is the 33% in the table above, not the 1.05×
+in this one.
 
 **Not one of the 645,120 cells on gold or BTC clears the research gates** (≥ 250 trades, positive
 control excess, PF ≥ 1.05) at any timeframe. Neither is shipped.

@@ -73,6 +73,24 @@ def main() -> None:
             jobs.append((nm, tf, P(**j["base"]), sd,
                          f"{nm} {tf}m long -- Phase-1 geometry, unrefined"))
 
+    # Gold and BTC produced no candidate -- nothing in 645,120 cells clears the research gates on
+    # either.  Their best-by-Sharpe cell is read anyway, labelled as such: there is no decision to
+    # protect (it was rejected on research), and a study that says "it fails" is worth more with
+    # the holdout number next to the research one.
+    for nm, tf in (("XAU", 60), ("BTC", 60)):
+        f = os.path.join(OUT, f"{nm}_{tf}m_long.parquet")
+        if not os.path.exists(f):
+            continue
+        df = pd.read_parquet(f)
+        r = df.sort_values("sharpe", ascending=False).iloc[0]
+        import turtle_bars as B
+        import turtle_search as S
+        pp = S.to_params(SH._row(r, tf), B.INSTRUMENTS[nm])
+        sd = float(meta[(meta.instrument == nm) & (meta.tf == tf)
+                        & (meta.side == 1)].trial_sharpe_sd.iloc[0])
+        jobs.append((nm, tf, pp, sd, f"{nm} {tf}m long -- REJECTED on research, shown for "
+                                     f"completeness"))
+
     results = {}
     for nm, tf, p, sd, label in jobs:
         cand = SH.candidates_for_pbo(nm, tf)
@@ -101,6 +119,30 @@ def main() -> None:
     df = pd.DataFrame(rows)
     print(df.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
     df.to_parquet(os.path.join(OUT, "locked_summary.parquet"), index=False)
+
+    # Are the timeframes separate strategies or one strategy sampled at different rates?  A book
+    # only earns its second commission if the daily streams are not the same stream.
+    import turtle_bars as B
+    import turtle_search as S
+    import turtle_validate as V
+    streams = {}
+    for label, r in results.items():
+        if "SHORT" in label or "REJECTED" in label or "Phase-1" in label:
+            continue
+        nm, tf = label.split()[0], int(label.split()[1].rstrip("m"))
+        with open(os.path.join(OUT, f"chosen_{nm}_{tf}m.json")) as fh:
+            pp = P(**json.load(fh)["params"])
+        full = B.load(nm, tf)
+        cut = B.split_session(full)
+        n_sess = int(full.sess.max()) + 1
+        s = full.window(S.WIN_LO, S.WIN_HI)
+        streams[label] = V.daily_series(s, pp, B.INSTRUMENTS[nm], n_sess)[cut:]
+    if len(streams) > 1:
+        m = pd.DataFrame(streams)
+        print("\n  --- locked-block daily P&L correlation between the shipped timeframes ---")
+        print(m.corr().to_string(float_format=lambda v: f"{v:.3f}"))
+        print("  A book pays a second commission for a second stream.  These are one strategy")
+        print("  sampled at different rates unless these numbers are low.")
 
 
 if __name__ == "__main__":
