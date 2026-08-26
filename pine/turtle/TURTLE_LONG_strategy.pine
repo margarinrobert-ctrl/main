@@ -52,14 +52,28 @@ strategy("Turtle Long-Only (measured presets)", overlay = true, pyramiding = 4,
 //   Bar detalization        High, with Deep Backtesting. Finer intrabar data is strictly better for
 //                           a stop system, because the stop is what the intrabar path decides.
 //   Order execution delay   One tick. Free realism; leave it on.
-//   Commission              THE DEFAULT IS WRONG FOR ANYTHING THAT IS NOT AN INDEX CFD. 0.50 cash
-//                           per order suits a 1-point-per-unit index. On crypto or FX it rounds to
-//                           nothing -- an ETH run of this script reported Commission load 0.29%,
-//                           i.e. about $520 of fees against $180,206 of gross profit. Switch the
-//                           type to PERCENT and enter your venue's real taker fee (0.05% is a
-//                           common crypto taker rate, and it is charged on EACH side).
-//   Slippage                Also in the instrument's own ticks. One tick is right on a 0.25-point
-//                           future and near-zero on an instrument quoted to 0.01.
+//   Commission              THE DEFAULT IS TOO LOW. 0.50 cash per order was carried over from an
+//                           index-CFD assumption; a run of this script reported Commission load
+//                           0.29%, about $520 of fees against $180,206 of gross profit, which is
+//                           not a cost model. On CME index futures through a retail broker use
+//                           CASH PER ORDER -- it is charged per SIDE, which is what you want:
+//                             MNQ  ~$0.72/side  (broker $0.35 + exchange $0.35 + NFA $0.02)
+//                             NQ   ~$2.05/side  (broker $0.85 + exchange $1.18 + NFA $0.02)
+//                           Those are this repo's model, not a quote -- check your own statement,
+//                           and note that with PYRAMIDING 4 a full ladder pays this EIGHT times.
+//                           Use PERCENT only on crypto or FX, where fees scale with notional.
+//   Slippage                In the instrument's own ticks. NQ/MNQ tick is 0.25 points. One tick is
+//                           optimistic for a STOP-exit system: a stop fills into the move that
+//                           triggered it, so 2 ticks per side is the more honest setting here.
+//
+//   TIMEFRAME. Every "T" preset is LOCKED to the chart it was measured on -- T1 and T2 to 240m,
+//   T3 to 120m, T4 to 60m -- and on any other chart `onDesignTF` goes false, `gateOk` goes false,
+//   and the script takes NO TRADES AT ALL. The HUD's second row says so in red. If you are on a
+//   15-minute chart and still seeing fills, you are on "Spec defaults (no gate)" or "Custom",
+//   which is the RAW Turtle with no ADX ceiling and no extension filter -- a different strategy
+//   from the measured ones, and one nothing in docs/ib/ has validated at that speed.
+//   `STUDY_TURTLE_YOUTUBE.md` is the nearest evidence and it points the wrong way: the 15-minute
+//   variant fails out of sample where the 1-hour one holds.
 //
 //   Leverage = Infinity is a deliberate choice with a consequence. It stops the broker emulator
 //   silently REJECTING orders the account cannot fund, which is what made the same script report

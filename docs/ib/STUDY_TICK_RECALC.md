@@ -147,3 +147,20 @@ happens once, at the close, from settled state.
 of statements is not a partial improvement — it desynchronises them, and a reader who has just been
 told the script is now deterministic has less reason to check than before. Either every statement
 that touches a piece of state reads it at the same instant, or none of them do.
+
+## A misreading of my own, corrected
+
+I read the `ETH` badge in the Strategy Tester's top-right corner as the instrument and referred to
+"the ETH runs". On a TradingView futures chart that badge sits beside the clock and the `B-ADJ`
+contract-adjustment marker, and it is the **session**: `ETH` = Electronic/Extended Trading Hours,
+`RTH` = Regular Trading Hours. It says nothing about the symbol.
+
+The correction matters because it changed the advice attached to it. On the strength of "ETH" I
+recommended switching commission to **percent** with a crypto taker rate. The runs are on CME index
+futures simulated through a retail futures broker, where fees are **per contract per side** and
+percent commission is simply the wrong model — MNQ is about $0.72 a side, NQ about $2.05, and with
+`pyramiding = 4` a full ladder pays that eight times over its life.
+
+Two habits follow. Read the badge row as *timezone / session / contract adjustment*, not as a
+ticker. And when a cost model is being chosen, ask what the instrument is rather than inferring it
+from chrome.
