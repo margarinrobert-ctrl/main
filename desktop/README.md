@@ -61,6 +61,7 @@ SVG, no external assets and no network requests.
 - [Finding anomalies](#finding-anomalies)
 - [Optimisation](#optimisation)
 - [Walk-forward: is the optimisation real?](#walk-forward-is-the-optimisation-real)
+- [Monte Carlo: what else could have happened?](#monte-carlo-what-else-could-have-happened)
 - [Comparing runs](#comparing-runs)
 - [Saving and exporting](#saving-and-exporting)
 - [Where your files live](#where-your-files-live)
@@ -593,6 +594,44 @@ instrument over one period.
 
 ---
 
+## Monte Carlo: what else could have happened?
+
+A backtest draws one path. **Backtest → Monte Carlo…** (`Ctrl+M`) resamples
+the trades that run took and shows the distribution that path came from —
+because the drawdown you saw is one sample of a distribution, and it is usually
+not the worst one in it.
+
+Three resamplers, answering three different questions:
+
+| Method | What it changes | What it answers |
+|---|---|---|
+| **Shuffle** | the order of the trades | how much of the drawdown was the order the trades happened to arrive in? Every draw ends at the same equity, so read the drawdown, not the balance. |
+| **Bootstrap** | the sample of trades, drawn with replacement | how much of the result was the particular trades you got? Assumes your trades are a fair sample of the ones the strategy would take. |
+| **Block bootstrap** | the same, in contiguous runs | the same question, with the losing streaks left intact. Trades cluster by regime; a plain bootstrap breaks the streaks up and reports a gentler drawdown than the strategy will actually produce. |
+
+**Compound** contributes each trade's return as a fraction of the equity it was
+opened against, so an early loss costs more than a late one — what a
+percent-of-equity size actually does. Unticked, each trade contributes its cash
+result, which is what a fixed size produces.
+
+The report gives the 5th, 25th, 50th, 75th and 95th percentile of final equity,
+worst drawdown in cash and percent, and how many trades the account spent under
+water; where the backtest itself sits in that distribution; how often a draw
+lost money; and how often one closed below a ruin level you set. **The 95th
+percentile drawdown is the number to size the account against, not the one the
+backtest happened to produce.**
+
+What none of this can do is tell you whether the strategy has an edge. It
+resamples the trades the strategy took; if those came from a rule fitted to this
+data, every draw is fitted to it too. It answers *"given these trades, what
+range of paths?"* — never *"will this work?"*.
+
+Ruin is measured at trade closes: an open position that went far against you and
+came back does not appear, so the ruin figure is a floor on how often it
+happened.
+
+---
+
 ## Comparing runs
 
 Save a run with **Backtest → Save Backtest**, then **Compare Runs** to put two
@@ -683,10 +722,12 @@ python -m tradingbacktester.cli anomalies --data "US30 15m"
 python -m tradingbacktester.cli run "EMA Cross + RSI" --data "US30 30m"
 python -m tradingbacktester.cli walkforward "EMA Cross + RSI" --data "US30 30m" \
     --param ema_fast=8:20:4 --folds 5
+python -m tradingbacktester.cli montecarlo "EMA Cross + RSI" --data "US30 30m" \
+    --method block --draws 5000
 ```
 
 `--json` prints machine-readable output on `find`, `indicators`, `anomalies`,
-`run` and `walkforward`; everything else then goes to stderr so the output can
+`run`, `walkforward` and `montecarlo`; everything else then goes to stderr so the output can
 be piped straight into a tool that expects one document. `--workspace` points at
 a different folder. Nothing here reaches the network.
 
@@ -763,7 +804,8 @@ tradingbacktester/
 ├── indicators/   the registry and the 48-indicator library
 ├── strategy/     the declarative strategy definition and its compiler
 ├── engine/       cost model, position sizing, the simulated broker, the loop
-├── analytics/    metrics, equity curves, period returns, comparison
+├── analytics/    metrics, equity curves, period returns, comparison,
+│                Monte Carlo trade resampling
 ├── finder/       trading styles, the candidate space, matched controls, search
 ├── research/     engineered features, information coefficients, anomalies
 ├── optimize/     parameter grids, the parallel runner, ranking, walk-forward

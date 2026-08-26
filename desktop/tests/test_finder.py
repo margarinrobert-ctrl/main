@@ -392,6 +392,24 @@ def test_cli_walk_forward_default_grid_is_small_enough_to_run(tmp_path, capsys):
         assert "--param" in err
 
 
+def test_cli_monte_carlo_resamples_a_real_run(tmp_path, capsys):
+    from tradingbacktester.cli import main
+
+    code = main(["--workspace", str(tmp_path), "montecarlo", "EMA Cross + RSI",
+                 "--data", "US30 30m", "--method", "block", "--draws", "500",
+                 "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["draws"] == 500
+    assert payload["trades"] > 0
+    assert payload["method"] == "block"
+    assert payload["block_size"] > 1
+    assert set(payload["max_drawdown"]) == {"5", "25", "50", "75", "95"}
+    assert payload["verdict"]
+    assert any("cannot tell you whether the strategy has an edge" in n
+               for n in payload["notes"])
+
+
 def test_cli_walk_forward_explains_a_malformed_range(tmp_path, capsys):
     from tradingbacktester.cli import main
 

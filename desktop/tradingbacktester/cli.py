@@ -425,6 +425,33 @@ def cmd_walkforward(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_montecarlo(args: argparse.Namespace) -> int:
+    from .analytics.montecarlo import format_monte_carlo, resample_result
+    from .engine.backtester import Backtester
+
+    bars, name = _resolve_bars(args)
+    spec = _resolve_spec(args)
+    config = _config_for(spec, args.capital)
+    stream = sys.stderr if args.json else sys.stdout
+    print(f"{spec.name} on {name} ({len(bars):,} bars, {bars.timeframe.label})",
+          file=stream)
+    run = Backtester(bars, spec, config).run()
+    print(f"  {run.summary_line()}", file=stream)
+
+    result = resample_result(
+        run, method=args.method, draws=args.draws,
+        compounded=args.compounded,
+        ruin_level=args.ruin if args.ruin > 0 else None,
+        block_size=args.block, seed=args.seed, progress=_stderr_progress())
+    _clear_progress()
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print()
+        print(format_monte_carlo(result, currency=bars.instrument.currency))
+    return 0
+
+
 def cmd_strategies(args: argparse.Namespace) -> int:
     from .strategy.builtin import BUILTIN_STRATEGIES
     from .strategy.storage import StrategyStore
@@ -547,6 +574,35 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")
     p.set_defaults(func=cmd_walkforward)
+
+    p = sub.add_parser(
+        "montecarlo",
+        help="Resample a run's trades to see the range of paths",
+        description="Run a backtest, then resample its trade sequence. This "
+                    "describes the range of outcomes those trades could have "
+                    "produced; it says nothing about whether the strategy has "
+                    "an edge.")
+    p.add_argument("strategy")
+    p.add_argument("--data", required=True)
+    p.add_argument("--method", default="block",
+                   choices=("shuffle", "bootstrap", "block"),
+                   help="shuffle: same trades, different order. bootstrap: a "
+                        "different sample of trades. block: a different sample "
+                        "in contiguous runs, so streaks survive.")
+    p.add_argument("--draws", type=int, default=5000)
+    p.add_argument("--compounded", action="store_true",
+                   help="Each trade contributes its return as a fraction of "
+                        "the equity it was opened against")
+    p.add_argument("--block", type=int, default=0,
+                   help="Block length for --method block (default: n^(1/3))")
+    p.add_argument("--ruin", type=float, default=0.0,
+                   help="Count a draw as ruined below this equity "
+                        "(default: half the starting capital)")
+    p.add_argument("--seed", type=int, default=12345)
+    p.add_argument("--capital", type=float, default=100_000.0)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_montecarlo)
 
     p = sub.add_parser("strategies", help="List strategies")
     p.set_defaults(func=cmd_strategies)

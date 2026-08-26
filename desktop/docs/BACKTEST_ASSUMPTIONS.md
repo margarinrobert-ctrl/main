@@ -288,3 +288,39 @@ Walk-forward efficiency — out-of-sample divided by in-sample — is reported a
 when the in-sample total is not positive, because if the best combination the optimiser
 could find still lost money on the data it was chosen from, there was nothing for the
 out-of-sample block to keep.
+
+## What the Monte Carlo resamples, and what it assumes
+
+The Monte Carlo resamples the *trade sequence* a run produced. It does not re-simulate
+anything: the trades are taken as given and only their order or their membership changes.
+Three consequences follow and all three matter.
+
+**Equity is measured at trade closes.** A path's minimum is the lowest equity between two
+trades, so an open position that went far against you and came back does not appear. The
+ruin probability is therefore a floor on how often the account actually went below the
+level, never a ceiling. The same applies to the drawdown percentiles: they are close-to-
+close, like the equity curve the backtest reports.
+
+**The bootstrap assumes the trades are a fair sample.** Drawing with replacement treats the
+trades you have as the population the strategy draws from. If the sample came from one
+regime — and one instrument over three years usually is one regime — every draw is drawn
+from that regime too. No amount of resampling manufactures a market the sample did not
+contain.
+
+**A plain bootstrap assumes trades are independent, and they are not.** Trades cluster: a
+trend-following rule loses through the same choppy fortnight several times in a row. Drawing
+trades independently breaks those streaks up and reports a drawdown gentler than the
+strategy will actually produce. The block bootstrap draws contiguous runs — `n**(1/3)` by
+default — so the clustering survives; where there is no clustering the two agree.
+
+Additive mode contributes each trade's cash P&L and is what a fixed position size produces;
+the arithmetic is then order-independent, which is exactly why the shuffle can isolate the
+effect of ordering on drawdown alone. Compounded mode contributes each trade's result as a
+fraction of the equity it was opened against, so an early loss costs more than a late one.
+Compounding resampled *cash* would be wrong — a $500 loss taken against $100,000 is not the
+same fraction of a $40,000 account — so compounded mode resamples the returns instead and
+refuses to run without them.
+
+None of this speaks to whether the strategy has an edge. Resampling the trades a rule took
+cannot detect that the rule was fitted to the data those trades came from; every draw
+inherits the fit. It is a question about risk, not about validity.

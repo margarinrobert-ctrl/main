@@ -140,6 +140,20 @@ produced no result shows the reason in place of its numbers rather than being
 dropped. Its own `TaskRunner`, with a working Cancel; `shutdown()` is called
 from the dialog's `closeEvent`.
 
+### `ui/dialogs/montecarlo_dialog.py` — `MonteCarloDialog(result, parent=None)`
+Resamples the loaded run's trade sequence. Controls: method (shuffle /
+bootstrap / block), draw count, compounding, and the ruin level. A four-row
+percentile table (final equity, worst drawdown, worst drawdown %, trades under
+water) at the 5th/25th/50th/75th/95th, a histogram of final equity with the
+backtest's own result and break-even marked on it, and a headline stating where
+the run sits in the distribution and the verdict.
+A permanent, prominent notice: *"This resamples the trades the strategy already
+took. It cannot tell you whether the strategy has an edge — if these trades came
+from a rule fitted to this data, every draw is fitted to it too."* This is a
+requirement, not a decoration.
+Opened from **Backtest → Monte Carlo…** (`Ctrl+M`), which is disabled until a
+run with at least one trade exists.
+
 ### `ui/dialogs/about_dialog.py`
 - `AboutDialog(workspace, parent)` — name, version, Python/Qt versions, the
   workspace path, licence summary, third-party credits, and an explicit

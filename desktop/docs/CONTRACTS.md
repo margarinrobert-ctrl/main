@@ -233,6 +233,17 @@ Deciding the column layout from the values, not the header names. Called by
   `daily_returns(result)` returning tidy structures for the UI table.
 - `comparison.py` — `compare_results(results) -> ComparisonTable` with aligned
   equity curves (indexed to 100) and a metric matrix.
+- `montecarlo.py` — `resample_trades(net_pnl, starting_capital, ...)` and
+  `resample_result(result, ...)` returning a `MonteCarloResult`: percentiles of
+  final equity, worst drawdown in cash and percent, and trades spent under
+  water, plus where the observed run sits in each distribution, the probability
+  of a losing run, and the probability of closing below a ruin level. Three
+  resamplers — `shuffle` (a permutation, so the final equity never moves),
+  `bootstrap` (with replacement) and `block` (contiguous runs, so a losing
+  streak survives). Additive by default; `compounded` resamples each trade's
+  return against the equity it was opened against. Draws are processed in
+  chunks so a long trade list and a large draw count cannot allocate a matrix
+  measured in gigabytes. `format_monte_carlo(result)` renders it as text.
 
 ### `tradingbacktester/optimize/*`
 - `grid.py` — `ParameterRange(name, start, stop, step)` and

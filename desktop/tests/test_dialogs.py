@@ -591,6 +591,60 @@ def test_optimizer_walk_forward_tab_runs_over_the_same_grid(qapp, bars):
     dialog.close()
 
 
+def test_monte_carlo_dialog_resamples_the_loaded_run(qapp, bars):
+    import time
+
+    from tradingbacktester.ui.dialogs.montecarlo_dialog import MonteCarloDialog
+
+    run = run_once(bars)
+    assert run.trades
+
+    dialog = MonteCarloDialog(run)
+    dialog.show()
+    qapp.processEvents()
+    assert "cannot tell you" not in dialog.headline.text()
+    dialog.draws.setValue(500)
+    index = dialog.method.findData("bootstrap")
+    dialog.method.setCurrentIndex(index)
+    qapp.processEvents()
+    assert "with replacement" in dialog.method_help.text()
+
+    dialog.run()
+    deadline = time.monotonic() + 120
+    while dialog.busy and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.01)
+    for _ in range(10):
+        qapp.processEvents()
+
+    assert dialog.table.rowCount() == 4
+    assert dialog.table.item(0, 0).text() == "Final equity"
+    assert dialog.table.item(0, 3).text(), "the median column must be filled in"
+    assert "of draws lost money" in dialog.headline.text()
+    assert "cannot tell you whether the strategy has an edge" in dialog.notes.text()
+    # The histogram must render without a paint error.
+    dialog.histogram.repaint()
+    qapp.processEvents()
+    dialog.close()
+
+
+def test_monte_carlo_dialog_says_so_when_there_are_no_trades(qapp, bars,
+                                                             monkeypatch):
+    from tradingbacktester.engine.results import BacktestResult
+    from tradingbacktester.ui.dialogs.montecarlo_dialog import MonteCarloDialog
+
+    said = []
+    monkeypatch.setattr(
+        "tradingbacktester.ui.dialogs.montecarlo_dialog.show_info",
+        lambda parent, title, message: said.append(message))
+    dialog = MonteCarloDialog(BacktestResult())
+    dialog.run()
+    qapp.processEvents()
+    assert said and "nothing to resample" in said[0]
+    assert not dialog.busy
+    dialog.close()
+
+
 def test_walk_forward_tab_refuses_an_empty_grid(qapp, bars, monkeypatch):
     """Nothing to choose is a message, not a crash and not a fake result."""
     from tradingbacktester.ui.dialogs.optimizer_dialog import OptimizerDialog
@@ -685,6 +739,29 @@ def test_switching_dataset_resets_the_timeframe(window, qapp):
         window.data_panel.dataset_box.setCurrentIndex(index)
         qapp.processEvents()
         assert window.data_panel.current_timeframe().label == meta.timeframe, meta.name
+
+
+def test_monte_carlo_is_offered_only_once_there_are_trades(window, qapp,
+                                                           monkeypatch):
+    """A menu item that opens an empty dialog is worse than a disabled one."""
+    import time
+
+    assert not window.act_montecarlo.isEnabled()
+    said = []
+    monkeypatch.setattr("tradingbacktester.ui.main_window.show_info",
+                        lambda parent, title, message: said.append(message))
+    window.on_monte_carlo()
+    assert said and "nothing to resample" in said[0]
+
+    window.on_run_backtest()
+    deadline = time.monotonic() + 180
+    while window._runner.busy and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.02)
+    for _ in range(10):
+        qapp.processEvents()
+    assert window._result is not None and window._result.trades
+    assert window.act_montecarlo.isEnabled()
 
 
 def test_window_survives_selecting_every_strategy(window, qapp):

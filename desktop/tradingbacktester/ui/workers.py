@@ -258,3 +258,15 @@ def walk_forward_task(bars: Any, spec: Any, config: Any, ranges: Any,
                         train_fraction=train_fraction, anchored=anchored,
                         metric=metric, minimum_trades=minimum_trades,
                         progress=progress, cancel=cancel)
+
+
+def monte_carlo_task(result: Any, method: str = "block", draws: int = 5000,
+                     compounded: bool = False, ruin_level: float | None = None,
+                     progress: Callable[[int, int, str], None] | None = None,
+                     cancel: Callable[[], bool] | None = None) -> Any:
+    """Resample a finished run's trade sequence."""
+    from ..analytics.montecarlo import resample_result
+
+    return resample_result(result, method=method, draws=draws,
+                           compounded=compounded, ruin_level=ruin_level,
+                           progress=progress, cancel=cancel)
