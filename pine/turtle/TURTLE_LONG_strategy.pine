@@ -216,7 +216,20 @@ if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and 
 chanExit  = sysOn == 1 ? chanLo1[1] : chanLo2[1]
 exitLevel = na(stopLvl) ? chanExit : (na(chanExit) ? stopLvl : math.max(stopLvl, chanExit))
 
-if not flat and not na(exitLevel)
+// THIS CALL HAS TO BE GUARDED TOO, AND LEAVING IT OPEN WAS A HALF-FIX THAT MADE THINGS WORSE.
+// Guarding the state blocks but not this one creates a window that did not exist before: a fill
+// happens mid-bar, "On order fill" re-runs the script, `flat` is already false -- but `stopLvl` is
+// still `na`, because the block that anchors it now waits for the close. `exitLevel` therefore
+// falls through to `chanExit`, the CHANNEL LOW, and a stop goes to the broker at a level the
+// strategy never chose. The position gets cut early and re-entered, which is why the boxes-on run
+// still showed MORE trades and LESS drawdown than the boxes-off one after the first fix:
+// US100, 100K, same range -- 850 trades / PF 1.642 with three boxes against 762 / PF 1.188 with one.
+//
+// `lastCount > 0` is the real condition: it means the state machine has actually anchored to the
+// position that is currently open. Placement now happens once, at the close, from settled state.
+// A strategy order PERSISTS until filled or cancelled, so the stop stays live intrabar on every
+// later bar -- what is deterministic is when the level is SET, not when it can trigger.
+if barstate.isconfirmed and not flat and lastCount > 0 and not na(exitLevel)
     strategy.exit("x", stop = exitLevel)
 
 // ----------------------------------------------------------------- plots

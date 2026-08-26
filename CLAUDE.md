@@ -675,4 +675,14 @@ rules from −913 / PF 0.994 / 11,398 trades to +62,278 / PF 1.416 / **14,462** 
 is the tell, and the bar-close run is the correct one. Ask of every line: does it read a series that
 differs mid-bar, and does anything durable depend on the answer? `close`, `high`, `low`, `ta.atr`,
 `ta.dmi`, `strategy.opentrades` all do. **If a checkbox changes the report, the report is about the
-checkbox.** See `docs/ib/STUDY_TICK_RECALC.md`.
+checkbox.** And guard the WHOLE coupled set, not some of it: guarding the state blocks while leaving
+`strategy.exit` open was a half-fix that made it worse — a mid-bar fill re-ran the script with
+`stopLvl` still `na`, so the exit fell through to the CHANNEL LOW and cut positions early, leaving
+850 trades / PF 1.642 against 762 / PF 1.188. Placement time and trigger time are different things:
+a strategy order persists once placed, so setting it at the close still leaves it live intrabar.
+Two more ways a report is wrong before its rules are: **the account too small to take the trades**
+(US100, same script and range, 850 trades at 100K against 4,806 at 1M — the broker emulator REJECTS
+unfundable orders silently, and the rejections cluster where price is high and the ladder is
+already large), and **fills that are free** (this script set no commission and no slippage —
+`Commission load 0.00%`). Read the TRADE COUNT and the COMMISSION LOAD before the P&L.
+See `docs/ib/STUDY_TICK_RECALC.md`.

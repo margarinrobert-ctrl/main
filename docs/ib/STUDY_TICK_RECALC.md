@@ -112,3 +112,38 @@ the engine can re-evaluate mid-bar (the main study), the account can be too smal
 (above), and the fills can be free (above). All three flatter. None of them is visible in the equity
 curve — they are visible in the **trade count** and in **Commission load**, which is why those two
 numbers are worth reading before the P&L.
+
+## Correction — the first fix was a half-fix, and half-fixing it made it worse
+
+Guarding the two state blocks was not enough, and I said it was. Re-run on US100 at 100K over the
+same range with the corrected script still showed:
+
+| Script execution | trades | profitable | PF | total P&L | max DD |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| all three boxes | **850** | 23.65% | **1.642** | +9,350.80 | 890.50 (0.85%) |
+| bar close only | **762** | 18.37% | **1.188** | +3,386.40 | 1,788.50 (1.76%) |
+
+Still 88 extra trades and a 0.45 swing in profit factor from a checkbox. The remaining leak was
+created *by* the first fix.
+
+`strategy.exit` was left unguarded on purpose — the reasoning was that it must stay a live intrabar
+order. That reasoning confused **when the level is set** with **when it can trigger**, and the two
+are separate: a strategy order persists until filled or cancelled, so placing it at the close still
+leaves it live intrabar on every later bar.
+
+Meanwhile, guarding the state blocks while leaving the exit call open opened a window that had not
+existed before. A fill lands mid-bar; "On order fill" re-runs the script; `flat` is already false —
+but `stopLvl` is still `na`, because the block that anchors it now waits for the close. `exitLevel`
+falls through its own `na` branch to `chanExit`, the **channel low**, and a stop goes to the broker
+at a level the strategy never chose. The position is cut early and re-entered. That is the 88 extra
+trades, and it is why the boxes-on run shows *less* drawdown (0.85% against 1.76%) — an accidental
+tighter stop flatters exactly the way the original defect did.
+
+The condition that actually expresses the requirement is `lastCount > 0`: the state machine has
+anchored to the position that is currently open. With that plus `barstate.isconfirmed`, placement
+happens once, at the close, from settled state.
+
+**The lesson is narrower than "guard everything" and more useful.** Guarding *some* of a coupled set
+of statements is not a partial improvement — it desynchronises them, and a reader who has just been
+told the script is now deterministic has less reason to check than before. Either every statement
+that touches a piece of state reads it at the same instant, or none of them do.
