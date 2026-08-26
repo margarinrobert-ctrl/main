@@ -62,6 +62,7 @@ SVG, no external assets and no network requests.
 - [Optimisation](#optimisation)
 - [Walk-forward: is the optimisation real?](#walk-forward-is-the-optimisation-real)
 - [Monte Carlo: what else could have happened?](#monte-carlo-what-else-could-have-happened)
+- [The mirror market: was it the rule or the rally?](#the-mirror-market-was-it-the-rule-or-the-rally)
 - [Comparing runs](#comparing-runs)
 - [Saving and exporting](#saving-and-exporting)
 - [Where your files live](#where-your-files-live)
@@ -632,6 +633,57 @@ happened.
 
 ---
 
+## The mirror market: was it the rule or the rally?
+
+Every dataset here is an instrument that went up. A long-biased rule inherits
+that: hold anything through a rising market and the equity curve slopes the
+right way whether or not the rule is doing anything. A research/holdout split
+does not catch it — both blocks are in the same bull market — and a random
+control only catches it if the control is allowed to take the same side.
+
+The control that does catch it is a market that fell. **Backtest → Mirror-Market
+Test…** builds one out of the data you already have by negating every log
+return. The mirror has, exactly:
+
+- the same timestamps — the same session structure, weekday pattern, holidays
+  and gaps;
+- the same bar-to-bar volatility, and therefore the same volatility clustering:
+  a turbulent fortnight in the original is a turbulent fortnight in the mirror;
+- the same bar ranges and the same intrabar shape, reflected — an up-bar that
+  opened on its low and closed on its high becomes a down-bar that opened on its
+  high and closed on its low;
+- the opposite drift.
+
+Run the same rule on both and you are asking one question: how much of this was
+the rule, and how much was the market going up? The report splits the real
+result into a direction-independent half — the mean of the two runs — and a
+direction-dependent half, and says which one it mostly is.
+
+On the shipped US30 data, `MACD Trend` keeps most of its profit in the mirror;
+`SuperTrend Follower` keeps about half. The indicator study is starker still:
+the long baseline flips from +3.93 to −3.92 per trade, and the momentum feature
+that ranks first on the real series drops out of the top on the mirror while the
+volatility features survive with the same sign.
+
+Every command that reads data takes `--mirror`, because that question is worth
+asking of a search, an indicator ranking and an anomaly scan too — not only of
+one backtest:
+
+```bash
+python -m tradingbacktester.cli mirror "MACD Trend" --data "US30 30m"
+python -m tradingbacktester.cli find --data "US30 15m" --style swing --mirror
+python -m tradingbacktester.cli indicators --data "US30 30m" --style swing --mirror
+```
+
+**The mirror is a control, not a second sample.** It contains no information the
+original did not, so a rule that survives it has survived one control — not a
+second market and not a second period. And real markets do not fall the way they
+rise: falls are faster and more volatile, so a mirrored bull market is not a bear
+market anyone traded. Read it as a control on direction, never as a simulation
+of a downturn.
+
+---
+
 ## Comparing runs
 
 Save a run with **Backtest → Save Backtest**, then **Compare Runs** to put two
@@ -724,10 +776,12 @@ python -m tradingbacktester.cli walkforward "EMA Cross + RSI" --data "US30 30m" 
     --param ema_fast=8:20:4 --folds 5
 python -m tradingbacktester.cli montecarlo "EMA Cross + RSI" --data "US30 30m" \
     --method block --draws 5000
+python -m tradingbacktester.cli mirror "MACD Trend" --data "US30 30m"
 ```
 
-`--json` prints machine-readable output on `find`, `indicators`, `anomalies`,
-`run`, `walkforward` and `montecarlo`; everything else then goes to stderr so the output can
+`--mirror` on any command that reads data reflects the series first. `--json`
+prints machine-readable output on `find`, `indicators`, `anomalies`,
+`run`, `walkforward`, `montecarlo` and `mirror`; everything else then goes to stderr so the output can
 be piped straight into a tool that expects one document. `--workspace` points at
 a different folder. Nothing here reaches the network.
 
@@ -807,7 +861,8 @@ tradingbacktester/
 ├── analytics/    metrics, equity curves, period returns, comparison,
 │                Monte Carlo trade resampling
 ├── finder/       trading styles, the candidate space, matched controls, search
-├── research/     engineered features, information coefficients, anomalies
+├── research/     engineered features, information coefficients, anomalies,
+│                the mirror-market control
 ├── optimize/     parameter grids, the parallel runner, ranking, walk-forward
 ├── reports/      CSV, HTML and PDF export
 ├── storage/      the on-disk workspace and saved runs

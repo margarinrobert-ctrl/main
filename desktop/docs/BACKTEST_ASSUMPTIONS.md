@@ -324,3 +324,36 @@ refuses to run without them.
 None of this speaks to whether the strategy has an edge. Resampling the trades a rule took
 cannot detect that the rule was fitted to the data those trades came from; every draw
 inherits the fit. It is a question about risk, not about validity.
+
+## What the mirror market preserves, and what it does not
+
+The mirror is the loaded series with every log return negated. Working in log space rather
+than on price differences is what makes the reflection exact and keeps every price
+positive: a move that multiplied the price by 1.02 becomes one that divides by it, and no
+sequence of returns can take the mirror to or below zero.
+
+Preserved exactly: the timestamps, and therefore the session structure, the weekday
+pattern, the holidays and the gaps; the bar-to-bar volatility, and therefore the volatility
+clustering; the bar ranges; the intrabar shape, reflected about each bar's own open, so the
+distance from the open up to the high becomes the distance from the open down to the low;
+and the opening gaps, also reflected. Volume is copied unchanged.
+
+Inverted: the drift, and nothing else. A rise of 216% mirrors to a fall of 68%, because
+reversing a multiplication by 3.16 is a division by it.
+
+Not preserved, and this is the limit of the control: real markets do not fall the way they
+rise. Falls are faster, more volatile and more correlated across instruments; a mirrored
+bull market is a melt-up no instrument ever had. The mirror answers "would this rule work
+if the drift went the other way?" — it does not answer "how would this rule have done in
+2008".
+
+Nor is the mirror a second sample. It is the same data reflected and contains no
+information the original did not, so a rule that survives it has survived one control, not
+a second market and not a second period. The decomposition of a result into a
+direction-independent and a direction-dependent half is likewise an estimate rather than an
+identity: the rule fires on different bars in the mirror, so the two runs are not the same
+trades with the sign flipped.
+
+The mirrored instrument's symbol gains a `(mirror)` suffix, and the series records
+`meta["mirror_of"]`, so a mirrored run cannot be mistaken for a real one in a report, a
+chart title or a saved backtest.

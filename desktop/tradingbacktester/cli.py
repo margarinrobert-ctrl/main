@@ -44,7 +44,7 @@ def _instruments(args: argparse.Namespace):
     return InstrumentRegistry(_workspace(args).settings / "instruments.json")
 
 
-def _resolve_bars(args: argparse.Namespace):
+def _load_bars(args: argparse.Namespace):
     """Find the dataset named on the command line, wherever it lives.
 
     A name matches, in order: a dataset already in the workspace, one of the
@@ -84,6 +84,22 @@ def _resolve_bars(args: argparse.Namespace):
     raise BacktesterError(
         f"No dataset called '{wanted}'. Available: "
         f"{', '.join(known) if known else '(none)'} — or give a path to a CSV.")
+
+
+def _resolve_bars(args: argparse.Namespace):
+    """The named dataset, reflected first when ``--mirror`` was given.
+
+    Every command that reads data accepts ``--mirror``, because the question
+    "would this survive on a market that fell?" is worth asking of a search, an
+    indicator ranking and an anomaly scan, not only of one backtest.
+    """
+    bars, name = _load_bars(args)
+    if getattr(args, "mirror", False):
+        from .research.mirror import mirror_bars
+
+        bars = mirror_bars(bars)
+        name = f"{name} (mirrored)"
+    return bars, name
 
 
 # ---------------------------------------------------------------------------
@@ -295,8 +311,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     config = _config_for(spec, args.capital)
     result = Backtester(bars, spec, config).run()
 
-    print(f"{spec.name} on {name} ({len(bars):,} bars, {bars.timeframe.label})")
-    print(result.summary_line())
+    stream = sys.stderr if args.json else sys.stdout
+    print(f"{spec.name} on {name} ({len(bars):,} bars, {bars.timeframe.label})",
+          file=stream)
+    print(result.summary_line(), file=stream)
     metrics = compute_metrics(result)
     if args.json:
         print(json.dumps(metrics, indent=2, default=str))
@@ -452,6 +470,26 @@ def cmd_montecarlo(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mirror(args: argparse.Namespace) -> int:
+    from .research.mirror import format_mirror, mirror_test
+
+    bars, name = _resolve_bars(args)
+    spec = _resolve_spec(args)
+    config = _config_for(spec, args.capital)
+    stream = sys.stderr if args.json else sys.stdout
+    print(f"{spec.name} on {name} ({len(bars):,} bars, {bars.timeframe.label})",
+          file=stream)
+
+    report = mirror_test(bars, spec, config, progress=_stderr_progress())
+    _clear_progress()
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print()
+        print(format_mirror(report, currency=bars.instrument.currency))
+    return 0
+
+
 def cmd_strategies(args: argparse.Namespace) -> int:
     from .strategy.builtin import BUILTIN_STRATEGIES
     from .strategy.storage import StrategyStore
@@ -604,8 +642,37 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--symbol", default="")
     p.set_defaults(func=cmd_montecarlo)
 
+    p = sub.add_parser(
+        "mirror",
+        help="Run a strategy on this market and on its reflection",
+        description="Negate every log return to build a market with the same "
+                    "timestamps, the same volatility and the opposite drift, "
+                    "then run the same strategy on both. A rule that only "
+                    "makes money on the real series was betting on direction.")
+    p.add_argument("strategy")
+    p.add_argument("--data", required=True)
+    p.add_argument("--capital", type=float, default=100_000.0)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_mirror)
+
     p = sub.add_parser("strategies", help="List strategies")
     p.set_defaults(func=cmd_strategies)
+
+    # Every command that reads a dataset can read its reflection instead. Added
+    # here rather than in each parser so a new data command cannot forget it;
+    # `mirror` is excluded because reflecting is the whole of what it does.
+    for name, subparser in sub.choices.items():
+        if name == "mirror":
+            continue
+        if any("--data" in (action.option_strings or ())
+               for action in subparser._actions):
+            subparser.add_argument(
+                "--mirror", action="store_true",
+                help="Negate every log return first, giving a market with the "
+                     "same volatility and session structure and the opposite "
+                     "drift. Anything that only works on the real series was "
+                     "betting on direction.")
     return parser
 
 

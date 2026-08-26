@@ -410,6 +410,46 @@ def test_cli_monte_carlo_resamples_a_real_run(tmp_path, capsys):
                for n in payload["notes"])
 
 
+def test_cli_mirror_runs_both_sides(tmp_path, capsys):
+    from tradingbacktester.cli import main
+
+    code = main(["--workspace", str(tmp_path), "mirror", "MACD Trend",
+                 "--data", "US30 30m", "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["real"]["trades"] > 0
+    assert payload["mirror"]["trades"] > 0
+    assert payload["real"]["drift_pct"] > 0 > payload["mirror"]["drift_pct"]
+    assert payload["verdict"]
+    assert any("control, not a second sample" in n for n in payload["notes"])
+
+
+def test_cli_mirror_flag_reflects_the_data_for_any_command(tmp_path, capsys):
+    """--mirror is on every command that reads data, not only `mirror`."""
+    from tradingbacktester.cli import main
+
+    code = main(["--workspace", str(tmp_path), "run", "MACD Trend",
+                 "--data", "US30 30m", "--json"])
+    assert code == 0
+    real = json.loads(capsys.readouterr().out)
+
+    code = main(["--workspace", str(tmp_path), "run", "MACD Trend",
+                 "--data", "US30 30m", "--mirror", "--json"])
+    assert code == 0
+    mirrored = json.loads(capsys.readouterr().out)
+    assert mirrored["net_profit"] != real["net_profit"]
+    assert mirrored["total_trades"] > 0
+
+
+def test_cli_mirror_flag_is_refused_on_the_mirror_command(tmp_path, capsys):
+    """`mirror --mirror` would silently test the reflection of a reflection."""
+    from tradingbacktester.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["mirror", "MACD Trend", "--data", "x",
+                                   "--mirror"])
+
+
 def test_cli_walk_forward_explains_a_malformed_range(tmp_path, capsys):
     from tradingbacktester.cli import main
 

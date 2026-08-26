@@ -645,6 +645,46 @@ def test_monte_carlo_dialog_says_so_when_there_are_no_trades(qapp, bars,
     dialog.close()
 
 
+def test_mirror_dialog_runs_both_series(qapp, bars):
+    import time
+
+    from tradingbacktester.ui.dialogs.mirror_dialog import MirrorDialog
+
+    spec = BUILTIN_STRATEGIES["MACD Trend"]()
+    config = BacktestConfig(starting_capital=100_000.0)
+    config.exits, config.execution = spec.exits, spec.execution
+    config.session, config.costs, config.risk = spec.session, spec.costs, spec.risk
+
+    dialog = MirrorDialog(bars, spec, config)   # runs on construction
+    dialog.show()
+    deadline = time.monotonic() + 180
+    while dialog.busy and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.02)
+    for _ in range(10):
+        qapp.processEvents()
+
+    assert dialog.table.item(0, 0).text() == "Drift over the sample"
+    real_drift = dialog.table.item(0, 1).text()
+    mirror_drift = dialog.table.item(0, 2).text()
+    assert real_drift.startswith("+") and mirror_drift.startswith("-")
+    assert dialog.table.item(2, 0).text() == "Net profit"
+    assert dialog.table.item(2, 2).text(), "the mirrored column must be filled in"
+    assert "Direction-independent half" in dialog.split.text()
+    assert "control, not a second sample" in dialog.notes.text()
+    assert dialog.headline.text().endswith(".")
+    dialog.close()
+
+
+def test_mirror_test_needs_data_and_a_strategy(window, qapp, monkeypatch):
+    said = []
+    monkeypatch.setattr("tradingbacktester.ui.main_window.show_info",
+                        lambda parent, title, message: said.append(message))
+    window._view_bars = None
+    window.on_mirror_test()
+    assert said and "Load a dataset" in said[0]
+
+
 def test_walk_forward_tab_refuses_an_empty_grid(qapp, bars, monkeypatch):
     """Nothing to choose is a message, not a crash and not a fake result."""
     from tradingbacktester.ui.dialogs.optimizer_dialog import OptimizerDialog

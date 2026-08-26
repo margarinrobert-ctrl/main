@@ -154,6 +154,16 @@ requirement, not a decoration.
 Opened from **Backtest → Monte Carlo…** (`Ctrl+M`), which is disabled until a
 run with at least one trade exists.
 
+### `ui/dialogs/mirror_dialog.py` — `MirrorDialog(bars, spec, config, parent=None)`
+Runs on construction: the same strategy on the series and on its reflection.
+A seven-row comparison (drift, trades, net profit, expectancy, win rate, profit
+factor, max drawdown) with the better of each pair coloured, the split into a
+direction-independent and a direction-dependent half, the verdict as the
+headline, and the caveats below it — including that the mirror is a control and
+not a second sample, and that a mirrored bull market is not a bear market.
+Opened from **Backtest → Mirror-Market Test…**, enabled whenever a dataset and
+a strategy are loaded.
+
 ### `ui/dialogs/about_dialog.py`
 - `AboutDialog(workspace, parent)` — name, version, Python/Qt versions, the
   workspace path, licence summary, third-party credits, and an explicit

@@ -270,3 +270,12 @@ def monte_carlo_task(result: Any, method: str = "block", draws: int = 5000,
     return resample_result(result, method=method, draws=draws,
                            compounded=compounded, ruin_level=ruin_level,
                            progress=progress, cancel=cancel)
+
+
+def mirror_task(bars: Any, spec: Any, config: Any,
+                progress: Callable[[int, int, str], None] | None = None,
+                cancel: Callable[[], bool] | None = None) -> Any:
+    """Run a strategy on a series and on its reflection."""
+    from ..research.mirror import mirror_test
+
+    return mirror_test(bars, spec, config, progress=progress, cancel=cancel)

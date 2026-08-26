@@ -165,6 +165,9 @@ class MainWindow(QMainWindow):
         act("montecarlo", "Monte Carlo…", "shield", "Ctrl+M",
             "Resample this run's trades to see the range of paths they could "
             "have produced", self.on_monte_carlo)
+        act("mirror", "Mirror-Market Test…", "compare", "",
+            "Run this strategy again on a market with the same volatility and "
+            "the opposite drift", self.on_mirror_test)
 
         act("export_trades", "Export Trades to CSV…", "export", "",
             "Save the trade list", self.on_export_trades)
@@ -311,6 +314,7 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addAction(self.act_optimize)
         m.addAction(self.act_montecarlo)
+        m.addAction(self.act_mirror)
 
         self.view_menu = bar.addMenu("&View")
         self.view_menu.addAction(self.act_simple)
@@ -1287,6 +1291,20 @@ class MainWindow(QMainWindow):
 
         MonteCarloDialog(self._result, self).exec()
 
+    def on_mirror_test(self) -> None:
+        if self._view_bars is None or self._spec is None:
+            show_info(self, "Mirror-market test",
+                      "Load a dataset and select a strategy first.")
+            return
+        from .dialogs.mirror_dialog import MirrorDialog
+
+        try:
+            config = self.risk_panel.build_config(self._view_bars.instrument)
+        except BacktesterError as exc:
+            show_error(self, exc)
+            return
+        MirrorDialog(self._view_bars, self._spec, config, self).exec()
+
     def on_load_shipped(self) -> None:
         """Import whatever shipped data is not in the library yet."""
         from ..data.bundled import available
@@ -1575,6 +1593,7 @@ class MainWindow(QMainWindow):
         self.act_optimize.setEnabled(has_data and has_strategy)
         self.act_montecarlo.setEnabled(
             self._result is not None and bool(self._result.trades))
+        self.act_mirror.setEnabled(has_data and has_strategy)
         self.act_quality.setEnabled(self._quality is not None)
         title = APP_DISPLAY_NAME
         if self._spec is not None:

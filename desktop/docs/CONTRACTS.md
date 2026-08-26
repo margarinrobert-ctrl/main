@@ -349,7 +349,22 @@ what a real trade would have paid rather than against an abstract return.
 - `anomalies.DETECTORS` — 15 causal detectors. `anomalies.scan(bars, style,
   ...) -> AnomalyScan` counts each one and then trades it against a matched
   control on both sides, separating data-quality problems from market ones.
+- `mirror.mirror_bars(bars) -> BarSeries` — the same series with every log
+  return negated. Exact identities, all asserted in the tests: the returns are
+  negated bar for bar, the volatility and the bar ranges are unchanged, each
+  bar is reflected about its own open (so the distance up to the high becomes
+  the distance down to the low), the opening gaps are reflected, the timestamps
+  and volume are untouched, prices stay positive, and mirroring twice returns
+  the original. The instrument's symbol gains a `(mirror)` suffix so a
+  mirrored run cannot be mistaken for a real one.
+- `mirror.mirror_test(bars, spec, config) -> MirrorReport` — the same strategy
+  on both series, with the real result split into a direction-independent half
+  (the mean of the two runs) and a direction-dependent half (half their
+  difference). An estimate, not an identity: the rule fires on different bars
+  in the mirror. `format_mirror(report)` renders it as text.
 - `report.format_study` / `report.format_anomalies` — plain text with the
   caveats beside the numbers.
 
-CLI: `indicators` and `anomalies` subcommands, both with `--json`.
+CLI: `indicators`, `anomalies` and `mirror` subcommands, all with `--json`.
+Every command that reads a dataset also takes `--mirror`, added once over
+`sub.choices` so a new data command cannot forget it.
