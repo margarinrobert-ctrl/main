@@ -554,6 +554,23 @@ seventh independent route to the same mean-reversion conclusion. Note also that 
 does NOT catch conceptual redundancy: five of six "independent" picks were all volatility level.
 See `docs/ib/STUDY_TURTLE_FEATURES.md`.
 
+**DIVERGENCE IS WORTH ABOUT ONE POINT, VOLUME SPIKES ARE NEGATIVE, AND THE STACKED GATES ARE NOISE.**
+RSI and Stochastic bullish divergence as a confirmation entry on the intraday long 1:1 label
+(base 46.45% OOS, break-even 58.36%): RSI alone **+0.67**, Stoch alone **+1.04**, both together
+**+1.38** on 230 trades at p 0.362. Against the **+11.9 points** needed. RSI vs Stoch is a TIE that
+flips across blocks (RSI better IS, Stoch better OOS) -- neither "works better". **VOLUME SPIKES
+HURT LONGS, monotonically**: -2.45 points at 1.5x the time-of-day baseline, -17.88 at 2.0x. A spike
+marks maximum participation, which is where a short-horizon move is most likely over -- consistent
+with trend continuation being anti-predictive here. Stacking three filters at 1%/1%/13% firing rates
+leaves **n=3**, and "100% win rate" on n=3 has a Clopper-Pearson lower bound of **29.2%**.
+
+**DIVERGENCE MUST BE CONFIRMED-ONLY, AND THE AUDIT CAUGHT MY OWN SECOND LEAK.** A pivot low at bar i
+needs bars i-k..i+k, so it is knowable at i+k, not i -- nearly every published divergence indicator
+marks it at the pivot, which back-tests beautifully and cannot be traded. Worse, my `bars since
+divergence` feature filled forward to the NEXT pivot's confirmation bar, so bar t knew when a future
+pivot would confirm: the truncation audit read **+37 full against +999 truncated**. Fixed with a
+plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -591,6 +608,7 @@ See `docs/ib/STUDY_TURTLE_FEATURES.md`.
 | `research/btc_legs.py`, `run_btc_legs.py` | all nine shipped legs on BTC, with the volatility-artifact diagnostic |
 | `research/eurusd_legs.py`, `run_eurusd_legs.py` | the shipped 30m legs on EURUSD, matched control, BH |
 | `research/vbt/sweep_engine.py`, `run_sweep.py`, `analyse_sweep.py` | the 110,250-config sweep, IS selection, one OOS read |
+| `research/turtlefeat/divergence.py` | confirmed-only RSI/Stoch divergence + volume spikes, leakage-audited |
 | `research/turtlefeat/` | 124 causal Turtle features + Kalman state, redundancy and 1:1 separation tests |
 | `research/vbt/heat.py` | MAE/MFE in POINTS and in R, split by exit reason and by market |
 | `research/vbt/intraday.py`, `run_intraday.py` | session-windowed intraday engine; nothing can hold past the flatten |
