@@ -3,22 +3,61 @@
 *A request to maximise Sharpe and profit factor for intraday scalping, answered on four uploaded
 data files. Research block first 65% of sessions per instrument; locked block read once.*
 
+## Summary
+
+The supplied Turtle earns from its **multi-day hold**. Confined to four hours it does not: every
+preset drops from a research Sharpe of 0.47–0.78 to 0.05–0.30 (§2).
+
+Rebuilt for the window and searched over **14,261,040 configurations** on three instruments and
+both sides, the answer is a **negative result with one weak survivor**:
+
+* **Five of six candidates lost money on the holdout**, including the one with the best research
+  numbers by a wide margin — US30 60m at research Sharpe 1.05 / PF 1.47 / control excess $69 a
+  trade at p 0.002, and holdout **−0.36** with a *gross* result of **−$14.43 a trade** (§4).
+* The survivor is **US30 15m**: holdout Sharpe **0.22**, PF **1.04**, +$18.70 a trade over 898
+  trades, drawdown $40,672 against a $16,789 gain, **6 of 10 gates**, Sharpe 95% CI **[−0.83, 1.31]**
+  (§4.3–4.4). A paper-trading candidate, nothing more.
+* **Gold and BTC produce nothing at all** — not one of 645,120 cells clears the research gates on
+  either, and over a uniform grid sample their median configuration is *worse* than a matched
+  random entry (§3.4).
+
+Two methodological results are worth more than the strategy. Running the identical pipeline on the
+**short mirror** showed that a matched-control p-value computed on a selected winner is not a
+p-value — the short side scored the *larger* excess at the same significance (§4.2). And the mirror
+test **predicted the holdout ranking exactly**, where PBO and walk-forward got it backwards (§4.1).
+
 ```bash
-# ingest + identification + audit
+# ingest + instrument/timezone identification + audit
 python3 research/turtle_data.py
 python3 research/turtle_bars.py
 
-# verification (must pass before any number below is read)
+# verification -- must pass before any number below is read
 python3 research/turtle_test.py
 
 # phase 0: the supplied strategy, research block only
 python3 research/turtle_baseline.py
 
-# phases 1-3: search, coherence, finalists
-/tmp/turtle_sweep/run_all.sh
+# phase 1: the sweep -- 22 runs x 645,120 cells, four at a time
+for tf in 5 15 30 60; do for i in US30 XAU; do
+  python3 research/turtle_run_sweep.py $i $tf 1; python3 research/turtle_run_sweep.py $i $tf -1
+done; done
+for tf in 15 30 60; do
+  python3 research/turtle_run_sweep.py BTC $tf 1; python3 research/turtle_run_sweep.py BTC $tf -1
+done
+
+# phases 1-2: search size, direction control, cross-instrument coherence
 python3 research/turtle_report.py 1
 python3 research/turtle_report.py 2
-python3 research/turtle_report.py 3 <tf>
+
+# phase 3: pick + refine, research only.  --short runs the procedure control.
+python3 research/turtle_ship.py US30 15
+python3 research/turtle_ship.py US30 60 --short
+
+# phase 4: the locked read, once, for every candidate at the same time
+python3 research/turtle_reveal.py
+
+# ship
+python3 research/turtle_emit.py US30:15 US30:60 US30:30 US30:5
 ```
 
 ---
@@ -439,4 +478,177 @@ Research-block result of the three variants, US30 60m:
 | **marginal-supported** | **391** | **26,654** | **68.17** | **1.05** | **1.47** | **4.74** | **+$68.99 (p 0.0025)** | **5.94×** | **2.67** | **100%** |
 | grid argmax *(not shipped)* | 354 | 29,233 | 82.58 | 1.18 | 1.60 | 7.84 | +$82.32 (p 0.0025) | 7.17× | 3.05 | 100% |
 
-*Sections 4 onwards — the locked read, the gates and the shipped Pine — follow.*
+---
+
+## 4. The locked read
+
+**14,261,040 configurations** were evaluated to produce these candidates: 22 sweeps × 645,120
+cells, plus five short-mirror sweeps, refinement grids, spike tests and PBO universes. The locked
+block had never been touched. Every number below is the first time it was consulted, and no
+selection followed it.
+
+| candidate | research Sharpe | research PF | **locked Sharpe** | locked PF | locked $/trade | locked net | gates |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **US30 15m** | 0.466 | 1.107 | **+0.222** | 1.039 | **+$18.70** | **+$16,789** | **6 / 10** |
+| US30 5m *(refined)* | 0.565 | 1.152 | −0.053 | 0.988 | −$4.97 | −$3,336 | 3 / 10 |
+| US30 60m *(unrefined)* | 0.808 | 1.296 | −0.265 | 0.931 | −$16.22 | −$5,806 | 3 / 10 |
+| US30 5m *(unrefined)* | 0.281 | 1.058 | −0.330 | 0.948 | −$22.22 | −$27,531 | 3 / 10 |
+| US30 60m *(refined)* | **1.054** | **1.470** | **−0.359** | 0.884 | −$29.06 | −$7,002 | 3 / 10 |
+| US30 30m | 0.783 | 1.250 | **−0.633** | 0.870 | −$42.86 | −$31,543 | 2 / 10 |
+| *US30 60m SHORT — procedure control* | 0.587 | 1.353 | −0.574 | 0.798 | −$97.24 | −$15,656 | 3 / 10 |
+| *XAU 60m — rejected on research* | 0.019 | 1.007 | +0.062 | 1.021 | +$8.93 | +$6,457 | 4 / 10 |
+| *BTC 60m — rejected on research* | 0.024 | 1.011 | −0.100 | 0.967 | −$14.28 | −$3,399 | 2 / 10 |
+
+**One configuration out of six survives with a positive holdout, and it is not the one with the
+best research numbers.** The 60-minute configuration — research Sharpe 1.05, PF 1.47, PSR-above-zero
+0.9991, matched-control excess +$69.10 a trade at p = 0.002, 100% of research years profitable,
+neighbourhood a plateau at 0.91 — earns **−$29.06 a trade** on the holdout, and its *gross* result
+before any cost is **−$14.43 a trade**. Nothing about its research profile was a warning.
+
+The 30-minute configuration is worse: research 0.783, locked −0.633.
+
+### 4.1 The research-side control that predicted this, and the two that did not
+
+Ranking the timeframes by locked Sharpe gives **15m > 5m > 60m > 30m**. Three research-block
+diagnostics were available before the holdout was read. They did not agree with each other.
+
+| US30 | short mirror clears the pipeline's gates? | uniform-grid excess asymmetry | PBO | walk-forward efficiency | **locked Sharpe** |
+| --- | --- | --- | --- | --- | --- |
+| 15m | **no — 0 of 8,000** | clean: +$5.83 vs −$0.89 | 0.266 ✓ | 0.52 ✓ | **+0.222** |
+| 5m | **no — 0 of 8,000** | clean: +$4.18 vs −$3.62 | 0.000 † | −0.31 ✗ | −0.053 |
+| 60m | **yes — 8,000 of 8,000** | **none: +$6.43 vs +$5.96** | 0.103 ✓ | 0.44 ✓ | −0.265 |
+| 30m | **yes — 7,958 of 8,000** | weak: +$11.06 vs +$2.03 | 0.397 ✗ | −0.01 ✗ | −0.633 |
+
+**The mirror test got the order exactly right.** Where the identical pipeline — same gates, same
+spike test, same refinement rule — produces nothing at all from the short side, the long side
+survived the holdout. Where it produces a candidate just as readily from the short side, the long
+side did not. The uniform-grid asymmetry test agrees with it, which is unsurprising since they
+measure the same thing two ways.
+
+**PBO and walk-forward got it backwards.** They selected 60m and 15m; 60m was the second-worst
+result on the holdout. Both are computed *within* the research block, so both are answering
+"does selection work on this sample" — and on a sample where the whole family is a directionless
+breakout effect, selection works fine and predicts nothing about the next sample.
+
+† 5m's PBO of zero is not a pass; only 1% of its universe is profitable, so the in-sample winner
+beats the out-of-sample median of a uniformly bad field every time.
+
+### 4.2 The control p-value did not survive selection, and the short mirror shows why
+
+On the research block the 60-minute long winner beat its matched control by $69.10 a trade at
+p = 0.002. The **short** winner, chosen by the identical procedure on the side the sample was
+against, beat *its* control by $115.71 a trade at p = 0.005. Both were emphatic; both were wrong.
+On the holdout the long went to −$35.21 of excess (p = 0.86) and the short to −$40.49 (p = 0.76).
+
+The control is not the problem — §3.4's grid-wide result is entirely built on it and is the
+strongest evidence here. What fails is quoting a control p-value for a configuration the search
+selected, because the objective and the excess are correlated and the maximum of 645,120 cells is
+extreme in both. The way to keep the control honest is to compute it **before** selection, over the
+space, which is what §3.4 does and what §3.3's mirror table does.
+
+### 4.3 The one that survived
+
+US30, 15-minute bars, entries 07:00–11:00 New York, flat at 11:00.
+
+```
+entry channel   System 1: 20 bars (5 hours)    System 2: 60 bars (15 hours)
+trailing exit   channel exit OFF -- the ATR stop alone
+stop            2.5 x ATR(20), re-anchored to every fill, LIVE ON THE ENTRY BAR
+pyramid         add 0.5N in favour, up to 4 units
+take profit     2R
+System 1 filter skip the next System 1 entry after a winner
+```
+
+| | research (2016-10 → 2022-06) | **locked (2022-06 → 2025-07)** |
+| --- | --- | --- |
+| trades | 1,347 | **898** |
+| net | $51,662 | **$16,789** |
+| per trade | $38.35 | **$18.70** |
+| Sharpe (annualised, per session, zero-filled) | 0.466 | **0.222** |
+| profit factor | 1.107 | **1.039** |
+| win rate | 39.0% | 35.4% |
+| max drawdown | $24,642 | **$40,672** |
+| MAR | 2.10 | **0.41** |
+| matched-control excess | +$60.00 (p 0.002) | **+$28.17 (p 0.110)** |
+| break-even cost multiple | 2.10× | **1.55×** |
+| Newey-West *t* | — | **0.42** |
+| Sharpe 95% CI (stationary bootstrap) | — | **[−0.83, 1.31]** |
+
+Exit split on the holdout — the protocol asks for this first, because "profitability" that is really
+one exit reason is not an edge:
+
+| exit | trades | net | per trade |
+| --- | --- | --- | --- |
+| ATR stop | 470 | −$376,719 | −$801.53 |
+| take profit (2R) | 148 | +$314,131 | +$2,122.50 |
+| session flatten (11:00) | 280 | +$79,378 | +$283.49 |
+
+The 2R take-profit is doing the work, and the 11:00 flatten is a small positive rather than a tax —
+which is the one structural thing that transferred cleanly from research to holdout.
+
+Cost sensitivity on the holdout: **+$35.82** a trade at 0.5×, **+$18.70** at 1×, **+$1.57** at
+1.5×, **−$15.56** at 2×. It clears the protocol's 1.5× gate with almost nothing to spare.
+
+By year on the holdout: 2022 +$25,860 · 2023 −$1,866 · 2024 −$24,457 · 2025 +$17,252. Two years of
+four profitable, and 2024 gives back most of 2022.
+
+### 4.4 The verdict
+
+**6 of 10 gates.** It fails the ones that matter most for a claim of edge:
+
+| | |
+| --- | --- |
+| PASS | ≥ 100 OOS trades (898) · positive net edge (+$18.70) · PBO 0.270 · survives 1.5× costs (+$1.57) · surface is a plateau (0.85) · no single year > 60% of gains (60%) |
+| **FAIL** | **HAC *t* 0.42** (needs > 2) · **Deflated Sharpe 0.0000** (needs > 0.95) · **profitable in 50% of years** (needs ≥ 60%) · **walk-forward efficiency −0.38** (needs ≥ 0.4) |
+
+The Sharpe's 95% confidence interval is **[−0.83, 1.31]**. The minimum track record length needed to
+establish the result at 95% is **13,681 sessions — 54 years**. The Monte Carlo trade reshuffle puts
+the median drawdown at $36,225 and the 95th percentile at $55,679 against a $16,789 gain.
+
+This is not a tradeable strategy. It is the only configuration out of 14.2 million that did not
+lose money out of sample, and it did so at a Sharpe of 0.22, a profit factor of 1.04 and a
+drawdown two and a half times its total gain. Under `docs/RESEARCH_PROTOCOL.md` §4 the correct
+reading is:
+
+> *These rules, on this instrument, in this session, at this timeframe, under this cost model, over
+> this sample, do not demonstrate an edge.*
+
+---
+
+## 5. What would move this, in order of expected value
+
+**1. Change the cost regime — but the arithmetic says it is not enough here.** At half the modelled
+round turn the holdout Sharpe goes 0.22 → 0.43 and the profit factor 1.04 → 1.08. Better, and still
+not tradeable. The gross edge is $52.95 a trade against $34.26 of cost; even free execution leaves
+a Sharpe under 0.5.
+
+**2. Widen the window.** This is the constraint that costs the most. §2 measured it directly: the
+same presets that score 0.47–0.78 with a multi-day hold score 0.05–0.30 confined to 07:00–11:00.
+The Turtle's mechanism is the multi-day hold, and four hours is not enough room for it. A version
+of this study with the session unconstrained would be answering a different question, but it is the
+question with the better prior.
+
+**3. Trade the instrument the edge is on.** §3.4 is unambiguous: on US30 a random configuration of
+this family beats a matched random entry 60–87% of the time; on gold and BTC the median
+configuration is *worse* than a random entry. Whatever the Donchian break is measuring, it is a
+property of the index and not of the metal or the coin. Two more index files — NQ, ES, DAX — would
+test that directly, and cross-instrument agreement on three indices would be worth more than
+anything another parameter axis can buy.
+
+**4. Stop searching this space.** 14.2 million cells produced one survivor at Sharpe 0.22. The
+family's uniform-grid median Sharpe is −0.05 at 30 and 60 minutes and −1.11 at 5. There is no
+corner of this grid that has not been looked at, and the one thing the search reliably produced was
+research-block winners that lose money out of sample.
+
+**Do not re-run the geometry sweep on this data.** Do not re-run it on gold or BTC at all.
+
+---
+
+## 6. What ships
+
+`TurtleScalp_0700_1100.pine`, generated by `research/turtle_emit.py`, with the 15-minute
+configuration as the default preset and the original 20/55 Turtle alongside it for comparison. The
+presets that failed the holdout are included and **labelled with the number they failed at**, so the
+next person to look at this data does not rediscover them.
+
+It is a paper-trading candidate under §3 of the protocol, and it has not earned more than that.

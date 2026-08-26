@@ -73,6 +73,38 @@ should look better there; the holdout is where an edge decays, not where it appe
 now: a feature family (ranked over both blocks by mistake) and the whole daily-trend pullback
 family. Treat it as a defect, not a result.
 
+**A matched-control p-value computed on a SELECTED winner is not a p-value.** The control is still
+the right instrument -- it is what makes an individual configuration interpretable -- but the
+objective and the excess are correlated, so the maximum of a large grid is extreme in both. Proof:
+run the identical pipeline on the SHORT MIRROR. On US30 60m the short winner beat its own control
+by $115.71/trade at p 0.005, against the long winner's $69.10 at p 0.002 -- the side the sample was
+*against* scored the larger excess. Both then lost money on the holdout. Compute the control
+BEFORE selection, over the space: `share of a uniform grid sample that beats its own control` is a
+number nothing was selected to produce. See `docs/ib/STUDY_TURTLE_SCALP.md`.
+
+**Score the SPACE, not its maximum.** Reading only the best cell of each run said the Turtle
+breakout carried information on US30, gold and BTC alike and only the cost line differed. Over a
+uniform 500-cell grid sample the share beating its own control is 60-87% on US30 and 7.6-33% on
+gold and BTC, where the median excess is NEGATIVE. Taking the max of 645,120 draws from a
+distribution centred below zero lands above zero, and reporting that is how a negative result gets
+written up as "the signal is there, the costs are too high".
+
+**The short-mirror gate test predicted the holdout; PBO and walk-forward did not.** Four US30
+timeframes, ranked by locked Sharpe: 15m +0.22, 5m -0.05, 60m -0.27, 30m -0.63. The mirror test --
+*does the identical pipeline produce a candidate at all from the short side?* -- got that order
+exactly right (0 of 8,000 cells clear on the short side at 15m and 5m; 8,000 of 8,000 at 60m and
+30m). PBO and walk-forward chose 60m and 15m, and 60m was the second-worst holdout result. Both are
+computed INSIDE the research block, so both answer "does selection work on this sample" -- and on a
+sample where the family is a directionless breakout effect, selection works fine and forecasts
+nothing.
+
+**The Turtle confined to 07:00-11:00 New York is exhausted. Do not re-run it.** 14,261,040
+configurations over US30, XAU and BTC at 5/15/30/60m, both sides. Five of six candidates lost money
+out of sample; the survivor is US30 15m at holdout Sharpe 0.22, PF 1.04, 6/10 gates, drawdown 2.4x
+its total gain. The Turtle's mechanism is the multi-day hold -- the same presets score 0.47-0.78
+unconstrained and 0.05-0.30 inside the window. What would move it: more index instruments (NQ, ES,
+DAX), not more parameters. See `docs/ib/STUDY_TURTLE_SCALP.md`.
+
 **The daily trend can dictate DIRECTION so the optimiser never picks it.** Worth keeping as a
 protocol even though the pullback family failed: `research/daily_trend.py` keys the daily state on
 a known-at timestamp so an intraday bar sees the last RTH close and nothing after. Note 81% of bars
@@ -153,6 +185,18 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/limit_entry.py` | limit-order entries, bar-level and true 1-minute, with pessimism knobs |
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
+| `research/turtle_data.py` | ingest + instrument/timezone identification for the uploaded US30/XAU/BTC files |
+| `research/turtle_bars.py` | their bars, NY-anchored resampling, the 65/35 session split |
+| `research/turtle_sim.py` | the Turtle engine, Pine execution semantics reproduced exactly |
+| `research/turtle_test.py` | its verification: literal Pine transcription, null, truncation, window, tensor |
+| `research/turtle_tensor.py` | cached per-bar exits + the clock- and volatility-matched controls |
+| `research/turtle_search.py`, `turtle_run_sweep.py` | the 645,120-cell-per-run sweep |
+| `research/turtle_select.py` | cross-instrument coherence on the union of proposals |
+| `research/turtle_refine.py` | session/gate refinement, and the marginal-supported adoption rule |
+| `research/turtle_validate.py` | DSR, PBO/CSCV, walk-forward, bootstrap, re-simulated neighbourhoods |
+| `research/turtle_final.py` | the protocol's ten gates, cost sensitivity, Monte Carlo |
+| `research/turtle_ship.py`, `turtle_reveal.py` | pick + refine, then the single locked read |
+| `research/turtle_pine.py`, `turtle_emit.py` | the Pine emitter and its round-trip verifier |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |

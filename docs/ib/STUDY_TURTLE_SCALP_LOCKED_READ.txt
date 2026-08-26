@@ -1,0 +1,690 @@
+============================================================================================================
+THE LOCKED READ
+============================================================================================================
+  27 sweeps x 645,120 cells = 14,192,640
+  plus refinement grids, spike tests and PBO universes -> 14,261,040 configurations
+  Every number below is the FIRST time the locked block has been consulted.
+============================================================================================================
+FINAL -- US30 15m long -- marginal-supported 15m
+============================================================================================================
+  universe: 400 uniformly sampled grid cells;  Sharpe min -2.94 / median -0.28 / max 0.45, 18% above zero
+  they are one strategy with knobs: mean pairwise daily-P&L correlation 0.69, effective independent configurations 2.0
+  PBO 0.270 over 252 splits   walk-forward: 20 folds, efficiency -0.38, stitched OOS Sharpe -0.15 on 1,460 sessions (net $-12,548), parameter stability 15%
+  neighbourhood: 16 one-step neighbours, median 0.397 against a base of 0.466 (stability 0.85) -> plateau
+
+================================================================================================
+LOCKED READ -- US30 15m long -- marginal-supported
+  configurations evaluated across the whole study: 14,261,040
+  trial Sharpe dispersion (annualised): 0.556
+  expected best-of-14,261,040 Sharpe from noise alone: 2.984
+================================================================================================
+  research  n 1,347  net $     51,662  /trade $  38.35  Sharpe   0.47  PF  1.11  win 39.0%  maxDD $   24,642  MAR   2.10
+            control /trade $  -21.64  excess $   60.00  p 0.0020   ctrl Sharpe -0.30  excess  0.77  p 0.0020
+            DSR 0.0000  PSR>0 0.8978  Sharpe 95% CI [-0.18, 1.13]  MTRL 2952 sessions
+  locked    n   898  net $     16,789  /trade $  18.70  Sharpe   0.22  PF  1.04  win 35.4%  maxDD $   40,672  MAR   0.41
+            control /trade $   -9.47  excess $   28.17  p 0.1098   ctrl Sharpe -0.13  excess  0.36  p 0.1377
+            DSR 0.0000  PSR>0 0.6672  Sharpe 95% CI [-0.83, 1.31]  MTRL 13681 sessions
+
+  --- locked block, exit-reason split ---
+    atr_stop           470 trades  net $  -376,719  /trade $ -801.53  win  0.0%
+    take_profit        148 trades  net $   314,131  /trade $ 2122.50  win 100.0%
+    session_flatten    280 trades  net $    79,378  /trade $  283.49  win 60.7%
+
+  --- locked block, cost sensitivity ---
+ cost_x   n        net  per_trade  sharpe    pf
+  0.500 898  32170.271     35.824   0.425 1.076
+  1.000 898  16789.211     18.696   0.222 1.039
+  1.500 898   1408.151      1.568   0.019 1.003
+  2.000 898 -13972.909    -15.560  -0.185 0.969
+  3.000 898 -44735.029    -49.816  -0.594 0.905
+    gross $52.95/trade against $34.26 of modelled cost -> break-even at 1.55x the modelled round turn
+
+  --- locked block, by year ---
+      trades        net  per_trade   win  share_of_gains
+year                                                    
+2022     135  25859.964    191.555 0.422           0.600
+2023     286  -1866.134     -6.525 0.353           0.000
+2024     330 -24456.654    -74.111 0.321           0.000
+2025     147  17252.036    117.361 0.367           0.400
+
+  --- locked block, Monte Carlo trade reshuffle ---
+    observed max drawdown $41,374;  median of reshuffles $36,225;  95th percentile $55,679;  P(net <= 0) 0.0%
+
+  --- the ten gates, on the locked block ---
+    [PASS] 1  >= 100 out-of-sample trades         898
+    [PASS] 2  positive net edge after costs       $18.70/trade
+    [FAIL] 3  HAC t-stat > 2                      0.42
+    [FAIL] 4  Deflated Sharpe > 0.95              0.0000
+    [PASS] 5  PBO < 0.30                          0.270
+    [PASS] 6  survives 1.5x modelled costs        $1.57/trade
+    [PASS] 7  parameter surface is not a spike    plateau (0.85)
+    [FAIL] 8  profitable in >= 60% of years       50%
+    [PASS] 9  no single year > 60% of gains       60%
+    [FAIL] 10 walk-forward efficiency >= 0.4      -0.38
+
+    6 / 10 gates passed
+============================================================================================================
+FINAL -- US30 15m long -- Phase-1 geometry, unrefined 15m
+============================================================================================================
+  universe: 400 uniformly sampled grid cells;  Sharpe min -2.94 / median -0.28 / max 0.45, 18% above zero
+  they are one strategy with knobs: mean pairwise daily-P&L correlation 0.69, effective independent configurations 2.0
+  PBO 0.270 over 252 splits   walk-forward: 20 folds, efficiency -0.38, stitched OOS Sharpe -0.15 on 1,460 sessions (net $-12,548), parameter stability 15%
+  neighbourhood: 16 one-step neighbours, median 0.397 against a base of 0.466 (stability 0.85) -> plateau
+
+================================================================================================
+LOCKED READ -- US30 15m long -- Phase-1 geometry, unrefined
+  configurations evaluated across the whole study: 14,261,040
+  trial Sharpe dispersion (annualised): 0.556
+  expected best-of-14,261,040 Sharpe from noise alone: 2.984
+================================================================================================
+  research  n 1,347  net $     51,662  /trade $  38.35  Sharpe   0.47  PF  1.11  win 39.0%  maxDD $   24,642  MAR   2.10
+            control /trade $  -21.64  excess $   60.00  p 0.0020   ctrl Sharpe -0.30  excess  0.77  p 0.0020
+            DSR 0.0000  PSR>0 0.8978  Sharpe 95% CI [-0.18, 1.13]  MTRL 2952 sessions
+  locked    n   898  net $     16,789  /trade $  18.70  Sharpe   0.22  PF  1.04  win 35.4%  maxDD $   40,672  MAR   0.41
+            control /trade $   -9.47  excess $   28.17  p 0.1098   ctrl Sharpe -0.13  excess  0.36  p 0.1377
+            DSR 0.0000  PSR>0 0.6672  Sharpe 95% CI [-0.83, 1.31]  MTRL 13681 sessions
+
+  --- locked block, exit-reason split ---
+    atr_stop           470 trades  net $  -376,719  /trade $ -801.53  win  0.0%
+    take_profit        148 trades  net $   314,131  /trade $ 2122.50  win 100.0%
+    session_flatten    280 trades  net $    79,378  /trade $  283.49  win 60.7%
+
+  --- locked block, cost sensitivity ---
+ cost_x   n        net  per_trade  sharpe    pf
+  0.500 898  32170.271     35.824   0.425 1.076
+  1.000 898  16789.211     18.696   0.222 1.039
+  1.500 898   1408.151      1.568   0.019 1.003
+  2.000 898 -13972.909    -15.560  -0.185 0.969
+  3.000 898 -44735.029    -49.816  -0.594 0.905
+    gross $52.95/trade against $34.26 of modelled cost -> break-even at 1.55x the modelled round turn
+
+  --- locked block, by year ---
+      trades        net  per_trade   win  share_of_gains
+year                                                    
+2022     135  25859.964    191.555 0.422           0.600
+2023     286  -1866.134     -6.525 0.353           0.000
+2024     330 -24456.654    -74.111 0.321           0.000
+2025     147  17252.036    117.361 0.367           0.400
+
+  --- locked block, Monte Carlo trade reshuffle ---
+    observed max drawdown $41,374;  median of reshuffles $36,225;  95th percentile $55,679;  P(net <= 0) 0.0%
+
+  --- the ten gates, on the locked block ---
+    [PASS] 1  >= 100 out-of-sample trades         898
+    [PASS] 2  positive net edge after costs       $18.70/trade
+    [FAIL] 3  HAC t-stat > 2                      0.42
+    [FAIL] 4  Deflated Sharpe > 0.95              0.0000
+    [PASS] 5  PBO < 0.30                          0.270
+    [PASS] 6  survives 1.5x modelled costs        $1.57/trade
+    [PASS] 7  parameter surface is not a spike    plateau (0.85)
+    [FAIL] 8  profitable in >= 60% of years       50%
+    [PASS] 9  no single year > 60% of gains       60%
+    [FAIL] 10 walk-forward efficiency >= 0.4      -0.38
+
+    6 / 10 gates passed
+============================================================================================================
+FINAL -- US30 30m long -- marginal-supported 30m
+============================================================================================================
+  universe: 400 uniformly sampled grid cells;  Sharpe min -1.79 / median -0.06 / max 0.59, 43% above zero
+  they are one strategy with knobs: mean pairwise daily-P&L correlation 0.76, effective independent configurations 1.7
+  PBO 0.385 over 252 splits   walk-forward: 20 folds, efficiency 0.34, stitched OOS Sharpe 0.19 on 1,460 sessions (net $11,739), parameter stability 20%
+  neighbourhood: 15 one-step neighbours, median 0.719 against a base of 0.783 (stability 0.92) -> plateau
+
+================================================================================================
+LOCKED READ -- US30 30m long -- marginal-supported
+  configurations evaluated across the whole study: 14,261,040
+  trial Sharpe dispersion (annualised): 0.347
+  expected best-of-14,261,040 Sharpe from noise alone: 1.862
+================================================================================================
+  research  n 1,200  net $     56,066  /trade $  46.72  Sharpe   0.78  PF  1.25  win 33.2%  maxDD $   14,076  MAR   3.98
+            control /trade $  -12.43  excess $   59.15  p 0.0020   ctrl Sharpe -0.27  excess  1.05  p 0.0020
+            DSR 0.0007  PSR>0 0.9895  Sharpe 95% CI [0.17, 1.36]  MTRL 894 sessions
+  locked    n   736  net $    -31,543  /trade $ -42.86  Sharpe  -0.63  PF  0.87  win 29.3%  maxDD $   50,685  MAR  -0.62
+            control /trade $  -12.42  excess $  -30.44  p 0.9261   ctrl Sharpe -0.21  excess -0.43  p 0.8882
+            DSR 0.0000  PSR>0 0.1255  Sharpe 95% CI [-1.70, 0.27]  MTRL inf sessions
+
+  --- locked block, exit-reason split ---
+    atr_stop            51 trades  net $   -44,756  /trade $ -877.56  win  0.0%
+    chan_stop          399 trades  net $  -170,662  /trade $ -427.72  win  2.3%
+    take_profit         11 trades  net $    38,695  /trade $ 3517.68  win 100.0%
+    session_flatten    275 trades  net $   145,180  /trade $  527.93  win 71.3%
+
+  --- locked block, cost sensitivity ---
+ cost_x   n        net  per_trade  sharpe    pf
+  0.500 736 -22610.256    -30.720  -0.454 0.904
+  1.000 736 -31543.236    -42.858  -0.633 0.870
+  1.500 736 -40476.216    -54.995  -0.813 0.837
+  2.000 736 -49409.196    -67.132  -0.992 0.806
+  3.000 736 -67275.156    -91.406  -1.350 0.749
+    gross $-18.58/trade against $24.27 of modelled cost -> break-even at -0.77x the modelled round turn
+
+  --- locked block, by year ---
+      trades        net  per_trade   win  share_of_gains
+year                                                    
+2022     110 -12244.293   -111.312 0.300           0.000
+2023     239 -18270.288    -76.445 0.297           0.000
+2024     267  -6487.812    -24.299 0.281           0.000
+2025     120   5459.156     45.493 0.308           1.000
+
+  --- locked block, Monte Carlo trade reshuffle ---
+    observed max drawdown $50,685;  median of reshuffles $45,202;  95th percentile $59,471;  P(net <= 0) 100.0%
+
+  --- the ten gates, on the locked block ---
+    [PASS] 1  >= 100 out-of-sample trades         736
+    [FAIL] 2  positive net edge after costs       $-42.86/trade
+    [FAIL] 3  HAC t-stat > 2                      -1.28
+    [FAIL] 4  Deflated Sharpe > 0.95              0.0000
+    [FAIL] 5  PBO < 0.30                          0.385
+    [FAIL] 6  survives 1.5x modelled costs        $-54.99/trade
+    [PASS] 7  parameter surface is not a spike    plateau (0.92)
+    [FAIL] 8  profitable in >= 60% of years       25%
+    [FAIL] 9  no single year > 60% of gains       100%
+    [FAIL] 10 walk-forward efficiency >= 0.4      0.34
+
+    2 / 10 gates passed
+============================================================================================================
+FINAL -- US30 30m long -- Phase-1 geometry, unrefined 30m
+============================================================================================================
+  universe: 400 uniformly sampled grid cells;  Sharpe min -1.79 / median -0.06 / max 0.59, 43% above zero
+  they are one strategy with knobs: mean pairwise daily-P&L correlation 0.76, effective independent configurations 1.7
+  PBO 0.385 over 252 splits   walk-forward: 20 folds, efficiency 0.34, stitched OOS Sharpe 0.19 on 1,460 sessions (net $11,739), parameter stability 20%
+  neighbourhood: 15 one-step neighbours, median 0.719 against a base of 0.783 (stability 0.92) -> plateau
+
+================================================================================================
+LOCKED READ -- US30 30m long -- Phase-1 geometry, unrefined
+  configurations evaluated across the whole study: 14,261,040
+  trial Sharpe dispersion (annualised): 0.347
+  expected best-of-14,261,040 Sharpe from noise alone: 1.862
+================================================================================================
+  research  n 1,200  net $     56,066  /trade $  46.72  Sharpe   0.78  PF  1.25  win 33.2%  maxDD $   14,076  MAR   3.98
+            control /trade $  -12.43  excess $   59.15  p 0.0020   ctrl Sharpe -0.27  excess  1.05  p 0.0020
+            DSR 0.0007  PSR>0 0.9895  Sharpe 95% CI [0.17, 1.36]  MTRL 894 sessions
+  locked    n   736  net $    -31,543  /trade $ -42.86  Sharpe  -0.63  PF  0.87  win 29.3%  maxDD $   50,685  MAR  -0.62
+            control /trade $  -12.42  excess $  -30.44  p 0.9261   ctrl Sharpe -0.21  excess -0.43  p 0.8882
+            DSR 0.0000  PSR>0 0.1255  Sharpe 95% CI [-1.70, 0.27]  MTRL inf sessions
+
+  --- locked block, exit-reason split ---
+    atr_stop            51 trades  net $   -44,756  /trade $ -877.56  win  0.0%
+    chan_stop          399 trades  net $  -170,662  /trade $ -427.72  win  2.3%
+    take_profit         11 trades  net $    38,695  /trade $ 3517.68  win 100.0%
+    session_flatten    275 trades  net $   145,180  /trade $  527.93  win 71.3%
+
+  --- locked block, cost sensitivity ---
+ cost_x   n        net  per_trade  sharpe    pf
+  0.500 736 -22610.256    -30.720  -0.454 0.904
+  1.000 736 -31543.236    -42.858  -0.633 0.870
+  1.500 736 -40476.216    -54.995  -0.813 0.837
+  2.000 736 -49409.196    -67.132  -0.992 0.806
+  3.000 736 -67275.156    -91.406  -1.350 0.749
+    gross $-18.58/trade against $24.27 of modelled cost -> break-even at -0.77x the modelled round turn
+
+  --- locked block, by year ---
+      trades        net  per_trade   win  share_of_gains
+year                                                    
+2022     110 -12244.293   -111.312 0.300           0.000
+2023     239 -18270.288    -76.445 0.297           0.000
+2024     267  -6487.812    -24.299 0.281           0.000
+2025     120   5459.156     45.493 0.308           1.000
+
+  --- locked block, Monte Carlo trade reshuffle ---
+    observed max drawdown $50,685;  median of reshuffles $45,202;  95th percentile $59,471;  P(net <= 0) 100.0%
+
+  --- the ten gates, on the locked block ---
+    [PASS] 1  >= 100 out-of-sample trades         736
+    [FAIL] 2  positive net edge after costs       $-42.86/trade
+    [FAIL] 3  HAC t-stat > 2                      -1.28
+    [FAIL] 4  Deflated Sharpe > 0.95              0.0000
+    [FAIL] 5  PBO < 0.30                          0.385
+    [FAIL] 6  survives 1.5x modelled costs        $-54.99/trade
+    [PASS] 7  parameter surface is not a spike    plateau (0.92)
+    [FAIL] 8  profitable in >= 60% of years       25%
+    [FAIL] 9  no single year > 60% of gains       100%
+    [FAIL] 10 walk-forward efficiency >= 0.4      0.34
+
+    2 / 10 gates passed
+============================================================================================================
+FINAL -- US30 5m long -- marginal-supported 5m
+============================================================================================================
+  universe: 400 uniformly sampled grid cells;  Sharpe min -5.56 / median -1.16 / max 0.14, 1% above zero
+  they are one strategy with knobs: mean pairwise daily-P&L correlation 0.65, effective independent configurations 2.3
+  PBO 0.000 over 252 splits   walk-forward: 20 folds, efficiency -0.18, stitched OOS Sharpe -0.42 on 1,460 sessions (net $-38,256), parameter stability 15%
+  neighbourhood: 13 one-step neighbours, median 0.391 against a base of 0.565 (stability 0.69) -> ridge
+
+================================================================================================
+LOCKED READ -- US30 5m long -- marginal-supported
+  configurations evaluated across the whole study: 14,261,040
+  trial Sharpe dispersion (annualised): 1.130
+  expected best-of-14,261,040 Sharpe from noise alone: 6.069
+================================================================================================
+  research  n 1,216  net $     63,170  /trade $  51.95  Sharpe   0.57  PF  1.15  win 23.1%  maxDD $   22,039  MAR   2.87
+            control /trade $  -17.58  excess $   69.53  p 0.0020   ctrl Sharpe -0.22  excess  0.79  p 0.0020
+            DSR 0.0000  PSR>0 0.9450  Sharpe 95% CI [-0.06, 1.12]  MTRL 1861 sessions
+  locked    n   671  net $     -3,336  /trade $  -4.97  Sharpe  -0.05  PF  0.99  win 20.3%  maxDD $   30,606  MAR  -0.11
+            control /trade $  -39.56  excess $   34.58  p 0.1118   ctrl Sharpe -0.48  excess  0.42  p 0.1098
+            DSR 0.0000  PSR>0 0.4592  Sharpe 95% CI [-0.94, 0.73]  MTRL inf sessions
+
+  --- locked block, exit-reason split ---
+    atr_stop           524 trades  net $  -280,666  /trade $ -535.62  win  0.2%
+    take_profit        102 trades  net $   242,448  /trade $ 2376.94  win 100.0%
+    session_flatten     45 trades  net $    34,882  /trade $  775.16  win 73.3%
+
+  --- locked block, cost sensitivity ---
+ cost_x   n        net  per_trade  sharpe    pf
+  0.500 671   9582.417     14.281   0.152 1.035
+  1.000 671  -3335.663     -4.971  -0.053 0.988
+  1.500 671 -16253.743    -24.223  -0.259 0.945
+  2.000 671 -29171.823    -43.475  -0.464 0.905
+  3.000 671 -55007.983    -81.979  -0.874 0.832
+    gross $33.53/trade against $38.50 of modelled cost -> break-even at 0.87x the modelled round turn
+
+  --- locked block, by year ---
+      trades       net  per_trade   win  share_of_gains
+year                                                   
+2022     107 -1974.838    -18.456 0.196           0.000
+2023     222 -7175.662    -32.323 0.203           0.000
+2024     228   414.185      1.817 0.197           0.071
+2025     114  5400.651     47.374 0.219           0.929
+
+  --- locked block, Monte Carlo trade reshuffle ---
+    observed max drawdown $30,606;  median of reshuffles $35,746;  95th percentile $52,850;  P(net <= 0) 100.0%
+
+  --- the ten gates, on the locked block ---
+    [PASS] 1  >= 100 out-of-sample trades         671
+    [FAIL] 2  positive net edge after costs       $-4.97/trade
+    [FAIL] 3  HAC t-stat > 2                      -0.12
+    [FAIL] 4  Deflated Sharpe > 0.95              0.0000
+    [PASS] 5  PBO < 0.30                          0.000
+    [FAIL] 6  survives 1.5x modelled costs        $-24.22/trade
+    [PASS] 7  parameter surface is not a spike    ridge (0.69)
+    [FAIL] 8  profitable in >= 60% of years       50%
+    [FAIL] 9  no single year > 60% of gains       93%
+    [FAIL] 10 walk-forward efficiency >= 0.4      -0.18
+
+    3 / 10 gates passed
+============================================================================================================
+FINAL -- US30 5m long -- Phase-1 geometry, unrefined 5m
+============================================================================================================
+  universe: 400 uniformly sampled grid cells;  Sharpe min -5.56 / median -1.16 / max 0.14, 1% above zero
+  they are one strategy with knobs: mean pairwise daily-P&L correlation 0.65, effective independent configurations 2.3
+  PBO 0.000 over 252 splits   walk-forward: 20 folds, efficiency -0.18, stitched OOS Sharpe -0.42 on 1,460 sessions (net $-38,256), parameter stability 15%
+  neighbourhood: 13 one-step neighbours, median 0.261 against a base of 0.281 (stability 0.93) -> plateau
+
+================================================================================================
+LOCKED READ -- US30 5m long -- Phase-1 geometry, unrefined
+  configurations evaluated across the whole study: 14,261,040
+  trial Sharpe dispersion (annualised): 1.130
+  expected best-of-14,261,040 Sharpe from noise alone: 6.069
+================================================================================================
+  research  n 1,998  net $     36,968  /trade $  18.50  Sharpe   0.28  PF  1.06  win 27.9%  maxDD $   37,125  MAR   1.00
+            control /trade $  -29.48  excess $   47.99  p 0.0020   ctrl Sharpe -0.61  excess  0.89  p 0.0020
+            DSR 0.0000  PSR>0 0.7780  Sharpe 95% CI [-0.39, 0.93]  MTRL 8109 sessions
+  locked    n 1,239  net $    -27,531  /trade $ -22.22  Sharpe  -0.33  PF  0.95  win 25.7%  maxDD $   55,839  MAR  -0.49
+            control /trade $  -19.98  excess $   -2.24  p 0.5689   ctrl Sharpe -0.39  excess  0.06  p 0.4072
+            DSR 0.0000  PSR>0 0.2637  Sharpe 95% CI [-1.27, 0.53]  MTRL inf sessions
+
+  --- locked block, exit-reason split ---
+    atr_stop           821 trades  net $  -498,237  /trade $ -606.87  win  0.1%
+    take_profit        132 trades  net $   323,496  /trade $ 2450.73  win 100.0%
+    session_flatten    286 trades  net $   147,210  /trade $  514.72  win 65.0%
+
+  --- locked block, cost sensitivity ---
+ cost_x    n         net  per_trade  sharpe    pf
+  0.500 1239   -5591.326     -4.513  -0.067 0.989
+  1.000 1239  -27530.886    -22.220  -0.330 0.948
+  1.500 1239  -49470.446    -39.928  -0.594 0.910
+  2.000 1239  -71410.006    -57.635  -0.859 0.873
+  3.000 1239 -115289.126    -93.050  -1.389 0.806
+    gross $13.19/trade against $35.41 of modelled cost -> break-even at 0.37x the modelled round turn
+
+  --- locked block, by year ---
+      trades        net  per_trade   win  share_of_gains
+year                                                    
+2022     203  -8998.913    -44.330 0.261           0.000
+2023     388 -15111.064    -38.946 0.250           0.000
+2024     442 -18954.492    -42.883 0.242           0.000
+2025     206  15533.583     75.406 0.301           1.000
+
+  --- locked block, Monte Carlo trade reshuffle ---
+    observed max drawdown $55,839;  median of reshuffles $59,199;  95th percentile $83,867;  P(net <= 0) 100.0%
+
+  --- the ten gates, on the locked block ---
+    [PASS] 1  >= 100 out-of-sample trades         1,239
+    [FAIL] 2  positive net edge after costs       $-22.22/trade
+    [FAIL] 3  HAC t-stat > 2                      -0.67
+    [FAIL] 4  Deflated Sharpe > 0.95              0.0000
+    [PASS] 5  PBO < 0.30                          0.000
+    [FAIL] 6  survives 1.5x modelled costs        $-39.93/trade
+    [PASS] 7  parameter surface is not a spike    plateau (0.93)
+    [FAIL] 8  profitable in >= 60% of years       25%
+    [FAIL] 9  no single year > 60% of gains       100%
+    [FAIL] 10 walk-forward efficiency >= 0.4      -0.18
+
+    3 / 10 gates passed
+============================================================================================================
+FINAL -- US30 60m long -- marginal-supported 60m
+============================================================================================================
+  universe: 400 uniformly sampled grid cells;  Sharpe min -0.89 / median -0.05 / max 0.66, 44% above zero
+  they are one strategy with knobs: mean pairwise daily-P&L correlation 0.75, effective independent configurations 1.8
+  PBO 0.111 over 252 splits   walk-forward: 20 folds, efficiency 0.17, stitched OOS Sharpe 0.11 on 1,460 sessions (net $6,009), parameter stability 10%
+  neighbourhood: 14 one-step neighbours, median 0.959 against a base of 1.054 (stability 0.91) -> plateau
+
+================================================================================================
+LOCKED READ -- US30 60m long -- marginal-supported
+  configurations evaluated across the whole study: 14,261,040
+  trial Sharpe dispersion (annualised): 0.241
+  expected best-of-14,261,040 Sharpe from noise alone: 1.292
+================================================================================================
+  research  n   391  net $     26,654  /trade $  68.17  Sharpe   1.05  PF  1.47  win 42.7%  maxDD $    5,621  MAR   4.74
+            control /trade $   -0.93  excess $   69.10  p 0.0020   ctrl Sharpe -0.03  excess  1.08  p 0.0020
+            DSR 0.2417  PSR>0 0.9991  Sharpe 95% CI [0.33, 1.70]  MTRL 493 sessions
+  locked    n   241  net $     -7,002  /trade $ -29.06  Sharpe  -0.36  PF  0.88  win 30.7%  maxDD $   17,018  MAR  -0.41
+            control /trade $    6.16  excess $  -35.21  p 0.8643   ctrl Sharpe  0.07  excess -0.43  p 0.8283
+            DSR 0.0013  PSR>0 0.2562  Sharpe 95% CI [-1.54, 0.59]  MTRL inf sessions
+
+  --- locked block, exit-reason split ---
+    atr_stop           137 trades  net $   -51,737  /trade $ -377.65  win  0.0%
+    chan_stop           26 trades  net $    -8,094  /trade $ -311.30  win  0.0%
+    session_flatten     78 trades  net $    52,829  /trade $  677.29  win 94.9%
+
+  --- locked block, cost sensitivity ---
+ cost_x   n        net  per_trade  sharpe    pf
+  0.500 241  -5240.474    -21.745  -0.269 0.911
+  1.000 241  -7002.394    -29.056  -0.359 0.884
+  1.500 241  -8764.314    -36.366  -0.449 0.858
+  2.000 241 -10526.234    -43.677  -0.538 0.833
+  3.000 241 -14050.074    -58.299  -0.715 0.786
+    gross $-14.43/trade against $14.62 of modelled cost -> break-even at -0.99x the modelled round turn
+
+  --- locked block, by year ---
+      trades       net  per_trade   win  share_of_gains
+year                                                   
+2022      38  4092.155    107.688 0.395           1.000
+2023      81 -7721.635    -95.329 0.259           0.000
+2024      85 -2283.505    -26.865 0.306           0.000
+2025      37 -1089.410    -29.444 0.324           0.000
+
+  --- locked block, Monte Carlo trade reshuffle ---
+    observed max drawdown $17,018;  median of reshuffles $13,694;  95th percentile $19,266;  P(net <= 0) 100.0%
+
+  --- the ten gates, on the locked block ---
+    [PASS] 1  >= 100 out-of-sample trades         241
+    [FAIL] 2  positive net edge after costs       $-29.06/trade
+    [FAIL] 3  HAC t-stat > 2                      -0.72
+    [FAIL] 4  Deflated Sharpe > 0.95              0.0013
+    [PASS] 5  PBO < 0.30                          0.111
+    [FAIL] 6  survives 1.5x modelled costs        $-36.37/trade
+    [PASS] 7  parameter surface is not a spike    plateau (0.91)
+    [FAIL] 8  profitable in >= 60% of years       25%
+    [FAIL] 9  no single year > 60% of gains       100%
+    [FAIL] 10 walk-forward efficiency >= 0.4      0.17
+
+    3 / 10 gates passed
+============================================================================================================
+FINAL -- US30 60m long -- Phase-1 geometry, unrefined 60m
+============================================================================================================
+  universe: 400 uniformly sampled grid cells;  Sharpe min -0.89 / median -0.05 / max 0.66, 44% above zero
+  they are one strategy with knobs: mean pairwise daily-P&L correlation 0.75, effective independent configurations 1.8
+  PBO 0.111 over 252 splits   walk-forward: 20 folds, efficiency 0.17, stitched OOS Sharpe 0.11 on 1,460 sessions (net $6,009), parameter stability 10%
+  neighbourhood: 14 one-step neighbours, median 0.721 against a base of 0.808 (stability 0.89) -> plateau
+
+================================================================================================
+LOCKED READ -- US30 60m long -- Phase-1 geometry, unrefined
+  configurations evaluated across the whole study: 14,261,040
+  trial Sharpe dispersion (annualised): 0.241
+  expected best-of-14,261,040 Sharpe from noise alone: 1.292
+================================================================================================
+  research  n   542  net $     22,772  /trade $  42.01  Sharpe   0.81  PF  1.30  win 43.2%  maxDD $    5,069  MAR   4.49
+            control /trade $   -0.83  excess $   42.84  p 0.0040   ctrl Sharpe -0.03  excess  0.83  p 0.0040
+            DSR 0.0868  PSR>0 0.9884  Sharpe 95% CI [0.13, 1.45]  MTRL 922 sessions
+  locked    n   358  net $     -5,806  /trade $ -16.22  Sharpe  -0.26  PF  0.93  win 34.4%  maxDD $   15,721  MAR  -0.37
+            control /trade $    7.63  excess $  -23.84  p 0.8383   ctrl Sharpe  0.13  excess -0.39  p 0.8124
+            DSR 0.0017  PSR>0 0.3095  Sharpe 95% CI [-1.34, 0.75]  MTRL inf sessions
+
+  --- locked block, exit-reason split ---
+    atr_stop           179 trades  net $   -69,759  /trade $ -389.71  win  0.0%
+    chan_stop           29 trades  net $    -9,242  /trade $ -318.71  win  0.0%
+    session_flatten    150 trades  net $    73,195  /trade $  487.97  win 82.0%
+
+  --- locked block, cost sensitivity ---
+ cost_x   n        net  per_trade  sharpe    pf
+  0.500 358  -3274.406     -9.146  -0.150 0.960
+  1.000 358  -5806.366    -16.219  -0.265 0.931
+  1.500 358  -8338.326    -23.291  -0.379 0.903
+  2.000 358 -10870.286    -30.364  -0.493 0.876
+  3.000 358 -15934.206    -44.509  -0.719 0.825
+    gross $-2.07/trade against $14.15 of modelled cost -> break-even at -0.15x the modelled round turn
+
+  --- locked block, by year ---
+      trades       net  per_trade   win  share_of_gains
+year                                                   
+2022      54  1745.472     32.324 0.370           1.000
+2023     125 -3683.314    -29.467 0.336           0.000
+2024     128 -2003.698    -15.654 0.328           0.000
+2025      51 -1864.825    -36.565 0.373           0.000
+
+  --- locked block, Monte Carlo trade reshuffle ---
+    observed max drawdown $15,721;  median of reshuffles $14,513;  95th percentile $21,160;  P(net <= 0) 100.0%
+
+  --- the ten gates, on the locked block ---
+    [PASS] 1  >= 100 out-of-sample trades         358
+    [FAIL] 2  positive net edge after costs       $-16.22/trade
+    [FAIL] 3  HAC t-stat > 2                      -0.52
+    [FAIL] 4  Deflated Sharpe > 0.95              0.0017
+    [PASS] 5  PBO < 0.30                          0.111
+    [FAIL] 6  survives 1.5x modelled costs        $-23.29/trade
+    [PASS] 7  parameter surface is not a spike    plateau (0.89)
+    [FAIL] 8  profitable in >= 60% of years       25%
+    [FAIL] 9  no single year > 60% of gains       100%
+    [FAIL] 10 walk-forward efficiency >= 0.4      0.17
+
+    3 / 10 gates passed
+============================================================================================================
+FINAL -- US30 60m SHORT MIRROR (procedure control) -- marginal-supported 60m
+============================================================================================================
+  universe: 400 uniformly sampled grid cells;  Sharpe min -1.52 / median -0.21 / max 0.49, 19% above zero
+  they are one strategy with knobs: mean pairwise daily-P&L correlation 0.71, effective independent configurations 1.9
+  PBO 0.226 over 252 splits   walk-forward: 20 folds, efficiency -0.24, stitched OOS Sharpe -0.11 on 1,460 sessions (net $-4,367), parameter stability 15%
+  neighbourhood: 14 one-step neighbours, median 0.469 against a base of 0.587 (stability 0.80) -> ridge
+
+================================================================================================
+LOCKED READ -- US30 60m SHORT MIRROR (procedure control) -- marginal-supported
+  configurations evaluated across the whole study: 14,261,040
+  trial Sharpe dispersion (annualised): 0.262
+  expected best-of-14,261,040 Sharpe from noise alone: 1.405
+================================================================================================
+  research  n   230  net $     26,612  /trade $ 115.71  Sharpe   0.59  PF  1.35  win 45.7%  maxDD $   15,597  MAR   1.71
+            control /trade $   -6.46  excess $  122.17  p 0.0080   ctrl Sharpe -0.06  excess  0.65  p 0.0299
+            DSR 0.0144  PSR>0 0.9419  Sharpe 95% CI [-0.18, 1.34]  MTRL 1927 sessions
+  locked    n   161  net $    -15,656  /trade $ -97.24  Sharpe  -0.57  PF  0.80  win 37.9%  maxDD $   19,449  MAR  -0.80
+            control /trade $  -56.75  excess $  -40.49  p 0.7565   ctrl Sharpe -0.45  excess -0.12  p 0.6088
+            DSR 0.0001  PSR>0 0.1372  Sharpe 95% CI [-1.68, 0.41]  MTRL inf sessions
+
+  --- locked block, exit-reason split ---
+    atr_stop            16 trades  net $   -21,505  /trade $-1344.05  win  0.0%
+    chan_stop           33 trades  net $   -23,523  /trade $ -712.81  win  0.0%
+    take_profit         27 trades  net $    42,135  /trade $ 1560.57  win 100.0%
+    session_flatten     85 trades  net $   -12,764  /trade $ -150.16  win 40.0%
+
+  --- locked block, cost sensitivity ---
+ cost_x   n        net  per_trade  sharpe    pf
+  0.500 161 -14113.462    -87.661  -0.517 0.816
+  1.000 161 -15655.962    -97.242  -0.574 0.798
+  1.500 161 -17198.462   -106.823  -0.630 0.781
+  2.000 161 -18740.962   -116.403  -0.686 0.764
+  3.000 161 -21825.962   -135.565  -0.799 0.731
+    gross $-78.08/trade against $19.16 of modelled cost -> break-even at -4.07x the modelled round turn
+
+  --- locked block, by year ---
+      trades        net  per_trade   win  share_of_gains
+year                                                    
+2022      23  -5758.984   -250.391 0.435           0.000
+2023      56 -10222.542   -182.545 0.286           0.000
+2024      56   1349.940     24.106 0.429           1.000
+2025      26  -1024.376    -39.399 0.423           0.000
+
+  --- locked block, Monte Carlo trade reshuffle ---
+    observed max drawdown $19,449;  median of reshuffles $22,804;  95th percentile $30,616;  P(net <= 0) 100.0%
+
+  --- the ten gates, on the locked block ---
+    [PASS] 1  >= 100 out-of-sample trades         161
+    [FAIL] 2  positive net edge after costs       $-97.24/trade
+    [FAIL] 3  HAC t-stat > 2                      -1.13
+    [FAIL] 4  Deflated Sharpe > 0.95              0.0001
+    [PASS] 5  PBO < 0.30                          0.226
+    [FAIL] 6  survives 1.5x modelled costs        $-106.82/trade
+    [PASS] 7  parameter surface is not a spike    ridge (0.80)
+    [FAIL] 8  profitable in >= 60% of years       25%
+    [FAIL] 9  no single year > 60% of gains       100%
+    [FAIL] 10 walk-forward efficiency >= 0.4      -0.24
+
+    3 / 10 gates passed
+============================================================================================================
+FINAL -- XAU 60m long -- REJECTED on research, shown for completeness 60m
+============================================================================================================
+  universe: 400 uniformly sampled grid cells;  Sharpe min -1.38 / median -0.44 / max -0.03, 0% above zero
+  they are one strategy with knobs: mean pairwise daily-P&L correlation 0.74, effective independent configurations 1.8
+  PBO 0.365 over 252 splits   walk-forward: 20 folds, efficiency -2.55, stitched OOS Sharpe -0.20 on 3,180 sessions (net $-18,724), parameter stability 20%
+  neighbourhood: 14 one-step neighbours, median -0.008 against a base of 0.019 (stability -0.43) -> spike
+
+================================================================================================
+LOCKED READ -- XAU 60m long -- REJECTED on research, shown for completeness
+  configurations evaluated across the whole study: 14,261,040
+  trial Sharpe dispersion (annualised): 0.203
+  expected best-of-14,261,040 Sharpe from noise alone: 1.091
+================================================================================================
+  research  n 1,091  net $      1,936  /trade $   1.77  Sharpe   0.02  PF  1.01  win 31.6%  maxDD $   32,668  MAR   0.06
+            control /trade $  -19.72  excess $   21.50  p 0.0798   ctrl Sharpe -0.28  excess  0.30  p 0.0798
+            DSR 0.0000  PSR>0 0.5302  Sharpe 95% CI [-0.49, 0.49]  MTRL 1804464 sessions
+  locked    n   723  net $      6,457  /trade $   8.93  Sharpe   0.06  PF  1.02  win 32.2%  maxDD $   39,900  MAR   0.16
+            control /trade $  -11.41  excess $   20.34  p 0.2814   ctrl Sharpe -0.11  excess  0.17  p 0.2954
+            DSR 0.0015  PSR>0 0.5711  Sharpe 95% CI [-0.74, 0.74]  MTRL 173785 sessions
+
+  ** WRONG SHAPE ** locked Sharpe exceeds research Sharpe.  A rule selected on research
+     should look better there; treat this as a defect, not a result.
+
+  --- locked block, exit-reason split ---
+    atr_stop           388 trades  net $  -248,662  /trade $ -640.88  win  1.5%
+    chan_stop           42 trades  net $   -37,453  /trade $ -891.74  win  0.0%
+    session_flatten    293 trades  net $   292,572  /trade $  998.54  win 77.5%
+
+  --- locked block, cost sensitivity ---
+ cost_x   n        net  per_trade  sharpe    pf
+  0.500 723  19696.627     27.243   0.189 1.066
+  1.000 723   6456.627      8.930   0.062 1.021
+  1.500 723  -6783.373     -9.382  -0.065 0.978
+  2.000 723 -20023.373    -27.695  -0.193 0.938
+  3.000 723 -46503.373    -64.320  -0.449 0.863
+    gross $45.56/trade against $36.63 of modelled cost -> break-even at 1.24x the modelled round turn
+
+  --- locked block, by year ---
+      trades        net  per_trade   win  share_of_gains
+year                                                    
+2019      55   4169.556     75.810 0.327           0.122
+2020     120   3875.371     32.295 0.350           0.114
+2021     115  -6215.013    -54.044 0.287           0.000
+2022     110   2181.291     19.830 0.373           0.064
+2023     101   4705.678     46.591 0.277           0.138
+2024     118 -19429.612   -164.658 0.263           0.000
+2025      97  19152.062    197.444 0.392           0.562
+2026       7  -1982.705   -283.244 0.286           0.000
+
+  --- locked block, Monte Carlo trade reshuffle ---
+    observed max drawdown $39,900;  median of reshuffles $35,171;  95th percentile $53,793;  P(net <= 0) 0.0%
+
+  --- the ten gates, on the locked block ---
+    [PASS] 1  >= 100 out-of-sample trades         723
+    [PASS] 2  positive net edge after costs       $8.93/trade
+    [FAIL] 3  HAC t-stat > 2                      0.17
+    [FAIL] 4  Deflated Sharpe > 0.95              0.0015
+    [FAIL] 5  PBO < 0.30                          0.365
+    [FAIL] 6  survives 1.5x modelled costs        $-9.38/trade
+    [FAIL] 7  parameter surface is not a spike    spike (-0.43)
+    [PASS] 8  profitable in >= 60% of years       62%
+    [PASS] 9  no single year > 60% of gains       56%
+    [FAIL] 10 walk-forward efficiency >= 0.4      -2.55
+
+    4 / 10 gates passed
+============================================================================================================
+FINAL -- BTC 60m long -- REJECTED on research, shown for completeness 60m
+============================================================================================================
+  universe: 400 uniformly sampled grid cells;  Sharpe min -2.20 / median -0.88 / max -0.07, 0% above zero
+  they are one strategy with knobs: mean pairwise daily-P&L correlation 0.74, effective independent configurations 1.8
+  PBO 0.444 over 252 splits   walk-forward: 20 folds, efficiency -1.19, stitched OOS Sharpe -0.73 on 1,660 sessions (net $-19,731), parameter stability 10%
+  neighbourhood: 14 one-step neighbours, median -0.014 against a base of 0.024 (stability -0.58) -> spike
+
+================================================================================================
+LOCKED READ -- BTC 60m long -- REJECTED on research, shown for completeness
+  configurations evaluated across the whole study: 14,261,040
+  trial Sharpe dispersion (annualised): 0.343
+  expected best-of-14,261,040 Sharpe from noise alone: 1.840
+================================================================================================
+  research  n   390  net $        669  /trade $   1.72  Sharpe   0.02  PF  1.01  win 43.3%  maxDD $   17,114  MAR   0.04
+            control /trade $  -22.35  excess $   24.06  p 0.1317   ctrl Sharpe -0.43  excess  0.46  p 0.1357
+            DSR 0.0000  PSR>0 0.5222  Sharpe 95% CI [-0.95, 0.87]  MTRL 1758014 sessions
+  locked    n   238  net $     -3,399  /trade $ -14.28  Sharpe  -0.10  PF  0.97  win 42.0%  maxDD $   17,218  MAR  -0.20
+            control /trade $ -124.71  excess $  110.43  p 0.0220   ctrl Sharpe -1.26  excess  1.16  p 0.0200
+            DSR 0.0005  PSR>0 0.4322  Sharpe 95% CI [-1.19, 0.85]  MTRL inf sessions
+
+  --- locked block, exit-reason split ---
+    atr_stop            19 trades  net $   -29,552  /trade $-1555.39  win  0.0%
+    chan_stop           17 trades  net $   -16,142  /trade $ -949.55  win  0.0%
+    session_flatten    202 trades  net $    42,296  /trade $  209.38  win 49.5%
+
+  --- locked block, cost sensitivity ---
+ cost_x   n        net  per_trade  sharpe    pf
+  0.500 238  12767.827     53.646   0.371 1.134
+  1.000 238  -3399.152    -14.282  -0.100 0.967
+  1.500 238 -19566.130    -82.211  -0.579 0.824
+  2.000 238 -35733.108   -150.139  -1.061 0.702
+  3.000 238 -68067.065   -285.996  -2.019 0.510
+    gross $121.57/trade against $135.86 of modelled cost -> break-even at 0.89x the modelled round turn
+
+  --- locked block, by year ---
+      trades       net  per_trade   win  share_of_gains
+year                                                   
+2023      29 -5099.798   -175.855 0.310           0.000
+2024      95  3000.852     31.588 0.453           0.573
+2025      79  2235.828     28.302 0.456           0.427
+2026      35 -3536.034   -101.030 0.343           0.000
+
+  --- locked block, Monte Carlo trade reshuffle ---
+    observed max drawdown $17,196;  median of reshuffles $21,672;  95th percentile $32,290;  P(net <= 0) 100.0%
+
+  --- the ten gates, on the locked block ---
+    [PASS] 1  >= 100 out-of-sample trades         238
+    [FAIL] 2  positive net edge after costs       $-14.28/trade
+    [FAIL] 3  HAC t-stat > 2                      -0.18
+    [FAIL] 4  Deflated Sharpe > 0.95              0.0005
+    [FAIL] 5  PBO < 0.30                          0.444
+    [FAIL] 6  survives 1.5x modelled costs        $-82.21/trade
+    [FAIL] 7  parameter surface is not a spike    spike (-0.58)
+    [FAIL] 8  profitable in >= 60% of years       50%
+    [PASS] 9  no single year > 60% of gains       57%
+    [FAIL] 10 walk-forward efficiency >= 0.4      -1.19
+
+    2 / 10 gates passed
+
+============================================================================================================
+SUMMARY -- research vs locked, every candidate
+============================================================================================================
+                                                      candidate  res_n  res_sharpe  res_pf  lk_n  lk_sharpe  lk_pf  lk_per_trade  lk_excess  lk_p  gates
+                            US30 15m long -- marginal-supported   1347       0.466   1.107   898      0.222  1.039        18.696     28.169 0.110      6
+                   US30 15m long -- Phase-1 geometry, unrefined   1347       0.466   1.107   898      0.222  1.039        18.696     28.169 0.110      6
+                            US30 30m long -- marginal-supported   1200       0.783   1.250   736     -0.633  0.870       -42.858    -30.440 0.926      2
+                   US30 30m long -- Phase-1 geometry, unrefined   1200       0.783   1.250   736     -0.633  0.870       -42.858    -30.440 0.926      2
+                             US30 5m long -- marginal-supported   1216       0.565   1.152   671     -0.053  0.988        -4.971     34.585 0.112      3
+                    US30 5m long -- Phase-1 geometry, unrefined   1998       0.281   1.058  1239     -0.330  0.948       -22.220     -2.243 0.569      3
+                            US30 60m long -- marginal-supported    391       1.054   1.470   241     -0.359  0.884       -29.056    -35.211 0.864      3
+                   US30 60m long -- Phase-1 geometry, unrefined    542       0.808   1.296   358     -0.265  0.931       -16.219    -23.844 0.838      3
+US30 60m SHORT MIRROR (procedure control) -- marginal-supported    230       0.587   1.353   161     -0.574  0.798       -97.242    -40.489 0.756      3
+   XAU 60m long -- REJECTED on research, shown for completeness   1091       0.019   1.007   723      0.062  1.021         8.930     20.344 0.281      4
+   BTC 60m long -- REJECTED on research, shown for completeness    390       0.024   1.011   238     -0.100  0.967       -14.282    110.426 0.022      2
+
+  --- locked-block daily P&L correlation between the shipped timeframes ---
+                                     US30 15m long -- marginal-supported  US30 30m long -- marginal-supported  US30 5m long -- marginal-supported  US30 60m long -- marginal-supported
+US30 15m long -- marginal-supported                                1.000                                0.560                               0.461                                0.334
+US30 30m long -- marginal-supported                                0.560                                1.000                               0.253                                0.346
+US30 5m long -- marginal-supported                                 0.461                                0.253                               1.000                                0.108
+US30 60m long -- marginal-supported                                0.334                                0.346                               0.108                                1.000
+  A book pays a second commission for a second stream.  These are one strategy
+  sampled at different rates unless these numbers are low.
