@@ -659,11 +659,22 @@ the rule, and how much was the market going up? The report splits the real
 result into a direction-independent half — the mean of the two runs — and a
 direction-dependent half, and says which one it mostly is.
 
-On the shipped US30 data, `MACD Trend` keeps most of its profit in the mirror;
-`SuperTrend Follower` keeps about half. The indicator study is starker still:
-the long baseline flips from +3.93 to −3.92 per trade, and the momentum feature
-that ranks first on the real series drops out of the top on the mirror while the
-volatility features survive with the same sign.
+On the shipped US30 15m data, `MACD Trend` makes +5,994 on the real series and
++4,206 on the mirror — it keeps 70% of its profit with the drift reversed, and
+the decomposition puts only 15% of the result down to direction.
+`SuperTrend Follower` makes +10,669 and +889: it keeps 8%, and 46% of its real
+result is direction. Those two percentages measure different things and it is
+worth knowing which is which — the mirror's own net is what the same rule
+earned on a market that fell, while the decomposition estimates the
+direction-independent component of the *real* result. A rule can score poorly
+on the first and respectably on the second, because it fires on different bars
+in the mirror.
+
+The indicator study is starker still: the long baseline flips from +3.93 to
+−3.92 per trade, and `return60_atr` — the momentum feature that ranks first on
+the real series — drops out of the top three on the mirror, while the
+volatility features (`atr_rank200`, `atr14_over_atr100`) stay there with the
+same sign.
 
 Every command that reads data takes `--mirror`, because that question is worth
 asking of a search, an indicator ranking and an anomaly scan too — not only of
