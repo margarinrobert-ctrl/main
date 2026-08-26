@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import sys
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -99,6 +100,7 @@ def export_pdf_report(result: BacktestResult, path: str | Path) -> str:
         _charts_block(canvas, ctx)
         _metrics_block(canvas, ctx)
         _monthly_block(canvas, ctx)
+        _montecarlo_block(canvas, ctx)
         _trades_block(canvas, ctx)
         _assumptions_block(canvas, ctx)
         canvas.finish()
@@ -109,16 +111,36 @@ def export_pdf_report(result: BacktestResult, path: str | Path) -> str:
     return str(target)
 
 
+def _needs_offscreen() -> bool:
+    """True when constructing a Qt application here would abort the process.
+
+    On Linux and the BSDs Qt's default platform plugin is X11 or Wayland, and
+    with neither display available its failure is a ``qFatal`` -- the process
+    aborts, and a library function that kills its caller is not one anybody can
+    use from a script or a scheduled job. Windows and macOS always have a
+    window system, so the question does not arise there.
+    """
+    if sys.platform.startswith(("win", "darwin")):
+        return False
+    if os.environ.get("QT_QPA_PLATFORM"):
+        return False        # the caller has already chosen; respect it
+    return not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
 def ensure_application() -> QGuiApplication:
     """Return the running Qt application, creating a minimal one if there is none.
 
     Font metrics, and therefore every text position in this report, are
     unavailable until a ``QGuiApplication`` exists.  Scripts and tests that only
     want a PDF should not have to know that, so this creates one on demand and
-    keeps a reference to it.
+    keeps a reference to it -- including on a machine with no display at all,
+    where it selects the offscreen platform first rather than aborting.
     """
     app = QGuiApplication.instance()
     if app is None:
+        if _needs_offscreen():
+            log.debug("No display; rendering the PDF on the offscreen platform")
+            os.environ["QT_QPA_PLATFORM"] = "offscreen"
         app = QGuiApplication(sys.argv[:1] or [APP_DISPLAY_NAME])
         _OWNED_APPLICATIONS.append(app)
     Fonts.resolve()
@@ -508,6 +530,96 @@ def _monthly_block(canvas: _Canvas, ctx: ReportContext) -> None:
         canvas.y += row_h
         _row_rule(canvas)
     canvas.space(3.0)
+
+
+def _montecarlo_block(canvas: _Canvas, ctx: ReportContext) -> None:
+    """The same resampling the HTML report carries, as a printed table.
+
+    The PDF keeps its own explicit block list rather than sharing the HTML's
+    sections, so a section added there does not appear here -- which is exactly
+    what happened when this one was added. Both reports are the artefact that
+    gets shared, and a single equity curve shared on its own reads as the
+    outcome rather than as one draw from a distribution.
+
+    Never fatal, for the same reason as in the HTML report: a resampling that
+    fails should cost this block, not the whole document.
+    """
+    if len(ctx.trades) < 2:
+        return
+    try:
+        from ..analytics.montecarlo import resample_result
+        from .html_report import _REPORT_DRAWS
+
+        mc = resample_result(ctx.result, method="block", draws=_REPORT_DRAWS)
+    except Exception:                       # noqa: BLE001 - see the docstring
+        log.debug("Monte Carlo block skipped", exc_info=True)
+        return
+
+    canvas.heading("What else could have happened")
+    canvas.paragraph(
+        f"{_REPORT_DRAWS:,} resampled runs over these {len(ctx.trades):,} "
+        f"trades, drawn in contiguous blocks of {mc.block_size} so that losing "
+        f"streaks survive the resampling. This describes the range of paths "
+        f"these trades could have produced. It cannot tell you whether the "
+        f"strategy has an edge: if these trades came from a rule fitted to "
+        f"this data, every draw is fitted to it too.",
+        canvas.font(8), PALETTE.text_dim, space_after=3.0)
+
+    quantiles = (5, 25, 50, 75, 95)
+    rows = (
+        ("Final equity", mc.percentiles(mc.final_equity, quantiles), ctx.money),
+        ("Worst drawdown", mc.percentiles(mc.max_drawdown, quantiles), ctx.money),
+        ("Worst drawdown %", mc.percentiles(mc.max_drawdown_pct, quantiles),
+         lambda v: _pct(v, 1)),
+        ("Trades under water",
+         mc.percentiles(mc.longest_drawdown.astype(float), quantiles),
+         lambda v: f"{v:,.0f}"),
+    )
+    xs, widths = _columns(canvas.width, [2.0] + [1.0] * len(quantiles))
+    head_font = canvas.font(7.4, bold=True)
+    cell_font = canvas.font(7.4, mono=True)
+    label_font = canvas.font(7.4)
+    row_h = canvas.line_height(cell_font) * 1.45
+
+    def header() -> None:
+        canvas.box(QRectF(0, canvas.y, canvas.width, row_h), PALETTE.elevated,
+                   PALETTE.border)
+        canvas.text(xs[0] + canvas.mm(0.6), canvas.y, widths[0], "Percentile",
+                    head_font, PALETTE.text_dim, Qt.AlignmentFlag.AlignLeft,
+                    row_h)
+        for index, q in enumerate(quantiles, start=1):
+            canvas.text(xs[index], canvas.y, widths[index] - canvas.mm(1.0),
+                        f"{q}th", head_font, PALETTE.text_dim,
+                        Qt.AlignmentFlag.AlignRight, row_h)
+        canvas.y += row_h
+
+    canvas.ensure(row_h * (len(rows) + 2))
+    header()
+    for label, values, render in rows:
+        canvas.ensure(row_h, header)
+        canvas.text(xs[0] + canvas.mm(0.6), canvas.y, widths[0], label,
+                    label_font, PALETTE.text, Qt.AlignmentFlag.AlignLeft, row_h)
+        for index, q in enumerate(quantiles, start=1):
+            canvas.text(xs[index], canvas.y, widths[index] - canvas.mm(1.0),
+                        render(values[q]), cell_font, PALETTE.text,
+                        Qt.AlignmentFlag.AlignRight, row_h)
+        canvas.y += row_h
+        _row_rule(canvas)
+
+    canvas.space(2.0)
+    worst = mc.drawdown_at(95)
+    canvas.paragraph(
+        f"This backtest finished at {ctx.money(mc.observed.final_equity)} with "
+        f"a worst drawdown of {ctx.money(mc.observed.max_drawdown)} "
+        f"({_pct(mc.observed.max_drawdown_pct, 1)}). "
+        f"{mc.losing_probability * 100:.1f}% of resampled runs lost money and "
+        f"{mc.ruin_probability * 100:.1f}% closed below "
+        f"{ctx.money(mc.ruin_level)} at some point. One run in twenty had a "
+        f"drawdown worse than {ctx.money(worst)} — that is the number to size "
+        f"an account against, not the "
+        f"{ctx.money(mc.observed.max_drawdown)} this backtest happened to "
+        f"produce.",
+        canvas.font(8), PALETTE.text_dim, space_after=3.0)
 
 
 def _trades_block(canvas: _Canvas, ctx: ReportContext) -> None:

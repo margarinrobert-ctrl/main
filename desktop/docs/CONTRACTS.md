@@ -284,7 +284,12 @@ Every plain-text formatter is asserted against its own declared width in
   `csv_export.currency_symbol(result)` supplies the money prefix for both
   visual reports and returns a real symbol, not a bare ISO code.
 - `pdf_report.py` — use Qt's `QPdfWriter`/`QPainter` (always present) to render
-  the report; no reportlab dependency.
+  the report; no reportlab dependency. It keeps its own explicit block list
+  rather than sharing the HTML's sections, so a section added there is **not**
+  automatically in the PDF; `tests/test_reports.py` asserts that the analyses
+  a reader would act on appear in both. `ensure_application()` selects the
+  offscreen platform when there is no display, because Qt's failure to open
+  one is a `qFatal` — a library function must not abort its caller.
 
 ### `tradingbacktester/storage/*`
 - `workspace.py` — `bootstrap(settings) -> Workspace` creating dirs, seeding

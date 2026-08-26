@@ -236,3 +236,129 @@ def test_the_report_makes_no_network_requests(run):
     assert not re.findall(r'(?:src|href)\s*=\s*["\']https?://', html)
     assert not re.findall(r'url\(["\']?https?://', html)
     assert "<script" not in html
+
+
+# --------------------------------------------------------------------------
+# The PDF keeps its own block list, so a section added to the HTML is not
+# automatically in it. That is exactly how this one was missed once.
+# --------------------------------------------------------------------------
+
+def _pdf_headings(result, path):
+    """Render a PDF and record the headings and paragraphs it actually drew.
+
+    Qt writes PDF text as glyph indices against an embedded subset, so the
+    bytes cannot be searched for a phrase. Spying on the canvas is the honest
+    way to assert what the document contains.
+    """
+    from tradingbacktester.reports import pdf_report
+
+    headings: list[str] = []
+    paragraphs: list[str] = []
+    real_heading = pdf_report._Canvas.heading
+    real_paragraph = pdf_report._Canvas.paragraph
+
+    def heading(self, title):
+        headings.append(title)
+        return real_heading(self, title)
+
+    def paragraph(self, text, *args, **kwargs):
+        paragraphs.append(text)
+        return real_paragraph(self, text, *args, **kwargs)
+
+    pdf_report._Canvas.heading = heading
+    pdf_report._Canvas.paragraph = paragraph
+    try:
+        pdf_report.export_pdf_report(result, str(path))
+    finally:
+        pdf_report._Canvas.heading = real_heading
+        pdf_report._Canvas.paragraph = real_paragraph
+    return headings, paragraphs
+
+
+@pytest.mark.gui
+def test_the_pdf_carries_the_monte_carlo_too(run, tmp_path):
+    _, _, result = run
+    headings, paragraphs = _pdf_headings(result, tmp_path / "r.pdf")
+    assert "What else could have happened" in headings
+    joined = " ".join(paragraphs)
+    assert "resampled runs over these" in joined
+    assert "cannot tell you whether the strategy has an edge" in joined
+    assert "size an account against" in joined
+    assert (tmp_path / "r.pdf").stat().st_size > 10_000
+
+
+@pytest.mark.gui
+def test_the_pdf_money_reads_as_money(run, tmp_path):
+    import re
+
+    _, _, result = run
+    _headings, paragraphs = _pdf_headings(result, tmp_path / "r.pdf")
+    joined = " ".join(paragraphs)
+    assert not re.search(r"USD[0-9]", joined)
+    assert re.search(r"\$[0-9][0-9,]*", joined)
+
+
+@pytest.mark.gui
+def test_the_pdf_still_writes_when_resampling_cannot_run(run, tmp_path,
+                                                         monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("no")
+
+    monkeypatch.setattr("tradingbacktester.analytics.montecarlo.resample_result",
+                        boom)
+    _, _, result = run
+    headings, _paragraphs = _pdf_headings(result, tmp_path / "r.pdf")
+    assert "What else could have happened" not in headings
+    assert "Trades" in headings, "the rest of the document must survive"
+    assert (tmp_path / "r.pdf").stat().st_size > 10_000
+
+
+@pytest.mark.gui
+def test_both_reports_agree_on_which_sections_exist(run, tmp_path):
+    """The HTML and the PDF are the same document in two formats.
+
+    They are assembled by two separate lists, so one can silently gain a
+    section the other lacks. This does not demand identical structure — the
+    PDF has no chart legend and the HTML no page footer — only that the
+    analyses a reader would act on appear in both.
+    """
+    from tradingbacktester.reports.html_report import build_html_report
+
+    _, _, result = run
+    html = build_html_report(result)
+    headings, _ = _pdf_headings(result, tmp_path / "r.pdf")
+    for section in ("What else could have happened", "Trades"):
+        assert section in html, f"{section} missing from the HTML report"
+        assert section in headings, f"{section} missing from the PDF report"
+
+
+def test_pdf_export_works_with_no_display_at_all(run, tmp_path, monkeypatch):
+    """It used to abort the process — a library that kills its caller.
+
+    Qt's default platform plugin on Linux is X11 or Wayland, and with neither
+    available its failure is a `qFatal`, not an exception. That made
+    `export_pdf_report` unusable from a script or a scheduled job, which is
+    precisely what its own docstring promises it supports.
+    """
+    from tradingbacktester.reports.pdf_report import _needs_offscreen
+
+    monkeypatch.delenv("QT_QPA_PLATFORM", raising=False)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.setattr("sys.platform", "linux")
+    assert _needs_offscreen() is True
+
+    # A caller who has chosen a platform keeps it.
+    monkeypatch.setenv("QT_QPA_PLATFORM", "wayland")
+    assert _needs_offscreen() is False
+    monkeypatch.delenv("QT_QPA_PLATFORM")
+
+    # A display present means Qt can do its normal thing.
+    monkeypatch.setenv("DISPLAY", ":0")
+    assert _needs_offscreen() is False
+    monkeypatch.delenv("DISPLAY")
+
+    # Windows and macOS always have a window system.
+    for platform in ("win32", "darwin"):
+        monkeypatch.setattr("sys.platform", platform)
+        assert _needs_offscreen() is False
