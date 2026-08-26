@@ -28,6 +28,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from typing import Sequence
+
 import numpy as np
 
 from ..core.types import CommissionMode, CostModel, SlippageMode, SpreadMode
@@ -136,40 +138,63 @@ class OutcomeCache:
 # ---------------------------------------------------------------------------
 
 
-def round_turn_points(costs: CostModel, instrument, price: np.ndarray,
-                      atr: np.ndarray) -> np.ndarray:
-    """Total cost of opening and closing one contract, in price points.
+def spread_halves(costs: CostModel) -> tuple[float, float]:
+    """``(entry, exit)`` spread in price points, exactly as the engine splits it.
 
-    Charged as a single adverse amount rather than modelled tick by tick: the
-    question here is whether an edge survives its costs, and for that the total
-    is what matters.
+    This is not a detail that can be rounded off into a single round-turn
+    figure. The engine fills the entry at the adverse side of the spread and
+    then places the stop and the target *from that price*, so a two-point
+    spread moves both barriers by a point. Charging the whole spread at the end
+    instead gets the same P&L per trade and a different set of trades.
     """
+    spread = float(costs.spread_points)
+    if costs.spread_mode == SpreadMode.HALF_EACH_SIDE:
+        return spread * 0.5, spread * 0.5
+    if costs.spread_mode == SpreadMode.FULL_ON_ENTRY:
+        return spread, 0.0
+    return 0.0, 0.0
+
+
+def slippage_points(costs: CostModel, price: np.ndarray,
+                    atr: np.ndarray) -> np.ndarray:
+    """Slippage charged on one side of a trade, in price points."""
+    price = np.asarray(price, dtype="float64")
+    if costs.slippage_mode == SlippageMode.FIXED_POINTS:
+        return np.full_like(price, float(costs.slippage_value))
+    if costs.slippage_mode == SlippageMode.PERCENT:
+        return float(costs.slippage_value) / 100.0 * np.abs(price)
+    if costs.slippage_mode == SlippageMode.ATR_FRACTION:
+        return float(costs.slippage_value) * np.nan_to_num(atr)
+    return np.zeros_like(price)
+
+
+def commission_points(costs: CostModel, instrument,
+                      price: np.ndarray) -> np.ndarray:
+    """Round-turn commission converted into price points."""
     price = np.asarray(price, dtype="float64")
     point = float(getattr(instrument, "point_value", 1.0)) or 1.0
     out = np.zeros_like(price)
-
-    if costs.spread_mode != SpreadMode.NONE:
-        out += float(costs.spread_points)
-
-    if costs.slippage_mode == SlippageMode.FIXED_POINTS:
-        out += 2.0 * float(costs.slippage_value)
-    elif costs.slippage_mode == SlippageMode.PERCENT:
-        out += 2.0 * float(costs.slippage_value) / 100.0 * np.abs(price)
-    elif costs.slippage_mode == SlippageMode.ATR_FRACTION:
-        out += 2.0 * float(costs.slippage_value) * np.nan_to_num(atr)
-
-    commission = 0.0
-    if costs.commission_mode == CommissionMode.PER_UNIT:
-        commission = 2.0 * float(costs.commission_value)
-    elif costs.commission_mode == CommissionMode.PER_TRADE:
-        commission = 2.0 * float(costs.commission_value)
+    if costs.commission_mode in (CommissionMode.PER_UNIT,
+                                 CommissionMode.PER_TRADE):
+        out += 2.0 * float(costs.commission_value) / point
     elif costs.commission_mode == CommissionMode.PERCENT_NOTIONAL:
         out += 2.0 * float(costs.commission_value) / 100.0 * np.abs(price)
-    if commission:
-        out += commission / point
     if costs.min_commission:
         out += 2.0 * float(costs.min_commission) / point
     return out
+
+
+def round_turn_points(costs: CostModel, instrument, price: np.ndarray,
+                      atr: np.ndarray) -> np.ndarray:
+    """Everything one round turn costs, in price points.
+
+    Kept for reporting; the simulation applies the halves separately because
+    where a cost is charged changes where the barriers sit.
+    """
+    entry, exit_ = spread_halves(costs)
+    slip = slippage_points(costs, price, atr)
+    return (entry + exit_) + 2.0 * slip + commission_points(costs, instrument,
+                                                            price)
 
 
 # ---------------------------------------------------------------------------
@@ -215,10 +240,17 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
     risk_points = np.full(n, np.nan)
 
     minute = _minute_of_day(bars)
+    entry_spread, exit_spread = spread_halves(costs)
+    slip = slippage_points(costs, close, atr)
+    commission = commission_points(costs, bars.instrument, close)
     cost = round_turn_points(costs, bars.instrument, close, atr)
 
-    # A signal on bar i fills on bar i+1 and needs `horizon` bars to resolve in.
-    last = n - horizon - 1
+    # A signal on bar i fills on bar i+1. The last few bars of the series do
+    # not have a full horizon left, but the engine still takes those trades and
+    # closes them at the end of the run, so they are simulated the same way:
+    # the price arrays are padded with bars no barrier can reach, and the hold
+    # is capped at the data that actually exists.
+    last = n - 2
     if last < 0:
         return OutcomeCache(geometry, valid, net_points,
                             net_points * float(getattr(bars.instrument,
@@ -228,7 +260,10 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
 
     idx = np.arange(0, last + 1)
     risk = np.abs(atr[idx]) * float(geometry.stop_atr)
-    fill = open_[idx + 1]
+    # The fill is the next open moved against you by the entry half-spread and
+    # the entry slippage, and the barriers are measured from THAT price -- as
+    # the engine does, because the order is filled before the stop is placed.
+    fill = open_[idx + 1] + side * (entry_spread + slip[idx + 1])
     usable = np.isfinite(risk) & (risk > 0) & np.isfinite(fill)
 
     stop = fill - side * risk
@@ -237,14 +272,21 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
     limit = np.full(idx.size, horizon, dtype="int32")
     if hold_limit is not None:
         limit = np.minimum(limit, np.asarray(hold_limit[idx], dtype="int32"))
+    remaining = (n - (idx + 1)).astype("int32")
+    limit = np.minimum(limit, remaining)
     usable &= limit > 0
 
     # Sliding windows of the bars a trade may resolve in: row k covers
     # high[k : k + horizon], and the trade signalled at i starts at row i + 1.
     from numpy.lib.stride_tricks import sliding_window_view
 
-    high_win = sliding_window_view(high, horizon)
-    low_win = sliding_window_view(low, horizon)
+    # Padding a long trade's target out of reach (-inf highs) and its stop out
+    # of reach (+inf lows) means the padding can never trigger a barrier, for
+    # either side, so the tail needs no special case beyond the capped hold.
+    pad_high = np.concatenate([high, np.full(horizon, -np.inf)])
+    pad_low = np.concatenate([low, np.full(horizon, np.inf)])
+    high_win = sliding_window_view(pad_high, horizon)
+    low_win = sliding_window_view(pad_low, horizon)
 
     for start in range(0, idx.size, _CHUNK):
         stop_at = min(start + _CHUNK, idx.size)
@@ -273,7 +315,7 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
 
         held = np.where(stopped, first_stop,
                         np.where(targeted, first_target, cap - 1))
-        exit_index = rows + held
+        exit_index = np.minimum(rows + held, n - 1)
 
         # A gap through the stop fills at the open, which is worse than the
         # stop price -- the single most important honesty in this simulation.
@@ -287,8 +329,11 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
                               gap_open, target[start:stop_at]),
                      close[exit_index]))
 
-        gross = side * (exit_at - fill[start:stop_at])
-        net = gross - cost[idx[start:stop_at]]
+        # The exit is moved against you by the exit half-spread and slippage;
+        # commission is the only cost that is not part of a price.
+        exit_fill = exit_at - side * (exit_spread + slip[exit_index])
+        gross = side * (exit_fill - fill[start:stop_at])
+        net = gross - commission[idx[start:stop_at]]
 
         sl = slice(start, stop_at)
         valid[idx[sl]] = take
@@ -320,46 +365,97 @@ def _minute_of_day(bars: BarSeries) -> np.ndarray:
     return minutes.astype("int16")
 
 
-def session_hold_limit(bars: BarSeries, timezone: str, end: str,
-                       horizon: int) -> np.ndarray:
-    """Bars a trade signalled on each bar may run for before the session closes.
+def session_arrays(bars: BarSeries, timezone: str, start: str, end: str,
+                   weekdays: Sequence[int] = (0, 1, 2, 3, 4)
+                   ) -> tuple[np.ndarray, np.ndarray]:
+    """``(in_session, last_of_session)`` from the engine's own session code.
+
+    Reimplementing this was a mistake once already: the engine treats the
+    window as ``start <= minute < end``, so on thirty-minute bars the last bar
+    of a session ending at 16:00 is the one stamped 15:30, and a rule of
+    ``<= end`` lets every trade run one bar longer than the engine does. Rather
+    than copy the convention and hope it stays copied, this calls the engine.
+    """
+    from ..core.types import SessionSettings
+    from ..engine.backtester import _SessionArrays
+
+    settings = SessionSettings(enabled=True, start=start, end=end,
+                               timezone=timezone, weekdays=tuple(weekdays),
+                               flat_at_session_end=True)
+    arrays = _SessionArrays.build(bars.ts, settings, timezone)
+    return (np.asarray(arrays.in_session, dtype=bool),
+            np.asarray(arrays.session_last, dtype=bool))
+
+
+def session_hold_limit(bars: BarSeries, timezone: str, start: str, end: str,
+                       horizon: int, weekdays: Sequence[int] = (0, 1, 2, 3, 4)
+                       ) -> np.ndarray:
+    """How long a trade signalled on each bar may run before the session closes.
 
     Returns an array the length of *bars*: a signal on bar ``i`` fills on
-    ``i+1`` and must be flat by the last bar of that fill bar's session.
+    ``i+1`` and must be flat by the last in-session bar of that fill bar's
+    session. Getting this wrong is not a rounding error -- an index CFD trades
+    almost around the clock, so an extra hour of licence here lets a trade the
+    engine shuts at the New York close run into the evening.
     """
-    import pandas as pd
-
     n = len(bars)
-    index = pd.DatetimeIndex(pd.to_datetime(bars.ts, utc=True))
-    try:
-        local = index.tz_convert(timezone)
-    except Exception:                       # pragma: no cover - bad tz name
-        local = index
-    hour, minute = (int(x) for x in str(end).split(":")[:2])
-    end_minutes = hour * 60 + minute
-    day = local.strftime("%Y-%m-%d").to_numpy()
-    minutes = (local.hour * 60 + local.minute).to_numpy()
-
-    # Last in-session bar of each day, then how far each bar is from it.
-    in_session = minutes <= end_minutes
-    limit = np.zeros(n, dtype="int32")
     if n == 0:
-        return limit
-    # Walk backwards: distance to the end of this day's tradeable run.
-    last_index = np.zeros(n, dtype="int64")
-    current = -1
-    current_day = None
-    for i in range(n - 1, -1, -1):
-        if day[i] != current_day:
-            current_day = day[i]
-            current = i
-        if in_session[i]:
-            last_index[i] = current
-        else:
-            last_index[i] = i
-    fill = np.minimum(np.arange(n) + 1, n - 1)
-    limit = (last_index[fill] - fill + 1).astype("int32")
-    return np.clip(limit, 0, horizon)
+        return np.zeros(0, dtype="int32")
+    in_session, last_of_session = session_arrays(bars, timezone, start, end,
+                                                 weekdays)
+
+    # For each bar, the index of the next session close at or after it.
+    closes = np.flatnonzero(last_of_session)
+    room = np.zeros(n, dtype="int32")
+    if closes.size:
+        position = np.searchsorted(closes, np.arange(n), side="left")
+        valid = position < closes.size
+        next_close = np.where(valid, closes[np.minimum(position,
+                                                       closes.size - 1)], n - 1)
+        fill = np.minimum(np.arange(n) + 1, n - 1)
+        next_close_at_fill = next_close[fill]
+        room = (next_close_at_fill - fill + 1).astype("int32")
+        room[~in_session[fill]] = 0
+        room[~valid[fill]] = 0
+    return np.clip(room, 0, horizon)
+
+
+def session_entry_mask(bars: BarSeries, timezone: str, start: str | None,
+                       end: str | None,
+                       weekdays: Sequence[int] = (0, 1, 2, 3, 4)) -> np.ndarray:
+    """Bars a rule is allowed to fire on.
+
+    The engine gates on the **signal** bar, not the fill bar: it evaluates
+    rules only while the session is open, and an order raised on the last bar
+    of the session still fills at the next open. Gating on the fill bar instead
+    -- which looks equally reasonable -- silently adds a trade at 09:30 every
+    time a rule fires on the 09:00 bar, and the engine takes none of them.
+    """
+    n = len(bars)
+    if n == 0:
+        return np.zeros(0, dtype=bool)
+    if start is None or end is None:
+        ok = np.ones(n, dtype=bool)
+        if weekdays is not None and len(weekdays) < 7:
+            import pandas as pd
+
+            local = pd.DatetimeIndex(pd.to_datetime(bars.ts, utc=True))
+            try:
+                local = local.tz_convert(timezone)
+            except Exception:               # pragma: no cover - bad tz name
+                pass
+            ok &= np.isin(local.dayofweek.to_numpy(), list(weekdays))
+    else:
+        ok, _ = session_arrays(bars, timezone, start, end, weekdays)
+    # The last bar has no bar after it to fill on.
+    ok = np.asarray(ok, dtype=bool).copy()
+    ok[-1] = False
+    return ok
+
+
+def _minutes(text: str) -> int:
+    hour, minute = (int(x) for x in str(text).split(":")[:2])
+    return hour * 60 + minute
 
 
 def select_sequential(cache: OutcomeCache, mask: np.ndarray) -> np.ndarray:
@@ -381,9 +477,11 @@ def select_sequential(cache: OutcomeCache, mask: np.ndarray) -> np.ndarray:
         if i <= busy_until:
             continue
         kept[i] = True
-        # Filled on i+1, exited `held` bars later; the next fill is the bar
-        # after that, so the next usable signal bar is one earlier again.
-        busy_until = i + int(held[i]) + 1
+        # Filled on i+1 and out on bar i+1+held. The engine evaluates rules at
+        # the close of every bar, including the one a position closed on, so
+        # the exit bar itself can raise the next signal -- which fills the bar
+        # after. Anything earlier would overlap.
+        busy_until = i + int(held[i])
     return kept
 
 
@@ -404,14 +502,31 @@ def verify_against_engine(bars: BarSeries, cache: OutcomeCache,
     config.session = spec.session
     config.costs = spec.costs
     config.risk = spec.risk
+    config.warmup_bars = spec.warmup_bars()
     result = Backtester(bars, spec, config).run()
 
-    fast = cache.summary(select_sequential(cache, mask))
-    engine_trades = list(getattr(result, "trades", ()) or ())
-    engine_net = float(sum(float(getattr(t, "net_pnl", 0.0)) for t in engine_trades))
+    kept = select_sequential(cache, mask)
+    fast = cache.summary(kept)
+    trades = list(getattr(result, "trades", ()) or ())
+    engine_net = float(sum(float(t.net_pnl) for t in trades))
+
+    # Which trades the two agree on, matched by the bar the position opened.
+    fast_fills = set((np.flatnonzero(kept) + 1).tolist())
+    engine_fills = {int(t.entry_bar) for t in trades}
+    by_bar = {int(t.entry_bar): t for t in trades}
+    worst = 0.0
+    for i in np.flatnonzero(kept):
+        trade = by_bar.get(int(i) + 1)
+        if trade is not None:
+            worst = max(worst, abs(float(cache.net_cash[i]) - float(trade.net_pnl)))
+
     return {
         "fast_trades": float(fast["trades"]), "fast_net": fast["net"],
-        "engine_trades": float(len(engine_trades)), "engine_net": engine_net,
-        "trade_difference": float(len(engine_trades) - fast["trades"]),
+        "engine_trades": float(len(trades)), "engine_net": engine_net,
+        "shared_trades": float(len(fast_fills & engine_fills)),
+        "fast_only": float(len(fast_fills - engine_fills)),
+        "engine_only": float(len(engine_fills - fast_fills)),
+        "worst_matched_difference": worst,
+        "trade_difference": float(len(trades) - fast["trades"]),
         "net_difference": engine_net - fast["net"],
     }

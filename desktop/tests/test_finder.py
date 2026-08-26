@@ -361,3 +361,120 @@ def test_cli_runs_a_builtin_strategy(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "net profit" in out
     assert "max drawdown pct" in out
+
+
+# --------------------------------------------------------------------------
+# The fast path must be the engine, only faster
+# --------------------------------------------------------------------------
+
+def test_the_fast_path_agrees_with_the_engine_on_real_data():
+    """Every candidate, trade for trade, against the real simulator.
+
+    This is the test that makes the search worth running. The cached-outcome
+    path exists because it is a thousand times faster, not because it is
+    authoritative, and four separate defects were found by running exactly
+    this comparison rather than by reading the code:
+
+    * the entry was filled at the raw open, so the stop and target sat half a
+      spread away from where the engine put them;
+    * "the last bar of the session" was computed as the last bar of the
+      calendar day, which on an index CFD is seven hours later;
+    * entries were gated on the fill bar, but the engine gates on the signal
+      bar, which added a 09:30 trade every time a rule fired at 09:00;
+    * a signal on the bar a position closed was skipped, and the engine takes
+      it.
+    """
+    from tradingbacktester.data.bundled import find as find_bundled
+    from tradingbacktester.data.csv_loader import load_csv, sniff_csv
+    from tradingbacktester.data.instruments import default_instrument_for
+    from tradingbacktester.finder.candidates import (all_candidates, build_spec,
+                                                     signals_for, warmup_for)
+    from tradingbacktester.finder.outcomes import (session_entry_mask,
+                                                   session_hold_limit,
+                                                   verify_against_engine)
+    from tradingbacktester.finder.search import default_costs, prepare_bars
+
+    dataset = find_bundled("US30 30m")
+    assert dataset is not None and dataset.exists()
+    bars = load_csv(str(dataset.path()), sniff_csv(str(dataset.path())).mapping,
+                    default_instrument_for("US30"))
+    chosen = style("intraday")
+    working = prepare_bars(bars, "30m")
+    timezone = working.instrument.timezone
+    costs = default_costs(working.instrument)
+    entry_ok = session_entry_mask(working, timezone, chosen.session[0],
+                                  chosen.session[1], chosen.weekdays)
+    hold = session_hold_limit(working, timezone, chosen.session[0],
+                              chosen.session[1], chosen.max_bars,
+                              chosen.weekdays)
+
+    # A representative slice: every template, both sides.
+    seen: set[tuple] = set()
+    sample = []
+    for candidate in all_candidates():
+        key = (candidate.template, candidate.side)
+        if key in seen:
+            continue
+        seen.add(key)
+        sample.append(candidate)
+    assert len(sample) == 12
+
+    problems = []
+    for candidate in sample:
+        cache = build_outcomes(
+            working, Geometry(candidate.side, 1.5, 2.0, chosen.max_bars, 14),
+            costs, hold)
+        mask = entry_ok & signals_for(working, candidate,
+                                      warmup_for(candidate, chosen.atr_period))
+        spec = build_spec(candidate, chosen, "30m", 1.5, 2.0, costs,
+                          instrument_timezone=timezone)
+        result = verify_against_engine(working, cache, mask, spec)
+        if (result["fast_only"] or result["engine_only"]
+                or result["worst_matched_difference"] > 0.01
+                or abs(result["net_difference"]) > 0.01):
+            problems.append(f"{candidate.describe()}: {result}")
+        assert result["fast_trades"] > 0, candidate.describe()
+    assert not problems, "\n".join(problems)
+
+
+def test_the_session_limit_uses_the_engines_own_session():
+    """A trade must be flat at the session close, not at local midnight."""
+    from tradingbacktester.data.bundled import find as find_bundled
+    from tradingbacktester.data.csv_loader import load_csv, sniff_csv
+    from tradingbacktester.data.instruments import default_instrument_for
+    from tradingbacktester.finder.outcomes import (session_arrays,
+                                                   session_hold_limit)
+
+    dataset = find_bundled("US30 30m")
+    bars = load_csv(str(dataset.path()), sniff_csv(str(dataset.path())).mapping,
+                    default_instrument_for("US30"))
+    in_session, last = session_arrays(bars, "America/New_York", "09:30",
+                                      "16:00", (0, 1, 2, 3, 4))
+    # 09:30 to 16:00 exclusive is thirteen thirty-minute bars.
+    assert int(in_session.sum()) > 0
+    hold = session_hold_limit(bars, "America/New_York", "09:30", "16:00", 48,
+                              (0, 1, 2, 3, 4))
+    assert hold.max() == 13, f"session is {hold.max()} bars, expected 13"
+    # A bar outside the session gives no room at all.
+    assert int((hold[~in_session] > 0).sum()) < int(in_session.sum())
+
+
+def test_entry_and_exit_costs_land_where_the_engine_puts_them():
+    """The entry half-spread moves the barriers; it is not a P&L adjustment."""
+    from tradingbacktester.core.types import CostModel, SpreadMode
+    from tradingbacktester.finder.outcomes import spread_halves
+
+    costs = CostModel(spread_mode=SpreadMode.HALF_EACH_SIDE, spread_points=2.0)
+    assert spread_halves(costs) == (1.0, 1.0)
+    assert spread_halves(CostModel(spread_mode=SpreadMode.FULL_ON_ENTRY,
+                                   spread_points=2.0)) == (2.0, 0.0)
+    assert spread_halves(CostModel()) == (0.0, 0.0)
+
+    bars = _noise(2_000, seed=9)
+    free = build_outcomes(bars, Geometry(1, 1.5, 2.0, 24), CostModel())
+    charged = build_outcomes(bars, Geometry(1, 1.5, 2.0, 24), costs)
+    i = int(np.flatnonzero(free.valid & charged.valid)[100])
+    # A long pays the ask: the fill, and both barriers with it, move up.
+    assert charged.entry_price[i] == pytest.approx(free.entry_price[i] + 1.0)
+    assert charged.stop_price[i] == pytest.approx(free.stop_price[i] + 1.0)
+    assert charged.target_price[i] == pytest.approx(free.target_price[i] + 1.0)

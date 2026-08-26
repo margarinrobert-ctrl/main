@@ -42,10 +42,11 @@ from ..core.timeframe import Timeframe
 from ..core.types import CostModel, SlippageMode, SpreadMode
 from ..data.models import BarSeries
 from .candidates import (Candidate, TEMPLATES_BY_KEY, all_candidates,
-                         build_spec, signals_for)
+                         build_spec, signals_for, warmup_for)
 from .control import ControlResult, analytic_control, benjamini_hochberg, sampled_control
 from .outcomes import (EXIT_NAMES, Geometry, OutcomeCache, build_outcomes,
-                       select_sequential, session_hold_limit)
+                       select_sequential, session_entry_mask,
+                       session_hold_limit)
 from .styles import TradingStyle
 
 ProgressFn = Callable[[int, int, str], None]
@@ -176,40 +177,6 @@ class FinderReport:
 # ---------------------------------------------------------------------------
 
 
-def session_entry_mask(bars: BarSeries, style: TradingStyle,
-                       timezone: str) -> np.ndarray:
-    """Bars whose *fill* bar is inside the style's session window."""
-    n = len(bars)
-    if style.session is None and len(style.weekdays) == 7:
-        return np.ones(n, dtype=bool)
-
-    import pandas as pd
-
-    index = pd.DatetimeIndex(pd.to_datetime(bars.ts, utc=True))
-    try:
-        local = index.tz_convert(timezone)
-    except Exception:                       # pragma: no cover - bad tz name
-        local = index
-    ok = np.ones(n, dtype=bool)
-    if style.weekdays:
-        ok &= np.isin(local.dayofweek.to_numpy(), list(style.weekdays))
-    if style.session is not None:
-        minutes = (local.hour * 60 + local.minute).to_numpy()
-        start = _minutes(style.session[0])
-        end = _minutes(style.session[1])
-        ok &= (minutes >= start) & (minutes <= end)
-    # The rule fires on bar i but the trade opens on bar i+1, so it is the fill
-    # bar that has to be inside the session.
-    shifted = np.zeros(n, dtype=bool)
-    shifted[:-1] = ok[1:]
-    return shifted
-
-
-def _minutes(text: str) -> int:
-    hour, minute = (int(x) for x in str(text).split(":")[:2])
-    return hour * 60 + minute
-
-
 def default_costs(instrument) -> CostModel:
     """The instrument's own published costs, which are never zero."""
     spread = float(getattr(instrument, "default_spread_points", 0.0) or 0.0)
@@ -287,11 +254,15 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
     research[:split] = True
     holdout = ~research
 
-    entry_ok = session_entry_mask(working, style, timezone)
+    entry_ok = session_entry_mask(
+        working, timezone,
+        style.session[0] if style.session else None,
+        style.session[1] if style.session else None, style.weekdays)
     hold_limit = None
     if style.session is not None and style.flat_at_session_end:
-        hold_limit = session_hold_limit(working, timezone, style.session[1],
-                                        style.max_bars)
+        hold_limit = session_hold_limit(working, timezone, style.session[0],
+                                        style.session[1], style.max_bars,
+                                        style.weekdays)
 
     candidates = all_candidates(sides, templates)
     geometries = style.geometries()
@@ -315,7 +286,8 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
         if progress is not None and index % 5 == 0:
             progress(index, len(candidates) + combinations,
                      f"Reading {len(candidates)} entry rules")
-        signal_cache[candidate.key()] = signals_for(working, candidate) & entry_ok
+        signal_cache[candidate.key()] = entry_ok & signals_for(
+            working, candidate, warmup_for(candidate, style.atr_period))
 
     # -- outcomes, once per geometry ------------------------------------
     caches: dict[tuple[int, float, float], OutcomeCache] = {}
@@ -462,7 +434,8 @@ def _neighbourhood(bars: BarSeries, caches: dict, signal_cache: dict,
                               finding.candidate.side)
             key = other.key()
             if key not in signal_cache:
-                signal_cache[key] = signals_for(bars, other) & entry_ok
+                signal_cache[key] = entry_ok & signals_for(
+                    bars, other, warmup_for(other, style.atr_period))
             scored = _score(caches[(other.side, finding.stop_atr,
                                     finding.target_r)],
                             signal_cache[key], block, other, finding.timeframe,

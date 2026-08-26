@@ -304,11 +304,35 @@ def all_candidates(sides: tuple[int, ...] = (1, -1),
     return out
 
 
-def signals_for(bars: BarSeries, candidate: Candidate) -> np.ndarray:
+def warmup_for(candidate: Candidate, atr_period: int = 14) -> int:
+    """Bars the engine would refuse to trade on, for this candidate.
+
+    Taken from the same place the engine takes it -- the indicator registry's
+    own declared warm-up -- so the fast search skips exactly the bars a real
+    run would skip. Without it the search scores trades on an EMA that has
+    seen four bars, and then wonders why the engine disagrees.
+    """
+    from ..indicators.base import REGISTRY
+
+    template = TEMPLATES_BY_KEY[candidate.template]
+    slots, _ = template.build(candidate.params, candidate.side)
+    need = 1
+    for slot in slots:
+        definition = REGISTRY.get(slot.indicator)
+        need = max(need, definition.warmup(
+            definition.coerce_params(slot.params)))
+    return int(max(need, int(atr_period))) + 1
+
+
+def signals_for(bars: BarSeries, candidate: Candidate,
+                warmup: int = 0) -> np.ndarray:
     """The entry mask for one candidate, evaluated on bar closes."""
     template = TEMPLATES_BY_KEY[candidate.template]
-    mask = template.signal(bars, candidate.params, candidate.side)
-    return np.asarray(mask, dtype=bool)
+    mask = np.asarray(template.signal(bars, candidate.params, candidate.side),
+                      dtype=bool)
+    if warmup > 0:
+        mask[:min(int(warmup), mask.size)] = False
+    return mask
 
 
 def build_spec(candidate: Candidate, style, timeframe: str,
