@@ -340,6 +340,14 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
             f"across {len(findings):,} tests. This is the normal outcome of an "
             f"honest search and it is worth more than a shortlist would be.")
         best.verdict = "not worth trading — did not survive multiplicity"
+        # Still build it as a real strategy: the row is shown, so it should be
+        # openable and chartable like any other. Being able to look at what
+        # nearly worked is worth more than a row that cannot be clicked.
+        best.spec = build_spec(
+            best.candidate, style, timeframe, best.stop_atr, best.target_r,
+            costs, name=f"Found · {best.label}", instrument_timezone=timezone)
+        _reveal(caches[(best.candidate.side, best.stop_atr, best.target_r)],
+                signal_cache[best.candidate.key()], holdout, best, minimum)
         return _report(style, timeframe, working, split, combinations,
                        len(findings), findings, [best], notes, started)
 

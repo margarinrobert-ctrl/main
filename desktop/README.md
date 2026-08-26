@@ -57,6 +57,8 @@ SVG, no external assets and no network requests.
 - [Running a backtest](#running-a-backtest)
 - [Reading the metrics](#reading-the-metrics)
 - [Finding strategies automatically](#finding-strategies-automatically)
+- [Which indicators actually predict anything](#which-indicators-actually-predict-anything)
+- [Finding anomalies](#finding-anomalies)
 - [Optimisation](#optimisation)
 - [Comparing runs](#comparing-runs)
 - [Saving and exporting](#saving-and-exporting)
@@ -390,7 +392,10 @@ The full formula for every metric is in **Help → Metric Definitions**
 
 ## Finding strategies automatically
 
-**Backtest → Find Strategies…**, `Ctrl+F`, or the button on the toolbar.
+**Backtest → Find Strategies…**, `Ctrl+F`, or the button on the toolbar. The
+window has three tabs — *Strategies*, *Indicators*, *Anomalies* — asking three
+questions of the same data with the same machinery underneath. This section is
+the first; the next two sections are the others.
 
 Pick the data and the kind of trading you want. That is the whole form. Everything
 else — bar size, stop and target geometry, session window, how the result is
@@ -451,6 +456,67 @@ to recommend nothing.
 
 **Everything it produces is historical analysis, not a prediction.** The report
 says so in those words, on every path, including when nothing was found.
+
+---
+
+## Which indicators actually predict anything
+
+The **Indicators** tab of the same window. "Best indicator" is not a question
+until you say what it is being asked to predict, so the study is always tied to
+a style, and the thing being predicted is what a trade with that style's
+geometry, costs included, would actually have paid.
+
+Fifty-four engineered features across seven families — trend, momentum,
+volatility, bar shape, volume, mean reversion and session — each of them
+scale-free (distances in ATRs, sizes against their own rolling average, levels
+as trailing z-scores or percentiles) and causal, which is checked by truncating
+the series and asserting nothing earlier moves.
+
+Each feature is scored by its rank correlation with that outcome, and then held
+to four standards:
+
+1. **Standard errors corrected for overlap.** Consecutive bars share most of
+   their future and most indicators barely change from bar to bar. Both
+   together are ruinous: on a persistent feature against an overlapping return
+   *with no relationship at all*, a 5% test rejects **62% of the time**
+   uncorrected. With Newey–West errors at the trade's own horizon it rejects
+   10%. `tests/test_research.py` measures exactly that.
+2. **Corrected for multiplicity**, with the number of *independent* features
+   reported beside the number of significant ones. Fifty-four features are
+   about thirty ideas on this data, and the report names the groups that say
+   the same thing.
+3. **Converted to money.** A rank correlation of 0.03 can be overwhelmingly
+   significant and worth a fifth of a tick against a six-tick round turn. The
+   spread between the top and bottom tenth is reported in account currency,
+   beside the cost of trading and beside the baseline — what a trade opened on
+   *every* bar pays, which on most instruments is negative.
+4. **Checked on the locked block**, once, for sign and size.
+
+Anything that is significant but not monotone across the deciles, or whose rank
+correlation and average disagree in sign, or that is really a time-of-day
+effect, says so on its own row.
+
+---
+
+## Finding anomalies
+
+The **Anomalies** tab. Two different things get called an anomaly and they are
+reported separately:
+
+**Data anomalies** — bad prints, frozen quotes, holiday gaps, impossible bars.
+These make a backtest describe something that never happened, so they come
+first.
+
+**Market anomalies** — fifteen detectors: volatility spikes and collapses,
+range shocks, gaps, volume surges and droughts, price shocks, wide outside
+bars, inside bars in a squeeze, new 200-bar extremes, three-bar thrusts. Each
+is causal, and each is not merely counted but **traded**: its bars are run
+through the same simulation and the same matched control as the strategy
+search, on both sides, with the multiplicity corrected and the locked block
+kept back.
+
+The usual answer is "nothing follows it", which is exactly what you want to
+know before building a strategy on a gap.
 
 ---
 
@@ -558,6 +624,8 @@ python -m tradingbacktester.cli data                    # what is available
 python -m tradingbacktester.cli import ~/data/5m.csv --symbol US30
 python -m tradingbacktester.cli find --data "US30 15m" --style intraday
 python -m tradingbacktester.cli find --data "US30 15m" --style swing --save
+python -m tradingbacktester.cli indicators --data "US30 15m" --style intraday
+python -m tradingbacktester.cli anomalies --data "US30 15m"
 python -m tradingbacktester.cli run "EMA Cross + RSI" --data "US30 30m"
 ```
 
@@ -639,6 +707,7 @@ tradingbacktester/
 ├── engine/       cost model, position sizing, the simulated broker, the loop
 ├── analytics/    metrics, equity curves, period returns, comparison
 ├── finder/       trading styles, the candidate space, matched controls, search
+├── research/     engineered features, information coefficients, anomalies
 ├── optimize/     parameter grids, the parallel runner, ranking
 ├── reports/      CSV, HTML and PDF export
 ├── storage/      the on-disk workspace and saved runs
@@ -671,6 +740,8 @@ print(result.summary_line())
 | A sizing method | one branch in `engine/risk.PositionSizer` |
 | A rule family for the finder | one `Template` in `finder/candidates.py` |
 | A trading style | one `TradingStyle` in `finder/styles.py` |
+| A feature for the study | one `Feature` in `research/features.py` |
+| An anomaly detector | one `Detector` in `research/anomalies.py` |
 
 Live data, paper trading and broker connections are **not** implemented. The
 provider protocol is the seam they would attach to; nothing in this version

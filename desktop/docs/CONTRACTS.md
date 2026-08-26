@@ -304,3 +304,32 @@ cached; after that a candidate rule is a boolean mask and scoring it is a sum.
 `data`, `import`, `find`, `run`, `strategies`. Reads and writes the same
 workspace as the GUI. `--json` for machine-readable output; `--workspace` to
 point elsewhere. Imports no Qt.
+
+
+## `tradingbacktester/research/` — indicators and anomalies
+
+Shares the finder's simulation and controls, so a feature is scored against
+what a real trade would have paid rather than against an abstract return.
+
+- `features.Feature` / `all_features()` / `compute_matrix(bars)` — 54
+  scale-free causal features in seven families. Every one is checked by
+  truncating the series and asserting earlier values do not move.
+- `ic.rank_standardise(values)` — rank transform to mean 0, unit variance,
+  with tied ranks averaged.
+- `ic.newey_west(values, lag)` — `(mean, standard error)` with Bartlett
+  weights. The lag is the trade's horizon. Without it a 5% test on unrelated
+  data rejects 62% of the time.
+- `ic.evaluate(name, feature, target, lag) -> ICResult` — IC, t, p, decile
+  profile, spread in currency, monotonicity.
+- `ic.redundancy_groups(matrix, names, threshold)` — clusters of features
+  saying the same thing.
+- `study.study_features(bars, style, ...) -> FeatureStudy` — the protocol:
+  research/holdout split, overlap-corrected errors, BH correction, redundancy
+  clustering, decile spread against the round-turn cost, verdicts in English.
+- `anomalies.DETECTORS` — 15 causal detectors. `anomalies.scan(bars, style,
+  ...) -> AnomalyScan` counts each one and then trades it against a matched
+  control on both sides, separating data-quality problems from market ones.
+- `report.format_study` / `report.format_anomalies` — plain text with the
+  caveats beside the numbers.
+
+CLI: `indicators` and `anomalies` subcommands, both with `--json`.

@@ -1,15 +1,22 @@
-"""Find Strategies: pick data, pick a style, press go.
+"""Research: pick data, pick a style, and ask one of three questions.
 
 The whole point of this dialog is that it asks for two things and nothing
-else. Everything a search needs beyond "which data" and "what kind of trading"
+else. Everything a study needs beyond "which data" and "what kind of trading"
 -- the bar size, the stop and target geometry, the session, the split, the
 control, the multiplicity correction -- is decided by the protocol rather than
 by the user, because those are exactly the settings that, left adjustable,
 turn a search into a machine for finding coincidences.
 
-What it gives back is deliberately not a leaderboard. Every row carries the
-control it was measured against, what the locked block said, and a verdict in
-plain English -- including, most of the time, "not worth trading".
+Three tabs, three questions, one set of machinery underneath:
+
+* **Strategies** -- is there an entry rule that beats entering at random?
+* **Indicators** -- which measurements predict what a trade will pay, and is
+  the prediction worth more than the spread?
+* **Anomalies** -- which bars are unusual, and does anything follow them?
+
+What they give back is deliberately not a leaderboard. Every row carries what
+it was measured against, what the locked block said, and a verdict in plain
+English -- including, most of the time, "nothing".
 """
 
 from __future__ import annotations
@@ -20,12 +27,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog,
                                QHBoxLayout, QHeaderView, QLabel, QProgressBar,
                                QPushButton, QRadioButton, QSizePolicy,
-                               QSplitter, QTableWidget, QTableWidgetItem,
-                               QTextBrowser, QVBoxLayout, QWidget)
+                               QSplitter, QTabWidget, QTableWidget,
+                               QTableWidgetItem, QTextBrowser, QVBoxLayout,
+                               QWidget)
 
 from ...core.errors import BacktesterError, CancelledError
 from ...finder import find_strategies, format_report
 from ...finder.styles import STYLES
+from ...research import format_anomalies, format_study, scan, study_features
 from ...logging_setup import get_logger
 from ..theme import PALETTE, Fonts
 from ..widgets.common import Card, show_error
@@ -35,6 +44,23 @@ log = get_logger(__name__)
 _COLUMNS = ("Rule", "Trades", "Won", "Per trade", "Vs. random", "Locked block",
             "Verdict")
 
+_INDICATOR_COLUMNS = ("Indicator", "Family", "Says", "Predictive power",
+                      "Worth per trade", "Locked block", "Verdict")
+
+_ANOMALY_COLUMNS = ("Event", "Count", "Share", "Side", "Edge per trade", "p",
+                    "Verdict")
+
+#: The three questions, in the order the tabs show them.
+STUDIES = (
+    ("strategies", "Strategies",
+     "Is there an entry rule that beats entering at random?"),
+    ("indicators", "Indicators",
+     "Which measurements predict what a trade pays, and by enough to cover "
+     "the spread?"),
+    ("anomalies", "Anomalies",
+     "Which bars are unusual, and does anything follow them?"),
+)
+
 
 class FinderDialog(QDialog):
     """Search for strategies on one dataset, in one style."""
@@ -42,14 +68,17 @@ class FinderDialog(QDialog):
     def __init__(self, datasets: Any, instruments: Any, strategies: Any,
                  current_bars: Any = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Find Strategies")
+        self.setWindowTitle("Research")
         self.resize(1180, 800)
 
         self._datasets = datasets
         self._instruments = instruments
         self._strategies = strategies
         self._bars = current_bars
-        self._report: Any = None
+        self._reports: dict[str, Any] = {"strategies": None,
+                                         "indicators": None,
+                                         "anomalies": None}
+        self._running: str = "strategies"
         self._worker: Any = None
 
         self._build_ui()
@@ -106,27 +135,52 @@ class FinderDialog(QDialog):
         top.addWidget(style_card, 1)
         outer.addLayout(top)
 
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        self.table = QTableWidget(0, len(_COLUMNS))
-        self.table.setHorizontalHeaderLabels(list(_COLUMNS))
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.table.setFont(Fonts.numeric(9))
-        self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(
-            len(_COLUMNS) - 1, QHeaderView.ResizeMode.Stretch)
-        self.table.itemSelectionChanged.connect(self._on_row_selected)
-        splitter.addWidget(self.table)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self._tables: dict[str, QTableWidget] = {}
+        self._details: dict[str, QTextBrowser] = {}
+        for key, label, question in STUDIES:
+            columns = {"strategies": _COLUMNS,
+                       "indicators": _INDICATOR_COLUMNS,
+                       "anomalies": _ANOMALY_COLUMNS}[key]
+            page = QWidget()
+            layout = QVBoxLayout(page)
+            layout.setContentsMargins(0, 8, 0, 0)
+            layout.setSpacing(6)
+            prompt = QLabel(question)
+            prompt.setWordWrap(True)
+            prompt.setObjectName("Hint")
+            prompt.setFont(Fonts.body(9))
+            layout.addWidget(prompt)
 
-        self.detail = QTextBrowser()
-        self.detail.setOpenExternalLinks(False)
-        self.detail.setFont(Fonts.body(9))
-        splitter.addWidget(self.detail)
-        splitter.setSizes([300, 320])
-        outer.addWidget(splitter, 1)
+            splitter = QSplitter(Qt.Orientation.Vertical)
+            table = QTableWidget(0, len(columns))
+            table.setHorizontalHeaderLabels(list(columns))
+            table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            table.setSelectionBehavior(
+                QAbstractItemView.SelectionBehavior.SelectRows)
+            table.setSelectionMode(
+                QAbstractItemView.SelectionMode.SingleSelection)
+            table.setFont(Fonts.numeric(9))
+            table.verticalHeader().setVisible(False)
+            table.horizontalHeader().setSectionResizeMode(
+                0, QHeaderView.ResizeMode.Stretch)
+            table.horizontalHeader().setSectionResizeMode(
+                len(columns) - 1, QHeaderView.ResizeMode.Stretch)
+            table.itemSelectionChanged.connect(self._on_row_selected)
+            splitter.addWidget(table)
+
+            detail = QTextBrowser()
+            detail.setOpenExternalLinks(False)
+            detail.setFont(Fonts.body(9))
+            splitter.addWidget(detail)
+            splitter.setSizes([290, 300])
+            layout.addWidget(splitter, 1)
+            self.tabs.addTab(page, label)
+            self._tables[key] = table
+            self._details[key] = detail
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        outer.addWidget(self.tabs, 1)
 
         self.progress = QProgressBar()
         self.progress.hide()
@@ -239,6 +293,20 @@ class FinderDialog(QDialog):
 
     # -- running ---------------------------------------------------------
 
+    @property
+    def _study(self) -> str:
+        index = max(0, self.tabs.currentIndex())
+        return STUDIES[min(index, len(STUDIES) - 1)][0]
+
+    def _on_tab_changed(self, *_args) -> None:
+        self._on_row_selected()
+        study = self._study
+        if self._reports.get(study) is None:
+            index = max(0, min(self.tabs.currentIndex(), len(STUDIES) - 1))
+            self.status.setText(
+                f"{STUDIES[index][2]}  Press Search to find out.")
+            self.status.setStyleSheet(f"color:{PALETTE.text_dim};")
+
     def _search(self) -> None:
         try:
             bars = self._load_bars()
@@ -247,8 +315,9 @@ class FinderDialog(QDialog):
             return
 
         style = self._selected_style()
-        self.table.setRowCount(0)
-        self.detail.clear()
+        study = self._study
+        self._tables[study].setRowCount(0)
+        self._details[study].clear()
         self.save_button.setEnabled(False)
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
@@ -256,8 +325,9 @@ class FinderDialog(QDialog):
         self.search_button.setEnabled(False)
         self.cancel_search.setEnabled(True)
         self.status.setText(
-            f"Searching {len(bars):,} bars of {bars.instrument.symbol}. "
-            f"This runs on a background thread; the window stays usable.")
+            f"Working through {len(bars):,} bars of "
+            f"{bars.instrument.symbol}. This runs on a background thread; the "
+            f"window stays usable.")
         self.status.setStyleSheet(f"color:{PALETTE.text_dim};")
 
         from ..workers import TaskRunner
@@ -267,16 +337,22 @@ class FinderDialog(QDialog):
         self._worker.finished.connect(self._on_finished)
         self._worker.failed.connect(self._on_failed)
         self._worker.cancelled.connect(self._on_cancelled)
+        self._running = study
 
         def job(progress=None, cancel=None):
             def forward(done: int, total: int, message: str) -> None:
                 if cancel is not None and cancel.cancelled:
-                    raise CancelledError("The search was stopped.")
+                    raise CancelledError("The study was stopped.")
                 if progress is not None:
                     progress(done, total, message)
+
+            if study == "indicators":
+                return study_features(bars, style, progress=forward)
+            if study == "anomalies":
+                return scan(bars, style, progress=forward)
             return find_strategies(bars, style, progress=forward)
 
-        self._worker.start(job, "Searching for strategies")
+        self._worker.start(job, f"Running the {study} study")
 
     def _cancel(self) -> None:
         if self._worker is not None:
@@ -292,11 +368,11 @@ class FinderDialog(QDialog):
         self._finish_ui()
         self.status.setText(message)
         self.status.setStyleSheet(f"color:{PALETTE.danger};")
-        log.error("Strategy search failed: %s\n%s", message, detail)
+        log.error("Study failed: %s\n%s", message, detail)
 
     def _on_cancelled(self) -> None:
         self._finish_ui()
-        self.status.setText("Search stopped.")
+        self.status.setText("Stopped.")
 
     def _finish_ui(self) -> None:
         self.progress.hide()
@@ -305,78 +381,190 @@ class FinderDialog(QDialog):
 
     def _on_finished(self, report: Any) -> None:
         self._finish_ui()
-        self._report = report
-        self._fill_table(report)
-        self.detail.setPlainText(format_report(report))
-        if report.shortlist:
-            worth = sum(1 for f in report.shortlist
-                        if f.verdict == "worth testing further")
-            self.status.setText(
-                f"{report.combinations:,} combinations tried in "
-                f"{report.elapsed:.0f}s. {len(report.shortlist)} shortlisted, "
-                f"{worth} worth testing further. Select a row to read the "
-                f"detail.")
-            self.status.setStyleSheet(
-                f"color:{PALETTE.success if worth else PALETTE.warning};")
+        study = self._running or self._study
+        self._reports[study] = report
+        if study == "indicators":
+            self._fill_indicators(report)
+        elif study == "anomalies":
+            self._fill_anomalies(report)
         else:
-            self.status.setText(
-                f"{report.combinations:,} combinations tried and none survived. "
-                f"That is the usual outcome of an honest search — see below for "
-                f"what it would take to change it.")
-            self.status.setStyleSheet(f"color:{PALETTE.warning};")
+            self._fill_strategies(report)
 
-    def _fill_table(self, report: Any) -> None:
+    # -- filling the three tables ----------------------------------------
+
+    def _put(self, table, row: int, cells: list[str], highlight: bool) -> None:
+        for column, text in enumerate(cells):
+            item = QTableWidgetItem(text)
+            if column:
+                item.setTextAlignment(Qt.AlignmentFlag.AlignRight
+                                      | Qt.AlignmentFlag.AlignVCenter)
+            if column == len(cells) - 1:
+                item.setForeground(Qt.GlobalColor.green if highlight
+                                   else Qt.GlobalColor.gray)
+            table.setItem(row, column, item)
+
+    def _fill_strategies(self, report: Any) -> None:
+        table = self._tables["strategies"]
         rows = list(report.shortlist)
-        self.table.setRowCount(len(rows))
+        table.setRowCount(len(rows))
         for row, finding in enumerate(rows):
             research = finding.research
             holdout = finding.holdout or {}
             excess = (finding.holdout_control.excess_per_trade
                       if finding.holdout_control else 0.0)
-            cells = [
+            self._put(table, row, [
                 finding.label,
                 f"{int(research['trades']):,}",
                 f"{research['win_rate'] * 100:.1f}%",
                 f"{research['per_trade']:+,.2f}",
-                f"{finding.control.excess_per_trade:+,.2f} (p={finding.control.p_value:.3f})",
+                f"{finding.control.excess_per_trade:+,.2f} "
+                f"(p={finding.control.p_value:.3f})",
                 (f"{int(holdout.get('trades', 0)):,} trades, {excess:+,.2f}"
                  if holdout else "—"),
                 finding.verdict,
-            ]
-            for column, text in enumerate(cells):
-                item = QTableWidgetItem(text)
-                if column:
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight
-                                          | Qt.AlignmentFlag.AlignVCenter)
-                if column == len(cells) - 1:
-                    item.setForeground(Qt.GlobalColor.green
-                                       if finding.verdict.startswith("worth")
-                                       else Qt.GlobalColor.gray)
-                self.table.setItem(row, column, item)
-        self.table.resizeColumnsToContents()
-        self.table.horizontalHeader().setSectionResizeMode(
+            ], finding.verdict.startswith("worth"))
+        self._finish_table(table, "strategies", format_report(report))
+
+        worth = sum(1 for f in rows if f.verdict == "worth testing further")
+        if rows:
+            self.status.setText(
+                f"{report.combinations:,} combinations tried in "
+                f"{report.elapsed:.0f}s. {len(rows)} shortlisted, {worth} "
+                f"worth testing further. Select a row to read the detail.")
+            self.status.setStyleSheet(
+                f"color:{PALETTE.success if worth else PALETTE.warning};")
+        else:
+            self.status.setText(
+                f"{report.combinations:,} combinations tried and none "
+                f"survived. That is the usual outcome of an honest search — "
+                f"see below for what it would take to change it.")
+            self.status.setStyleSheet(f"color:{PALETTE.warning};")
+
+    def _fill_indicators(self, study: Any) -> None:
+        table = self._tables["indicators"]
+        rows = [f for f in study.findings if f.research.significant][:30]
+        table.setRowCount(len(rows))
+        for row, finding in enumerate(rows):
+            holdout = (f"IC {finding.holdout.ic:+.4f}" if finding.holdout
+                       else "—")
+            self._put(table, row, [
+                finding.name,
+                finding.feature.family,
+                finding.direction,
+                f"IC {finding.research.ic:+.4f} (t={finding.research.t_stat:+.1f})",
+                f"{finding.research.spread:+,.2f} {study.currency}",
+                holdout,
+                finding.verdict,
+            ], finding.verdict.startswith("predicts, and"))
+        self._finish_table(table, "indicators", format_study(study, top=30))
+
+        useful = sum(1 for f in rows
+                     if f.verdict.startswith("predicts, and"))
+        self.status.setText(
+            f"{study.tested} features in {study.independent} independent "
+            f"groups; {study.significant} predict something, {useful} by more "
+            f"than the {study.cost_per_trade:,.2f} {study.currency} cost of "
+            f"trading. Select a row to read the detail.")
+        self.status.setStyleSheet(
+            f"color:{PALETTE.success if useful else PALETTE.warning};")
+
+    def _fill_anomalies(self, report: Any) -> None:
+        table = self._tables["anomalies"]
+        rows = list(report.findings)
+        table.setRowCount(len(rows))
+        for row, finding in enumerate(rows):
+            self._put(table, row, [
+                finding.label,
+                f"{finding.count:,}",
+                f"{finding.share * 100:.2f}%",
+                "long" if finding.side > 0 else "short",
+                f"{finding.excess:+,.2f} {report.currency}",
+                f"{finding.p_value:.3f}",
+                finding.verdict,
+            ], finding.verdict.startswith("worth"))
+        self._finish_table(table, "anomalies", format_anomalies(report))
+
+        worth = sum(1 for f in rows if f.verdict.startswith("worth"))
+        self.status.setText(
+            f"{len(rows)} detectors on {report.bars:,} bars; {worth} worth a "
+            f"closer look. Select a row to read the detail.")
+        self.status.setStyleSheet(
+            f"color:{PALETTE.success if worth else PALETTE.warning};")
+
+    def _finish_table(self, table, study: str, text: str) -> None:
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch)
+        self._details[study].setPlainText(text)
+
+    # -- selection --------------------------------------------------------
 
     def _on_row_selected(self) -> None:
+        study = self._study
         finding = self._selected_finding()
-        self.save_button.setEnabled(finding is not None and finding.spec is not None)
+        self.save_button.setEnabled(
+            study == "strategies" and finding is not None
+            and getattr(finding, "spec", None) is not None)
         if finding is None:
             return
-        from ...finder.report import _finding_lines
+        if study == "strategies":
+            from ...finder.report import _finding_lines
 
-        lines = [finding.label, ""]
-        lines.extend(_finding_lines(finding, "USD"))
-        self.detail.setPlainText("\n".join(lines))
+            lines = [finding.label, ""]
+            lines.extend(_finding_lines(finding, "USD"))
+        elif study == "indicators":
+            report = self._reports["indicators"]
+            lines = [f"{finding.name}  [{finding.feature.family}]",
+                     "", finding.feature.description, "",
+                     finding.research.describe(report.currency,
+                                               report.cost_per_trade),
+                     f"deciles: bottom {finding.research.bottom_decile:+,.2f} → "
+                     f"top {finding.research.top_decile:+,.2f} "
+                     f"{report.currency}/trade "
+                     f"(baseline {report.baseline:+,.2f})"]
+            if finding.holdout is not None:
+                lines.append(
+                    f"locked block: IC {finding.holdout.ic:+.4f} "
+                    f"(t={finding.holdout.t_stat:+.2f})")
+            if len(finding.cluster) > 1:
+                lines.append("measures the same thing as: "
+                             + ", ".join(n for n in finding.cluster
+                                         if n != finding.name))
+            lines.extend(["", f"verdict: {finding.verdict}"])
+            lines.extend(f"  - {c}" for c in finding.concerns)
+        else:
+            lines = [finding.label, "", finding.detector.description, "",
+                     f"{finding.count:,} bars ({finding.share * 100:.2f}% of "
+                     f"the data)",
+                     f"best side: {'long' if finding.side > 0 else 'short'}, "
+                     f"{finding.trades:,} trades, "
+                     f"{finding.per_trade:+,.2f} per trade",
+                     f"against a matched control: {finding.excess:+,.2f} "
+                     f"(p={finding.p_value:.3f})",
+                     f"locked block: {finding.holdout_trades:,} trades, "
+                     f"{finding.holdout_excess:+,.2f} per trade",
+                     "", f"verdict: {finding.verdict}"]
+            if finding.detail:
+                lines.extend(["", finding.detail])
+        self._details[study].setPlainText("\n".join(str(x) for x in lines))
 
     def _selected_finding(self):
-        if self._report is None:
+        study = self._study
+        report = self._reports.get(study)
+        if report is None:
             return None
-        rows = self.table.selectionModel().selectedRows()
+        table = self._tables[study]
+        rows = table.selectionModel().selectedRows()
         if not rows:
             return None
         index = rows[0].row()
-        shortlist = list(self._report.shortlist)
-        return shortlist[index] if 0 <= index < len(shortlist) else None
+        if study == "strategies":
+            items = list(report.shortlist)
+        elif study == "indicators":
+            items = [f for f in report.findings if f.research.significant][:30]
+        else:
+            items = list(report.findings)
+        return items[index] if 0 <= index < len(items) else None
 
     def _save_selected(self) -> None:
         finding = self._selected_finding()

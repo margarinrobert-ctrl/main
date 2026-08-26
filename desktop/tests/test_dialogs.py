@@ -671,20 +671,67 @@ def test_finder_dialog_shows_a_result_and_can_save_it(qapp, tmp_path, registry):
     assert len(bars) > 1000
 
     report = find_strategies(bars, dialog._selected_style(), control_draws=50)
+    dialog._running = "strategies"
     dialog._on_finished(report)
     qapp.processEvents()
-    assert dialog.table.rowCount() == len(report.shortlist)
+    table = dialog._tables["strategies"]
+    assert table.rowCount() == len(report.shortlist)
     # Whatever the verdict, the multiplicity has to be on screen.
     assert f"{report.combinations:,} combinations" in dialog.status.text()
-    assert "not a prediction" in dialog.detail.toPlainText()
+    assert "not a prediction" in dialog._details["strategies"].toPlainText()
 
     if report.shortlist and report.shortlist[0].spec is not None:
-        dialog.table.selectRow(0)
+        table.selectRow(0)
         qapp.processEvents()
         assert dialog.save_button.isEnabled()
         dialog._save_selected()
         assert store.list(), "the saved strategy did not reach the workspace"
         assert "not a recommendation" in dialog.status.text()
+    dialog.close()
+
+
+def test_finder_dialog_runs_all_three_studies(qapp, tmp_path, registry):
+    """One dialog, three questions, and each of them fills its own tab."""
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.finder import find_strategies
+    from tradingbacktester.research import scan, study_features
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import (STUDIES,
+                                                            FinderDialog)
+
+    workspace = Workspace(tmp_path).ensure()
+    dialog = FinderDialog(DatasetRepository(workspace), registry,
+                          StrategyStore(workspace))
+    assert [dialog.tabs.tabText(i) for i in range(dialog.tabs.count())] == \
+        [label for _key, label, _q in STUDIES]
+
+    for i in range(dialog.dataset_box.count()):
+        if "US30 30m" in dialog.dataset_box.itemText(i):
+            dialog.dataset_box.setCurrentIndex(i)
+            break
+    bars = dialog._load_bars()
+    chosen = dialog._selected_style()
+
+    runs = {
+        "strategies": lambda: find_strategies(bars, chosen, control_draws=50),
+        "indicators": lambda: study_features(bars, chosen),
+        "anomalies": lambda: scan(bars, chosen, control_draws=50),
+    }
+    for index, (key, _label, _question) in enumerate(STUDIES):
+        dialog.tabs.setCurrentIndex(index)
+        dialog._running = key
+        dialog._on_finished(runs[key]())
+        qapp.processEvents()
+        assert dialog.status.text(), f"{key} said nothing"
+        assert dialog._details[key].toPlainText(), f"{key} has no detail text"
+        table = dialog._tables[key]
+        if table.rowCount():
+            table.selectRow(0)
+            qapp.processEvents()
+            assert dialog._details[key].toPlainText()
+        # Only a found strategy can be saved; the other two are studies.
+        assert dialog.save_button.isEnabled() == (
+            key == "strategies" and table.rowCount() > 0)
     dialog.close()
 
 

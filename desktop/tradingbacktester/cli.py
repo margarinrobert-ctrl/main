@@ -152,6 +152,28 @@ def cmd_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _stderr_progress():
+    """A progress callback that draws on a terminal and stays quiet in a pipe."""
+    last = [0.0]
+
+    def progress(done: int, total: int, message: str) -> None:
+        if not sys.stderr.isatty():
+            return
+        share = done / max(1, total)
+        if share - last[0] < 0.02:
+            return
+        last[0] = share
+        sys.stderr.write(f"\r  {message} … {share * 100:3.0f}%")
+        sys.stderr.flush()
+
+    return progress
+
+
+def _clear_progress() -> None:
+    if sys.stderr.isatty():
+        sys.stderr.write("\r" + " " * 78 + "\r")
+
+
 def cmd_find(args: argparse.Namespace) -> int:
     from .finder import find_strategies, format_report, style as get_style
     from .finder.styles import STYLES
@@ -168,26 +190,14 @@ def cmd_find(args: argparse.Namespace) -> int:
     # search works out: five-minute bars cannot be turned into one-minute ones.
     timeframe = args.timeframe
 
-    last = [0.0]
-
-    def progress(done: int, total: int, message: str) -> None:
-        if not sys.stderr.isatty():
-            return
-        share = done / max(1, total)
-        if share - last[0] < 0.02:
-            return
-        last[0] = share
-        sys.stderr.write(f"\r  {message} … {share * 100:3.0f}%")
-        sys.stderr.flush()
-
+    progress = _stderr_progress()
     report = find_strategies(
         bars, chosen, timeframe=timeframe, top_n=args.top,
         control_draws=args.draws, research_fraction=args.research,
         sides=((1,) if args.side == "long" else (-1,) if args.side == "short"
                else (1, -1)),
         progress=progress)
-    if sys.stderr.isatty():
-        sys.stderr.write("\r" + " " * 70 + "\r")
+    _clear_progress()
 
     if args.json:
         print(json.dumps(report.to_dict(), indent=2))
@@ -207,6 +217,46 @@ def cmd_find(args: argparse.Namespace) -> int:
             saved += 1
         print(f"Saved {saved} strategy file(s) into the workspace. They are "
               f"candidates for further testing, not recommendations.")
+    return 0
+
+
+def cmd_indicators(args: argparse.Namespace) -> int:
+    from .finder.styles import STYLES
+    from .research import format_study, study_features
+    from .finder import style as get_style
+
+    if args.style == "list":
+        for s in STYLES:
+            print(f"{s.key:<10} {s.label:<16} {s.summary}")
+        return 0
+
+    bars, name = _resolve_bars(args)
+    report = study_features(bars, get_style(args.style),
+                            timeframe=args.timeframe,
+                            side=-1 if args.side == "short" else 1,
+                            research_fraction=args.research,
+                            progress=_stderr_progress())
+    _clear_progress()
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(format_study(report, top=args.top))
+    return 0
+
+
+def cmd_anomalies(args: argparse.Namespace) -> int:
+    from .research import format_anomalies, scan
+    from .finder import style as get_style
+
+    bars, name = _resolve_bars(args)
+    report = scan(bars, get_style(args.style), timeframe=args.timeframe,
+                  control_draws=args.draws, research_fraction=args.research,
+                  progress=_stderr_progress())
+    _clear_progress()
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(format_anomalies(report))
     return 0
 
 
@@ -316,6 +366,31 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", help="Machine-readable output")
     p.add_argument("--symbol", default="")
     p.set_defaults(func=cmd_find)
+
+    p = sub.add_parser("indicators",
+                       help="Rank indicators by what they predict")
+    p.add_argument("--data", required=True)
+    p.add_argument("--style", default="intraday",
+                   help="scalp | intraday | swing | position, or 'list'")
+    p.add_argument("--timeframe", default="")
+    p.add_argument("--side", default="long", choices=("long", "short"),
+                   help="Which side's trades to predict")
+    p.add_argument("--top", type=int, default=14)
+    p.add_argument("--research", type=float, default=0.65)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_indicators)
+
+    p = sub.add_parser("anomalies",
+                       help="Find unusual bars and test whether they pay")
+    p.add_argument("--data", required=True)
+    p.add_argument("--style", default="intraday")
+    p.add_argument("--timeframe", default="")
+    p.add_argument("--draws", type=int, default=1000)
+    p.add_argument("--research", type=float, default=0.65)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_anomalies)
 
     p = sub.add_parser("run", help="Run one backtest")
     p.add_argument("strategy")
