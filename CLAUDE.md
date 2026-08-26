@@ -667,4 +667,12 @@ Three definitional traps, all of which have shipped broken once: ATR is `ta.ema(
 not `ta.atr`; bare `hour`/`minute` are **exchange** time (Chicago for CME) not New York; CCI is on
 `hlc3`. Entries require `barstate.isconfirmed` so the Strategy Tester's "Script execution"
 checkboxes cannot change the result — without it, tick evaluation fires 5.1× as many signals with
-80% on bars that never satisfied the rule.
+80% on bars that never satisfied the rule. **And guarding the ENTRIES is not enough: guard every
+block that writes `var` state.** The Turtle script's `lastWin := close > firstFill` was unguarded, and
+mid-bar `close` is the current price — `lastWin` drives the System 1 skip, so it chose which
+breakouts to take from a price the bar-close run cannot see. Ticking the three boxes moved the same
+rules from −913 / PF 0.994 / 11,398 trades to +62,278 / PF 1.416 / **14,462** trades. The trade count
+is the tell, and the bar-close run is the correct one. Ask of every line: does it read a series that
+differs mid-bar, and does anything durable depend on the answer? `close`, `high`, `low`, `ta.atr`,
+`ta.dmi`, `strategy.opentrades` all do. **If a checkbox changes the report, the report is about the
+checkbox.** See `docs/ib/STUDY_TICK_RECALC.md`.
