@@ -65,3 +65,50 @@ In Pine, the question is not "does this line place an order". It is **"does this
 that differs mid-bar, and does anything durable depend on the answer"**. `close`, `high`, `low`,
 `ta.atr`, `ta.dmi`, `strategy.opentrades` and everything derived from them all differ mid-bar. A
 `var` written from any of them is a decision frozen at an arbitrary instant inside the bar. Guard it.
+
+## Addendum — two things the US100 runs exposed that are not the checkbox
+
+A follow-up pair of Deep Backtests on US100, offered as a checkbox comparison, turned out to have
+**Script execution 3 on both** — so they are not that comparison at all. What they do show is worse,
+and neither defect had anything to do with tick recalculation.
+
+| | range | capital | trades | profitable | PF | total P&L | max DD |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| run A | 2022-12-31 → 2025-12-26 | **100K** | **850** | 23.65% | 1.642 | +9,350.80 (+9.35%) | 890.50 (0.85%) |
+| run B | 2022-12-19 → 2025-12-26 | **1M** | **4,806** | 35.00% | 1.551 | +52,017.10 (+5.20%) | 4,297.50 (0.42%) |
+
+### Capital silently rewrites the strategy
+
+The same script over the same range produced **850 trades at 100K and 4,806 at 1M — 5.65×**. Twelve
+extra days of range cannot do that. Capital can: with `pyramiding = 4` the ladder needs four units of
+notional, and when the account cannot fund the next unit TradingView's broker emulator **rejects the
+order** rather than reporting an error. The run then trades a different, smaller subset of its own
+signals and reports the result as though it were the strategy.
+
+The rejections are not random, which is what makes this worse than a sample-size problem. They
+cluster exactly where price is high and the position is already large — so the underfunded run is
+systematically dropping the late units of extended trends, which is where a Turtle ladder either
+makes its year or gives it back. Run A's 23.65% win rate against run B's 35.00% is that selection,
+not a different edge.
+
+`unitQty` is now an input, and the HUD carries a fourth row that turns red with the required notional
+and the current equity when the full ladder does not fit. Size the units down; do not raise capital
+until the warning clears and call the difference performance.
+
+### The script was charging nothing
+
+Run B's Performance analysis reads **Commission load 0.00%**, and it is correct: the `strategy()`
+declaration set no `commission_type`, no `commission_value` and no `slippage`. The file header had
+claimed all along that the research assumed ~1.0 point spread and 0.25 point slippage — the research
+did, the **script did not**. Every Strategy Tester run of it, including both above and the ETH runs in
+the main study, was a zero-cost backtest of a system taking thousands of trades.
+
+Both are now set in the declaration and both are meant to be edited per instrument. This was my
+omission: every other Pine shipped on this branch carries `commission_value` and `slippage`, and this
+one was missed.
+
+**The general point.** A backtest has three ways to be wrong before its rules are ever in question:
+the engine can re-evaluate mid-bar (the main study), the account can be too small to take the trades
+(above), and the fills can be free (above). All three flatter. None of them is visible in the equity
+curve — they are visible in the **trade count** and in **Commission load**, which is why those two
+numbers are worth reading before the P&L.

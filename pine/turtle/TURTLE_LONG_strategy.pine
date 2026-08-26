@@ -30,10 +30,18 @@
 // Turtle unit, ~1.0 point spread and 0.25 point slippage assumed. Research 2016-2021,
 // out-of-sample 2022-2025. See docs/ib/STUDY_TURTLE.md -- including the finding that a RANDOM
 // entry with these same exits performs as well as the breakout itself.
+// COSTS WERE MISSING FROM THIS DECLARATION AND ARE NOW CHARGED. The header above says the
+// research assumed ~1.0 point spread and 0.25 point slippage; the SCRIPT charged neither, so
+// every Strategy Tester run of it reported "Commission load 0.00%" -- a zero-cost backtest of a
+// system that takes thousands of trades. Set both to your instrument below before reading any
+// number this produces. Defaults are the research's own assumption on a 1-point-per-unit index
+// CFD; on a futures contract use the contract's real per-order fee instead.
 strategy("Turtle Long-Only (measured presets)", overlay = true, pyramiding = 4,
          default_qty_type = strategy.fixed, default_qty_value = 1,
          initial_capital = 100000, calc_on_every_tick = false,
-         process_orders_on_close = false)
+         process_orders_on_close = false,
+         commission_type = strategy.commission.cash_per_order,
+         commission_value = 0.50, slippage = 1)
 
 // ----------------------------------------------------------------- preset (locks everything)
 presetName = input.string("T1  240m  ADX<22 + not extended", "Preset", options = [
@@ -43,6 +51,17 @@ presetName = input.string("T1  240m  ADX<22 + not extended", "Preset", options =
      "T4   60m  ADX<22 + not extended",
      "Spec defaults (no gate)",
      "Custom"])
+
+// ----------------------------------------------------------------- POSITION SIZE
+// EXPOSED BECAUSE AN UNDERFUNDED ACCOUNT SILENTLY CHANGES THE STRATEGY. With pyramiding 4 the
+// ladder needs four units of notional; when the account cannot fund the next one the broker
+// emulator REJECTS the order rather than reporting an error, so the run quietly trades a
+// different, self-selected subset of the signals. Measured on US100 over the same range and the
+// same script: 100K capital gave 850 trades, 1M capital gave 4,806 -- 5.65x, from capital alone.
+// The HUD warns when the full ladder does not fit.
+unitQty = input.float(1.0, "Units per Turtle unit", minval = 0.01, step = 0.01,
+     group = "Position size",
+     tooltip = "Lower this instead of raising capital if the HUD says the ladder does not fit. A rejected order is not a neutral event -- the rejections cluster where price is high and the position is already large, so what gets dropped is systematic, not random.")
 
 // ----------------------------------------------------------------- SESSION: FREE, NEVER LOCKED
 sessOn    = input.bool(false, "Restrict entries to a session", group = "Entry session (free)")
@@ -172,21 +191,21 @@ sig1 = high > chanHi1[1]
 
 if barstate.isconfirmed and flat and gateOk and atrN > 0
     if sig2
-        strategy.entry("S2", strategy.long, qty = 1)
+        strategy.entry("S2", strategy.long, qty = unitQty)
         sysOn   := 2
         pendAtr := atrN
     else if sig1
         if skipWin and lastWin
             lastWin := false
         else
-            strategy.entry("S1", strategy.long, qty = 1)
+            strategy.entry("S1", strategy.long, qty = unitQty)
             sysOn   := 1
             pendAtr := atrN
 
 // ----------------------------------------------------------------- pyramid adds
 if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
     if high >= nextAdd
-        strategy.entry("add" + str.tostring(unitsOn + 1), strategy.long, qty = 1)
+        strategy.entry("add" + str.tostring(unitsOn + 1), strategy.long, qty = unitQty)
         pendAtr := atrN
 
 // ----------------------------------------------------------------- exit
@@ -209,7 +228,9 @@ plot(flat ? na : exitLevel, "Active stop", color = color.fuchsia, style = plot.s
 
 // A changed session must never be invisible in a screenshot.
 sessChanged = sessOn and sessStart != "0000-0000"
-var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+ladderCost = close * maxUnits * unitQty * syminfo.pointvalue
+fundsOk    = ladderCost <= strategy.equity * 0.9
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, presetName, text_color = color.white,
          bgcolor = onDesignTF ? color.new(color.teal, 20) : color.new(color.red, 10))
@@ -218,3 +239,8 @@ if barstate.islast
     table.cell(hud, 0, 2, sessChanged ? "session " + sessStart + " " + sessTZ : "session: all hours",
          text_color = color.white,
          bgcolor = sessChanged ? color.new(color.orange, 20) : color.new(color.gray, 40))
+    table.cell(hud, 0, 3, fundsOk ? "ladder funded" :
+         "LADDER DOES NOT FIT - orders will be REJECTED (needs " +
+         str.tostring(math.round(ladderCost)) + " vs equity " +
+         str.tostring(math.round(strategy.equity)) + ")",
+         text_color = color.white, bgcolor = fundsOk ? color.new(color.teal, 40) : color.red)
