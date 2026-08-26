@@ -535,6 +535,25 @@ reached target drew down just **0.09 R**: on this sample a winner declares itsel
 Points per market (OOS risk / mean MAE): US30 204.8/81.9, US100 118.6/47.0, XAUUSD 19.6/6.1,
 BTC 1172.3/472.6. See `docs/ib/STUDY_INTRADAY_HEAT.md`.
 
+**A LABEL THAT COUNTS A TIMEOUT AS A LOSS MEASURES THE CLOCK, NOT THE MARKET.** Labelling a
+session-flattened 1:1 trade as a loss made `min_to_close` separate **0.00% from 43.17%** and
+volatility features 8.84% from 42.77% -- a bar near the flatten CANNOT reach the target and a fast
+bar resolves before the bell, so anything that speeds resolution inflates the win rate. **64 of 117
+features "passed" BH on a stopwatch.** Fix: drop bars with under 60 minutes of session left, and
+label RESOLVED trades only.
+
+**124 TURTLE FEATURES DO NOT GET NEAR 65% AT 1:1.** Corrected base rate **47.27%**, break-even
+**58.36%** (1.0xATR stop, NQ 15m). Best single decile anywhere **58.25%** -- exactly the cost floor,
+in-sample, post-selection. A sign-aligned composite of six independent features gives research top
+decile 57.19% and **OOS 48.78%**, ten points BELOW break-even. 14 of 124 pass BH, 6 pass Bonferroni
+at the effective count -- and 124 columns are only **47 principal components**. A KALMAN
+local-level-plus-slope filter was added as a genuinely different estimator; its best feature ranks
+23rd at p 0.045 and none survives correction. **Trend persistence predicts NEGATIVELY** here
+(`dir_persist_20`, `ret24_consistency`, `slope_ema200_atr`, both Kalman slope features) -- the
+seventh independent route to the same mean-reversion conclusion. Note also that a |rho| threshold
+does NOT catch conceptual redundancy: five of six "independent" picks were all volatility level.
+See `docs/ib/STUDY_TURTLE_FEATURES.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -572,6 +591,7 @@ BTC 1172.3/472.6. See `docs/ib/STUDY_INTRADAY_HEAT.md`.
 | `research/btc_legs.py`, `run_btc_legs.py` | all nine shipped legs on BTC, with the volatility-artifact diagnostic |
 | `research/eurusd_legs.py`, `run_eurusd_legs.py` | the shipped 30m legs on EURUSD, matched control, BH |
 | `research/vbt/sweep_engine.py`, `run_sweep.py`, `analyse_sweep.py` | the 110,250-config sweep, IS selection, one OOS read |
+| `research/turtlefeat/` | 124 causal Turtle features + Kalman state, redundancy and 1:1 separation tests |
 | `research/vbt/heat.py` | MAE/MFE in POINTS and in R, split by exit reason and by market |
 | `research/vbt/intraday.py`, `run_intraday.py` | session-windowed intraday engine; nothing can hold past the flatten |
 | `research/vbt/prop.py` | prop-firm evaluation: trailing DD, daily loss, P(pass) by day-block bootstrap |
