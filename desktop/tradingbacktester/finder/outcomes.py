@@ -107,7 +107,7 @@ class OutcomeCache:
             return {"trades": 0, "net": 0.0, "per_trade": 0.0, "win_rate": 0.0,
                     "gross_win": 0.0, "gross_loss": 0.0, "profit_factor": 0.0,
                     "stops": 0.0, "targets": 0.0, "times": 0.0,
-                    "avg_bars": 0.0, "max_drawdown": 0.0}
+                    "avg_bars": 0.0, "median_bars": 0.0, "max_drawdown": 0.0}
         cash = self.net_cash[take]
         wins = cash[cash > 0]
         losses = cash[cash < 0]
@@ -129,6 +129,10 @@ class OutcomeCache:
             "targets": float((reason == EXIT_TARGET).mean()),
             "times": float((reason == EXIT_TIME).mean()),
             "avg_bars": float(self.bars_held[take].mean()),
+            # Hold times are heavily right-skewed -- a mass at zero bars and a
+            # tail at the time stop -- so the mean sits well above the typical
+            # trade and the report needs both.
+            "median_bars": float(np.median(self.bars_held[take])),
             "max_drawdown": float((peak - equity).max()) if count else 0.0,
         }
 
@@ -157,31 +161,48 @@ def spread_halves(costs: CostModel) -> tuple[float, float]:
 
 def slippage_points(costs: CostModel, price: np.ndarray,
                     atr: np.ndarray) -> np.ndarray:
-    """Slippage charged on one side of a trade, in price points."""
+    """Slippage charged on one side of a trade, in price points.
+
+    *price* must be the price the fill actually happens at, not the bar's
+    close: under ``PERCENT`` the engine charges a fraction of the fill, and on
+    a bar that ranges a percent the two differ enough to move the barriers.
+    """
     price = np.asarray(price, dtype="float64")
     if costs.slippage_mode == SlippageMode.FIXED_POINTS:
-        return np.full_like(price, float(costs.slippage_value))
+        return np.full(price.shape, float(costs.slippage_value))
     if costs.slippage_mode == SlippageMode.PERCENT:
         return float(costs.slippage_value) / 100.0 * np.abs(price)
     if costs.slippage_mode == SlippageMode.ATR_FRACTION:
-        return float(costs.slippage_value) * np.nan_to_num(atr)
-    return np.zeros_like(price)
+        return float(costs.slippage_value) * np.nan_to_num(
+            np.broadcast_to(atr, price.shape))
+    return np.zeros(price.shape)
+
+
+def commission_side(costs: CostModel, instrument,
+                    price: np.ndarray) -> np.ndarray:
+    """Commission for **one** side of a trade at *price*, in price points.
+
+    ``min_commission`` is a per-side **floor**, the way a broker charges a
+    minimum ticket -- not an extra charge on top. Adding it instead overstates
+    the cost of every trade whenever both figures are set, which makes a real
+    edge look unprofitable. And percent-of-notional is charged at the price
+    each side actually transacts at, so entry and exit are computed
+    separately rather than both from the entry.
+    """
+    price = np.asarray(price, dtype="float64")
+    point = float(getattr(instrument, "point_value", 1.0)) or 1.0
+    floor = float(costs.min_commission or 0.0)
+    if costs.commission_mode == CommissionMode.PERCENT_NOTIONAL:
+        cash = float(costs.commission_value) / 100.0 * np.abs(price) * point
+    else:
+        cash = np.full(price.shape, float(costs.commission_value))
+    return np.maximum(cash, floor) / point
 
 
 def commission_points(costs: CostModel, instrument,
                       price: np.ndarray) -> np.ndarray:
-    """Round-turn commission converted into price points."""
-    price = np.asarray(price, dtype="float64")
-    point = float(getattr(instrument, "point_value", 1.0)) or 1.0
-    out = np.zeros_like(price)
-    if costs.commission_mode in (CommissionMode.PER_UNIT,
-                                 CommissionMode.PER_TRADE):
-        out += 2.0 * float(costs.commission_value) / point
-    elif costs.commission_mode == CommissionMode.PERCENT_NOTIONAL:
-        out += 2.0 * float(costs.commission_value) / 100.0 * np.abs(price)
-    if costs.min_commission:
-        out += 2.0 * float(costs.min_commission) / point
-    return out
+    """Round-turn commission, both sides transacting at the same price."""
+    return 2.0 * commission_side(costs, instrument, price)
 
 
 def round_turn_points(costs: CostModel, instrument, price: np.ndarray,
@@ -202,11 +223,36 @@ def round_turn_points(costs: CostModel, instrument, price: np.ndarray,
 # ---------------------------------------------------------------------------
 
 
+#: Wilder's ATR is a bar-by-bar recursion in Python -- about four tenths of a
+#: second on half a million bars -- and a search recomputes the same one for
+#: every geometry, every feature and every detector. This is a small bounded
+#: cache of the last few (series, period) pairs.
+_ATR_CACHE: "dict[tuple[int, int], tuple[BarSeries, np.ndarray]]" = {}
+_ATR_CACHE_SIZE = 24
+
+
 def wilder_atr(bars: BarSeries, period: int) -> np.ndarray:
-    """Wilder's ATR -- the one the engine's stops are placed from."""
+    """Wilder's ATR -- the one the engine's stops are placed from.
+
+    Memoised per (series, period): the value is a pure function of both, and
+    recomputing it two dozen times per search was most of the search. The key
+    holds the series itself, so an id reused after a garbage collection cannot
+    return another dataset's ATR.
+    """
     from ..engine.backtester import _wilder_atr
 
-    return _wilder_atr(bars, period)
+    period = int(period)
+    key = (id(bars), period)
+    entry = _ATR_CACHE.get(key)
+    if entry is not None and entry[0] is bars:
+        return entry[1]
+
+    values = _wilder_atr(bars, period)
+    values.setflags(write=False)            # shared, so nobody may mutate it
+    if len(_ATR_CACHE) >= _ATR_CACHE_SIZE:
+        _ATR_CACHE.pop(next(iter(_ATR_CACHE)), None)
+    _ATR_CACHE[key] = (bars, values)
+    return values
 
 
 def _first_hit(window: np.ndarray) -> np.ndarray:
@@ -218,11 +264,17 @@ def _first_hit(window: np.ndarray) -> np.ndarray:
 
 
 def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
-                   hold_limit: np.ndarray | None = None) -> OutcomeCache:
+                   hold_limit: np.ndarray | None = None,
+                   detail: bool = True) -> OutcomeCache:
     """Walk every bar forward and record what a trade opened there would do.
 
     *hold_limit* optionally caps the hold per signal bar -- that is how "flat at
     the session close" is applied exactly rather than approximately.
+
+    *detail* keeps the per-bar entry, stop, target and risk prices. They are
+    only read when checking a result against the engine, and a search builds
+    two dozen of these caches: on half a million bars they are two thirds of
+    the memory and none of the answer, so the search asks for them off.
     """
     n = len(bars)
     side = 1 if geometry.side >= 0 else -1
@@ -234,15 +286,14 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
     net_points = np.zeros(n, dtype="float64")
     exit_reason = np.full(n, EXIT_NONE, dtype="int8")
     bars_held = np.zeros(n, dtype="int32")
-    entry_price = np.full(n, np.nan)
-    stop_price = np.full(n, np.nan)
-    target_price = np.full(n, np.nan)
-    risk_points = np.full(n, np.nan)
+    empty = np.zeros(0, dtype="float64")
+    entry_price = np.full(n, np.nan) if detail else empty
+    stop_price = np.full(n, np.nan) if detail else empty
+    target_price = np.full(n, np.nan) if detail else empty
+    risk_points = np.full(n, np.nan) if detail else empty
 
     minute = _minute_of_day(bars)
     entry_spread, exit_spread = spread_halves(costs)
-    slip = slippage_points(costs, close, atr)
-    commission = commission_points(costs, bars.instrument, close)
     cost = round_turn_points(costs, bars.instrument, close, atr)
 
     # A signal on bar i fills on bar i+1. The last few bars of the series do
@@ -263,7 +314,10 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
     # The fill is the next open moved against you by the entry half-spread and
     # the entry slippage, and the barriers are measured from THAT price -- as
     # the engine does, because the order is filled before the stop is placed.
-    fill = open_[idx + 1] + side * (entry_spread + slip[idx + 1])
+    # Percent slippage is a fraction of the price being filled at, so it is
+    # taken from the open the order fills on, never from the bar's close.
+    entry_slip = slippage_points(costs, open_[idx + 1], atr[idx + 1])
+    fill = open_[idx + 1] + side * (entry_spread + entry_slip)
     usable = np.isfinite(risk) & (risk > 0) & np.isfinite(fill)
 
     stop = fill - side * risk
@@ -331,9 +385,12 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
 
         # The exit is moved against you by the exit half-spread and slippage;
         # commission is the only cost that is not part of a price.
-        exit_fill = exit_at - side * (exit_spread + slip[exit_index])
+        exit_slip = slippage_points(costs, exit_at, atr[exit_index])
+        exit_fill = exit_at - side * (exit_spread + exit_slip)
         gross = side * (exit_fill - fill[start:stop_at])
-        net = gross - commission[idx[start:stop_at]]
+        net = gross - (commission_side(costs, bars.instrument,
+                                       fill[start:stop_at])
+                       + commission_side(costs, bars.instrument, exit_fill))
 
         sl = slice(start, stop_at)
         valid[idx[sl]] = take
@@ -343,10 +400,11 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
                            np.where(targeted, EXIT_TARGET, EXIT_TIME)),
             EXIT_NONE).astype("int8")
         bars_held[idx[sl]] = np.where(take, held, 0).astype("int32")
-        entry_price[idx[sl]] = np.where(take, fill[sl], np.nan)
-        stop_price[idx[sl]] = np.where(take, stop[sl], np.nan)
-        target_price[idx[sl]] = np.where(take, target[sl], np.nan)
-        risk_points[idx[sl]] = np.where(take, risk[sl], np.nan)
+        if detail:
+            entry_price[idx[sl]] = np.where(take, fill[sl], np.nan)
+            stop_price[idx[sl]] = np.where(take, stop[sl], np.nan)
+            target_price[idx[sl]] = np.where(take, target[sl], np.nan)
+            risk_points[idx[sl]] = np.where(take, risk[sl], np.nan)
 
     point_value = float(getattr(bars.instrument, "point_value", 1.0)) or 1.0
     return OutcomeCache(
@@ -422,7 +480,8 @@ def session_hold_limit(bars: BarSeries, timezone: str, start: str, end: str,
 
 def session_entry_mask(bars: BarSeries, timezone: str, start: str | None,
                        end: str | None,
-                       weekdays: Sequence[int] = (0, 1, 2, 3, 4)) -> np.ndarray:
+                       weekdays: Sequence[int] = (0, 1, 2, 3, 4),
+                       flat_at_session_end: bool = True) -> np.ndarray:
     """Bars a rule is allowed to fire on.
 
     The engine gates on the **signal** bar, not the fill bar: it evaluates
@@ -430,6 +489,11 @@ def session_entry_mask(bars: BarSeries, timezone: str, start: str | None,
     of the session still fills at the next open. Gating on the fill bar instead
     -- which looks equally reasonable -- silently adds a trade at 09:30 every
     time a rule fires on the 09:00 bar, and the engine takes none of them.
+
+    With *flat_at_session_end* the engine also refuses the **last** in-session
+    bar, because a position opened there would be closed at that same bar's
+    close. On data that carries only session bars, allowing it produces a
+    phantom trade held overnight in a style whose premise is that nothing is.
     """
     n = len(bars)
     if n == 0:
@@ -446,7 +510,10 @@ def session_entry_mask(bars: BarSeries, timezone: str, start: str | None,
                 pass
             ok &= np.isin(local.dayofweek.to_numpy(), list(weekdays))
     else:
-        ok, _ = session_arrays(bars, timezone, start, end, weekdays)
+        ok, last = session_arrays(bars, timezone, start, end, weekdays)
+        ok = np.asarray(ok, dtype=bool).copy()
+        if flat_at_session_end:
+            ok &= ~np.asarray(last, dtype=bool)
     # The last bar has no bar after it to fill on.
     ok = np.asarray(ok, dtype=bool).copy()
     ok[-1] = False

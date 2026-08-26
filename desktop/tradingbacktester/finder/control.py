@@ -152,17 +152,19 @@ def sampled_control(pool_minutes: np.ndarray, pool_values: np.ndarray,
         buckets[int(minute)] = group
 
     wanted, counts = np.unique(trade_minutes, return_counts=True)
-    means = np.empty(draws, dtype="float64")
     total = float(counts.sum())
-    for d in range(draws):
-        running = 0.0
-        for minute, count in zip(wanted, counts):
-            pool = buckets.get(int(minute))
-            if pool is None or pool.size == 0:
-                pool = v_sorted
-            running += float(rng.choice(pool, size=int(count),
-                                        replace=True).sum())
-        means[d] = running / total
+    # One draw per minute of the day, of shape (draws, count), rather than one
+    # call per (draw, minute) pair. On a one-minute chart with two thousand
+    # draws the loop version made three quarters of a million calls to the
+    # generator for a single finding.
+    totals = np.zeros(draws, dtype="float64")
+    for minute, count in zip(wanted, counts):
+        pool = buckets.get(int(minute))
+        if pool is None or pool.size == 0:
+            pool = v_sorted
+        picked = rng.choice(pool, size=(draws, int(count)), replace=True)
+        totals += picked.sum(axis=1)
+    means = totals / total
 
     actual = float(trade_values.mean())
     expected = float(means.mean())
@@ -179,6 +181,27 @@ def sampled_control(pool_minutes: np.ndarray, pool_values: np.ndarray,
 def _upper_tail(z: float) -> float:
     """``P(Z > z)`` for a standard normal, without SciPy."""
     return 0.5 * math.erfc(z / math.sqrt(2.0))
+
+
+def bh_q_values(p_values: list[float]) -> list[float]:
+    """Benjamini-Hochberg adjusted p-values.
+
+    ``q = min over ranks at or above this one of p * n / rank``, clipped to 1.
+    Printing the raw p-value beside a "q=" label -- which is easy to do by
+    accident -- tells the reader a result is n times more certain than the
+    correction actually allows.
+    """
+    n = len(p_values)
+    if n == 0:
+        return []
+    order = sorted(range(n), key=lambda i: p_values[i])
+    out = [1.0] * n
+    running = 1.0
+    for rank in range(n, 0, -1):
+        index = order[rank - 1]
+        running = min(running, p_values[index] * n / rank)
+        out[index] = min(1.0, max(0.0, running))
+    return out
 
 
 def benjamini_hochberg(p_values: list[float], alpha: float = 0.10) -> list[bool]:

@@ -176,13 +176,14 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
     entry_ok = session_entry_mask(
         working, timezone,
         style.session[0] if style.session else None,
-        style.session[1] if style.session else None, style.weekdays)
+        style.session[1] if style.session else None, style.weekdays,
+        style.flat_at_session_end)
 
     if progress is not None:
         progress(0, 3, "Simulating a trade on every bar")
     cache = build_outcomes(working, Geometry(side, stop_atr, target_r,
                                              style.max_bars, style.atr_period),
-                           costs, hold_limit)
+                           costs, hold_limit, detail=False)
     target = np.where(cache.valid & entry_ok, cache.net_cash, np.nan)
 
     if progress is not None:
@@ -210,11 +211,12 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
         results.append(evaluate(feature.name, matrix[research, column],
                                 target[research], horizon))
 
-    from ..finder.control import benjamini_hochberg
+    from ..finder.control import bh_q_values
 
-    survives = benjamini_hochberg([r.p_value for r in results], 0.10)
-    for result, ok in zip(results, survives):
-        result.q_value = result.p_value if ok else max(result.p_value, 0.11)
+    q_values = bh_q_values([r.p_value for r in results])
+    for result, q in zip(results, q_values):
+        result.q_value = q
+    survives = [r.significant for r in results]
 
     clusters = redundancy_groups(matrix[research], [f.name for f in features])
     cluster_of = {name: group for group in clusters for name in group}
@@ -226,11 +228,13 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
         if bool(survives[column]):
             finding.holdout = evaluate(feature.name, matrix[holdout, column],
                                        target[holdout], horizon)
-        _judge(finding, cost_per_trade)
+        # Before the verdict, not after: a concern that arrives afterwards is
+        # printed under a verdict that does not account for it, which is how a
+        # feature ends up labelled "the edge is bigger than the costs" directly
+        # above a line saying it is probably just the drift.
+        _judge(finding, cost_per_trade,
+               extra=_drift_concern(finding, baseline, side))
         findings.append(finding)
-
-    for finding in findings:
-        _drift_caveat(finding, baseline, side)
 
     findings.sort(key=lambda f: (-abs(f.research.ic) if f.research.significant
                                  else 1.0, f.research.q_value))
@@ -288,7 +292,8 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
         elapsed=time.time() - started)
 
 
-def _drift_caveat(finding: FeatureFinding, baseline: float, side: int) -> None:
+def _drift_concern(finding: FeatureFinding, baseline: float,
+                   side: int) -> list[str]:
     """Flag a trend feature that agrees with the direction the market went.
 
     US30 tripled over the period this application ships data for. "Buy when
@@ -296,22 +301,22 @@ def _drift_caveat(finding: FeatureFinding, baseline: float, side: int) -> None:
     it means anything, and no amount of statistics inside one rising market can
     tell the two apart.
     """
-    if not finding.research.significant:
-        return
-    if finding.feature.family != "trend":
-        return
+    if not finding.research.significant or finding.feature.family != "trend":
+        return []
     drifted = (baseline > 0 and side > 0) or (baseline < 0 and side < 0)
     if drifted and np.sign(finding.research.ic) == np.sign(side):
-        finding.concerns.append(
-            "this is a trend feature pointing the same way the market went "
-            "over this sample, which is the most likely thing here to be "
-            "drift rather than prediction; test it on an instrument that fell")
+        return ["this is a trend feature pointing the same way the market went "
+                "over this sample, which is the most likely thing here to be "
+                "drift rather than prediction; test it on an instrument that "
+                "fell"]
+    return []
 
 
-def _judge(finding: FeatureFinding, cost: float) -> None:
+def _judge(finding: FeatureFinding, cost: float,
+           extra: list[str] | None = None) -> None:
     """Turn the numbers into a sentence, including when the answer is no."""
     research = finding.research
-    concerns: list[str] = []
+    concerns: list[str] = list(extra or [])
 
     if not research.significant:
         finding.verdict = "predicts nothing"

@@ -309,12 +309,15 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
     entry_ok = session_entry_mask(
         working, timezone,
         style.session[0] if style.session else None,
-        style.session[1] if style.session else None, style.weekdays)
+        style.session[1] if style.session else None, style.weekdays,
+        style.flat_at_session_end)
 
+    eligible = int(entry_ok.sum())
     caches = {
         side: build_outcomes(working,
                              Geometry(side, stop_atr, target_r, style.max_bars,
-                                      style.atr_period), costs, hold_limit)
+                                      style.atr_period), costs, hold_limit,
+                             detail=False)
         for side in (1, -1)
     }
 
@@ -323,6 +326,9 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
     research[:split] = True
 
     findings: list[AnomalyFinding] = []
+    #: Every (detector, side) pair that was actually scored. This is the
+    #: multiplicity, and it is what the correction divides by.
+    attempts: list[tuple[AnomalyFinding, int, ControlResult, dict]] = []
     for index, detector in enumerate(DETECTORS):
         if progress is not None:
             progress(index, len(DETECTORS), f"Scanning for {detector.label}")
@@ -335,7 +341,11 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
             continue
         fired &= entry_ok
         count = int(fired.sum())
-        share = count / max(1, n)
+        # Against the bars it could have fired on, not against every bar in the
+        # file: for a session-limited style three quarters of the series was
+        # never eligible, and dividing by all of it makes a detector that fires
+        # on most of the session look rare.
+        share = count / max(1, eligible)
         finding = AnomalyFinding(detector=detector, count=count, share=share)
 
         if count < _MIN_EVENTS:
@@ -348,19 +358,24 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
             findings.append(finding)
             continue
 
-        best = None
+        # Both sides are scored and both p-values go into the correction. It
+        # is tempting to keep only the better side and correct over the
+        # detectors alone, but taking the best of two is itself a search, and
+        # not counting it halves the multiplicity twice over.
+        sides = []
         for side in (1, -1):
             scored = _score(caches[side], fired & research)
-            if scored is None:
-                continue
-            if best is None or scored[1].excess_per_trade > best[1].excess_per_trade:
-                best = (side, scored[1], scored[0])
-        if best is None:
+            if scored is not None:
+                sides.append((side, scored[1], scored[0]))
+        if not sides:
             finding.verdict = "not enough trades after these bars to judge"
             findings.append(finding)
             continue
 
-        side, control, summary = best
+        for side, control, summary in sides:
+            attempts.append((finding, side, control, summary))
+        side, control, summary = max(
+            sides, key=lambda item: item[1].excess_per_trade)
         finding.side = side
         finding.control = control
         finding.trades = int(summary["trades"])
@@ -369,11 +384,14 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
         finding.p_value = control.p_value
         findings.append(finding)
 
+    tests = len(attempts)
+    if attempts:
+        survives = benjamini_hochberg([c.p_value for _f, _s, c, _u in attempts],
+                                      alpha)
+        for (finding, side, _control, _summary), ok in zip(attempts, survives):
+            if ok and side == finding.side:
+                finding.survives_fdr = True
     scored = [f for f in findings if f.control is not None]
-    if scored:
-        survives = benjamini_hochberg([f.p_value for f in scored], alpha)
-        for finding, ok in zip(scored, survives):
-            finding.survives_fdr = bool(ok)
 
     for finding in scored:
         if not finding.survives_fdr:
@@ -393,14 +411,18 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
     import pandas as pd
 
     notes = [
-        f"{len(DETECTORS)} detectors were tried on each side, so "
-        f"{len(DETECTORS) * 2} tests; the p-values are corrected for that.",
+        f"{len(DETECTORS)} detectors were tried on each side and "
+        f"{tests} of those had enough trades to score; the p-values are "
+        f"corrected over all {tests}, including the side that was not "
+        f"reported, because choosing the better of two is itself a search.",
         "Each detector is scored against random entries at the same times of "
         "day with the same geometry and costs, so 'it happened during a "
         "profitable hour' does not count as an edge.",
-        "Anomalies were selected on the first "
+        f"Anomalies were selected on the first "
         f"{research_fraction * 100:.0f}% of the data; the rest is a check, not "
         f"a score.",
+        f"'Share' is against the {eligible:,} bars a detector could fire on "
+        f"for this style, not against every bar in the file.",
         "An unusual bar is not a trading signal until something reliably "
         "follows it. Most of the rows above are the market being unusual and "
         "then carrying on as before.",

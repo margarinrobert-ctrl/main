@@ -84,18 +84,20 @@ def rank_standardise(values: np.ndarray) -> np.ndarray:
     count = int(ok.sum())
     if count < 3:
         return out
-    order = np.argsort(values[ok], kind="stable")
-    ranks = np.empty(count, dtype="float64")
-    ranks[order] = np.arange(count, dtype="float64")
+    present = values[ok]
+    order = np.argsort(present, kind="stable")
+    sorted_values = present[order]
     # Average the ranks of ties, or a feature with many equal values (a
-    # bounded oscillator at its floor) gets an arbitrary ordering.
-    sorted_values = values[ok][order]
-    start = 0
-    for stop in range(1, count + 1):
-        if stop == count or sorted_values[stop] != sorted_values[start]:
-            if stop - start > 1:
-                ranks[order[start:stop]] = (start + stop - 1) / 2.0
-            start = stop
+    # bounded oscillator sitting at its floor) gets an arbitrary ordering.
+    # Done with run boundaries rather than a loop: this is called several
+    # hundred times per study, and a per-element loop over a 400,000-bar block
+    # costs more than every other computation in the study put together.
+    starts = np.flatnonzero(np.concatenate(
+        ([True], sorted_values[1:] != sorted_values[:-1])))
+    ends = np.concatenate((starts[1:], [count]))
+    average = (starts + ends - 1) / 2.0
+    ranks = np.empty(count, dtype="float64")
+    ranks[order] = np.repeat(average, ends - starts)
     centred = ranks - ranks.mean()
     spread = centred.std()
     if spread <= 0:

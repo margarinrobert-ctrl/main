@@ -48,7 +48,7 @@ def _finding_lines(finding: Finding, currency: str) -> list[str]:
     template = TEMPLATES_BY_KEY[finding.candidate.template]
     research = finding.research
     holdout = finding.holdout or {}
-    lines = [f"   {template.description}"]
+    lines = [f"   {template.describe(finding.candidate.side)}"]
     lines.append(
         f"   research: {int(research['trades']):,} trades, "
         f"{research['win_rate'] * 100:.1f}% won, "
@@ -59,7 +59,8 @@ def _finding_lines(finding: Finding, currency: str) -> list[str]:
         f"   exits: {research['stops'] * 100:.0f}% stop, "
         f"{research['targets'] * 100:.0f}% target, "
         f"{research['times'] * 100:.0f}% time, "
-        f"median hold {research['avg_bars']:.1f} bars")
+        f"hold {research.get('median_bars', 0.0):.0f} bars median, "
+        f"{research['avg_bars']:.1f} mean")
     lines.append(f"   control: {finding.control.describe(currency)}")
     if finding.sampled is not None:
         lines.append(f"            {finding.sampled.describe(currency)}")

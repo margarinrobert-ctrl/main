@@ -122,7 +122,22 @@ class IndicatorDef:
         return out
 
     def warmup(self, params: dict[str, Any] | None = None) -> int:
-        """Bars of warm-up implied by a given parameter set."""
+        """Bars of warm-up implied by a given parameter set.
+
+        The longest period the parameters name, or ``min_bars`` when they name
+        none. ``min_bars`` is deliberately *not* applied as a floor on top:
+        most declarations of it are simply the indicator's default period, so
+        an SMA asked for a period of 1 would otherwise be told it needs twenty
+        bars.
+
+        The known limitation: a recursively smoothed indicator -- Wilder's RSI
+        or ATR -- returns a number at ``period`` bars and is still settling for
+        several times that. Both the engine and the strategy search take their
+        warm-up from here, so they agree with each other, and neither waits
+        that long. Widening it would change every existing strategy's results,
+        so it is a decision to take deliberately rather than a bug to fix
+        quietly.
+        """
         params = params or self.default_params()
         periods = [int(v) for k, v in params.items()
                    if isinstance(v, (int, float)) and not isinstance(v, bool)

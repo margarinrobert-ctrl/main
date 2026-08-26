@@ -257,7 +257,8 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
     entry_ok = session_entry_mask(
         working, timezone,
         style.session[0] if style.session else None,
-        style.session[1] if style.session else None, style.weekdays)
+        style.session[1] if style.session else None, style.weekdays,
+        style.flat_at_session_end)
     hold_limit = None
     if style.session is not None and style.flat_at_session_end:
         hold_limit = session_hold_limit(working, timezone, style.session[0],
@@ -277,8 +278,10 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
     notes.append(
         f"{combinations:,} combinations were tried: {len(candidates)} entry "
         f"rules x {len(geometries)} geometries. That is how many chances the "
-        f"search had to be lucky, and it is why the p-values below are "
-        f"corrected for it.")
+        f"search had to be lucky. The correction is applied over the ones that "
+        f"produced enough trades to be scored at all -- stated with the "
+        f"results above -- since a combination that never traded was never a "
+        f"chance to be lucky.")
 
     # -- signals, once per candidate ------------------------------------
     signal_cache: dict[tuple, np.ndarray] = {}
@@ -295,7 +298,8 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
         for stop_atr, target_r in geometries:
             caches[(side, stop_atr, target_r)] = build_outcomes(
                 working, Geometry(side, stop_atr, target_r, style.max_bars,
-                                  style.atr_period), costs, hold_limit)
+                                  style.atr_period), costs, hold_limit,
+                detail=False)
 
     findings: list[Finding] = []
     step = len(candidates)

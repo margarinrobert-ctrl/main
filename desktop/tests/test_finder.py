@@ -478,3 +478,212 @@ def test_entry_and_exit_costs_land_where_the_engine_puts_them():
     assert charged.entry_price[i] == pytest.approx(free.entry_price[i] + 1.0)
     assert charged.stop_price[i] == pytest.approx(free.stop_price[i] + 1.0)
     assert charged.target_price[i] == pytest.approx(free.target_price[i] + 1.0)
+
+
+def test_the_fast_path_agrees_with_the_engine_on_session_only_data():
+    """The case the 24-hour data hid: bars that exist only inside the session.
+
+    On a file that carries every hour, a signal on the last session bar fills
+    on a bar outside the session and the hold limit refuses it, so an
+    incorrect entry mask went unnoticed. On a file with only session bars the
+    next bar is the next morning, and the same mistake takes an overnight
+    trade in a style whose whole premise is that nothing is held overnight.
+    """
+    import pandas as pd
+
+    from tradingbacktester.core.timeframe import Timeframe
+    from tradingbacktester.data.models import BarSeries
+    from tradingbacktester.finder.candidates import (build_spec, signals_for,
+                                                     warmup_for)
+    from tradingbacktester.finder.outcomes import (session_entry_mask,
+                                                   session_hold_limit,
+                                                   verify_against_engine)
+    from tradingbacktester.finder.search import default_costs
+
+    rng = np.random.default_rng(17)
+    n = 12_000
+    stamps = []
+    t = pd.Timestamp("2019-01-02 09:30", tz="America/New_York")
+    while len(stamps) < n:
+        if t.dayofweek < 5 and 570 <= (t.hour * 60 + t.minute) < 960:
+            stamps.append(t)
+        t += pd.Timedelta(minutes=30)
+    ts = (pd.DatetimeIndex(stamps).tz_convert("UTC")
+          .to_numpy(dtype="datetime64[ns]").astype("int64"))
+    steps = rng.normal(0, 12.0, n)
+    close = 30_000.0 + np.cumsum(steps - steps.mean())
+    open_ = np.empty(n)
+    open_[0] = close[0]
+    open_[1:] = close[:-1]
+    high = np.maximum(open_, close) + np.abs(rng.normal(0, 6.0, n))
+    low = np.minimum(open_, close) - np.abs(rng.normal(0, 6.0, n))
+    bars = BarSeries(ts=ts, open=open_, high=high, low=low, close=close,
+                     volume=np.full(n, 500.0),
+                     instrument=default_instrument_for("US30"),
+                     timeframe=Timeframe.parse("30m"))
+
+    chosen = style("intraday")
+    timezone = bars.instrument.timezone
+    costs = default_costs(bars.instrument)
+    entry_ok = session_entry_mask(bars, timezone, chosen.session[0],
+                                  chosen.session[1], chosen.weekdays,
+                                  chosen.flat_at_session_end)
+    hold = session_hold_limit(bars, timezone, chosen.session[0],
+                              chosen.session[1], chosen.max_bars,
+                              chosen.weekdays)
+
+    from tradingbacktester.finder.candidates import all_candidates
+
+    seen: set[tuple] = set()
+    problems = []
+    for candidate in all_candidates():
+        key = (candidate.template, candidate.side)
+        if key in seen:
+            continue
+        seen.add(key)
+        cache = build_outcomes(
+            bars, Geometry(candidate.side, 1.5, 2.0, chosen.max_bars, 14),
+            costs, hold)
+        mask = entry_ok & signals_for(bars, candidate,
+                                      warmup_for(candidate, chosen.atr_period))
+        spec = build_spec(candidate, chosen, "30m", 1.5, 2.0, costs,
+                          instrument_timezone=timezone)
+        result = verify_against_engine(bars, cache, mask, spec)
+        if (result["fast_only"] or result["engine_only"]
+                or abs(result["net_difference"]) > 0.01):
+            problems.append(f"{candidate.describe()}: {result}")
+    assert not problems, "\n".join(problems)
+
+
+@pytest.mark.parametrize("name,costs", [
+    ("percent slippage", dict(spread_mode="HALF_EACH_SIDE", spread_points=2.0,
+                              slippage_mode="PERCENT", slippage_value=0.01)),
+    ("atr slippage", dict(slippage_mode="ATR_FRACTION", slippage_value=0.05)),
+    ("fixed slippage", dict(slippage_mode="FIXED_POINTS", slippage_value=1.5)),
+    ("percent commission", dict(commission_mode="PERCENT_NOTIONAL",
+                                commission_value=0.002)),
+    ("commission with a floor", dict(commission_mode="PER_UNIT",
+                                     commission_value=2.0, min_commission=1.0)),
+    ("all of them at once", dict(spread_mode="HALF_EACH_SIDE", spread_points=2.0,
+                                 slippage_mode="PERCENT", slippage_value=0.005,
+                                 commission_mode="PERCENT_NOTIONAL",
+                                 commission_value=0.001, min_commission=0.5)),
+])
+def test_every_cost_model_agrees_with_the_engine(name, costs):
+    """Each cost mode charged where the engine charges it, not where it is easy.
+
+    Percent costs are a fraction of the price the side actually transacts at,
+    so entry and exit are priced separately; the earlier version charged both
+    from the bar's close, which moved the barriers.
+    """
+    from tradingbacktester.core.types import (CommissionMode, CostModel,
+                                              SlippageMode, SpreadMode)
+    from tradingbacktester.data.bundled import find as find_bundled
+    from tradingbacktester.data.csv_loader import load_csv, sniff_csv
+    from tradingbacktester.data.instruments import default_instrument_for
+    from tradingbacktester.finder.candidates import (all_candidates, build_spec,
+                                                     signals_for, warmup_for)
+    from tradingbacktester.finder.outcomes import (session_entry_mask,
+                                                   session_hold_limit,
+                                                   verify_against_engine)
+    from tradingbacktester.finder.search import prepare_bars
+
+    enums = {"spread_mode": SpreadMode, "slippage_mode": SlippageMode,
+             "commission_mode": CommissionMode}
+    model = CostModel(**{k: (enums[k][v] if k in enums else v)
+                         for k, v in costs.items()})
+
+    dataset = find_bundled("US30 30m")
+    bars = load_csv(str(dataset.path()), sniff_csv(str(dataset.path())).mapping,
+                    default_instrument_for("US30"))
+    chosen = style("intraday")
+    working = prepare_bars(bars, "30m")
+    timezone = working.instrument.timezone
+    entry_ok = session_entry_mask(working, timezone, chosen.session[0],
+                                  chosen.session[1], chosen.weekdays,
+                                  chosen.flat_at_session_end)
+    hold = session_hold_limit(working, timezone, chosen.session[0],
+                              chosen.session[1], chosen.max_bars,
+                              chosen.weekdays)
+
+    checked = 0
+    for candidate in all_candidates():
+        if candidate.template not in ("breakout", "rsi_reversion"):
+            continue
+        checked += 1
+        if checked > 4:
+            break
+        cache = build_outcomes(
+            working, Geometry(candidate.side, 1.5, 2.0, chosen.max_bars, 14),
+            model, hold)
+        mask = entry_ok & signals_for(working, candidate,
+                                      warmup_for(candidate, chosen.atr_period))
+        spec = build_spec(candidate, chosen, "30m", 1.5, 2.0, model,
+                          instrument_timezone=timezone)
+        result = verify_against_engine(working, cache, mask, spec)
+        assert result["fast_only"] == 0 and result["engine_only"] == 0, \
+            f"{name}: {candidate.describe()} {result}"
+        assert result["worst_matched_difference"] < 0.01, f"{name}: {result}"
+        assert abs(result["net_difference"]) < 0.01, f"{name}: {result}"
+
+
+def test_min_commission_is_a_floor_not_an_extra_charge():
+    """The engine charges max(commission, minimum); adding them overcharges."""
+    from tradingbacktester.core.types import CommissionMode, CostModel
+    from tradingbacktester.finder.outcomes import commission_points
+
+    bars = _noise(500, seed=3)
+    price = bars.close
+    instrument = bars.instrument
+
+    both = CostModel(commission_mode=CommissionMode.PER_UNIT,
+                     commission_value=2.0, min_commission=1.0)
+    # 2.00 a side beats the 1.00 floor, so a round turn is 4.00, not 6.00.
+    charged = commission_points(both, instrument, price)
+    expected = 2.0 * 2.0 / float(instrument.point_value)
+    assert charged == pytest.approx(expected)
+
+    # And when the floor bites it is the floor that is charged.
+    floored = CostModel(commission_mode=CommissionMode.PER_UNIT,
+                        commission_value=0.25, min_commission=1.0)
+    assert commission_points(floored, instrument, price) == pytest.approx(
+        2.0 * 1.0 / float(instrument.point_value))
+
+
+def test_the_summary_reports_a_median_hold_as_well_as_a_mean():
+    bars = _noise(4_000, seed=8)
+    cache = build_outcomes(bars, Geometry(1, 1.5, 2.0, 24), CostModel())
+    summary = cache.summary()
+    assert summary["trades"] > 0
+    assert "median_bars" in summary
+    held = cache.bars_held[cache.valid]
+    assert summary["median_bars"] == pytest.approx(float(np.median(held)))
+    assert summary["avg_bars"] == pytest.approx(float(held.mean()))
+
+
+def test_dropping_the_diagnostic_arrays_does_not_change_any_result():
+    bars = _noise(3_000, seed=12)
+    full = build_outcomes(bars, Geometry(1, 1.5, 2.0, 24), CostModel(),
+                          detail=True)
+    lean = build_outcomes(bars, Geometry(1, 1.5, 2.0, 24), CostModel(),
+                          detail=False)
+    assert np.array_equal(full.valid, lean.valid)
+    assert full.net_cash == pytest.approx(lean.net_cash)
+    assert np.array_equal(full.exit_reason, lean.exit_reason)
+    assert np.array_equal(full.bars_held, lean.bars_held)
+    assert lean.entry_price.size == 0, "the lean cache still allocated detail"
+
+
+def test_a_short_candidate_is_described_as_a_short_one():
+    from tradingbacktester.finder.candidates import (TEMPLATES_BY_KEY,
+                                                     all_candidates, build_spec)
+
+    for key in ("rsi_reversion", "band_reversion", "breakout"):
+        template = TEMPLATES_BY_KEY[key]
+        assert template.describe(1) != template.describe(-1)
+
+    short = next(c for c in all_candidates()
+                 if c.template == "rsi_reversion" and c.side < 0)
+    spec = build_spec(short, style("intraday"), "15m", 1.5, 2.0, CostModel())
+    text = spec.description.lower()
+    assert "overbought" in text and "oversold" not in text

@@ -70,6 +70,26 @@ class Template:
     build: Callable[[dict, int], tuple[list[IndicatorSlot], Any]]
     """``(params, side) -> (indicator slots, entry condition)``."""
     warmup: Callable[[dict], int]
+    """Bars this family needs before its rule means anything.
+
+    Reported for the record, and deliberately NOT used to mask the signals:
+    :func:`warmup_for` takes the warm-up from the same indicator registry the
+    engine takes it from, because the search's job is to measure the strategy
+    the user will actually run. Skipping more bars here than the engine skips
+    would make the search describe a strategy nobody can reproduce. If one of
+    these declarations is right, the fix belongs in the indicator's own
+    ``min_bars`` -- where the engine will honour it too.
+    """
+    short_description: str = ""
+    """How the rule reads on the short side, when that is not a rephrasing.
+    A short RSI-reversion candidate crosses DOWN through an overbought level;
+    describing it as "turns back up through an oversold level" puts a sentence
+    in the saved strategy file that contradicts the rule inside it."""
+
+    def describe(self, side: int) -> str:
+        if side < 0 and self.short_description:
+            return self.short_description
+        return self.description
 
     def candidates(self, sides: tuple[int, ...]) -> Iterator[Candidate]:
         keys = list(self.grid)
@@ -251,40 +271,47 @@ def _stoch_build(p: dict, side: int):
 TEMPLATES: tuple[Template, ...] = (
     Template(
         key="trend_pullback", label="Trend pullback",
-        description="Price pulls back to the fast average while the fast "
-                    "average is on the right side of the slow one.",
+        description="Price pulls back up to the fast average while the fast "
+                    "average is above the slow one.",
+        short_description="Price pulls back down to the fast average while the "
+                          "fast average is below the slow one.",
         grid={"fast": (10, 20, 50), "slow": (50, 100, 200)},
         signal=_pullback_signal, build=_pullback_build,
         warmup=lambda p: int(p["slow"]) + 5),
     Template(
         key="breakout", label="Channel breakout",
-        description="Close beyond the highest high (or lowest low) of the "
-                    "previous N bars.",
+        description="Close beyond the highest high of the previous N bars.",
+        short_description="Close below the lowest low of the previous N bars.",
         grid={"lookback": (10, 20, 40, 80)},
         signal=_breakout_signal, build=_breakout_build,
         warmup=lambda p: int(p["lookback"]) + 5),
     Template(
         key="rsi_reversion", label="RSI reversion",
         description="RSI turns back up through an oversold level.",
+        short_description="RSI turns back down through an overbought level.",
         grid={"period": (7, 14, 21), "level": (25.0, 30.0, 35.0)},
         signal=_reversion_signal, build=_reversion_build,
         warmup=lambda p: int(p["period"]) * 4),
     Template(
         key="band_reversion", label="Bollinger reversion",
         description="Close crosses back inside the lower band.",
+        short_description="Close crosses back inside the upper band.",
         grid={"period": (14, 20, 30), "deviations": (2.0, 2.5)},
         signal=_band_signal, build=_band_build,
         warmup=lambda p: int(p["period"]) + 5),
     Template(
         key="macd_cross", label="MACD cross",
-        description="The MACD line crosses its signal line.",
+        description="The MACD line crosses above its signal line.",
+        short_description="The MACD line crosses below its signal line.",
         grid={"fast": (8, 12), "slow": (21, 26), "signal": (9,)},
         signal=_macd_signal, build=_macd_build,
         warmup=lambda p: int(p["slow"]) * 3),
     Template(
         key="stoch_trend", label="Stochastic with the trend",
-        description="%K crosses %D, taken only on the side of a long moving "
+        description="%K crosses above %D, taken only above a long moving "
                     "average.",
+        short_description="%K crosses below %D, taken only below a long moving "
+                          "average.",
         grid={"k": (9, 14), "trend": (100, 200)},
         signal=_stoch_signal, build=_stoch_build,
         warmup=lambda p: int(p["trend"]) + 10),
@@ -317,6 +344,8 @@ def warmup_for(candidate: Candidate, atr_period: int = 14) -> int:
     template = TEMPLATES_BY_KEY[candidate.template]
     slots, _ = template.build(candidate.params, candidate.side)
     need = 1
+    # From the registry, which is where the engine gets it. See Template.warmup
+    # for why the family's own declaration is not used here.
     for slot in slots:
         definition = REGISTRY.get(slot.indicator)
         need = max(need, definition.warmup(
@@ -345,7 +374,7 @@ def build_spec(candidate: Candidate, style, timeframe: str,
     spec = StrategySpec(
         name=name or f"{template.label} {candidate.side_label} {timeframe}",
         description=(
-            f"{template.description}\n\n"
+            f"{template.describe(candidate.side)}\n\n"
             f"Found by the strategy finder on {timeframe} bars in the "
             f"{style.label.lower()} style. Historical analysis of one sample; "
             f"not a prediction."),
