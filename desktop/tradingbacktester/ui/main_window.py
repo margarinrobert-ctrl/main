@@ -30,7 +30,7 @@ from ..engine.results import BacktestResult
 from ..logging_setup import get_logger
 from ..strategy.spec import StrategySpec
 from .icons import icon
-from .theme import PALETTE, Fonts, money, pct
+from .theme import PALETTE, Fonts, currency_symbol, money, pct
 from .widgets.chart_widget import ChartWidget
 from .widgets.common import (Card, ask_text, confirm, show_error, show_info,
                              show_warning)
@@ -1073,7 +1073,7 @@ class MainWindow(QMainWindow):
         result.duration_seconds = elapsed
         inst = result.bars.instrument if result.bars is not None else None
         decimals = inst.price_decimals if inst else 2
-        currency = _currency_symbol(inst.currency if inst else "USD")
+        currency = currency_symbol(inst.currency if inst else "USD")
         tz = inst.timezone if inst else "UTC"
 
         self.chart.set_bars(result.bars)
@@ -1653,6 +1653,3 @@ def _symbol_from_sample_name(stem: str) -> str:
     return parts[0].upper() if parts else ""
 
 
-def _currency_symbol(code: str) -> str:
-    return {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥",
-            "CHF": "CHF ", "AUD": "A$", "CAD": "C$"}.get((code or "").upper(), "")

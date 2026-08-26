@@ -441,6 +441,24 @@ def test_cli_mirror_flag_reflects_the_data_for_any_command(tmp_path, capsys):
     assert mirrored["total_trades"] > 0
 
 
+def test_every_data_command_takes_mirror_and_nothing_else_does():
+    """--mirror is added in one place; this is what keeps that list honest."""
+    from tradingbacktester.cli import build_parser
+
+    parser = build_parser()
+    sub = next(a for a in parser._subparsers._group_actions)
+    for name, subparser in sub.choices.items():
+        options = {o for a in subparser._actions for o in a.option_strings}
+        takes_data = "--data" in options
+        takes_mirror = "--mirror" in options
+        if name == "mirror":
+            assert takes_data and not takes_mirror, name
+        elif takes_data:
+            assert takes_mirror, f"{name} reads data but cannot mirror it"
+        else:
+            assert not takes_mirror, f"{name} has --mirror but no data to mirror"
+
+
 def test_cli_mirror_flag_is_refused_on_the_mirror_command(tmp_path, capsys):
     """`mirror --mirror` would silently test the reflection of a reflection."""
     from tradingbacktester.cli import build_parser

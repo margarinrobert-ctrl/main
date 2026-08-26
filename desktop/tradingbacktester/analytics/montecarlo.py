@@ -56,6 +56,12 @@ METHODS: tuple[str, ...] = ("shuffle", "bootstrap", "block")
 #: and a large draw count cannot allocate a matrix measured in gigabytes.
 _CHUNK = 256
 
+#: Ceiling on the elements in one chunk's matrix. 4M float64 is 32MB per
+#: intermediate, and the path arithmetic holds a handful of them at once, so a
+#: 50,000-trade run drops to five paths per chunk instead of allocating half a
+#: gigabyte per step.
+_MAX_CHUNK_ELEMENTS = 4_000_000
+
 #: Below this many trades every percentile in the report is an artefact of the
 #: handful of numbers that went into it.  Not refused -- labelled.
 RELIABLE_TRADES = 30
@@ -325,13 +331,14 @@ def resample_trades(net_pnl: Sequence[float], starting_capital: float, *,
     rng = np.random.default_rng(int(seed))
 
     finals, falls, fall_pcts, longest, mins = [], [], [], [], []
+    chunk = max(1, min(_CHUNK, _MAX_CHUNK_ELEMENTS // max(1, n)))
     done = 0
     while done < draws:
         if cancel is not None and getattr(cancel, "cancelled", False):
             from ..core.errors import CancelledError
 
             raise CancelledError("The Monte Carlo was cancelled.")
-        rows = min(_CHUNK, draws - done)
+        rows = min(chunk, draws - done)
         index = _indices(method, rng, rows, n, block)
         equity = _equity(source[index], starting, compounded)
         final, fall, fall_pct, run, low = _path_stats(equity, starting)

@@ -194,6 +194,18 @@ def test_longest_run_under_water_is_counted_in_trades():
     assert _longest_true_run(mask).tolist() == [3, 0, 7]
 
 
+def test_a_long_trade_list_shrinks_the_chunk_instead_of_the_allocation():
+    """256 draws x 50,000 trades is half a gigabyte per intermediate."""
+    import tradingbacktester.analytics.montecarlo as mc
+
+    long_run = np.zeros(50_000, dtype="float64")
+    long_run[::2] = 1.0
+    result = mc.resample_trades(long_run, 100_000.0, draws=8, seed=1)
+    assert result.draws == 8 and result.final_equity.size == 8
+    assert mc._MAX_CHUNK_ELEMENTS // 50_000 < mc._CHUNK, (
+        "this test is only meaningful while the cap actually binds")
+
+
 def test_chunking_does_not_change_the_answer(monkeypatch, winning_trades):
     """The draws are processed in chunks; the totals must not depend on the size."""
     import tradingbacktester.analytics.montecarlo as mc

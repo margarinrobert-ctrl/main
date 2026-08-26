@@ -100,10 +100,17 @@ class WalkForwardResult:
 
     @property
     def efficiency(self) -> float:
-        """Out-of-sample over in-sample across every window.
+        """Out-of-sample over in-sample across every window, in cash.
 
         The headline number, computed from the totals rather than as a mean of
         per-window ratios so that one near-zero denominator cannot dominate it.
+
+        Always cash, whatever :attr:`metric` the windows were ranked by: a
+        drawdown percentage or a profit factor cannot be summed across windows
+        and a ratio of two such sums would mean nothing. When the optimiser was
+        selecting for something other than profit, a low efficiency is not by
+        itself a failure of the selection -- it says the profit did not
+        persist, not that the thing being optimised did not.
 
         Undefined when the in-sample total is not positive. "Kept -76% of its
         in-sample profit" is not a sentence: if the best combination the
@@ -146,9 +153,12 @@ class WalkForwardResult:
                     "the training window")
         efficiency = self.efficiency
         if math.isfinite(efficiency) and efficiency < 0.3:
+            tail = ("so most of what the optimiser found was noise"
+                    if self.metric == "net_profit" else
+                    "so most of the in-sample profit did not persist")
             return (f"made money out of sample but kept only "
-                    f"{efficiency * 100:.0f}% of what it made in sample, so "
-                    f"most of what the optimiser found was noise")
+                    f"{efficiency * 100:.0f}% of what it made in sample, "
+                    f"{tail}")
         if math.isfinite(self.stability) and self.stability < 0.34:
             return ("made money out of sample, but the best parameters changed "
                     "in most windows, so there is no stable setting to ship")
@@ -167,7 +177,7 @@ class WalkForwardResult:
                  "train_metric": w.train_metric, "test_metric": w.test_metric,
                  "train_trades": w.train_trades, "test_trades": w.test_trades,
                  "test_net": w.test_net, "efficiency": w.efficiency,
-                 "error": w.error}
+                 "warmup_pad": w.warmup_pad, "error": w.error}
                 for w in self.windows],
             "out_of_sample_trades": self.out_of_sample_trades,
             "out_of_sample_net": self.out_of_sample_net,
@@ -379,13 +389,24 @@ def _notes(result: WalkForwardResult, folds: int, anchored: bool,
         "with hindsight. The in-sample figures are shown so the two can be "
         "compared, not because either is a result.",
     ]
+    if result.metric != "net_profit":
+        notes.append(
+            f"The windows were ranked by {result.metric.replace('_', ' ')}, but "
+            f"walk-forward efficiency below is measured in cash — a drawdown "
+            f"percentage or a profit factor cannot be summed across windows. "
+            f"A combination chosen for something other than profit can keep "
+            f"little of its profit without that being a failure of the "
+            f"selection.")
     if result.warmup > 0:
         notes.append(
             f"Each block was handed the {result.warmup} bars immediately "
             f"before it so its indicators started settled, and was then only "
             f"allowed to trade from its own first bar. The test blocks "
             f"therefore tile the tail of the series exactly once, with no gap "
-            f"where a moving average was still filling up and no overlap.")
+            f"where a moving average was still filling up and no overlap. The "
+            f"one exception is any block that starts at bar 0, which has no "
+            f"history to be handed and so trades on {result.warmup} bars "
+            f"fewer than the rest.")
     efficiency = result.efficiency
     if math.isfinite(efficiency) and efficiency < 0:
         # "Kept -93%" is not a thing that can happen. It kept none of it and

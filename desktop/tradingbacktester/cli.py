@@ -660,19 +660,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_strategies)
 
     # Every command that reads a dataset can read its reflection instead. Added
-    # here rather than in each parser so a new data command cannot forget it;
-    # `mirror` is excluded because reflecting is the whole of what it does.
+    # in one place rather than in each parser so a new data command cannot
+    # forget it; `mirror` is excluded because reflecting is the whole of what
+    # it does.
     for name, subparser in sub.choices.items():
-        if name == "mirror":
+        if name in ("mirror", "data", "import", "strategies"):
             continue
-        if any("--data" in (action.option_strings or ())
-               for action in subparser._actions):
-            subparser.add_argument(
-                "--mirror", action="store_true",
-                help="Negate every log return first, giving a market with the "
-                     "same volatility and session structure and the opposite "
-                     "drift. Anything that only works on the real series was "
-                     "betting on direction.")
+        subparser.add_argument(
+            "--mirror", action="store_true",
+            help="Negate every log return first, giving a market with the "
+                 "same volatility and session structure and the opposite "
+                 "drift. Anything that only works on the real series was "
+                 "betting on direction.")
     return parser
 
 

@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QDialog, QHBoxLayout,
                                QWidget)
 
 from ...logging_setup import get_logger
-from ..theme import PALETTE, Fonts, money
+from ..theme import PALETTE, Fonts, currency_symbol, money
 from ..widgets.common import Card, show_error
 from ..workers import TaskRunner, mirror_task
 
@@ -172,7 +172,8 @@ class MirrorDialog(QDialog):
     # -- presentation ------------------------------------------------------
 
     def _fill(self, report: Any) -> None:
-        currency = getattr(self._bars.instrument, "currency", "") or ""
+        currency = currency_symbol(
+            getattr(self._bars.instrument, "currency", ""))
         for row, (label, key, fmt, bigger_is_better) in enumerate(_ROWS):
             head = QTableWidgetItem(label)
             head.setFont(Fonts.body(9))

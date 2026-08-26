@@ -445,6 +445,18 @@ def test_theme_formatters():
     assert value_color(1) != value_color(-1)
 
 
+def test_money_takes_a_symbol_not_a_currency_code():
+    """`money(v, "USD")` gives "USD1,234.50", which reads as a typo."""
+    from tradingbacktester.ui.theme import currency_symbol, money
+
+    assert currency_symbol("USD") == "$"
+    assert currency_symbol("usd") == "$", "the code's case must not matter"
+    assert currency_symbol("SEK") == "", "an unknown code gets no symbol"
+    assert currency_symbol("") == "" and currency_symbol(None) == ""
+    assert money(1234.5, currency_symbol("EUR")) == "€1,234.50"
+    assert money(-1234.5, currency_symbol("SEK")) == "-1,234.50"
+
+
 def test_every_icon_renders(qapp):
     from tradingbacktester.ui.icons import available_icons, icon
 

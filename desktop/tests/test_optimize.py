@@ -349,6 +349,19 @@ def test_out_of_sample_total_is_the_sum_of_the_test_blocks(bars, spec,
         list(np.cumsum([w.test_net for w in result.completed])))
 
 
+def test_efficiency_is_cash_even_when_the_ranking_metric_is_not(bars, spec):
+    """Summing drawdown percentages across windows would mean nothing."""
+    result = walk_forward(bars, spec, BacktestConfig(),
+                          [ParameterRange("ema_fast", 8, 16, 4)], folds=3,
+                          metric="max_drawdown_pct", minimum_trades=1)
+    assert result.completed
+    # A drawdown percentage must come back with its own sign, not negated by
+    # the minimise-by-negating trick inside the search.
+    assert all(w.train_metric >= 0 for w in result.completed)
+    assert any("measured in cash" in note for note in result.notes)
+    assert "optimiser found was noise" not in result.verdict()
+
+
 def test_result_is_json_serialisable(bars, spec, monkeypatch):
     _stub(monkeypatch, lambda n, p: (25.0, 40))
     result = walk_forward(bars, spec, BacktestConfig(),

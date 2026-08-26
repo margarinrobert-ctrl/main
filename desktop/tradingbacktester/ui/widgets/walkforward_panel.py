@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QDoubleSpinBox,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
 from ...logging_setup import get_logger
-from ..theme import PALETTE, Fonts, money, number
+from ..theme import PALETTE, Fonts, currency_symbol, money, number
 from ..workers import TaskRunner, walk_forward_task
 from .common import show_error, show_info
 
@@ -253,7 +253,8 @@ class WalkForwardPanel(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(
             6, QHeaderView.ResizeMode.Stretch)
 
-        currency = getattr(self._bars.instrument, "currency", "USD")
+        currency = currency_symbol(
+            getattr(self._bars.instrument, "currency", "USD"))
         headline = (f"Out of sample: {money(result.out_of_sample_net, currency)} "
                     f"over {result.out_of_sample_trades:,} trades, "
                     f"{result.winning_windows} of {len(result.completed)} "

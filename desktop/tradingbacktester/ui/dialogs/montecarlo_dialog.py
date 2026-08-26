@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
 
 from ...analytics.montecarlo import RELIABLE_TRADES, METHODS
 from ...logging_setup import get_logger
-from ..theme import PALETTE, Fonts, money
+from ..theme import PALETTE, Fonts, currency_symbol, money
 from ..widgets.common import Card, show_error, show_info
 from ..workers import TaskRunner, monte_carlo_task
 
@@ -270,8 +270,9 @@ class MonteCarloDialog(QDialog):
     # -- presentation ------------------------------------------------------
 
     def _fill(self, mc: Any) -> None:
-        currency = getattr(getattr(self._result, "bars", None), "instrument", None)
-        currency = getattr(currency, "currency", "") or ""
+        instrument = getattr(getattr(self._result, "bars", None),
+                             "instrument", None)
+        currency = currency_symbol(getattr(instrument, "currency", ""))
         quantiles = (5, 25, 50, 75, 95)
         rows = [
             ("Final equity", mc.percentiles(mc.final_equity, quantiles), 0),
