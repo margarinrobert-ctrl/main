@@ -1,0 +1,179 @@
+//@version=5
+// INTRADAY ONLY -- free session window, hard flatten, take-profit in POINTS or in R.
+//
+// ================================ READ BEFORE RUNNING ================================
+// NOTHING HOLDS OVERNIGHT. The position is closed at the flatten time on that bar,
+// whatever it is worth. There is no path that carries a trade past it.
+//
+// MEASURED, 15-minute chart, selected in-sample and read ONCE out of sample across
+// US30, NQ, XAUUSD, US100 and BTC, with the window as the only thing varied:
+//
+//     window (New York)      IS E[R]  IS PF  |  OOS E[R]  OOS PF
+//     06:00-12:00             +0.078   1.22      +0.034    1.08
+//     07:00-12:00             +0.078   1.23      +0.032    1.08
+//     08:00-12:00             +0.066   1.20      +0.031    1.08
+//     09:30-12:00  <- default +0.103   1.44      +0.046    1.17
+//     09:30-11:30             +0.087   1.38      +0.039    1.15
+//     09:30-11:00             +0.091   1.44      +0.033    1.13
+//
+// THE 06:00 OPEN IS THE WORST PART OF THE WINDOW. Starting at 09:30 instead lifts
+// out-of-sample expectancy 35% on 38% FEWER trades. The pre-open block is subtractive,
+// not merely thin -- dropping it improves both blocks at once. A separate study on this
+// data measured 07:00-09:00 as the worst hours of the day on all three indices
+// (-0.18 to -0.43 R/trade). The default is 09:30 for that reason; the input is free so
+// you can check 06:00 yourself rather than take my word for it.
+//
+// WHAT THE INTRADAY CONSTRAINT COSTS. The same rules allowed to hold for days score
+// +0.279 R out of sample at PF 1.35. Held to a window with a hard flatten they score
+// +0.034 (at 06:00) to +0.046 (at 09:30). The constraint removes roughly 88%, and the
+// mechanism is not cost: exits fire on the CLOCK rather than on the trade, so a far
+// target mostly never arrives. Set expectations at PF ~1.2, not ~1.4.
+//
+// STILL TRUE OF THIS FAMILY, and it matters more than the table:
+//   * the Donchian entry trigger is INERT -- a risk-matched random entry with the same
+//     filters and exits beats it, and against an ATR stop it is worth +0.02 R
+//   * on 5-minute bars only 1.0% of 2,160 configurations were positive out of sample,
+//     against 5.5% on 15-minute. Do not run this at 5 minutes.
+//   * the cost model does not widen the pre-RTH spread, so an early open is worse in
+//     reality than it measures here
+//
+// NON-REPAINTING: the 4H EMA and the daily/weekly/monthly levels use lookahead_off AND
+// the previous completed bar, so neither ever contains data from the period the current
+// bar sits inside. Research-side truncation audit: 105 checks, 0 mismatches.
+//
+// Research tooling for education and analysis. Not financial advice.
+// =====================================================================================
+
+strategy("Intraday Session | Donchian + 4H EMA + flat by time", overlay = true,
+     initial_capital = 100000, default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 100, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false, commission_type = strategy.commission.percent,
+     commission_value = 0.01, slippage = 1)
+
+// ------------------------------------------------------------------ session (free)
+tz       = input.string("America/New_York", "Session timezone", group = "Session",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "UTC"])
+startH   = input.int(9,  "Start hour",     minval = 0, maxval = 23, group = "Session")
+startM   = input.int(30, "Start minute",   minval = 0, maxval = 59, group = "Session")
+flatH    = input.int(12, "Flatten hour",   minval = 0, maxval = 23, group = "Session")
+flatM    = input.int(0,  "Flatten minute", minval = 0, maxval = 59, group = "Session")
+
+// ------------------------------------------------------------------ take profit
+tpMode   = input.string("R multiple", "Take profit measured in", group = "Take profit",
+     options = ["R multiple", "Points"],
+     tooltip = "R multiple scales the target with each trade's own stop distance, so it " +
+     "behaves the same on a 20,000 index and a 2,000 metal. Points is a fixed price " +
+     "distance and does NOT adapt -- on a quiet day it is far, on a fast one it is near.")
+tpR      = input.float(5.0, "Target, in R",      minval = 0.25, step = 0.25, group = "Take profit")
+tpPts    = input.float(50.0, "Target, in points", minval = 0.0,  step = 1.0,  group = "Take profit")
+slPtsOn  = input.bool(false, "Override stop with a fixed point distance", group = "Take profit")
+slPts    = input.float(25.0, "Stop, in points",   minval = 0.0,  step = 1.0,  group = "Take profit")
+
+// ------------------------------------------------------------------ rules
+entLen   = input.int(30, "Entry Donchian length", minval = 2, group = "Rules")
+stpLen   = input.int(20, "Stop Donchian length",  minval = 2, group = "Rules")
+emaLen   = input.int(20, "Higher-timeframe EMA",  minval = 2, group = "Rules")
+htf      = input.timeframe("240", "Higher timeframe", group = "Rules")
+tolR     = input.float(1.0, "Minimum clearance to major S/R, in R",
+     minval = 0.0, step = 0.25, group = "Rules")
+useLong  = input.bool(true,  "Longs",  group = "Direction")
+useShort = input.bool(false, "Shorts", group = "Direction")
+drawIt   = input.bool(true, "Plot levels", group = "Display")
+
+// ------------------------------------------- higher timeframe, non-repainting
+htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1],
+     lookahead = barmerge.lookahead_off)
+dHigh = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_off)
+wHigh = request.security(syminfo.tickerid, "W", high[1], lookahead = barmerge.lookahead_off)
+mHigh = request.security(syminfo.tickerid, "M", high[1], lookahead = barmerge.lookahead_off)
+dLow  = request.security(syminfo.tickerid, "D", low[1],  lookahead = barmerge.lookahead_off)
+wLow  = request.security(syminfo.tickerid, "W", low[1],  lookahead = barmerge.lookahead_off)
+mLow  = request.security(syminfo.tickerid, "M", low[1],  lookahead = barmerge.lookahead_off)
+
+nearestAbove(a, b, d, px) =>
+    r = float(na)
+    if not na(a) and a > px
+        r := a
+    if not na(b) and b > px and (na(r) or b < r)
+        r := b
+    if not na(d) and d > px and (na(r) or d < r)
+        r := d
+    r
+
+nearestBelow(a, b, d, px) =>
+    r = float(na)
+    if not na(a) and a < px
+        r := a
+    if not na(b) and b < px and (na(r) or b > r)
+        r := b
+    if not na(d) and d < px and (na(r) or d > r)
+        r := d
+    r
+
+resAbove = nearestAbove(dHigh, wHigh, mHigh, close)
+supBelow = nearestBelow(dLow, wLow, mLow, close)
+
+// ------------------------------------------------------------------ session clock
+nowMin  = hour(time, tz) * 60 + minute(time, tz)
+startMn = startH * 60 + startM
+flatMn  = flatH * 60 + flatM
+inWin   = startMn <= flatMn ? (nowMin >= startMn and nowMin < flatMn) : (nowMin >= startMn or nowMin < flatMn)
+atFlat  = not inWin
+
+hiEnt = ta.highest(high, entLen)[1]
+loEnt = ta.lowest(low,  entLen)[1]
+hiStp = ta.highest(high, stpLen)[1]
+loStp = ta.lowest(low,  stpLen)[1]
+
+ready = not na(hiEnt) and not na(loEnt) and not na(hiStp) and not na(loStp) and not na(htfEma)
+flat  = strategy.position_size == 0
+
+lStop = slPtsOn ? hiEnt - slPts : loStp
+sStop = slPtsOn ? loEnt + slPts : hiStp
+lRisk = hiEnt - lStop
+sRisk = sStop - loEnt
+lRoom = na(resAbove) ? na : resAbove - hiEnt
+sRoom = na(supBelow) ? na : loEnt - supBelow
+
+longOK  = useLong  and ready and inWin and close[1] > htfEma and lRisk > 0 and
+     not na(lRoom) and lRoom >= tolR * lRisk
+shortOK = useShort and ready and inWin and close[1] < htfEma and sRisk > 0 and
+     not na(sRoom) and sRoom >= tolR * sRisk
+
+var float riskPts = na
+
+if flat and barstate.isconfirmed
+    if longOK
+        strategy.entry("L", strategy.long, stop = hiEnt)
+    else
+        strategy.cancel("L")
+    if shortOK
+        strategy.entry("S", strategy.short, stop = loEnt)
+    else
+        strategy.cancel("S")
+
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    ep = strategy.opentrades.entry_price(0)
+    riskPts := strategy.position_size > 0 ? ep - lStop : sStop - ep
+    strategy.cancel(strategy.position_size > 0 ? "S" : "L")
+
+// hard flatten wins over every other exit
+if strategy.position_size != 0 and atFlat and barstate.isconfirmed
+    strategy.close_all(comment = "flat by time")
+else if strategy.position_size != 0 and not na(riskPts) and riskPts > 0
+    ep     = strategy.opentrades.entry_price(0)
+    isLong = strategy.position_size > 0
+    dir    = isLong ? 1 : -1
+    tDist  = tpMode == "Points" ? tpPts : tpR * riskPts
+    strategy.exit("X", from_entry = isLong ? "L" : "S",
+         stop = ep - dir * riskPts, limit = ep + dir * tDist)
+
+if strategy.position_size == 0
+    riskPts := na
+
+bgcolor(drawIt and inWin ? color.new(color.blue, 92) : na, title = "session")
+plot(drawIt ? htfEma : na, "HTF EMA", color = color.new(color.blue, 0), linewidth = 2)
+plot(drawIt ? hiEnt : na, "entry high", color = color.new(color.teal, 40), style = plot.style_stepline)
+plot(drawIt ? loEnt : na, "entry low",  color = color.new(color.maroon, 40), style = plot.style_stepline)
+plot(drawIt ? resAbove : na, "major resistance", color = color.new(color.red, 0), style = plot.style_linebr)
+plot(drawIt ? supBelow : na, "major support",    color = color.new(color.green, 0), style = plot.style_linebr)

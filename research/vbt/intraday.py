@@ -37,6 +37,9 @@ def walk(o, h, l, c, mod, start, end, imod, io, ih, il, ic,
     n = len(c); cap = n // 3 + 16
     R = np.zeros(cap); SD = np.zeros(cap, np.int64); WHY = np.zeros(cap, np.int64)
     AMB = np.zeros(cap, np.int64); BAR = np.zeros(cap, np.int64)
+    # excursions in PRICE POINTS, and the risk in points, so heat can be read in the
+    # unit a trader actually sets a stop in rather than only in R
+    MAE = np.zeros(cap); MFE = np.zeros(cap); RSK = np.zeros(cap); ENT = np.zeros(cap)
     k = 0
     cf = cost / 1e4; sf = slip / 1e4
     state = 0; entry = 0.0; stop = 0.0; risk = 0.0; tgt = 0.0
@@ -92,8 +95,15 @@ def walk(o, h, l, c, mod, start, end, imod, io, ih, il, ic,
                     continue
                 state = sd; entry = px; stop = st; risk = rk
                 tgt = px + sd * tp_r * rk
-                SD[k] = sd; BAR[k] = i
+                SD[k] = sd; BAR[k] = i; RSK[k] = rk; ENT[k] = px
+                MAE[k] = 0.0; MFE[k] = 0.0
                 continue
+            adv = (entry - il[j]) if state == 1 else (ih[j] - entry)
+            fav = (ih[j] - entry) if state == 1 else (entry - il[j])
+            if adv > MAE[k]:
+                MAE[k] = adv
+            if fav > MFE[k]:
+                MFE[k] = fav
             hs = (il[j] <= stop) if state == 1 else (ih[j] >= stop)
             ht = (ih[j] >= tgt) if state == 1 else (il[j] <= tgt)
             if hs and ht:
@@ -109,4 +119,4 @@ def walk(o, h, l, c, mod, start, end, imod, io, ih, il, ic,
     if state != 0:
         px = c[n - 1] * (1.0 - state * (cf + sf))
         R[k] = state * (px - entry) / risk; WHY[k] = 3; k += 1
-    return R[:k], SD[:k], WHY[:k], AMB[:k], BAR[:k]
+    return R[:k], SD[:k], WHY[:k], AMB[:k], BAR[:k], MAE[:k], MFE[:k], RSK[:k], ENT[:k]

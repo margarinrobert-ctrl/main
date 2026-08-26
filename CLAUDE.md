@@ -522,6 +522,19 @@ widen the pre-RTH spread, so the real penalty is LARGER than measured. On 5-minu
 2,160 configurations are positive OOS, against 5.5% on 15-minute. See
 `docs/ib/STUDY_INTRADAY_SESSION.md`.
 
+**THE TAKE-PROFIT ON THE INTRADAY SYSTEM IS NEVER REACHED -- it is a stop-and-clock system wearing
+a target.** 09:30-12:00 New York, 15m, 5R target: out of sample **0 of 1,027 trades reached it**;
+15.1% stopped out and 84.9% were flattened on the clock. In-sample 5 of 1,651 (0.3%). The whole TP
+axis is a PLATEAU from 1.5R to 5R (OOS +0.043 to +0.047, PF 1.16-1.18) and degrades sharply BELOW
+1.5R (0.5R -> +0.014, PF 1.07) -- reassuring shape, but the plateau exists BECAUSE the target stops
+binding: 7.9% reach 1.5R, 1.0% reach 3R, 0% reach 5R. **Setting 5R and setting "no target" are the
+same strategy.** HEAT, out of sample: mean MAE **0.43 R** (p90 1.08), stopped trades 1.21 R because
+price gaps through, flattened trades take only 0.29 R of heat but reach **+0.61 R of MFE** before
+the clock closes them -- that give-back is the one actionable number. The few trades that ever
+reached target drew down just **0.09 R**: on this sample a winner declares itself immediately.
+Points per market (OOS risk / mean MAE): US30 204.8/81.9, US100 118.6/47.0, XAUUSD 19.6/6.1,
+BTC 1172.3/472.6. See `docs/ib/STUDY_INTRADAY_HEAT.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -559,6 +572,7 @@ widen the pre-RTH spread, so the real penalty is LARGER than measured. On 5-minu
 | `research/btc_legs.py`, `run_btc_legs.py` | all nine shipped legs on BTC, with the volatility-artifact diagnostic |
 | `research/eurusd_legs.py`, `run_eurusd_legs.py` | the shipped 30m legs on EURUSD, matched control, BH |
 | `research/vbt/sweep_engine.py`, `run_sweep.py`, `analyse_sweep.py` | the 110,250-config sweep, IS selection, one OOS read |
+| `research/vbt/heat.py` | MAE/MFE in POINTS and in R, split by exit reason and by market |
 | `research/vbt/intraday.py`, `run_intraday.py` | session-windowed intraday engine; nothing can hold past the flatten |
 | `research/vbt/prop.py` | prop-firm evaluation: trailing DD, daily loss, P(pass) by day-block bootstrap |
 | `research/vbt/mae_mfe.py` | per-trade MFE/MAE in R on the finest series; capture and heat |
