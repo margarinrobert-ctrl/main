@@ -131,8 +131,21 @@ var int   sysOn     = 0
 var int   lastCount = 0
 var bool  lastWin   = false
 
+// BOTH STATE BLOCKS BELOW ARE GUARDED BY barstate.isconfirmed, AND THAT IS NOT OPTIONAL.
+// Guarding only the ENTRIES is not enough. When the Strategy Tester's "On order fill" or
+// "On realtime bar tick" boxes are ticked, the whole script re-executes INSIDE the bar, and
+// on such a pass `close` is the price at that instant, not the bar's close. `lastWin` is
+// computed from `close`, and `lastWin` drives the System 1 skip rule -- so an unguarded
+// version decides whether to TAKE a 20-bar breakout using a price the bar-close version
+// cannot see. Measured on the same chart and the same range: unguarded, the three boxes on
+// gave +62,278 / PF 1.416 / 14,462 trades and the boxes off gave -913 / PF 0.994 / 11,398.
+// Same rules, 27% more fills and a 63-point swing in return, decided by the checkbox.
+// `anchorAtr` has the same problem one level down: a mid-bar `atrN` is a partly-formed ATR,
+// so every stop and every pyramid step would be anchored off a number that does not exist yet.
+// With the guards, all three checkbox combinations produce the identical report.
+
 // a trade that just closed: record whether it won, so the System 1 skip can read it
-if strategy.position_size == 0 and lastCount > 0
+if barstate.isconfirmed and strategy.position_size == 0 and lastCount > 0
     lastWin   := close > firstFill
     unitsOn   := 0
     sysOn     := 0
@@ -141,7 +154,7 @@ if strategy.position_size == 0 and lastCount > 0
     lastCount := 0
 
 // a fill just happened: re-anchor the stop and the next add to that fill price
-if strategy.opentrades > lastCount
+if barstate.isconfirmed and strategy.opentrades > lastCount
     fillPx = strategy.opentrades.entry_price(strategy.opentrades - 1)
     anchorAtr = na(pendAtr) ? atrN : pendAtr
     if lastCount == 0
