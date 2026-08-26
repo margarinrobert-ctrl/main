@@ -499,7 +499,9 @@ def test_cli_report_writes_html_and_the_trade_list(tmp_path, capsys):
     assert (tmp_path / "report.trades.csv").is_file()
     out = capsys.readouterr().out
     assert "wrote" in out and "KB" in out
-    assert "What else could have happened" in target.read_text()
+    # Explicit encoding: the report contains em-dashes and arrows, and the
+    # default on the Windows runner is cp1252, not UTF-8.
+    assert "What else could have happened" in target.read_text(encoding="utf-8")
 
 
 def test_cli_report_picks_the_format_from_the_suffix(tmp_path, capsys):
@@ -519,7 +521,7 @@ def test_cli_report_format_overrides_the_suffix(tmp_path, capsys):
     assert main(["--workspace", str(tmp_path), "report", "MACD Trend",
                  "--data", "US30 30m", "--out", str(target),
                  "--format", "html"]) == 0
-    assert target.read_text().lstrip().startswith("<!DOCTYPE html")
+    assert target.read_text(encoding="utf-8").lstrip().startswith("<!DOCTYPE html")
     capsys.readouterr()
 
 
