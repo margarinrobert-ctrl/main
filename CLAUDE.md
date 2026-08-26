@@ -100,6 +100,18 @@ expected by chance. The window baseline itself is negative (-$22 to -$5/trade). 
 `docs/ib/STUDY_TREND_PULLBACK_2.md`. What would move it: more history (this sample is one regime,
 81% daily uptrend), cross-asset files, a second instrument.
 
+**A moving-average entry tap is priced by its DISTANCE, not by the average.** KAMA 9 (and EMA 9/21,
+SMA 20, Hull 9) as a pullback location on a Donchian breakout: score every tap against a BLIND LIMIT
+resting the same number of ATRs from the signal close. Not one tap beat that on either block
+(research p 0.162-0.985, locked p 0.047-0.686). The obvious control -- a random WAIT -- is rigged in
+the tap's favour, because it fills at an OPEN while the tap fills at a LEVEL. And the tap loses to
+just taking the trade: locked baseline +0.1387 R on all 275 breakouts against -0.0223 R on the 31%
+that pull back to KAMA 9, even though the fill is 1.44 ATR cheaper. Same lesson as
+`STUDY_LIMIT_ENTRY.md` from the other side. As a TRIGGER, KAMA 9 x EMA 50 is the best of twelve
+crossovers on research (p 0.005, PF 1.48) and decays to p 0.258 / PF 1.07 with 87% of net P&L in the
+top 1% of trades; over a 6x7 length grid the surface rises monotonically with the KAMA period, so
+the 9 is not the mechanism. `docs/ib/STUDY_KAMA_ENTRY.md`.
+
 **A published indicator stack can be a random entry, and the grid hides it.** Donchian 20 + EMA 50
 + ADX>20 + CHOP<40 with a 3xATR trail, on the 1-hour chart it is published for: **0 of 384 scorable
 combinations** of its own 432-parameter grid beat a matched control at p<0.05, against 19 expected
