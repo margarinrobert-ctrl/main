@@ -30,8 +30,11 @@ import numpy as np
 from ..core.errors import ReportError
 from ..core.types import SignalExecution, SizingMode, Trade
 from ..engine.results import BacktestResult
-from ..ui.theme import PALETTE, Fonts, duration as _duration, money as _money
-from ..ui.theme import number as _number, pct as _pct
+# Deliberately the Qt-free layer, not `ui.theme`: this module emits a string
+# and must stay importable on a machine with no PySide6.
+from ..core.presentation import (MONO_FONT_STACK, PALETTE, UI_FONT_STACK,
+                                 duration as _duration, money as _money,
+                                 number as _number, pct as _pct)
 from .csv_export import (currency_symbol, describe_cost_model,
                          instrument_timezone, price_decimals, run_header_fields)
 
@@ -1228,8 +1231,8 @@ def _css() -> str:
     card is allowed to break in half.
     """
     p = PALETTE
-    ui = f'"{Fonts.ui}", system-ui, sans-serif'
-    mono = f'"{Fonts.mono}", ui-monospace, monospace'
+    ui = UI_FONT_STACK
+    mono = MONO_FONT_STACK
     return f"""
 * {{ box-sizing: border-box; }}
 html, body {{ margin: 0; padding: 0; }}

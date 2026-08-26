@@ -859,7 +859,8 @@ import that works from source is missing from the bundle.
 
 ```
 tradingbacktester/
-├── core/         value types, timeframes, the error hierarchy
+├── core/         value types, timeframes, the error hierarchy, the
+│                palette and the text formatters (Qt-free)
 ├── data/         CSV loading, column auto-detection, validation, resampling,
 │                instruments, storage
 ├── indicators/   the registry and the 48-indicator library
@@ -876,8 +877,12 @@ tradingbacktester/
 └── ui/           the PySide6 application
 ```
 
-Everything below `ui/` imports without Qt, which is what makes the engine
-scriptable and the test suite fast:
+Everything below `ui/` imports without Qt — the one exception is the PDF
+renderer, which paints with `QPainter` and is why there is no reportlab
+dependency. `tests/test_architecture.py` asserts that in a subprocess with
+PySide6 blocked at the import hook, so the HTML report, the CLI and the whole
+engine keep working on a machine with no Qt installed. It is what makes the
+engine scriptable and the test suite fast:
 
 ```python
 from tradingbacktester.core.types import BacktestConfig

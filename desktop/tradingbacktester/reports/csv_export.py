@@ -197,7 +197,7 @@ def currency_symbol(result: BacktestResult) -> str:
     symbol where one exists and keeps the code -- with a space -- where it does
     not. CSV output does not use this; only the visual reports do.
     """
-    from ..core.textfmt import currency_symbol as prefix_for
+    from ..core.presentation import currency_symbol as prefix_for
 
     bars = getattr(result, "bars", None)
     instrument = getattr(bars, "instrument", None) if bars is not None else None

@@ -190,7 +190,7 @@ def test_report_money_reads_as_money_not_as_a_currency_code(run):
 
 
 def test_an_unknown_currency_keeps_its_code_and_gains_a_space():
-    from tradingbacktester.core.textfmt import currency_symbol
+    from tradingbacktester.core.presentation import currency_symbol
 
     assert currency_symbol("SEK") == "SEK "
     assert currency_symbol("usd") == "$"

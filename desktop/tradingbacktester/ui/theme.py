@@ -8,84 +8,19 @@ screen that colours everything ends up communicating nothing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Iterable
 
-from PySide6.QtCore import Qt
-
-from ..core.textfmt import currency_symbol  # noqa: F401 - re-exported for the UI
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
 
-
-@dataclass(frozen=True)
-class Palette:
-    """Every colour the application uses, as hex strings."""
-
-    # Surfaces, darkest to lightest.
-    app_bg: str = "#0b0f16"
-    panel_bg: str = "#111722"
-    panel_alt: str = "#151d2a"
-    elevated: str = "#1b2534"
-    hover: str = "#212c3d"
-    pressed: str = "#182231"
-    border: str = "#232f42"
-    border_strong: str = "#31415a"
-
-    # Text.
-    text: str = "#e3e9f2"
-    text_dim: str = "#93a1b5"
-    text_muted: str = "#64748b"
-    text_inverse: str = "#0b0f16"
-
-    # Semantics.
-    accent: str = "#3d8bfd"
-    accent_hover: str = "#5a9dff"
-    accent_dim: str = "#1f4d8f"
-    long: str = "#26a69a"
-    long_dim: str = "#1a6f67"
-    short: str = "#ef5350"
-    short_dim: str = "#9c3634"
-    warning: str = "#e3a008"
-    danger: str = "#f0554e"
-    success: str = "#35b96b"
-    info: str = "#4fa8d8"
-
-    # Chart furniture.
-    grid: str = "#1a2333"
-    grid_strong: str = "#243149"
-    axis_text: str = "#7b8a9e"
-    crosshair: str = "#7e8ea3"
-    volume_up: str = "#1f6f68"
-    volume_down: str = "#7a3634"
-    equity: str = "#4da3ff"
-    equity_fill: str = "#183350"
-    balance: str = "#7f8fa6"
-    drawdown: str = "#c2413c"
-    drawdown_fill: str = "#3a1a1d"
-    marker_long: str = "#2ecc9a"
-    marker_short: str = "#ff6b6b"
-    marker_exit: str = "#c8d2e0"
-    stop_line: str = "#b8474a"
-    target_line: str = "#2f9e8f"
-    session_shade: str = "#0e1826"
-
-    #: Colour cycle for indicator lines, chosen to stay distinguishable on dark
-    #: and to avoid the long/short greens and reds.
-    series: tuple[str, ...] = (
-        "#4da3ff", "#e3a008", "#b07cf0", "#4fd1c5", "#f08f4a",
-        "#7dd3fc", "#f472b6", "#a3e635", "#facc15", "#94a3b8",
-    )
-
-    def series_color(self, index: int) -> str:
-        return self.series[index % len(self.series)]
-
-    def qcolor(self, name: str, alpha: int = 255) -> QColor:
-        c = QColor(getattr(self, name))
-        c.setAlpha(alpha)
-        return c
+# The palette and the scalar formatters are Qt-free and live below `ui/` so the
+# HTML report can use them without pulling in PySide6. They are re-exported
+# here because every widget in the application imports them from `..theme`, and
+# a colour table is a theme concern wherever the code sits.
+from ..core.presentation import (  # noqa: F401 - re-exported for the widgets
+    MONO_FONT_STACK, PALETTE, UI_FONT_STACK, Palette, currency_symbol,
+    duration, money, number, pct, value_color)
 
 
-PALETTE = Palette()
 
 
 # --------------------------------------------------------------------------
@@ -578,79 +513,3 @@ def apply_theme(app) -> None:
 
 # --------------------------------------------------------------------------
 # Value formatting used across every panel
-# --------------------------------------------------------------------------
-
-def money(value: float, currency: str = "", decimals: int = 2) -> str:
-    """Format cash with a thousands separator and an explicit sign for negatives."""
-    if value is None:
-        return "-"
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return "-"
-    if v != v:  # NaN
-        return "-"
-    if v in (float("inf"), float("-inf")):
-        return "∞" if v > 0 else "-∞"
-    sign = "-" if v < 0 else ""
-    return f"{sign}{currency}{abs(v):,.{decimals}f}"
-
-
-def pct(value: float, decimals: int = 2, signed: bool = False) -> str:
-    if value is None:
-        return "-"
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return "-"
-    if v != v:
-        return "-"
-    if v in (float("inf"), float("-inf")):
-        return "∞%" if v > 0 else "-∞%"
-    return f"{v:+.{decimals}f}%" if signed else f"{v:.{decimals}f}%"
-
-
-def number(value: float, decimals: int = 2) -> str:
-    if value is None:
-        return "-"
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return str(value)
-    if v != v:
-        return "-"
-    if v in (float("inf"), float("-inf")):
-        return "∞" if v > 0 else "-∞"
-    return f"{v:,.{decimals}f}"
-
-
-def duration(seconds: float) -> str:
-    """Compact human duration: ``2d 4h``, ``35m``, ``18s``."""
-    if seconds is None or seconds != seconds:
-        return "-"
-    s = int(max(0.0, float(seconds)))
-    if s < 60:
-        return f"{s}s"
-    m, s = divmod(s, 60)
-    if m < 60:
-        return f"{m}m {s}s" if s else f"{m}m"
-    h, m = divmod(m, 60)
-    if h < 24:
-        return f"{h}h {m}m" if m else f"{h}h"
-    d, h = divmod(h, 24)
-    return f"{d}d {h}h" if h else f"{d}d"
-
-
-def value_color(value: float, p: Palette = PALETTE) -> str:
-    """Green above zero, red below, neutral at zero."""
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return p.text
-    if v != v:
-        return p.text_muted
-    if v > 0:
-        return p.long
-    if v < 0:
-        return p.short
-    return p.text_dim

@@ -39,7 +39,10 @@ from ..config import APP_DISPLAY_NAME, APP_VERSION
 from ..core.errors import ReportError
 from ..core.types import SignalExecution
 from ..engine.results import BacktestResult
-from ..ui.theme import PALETTE, Fonts, money as _money, pct as _pct
+from ..core.presentation import PALETTE, money as _money, pct as _pct
+# `Fonts` builds QFont objects and resolves families against the installed set,
+# so this renderer — which paints with QPainter — genuinely needs the UI layer.
+from ..ui.theme import Fonts
 from .csv_export import describe_cost_model, iso_timestamps, run_header_fields
 from .html_report import METRIC_GROUPS, ReportContext, decimate_indices
 

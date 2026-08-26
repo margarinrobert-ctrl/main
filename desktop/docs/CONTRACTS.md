@@ -245,14 +245,20 @@ Deciding the column layout from the values, not the header names. Called by
   chunks so a long trade list and a large draw count cannot allocate a matrix
   measured in gigabytes. `format_monte_carlo(result)` renders it as text.
 
+### `tradingbacktester/core/presentation.py`
+The palette and the scalar formatters, without Qt: `Palette` / `PALETTE`,
+`money`, `pct`, `number`, `duration`, `value_color`, `currency_symbol`, and the
+CSS font stacks. `ui.theme` re-exports all of it, so every widget still imports
+these from `..theme`; it keeps only what genuinely needs Qt — `Fonts` (QFont
+construction and family resolution), the stylesheet and `apply_theme`.
+`Palette.qcolor()` imports `QColor` inside the call so the palette stays
+importable without PySide6.
+
 ### `tradingbacktester/core/textfmt.py`
 - `fit(text, width, hang, indent)` — wrap to a width with a hanging indent,
   never breaking an identifier in half, never returning an empty list.
 - `row(cells, verdict, width)` — a table row whose trailing free-text column
   wraps under itself so the numeric columns stay in line.
-- `currency_symbol(code)` — the prefix for an amount: a symbol where one
-  exists, the code and a space where it does not, empty for none. Qt-free, so
-  the reports and the UI share one table.
 Every plain-text formatter is asserted against its own declared width in
 `tests/test_reports.py`, at two widths, on real data.
 
