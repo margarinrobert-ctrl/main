@@ -158,6 +158,21 @@ does not complement one. What works is short-horizon mean reversion at the execu
 little as a signal (0.28 ticks vs a 6-tick round turn) and a lot as a better fill on a trade you
 were making anyway. See `docs/ib/STUDY_LIMIT_ENTRY.md`.
 
+**A Pine port cannot be asserted by reading it — diff it against the engine's order model.**
+`TURTLE_4_FINALISTS` was transcribed line by line, read back twice, shipped lint-clean, and did not
+compile: an `options` array continued at 16 spaces, and Pine reads any continuation indented by a
+MULTIPLE OF 4 as a block body (`pine_lint` only checks a statement's first continuation line).
+Three rules were also wrong, and `research/turtle15/pine_parity.py` — the shipped script's order
+model in Python, run against the engine on the same bars — found all three: no exit order was live
+during the ENTRY bar, which is 4.4-13.0% of trades averaging -33 to -118 points; the ladder placed
+one rung per bar when the rung levels are deterministic and can all rest at once; and a signal could
+fire on the bar a trade closed. Run the harness TWICE — with position scaling off, which is the
+transcription check and must come back at correlation 0.99+, and as configured, which measures the
+order-model gap. Here that gap is 1.5-2x the engine's points per trade with NO rule differing,
+because the engine re-anchors the stop to each new fill WITHIN a bar and Pine cannot see a fill
+until the bar closes. A better Strategy Tester number than the research is that gap, not an edge.
+See `docs/ib/STUDY_PINE_PARITY.md`.
+
 **Tune with `research/tune.py`, not by editing a module.** A trade's outcome depends only on its
 signal bar and the geometry, so the price walk is cached per bar and every exit knob — stop,
 target, flatten time, max hold, entry mechanic, cost model — becomes an array index: 0.4 us per
@@ -668,6 +683,7 @@ plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
 | `research/hypo/` | the eight-hypothesis programme: library with rationales, full metric suite, robustness score, portfolio correlation |
 | `research/atme/` | adaptive trade management: entry mechanics, trailing/breakeven stops, partials, mechanic isolation |
 | `research/atme/livesim.py` | true 1-minute path re-simulation of a 5-minute config, plus perturbation Monte Carlo |
+| `research/turtle15/pine_parity.py` | the shipped Pine's order model in Python, diffed against the engine |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
