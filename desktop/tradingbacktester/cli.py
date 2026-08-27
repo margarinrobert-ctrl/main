@@ -187,18 +187,24 @@ def _list_styles(geometry: bool = False) -> int:
     return 0
 
 
-def _stderr_progress():
-    """A progress callback that draws on a terminal and stays quiet in a pipe."""
+def _stderr_progress(label: str = "working"):
+    """A progress callback that draws on a terminal and stays quiet in a pipe.
+
+    ``message`` is optional so the same callback fits both conventions in this
+    codebase: the analytics layers name each phase as they go, and the
+    optimisation runner reports only ``(done, total)``. A runner that does not
+    name its work gets ``label``.
+    """
     last = [0.0]
 
-    def progress(done: int, total: int, message: str) -> None:
+    def progress(done: int, total: int, message: str = "") -> None:
         if not sys.stderr.isatty():
             return
         share = done / max(1, total)
         if share - last[0] < 0.02:
             return
         last[0] = share
-        sys.stderr.write(f"\r  {message} … {share * 100:3.0f}%")
+        sys.stderr.write(f"\r  {message or label} … {share * 100:3.0f}%")
         sys.stderr.flush()
 
     return progress
@@ -409,7 +415,7 @@ def _thin(candidate, rungs: int = 3):
     return ParameterRange(candidate.name, candidate.start, candidate.stop, step)
 
 
-def _default_ranges(spec, ceiling: int = 200):
+def _default_ranges(spec, ceiling: int = 200, unit: str = " per fold"):
     """Sweep every numeric parameter around its default, or explain why not.
 
     A walk-forward searches the whole grid once per fold, so a grid that is
@@ -417,6 +423,10 @@ def _default_ranges(spec, ceiling: int = 200):
     obvious grid is too big every range is thinned to its endpoints and centre
     first; only if that is still too big is the user asked which parameters
     matter, rather than being left to wait for a run nobody chose.
+
+    ``unit`` names what the count is per, because the caller knows and this
+    function does not: a holdout sweep runs the grid once, not once per fold,
+    and telling its user otherwise would misstate the cost by five times.
     """
     from .optimize.grid import combination_count, suggested_range
 
@@ -440,11 +450,40 @@ def _default_ranges(spec, ceiling: int = 200):
         example = ranges[0]
         raise BacktesterError(
             f"Sweeping every parameter of '{spec.name}' is {total:,} "
-            f"combinations per fold, which is too many to run by default. "
+            f"combinations{unit}, which is too many to run by default. "
             f"Name the ones that matter with --param, for example --param "
             f"{example.name}={example.start:g}:{example.stop:g}"
             f":{abs(example.step):g}. Numeric parameters: {names}.")
     return ranges
+
+
+def cmd_optimise(args: argparse.Namespace) -> int:
+    from .optimize.holdout import format_holdout, optimise_with_holdout
+
+    bars, name = _resolve_bars(args)
+    spec = _resolve_spec(args)
+    config = _config_for(spec, args.capital)
+
+    ranges = ([_parse_param(text) for text in args.param] if args.param
+              else _default_ranges(spec, unit=""))
+    stream = sys.stderr if args.json else sys.stdout
+    print(f"{spec.name} on {name} ({len(bars):,} bars, {bars.timeframe.label})",
+          file=stream)
+    for r in ranges:
+        print(f"  sweeping {r.describe()}", file=stream)
+
+    result = optimise_with_holdout(
+        bars, spec, config, ranges, metric=args.metric,
+        research_fraction=args.research, reveal=args.reveal,
+        progress=_stderr_progress("sweeping the research block"))
+    _clear_progress()
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2))
+    else:
+        print()
+        print(format_holdout(result, bars,
+                             currency=bars.instrument.currency))
+    return 0
 
 
 def cmd_walkforward(args: argparse.Namespace) -> int:
@@ -677,6 +716,10 @@ def cmd_strategies(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # Imported here rather than at module scope: the help text quotes these
+    # defaults, and `cli --help` should not pay for loading the optimiser.
+    from .optimize.holdout import DEFAULT_REVEAL, RESEARCH_FRACTION
+
     parser = argparse.ArgumentParser(
         prog="tradingbacktester",
         description="Backtest and search for strategies from the command line. "
@@ -754,6 +797,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")
     p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser(
+        "optimize", aliases=["optimise"],
+        help="Sweep a grid on one block, then look at the other once",
+        description="Rank every combination on the first part of the series, "
+                    "fix the ranking, and only then measure the top few on the "
+                    "part that was held back. The locked block is scored once, "
+                    "after the choice is made, because a holdout that can "
+                    "influence the choice is not a holdout.")
+    p.add_argument("strategy")
+    p.add_argument("--data", required=True)
+    p.add_argument("--param", action="append", default=[],
+                   metavar="NAME=START:STOP:STEP",
+                   help="Parameter to sweep; repeat for more than one. "
+                        "Omit to sweep every numeric parameter.")
+    p.add_argument("--metric", default="net_profit",
+                   help="What the research block is ranked by")
+    p.add_argument("--research", type=float, default=RESEARCH_FRACTION,
+                   help="Fraction of the series that chooses the parameters")
+    p.add_argument("--reveal", type=int, default=DEFAULT_REVEAL,
+                   help="How many ranked combinations are measured on the "
+                        "locked block. Raising this spends the holdout: "
+                        "revealing all of them and picking the best is "
+                        "selecting on it with extra steps.")
+    p.add_argument("--capital", type=float, default=100_000.0)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_optimise)
 
     p = sub.add_parser(
         "walkforward",
@@ -880,9 +951,17 @@ def build_parser() -> argparse.ArgumentParser:
     # in one place rather than in each parser so a new data command cannot
     # forget it; `mirror` is excluded because reflecting is the whole of what
     # it does.
+    #
+    # `choices` maps every alias to the SAME parser object, so a command with
+    # an alias would be visited twice and argparse raises on the duplicate
+    # option. Track the objects, not the names.
+    seen: set[int] = set()
     for name, subparser in sub.choices.items():
         if name in ("mirror", "data", "import", "strategies", "convert"):
             continue
+        if id(subparser) in seen:
+            continue
+        seen.add(id(subparser))
         subparser.add_argument(
             "--mirror", action="store_true",
             help="Negate every log return first, giving a market with the "

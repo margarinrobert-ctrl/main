@@ -30,6 +30,7 @@ from ...optimize.ranking import (RANKING_METRICS, heatmap,
                                  overfitting_note, rank)
 from ..theme import PALETTE, Fonts, money, number, pct
 from ..widgets.common import Card, show_error, show_info
+from ..widgets.holdout_panel import HoldoutPanel
 from ..widgets.walkforward_panel import WalkForwardPanel
 from ..workers import TaskRunner, optimize_task
 
@@ -242,6 +243,14 @@ class OptimizerDialog(QDialog):
             lambda: (self.metric_box.currentData() or "net_profit",
                      self.min_trades.value()))
         self.tabs.addTab(self.walkforward, icon("shield", 15), "Walk-Forward")
+
+        # Same grid again, for the question the Results tab implies but cannot
+        # answer: what are THESE parameters worth on data they never saw?
+        self.holdout = HoldoutPanel(
+            self._bars, self._spec, self._config, self._ranges,
+            lambda: (self.metric_box.currentData() or "net_profit",
+                     self.min_trades.value()))
+        self.tabs.addTab(self.holdout, icon("target", 15), "Out of Sample")
         rl.addWidget(self.tabs, 1)
 
         self.note = QLabel("")
@@ -539,6 +548,7 @@ class OptimizerDialog(QDialog):
             self._runner.cancel()
             self._runner.wait(3000)
         self.walkforward.shutdown()
+        self.holdout.shutdown()
         super().closeEvent(event)
 
 

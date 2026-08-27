@@ -140,6 +140,20 @@ produced no result shows the reason in place of its numbers rather than being
 dropped. Its own `TaskRunner`, with a working Cancel; `shutdown()` is called
 from the dialog's `closeEvent`.
 
+Fourth tab: **Out of Sample**, `ui/widgets/holdout_panel.py` —
+`HoldoutPanel(bars, spec, config, ranges_fn, settings_fn, parent=None)`.
+Same two callables, same reason. Controls: the research-block share and how many
+ranked combinations are revealed. One row per revealed combination — its rank,
+its parameters, the research and locked values with their trade counts, and the
+retention — with the two blocks in their own columns and never blended into one
+figure. Retention shows `n/a` rather than a number wherever the ratio would
+mislead (a losing research block, a metric where smaller is better), the
+headline says which of those it is, and a winner that did *better* out of sample
+is coloured as a warning rather than a success. The notes state the grid size
+and that the split does not correct for that multiplicity, every run. Cancelling
+leaves the locked block unread and the headline says so. Its own `TaskRunner`;
+`shutdown()` is called from the dialog's `closeEvent`.
+
 ### `ui/dialogs/montecarlo_dialog.py` — `MonteCarloDialog(result, parent=None)`
 Resamples the loaded run's trade sequence. Controls: method (shuffle /
 bootstrap / block), draw count, compounding, and the ruin level. A four-row

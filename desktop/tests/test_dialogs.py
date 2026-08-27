@@ -591,6 +591,77 @@ def test_optimizer_walk_forward_tab_runs_over_the_same_grid(qapp, bars):
     dialog.close()
 
 
+def test_optimizer_out_of_sample_tab_reveals_the_locked_block_once(qapp, bars):
+    """The tab presses its own button and gets a real two-column answer."""
+    import math
+    import time
+
+    from tradingbacktester.ui.dialogs.optimizer_dialog import OptimizerDialog
+
+    spec = BUILTIN_STRATEGIES["EMA Cross + RSI"]()
+    dialog = OptimizerDialog(bars, spec, BacktestConfig(starting_capital=100_000.0))
+    dialog.show()
+    qapp.processEvents()
+    for row in dialog._rows:
+        row["enabled"].setChecked(row["param"].name in ("ema_fast", "ema_slow"))
+    dialog._rows[0]["start"].setValue(10)
+    dialog._rows[0]["stop"].setValue(20)
+    dialog._rows[0]["step"].setValue(5)
+    dialog._rows[1]["start"].setValue(40)
+    dialog._rows[1]["stop"].setValue(60)
+    dialog._rows[1]["step"].setValue(20)
+    qapp.processEvents()
+
+    panel = dialog.holdout
+    assert [r.name for r in panel._ranges_fn()] == ["ema_fast", "ema_slow"]
+    panel.reveal.setValue(2)
+    panel.run_button.click()
+    deadline = time.monotonic() + 240
+    while panel.busy and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.02)
+    for _ in range(10):
+        qapp.processEvents()
+
+    result = panel._result
+    assert result is not None, "the out-of-sample run produced nothing"
+    assert result.combinations == 6
+    assert panel.table.rowCount() == 2, "only the revealed rows may be shown"
+    assert panel.headline.text() != "Not run yet."
+    # The two blocks stay in their own columns; nothing is blended.
+    assert result.research_bars + result.holdout_bars == len(bars)
+    for row, entry in enumerate(result.revealed):
+        assert panel.table.item(row, 1).text() == entry.label
+        kept = panel.table.item(row, 6).text()
+        assert kept == ("n/a" if not math.isfinite(entry.retention)
+                        else f"{entry.retention * 100:.0f}%")
+    notes = panel.notes.text()
+    assert "multiplicity" in notes
+    assert "not a prediction" in notes
+    dialog.close()
+
+
+def test_optimizer_out_of_sample_tab_refuses_an_empty_grid(qapp, bars, monkeypatch):
+    """With nothing ticked there is no choice to test, and it says so."""
+    from tradingbacktester.ui.dialogs.optimizer_dialog import OptimizerDialog
+    from tradingbacktester.ui.widgets import holdout_panel
+
+    said: list[tuple[str, str]] = []
+    monkeypatch.setattr(holdout_panel, "show_info",
+                        lambda _p, title, text: said.append((title, text)))
+
+    spec = BUILTIN_STRATEGIES["EMA Cross + RSI"]()
+    dialog = OptimizerDialog(bars, spec, BacktestConfig(starting_capital=100_000.0))
+    for row in dialog._rows:
+        row["enabled"].setChecked(False)
+    qapp.processEvents()
+
+    dialog.holdout.run()
+    assert dialog.holdout.busy is False
+    assert said and "nothing to choose" in said[0][1]
+    dialog.close()
+
+
 def test_monte_carlo_dialog_resamples_the_loaded_run(qapp, bars):
     import time
 

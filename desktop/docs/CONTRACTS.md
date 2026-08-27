@@ -293,6 +293,21 @@ Every plain-text formatter is asserted against its own declared width in
   `verdict()` in one sentence. Every block is handed `warmup` bars of history
   and pinned to trade only from its own first bar, so the test blocks neither
   gap nor overlap. `format_walk_forward(result, bars)` renders it as text.
+- `holdout.py` — `optimise_with_holdout(bars, spec, config, ranges, *,
+  metric, research_fraction=0.65, reveal=3, ...) -> HoldoutResult`: the grid's
+  missing train/test split. Sweeps the research block only, fixes the ranking,
+  then evaluates the top `reveal` combinations on the locked block **once**.
+  The locked block is padded with the bars immediately before it and
+  `config.warmup_bars` raised to match, on a copy, so a combination is warm on
+  its first bar there and cannot trade inside the block that chose it; the
+  caller's config is not mutated. `Revealed.retention` is locked over research
+  and returns NaN in the three cases where the ratio would mislead — a research
+  block that did not make money, a research value of zero, and any metric where
+  smaller is better. `HoldoutResult.wrong_shape` flags retention above 1.5,
+  which is a defect to explain and not a result to bank. A cancelled sweep and
+  a grid with nothing rankable both leave the locked block untouched and say so.
+  `format_holdout(result, bars)` renders it as two columns and the notes; the
+  notes always state the grid size and that the split does not correct for it.
 
 ### `tradingbacktester/reports/*`
 - `csv_export.py` — `export_trades_csv`, `export_equity_csv`, `export_metrics_csv`.

@@ -260,6 +260,28 @@ def walk_forward_task(bars: Any, spec: Any, config: Any, ranges: Any,
                         progress=progress, cancel=cancel)
 
 
+def holdout_task(bars: Any, spec: Any, config: Any, ranges: Any,
+                 metric: str = "net_profit", research_fraction: float = 0.65,
+                 reveal: int = 3,
+                 progress: Callable[[int, int, str], None] | None = None,
+                 cancel: Callable[[], bool] | None = None) -> Any:
+    """Rank a grid on the first block, then reveal the second one once."""
+    from ..optimize.holdout import optimise_with_holdout
+
+    relay = None
+    if progress is not None:
+        # The optimisation runner reports (done, total) and names nothing; the
+        # UI's progress bar wants a phase. Supply the phase here rather than
+        # widening the runner's callback, which every other caller relies on.
+        def relay(done: int, total: int) -> None:      # noqa: F811
+            progress(done, total, "Sweeping the research block")
+
+    return optimise_with_holdout(
+        bars, spec, config, ranges, metric=metric,
+        research_fraction=research_fraction, reveal=reveal,
+        progress=relay, cancel=cancel)
+
+
 def monte_carlo_task(result: Any, method: str = "block", draws: int = 5000,
                      compounded: bool = False, ruin_level: float | None = None,
                      progress: Callable[[int, int, str], None] | None = None,

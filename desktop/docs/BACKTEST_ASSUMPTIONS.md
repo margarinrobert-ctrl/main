@@ -307,6 +307,51 @@ when the in-sample total is not positive, because if the best combination the op
 could find still lost money on the data it was chosen from, there was nothing for the
 out-of-sample block to keep.
 
+## How the out-of-sample split is cut, and why the locked block is read once
+
+The grid optimiser's **Out of Sample** tab (`optimize/holdout.py`) cuts the series in two:
+the first 65% chooses the parameters and the rest is held back. Every combination is
+backtested on the research block only. The ranking is then *fixed*, and only after that are
+the top few — three by default — measured on the block that was held back.
+
+The "only after that" is the whole design, not a nicety. A holdout stops being a holdout the
+moment it can influence a choice. If every combination were scored on the locked block and
+the best one reported, the split would have bought nothing: the search would simply have had
+more data to fit. The number of combinations revealed is a setting so that raising it is a
+decision the user makes, and the control says what it costs.
+
+The locked block is padded with the bars immediately before it and the engine's floor on the
+first tradeable bar is raised to match, for the same two reasons the walk-forward blocks are
+padded: without the history a combination is blind for as long as its slowest indicator
+needs, and without the floor a combination with a shorter warm-up than the widest in the
+grid would start trading inside the block that chose it. The padding is applied to a copy of
+the configuration, so the caller's settings are unchanged. The prepended bars are strictly
+earlier in the series, so nothing here can see forward.
+
+The two blocks are never merged into one figure. A blended number is how a combination
+chosen on one block gets described as profitable.
+
+Retention — the locked value over the research value — is reported as undefined rather than
+as a number in three cases:
+
+- **The research block did not make money.** "Kept −80% of a loss" is not a sentence, and a
+  ratio of two negatives is worse than useless. The report says instead that nothing in the
+  grid worked on the block that chose it, and that whatever the locked column shows is what
+  the least-bad combination happened to do next.
+- **The research value was zero.**
+- **The metric is one where smaller is better.** A winner that "kept 150%" of its drawdown
+  kept a worse one, and the phrasing would read as a good result while describing a bad one.
+
+Retention above 1.5 is **flagged, never celebrated**. An edge decays on a block it was not
+chosen from; it does not appear there. When it does, the usual causes are an easier period
+in the locked block or a leak between the two, and either is a defect to explain rather than
+a result to bank.
+
+Finally, the split does not correct for multiplicity and the report says so every time.
+A thousand combinations ranked on the research block had a thousand chances to fit it. The
+locked figure beside the winner is one sample of what happened next — not a p-value, and not
+a correction for the thousand.
+
 ## What the Monte Carlo resamples, and what it assumes
 
 The Monte Carlo resamples the *trade sequence* a run produced. It does not re-simulate

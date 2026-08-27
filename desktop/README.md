@@ -63,6 +63,7 @@ SVG, no external assets and no network requests.
 - [Which indicators actually predict anything](#which-indicators-actually-predict-anything)
 - [Finding anomalies](#finding-anomalies)
 - [Optimisation](#optimisation)
+- [Out of sample: what are *these* parameters worth?](#out-of-sample-what-are-these-parameters-worth)
 - [Walk-forward: is the optimisation real?](#walk-forward-is-the-optimisation-real)
 - [Monte Carlo: what else could have happened?](#monte-carlo-what-else-could-have-happened)
 - [The mirror market: was it the rule or the rally?](#the-mirror-market-was-it-the-rule-or-the-rally)
@@ -769,7 +770,63 @@ Optimisation reports what would have happened on the data you gave it. The
 best combination on a historical sample is, by construction, the one that fitted
 that sample's noise best. Expect it to be worse out of sample.
 
-The **Walk-Forward** tab in the same dialog is how you find out how much worse.
+The **Out of Sample** and **Walk-Forward** tabs in the same dialog are how you
+find out how much worse.
+
+---
+
+## Out of sample: what are *these* parameters worth?
+
+The Results tab ranks every combination over the whole series. That number is
+the best fit to the data it was chosen on, and a sweep produces a winner even on
+data with no edge in it — so on its own it is not evidence of anything.
+
+**Backtest → Optimise Parameters → Out of Sample** runs the same grid over the
+first 65% of the series only, fixes the ranking, and *then* measures the top few
+on the part that was held back. The two blocks are never merged into one figure:
+a blended number is how a combination chosen on one block gets described as
+profitable.
+
+The locked block is scored **once**, after the choice is made, and only for the
+top few. That is the whole design. Scoring every combination on it and reporting
+the best would not be a holdout at all — the search would simply have had more
+data to overfit. The `Reveal` box exists so you can raise it, and its tooltip
+says what raising it costs.
+
+The report gives you the two columns side by side and a retention figure —
+locked over research — with four things it refuses to do:
+
+- It reports **no retention at all** when the research block lost money. "Kept
+  −80% of a loss" is not a sentence, and a ratio of two negatives is worse than
+  useless. Instead it says plainly that nothing in the grid worked on the block
+  that chose it, and that the locked column is what the least-bad combination
+  happened to do next.
+- It reports no retention for a metric where **smaller is better**. A winner
+  that "kept 150%" of its drawdown kept a worse one.
+- It **flags** a winner that did markedly better out of sample rather than
+  celebrating it. An edge decays on a block it was not chosen from; it does not
+  appear there. The usual causes are an easier period in the locked block or a
+  leak between the two.
+- It states the **multiplicity** beside the result every time. A thousand
+  combinations ranked on the research block had a thousand chances to fit it,
+  and the locked figure is one sample of what happened next — not a p-value and
+  not a correction for that.
+
+The locked block is handed the bars immediately before it so indicators start
+settled, and is then only allowed to trade from its own first bar. Those bars
+are strictly in the past.
+
+```bash
+python -m tradingbacktester.cli optimize "Bollinger Breakout" --data "US30 30m" \
+    --param bb_period=14:24:1 --param bb_dev=1.6:2.5:0.3
+```
+
+`--research` sets the split, `--reveal` how many combinations are measured on the
+locked block, `--metric` what the research block is ranked by.
+
+The Walk-Forward tab next door answers a harder question and re-optimises in
+every window. This one answers the simpler question the Results tab implies but
+cannot support.
 
 ---
 
@@ -1118,7 +1175,7 @@ python -m tradingbacktester.cli report "MACD Trend" --data "US30 30m" \
 menu produces; the suffix chooses the format and the PDF renders with no display
 attached. `--mirror` on any command that reads data reflects the series first. `--json`
 prints machine-readable output on `find`, `indicators`, `anomalies`,
-`run`, `walkforward`, `montecarlo` and `mirror`; everything else then goes to stderr so the output can
+`run`, `optimize`, `walkforward`, `montecarlo` and `mirror`; everything else then goes to stderr so the output can
 be piped straight into a tool that expects one document. `--workspace` points at
 a different folder. Nothing here reaches the network.
 
@@ -1201,7 +1258,7 @@ tradingbacktester/
 ├── finder/       trading styles, the candidate space, matched controls, search
 ├── research/     engineered features, information coefficients, anomalies,
 │                the mirror-market control
-├── optimize/     parameter grids, the parallel runner, ranking, walk-forward
+├── optimize/     parameter grids, the parallel runner, ranking, holdout, walk-forward
 ├── reports/      CSV, HTML and PDF export
 ├── storage/      the on-disk workspace and saved runs
 └── ui/           the PySide6 application
