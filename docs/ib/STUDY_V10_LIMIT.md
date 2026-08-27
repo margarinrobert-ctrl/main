@@ -1,5 +1,15 @@
 # Optimising V9 for scalping: the mechanic is the lever, not the signal
 
+
+> **CORRECTION (V15).** Every limit-entry figure in this study was produced by `eem.run`, whose
+> fill model scans forward from each signal in turn and fills at *that* signal's level — so a limit
+> priced eight bars ago outranks a nearer one priced since. That needs eight simultaneous resting
+> orders and for the far one to fill first; a script has one live order. Re-measured with the
+> implementable model the legs keep **24–47%** of their R, with every shared trade identical (exit
+> bar 100%, correlation 1.0000). Read the numbers below as an upper bound, not as a result. See
+> `docs/ib/STUDY_V15_BOOK.md` §2 and `research/v15/v15_parity.py`. Market-order results are
+> unaffected.
+
 NQ 15-minute, 70,685 bars, 2022-12-26 → 2025-12-12. Research = first 65% of sessions, LOCKED read
 once after parameters were fixed. All headline figures are **true 1-minute path execution**
 (`research/limit_entry.run_1m`), fills require price to trade **through** the limit by 4 ticks, and

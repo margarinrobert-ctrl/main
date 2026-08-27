@@ -1,5 +1,15 @@
 # 1,290,240 cells per side in 07:00–11:00: the long side is an overfit, the short side is an entry mechanic
 
+
+> **CORRECTION (V15).** Every limit-entry figure in this study was produced by `eem.run`, whose
+> fill model scans forward from each signal in turn and fills at *that* signal's level — so a limit
+> priced eight bars ago outranks a nearer one priced since. That needs eight simultaneous resting
+> orders and for the far one to fill first; a script has one live order. Re-measured with the
+> implementable model the legs keep **24–47%** of their R, with every shared trade identical (exit
+> bar 100%, correlation 1.0000). Read the numbers below as an upper bound, not as a result. See
+> `docs/ib/STUDY_V15_BOOK.md` §2 and `research/v15/v15_parity.py`. Market-order results are
+> unaffected.
+
 Grid fixed before it ran, and its rules chosen with the user: **entries only inside 07:00–11:00 New
 York with exits running free**; a configuration must hold on **US30 and US100 independently**;
 **both sides ranked separately**; ranked on **return over max drawdown**, the one criterion on this

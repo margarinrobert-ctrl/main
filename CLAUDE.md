@@ -37,6 +37,27 @@ strategies cross to unprofitable — one of them the time-of-day control. Note t
 uniform on the Python side (calm-bar friction FELL from 2t to 1.5t per side while fees rose), so
 read the decomposition, not the total. See `docs/ib/STUDY_COSTS.md`.
 
+**A BACKTEST'S FILL MODEL CAN TAKE ORDERS A SCRIPT CANNOT PLACE.** `eem.run`'s limit entry scans
+forward from each signal in turn and fills at THAT signal's level, so a limit priced eight bars ago
+outranks a nearer one priced since — eight simultaneous resting orders with the far one filling
+first. A script has ONE live order. Re-measured with the implementable model the four V15 legs keep
+**24–47%** of their R, while every trade the two models share is IDENTICAL (exit bar 100%,
+correlation 1.0000) — so the bug is invisible in P&L-per-trade and shows only in the TRADE COUNT.
+Of the three one-order policies, holding the order untouched beats re-pricing on every fresh signal
+by 2x: "keep the order current" chases the market. This corrects every limit-entry figure in
+`docs/ib/STUDY_V10_LIMIT.md` and `docs/ib/STUDY_V14_WINDOW_GRID.md`. Market orders are unaffected.
+See `docs/ib/STUDY_V15_BOOK.md`.
+
+**Clearing a matched control and clearing zero are different questions.** V15's shipped book beats
+its minute-of-day-matched control on the judged block at p 0.010 — the control's MEDIAN outcome is
+−10.9R, so random entries with that geometry lose — while a bootstrap of the same 81 days puts
+P(mean daily R ≤ 0) at 0.073. Both are true. Report both; a short holdout can answer the first and
+not the second.
+
+**Prop targets are a distribution problem, not a strategy problem.** The V15 book's best risk level
+by edge (0.25%: 25.5% pass, 12.8% bust) is also the one where **61.7% of 60-day runs end neither
+passed nor busted**. Sized to survive, it grinds. Print P(neither) beside P(pass) or the table lies.
+
 **Sizing creates no edge.** Fixed one contract per leg, AVA across legs. See §9.
 
 **A win rate that exists at only one threshold is not a mechanism.** Parameterise every shipped
@@ -805,6 +826,9 @@ plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
 | `research/donchian/` | the Donchian/EMA/ADX/CHOP reproduction, its control gate and drop-one |
 | `research/costs.py` | itemised fees, broker presets, bar-dependent slippage; `real_costs.py` reports the damage |
+| `research/v15/v15book.py` | the V15 book: features, both legs, the two geometries |
+| `research/v15/v15_parity.py` | **the order-model diff** — the script's one live order vs the engine's eight |
+| `research/v15/run_book.py` | the whole V15 table: mechanic, control gate, walk-forward, MC, prop |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine
