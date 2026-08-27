@@ -154,6 +154,24 @@ and that the split does not correct for that multiplicity, every run. Cancelling
 leaves the locked block unread and the headline says so. Its own `TaskRunner`;
 `shutdown()` is called from the dialog's `closeEvent`.
 
+### `ui/dialogs/finder_dialog.py` — `FinderDialog(datasets, instruments, strategies, parent=None)`
+Three tabs over one dataset — *Strategies*, *Indicators*, *Anomalies* — each
+running its study on a `TaskRunner` with a working Cancel. Pick a dataset and a
+trading style; the style fixes bar size, session, stop and target geometry and
+minimum trade count, because a geometry the search can choose is a geometry it
+can fit.
+
+Under those, a **Constraints (optional)** card, off by default. Switched on it
+overrides the style's session (or "all hours"), stop and target multiples, max
+hold and minimum trades, and the note beneath states the exact geometry the
+search will be given. Every control refreshes that note — it claims to say what
+will be searched, so it has to be true after any change, not only the last
+toggle. Switching style re-seeds the boxes from it, so a change is always a
+change *from* the style. The overrides go through `finder.styles.customise`,
+which copies rather than mutating: the shipped styles are module constants and
+the next search in the same process must see them unchanged. Nothing here is
+searched over, and the note says so.
+
 ### `ui/dialogs/montecarlo_dialog.py` — `MonteCarloDialog(result, parent=None)`
 Resamples the loaded run's trade sequence. Controls: method (shuffle /
 bootstrap / block), draw count, compounding, and the ruin level. A four-row

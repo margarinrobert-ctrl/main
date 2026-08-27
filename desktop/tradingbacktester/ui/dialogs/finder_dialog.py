@@ -24,12 +24,12 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog,
-                               QHBoxLayout, QHeaderView, QLabel, QProgressBar,
-                               QPushButton, QRadioButton, QSizePolicy,
-                               QSplitter, QTabWidget, QTableWidget,
-                               QTableWidgetItem, QTextBrowser, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox,
+                               QDialog, QDoubleSpinBox, QHBoxLayout,
+                               QHeaderView, QLabel, QProgressBar, QPushButton,
+                               QRadioButton, QSizePolicy, QSpinBox, QSplitter,
+                               QTabWidget, QTableWidget, QTableWidgetItem,
+                               QTextBrowser, QTimeEdit, QVBoxLayout, QWidget)
 
 from ...core.errors import BacktesterError, CancelledError
 from ...finder import find_strategies, format_report
@@ -206,6 +206,8 @@ class FinderDialog(QDialog):
         top.addWidget(style_card, 1)
         outer.addLayout(top)
 
+        outer.addWidget(self._constraints_card())
+
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self._tables: dict[str, QTableWidget] = {}
@@ -330,9 +332,164 @@ class FinderDialog(QDialog):
             return
         self.dataset_detail.setText("")
 
+    def _constraints_card(self) -> QWidget:
+        """The style's constraints, opened only by someone who wants them.
+
+        The defaults are the point of a style: fixing the geometry before the
+        search runs is what stops the optimiser choosing it. But "day trading"
+        means different hours on different instruments, and a trader with a
+        reason to trade 07:00-11:00 should not have to edit the source.
+
+        Everything here is applied ONCE, before the search, and printed with
+        the result. Nothing is searched over -- a list of sessions handed to a
+        search, best kept, is how a calendar condition becomes a free lottery
+        ticket.
+        """
+        card = Card("Constraints (optional)")
+        self.constraints_on = QCheckBox(
+            "Override this style's session and geometry")
+        self.constraints_on.setToolTip(
+            "Off, the style decides — which is the safer answer. On, your "
+            "settings are fixed before the search runs and reported with the "
+            "result. Neither way is the constraint searched over.")
+        card.add(self.constraints_on)
+
+        self._constraint_row = QWidget()
+        row = QHBoxLayout(self._constraint_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(9)
+
+        row.addWidget(self._small("Session"))
+        self.session_start = QTimeEdit()
+        self.session_start.setDisplayFormat("HH:mm")
+        row.addWidget(self.session_start)
+        row.addWidget(self._small("to"))
+        self.session_end = QTimeEdit()
+        self.session_end.setDisplayFormat("HH:mm")
+        row.addWidget(self.session_end)
+        self.all_hours = QCheckBox("All hours")
+        self.all_hours.setToolTip(
+            "Trade around the clock. Sensible for a swing or position style "
+            "and rarely for an intraday one.")
+        row.addWidget(self.all_hours)
+
+        row.addSpacing(12)
+        row.addWidget(self._small("Stop"))
+        self.stop_atr = QDoubleSpinBox()
+        self.stop_atr.setRange(0.1, 20.0)
+        self.stop_atr.setSingleStep(0.25)
+        self.stop_atr.setDecimals(2)
+        self.stop_atr.setSuffix(" × ATR")
+        row.addWidget(self.stop_atr)
+
+        row.addWidget(self._small("Target"))
+        self.target_r = QDoubleSpinBox()
+        self.target_r.setRange(0.1, 20.0)
+        self.target_r.setSingleStep(0.25)
+        self.target_r.setDecimals(2)
+        self.target_r.setSuffix(" R")
+        row.addWidget(self.target_r)
+
+        row.addWidget(self._small("Max hold"))
+        self.max_bars = QSpinBox()
+        self.max_bars.setRange(1, 5000)
+        self.max_bars.setSuffix(" bars")
+        row.addWidget(self.max_bars)
+
+        row.addWidget(self._small("Min trades"))
+        self.min_trades = QSpinBox()
+        self.min_trades.setRange(1, 100_000)
+        row.addWidget(self.min_trades)
+        row.addStretch(1)
+        card.add(self._constraint_row)
+
+        self.constraint_note = QLabel("")
+        self.constraint_note.setWordWrap(True)
+        self.constraint_note.setFont(Fonts.numeric(8))
+        self.constraint_note.setStyleSheet(f"color:{PALETTE.text_muted};")
+        card.add(self.constraint_note)
+
+        # Every control, not just the two check boxes: the note claims to say
+        # what the search will be given, so it has to be true after any change
+        # and not only after the last one that happened to be a toggle.
+        self.constraints_on.toggled.connect(self._on_constraints_toggled)
+        self.all_hours.toggled.connect(self._on_constraints_toggled)
+        for widget in (self.session_start, self.session_end):
+            widget.timeChanged.connect(self._on_constraints_toggled)
+        for widget in (self.stop_atr, self.target_r):
+            widget.valueChanged.connect(self._on_constraints_toggled)
+        for widget in (self.max_bars, self.min_trades):
+            widget.valueChanged.connect(self._on_constraints_toggled)
+        self._constraint_row.setEnabled(False)
+        self._fill_constraints(self._selected_style())
+        return card
+
+    @staticmethod
+    def _small(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setFont(Fonts.body(9))
+        label.setStyleSheet(f"color:{PALETTE.text_dim};")
+        return label
+
+    def _fill_constraints(self, style) -> None:
+        """Seed the controls from the style, so a change is a change FROM it."""
+        from PySide6.QtCore import QTime
+
+        window = style.session or ("09:30", "16:00")
+        for widget, text in ((self.session_start, window[0]),
+                             (self.session_end, window[1])):
+            hour, _, minute = str(text).partition(":")
+            widget.setTime(QTime(int(hour or 0), int(minute or 0)))
+        self.all_hours.setChecked(style.session is None)
+        self.stop_atr.setValue(float(style.stop_atr[0]))
+        self.target_r.setValue(float(style.target_r[0]))
+        self.max_bars.setValue(int(style.max_bars))
+        self.min_trades.setValue(int(style.min_trades))
+        self._on_constraints_toggled()
+
+    def _on_constraints_toggled(self, *_args) -> None:
+        on = self.constraints_on.isChecked()
+        self._constraint_row.setEnabled(on)
+        for widget in (self.session_start, self.session_end):
+            widget.setEnabled(on and not self.all_hours.isChecked())
+        if not on:
+            self.constraint_note.setText(
+                "The style decides. That is the safer answer: a geometry the "
+                "search cannot choose is a geometry it cannot fit.")
+            return
+        style = self._selected_style()
+        self.constraint_note.setText(
+            f"Searching {self._constrained_style(style).describe()}. Fixed "
+            f"before the search runs and reported with the result — the search "
+            f"does not choose between these and the style's own.")
+
+    def _constrained_style(self, style):
+        """The style the search will actually be given."""
+        if not getattr(self, "constraints_on", None) \
+                or not self.constraints_on.isChecked():
+            return style
+        from ...finder.styles import customise
+
+        overrides = {
+            "stop_atr": (round(self.stop_atr.value(), 2),),
+            "target_r": (round(self.target_r.value(), 2),),
+            "max_bars": self.max_bars.value(),
+            "min_trades": self.min_trades.value(),
+        }
+        if self.all_hours.isChecked():
+            overrides["session"] = None
+            overrides["flat_at_session_end"] = False
+        else:
+            overrides["session"] = (
+                self.session_start.time().toString("HH:mm"),
+                self.session_end.time().toString("HH:mm"))
+        return customise(style, **overrides)
+
     def _on_style_changed(self, *_args) -> None:
         style = self._selected_style()
         self.style_detail.setText(f"{style.describe()}\n{style.notes}")
+        if getattr(self, "constraints_on", None) is not None:
+            self._fill_constraints(style)
 
     def _selected_style(self):
         for button in self._style_buttons:
@@ -385,7 +542,7 @@ class FinderDialog(QDialog):
             show_error(self, exc)
             return
 
-        style = self._selected_style()
+        style = self._constrained_style(self._selected_style())
         study = self._study
         self._tables[study].setRowCount(0)
         self._details[study].clear()

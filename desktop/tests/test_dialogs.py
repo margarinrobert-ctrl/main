@@ -939,6 +939,95 @@ def test_finder_dialog_shows_a_result_and_can_save_it(qapp, tmp_path, registry):
     dialog.close()
 
 
+def test_finder_constraints_are_off_until_asked_for(qapp, tmp_path, registry):
+    """The style decides unless someone deliberately overrides it."""
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import FinderDialog
+
+    workspace = Workspace(tmp_path).ensure()
+    dialog = FinderDialog(DatasetRepository(workspace), registry,
+                          StrategyStore(workspace))
+    style = dialog._selected_style()
+    assert dialog.constraints_on.isChecked() is False
+    assert dialog._constrained_style(style) is style
+    assert "style decides" in dialog.constraint_note.text()
+    dialog.close()
+
+
+def test_finder_constraints_reach_the_style_when_they_are(qapp, tmp_path,
+                                                          registry):
+    from PySide6.QtCore import QTime
+
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import FinderDialog
+
+    workspace = Workspace(tmp_path).ensure()
+    dialog = FinderDialog(DatasetRepository(workspace), registry,
+                          StrategyStore(workspace))
+    base = dialog._selected_style()
+    dialog.constraints_on.setChecked(True)
+    dialog.session_start.setTime(QTime(7, 0))
+    dialog.session_end.setTime(QTime(11, 0))
+    dialog.stop_atr.setValue(1.25)
+    dialog.target_r.setValue(2.5)
+    dialog.max_bars.setValue(24)
+    dialog.min_trades.setValue(40)
+    qapp.processEvents()
+
+    tight = dialog._constrained_style(base)
+    assert tight.session == ("07:00", "11:00")
+    assert tight.geometries() == [(1.25, 2.5)]
+    assert tight.max_bars == 24
+    assert tight.min_trades == 40
+    # The shipped style is a module constant and must be untouched.
+    assert base.session == ("09:30", "16:00")
+    assert base.min_trades == 100
+    assert "07:00-11:00" in dialog.constraint_note.text()
+    assert "does not choose" in dialog.constraint_note.text()
+    dialog.close()
+
+
+def test_finder_all_hours_disables_the_session_boxes(qapp, tmp_path, registry):
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import FinderDialog
+
+    workspace = Workspace(tmp_path).ensure()
+    dialog = FinderDialog(DatasetRepository(workspace), registry,
+                          StrategyStore(workspace))
+    dialog.constraints_on.setChecked(True)
+    dialog.all_hours.setChecked(True)
+    qapp.processEvents()
+    assert dialog.session_start.isEnabled() is False
+    assert dialog.session_end.isEnabled() is False
+    tight = dialog._constrained_style(dialog._selected_style())
+    assert tight.session is None
+    assert tight.flat_at_session_end is False
+    dialog.close()
+
+
+def test_finder_constraints_follow_the_selected_style(qapp, tmp_path, registry):
+    """Switching style re-seeds the boxes, so a change is a change FROM it."""
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import FinderDialog
+
+    workspace = Workspace(tmp_path).ensure()
+    dialog = FinderDialog(DatasetRepository(workspace), registry,
+                          StrategyStore(workspace))
+    for button in dialog._style_buttons:
+        if button._style.key == "swing":
+            button.setChecked(True)
+            break
+    qapp.processEvents()
+    assert dialog.all_hours.isChecked() is True      # swing has no session
+    assert dialog.max_bars.value() == 60
+    assert dialog.min_trades.value() == 60
+    dialog.close()
+
+
 def test_finder_dialog_runs_all_three_studies(qapp, tmp_path, registry):
     """One dialog, three questions, and each of them fills its own tab."""
     from tradingbacktester.config import Workspace
