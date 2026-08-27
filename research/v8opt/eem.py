@@ -32,7 +32,8 @@ COLS = ["sig", "ent", "exit", "units", "entry", "px0", "exitpx", "pnl", "mfe", "
 
 def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, cost=1.72,
         tp_pts=None, tp_r=None, be_pts=None, be_lock=0.0, trail_pts=None, atr_trail=None,
-        chan_exit=True, max_bars=None, flat_mod=None, part_frac=None, part_pts=None):
+        chan_exit=True, max_bars=None, flat_mod=None, part_frac=None, part_pts=None,
+        lim_mult=None, lim_atr=None, lim_wait=2, lim_through=0.0):
     """Long-only Turtle #8 with a pluggable exit. Returns one row per trade with its path."""
     o, h, l, c = d["o"], d["h"], d["l"], d["c"]
     mod = d["mod"]
@@ -55,9 +56,25 @@ def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, c
             i += 1
             continue
 
-        eb = i + 1
         a = atr[i]
-        px0 = o[eb]                      # the price the trade was taken at; MFE/MAE reference
+        if lim_mult is None:
+            eb = i + 1
+            px0 = o[eb]                  # market at the next open
+        else:
+            # RESTING LIMIT `lim_mult` x ATR(n) IN OUR FAVOUR, placed at the signal bar's close and
+            # live for `lim_wait` bars. Fill is assumed AT the limit even when price gapped through
+            # it, which is the pessimistic reading for a buy. Signals that never fill are DROPPED --
+            # that is the cost of the mechanic and it must show up in the trade count.
+            lim = c[i] - lim_mult * lim_atr[i]
+            eb = None
+            for k in range(i + 1, min(i + 1 + lim_wait, n)):
+                if l[k] <= lim - lim_through:
+                    eb = k
+                    break
+            if eb is None:
+                i += 1
+                continue
+            px0 = lim
         avg = px0
         size = 1.0
         opened = 1          # units EVER opened -- the ladder counts these, not the live size
@@ -92,29 +109,49 @@ def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, c
             # bar's high and then testing THIS bar's low against it assumes the high came first,
             # which is a look-ahead worth 0.4 of profit factor here -- it was the single best exit
             # model in the first run and it was not real. `peak_prev` is the honest series.
+            # ON A LIMIT-ENTRY FILL BAR only the ATR stop applies. The fill happened at the bar's
+            # low; the CHANNEL exit can sit ABOVE that fill (we bought a dip below the recent
+            # range), so max(ATR stop, channel) triggers instantly AT A PROFIT -- a "stop" that
+            # makes money on the entry bar. That was 3,170 trades averaging +1.14 with a median
+            # hold of ONE bar, and it was the whole of a Sharpe-11 rule-free result.
+            limit_fill_bar = (lim_mult is not None and j == eb)
             lvl = stop
-            if chan_exit:
+            if chan_exit and not limit_fill_bar:
                 ch = C["lo1"][j] if sys_on == 1 else C["lo2"][j]
                 if np.isfinite(ch):
                     lvl = max(lvl, ch)
-            if be_pts is not None and peak_prev - px0 >= be_pts:
-                lvl = max(lvl, px0 + be_lock)
-            if trail_pts is not None:
-                lvl = max(lvl, peak_prev - trail_pts)
-            if atr_trail is not None:
-                lvl = max(lvl, peak_prev - atr_trail * a)
+            if not limit_fill_bar:
+                if be_pts is not None and peak_prev - px0 >= be_pts:
+                    lvl = max(lvl, px0 + be_lock)
+                if trail_pts is not None:
+                    lvl = max(lvl, peak_prev - trail_pts)
+                if atr_trail is not None:
+                    lvl = max(lvl, peak_prev - atr_trail * a)
+            # A SELL STOP CANNOT REST ABOVE THE MARKET. If the channel exit (or any trailing
+            # level) sits above the price at which the order is placed, it is not a stop -- it is a
+            # limit that books an instant profit, and letting it "trigger" inside the bar assumes
+            # an intrabar sequence nobody can know. Cap every working level at the close of the bar
+            # the order was placed on (the fill price itself, on a limit-entry fill bar).
+            cap = px0 if limit_fill_bar else c[j - 1]
+            lvl = min(lvl, cap)
             hit_sl = l[j] <= lvl
             peak = max(peak, h[j])
 
+            # ON A LIMIT-ENTRY FILL BAR THE TARGET IS NOT AVAILABLE. The fill happened because the
+            # bar traded DOWN to the limit; letting the same bar's HIGH pay the target assumes the
+            # low came first and the high after, i.e. that we bought the low and sold the high of
+            # one bar. That single assumption was worth a Sharpe of 11 on a rule-free every-bar
+            # test -- a fill artifact of exactly the kind this branch has caught before.
             tgt = None
-            if tp_pts is not None:
-                tgt = avg + tp_pts
-            elif tp_r is not None:
-                tgt = avg + tp_r * atr_mult * a
+            if not limit_fill_bar:
+                if tp_pts is not None:
+                    tgt = avg + tp_pts
+                elif tp_r is not None:
+                    tgt = avg + tp_r * atr_mult * a
 
             # partial first: it is nearer than the runner's target by construction
             if (part_pts is not None and part_frac is not None and not part_done
-                    and not hit_sl and h[j] >= avg + part_pts):
+                    and not hit_sl and not limit_fill_bar and h[j] >= avg + part_pts):
                 closed = size * part_frac
                 pnl += part_pts * closed - 0.5 * cost * closed
                 size -= closed

@@ -189,6 +189,27 @@ three units run a max drawdown of 4,428 all-hours and 6,685 in a 07:00-10:00 win
 evaluation is the RULE SET, not the strategy: under 30 days / 6% / 4% TRAILING nothing tested
 passes, while 90 days with a STATIC 4% gives 39% pass against 12% bust at the same sizing.
 
+**A limit-entry backtest on bar data measures intrabar ordering, not edge.** Three separate
+artifacts, each worth a lot: filling at a bar's low and paying the target at the same bar's high;
+the Donchian channel exit sitting ABOVE a limit fill so `max(ATR stop, channel)` fired instantly AT
+A PROFIT (3,170 trades averaging +1.14, median hold ONE bar); and a sell stop resting above the
+market, which is not a stop. Together they showed **Sharpe 11 on a rule-free every-bar test**.
+Removing them gave ~6; the true 1-minute path (`limit_entry.run_1m`) gave ~2. ALWAYS settle a
+limit-entry question on `run_1m`, never on the bars that decide the exits. Corollaries: a working
+stop level must be capped at the close of the bar the order is placed on, and `through_ticks=4` --
+the pessimism the module itself flags as mattering most -- turns out to cost only ~0.02 PF.
+Note `limit_entry.py` still ships the OLD bare costs (COMM=1.00, broker-only); pass `cost_mult=1.44`
+for the real MNQ stack. Its `trig` argument is a list of bar INDICES, not a boolean mask.
+See `docs/ib/STUDY_V10_LIMIT.md`.
+
+**The entry MECHANIC beat the entry SIGNAL again, on V9.** Same Donchian breakout, same ADX gate,
+same ATR stop, market order swapped for a resting limit 0.75xATR(5) below the close: locked Sharpe
+1.23 -> 1.57, $/trade +12.34 -> +24.44, research Sharpe 0.66 -> 3.81. And removing the Donchian
+entirely scored BETTER on both blocks (locked 1.26/2.10 against 1.19/1.30) -- the trigger fails its
+matched control at p 0.12-0.43. It is retained in the shipped script by user instruction, which
+costs ~0.05 PF and ~0.4 Sharpe on locked and halves the trade count; recorded so the decision can be
+revisited on evidence.
+
 **Tune with `research/tune.py`, not by editing a module.** A trade's outcome depends only on its
 signal bar and the geometry, so the price walk is cached per bar and every exit knob — stop,
 target, flatten time, max hold, entry mechanic, cost model — becomes an array index: 0.4 us per
