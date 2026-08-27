@@ -72,6 +72,28 @@ It is roughly free inside a morning window, where the trade would have closed an
 at the NEXT BAR'S OPEN — `strategy.close_all()` cannot sell the close of the bar that triggers it —
 so the engine was changed to match the script (`flat_open`), not the other way round.
 
+**THE ONE ENGINEERED FEATURE THAT SURVIVED: a breakout must also be above the LAST COMPLETED RTH
+SESSION'S HIGH.** On the V11 base (Donchian 55, ADX >= 25, 2.5N, 15m) it takes locked profit factor
+1.308 -> **1.780**, Sharpe 1.05 -> **1.55** and drawdown 14.3R -> 9.0R, and it is what makes the
+strategy clear a minute-of-day matched control it otherwise FAILS out of sample (base locked
+p 0.213, filtered p 0.014). It is a LEVEL, not a trend: the prior session's CLOSE does nothing
+(p 0.150) and every daily trend state tested does nothing (p 0.23 to 1.00). Bootstrap on locked
+P(mean daily R <= 0) = 0.023. See `docs/ib/STUDY_V17_FEATURES.md`.
+
+**Its pool was null, and it was carried on GRADIENT, not rank.** 285 conditions, 16 beat their
+control at p <= 0.05 against 14.2 expected; on net R only 7 against 14.2. The condition shipped was
+not the best cell — it was the only feature whose whole ladder was sign-consistent in BOTH
+directions, and that gradient reproduced on the locked block. Bonferroni over 285 kills the
+p-value; the replication of the gradient is the evidence, and it is one replication, not a result.
+
+**COMPUTE SHARPE OVER EVERY TRADING DAY IN THE BLOCK, zero-filled on days that did not trade.** Over
+traded days only, a filter is PAID for trading less: keep twelve days a year and the ratio explodes
+while the account earns nothing. This is the choice that makes a selectivity search honest.
+
+**`request.security` on a daily bar is NOT the session high.** It returns the 24-hour futures high.
+A script that needs an RTH session level must accumulate it on its own bars and freeze it at the
+session end — verified here identical to the tick against the 1-minute research construction.
+
 **A MOMENTUM FILTER CANNOT IMPROVE A BREAKOUT, BECAUSE A BREAKOUT IS A MOMENTUM EVENT.** 2,167
 conditions (58 scores x 366 rungs x 3 timeframes x 2 sides): 99 beat a same-selectivity control on
 research against 37 expected by chance, and on the holdout only **28%** still beat the UNFILTERED
@@ -866,6 +888,9 @@ plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
 | `research/v15/v15book.py` | the V15 book: features, both legs, the two geometries |
 | `research/v15/v15_parity.py` | **the order-model diff** — the script's one live order vs the engine's eight |
 | `research/v15/run_book.py` | the whole V15 table: mechanic, control gate, walk-forward, MC, prop |
+| `research/v17/v17feat.py` | 21 engineered breakout features, both directions, all causal |
+| `research/v17/v17run.py` | the 285-condition sweep; Sharpe over ALL days; same-selectivity null |
+| `research/v17/v17judge.py` | ladders, the single locked read, matched controls, stability |
 | `research/v16/v16mom.py` | the 58-score momentum pool, signed and side-mirrored |
 | `research/v16/v16core.py` | Donchian outcomes precomputed per signal bar + numba position lock |
 | `research/v16/v16run.py` | the 2,167-condition sweep and its same-selectivity null |

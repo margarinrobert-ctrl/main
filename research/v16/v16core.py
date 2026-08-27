@@ -116,10 +116,10 @@ def _lock(keep, sig, xb, out_idx):
     return m
 
 
-def prep(tf, entry_n=30, exit_n=20, broker="discount", cost_mult=1.0):
+def prep(tf, entry_n=30, exit_n=20, broker="discount", cost_mult=1.0, atr_len=14):
     b = fastbars.bars(tf)
     o, h, l, c, mod = b["o"], b["h"], b["l"], b["c"], b["mod"]
-    atr = I.ema(I.true_range(h, l, c), 14)
+    atr = I.ema(I.true_range(h, l, c), atr_len)
     cost = CO.model("MNQ", broker)
     cost = cost.__class__(**{**cost.__dict__, "mult": cost_mult}) if cost_mult != 1.0 else cost
     f_taker, f_stop = CO.friction_arrays(cost, h, l, c, mod)
