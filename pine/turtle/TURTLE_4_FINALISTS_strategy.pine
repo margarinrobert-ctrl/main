@@ -1,0 +1,226 @@
+//@version=5
+// The four finalists from the 143,820-configuration search, in one script with a preset switch.
+// One script rather than four files so all four share IDENTICAL logic -- that is the only way to
+// guarantee the differences between them are the parameters and nothing else.
+//
+// ================================ THE FOUR, AND THEIR NUMBERS ================================
+//                                              train   US30-2026   US100-all   US100-2026
+//   #1   e30/x20  2.0N  2u  adx25  vol1.0  tp1R   1.47      0.91        1.24        1.14
+//   #5   e30/x20  2.5N  3u  adx25  vol1.2  tp1R   1.60      1.34        1.24        0.76
+//   #8   e30/x20  2.5N  3u  adx15          tp2R   1.31      1.19        1.14        1.08   <-- the only one
+//   #10  e10/x20  2.0N  2u  adx25 d1 v1.2  tp1R   1.58      0.71        1.08        0.73       that survived
+//                                                                                              all three
+// Trained on US30 15-minute BEFORE 2026-01-01. The three right-hand columns were never searched.
+// **#8 is the only one positive on all three**, and it is the LOOSEST-gated of the four -- the
+// three carrying ADX>=25 plus a volatility floor scored better on train and then fell over. That
+// is the overfit signature, visible in this table without any statistics.
+// #8 on US30 2026: n=309, +28.96 pts/trade, 31.1% wins, p 0.0013 against a selectivity control.
+//
+// NONE OF THE FOUR PASSES A FUNDED EVALUATION. Best P(pass) anywhere in the whole 143,820-cell
+// search is 34.6% with 61.0% P(bust); #8 itself peaks at 19.8%. The constraint is the trade
+// DISTRIBUTION -- 31% wins with 12-16 consecutive losers against a 4% trailing drawdown -- not the
+// parameters. Full working in docs/ib/STUDY_MEGA_144K.md.
+//
+// ==================== WHERE PINE CANNOT BIT-MATCH THE RESEARCH ENGINE ====================
+// The rules below are transcribed from `research/turtleshort/mirror.py::run`, the function the
+// table above came from. Three differences are STRUCTURAL -- they come from Pine's order model,
+// not from a choice -- and pretending otherwise would be the dishonest part of a port:
+//
+//   1. LADDER TIMING. The engine can add a unit on the ENTRY BAR ITSELF, because it walks the bar
+//      after the fill price is known. A Pine script sees the fill only at that bar's close, so its
+//      ladder order is live from the NEXT bar. Expect slightly fewer, slightly later adds here.
+//   2. TARGET VERSUS STOP IN ONE BAR. The engine always takes the STOP when both sit inside a
+//      bar's range -- a bar-level loop cannot know the order and the pessimistic reading is the
+//      honest one. TradingView with Deep Backtesting and high detalization uses the ACTUAL
+//      intrabar sequence, which is better information. Expect TradingView to be slightly kinder.
+//   3. COSTS. The engine charges a flat points-per-fill (3.22 US30 points, set to 3.7% of the 2N
+//      stop, the same fraction NQ pays). TradingView charges your commission plus slippage in the
+//      instrument's own units. Match the FRACTION of the stop, not the number.
+//
+// Everything else is a faithful transcription, including the parts that are easy to get wrong:
+//   * Both entry channels are always live. The 55-bar breakout is System 2; the e1-bar breakout is
+//     System 1. System 2 takes precedence when both fire on one bar.
+//   * The EXIT channel depends on which system entered: System 1 exits on the x1-bar low,
+//     System 2 on the 20-bar low.
+//   * SKIP-AFTER-WINNER applies to System 1 ONLY, and the skip consumes itself whether or not the
+//     skipped signal would have won.
+//   * ATR IS FROZEN AT THE SIGNAL BAR and used for the stop distance, the ladder step and the
+//     target for the whole life of the trade. It does not re-read.
+//   * The stop RE-ANCHORS TO THE LATEST FILL on every add, and the working exit is the HIGHER of
+//     that stop and the channel low.
+//   * The target is measured from the RUNNING AVERAGE entry, so adding moves it.
+//   * Channels EXCLUDE the current bar, or a breakout could never happen.
+// ========================================================================================
+
+strategy("Turtle 4 finalists (searched, 2026-judged)", overlay = true, pyramiding = 3,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, calc_on_every_tick = false,
+         process_orders_on_close = false,
+         commission_type = strategy.commission.cash_per_order,
+         commission_value = 0.90, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Bar detalization   High, with Deep Backtesting.   Order execution delay  One tick.
+//   Commission         CASH PER ORDER, per side, your broker's real number. A 3-unit ladder pays
+//                      it six times. The research charged 3.22 US30 points a round turn = 3.7% of
+//                      the 2N stop; match that FRACTION on your instrument.
+//   Slippage           2 ticks. A stop fills INTO the move that triggered it.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+// ======================================================================
+
+preset = input.string("#8  e30/x20 2.5N 3u adx15 tp2R  (survived all three)", "Finalist",
+     options = ["#1  e30/x20 2.0N 2u adx25 v1.0 tp1R",
+                "#5  e30/x20 2.5N 3u adx25 v1.2 tp1R",
+                "#8  e30/x20 2.5N 3u adx15 tp2R  (survived all three)",
+                "#10 e10/x20 2.0N 2u adx25 d1 v1.2 tp1R",
+                "Custom"])
+
+gC       = "Custom only"
+cE1      = input.int(30,  "Entry channel (System 1)", minval = 2,  group = gC)
+cX1      = input.int(20,  "Exit channel (System 1)",  minval = 2,  group = gC)
+cMult    = input.float(2.5, "ATR stop multiple",      minval = 0.1, step = 0.1, group = gC)
+cUnits   = input.int(3,   "Max units",                minval = 1,  maxval = 4, group = gC)
+cAdx     = input.float(15, "ADX floor (0 = off)",     minval = 0,  step = 1,  group = gC)
+cDist    = input.float(0, "EMA100 distance floor in ATR (0 = off)", minval = 0, step = 0.5, group = gC)
+cVol     = input.float(0, "ATR expansion floor (0 = off)", minval = 0, step = 0.1, group = gC)
+cTp      = input.float(2, "Take profit in R (0 = off)", minval = 0, step = 0.5, group = gC)
+
+gF       = "Fixed by the search (shared by all four)"
+entry2   = input.int(55,  "Entry channel (System 2)", minval = 2, group = gF)
+exit2    = input.int(20,  "Exit channel (System 2)",  minval = 2, group = gF)
+atrLen   = input.int(20,  "ATR length",               minval = 2, group = gF)
+pyrStep  = input.float(0.5, "Ladder step (N)", minval = 0.0, step = 0.05, group = gF)
+skipWin  = input.bool(true, "Skip after a winning trade (System 1 only)", group = gF)
+unitQty  = input.float(1.0, "Units per Turtle unit", minval = 0.01, step = 0.01, group = gF)
+
+isCustom = preset == "Custom"
+entry1  = isCustom ? cE1 : preset == "#10 e10/x20 2.0N 2u adx25 d1 v1.2 tp1R" ? 10 : 30
+exit1   = isCustom ? cX1 : 20
+atrMult = isCustom ? cMult : (preset == "#1  e30/x20 2.0N 2u adx25 v1.0 tp1R" or
+     preset == "#10 e10/x20 2.0N 2u adx25 d1 v1.2 tp1R") ? 2.0 : 2.5
+maxUnits = isCustom ? cUnits : (preset == "#1  e30/x20 2.0N 2u adx25 v1.0 tp1R" or
+     preset == "#10 e10/x20 2.0N 2u adx25 d1 v1.2 tp1R") ? 2 : 3
+adxMin = isCustom ? cAdx : preset == "#8  e30/x20 2.5N 3u adx15 tp2R  (survived all three)" ? 15.0 : 25.0
+distMin = isCustom ? cDist : preset == "#10 e10/x20 2.0N 2u adx25 d1 v1.2 tp1R" ? 1.0 : 0.0
+volMin = isCustom ? cVol : preset == "#1  e30/x20 2.0N 2u adx25 v1.0 tp1R" ? 1.0 :
+     preset == "#8  e30/x20 2.5N 3u adx15 tp2R  (survived all three)" ? 0.0 : 1.2
+tpR = isCustom ? cTp : preset == "#8  e30/x20 2.5N 3u adx15 tp2R  (survived all three)" ? 2.0 : 1.0
+
+// ----------------------------------------------------------------- series
+// Channels EXCLUDE the current bar -- ta.highest(high, n) includes bar n's own high, so a close
+// could never exceed it and the signal would never fire.
+atrN    = ta.atr(atrLen)                      // Wilder's, matching mirror.wilder_atr
+chanHi1 = ta.highest(high, entry1)[1]
+chanHi2 = ta.highest(high, entry2)[1]
+chanLo1 = ta.lowest(low,  exit1)[1]
+chanLo2 = ta.lowest(low,  exit2)[1]
+ema100  = ta.ema(close, 100)
+atrLong = ta.sma(atrN, 200)
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER -- the first element is +DI, not ADX.
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)
+distEma = atrN > 0 ? (close - ema100) / atrN : na
+volRat  = atrLong > 0 ? atrN / atrLong : na
+
+// A floor of 0 means the gate is OFF -- exactly as the search encoded it.
+okAdx  = adxMin  <= 0 or (not na(adxVal)  and adxVal  >= adxMin)
+okDist = distMin <= 0 or (not na(distEma) and distEma >= distMin)
+okVol  = volMin  <= 0 or (not na(volRat)  and volRat  >= volMin)
+ready  = not na(atrN) and atrN > 0 and not na(chanHi1) and not na(chanHi2)
+gateOk = ready and okAdx and okDist and okVol
+
+// ----------------------------------------------------------------- state
+var float sigAtr  = na      // ATR FROZEN AT THE SIGNAL BAR, used for stop, ladder and target
+var float lastFill = na
+var float nextAdd = na
+var int   sysOn   = 0
+var int   unitsOn = 0
+var int   lastCnt = 0
+var bool  lastWin = false
+var float entEquity = na
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL. Guarding only part of a coupled set
+// desynchronises it rather than partly fixing it -- see docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    // trade just closed: record whether it won, so the System 1 skip can read it
+    lastWin   := strategy.netprofit > nz(entEquity)
+    sysOn     := 0
+    unitsOn   := 0
+    sigAtr    := na
+    lastFill  := na
+    nextAdd   := na
+    lastCnt   := 0
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    // a fill happened: re-anchor the stop and the next rung to THAT fill, as the engine does
+    lastFill := strategy.opentrades.entry_price(strategy.opentrades - 1)
+    if lastCnt == 0
+        entEquity := strategy.netprofit - strategy.openprofit
+    nextAdd  := lastFill + pyrStep * sigAtr
+    unitsOn  := strategy.opentrades
+    lastCnt  := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ----------------------------------------------------------------- entries
+// Both channels are live. System 2 (55-bar) takes precedence when both fire on the same bar.
+sig2 = ready and high > chanHi2
+sig1 = ready and high > chanHi1
+
+if barstate.isconfirmed and flat and gateOk
+    if sig2
+        sigAtr := atrN
+        sysOn  := 2
+        strategy.entry("S2", strategy.long, qty = unitQty)
+    else if sig1
+        if skipWin and lastWin
+            // the skip consumes itself whether or not the skipped signal would have won
+            lastWin := false
+        else
+            sigAtr := atrN
+            sysOn  := 1
+            strategy.entry("S1", strategy.long, qty = unitQty)
+
+// ----------------------------------------------------------------- ladder
+// A STOP order at the rung, so the fill is AT the level -- the engine fills at `nxt`, not at the
+// bar's high. Note the structural lag documented in the header: the engine can add on the entry
+// bar, this cannot.
+if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
+     and not na(nextAdd)
+    strategy.entry("add" + str.tostring(unitsOn + 1), strategy.long, qty = unitQty, stop = nextAdd)
+
+// ----------------------------------------------------------------- exit
+// Working stop = the HIGHER of the fill-anchored ATR stop and the channel low, because falling
+// price reaches that first. The channel depends on which SYSTEM entered.
+atrStop   = na(lastFill) or na(sigAtr) ? na : lastFill - atrMult * sigAtr
+chanExit  = sysOn == 1 ? chanLo1 : chanLo2
+exitLevel = na(atrStop) ? chanExit : (na(chanExit) ? atrStop : math.max(atrStop, chanExit))
+// The target is measured from the RUNNING AVERAGE entry, so adding a unit moves it.
+tpLevel   = tpR <= 0 or flat or na(sigAtr) ? na :
+     strategy.position_avg_price + tpR * atrMult * sigAtr
+
+if barstate.isconfirmed and not flat and lastCnt > 0 and not na(exitLevel)
+    strategy.exit("x", stop = exitLevel, limit = tpLevel)
+
+// ----------------------------------------------------------------- plots
+plot(chanHi1, "Entry 1", color = color.new(color.aqua, 35))
+plot(chanHi2, "Entry 2 (55)", color = color.new(color.blue, 45))
+plot(chanLo1, "Exit 1", color = color.new(color.red, 65))
+plot(chanLo2, "Exit 2 (20)", color = color.new(color.purple, 65))
+plot(flat ? na : exitLevel, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+plot(tpLevel, "Target", color = color.new(color.lime, 0), style = plot.style_linebr)
+
+onTf     = timeframe.period == "15"
+survived = preset == "#8  e30/x20 2.5N 3u adx15 tp2R  (survived all three)"
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, preset, text_color = color.white,
+         bgcolor = survived ? color.new(color.teal, 20) : color.new(color.orange, 20))
+    table.cell(hud, 0, 1, survived ? "positive on all three held-back blocks" :
+         "NEGATIVE on at least one held-back block -- see header table",
+         text_color = color.white,
+         bgcolor = survived ? color.new(color.teal, 40) : color.new(color.red, 25))
+    table.cell(hud, 0, 2, onTf ? "15m chart" : "NOT 15m - searched on 15m only",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 40) : color.red)
+    table.cell(hud, 0, 3, "FUNDED EVAL: best P(pass) in the whole search 34.6%, P(bust) 61%",
+         text_color = color.white, bgcolor = color.new(color.red, 15))
