@@ -18,7 +18,8 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication
 
 from .config import APP_DISPLAY_NAME, APP_ORG, APP_VERSION, AppSettings
-from .logging_setup import configure_logging, get_logger, install_excepthook
+from .logging_setup import (breadcrumb, configure_logging, get_logger,
+                            install_excepthook, startup_log_path)
 
 
 def create_application(argv: Sequence[str] | None = None) -> QApplication:
@@ -145,11 +146,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     if "--version" in args:
         print(f"{APP_DISPLAY_NAME} {APP_VERSION}")
         return 0
+    # Breadcrumbs from the first line, to a fixed path that does not depend on
+    # the workspace. Until now the log was only opened AFTER the workspace was
+    # built, so a launch that stalled before that left nothing to read at all —
+    # which is the position a "it shows a white screen" report starts from.
+    breadcrumb(f"--- {APP_DISPLAY_NAME} {APP_VERSION} starting "
+               f"({'frozen' if _is_frozen() else 'source'}) ---")
     app = create_application(args)
+    breadcrumb("Qt application created")
 
     from .ui.theme import apply_theme
 
+    # Enumerates every installed font, which is the first heavy Qt call and a
+    # plausible place for a machine-specific stall.
+    breadcrumb("applying the theme (enumerating fonts)")
     apply_theme(app)
+    breadcrumb("theme applied")
 
     # Something on screen BEFORE the workspace is built. Seeding it writes the
     # instrument catalogue and generates the sample datasets, which is under a
@@ -168,7 +180,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .storage.workspace import bootstrap
 
         _say(app, splash, "Preparing your workspace…")
+        breadcrumb("building the workspace")
         workspace = bootstrap(settings)
+        breadcrumb(f"workspace ready at {workspace.root}")
         _say(app, splash, "Starting up…")
         log_file = configure_logging(workspace.logs, settings.log_level,
                                      console=not _is_frozen())
@@ -188,9 +202,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     app.setWindowIcon(app_icon(256))
 
     _say(app, splash, "Opening the window…")
+    breadcrumb("building the main window")
     from .ui.main_window import MainWindow
 
     window = MainWindow(settings, workspace, log_file)
+    breadcrumb("main window built")
 
     def report(message: str, detail: str) -> None:
         from .ui.widgets.common import ErrorDialog
@@ -202,7 +218,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Held until the window is up, so there is never a moment with nothing on
     # screen; `finish` also raises the window above the splash on Windows.
     _close_splash(splash, window)
-    return app.exec()
+    breadcrumb("window shown, entering the event loop")
+    log.info("Start-up breadcrumbs: %s", startup_log_path())
+    code = app.exec()
+    breadcrumb(f"exited cleanly with code {code}")
+    return code
 
 
 # --------------------------------------------------------------------------

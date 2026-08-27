@@ -1051,3 +1051,51 @@ def test_the_self_test_now_actually_starts_the_window():
         "the self-test must construct the window, not just import the class"
     assert "_first_run()" in source
     assert SELF_TEST_STARTUP_BUDGET > 0
+
+
+def test_startup_breadcrumbs_land_somewhere_findable(tmp_path, monkeypatch):
+    """A launch that stalls before the workspace exists left no trace at all."""
+    from tradingbacktester.logging_setup import breadcrumb, startup_log_path
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    target = startup_log_path()
+    assert target.parent.is_dir()
+    breadcrumb("first line")
+    breadcrumb("second line")
+    written = target.read_text(encoding="utf-8").splitlines()
+    assert len(written) == 2
+    assert written[0].endswith("first line")
+    assert written[1].endswith("second line")
+    # Each call opens, writes and closes: a process killed with the Task
+    # Manager must not lose the line saying where it was.
+    assert "second line" in target.read_text(encoding="utf-8")
+
+
+def test_a_breadcrumb_never_raises(tmp_path, monkeypatch):
+    """It runs on the failure path; it must not become the failure."""
+    from tradingbacktester.logging_setup import breadcrumb, startup_log_path
+
+    # A file where a directory is expected: mkdir raises, and the fallback to
+    # the temp directory has to absorb it.
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    monkeypatch.setenv("LOCALAPPDATA", str(blocker))
+    assert startup_log_path().parent.is_dir()
+    breadcrumb("this must not raise")
+
+    # And when the path itself cannot be worked out at all.
+    def boom():
+        raise RuntimeError("no path")
+
+    monkeypatch.setattr("tradingbacktester.logging_setup.startup_log_path", boom)
+    breadcrumb("nor must this")              # no assertion: not raising is it
+
+
+def test_startup_falls_back_to_temp_without_localappdata(monkeypatch):
+    import tempfile
+
+    from tradingbacktester.logging_setup import startup_log_path
+
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.delenv("APPDATA", raising=False)
+    assert startup_log_path().parent == Path(tempfile.gettempdir())

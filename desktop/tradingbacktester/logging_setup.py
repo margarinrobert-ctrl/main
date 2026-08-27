@@ -19,6 +19,52 @@ _LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)-32s %(message)s"
 _configured = False
 
 
+def startup_log_path() -> Path:
+    """Where the pre-workspace breadcrumbs go.
+
+    A fixed, always-writable location that does not depend on the workspace,
+    because the workspace is one of the things that can be slow to build and a
+    launch that stalls before it exists would otherwise leave no trace at all.
+    Windows puts it under ``%LOCALAPPDATA%``; everything else uses the temp
+    directory, which is the only place guaranteed writable.
+    """
+    import os
+    import tempfile
+
+    from .config import APP_ORG
+
+    base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+    root = (Path(base) / APP_ORG) if base else Path(tempfile.gettempdir())
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except Exception:                       # noqa: BLE001 - a diagnostic path
+        # Not just OSError: a path from the environment can be malformed in
+        # ways that raise ValueError before it ever reaches the filesystem, and
+        # the one place that must not throw is the one that records why
+        # something else did.
+        root = Path(tempfile.gettempdir())
+    return root / "startup.log"
+
+
+def breadcrumb(message: str) -> None:
+    """Append one timestamped line to the start-up log, and never raise.
+
+    Used for the phase before :func:`configure_logging` can run. A launch that
+    hangs is diagnosed from the last line this wrote, so it opens, writes and
+    closes each time rather than holding a handle: a process killed with the
+    Task Manager must not lose the line that says where it was.
+    """
+    import time
+
+    try:
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with startup_log_path().open("a", encoding="utf-8") as handle:
+            handle.write(f"{stamp}  {message}\n")
+            handle.flush()
+    except Exception:                       # noqa: BLE001 - see the docstring
+        pass
+
+
 def configure_logging(log_dir: Path, level: str = "INFO", console: bool = True) -> Path:
     """Set up file and console logging.  Returns the active log file path."""
     global _configured
