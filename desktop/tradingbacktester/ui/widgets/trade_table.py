@@ -70,7 +70,9 @@ class TradeTableModel(QAbstractTableModel):
         self._decimals = 2
         self._currency = ""
         self._timezone = "UTC"
-        self._times: list[tuple[str, str]] = []
+        self._entry_dt: Any = None
+        self._exit_dt: Any = None
+        self._time_cache: dict[int, tuple[str, str]] = {}
 
     def _size_columns(self) -> None:
         """Width each column from font metrics rather than fixed pixels.
@@ -108,24 +110,51 @@ class TradeTableModel(QAbstractTableModel):
         self._decimals = decimals
         self._currency = currency
         self._timezone = timezone or "UTC"
-        # Formatting timestamps one by one is slow for tens of thousands of
-        # trades, so the whole column is converted once with pandas.
+        # Must be cleared, not kept: the cache is keyed on the row number, and
+        # after a reload row 0 is a different trade in a possibly different
+        # timezone.
+        self._time_cache = {}
+        # Converting the columns is vectorised and costs nothing; FORMATTING
+        # them is per element, and this table is virtual -- about forty rows
+        # are on screen at a time.  Formatting all of them up front spent 3.4
+        # seconds on 200,000 trades to produce eighty strings anyone could
+        # read, on the thread that paints the window.  So convert here, format
+        # in `time_at`.
         if self._trades:
-            entry = pd.DatetimeIndex(pd.to_datetime(
-                [t.entry_ts for t in self._trades], utc=True))
-            exit_ = pd.DatetimeIndex(pd.to_datetime(
-                [t.exit_ts for t in self._trades], utc=True))
-            try:
-                entry = entry.tz_convert(self._timezone)
-                exit_ = exit_.tz_convert(self._timezone)
-            except Exception:
-                pass
-            # Seconds add width without information on bar data.
-            fmt = "%Y-%m-%d %H:%M"
-            self._times = list(zip(entry.strftime(fmt), exit_.strftime(fmt)))
+            def column(values):
+                index = pd.DatetimeIndex(pd.to_datetime(
+                    np.fromiter(values, dtype="int64", count=len(self._trades)),
+                    unit="ns", utc=True))
+                try:
+                    return index.tz_convert(self._timezone)
+                except Exception:
+                    return index      # An unknown timezone stays in UTC.
+
+            self._entry_dt = column(t.entry_ts for t in self._trades)
+            self._exit_dt = column(t.exit_ts for t in self._trades)
         else:
-            self._times = []
+            self._entry_dt = None
+            self._exit_dt = None
         self.endResetModel()
+
+    #: Seconds add width without information on bar data.
+    TIME_FORMAT = "%Y-%m-%d %H:%M"
+
+    def time_at(self, row: int) -> tuple[str, str]:
+        """The entry and exit times of one row, formatted on demand.
+
+        Cached, because the text filter reads every row and would otherwise
+        reformat the whole table on each keystroke.
+        """
+        hit = self._time_cache.get(row)
+        if hit is not None:
+            return hit
+        if self._entry_dt is None or not (0 <= row < len(self._trades)):
+            return ("", "")
+        fmt = self.TIME_FORMAT
+        out = (self._entry_dt[row].strftime(fmt), self._exit_dt[row].strftime(fmt))
+        self._time_cache[row] = out
+        return out
 
     def trade_at(self, row: int) -> Trade | None:
         if 0 <= row < len(self._trades):
@@ -187,9 +216,7 @@ class TradeTableModel(QAbstractTableModel):
         if k == "int":
             return str(row + 1) if col.key == "num" else str(int(getattr(t, col.key)))
         if k == "time":
-            if not self._times:
-                return ""
-            return self._times[row][0 if col.key == "entry_time" else 1]
+            return self.time_at(row)[0 if col.key == "entry_time" else 1]
         if k == "side":
             return "LONG" if t.side is Side.LONG else "SHORT"
         if k == "price":
@@ -299,8 +326,7 @@ class TradeFilterProxy(QSortFilterProxyModel):
             hay = " ".join((
                 str(row + 1), t.side.value, t.exit_reason.label,
                 f"{t.entry_price}", f"{t.exit_price}", f"{t.net_pnl:.2f}",
-                model._times[row][0] if model._times else "",
-                model._times[row][1] if model._times else "",
+                *model.time_at(row),
             )).lower()
             if self.text_filter not in hay:
                 return False

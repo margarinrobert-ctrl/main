@@ -619,3 +619,91 @@ def test_comparing_runs_over_a_large_dataset_is_not_a_freeze(qapp):
     assert elapsed < COMPARE_BUDGET_SECONDS, (
         f"drawing three {n:,}-point equity curves took {elapsed:.1f}s; "
         f"undownsampled it took 6.1s to build and 6.6s more to paint")
+
+
+# ---------------------------------------------------------------------------
+# the trade blotter
+# ---------------------------------------------------------------------------
+
+def _trades(n: int):
+    from tradingbacktester.core.types import ExitReason, Side, Trade
+
+    base = 1_672_617_600_000_000_000
+    return [Trade(
+        id=i, side=Side.LONG, quantity=1.0,
+        entry_bar=i, entry_ts=base + i * 300 * 10 ** 9, entry_price=100.0,
+        exit_bar=i + 2, exit_ts=base + (i + 2) * 300 * 10 ** 9, exit_price=101.0,
+        stop_loss=99.0, take_profit=102.0, gross_pnl=1.0, commission=0.1,
+        slippage_cost=0.0, spread_cost=0.0, net_pnl=0.9, return_pct=0.9,
+        bars_held=2, duration_seconds=600, exit_reason=ExitReason.TAKE_PROFIT,
+        mae=0.0, mfe=1.0, r_multiple=0.9, equity_at_entry=100_000.0,
+        equity_after=100_000.9) for i in range(n)]
+
+
+#: Loading the blotter.  Measured on 200,000 trades: 0.04s formatting on
+#: demand against 3.41s formatting up front.
+BLOTTER_BUDGET_SECONDS = 1.0
+
+
+def test_a_large_blotter_loads_without_formatting_every_row(qapp):
+    """The table is virtual -- about forty rows are on screen -- so formatting
+    every timestamp up front is the same mistake as drawing every bar."""
+    from tradingbacktester.ui.widgets.trade_table import TradeTableModel
+
+    trades = _trades(200_000)
+    model = TradeTableModel()
+    started = time.monotonic()
+    model.set_trades(trades, 2, "$", "America/New_York")
+    elapsed = time.monotonic() - started
+    assert elapsed < BLOTTER_BUDGET_SECONDS, (
+        f"loading {len(trades):,} trades took {elapsed:.2f}s; formatting every "
+        f"timestamp up front took 3.41s")
+
+
+@pytest.mark.parametrize("timezone", ["UTC", "America/New_York",
+                                      "Europe/London", "Not/AZone"])
+def test_lazy_times_read_exactly_as_the_eager_ones_did(timezone, qapp):
+    """Including an unknown timezone, which must fall back to UTC rather than
+    raise -- the fallback the eager path had."""
+    import pandas as pd
+
+    from tradingbacktester.ui.widgets.trade_table import TradeTableModel
+
+    trades = _trades(200)
+    model = TradeTableModel()
+    model.set_trades(trades, 2, "$", timezone)
+
+    entry = pd.DatetimeIndex(pd.to_datetime([t.entry_ts for t in trades],
+                                            utc=True))
+    exit_ = pd.DatetimeIndex(pd.to_datetime([t.exit_ts for t in trades],
+                                            utc=True))
+    try:
+        entry = entry.tz_convert(timezone)
+        exit_ = exit_.tz_convert(timezone)
+    except Exception:
+        pass
+    fmt = "%Y-%m-%d %H:%M"
+    expected = list(zip(entry.strftime(fmt), exit_.strftime(fmt)))
+    assert [model.time_at(i) for i in range(len(trades))] == expected
+
+
+def test_time_at_is_safe_off_the_end_and_on_an_empty_table(qapp):
+    from tradingbacktester.ui.widgets.trade_table import TradeTableModel
+
+    model = TradeTableModel()
+    model.set_trades([], 2, "$", "UTC")
+    assert model.time_at(0) == ("", "")
+    model.set_trades(_trades(3), 2, "$", "UTC")
+    assert model.time_at(99) == ("", "")
+    assert model.time_at(1)[0]
+
+
+def test_reloading_the_blotter_does_not_serve_stale_times(qapp):
+    """The cache is keyed on the row number, so it has to be cleared."""
+    from tradingbacktester.ui.widgets.trade_table import TradeTableModel
+
+    model = TradeTableModel()
+    model.set_trades(_trades(5), 2, "$", "UTC")
+    first = model.time_at(0)
+    model.set_trades(_trades(5), 2, "$", "America/New_York")
+    assert model.time_at(0) != first, "the row kept its old timezone"
