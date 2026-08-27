@@ -261,9 +261,9 @@ def _constrain(chosen, args: argparse.Namespace):
         overrides["stop_atr"] = _numbers(args.stop, "stop multiples")
     if args.target:
         overrides["target_r"] = _numbers(args.target, "target multiples")
-    if args.max_bars:
+    if args.max_bars is not None:
         overrides["max_bars"] = int(args.max_bars)
-    if args.min_trades:
+    if args.min_trades is not None:
         overrides["min_trades"] = int(args.min_trades)
     if not overrides:
         return chosen
@@ -889,9 +889,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Stop distances to try, in multiples of ATR")
     p.add_argument("--target", default="", metavar="1.0,2.0",
                    help="Target distances to try, in multiples of the stop")
-    p.add_argument("--max-bars", type=int, default=0, dest="max_bars",
+    # None rather than 0 for "not given": 0 is a real value a user may type,
+    # and treating it as absent silently ran the search with the style's own
+    # limit instead of refusing an impossible one.
+    p.add_argument("--max-bars", type=int, default=None, dest="max_bars",
                    help="Hardest limit on how long a trade may run, in bars")
-    p.add_argument("--min-trades", type=int, default=0, dest="min_trades",
+    p.add_argument("--min-trades", type=int, default=None, dest="min_trades",
                    help="Below this a result is treated as noise whatever it "
                         "says")
     p.add_argument("--top", type=int, default=5, help="How many to shortlist")

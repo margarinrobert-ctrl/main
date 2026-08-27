@@ -651,6 +651,61 @@ def test_a_signal_reads_no_bar_after_the_one_it_fires_on():
         assert np.array_equal(full, part), candidate.describe()
 
 
+def test_an_unknown_family_is_refused_by_name():
+    """A typo in a filter must not silently search everything, or crash."""
+    from tradingbacktester.core.errors import StrategyError
+    from tradingbacktester.finder.candidates import TEMPLATES, all_candidates
+
+    with pytest.raises(StrategyError) as exc:
+        all_candidates(templates=("not_a_family",))
+    message = str(exc.value)
+    assert "not_a_family" in message
+    # And it lists what would have worked.
+    assert all(t.key in message for t in TEMPLATES)
+
+
+def test_several_unknown_families_are_all_named():
+    from tradingbacktester.core.errors import StrategyError
+    from tradingbacktester.finder.candidates import all_candidates
+
+    with pytest.raises(StrategyError) as exc:
+        all_candidates(templates=("nope", "also_nope"))
+    assert "nope" in str(exc.value) and "also_nope" in str(exc.value)
+
+
+@pytest.mark.parametrize("fraction,short", [(0.0001, "research"),
+                                            (0.9999, "locked")])
+def test_a_split_that_leaves_a_block_too_short_is_refused(fraction, short):
+    """A one-bar research block ran happily and reported "nothing survived".
+
+    Honest and completely uninformative, which is the worst combination: it
+    reads as "there is nothing here" rather than "you asked for something
+    impossible".
+    """
+    from tradingbacktester.core.errors import InsufficientDataError
+    from tradingbacktester.finder import find_strategies
+    from tradingbacktester.finder.styles import style as get_style
+
+    bars = generate_sample_data("NQ", "30m", n_bars=4000, seed=13)
+    with pytest.raises(InsufficientDataError) as exc:
+        find_strategies(bars, get_style("intraday"), timeframe="30m",
+                        research_fraction=fraction, control_draws=20,
+                        validate="quick")
+    message = str(exc.value)
+    assert short in message
+    assert "3 trades" in message
+
+
+def test_the_split_guard_leaves_the_default_alone():
+    """The floor must not refuse a split anybody would actually use."""
+    from tradingbacktester.finder.search import MIN_BARS, check_split
+    from tradingbacktester.finder.styles import STYLES
+
+    for style_def in STYLES:
+        split = int(MIN_BARS * 0.65)
+        check_split(MIN_BARS, split, style_def.max_bars)
+
+
 def test_a_user_may_fix_the_session_and_the_geometry():
     from tradingbacktester.finder.styles import customise, style as get_style
 

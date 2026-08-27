@@ -40,7 +40,8 @@ from ..data.models import BarSeries
 from ..finder.outcomes import (Geometry, build_outcomes, round_turn_points,
                                session_entry_mask, session_hold_limit,
                                wilder_atr)
-from ..finder.search import choose_timeframe, default_costs, prepare_bars
+from ..finder.search import (check_split, choose_timeframe,
+                             default_costs, prepare_bars)
 from ..finder.styles import TradingStyle
 from .engineering import (Dimensionality, build_interactions,
                           drop_restatements, effective_dimension)
@@ -215,6 +216,7 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
     matrix, features = compute_matrix(working, features)
 
     split = int(n * float(research_fraction))
+    check_split(n, split, style.max_bars, "A feature study")
     research = slice(0, split)
     holdout = slice(split, n)
 

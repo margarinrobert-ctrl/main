@@ -481,7 +481,21 @@ TEMPLATES_BY_KEY = {t.key: t for t in TEMPLATES}
 
 def all_candidates(sides: tuple[int, ...] = (1, -1),
                    templates: tuple[str, ...] = ()) -> list[Candidate]:
-    """Every candidate in the space, which is also the multiplicity of a search."""
+    """Every candidate in the space, which is also the multiplicity of a search.
+
+    An unknown family name is refused by name rather than raising a KeyError
+    three frames down: a typo in a filter that silently searched everything
+    would report a multiplicity the user did not choose, and one that crashed
+    would do it after the data had already been loaded.
+    """
+    unknown = [k for k in templates if k not in TEMPLATES_BY_KEY]
+    if unknown:
+        from ..core.errors import StrategyError
+
+        raise StrategyError(
+            f"{'These are not entry-rule families' if len(unknown) > 1 else 'That is not an entry-rule family'}"
+            f": {', '.join(unknown)}. Choose from: "
+            f"{', '.join(t.key for t in TEMPLATES)}.")
     chosen = ([TEMPLATES_BY_KEY[k] for k in templates] if templates
               else list(TEMPLATES))
     out: list[Candidate] = []

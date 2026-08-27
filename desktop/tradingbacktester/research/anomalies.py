@@ -33,8 +33,8 @@ from ..finder.control import ControlResult, analytic_control, benjamini_hochberg
 from ..finder.outcomes import (Geometry, OutcomeCache, build_outcomes,
                                select_sequential, session_entry_mask,
                                session_hold_limit, wilder_atr)
-from ..finder.search import (MIN_BARS, choose_timeframe, default_costs,
-                             prepare_bars, too_few_bars)
+from ..finder.search import (MIN_BARS, check_split, choose_timeframe,
+                             default_costs, prepare_bars, too_few_bars)
 from ..finder.styles import TradingStyle
 from .features import rolling_mean, rolling_rank
 
@@ -597,6 +597,7 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
     }
 
     split = int(n * float(research_fraction))
+    check_split(n, split, style.max_bars, "An anomaly scan")
     research = np.zeros(n, dtype=bool)
     research[:split] = True
 

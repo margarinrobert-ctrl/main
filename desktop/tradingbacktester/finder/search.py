@@ -250,6 +250,51 @@ def prepare_bars(bars: BarSeries, timeframe: str) -> BarSeries:
 #: research/holdout split leaves enough on either side to mean anything.
 MIN_BARS = 500
 
+#: Non-overlapping trades a block must be able to hold before anything measured
+#: on it means something.  Three is not a sample; it is the floor below which
+#: the block is not a block at all.
+MIN_TRADES_PER_BLOCK = 3
+
+#: And an absolute floor, for a style whose trades are very short.
+MIN_BLOCK_BARS = 50
+
+#: The split the rest of this module assumes, used only to keep the block floor
+#: consistent with :data:`MIN_BARS`.
+DEFAULT_RESEARCH_FRACTION = 0.65
+
+
+def check_split(total: int, split: int, max_bars: int, what: str = "A search"
+                ) -> None:
+    """Refuse a split that leaves either block too short to mean anything.
+
+    Without this a research fraction of 0.0001 ran happily on the shipped data:
+    one bar to choose on, 11,444 locked, and a report that said "nothing
+    survived" as though the search had been given a chance. The failure was
+    honest and completely uninformative, which is the worst combination -- a
+    user reads it as "there is nothing here" rather than "you asked for
+    something impossible".
+    """
+    from ..core.errors import InsufficientDataError
+
+    # Capped so the guard can never refuse a dataset MIN_BARS says is long
+    # enough at the default split. A floor that contradicts the other floor is
+    # not a safeguard, it is a second opinion the user cannot act on: a 500-bar
+    # swing series would be accepted by one check and rejected by the next.
+    ceiling = int(MIN_BARS * (1.0 - DEFAULT_RESEARCH_FRACTION))
+    floor = min(max(MIN_BLOCK_BARS, int(max_bars) * MIN_TRADES_PER_BLOCK),
+                ceiling)
+    research, holdout = int(split), int(total) - int(split)
+    if research >= floor and holdout >= floor:
+        return
+    short = "research" if research < floor else "locked"
+    raise InsufficientDataError(
+        f"{what} needs at least {floor:,} bars on each side of the split and "
+        f"the {short} block would have "
+        f"{min(research, holdout):,}. That is not enough to hold "
+        f"{MIN_TRADES_PER_BLOCK} trades of this style's maximum length, so "
+        f"nothing measured on it would mean anything. Change the research "
+        f"fraction, or use more data.")
+
 
 def too_few_bars(what: str, bars: BarSeries, working: BarSeries,
                  timeframe: str, minimum: int = MIN_BARS) -> str:
@@ -295,6 +340,7 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
     costs = costs if costs is not None else default_costs(instrument)
 
     split = int(n * float(research_fraction))
+    check_split(n, split, style.max_bars, "A search")
     research = np.zeros(n, dtype=bool)
     research[:split] = True
     holdout = ~research

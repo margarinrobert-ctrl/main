@@ -432,6 +432,11 @@ cached; after that a candidate rule is a boolean mask and scoring it is a sum.
   in it. Nothing here is searched over — handing a list of sessions to a
   search and keeping the best would put the session inside the selection.
   `session=None` is how "all hours" is said.
+- `search.check_split(total, split, max_bars)` — refuses a research fraction
+  that leaves either block too short to hold `MIN_TRADES_PER_BLOCK`
+  non-overlapping trades. Capped so it can never contradict `MIN_BARS`: a floor
+  that rejects what another floor accepts is a second opinion the user cannot
+  act on. Used by the search, the feature study and the anomaly scan.
 - `search.find_strategies(bars, style, ...) -> FinderReport` — the protocol:
   split, gate on the control, correct for multiplicity, test the
   neighbourhood, reveal the locked block once, judge in plain English.
