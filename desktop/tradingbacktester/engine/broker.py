@@ -216,6 +216,12 @@ class SimulatedBroker:
         self._lot = float(instrument.lot_size)
 
         #: ATR of the bar currently being processed; see :meth:`set_bar_atr`.
+        #: Limit fills, and how many of them rested on a single touch. See
+        #: :meth:`_count_touch_only`.
+        self._limit_fills = 0
+        self._touch_only_fills = 0
+        self._tick = float(getattr(instrument, "tick_size", 0.0) or 0.0)
+
         self._atr_at_close = float("nan")
         self._order_seq = 0
         self._trade_seq = 0
@@ -288,6 +294,35 @@ class SimulatedBroker:
         self.orders.append(order)
         return order
 
+    def _count_touch_only(self, fill: tuple[float, bool] | None, buying: bool,
+                          limit: float, o: float, h: float, l: float) -> None:
+        """Count limit fills that happened because price merely touched.
+
+        ``limit_requires_through`` defaults to zero, so out of the box a target
+        fills the moment the bar's range reaches it.  That is the one optimistic
+        assumption in an engine whose every other default is pessimistic --
+        gap-through fills at the open, a two-barrier bar assumes the stop -- and
+        the assumptions document concedes it in prose: "on a level that trades
+        once and leaves, you probably did not get filled. This simulator assumes
+        you did."
+
+        Rather than change the default and silently move everyone's numbers,
+        this measures the exposure: how many fills would NOT have happened had
+        the bar been required to trade one tick past the level.  The result
+        reports the count, so the reader can see how much of a run rests on it.
+        """
+        if fill is None or self._through > 0.0:
+            return
+        _price, gapped = fill
+        if gapped:
+            return                          # already marketable at the open
+        self._limit_fills += 1
+        tick = self._tick
+        if tick <= 0:
+            return
+        if limit_fill_price(buying, limit, o, h, l, tick) is None:
+            self._touch_only_fills += 1
+
     def resolve_resting_order(self, order: Order, o: float, h: float,
                               l: float) -> tuple[float, bool] | None:
         """Would this resting order fill on a bar with this range?
@@ -304,8 +339,11 @@ class SimulatedBroker:
             if order.limit_price is None:
                 raise OrderError("A limit order was submitted without a limit price.",
                                  detail=repr(order))
-            return limit_fill_price(buying, float(order.limit_price), o, h, l,
+            fill = limit_fill_price(buying, float(order.limit_price), o, h, l,
                                     self._through)
+            self._count_touch_only(fill, buying, float(order.limit_price),
+                                   o, h, l)
+            return fill
         if order.order_type is OrderType.STOP:
             if order.stop_price is None:
                 raise OrderError("A stop order was submitted without a stop price.",
@@ -579,6 +617,7 @@ class SimulatedBroker:
             if row[2]:
                 continue
             r = limit_fill_price(buying, row[0], o, h, l, self._through)
+            self._count_touch_only(r, buying, row[0], o, h, l)
             if r is not None:
                 hit = (r[0], r[1], "partial", row)
                 barrier = row[0]
@@ -586,6 +625,7 @@ class SimulatedBroker:
         target = slot.pos.take_profit
         if target is not None:
             r = limit_fill_price(buying, target, o, h, l, self._through)
+            self._count_touch_only(r, buying, target, o, h, l)
             if r is not None:
                 # Profit barriers sit above a long and below a short, so "nearer
                 # the entry" is the lower price for a long and the higher one for

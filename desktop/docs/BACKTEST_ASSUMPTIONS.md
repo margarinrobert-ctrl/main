@@ -146,7 +146,13 @@ The R multiple of every piece is measured against the risk defined at entry by t
 ## The session filter and the daily loss limit
 
 The session filter is evaluated in the **instrument's timezone**, not in the file's
-timezone and not in yours. A bar is tradeable when its opening timestamp falls inside the
+timezone and not in yours — unless a strategy names one explicitly, which overrides it.
+This was not always true: `SessionSettings.timezone` used to default to
+`"America/New_York"` and that default was applied even to a CME instrument carrying
+`America/Chicago`, so a scripted session filter on NQ filtered in New York while every
+other part of the application read those bars as Chicago. On a 30-minute NQ series that
+was 71 trades against 49, with nothing on screen to say so. The default is now empty,
+meaning the instrument's. A bar is tradeable when its opening timestamp falls inside the
 window and on an allowed weekday. When *flat at session end* is set, any position still
 open on the last in-session bar of a day is closed there, at that bar's close, with the
 exit reason recorded as Session End — which is worth checking in the exit breakdown,
@@ -180,7 +186,19 @@ for the gap between a good backtest and a disappointing live account.
 **Queue position.** A limit order at a price does not fill because the price traded there;
 it fills because everyone ahead of you in the queue filled first and there was still size
 left when your turn came. On a level that trades once and leaves, you probably did not get
-filled. This simulator assumes you did.
+filled. This simulator assumes you did — `ExecutionSettings.limit_requires_through`
+defaults to `0.0`, and it is the one optimistic default in an engine whose every other
+default is pessimistic.
+
+Rather than change that default and silently move every stored result, **each run counts
+the fills that rested on it** and says so: "N of M limit fills happened on a single touch."
+
+That share is not a bound on the impact, and the warning says so. A target that does not
+fill leaves the position open to run to its stop, so one touch-only fill is worth a win
+*plus* the loss that replaces it. Measured on a 73-trade NQ sample: one such fill in 28
+turned a +1,773 winner into a −2,590 loser and moved the net by half — with the other 72
+trades byte-identical. Set the through-requirement to a tick and re-run to see what a
+strategy is worth without them.
 
 **Partial fills.** Real orders come back in pieces, at different prices, and sometimes not
 at all. Here every order fills in full, instantly, at one price.

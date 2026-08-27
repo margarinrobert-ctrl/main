@@ -141,7 +141,7 @@ from typing import Any, Callable, Sequence
 import numpy as np
 
 from ..core.errors import (BacktestError, BacktesterError, CancelledError,
-                           InsufficientDataError)
+                           DataError, InsufficientDataError)
 from ..core.types import (BacktestConfig, CostModel, ExecutionSettings,
                           ExitReason, ExitSettings, RiskSettings,
                           SessionSettings, Side, SignalExecution)
@@ -177,6 +177,36 @@ def _progress_interval(n: int) -> int:
 _OP_EXIT = 0
 _OP_ENTRY = 1
 _OP_REVERSE = 2
+
+
+def _touch_only_warning(broker: Any) -> list[str]:
+    """Say how much of this run rests on the one optimistic fill assumption.
+
+    Everything else in this engine defaults pessimistic. Limit fills do not:
+    with `limit_requires_through` at its default of zero, a target fills the
+    moment the bar's range reaches it, and the assumptions document concedes
+    that on a level that trades once and leaves you probably did not get
+    filled. Reporting the count is better than changing the default silently
+    and better than saying nothing -- it turns a paragraph of prose into a
+    number about THIS run.
+    """
+    touched = int(getattr(broker, "_touch_only_fills", 0) or 0)
+    total = int(getattr(broker, "_limit_fills", 0) or 0)
+    if not touched:
+        return []
+    share = touched / total if total else 0.0
+    return [
+        f"{touched:,} of {total:,} limit fills ({share:.0%}) happened on a "
+        f"single touch — the bar reached the level but never traded a tick "
+        f"past it, so the fill assumes nobody was ahead of you in the queue. "
+        f"That share is NOT how much of the result depends on it. A target "
+        f"that does not fill leaves the position open to run to its stop, so "
+        f"one touch-only fill is worth a win PLUS the loss that replaces it. "
+        f"Measured on a 73-trade sample: one such fill in 28 turned a "
+        f"+1,773 winner into a -2,590 loser and moved the net by half, with "
+        f"the other 72 trades unchanged. Set "
+        f"Execution ▸ 'limit needs to trade through' to a tick and re-run to "
+        f"see what this strategy is actually worth without them."]
 
 
 class Backtester:
@@ -219,6 +249,59 @@ class Backtester:
         self.label = label
         self.warnings: list[str] = []
 
+
+    #: Non-finite OHLC values above this share of the series make the run a
+    #: description of the gaps rather than of the strategy.
+    _BAD_PRICE_LIMIT = 0.02
+
+    def _check_bars(self, bars: BarSeries) -> None:
+        """Refuse a series that breaks BarSeries' own contract; warn on the rest.
+
+        The engine walks bars in order and carries state between them, so a
+        timestamp that repeats or goes backwards does not make the answer
+        slightly wrong -- it makes it meaningless. Until now nothing checked:
+        a hand-built series with a duplicated or swapped timestamp ran to
+        completion and reported trades, and a NaN close quietly took a
+        fifteen-trade run down to six with no warning anywhere. The importer
+        repairs all of this, so the exposure is programmatic callers, which is
+        exactly where nobody is watching the screen.
+
+        Timestamps raise. Prices warn, because a gap is a fact about the data
+        rather than a defect in it, and the engine already declines to trade a
+        bar it cannot price.
+        """
+        ts = np.asarray(bars.ts, dtype="int64")
+        if ts.size > 1:
+            steps = np.diff(ts)
+            duplicates = int((steps == 0).sum())
+            backwards = int((steps < 0).sum())
+            if duplicates or backwards:
+                first = int(np.argmax(steps <= 0)) + 1
+                raise DataError(
+                    f"The bars are not in strictly ascending time order, which "
+                    f"the simulation depends on: "
+                    f"{duplicates:,} repeated and {backwards:,} out-of-order "
+                    f"timestamps, the first at bar {first:,}. Re-import the "
+                    f"file, or repair the series with "
+                    f"tradingbacktester.data.validation.clean_bars.",
+                    detail=f"bar {first}: {ts[first - 1]} then {ts[first]}")
+
+        bad = np.zeros(len(bars), dtype=bool)
+        for name in ("open", "high", "low", "close"):
+            values = np.asarray(getattr(bars, name), dtype="float64")
+            bad |= ~np.isfinite(values)
+        count = int(bad.sum())
+        if count:
+            share = count / len(bars)
+            self.warnings.append(
+                f"{count:,} of {len(bars):,} bars ({share:.1%}) carry a price "
+                f"that is not a number. Those bars cannot be traded and cannot "
+                f"raise a signal, so this run covers less of the period than "
+                f"its dates suggest."
+                + ("  That is most of the series; treat the result as a "
+                   "description of the gaps rather than of the strategy."
+                   if share > self._BAD_PRICE_LIMIT else ""))
+
     # ------------------------------------------------------------------
     # entry point
     # ------------------------------------------------------------------
@@ -230,6 +313,7 @@ class Backtester:
         if bars is None or len(bars) == 0:
             raise InsufficientDataError("There are no bars to run the backtest on.")
 
+        self._check_bars(bars)
         spec_warnings = self._validate_spec()
         config = self._effective_config()
         compiled = self._compile(config)
@@ -280,7 +364,8 @@ class Backtester:
 
         result = self._build_result(run_bars, compiled, config, broker, signals,
                                     equity, balance, exposure, lo, hi)
-        result.warnings = spec_warnings + self.warnings + broker.warnings
+        result.warnings = (spec_warnings + self.warnings + broker.warnings
+                           + _touch_only_warning(broker))
         result.duration_seconds = time.perf_counter() - started
         result.metrics = self._metrics(result)
         logger.info("Backtest finished: %s", result.summary_line())
@@ -722,7 +807,12 @@ class _SessionArrays:
               fallback_tz: str) -> "_SessionArrays":
         import pandas as pd
 
-        tz = session.timezone if session.enabled else (fallback_tz or "UTC")
+        # An empty session timezone means the instrument's, which is what
+        # SessionSettings documents and what the compiler already did. Reading
+        # `session.timezone` unconditionally is how a CME instrument got
+        # filtered in New York.
+        tz = (session.timezone or fallback_tz or "UTC") if session.enabled \
+            else (fallback_tz or "UTC")
         idx = pd.DatetimeIndex(pd.to_datetime(np.asarray(ts, dtype="int64"),
                                               utc=True))
         try:

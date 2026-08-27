@@ -402,7 +402,17 @@ class SessionSettings:
     enabled: bool = False
     start: str = "09:30"
     end: str = "16:00"
-    timezone: str = "America/New_York"
+    timezone: str = ""
+    """Empty means the instrument's own timezone, which is what the line above
+    promises and what the strategy compiler has always done.
+
+    It used to default to ``"America/New_York"``, and that default was applied
+    even for a CME instrument carrying ``America/Chicago`` -- so a scripted
+    ``SessionSettings(enabled=True)`` on NQ filtered 09:30-16:00 New York while
+    every other part of the application read those bars as Chicago. On a
+    30-minute NQ series that was 71 trades against 49, and nothing said so.
+
+    A strategy saved with an explicit zone keeps it; only the default changed."""
     weekdays: tuple[int, ...] = (0, 1, 2, 3, 4)
     """Monday is 0.  Bars on other weekdays are not tradeable."""
     flat_at_session_end: bool = True
