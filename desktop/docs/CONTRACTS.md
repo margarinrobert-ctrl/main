@@ -462,9 +462,28 @@ what a real trade would have paid rather than against an abstract return.
   profile, spread in currency, monotonicity.
 - `ic.redundancy_groups(matrix, names, threshold)` — clusters of features
   saying the same thing.
-- `study.study_features(bars, style, ...) -> FeatureStudy` — the protocol:
-  research/holdout split, overlap-corrected errors, BH correction, redundancy
-  clustering, decile spread against the round-turn cost, verdicts in English.
+- `study.study_features(bars, style, ..., interactions=0) -> FeatureStudy` —
+  the protocol: research/holdout split, overlap-corrected errors, BH
+  correction, redundancy clustering, decile spread against the round-turn
+  cost, verdicts in English. `interactions=N` builds combined features from
+  the N parents ranked best on the **research block alone**.
+- `engineering.build_interactions(parents)` — every allowed pairing under four
+  operators: product, ratio, trailing-standardised difference, and sign
+  agreement. Symmetric operators are built once (`a − b` and `b − a` are the
+  same question, and their ICs are exact mirrors). Every operator is
+  **pointwise and trailing** — bar *i* from bar *i* of each parent, with any
+  scaling taken over `STANDARDISE_WINDOW` bars of history — so a causal parent
+  cannot produce a peeking child. A child inherits its slowest parent's
+  warm-up.
+- `engineering.drop_restatements(...)` — children correlated above
+  `REDUNDANT_ABOVE` with a parent are discarded before being tested. Not
+  tidiness: testing a question already asked makes every genuinely new child
+  harder to pass for nothing.
+- `engineering.effective_dimension(matrix) -> Dimensionality` — how many
+  principal components carry 95% of the variance, reported on every study
+  whether or not interactions were asked for. The feature count is how many
+  tests were run; this is how many questions were asked, and on the shipped
+  data 54 features are 19 directions.
 - `anomalies.DETECTORS` — 23 causal detectors in two families.
   **Shape** (15): volatility spikes and collapses, range and price shocks,
   gaps, volume surges and droughts, outside and inside bars, frozen prices,

@@ -336,6 +336,7 @@ def cmd_indicators(args: argparse.Namespace) -> int:
                             timeframe=args.timeframe,
                             side=-1 if args.side == "short" else 1,
                             research_fraction=args.research,
+                            interactions=args.interactions,
                             progress=_stderr_progress())
     _clear_progress()
     if args.json:
@@ -919,6 +920,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--side", default="long", choices=("long", "short"),
                    help="Which side's trades to predict")
     p.add_argument("--top", type=int, default=14)
+    p.add_argument("--interactions", type=int, default=0, metavar="N",
+                   help="Also build combined features from the N best "
+                        "parents, ranked on the research block alone. Every "
+                        "pair is another test and none of them is another "
+                        "fact, so the multiplicity correction gets harder for "
+                        "every feature; the report states the effective "
+                        "dimension so that cost is visible.")
     p.add_argument("--research", type=float, default=0.65)
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")

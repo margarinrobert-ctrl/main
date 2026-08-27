@@ -42,6 +42,8 @@ from ..finder.outcomes import (Geometry, build_outcomes, round_turn_points,
                                wilder_atr)
 from ..finder.search import choose_timeframe, default_costs, prepare_bars
 from ..finder.styles import TradingStyle
+from .engineering import (Dimensionality, build_interactions,
+                          drop_restatements, effective_dimension)
 from .features import Feature, all_features, compute_matrix
 from .ic import ICResult, evaluate, redundancy_groups
 
@@ -117,6 +119,15 @@ class FeatureStudy:
     clusters: list[list[str]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     elapsed: float = 0.0
+    dimension: Dimensionality | None = None
+    """How many independent directions the features really hold.
+
+    The count of features is how many tests were run; this is how many
+    questions were asked, and it is usually a third of the first number."""
+    constructed: int = 0
+    """How many of the features tested were built from other features."""
+    dropped: list[str] = field(default_factory=list)
+    """Constructed features discarded as restatements of a parent, with why."""
 
     def top(self, count: int = 12) -> list[FeatureFinding]:
         return self.findings[:count]
@@ -132,6 +143,10 @@ class FeatureStudy:
             "baseline_per_trade": self.baseline,
             "features_tested": self.tested,
             "independent_features": self.independent,
+            "constructed_features": self.constructed,
+            "dimension": (self.dimension.to_dict() if self.dimension
+                          else None),
+            "dropped_as_restatements": list(self.dropped),
             "significant": self.significant,
             "findings": [f.to_dict() for f in self.findings],
             "notes": list(self.notes),
@@ -149,8 +164,17 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
                    timeframe: str = "", costs: CostModel | None = None,
                    side: int = 1, research_fraction: float = 0.65,
                    features: list[Feature] | None = None,
+                   interactions: int = 0,
                    progress: ProgressFn | None = None) -> FeatureStudy:
-    """Rank features by what they predict about this style's trades."""
+    """Rank features by what they predict about this style's trades.
+
+    ``interactions`` builds combined features from that many parents, chosen by
+    their ranking on the **research block alone**. Zero, the default, is not
+    timidity: every pair is another test, none of them is another fact, and on
+    this kind of data the honest expectation is that the correction eats them
+    all. The multiplicity is reported so that expectation can be checked rather
+    than assumed.
+    """
     started = time.time()
     requested = timeframe
     timeframe = timeframe or choose_timeframe(bars, style)
@@ -193,6 +217,12 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
     split = int(n * float(research_fraction))
     research = slice(0, split)
     holdout = slice(split, n)
+
+    dropped: list[str] = []
+    if interactions:
+        matrix, features, dropped = _add_interactions(
+            working, matrix, features, target, split, int(style.max_bars),
+            int(interactions), progress)
 
     point_value = float(getattr(instrument, "point_value", 1.0)) or 1.0
     cost_points = round_turn_points(costs, instrument, working.close,
@@ -249,6 +279,22 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
         f"{len(features)} features were tested and they fall into "
         f"{len(clusters)} groups that say much the same thing, so the honest "
         f"count of separate ideas is {len(clusters)}, not {len(features)}.")
+    dimension = effective_dimension(matrix[research],
+                                    [f.name for f in features])
+    if dimension.note:
+        notes.append(dimension.note)
+    constructed = sum(1 for f in features if f.family == "interaction")
+    if constructed:
+        notes.append(
+            f"{constructed} of those were BUILT from other features, from the "
+            f"{interactions} parents that ranked best on the research block "
+            f"alone — never on both blocks, which would put the locked block "
+            f"inside the construction step. Every pair is another test and "
+            f"none of them is another fact, so building them made every "
+            f"feature here, including the {len(features) - constructed} "
+            f"original ones, harder to pass."
+            + (f" {len(dropped)} more were discarded before being tested "
+               f"because they merely restated a parent." if dropped else ""))
     notes.append(
         f"Standard errors are Newey-West with a lag of {horizon} bars, the "
         f"length of the trade. Without that correction a persistent indicator "
@@ -289,7 +335,54 @@ def study_features(bars: BarSeries, style: TradingStyle, *,
         cost_per_trade=cost_per_trade, baseline=baseline, tested=len(features),
         independent=len(clusters), significant=significant,
         findings=findings, clusters=clusters, notes=notes,
+        dimension=dimension,
+        constructed=sum(1 for f in features if f.family == "interaction"),
+        dropped=list(dropped),
         elapsed=time.time() - started)
+
+
+def _add_interactions(working: BarSeries, matrix: np.ndarray,
+                      features: list[Feature], target: np.ndarray, split: int,
+                      horizon: int, parents: int,
+                      progress: ProgressFn | None):
+    """Build combined features from the best parents, and say what was dropped.
+
+    The parents are ranked on the RESEARCH BLOCK ONLY. Ranking over both blocks
+    and then building from the winners puts the locked block inside the
+    construction step, and a feature family selected that way once produced a
+    result that failed on research and "passed" on the holdout -- the wrong
+    shape, and pure leakage.
+
+    A child that merely restates a parent is discarded before it is tested:
+    it is not a new question, and asking it again would make every genuinely
+    new child harder to pass for nothing.
+    """
+    research = slice(0, split)
+    if progress is not None:
+        progress(1, 3, "Ranking parents on the research block")
+    scored = []
+    for column, feature in enumerate(features):
+        result = evaluate(feature.name, matrix[research, column],
+                          target[research], horizon)
+        scored.append((abs(result.ic), column, feature))
+    scored.sort(key=lambda row: -row[0])
+    chosen = [feature for _ic, _column, feature in scored[:max(2, parents)]]
+
+    children = build_interactions(chosen)
+    if not children:
+        return matrix, features, []
+    if progress is not None:
+        progress(1, 3, f"Computing {len(children)} combined features")
+    child_matrix, children = compute_matrix(working, children)
+    parent_matrix = np.column_stack(
+        [matrix[:, column] for _ic, column, _f in scored[:max(2, parents)]])
+    keep, dropped = drop_restatements(child_matrix[research], children,
+                                      parent_matrix[research], chosen)
+    if not keep:
+        return matrix, features, dropped
+    kept = [children[i] for i in keep]
+    return (np.column_stack([matrix, child_matrix[:, keep]]),
+            list(features) + kept, dropped)
 
 
 def _drift_concern(finding: FeatureFinding, baseline: float,
