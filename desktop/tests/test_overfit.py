@@ -508,3 +508,66 @@ def test_the_candidate_cap_is_a_module_constant_not_a_magic_number():
     assert MAX_CANDIDATES >= 100
     assert MIN_TRADES_PER_BLOCK >= 2
     assert DEFAULT_BLOCKS % 2 == 0 and DEFAULT_BLOCKS >= 4
+
+
+# --------------------------------------------------------------------------
+# Purging the block boundaries
+# --------------------------------------------------------------------------
+
+def test_the_tail_of_every_block_is_purged():
+    """A trade signalled here would be settled by the next block."""
+    collector = BlockCollector.over(split=1200, total=1200, purge=10)
+    assert collector.purged == 10
+    ids = collector.block_of[:1200]
+    width = 1200 // DEFAULT_BLOCKS
+    for index in range(DEFAULT_BLOCKS):
+        end = (index + 1) * width
+        assert (ids[end - 10:end] == -1).all(), (
+            f"block {index} was not purged at its tail")
+        assert ids[end - 11] == index, "the purge ate more than its share"
+
+
+def test_purging_only_ever_removes_bars():
+    """It must not renumber or reorder anything."""
+    plain = BlockCollector.over(split=1200, total=1200, purge=0)
+    purged = BlockCollector.over(split=1200, total=1200, purge=10)
+    kept = purged.block_of >= 0
+    assert (purged.block_of[kept] == plain.block_of[kept]).all()
+    assert kept.sum() < (plain.block_of >= 0).sum()
+
+
+def test_a_purge_that_would_empty_a_block_is_refused():
+    """The cross-validation is worth more than the last bars of each block."""
+    collector = BlockCollector.over(split=1200, total=1200, purge=500)
+    assert collector.purged == 0
+    assert (collector.block_of[:1200] >= 0).all()
+
+
+def test_purging_is_off_by_default_so_callers_opt_in():
+    assert BlockCollector.over(split=1200, total=1200).purged == 0
+
+
+def test_the_search_purges_by_its_own_hold_limit():
+    """The two numbers must not drift apart."""
+    from tradingbacktester.finder.outcomes import hold_bars
+    from tradingbacktester.finder.styles import style
+
+    import tradingbacktester.finder.search as search_module
+
+    seen = {}
+    real = BlockCollector.over
+
+    def spy(cls, split, blocks=DEFAULT_BLOCKS, total=0, purge=0):
+        seen["purge"] = purge
+        return real.__func__(cls, split, blocks, total, purge)
+
+    from tests.test_finder import _planted
+
+    search_module.BlockCollector.over = classmethod(spy)
+    try:
+        search_module.find_strategies(_planted(n=30_000, seed=5),
+                                      style("intraday"), control_draws=20,
+                                      validate="quick")
+    finally:
+        search_module.BlockCollector.over = real
+    assert seen["purge"] == hold_bars(style("intraday").max_bars)

@@ -443,6 +443,68 @@ cached; after that a candidate rule is a boolean mask and scoring it is a sum.
 - `report.format_report(report)` — plain text, multiplicity and disclaimer
   included on every path.
 
+### `finder/overfit.py` — pricing the search rather than the winner
+
+Two named statistics, both computed on the RESEARCH block only. Cutting the
+whole series into blocks would deal the locked block into training sets, which
+is the leak the split exists to prevent; `tests/test_overfit.py` rewrites the
+locked block and asserts the measurement does not move.
+
+- `norm_cdf` / `norm_ppf` — the normal CDF from `erfc` and its inverse by
+  Acklam's rational approximation, refined by one step of Halley's method
+  against `erfc`. Round-trips to 1e-13 across the whole range, including both
+  sides of both of Acklam's branch cut-offs. No SciPy.
+- `expected_max_sharpe(trials, trial_variance)` — Bailey and López de Prado's
+  expected maximum Sharpe under the null. Grows like `sqrt(2 ln N)` and sits
+  below it; scales with the spread of the trials, so a search whose trials all
+  scored the same has nothing to deflate.
+- `deflated_sharpe(returns, trials, trial_variance) -> DeflatedSharpe` — the
+  probability the observed Sharpe beats that benchmark rather than zero,
+  corrected for skew and kurtosis via Mertens' estimator variance. **Per
+  trade, never annualised**: the benchmark is per-trade too, and annualising
+  one side of the comparison and not the other is the easiest mistake here.
+- `DeflatedSharpe.redeflate(trials, trial_variance)` — the same Sharpe priced
+  for a different search size. Every input beyond the benchmark is already on
+  the dataclass, so a grid can re-price a sweep's finding without touching the
+  trades, and the result equals a direct computation to 1e-15.
+- `probability_of_overfitting(counts, sums, squares, blocks) -> PBOResult` —
+  combinatorially symmetric cross-validation. The three `(blocks, candidates)`
+  matrices rebuild a mean and variance over any union of blocks without
+  keeping a trade; every split is one matrix product, so all
+  `C(12, 6) = 924` of them are two `matmul`s rather than a Python loop.
+  Calibrated: pure noise reports 0.48, a planted edge 0.00, an edge living in
+  one block of twelve 0.65.
+- **The limitation, asserted rather than assumed.** The splits are
+  combinatorial, so the measurement is blind to *when* an edge existed. It
+  responds to how concentrated an edge is (one block in twelve → 0.65) and not
+  at all to whether the good blocks came early or late (six in twelve → 0.001,
+  however arranged). Regime decay is what the sequential locked block catches;
+  neither subsumes the other and the application keeps both.
+- `BlockCollector` — accumulates the three matrices as the search scores
+  candidates, from the `kept` mask that already exists inside `_score`. Three
+  `bincount` calls per candidate; recomputing `kept` outside would double the
+  most expensive line in the search. Blocks are contiguous and in time order,
+  never interleaved: shuffled blocks would let a training set sit either side
+  of a testing set separated by minutes, and every serial correlation would
+  read as skill. Ties in the out-of-sample rank are shared, or a grid of
+  identical candidates would report perfect selection.
+- `BlockCollector.over(..., purge=hold_bars(max_bars))` — López de Prado's
+  purging. The splits are combinatorial, so a trade signalled just before the
+  end of block 3 and settled inside block 4 leaks whenever 3 trains and 4
+  tests. **Measured, the leak is below the noise floor**: on US30 15m intraday
+  it moved PBO from 0.2965 to 0.2846, about eleven splits of 924, which is
+  what dropping half a percent of the trades does either way. Kept because the
+  leak is real in principle and the fix is free, *not* because it was caught
+  changing an answer — and a longer hold or a shorter research block would
+  make it matter. A purge wide enough to empty a block is refused rather than
+  applied. No separate embargo: every block is both a potential training and a
+  potential testing block, and trades only run forwards, so purging each tail
+  covers both directions.
+- Both reach `FinderReport.overfitting` and `Finding.deflated`, the plain-text
+  reports, the JSON, and the Research dialog — the PBO in the **status line**
+  rather than only the detail pane, because a high probability of overfitting
+  beside a shortlist is the most dangerous thing the dialog can show.
+
 ### `finder/autosearch.py` — the exhaustive grid
 
 Every style × every bar size the data can build × every rule family × every

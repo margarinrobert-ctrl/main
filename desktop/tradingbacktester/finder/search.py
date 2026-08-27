@@ -52,8 +52,8 @@ from .control import (ControlResult, MinuteTable, analytic_control,
 from .overfit import (BlockCollector, DeflatedSharpe, PBOResult,
                       deflated_sharpe)
 from .outcomes import (EXIT_NAMES, Geometry, OutcomeCache, block_hold_limit,
-                       build_outcomes, select_sequential, session_entry_mask,
-                       session_hold_limit)
+                       build_outcomes, hold_bars, select_sequential,
+                       session_entry_mask, session_hold_limit)
 from .styles import TradingStyle
 
 ProgressFn = Callable[[int, int, str], None]
@@ -444,7 +444,10 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
     # Cross-validation runs over the RESEARCH block only. Cutting the whole
     # series into blocks would deal the locked block into training sets, which
     # is exactly the leak the split exists to prevent.
-    collector = BlockCollector.over(split, total=n)
+    # Purged by the longest a trade may run, so a trade signalled at the end
+    # of one cross-validation block cannot be settled by the next one.
+    collector = BlockCollector.over(split, total=n,
+                                    purge=hold_bars(style.max_bars))
 
     findings: list[Finding] = []
     step = len(candidates)

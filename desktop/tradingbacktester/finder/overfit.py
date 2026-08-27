@@ -480,15 +480,42 @@ class BlockCollector:
     squares: list[np.ndarray] = field(default_factory=list)
     labels: list[str] = field(default_factory=list)
 
+    purged: int = 0
+    """Bars dropped from the end of every block. See :meth:`over`."""
+
     @classmethod
     def over(cls, split: int, blocks: int = DEFAULT_BLOCKS,
-             total: int = 0) -> "BlockCollector | None":
+             total: int = 0, purge: int = 0) -> "BlockCollector | None":
         """Cut the research block into ``blocks`` equal contiguous slices.
 
         Contiguous and in time order, never interleaved: blocks that are
         shuffled in time would let a training set sit on both sides of a
         testing set separated by minutes, and every serial correlation in the
         data would then read as skill.
+
+        ``purge`` is the longest a trade may run, in bars, and the last
+        ``purge`` bars of every block are removed. This is Lopez de Prado's
+        purging, and it is needed because the splits are combinatorial: a trade
+        signalled just before the end of block 3 finishes inside block 4, so if
+        3 is dealt into training and 4 into testing, part of that trade's
+        result was decided by the testing data.
+
+        **Measured, the leak is below the noise floor here**, and that is
+        stated rather than left as an implication: on US30 15m intraday, a
+        48-bar hold against a 10,500-bar block, purging moved the probability
+        of overfitting from 0.2965 to 0.2846 -- about eleven splits out of 924,
+        which is what dropping half a percent of the trades does to a ranking
+        whether or not any of them leaked. So this is kept because the leak is
+        real in principle and the fix is free, NOT because it was caught
+        changing an answer. On a geometry with a longer hold or a shorter
+        research block it would matter more, and there is no reason to find out
+        the hard way which one a user has.
+
+        No embargo beyond the purge: an embargo protects against a training
+        set that comes AFTER the testing set in time, which the combinatorial
+        construction does produce. Purging the tail of every block covers both
+        directions here, because every block is both a potential training and a
+        potential testing block and the trades only ever run forwards.
         """
         split = int(split)
         blocks = int(blocks) - (int(blocks) % 2)
@@ -496,10 +523,16 @@ class BlockCollector:
             return None
         total = max(int(total), split)
         edges = np.linspace(0, split, blocks + 1).astype("int64")
+        purge = max(0, int(purge))
+        # A purge that would empty a block is refused rather than applied: the
+        # cross-validation is worth more than the last few bars of each block.
+        width = int(np.min(np.diff(edges)))
+        if purge >= width // 2:
+            purge = 0
         block_of = np.full(total, -1, dtype="int64")
         for index in range(blocks):
-            block_of[edges[index]:edges[index + 1]] = index
-        return cls(block_of=block_of, blocks=blocks)
+            block_of[edges[index]:edges[index + 1] - purge] = index
+        return cls(block_of=block_of, blocks=blocks, purged=purge)
 
     def add(self, taken: np.ndarray, values: np.ndarray, label: str = "") -> None:
         """Record one candidate: a boolean mask of trades and their results."""

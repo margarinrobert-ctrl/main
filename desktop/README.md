@@ -1344,6 +1344,24 @@ candidates, and its 0.75 was printed at the top of the report beside another
 sweep's estimate over 1,488. Reporting the worst is right; letting the noisiest
 estimate *be* the worst is not.
 
+### Purging the block boundaries
+
+The splits are combinatorial, so a trade signalled just before the end of one
+block and settled inside the next one leaks whenever the first block trains and
+the second tests. The last `max_bars` of every block are therefore dropped —
+López de Prado's purging.
+
+**Measured, the leak is below the noise floor here, and that is worth stating
+rather than implying.** On US30 15-minute intraday — a 48-bar hold against a
+10,500-bar block — purging moved the probability of overfitting from 0.2965 to
+0.2846. That is about eleven splits out of 924, which is what dropping half a
+percent of the trades does to a ranking whether or not any of them leaked.
+
+It is kept because the leak is real in principle and the fix is free, **not**
+because it was caught changing an answer. On a geometry with a longer hold or a
+shorter research block it would matter more, and there is no reason to find out
+the hard way which one you have.
+
 ### What the cross-validation cannot see
 
 The splits are combinatorial rather than sequential — that is the point, since
