@@ -143,6 +143,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv)
     if "--self-test" in args:
         return self_test()
+    # A real launch on the real platform plugin, which `--self-test` cannot be:
+    # it forces the offscreen platform, so it proves the packaging and the
+    # Python path and says nothing about the window system. This one starts
+    # normally, holds the window open briefly and exits 0 -- so CI can exercise
+    # the display path that a white-screen report lives in.
+    smoke = "--smoke-test" in args
     if "--version" in args:
         print(f"{APP_DISPLAY_NAME} {APP_VERSION}")
         return 0
@@ -220,9 +226,44 @@ def main(argv: Sequence[str] | None = None) -> int:
     _close_splash(splash, window)
     breadcrumb("window shown, entering the event loop")
     log.info("Start-up breadcrumbs: %s", startup_log_path())
+    if smoke:
+        return _smoke(app, window)
     code = app.exec()
     breadcrumb(f"exited cleanly with code {code}")
     return code
+
+
+#: How long `--smoke-test` holds the window open. Long enough for a first paint
+#: and the first-run seeding on a slow machine, short enough for CI.
+SMOKE_SECONDS = 20.0
+
+
+def _smoke(app: QApplication, window: Any) -> int:
+    """Hold a real window open briefly, then report whether it painted.
+
+    The point is the platform plugin: `--self-test` forces the offscreen one,
+    so it cannot tell a working window system from a broken one. This runs on
+    whatever the machine actually uses.
+    """
+    import time
+
+    deadline = time.monotonic() + SMOKE_SECONDS
+    painted = False
+    while time.monotonic() < deadline:
+        app.processEvents()
+        if not painted and window.isVisible() and window.width() > 0:
+            painted = True
+            breadcrumb(f"window is visible at {window.width()}x{window.height()}")
+        time.sleep(0.05)
+    breadcrumb(f"smoke test finished, painted={painted}")
+    print(f"SMOKE TEST {'PASSED' if painted else 'FAILED'}")
+    print(f"  platform: {app.platformName()}")
+    print(f"  window:   {window.width()}x{window.height()} "
+          f"visible={window.isVisible()}")
+    print(f"  breadcrumbs: {startup_log_path()}")
+    window.close()
+    app.processEvents()
+    return 0 if painted else 1
 
 
 # --------------------------------------------------------------------------

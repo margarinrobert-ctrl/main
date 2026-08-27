@@ -1099,3 +1099,36 @@ def test_startup_falls_back_to_temp_without_localappdata(monkeypatch):
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
     monkeypatch.delenv("APPDATA", raising=False)
     assert startup_log_path().parent == Path(tempfile.gettempdir())
+
+
+def test_the_smoke_test_reports_whether_the_window_painted(qapp, tmp_path,
+                                                           monkeypatch):
+    """`--self-test` forces the offscreen platform and so cannot tell.
+
+    This is the check that exercises whatever platform plugin the machine
+    actually has, which is where a white-screen report lives.
+    """
+    from tradingbacktester.app import SMOKE_SECONDS, _smoke
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("tradingbacktester.app.SMOKE_SECONDS", 0.2)
+
+    class Painted:
+        def isVisible(self): return True
+        def width(self): return 1200
+        def height(self): return 800
+        def close(self): pass
+
+    class Blank:
+        def isVisible(self): return False
+        def width(self): return 0
+        def height(self): return 0
+        def close(self): pass
+
+    assert _smoke(qapp, Painted()) == 0
+    assert _smoke(qapp, Blank()) == 1
+    assert SMOKE_SECONDS > 0
+
+    crumbs = (tmp_path / "TradingBacktester" / "startup.log").read_text("utf-8")
+    assert "window is visible at 1200x800" in crumbs
+    assert "painted=False" in crumbs

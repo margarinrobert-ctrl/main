@@ -61,6 +61,27 @@ jobs:
           $p = Start-Process -FilePath "dist\TradingBacktester\TradingBacktester.exe" -ArgumentList "--self-test" -PassThru -Wait -NoNewWindow
           if ($p.ExitCode -ne 0) { throw "Frozen build failed its self-test (exit $($p.ExitCode))" }
 
+      # `--self-test` forces the offscreen platform, so it proves the packaging
+      # and the Python path and says nothing about the window system. This runs
+      # the exe on whatever platform plugin the runner actually has, which is
+      # the path a "white screen" report lives in. Non-blocking on purpose: a
+      # runner without an interactive desktop is not a broken application, and
+      # the breadcrumbs printed afterwards are the point either way.
+      - name: Smoke-test the frozen build on the real display
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          $p = Start-Process -FilePath "dist\TradingBacktester\TradingBacktester.exe" -ArgumentList "--smoke-test" -PassThru -Wait -NoNewWindow
+          Write-Host "smoke-test exit code: $($p.ExitCode)"
+          $crumbs = Join-Path $env:LOCALAPPDATA "TradingBacktester\startup.log"
+          if (Test-Path $crumbs) {
+            Write-Host "--- start-up breadcrumbs ---"
+            Get-Content $crumbs | Select-Object -Last 30
+          } else {
+            Write-Host "no breadcrumb file at $crumbs"
+          }
+          if ($p.ExitCode -ne 0) { throw "the window never painted (exit $($p.ExitCode))" }
+
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
 
