@@ -72,6 +72,34 @@ It is roughly free inside a morning window, where the trade would have closed an
 at the NEXT BAR'S OPEN — `strategy.close_all()` cannot sell the close of the bar that triggers it —
 so the engine was changed to match the script (`flat_open`), not the other way round.
 
+**V17'S SESSION-HIGH FILTER DOES NOT GENERALISE, AND ITS US100 "CONFIRMATION" WAS THE SAME TRADES.**
+Frozen and run on four markets that had no part in finding it: positive on ONE, and that one is the
+Nasdaq. 59.9% of NQ's signal bars are also US100 signal bars at the IDENTICAL timestamp (83.6%
+within two bars), and splitting US100 at the end of NQ's data collapses it +0.2952 -> +0.0334 R.
+At 60 minutes drop-one shows the filter earns nothing and REMOVING it improves the rule
+(+0.2511 -> +0.2554, control p 0.005 -> 0.001). See `docs/ib/STUDY_V19_DESTROY.md`.
+
+**RUN THE ZERO-COST VARIANT BEFORE CONCLUDING THERE IS NO EDGE — AND THEN CHANGE THE BAR SIZE.** The
+same rule is gross-POSITIVE on all four markets while the round turn is 8-11% of the stop on the
+three that fail net against 3.1% on the one that does not. Cost-in-R and gross-edge-in-R both scale
+with bar size, so the arithmetic is neutral and anything that moves NET is real: 15m -> 30m -> 60m
+takes US30 from -0.0218 to +0.0663 to **+0.2511** and gold from -0.0117 to +0.1154, while INVERTING
+on US100 — the market that duplicates the NQ trades the 15m result came from.
+
+**SCORE A REGIME-CONDITIONAL RULE AGAINST A CONTROL DRAWN FROM THE SAME REGIME BARS.** A
+minute-of-day control on 60-minute bars has about SEVEN minutes to match on, so it prices the clock
+and not the direction — and three things said the 60m result was drift (the short mirror loses what
+the long side wins, -0.165 against +0.251; the edge lives entirely above the 200-day, +0.2689 against
++0.0210; 3 of 9 walk-forward years negative). Restricted to the up state and scored against random
+entries from THE SAME up-trend bars it still clears: US30 8.5yr p **0.004** (+0.192 R excess), gold
+22yr p 0.032 (+0.095). Against the blunter baseline of EVERY eligible up-state bar with identical
+geometry the breakout adds **+0.12 to +0.22 R per trade**. That is a drift harvester that beats its
+own drift — worth trading, not an all-weather alpha, and it will not trade in a bear market.
+
+**AND IT STILL DOES NOT CLEAR ITS OWN MULTIPLICITY.** The 60-minute timeframe was chosen AFTER
+comparing three; roughly sixty looks were taken; Bonferroni needs ~0.0008 against a best p of 0.004.
+Realised drawdown was LUCKY — MC median 22.4R against a realised 15.5, p99 **60.8R**. Size for p99.
+
 **A 1.5xATR STOP AND A 2R TARGET ARE BOTH ON THE WRONG SIDE OF THEIR OWN MARGINAL CURVES.** 625
 cells x 5 instruments: the stop axis is MONOTONE toward wider on every single market (pooled EV
 -0.228 at 1.0N to -0.053 at 3.0N) and NO TAKE PROFIT beats every target for the sixth independent
@@ -912,6 +940,9 @@ plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
 | `research/v15/v15book.py` | the V15 book: features, both legs, the two geometries |
 | `research/v15/v15_parity.py` | **the order-model diff** — the script's one live order vs the engine's eight |
 | `research/v15/run_book.py` | the whole V15 table: mechanic, control gate, walk-forward, MC, prop |
+| `research/v19/v19frozen.py` | V17's rule frozen and run on four markets that never saw it |
+| `research/v19/v19attack.py` | drop-one, perturbation, walk-forward, cost stress, Monte Carlo |
+| `research/v19/v19verdict.py` | **the regime-matched control** — random entries from the same up-trend bars |
 | `research/v18/v18diag.py` | ADF, AR(1) half-life, Hurst, Lo-MacKinlay VR, Newey-West corr — no statsmodels |
 | `research/v18/v18coint.py` | Engle-Granger both ways on five series, 15m and daily, with a positive control |
 | `research/v18/v18multi.py` | the spec on every instrument, each with its OWN tick, point value and spread |
