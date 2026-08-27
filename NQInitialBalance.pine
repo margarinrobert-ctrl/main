@@ -1,0 +1,445 @@
+//@version=6
+// NQ — Initial Balance (IB) breakout-retracement backtest, Edgeful-style rules
+//
+// WHAT THIS IS: a clean, mechanical backtest of the Initial Balance strategy that edgeful
+// publishes for index futures. It is deliberately small — one setup, one trade a day, no
+// indicator stack on top.
+//
+// THE RULES (as edgeful documents them, see SOURCE NOTES at the bottom of this file):
+//   1. Initial Balance = the high and low of the first hour of the NY session, 9:30–10:30 ET.
+//   2. Wait for that hour to CLOSE. Nothing is traded while the IB is still forming.
+//   3. Wait for a break of the IB high (long bias) or IB low (short bias).
+//   4. Do NOT chase the break. Enter on the retracement back INTO the range, at 25% of the
+//      IB range inside the broken edge.
+//   5. Stop loss at 60% of the IB range, measured from the broken edge (i.e. deeper inside
+//      the range than the entry).
+//   6. Target 50% of the IB range beyond the broken edge.
+//   7. If neither stop nor target is hit, flatten at the end of the session.
+//
+//   With the defaults that is a fixed geometry: risk = 35% of the IB range, reward = 75% of
+//   the IB range → ~2.14R per trade before costs.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// BUILT FOR FUTURES (NQ1! / MNQ1! on CME_MINI). Read this before changing anything:
+//
+//   • MARGIN — this is the setting that decides whether you get any trades at all.
+//     Pine v6 defaults margin_long/margin_short to 100 (%) and, unlike v4, ENFORCES it.
+//     NQ at ~24,000 is 24,000 x $20 = ~$480,000 of notional per contract, so at 100%
+//     margin a $50,000 account can never afford a single contract and every order is
+//     silently cancelled — the Strategy Tester just shows zero trades. This is why an
+//     un-margined script "works" on a NAS100 CFD (1 unit ~ $24,000 of notional, which
+//     fits) and does nothing on NQ1!. Below it is set to 1%, roughly $4,800 per contract
+//     at current prices — conservative next to the $500–$2,000 intraday margin most
+//     futures brokers actually charge, and this strategy is flat by 15:55 ET every day so
+//     overnight initial margin (~5%) never applies. Raise it in Properties → "Margin for
+//     long/short positions %" if you want to model overnight or exchange margin.
+//
+//   • POINT VALUE is read from the symbol, so P&L is correct automatically:
+//     NQ = $20/point, MNQ = $2/point. Only the commission below needs changing for MNQ.
+//
+//   • PRICES ARE ROUNDED TO THE TICK. NQ ticks are 0.25, and a percentage of the IB range
+//     almost never lands on one. Every order price is snapped with math.round_to_mintick().
+//
+//   • SESSION TIMES ARE WALL-CLOCK NEW YORK, computed from hour()/minute() rather than a
+//     session string. Futures sessions roll at 18:00 ET the previous day and the chart's
+//     ETH/RTH toggle changes the session definition underneath you; wall-clock comparison
+//     is immune to both, and to daylight saving.
+//
+// NO REPAINTING: the IB is finalised only after the 9:30–10:30 window has closed, every
+// level is derived from completed bars, orders are submitted at bar close, and there are no
+// higher-timeframe requests. Nothing here can see the future.
+//
+// TIMEFRAME: run it on 1–5 minute NQ1!. Lower timeframes resolve the intrabar sequence of
+// stop-vs-target more honestly. Above 15m the IB window stops being measured cleanly and the
+// stats table will warn you.
+// ─────────────────────────────────────────────────────────────────────────────
+
+strategy(
+     title                   = "NQ Initial Balance (Edgeful-style)",
+     shorttitle              = "NQ IB",
+     overlay                 = true,
+     pyramiding              = 0,
+     initial_capital         = 50000,
+     default_qty_type        = strategy.fixed,
+     default_qty_value       = 1,
+     commission_type         = strategy.commission.cash_per_contract,
+     commission_value        = 2.50,      // ~$5 round turn on NQ. Use ~0.50 for MNQ.
+     slippage                = 2,         // ticks per side; NQ tick = 0.25 pt = $5
+     margin_long             = 1,         // % of notional — see the MARGIN note above
+     margin_short            = 1,
+     calc_on_every_tick      = false,
+     process_orders_on_close = false)
+// All five cost/sizing values above must be compile-time constants in Pine, so they cannot be
+// Inputs. Every one of them is editable live in the Strategy Tester's *Properties* tab
+// (Order size, Commission, Slippage, Margin), which overrides the code without editing it.
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inputs
+// ─────────────────────────────────────────────────────────────────────────────
+TZ = "America/New_York"   // handles EST/EDT automatically
+
+gS = "Session (New York wall-clock)"
+ibStartH = input.int(9,  "IB starts — hour",   minval = 0, maxval = 23, group = gS, inline = "a")
+ibStartM = input.int(30, ":",                  minval = 0, maxval = 59, group = gS, inline = "a")
+ibEndH   = input.int(10, "IB ends — hour",     minval = 0, maxval = 23, group = gS, inline = "b")
+ibEndM   = input.int(30, ":",                  minval = 0, maxval = 59, group = gS, inline = "b")
+exitH    = input.int(15, "Flatten — hour",     minval = 0, maxval = 23, group = gS, inline = "c")
+exitM    = input.int(55, ":",                  minval = 0, maxval = 59, group = gS, inline = "c", tooltip = "Entries are armed from the IB close until this time. At this time any unfilled order is cancelled and any open position is closed.")
+
+gR = "Strategy rules"
+retrPct  = input.float(25, "Entry — retracement into IB (% of range)", minval = 0,   maxval = 99,  step = 1,   group = gR, tooltip = "edgeful's documented entry: 25% of the IB range back inside the broken edge.")
+stopPct  = input.float(60, "Stop — from broken edge (% of range)",     minval = 1,   maxval = 200, step = 1,   group = gR, tooltip = "edgeful's documented stop: 60% of the IB range measured from the broken edge. Must be larger than the entry retracement.")
+useRR    = input.bool(false, "Use fixed R:R target instead of % target",                                       group = gR)
+tgtPct   = input.float(50, "Target — beyond broken edge (% of range)", minval = 1,   maxval = 500, step = 1,   group = gR, tooltip = "edgeful's documented target: 50% of the IB range beyond the broken edge.")
+rrMult   = input.float(2.0, "Risk : Reward (when fixed R:R is on)",    minval = 0.1, maxval = 20,  step = 0.1, group = gR)
+useBE    = input.bool(false, "Move stop to breakeven",                                                        group = gR, tooltip = "edgeful publishes this as a separate 'IB breakeven stop' variant. Off by default so the base rules are measured first.")
+bePct    = input.float(25, "Breakeven trigger (% of range beyond edge)", minval = 1, maxval = 500, step = 1,  group = gR)
+
+gF = "Filters"
+allowLong  = input.bool(true,  "Allow longs",  group = gF)
+allowShort = input.bool(true,  "Allow shorts", group = gF)
+minIB      = input.float(0, "Min IB range (points, 0 = off)", minval = 0, step = 5, group = gF, tooltip = "Skips dead first hours where the geometry gives almost no reward.")
+maxIB      = input.float(0, "Max IB range (points, 0 = off)", minval = 0, step = 5, group = gF, tooltip = "Skips news-blowout first hours where the 60% stop is enormous.")
+allow2nd   = input.bool(false, "Allow a second trade (double-break days)", group = gF, tooltip = "Default off — the documented strategy is one trade per day. On: after the first trade closes, a break of the OPPOSITE side can be traded too.")
+
+dMon = input.bool(true, "Mon", group = gF, inline = "wd")
+dTue = input.bool(true, "Tue", group = gF, inline = "wd")
+dWed = input.bool(true, "Wed", group = gF, inline = "wd")
+dThu = input.bool(true, "Thu", group = gF, inline = "wd")
+dFri = input.bool(true, "Fri", group = gF, inline = "wd", tooltip = "Weekdays to trade. edgeful's double-break-by-weekday analysis puts Tuesday as the highest double-break day on NQ and ES (the days the rejection bias is most likely to fail) and Monday as the cleanest across every ticker.")
+
+gJ = "IB by rejection (edgeful subreport)"
+rejMode = input.string("Off", "Rejection bias filter", options = ["Off", "Trade only with the bias", "Trade only against the bias"], group = gJ, tooltip = "Which side of the IB printed FIRST implies which side breaks next. Low first = bullish (expect the high to break). High first = bearish (expect the low to break). edgeful reports ~78% / ~77% on NQ over 6 months.\n\n'With the bias' takes only the aligned break. 'Against the bias' is the falsification test — if it scores about the same, the edge is not in your data window. When the high and low both print in the same bar there is no bias and the day is skipped while a filter is active.")
+
+gV = "Display"
+showLevels = input.bool(true, "Plot IB / entry / stop / target", group = gV)
+showTable  = input.bool(true, "Show statistics table",           group = gV)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session state — wall-clock New York, independent of the symbol's session definition
+// ─────────────────────────────────────────────────────────────────────────────
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow = dayofweek(time, TZ)
+weekday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+dayOK   = nyDow == dayofweek.monday ? dMon : nyDow == dayofweek.tuesday ? dTue : nyDow == dayofweek.wednesday ? dWed : nyDow == dayofweek.thursday ? dThu : nyDow == dayofweek.friday ? dFri : false
+
+ibFrom = ibStartH * 60 + ibStartM
+ibTo   = ibEndH   * 60 + ibEndM
+exitAt = exitH    * 60 + exitM
+
+inIB    = weekday and nyMin >= ibFrom and nyMin < ibTo
+inTrade = weekday and nyMin >= ibTo   and nyMin < exitAt
+
+ibStart  = inIB and not inIB[1]           // first bar of the 9:30–10:30 window
+ibClosed = not inIB and inIB[1]           // first bar AFTER the window — IB is now final
+tradeEnd = not inTrade and inTrade[1]     // first bar after the trade window
+
+var float ibH   = na
+var float ibL   = na
+var bool  ready = false      // IB finalised for today
+
+// IB by rejection: the timestamps at which the FINAL high and low were printed.
+// Whichever is earlier is the side that "formed first".
+var int  tHi  = na
+var int  tLo  = na
+var int  bias = 0            // 1 = low formed first (bullish), -1 = high formed first (bearish), 0 = same bar
+
+// Raw statistics, tallied regardless of any filter, so the table can verify the claim.
+var int firstBrk = 0         // which IB side broke first today: 1 high, -1 low
+var bool tallied = false
+var int nLoFirst = 0
+var int nLoHit   = 0
+var int nHiFirst = 0
+var int nHiHit   = 0
+
+var int   dir       = 0      // 0 = no break taken yet, 1 = long taken, -1 = short taken
+var int   doneDir   = 0      // sides already used today (so a 'second trade' must be the other side)
+var int   tradesDay = 0
+var float ePrice    = na
+var float sPrice    = na
+var float tPrice    = na
+var float curStop   = na
+var bool  armed     = false  // a resting entry order exists
+
+// Day reset happens on the first bar of the IB window — every level below is rebuilt from
+// scratch each session.
+if ibStart
+    ibH       := high
+    ibL       := low
+    tHi       := time
+    tLo       := time
+    bias      := 0
+    firstBrk  := 0
+    tallied   := false
+    ready     := false
+    dir       := 0
+    doneDir   := 0
+    tradesDay := 0
+    ePrice    := na
+    sPrice    := na
+    tPrice    := na
+    curStop   := na
+    armed     := false
+else if inIB
+    if high > ibH
+        ibH := high
+        tHi := time
+    if low < ibL
+        ibL := low
+        tLo := time
+
+if ibClosed
+    ready := true
+    // Low printed earlier than the high -> bullish (expect the high to break), and vice versa.
+    // Equal timestamps mean both extremes landed in the same bar, so the order is unknowable.
+    bias := tLo < tHi ? 1 : tHi < tLo ? -1 : 0
+
+ibRange = ready ? ibH - ibL : na
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Setup detection — break, then retracement entry
+// ─────────────────────────────────────────────────────────────────────────────
+// Which side actually broke first today. Tallied whatever the filters say, so the table
+// reports the real base rate rather than the rate among trades we happened to take.
+if ready and inTrade and firstBrk == 0
+    bool rawUp = high > ibH
+    bool rawDn = low  < ibL
+    firstBrk := rawUp and (not rawDn or close >= open) ? 1 : rawDn ? -1 : 0
+    if firstBrk != 0 and not tallied and bias != 0
+        tallied := true
+        if bias == 1
+            nLoFirst += 1
+            nLoHit   += firstBrk ==  1 ? 1 : 0
+        else
+            nHiFirst += 1
+            nHiHit   += firstBrk == -1 ? 1 : 0
+
+// Does a break in direction d agree with the rejection filter?
+f_biasOK(int d) =>
+    bool ok = true
+    if rejMode != "Off"
+        ok := bias == 0 ? false : rejMode == "Trade only with the bias" ? d == bias : d != bias
+    ok
+
+sizeOK  = not na(ibRange) and ibRange > 0 and (minIB <= 0 or ibRange >= minIB) and (maxIB <= 0 or ibRange <= maxIB)
+geomOK  = stopPct > retrPct     // otherwise the stop would sit on the wrong side of the entry
+canScan = ready and inTrade and dayOK and dir == 0 and sizeOK and geomOK and strategy.position_size == 0
+
+brokeUp = canScan and high > ibH and doneDir !=  1
+brokeDn = canScan and low  < ibL and doneDir != -1
+
+// If a single bar takes out both sides, follow the direction that bar closed in.
+goLong  = brokeUp and (not brokeDn or close >= open) and allowLong  and f_biasOK( 1)
+goShort = brokeDn and (not brokeUp or close <  open) and allowShort and f_biasOK(-1)
+
+if goLong
+    dir     := 1
+    doneDir := 1
+    ePrice  := math.round_to_mintick(ibH - ibRange * retrPct / 100)
+    sPrice  := math.round_to_mintick(ibH - ibRange * stopPct / 100)
+    tPrice  := math.round_to_mintick(useRR ? ePrice + rrMult * (ePrice - sPrice) : ibH + ibRange * tgtPct / 100)
+    curStop := sPrice
+    armed   := true
+    // Resting limit BUY below the market: price must retrace into the IB to fill us.
+    strategy.entry("IB Long", strategy.long, limit = ePrice, comment = "IB long")
+else if goShort
+    dir     := -1
+    doneDir := -1
+    ePrice  := math.round_to_mintick(ibL + ibRange * retrPct / 100)
+    sPrice  := math.round_to_mintick(ibL + ibRange * stopPct / 100)
+    tPrice  := math.round_to_mintick(useRR ? ePrice - rrMult * (sPrice - ePrice) : ibL - ibRange * tgtPct / 100)
+    curStop := sPrice
+    armed   := true
+    // Resting limit SELL above the market.
+    strategy.entry("IB Short", strategy.short, limit = ePrice, comment = "IB short")
+else if brokeUp or brokeDn
+    // Break happened but that side is disabled — burn it so we don't flip into the other side.
+    dir     := brokeUp ? 1 : -1
+    doneDir := dir
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Position management
+// ─────────────────────────────────────────────────────────────────────────────
+inLong  = strategy.position_size > 0
+inShort = strategy.position_size < 0
+justFilled = strategy.position_size != 0 and strategy.position_size[1] == 0
+
+if justFilled
+    armed     := false
+    tradesDay += 1
+
+// Breakeven: once price has run bePct of the range beyond the broken edge, pull the stop to entry.
+if useBE and strategy.position_size != 0
+    if inLong and high >= ibH + ibRange * bePct / 100
+        curStop := math.max(curStop, ePrice)
+    if inShort and low <= ibL - ibRange * bePct / 100
+        curStop := math.min(curStop, ePrice)
+
+if inLong
+    strategy.exit("IB Long X", from_entry = "IB Long", stop = curStop, limit = tPrice, comment_loss = "stop", comment_profit = "target")
+if inShort
+    strategy.exit("IB Short X", from_entry = "IB Short", stop = curStop, limit = tPrice, comment_loss = "stop", comment_profit = "target")
+
+// Trade closed — allow the opposite break only if the user opted into double-break days.
+justClosed = strategy.position_size == 0 and strategy.position_size[1] != 0
+if justClosed
+    if allow2nd and tradesDay < 2 and inTrade
+        dir     := 0
+        ePrice  := na
+        sPrice  := na
+        tPrice  := na
+        curStop := na
+    else
+        armed := false
+
+// End of session — cancel anything unfilled, flatten anything open.
+if tradeEnd
+    strategy.cancel_all()
+    if strategy.position_size != 0
+        strategy.close_all(comment = "EOD flat")
+    armed := false
+    ready := false
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Plots
+// ─────────────────────────────────────────────────────────────────────────────
+liveDay  = showLevels and (inIB or (ready and inTrade))
+liveTrad = showLevels and (armed or strategy.position_size != 0)
+
+plot(liveDay  ? ibH     : na, "IB High",     color = color.new(color.teal,  0), linewidth = 2, style = plot.style_linebr)
+plot(liveDay  ? ibL     : na, "IB Low",      color = color.new(color.teal,  0), linewidth = 2, style = plot.style_linebr)
+plot(liveTrad ? ePrice  : na, "Entry",       color = color.new(color.blue,  0), linewidth = 1, style = plot.style_linebr)
+plot(liveTrad ? curStop : na, "Stop loss",   color = color.new(color.red,   0), linewidth = 1, style = plot.style_linebr)
+plot(liveTrad ? tPrice  : na, "Take profit", color = color.new(color.green, 0), linewidth = 1, style = plot.style_linebr)
+
+bgcolor(inIB and showLevels ? color.new(color.teal, 92) : na, title = "IB window")
+
+plotshape(justFilled and inLong,  title = "Long entry",  style = shape.triangleup,   location = location.belowbar, color = color.new(color.green, 0), size = size.small, text = "IB")
+plotshape(justFilled and inShort, title = "Short entry", style = shape.triangledown, location = location.abovebar, color = color.new(color.red,   0), size = size.small, text = "IB")
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Statistics table (with a diagnostic row, because a silent zero-trade backtest is the
+// single most common way this kind of strategy wastes an afternoon)
+// ─────────────────────────────────────────────────────────────────────────────
+f_money(float x) =>
+    (x < 0 ? "-$" : "$") + str.tostring(math.abs(x), "0.00")
+
+var table st = table.new(position.top_right, 2, 10, border_width = 1, frame_width = 1, frame_color = color.new(color.gray, 50))
+
+var int ibDays = 0
+if ibClosed
+    ibDays += 1
+
+if showTable and barstate.islast
+    int closed = strategy.closedtrades
+    float winRt = closed > 0 ? 100.0 * strategy.wintrades / closed : 0.0
+    float pf = na
+    if strategy.grossloss > 0
+        pf := strategy.grossprofit / strategy.grossloss
+    float ddPct = strategy.initial_capital > 0 ? 100.0 * strategy.max_drawdown / strategy.initial_capital : 0.0
+    color npCol = strategy.netprofit >= 0 ? color.new(color.green, 0) : color.new(color.red, 0)
+
+    // Diagnostic: say why there is nothing to show, rather than showing an empty table.
+    string diag  = ""
+    color  diagC = color.new(color.gray, 0)
+    if ibDays == 0
+        diag  := "No IB window found — check the chart timeframe and that the symbol trades 09:30 ET"
+        diagC := color.new(color.red, 0)
+    else if timeframe.in_seconds() > 900
+        diag  := "Timeframe " + timeframe.period + " is too coarse to measure the IB — use 1–5m"
+        diagC := color.new(color.orange, 0)
+    else if closed == 0
+        diag  := "IB found on " + str.tostring(ibDays) + " days but 0 trades — check Properties → Margin"
+        diagC := color.new(color.orange, 0)
+    else
+        diag  := str.tostring(ibDays) + " IB days · " + syminfo.ticker + " · " + f_money(syminfo.pointvalue) + "/pt"
+
+    table.cell(st, 0, 0, "IB backtest",    text_color = color.white, bgcolor = color.new(color.teal, 20), text_size = size.small)
+    table.cell(st, 1, 0, timeframe.period, text_color = color.white, bgcolor = color.new(color.teal, 20), text_size = size.small)
+
+    table.cell(st, 0, 1, "Net profit",   text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 1, f_money(strategy.netprofit), text_size = size.small, text_color = npCol)
+
+    table.cell(st, 0, 2, "Win rate",     text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 2, str.tostring(winRt, "#.##") + "%", text_size = size.small)
+
+    table.cell(st, 0, 3, "Profit factor", text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 3, na(pf) ? "—" : str.tostring(pf, "#.###"), text_size = size.small)
+
+    table.cell(st, 0, 4, "Trades",       text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 4, str.tostring(closed), text_size = size.small)
+
+    table.cell(st, 0, 5, "Max drawdown", text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 5, f_money(strategy.max_drawdown) + " (" + str.tostring(ddPct, "#.#") + "%)", text_size = size.small)
+
+    // IB-by-rejection base rates measured on THIS chart's data, so the published ~78% / ~77%
+    // on NQ can be checked rather than assumed. These count every session, including the ones
+    // the filters excluded from trading.
+    string loTxt = nLoFirst == 0 ? "—" : str.tostring(100.0 * nLoHit / nLoFirst, "#.#") + "%  (" + str.tostring(nLoFirst) + " days)"
+    string hiTxt = nHiFirst == 0 ? "—" : str.tostring(100.0 * nHiHit / nHiFirst, "#.#") + "%  (" + str.tostring(nHiFirst) + " days)"
+
+    table.cell(st, 0, 6, "Low first → high broke", text_size = size.tiny, text_color = color.gray)
+    table.cell(st, 1, 6, loTxt, text_size = size.tiny)
+
+    table.cell(st, 0, 7, "High first → low broke", text_size = size.tiny, text_color = color.gray)
+    table.cell(st, 1, 7, hiTxt, text_size = size.tiny)
+
+    table.cell(st, 0, 8, "Instrument",   text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 8, syminfo.type,   text_size = size.small)
+
+    table.cell(st, 0, 9, diag, text_size = size.tiny, text_color = diagC)
+    table.cell(st, 1, 9, "",   text_size = size.tiny)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SOURCE NOTES — what is verified vs. what is a modelling choice
+//
+// Verified from edgeful's public writing (blog posts on the initial balance breakout
+// strategy, the GC initial-balance algo, the YM initial balance strategy, and the IB
+// breakeven stop algo):
+//   • IB = high/low of the first hour of the NY session, 9:30–10:30 ET.
+//   • Wait for the first hour to close before trading.
+//   • A "single break" day breaks only one side; edgeful cites ~82% single-break on NQ.
+//   • Entry is NOT the breakout itself — it is a retracement back into the range, at 25%
+//     of the IB distance inside the range. ("if the IB range is 40 and breaks to the
+//     downside, place an entry 10 above the low of the IB range")
+//   • Stop loss at 60% of the IB range. ("if the IB range is 40 and the breakout is lower,
+//     the stop loss will be set at 24 above the IB low")
+//   • Target 50% of the IB range from the broken edge.
+//   • One trade per day; if neither stop nor target is hit, exit at the close of trading.
+//   • Breakeven-stop management exists as a separate published variant.
+//
+// Modelling choices made here (NOT edgeful specifications — all are inputs you can change):
+//   • The trade window ends at 15:55 ET and flattens; edgeful says "close of trading"
+//     without naming a minute.
+//   • Break confirmation is a simple wick through the level. Whether edgeful requires a
+//     candle CLOSE beyond the edge is not stated in the public posts.
+//   • Bar-close order submission: if a break and its retracement complete inside one bar,
+//     that entry is missed. This is conservative and avoids intrabar lookahead.
+//   • If one bar breaks both sides, the bar's close direction decides.
+//   • edgeful's other day-selection filters (where the first hour closed within its range)
+//     remain subscription data and are not applied — every session is still measured.
+//
+// IB BY REJECTION (the "Rejection bias filter" input):
+//   Rule, from edgeful's "IB by rejection" subreport write-up: whichever side of the IB
+//   prints FIRST implies the OTHER side breaks next. Low first = bullish, expect the high to
+//   break. High first = bearish, expect the low to break. edgeful's published figures are
+//   78.46% and 77.42% on NQ over 6 months (NY session, 5m, by wick).
+//
+//   Measured here exactly that way: the timestamp of the final IB high is compared against
+//   the timestamp of the final IB low, using wicks, and the earlier one is "first". When both
+//   extremes land in the same bar the order is unknowable, so there is no bias and the day is
+//   skipped whenever a filter is active.
+//
+//   Those percentages are edgeful's, over their window, not a guarantee — so the stats table
+//   recomputes both base rates on whatever chart and date range you actually load, counting
+//   every session including filtered ones. Run the filter on "Trade only against the bias" as
+//   a falsification check: if it performs about as well as trading with the bias, the edge is
+//   not present in your data.
+//
+//   The weekday toggles come from the same source's double-break-by-weekday analysis —
+//   Tuesday the worst day on NQ and ES, Monday the cleanest — and default to all days on.
+//
+//   Not implemented: edgeful's third suggested usage, entering before the IB closes. That one
+//   explicitly depends on discretionary price-action reading (VWAP, FVGs) on a still-forming
+//   IB whose final high and low are not yet known, so it cannot be stated as a mechanical rule
+//   and any backtest of it would be fiction.
