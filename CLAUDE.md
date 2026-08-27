@@ -210,6 +210,18 @@ matched control at p 0.12-0.43. It is retained in the shipped script by user ins
 costs ~0.05 PF and ~0.4 Sharpe on locked and halves the trade count; recorded so the decision can be
 revisited on evidence.
 
+**A breakout finally beat its own random-entry control -- ADX>=25 and NO take profit did it.**
+Donchian 55 + ADX>=25 + 2.5N stop + 20-bar channel exit + ONE unit + no target, market order at the
+next open: matched control p 0.007 (+12.19 vs +2.32 for a random bar with identical geometry) and
+selectivity control p 0.016. At ADX>=15 the SAME system fails at p 0.12-0.43, so the floor is the
+mechanism, not decoration. Locked PF 1.29 / Sharpe 1.36 / +11.61 pts against V9's 1.17 / 1.23 /
++6.17. Perturbation moves PF by <=0.05 on every axis at +/-20%; bootstrap P(mean<=0) 0.0075; 5/6
+walk-forward folds positive. Read a grid by its MARGINAL average per axis, not its top cell -- the
+top cell is the max of 459 draws. Two cautions: drawdown TRIPLES out of sample (703 -> 2,044,
+ret/DD 5.88 -> 1.01), and MC says the realised sequence was UNLUCKY (median 1,284, p95 2,033), so
+size for the p99. NO TAKE PROFIT beat every target tested -- the third independent time on this
+branch. See `docs/ib/STUDY_V11_MARKET.md`.
+
 **Tune with `research/tune.py`, not by editing a module.** A trade's outcome depends only on its
 signal bar and the geometry, so the price walk is cached per bar and every exit knob — stop,
 target, flatten time, max hold, entry mechanic, cost model — becomes an array index: 0.4 us per
