@@ -19,9 +19,10 @@ from PySide6.QtWidgets import (QButtonGroup, QFrame, QHBoxLayout, QLabel,
 
 from ...core.types import Side
 from ..theme import PALETTE, Fonts, number
-from .chart_items import (CandlestickItem, LevelLinesItem, PriceAxisItem,
-                          SessionShadingItem, TimeAxisItem, TradeMarkerItem,
-                          VolumeItem)
+from .chart_items import (BandFillItem, CandlestickItem, HistogramItem,
+                          LevelLinesItem, PriceAxisItem, SessionShadingItem,
+                          TimeAxisItem, TradeMarkerItem, VolumeItem,
+                          clip_to_view as _clip_to_view)
 
 pg.setConfigOptions(antialias=True, background=PALETTE.app_bg,
                     foreground=PALETTE.text_dim, useOpenGL=False)
@@ -430,6 +431,7 @@ class ChartWidget(QWidget):
                                                                   dtype="float64")
                    for s in series if s.get("values") is not None}
         drawn: dict[str, pg.PlotDataItem] = {}
+        values_by_output: dict[str, np.ndarray] = {}
 
         for s in series:
             values = np.asarray(s["values"], dtype="float64")
@@ -445,16 +447,7 @@ class ChartWidget(QWidget):
                                                      Qt.PenStyle.SolidLine)
 
             if s.get("kind") == "histogram":
-                heights = np.nan_to_num(values)
-                negative = s.get("negative_color")
-                if negative:
-                    brushes = [pg.mkBrush(colour if v >= 0 else negative)
-                               for v in heights]
-                    item = pg.BarGraphItem(x=x, height=heights, width=0.7,
-                                           brushes=brushes, pen=None)
-                else:
-                    item = pg.BarGraphItem(x=x, height=heights, width=0.7,
-                                           brush=pg.mkBrush(colour), pen=None)
+                item = HistogramItem(values, colour, s.get("negative_color"))
                 plot.addItem(item)
                 keep(item)
                 continue
@@ -471,11 +464,13 @@ class ChartWidget(QWidget):
             pen = pg.mkPen(colour, width=width, style=style)
             curve = plot.plot(x, values, pen=pen, connect="finite",
                               name=s.get("name", ref), antialias=True)
+            _clip_to_view(curve)
             curve.setZValue(10)
             keep(curve)
             output = s.get("output", s.get("name", ""))
             if output:
                 drawn[output] = curve
+                values_by_output[output] = values
 
         # Band shading, once both edges exist.
         for s in series:
@@ -484,7 +479,11 @@ class ChartWidget(QWidget):
             if not target or output not in drawn or target not in drawn:
                 continue
             brush = pg.mkBrush(self._fill_colour(s.get("fill_color", "#4aa3ff22")))
-            fill = pg.FillBetweenItem(drawn[output], drawn[target], brush=brush)
+            # Not pg.FillBetweenItem: it builds a QPainterPath over the whole
+            # series the moment it is constructed, which is seconds per band on
+            # a large dataset and happens before the window can paint.
+            fill = BandFillItem(values_by_output[output], values_by_output[target],
+                                brush=brush.color())
             fill.setZValue(-5)
             plot.addItem(fill)
             keep(fill)
@@ -524,6 +523,7 @@ class ChartWidget(QWidget):
                 continue
             curve = plot.plot(x, data, pen=pg.mkPen(colour, width=width),
                               connect="finite", antialias=True)
+            _clip_to_view(curve)
             curve.setZValue(10)
             out.append(curve)
         return out

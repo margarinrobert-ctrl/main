@@ -113,6 +113,43 @@ def self_test() -> int:
                     "would open on an empty library")
             checks.append(f"window started in {elapsed:.1f}s")
             checks.append(f"datasets seeded: {len(datasets)}")
+
+            # The seeded datasets are small, and that is exactly the blind spot
+            # a white-screen report lived in: the chart used to do work
+            # proportional to the FILE, so everything passed until a user
+            # opened a large dataset and the window stopped painting.  Chart one
+            # here, in the packaged binary, under its own budget.
+            from .core.timeframe import Timeframe as _Tf
+
+            big = generate_sample_data("BIG", _Tf.parse("5m"),
+                                       n_bars=SELF_TEST_LARGE_BARS, seed=5)
+            meta = window.datasets.add_from_bars(big, name="SELF-TEST BIG 5m")
+            window.on_dataset_changed(meta.id)
+            app.processEvents()
+            if window._view_bars is None:
+                raise AssertionError(
+                    f"charting {len(big):,} bars produced no view")
+            # Named explicitly, because the two indicator shapes that stalled
+            # are a band (Bollinger's shaded channel) and a histogram (MACD's).
+            # A strategy drawing plain lines exercises neither, which is how the
+            # defect passed every previous self-test.
+            for wanted in SELF_TEST_HEAVY_STRATEGIES:
+                spec = next((s for s in window.strategies.list()
+                             if s.name == wanted), None)
+                if spec is None:
+                    continue
+                started = time.monotonic()
+                window.on_strategy_selected(spec.id)
+                app.processEvents()
+                charted = time.monotonic() - started
+                if charted > SELF_TEST_CHART_BUDGET:
+                    raise AssertionError(
+                        f"drawing '{wanted}' over {len(big):,} bars took "
+                        f"{charted:.1f}s, over the "
+                        f"{SELF_TEST_CHART_BUDGET:.0f}s budget -- this is the "
+                        f"white unresponsive window a user reports as a freeze")
+                checks.append(f"{wanted} over {len(big):,} bars: {charted:.1f}s")
+            window.datasets.remove(meta.id)
     except Exception as exc:
         print("SELF-TEST FAILED")
         for line in checks:
@@ -133,6 +170,22 @@ def self_test() -> int:
 #: is one a user reports as a freeze, whatever it is doing. Generous enough for
 #: a cold cache and a virus scanner reading every file for the first time.
 SELF_TEST_STARTUP_BUDGET = 45.0
+
+#: How many bars the self-test charts.  Matched to the shipped US30 5-minute
+#: file (581,195 bars), because that is the scale the freeze was reported at and
+#: a smaller sample hides it: the same defect that costs 3.5s here costs 1.4s at
+#: 200,000 bars, which would have passed.
+SELF_TEST_LARGE_BARS = 500_000
+
+#: Drawing one of those strategies over that dataset.  Measured at this scale:
+#: 0.2s with the chart clipping to the view, 3.5s without.  Two seconds sits
+#: between the two, so the gate fails on the defect and has ten times the
+#: headroom on a working build.
+SELF_TEST_CHART_BUDGET = 2.0
+
+#: The built-ins whose drawing used to scale with the file: a shaded band and a
+#: signed histogram.
+SELF_TEST_HEAVY_STRATEGIES = ("Bollinger Breakout", "MACD Trend")
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -15,6 +15,8 @@ cost proportional to the window, so panning a million-bar dataset stays smooth.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QPointF, QRectF, Qt
@@ -30,6 +32,95 @@ def _view_range(item: pg.GraphicsObject) -> tuple[float, float]:
         return (-np.inf, np.inf)
     (x0, x1), _ = vb.viewRange()
     return (x0, x1)
+
+
+def _runs(mask) -> list[tuple[int, int]]:
+    """The ``[start, stop)`` spans where *mask* is true.
+
+    Used to break a band or a line at NaN rather than drawing a straight edge
+    across the gap.
+    """
+    mask = np.asarray(mask, dtype=bool)
+    if not mask.any():
+        return []
+    edges = np.flatnonzero(np.diff(np.concatenate(([False], mask, [False]))))
+    return list(zip(edges[0::2].tolist(), edges[1::2].tolist()))
+
+
+def _stride(item: pg.GraphicsObject, points: int) -> int:
+    """How many data points share one pixel column, at least 1.
+
+    Painting more points than the widget has pixels is work no one can see, and
+    on a half-million-bar dataset it is the difference between a chart that
+    opens and a window that stops answering.
+    """
+    vb = item.getViewBox()
+    if vb is None or points <= 0:
+        return 1
+    width_px = float(vb.width())
+    if width_px <= 1.0:
+        return 1
+    return max(1, int(points // max(1.0, width_px)))
+
+
+def _peak(xs, values, stride: int):
+    """One sample per column, the one furthest from zero."""
+    n = (len(values) // stride) * stride
+    if n < stride:
+        return xs, values
+    block = np.abs(values[:n]).reshape(-1, stride)
+    pick = block.argmax(axis=1) + np.arange(0, n, stride)
+    tail = np.arange(n, len(values))
+    keep = np.concatenate((pick, tail)) if len(tail) else pick
+    return xs[keep], values[keep]
+
+
+def _envelope(xs, top, bottom, stride: int):
+    """Per-column outer envelope of a band.
+
+    Taken over *both* series rather than assuming one is always above the
+    other: the caller's "upper" and "lower" are whichever outputs the indicator
+    named, and a band whose edges cross -- a squeeze, a Donchian channel at a
+    new extreme -- would otherwise be drawn inside out.
+    """
+    n = (len(top) // stride) * stride
+    if n < stride:
+        return xs, top, bottom
+    a = top[:n].reshape(-1, stride)
+    b = bottom[:n].reshape(-1, stride)
+    hi = np.maximum(a.max(axis=1), b.max(axis=1))
+    lo = np.minimum(a.min(axis=1), b.min(axis=1))
+    x = xs[:n].reshape(-1, stride).mean(axis=1)
+    if n < len(top):
+        x = np.concatenate((x, xs[n:]))
+        hi = np.concatenate((hi, top[n:]))
+        lo = np.concatenate((lo, bottom[n:]))
+    return x, hi, lo
+
+
+def clip_to_view(curve) -> None:
+    """Make a curve cost what is on screen rather than what is in the file.
+
+    Without this pyqtgraph builds the whole polyline on every paint: at half a
+    million bars that is seconds per indicator, on the GUI thread, which is what
+    the window not painting looks like.  ``clipToView`` narrows the work to the
+    visible x range and peak downsampling keeps the shape honest when zoomed
+    out -- the extremes of each pixel column are kept, so a spike never
+    disappears between samples.  Both recompute on every view change, so zooming
+    in still shows every bar.
+
+    Call this **after** the curve has been added to a plot.  ``clipToView``
+    asks the item for its view box, and pyqtgraph caches whatever it finds; an
+    item with no plot yet answers with the enclosing graphics widget, which is
+    then used as a view box on the next paint and raises.
+    """
+    try:
+        if not isinstance(curve.getViewBox(), pg.ViewBox):
+            return
+        curve.setClipToView(True)
+        curve.setDownsampling(auto=True, method="peak")
+    except Exception:            # noqa: BLE001 - a chart is not worth a crash
+        pass
 
 
 class CandlestickItem(pg.GraphicsObject):
@@ -228,6 +319,163 @@ class VolumeItem(pg.GraphicsObject):
                     painter.drawRect(QRectF(x - 0.35, 0.0, 0.7, vv))
 
 
+class BandFillItem(pg.GraphicsObject):
+    """The shaded area between two indicator lines, clipped to the view.
+
+    pyqtgraph ships :class:`~pyqtgraph.FillBetweenItem` for this, and it builds
+    one ``QPainterPath`` over every point in the series the moment the curves
+    are set.  At 581,195 bars -- the shipped US30 5-minute file -- that single
+    call takes about two seconds, and a Bollinger band draws three of them, on
+    the GUI thread, before the window has painted once.  A chart with a band
+    indicator and a large dataset therefore opened as a white unresponsive
+    rectangle: the freeze users report.
+
+    This follows the module's own rule instead and paints only the bars in view,
+    so the cost is proportional to the window rather than to the file.  NaN runs
+    (an indicator's warm-up, or a gap) break the band into separate polygons
+    rather than being bridged by a straight edge across the chart.
+    """
+
+    def __init__(self, upper=None, lower=None, brush=None) -> None:
+        super().__init__()
+        self._a = np.empty(0)
+        self._b = np.empty(0)
+        self.brush = QBrush(brush if isinstance(brush, QColor) else QColor(brush)
+                            if brush is not None else QColor(PALETTE.accent))
+        self._bounds = QRectF()
+        if upper is not None and lower is not None:
+            self.set_data(upper, lower)
+
+    def set_data(self, upper, lower) -> None:
+        a = np.ascontiguousarray(upper, dtype="float64")
+        b = np.ascontiguousarray(lower, dtype="float64")
+        n = min(len(a), len(b))
+        self._a = a[:n]
+        self._b = b[:n]
+        both = np.isfinite(self._a) & np.isfinite(self._b)
+        if n and both.any():
+            lo = float(min(self._a[both].min(), self._b[both].min()))
+            hi = float(max(self._a[both].max(), self._b[both].max()))
+            self._bounds = QRectF(-0.5, lo, n, max(hi - lo, 1e-9))
+        else:
+            self._bounds = QRectF()
+        self.prepareGeometryChange()
+        self.informViewBoundsChanged()
+        self.update()
+
+    def set_brush(self, brush) -> None:
+        self.brush = QBrush(brush)
+        self.update()
+
+    def boundingRect(self) -> QRectF:  # noqa: N802
+        return self._bounds
+
+    def paint(self, painter: QPainter, *_args) -> None:  # noqa: N802
+        n = len(self._a)
+        if n == 0:
+            return
+        x0, x1 = _view_range(self)
+        i0 = max(0, int(np.floor(x0)) - 1)
+        i1 = min(n, int(np.ceil(x1)) + 2)
+        if i1 <= i0 + 1:
+            return
+        a = self._a[i0:i1]
+        b = self._b[i0:i1]
+        good = np.isfinite(a) & np.isfinite(b)
+        if not good.any():
+            return
+        stride = _stride(self, i1 - i0)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self.brush)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        for start, stop in _runs(good):
+            if stop - start < 2:
+                continue        # a single point has no area to shade
+            xs = np.arange(i0 + start, i0 + stop, dtype="float64")
+            top = a[start:stop]
+            bottom = b[start:stop]
+            if stride > 1:
+                # Zoomed far enough out that many points share a pixel column.
+                # Keep the outer envelope of each column so the band never looks
+                # narrower than it is; the cost becomes the width of the widget
+                # instead of the length of the file.
+                xs, top, bottom = _envelope(xs, top, bottom, stride)
+            poly = QPolygonF([QPointF(float(x), float(y))
+                              for x, y in zip(xs, top)])
+            for x, y in zip(xs[::-1], bottom[::-1]):
+                poly.append(QPointF(float(x), float(y)))
+            painter.drawPolygon(poly)
+
+
+class HistogramItem(pg.GraphicsObject):
+    """A signed indicator histogram (MACD, awesome oscillator), clipped to view.
+
+    The replaced ``pg.BarGraphItem`` took a per-bar brush list, so colouring a
+    histogram by sign built one ``QBrush`` per bar -- 581,195 of them for the
+    shipped 5-minute file, before anything was drawn.  Two masks and two brushes
+    do the same job in constant memory.
+    """
+
+    def __init__(self, values=None, color: str | None = None,
+                 negative_color: str | None = None) -> None:
+        super().__init__()
+        self._v = np.empty(0)
+        self.up = QColor(color or PALETTE.long)
+        self.down = QColor(negative_color or color or PALETTE.short)
+        self._bounds = QRectF()
+        if values is not None:
+            self.set_data(values)
+
+    def set_data(self, values) -> None:
+        self._v = np.nan_to_num(np.ascontiguousarray(values, dtype="float64"))
+        n = len(self._v)
+        if n:
+            lo = min(0.0, float(self._v.min()))
+            hi = max(0.0, float(self._v.max()))
+            self._bounds = QRectF(-0.5, lo, n, max(hi - lo, 1e-9))
+        else:
+            self._bounds = QRectF()
+        self.prepareGeometryChange()
+        self.informViewBoundsChanged()
+        self.update()
+
+    def boundingRect(self) -> QRectF:  # noqa: N802
+        return self._bounds
+
+    #: Bar width in bar units, matching :class:`VolumeItem`.
+    BAR_WIDTH = 0.7
+
+    def paint(self, painter: QPainter, *_args) -> None:  # noqa: N802
+        n = len(self._v)
+        if n == 0:
+            return
+        x0, x1 = _view_range(self)
+        i0 = max(0, int(np.floor(x0)) - 1)
+        i1 = min(n, int(np.ceil(x1)) + 2)
+        if i1 <= i0:
+            return
+        v = self._v[i0:i1]
+        idx = np.arange(i0, i1, dtype="float64")
+        stride = _stride(self, i1 - i0)
+        half = self.BAR_WIDTH / 2.0
+        if stride > 1:
+            # One bar per pixel column, taking whichever of its values is
+            # furthest from zero so a spike is never sampled away.
+            idx, v = _peak(idx, v, stride)
+            half = max(half, stride / 2.0)
+        painter.setPen(Qt.PenStyle.NoPen)
+        positive = v >= 0
+        for mask, color in ((positive, self.up), (~positive, self.down)):
+            if not mask.any():
+                continue
+            painter.setBrush(QBrush(color))
+            for x, vv in zip(idx[mask], v[mask]):
+                if vv == 0.0:
+                    continue
+                painter.drawRect(QRectF(x - half, min(0.0, vv), half * 2.0,
+                                        abs(vv)))
+
+
 class TradeMarkerItem(pg.GraphicsObject):
     """Entry/exit arrows plus a connecting line coloured by trade outcome.
 
@@ -394,6 +642,39 @@ class SessionShadingItem(pg.GraphicsObject):
             painter.drawRect(QRectF(a - 0.5, y0, (b - a) + 1.0, y1 - y0))
 
 
+#: The last few index conversions, keyed by the array's identity and timezone.
+#: A chart has one time axis per panel and they are all given the same
+#: timestamps, so without this a five-panel chart converted the same half-
+#: million values five times.  The array is held in the value, so an ``id``
+#: reused after garbage collection cannot return another array's dates.
+_DT_CACHE: dict[tuple[int, str], tuple[Any, Any]] = {}
+_DT_CACHE_SIZE = 6
+
+
+def _localise(ts: np.ndarray, timezone: str):
+    """int64 nanoseconds -> a tz-aware ``DatetimeIndex``.
+
+    ``pd.to_datetime`` on an integer array without ``unit`` takes the object
+    path -- 0.21s for 581,195 values against 0.006s for the vectorised one, per
+    axis, on the GUI thread while the window waits to paint.
+    """
+    import pandas as pd
+
+    key = (id(ts), str(timezone))
+    hit = _DT_CACHE.get(key)
+    if hit is not None and hit[0] is ts:
+        return hit[1]
+    idx = pd.DatetimeIndex(pd.to_datetime(ts, unit="ns", utc=True))
+    try:
+        idx = idx.tz_convert(timezone)
+    except Exception:
+        pass          # An unknown timezone must not break the axis; stay in UTC.
+    if len(_DT_CACHE) >= _DT_CACHE_SIZE:
+        _DT_CACHE.pop(next(iter(_DT_CACHE)))
+    _DT_CACHE[key] = (ts, idx)
+    return idx
+
+
 class TimeAxisItem(pg.AxisItem):
     """Bottom axis that labels bar indices with dates from the timestamp array.
 
@@ -411,18 +692,8 @@ class TimeAxisItem(pg.AxisItem):
         self.setPen(pg.mkPen(PALETTE.border))
 
     def set_timestamps(self, ts, timezone: str = "UTC") -> None:
-        import pandas as pd
-
         self._ts = np.ascontiguousarray(ts, dtype="int64")
-        if len(self._ts):
-            idx = pd.DatetimeIndex(pd.to_datetime(self._ts, utc=True))
-            try:
-                idx = idx.tz_convert(timezone)
-            except Exception:
-                pass  # An unknown timezone must not break the axis; stay in UTC.
-            self._dt = idx
-        else:
-            self._dt = None
+        self._dt = _localise(self._ts, timezone) if len(self._ts) else None
         self.picture = None
         self.update()
 

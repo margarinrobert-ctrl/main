@@ -67,6 +67,7 @@ SVG, no external assets and no network requests.
 - [Comparing runs](#comparing-runs)
 - [Saving and exporting](#saving-and-exporting)
 - [Where your files live](#where-your-files-live)
+- [Large datasets](#large-datasets)
 - [How orders are simulated](#how-orders-are-simulated)
 - [Using it without the window](#using-it-without-the-window)
 - [Building from source](#building-from-source)
@@ -793,6 +794,33 @@ Documents\TradingBacktester\        (Windows default)
 
 Move it, back it up or sync it as a whole. **File → Change Workspace Folder**
 points the application somewhere else without touching the old one.
+
+---
+
+## Large datasets
+
+The chart draws what is on the screen, not what is in the file. Candles, volume,
+indicator bands and histograms all clip to the visible x range, and lines
+downsample to one peak per pixel column when they are zoomed out — so panning a
+million-bar dataset costs the same as panning a thousand-bar one, and zooming in
+still shows every bar.
+
+This is not a detail. A previous build built the shaded area of a Bollinger band
+as a single path over every point in the file. On the shipped 581,195-bar US30
+5-minute dataset that took about two seconds per band, three bands per redraw,
+on the thread that paints the window — so opening the application on a large
+dataset produced a white rectangle that Windows titled "Not Responding". The
+application now opens on that dataset in under two seconds, and the packaged
+build refuses to ship if drawing a band or a histogram over half a million bars
+takes longer than two seconds (`--self-test`).
+
+Datasets are read once and kept: reopening the same one does not re-parse the
+file. Re-importing over it invalidates that automatically, since the cache is
+keyed on the file's size and modification time.
+
+Two things still cost what the data costs, because they have to: importing a
+CSV, and running a backtest. Both report progress and both run off the GUI
+thread.
 
 ---
 

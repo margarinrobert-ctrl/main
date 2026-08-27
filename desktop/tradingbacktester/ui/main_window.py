@@ -721,6 +721,10 @@ class MainWindow(QMainWindow):
             self.chart.clear()
             self._update_actions()
             return
+        # Reading, checking and drawing a dataset are three separate waits, and
+        # on a large file each is long enough to be noticed.  Letting Qt paint
+        # between them keeps the window answering the window manager, which is
+        # the difference between "loading" and "Not Responding".
         try:
             bars = self.datasets.load_bars(dataset_id)
         except BacktesterError as exc:
@@ -729,6 +733,7 @@ class MainWindow(QMainWindow):
         self._bars = bars
         self.settings.last_dataset = dataset_id
         self.settings.save()
+        self._pump()
         try:
             from ..data.validation import validate_bars
 
@@ -736,6 +741,7 @@ class MainWindow(QMainWindow):
         except Exception:
             log.exception("Validation failed")
             self._quality = None
+        self._pump()
         self.data_panel.set_bars(bars, self._quality)
         self.on_view_changed()
         if self._quality is not None and getattr(self._quality, "errors", None):

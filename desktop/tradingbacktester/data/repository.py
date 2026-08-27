@@ -218,6 +218,10 @@ class DatasetRepository:
         self.index_path: Path = self.dir / INDEX_FILENAME
         self._items: dict[str, DatasetMeta] = {}
         self._lock = threading.RLock()
+        #: ``((dataset_id, (size, mtime_ns)), BarSeries)`` for the last dataset
+        #: read.  See :meth:`load_bars`.  Shared with worker threads, which is
+        #: safe because nothing ever writes into a loaded ``BarSeries``.
+        self._bars_cache: tuple[tuple[str, tuple[int, int]], BarSeries] | None = None
         try:
             self.dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -328,6 +332,9 @@ class DatasetRepository:
         """
         meta = self.get(dataset_id)
         path = self.path_for(meta)
+        cached = self._cached(meta, path)
+        if cached is not None:
+            return cached
         frame = _read_frame(path, meta.storage_format)
 
         missing = [c for c in _COLUMNS if c not in frame.columns]
@@ -361,7 +368,46 @@ class DatasetRepository:
                   "warnings": list(meta.import_warnings)},
         )
         log.debug("Loaded dataset %s (%d bars) from %s", meta.id, len(bars), path)
+        self._remember(meta, path, bars)
         return bars
+
+    # -- the one-entry cache ------------------------------------------------
+    #
+    # Opening the application reads the remembered dataset more than once: the
+    # panel populates itself while the window is built, and the first-run pass
+    # selects it again.  At 581,195 bars that is two thirds of a second of CSV
+    # parsing per read, on the GUI thread, before anything paints.  The key
+    # includes the file's size and modification time, so re-importing over a
+    # dataset invalidates it without the caller having to know the cache is
+    # here.  One entry only: a BarSeries of a large dataset is tens of
+    # megabytes and the application works on one at a time.
+
+    def _stamp(self, path: Path) -> tuple[int, int] | None:
+        try:
+            st = path.stat()
+        except OSError:
+            return None
+        return (st.st_size, st.st_mtime_ns)
+
+    def _cached(self, meta: DatasetMeta, path: Path) -> BarSeries | None:
+        entry = self._bars_cache
+        if entry is None:
+            return None
+        key, bars = entry
+        if key == (meta.id, self._stamp(path)) and key[1] is not None:
+            log.debug("Reused the cached bars for %s", meta.id)
+            return bars
+        return None
+
+    def _remember(self, meta: DatasetMeta, path: Path, bars: BarSeries) -> None:
+        stamp = self._stamp(path)
+        if stamp is None:
+            return
+        self._bars_cache = ((meta.id, stamp), bars)
+
+    def forget_cached_bars(self) -> None:
+        """Drop the cached bars, freeing the memory they hold."""
+        self._bars_cache = None
 
     def verify(self, dataset_id: str) -> bool:
         """Re-hash a dataset's file and compare it with the stored checksum.

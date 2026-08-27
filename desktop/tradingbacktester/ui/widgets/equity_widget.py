@@ -17,7 +17,8 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QToolButton,
                                QVBoxLayout, QWidget)
 
 from ..theme import PALETTE, Fonts, money, pct
-from .chart_items import PriceAxisItem, TimeAxisItem
+from .chart_items import (BandFillItem, PriceAxisItem, TimeAxisItem,
+                          clip_to_view as _clip_to_view)
 
 
 class EquityWidget(QWidget):
@@ -170,31 +171,35 @@ class EquityWidget(QWidget):
             colour = s.get("color") or PALETTE.series_color(i)
             eq = np.asarray(s["equity"], dtype="float64")
             if s.get("fill", False) and len(self._series) == 1:
-                base = pg.PlotDataItem(
-                    x, np.full_like(eq, self._starting_capital or float(eq[0])),
-                    pen=pg.mkPen(None))
+                # BandFillItem, not pg.FillBetweenItem: the latter builds a
+                # QPainterPath over every point when it is constructed, and an
+                # equity curve has one point per bar, so a backtest over a large
+                # dataset froze the window here for seconds after every run.
+                base = np.full_like(eq, self._starting_capital or float(eq[0]))
+                fill = BandFillItem(eq, base, brush=QColor(PALETTE.equity_fill))
                 curve = pg.PlotDataItem(x, eq, pen=pg.mkPen(colour, width=1.6))
-                fill = pg.FillBetweenItem(curve, base,
-                                          brush=pg.mkBrush(QColor(PALETTE.equity_fill)))
                 self.eq_plot.addItem(fill)
                 self.eq_plot.addItem(curve)
+                _clip_to_view(curve)
             else:
-                self.eq_plot.plot(x, eq, pen=pg.mkPen(colour, width=1.6),
-                                  name=s.get("label", ""), antialias=True)
+                _clip_to_view(self.eq_plot.plot(
+                    x, eq, pen=pg.mkPen(colour, width=1.6),
+                    name=s.get("label", ""), antialias=True))
             if self._show_balance and s.get("balance") is not None and len(self._series) == 1:
-                self.eq_plot.plot(x, np.asarray(s["balance"], dtype="float64"),
-                                  pen=pg.mkPen(PALETTE.balance, width=1.0,
-                                               style=Qt.PenStyle.DashLine),
-                                  name="Balance", antialias=True)
+                _clip_to_view(self.eq_plot.plot(
+                    x, np.asarray(s["balance"], dtype="float64"),
+                    pen=pg.mkPen(PALETTE.balance, width=1.0,
+                                 style=Qt.PenStyle.DashLine),
+                    name="Balance", antialias=True))
 
             dd = np.asarray(s["drawdown_pct"], dtype="float64")
             dd_colour = colour if len(self._series) > 1 else PALETTE.drawdown
             dd_curve = pg.PlotDataItem(x, dd, pen=pg.mkPen(dd_colour, width=1.2))
             if len(self._series) == 1:
-                zero = pg.PlotDataItem(x, np.zeros_like(dd), pen=pg.mkPen(None))
-                self.dd_plot.addItem(pg.FillBetweenItem(
-                    dd_curve, zero, brush=pg.mkBrush(QColor(PALETTE.drawdown_fill))))
+                self.dd_plot.addItem(BandFillItem(
+                    dd, np.zeros_like(dd), brush=QColor(PALETTE.drawdown_fill)))
             self.dd_plot.addItem(dd_curve)
+            _clip_to_view(dd_curve)
 
         self.start_line.setPos(self._starting_capital)
         self.start_line.setVisible(self._starting_capital > 0 and len(self._series) == 1)
