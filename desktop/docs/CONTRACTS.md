@@ -465,9 +465,29 @@ what a real trade would have paid rather than against an abstract return.
 - `study.study_features(bars, style, ...) -> FeatureStudy` — the protocol:
   research/holdout split, overlap-corrected errors, BH correction, redundancy
   clustering, decile spread against the round-turn cost, verdicts in English.
-- `anomalies.DETECTORS` — 15 causal detectors. `anomalies.scan(bars, style,
-  ...) -> AnomalyScan` counts each one and then trades it against a matched
-  control on both sides, separating data-quality problems from market ones.
+- `anomalies.DETECTORS` — 23 causal detectors in two families.
+  **Shape** (15): volatility spikes and collapses, range and price shocks,
+  gaps, volume surges and droughts, outside and inside bars, frozen prices,
+  200-bar extremes, three-bar thrusts. **Calendar** (`CALENDAR_DETECTORS`, 8):
+  Monday, Friday, turn of the month, January, first and last hour of the
+  *session*, first bar after a long break, and price at a round number.
+  Reported apart, with `Detector.max_share` per detector — Monday is a fifth
+  of the sample by construction and a volatility spike on a fifth of all bars
+  is not a spike.
+
+  A calendar condition is banned everywhere else in this project because an
+  optimiser allowed to choose among five weekdays is handed a free lottery
+  ticket. This list is the opposite: fixed in the source, every entry tested
+  whether it looks promising or not, both sides scored, all p-values in one
+  BH correction — so adding the family makes every *other* finding harder to
+  pass, which the report states. Absent on purpose: post-earnings drift,
+  index inclusion, anything needing fundamentals or a second instrument.
+
+  `Detector.needs_session` gets the style's own tradeable mask, because "the
+  first hour of the day" means the session's, not local midnight's.
+  `anomalies.scan(bars, style, ...) -> AnomalyScan` counts each one and then
+  trades it against a matched control on both sides, separating data-quality
+  problems from market ones.
 - `mirror.mirror_bars(bars) -> BarSeries` — the same series with every log
   return negated. Exact identities, all asserted in the tests: the returns are
   negated bar for bar, the volatility and the bar ranges are unchanged, each

@@ -239,16 +239,132 @@ def test_a_feature_that_predicts_nothing_is_labelled_as_such(us30_30m):
 # Anomalies
 # --------------------------------------------------------------------------
 
+def _session_mask(bars, key: str = "intraday"):
+    from tradingbacktester.finder.outcomes import session_entry_mask
+
+    chosen = style(key)
+    return session_entry_mask(
+        bars, bars.instrument.timezone,
+        chosen.session[0] if chosen.session else None,
+        chosen.session[1] if chosen.session else None,
+        chosen.weekdays, chosen.flat_at_session_end)
+
+
 def test_no_detector_can_see_the_future(us30_30m):
+    """Truncate the series; every surviving bar must keep its answer.
+
+    The cheapest look-ahead test there is, and it earns its place: it caught
+    "the last hour of the day", which read the day's FINAL bar to decide when
+    the hour started. At 14:00 you do not know 16:00 will be the last one, and
+    on the final day in the file you never find out.
+    """
+    from tradingbacktester.research.anomalies import _fire
+
     cut = len(us30_30m) - 300
     short = us30_30m.slice(0, cut)
+    full_mask = _session_mask(us30_30m)
+    short_mask = _session_mask(short)
     drifted = []
     for detector in DETECTORS:
-        full = np.asarray(detector.detect(us30_30m), dtype=bool)[:cut]
-        truncated = np.asarray(detector.detect(short), dtype=bool)
+        full = np.asarray(_fire(detector, us30_30m, full_mask),
+                          dtype=bool)[:cut]
+        truncated = np.asarray(_fire(detector, short, short_mask), dtype=bool)
         if not np.array_equal(full, truncated):
             drifted.append(detector.key)
     assert not drifted, f"these detectors changed when the future was removed: {drifted}"
+
+
+# --------------------------------------------------------------------------
+# The calendar family
+# --------------------------------------------------------------------------
+
+def test_the_calendar_family_is_a_fixed_list_not_a_search():
+    """Naming them in advance is the opposite of letting a search pick one."""
+    from tradingbacktester.research.anomalies import CALENDAR_DETECTORS
+
+    assert len(CALENDAR_DETECTORS) >= 8
+    keys = {d.key for d in CALENDAR_DETECTORS}
+    assert keys <= {d.key for d in DETECTORS}, "all of them must be scanned"
+    assert all(d.family == "calendar" for d in CALENDAR_DETECTORS)
+    # And every one of them is tested on every scan, promising or not.
+    assert len({d.key for d in DETECTORS}) == len(DETECTORS)
+
+
+def test_a_calendar_detector_may_fire_on_more_bars_than_a_shape_one():
+    """Monday is a fifth of the sample by construction; a spike is not."""
+    from tradingbacktester.research.anomalies import _MAX_SHARE
+
+    shapes = [d for d in DETECTORS if d.family == "shape"]
+    calendar = [d for d in DETECTORS if d.family == "calendar"]
+    assert all(d.max_share == _MAX_SHARE for d in shapes)
+    assert max(d.max_share for d in calendar) > _MAX_SHARE
+
+
+@pytest.mark.parametrize("key", ["first_hour", "last_hour", "after_long_break"])
+def test_a_session_detector_fires_inside_the_session(us30_30m, key):
+    """"The first hour of the day" is the session's, not local midnight's.
+
+    Without the session mask these marked the hour after midnight, which on an
+    index CFD is nowhere near the open, falls entirely outside an RTH style's
+    window, and scored zero bars while reading like a detector that had simply
+    found nothing.
+    """
+    from tradingbacktester.research.anomalies import _fire
+
+    detector = next(d for d in DETECTORS if d.key == key)
+    assert detector.needs_session is True
+    mask = _session_mask(us30_30m)
+    fired = np.asarray(_fire(detector, us30_30m, mask), dtype=bool)
+    assert fired.any(), f"{key} fired on nothing"
+    assert (fired & mask).sum() == fired.sum(), \
+        f"{key} fired outside the session it was given"
+
+
+def test_the_last_hour_is_measured_from_the_previous_close(us30_30m):
+    """Which is what a trader knows, and the only causal way to say it."""
+    from tradingbacktester.research.anomalies import _fire
+
+    detector = next(d for d in DETECTORS if d.key == "last_hour")
+    mask = _session_mask(us30_30m)
+    fired = np.asarray(_fire(detector, us30_30m, mask), dtype=bool)
+    # The first session in the file has no previous close to measure from, so
+    # nothing fires there rather than something being guessed.
+    first_day = np.flatnonzero(mask)[:13]
+    assert not fired[first_day].any()
+
+
+def test_turn_of_month_covers_the_turn_and_not_the_middle(us30_30m):
+    import pandas as pd
+
+    from tradingbacktester.research.anomalies import _turn_of_month
+
+    fired = np.asarray(_turn_of_month(us30_30m), dtype=bool)
+    local = pd.DatetimeIndex(pd.to_datetime(us30_30m.ts, utc=True)).tz_convert(
+        us30_30m.instrument.timezone)
+    days = np.asarray(local.day)
+    # Mid-month is never the turn; the first of the month always is.
+    assert not fired[days == 15].any()
+    assert fired[days == 1].all()
+
+
+def test_round_number_scales_to_the_price_not_to_an_assumption(us30_30m):
+    """40,000 is round for an index; 1.05 is round for a currency pair."""
+    from tradingbacktester.research.anomalies import _round_number
+
+    fired = np.asarray(_round_number(us30_30m), dtype=bool)
+    assert fired.any()
+    assert fired.mean() < 0.10, "a round number should be an event, not a state"
+
+
+def test_the_scan_says_the_calendar_family_makes_everything_stricter(us30_30m):
+    report = scan(us30_30m, style("intraday"), timeframe="30m",
+                  control_draws=50)
+    notes = " ".join(report.notes)
+    assert "calendar effects" in notes
+    assert "free lottery ticket" in notes
+    assert "harder to pass" in notes
+    # The multiplicity sentence counts tests, not detectors: both sides of each.
+    assert f"{len(DETECTORS) * 2} tests" in notes
 
 
 def test_the_scan_reports_every_detector_with_a_verdict(us30_30m):

@@ -54,6 +54,26 @@ class Detector:
     label: str
     description: str
     detect: Callable[[BarSeries], np.ndarray]
+    needs_session: bool = False
+    """Called as ``detect(bars, session)`` rather than ``detect(bars)``.
+
+    "The first hour of the day" means the first hour of the SESSION, not of the
+    calendar day. Without the mask these detectors marked the first hour after
+    local midnight -- which on a nearly-24-hour instrument is nowhere near the
+    open, sits entirely outside an RTH style's window, and scored zero bars
+    while looking like a detector that had simply found nothing.
+    """
+    family: str = "shape"
+    """``shape`` for a property of the bar, ``calendar`` for a property of the
+    clock.  Reported apart because they are answers to different questions and
+    one of them is far easier to fool yourself with."""
+    max_share: float = _MAX_SHARE
+    """Above this the detector is describing the market, not an event in it.
+
+    A calendar detector is allowed more: "Monday" is a fifth of the sample by
+    construction and that is the whole point of asking about it, whereas a
+    volatility spike on a fifth of all bars is not a spike.
+    """
 
 
 @dataclass
@@ -227,6 +247,253 @@ def _thrust(bars: BarSeries) -> np.ndarray:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Calendar and session effects
+#
+# These are the anomalies the literature is actually about -- Monday, the turn
+# of the month, January, the first and last hour -- and they need a paragraph
+# of their own, because everywhere else in this project a calendar condition is
+# banned outright.
+#
+# The ban is on letting a SEARCH pick one. Weekday and month conditions
+# partition a sample five or twelve ways, and an optimiser allowed to choose
+# among them is being handed a free lottery ticket: one of the five will look
+# wonderful on any series, edge or no edge.
+#
+# Naming them in advance is the opposite activity. This list is fixed in the
+# source, every entry is tested whether it looks promising or not, both sides
+# are scored, all of the p-values go into one Benjamini-Hochberg correction
+# together with every shape detector, and the locked block is the gate. Nothing
+# is chosen; a stated list is checked. Adding a calendar family therefore makes
+# every OTHER finding harder to pass, which is the correct direction and is
+# reported with the result.
+#
+# What is deliberately absent: post-earnings drift, index-inclusion effects and
+# anything else needing fundamentals or a second instrument. This application
+# has one OHLCV series, and a detector that pretends otherwise would be
+# measuring nothing.
+# ---------------------------------------------------------------------------
+
+
+def _local(bars: BarSeries):
+    """Bar timestamps in the instrument's own timezone, as a pandas index.
+
+    In the instrument's zone rather than UTC because "Monday" and "the first
+    hour" are facts about the exchange's clock, and a New York session that
+    starts at 13:30 UTC in summer starts at 14:30 in winter.
+    """
+    import pandas as pd
+
+    index = pd.DatetimeIndex(pd.to_datetime(bars.ts, utc=True))
+    zone = getattr(bars.instrument, "timezone", "") or "UTC"
+    try:
+        return index.tz_convert(zone)
+    except Exception:                   # noqa: BLE001 - a bad zone is a label
+        return index                    # problem, not a reason to fail the scan
+
+
+def _weekday(day: int) -> Callable[[BarSeries], np.ndarray]:
+    def detect(bars: BarSeries) -> np.ndarray:
+        return np.asarray(_local(bars).dayofweek == day, dtype=bool)
+    return detect
+
+
+def _month(month: int) -> Callable[[BarSeries], np.ndarray]:
+    def detect(bars: BarSeries) -> np.ndarray:
+        return np.asarray(_local(bars).month == month, dtype=bool)
+    return detect
+
+
+def _turn_of_month(bars: BarSeries) -> np.ndarray:
+    """The first three trading days of a month, and its last weekday.
+
+    Both halves have to be knowable at the time, and the obvious way to write
+    this is not. Taking the month's last trading day as "the last date this
+    file has for that month" reads the whole month before deciding about its
+    first bar -- so truncating the series changes the answer, and on the final
+    month in a file it marks whatever day the data happens to stop on. The
+    causality test caught exactly that.
+
+    So: the first three trading days are COUNTED as they arrive, and the last
+    day is the last **weekday** of the calendar month, which is knowable years
+    ahead. A holiday on that Friday makes the real last session the Thursday
+    and this fires a day late; that is a known and stated inaccuracy rather
+    than a peek at the future.
+    """
+    import pandas as pd
+
+    n = len(bars)
+    out = np.zeros(n, dtype=bool)
+    if not n:
+        return out
+    local = _local(bars)
+    dates = local.normalize()
+    month_key = (np.asarray(local.year, dtype="int64") * 100
+                 + np.asarray(local.month, dtype="int64"))
+    date_key = month_key * 100 + np.asarray(local.day, dtype="int64")
+
+    new_date = np.empty(n, dtype=bool)
+    new_date[0] = True
+    new_date[1:] = date_key[1:] != date_key[:-1]
+    new_month = np.empty(n, dtype=bool)
+    new_month[0] = True
+    new_month[1:] = month_key[1:] != month_key[:-1]
+
+    # How many distinct dates of THIS month have been seen at or before each
+    # bar -- a running count, so it never reads forward.
+    seq = np.cumsum(new_date)
+    before = np.maximum.accumulate(np.where(new_month, seq - 1, 0))
+    ordinal = seq - before
+
+    # The last weekday of the calendar month: step back from month end over a
+    # Saturday (dayofweek 5) or Sunday (6).
+    month_end = dates + pd.offsets.MonthEnd(0)
+    back = np.maximum(0, np.asarray(month_end.dayofweek, dtype="int64") - 4)
+    last_weekday = month_end - pd.to_timedelta(back, unit="D")
+
+    out = (ordinal <= 3) | (dates.to_numpy() == last_weekday.to_numpy())
+    return np.asarray(out, dtype=bool)
+
+
+def _session_days(bars: BarSeries, session: np.ndarray):
+    """``(minutes, [indices of each day's tradeable bars])`` in local time.
+
+    Only the bars the style may actually trade, grouped by local date. Grouping
+    every bar instead makes "the first hour of the day" the hour after local
+    midnight, which for an instrument trading nearly around the clock is not
+    the open and is not in anybody's session.
+    """
+    local = _local(bars)
+    minutes = (np.asarray(local.hour, dtype="int64") * 60
+               + np.asarray(local.minute, dtype="int64"))
+    day_key = (np.asarray(local.year, dtype="int64") * 10000
+               + np.asarray(local.month, dtype="int64") * 100
+               + np.asarray(local.day, dtype="int64"))
+    eligible = np.flatnonzero(np.asarray(session, dtype=bool))
+    days: list[np.ndarray] = []
+    if eligible.size:
+        keys = day_key[eligible]
+        change = np.empty(eligible.size, dtype=bool)
+        change[0] = True
+        change[1:] = keys[1:] != keys[:-1]
+        starts = np.flatnonzero(change)
+        for lo, hi in zip(starts, np.append(starts[1:], eligible.size)):
+            days.append(eligible[lo:hi])
+    return minutes, days
+
+
+def _first_hour(bars: BarSeries, session: np.ndarray) -> np.ndarray:
+    """Bars in the first hour after the session's own first bar of the day."""
+    minutes, days = _session_days(bars, session)
+    out = np.zeros(len(bars), dtype=bool)
+    for index in days:
+        out[index] = minutes[index] < minutes[index[0]] + 60
+    return out
+
+
+def _last_hour(bars: BarSeries, session: np.ndarray) -> np.ndarray:
+    """The hour before the close, using the PREVIOUS day's close to say when.
+
+    Taking today's own last bar is the obvious way to write this and it is
+    look-ahead: at 14:00 you do not know that 16:00 will be the final bar, and
+    on the last day in the file you never find out. Truncating the series then
+    changes the answer for bars that were already decided -- which is exactly
+    what the causality test measures, and how this one was caught.
+
+    Yesterday's close is known today, which is also what a trader actually
+    knows. On a half-day the reference is an hour or two late and this fires on
+    nothing; that is the conservative direction and is better than a detector
+    that cannot be traded.
+    """
+    minutes, days = _session_days(bars, session)
+    out = np.zeros(len(bars), dtype=bool)
+    previous_close: int | None = None
+    for index in days:
+        if previous_close is not None:
+            out[index] = minutes[index] > previous_close - 60
+        previous_close = int(minutes[index[-1]])
+    return out
+
+
+def _after_long_break(bars: BarSeries, session: np.ndarray) -> np.ndarray:
+    """The first tradeable bar after a gap far longer than the usual one.
+
+    A holiday, a weekend, or a data outage -- the detector cannot tell which,
+    and says so. Measured against the median spacing of the bars this style can
+    actually trade, rather than of every bar in the file: on a session-limited
+    style the overnight gap is the usual case, and against the 24-hour spacing
+    every single session open would look like a holiday.
+    """
+    out = np.zeros(len(bars), dtype=bool)
+    eligible = np.flatnonzero(np.asarray(session, dtype=bool))
+    if eligible.size < 3:
+        return out
+    ts = np.asarray(bars.ts, dtype="int64")[eligible]
+    steps = np.diff(ts)
+    usual = float(np.median(steps))
+    if usual <= 0:
+        return out
+    out[eligible[1:]] = steps > usual * 4.0
+    return out
+
+
+def _round_number(bars: BarSeries) -> np.ndarray:
+    """Close within a tenth of an ATR of a round level.
+
+    The level is the round number appropriate to the price -- 100s for an
+    index in the tens of thousands, 0.01 for a currency pair -- taken from the
+    price's own magnitude rather than hard-coded, so it is not an assumption
+    about which instrument this is.
+    """
+    close = np.asarray(bars.close, dtype="float64")
+    atr = wilder_atr(bars, 14)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        magnitude = np.power(10.0, np.floor(np.log10(np.abs(close))) - 2.0)
+    step = np.where(np.isfinite(magnitude) & (magnitude > 0), magnitude * 10.0,
+                    np.nan)
+    distance = np.abs(close - np.round(close / step) * step)
+    return np.asarray(np.isfinite(distance) & np.isfinite(atr) & (atr > 0)
+                      & (distance < atr * 0.1), dtype=bool)
+
+
+CALENDAR_DETECTORS: tuple[Detector, ...] = (
+    Detector("monday", "Monday",
+             "The weekend effect: the best-known calendar anomaly there is, "
+             "and the one most often found to have decayed.",
+             _weekday(0), family="calendar", max_share=0.30),
+    Detector("friday", "Friday",
+             "The other end of the week, tested for the same reason.",
+             _weekday(4), family="calendar", max_share=0.30),
+    Detector("turn_of_month", "Turn of the month",
+             "The last trading day of a month and the first three of the "
+             "next, counted in trading days actually present in this file.",
+             _turn_of_month, family="calendar", max_share=0.35),
+    Detector("january", "January",
+             "The January effect, on whatever instrument this is.",
+             _month(1), family="calendar", max_share=0.20),
+    Detector("first_hour", "First hour of the day",
+             "The hour after the session's own first bar. Where the "
+             "overnight news gets priced.",
+             _first_hour, needs_session=True, family="calendar",
+             max_share=0.35),
+    Detector("last_hour", "Last hour of the day",
+             "The hour before the session's own last bar, where the "
+             "rebalancing happens.",
+             _last_hour, needs_session=True, family="calendar",
+             max_share=0.35),
+    Detector("after_long_break", "First bar after a long break",
+             "A gap more than four times this series' usual one -- a "
+             "weekend, a holiday or a data outage, and the detector cannot "
+             "tell which.",
+             _after_long_break, needs_session=True,
+             family="calendar", max_share=0.30),
+    Detector("round_number", "At a round number",
+             "The close sits within a tenth of an ATR of a round level, "
+             "scaled to the price's own magnitude.",
+             _round_number, family="calendar", max_share=0.30),
+)
+
+
 DETECTORS: tuple[Detector, ...] = (
     Detector("volatility_spike", "Volatility spike",
              "ATR over five bars is more than twice ATR over fifty: the "
@@ -272,12 +539,20 @@ DETECTORS: tuple[Detector, ...] = (
     Detector("thrust", "Three-bar thrust",
              "Three consecutive bars closing the same way, each with a body "
              "over eight tenths of an ATR.", _thrust),
-)
+) + CALENDAR_DETECTORS
 
 
 # ---------------------------------------------------------------------------
 # the scan
 # ---------------------------------------------------------------------------
+
+
+def _fire(detector: Detector, bars: BarSeries,
+          session: np.ndarray) -> np.ndarray:
+    """Run one detector, giving it the session mask if it asked for one."""
+    if detector.needs_session:
+        return detector.detect(bars, session)
+    return detector.detect(bars)
 
 
 def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
@@ -333,7 +608,7 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
         if progress is not None:
             progress(index, len(DETECTORS), f"Scanning for {detector.label}")
         try:
-            fired = np.asarray(detector.detect(working), dtype=bool)
+            fired = np.asarray(_fire(detector, working, entry_ok), dtype=bool)
         except Exception:                   # pragma: no cover - defensive
             from ..logging_setup import get_logger
 
@@ -352,7 +627,7 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
             finding.verdict = f"too rare to judge ({count} bars)"
             findings.append(finding)
             continue
-        if share > _MAX_SHARE:
+        if share > detector.max_share:
             finding.verdict = (f"fires on {share * 100:.0f}% of bars, which is "
                                f"not an anomaly")
             findings.append(finding)
@@ -399,7 +674,8 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
             finding.detail = ""
             continue
         cache = caches[finding.side]
-        fired = np.asarray(finding.detector.detect(working), dtype=bool) & entry_ok
+        fired = np.asarray(_fire(finding.detector, working, entry_ok),
+                           dtype=bool) & entry_ok
         confirmed = _sampled(cache, fired & research, control_draws, seed)
         held = _score(cache, fired & ~research)
         finding.holdout_excess = held[1].excess_per_trade if held else 0.0
@@ -411,10 +687,18 @@ def scan(bars: BarSeries, style: TradingStyle, *, timeframe: str = "",
     import pandas as pd
 
     notes = [
-        f"{len(DETECTORS)} detectors were tried on each side and "
-        f"{tests} of those had enough trades to score; the p-values are "
-        f"corrected over all {tests}, including the side that was not "
-        f"reported, because choosing the better of two is itself a search.",
+        f"{len(DETECTORS)} detectors were tried on both sides — "
+        f"{len(DETECTORS) * 2} tests — and {tests} of those had enough trades "
+        f"to score. The p-values are corrected over all {tests}, including "
+        f"each side that was not reported, because choosing the better of two "
+        f"is itself a search.",
+        f"{sum(1 for d in DETECTORS if d.family == 'calendar')} of the "
+        f"detectors are calendar effects. Everywhere else in this application "
+        f"a calendar condition is banned, because an optimiser allowed to "
+        f"choose among five weekdays is being handed a free lottery ticket. "
+        f"Naming them in advance is the opposite: this list is fixed in the "
+        f"source, every entry is tested whether it looks promising or not, and "
+        f"including them makes every other finding here harder to pass.",
         "Each detector is scored against random entries at the same times of "
         "day with the same geometry and costs, so 'it happened during a "
         "profitable hour' does not count as an edge.",
