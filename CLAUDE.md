@@ -222,6 +222,21 @@ ret/DD 5.88 -> 1.01), and MC says the realised sequence was UNLUCKY (median 1,28
 size for the p99. NO TAKE PROFIT beat every target tested -- the third independent time on this
 branch. See `docs/ib/STUDY_V11_MARKET.md`.
 
+**Donchian 30/20 + ADX>=25 works on US100 and FAILS on the US30 it was fitted to.** 900 cells on
+US30 train; read once on three held-back sets. US30 2026 PF 0.92 / Sharpe -0.53; US100 held back
+1.42 / 2.01 with 6/6 walk-forward folds and bootstrap P(mean<=0) 0.0095; XAU flat (0.98 -> 1.19).
+US100 chose nothing, so its block is a genuine pre-registered test -- and the instrument that DID
+choose is the one that failed. The ADX filter is both the only thing that survived selection AND
+the thing that inverts out of sample (US30 2026: ungated 1.04, ADX>=20 0.94, ADX>=25 0.92).
+BOTH CONTROLS FAIL EVERYWHERE (breakout vs random bar p 0.06-0.29; ADX vs same-selectivity filter
+p 0.14-0.58, and on US100 held-back a random filter earned MORE). The edge is the EXIT GEOMETRY --
+2.0N stop, 20-bar channel exit, one unit, no target -- not the trigger. Compare STUDY_V11_MARKET:
+the same family with Donchian **55** on NQ passes both gates at p 0.007/0.016, so channel length
+decides whether the trigger carries information. Also: the ATR-expansion filter looks strong
+(PF 1.42 -> 1.77) and is indistinguishable from a random filter of the same selectivity
+(p 0.117-0.454) -- restrictiveness alone raises PF. XAU 5m arrives as semicolon CSV from 2004,
+NY+7; 494,235 15m bars. See `docs/ib/STUDY_V12_DONCHIAN_3020.md`.
+
 **Tune with `research/tune.py`, not by editing a module.** A trade's outcome depends only on its
 signal bar and the geometry, so the price walk is cached per bar and every exit knob — stop,
 target, flatten time, max hold, entry mechanic, cost model — becomes an array index: 0.4 us per
