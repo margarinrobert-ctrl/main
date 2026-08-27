@@ -57,6 +57,7 @@ SVG, no external assets and no network requests.
 - [Running a backtest](#running-a-backtest)
 - [Reading the metrics](#reading-the-metrics)
 - [Finding strategies automatically](#finding-strategies-automatically)
+- [Importing a strategy you already have](#importing-a-strategy-you-already-have)
 - [Which indicators actually predict anything](#which-indicators-actually-predict-anything)
 - [Finding anomalies](#finding-anomalies)
 - [Optimisation](#optimisation)
@@ -520,6 +521,78 @@ to recommend nothing.
 
 **Everything it produces is historical analysis, not a prediction.** The report
 says so in those words, on every path, including when nothing was found.
+
+---
+
+## Importing a strategy you already have
+
+**Strategy → Paste a Strategy…**, `Ctrl+Shift+V`. Paste Pine Script or a
+strategy this application exported, and it is read, translated and run.
+
+The rule the whole feature is built on: **a strategy that cannot be fully
+interpreted is reported, never approximated.** An import that quietly drops a
+condition produces a backtest that runs, looks fine, and describes a strategy
+you did not write — and there is nothing on screen to tell you. So every line
+of what you paste lands in exactly one of three buckets, all of them listed:
+
+| outcome | meaning |
+|---|---|
+| converted | it became part of the strategy |
+| ignored | it changes nothing about what is traded — `plot`, `bgcolor`, a label |
+| unsupported | it affects behaviour and could not be represented, with the reason |
+
+If anything is unsupported, the conversion is labelled **partial** and the
+dialog will not backtest it at all. A backtest of a partial conversion is a
+backtest of a strategy nobody wrote.
+
+### Why it parses rather than pattern-matches
+
+A regular expression that matches `ta.ema(close, 20)` also matches it inside a
+comment, inside a string, and inside `ta.ema(ta.ema(close, 20), 5)` — and it
+silently gets the last one wrong. So the source is tokenised and parsed
+properly, and the tests fix exactly those cases.
+
+The case that matters most is Pine's commonest shape:
+
+```pine
+if longCondition
+    strategy.entry("Long", strategy.long)
+```
+
+An importer that reports the `if` as unsupported and then reads the indented
+`strategy.entry` as a top-level line has just built a strategy that enters on
+**every bar**. It would run, it would backtest, and it would be wrong. So the
+`if` condition travels with the statements inside it — through `else`,
+`else if` chains, and nesting, which AND together — and any statement whose
+condition could not be determined is refused rather than treated as
+unconditional. An entry with no condition at all is refused for the same
+reason.
+
+### What comes across
+
+`ta.` moving averages (SMA/EMA/WMA/HMA/VWMA/RMA/DEMA/TEMA), RSI, ATR, CCI,
+MFI, ROC, MOM, stdev, highest, lowest, Williams %R, linreg, OBV, TR, VWAP;
+comparisons, `and`/`or`/`not`, `ta.crossover`/`crossunder`/`cross`,
+`ta.rising`/`falling`, `ta.change`, bar offsets like `close[1]`, arithmetic,
+and `strategy.entry` / `strategy.close` / `strategy.exit` with point-based
+`loss=` and `profit=`.
+
+### What does not, and is listed instead
+
+`for`/`while` loops, user-defined functions, `var` declarations that carry a
+value between bars, `request.security`, arrays and matrices, indicators with no
+equivalent here, variable-length lookbacks, and stops or targets at an absolute
+price — this application places those as a multiple of ATR, a percentage or a
+point distance, not at a price computed on the entry bar.
+
+Position sizing, `pyramiding` and costs are **not** imported even when present
+in `strategy()`. They are set in this application's own Risk and Costs panels,
+and the report says so explicitly rather than letting you assume they came
+across.
+
+One more caveat it raises on sight: Pine's `==` compares floating-point values
+exactly, and this engine compares them within a tolerance. On continuous series
+the two rarely agree, so any `==` in a rule is flagged.
 
 ---
 

@@ -142,6 +142,9 @@ class MainWindow(QMainWindow):
             "Delete the current strategy", self.on_delete_strategy)
         act("import_strategy", "Import Strategy…", "import", "",
             "Load a strategy from a JSON file", self.on_import_strategy)
+        act("paste_strategy", "Paste a Strategy…", "import", "Ctrl+Shift+V",
+            "Paste Pine Script or exported JSON, see exactly what could be "
+            "translated, and run it", self.on_paste_strategy)
         act("export_strategy", "Export Strategy…", "export", "",
             "Save the current strategy to a JSON file", self.on_export_strategy)
 
@@ -298,6 +301,8 @@ class MainWindow(QMainWindow):
                   self.act_duplicate_strategy, self.act_rename_strategy,
                   self.act_delete_strategy):
             m.addAction(a)
+        m.addSeparator()
+        m.addAction(self.act_paste_strategy)
         m.addSeparator()
         m.addAction(self.act_import_strategy)
         m.addAction(self.act_export_strategy)
@@ -1406,6 +1411,17 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Finding strategies
     # ------------------------------------------------------------------
+
+    def on_paste_strategy(self) -> None:
+        """Paste a strategy in any supported format and see what came across."""
+        from .dialogs.import_strategy_dialog import ImportStrategyDialog
+
+        dialog = ImportStrategyDialog(self.strategies, self._view_bars, self)
+        dialog.exec()
+        # An import can save into the library, so the picker has to catch up.
+        self.strategy_panel.refresh(self.strategy_panel.current_strategy_id()
+                                    or None)
+        self._update_start_here()
 
     def on_find_strategies(self) -> None:
         """Open the search. It does not need a dataset loaded to be useful."""

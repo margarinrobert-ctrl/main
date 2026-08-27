@@ -564,6 +564,67 @@ def cmd_mirror(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_convert(args: argparse.Namespace) -> int:
+    """Translate a pasted strategy and say exactly what did not come across.
+
+    Exit code 0 only for a faithful conversion.  A partial one exits 2, because
+    a script that treats "it produced a spec" as success would go on to
+    backtest a strategy nobody wrote.
+    """
+    import sys as _sys
+
+    from .strategy.importer import import_strategy
+
+    if args.path == "-":
+        text = _sys.stdin.read()
+    else:
+        try:
+            text = Path(args.path).read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"Could not read {args.path}: {exc}", file=_sys.stderr)
+            return 1
+
+    report = import_strategy(text)
+
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(f"Detected: {report.detected}"
+              + (f" ({report.evidence[0]})" if report.evidence else ""))
+        print(f"Converted {len(report.converted)}, ignored "
+              f"{len(report.ignored)}, unsupported {len(report.unsupported)}.")
+        print()
+        for line in report.lines:
+            if line.outcome == "converted":
+                continue
+            marker = "  " if line.outcome == "ignored" else "!!"
+            print(f"{marker} line {line.line}: {line.source}")
+            print(f"      {line.outcome}: {line.detail}")
+        for warning in report.warnings:
+            print(f"NOTE: {warning}")
+        for error in report.errors:
+            print(f"ERROR: {error}")
+        print()
+        if report.faithful:
+            print("Converted in full. Every line that affects what this "
+                  "trades was translated.")
+        else:
+            print("PARTIAL. This is not the strategy that was pasted, so a "
+                  "backtest of it would describe something else.")
+
+    if args.save:
+        if not report.faithful:
+            print("Not saved: only a faithful conversion is saved, because a "
+                  "partial one in the library is indistinguishable from a "
+                  "whole one later.", file=_sys.stderr)
+            return 2
+        from .strategy.storage import StrategyStore
+
+        StrategyStore(_workspace(args)).save(report.spec)
+        print(f"Saved '{report.spec.name}'.")
+    return 0 if report.faithful else 2
+
+
 def cmd_strategies(args: argparse.Namespace) -> int:
     from .strategy.builtin import BUILTIN_STRATEGIES
     from .strategy.storage import StrategyStore
@@ -757,12 +818,23 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("strategies", help="List strategies")
     p.set_defaults(func=cmd_strategies)
 
+    p = sub.add_parser(
+        "convert",
+        help="Read a Pine Script or exported strategy and report what "
+             "translated")
+    p.add_argument("path", help="File to read, or - for standard input")
+    p.add_argument("--save", action="store_true",
+                   help="Save into the workspace, but only if the conversion "
+                        "was faithful")
+    p.add_argument("--json", action="store_true", help="Machine-readable output")
+    p.set_defaults(func=cmd_convert)
+
     # Every command that reads a dataset can read its reflection instead. Added
     # in one place rather than in each parser so a new data command cannot
     # forget it; `mirror` is excluded because reflecting is the whole of what
     # it does.
     for name, subparser in sub.choices.items():
-        if name in ("mirror", "data", "import", "strategies"):
+        if name in ("mirror", "data", "import", "strategies", "convert"):
             continue
         subparser.add_argument(
             "--mirror", action="store_true",
