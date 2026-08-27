@@ -417,8 +417,21 @@ cached; after that a candidate rule is a boolean mask and scoring it is a sum.
   enough to gate every candidate; the sampled one confirms the shortlist
   without a distributional assumption.
 - `control.benjamini_hochberg(p_values, alpha)` — the multiplicity correction.
-- `candidates.TEMPLATES` — six entry-rule families, each able to emit a real
-  `StrategySpec` so anything found is runnable, saveable and exportable.
+- `candidates.TEMPLATES` — ten entry-rule families, each able to emit a real
+  `StrategySpec` so anything found is runnable, saveable and exportable: trend
+  pullback, channel breakout, RSI reversion, Bollinger reversion, MACD cross,
+  stochastic-with-trend, break of structure (the last confirmed *pivot*, not a
+  rolling extreme), rate-of-change momentum, volatility squeeze, and range
+  expansion. Every one is asserted causal (truncating the series changes no
+  surviving signal), round-trippable through its own serialised form, and
+  equal to the engine trade for trade in all four styles.
+- `styles.customise(base, **overrides)` — the user's own constraints: session
+  window, weekdays, stop and target multiples, max hold, minimum trades, ATR
+  period, timeframes. Applied ONCE before the search and reported with the
+  result; `styles.ADJUSTABLE` is the whitelist, and a style's identity is not
+  in it. Nothing here is searched over — handing a list of sessions to a
+  search and keeping the best would put the session inside the selection.
+  `session=None` is how "all hours" is said.
 - `search.find_strategies(bars, style, ...) -> FinderReport` — the protocol:
   split, gate on the control, correct for multiplicity, test the
   neighbourhood, reveal the locked block once, judge in plain English.

@@ -33,7 +33,7 @@ import numpy as np
 from ..core.types import ExitSettings, SessionSettings
 from ..data.models import BarSeries
 from ..indicators.base import REGISTRY
-from ..strategy.spec import (Compare, Const, Cross, Group, Ind,
+from ..strategy.spec import (Compare, Const, Cross, ExprOperand, Group, Ind,
                              IndicatorSlot, Price, State, StrategySpec)
 
 
@@ -281,6 +281,118 @@ def _stoch_build(p: dict, side: int):
     return slots, Group("and", [cross, trend])
 
 
+def _structure_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+    """Market structure: price takes out the last confirmed swing point.
+
+    Not the same rule as the channel breakout, and the difference is the point.
+    A Donchian break is "higher than anything in the last N bars", which fires
+    on any drift to a new extreme. This fires only when price closes through
+    the last *pivot* -- a level the market turned at and other people are
+    watching -- and the pivot is published ``right`` bars after it happened, so
+    the level was knowable before the close that breaks it.
+    """
+    left = right = int(p["swing"])
+    level = REGISTRY.compute(
+        "PIVOT_HIGH" if side > 0 else "PIVOT_LOW", bars,
+        {"left": left, "right": right, "hold": True})["value"]
+    trend = _ind(bars, "EMA", period=p["trend"])
+    with_trend = (bars.close > trend) if side > 0 else (bars.close < trend)
+    cross = (_crossed_up(bars.close, level) if side > 0
+             else _crossed_down(bars.close, level))
+    return cross & np.isfinite(trend) & with_trend
+
+
+def _structure_build(p: dict, side: int):
+    left = right = int(p["swing"])
+    slots = [IndicatorSlot("pivot", "PIVOT_HIGH" if side > 0 else "PIVOT_LOW",
+                           {"left": left, "right": right, "hold": True}),
+             IndicatorSlot("emaTrend", "EMA", {"period": p["trend"]})]
+    cross = Cross(Price("close"), "above" if side > 0 else "below",
+                  Ind("pivot"))
+    trend = Compare(Price("close"), ">" if side > 0 else "<", Ind("emaTrend"))
+    return slots, Group("and", [cross, trend])
+
+
+def _momentum_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+    """Rate of change crosses a threshold: momentum with no average in it.
+
+    Every other family here reads a moving average somewhere, so they all share
+    a failure mode -- a market that chops around a mean. This one asks only
+    whether the last N bars moved, and by how much.
+    """
+    roc = _ind(bars, "ROC", period=p["period"])
+    level = float(p["level"])
+    return (_crossed_up(roc, level) if side > 0
+            else _crossed_down(roc, -level))
+
+
+def _momentum_build(p: dict, side: int):
+    slots = [IndicatorSlot("roc", "ROC", {"period": p["period"]})]
+    level = float(p["level"]) if side > 0 else -float(p["level"])
+    return slots, Cross(Ind("roc"), "above" if side > 0 else "below",
+                        Const(level))
+
+
+def _squeeze_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+    """Volatility compresses, then price leaves the band it compressed into.
+
+    Two conditions the other families never combine: band width BELOW a
+    threshold on the previous bar, and a close through the band on this one.
+    The compression is read one bar back on purpose -- the bar that expands is
+    not a bar that was quiet.
+    """
+    width = REGISTRY.compute(
+        "BBWIDTH", bars, {"period": p["period"], "deviation": 2.0})["value"]
+    out = REGISTRY.compute("BBANDS", bars,
+                           {"period": p["period"], "deviation": 2.0})
+    quiet = np.zeros(width.shape, dtype=bool)
+    quiet[1:] = np.isfinite(width[:-1]) & (width[:-1] < float(p["max_width"]))
+    band = out["upper"] if side > 0 else out["lower"]
+    breakout = (_crossed_up(bars.close, band) if side > 0
+                else _crossed_down(bars.close, band))
+    return quiet & breakout
+
+
+def _squeeze_build(p: dict, side: int):
+    slots = [IndicatorSlot("bbw", "BBWIDTH",
+                           {"period": p["period"], "deviation": 2.0}),
+             IndicatorSlot("bb", "BBANDS",
+                           {"period": p["period"], "deviation": 2.0})]
+    quiet = Compare(Ind("bbw", offset=1), "<", Const(float(p["max_width"])))
+    breakout = Cross(Price("close"), "above" if side > 0 else "below",
+                     Ind("bb", "upper" if side > 0 else "lower"))
+    return slots, Group("and", [quiet, breakout])
+
+
+def _range_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+    """A bar whose range dwarfs the recent average, closing in its direction.
+
+    Range expansion is the one shape here that reads the CURRENT bar's own
+    size rather than a level. The average it is measured against is taken one
+    bar back, so the expanding bar is not part of what it is being compared to.
+    """
+    tr = REGISTRY.compute("TRUE_RANGE", bars, {})["value"]
+    # ATR with its default method, and the SAME indicator the spec below emits:
+    # the fast path and the engine must read one series, not two that agree
+    # most of the time.
+    avg = _ind(bars, "ATR", period=p["period"])
+    prior = np.full(avg.shape, np.nan)
+    prior[1:] = avg[:-1]
+    big = np.isfinite(prior) & (prior > 0) & (tr > prior * float(p["multiple"]))
+    direction = (bars.close > bars.open) if side > 0 else (bars.close < bars.open)
+    return big & direction
+
+
+def _range_build(p: dict, side: int):
+    slots = [IndicatorSlot("tr", "TRUE_RANGE", {}),
+             IndicatorSlot("atr", "ATR", {"period": p["period"]})]
+    big = Compare(Ind("tr"), ">",
+                  ExprOperand("*", Ind("atr", offset=1),
+                              Const(float(p["multiple"]))))
+    direction = Compare(Price("close"), ">" if side > 0 else "<", Price("open"))
+    return slots, Group("and", [big, direction])
+
+
 TEMPLATES: tuple[Template, ...] = (
     Template(
         key="trend_pullback", label="Trend pullback",
@@ -328,6 +440,40 @@ TEMPLATES: tuple[Template, ...] = (
         grid={"k": (9, 14), "trend": (100, 200)},
         signal=_stoch_signal, build=_stoch_build,
         warmup=lambda p: int(p["trend"]) + 10),
+    Template(
+        key="structure_break", label="Break of structure",
+        description="Close takes out the last confirmed swing high, above a "
+                    "long moving average.",
+        short_description="Close takes out the last confirmed swing low, below "
+                          "a long moving average.",
+        grid={"swing": (3, 5, 8), "trend": (50, 100, 200)},
+        signal=_structure_signal, build=_structure_build,
+        warmup=lambda p: int(p["trend"]) + int(p["swing"]) * 2 + 5),
+    Template(
+        key="momentum", label="Rate-of-change momentum",
+        description="Rate of change crosses up through a positive threshold.",
+        short_description="Rate of change crosses down through a negative "
+                          "threshold.",
+        grid={"period": (5, 10, 20), "level": (0.25, 0.5, 1.0)},
+        signal=_momentum_signal, build=_momentum_build,
+        warmup=lambda p: int(p["period"]) + 5),
+    Template(
+        key="squeeze", label="Volatility squeeze",
+        description="Bands were narrow, and price closes out through the "
+                    "upper one.",
+        short_description="Bands were narrow, and price closes out through the "
+                          "lower one.",
+        grid={"period": (20, 30), "max_width": (1.0, 1.5, 2.0)},
+        signal=_squeeze_signal, build=_squeeze_build,
+        warmup=lambda p: int(p["period"]) + 5),
+    Template(
+        key="range_expansion", label="Range expansion",
+        description="A bar far larger than the recent average, closing up.",
+        short_description="A bar far larger than the recent average, closing "
+                          "down.",
+        grid={"period": (14, 20), "multiple": (1.5, 2.0, 3.0)},
+        signal=_range_signal, build=_range_build,
+        warmup=lambda p: int(p["period"]) + 5),
 )
 
 TEMPLATES_BY_KEY = {t.key: t for t in TEMPLATES}

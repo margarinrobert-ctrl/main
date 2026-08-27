@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from tradingbacktester.data.sample import generate_sample_data
 from tradingbacktester.core.timeframe import Timeframe
 from tradingbacktester.core.types import CostModel, SpreadMode
 from tradingbacktester.data.instruments import default_instrument_for
@@ -593,6 +594,136 @@ def test_cli_walk_forward_explains_a_malformed_range(tmp_path, capsys):
 
 
 # --------------------------------------------------------------------------
+# The families a search may look in, and the constraints a user may set
+# --------------------------------------------------------------------------
+
+def test_every_family_is_causal_and_buildable():
+    """A template that cannot emit a real strategy is a number, not a result."""
+    from tradingbacktester.finder.candidates import (TEMPLATES, all_candidates,
+                                                     build_spec, signals_for,
+                                                     warmup_for)
+    from tradingbacktester.finder.search import default_costs
+    from tradingbacktester.finder.styles import style as get_style
+
+    bars = generate_sample_data("NQ", "1h", n_bars=1500, seed=5)
+    chosen = get_style("swing")
+    costs = default_costs(bars.instrument)
+    seen: set[str] = set()
+    for candidate in all_candidates():
+        if candidate.template in seen:
+            continue
+        seen.add(candidate.template)
+        signals = signals_for(bars, candidate,
+                              warmup_for(candidate, chosen.atr_period))
+        assert signals.dtype == bool
+        assert len(signals) == len(bars)
+        spec = build_spec(candidate, chosen, "1h", 1.5, 2.0, costs)
+        assert spec.entry_long is not None or spec.entry_short is not None
+        # It must survive a round trip through its own serialised form, or it
+        # cannot be saved, charted or exported.
+        from tradingbacktester.strategy.spec import StrategySpec
+
+        assert StrategySpec.from_dict(spec.to_dict()).name == spec.name
+    assert seen == {t.key for t in TEMPLATES}
+
+
+def test_a_signal_reads_no_bar_after_the_one_it_fires_on():
+    """Truncating the series must not change any signal that survives.
+
+    The cheapest look-ahead test there is, and it catches the whole class:
+    an indicator that peeks forward gives a different answer when the future
+    is removed.
+    """
+    from tradingbacktester.finder.candidates import (all_candidates,
+                                                     signals_for, warmup_for)
+
+    bars = generate_sample_data("NQ", "1h", n_bars=1200, seed=9)
+    cut = 900
+    short = bars.slice(0, cut)
+    seen: set[str] = set()
+    for candidate in all_candidates():
+        if candidate.template in seen:
+            continue
+        seen.add(candidate.template)
+        warm = warmup_for(candidate, 14)
+        full = signals_for(bars, candidate, warm)[:cut]
+        part = signals_for(short, candidate, warm)
+        assert np.array_equal(full, part), candidate.describe()
+
+
+def test_a_user_may_fix_the_session_and_the_geometry():
+    from tradingbacktester.finder.styles import customise, style as get_style
+
+    base = get_style("intraday")
+    tight = customise(base, session=("07:00", "11:00"), stop_atr=(1.0,),
+                      target_r=(2.0,), min_trades=40)
+    assert tight.session == ("07:00", "11:00")
+    assert tight.geometries() == [(1.0, 2.0)]
+    assert tight.min_trades == 40
+    # The base style is a module-level constant; changing a copy must not
+    # change it for the next search in the same process.
+    assert base.session == ("09:30", "16:00")
+    assert base.min_trades == 100
+
+
+def test_all_hours_is_expressible():
+    from tradingbacktester.finder.styles import customise
+
+    loose = customise("intraday", session=None, flat_at_session_end=False)
+    assert loose.session is None
+    assert loose.flat_at_session_end is False
+
+
+@pytest.mark.parametrize("field,value", [
+    ("key", "mine"),                    # identity is not a constraint
+    ("label", "Mine"),
+    ("nonsense", 1),
+])
+def test_only_the_constraints_are_adjustable(field, value):
+    from tradingbacktester.core.errors import StrategyError
+    from tradingbacktester.finder.styles import customise
+
+    with pytest.raises(StrategyError):
+        customise("intraday", **{field: value})
+
+
+@pytest.mark.parametrize("override", [
+    {"session": ("7am", "11:00")},
+    {"session": ("09:30",)},
+    {"stop_atr": ()},
+    {"target_r": ()},
+    {"max_bars": 0},
+    {"weekdays": (9,)},
+    {"weekdays": ()},
+])
+def test_a_constraint_that_cannot_make_a_usable_style_is_refused(override):
+    from tradingbacktester.core.errors import StrategyError
+    from tradingbacktester.finder.styles import customise
+
+    with pytest.raises(StrategyError):
+        customise("intraday", **override)
+
+
+def test_a_constrained_search_runs_and_reports_its_constraints():
+    """End to end: the constraints reach the search and the report states them."""
+    from tradingbacktester.finder import find_strategies, format_report
+    from tradingbacktester.finder.styles import customise
+
+    bars = generate_sample_data("NQ", "30m", n_bars=4000, seed=11)
+    chosen = customise("intraday", session=("09:30", "12:00"), stop_atr=(1.5,),
+                       target_r=(2.0,), min_trades=20)
+    report = find_strategies(bars, chosen, timeframe="30m",
+                             templates=("squeeze", "momentum"),
+                             control_draws=50, validate="quick")
+    text = format_report(report)
+    assert "09:30-12:00" in text
+    assert "stop 1.5-1.5x ATR" in text
+    # Only the two families asked for were tried.
+    for finding in report.findings:
+        assert finding.candidate.template in ("squeeze", "momentum")
+
+
+# --------------------------------------------------------------------------
 # The fast path must be the engine, only faster
 # --------------------------------------------------------------------------
 
@@ -601,7 +732,7 @@ def _agreement_case(style_key: str, timeframe: str, dataset_name: str):
     from tradingbacktester.data.bundled import find as find_bundled
     from tradingbacktester.data.csv_loader import load_csv, sniff_csv
     from tradingbacktester.data.instruments import default_instrument_for
-    from tradingbacktester.finder.candidates import all_candidates
+    from tradingbacktester.finder.candidates import TEMPLATES, all_candidates
     from tradingbacktester.finder.outcomes import (session_entry_mask,
                                                    session_hold_limit)
     from tradingbacktester.finder.search import default_costs, prepare_bars
@@ -637,7 +768,7 @@ def _agreement_case(style_key: str, timeframe: str, dataset_name: str):
             continue
         seen.add(key)
         sample.append(candidate)
-    assert len(sample) == 12
+    assert len(sample) == 2 * len(TEMPLATES), "every family, both sides"
     return working, chosen, timezone, costs, entry_ok, hold, sample
 
 

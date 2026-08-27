@@ -406,10 +406,10 @@ window has three tabs — *Strategies*, *Indicators*, *Anomalies* — asking thr
 questions of the same data with the same machinery underneath. This section is
 the first; the next two sections are the others.
 
-Pick the data and the kind of trading you want. That is the whole form. Everything
-else — bar size, stop and target geometry, session window, how the result is
-judged — is fixed by the method, because those are exactly the settings that,
-left adjustable, turn a search into a machine for finding coincidences.
+Pick the data and the kind of trading you want. That is the whole form, and the
+style fixes the rest — bar size, stop and target geometry, session window, how
+the result is judged — because those are exactly the settings that, left for the
+search to pick, turn it into a machine for finding coincidences.
 
 | Style | Bars | Session | Stop | Target | Max hold |
 |---|---|---|---|---|---|
@@ -418,10 +418,50 @@ left adjustable, turn a search into a machine for finding coincidences.
 | Swing trading | 1h, 4h | all hours | 1.5–3× ATR | 1.5–3R | 60 bars |
 | Position trading | Daily | all hours | 2–4× ATR | 2–4R | 40 bars |
 
-Six families of entry rule — trend pullback, channel breakout, RSI reversion,
-Bollinger reversion, MACD cross, stochastic-with-the-trend — are tried across a
-small parameter grid and every geometry the style allows. That is 630–840
-combinations.
+Ten families of entry rule are tried across a small parameter grid and every
+geometry the style allows:
+
+| Family | Fires when |
+|---|---|
+| Trend pullback | Price pulls back to the fast average while it is above the slow one |
+| Channel breakout | Close beyond the highest high of the previous *N* bars |
+| RSI reversion | RSI turns back up through an oversold level |
+| Bollinger reversion | Close crosses back inside the lower band |
+| MACD cross | The MACD line crosses above its signal line |
+| Stochastic with the trend | %K crosses %D, taken only above a long moving average |
+| **Break of structure** | Close takes out the last *confirmed swing point*, with the trend |
+| **Momentum** | Rate of change crosses a threshold — the one family with no average in it |
+| **Volatility squeeze** | Bands were narrow, and price closes out through one |
+| **Range expansion** | A bar far larger than the recent average, closing in its direction |
+
+Break of structure is not the channel breakout with extra steps: a Donchian
+break fires on any drift to a new extreme, while this one needs a close through
+a level the market actually turned at — and the pivot is published several bars
+after it happened, so the level was knowable before the close that breaks it.
+
+**Statistical arbitrage is not here, and cannot be.** A pairs or spread trade
+needs two instruments priced against each other; this application backtests one
+series at a time. Nothing in the search will pretend otherwise.
+
+### Setting your own constraints
+
+The defaults are the point — but "day trading" means different hours on
+different instruments, and a trader with a reason to trade 07:00–11:00 should
+not have to edit the source to say so. From the terminal:
+
+```bash
+python -m tradingbacktester.cli find --data "US30 30m" --style intraday \
+    --session 07:00-11:00 --stop 1.5 --target 2.0 \
+    --template structure_break,squeeze --min-trades 40
+```
+
+`--session`, `--weekdays`, `--stop`, `--target`, `--max-bars`, `--min-trades`
+and `--template` each narrow the search. Every one is applied **once, before the
+search runs**, and printed with the result. None of them is searched over:
+handing a list of sessions to a search and keeping the best would put the
+session inside the selection, which is how a calendar condition becomes a free
+lottery ticket. `--template list` shows the families and `--style list` the
+styles.
 
 ### What makes the answer worth reading
 

@@ -20,6 +20,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from .config import AppSettings, Workspace
 from .core.errors import BacktesterError
@@ -215,16 +216,80 @@ def _clear_progress() -> None:
         sys.stderr.write("\r" + " " * 78 + "\r")
 
 
+def _numbers(text: str, what: str) -> tuple[float, ...]:
+    """``"1.0,1.5,2"`` -> ``(1.0, 1.5, 2.0)``."""
+    parts = [p.strip() for p in str(text).split(",") if p.strip()]
+    try:
+        return tuple(float(p) for p in parts)
+    except ValueError as exc:
+        raise BacktesterError(
+            f"The {what} must be numbers separated by commas, not "
+            f"'{text}'.") from exc
+
+
+def _constrain(chosen, args: argparse.Namespace):
+    """Apply the user's own constraints to a style, or leave it alone.
+
+    Every one of these is fixed BEFORE the search runs and reported with the
+    result. None of them is searched over: handing a list of sessions to a
+    search and keeping the best would put the session inside the selection.
+    """
+    from .finder.styles import customise
+
+    overrides: dict[str, Any] = {}
+    if args.session:
+        window = str(args.session).strip().lower()
+        if window in ("none", "all", "any"):
+            overrides["session"] = None
+            overrides["flat_at_session_end"] = False
+        else:
+            parts = window.replace("to", "-").split("-")
+            if len(parts) != 2:
+                raise BacktesterError(
+                    f"Write the session as START-END, for example "
+                    f"09:30-16:00, or 'none' for all hours. Got '{args.session}'.")
+            overrides["session"] = (parts[0].strip(), parts[1].strip())
+    if args.weekdays:
+        try:
+            overrides["weekdays"] = tuple(
+                int(d) for d in str(args.weekdays).split(",") if d.strip())
+        except ValueError as exc:
+            raise BacktesterError(
+                f"Weekdays are numbers 0 (Monday) to 6 (Sunday), separated by "
+                f"commas, not '{args.weekdays}'.") from exc
+    if args.stop:
+        overrides["stop_atr"] = _numbers(args.stop, "stop multiples")
+    if args.target:
+        overrides["target_r"] = _numbers(args.target, "target multiples")
+    if args.max_bars:
+        overrides["max_bars"] = int(args.max_bars)
+    if args.min_trades:
+        overrides["min_trades"] = int(args.min_trades)
+    if not overrides:
+        return chosen
+    return customise(chosen, **overrides)
+
+
 def cmd_find(args: argparse.Namespace) -> int:
     from .finder import find_strategies, format_report, style as get_style
     if args.style == "list":
         return _list_styles(geometry=True)
+    if args.template == "list":
+        from .finder.candidates import TEMPLATES
+
+        for template in TEMPLATES:
+            for line in row(f"  {template.key:<18} ", template.description):
+                print(line)
+        return 0
 
     bars, name = _resolve_bars(args)
-    chosen = get_style(args.style)
+    chosen = _constrain(get_style(args.style), args)
     # Empty means "the best bar size this data can actually produce", which the
     # search works out: five-minute bars cannot be turned into one-minute ones.
     timeframe = args.timeframe
+
+    stream = sys.stderr if args.json else sys.stdout
+    print(f"{chosen.label} on {name}: {chosen.describe()}", file=stream)
 
     progress = _stderr_progress()
     report = find_strategies(
@@ -232,6 +297,8 @@ def cmd_find(args: argparse.Namespace) -> int:
         control_draws=args.draws, research_fraction=args.research,
         sides=((1,) if args.side == "long" else (-1,) if args.side == "short"
                else (1, -1)),
+        templates=tuple(t.strip() for t in str(args.template).split(",")
+                        if t.strip()),
         validate=args.validate,
         progress=progress)
     _clear_progress()
@@ -800,12 +867,32 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_import)
 
     p = sub.add_parser("find", help="Search for strategies")
-    p.add_argument("--data", required=True,
+    # Not required, so `--style list` and `--template list` work on their own.
+    # A search without it still stops immediately, with the same message.
+    p.add_argument("--data", default="",
                    help="Dataset name, shipped dataset, or a path to a CSV")
     p.add_argument("--style", default="intraday",
                    help="scalp | intraday | swing | position, or 'list'")
     p.add_argument("--timeframe", default="", help="Override the bar size")
     p.add_argument("--side", default="both", choices=("both", "long", "short"))
+    p.add_argument("--template", default="",
+                   help="Comma-separated entry-rule families to search, or "
+                        "'list' to see them. Default: all of them.")
+    p.add_argument("--session", default="", metavar="START-END",
+                   help="Trade only inside this window, in the instrument's "
+                        "own timezone; 'none' for all hours. Fixed before the "
+                        "search runs, never searched over.")
+    p.add_argument("--weekdays", default="", metavar="0,1,2,3,4",
+                   help="Weekdays to trade, 0 is Monday")
+    p.add_argument("--stop", default="", metavar="1.0,1.5,2.0",
+                   help="Stop distances to try, in multiples of ATR")
+    p.add_argument("--target", default="", metavar="1.0,2.0",
+                   help="Target distances to try, in multiples of the stop")
+    p.add_argument("--max-bars", type=int, default=0, dest="max_bars",
+                   help="Hardest limit on how long a trade may run, in bars")
+    p.add_argument("--min-trades", type=int, default=0, dest="min_trades",
+                   help="Below this a result is treated as noise whatever it "
+                        "says")
     p.add_argument("--top", type=int, default=5, help="How many to shortlist")
     p.add_argument("--draws", type=int, default=2000,
                    help="Draws for the sampled control")

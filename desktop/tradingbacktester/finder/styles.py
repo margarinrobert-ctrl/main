@@ -15,7 +15,8 @@ they say they want a strategy.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -134,3 +135,100 @@ def style(key: str) -> TradingStyle:
             f"'{key}' is not a trading style. Choose one of: "
             f"{', '.join(s.key for s in STYLES)}.")
     return found
+
+
+#: What :func:`customise` will let a caller change, and nothing else.  A style
+#: is a constraint, and the fields not listed here are the ones that stop a
+#: search from becoming a different question: the templates it may use, its own
+#: identity, and the note explaining what it is for.
+ADJUSTABLE = ("timeframes", "stop_atr", "target_r", "max_bars", "session",
+              "flat_at_session_end", "weekdays", "min_trades", "atr_period")
+
+
+def customise(base: TradingStyle | str, **overrides: Any) -> TradingStyle:
+    """A copy of ``base`` with some of its constraints changed.
+
+    The point of a style is that the geometry is fixed before the search runs,
+    so the optimiser cannot pick it -- but "day trading" means different hours
+    on different instruments, and a user with a reason to trade 07:00-11:00 or
+    to hold for a week should not have to edit the source to say so.
+
+    What this will NOT do is let the constraint be *searched*. The overrides
+    are applied once, up front, and the resulting style is reported with the
+    result, so a reader can see what was fixed and what was found. Handing a
+    list of sessions to a search and keeping the best would put the session
+    inside the selection, which is how a calendar condition becomes a free
+    lottery ticket.
+
+    Raises
+    ------
+    StrategyError
+        For an unknown field, one that is not adjustable, or a value that
+        cannot make a usable style -- an empty geometry, a session that is not
+        ``HH:MM``, a negative hold.
+    """
+    from ..core.errors import StrategyError
+
+    found = base if isinstance(base, TradingStyle) else style(base)
+    clean: dict[str, Any] = {}
+    for name, value in overrides.items():
+        # ``None`` means "leave it alone" for every field but one: for a
+        # session it is the documented way to say ALL HOURS, and skipping it
+        # made that the one constraint a user could not express.
+        if value is None and name != "session":
+            continue
+        if name not in ADJUSTABLE:
+            known = ", ".join(ADJUSTABLE)
+            raise StrategyError(
+                f"'{name}' is not something a search may be told to change. "
+                f"Adjustable: {known}."
+                if hasattr(found, name) else
+                f"A trading style has no '{name}'. Adjustable: {known}.")
+        clean[name] = value
+
+    if "session" in clean and clean["session"] is not None:
+        window = tuple(clean["session"])
+        if len(window) != 2:
+            raise StrategyError(
+                "A session is a start and an end, for example "
+                "('09:30', '16:00').")
+        for part in window:
+            _check_hhmm(str(part))
+        clean["session"] = window
+
+    for name in ("stop_atr", "target_r", "timeframes"):
+        if name in clean:
+            values = tuple(clean[name])
+            if not values:
+                raise StrategyError(
+                    f"A search needs at least one {name.replace('_', ' ')} to "
+                    f"try.")
+            clean[name] = values
+
+    for name in ("max_bars", "min_trades", "atr_period"):
+        if name in clean and int(clean[name]) < 1:
+            raise StrategyError(
+                f"{name.replace('_', ' ')} must be at least 1.")
+
+    if "weekdays" in clean:
+        days = tuple(sorted({int(d) for d in clean["weekdays"]}))
+        if not days or any(d < 0 or d > 6 for d in days):
+            raise StrategyError(
+                "Weekdays are numbers from 0 (Monday) to 6 (Sunday).")
+        clean["weekdays"] = days
+
+    return replace(found, **clean)
+
+
+def _check_hhmm(text: str) -> None:
+    from ..core.errors import StrategyError
+
+    parts = str(text).split(":")
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+    except (ValueError, IndexError):
+        raise StrategyError(
+            f"'{text}' is not a time of day. Write it as HH:MM.") from None
+    if not (0 <= hour <= 24) or not (0 <= minute < 60):
+        raise StrategyError(f"'{text}' is not a real time of day.")
