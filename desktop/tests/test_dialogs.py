@@ -989,3 +989,65 @@ def test_start_here_can_be_dismissed_and_restored(window, qapp):
     qapp.processEvents()
     assert window.start_here.isVisible()
     assert window.settings.show_start_here is True
+
+
+# --------------------------------------------------------------------------
+# Start-up: a launch that shows nothing is indistinguishable from a hang
+# --------------------------------------------------------------------------
+
+def test_the_splash_appears_before_the_workspace_is_built(qapp):
+    """Seeding the workspace writes files; nothing was on screen for any of it."""
+    from tradingbacktester import app as application
+
+    splash = application._splash(qapp)
+    assert splash is not None
+    assert splash.isVisible()
+    assert splash.pixmap().width() > 200, "a splash nobody can read is not one"
+    application._say(qapp, splash, "Preparing your workspace…")
+    qapp.processEvents()
+    assert splash.isVisible()
+    application._close_splash(splash, None)
+    qapp.processEvents()
+    assert not splash.isVisible()
+
+
+def test_the_splash_is_never_a_reason_to_fail_a_launch(qapp, monkeypatch):
+    """A cosmetic window that cannot be built must not stop the application."""
+    from tradingbacktester import app as application
+
+    monkeypatch.setattr("tradingbacktester.ui.icons.app_icon",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no")))
+    assert application._splash(qapp) is None
+    # And every helper tolerates the None it just got handed.
+    application._say(qapp, None, "still starting")
+    application._close_splash(None, None)
+
+
+def test_first_run_reports_each_step_and_logs_its_timings(window, qapp, caplog):
+    """A window that paints once and then stops answering reads as a freeze."""
+    import logging
+
+    said = []
+    window.status = lambda message="", *a, **k: said.append(message)
+    with caplog.at_level(logging.INFO, logger="tradingbacktester.ui.main_window"):
+        window._first_run()
+    qapp.processEvents()
+
+    assert any("workspace" in s.lower() for s in said), said
+    assert any("chart" in s.lower() for s in said), said
+    logged = [r.getMessage() for r in caplog.records]
+    assert any("First run:" in m for m in logged)
+    assert any("First run finished in" in m for m in logged)
+
+
+def test_the_self_test_now_actually_starts_the_window():
+    """It used to only import the class, so a hang on startup passed CI."""
+    import inspect
+
+    from tradingbacktester.app import SELF_TEST_STARTUP_BUDGET, self_test
+
+    source = inspect.getsource(self_test)
+    assert "MainWindow(settings, workspace" in source, \
+        "the self-test must construct the window, not just import the class"
+    assert "_first_run()" in source
+    assert SELF_TEST_STARTUP_BUDGET > 0

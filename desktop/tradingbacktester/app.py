@@ -11,9 +11,10 @@ from __future__ import annotations
 import multiprocessing
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication
 
 from .config import APP_DISPLAY_NAME, APP_ORG, APP_VERSION, AppSettings
@@ -42,6 +43,7 @@ def self_test() -> int:
     """
     import os
     import tempfile
+    import time
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     app = create_application([])
@@ -73,6 +75,43 @@ def self_test() -> int:
             out = export_trades_csv(result, f"{tmp}/trades.csv")
             checks.append(f"trade export: {out}")
         checks.append(f"main window class: {MainWindow.__name__}")
+
+        # Importing the class is not the same as starting the application, and
+        # the difference is exactly where a frozen build fails: it can pass an
+        # import-only self-test and still show a white window that never
+        # paints. So build the window, run the first-run seeding the way a real
+        # launch does, and pump the event loop -- under a wall-clock budget, so
+        # a hang fails the build instead of hanging it.
+        from .config import AppSettings
+        from .storage.workspace import bootstrap
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = AppSettings()
+            settings.workspace_dir = f"{tmp}/workspace"
+            workspace = bootstrap(settings)
+            started = time.monotonic()
+            window = MainWindow(settings, workspace, None)
+            window.resize(1280, 800)
+            window.show()
+            app.processEvents()
+            window._first_run()
+            for _ in range(20):
+                app.processEvents()
+            elapsed = time.monotonic() - started
+            datasets = [m.name for m in window.datasets.list()]
+            window.close()
+            app.processEvents()
+            if elapsed > SELF_TEST_STARTUP_BUDGET:
+                raise AssertionError(
+                    f"the window took {elapsed:.1f}s to become usable, over "
+                    f"the {SELF_TEST_STARTUP_BUDGET:.0f}s budget -- a launch "
+                    f"this slow is what a user reports as a freeze")
+            if not datasets:
+                raise AssertionError(
+                    "the first run seeded no datasets, so the application "
+                    "would open on an empty library")
+            checks.append(f"window started in {elapsed:.1f}s")
+            checks.append(f"datasets seeded: {len(datasets)}")
     except Exception as exc:
         print("SELF-TEST FAILED")
         for line in checks:
@@ -89,6 +128,12 @@ def self_test() -> int:
     return 0
 
 
+#: A frozen build that takes longer than this to put a usable window on screen
+#: is one a user reports as a freeze, whatever it is doing. Generous enough for
+#: a cold cache and a virus scanner reading every file for the first time.
+SELF_TEST_STARTUP_BUDGET = 45.0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point used by ``python -m tradingbacktester`` and by the frozen exe."""
     # Harmless when already called from run.py, and required when someone
@@ -102,6 +147,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     app = create_application(args)
 
+    from .ui.theme import apply_theme
+
+    apply_theme(app)
+
+    # Something on screen BEFORE the workspace is built. Seeding it writes the
+    # instrument catalogue and generates the sample datasets, which is under a
+    # second here and can be many times that on a first launch where a virus
+    # scanner reads every file as it appears. Until now nothing was shown for
+    # the whole of it, and a launch that shows nothing is indistinguishable
+    # from one that has hung -- which is what "a white screen, not responding"
+    # is a report of.
+    splash = _splash(app)
     settings = AppSettings.load()
     try:
         # bootstrap creates the folder tree, seeds the instrument catalogue and
@@ -110,14 +167,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         # reported before any UI exists to be broken by it.
         from .storage.workspace import bootstrap
 
+        _say(app, splash, "Preparing your workspace…")
         workspace = bootstrap(settings)
+        _say(app, splash, "Starting up…")
         log_file = configure_logging(workspace.logs, settings.log_level,
                                      console=not _is_frozen())
     except Exception as exc:  # The workspace is unusable; say so and stop.
-        from .ui.theme import apply_theme
         from .ui.widgets.common import show_error
 
-        apply_theme(app)
+        _close_splash(splash, None)
         show_error(None, exc, "Cannot Start")
         return 2
 
@@ -125,12 +183,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     log.info("%s %s starting", APP_DISPLAY_NAME, APP_VERSION)
     log.info("Workspace: %s", workspace.root)
 
-    from .ui.theme import apply_theme
     from .ui.icons import app_icon
 
-    apply_theme(app)
     app.setWindowIcon(app_icon(256))
 
+    _say(app, splash, "Opening the window…")
     from .ui.main_window import MainWindow
 
     window = MainWindow(settings, workspace, log_file)
@@ -142,7 +199,87 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     install_excepthook(report)
     window.show()
+    # Held until the window is up, so there is never a moment with nothing on
+    # screen; `finish` also raises the window above the splash on Windows.
+    _close_splash(splash, window)
     return app.exec()
+
+
+# --------------------------------------------------------------------------
+# the splash
+# --------------------------------------------------------------------------
+
+def _splash(app: QApplication) -> Any:
+    """A small window saying the application is starting.
+
+    Never fatal: a splash that cannot be created is not a reason to fail a
+    launch, so every failure here returns ``None`` and the caller carries on
+    without one.
+    """
+    try:
+        from PySide6.QtGui import QPainter, QPixmap
+        from PySide6.QtWidgets import QSplashScreen
+
+        from .ui.icons import app_icon
+        from .ui.theme import PALETTE
+
+        pixmap = QPixmap(420, 160)
+        pixmap.fill(QColor(PALETTE.panel_bg))
+        painter = QPainter(pixmap)
+        try:
+            painter.setPen(QColor(PALETTE.border_strong))
+            painter.drawRect(0, 0, pixmap.width() - 1, pixmap.height() - 1)
+            app_icon(64).paint(painter, 24, 30, 64, 64)
+            painter.setPen(QColor(PALETTE.text))
+            font = painter.font()
+            font.setPointSize(15)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(108, 62, APP_DISPLAY_NAME)
+            painter.setPen(QColor(PALETTE.text_muted))
+            small = painter.font()
+            small.setPointSize(9)
+            small.setBold(False)
+            painter.setFont(small)
+            painter.drawText(108, 84, f"Version {APP_VERSION}")
+        finally:
+            painter.end()
+
+        splash = QSplashScreen(pixmap)
+        splash.show()
+        app.processEvents()
+        return splash
+    except Exception:                       # noqa: BLE001 - see the docstring
+        return None
+
+
+def _say(app: QApplication, splash: Any, message: str) -> None:
+    """Put a line on the splash and let it paint."""
+    if splash is not None:
+        try:
+            from PySide6.QtCore import Qt
+
+            from .ui.theme import PALETTE
+
+            splash.showMessage(
+                f"  {message}",
+                Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignLeft,
+                QColor(PALETTE.text_dim))
+        except Exception:                   # noqa: BLE001 - cosmetic only
+            pass
+    app.processEvents()
+
+
+def _close_splash(splash: Any, window: Any) -> None:
+    if splash is None:
+        return
+    try:
+        if window is not None:
+            splash.finish(window)
+        else:
+            splash.close()
+    except Exception:                       # noqa: BLE001 - cosmetic only
+        pass
 
 
 def _is_frozen() -> bool:

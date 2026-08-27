@@ -517,7 +517,27 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _first_run(self) -> None:
-        """Seed the workspace and restore the last session's selection."""
+        """Seed the workspace and restore the last session's selection.
+
+        Every step here reports itself to the status bar and pumps the event
+        loop before the next one. That is not cosmetic: on a first launch the
+        operating system may be reading several hundred freshly unpacked files
+        for the first time, and a window that paints once and then stops
+        answering is reported -- correctly -- as a freeze. A window that says
+        what it is doing is the same wait and a different experience, and the
+        timings go to the log so a slow launch can be localised afterwards
+        rather than guessed at.
+        """
+        import time
+
+        started = time.monotonic()
+
+        def step(message: str) -> None:
+            self.status(message)
+            log.info("First run: %s (%.1fs)", message, time.monotonic() - started)
+            self._pump()
+
+        step("Preparing the workspace…")
         try:
             from ..strategy.builtin import BUILTIN_STRATEGIES
 
@@ -529,29 +549,63 @@ class MainWindow(QMainWindow):
         except Exception:
             log.exception("Strategy seeding failed")
 
+        step("Checking the dataset library…")
         if not self.datasets.list():
             # A first run with an empty library opens on nothing at all, which
             # tells a new user nothing about what the application does.  Real
             # market data is imported first, so the first thing on screen is a
             # real chart; the synthetic samples follow, and every surface that
             # shows them says they are not real data.
+            step("Importing the market data that ships with the app…")
             try:
-                self._import_bundled_datasets(self.STARTUP_IMPORT_LIMIT)
+                self._import_bundled_datasets(self.STARTUP_IMPORT_LIMIT,
+                                              progress=self._startup_progress)
             except Exception:
                 log.exception("Importing the shipped market data failed")
+            step("Generating the sample datasets…")
             try:
                 self._import_sample_datasets()
             except Exception:
                 log.exception("Importing the sample datasets failed")
 
+        step("Opening the first chart…")
         self.data_panel.refresh_datasets(self.settings.last_dataset
                                          or self._preferred_dataset())
         self.strategy_panel.refresh(self.settings.last_strategy or None)
         self._update_actions()
         self._update_start_here()
+        elapsed = time.monotonic() - started
+        log.info("First run finished in %.1fs", elapsed)
+        if elapsed > self.SLOW_START_SECONDS:
+            log.warning("Start-up took %.1fs, which a user experiences as a "
+                        "freeze. The per-step timings above say where it went.",
+                        elapsed)
         if self._bars is None:
             self.status("Import a CSV, or press Sample to load the bundled "
                         "synthetic dataset.")
+        else:
+            self.status("Ready.")
+
+    #: Longer than this and the launch is logged as slow, with the per-step
+    #: timings above it, so a report of "it freezes" has evidence attached.
+    SLOW_START_SECONDS = 20.0
+
+    def _pump(self) -> None:
+        """Let Qt paint and answer the window manager.
+
+        Without this the window is created, shown, and then never repainted
+        until the seeding finishes -- which is the white unresponsive rectangle
+        a first launch is reported as.
+        """
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+
+    def _startup_progress(self, done: int, total: int, message: str = "") -> None:
+        """Progress callback for the start-up import: says so, and repaints."""
+        if message:
+            self.status(f"{message}  ({done + 1} of {max(total, 1)})")
+        self._pump()
 
     #: Shipped files larger than this are not imported at start-up.  Half a
     #: million bars takes twenty seconds to parse, and a first launch that
