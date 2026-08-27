@@ -72,6 +72,30 @@ It is roughly free inside a morning window, where the trade would have closed an
 at the NEXT BAR'S OPEN — `strategy.close_all()` cannot sell the close of the bar that triggers it —
 so the engine was changed to match the script (`flat_open`), not the other way round.
 
+**A 1.5xATR STOP AND A 2R TARGET ARE BOTH ON THE WRONG SIDE OF THEIR OWN MARGINAL CURVES.** 625
+cells x 5 instruments: the stop axis is MONOTONE toward wider on every single market (pooled EV
+-0.228 at 1.0N to -0.053 at 3.0N) and NO TAKE PROFIT beats every target for the sixth independent
+time, taking 60-79% of the MAR top decile on four of five markets against a 20% population share.
+The specified geometry is second-worst on the stop axis. Share of grid profitable FIRST: US30 0%,
+US30L 2%, XAU 1%, NQ 45%, US100 66%. See `docs/ib/STUDY_V18_COINT_EWMAC.md`.
+
+**CORRELATION NEAR 1 WITH NO COINTEGRATION MEANS THE LEVELS ARE WRONG, NOT THE MARKET.** US100 and
+NQ are the same index — daily return correlation **0.9995** — and the pair does not cointegrate
+(t -1.64). That is the smoothly drifting level ratio `STUDY_US100.md` already documents in our NQ
+file. The positive control that proves the test works is US30 vs US30L: same instrument, two
+providers, beta 0.994, half-life SIX bars. Always include a pair you know the answer to.
+
+**READ A RESIDUAL COINTEGRATION TEST AGAINST MACKINNON'S EG VALUES (-3.90/-3.34/-3.04), NOT ADF's
+(-3.43/-2.86/-2.57).** Testing a residual you ESTIMATED costs degrees of freedom. Run both
+directions and believe only a pair that rejects both ways; on daily closes here NOTHING cointegrates,
+so the 15-minute rejections were microstructure and sample size. And note the sign convention for a
+trend follower: a cointegrated pair is BAD news — the spread reverts, so two cointegrated legs are
+one bet wearing two names. Gold is the only independent series (rho 0.06-0.10, rolling correlation
+below 0.5 in 97-99% of windows), and US30/US100 15m correlation itself ranges 0.019 to 0.971.
+
+**A DAILY EWMAC(16,64) GATE ON AN INTRADAY BREAKOUT IS A COIN FLIP** — helps four of ten
+instrument-block cells, hurts six, and hurts on both blocks of the 8.5-year US30 history.
+
 **THE ONE ENGINEERED FEATURE THAT SURVIVED: a breakout must also be above the LAST COMPLETED RTH
 SESSION'S HIGH.** On the V11 base (Donchian 55, ADX >= 25, 2.5N, 15m) it takes locked profit factor
 1.308 -> **1.780**, Sharpe 1.05 -> **1.55** and drawdown 14.3R -> 9.0R, and it is what makes the
@@ -888,6 +912,10 @@ plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
 | `research/v15/v15book.py` | the V15 book: features, both legs, the two geometries |
 | `research/v15/v15_parity.py` | **the order-model diff** — the script's one live order vs the engine's eight |
 | `research/v15/run_book.py` | the whole V15 table: mechanic, control gate, walk-forward, MC, prop |
+| `research/v18/v18diag.py` | ADF, AR(1) half-life, Hurst, Lo-MacKinlay VR, Newey-West corr — no statsmodels |
+| `research/v18/v18coint.py` | Engle-Granger both ways on five series, 15m and daily, with a positive control |
+| `research/v18/v18multi.py` | the spec on every instrument, each with its OWN tick, point value and spread |
+| `research/v18/v18results.py` | EV/PF/DD, the 625-cell robustness grid, drawdown consensus, MC |
 | `research/v17/v17feat.py` | 21 engineered breakout features, both directions, all causal |
 | `research/v17/v17run.py` | the 285-condition sweep; Sharpe over ALL days; same-selectivity null |
 | `research/v17/v17judge.py` | ladders, the single locked read, matched controls, stability |

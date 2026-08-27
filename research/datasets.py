@@ -231,7 +231,7 @@ REGISTRY = {
     "US30_ISO_15m": Dataset(
         key="US30_ISO_15m", instrument="US30", timeframe_min=15,
         restore_to="data/US30_ISO_15m.csv",
-        rows=48937, span="2024-08-19 01:45 to 2026-08-26 17:30 New York", bytes=0, sha256_16="",
+        rows=48937, span="2024-08-19 01:45 to 2026-08-26 17:30 New York", bytes=2859078, sha256_16="f319104b7cd70a6b",
         fmt="RTF-WRAPPED CSV as delivered -- an eighth export format, and the first that is not a "
             "plain text file. Unwrap it: drop the RTF header, split the body on `\\par`, strip "
             "control words with the regex `\\\\[a-zA-Z]+-?\\d* ?` and the braces, keep lines "
@@ -252,7 +252,7 @@ REGISTRY = {
     "US100_ISO_15m": Dataset(
         key="US100_ISO_15m", instrument="US100", timeframe_min=15,
         restore_to="data/US100_ISO_15m.csv",
-        rows=46700, span="2024-08-26 07:15 to 2026-08-26 18:15 New York", bytes=0, sha256_16="",
+        rows=51370, span="2024-08-26 07:15 to 2026-08-26 18:15 New York", bytes=3029162, sha256_16="1a6d1829afd0bdca",
         fmt="RTF-WRAPPED CSV, unwrapped exactly as US30_ISO_15m above",
         columns="ISO 8601 timestamp with an explicit UTC offset, open, high, low, close, volume",
         order="ascending after unwrapping",
@@ -281,10 +281,30 @@ REGISTRY = {
         notes="NINE years against the ISO feed's two, so it is where a rule gets tested on 2018, "
               "COVID and the 2022 bear. Everything before 2022-12-26 is unseen by any NQ study."),
 
+    "US30_LONG_15m": Dataset(
+        key="US30_LONG_15m", instrument="US30", timeframe_min=15,
+        restore_to="data/US30_LONG_15m.csv",
+        rows=193942, span="2016-10-26 18:30 to 2025-07-15 13:30 New York", bytes=10967281,
+        sha256_16="e2c84cbb30347510",
+        fmt="GZIPPED TAB-separated csv, delivered NEWEST FIRST",
+        columns="DateTime, Open, High, Low, Close, Volume, TickVolume -- `Volume` is ZERO "
+                "throughout and `TickVolume` is the real activity column",
+        order="DESCENDING as delivered -- sort ascending before use",
+        clock="New York + 7, DERIVED not assumed: mean tick volume by minute-of-day peaks at raw "
+              "16:30/16:45/17:00/17:15, and after a -7h shift the peak lands exactly on minute 570 "
+              "= 09:30 New York.",
+        volume="TickVolume; the Volume column is identically zero",
+        defects="not re-measured beyond the zero Volume column.",
+        loader="research/v18/*",
+        provenance="user upload, 2026-08-27, as US30_15m.csv.gz",
+        notes="EIGHT AND A HALF YEARS of US30 against the ISO feed's two, and it ENDS 2025-07 while "
+              "US30_ISO_15m BEGINS 2024-08 -- so they overlap by only eleven months and the pre-2024 "
+              "history is unseen by every study on this branch."),
+
     "XAU_ISO_15m": Dataset(
         key="XAU_ISO_15m", instrument="XAUUSD", timeframe_min=15,
         restore_to="data/XAU_ISO_15m.csv",
-        rows=494235, span="2004 to 2026", bytes=0, sha256_16="",
+        rows=494235, span="2004 to 2026", bytes=27637271, sha256_16="8c9ef8b42a578f6c",
         fmt="a .7z ARCHIVE of a SEMICOLON-separated csv -- `pip install py7zr` to extract",
         columns="Date;Open;High;Low;Close;Volume, timestamps formatted `%Y.%m.%d %H:%M`",
         order="ascending",
