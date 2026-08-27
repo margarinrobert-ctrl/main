@@ -30,7 +30,7 @@ COLS = ["sig", "ent", "exit", "units", "entry", "px0", "exitpx", "pnl", "mfe", "
         "t_mfe", "bars", "reason", "eff"]
 
 
-def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, cost=1.72,
+def run(d, atr, C, mask, *, side=1, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, cost=1.72,
         tp_pts=None, tp_r=None, be_pts=None, be_lock=0.0, trail_pts=None, atr_trail=None,
         chan_exit=True, max_bars=None, flat_mod=None, part_frac=None, part_pts=None,
         lim_mult=None, lim_atr=None, lim_wait=2, lim_through=0.0):
@@ -45,8 +45,15 @@ def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, c
         if not mask[i] or not np.isfinite(atr[i]) or atr[i] <= 0:
             i += 1
             continue
-        s2 = np.isfinite(C["hi2"][i]) and h[i] > C["hi2"][i]
-        s1 = np.isfinite(C["hi1"][i]) and h[i] > C["hi1"][i]
+        if side > 0:
+            s2 = np.isfinite(C["hi2"][i]) and h[i] > C["hi2"][i]
+            s1 = np.isfinite(C["hi1"][i]) and h[i] > C["hi1"][i]
+        else:
+            # SHORT: break of the LOW channel. `elo*` are the entry channels on the down side and
+            # `xhi*` the exits, exactly as mirror.channels lays them out -- using lo1/lo2 here
+            # would silently make the ENTRY channel the EXIT channel.
+            s2 = np.isfinite(C["elo2"][i]) and l[i] < C["elo2"][i]
+            s1 = np.isfinite(C["elo1"][i]) and l[i] < C["elo1"][i]
         sys_on = 2 if s2 else (1 if s1 else 0)
         if sys_on == 0:
             i += 1
@@ -65,10 +72,10 @@ def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, c
             # live for `lim_wait` bars. Fill is assumed AT the limit even when price gapped through
             # it, which is the pessimistic reading for a buy. Signals that never fill are DROPPED --
             # that is the cost of the mechanic and it must show up in the trade count.
-            lim = c[i] - lim_mult * lim_atr[i]
+            lim = c[i] - side * lim_mult * lim_atr[i]
             eb = None
             for k in range(i + 1, min(i + 1 + lim_wait, n)):
-                if l[k] <= lim - lim_through:
+                if (l[k] <= lim - lim_through) if side > 0 else (h[k] >= lim + lim_through):
                     eb = k
                     break
             if eb is None:
@@ -79,8 +86,8 @@ def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, c
         size = 1.0
         opened = 1          # units EVER opened -- the ladder counts these, not the live size
         last_fill = px0
-        nxt = px0 + pyr * a
-        stop = px0 - atr_mult * a
+        nxt = px0 + side * pyr * a
+        stop = px0 - side * atr_mult * a
         pnl = -cost
         peak = px0            # running high INCLUDING this bar -- for MFE only
         peak_prev = px0       # running high as of the PREVIOUS bar -- for every trailing level
@@ -92,18 +99,20 @@ def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, c
             # `opened`, not `size`. A partial exit reduces size, and keying the ladder off size
             # let it RE-OPEN a unit it had just closed -- trades exited at 1.5 units on a
             # max_units=1 configuration, inflating every result that used a partial.
-            while opened < max_units and h[j] >= nxt:
+            while opened < max_units and ((h[j] >= nxt) if side > 0 else (l[j] <= nxt)):
                 last_fill = nxt
                 pnl -= cost
                 avg = (avg * size + last_fill) / (size + 1)
                 size += 1
                 opened += 1
-                stop = last_fill - atr_mult * a
-                nxt = last_fill + pyr * a
-            if h[j] - px0 > mfe:
-                mfe = h[j] - px0
+                stop = last_fill - side * atr_mult * a
+                nxt = last_fill + side * pyr * a
+            fav = (h[j] - px0) if side > 0 else (px0 - l[j])
+            adv = (px0 - l[j]) if side > 0 else (h[j] - px0)
+            if fav > mfe:
+                mfe = fav
                 t_mfe = j - eb
-            mae = max(mae, px0 - l[j])
+            mae = max(mae, adv)
 
             # A TRAILING LEVEL MAY ONLY READ BARS THAT HAVE CLOSED. Updating the peak from THIS
             # bar's high and then testing THIS bar's low against it assumes the high came first,
@@ -117,25 +126,31 @@ def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, c
             limit_fill_bar = (lim_mult is not None and j == eb)
             lvl = stop
             if chan_exit and not limit_fill_bar:
-                ch = C["lo1"][j] if sys_on == 1 else C["lo2"][j]
-                if np.isfinite(ch):
-                    lvl = max(lvl, ch)
+                if side > 0:
+                    ch = C["lo1"][j] if sys_on == 1 else C["lo2"][j]
+                    if np.isfinite(ch):
+                        lvl = max(lvl, ch)
+                else:
+                    ch = C["xhi1"][j] if sys_on == 1 else C["xhi2"][j]
+                    if np.isfinite(ch):
+                        lvl = min(lvl, ch)
             if not limit_fill_bar:
-                if be_pts is not None and peak_prev - px0 >= be_pts:
-                    lvl = max(lvl, px0 + be_lock)
+                better = max if side > 0 else min
+                if be_pts is not None and side * (peak_prev - px0) >= be_pts:
+                    lvl = better(lvl, px0 + side * be_lock)
                 if trail_pts is not None:
-                    lvl = max(lvl, peak_prev - trail_pts)
+                    lvl = better(lvl, peak_prev - side * trail_pts)
                 if atr_trail is not None:
-                    lvl = max(lvl, peak_prev - atr_trail * a)
+                    lvl = better(lvl, peak_prev - side * atr_trail * a)
             # A SELL STOP CANNOT REST ABOVE THE MARKET. If the channel exit (or any trailing
             # level) sits above the price at which the order is placed, it is not a stop -- it is a
             # limit that books an instant profit, and letting it "trigger" inside the bar assumes
             # an intrabar sequence nobody can know. Cap every working level at the close of the bar
             # the order was placed on (the fill price itself, on a limit-entry fill bar).
             cap = px0 if limit_fill_bar else c[j - 1]
-            lvl = min(lvl, cap)
-            hit_sl = l[j] <= lvl
-            peak = max(peak, h[j])
+            lvl = min(lvl, cap) if side > 0 else max(lvl, cap)
+            hit_sl = (l[j] <= lvl) if side > 0 else (h[j] >= lvl)
+            peak = max(peak, h[j]) if side > 0 else min(peak, l[j])
 
             # ON A LIMIT-ENTRY FILL BAR THE TARGET IS NOT AVAILABLE. The fill happened because the
             # bar traded DOWN to the limit; letting the same bar's HIGH pay the target assumes the
@@ -145,37 +160,39 @@ def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, c
             tgt = None
             if not limit_fill_bar:
                 if tp_pts is not None:
-                    tgt = avg + tp_pts
+                    tgt = avg + side * tp_pts
                 elif tp_r is not None:
-                    tgt = avg + tp_r * atr_mult * a
+                    tgt = avg + side * tp_r * atr_mult * a
 
             # partial first: it is nearer than the runner's target by construction
             if (part_pts is not None and part_frac is not None and not part_done
-                    and not hit_sl and not limit_fill_bar and h[j] >= avg + part_pts):
+                    and not hit_sl and not limit_fill_bar
+                    and ((h[j] >= avg + part_pts) if side > 0 else (l[j] <= avg - part_pts))):
                 closed = size * part_frac
                 pnl += part_pts * closed - 0.5 * cost * closed
                 size -= closed
                 part_done = True
 
-            if tgt is not None and h[j] >= tgt and not hit_sl:
-                pnl += (tgt - avg) * size
+            if (tgt is not None and not hit_sl
+                    and ((h[j] >= tgt) if side > 0 else (l[j] <= tgt))):
+                pnl += side * (tgt - avg) * size
                 rows.append((i, eb, j, size, avg, px0, tgt, pnl, mfe, mae, t_mfe, j - eb,
-                             "tp", (tgt - px0) / mfe if mfe > 0 else np.nan))
+                             "tp", side * (tgt - px0) / mfe if mfe > 0 else np.nan))
                 break
             if flat_mod is not None and mod[j] >= flat_mod:
-                pnl += (c[j] - avg) * size
+                pnl += side * (c[j] - avg) * size
                 rows.append((i, eb, j, size, avg, px0, c[j], pnl, mfe, mae, t_mfe, j - eb,
-                             "flat", (c[j] - px0) / mfe if mfe > 0 else np.nan))
+                             "flat", side * (c[j] - px0) / mfe if mfe > 0 else np.nan))
                 break
             if max_bars is not None and (j - eb) >= max_bars:
-                pnl += (c[j] - avg) * size
+                pnl += side * (c[j] - avg) * size
                 rows.append((i, eb, j, size, avg, px0, c[j], pnl, mfe, mae, t_mfe, j - eb,
-                             "time", (c[j] - px0) / mfe if mfe > 0 else np.nan))
+                             "time", side * (c[j] - px0) / mfe if mfe > 0 else np.nan))
                 break
             if hit_sl:
-                pnl += (lvl - avg) * size
+                pnl += side * (lvl - avg) * size
                 rows.append((i, eb, j, size, avg, px0, lvl, pnl, mfe, mae, t_mfe, j - eb,
-                             "stop", (lvl - px0) / mfe if mfe > 0 else np.nan))
+                             "stop", side * (lvl - px0) / mfe if mfe > 0 else np.nan))
                 break
             peak_prev = peak
             j += 1
@@ -191,7 +208,7 @@ def _eff(t, floor=10.0):
     q = t[t.mfe >= floor]
     if len(q) == 0:
         return np.nan
-    return float(np.median((q.exitpx - q.px0) / q.mfe))
+    return float(np.median(np.sign(q.exitpx - q.px0) * np.abs(q.exitpx - q.px0) / q.mfe))
 
 
 def stats(t, block_days=None):

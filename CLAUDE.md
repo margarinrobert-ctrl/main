@@ -237,6 +237,32 @@ decides whether the trigger carries information. Also: the ATR-expansion filter 
 (p 0.117-0.454) -- restrictiveness alone raises PF. XAU 5m arrives as semicolon CSV from 2004,
 NY+7; 494,235 15m bars. See `docs/ib/STUDY_V12_DONCHIAN_3020.md`.
 
+**A one-bar scalp is arithmetically dead here, and the IC says so before any rule is written.**
+180 IC tests (Newey-West + BH) on nine years of US100: 22 survive, largest |IC| anywhere **0.0305**,
+none reaches 0.05. Converted to points: at h=1 an IC of 0.03 is worth 0.39 pts against a 1.215-pt
+round turn (0.32x); h=4 0.81 (0.67x); h=16 1.79 (1.48x). **You need IC >= 0.10 at h=1 to clear
+costs.** And every price-vs-MA feature is MEAN-REVERTING at h=1 and ~zero at h=16, so an MA cross
+carries no trend information at scalping range. Decile checks: ma_gap is non-monotone (D5 beats
+D10), ADX and CHOP deciles are flat. See `docs/ib/STUDY_V13_MA_REGIME.md`.
+
+**MA LENGTH is not a degree of freedom either.** 13/48 vs 12/48 vs 15/48, and 12/100 vs 12/90 vs
+12/110, all land within 0.03 PF. What matters is that two pairs AGREE and that a regime filter is
+on. Extends STUDY_MA_LAG from "MA type" to "MA length".
+
+**A REGIME needs three independent readings; each one alone is worthless.** ADX>=25 as a standalone
+trigger scores p 0.994 and CHOP<=50 scores p 0.990 -- the two worst rows in an 18-signal battery.
+Required TOGETHER with an efficiency-ratio floor (ADX>=25 AND ER(20)>=0.30 AND CHOP14<=55) they take
+a Donchian 30/20 breakout from PF 1.04 / p 0.690 to PF 1.24 / p 0.064 on research, and the
+combination is positive on FIVE blocks across THREE asset classes and 22 years (US100 9yr research
+1.24 and locked 1.46, US100-ISO 1.27, US30 1.26, XAU 1.14), 8/9 walk-forward folds, bootstrap
+P(mean<=0) 0.0001. Watch the shape though: locked > research, which is the wrong direction.
+
+**The short side was one bear market.** Short-as-specified loses on every block (p 0.65-0.96).
+Short-INVERTED (fade a flush in an uptrend) looked significant on three equity blocks (p 0.003/
+0.030/0.026) and is carried entirely by the 2021-10..2022-10 fold (PF 2.19, +33.80): 4/9 folds
+elsewhere, bootstrap P(mean<=0) 0.099, and XAU PF 0.77 at p 1.000. Check WHICH FOLD carries a
+result before believing it.
+
 **Tune with `research/tune.py`, not by editing a module.** A trade's outcome depends only on its
 signal bar and the geometry, so the price walk is cached per bar and every exit knob — stop,
 target, flatten time, max hold, entry mechanic, cost model — becomes an array index: 0.4 us per
