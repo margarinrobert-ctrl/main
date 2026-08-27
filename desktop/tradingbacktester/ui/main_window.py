@@ -1661,14 +1661,81 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(title)
 
     def _restore_geometry(self) -> None:
+        """Put the window back where it was, unless that cannot be read or used.
+
+        Both saved fields are base64 written by Qt, and both are read back with
+        ``.encode("ascii")``.  A settings file holding anything else -- hand
+        edited, half written by a machine that lost power, copied between
+        profiles -- raises *inside the constructor*, so there is no window at
+        all and nothing to show the user an error in.  Neither field is worth
+        that: a lost layout is an inconvenience, a launch that dies is not.
+
+        Qt 6 already pulls a geometry saved on a monitor that is no longer
+        attached back onto one that is, so this does not repeat that work.  The
+        screen check behind it is defence in depth, because the failure it
+        guards against is silent: a window off the desktop is invisible, and so
+        is every modal dialog centred on it, which looks exactly like an
+        application that has hung.
+        """
+        restored = False
         if self.settings.window_geometry:
-            self.restoreGeometry(QByteArray.fromBase64(
-                self.settings.window_geometry.encode("ascii")))
+            try:
+                restored = self.restoreGeometry(QByteArray.fromBase64(
+                    self.settings.window_geometry.encode("ascii")))
+            except Exception:
+                log.exception("The saved window geometry could not be read")
+                restored = False
+        if restored and not self._on_a_screen():
+            log.warning("The saved window position is not on any attached "
+                        "screen; opening at the default size instead.")
+            self.resize(1680, 980)
+            self._centre_on_primary()
         if self.settings.window_state:
-            self.restoreState(QByteArray.fromBase64(
-                self.settings.window_state.encode("ascii")))
+            try:
+                if not self.restoreState(QByteArray.fromBase64(
+                        self.settings.window_state.encode("ascii"))):
+                    self.on_reset_layout()
+            except Exception:
+                log.exception("The saved dock layout could not be read")
+                self.on_reset_layout()
         else:
             self.on_reset_layout()
+
+    #: How much of the window has to be on a screen for the position to be
+    #: worth keeping.  A sliver is not enough to grab, and not enough to see a
+    #: dialog in.
+    MIN_ON_SCREEN = 0.2
+
+    def _on_a_screen(self) -> bool:
+        """Is enough of the window inside the desktop to be usable?"""
+        from PySide6.QtWidgets import QApplication
+
+        frame = self.frameGeometry()
+        area = frame.width() * frame.height()
+        if area <= 0:
+            return False
+        screens = QApplication.screens()
+        if not screens:
+            return True          # Headless: there is nothing to be off the edge of.
+        visible = 0
+        for screen in screens:
+            overlap = frame.intersected(screen.availableGeometry())
+            if not overlap.isEmpty():
+                visible += overlap.width() * overlap.height()
+        return visible >= area * self.MIN_ON_SCREEN
+
+    def _centre_on_primary(self) -> None:
+        """Middle of the primary screen, shrunk to fit if it has to be."""
+        from PySide6.QtWidgets import QApplication
+
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        self.resize(self.frameGeometry().size().boundedTo(available.size()))
+        frame = self.frameGeometry()
+        frame.moveCenter(available.center())
+        self.move(frame.topLeft())
 
     def closeEvent(self, event) -> None:  # noqa: N802
         if self._runner.busy:

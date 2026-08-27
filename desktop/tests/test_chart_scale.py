@@ -352,3 +352,66 @@ def test_the_dataset_cache_notices_the_file_changing(tmp_path, qapp):
     repo.remove(meta.id)
     new_meta = repo.add_from_bars(replacement, name="C 1h")
     assert len(repo.load_bars(new_meta.id)) == 800
+
+
+# ---------------------------------------------------------------------------
+# a saved window position that cannot be used
+# ---------------------------------------------------------------------------
+#
+# Qt 6 already clamps a geometry restored onto a monitor that is no longer
+# attached -- saving at (-9000, -9000) and restoring gives a position on the
+# remaining screen -- so that case needs no code here and gets no test
+# pretending otherwise.  What is NOT handled is a settings file whose saved
+# fields are not what the reader expects, and that one is fatal: it raises
+# inside MainWindow.__init__, so there is no window at all.
+
+
+def _settings_and_workspace(tmp_path):
+    from tradingbacktester.config import AppSettings
+    from tradingbacktester.storage.workspace import bootstrap
+
+    settings = AppSettings()
+    settings.workspace_dir = str(tmp_path / "ws")
+    return settings, bootstrap(settings)
+
+
+@pytest.mark.parametrize("saved", ["caf\u00e9", "\u2014dash", "not base64!!", ""])
+def test_an_unreadable_saved_geometry_still_opens_a_window(saved, tmp_path, qapp):
+    """Non-ASCII in the field raises UnicodeEncodeError on the .encode("ascii")
+    the restore does, and it raises during construction -- so before this the
+    application did not open at all, it failed."""
+    from tradingbacktester.ui.main_window import MainWindow
+
+    settings, workspace = _settings_and_workspace(tmp_path)
+    settings.window_geometry = saved
+    settings.window_state = saved
+    window = MainWindow(settings, workspace, None)
+    window.show()
+    qapp.processEvents()
+    assert window.isVisible()
+    assert window.width() > 0 and window.height() > 0
+    window.close()
+    qapp.processEvents()
+
+
+def test_the_on_screen_check_rejects_a_window_off_the_desktop(tmp_path, qapp):
+    """The guard's own logic, tested directly rather than through Qt's restore.
+
+    It is defence in depth behind Qt's clamping: a window that ends up off the
+    desktop is invisible, and so is every modal dialog centred on it, which is
+    an application that never answers and never says why.
+    """
+    from tradingbacktester.ui.main_window import MainWindow
+
+    settings, workspace = _settings_and_workspace(tmp_path)
+    window = MainWindow(settings, workspace, None)
+    window.resize(900, 600)
+    window.move(-9000, -9000)
+    qapp.processEvents()
+    assert not window._on_a_screen()
+
+    window._centre_on_primary()
+    qapp.processEvents()
+    assert window._on_a_screen()
+    window.close()
+    qapp.processEvents()
