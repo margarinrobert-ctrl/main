@@ -470,3 +470,71 @@ def test_a_nan_robustness_is_not_printed_as_a_score():
     text = format_auto_search(report, top=8)
     assert "nan/100" not in text
     assert "robustness nan" not in text
+
+
+# --------------------------------------------------------------------------
+# Which sweep is allowed to speak for the grid
+# --------------------------------------------------------------------------
+
+def test_a_thin_sweep_does_not_speak_for_the_whole_grid():
+    """The worst estimate is not the same thing as the worst result.
+
+    A position-trading sweep of daily bars scored 60 combinations, 36 of which
+    traded in every block. Its probability of overfitting -- over 36
+    candidates, beside another sweep's over 1,488 -- was printed at the top of
+    the report as the grid's answer.
+    """
+    from tradingbacktester.finder.autosearch import (MIN_CANDIDATES_FOR_GRID,
+                                                     AutoSearchReport)
+    from tradingbacktester.finder.overfit import PBOResult
+
+    def sweep(style, timeframe, probability, candidates):
+        s = Sweep(style=style, timeframe=timeframe, combinations=1, scored=1)
+        s.report = type("R", (), {"findings": [], "overfitting": PBOResult(
+            probability, 924, candidates, 12, 0.0, -1.0, 0.5)})()
+        return s
+
+    report = AutoSearchReport(symbol="X", bars=1)
+    report.sweeps = [sweep("intraday", "15m", 0.30, 1_488),
+                     sweep("position", "1D", 0.95, 36)]
+    # Reproduce the selection the grid makes.
+    measured = [(s, s.report.overfitting) for s in report.sweeps]
+    solid = [p for p in measured
+             if p[1].candidates >= MIN_CANDIDATES_FOR_GRID]
+    assert len(solid) == 1
+    assert solid[0][1].probability == 0.30, (
+        "the 36-candidate estimate was allowed to speak for the grid")
+
+
+def test_the_grid_names_the_sweep_its_headline_came_from(small):
+    report = auto_search(small, control_draws=20, validate="quick")
+    if report.overfitting is None or not report.overfitting.ran:
+        pytest.skip("no sweep on this fixture could be cross-validated")
+    assert report.overfitting_sweep, "the headline does not say where it is from"
+    styles = {s.style for s in report.sweeps}
+    assert report.overfitting_sweep.split(" on ")[0] in styles
+    text = format_auto_search(report)
+    assert report.overfitting_sweep in text
+    assert f"{report.overfitting.candidates:,} candidates" in text
+
+
+def test_the_grid_falls_back_to_the_widest_sample_when_all_are_thin():
+    """With every estimate thin, the widest is the least misleading."""
+    from tradingbacktester.finder.autosearch import (MIN_CANDIDATES_FOR_GRID,
+                                                     AutoSearchReport)
+    from tradingbacktester.finder.overfit import PBOResult
+
+    def sweep(style, probability, candidates):
+        s = Sweep(style=style, timeframe="1D", combinations=1, scored=1)
+        s.report = type("R", (), {"findings": [], "overfitting": PBOResult(
+            probability, 924, candidates, 12, 0.0, -1.0, 0.5)})()
+        return s
+
+    report = AutoSearchReport(symbol="X", bars=1)
+    report.sweeps = [sweep("swing", 0.9, 10), sweep("position", 0.2, 80)]
+    measured = [(s, s.report.overfitting) for s in report.sweeps]
+    solid = [p for p in measured
+             if p[1].candidates >= MIN_CANDIDATES_FOR_GRID]
+    assert not solid
+    pool = solid or [max(measured, key=lambda p: p[1].candidates)]
+    assert pool[0][1].candidates == 80

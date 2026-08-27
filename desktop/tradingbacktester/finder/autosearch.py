@@ -49,6 +49,7 @@ from ..core.timeframe import Timeframe
 from ..core.types import CostModel
 from ..data.models import BarSeries
 from .control import benjamini_hochberg
+from .overfit import PBOResult
 from .search import Finding, FinderReport, find_strategies
 from .styles import STYLES, TradingStyle
 
@@ -75,6 +76,17 @@ _TICKS = 1000
 #: the report rather than applied silently, because a bound on coverage that
 #: the reader cannot see reads as "we checked everything".
 VALIDATION_CAP = 25
+
+#: A sweep needs this many cross-validated candidates before its probability of
+#: overfitting is allowed to speak for the whole grid.
+#:
+#: Without it the summary is decided by the WEAKEST sweep: a position-trading
+#: search of daily bars scored 60 combinations, 36 of which traded in every
+#: block, and its 0.75 -- an estimate over 36 candidates, next to another
+#: sweep's over 1,488 -- was printed at the top of the report as the grid's
+#: answer. Reporting the worst is right; letting the noisiest estimate be the
+#: worst is not.
+MIN_CANDIDATES_FOR_GRID = 100
 
 
 @dataclass
@@ -117,6 +129,17 @@ class AutoSearchReport:
     null_best: float = float("nan")
     """What the best of this many tries would score on data with no edge."""
     alpha: float = DEFAULT_ALPHA
+    overfitting: "PBOResult | None" = None
+    """The WORST probability of backtest overfitting among the sweeps.
+
+    Worst rather than pooled, and worst rather than best: the sweeps have
+    different bar sizes, so their blocks are different lengths and averaging
+    them would be averaging incomparable things. Reporting the worst is the
+    one summary that cannot flatter the grid -- but only among sweeps with
+    enough candidates to have measured it properly. See
+    :data:`MIN_CANDIDATES_FOR_GRID`."""
+    overfitting_sweep: str = ""
+    """Which sweep that came from, since it speaks for the grid."""
     elapsed: float = 0.0
     notes: list[str] = field(default_factory=list)
     origins: dict[tuple[str, str], str] = field(default_factory=dict)
@@ -156,6 +179,9 @@ class AutoSearchReport:
             "null_best_excess": (None if not math.isfinite(self.null_best)
                                  else round(self.null_best, 4)),
             "beats_its_own_null": self.beats_its_own_null,
+            "overfitting": (self.overfitting.to_dict() if self.overfitting
+                            else None),
+            "overfitting_sweep": self.overfitting_sweep,
             "origins": {f"{label}|{timeframe}": style
                         for (label, timeframe), style in self.origins.items()},
             "alpha": self.alpha,
@@ -285,6 +311,23 @@ def auto_search(bars: BarSeries, *, styles: Sequence[str] = (),
         out.survivors = [f for f, ok in zip(scored, survives) if ok]
         out.survivors.sort(key=lambda f: -float(f.control.excess_per_trade))
         out.null_best = _null_best(scored, seed)
+        _deflate_over_the_grid(out, scored)
+
+    # A sweep measures its own probability of overfitting over its own blocks.
+    # The grid's answer is the worst of them, for the reason on the field.
+    measured = [(s, s.report.overfitting) for s in out.sweeps
+                if s.ran and s.report.overfitting is not None
+                and s.report.overfitting.ran]
+    if measured:
+        solid = [pair for pair in measured
+                 if pair[1].candidates >= MIN_CANDIDATES_FOR_GRID]
+        # If no sweep cleared the bar, the best-measured one speaks rather
+        # than the worst: with every estimate thin, the widest sample is the
+        # least misleading, and the candidate count is printed beside it.
+        pool = solid or [max(measured, key=lambda pair: pair[1].candidates)]
+        sweep, result = max(pool, key=lambda pair: pair[1].probability)
+        out.overfitting = result
+        out.overfitting_sweep = f"{sweep.style} on {sweep.timeframe}"
 
     # The grid was gated cheaply, because gating ten thousand combinations
     # through the engine would take hours to reject all but a handful. What
@@ -301,6 +344,28 @@ def auto_search(bars: BarSeries, *, styles: Sequence[str] = (),
     if progress is not None:
         progress(steps * _TICKS, steps * _TICKS, "Done")
     return out
+
+
+def _deflate_over_the_grid(out: AutoSearchReport,
+                           scored: Sequence[Finding]) -> None:
+    """Re-price every Sharpe for the size of the WHOLE grid.
+
+    Each sweep deflated its findings against its own trial count, which is the
+    right answer for that sweep and the wrong one here: a rule that came out of
+    a 1,560-combination sweep of a 7,890-combination grid was selected from the
+    grid. Re-pricing raises the benchmark and can only lower a deflated Sharpe,
+    which is the direction an honest correction moves in.
+    """
+    sharpes = np.array([float(f.research.get("sharpe", 0.0)) for f in scored],
+                       dtype="float64")
+    sharpes = sharpes[np.isfinite(sharpes)]
+    if sharpes.size < 2:
+        return
+    variance = float(sharpes.var(ddof=1))
+    trials = len(scored)
+    for finding in scored:
+        if finding.deflated is not None:
+            finding.deflated = finding.deflated.redeflate(trials, variance)
 
 
 def _validate_survivors(out: AutoSearchReport, bars: BarSeries,
@@ -455,6 +520,26 @@ def _notes(out: AutoSearchReport, pairs: Sequence[tuple]) -> None:
         "is the reason this one is worth running; the alternative is a tool "
         "that hands you the best of ten thousand coin flips.")
 
+    if out.overfitting is not None and out.overfitting.ran:
+        pbo = out.overfitting
+        out.notes.append(
+            f"Probability of backtest overfitting: {pbo.probability:.2f} "
+            f"(the worst of the {len(ran)} searches — {out.overfitting_sweep}, "
+            f"measured over {pbo.candidates:,} candidates and {pbo.splits:,} "
+            f"half-and-half splits of {pbo.blocks} time-ordered pieces of the "
+            f"research block). This asks whether SELECTION generalises, which "
+            f"is a different question from whether any one candidate does, and "
+            f"one no candidate's own statistics can answer. The in-sample "
+            f"winner gave up {abs(pbo.degradation):.2f} of its metric out of "
+            f"sample and was outright negative "
+            f"{pbo.probability_of_loss:.0%} of the time. "
+            + ("Above 0.5 the search is fitting noise: picking the winner did "
+               "not carry over, and anything that survived should be treated "
+               "as unproven however good its own numbers look."
+               if pbo.probability > 0.5 else
+               "At or below 0.5, picking the winner carried over to pieces it "
+               "was not picked on -- necessary, not sufficient."))
+
     if out.best is not None and math.isfinite(out.null_best):
         out.notes.append(
             f"On data with no edge at all, the best of a search this size "
@@ -536,6 +621,16 @@ def format_auto_search(report: AutoSearchReport, currency: str = "USD",
                         f"data with no edge: {report.null_best:+,.2f}. "
                         f"The finding {verdict}.", width))
         out.append("")
+        if report.best.deflated is not None:
+            out.extend(_fit("", "Deflated Sharpe of that finding: "
+                            + report.best.deflated.describe() + ".", width))
+            out.append("")
+
+    if report.overfitting is not None and report.overfitting.ran:
+        out.extend(_fit("", f"Worst of the {len(report.sweeps)} searches "
+                        f"({report.overfitting_sweep}): "
+                        + report.overfitting.describe(), width))
+        out.append("")
 
     if report.survivors:
         out.extend(_fit("", f"{len(report.survivors):,} combination(s) "
@@ -556,6 +651,13 @@ def format_auto_search(report: AutoSearchReport, currency: str = "USD",
                             f"{currency}/trade, excess "
                             f"{control.excess_per_trade:+,.2f} "
                             f"(p={control.p_value:.4g})", width))
+            if finding.deflated is not None:
+                out.extend(_fit("      ", "deflated Sharpe "
+                                f"{finding.deflated.probability:.3f} "
+                                f"({finding.deflated.sharpe:+.4f}/trade "
+                                f"against {finding.deflated.benchmark:+.4f} "
+                                f"for the best of "
+                                f"{finding.deflated.trials:,} tries)", width))
             # Same three cases as `report._robustness_lines`, and for the same
             # reason: a number printed beside a disqualifying reason is a
             # number someone will quote without the reason, and "nan/100" is

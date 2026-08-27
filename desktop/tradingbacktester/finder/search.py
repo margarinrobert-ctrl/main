@@ -49,6 +49,8 @@ from .robustness import Robustness, assess, rank as rank_by_robustness
 from .validate import Validations, run as run_validations
 from .control import (ControlResult, MinuteTable, analytic_control,
                       benjamini_hochberg, sampled_control)
+from .overfit import (BlockCollector, DeflatedSharpe, PBOResult,
+                      deflated_sharpe)
 from .outcomes import (EXIT_NAMES, Geometry, OutcomeCache, block_hold_limit,
                        build_outcomes, select_sequential, session_entry_mask,
                        session_hold_limit)
@@ -102,6 +104,13 @@ class Finding:
     """Concentration, Monte Carlo, mirror and walk-forward. See `validate.py`."""
     robustness: Any = None
     """The multi-dimensional score built from all of the above."""
+    deflated: "DeflatedSharpe | None" = None
+    """The Sharpe with the SEARCH priced out of it. See `finder/overfit.py`.
+
+    A Sharpe quoted from the best of N tries is the Sharpe of a maximum, not
+    of a strategy. This is the probability it beats what the best of N tries
+    reaches on no skill at all, corrected for the skew and fat tails that make
+    a stop-and-target strategy's Sharpe flattering in the first place."""
     confirmation: Any = None
     """The engine's own backtest of this rule. See `finder/confirm.py`.
 
@@ -143,6 +152,8 @@ class Finding:
                                 if self.holdout_control else None),
             "verdict": self.verdict,
             "concerns": list(self.concerns),
+            "deflated_sharpe": (self.deflated.to_dict()
+                                if self.deflated is not None else None),
             "confirmation": (self.confirmation.to_dict()
                              if self.confirmation is not None else None),
             "validations": (self.validations.to_dict()
@@ -173,6 +184,14 @@ class FinderReport:
     shortlist: list[Finding] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     elapsed: float = 0.0
+    overfitting: "PBOResult | None" = None
+    """Whether SELECTION generalises, not whether the winner does.
+
+    Combinatorially symmetric cross-validation over the research block. It is
+    a property of the search rather than of any candidate, so it is reported
+    whether or not anything survived -- a high probability of overfitting
+    beside a survivor is the most dangerous output this application can
+    produce, and it must not be possible to read one without the other."""
 
     @property
     def found_anything(self) -> bool:
@@ -189,6 +208,8 @@ class FinderReport:
             "combinations": self.combinations, "tested": self.tested,
             "elapsed_seconds": round(self.elapsed, 2),
             "shortlist": [f.to_dict() for f in self.shortlist],
+            "overfitting": (self.overfitting.to_dict() if self.overfitting
+                            else None),
             "notes": list(self.notes),
         }
 
@@ -420,6 +441,11 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
         tables[key] = MinuteTable.build(cache.minute_of_day[pool],
                                         cache.net_cash[pool])
 
+    # Cross-validation runs over the RESEARCH block only. Cutting the whole
+    # series into blocks would deal the locked block into training sets, which
+    # is exactly the leak the split exists to prevent.
+    collector = BlockCollector.over(split, total=n)
+
     findings: list[Finding] = []
     step = len(candidates)
     minimum = max(ABSOLUTE_MIN_TRADES, int(style.min_trades))
@@ -433,7 +459,8 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
             key = (candidate.side, stop_atr, target_r)
             cache = caches[key]
             finding = _score(cache, mask, research, candidate, timeframe,
-                             stop_atr, target_r, minimum, table=tables[key])
+                             stop_atr, target_r, minimum, table=tables[key],
+                             collector=collector)
             if finding is not None:
                 findings.append(finding)
 
@@ -444,7 +471,31 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
             f"dataset, not about the rules -- try a smaller bar size, more "
             f"history, or a style with a shorter hold.")
         return _report(style, timeframe, working, split, combinations, 0,
-                       findings, [], notes, started)
+                       findings, [], notes, started)   # nothing to validate
+
+    # -- what the SEARCH is worth, as distinct from any candidate --------
+    #
+    # Both of these price the search itself rather than the winner, so both
+    # are computed over every scored candidate, before anything is selected.
+    overfitting = (collector.result() if collector is not None else
+                   PBOResult(float("nan"), 0, 0, 0, float("nan"),
+                             float("nan"), float("nan"), False,
+                             "the research block is too short to cut into "
+                             "blocks for cross-validation"))
+    sharpes = np.array([float(f.research.get("sharpe", 0.0)) for f in findings],
+                       dtype="float64")
+    sharpes = sharpes[np.isfinite(sharpes)]
+    trial_variance = float(sharpes.var(ddof=1)) if sharpes.size > 1 else 0.0
+
+    def _deflate(finding: Finding) -> None:
+        """Price this candidate's Sharpe for the size of the search."""
+        cache = caches[(finding.candidate.side, finding.stop_atr,
+                        finding.target_r)]
+        kept = select_sequential(
+            cache, signal_cache[finding.candidate.key()] & research)
+        finding.deflated = deflated_sharpe(cache.net_cash[kept],
+                                           trials=len(findings),
+                                           trial_variance=trial_variance)
 
     survives = benjamini_hochberg([f.control.p_value for f in findings], alpha)
     for finding, ok in zip(findings, survives):
@@ -464,6 +515,7 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
             f"across {len(findings):,} tests. This is the normal outcome of an "
             f"honest search and it is worth more than a shortlist would be.")
         best.verdict = "not worth trading — did not survive multiplicity"
+        _deflate(best)
         # Still build it as a real strategy: the row is shown, so it should be
         # openable and chartable like any other. Being able to look at what
         # nearly worked is worth more than a row that cannot be clicked.
@@ -479,7 +531,8 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
                             "measuring something already disqualified"})
         best.robustness = assess(best, minimum_trades=minimum)
         return _report(style, timeframe, working, split, combinations,
-                       len(findings), findings, [best], notes, started)
+                       len(findings), findings, [best], notes, started,
+                       overfitting)
 
     shortlist = _deduplicate(ranked)[:max(1, int(top_n))]
 
@@ -490,6 +543,7 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
                      f"Checking shortlisted rule {position + 1} of {len(shortlist)}")
         cache = caches[(finding.candidate.side, finding.stop_atr, finding.target_r)]
         mask = signal_cache[finding.candidate.key()]
+        _deflate(finding)
         finding.sampled = _sampled(cache, mask, research, control_draws, seed)
         finding.neighbourhood = _neighbourhood(
             working, caches, signal_cache, research, finding, style, minimum,
@@ -523,7 +577,8 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
     shortlist = rank_by_robustness(shortlist)
 
     return _report(style, timeframe, working, split, combinations,
-                   len(findings), findings, shortlist, notes, started)
+                   len(findings), findings, shortlist, notes, started,
+                   overfitting)
 
 
 # ---------------------------------------------------------------------------
@@ -534,17 +589,26 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
 def _score(cache: OutcomeCache, mask: np.ndarray, block: np.ndarray,
            candidate: Candidate, timeframe: str, stop_atr: float,
            target_r: float, minimum: int,
-           table: MinuteTable | None = None) -> Finding | None:
+           table: MinuteTable | None = None,
+           collector: "BlockCollector | None" = None) -> Finding | None:
     """Evaluate one candidate on one block, against its matched control.
 
     ``table`` is the control population already summarised. It depends only on
     the cache and the block, so the caller builds one per geometry rather than
     letting every candidate re-sort the same half-million values.
+
+    ``collector`` accumulates the per-block trade statistics the
+    cross-validation needs. It is done here rather than in the caller because
+    ``kept`` already exists at this point; recomputing it outside would double
+    the most expensive line in the search for a measurement that is three
+    ``bincount`` calls.
     """
     kept = select_sequential(cache, mask & block)
     count = int(kept.sum())
     if count < minimum:
         return None
+    if collector is not None:
+        collector.add(kept, cache.net_cash)
     pool = cache.valid & block
     control = analytic_control(cache.minute_of_day[pool], cache.net_cash[pool],
                                cache.minute_of_day[kept], cache.net_cash[kept],
@@ -709,10 +773,27 @@ DISCLAIMER = (
 
 
 def _report(style, timeframe, bars, split, combinations, tested, findings,
-            shortlist, notes, started) -> FinderReport:
+            shortlist, notes, started, overfitting=None) -> FinderReport:
     import pandas as pd
 
-    notes = list(notes) + [DISCLAIMER]
+    notes = list(notes)
+    if overfitting is not None and overfitting.ran:
+        notes.append(
+            "Probability of backtest overfitting: "
+            f"{overfitting.probability:.2f}. Measured by dealing the research "
+            f"block into {overfitting.blocks} time-ordered pieces, taking "
+            f"every one of the {overfitting.splits:,} ways to split them in "
+            f"half, picking the best candidate on one half and reading its "
+            f"rank on the other. This asks whether SELECTION generalises, "
+            f"which no single strategy's statistics can answer. "
+            + ("Above 0.5 means the winner of this search lands below the "
+               "median more often than not when asked again -- the search is "
+               "fitting noise, and a candidate that survived everything else "
+               "should still be treated as unproven."
+               if overfitting.probability > 0.5 else
+               "At or below 0.5, picking the winner carried over to data it "
+               "was not picked on. That is necessary, not sufficient."))
+    notes = notes + [DISCLAIMER]
 
     def stamp(index: int) -> str:
         index = max(0, min(index, len(bars) - 1))
@@ -725,5 +806,5 @@ def _report(style, timeframe, bars, split, combinations, tested, findings,
         research_start=stamp(0), research_end=stamp(split - 1),
         holdout_end=stamp(len(bars) - 1), combinations=combinations,
         tested=tested, findings=findings, shortlist=shortlist, notes=notes,
-        elapsed=time.time() - started,
+        elapsed=time.time() - started, overfitting=overfitting,
     )

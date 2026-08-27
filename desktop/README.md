@@ -58,6 +58,7 @@ SVG, no external assets and no network requests.
 - [Reading the metrics](#reading-the-metrics)
 - [Finding strategies automatically](#finding-strategies-automatically)
 - [Searching everything at once](#searching-everything-at-once)
+- [Two measurements that price the search, not the winner](#two-measurements-that-price-the-search-not-the-winner)
 - [Importing a strategy you already have](#importing-a-strategy-you-already-have)
 - [The research loop](#the-research-loop)
 - [The research dashboard](#the-research-dashboard)
@@ -1263,6 +1264,107 @@ keyed on the file's size and modification time.
 Two things still cost what the data costs, because they have to: importing a
 CSV, and running a backtest. Both report progress and both run off the GUI
 thread.
+
+---
+
+## Two measurements that price the search, not the winner
+
+Every other number in this application describes a strategy. These two describe
+the *search that produced it*, and they are the named, citable versions of
+things the finder was already doing informally. Both run on the **research
+block only** — cross-validating over the whole series would put the locked
+block inside the selection, which is the mistake the split exists to prevent.
+
+### The Deflated Sharpe Ratio
+
+Bailey and López de Prado (2014). A Sharpe ratio quoted from the best of *N*
+tries is not the Sharpe ratio of a strategy — it is the Sharpe ratio of a
+maximum. The deflation asks what the best of *N* tries would score with no
+skill at all, and reports the probability the observed Sharpe beats **that**
+rather than the probability it beats zero.
+
+It charges for three things at once: how many combinations were tried, how much
+they varied, and how non-normal the returns are. That last one matters more
+than it sounds — a stop-and-target strategy wins small and often and loses at
+the stop, so its returns are skewed and fat-tailed, and its raw Sharpe flatters
+it. The deflation prices that in.
+
+Here is the whole point of it, from a real run on the shipped US30 15-minute
+data:
+
+```
+control: random entries at the same times made +0.04 USD per trade, so the
+   edge is +20.20 USD (p=0.001, analytic)
+deflated Sharpe: Sharpe +0.1224/trade against +0.1293 for the best of 1,557
+   tries on no skill — does NOT clear it; deflated Sharpe 0.464
+```
+
+A rule with `p = 0.001` and a +$20.20 edge over random entries, and the
+deflation says it is a coin flip. It is: 1,557 tries is enough that the best of
+them reaches that Sharpe with no skill.
+
+The deflated Sharpe appears as its own column in the results table, beside the
+raw Sharpe on purpose — **the gap between the two is the cost of having
+searched**, and putting them in different places is how the raw one ends up
+quoted alone.
+
+### The Probability of Backtest Overfitting
+
+Bailey, Borwein, López de Prado and Zhu (2015), by combinatorially symmetric
+cross-validation. This measures something no individual strategy's statistics
+can: whether the **selection procedure** generalises.
+
+Deal the research block into 12 time-ordered blocks. Take every one of the 924
+ways to split them into two halves. On each split, pick the best candidate on
+one half and read its rank on the other. If picking winners is skill, the
+winner stays near the top. If picking winners is fitting noise, it lands
+anywhere — and about half the time, below the median.
+
+**PBO is the fraction of splits where the in-sample winner came out below the
+out-of-sample median. Near 0.5 means the search has learned nothing.** On the
+shipped US30 5-minute grid:
+
+```
+Worst of the 7 searches (swing on 1h): probability of backtest overfitting
+0.56 over 924 splits of 1,140 candidates — the search is fitting noise. The
+in-sample winner lost 2.607 of its metric out of sample and was outright
+negative 62% of the time.
+```
+
+It is reported whether or not anything survived the multiplicity correction,
+because it describes the search rather than the survivor — and a high PBO
+beside a survivor is the most dangerous output this application can produce. In
+the window it goes in the **status line**, not only in the detail pane, for the
+same reason.
+
+The grid reports the worst sweep, named, and only among sweeps with at least
+100 cross-validated candidates. Without that floor the summary was decided by
+the weakest sweep: a position-trading search of daily bars had 36 usable
+candidates, and its 0.75 was printed at the top of the report beside another
+sweep's estimate over 1,488. Reporting the worst is right; letting the noisiest
+estimate *be* the worst is not.
+
+### What the cross-validation cannot see
+
+The splits are combinatorial rather than sequential — that is the point, since
+it avoids resting everything on one arbitrary cut — but it means the
+measurement is **blind to when an edge existed**. A candidate that worked in
+the first half of the research block and stopped working in the second has, on
+average, half its good blocks in any testing half, so it still tests well.
+
+Measured across the range, PBO responds to how *concentrated* an edge is (one
+block in twelve gives 0.65) and not at all to whether the good blocks came
+early or late (six in twelve gives 0.001, however they are arranged).
+
+That failure — an edge that was real and then stopped being real — is exactly
+what the sequential locked block catches. Neither measurement subsumes the
+other, which is why both are kept, and reading PBO as protection against regime
+change would be a mistake. `tests/test_overfit.py` asserts the limitation so it
+cannot be quietly forgotten.
+
+Neither statistic needs SciPy: the normal CDF is `erfc` from the standard
+library, and its inverse is Acklam's rational approximation refined by one step
+of Halley's method, which round-trips to 1e-13 across the whole range.
 
 ---
 

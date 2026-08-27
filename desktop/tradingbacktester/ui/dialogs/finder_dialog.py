@@ -52,7 +52,7 @@ log = get_logger(__name__)
 #: the ENGINE's, from `finder/confirm.py`, not the search's fast path.
 _COLUMNS = ("Rule", "Robustness", "OOS retention", "Trades (IS | OOS)",
             "Net (IS | OOS)", "Sharpe (IS | OOS)", "Max DD (OOS)",
-            "Vs. random", "Verdict")
+            "Vs. random", "Deflated Sharpe", "Verdict")
 
 _INDICATOR_COLUMNS = ("Indicator", "Family", "Says", "Predictive power",
                       "Worth per trade", "Locked block", "Verdict")
@@ -63,7 +63,7 @@ _ANOMALY_COLUMNS = ("Event", "Count", "Share", "Side", "Edge per trade", "p",
 #: The exhaustive grid.  Which sweep a survivor came out of leads, because on a
 #: grid the answer to "what did you search" is most of the answer.
 _AUTO_COLUMNS = ("Rule", "Style", "Bars", "Robustness", "Trades (IS | OOS)",
-                 "Net (IS | OOS)", "Vs. random", "Verdict")
+                 "Net (IS | OOS)", "Vs. random", "Deflated Sharpe", "Verdict")
 
 #: The three questions, in the order the tabs show them.
 STUDIES = (
@@ -105,6 +105,23 @@ def _pair(left: Any, right: Any, fmt: str = "{:,.0f}") -> str:
     return f"{one(left)} | {one(right)}"
 
 
+def _overfit_warning(report: Any) -> str:
+    """A sentence about the SEARCH, put where a result cannot be read without it.
+
+    A high probability of backtest overfitting beside a shortlist is the most
+    dangerous thing this dialog can show, so it goes in the status line rather
+    than only in the detail pane, which is the half nobody reads first.
+    """
+    pbo = getattr(report, "overfitting", None)
+    if pbo is None or not pbo.ran:
+        return ""
+    if pbo.probability > 0.5:
+        return (f" Probability of backtest overfitting {pbo.probability:.2f} — "
+                f"picking the winner of this search did NOT carry over to data "
+                f"it was not picked on, so treat everything below as unproven.")
+    return f" Probability of backtest overfitting {pbo.probability:.2f}."
+
+
 def _strategy_cells(finding: Any) -> list[str]:
     """One row of the strategy table, from the engine's own numbers."""
     import math
@@ -144,8 +161,18 @@ def _strategy_cells(finding: Any) -> list[str]:
     versus = ("—" if control is None else
               f"{control.excess_per_trade:+,.2f} (p={control.p_value:.3f})")
 
+    # The Sharpe with the search priced out of it. Shown beside the raw Sharpe
+    # on purpose: the gap between the two IS the cost of having searched, and
+    # putting them in different places is how the raw one gets quoted alone.
+    deflated = getattr(finding, "deflated", None)
+    if deflated is None or deflated.observations < 2:
+        deflated_text = "—"
+    else:
+        deflated_text = (f"{deflated.probability:.3f}"
+                         + ("" if deflated.clears else "  (below best-of-N)"))
+
     return [finding.label, robustness, retention, trades, net, sharpe,
-            drawdown, versus, finding.verdict]
+            drawdown, versus, deflated_text, finding.verdict]
 
 
 class FinderDialog(QDialog):
@@ -677,13 +704,15 @@ class FinderDialog(QDialog):
         self._finish_table(table, "strategies", format_report(report))
 
         worth = sum(1 for f in rows if f.verdict == "worth testing further")
+        overfit = _overfit_warning(report)
         if rows:
             self.status.setText(
                 f"{report.combinations:,} combinations tried in "
                 f"{report.elapsed:.0f}s. {len(rows)} shortlisted, {worth} "
-                f"worth testing further. Select a row to read the detail.")
+                f"worth testing further.{overfit} Select a row to read the "
+                f"detail.")
             self.status.setStyleSheet(
-                f"color:{PALETTE.success if worth else PALETTE.warning};")
+                f"color:{PALETTE.warning if overfit else (PALETTE.success if worth else PALETTE.warning)};")
         else:
             self.status.setText(
                 f"{report.combinations:,} combinations tried and none "
@@ -710,13 +739,13 @@ class FinderDialog(QDialog):
             where = report.sweep_of(finding)
             self._put(table, row, [
                 cells[0], where[0], where[1], cells[1], cells[3], cells[4],
-                cells[7], cells[8],
+                cells[7], cells[8], cells[9],
             ], finding.verdict.startswith("worth"))
         self._finish_table(table, "everything", format_auto_search(report))
 
         cost = (f"{report.combinations:,} combinations across "
                 f"{len(report.sweeps)} searches in {report.elapsed:.0f}s; "
-                f"{report.scored:,} scored.")
+                f"{report.scored:,} scored." + _overfit_warning(report))
         if not rows:
             self.status.setText(
                 f"{cost} Nothing survived the correction over the whole grid. "

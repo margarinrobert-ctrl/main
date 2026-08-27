@@ -31,6 +31,14 @@ def format_report(report: FinderReport, currency: str = "USD",
         f"{report.combinations:,} combinations tried, {report.tested:,} "
         f"had enough trades to score.  {report.elapsed:.1f}s.", width))
     out.extend(fit(f"Geometry: {report.style.describe()}", width, hang=10))
+    if report.overfitting is not None and report.overfitting.ran:
+        # Before the rows, not after them: this measures whether picking a
+        # winner from this search means anything, so it is the sentence that
+        # decides how to read every row below it.
+        # Not str.capitalize(): it lower-cases everything after the first
+        # letter, which turned the rest of the sentence into mush.
+        sentence = report.overfitting.describe()
+        out.extend(fit(sentence[:1].upper() + sentence[1:], width))
     out.append("")
 
     if not report.shortlist:
@@ -71,6 +79,9 @@ def _finding_lines(finding: Finding, currency: str,
                      width, hang=6))
     if finding.sampled is not None:
         lines.extend(fit(f"            {finding.sampled.describe(currency)}",
+                         width, hang=6))
+    if finding.deflated is not None:
+        lines.extend(fit(f"   deflated Sharpe: {finding.deflated.describe()}",
                          width, hang=6))
     if finding.neighbourhood is not None:
         n = finding.neighbourhood

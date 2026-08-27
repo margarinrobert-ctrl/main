@@ -107,6 +107,7 @@ class OutcomeCache:
         if count == 0:
             return {"trades": 0, "net": 0.0, "per_trade": 0.0, "win_rate": 0.0,
                     "gross_win": 0.0, "gross_loss": 0.0, "profit_factor": 0.0,
+                    "sharpe": 0.0,
                     "stops": 0.0, "targets": 0.0, "times": 0.0,
                     "avg_bars": 0.0, "median_bars": 0.0, "max_drawdown": 0.0}
         cash = self.net_cash[take]
@@ -126,6 +127,11 @@ class OutcomeCache:
             "gross_loss": gross_loss,
             "profit_factor": (gross_win / gross_loss if gross_loss > 0
                               else float("inf") if gross_win > 0 else 0.0),
+            # Per TRADE, not annualised: the deflation in `overfit.py` compares
+            # it against a per-trade benchmark, and annualising one side of
+            # that comparison and not the other is the easiest mistake here.
+            "sharpe": (float(cash.mean() / cash.std(ddof=1))
+                       if count > 1 and float(cash.std(ddof=1)) > 0 else 0.0),
             "stops": float((reason == EXIT_STOP).mean()),
             "targets": float((reason == EXIT_TARGET).mean()),
             "times": float((reason == EXIT_TIME).mean()),

@@ -492,6 +492,17 @@ for the fan-out.
   a real one, exactly as `report._robustness_lines` does. `nan/100` is not a
   score, and a number printed beside a disqualifying reason is a number
   someone will quote without the reason.
+- `_deflate_over_the_grid` re-prices every finding's Sharpe for the size of the
+  WHOLE grid. A rule out of a 1,560-combination sweep of a 7,890-combination
+  grid was selected from the grid; re-pricing raises the benchmark and can only
+  lower a deflated Sharpe, which is the direction an honest correction moves.
+- `MIN_CANDIDATES_FOR_GRID` (100) gates which sweep's probability of
+  overfitting may speak for the grid, and the chosen sweep is named in the
+  report. Without the floor the summary was decided by the weakest sweep: a
+  position-trading search of daily bars had 36 usable candidates and its 0.75
+  was printed as the grid's answer beside another sweep's estimate over 1,488.
+  Reporting the worst is right; letting the noisiest estimate be the worst is
+  not. When no sweep clears the floor the widest sample speaks instead.
 - `format_auto_search(report)` — the cost of the search first, then the
   yardstick, then the survivors. The disclaimer is on every path, including
   when nothing was found.
