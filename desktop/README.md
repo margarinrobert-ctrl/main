@@ -63,6 +63,7 @@ SVG, no external assets and no network requests.
 - [Walk-forward: is the optimisation real?](#walk-forward-is-the-optimisation-real)
 - [Monte Carlo: what else could have happened?](#monte-carlo-what-else-could-have-happened)
 - [The mirror market: was it the rule or the rally?](#the-mirror-market-was-it-the-rule-or-the-rally)
+- [Is it an edge, or is it exposure?](#is-it-an-edge-or-is-it-exposure)
 - [Comparing runs](#comparing-runs)
 - [Saving and exporting](#saving-and-exporting)
 - [Where your files live](#where-your-files-live)
@@ -695,6 +696,54 @@ of a downturn.
 
 ---
 
+## Is it an edge, or is it exposure?
+
+A Sharpe ratio computed on raw account currency cannot tell an edge from
+leverage. A rule that happens to be long the index during a rising hour earns
+money whether or not its entry condition means anything, and the Sharpe rewards
+it either way. So every Sharpe in the statistics panel and both reports now sits
+beside the regression of the strategy's **per-session** P&L on the market's own
+move across **the strategy's own entry window** — not the whole session, because
+a rule that only trades 09:30 to 11:00 is exposed to that hour and a half and to
+nothing else.
+
+| | |
+|---|---|
+| **Residual Sharpe** | the Sharpe of what is left once the market's contribution is regressed out |
+| **Market share of P&L** | the fraction of the result the market factor explains — above about a half, the Sharpe beside it is measuring exposure |
+| **Beta** | the regression slope against one long unit held across the same window |
+| **Alpha** | the mean per-session result left after the market's contribution |
+
+On the shipped US30 15m data, `EMA Cross + RSI` reads a Sharpe of 0.186 and a
+respectable-looking profit. **87% of that result is the market's own move.**
+Stripped of it the residual Sharpe is 0.025. `MACD Trend` goes the other way —
+its beta is slightly negative, so its residual Sharpe (0.305) is *higher* than
+its raw one (0.225).
+
+**The denominator is every session in the range, the flat ones included.**
+Dropping the sessions a strategy did not trade is the most common way an
+intraday Sharpe gets inflated two or three times.
+
+### Sub-period concentration
+
+Beside it: split the range into five equal parts by session and ask what share
+of the profit the best part carried. Above **60%** the result is one good
+stretch rather than an edge — a spike in time, and as disqualifying as a spike
+in parameter space, which the optimiser's robustness column has always said
+plainly.
+
+Run it on the block you are **selecting** on. Pointed out-of-sample it catches
+nothing, because the candidate has already been chosen by then.
+
+Both are available as ranking objectives in the optimiser. Neither is a thing to
+maximise hard: ranking a 901,120-cell sweep on residual Sharpe did move the beta
+(0.490 down to 0.166), but among the survivors the correlation between the
+selection block's residual Sharpe and an untouched validation block's was
+**−0.057**. Report them, rank on them if it helps, and do not optimise against
+them and call the result robust.
+
+---
+
 ## Comparing runs
 
 Save a run with **Backtest → Save Backtest**, then **Compare Runs** to put two
@@ -882,7 +931,7 @@ tradingbacktester/
 ├── strategy/     the declarative strategy definition and its compiler
 ├── engine/       cost model, position sizing, the simulated broker, the loop
 ├── analytics/    metrics, equity curves, period returns, comparison,
-│                Monte Carlo trade resampling
+│                Monte Carlo resampling, market-neutral scoring
 ├── finder/       trading styles, the candidate space, matched controls, search
 ├── research/     engineered features, information coefficients, anomalies,
 │                the mirror-market control

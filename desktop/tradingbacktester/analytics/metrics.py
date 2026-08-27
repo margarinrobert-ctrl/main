@@ -364,6 +364,7 @@ def _compute(result: BacktestResult) -> dict[str, Any]:
     _periods(result, metrics, rel)
     _activity(result, metrics, rel, trades, n)
     _exit_reasons(metrics, trades, n)
+    _market_neutral(result, metrics, rel, n)
 
     _low_sample_pass(metrics, rel, n, curves)
     _sanitise(metrics, rel)
@@ -377,6 +378,56 @@ def _compute(result: BacktestResult) -> dict[str, Any]:
 # --------------------------------------------------------------------------
 # Sections
 # --------------------------------------------------------------------------
+
+def _market_neutral(result: BacktestResult, m: dict[str, Any],
+                    rel: "_Reliability", n: int) -> None:
+    """Beta, residual Sharpe and concentration, beside the ordinary Sharpe.
+
+    Computed here rather than offered as a separate report because a Sharpe on
+    raw account currency cannot tell an edge from leverage, and a number nobody
+    goes and asks for does not stop anyone shipping one. See
+    :mod:`tradingbacktester.analytics.neutral`.
+    """
+    from .neutral import analyse
+
+    report = analyse(result)
+    if report is None:
+        return
+    neutral, spread = report.neutral, report.concentration
+    m["sessions"] = report.sessions
+    m["traded_sessions"] = report.traded_sessions
+    m["session_sharpe"] = neutral.sharpe
+    m["beta"] = neutral.beta
+    m["alpha"] = neutral.alpha
+    m["market_correlation"] = neutral.correlation
+    m["residual_sharpe"] = neutral.residual_sharpe
+    m["beta_pnl_share"] = neutral.beta_pnl_share
+    m["market_neutral_verdict"] = neutral.verdict()
+    m["concentration"] = spread.share
+    m["concentration_parts"] = list(spread.parts)
+    m["concentration_passed"] = spread.passed
+    m["concentration_verdict"] = spread.verdict()
+
+    # These are per-SESSION statistics, so the sample that matters is the
+    # session count, not the trade count the rest of the panel is labelled by.
+    if report.sessions < 30:
+        for key in ("session_sharpe", "beta", "alpha", "market_correlation",
+                    "residual_sharpe", "beta_pnl_share", "concentration"):
+            rel.mark(key, "low_sample",
+                     f"Regressed on {report.sessions} session(s). A beta needs "
+                     f"a few dozen before it is distinguishable from zero.")
+    # Deliberately NOT routed through the reliability states: those mean "the
+    # sample is too small", and badging a Sharpe built on 2,704 sessions as
+    # LOW n would be a lie about why it should not be trusted. The caveat is
+    # its own field and the panel flags it on its own terms.
+    m["mostly_beta"] = neutral.mostly_beta
+    if neutral.mostly_beta:
+        m["beta_warning"] = (
+            f"{neutral.beta_pnl_share * 100:.0f}% of this result is the "
+            f"market's own move across the strategy's window. Stripped of it "
+            f"the Sharpe is {neutral.residual_sharpe:.3f} against "
+            f"{neutral.sharpe:.3f}.")
+
 
 def _cash_and_counts(result: BacktestResult, m: dict[str, Any], rel: _Reliability,
                      trades: Sequence[Trade], net: np.ndarray, wins: np.ndarray,

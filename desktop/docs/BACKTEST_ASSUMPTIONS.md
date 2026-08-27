@@ -357,3 +357,52 @@ trades with the sign flipped.
 The mirrored instrument's symbol gains a `(mirror)` suffix, and the series records
 `meta["mirror_of"]`, so a mirrored run cannot be mistaken for a real one in a report, a
 chart title or a saved backtest.
+
+## What the market factor is, and what a session is
+
+The market-neutral statistics regress the strategy's per-session P&L on a factor, and the whole
+thing turns on what that factor is. It is the P&L, in account currency, of holding **one long unit
+from the open of the first bar inside the tradeable window to the close of the last bar inside it**,
+per session. One unit, because beta is a slope and the units cancel; the window rather than the
+whole day, because a rule that only trades 09:30 to 11:00 is exposed to that hour and a half and to
+nothing else, and regressing it on the whole session's move would attribute it exposure it never
+had.
+
+A session is the engine's own session, built by the same `_SessionArrays` the simulation filters
+trades with. That matters for an overnight window: a session running 18:00 to 17:00 spans two
+calendar dates and is one session, so the grouping counts session boundaries rather than dates. With
+no session filter every bar is inside the window and a session is a local calendar day.
+
+**The denominator is every session in the range, the flat ones included.** A strategy that traded on
+40% of sessions has its mean and its variance taken over all of them. Dropping the sessions a
+strategy did not trade is the most common way an intraday Sharpe gets inflated two or three times,
+and it is not a rounding difference: it changes the mean by the reciprocal of the traded fraction
+and the standard deviation by its square root.
+
+A trade is attributed to the session it was **opened** in, which is the session whose market move it
+was exposed to. A trade held across a session boundary therefore lands wholly in the session it
+started in rather than being split.
+
+What the regression cannot do: a matched random-entry control does not substitute for it. A random
+entry has a different holding profile from a breakout's, so it prices a different exposure — on the
+study this was built from, the control read +$28 a trade where the regression said +$2.39.
+
+And it is a diagnostic, not an objective. Ranking a 901,120-cell sweep on residual Sharpe did lower
+the selected beta from 0.490 to 0.166, but among the survivors the correlation between the selection
+block's residual Sharpe and an untouched validation block's was −0.057. Optimising directly for
+market-neutrality works on the block it is optimised on and nowhere else.
+
+## Which block the concentration gate is pointed at
+
+Sub-period concentration splits a block's sessions into five equal parts by ordinal and reports the
+share of the total that the best part carried. Above 0.6 the gate fails.
+
+The lesson is about *which block*. Specified out-of-sample only, this gate caught nothing on the
+strategy it was written for — by the time an out-of-sample block is read, the candidate has already
+been selected. On that strategy's **research** block, 20% of the sessions carried 76% of the profit
+and the remaining 80% had a residual Sharpe of 0.008. Run it on the block you are selecting on.
+
+On a block that lost money the ratio still computes but stops meaning what it says: dividing by a
+negative total flips the sign, and a part that lost more than the block did reads as a share above
+one. That case is reported as not applicable — a losing block is rejected on its result, not on how
+concentrated a profit it did not make was.

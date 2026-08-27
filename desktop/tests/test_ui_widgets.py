@@ -467,3 +467,66 @@ def test_every_icon_renders(qapp):
         assert not icon(name, 20).isNull(), name
     # An unknown name must give an empty icon, never an exception.
     icon("no-such-icon", 16)
+
+
+def test_stats_panel_shows_the_market_neutral_group(qapp):
+    """A Sharpe on raw cash cannot tell an edge from leverage; the panel says so."""
+    from PySide6.QtWidgets import QLabel
+
+    from tradingbacktester.analytics.metrics import compute_metrics
+    from tradingbacktester.core.types import BacktestConfig
+    from tradingbacktester.data.sample import generate_sample_data
+    from tradingbacktester.engine.backtester import Backtester
+    from tradingbacktester.strategy.builtin import BUILTIN_STRATEGIES
+    from tradingbacktester.ui.theme import PALETTE
+    from tradingbacktester.ui.widgets.stats_panel import StatsPanel, _MetricRow
+
+    bars = generate_sample_data("NQ", "1h", n_bars=3000, seed=5)
+    spec = BUILTIN_STRATEGIES["EMA Cross + RSI"]()
+    config = BacktestConfig(starting_capital=100_000.0)
+    config.exits, config.execution = spec.exits, spec.execution
+    config.session, config.costs, config.risk = spec.session, spec.costs, spec.risk
+    result = Backtester(bars, spec, config).run()
+
+    panel = StatsPanel()
+    panel.set_metrics(compute_metrics(result), currency="$")
+    qapp.processEvents()
+
+    shown = {}
+    for row in panel.findChildren(_MetricRow):
+        labels = row.findChildren(QLabel)
+        if len(labels) >= 2:
+            shown[labels[0].text()] = labels[-1].text()
+
+    for label in ("Residual Sharpe", "Market share of P&L", "Beta to the window",
+                  "Best sub-period share", "Sessions"):
+        assert label in shown, f"{label} missing from the panel"
+    # A fraction rendered as a percentage, not as 0.87%.
+    assert shown["Market share of P&L"].endswith("%")
+    assert shown["Sessions"].replace(",", "").isdigit()
+
+
+def test_a_fraction_renders_as_a_percentage_not_as_itself():
+    """`pct(0.87)` is "0.87%", which would be wrong by a factor of a hundred."""
+    from tradingbacktester.ui.widgets.stats_panel import StatsPanel
+
+    panel = StatsPanel.__new__(StatsPanel)      # no Qt needed for the formatter
+    panel._currency = "$"
+    assert panel._format(0.8672, "pct_unit") == "86.72%"
+    assert panel._format(0.8672, "pct") == "0.87%"
+    assert panel._format(None, "pct_unit") == "-"
+
+
+def test_the_two_diagnostics_go_amber_past_their_limit_not_green():
+    """A high beta share is a warning, not an achievement."""
+    import math
+
+    from tradingbacktester.ui.theme import PALETTE
+    from tradingbacktester.ui.widgets.stats_panel import _limit_colour
+
+    assert _limit_colour("beta_pnl_share", 0.87) == PALETTE.warning
+    assert _limit_colour("beta_pnl_share", 0.10) == PALETTE.text_dim
+    assert _limit_colour("concentration", 0.90) == PALETTE.warning
+    assert _limit_colour("concentration", 0.25) == PALETTE.text_dim
+    assert _limit_colour("beta_pnl_share", float("nan")) == PALETTE.text_dim
+    assert _limit_colour("beta_pnl_share", None) is None

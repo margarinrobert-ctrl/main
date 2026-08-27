@@ -233,6 +233,20 @@ Deciding the column layout from the values, not the header names. Called by
   `daily_returns(result)` returning tidy structures for the UI table.
 - `comparison.py` — `compare_results(results) -> ComparisonTable` with aligned
   equity curves (indexed to 100) and a metric matrix.
+- `neutral.py` — `build_session_map(bars, session)` groups bars into the
+  engine's own sessions and prices one long unit across each window (memoised:
+  the pandas timezone conversion is 106 ms on 194,000 bars and every
+  combination of a sweep would otherwise pay it again).
+  `session_pnl(trades, map)` gives the per-session series with the flat
+  sessions included — the denominator is every session in the block.
+  `market_neutral(strategy, market, sessions_per_year) -> NeutralStats` is the
+  regression: beta, alpha, correlation, residual Sharpe and `beta_pnl_share`
+  (NaN when the net is ~0 — there is no share of nothing).
+  `concentration(strategy, parts=5) -> Concentration` is the sub-period gate,
+  failing above 0.6 and reporting itself not applicable on a block that lost
+  money. `analyse(result)` returns both from a finished run, or `None` rather
+  than raising. All of it is folded into `compute_metrics`, so it reaches the
+  panel, both reports, the CLI and every optimiser row at once.
 - `montecarlo.py` — `resample_trades(net_pnl, starting_capital, ...)` and
   `resample_result(result, ...)` returning a `MonteCarloResult`: percentiles of
   final equity, worst drawdown in cash and percent, and trades spent under

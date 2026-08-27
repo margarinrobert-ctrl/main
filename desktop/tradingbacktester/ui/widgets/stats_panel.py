@@ -21,6 +21,26 @@ from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel,
 from ..theme import PALETTE, Fonts, duration, money, number, pct
 
 
+def _limit_colour(key: str, value: Any) -> str | None:
+    """Colour a diagnostic by whether it breached its own limit.
+
+    `beta_pnl_share` and `concentration` are not achievements to be green when
+    large: a high beta share means the Sharpe beside it is measuring exposure,
+    and a high concentration means the profit came from one stretch. Both go
+    amber past their limit and stay neutral below it, rather than borrowing the
+    profit-and-loss colouring every other row uses.
+    """
+    from ...analytics.neutral import BETA_SHARE_LIMIT, CONCENTRATION_LIMIT
+
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    v = float(value)
+    if v != v:                              # NaN: nothing to attribute
+        return PALETTE.text_dim
+    limit = BETA_SHARE_LIMIT if key == "beta_pnl_share" else CONCENTRATION_LIMIT
+    return PALETTE.warning if abs(v) > limit else PALETTE.text_dim
+
+
 class _MetricRow(QWidget):
     """One label/value pair with an optional reliability badge."""
 
@@ -174,6 +194,29 @@ _LAYOUT: tuple[tuple[str, tuple[tuple[str, str, str, bool, str], ...]], ...] = (
         ("kelly_fraction", "Kelly fraction", "ratio", False, "Theoretical optimal fraction of capital; treat as an upper bound"),
         ("exposure_pct", "Time in market", "pct", False, "Percentage of bars with an open position"),
     )),
+    ("Is it an edge, or is it exposure?", (
+        ("residual_sharpe", "Residual Sharpe", "ratio", True,
+         "Sharpe of what is left once the market's own move across this strategy's "
+         "window is regressed out. A Sharpe on raw cash cannot tell an edge from "
+         "leverage; this one can"),
+        ("beta_pnl_share", "Market share of P&L", "pct_unit", False,
+         "Fraction of the result the market factor explains. Above about a half, "
+         "the Sharpe above is measuring exposure rather than a rule"),
+        ("beta", "Beta to the window", "ratio", True,
+         "Regression slope of per-session P&L on one long unit held across the "
+         "same window"),
+        ("alpha", "Alpha per session", "money", True,
+         "Mean per-session result left after the market's contribution"),
+        ("market_correlation", "Correlation", "ratio", True,
+         "Between the per-session result and the market factor"),
+        ("concentration", "Best sub-period share", "pct_unit", False,
+         "Share of the block's profit its best fifth carried. Above 60% this is "
+         "one good stretch rather than an edge"),
+        ("sessions", "Sessions", "int", False,
+         "Every session in the range, the ones that did not trade included — "
+         "dropping those is how an intraday Sharpe gets inflated"),
+        ("traded_sessions", "Sessions traded", "int", False, ""),
+    )),
     ("Costs", (
         ("total_commission", "Commission", "money_cost", False, ""),
         ("total_slippage", "Slippage", "money_cost", False, ""),
@@ -264,6 +307,11 @@ class StatsPanel(QWidget):
             value = metrics.get(key)
             text = self._format(value, fmt)
             colour = None
+            # Two fractions that read as percentages, and both are warnings
+            # rather than achievements: colour them by their own limit, not by
+            # the sign every other row uses.
+            if key in ("beta_pnl_share", "concentration"):
+                colour = _limit_colour(key, value)
             if signed and isinstance(value, (int, float)) and not isinstance(value, bool):
                 v = float(value)
                 if key in ("max_drawdown", "max_drawdown_pct", "gross_loss",
@@ -341,7 +389,7 @@ class StatsPanel(QWidget):
 
     # -- formatting ------------------------------------------------------
 
-    def _format(self, value: Any, fmt: str) -> str:
+    def _format(self, value: Any, fmt: str) -> str:      # noqa: C901
         if value is None:
             return "-"
         if isinstance(value, float) and math.isnan(value):
@@ -352,6 +400,13 @@ class StatsPanel(QWidget):
             return money(-abs(float(value)), self._currency) if value else "-"
         if fmt == "pct":
             return pct(value)
+        if fmt == "pct_unit":
+            # A fraction, not an already-scaled percentage: a beta share is
+            # 0.87, and `pct` would render that as 0.87%.
+            try:
+                return pct(float(value) * 100.0)
+            except (TypeError, ValueError):
+                return str(value)
         if fmt == "int":
             return f"{int(value):,}"
         if fmt == "int_bars":

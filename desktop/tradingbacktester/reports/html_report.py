@@ -115,6 +115,29 @@ METRIC_GROUPS: tuple[tuple[str, tuple[tuple[str, str, str, bool, str], ...]], ..
         ("exposure_pct", "Time in market", "pct", False,
          "Percentage of bars with an open position"),
     )),
+    ("Is it an edge, or is it exposure?", (
+        ("residual_sharpe", "Residual Sharpe", "ratio", True,
+         "Sharpe of what is left once the market's own move across this "
+         "strategy's window is regressed out. A Sharpe on raw cash cannot "
+         "tell an edge from leverage; this one can"),
+        ("beta_pnl_share", "Market share of P&L", "pct_unit", True,
+         "Fraction of the result the market factor explains. Above about a "
+         "half, the Sharpe above is measuring exposure rather than a rule"),
+        ("beta", "Beta to the window", "ratio", True,
+         "Regression slope of per-session P&L on one long unit held across "
+         "the same window"),
+        ("alpha", "Alpha per session", "money", True,
+         "Mean per-session result left after the market's contribution"),
+        ("market_correlation", "Correlation", "ratio", True,
+         "Between the per-session result and the market factor"),
+        ("concentration", "Best sub-period share", "pct_unit", False,
+         "Share of the block's profit carried by its best fifth. Above 0.6 "
+         "this is one good stretch rather than an edge"),
+        ("sessions", "Sessions", "int", False,
+         "Every session in the range, including the ones that did not trade — "
+         "dropping those is how an intraday Sharpe gets inflated"),
+        ("traded_sessions", "Sessions traded", "int", False, ""),
+    )),
     ("Costs", (
         ("total_commission", "Commission", "money_cost", False, ""),
         ("total_slippage", "Slippage", "money_cost", False, ""),
@@ -250,6 +273,13 @@ class ReportContext:
             return self.money(-abs(float(value))) if value else "-"
         if kind == "pct":
             return _pct(value)
+        if kind == "pct_unit":
+            # A fraction, not an already-scaled percentage: beta share and
+            # concentration are 0.87, and `_pct` would render that as 0.87%.
+            try:
+                return _pct(float(value) * 100.0)
+            except (TypeError, ValueError):
+                return str(value)
         if kind == "int":
             try:
                 return f"{int(value):,}"

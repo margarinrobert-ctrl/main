@@ -75,6 +75,21 @@ RANKING_METRICS: tuple[RankingMetric, ...] = (
                   "Net profit divided by maximum drawdown."),
     RankingMetric("sqn", "System quality (SQN)", True,
                   "sqrt(n) x mean(R) / stdev(R); rewards consistency and sample size."),
+    RankingMetric("residual_sharpe", "Residual Sharpe (market-neutral)", True,
+                  "Sharpe of what is left after the market's own move across "
+                  "this strategy's window is regressed out. A Sharpe on raw "
+                  "cash cannot tell an edge from leverage; this one can. Worth "
+                  "ranking on — but see the note: optimising hard against it "
+                  "does not carry to an untouched block."),
+    RankingMetric("beta_pnl_share", "Market share of P&L", False,
+                  "Fraction of the result the market factor explains. Above "
+                  "about a half, the Sharpe beside it is measuring exposure "
+                  "rather than a rule."),
+    RankingMetric("concentration", "Sub-period concentration", False,
+                  "Share of the block's profit carried by its best fifth. "
+                  "Above 0.6 the result is one good stretch, not an edge — a "
+                  "spike in time, and as disqualifying as a spike in "
+                  "parameter space."),
 )
 
 _BY_KEY: dict[str, RankingMetric] = {m.key: m for m in RANKING_METRICS}
