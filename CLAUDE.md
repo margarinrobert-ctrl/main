@@ -58,6 +58,29 @@ not the second.
 by edge (0.25%: 25.5% pass, 12.8% bust) is also the one where **61.7% of 60-day runs end neither
 passed nor busted**. Sized to survive, it grinds. Print P(neither) beside P(pass) or the table lies.
 
+**A MOMENTUM FILTER CANNOT IMPROVE A BREAKOUT, BECAUSE A BREAKOUT IS A MOMENTUM EVENT.** 2,167
+conditions (58 scores x 366 rungs x 3 timeframes x 2 sides): 99 beat a same-selectivity control on
+research against 37 expected by chance, and on the holdout only **28%** still beat the UNFILTERED
+rule where chance is 50%; research-edge to locked-edge correlation **+0.107**. The mechanism is
+measurable — **94.7% of breakout bars already pass an RSI(14) >= 55 filter** against 41.0% of bars
+in general (lift 1.9-3.2x across every family), so the filter removes a twentieth of the sample and
+adds nothing. Do not re-run momentum-on-breakout. See `docs/ib/STUDY_V16_MOMENTUM.md`.
+
+**Volatility-scaling a past return is a CROSS-SECTIONAL fix and does nothing on one instrument.**
+The commodity-futures literature is right that raw returns let the most volatile assets monopolise
+the extreme buckets — but that is a ranking problem. Matched on trade count, `tsmom40` and `roc40`
+are the same rule (PF 1.193 vs 1.188, Sharpe 1.01 vs 0.99).
+
+**A plateau is necessary and not sufficient.** V16's best cell was rejected pre-holdout for having
+no neighbourhood (rungs below it scored -1.2, +6.1, -1.1, -4.4). The rule carried forward instead
+HAD a clean five-rung plateau (+12.8 to +52.6) and still failed the holdout. Coherence filters out
+the obvious artefacts; it does not certify anything.
+
+**On NQ 30m the plain Donchian 30/20 long breakout is the most block-stable thing measured here**
+— +0.1126 R/trade on research against +0.1033 on locked, PF 1.19 both — **and it does not beat its
+own minute-of-day matched control (p 0.16 on both blocks).** Consistency across blocks is not
+evidence of edge; it can just as easily be a consistent exposure to drift. Always run the control.
+
 **Sizing creates no edge.** Fixed one contract per leg, AVA across legs. See §9.
 
 **A win rate that exists at only one threshold is not a mechanism.** Parameterise every shipped
@@ -829,6 +852,10 @@ plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
 | `research/v15/v15book.py` | the V15 book: features, both legs, the two geometries |
 | `research/v15/v15_parity.py` | **the order-model diff** — the script's one live order vs the engine's eight |
 | `research/v15/run_book.py` | the whole V15 table: mechanic, control gate, walk-forward, MC, prop |
+| `research/v16/v16mom.py` | the 58-score momentum pool, signed and side-mirrored |
+| `research/v16/v16core.py` | Donchian outcomes precomputed per signal bar + numba position lock |
+| `research/v16/v16run.py` | the 2,167-condition sweep and its same-selectivity null |
+| `research/v16/v16verdict.py` | **the replication test** — research survivors read once on locked |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine
