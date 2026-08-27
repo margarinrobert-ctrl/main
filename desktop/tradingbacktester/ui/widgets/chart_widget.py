@@ -340,6 +340,15 @@ class ChartWidget(QWidget):
         [{"name", "values", "color", "style", "width"}], "guides": [floats],
         "range": (lo, hi) | None}``.
         """
+        # Adding an indicator must not move the chart.  A new sub-panel starts
+        # with its own x range and is then linked to the price plot, and
+        # pyqtgraph settles that link by dragging the price plot out to the new
+        # panel's range -- so choosing a strategy jumped a 300-bar view to the
+        # whole dataset.  On a large file that is unreadable (500,000 bars in
+        # 776 pixels) as well as slow, and it silently threw away wherever the
+        # user had scrolled to.
+        keep_x = self.price_plot.getViewBox().viewRange()[0]
+
         # Remove previous curves and sub-panels.
         for entries in self._indicator_curves.values():
             for plot, item in entries:
@@ -368,6 +377,10 @@ class ChartWidget(QWidget):
                 axisItems={"bottom": self._new_time_axis(),
                            "right": PriceAxisItem(2, "right")})
             self._style_plot(plot, show_x_labels=False)
+            # Before the link, so the panel adopts the price plot's range
+            # instead of proposing its own.
+            vb.enableAutoRange(axis="x", enable=False)
+            vb.setXRange(keep_x[0], keep_x[1], padding=0)
             plot.setXLink(self.price_plot)
             for g in spec.get("guides", ()):
                 line = pg.InfiniteLine(pos=float(g), angle=0, movable=False,
@@ -391,6 +404,11 @@ class ChartWidget(QWidget):
                     self._pin_label(lbl, box))
             self._add_series(plot, spec)
             self._panels.append(ChartPanel(plot, spec.get("label", ""), 1.0))
+
+        # Belt and braces: whatever the link did while the panels were
+        # built, the view the user was looking at is the view they keep.
+        if keep_x[1] > keep_x[0]:
+            self.price_plot.setXRange(keep_x[0], keep_x[1], padding=0)
 
         self._rebuild_layout_stretch()
         self._install_crosshair()

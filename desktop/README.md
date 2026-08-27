@@ -800,10 +800,21 @@ points the application somewhere else without touching the old one.
 ## Large datasets
 
 The chart draws what is on the screen, not what is in the file. Candles, volume,
-indicator bands and histograms all clip to the visible x range, and lines
-downsample to one peak per pixel column when they are zoomed out — so panning a
-million-bar dataset costs the same as panning a thousand-bar one, and zooming in
-still shows every bar.
+indicator bands and histograms all clip to the visible x range, and everything
+that survives that is reduced to one column per pixel when it is zoomed out — so
+panning a million-bar dataset costs the same as panning a thousand-bar one, and
+zooming in still shows every bar.
+
+Reducing keeps the extremes of each column rather than sampling, so nothing is
+lost that you could have seen: a price line keeps each column's high and low, a
+volume or indicator histogram keeps its tallest bar, and a band keeps its widest
+point. A one-bar spike stays visible at every zoom level. This is not a
+refinement — drawing every bar as a thin rectangle at 500 bars per pixel loses
+spikes to sub-pixel rounding, so the reduced chart is the more truthful one.
+
+Opening a dataset shows the most recent 300 bars, and nothing after that moves
+your view. Choosing a strategy, adding an indicator panel or changing a
+parameter all redraw in place.
 
 This is not a detail. A previous build built the shaded area of a Bollinger band
 as a single path over every point in the file. On the shipped 581,195-bar US30

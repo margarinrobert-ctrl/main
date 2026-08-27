@@ -75,6 +75,41 @@ def _peak(xs, values, stride: int):
     return xs[keep], values[keep]
 
 
+def _peak_index(values, stride: int):
+    """Indices of the value furthest from zero in each column."""
+    n = (len(values) // stride) * stride
+    if n < stride:
+        return np.arange(len(values))
+    block = np.abs(np.nan_to_num(values[:n])).reshape(-1, stride)
+    pick = block.argmax(axis=1) + np.arange(0, n, stride)
+    return np.concatenate((pick, np.arange(n, len(values))))
+
+
+def _minmax(xs, values, stride: int):
+    """One column per pixel, keeping that column's low and high in x order.
+
+    Drawing only, say, every fifth close would flatten a spike out of the
+    chart.  Keeping both extremes of each column preserves the range the eye
+    reads off a zoomed-out price line.
+    """
+    n = (len(values) // stride) * stride
+    if n < stride:
+        return xs, values
+    block = np.nan_to_num(values[:n], nan=np.inf).reshape(-1, stride)
+    lo = block.argmin(axis=1)
+    block = np.nan_to_num(values[:n], nan=-np.inf).reshape(-1, stride)
+    hi = block.argmax(axis=1)
+    base = np.arange(0, n, stride)
+    first = np.minimum(lo, hi) + base       # whichever comes first in time
+    second = np.maximum(lo, hi) + base
+    keep = np.empty(first.size * 2, dtype="int64")
+    keep[0::2] = first
+    keep[1::2] = second
+    if n < len(values):
+        keep = np.concatenate((keep, np.arange(n, len(values))))
+    return xs[keep], values[keep]
+
+
 def _envelope(xs, top, bottom, stride: int):
     """Per-column outer envelope of a band.
 
@@ -255,6 +290,14 @@ class CandlestickItem(pg.GraphicsObject):
         pen.setCosmetic(True)
         pen.setWidth(1)
         painter.setPen(pen)
+        # Clipping to the view is not enough on its own: zoomed all the way out
+        # the view IS the file, and this built one QPointF per bar in a Python
+        # loop -- half a million of them, on the thread that paints the window.
+        # One column per pixel, keeping that column's high and low, draws the
+        # same shape for the cost of the widget's width.
+        stride = _stride(self, len(idx))
+        if stride > 1:
+            idx, c = _minmax(idx, c, stride)
         poly = QPolygonF([QPointF(float(x), float(y)) for x, y in zip(idx, c)
                           if y == y])
         if len(poly) < 2:
@@ -309,6 +352,19 @@ class VolumeItem(pg.GraphicsObject):
         idx = np.arange(i0, i1, dtype="float64")
         v = self._v[i0:i1]
         up = self._up[i0:i1]
+        # Same reason as the price line: zoomed out, "the bars in view" is every
+        # bar in the file, and this drew one rectangle each -- 1.4 million of
+        # them on a 500,000-bar dataset.  One bar per pixel column, the tallest
+        # in that column, and its direction taken from the same bar.
+        stride = _stride(self, i1 - i0)
+        half = 0.35
+        if stride > 1:
+            keep = _peak_index(v, stride)
+            idx, v, up = idx[keep], v[keep], up[keep]
+            # The same proportion of the column a normal bar occupies, so a
+            # zoomed-out histogram keeps the gaps between bars instead of
+            # closing up into a solid block.
+            half = stride * 0.35
         for mask, color in ((up, QColor(PALETTE.volume_up)),
                             (~up, QColor(PALETTE.volume_down))):
             if not mask.any():
@@ -316,7 +372,7 @@ class VolumeItem(pg.GraphicsObject):
             painter.setBrush(QBrush(color))
             for x, vv in zip(idx[mask], v[mask]):
                 if vv > 0:
-                    painter.drawRect(QRectF(x - 0.35, 0.0, 0.7, vv))
+                    painter.drawRect(QRectF(x - half, 0.0, half * 2.0, vv))
 
 
 class BandFillItem(pg.GraphicsObject):
@@ -462,7 +518,7 @@ class HistogramItem(pg.GraphicsObject):
             # One bar per pixel column, taking whichever of its values is
             # furthest from zero so a spike is never sampled away.
             idx, v = _peak(idx, v, stride)
-            half = max(half, stride / 2.0)
+            half = stride * (self.BAR_WIDTH / 2.0)
         painter.setPen(Qt.PenStyle.NoPen)
         positive = v >= 0
         for mask, color in ((positive, self.up), (~positive, self.down)):

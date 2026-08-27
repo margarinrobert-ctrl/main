@@ -27,8 +27,8 @@ pytestmark = pytest.mark.gui
 pg = pytest.importorskip("pyqtgraph")
 
 from tradingbacktester.ui.widgets.chart_items import (  # noqa: E402
-    BandFillItem, HistogramItem, _envelope, _peak, _runs, _stride,
-    clip_to_view)
+    BandFillItem, CandlestickItem, HistogramItem, VolumeItem, _envelope,
+    _minmax, _peak, _peak_index, _runs, _stride, clip_to_view)
 
 
 # ---------------------------------------------------------------------------
@@ -415,3 +415,167 @@ def test_the_on_screen_check_rejects_a_window_off_the_desktop(tmp_path, qapp):
     assert window._on_a_screen()
     window.close()
     qapp.processEvents()
+
+
+#: One paint of the whole file at once.  Measured: 0.01s decimated against
+#: 0.70s not, so this is well clear of the working value and well under the
+#: broken one.  BUDGET_SECONDS is far too loose to catch this.
+ZOOMED_OUT_PAINT_BUDGET = 0.2
+
+
+# ---------------------------------------------------------------------------
+# clipping to the view is not enough on its own
+# ---------------------------------------------------------------------------
+#
+# Zoomed all the way out, "the bars in view" is every bar in the file. The
+# candle item's line mode built one QPointF per bar in a Python loop and the
+# volume item drew one rectangle per bar -- 1.4 million of them on a
+# 500,000-bar dataset, on the thread that paints the window.
+
+
+def test_minmax_keeps_both_extremes_of_each_column_in_time_order():
+    xs = np.arange(6, dtype="float64")
+    values = np.array([5.0, 1.0, 3.0, 2.0, 9.0, 4.0])
+    kept_x, kept_v = _minmax(xs, values, 3)
+    # Column 0 is [5, 1, 3]: high 5 at index 0, low 1 at index 1, so 5 then 1.
+    # Column 1 is [2, 9, 4]: low 2 at index 3, high 9 at index 4, so 2 then 9.
+    assert list(kept_v) == [5.0, 1.0, 2.0, 9.0]
+    assert list(kept_x) == [0.0, 1.0, 3.0, 4.0]
+
+
+def test_minmax_never_flattens_a_spike():
+    values = np.full(1000, 100.0)
+    values[437] = 500.0
+    xs = np.arange(1000, dtype="float64")
+    _, kept = _minmax(xs, values, 50)
+    assert kept.max() == 500.0, "the spike was sampled out of the chart"
+
+
+def test_minmax_leaves_a_short_series_alone():
+    xs = np.arange(3, dtype="float64")
+    values = np.array([1.0, 2.0, 3.0])
+    kept_x, kept_v = _minmax(xs, values, 10)
+    assert list(kept_v) == [1.0, 2.0, 3.0]
+
+
+def test_peak_index_points_at_the_tallest_bar_in_each_column():
+    values = np.array([1.0, 7.0, 2.0, 3.0, 1.0, 9.0])
+    assert list(_peak_index(values, 3)) == [1, 5]
+
+
+def test_peak_index_keeps_the_ragged_tail():
+    values = np.array([1.0, 2.0, 3.0, 4.0])
+    assert 3 in list(_peak_index(values, 3))
+
+
+def test_a_zoomed_out_price_line_paints_promptly(qapp):
+    from PySide6.QtGui import QColor, QImage, QPainter
+
+    n = BIG
+    rng = np.random.default_rng(12)
+    close = np.cumsum(rng.normal(0.0, 1.0, n)) + 1000.0
+    open_ = np.concatenate([[close[0]], close[:-1]])
+    item = CandlestickItem(open_, np.maximum(open_, close),
+                           np.minimum(open_, close), close)
+    item.set_mode("line")
+    win = pg.GraphicsLayoutWidget()
+    win.resize(900, 400)
+    plot = win.addPlot()
+    plot.addItem(item)
+    plot.setXRange(0, n, padding=0)
+    plot.setYRange(float(close.min()), float(close.max()), padding=0)
+    win.show()
+    qapp.processEvents()
+    image = QImage(900, 400, QImage.Format.Format_ARGB32)
+    image.fill(QColor("black"))
+    painter = QPainter(image)
+    started = time.monotonic()
+    win.render(painter)
+    elapsed = time.monotonic() - started
+    painter.end()
+    win.close()
+    assert elapsed < ZOOMED_OUT_PAINT_BUDGET, (
+        f"painting a {n:,}-bar price line zoomed out took {elapsed:.2f}s; "
+        f"before decimation it took 0.70s")
+
+
+def test_a_zoomed_out_volume_histogram_paints_promptly(qapp):
+    from PySide6.QtGui import QColor, QImage, QPainter
+
+    n = BIG
+    rng = np.random.default_rng(13)
+    close = np.cumsum(rng.normal(0.0, 1.0, n)) + 1000.0
+    open_ = np.concatenate([[close[0]], close[:-1]])
+    volume = np.abs(rng.normal(1000.0, 300.0, n))
+    win = pg.GraphicsLayoutWidget()
+    win.resize(900, 400)
+    plot = win.addPlot()
+    plot.addItem(VolumeItem(volume, open_, close))
+    plot.setXRange(0, n, padding=0)
+    plot.setYRange(0.0, float(volume.max()), padding=0)
+    win.show()
+    qapp.processEvents()
+    image = QImage(900, 400, QImage.Format.Format_ARGB32)
+    image.fill(QColor("black"))
+    painter = QPainter(image)
+    started = time.monotonic()
+    win.render(painter)
+    elapsed = time.monotonic() - started
+    painter.end()
+    win.close()
+    assert elapsed < ZOOMED_OUT_PAINT_BUDGET, (
+        f"painting {n:,} volume bars zoomed out took {elapsed:.2f}s; "
+        f"before decimation it took 0.61s")
+
+
+# ---------------------------------------------------------------------------
+# choosing a strategy must not move the chart
+# ---------------------------------------------------------------------------
+
+def test_choosing_a_strategy_keeps_the_view_where_it_was(tmp_path, qapp):
+    """A new sub-panel is linked to the price plot, and pyqtgraph settles that
+    link by dragging the price plot out to the new panel's range.  Choosing a
+    strategy therefore jumped a 300-bar view to the whole dataset -- half a
+    million bars in 776 pixels, which is unreadable as well as slow, and it
+    threw away wherever the user had scrolled to.
+
+    Driven through MainWindow rather than ChartWidget alone: the link only
+    settles this way once the chart is inside the window's dock layout, which
+    is why a widget-level test of the same thing passes either way and proves
+    nothing.
+    """
+    from tradingbacktester.core.timeframe import Timeframe
+    from tradingbacktester.data.sample import generate_sample_data
+    from tradingbacktester.ui.main_window import MainWindow
+
+    settings, workspace = _settings_and_workspace(tmp_path)
+    window = MainWindow(settings, workspace, None)
+    window.resize(1500, 900)
+    window.show()
+    window._first_run()
+    qapp.processEvents()
+
+    n = 60_000
+    bars = generate_sample_data("V", Timeframe.parse("5m"), n_bars=n, seed=6)
+    meta = window.datasets.add_from_bars(bars, name="V 5m")
+    window.on_dataset_changed(meta.id)
+    qapp.processEvents()
+
+    before = window.chart.price_plot.getViewBox().viewRange()[0]
+    assert before[1] - before[0] < n / 10, (
+        "opening a dataset should show the recent bars, not the whole file")
+
+    # SuperTrend Follower draws an ADX sub-panel, which is what adds the row.
+    target = next((s for s in window.strategies.list()
+                   if s.name == "SuperTrend Follower"), None)
+    assert target is not None, "the built-in strategies were not seeded"
+    window.on_strategy_selected(target.id)
+    qapp.processEvents()
+    after = window.chart.price_plot.getViewBox().viewRange()[0]
+    window.close()
+    qapp.processEvents()
+
+    assert after[1] - after[0] == pytest.approx(before[1] - before[0], rel=0.05), (
+        f"choosing a strategy changed the view from {before[1] - before[0]:.0f} "
+        f"bars to {after[1] - after[0]:.0f}")
+    assert after[0] == pytest.approx(before[0], abs=2.0)
