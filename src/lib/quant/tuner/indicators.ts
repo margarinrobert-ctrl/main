@@ -20,6 +20,7 @@
  * Causality is the contract: the value at bar i uses bars <= i and never i+1. `leakCheck` in
  * `tuner.test.ts` truncates the series and asserts every indicator is unchanged before the cut.
  */
+import { ByteLru } from "./lru";
 import type { Bar } from "../types";
 import { atr as wilderAtr, ema, percentRank, priorExtreme, rollingStd, rsi, sessionVwap, sma, trueRange } from "../series";
 
@@ -29,7 +30,13 @@ export interface IndicatorContext {
   minuteOfDay: ArrayLike<number>;
   /** Identifies the bar set, so the memo cannot serve one timeframe's array for another. */
   key: string;
-  cache: Map<string, Float64Array>;
+  /**
+   * Byte-budgeted, because a period sweep is exactly the thing that fills it: `ema{n}` over
+   * n = 10..200 step 5 is 39 arrays, and each one is 8 bytes a bar. On a million-bar file that is
+   * 312 MB of cache for a single knob, and the unbounded Map this replaced never gave any of it
+   * back.
+   */
+  cache: ByteLru<Float64Array>;
 }
 
 export interface IndicatorSpec {
@@ -334,6 +341,9 @@ export const REGISTRY: Record<string, IndicatorSpec> = {
   },
 };
 
+/** 96 MB of indicator arrays — enough for a wide period sweep, small enough to live in a tab. */
+export const DEFAULT_INDICATOR_BUDGET = 96 * 1024 * 1024;
+
 /** Memoised lookup. Throws with the catalogue rather than returning a silent NaN array. */
 export function get(ctx: IndicatorContext, name: string, args: number[]): Float64Array {
   const k = `${ctx.key}|${name}|${args.join(",")}`;
@@ -346,12 +356,17 @@ export function get(ctx: IndicatorContext, name: string, args: number[]): Float6
   }
   const raw = spec.build(ctx, args);
   const out = raw instanceof Float64Array ? raw : Float64Array.from(raw as ArrayLike<number>);
-  ctx.cache.set(k, out);
-  return out;
+  return ctx.cache.set(k, out, out.byteLength);
 }
 
-export function makeContext(bars: Bar[], sessionId: ArrayLike<number>, minuteOfDay: ArrayLike<number>, key: string): IndicatorContext {
-  return { bars, sessionId, minuteOfDay, key, cache: new Map() };
+export function makeContext(
+  bars: Bar[],
+  sessionId: ArrayLike<number>,
+  minuteOfDay: ArrayLike<number>,
+  key: string,
+  budgetBytes = DEFAULT_INDICATOR_BUDGET,
+): IndicatorContext {
+  return { bars, sessionId, minuteOfDay, key, cache: new ByteLru<Float64Array>(budgetBytes) };
 }
 
 export interface CatalogueEntry {

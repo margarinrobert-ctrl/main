@@ -19,7 +19,8 @@ import { syntheticSeries } from "../synth";
 import type { Bar, EntryIntent, Instrument } from "../types";
 import { get, makeContext, catalogue } from "./indicators";
 import { parseRule, RuleError, ruleMask, fillTemplate, templateKeys } from "./rule";
-import { TunerSession, parseWindow } from "./index";
+import { DEFAULT_AXES, MAX_CONFIGURATIONS, RANK_KEYS, TunerSession, parseWindow, rankValue, type SweepResult } from "./index";
+import { publicRow } from "./project";
 import { DEFAULT_COSTS, walk, type Geometry } from "./tensor";
 
 const inst: Instrument = { ...instrument("NQ"), tz: "America/New_York", session: [570, 960] };
@@ -71,7 +72,7 @@ describe("exit tensor", () => {
         for (let gi = 0; gi < GEOMS.length; gi++) {
           const g = GEOMS[gi];
           const collected: { signalBar: number; exitBar: number; pnl: number }[] = [];
-          walk(t, gi, trig, DEFAULT_COSTS, s.lockedFromSession, s.sessionOfBar, collected as never);
+          walk(t, gi, trig, DEFAULT_COSTS, s.lockedFromOrdinal, s.ordinalOfBar, collected as never);
 
           const signal = (i: number): EntryIntent | null => {
             if (!fires[i]) return null;
@@ -106,7 +107,7 @@ describe("exit tensor", () => {
     const g = GEOMS[1];
     for (const mult of [0.5, 1, 2, 3]) {
       const collected: { pnl: number }[] = [];
-      walk(t, 1, trig, { fillModel: "taker", mult }, s.lockedFromSession, s.sessionOfBar, collected as never);
+      walk(t, 1, trig, { fillModel: "taker", mult }, s.lockedFromOrdinal, s.ordinalOfBar, collected as never);
       const ref = runBacktest(
         b,
         (i) => {
@@ -241,14 +242,16 @@ describe("sweep guardrails", () => {
       costs: [DEFAULT_COSTS],
       params: { n: [20, 50] },
       minTrades: 5,
+      rankBy: "perTrade",
     });
     expect(res.evaluated).toBe(8);
     expect(res.rows.length).toBeGreaterThan(0);
     for (let i = 1; i < res.rows.length; i++) {
-      expect(res.rows[i - 1].perTradeResearch).toBeGreaterThanOrEqual(res.rows[i].perTradeResearch);
+      expect(res.rows[i - 1].research.perTrade).toBeGreaterThanOrEqual(res.rows[i].research.perTrade);
     }
-    // The locked block exists but is not a sortable, displayable column of the sweep row.
-    expect(Object.keys(res.rows[0])).not.toContain("perTradeLocked");
+    // The locked block exists on the internal row, and is not part of what a UI is handed.
+    expect(res.rows[0].locked.trades).toBeGreaterThanOrEqual(0);
+    expect(Object.keys(publicRow(res.rows[0]))).not.toContain("locked");
     const revealed = s.reveal(res, res.rows.slice(0, 2));
     expect(revealed).toHaveLength(2);
     expect(revealed[0].searched).toBe(8);
@@ -271,6 +274,130 @@ describe("sweep guardrails", () => {
     expect(out.control!.pResearch).toBeLessThanOrEqual(1);
     // A control drawn on a null series should not systematically beat or lose to the rule.
     expect(Number.isFinite(out.control!.meanResearch)).toBe(true);
+  });
+});
+
+/**
+ * The tuner is a page, and a page that stops answering is broken however correct its arithmetic.
+ * Two mechanisms keep it responsive — a byte-budgeted cache that batches the geometry axis, and a
+ * generator that yields mid-sweep so a superseded run can be abandoned — and BOTH are only
+ * acceptable if they cannot change an answer. That is what this block is for.
+ */
+describe("staying responsive without changing an answer", () => {
+  const b = bars();
+  const AXES = {
+    rule: "close>ema{n}",
+    sides: [1] as (1 | -1)[],
+    windows: [WINDOW],
+    stops: [1, 1.5, 2],
+    targets: [1, 2],
+    maxBars: [12, 24],
+    atrPeriod: 14,
+    costs: [DEFAULT_COSTS],
+    params: { n: [20, 50] },
+    minTrades: 5,
+    rankBy: "sharpe" as const,
+  };
+
+  const compare = (a: SweepResult, z: SweepResult) => {
+    expect(z.evaluated).toBe(a.evaluated);
+    expect(z.dropped).toBe(a.dropped);
+    expect(z.rows.length).toBe(a.rows.length);
+    for (let i = 0; i < a.rows.length; i++) {
+      expect(z.rows[i].rule, `row ${i} rule`).toBe(a.rows[i].rule);
+      expect(z.rows[i].stop).toBe(a.rows[i].stop);
+      expect(z.rows[i].target).toBe(a.rows[i].target);
+      expect(z.rows[i].maxBars).toBe(a.rows[i].maxBars);
+      expect(z.rows[i].research.trades, `row ${i} trades`).toBe(a.rows[i].research.trades);
+      expect(z.rows[i].research.netUsd, `row ${i} net`).toBeCloseTo(a.rows[i].research.netUsd, 9);
+      expect(z.rows[i].research.sharpe, `row ${i} sharpe`).toBeCloseTo(a.rows[i].research.sharpe, 9);
+      expect(z.rows[i].research.residSharpe, `row ${i} residual`).toBeCloseTo(a.rows[i].research.residSharpe, 9);
+      expect(z.rows[i].locked.netUsd, `row ${i} locked`).toBeCloseTo(a.rows[i].locked.netUsd, 9);
+    }
+  };
+
+  it("gives the same grid whether the geometry axis fits in one tensor or twelve", () => {
+    const roomy = new TunerSession(b, inst, "roomy").sweep(AXES);
+    // A one-byte budget forces a batch size of one: twelve tensors instead of one, and every
+    // cache entry evicted by the next. If batching could change an answer, it would here.
+    const cramped = new TunerSession(b, inst, "roomy", { tensor: 1, indicator: 1, trigger: 1 }).sweep(AXES);
+    expect(roomy.tensors).toBe(1);
+    expect(cramped.tensors).toBe(12);
+    compare(roomy, cramped);
+  });
+
+  it("survives being abandoned part-way and answers the next question correctly", () => {
+    const s = new TunerSession(b, inst, "abandon");
+    const it = s.sweepIter(AXES);
+    for (let k = 0; k < 3; k++) if (it.next().done) break;
+    it.return(undefined as never); // what the worker does when a sweep is superseded
+    compare(new TunerSession(b, inst, "abandon").sweep(AXES), s.sweep(AXES));
+  });
+
+  it("yields often enough to be interruptible, and reports monotone progress", () => {
+    const s = new TunerSession(b, inst, "progress");
+    let yields = 0;
+    let last = -1;
+    let sawTensor = false;
+    const it = s.sweepIter(AXES);
+    for (;;) {
+      const step = it.next();
+      if (step.done) {
+        expect(step.value.evaluated).toBe(TunerSession.size(AXES).total);
+        break;
+      }
+      yields++;
+      if (step.value.phase === "tensor") sawTensor = true;
+      else {
+        expect(step.value.done).toBeGreaterThanOrEqual(last);
+        last = step.value.done;
+        expect(step.value.done).toBeLessThanOrEqual(step.value.total);
+      }
+    }
+    expect(sawTensor).toBe(true);
+    expect(yields).toBeGreaterThan(1);
+  });
+
+  it("counts the grid before evaluating it, and refuses one past the ceiling", () => {
+    expect(TunerSession.size(AXES).total).toBe(24);
+    const s = new TunerSession(b, inst, "ceiling");
+    const huge = { ...AXES, stops: Array.from({ length: 400 }, (_, i) => 1 + i / 100), targets: Array.from({ length: 400 }, (_, i) => 1 + i / 100), maxBars: [4, 8, 12, 24, 48, 96, 192, 384, 768, 1536, 3072, 6144, 12288] };
+    expect(TunerSession.size(huge).total).toBeGreaterThan(MAX_CONFIGURATIONS);
+    expect(() => s.sweep(huge)).toThrow(/ceiling/);
+  });
+
+  it("reveals the same locked numbers after the cache that produced them is gone", () => {
+    const s = new TunerSession(b, inst, "evicted", { tensor: 1, trigger: 1 });
+    const res = s.sweep({ ...AXES, rankBy: "perTrade" });
+    const a = s.reveal(res, res.rows.slice(0, 2), 200);
+    const z = s.reveal(res, res.rows.slice(0, 2), 200);
+    for (let i = 0; i < a.length; i++) {
+      expect(z[i].locked.netUsd).toBeCloseTo(a[i].locked.netUsd, 9);
+      expect(z[i].control.pLocked).toBeCloseTo(a[i].control.pLocked, 12);
+    }
+  });
+});
+
+describe("ranking", () => {
+  const b = bars();
+  const s = new TunerSession(b, inst, "rank");
+
+  it("sorts descending on whichever research objective was asked for", () => {
+    for (const key of RANK_KEYS) {
+      const res = s.sweep({ ...DEFAULT_AXES, rule: "close>ema50", windows: [WINDOW], minTrades: 5, rankBy: key });
+      expect(res.rankBy).toBe(key);
+      expect(res.rows.length).toBeGreaterThan(1);
+      for (let i = 1; i < res.rows.length; i++) {
+        expect(rankValue(res.rows[i - 1], key), `${key} row ${i}`).toBeGreaterThanOrEqual(rankValue(res.rows[i], key));
+      }
+    }
+  });
+
+  it("has no way to spell a locked-block objective", () => {
+    // Not a runtime check — the point is that `RankKey` is a union over `BlockPerf` keys read off
+    // `row.research`, so "rank by what the holdout did" cannot be written at all.
+    for (const key of RANK_KEYS) expect(Object.keys(DEFAULT_AXES)).not.toContain("rankLocked");
+    expect(RANK_KEYS[0]).toBe("residSharpe");
   });
 });
 
