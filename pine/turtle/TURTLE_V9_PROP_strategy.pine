@@ -1,0 +1,211 @@
+//@version=5
+// V9-PROP -- the lowest-drawdown configuration found for US30, and an honest account of what it
+// does and does not clear. Derived from Version #8 by removing the ladder and re-cutting the exit.
+//
+// ============================== READ THIS BEFORE THE SETTINGS ==============================
+// UNDER A 30-DAY, 6% TARGET, 4% TRAILING-DRAWDOWN EVALUATION THIS DOES NOT PASS. At every size
+// large enough to reach the target in 30 days it busts more often than it passes (best cell 36%
+// pass against 56% bust). That is not a tuning problem -- no configuration tested on this data
+// clears it, and the two that appeared to were an engine bug, corrected below.
+//
+// WHAT BINDS IS THE EVALUATION, NOT THE STRATEGY. Same rules, same sizing, 6% target, $0.50/pt:
+//
+//     rule set                          4 ctr        6 ctr        10 ctr       (pass / bust)
+//     30 days, 4% TRAILING              0% / 0%      5% / 7%      25% / 37%
+//     90 days, 4% TRAILING             17% / 10%    39% / 30%     45% / 54%
+//     180 days, 4% TRAILING            48% / 21%    53% / 44%     46% / 54%
+//     90 days, 4% STATIC               14% / 4%     39% / 12%     59% / 32%   <-- the only
+//     60 days, 4% STATIC                5% / 2%     22% / 8%      47% / 29%       positive-edge
+//                                                                                 region found
+//
+// So: take a NO-TIME-LIMIT evaluation with a STATIC drawdown if you have the choice. At 6
+// contracts on a 90-day static-drawdown rule this passes 39% of the time and busts 12% -- the
+// only place in this whole study where pass probability meaningfully exceeds bust probability.
+//
+// ================================ WHAT THE NUMBERS ARE ================================
+// US30 15-minute ISO feed, 48,937 bars, 2024-08-19 -> 2026-08-26. Train pre-2026; 2026 read once.
+// Cost 3.216 points per unit round turn, set to the same FRACTION of the 2N stop that NQ pays.
+//
+//                          n      PF      pts/trade   max DD
+//   all hours, train      752    1.12       +4.31      1,573
+//   all hours, OOS 2026   423    1.20       +7.14      1,488
+//   07:00-10:00, full     349    1.23       +8.66      1,172
+//
+// The drawdown is the point. Version #8 as shipped runs a max drawdown of 4,428 all-hours and
+// 6,685 in the 07:00-10:00 window; this runs 1,488-1,573. **Dropping the ladder from three units
+// to one is what does that**, and it is the single most useful change here. Profit factor is
+// roughly unchanged; drawdown falls by a factor of three, and drawdown is what an evaluation kills
+// you for.
+//
+// ================================ AND WHAT THEY ARE NOT ================================
+// THE ENTRY DOES NOT BEAT A RANDOM ENTRY. Against a matched control -- same window, same stop,
+// same target, same trade count -- the Donchian trigger returns p 0.35-0.43. The edge such as it
+// is lives in the EXIT GEOMETRY and the cost structure, not in the breakout. Treat the trigger as
+// a way of spacing trades out, not as information. A separate SELECTIVITY control shows ADX >= 15
+// does earn its keep given that you are taking breakouts (p 0.0013); both statements are true and
+// they are not the same statement.
+//
+// PROFIT FACTOR 1.80 WAS NOT REACHED. Best out-of-sample profit factor anywhere in this study is
+// 1.28. Two configurations previously reported at 1.87 and 1.67 were products of an engine bug in
+// which a partial exit re-opened a ladder unit it had just closed; corrected, partial exits are
+// worth approximately nothing and are not in this script.
+//
+// Full working: docs/ib/STUDY_V8_EXIT_OPT.md. Parity harness: research/v8opt/v9_parity.py --
+// 96.7-98.9% of signals match the research engine, per-trade P&L correlation 0.949-0.970.
+// ==========================================================================================
+
+strategy("Turtle V9-PROP (US30 15m, low drawdown)", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.90, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Bar detalization   High, with Deep Backtesting.   Order execution delay  One tick.
+//   Commission         CASH PER ORDER, per side, your broker's real number.
+//   Slippage           2 ticks. A stop fills INTO the move that triggered it.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+//   Read the TRADE COUNT and the COMMISSION LOAD before the P&L.
+// ======================================================================
+
+gE       = "Entry"
+entry1   = input.int(30,   "Donchian entry, System 1", minval = 2, group = gE)
+entry2   = input.int(55,   "Donchian entry, System 2", minval = 2, group = gE)
+exitCh   = input.int(20,   "Donchian exit channel",    minval = 2, group = gE)
+adxMin   = input.float(15, "ADX floor (0 = off)",      minval = 0, step = 1, group = gE)
+skipWin  = input.bool(true,"Skip after a winning trade (System 1 only)", group = gE)
+
+gX       = "Exit -- one unit, no ladder"
+atrLen   = input.int(20,   "ATR length", minval = 2, group = gX)
+atrMult  = input.float(2.0,"ATR stop multiple", minval = 0.1, step = 0.1, group = gX)
+tpMode   = input.string("Points", "Take profit in", options = ["Points", "ATR multiples"], group = gX)
+tpPts    = input.float(200,"  target, points (US30)",  minval = 1, step = 5, group = gX)
+tpAtr    = input.float(4.6,"  target, ATR multiples",  minval = 0.1, step = 0.1, group = gX,
+     tooltip = "200 US30 points is about 4.6 x ATR(20) on this data. Use ATR multiples on any other instrument -- a points target does not transfer.")
+trailPts = input.float(100,"Trailing stop, points (0 = off)", minval = 0, step = 5, group = gX)
+qty      = input.int(6,    "Contracts", minval = 1, group = gX,
+     tooltip = "6 MYM on a 90-day static-drawdown evaluation is the only positive-edge cell found: 39% pass, 12% bust.")
+
+gS       = "Session window (OFF by default -- all hours is the recommendation)"
+sessOn   = input.bool(false, "Restrict entries to a window and flatten", group = gS)
+startHH  = input.int(7,  "Window start -- hour (New York)", minval = 0, maxval = 23, group = gS)
+startMM  = input.int(0,  "Window start -- minute",          minval = 0, maxval = 59, group = gS)
+flatHH   = input.int(10, "Flatten -- hour (New York)",      minval = 0, maxval = 23, group = gS)
+flatMM   = input.int(0,  "Flatten -- minute",               minval = 0, maxval = 59, group = gS)
+
+// ----------------------------------------------------------------- series
+// Channels EXCLUDE the current bar, or a breakout could never happen.
+atrN    = ta.atr(atrLen)                      // Wilder's RMA of TR, matching mirror.wilder_atr
+chanHi1 = ta.highest(high, entry1)[1]
+chanHi2 = ta.highest(high, entry2)[1]
+chanLo  = ta.lowest(low,  exitCh)[1]
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER -- the first element is +DI, not ADX.
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)
+
+// BARE `hour` AND `minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME, so an hour or two off
+// New York depending on the season. The research clock is New York; read it explicitly.
+modNY   = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+startM  = startHH * 60 + startMM
+flatM   = flatHH * 60 + flatMM
+barMin  = timeframe.in_seconds(timeframe.period) / 60
+inWin   = not sessOn or (modNY >= startM and modNY < flatM - barMin)
+atFlat  = sessOn and modNY >= flatM
+
+okAdx   = adxMin <= 0 or (not na(adxVal) and adxVal >= adxMin)
+ready   = not na(atrN) and atrN > 0
+gateOk  = ready and okAdx and inWin
+
+// ----------------------------------------------------------------- state
+var float sigAtr  = na      // ATR FROZEN AT THE SIGNAL BAR -- stop and target both read this
+var float entryPx = na
+var float peakSince = na    // highest high of bars that have CLOSED since entry
+var int   lastCnt = 0
+var bool  lastWin = false
+var float entEquity = na
+var int   exitBar = -1
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL -- guarding part of a coupled set
+// desynchronises it rather than partly fixing it. See docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    lastWin   := strategy.netprofit > nz(entEquity)
+    exitBar   := bar_index
+    sigAtr    := na
+    entryPx   := na
+    peakSince := na
+    lastCnt   := 0
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    entryPx   := strategy.opentrades.entry_price(strategy.opentrades - 1)
+    entEquity := strategy.netprofit
+    peakSince := high
+    lastCnt   := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ----------------------------------------------------------------- entry
+// System 2 (55-bar) takes precedence when both fire. The skip consumes itself either way.
+sig2 = not na(chanHi2) and high > chanHi2
+sig1 = not na(chanHi1) and high > chanHi1
+
+// The bracket goes on WITH the entry so the ENTRY BAR is covered -- without it, the bar the trade
+// opens on carries no stop at all. `loss`/`profit` are measured by Pine from the ACTUAL fill,
+// which is what the research engine anchors to; and where `stop` and `loss` are both given Pine
+// takes the SMALLER LOSS, which for a long is the HIGHER level -- exactly the engine's
+// max(ATR stop, channel low), reproduced rather than approximated.
+lossTk = int(math.max(1, math.round(atrMult * atrN / syminfo.mintick)))
+tpDist = tpMode == "Points" ? tpPts : tpAtr * atrN
+tpTk   = int(math.max(1, math.round(tpDist / syminfo.mintick)))
+
+if barstate.isconfirmed and flat and gateOk and bar_index > exitBar
+    if sig2
+        sigAtr := atrN
+        strategy.entry("S2", strategy.long, qty = qty)
+        strategy.exit("x0", from_entry = "S2", stop = chanLo, loss = lossTk, profit = tpTk)
+    else if sig1
+        if skipWin and lastWin
+            lastWin := false
+        else
+            sigAtr := atrN
+            strategy.entry("S1", strategy.long, qty = qty)
+            strategy.exit("x0", from_entry = "S1", stop = chanLo, loss = lossTk, profit = tpTk)
+
+// ----------------------------------------------------------------- exit
+// A TRAILING LEVEL MAY ONLY READ BARS THAT HAVE CLOSED. Updating the peak from the CURRENT bar's
+// high and then testing the same bar's low against it assumes the high came first -- a look-ahead
+// worth 0.2 of profit factor when it was measured. `peakSince` is updated here, at the close, and
+// the order it feeds is live from the NEXT bar.
+if barstate.isconfirmed and not flat and lastCnt > 0
+    peakSince := math.max(nz(peakSince, high), high)
+
+atrStop   = na(entryPx) or na(sigAtr) ? na : entryPx - atrMult * sigAtr
+trailStop = trailPts <= 0 or na(peakSince) ? na : peakSince - trailPts
+lvl1      = na(atrStop) ? chanLo : (na(chanLo) ? atrStop : math.max(atrStop, chanLo))
+exitLevel = na(trailStop) ? lvl1 : (na(lvl1) ? trailStop : math.max(lvl1, trailStop))
+tpLevel   = na(entryPx) or na(sigAtr) ? na : entryPx + (tpMode == "Points" ? tpPts : tpAtr * sigAtr)
+
+if barstate.isconfirmed and not flat and lastCnt > 0 and not na(exitLevel)
+    // "x0" covered the entry bar; "x" takes over from here. Cancel the first or both rest.
+    strategy.cancel("x0")
+    strategy.exit("x", stop = exitLevel, limit = tpLevel)
+
+// ----------------------------------------------------------------- flatten
+// LAST, so it cancels the orders the blocks above just placed. Cancelling matters: a resting order
+// left alive after the position closes opens a NEW position outside the window.
+if barstate.isconfirmed and atFlat
+    strategy.cancel_all()
+    if not flat
+        strategy.close_all(comment = "flatten")
+
+// ----------------------------------------------------------------- plots
+plot(chanHi1, "Entry 1", color = color.new(color.aqua, 35))
+plot(chanHi2, "Entry 2 (55)", color = color.new(color.blue, 45))
+plot(chanLo,  "Exit channel", color = color.new(color.red, 65))
+plot(flat ? na : exitLevel, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+plot(flat ? na : tpLevel,   "Target",       color = color.new(color.lime, 0), style = plot.style_linebr)
+
+onTf = timeframe.period == "15"
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V9-PROP - one unit, no ladder", text_color = color.white, bgcolor = color.new(color.teal, 25))
+    table.cell(hud, 0, 1, onTf ? "15m chart" : "NOT 15m - studied on 15m only", text_color = color.white, bgcolor = onTf ? color.new(color.teal, 45) : color.red)
+    table.cell(hud, 0, 2, "FAILS a 30-day 4% TRAILING evaluation. Use a no-time-limit STATIC-drawdown one.", text_color = color.white, bgcolor = color.new(color.red, 15))

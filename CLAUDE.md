@@ -173,6 +173,22 @@ because the engine re-anchors the stop to each new fill WITHIN a bar and Pine ca
 until the bar closes. A better Strategy Tester number than the research is that gap, not an edge.
 See `docs/ib/STUDY_PINE_PARITY.md`.
 
+**A partial exit must not re-open the ladder — count units OPENED, not units live.** `eem.run`
+gated its ladder on `size < max_units`; a partial reduces `size`, so the ladder re-opened a unit it
+had just closed and trades finished at 1.5 units on a max_units=1 config. It inflated EVERY result
+using a partial: config D 1.38/1.29 -> 1.10/0.95, the partial block's 1.14-1.19 "plateau" -> 0.82-1.02
+(the bug applied uniformly, which is exactly why a flat improvement looked robust), and a prop
+config from 1.87/1.62 to 1.12/0.98. Found by the parity harness, not by reading: target trades paid
++270.53 in the engine against the +133.48 the arithmetic demands. Corollary: **partial exits are
+worth nothing here**, and a suspiciously FLAT improvement across a whole parameter block is a bug
+signature, not a plateau. See `docs/ib/STUDY_V8_EXIT_OPT.md`.
+
+**One unit is the prop answer; the ladder is what generates the drawdown.** Same rules, US30 15m:
+three units run a max drawdown of 4,428 all-hours and 6,685 in a 07:00-10:00 window; one unit runs
+1,488-1,573 for the same profit factor. Replicates `STUDY_TURTLE_15M`. And what binds a funded
+evaluation is the RULE SET, not the strategy: under 30 days / 6% / 4% TRAILING nothing tested
+passes, while 90 days with a STATIC 4% gives 39% pass against 12% bust at the same sizing.
+
 **Tune with `research/tune.py`, not by editing a module.** A trade's outcome depends only on its
 signal bar and the geometry, so the price walk is cached per bar and every exit knob — stop,
 target, flatten time, max hold, entry mechanic, cost model — becomes an array index: 0.4 us per

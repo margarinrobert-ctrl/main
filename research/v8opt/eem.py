@@ -60,6 +60,7 @@ def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, c
         px0 = o[eb]                      # the price the trade was taken at; MFE/MAE reference
         avg = px0
         size = 1.0
+        opened = 1          # units EVER opened -- the ladder counts these, not the live size
         last_fill = px0
         nxt = px0 + pyr * a
         stop = px0 - atr_mult * a
@@ -71,11 +72,15 @@ def run(d, atr, C, mask, *, atr_mult=2.5, pyr=0.5, max_units=3, skip_win=True, c
         part_done = False
         j = eb
         while j < n:
-            while size < max_units and h[j] >= nxt:
+            # `opened`, not `size`. A partial exit reduces size, and keying the ladder off size
+            # let it RE-OPEN a unit it had just closed -- trades exited at 1.5 units on a
+            # max_units=1 configuration, inflating every result that used a partial.
+            while opened < max_units and h[j] >= nxt:
                 last_fill = nxt
                 pnl -= cost
                 avg = (avg * size + last_fill) / (size + 1)
                 size += 1
+                opened += 1
                 stop = last_fill - atr_mult * a
                 nxt = last_fill + pyr * a
             if h[j] - px0 > mfe:

@@ -6,6 +6,82 @@ against a PF ≥ 1.80 target inside a hard 07:00–10:00 New York window. US30 I
 
 Cost 3.216 points per unit round turn, set to the same **fraction of the 2N stop** that NQ pays.
 
+---
+
+# CORRECTION — a ladder bug invalidated the partial-exit results
+
+**Everything below this section that involves a PARTIAL EXIT was wrong when first published.**
+`eem.run` keyed the ladder off the *live* position size:
+
+```python
+while size < max_units and h[j] >= nxt:      # WRONG
+```
+
+A partial exit reduces `size`, which makes `size < max_units` true again — so the ladder
+**re-opened a unit it had just closed**. Trades finished at 1.5 units on a `max_units=1`
+configuration. It was found by building the V9 parity harness (`research/v8opt/v9_parity.py`) and
+noticing that target-hit trades paid +270.53 in the engine against +133.48 in the port, where
++133.48 is what the arithmetic says. The fix counts units *opened*, not units live.
+
+### What changed
+
+| | as published | corrected |
+| --- | ---: | ---: |
+| **Config D** (3 units + partial + trail) train → OOS | 1.38 → 1.29 | **1.10 → 0.95** |
+| Config A (structure + partial) train → OOS | 1.67 → 1.18 | reject either way |
+| Partial exits, train, vs 1.05 baseline | 1.14 – 1.19 | **0.82 – 1.02** |
+| 1-unit prop config train → OOS | 1.87 → 1.62 (never published) | **1.12 → 0.98** |
+| Peak prop P(pass) / P(bust) | 44.9% / 45.1% | **no positive-edge cell at 30 days** |
+
+**Partial exits are worth approximately nothing here.** The apparent 1.14–1.19 "plateau" was the bug
+applying uniformly across the block — which is exactly why a flat, consistent improvement looked
+like a robust one.
+
+### What did NOT change
+
+Everything without a partial exit, which is most of the study: the baseline, the 88-cell stop ×
+target grid, the window analysis, the exit-efficiency model, the break-even / trailing / structure /
+time rows, the entry-vs-exit control, and the walk-forward. The three headline findings stand — the
+window costs two-thirds of the result and doubles drawdown, the target surface wants to be further
+out, and the entry does not beat a matched random entry.
+
+### The corrected recommendation
+
+Not Config D. **One unit, 2.0N stop, 200-point target, 100-point trail, no partial**:
+
+| | n | PF | pts/trade | max DD |
+| --- | ---: | ---: | ---: | ---: |
+| all hours, train | 752 | 1.12 | +4.31 | 1,573 |
+| all hours, OOS 2026 | 423 | **1.20** | +7.14 | **1,488** |
+| 07:00–10:00, full span | 349 | 1.23 | +8.66 | **1,172** |
+
+Profit factor is ordinary. **Drawdown is a third of Version #8's** (4,428 all-hours, 6,685 in the
+window), and drawdown is what an evaluation kills you for. Dropping the ladder from three units to
+one is the whole of that improvement, and it replicates a finding already on this branch
+(`STUDY_TURTLE_15M`: one unit is the lowest-drawdown answer).
+
+### The prop-firm answer, corrected
+
+Under a 30-day / 6% / 4%-trailing evaluation, **nothing passes**: every size large enough to reach
+the target in 30 days busts more often than it passes. The binding constraint is the *evaluation*,
+not the strategy — same rules, same sizing, $0.50/point:
+
+| rule set | 4 ctr | 6 ctr | 10 ctr |
+| --- | ---: | ---: | ---: |
+| 30 days, 4% trailing | 0% / 0% | 5% / 7% | 25% / 37% |
+| 90 days, 4% trailing | 17% / 10% | 39% / 30% | 45% / 54% |
+| 180 days, 4% trailing | **48% / 21%** | 53% / 44% | 46% / 54% |
+| 90 days, 4% **static** | 14% / 4% | **39% / 12%** | 59% / 32% |
+| 60 days, 4% static | 5% / 2% | 22% / 8% | 47% / 29% |
+
+*(pass / bust)*. The static-drawdown, no-time-limit cells are the only region in this entire study
+where pass probability meaningfully exceeds bust probability.
+
+Shipped as `pine/turtle/TURTLE_V9_PROP_strategy.pine`, parity-checked at 96.7–98.9% signal match
+and 0.949–0.970 per-trade correlation against the engine.
+
+---
+
 ## The answer to the question that was actually asked
 
 **PF ≥ 1.80 is not reachable here, and the ceiling is not close.** Across an 88-cell stop × target
