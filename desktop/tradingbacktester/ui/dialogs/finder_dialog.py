@@ -352,7 +352,12 @@ class FinderDialog(QDialog):
                 return scan(bars, style, progress=forward)
             return find_strategies(bars, style, progress=forward)
 
-        self._worker.start(job, f"Running the {study} study")
+        # start(fn, *args, **kwargs) forwards everything after `fn` to the job.
+        # A label passed here became job's first POSITIONAL argument, which is
+        # `progress` -- and the runner then also passed progress by keyword, so
+        # every study died on "got multiple values for argument 'progress'"
+        # before it read a single bar. The job takes no arguments of its own.
+        self._worker.start(job)
 
     def _cancel(self) -> None:
         if self._worker is not None:

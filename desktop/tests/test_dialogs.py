@@ -913,6 +913,65 @@ def test_finder_dialog_runs_all_three_studies(qapp, tmp_path, registry):
     dialog.close()
 
 
+def test_pressing_search_actually_runs_each_study(qapp, tmp_path, registry):
+    """Drive `_search` -- the code path the button uses -- not the display.
+
+    The test above this one hands a report straight to `_on_finished`, so it
+    exercises the three tables and NOTHING of the machinery that produces a
+    report.  That is how this shipped broken: `_search` passed a label to
+    `TaskRunner.start(fn, *args)`, the label became the job's first positional
+    argument (`progress`), the runner then passed `progress` by keyword too,
+    and every study died on `TypeError: got multiple values for argument
+    'progress'` before reading a single bar.  Strategies, Indicators and
+    Anomalies were all dead from the button, and the suite was green.
+
+    So this test presses the button and waits for the worker.
+    """
+    import time
+
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import (STUDIES,
+                                                            FinderDialog)
+
+    workspace = Workspace(tmp_path).ensure()
+    dialog = FinderDialog(DatasetRepository(workspace), registry,
+                          StrategyStore(workspace))
+    for i in range(dialog.dataset_box.count()):
+        if "US30 30m" in dialog.dataset_box.itemText(i):
+            dialog.dataset_box.setCurrentIndex(i)
+            break
+
+    for index, (key, label, _question) in enumerate(STUDIES):
+        dialog.tabs.setCurrentIndex(index)
+        qapp.processEvents()
+        failures: list[tuple[str, str]] = []
+        dialog.failed.connect(failures.append) if hasattr(dialog, "failed") else None
+        original = dialog._on_failed
+
+        def capture(message, detail, _o=original, _f=failures):
+            _f.append((message, detail))
+            _o(message, detail)
+
+        dialog._on_failed = capture
+        dialog._search()
+
+        deadline = time.monotonic() + 240
+        while (dialog._worker is not None and dialog._worker.busy
+               and time.monotonic() < deadline):
+            qapp.processEvents()
+            time.sleep(0.02)
+        qapp.processEvents()
+        dialog._on_failed = original
+
+        assert not failures, (
+            f"the {label} study failed when the button was pressed: "
+            f"{failures[0][0]}\n{failures[0][1]}")
+        assert dialog._reports[key] is not None, (
+            f"the {label} study produced no report")
+    dialog.close()
+
+
 # --------------------------------------------------------------------------
 # Simple mode and the guided start
 # --------------------------------------------------------------------------
