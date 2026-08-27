@@ -226,6 +226,7 @@ def cmd_find(args: argparse.Namespace) -> int:
         control_draws=args.draws, research_fraction=args.research,
         sides=((1,) if args.side == "long" else (-1,) if args.side == "short"
                else (1, -1)),
+        validate=args.validate,
         progress=progress)
     _clear_progress()
 
@@ -619,6 +620,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Draws for the sampled control")
     p.add_argument("--research", type=float, default=0.65,
                    help="Fraction of the data used to choose (rest is locked)")
+    p.add_argument("--validate", choices=("quick", "standard", "full"),
+                   default="standard",
+                   help="How hard to check the shortlist. quick: the engine's "
+                        "own backtest only. standard: adds the concentration "
+                        "gate, a Monte Carlo resample and the mirror market. "
+                        "full: adds walk-forward, which is much slower.")
     p.add_argument("--save", action="store_true",
                    help="Save the shortlist as strategies in the workspace")
     p.add_argument("--json", action="store_true", help="Machine-readable output")

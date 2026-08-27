@@ -39,10 +39,14 @@ import numpy as np
 
 from ..core.errors import InsufficientDataError
 from ..core.timeframe import Timeframe
-from ..core.types import CostModel, SlippageMode, SpreadMode
+from ..core.types import (BacktestConfig, CostModel, SlippageMode,
+                          SpreadMode)
 from ..data.models import BarSeries
 from .candidates import (Candidate, TEMPLATES_BY_KEY, all_candidates,
                          build_spec, signals_for, warmup_for)
+from .confirm import confirm
+from .robustness import Robustness, assess, rank as rank_by_robustness
+from .validate import Validations, run as run_validations
 from .control import ControlResult, analytic_control, benjamini_hochberg, sampled_control
 from .outcomes import (EXIT_NAMES, Geometry, OutcomeCache, build_outcomes,
                        select_sequential, session_entry_mask,
@@ -93,6 +97,16 @@ class Finding:
     verdict: str = ""
     concerns: list[str] = field(default_factory=list)
     spec: Any = None
+    validations: Any = None
+    """Concentration, Monte Carlo, mirror and walk-forward. See `validate.py`."""
+    robustness: Any = None
+    """The multi-dimensional score built from all of the above."""
+    confirmation: Any = None
+    """The engine's own backtest of this rule. See `finder/confirm.py`.
+
+    The search ranks on a cached fast path; this is the same rule run through
+    the real engine on both blocks, and it is where every metric shown against
+    a recommendation comes from."""
 
     @property
     def label(self) -> str:
@@ -128,6 +142,12 @@ class Finding:
                                 if self.holdout_control else None),
             "verdict": self.verdict,
             "concerns": list(self.concerns),
+            "confirmation": (self.confirmation.to_dict()
+                             if self.confirmation is not None else None),
+            "validations": (self.validations.to_dict()
+                            if self.validations is not None else None),
+            "robustness": (self.robustness.to_dict()
+                           if self.robustness is not None else None),
         }
 
 
@@ -258,6 +278,7 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
                     research_fraction: float = 0.65,
                     top_n: int = 5, control_draws: int = 2000,
                     alpha: float = 0.10, seed: int = 0,
+                    validate: str = "standard",
                     progress: ProgressFn | None = None) -> FinderReport:
     """Search for entry rules that beat a matched control, and report honestly."""
     started = time.time()
@@ -376,6 +397,12 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
             costs, name=f"Found · {best.label}", instrument_timezone=timezone)
         _reveal(caches[(best.candidate.side, best.stop_atr, best.target_r)],
                 signal_cache[best.candidate.key()], holdout, best, minimum)
+        best.confirmation = confirm(best, working, split)
+        best.validations = Validations(
+            skipped={"all": "this candidate did not survive its multiplicity "
+                            "correction, so the deeper validations would be "
+                            "measuring something already disqualified"})
+        best.robustness = assess(best, minimum_trades=minimum)
         return _report(style, timeframe, working, split, combinations,
                        len(findings), findings, [best], notes, started)
 
@@ -397,7 +424,28 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
             finding.candidate, style, timeframe, finding.stop_atr,
             finding.target_r, costs,
             name=f"Found · {finding.label}", instrument_timezone=timezone)
+        # Nothing is recommended on the strength of the cached fast path alone.
+        # The same rule goes through the real engine on both blocks, and every
+        # metric shown against it comes from the trades that came out.
+        finding.confirmation = confirm(finding, working, split)
+        finding.validations = run_validations(
+            finding, working, BacktestConfig(), depth=validate, seed=seed,
+            progress=(lambda done, total, message, p=position:
+                      progress(len(candidates) + combinations,
+                               len(candidates) + combinations,
+                               f"Validating rule {p + 1} of {len(shortlist)}: "
+                               f"{message}") if progress is not None else None))
+        v = finding.validations
+        finding.robustness = assess(
+            finding, minimum_trades=minimum, concentration=v.concentration,
+            walkforward=v.walkforward, montecarlo=v.montecarlo,
+            mirror=v.mirror)
         _judge(finding, minimum)
+
+    # Re-ordered by robustness, not by return. The search ranked on excess per
+    # trade to decide WHAT to look at closely; what survives that scrutiny is
+    # ordered by how much of it held up.
+    shortlist = rank_by_robustness(shortlist)
 
     return _report(style, timeframe, working, split, combinations,
                    len(findings), findings, shortlist, notes, started)
@@ -551,8 +599,17 @@ def _judge(finding: Finding, minimum: int) -> None:
             "most trades ended on the time stop rather than at a barrier, so "
             "this is a bet on direction, not on the barriers")
 
+    # A blocker outranks the concern list: the score already refused to grade
+    # this candidate, and a row reading "worth testing further" beside
+    # "disqualified" is a contradiction the reader has to resolve themselves.
+    score = getattr(finding, "robustness", None)
+    if score is not None and score.blocked:
+        concerns.extend(b for b in score.blockers if b not in concerns)
+
     finding.concerns = concerns
-    if not concerns:
+    if score is not None and score.blocked:
+        finding.verdict = "not worth trading"
+    elif not concerns:
         finding.verdict = "worth testing further"
     elif holdout_excess > 0 and holdout_trades >= minimum:
         finding.verdict = "survived the locked block, with reservations"

@@ -41,8 +41,13 @@ from ..widgets.common import Card, show_error
 
 log = get_logger(__name__)
 
-_COLUMNS = ("Rule", "Trades", "Won", "Per trade", "Vs. random", "Locked block",
-            "Verdict")
+#: The strategy table.  Robustness comes before the money on purpose: a search
+#: always produces a winner, so the first thing to read about one is how much
+#: of it held up, not how much it made.  Every figure in the money columns is
+#: the ENGINE's, from `finder/confirm.py`, not the search's fast path.
+_COLUMNS = ("Rule", "Robustness", "OOS retention", "Trades (IS | OOS)",
+            "Net (IS | OOS)", "Sharpe (IS | OOS)", "Max DD (OOS)",
+            "Vs. random", "Verdict")
 
 _INDICATOR_COLUMNS = ("Indicator", "Family", "Says", "Predictive power",
                       "Worth per trade", "Locked block", "Verdict")
@@ -60,6 +65,72 @@ STUDIES = (
     ("anomalies", "Anomalies",
      "Which bars are unusual, and does anything follow them?"),
 )
+
+
+def _pair(left: Any, right: Any, fmt: str = "{:,.0f}") -> str:
+    """One in-sample figure beside its out-of-sample twin, never merged.
+
+    A single blended number is how a rule chosen on one block gets described as
+    profitable; keeping the two apart makes the decay between them the thing
+    the eye lands on.
+    """
+    import math
+
+    def one(value: Any) -> str:
+        if value is None:
+            return "—"
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        if not math.isfinite(number):
+            return "—"
+        return fmt.format(number)
+
+    return f"{one(left)} | {one(right)}"
+
+
+def _strategy_cells(finding: Any) -> list[str]:
+    """One row of the strategy table, from the engine's own numbers."""
+    import math
+
+    confirmation = getattr(finding, "confirmation", None)
+    score = getattr(finding, "robustness", None)
+
+    if score is None:
+        robustness = "—"
+    elif score.blocked:
+        robustness = "disqualified"
+    else:
+        total = score.total
+        robustness = ("—" if not math.isfinite(total)
+                      else f"{total:.0f}/100 {score.grade}")
+
+    retention = "—"
+    if score is not None and not score.blocked:
+        found = next((d for d in score.dimensions
+                      if d.key == "retention" and d.applicable), None)
+        if found is not None:
+            retention = f"{found.score * 100:.0f}%"
+
+    if confirmation is None or not confirmation.ran:
+        trades = net = sharpe = drawdown = "not run"
+    else:
+        research, holdout = confirmation.research.metrics, confirmation.holdout.metrics
+        trades = _pair(confirmation.research.trades, confirmation.holdout.trades)
+        net = _pair(research.get("net_profit"), holdout.get("net_profit"),
+                    "{:+,.0f}")
+        sharpe = _pair(research.get("sharpe_ratio"), holdout.get("sharpe_ratio"),
+                       "{:.2f}")
+        raw = holdout.get("max_drawdown")
+        drawdown = ("—" if raw is None else f"{abs(float(raw)):,.0f}")
+
+    control = getattr(finding, "control", None)
+    versus = ("—" if control is None else
+              f"{control.excess_per_trade:+,.2f} (p={control.p_value:.3f})")
+
+    return [finding.label, robustness, retention, trades, net, sharpe,
+            drawdown, versus, finding.verdict]
 
 
 class FinderDialog(QDialog):
@@ -413,21 +484,8 @@ class FinderDialog(QDialog):
         rows = list(report.shortlist)
         table.setRowCount(len(rows))
         for row, finding in enumerate(rows):
-            research = finding.research
-            holdout = finding.holdout or {}
-            excess = (finding.holdout_control.excess_per_trade
-                      if finding.holdout_control else 0.0)
-            self._put(table, row, [
-                finding.label,
-                f"{int(research['trades']):,}",
-                f"{research['win_rate'] * 100:.1f}%",
-                f"{research['per_trade']:+,.2f}",
-                f"{finding.control.excess_per_trade:+,.2f} "
-                f"(p={finding.control.p_value:.3f})",
-                (f"{int(holdout.get('trades', 0)):,} trades, {excess:+,.2f}"
-                 if holdout else "—"),
-                finding.verdict,
-            ], finding.verdict.startswith("worth"))
+            self._put(table, row, _strategy_cells(finding),
+                      finding.verdict.startswith("worth"))
         self._finish_table(table, "strategies", format_report(report))
 
         worth = sum(1 for f in rows if f.verdict == "worth testing further")

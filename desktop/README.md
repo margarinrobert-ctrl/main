@@ -446,9 +446,68 @@ default.
    wrong shape**, not celebrated. An edge decays out of sample; it does not
    appear there.
 
+7. **Every shortlisted candidate is re-run through the real engine.** The
+   search itself uses a cached fast path — 840 combinations over half a million
+   bars is affordable no other way — so a search result is a claim, not
+   evidence. Anything that reaches a shortlist is backtested again through the
+   same engine a hand-built strategy uses, on the research block and the locked
+   block separately, and every figure shown against it comes from the trades
+   that came out. The fast path is also compared against the engine **for that
+   candidate**: if the two disagree, the search ranked on a number the engine
+   cannot reproduce, and that is reported rather than hidden.
+8. **Nothing is ranked on profit.** See below.
+
 Anything shortlisted becomes a real strategy: **Save selected as a strategy**
 puts it in the library, where it can be charted, edited, re-run through the
 engine and exported to Pine like any other.
+
+### Robustness, and why the ranking ignores return
+
+A search always produces a winner, so ranking winners by profit ranks them by
+how lucky they got — on a single sample, profit measures how well a rule fitted
+that sample better than it measures anything else. So the shortlist is ordered
+by a robustness score instead, built from two mechanisms that behave
+differently on purpose.
+
+**Blockers disqualify.** A rule that took no trades out of sample, or lost money
+out of sample, or had too few out-of-sample trades for its style, or never
+survived its own multiplicity correction, or whose figures the engine could not
+reproduce, is not scored at all. It gets a reason. No weighting can rescue it,
+because there is nothing to weigh: the evidence for it does not exist. This is
+what stops anything being called "proven" on the strength of one block.
+
+**Dimensions are scored and weighted**, and only run on what got past the
+blockers:
+
+| dimension | weight | what it asks |
+|---|---|---|
+| Out-of-sample retention | 3.0 | how much of the in-sample edge survived into the locked block |
+| Statistical significance | 2.0 | how unlikely it is against a time-of-day matched control |
+| Parameter sensitivity | 2.0 | does the edge survive a change of settings, or live at exactly one |
+| Direction independence | 2.0 | is it a rule, or a long position wearing one (the mirror market) |
+| Walk-forward | 2.0 | did it hold up in rolling windows |
+| Drawdown quality | 1.5 | return measured against the worst the curve got, out of sample |
+| Cost sensitivity | 1.5 | how much of the gross result the spread and commission took |
+| Consistency | 1.5 | was the profit spread through the sample or earned in one fifth |
+| Monte Carlo | 1.5 | how much of the equity curve was the order the trades fell in |
+| Sample size | 1.0 | enough trades that the ratios describe a process |
+
+Retention is weighted heaviest because it is the only dimension measured on
+data the search never saw. It is **capped at 1.0**: a rule that does markedly
+better out of sample than in sample scores no bonus for it and is flagged as
+the wrong shape instead.
+
+A dimension that could not be measured is marked *not applicable* and drops out
+of the weighted mean rather than counting as a failure — scoring an unrun test
+as zero would punish a candidate for the depth you chose. The score is always
+shown with the number of dimensions behind it, so a thin score reads as thin,
+and fewer than four dimensions grades as "too little evidence to grade" rather
+than as a number.
+
+The deeper validations run automatically at `--validate standard` (the
+default): the concentration gate, a block-bootstrap Monte Carlo, and the mirror
+market. `--validate full` adds walk-forward, which is much slower. `--validate
+quick` runs the engine confirmation only.
 
 ### It will usually find nothing
 
