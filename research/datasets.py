@@ -14,6 +14,14 @@ lists what has to be re-attached. `inventory()` prints the lot.
 RE-ATTACHING. Every entry records `restore_to`, the exact path the loaders search for. Uploads land
 in a directory that is NOT durable and has been cleared mid-study more than once, so a file is only
 safe once it is at its `restore_to` path -- and even then only until the container is recycled.
+
+REGISTER ON ARRIVAL, NOT ON THE WAY OUT. Four files -- the two RTF-wrapped ISO index feeds, the
+nine-year US100 file and the twenty-year gold file -- were used across three sessions for V12, V13,
+V14 and V15 and never entered here. A recycle deleted them, and the studies that rest on them are
+now unreproducible: V16 and V17 had to be run on NQ instead. Their entries exist below but carry no
+byte count and no checksum, because there was nothing left to hash. `verify()` reports such an entry
+as PRESENT, UNVERIFIABLE rather than pretending a re-upload matches -- everything about the file
+survives except the one thing that could prove it is the same file.
 """
 from __future__ import annotations
 
@@ -210,6 +218,86 @@ REGISTRY = {
               "against one. Correlation with US30 at 15m is only +0.13 -- partially independent, "
               "well above gold's ~0.06 but far below the indices' 0.68-0.87.",
         extras=dict(order_flow="taker_share = Taker buy base asset volume / Volume")),
+
+    # ---------------------------------------------------------------------------------------
+    # THE FOUR BELOW WERE REGISTERED AFTER A CONTAINER RECYCLE HAD ALREADY DELETED THEM, so they
+    # carry no checksum and no byte count. That is the lesson, not a footnote: this registry only
+    # protects a file that is entered into it WHILE IT IS STILL ON DISK. Four files were used for
+    # V12, V13, V14 and V15 across three sessions without ever being registered, and when the
+    # container was reclaimed the studies became unreproducible -- V16 and V17 had to be run on NQ
+    # instead. Register on arrival, not on the way out.
+    # ---------------------------------------------------------------------------------------
+
+    "US30_ISO_15m": Dataset(
+        key="US30_ISO_15m", instrument="US30", timeframe_min=15,
+        restore_to="data/US30_ISO_15m.csv",
+        rows=48937, span="2024-08-19 01:45 to 2026-08-26 17:30 New York", bytes=0, sha256_16="",
+        fmt="RTF-WRAPPED CSV as delivered -- an eighth export format, and the first that is not a "
+            "plain text file. Unwrap it: drop the RTF header, split the body on `\\par`, strip "
+            "control words with the regex `\\\\[a-zA-Z]+-?\\d* ?` and the braces, keep lines "
+            "matching `^\\d{4}-\\d{2}-\\d{2}T`, then `tz_convert('America/New_York')` and save "
+            "the New York timestamp as a column named `ny`.",
+        columns="ISO 8601 timestamp WITH AN EXPLICIT UTC OFFSET, open, high, low, close, volume",
+        order="ascending after unwrapping",
+        clock="STATED, not derived -- the only feed here whose file carries its own offset. It is "
+              "exactly -04:00 and -05:00, i.e. New York with daylight saving, confirmed against the "
+              "09:30 equity-open volatility step.",
+        volume="broker tick volume",
+        defects="none measured beyond the RTF wrapper itself.",
+        loader="research/v15/v15book.load, research/v14/*",
+        provenance="user upload, 2026-08-26, as an RTF attachment",
+        notes="Runs to 2026-08, so 27,436 of its bars post-date every other file here -- it is the "
+              "only genuine forward test on the branch. Used by V12, V13, V14 and V15."),
+
+    "US100_ISO_15m": Dataset(
+        key="US100_ISO_15m", instrument="US100", timeframe_min=15,
+        restore_to="data/US100_ISO_15m.csv",
+        rows=46700, span="2024-08-26 07:15 to 2026-08-26 18:15 New York", bytes=0, sha256_16="",
+        fmt="RTF-WRAPPED CSV, unwrapped exactly as US30_ISO_15m above",
+        columns="ISO 8601 timestamp with an explicit UTC offset, open, high, low, close, volume",
+        order="ascending after unwrapping",
+        clock="STATED in the file: -04:00 / -05:00, New York with DST",
+        volume="broker tick volume",
+        defects="A DIFFERENT PROVIDER FROM US100_LONG_15m -- the median level gap between the two "
+                "over their overlap is 11.1 points. Returns agree; levels do not.",
+        loader="research/v15/v15book.load, research/v14/*",
+        provenance="user upload, 2026-08-26, as an RTF attachment",
+        notes="Pairs with US30_ISO_15m; the V14 grid required both instruments to agree."),
+
+    "US100_LONG_15m": Dataset(
+        key="US100_LONG_15m", instrument="US100", timeframe_min=15,
+        restore_to="data/US100_LONG_15m.csv",
+        rows=206703, span="2016-11 to 2025-10", bytes=0, sha256_16="",
+        fmt="TAB-separated, delivered NEWEST FIRST",
+        columns="DateTime, Open, High, Low, Close, Volume, TickVolume",
+        order="DESCENDING as delivered -- sort ascending before use",
+        clock="New York + 7, IDENTIFIED BY MEASUREMENT rather than stated: return correlation "
+              "0.9399 against US100_ISO_15m at a -7h shift, with a median level gap of 11.1 points, "
+              "against 21,780 points for US30. That is what proved it is US100 and not US30.",
+        volume="tick volume; a separate TickVolume column is also present",
+        defects="not re-measured after the identification.",
+        loader="research/v13/*, research/us100.py",
+        provenance="user upload, 2026-08-26, unlabelled -- the instrument had to be inferred",
+        notes="NINE years against the ISO feed's two, so it is where a rule gets tested on 2018, "
+              "COVID and the 2022 bear. Everything before 2022-12-26 is unseen by any NQ study."),
+
+    "XAU_ISO_15m": Dataset(
+        key="XAU_ISO_15m", instrument="XAUUSD", timeframe_min=15,
+        restore_to="data/XAU_ISO_15m.csv",
+        rows=494235, span="2004 to 2026", bytes=0, sha256_16="",
+        fmt="a .7z ARCHIVE of a SEMICOLON-separated csv -- `pip install py7zr` to extract",
+        columns="Date;Open;High;Low;Close;Volume, timestamps formatted `%Y.%m.%d %H:%M`",
+        order="ascending",
+        clock="New York + 7, verified on gold's OWN anchor rather than an equity open -- the "
+              "summer peak in mean |return| lands at 08:30 New York after a -7h shift.",
+        volume="tick volume",
+        defects="PRE-2010 IS EXCLUDED in the 5-minute source for 10.06% zero-range bars and a "
+                "median 5-minute volume of 14 ticks; the same caution applies here.",
+        loader="research/v13/*, research/v12ctx.py",
+        provenance="user upload, 2026-08-26, as a 7z archive",
+        notes="The only genuinely uncorrelated instrument on the branch -- contemporaneous "
+              "correlation with the indices is 0.057-0.070."),
+
 }
 
 
@@ -229,7 +317,12 @@ def verify(check_hash=True, verbose=True):
     out = {}
     for k, d in REGISTRY.items():
         if not os.path.exists(d.restore_to):
-            out[k] = "MISSING"
+            out[k] = "MISSING" + (" (no checksum on record -- see note)" if not d.sha256_16 else "")
+        elif not d.sha256_16:
+            # REGISTERED AFTER THE FILE WAS ALREADY GONE. Everything about it survives except the
+            # bytes, so a re-upload can be checked for shape but not PROVED identical. Say so
+            # rather than reporting a false match.
+            out[k] = "PRESENT, UNVERIFIABLE (registered without a checksum)"
         elif os.path.getsize(d.restore_to) != d.bytes:
             out[k] = f"SIZE MISMATCH ({os.path.getsize(d.restore_to):,} vs {d.bytes:,})"
         elif check_hash and sha16(d.restore_to) != d.sha256_16:
