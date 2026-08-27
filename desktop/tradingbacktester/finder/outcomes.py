@@ -285,7 +285,8 @@ def _first_hit(window: np.ndarray) -> np.ndarray:
 
 def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
                    hold_limit: np.ndarray | None = None,
-                   detail: bool = True) -> OutcomeCache:
+                   detail: bool = True,
+                   eligible: np.ndarray | None = None) -> OutcomeCache:
     """Walk every bar forward and record what a trade opened there would do.
 
     *hold_limit* optionally caps the hold per signal bar -- that is how "flat at
@@ -295,6 +296,13 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
     only read when checking a result against the engine, and a search builds
     two dozen of these caches: on half a million bars they are two thirds of
     the memory and none of the answer, so the search asks for them off.
+
+    *eligible* restricts the walk to the bars a rule may actually fire on. A
+    scalp style trades two hours of a twenty-four-hour instrument, so eleven
+    bars in twelve can never be a signal bar and simulating them is work whose
+    answer nothing reads. Bars outside it come back ``valid=False``, which is
+    what they were destined to be once the session mask met the signal mask --
+    the difference is that this way they are never computed.
     """
     n = len(bars)
     side = 1 if geometry.side >= 0 else -1
@@ -329,7 +337,17 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
                             exit_reason, bars_held, entry_price, stop_price,
                             target_price, risk_points, cost, minute)
 
-    idx = np.arange(0, last + 1)
+    if eligible is None:
+        idx = np.arange(0, last + 1)
+    else:
+        idx = np.flatnonzero(np.asarray(eligible[:last + 1], dtype=bool))
+        if idx.size == 0:
+            return OutcomeCache(geometry, valid, net_points,
+                                net_points * float(getattr(bars.instrument,
+                                                           "point_value", 1.0)),
+                                exit_reason, bars_held, entry_price,
+                                stop_price, target_price, risk_points, cost,
+                                minute)
     risk = np.abs(atr[idx]) * float(geometry.stop_atr)
     # The fill is the next open moved against you by the entry half-spread and
     # the entry slippage, and the barriers are measured from THAT price -- as
@@ -368,8 +386,17 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
         take = usable[start:stop_at]
         if not take.any():
             continue
-        hw = high_win[rows]
-        lw = low_win[rows]
+        # Slice rather than fancy-index whenever the rows are contiguous, which
+        # they are when nothing was filtered out. Fancy indexing copies: at
+        # 32,768 rows and a 13-bar horizon that is 3.4 MB per array per chunk,
+        # built and thrown away for no reason. A slice of a
+        # sliding_window_view is a view of the original prices.
+        if int(rows[-1]) - int(rows[0]) == rows.size - 1:
+            hw = high_win[rows[0]:rows[-1] + 1]
+            lw = low_win[rows[0]:rows[-1] + 1]
+        else:
+            hw = high_win[rows]
+            lw = low_win[rows]
         s = stop[start:stop_at][:, None]
         t = target[start:stop_at][:, None]
         if side > 0:

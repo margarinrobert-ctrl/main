@@ -93,19 +93,52 @@ def _minute_statistics(minutes: np.ndarray, values: np.ndarray
     return table, pooled_mean, pooled_var
 
 
+@dataclass(frozen=True)
+class MinuteTable:
+    """The control population, summarised once and reused.
+
+    Every candidate in a search is scored against the SAME pool -- every bar a
+    trade of this geometry could have opened on -- and summarising it means
+    sorting and grouping half a million values. Doing that per candidate cost
+    1.3 seconds of a 15-second search on the shipped 5-minute file, 991 times
+    over, for an answer that never changed.
+
+    Built once per (cache, block) and handed to :func:`analytic_control`.
+    """
+
+    table: dict[int, tuple[float, float, int]]
+    pooled_mean: float
+    pooled_var: float
+    size: int
+
+    @classmethod
+    def build(cls, minutes: np.ndarray, values: np.ndarray) -> "MinuteTable":
+        table, mean, var = _minute_statistics(minutes, values)
+        return cls(table, mean, var, int(values.size))
+
+
 def analytic_control(pool_minutes: np.ndarray, pool_values: np.ndarray,
-                     trade_minutes: np.ndarray, trade_values: np.ndarray
-                     ) -> ControlResult:
+                     trade_minutes: np.ndarray, trade_values: np.ndarray,
+                     table: "MinuteTable | None" = None) -> ControlResult:
     """Score trades against random entries drawn at the same times.
 
     *pool_\** are every bar a trade could have been opened on, with what it
     would have paid; *trade_\** are the ones the candidate actually took.
+
+    ``table`` is that pool already summarised. Pass one when scoring many
+    candidates against the same pool; the pool arrays are then only read for
+    their size, and passing them at all stays optional so a single call needs
+    no ceremony.
     """
     n = int(trade_values.size)
-    if n == 0 or pool_values.size == 0:
+    pool_size = table.size if table is not None else int(pool_values.size)
+    if n == 0 or pool_size == 0:
         return ControlResult(0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
-    table, pooled_mean, pooled_var = _minute_statistics(pool_minutes, pool_values)
+    if table is None:
+        table = MinuteTable.build(pool_minutes, pool_values)
+    pooled_mean, pooled_var = table.pooled_mean, table.pooled_var
+    table = table.table
     total_mean = 0.0
     total_var = 0.0
     for minute, count in zip(*np.unique(trade_minutes, return_counts=True)):

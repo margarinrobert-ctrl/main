@@ -47,7 +47,8 @@ from .candidates import (Candidate, TEMPLATES_BY_KEY, all_candidates,
 from .confirm import confirm
 from .robustness import Robustness, assess, rank as rank_by_robustness
 from .validate import Validations, run as run_validations
-from .control import ControlResult, analytic_control, benjamini_hochberg, sampled_control
+from .control import (ControlResult, MinuteTable, analytic_control,
+                      benjamini_hochberg, sampled_control)
 from .outcomes import (EXIT_NAMES, Geometry, OutcomeCache, block_hold_limit,
                        build_outcomes, select_sequential, session_entry_mask,
                        session_hold_limit)
@@ -392,13 +393,32 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
             working, candidate, warmup_for(candidate, style.atr_period))
 
     # -- outcomes, once per geometry ------------------------------------
+    # Only the bars a rule may fire on are walked. A scalp style trades two
+    # hours of a nearly-24-hour instrument, so 91% of bars can never be a
+    # signal bar and simulating them produced numbers nothing read.
+    #
+    # It also narrows the matched control's population to those same bars,
+    # which is the population the control is supposed to draw from: "random
+    # entries at the same times" means the times a rule could have entered.
+    # The per-minute figures are unchanged either way -- an out-of-session bar
+    # has an out-of-session minute and was never looked up -- so only the
+    # pooled fallback for a thinly-sampled minute moves, and it moves onto the
+    # right population.
     caches: dict[tuple[int, float, float], OutcomeCache] = {}
     for side in sides:
         for stop_atr, target_r in geometries:
             caches[(side, stop_atr, target_r)] = build_outcomes(
                 working, Geometry(side, stop_atr, target_r, style.max_bars,
                                   style.atr_period), costs, hold_limit,
-                detail=False)
+                detail=False, eligible=entry_ok)
+
+    # The control population is a property of the geometry and the block, not
+    # of the candidate, so summarise each one once instead of 991 times.
+    tables: dict[tuple[int, float, float], MinuteTable] = {}
+    for key, cache in caches.items():
+        pool = cache.valid & research
+        tables[key] = MinuteTable.build(cache.minute_of_day[pool],
+                                        cache.net_cash[pool])
 
     findings: list[Finding] = []
     step = len(candidates)
@@ -410,9 +430,10 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
             if progress is not None and step % 25 == 0:
                 progress(step, len(candidates) + combinations,
                          f"Scoring {combinations:,} combinations")
-            cache = caches[(candidate.side, stop_atr, target_r)]
+            key = (candidate.side, stop_atr, target_r)
+            cache = caches[key]
             finding = _score(cache, mask, research, candidate, timeframe,
-                             stop_atr, target_r, minimum)
+                             stop_atr, target_r, minimum, table=tables[key])
             if finding is not None:
                 findings.append(finding)
 
@@ -512,15 +533,22 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
 
 def _score(cache: OutcomeCache, mask: np.ndarray, block: np.ndarray,
            candidate: Candidate, timeframe: str, stop_atr: float,
-           target_r: float, minimum: int) -> Finding | None:
-    """Evaluate one candidate on one block, against its matched control."""
+           target_r: float, minimum: int,
+           table: MinuteTable | None = None) -> Finding | None:
+    """Evaluate one candidate on one block, against its matched control.
+
+    ``table`` is the control population already summarised. It depends only on
+    the cache and the block, so the caller builds one per geometry rather than
+    letting every candidate re-sort the same half-million values.
+    """
     kept = select_sequential(cache, mask & block)
     count = int(kept.sum())
     if count < minimum:
         return None
     pool = cache.valid & block
     control = analytic_control(cache.minute_of_day[pool], cache.net_cash[pool],
-                               cache.minute_of_day[kept], cache.net_cash[kept])
+                               cache.minute_of_day[kept], cache.net_cash[kept],
+                               table=table)
     return Finding(candidate=candidate, timeframe=timeframe, stop_atr=stop_atr,
                    target_r=target_r, research=cache.summary(kept),
                    control=control)

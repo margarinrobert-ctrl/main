@@ -122,8 +122,43 @@ class Template:
 # ---------------------------------------------------------------------------
 
 
+#: Indicator results, keyed by the series identity and the exact parameters.
+#:
+#: A search asks 130 candidates for their signals and they overlap heavily: on
+#: the shipped grid that is 188 indicator computations of only 34 distinct
+#: things, with EMA(100) and EMA(200) each computed sixteen times over the same
+#: half-million bars. Nothing about that was wrong, only wasteful -- 5.5x
+#: wasteful, on the single most expensive step in the whole search.
+#:
+#: The key holds the series OBJECT, not its id, so a BarSeries that has been
+#: garbage-collected cannot let a later one with a recycled id read its
+#: neighbour's numbers. Bounded, because a long session resamples and mirrors
+#: and slices, and an unbounded cache of half-million-point arrays is a leak
+#: with a polite name.
+_CACHE_LIMIT = 256
+_INDICATOR_CACHE: "dict[tuple, tuple[BarSeries, dict[str, np.ndarray]]]" = {}
+
+
+def clear_indicator_cache() -> None:
+    """Forget every memoised indicator. Only the tests need this."""
+    _INDICATOR_CACHE.clear()
+
+
+def _compute(bars: BarSeries, key: str, params: dict) -> dict[str, np.ndarray]:
+    """``REGISTRY.compute``, memoised per series and parameter set."""
+    signature = (id(bars), key, tuple(sorted(params.items())))
+    hit = _INDICATOR_CACHE.get(signature)
+    if hit is not None and hit[0] is bars:
+        return hit[1]
+    out = REGISTRY.compute(key, bars, params)
+    if len(_INDICATOR_CACHE) >= _CACHE_LIMIT:
+        _INDICATOR_CACHE.pop(next(iter(_INDICATOR_CACHE)), None)
+    _INDICATOR_CACHE[signature] = (bars, out)
+    return out
+
+
 def _ind(bars: BarSeries, key: str, output: str = "value", **params) -> np.ndarray:
-    return REGISTRY.compute(key, bars, params)[output]
+    return _compute(bars, key, params)[output]
 
 
 def _crossed_up(series: np.ndarray, level: np.ndarray | float) -> np.ndarray:
@@ -230,7 +265,7 @@ def _reversion_build(p: dict, side: int):
 
 
 def _band_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
-    out = REGISTRY.compute("BBANDS", bars,
+    out = _compute(bars, "BBANDS",
                            {"period": p["period"], "deviation": p["deviations"]})
     band = out["lower"] if side > 0 else out["upper"]
     return (_crossed_up(bars.close, band) if side > 0
@@ -247,7 +282,7 @@ def _band_build(p: dict, side: int):
 
 
 def _macd_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
-    out = REGISTRY.compute("MACD", bars, {"fast": p["fast"], "slow": p["slow"],
+    out = _compute(bars, "MACD", {"fast": p["fast"], "slow": p["slow"],
                                           "signal": p["signal"]})
     line, sig = out["macd"], out["signal"]
     return (_crossed_up(line, sig) if side > 0 else _crossed_down(line, sig))
@@ -262,7 +297,7 @@ def _macd_build(p: dict, side: int):
 
 
 def _stoch_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
-    out = REGISTRY.compute("STOCH", bars, {"k_period": p["k"], "smooth_k": 3,
+    out = _compute(bars, "STOCH", {"k_period": p["k"], "smooth_k": 3,
                                            "d_period": 3})
     k, d = out["k"], out["d"]
     trend = _ind(bars, "EMA", period=p["trend"])
@@ -292,8 +327,8 @@ def _structure_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
     the level was knowable before the close that breaks it.
     """
     left = right = int(p["swing"])
-    level = REGISTRY.compute(
-        "PIVOT_HIGH" if side > 0 else "PIVOT_LOW", bars,
+    level = _compute(
+        bars, "PIVOT_HIGH" if side > 0 else "PIVOT_LOW",
         {"left": left, "right": right, "hold": True})["value"]
     trend = _ind(bars, "EMA", period=p["trend"])
     with_trend = (bars.close > trend) if side > 0 else (bars.close < trend)
@@ -341,10 +376,10 @@ def _squeeze_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
     The compression is read one bar back on purpose -- the bar that expands is
     not a bar that was quiet.
     """
-    width = REGISTRY.compute(
-        "BBWIDTH", bars, {"period": p["period"], "deviation": 2.0})["value"]
-    out = REGISTRY.compute("BBANDS", bars,
-                           {"period": p["period"], "deviation": 2.0})
+    width = _compute(
+        bars, "BBWIDTH", {"period": p["period"], "deviation": 2.0})["value"]
+    out = _compute(bars, "BBANDS",
+                   {"period": p["period"], "deviation": 2.0})
     quiet = np.zeros(width.shape, dtype=bool)
     quiet[1:] = np.isfinite(width[:-1]) & (width[:-1] < float(p["max_width"]))
     band = out["upper"] if side > 0 else out["lower"]
@@ -371,7 +406,7 @@ def _range_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
     size rather than a level. The average it is measured against is taken one
     bar back, so the expanding bar is not part of what it is being compared to.
     """
-    tr = REGISTRY.compute("TRUE_RANGE", bars, {})["value"]
+    tr = _compute(bars, "TRUE_RANGE", {})["value"]
     # ATR with its default method, and the SAME indicator the spec below emits:
     # the fast path and the engine must read one series, not two that agree
     # most of the time.
