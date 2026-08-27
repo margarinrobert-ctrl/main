@@ -1,0 +1,202 @@
+//@version=5
+// V20 -- Donchian 30/20 with a 50-period linear regression confirmation, exactly as briefed, and
+// the measurements that say the regression does not earn its place.
+//
+// ================================ THE SPEC, AS ASKED ================================
+//   entry     Donchian 30 break, market order at the next open, one unit
+//   confirm   a 50-period linear regression must support the move
+//   exit      the NEARER of 2.0 x ATR(14) and the 20-bar opposite channel | target 2R
+//   markets   US30, US100, NQ, an 8.5-year US30 history and 22 years of gold, 15m and 30m
+//
+// ================================ "SUPPORTING THE MOVE" HAS FOUR READINGS ================================
+// Picking whichever backtests best is how a spec becomes an overfit, so all four were declared in
+// advance, all four were run, and 4 readings x 5 markets x 2 timeframes = 40 research cells is the
+// multiplicity. What each adds over the SAME rule with no confirmation at all, pooled median:
+//
+//   reading                        15m       30m    markets helped
+//   A  slope > 0               -0.0151   -0.0082      40% / 40%
+//   B  forecast > close        -0.0534   +0.0023      20% / 60%
+//   C  close > value           +0.0049   +0.0028      60% / 80%   <- the best, and it is nothing
+//   D  slope>0 AND close>value -0.0046   +0.0090      40% / 60%
+//
+// The best reading adds **five thousandths of an R**, against a base that is losing 0.05 to 0.15 R
+// a trade. Nothing here rescues anything.
+//
+// ================================ AND THE MOST LITERAL READING IS BACKWARDS ================================
+// "Forecasting the move" reads most naturally as reading B -- the line extrapolated one bar ahead
+// sits above the current price. Share of bars passing each test, US30 15m:
+//
+//   reading                    all bars   BREAKOUT bars    lift
+//   A  slope > 0                  53.1%          78.2%    1.47x
+//   B  forecast > close           50.5%          12.1%    **0.24x**
+//   C  close > value              49.7%          89.1%    1.80x
+//   D  both                       21.8%          67.7%    3.11x
+//
+// **On a breakout bar the regression's forecast is BELOW the current price 88% of the time.** It has
+// to be: a breakout bar has just jumped above its own recent range, so price sits far above a line
+// fitted to that range, and one bar of extrapolation cannot catch up. Reading B is not a
+// confirmation of a breakout -- it is mechanically close to a rejection of one. And reading C, the
+// one that scores best, passes 89.1% of breakout bars, so it removes about a ninth of the trades and
+// adds no information. A breakout is already a directional event; a trend filter on top of it is
+// mostly redundant with the trigger.
+//
+// ================================ THE NUMBERS, LOCKED BLOCK, READING C ================================
+//   market      tf       n     EV(R)      PF     MAR   Sharpe   Sortino   control p
+//   US30       15m     366   +0.0487   1.085    0.76     0.70      0.79     0.006
+//   US100      15m     323   +0.0994   1.192    2.14     1.42      1.76     0.033
+//   NQ         15m     494   -0.0023   0.996   -0.03    -0.04     -0.04     0.395
+//   US30 8.5yr 15m    1548   -0.1373   0.794   -0.92    -2.21     -2.09     0.968
+//   XAU 22yr   15m    3670   -0.0546   0.910   -0.74    -0.86     -0.91     0.304
+//   US30       30m     190   +0.0174   1.032    0.13     0.21      0.20     0.098
+//   US100      30m     176   -0.0082   0.985   -0.09    -0.10     -0.10     0.458
+//   NQ         30m     281   +0.0163   1.030    0.20     0.19      0.20     0.364
+//   US30 8.5yr 30m     791   -0.0778   0.869   -0.77    -0.91     -0.84     0.874
+//   XAU 22yr   30m    1867   -0.0022   0.996   -0.05    -0.02     -0.02     0.236
+//
+//   Bootstrap P(mean daily R <= 0) at 30m on the locked block: 0.421, 0.551, 0.411, 0.965, 0.532.
+//   **Nothing is significant.** Cost stress: at 1.5x the assumed friction EVERY market is negative.
+//   Regression length is inert -- 20/30/50/75/100 give pooled -0.029/-0.030/-0.024/-0.021/-0.019,
+//   so the 50 is neither special nor rescuable by moving it.
+//
+// ================================ THE ONE CHANGE THAT IS WORTH MAKING ================================
+// The 2R target is the weakest part of the brief, and it is the seventh independent time this has
+// come out the same way. Holding the Donchian, the regression and the stop fixed and removing ONLY
+// the target, locked block, 30 minutes:
+//
+//   market      as briefed (2R)     no target        change
+//   US100        -0.0082 / 0.985   +0.1581 / 1.285   +0.166 R
+//   XAU          -0.0022 / 0.996   +0.1555 / 1.256   +0.158 R
+//   NQ           +0.0163 / 1.030   +0.0990 / 1.179   +0.083 R
+//   US30         +0.0174 / 1.032   +0.0049 / 1.008   -0.013 R
+//   US30 8.5yr   -0.0778 / 0.869   -0.0923 / 0.861   -0.015 R
+//
+// Better on three of five and by an order of magnitude more than it costs on the other two. The
+// target ships ON because the brief asked for it; `Use a take profit` turns it off.
+//
+// ================================ THE HONEST SUMMARY ================================
+// **This configuration does not have a demonstrable edge.** It is negative or indistinguishable
+// from zero on the two long histories, its bootstrap p-values run 0.41 to 0.97, it dies at 1.5x the
+// assumed spread, and the regression confirmation contributes about five thousandths of an R while
+// being 89% redundant with the trigger it is meant to confirm. It is shipped because it was asked
+// for and because the measurements belong with it, not because it should be traded as it stands.
+// ==========================================================================================
+
+strategy("V20 Donchian 30/20 + linear regression", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Timeframe          15 or 30 minutes; both were measured and both are in the header.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+// ======================================================================
+
+gE       = "Entry"
+donLen   = input.int(30, "Donchian breakout length", minval = 2, group = gE)
+useLong  = input.bool(true,  "Trade the LONG side", group = gE)
+useShort = input.bool(false, "Trade the SHORT side", group = gE,
+     tooltip="Off by default: the short mirror of this family loses on every market measured on this branch, and every sample here is a rising one.")
+
+gR       = "Linear regression confirmation"
+lrLen    = input.int(50, "Regression length", minval = 5, group = gR,
+     tooltip="Inert. 20/30/50/75/100 give pooled EV -0.029/-0.030/-0.024/-0.021/-0.019 across five markets -- the length is not a lever.")
+lrMode   = input.string("close>value", "Confirmation", options = ["off", "slope", "forecast", "close>value", "both"], group = gR,
+     tooltip="slope: the line is rising. forecast: the line one bar ahead is above price -- only 12.1% of breakout bars pass this, so it mostly REJECTS breakouts. close>value: price above the line, passes 89.1% of breakout bars and adds +0.005 R. both: slope and close>value together.")
+
+gX       = "Exit"
+atrLen   = input.int(14, "ATR length", minval = 2, group = gX,
+     tooltip="ATR here is ema(TR, n), NOT ta.atr -- ta.atr is Wilder's RMA and a different series.")
+stopMult = input.float(2.0, "ATR stop multiple", minval = 0.1, step = 0.1, group = gX)
+exitCh   = input.int(20, "Donchian exit channel", minval = 2, group = gX)
+useTp    = input.bool(true, "Use a take profit", group = gX,
+     tooltip="Turning this OFF is the single change the measurements support: locked EV moves -0.008 to +0.158 on US100, -0.002 to +0.156 on gold and +0.016 to +0.099 on NQ. It ships on only because the brief asked for it.")
+tpR      = input.float(2.0, "  target, in R", minval = 0.1, step = 0.1, group = gX)
+qty      = input.int(1, "Contracts", minval = 1, group = gX)
+
+// ----------------------------------------------------------------- series
+atrN   = ta.ema(ta.tr(true), atrLen)
+entHi  = ta.highest(high, donLen)[1]     // ENTRY channels exclude this bar so a break is possible
+entLo  = ta.lowest(low,  donLen)[1]
+exLo   = ta.lowest(low,  exitCh)         // EXIT channels take NO [1]: placed at this close, live next bar
+exHi   = ta.highest(high, exitCh)
+
+// ta.linreg(source, n, 0) is the fitted value AT the current bar; the slope is that value minus the
+// same fit one bar back, and the one-bar-ahead forecast is the value plus the slope. Verified
+// against an explicit least-squares fit to 1e-6 in research/v20/v20linreg.py.
+lrVal  = ta.linreg(close, lrLen, 0)
+lrSlope = lrVal - ta.linreg(close, lrLen, 1)
+lrFc   = lrVal + lrSlope
+
+okLongC  = lrMode == "off" ? true : lrMode == "slope" ? lrSlope > 0 :
+     lrMode == "forecast" ? lrFc > close : lrMode == "close>value" ? close > lrVal :
+     (lrSlope > 0 and close > lrVal)
+okShortC = lrMode == "off" ? true : lrMode == "slope" ? lrSlope < 0 :
+     lrMode == "forecast" ? lrFc < close : lrMode == "close>value" ? close < lrVal :
+     (lrSlope < 0 and close < lrVal)
+
+ready = not na(atrN) and atrN > 0 and not na(lrVal)
+sigL  = useLong  and ready and okLongC  and not na(entHi) and high > entHi
+sigS  = useShort and ready and okShortC and not na(entLo) and low  < entLo
+
+// ----------------------------------------------------------------- state
+var float sigAtr    = na     // ATR FROZEN AT THE SIGNAL BAR; stop and target read this all trade
+var int   lastCnt   = 0
+var int   closedBar = na
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL -- docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    sigAtr := na
+    lastCnt := 0
+    closedBar := bar_index
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    lastCnt := strategy.opentrades
+
+// A position cannot re-arm on the bar it closed on -- the research lock requires the next signal to
+// be strictly after the exit bar, and Pine is already flat at that bar's close.
+flat = strategy.position_size == 0 and (na(closedBar) or bar_index > closedBar)
+
+// ----------------------------------------------------------------- entry, bracket riding with it
+// THE EXIT MUST BE LIVE ON THE ENTRY BAR. `stop` and `loss` together give exactly
+// max(ATR stop, channel) for a long: Pine takes whichever produces the SMALLER LOSS.
+lvlL = math.min(exLo, close)      // a sell stop cannot rest above the market
+lvlS = math.max(exHi, close)      // nor a buy stop below it
+
+if barstate.isconfirmed and flat
+    if sigL
+        sigAtr := atrN
+        strategy.entry("L", strategy.long, qty = qty)
+        strategy.exit("x", from_entry = "L", stop = lvlL,
+             loss = int(math.max(1, math.round(stopMult * atrN / syminfo.mintick))),
+             profit = useTp ? int(math.max(1, math.round(tpR * stopMult * atrN / syminfo.mintick))) : na)
+    else if sigS
+        sigAtr := atrN
+        strategy.entry("S", strategy.short, qty = qty)
+        strategy.exit("x", from_entry = "S", stop = lvlS,
+             loss = int(math.max(1, math.round(stopMult * atrN / syminfo.mintick))),
+             profit = useTp ? int(math.max(1, math.round(tpR * stopMult * atrN / syminfo.mintick))) : na)
+
+if barstate.isconfirmed and strategy.position_size != 0 and lastCnt > 0 and not na(sigAtr)
+    lTk = int(math.max(1, math.round(stopMult * sigAtr / syminfo.mintick)))
+    pTk = useTp ? int(math.max(1, math.round(tpR * stopMult * sigAtr / syminfo.mintick))) : na
+    if strategy.position_size > 0
+        strategy.exit("x", from_entry = "L", stop = lvlL, loss = lTk, profit = pTk)
+    else
+        strategy.exit("x", from_entry = "S", stop = lvlS, loss = lTk, profit = pTk)
+
+// ----------------------------------------------------------------- plots
+plot(useLong  ? entHi : na, "Donchian 30 high", color = color.new(color.teal, 30))
+plot(useShort ? entLo : na, "Donchian 30 low",  color = color.new(color.maroon, 30))
+plot(lrVal, "Linear regression 50", color = color.new(color.orange, 0), linewidth = 2)
+plot(strategy.position_size > 0 ? lvlL : na, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+plot(strategy.position_size < 0 ? lvlS : na, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V20 as briefed - NO demonstrable edge: bootstrap p 0.41 to 0.97, dies at 1.5x spread",
+         text_color = color.white, bgcolor = color.new(color.red, 20))
+    table.cell(hud, 0, 1, "The regression adds +0.005 R and passes 89% of breakout bars - it is redundant with the trigger",
+         text_color = color.white, bgcolor = color.new(color.orange, 20))
+    table.cell(hud, 0, 2, "Turning the take profit OFF is worth +0.08 to +0.17 R on three of five markets",
+         text_color = color.white, bgcolor = color.new(color.teal, 30))

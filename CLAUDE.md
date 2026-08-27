@@ -72,6 +72,14 @@ It is roughly free inside a morning window, where the trade would have closed an
 at the NEXT BAR'S OPEN — `strategy.close_all()` cannot sell the close of the bar that triggers it —
 so the engine was changed to match the script (`flat_open`), not the other way round.
 
+**A LINEAR REGRESSION CANNOT CONFIRM A BREAKOUT, AND ITS MOST LITERAL READING IS BACKWARDS.** On a
+breakout bar the 50-period regression's one-bar-ahead FORECAST is BELOW the current price **88% of
+the time** (12.1% of breakout bars pass, against 50.5% of bars in general — lift **0.24x**), because
+a breakout has just jumped above the range the line is fitted to. The reading that scores best,
+`close > value`, passes **89.1%** of breakout bars and adds +0.005 R. Four declared readings x 5
+markets x 2 timeframes = 40 cells; bootstrap p 0.41-0.97, every market negative at 1.5x spread.
+Same mechanism as `STUDY_V16_MOMENTUM.md`. See `docs/ib/STUDY_V20_LINREG.md`.
+
 **V17'S SESSION-HIGH FILTER DOES NOT GENERALISE, AND ITS US100 "CONFIRMATION" WAS THE SAME TRADES.**
 Frozen and run on four markets that had no part in finding it: positive on ONE, and that one is the
 Nasdaq. 59.9% of NQ's signal bars are also US100 signal bars at the IDENTICAL timestamp (83.6%
@@ -940,6 +948,7 @@ plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
 | `research/v15/v15book.py` | the V15 book: features, both legs, the two geometries |
 | `research/v15/v15_parity.py` | **the order-model diff** — the script's one live order vs the engine's eight |
 | `research/v15/run_book.py` | the whole V15 table: mechanic, control gate, walk-forward, MC, prop |
+| `research/v20/v20linreg.py` | validated rolling OLS + four pre-declared "regression confirms" readings |
 | `research/v19/v19frozen.py` | V17's rule frozen and run on four markets that never saw it |
 | `research/v19/v19attack.py` | drop-one, perturbation, walk-forward, cost stress, Monte Carlo |
 | `research/v19/v19verdict.py` | **the regime-matched control** — random entries from the same up-trend bars |
