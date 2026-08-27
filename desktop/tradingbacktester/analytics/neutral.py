@@ -194,7 +194,7 @@ def _market_factor(bars: Any, ordinal: np.ndarray, count: int,
     first_open = np.zeros(count, dtype="float64")
     last_close = np.zeros(count, dtype="float64")
     seen = np.zeros(count, dtype=bool)
-    np.maximum.at(seen, index, True)
+    seen[index] = True
     # `index` is non-decreasing; a reverse pass leaves the first open in place
     # and a forward pass leaves the last close.
     first_open[index[::-1]] = opens[::-1]
