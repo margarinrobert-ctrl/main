@@ -35,13 +35,18 @@ def gate(F, p, n):
     return g
 
 
-def run_pine(d, mask, atr, C, atr_mult, pyr, max_units, tp_r, cost, skip_win=True):
+def run_pine(d, mask, atr, C, atr_mult, pyr, max_units, tp_r, cost, skip_win=True,
+             flat_mod=None):
     """The SHIPPED SCRIPT's semantics, bar-close order placement and all.
 
     The protective bracket is placed on the SIGNAL bar alongside the entry, so it is live during
     the entry bar -- `loss`/`profit` are measured by Pine from the actual fill, which is what the
     engine anchors to while the position is one unit. Its channel leg reads the SIGNAL bar's
-    channel, one bar staler than the engine's."""
+    channel, one bar staler than the engine's.
+
+    `flat_mod` reproduces the script's flatten: a market order placed at the CLOSE of the first
+    bar with mod >= flat_mod, filling at the NEXT bar's open. The engine exits at that bar's
+    close, so this is one bar later and at a different price."""
     o, h, l, c = d["o"], d["h"], d["l"], d["c"]
     n = len(c)
     rows = []
@@ -51,10 +56,22 @@ def run_pine(d, mask, atr, C, atr_mult, pyr, max_units, tp_r, cost, skip_win=Tru
     exit_bar = -1
     sig_bar = -1
     pend = None                  # market order + its bracket -> fills at next open
+    pend_flat = False            # close_all placed at the last close, fills at THIS open
     lad_lvl = None               # ladder stop order live THIS bar
     ex_stop = ex_tp = None       # exit levels live THIS bar
     for t in range(1, n):
         # ---- A: intrabar, resolving orders placed at t-1's close ----------------------------
+        if pend_flat:
+            pend_flat = False
+            if units > 0:
+                pnl = (o[t] - avg) * units - cost * units      # fills at THIS bar's open
+                rows.append((sig_bar, t, units, avg, o[t], pnl))
+                last_win = pnl > 0
+                exit_bar = t
+                units = last_cnt = sys_on = 0
+                sig_atr = last_fill = next_add = avg = np.nan
+                lad_lvl = ex_stop = ex_tp = None
+            pend = None
         if pend is not None:
             sys_on, sig_atr, sig_bar, ch_sig = pend
             avg = last_fill = o[t]
@@ -107,6 +124,12 @@ def run_pine(d, mask, atr, C, atr_mult, pyr, max_units, tp_r, cost, skip_win=Tru
             ex_stop = a_stop if not np.isfinite(ch) else max(a_stop, ch)
             if tp_r is not None and tp_r > 0:
                 ex_tp = avg + tp_r * atr_mult * sig_atr
+        # the flatten runs LAST and cancels what the blocks above just placed
+        if flat_mod is not None and d["mod"][t] >= flat_mod:
+            lad_lvl = ex_stop = ex_tp = None
+            if units > 0:
+                pend_flat = True
+            pend = None
     return pd.DataFrame(rows, columns=["sig", "exit", "units", "entry", "lvl", "pnl"])
 
 
