@@ -315,6 +315,38 @@ when the in-sample total is not positive, because if the best combination the op
 could find still lost money on the data it was chosen from, there was nothing for the
 out-of-sample block to keep.
 
+## How bars are combined into a longer timeframe
+
+Only upward: five 1-minute bars fit inside one 5-minute bar, but nothing turns a 5-minute bar
+back into five without inventing prices, so that direction is refused.
+
+Grouping is in **UTC**. A 4-hour bar built in local time would change length twice a year when
+the clocks move, and a backtest run across a daylight-saving boundary would quietly disagree
+with itself. Session-aware grouping is a strategy concern, handled by the session filter at
+rule level.
+
+The limitation that follows, stated rather than buried: a **daily** bar built this way runs
+midnight to midnight UTC. That is not the daily bar a chart or a data vendor would show for an
+instrument that trades nearly around the clock — those are usually cut at the exchange's own
+daily rollover, 17:00 New York for CME products. It does *not* split the New York cash session,
+which sits inside a UTC day in both halves of the year, so an RTH strategy is unaffected; a
+daily OHLC for a 24-hour instrument will differ from the vendor's. Every resampled series
+records `meta["resample_anchor"] = "UTC"` so the two are never mistaken for each other.
+
+Three kinds of period are dropped rather than emitted as a bar:
+
+- A period holding **no source bars at all**. Emitting it as a gap would break the guarantee
+  that bar *i* is made of bars that closed before bar *i+1* starts.
+- A **first** period the data only partly covers. Its open is the price some way into the
+  period, and its high and low miss whatever happened before the file starts.
+- A **last** period the data only partly covers. Same reason, and worse: the last bar is what
+  every open position is marked to at the end of a run.
+
+The edges are judged on **time coverage**, not on how many source bars landed in the period. A
+holiday half-day is a complete daily bar with few bars in it; a Monday whose file happens to
+start at 09:00 is not. `meta` records both drops when they happen, and data covering no whole
+period at all is refused rather than turned into one partial bar.
+
 ## How the out-of-sample split is cut, and why the locked block is read once
 
 The grid optimiser's **Out of Sample** tab (`optimize/holdout.py`) cuts the series in two:

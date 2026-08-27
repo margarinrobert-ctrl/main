@@ -145,6 +145,75 @@ def test_resample_refuses_to_invent_finer_bars():
         resample(bars, Timeframe.parse("1m"))
 
 
+def test_a_partly_covered_first_period_is_not_emitted_as_a_bar():
+    """Data starting mid-period would give bar 0 the wrong open, high and low."""
+    # Twelve 5-minute bars starting at 00:05, so the 00:00-00:15 period is
+    # missing its first five minutes and the 00:55-01:10 one its last.
+    closes = list(range(10, 22))
+    bars = make_bars(closes, [c + 1 for c in closes], [c - 1 for c in closes],
+                     [c - 0.5 for c in closes], [100.0] * 12, timeframe="5m",
+                     start_ts=1_672_617_600_000_000_000 + 300 * 10**9)
+    out = resample(bars, Timeframe.parse("15m"))
+    assert out.meta.get("partial_first_period_dropped") is True
+    assert out.ts[0] == bars.ts[2], "the first whole period starts at 00:15"
+    # And what remains really is whole: three source bars in each.
+    assert out.volume[0] == pytest.approx(300.0)
+
+
+def test_a_partly_covered_last_period_is_not_emitted_as_a_bar():
+    """The last bar is what every open position is marked to at end of data."""
+    closes = list(range(10, 24))            # 14 bars: the last period has two
+    bars = make_bars(closes, [c + 1 for c in closes], [c - 1 for c in closes],
+                     [c - 0.5 for c in closes], [100.0] * 14, timeframe="5m",
+                     start_ts=1_672_617_600_000_000_000)
+    out = resample(bars, Timeframe.parse("15m"))
+    assert out.meta.get("partial_last_period_dropped") is True
+    assert len(out) == 4
+    assert all(v == pytest.approx(300.0) for v in out.volume)
+
+
+def test_a_period_the_market_was_shut_for_is_still_a_whole_period():
+    """Few bars inside a period is a fact about the period, not a gap."""
+    # A whole day of 1-hour bars, but only six of them: a holiday half-day.
+    # The period is fully covered by the data on both sides, so it is kept.
+    closes = list(range(10, 34))
+    bars = make_bars(closes, [c + 1 for c in closes], [c - 1 for c in closes],
+                     [c - 0.5 for c in closes], [100.0] * 24, timeframe="1h",
+                     start_ts=1_672_617_600_000_000_000)
+    # 04:00-08:00 keeps a single bar; every other period is complete.
+    kept = np.concatenate([np.arange(0, 5), np.arange(8, 24)])
+    thin = type(bars)(ts=bars.ts[kept], open=bars.open[kept],
+                      high=bars.high[kept], low=bars.low[kept],
+                      close=bars.close[kept], volume=bars.volume[kept],
+                      instrument=bars.instrument, timeframe=bars.timeframe,
+                      source=bars.source, meta=dict(bars.meta))
+    out = resample(thin, Timeframe.parse("4h"))
+    assert len(out) == 6, "the thin period is a bar like any other"
+    assert out.volume[1] == pytest.approx(100.0), "one bar in it, and that is fine"
+    assert not out.meta.get("empty_periods_dropped")
+    assert not out.meta.get("partial_first_period_dropped")
+    assert not out.meta.get("partial_last_period_dropped")
+
+
+def test_data_covering_no_whole_period_is_refused_not_faked():
+    closes = [10, 11]
+    bars = make_bars(closes, [c + 1 for c in closes], [c - 1 for c in closes],
+                     [c - 0.5 for c in closes], [100.0] * 2, timeframe="1h",
+                     start_ts=1_672_617_600_000_000_000 + 3600 * 10**9)
+    with pytest.raises(InsufficientDataError):
+        resample(bars, Timeframe.parse("1D"))
+
+
+def test_every_resampled_series_records_which_anchor_cut_its_bars():
+    """A daily bar cut at midnight UTC is not the one a vendor would show."""
+    closes = list(range(10, 34))
+    bars = make_bars(closes, [c + 1 for c in closes], [c - 1 for c in closes],
+                     [c - 0.5 for c in closes], [100.0] * 24, timeframe="1h",
+                     start_ts=1_672_617_600_000_000_000)
+    out = resample(bars, Timeframe.parse("4h"))
+    assert out.meta.get("resample_anchor") == "UTC"
+
+
 def test_available_timeframes_excludes_finer_ones():
     options = available_timeframes(Timeframe.parse("1h"))
     labels = {tf.label for tf in options}
