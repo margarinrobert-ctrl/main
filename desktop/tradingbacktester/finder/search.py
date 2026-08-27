@@ -48,8 +48,8 @@ from .confirm import confirm
 from .robustness import Robustness, assess, rank as rank_by_robustness
 from .validate import Validations, run as run_validations
 from .control import ControlResult, analytic_control, benjamini_hochberg, sampled_control
-from .outcomes import (EXIT_NAMES, Geometry, OutcomeCache, build_outcomes,
-                       select_sequential, session_entry_mask,
+from .outcomes import (EXIT_NAMES, Geometry, OutcomeCache, block_hold_limit,
+                       build_outcomes, select_sequential, session_entry_mask,
                        session_hold_limit)
 from .styles import TradingStyle
 
@@ -309,6 +309,14 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
         hold_limit = session_hold_limit(working, timezone, style.session[0],
                                         style.session[1], style.max_bars,
                                         style.weekdays)
+
+    # A trade may not run out of the block it was signalled in. Without this a
+    # trade opened just before the split finishes inside the locked block and
+    # its result lands in the RESEARCH figure -- the number every candidate is
+    # ranked on, decided in part by data the search must not see.
+    boundary = block_hold_limit(n, split, style.max_bars)
+    hold_limit = (boundary if hold_limit is None
+                  else np.minimum(hold_limit, boundary))
 
     candidates = all_candidates(sides, templates)
     geometries = style.geometries()

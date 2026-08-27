@@ -43,14 +43,20 @@ from ..data.models import BarSeries
 log = logging.getLogger(__name__)
 
 #: A fast-path per-trade figure further than this from the engine's, in account
-#: currency, is reported as a disagreement.  Not zero: the fast path sizes its
-#: stop from an ATR computed over the block it was given, and a padded block
-#: starts that average from a different place, so the two can differ by less
-#: than a tick without either being wrong.
-AGREEMENT_TOLERANCE = 0.50
-
-#: And a trade-count difference larger than this share of the smaller count.
-COUNT_TOLERANCE = 0.10
+#: currency, is reported as a disagreement.
+#:
+#: It used to be 0.50 with 10% slack on the trade count, on the reasoning that
+#: a padded block seeds its ATR from a different place. That reasoning was
+#: wrong twice over. The block this compares is the RESEARCH block, which gets
+#: no padding at all; and the slack was wide enough to hide real defects --
+#: four of them, found only when the equality test was widened past one style.
+#:
+#: Measured across 103 findings on four styles and three timeframes, the gap is
+#: 0.0000000000 every time and the trade counts are identical. A cent of
+#: headroom is seven orders of magnitude more than float accumulation over a
+#: few thousand trades needs, and anything above it is a defect to find rather
+#: than a difference to tolerate.
+AGREEMENT_TOLERANCE = 0.01
 
 
 @dataclass
@@ -196,8 +202,12 @@ def _check_agreement(fast: dict[str, float], engine: BlockRun) -> Agreement:
         out.reason = ("the engine took no trades where the search counted "
                       f"{fast_trades:,}")
         return out
-    smaller = min(fast_trades, engine_trades)
-    if smaller and abs(fast_trades - engine_trades) > COUNT_TOLERANCE * smaller:
+    # Exactly, not approximately. The two layers evaluate the same rule over
+    # the same bars with the same geometry; a single trade of difference means
+    # one of them is wrong, and every trade-count defect found so far was a
+    # handful out of thousands -- small enough that any share-based slack would
+    # have swallowed it whole.
+    if fast_trades != engine_trades:
         out.agrees = False
         out.reason = (f"the engine took {engine_trades:,} trades where the "
                       f"search counted {fast_trades:,}")

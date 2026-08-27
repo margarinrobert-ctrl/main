@@ -362,6 +362,12 @@ cached; after that a candidate rule is a boolean mask and scoring it is a sum.
   the barriers on that bar first, so the trade spans `max_bars + 1` bars and
   the barriers are live on all of them. Used for the sliding window, for the
   cap, and by `session_hold_limit`; the three must not drift.
+- `outcomes.block_hold_limit(n, split, horizon)` — caps every trade at the end
+  of the block it was signalled in. Without it the last research trade
+  finishes inside the locked block and its full result lands in the figure
+  every candidate is ranked on, so the ranking is decided in part by data the
+  search must not see. One trade per block, and on a swing candidate it was
+  $478 of a $4,297 research result.
 - `outcomes.select_sequential(cache, mask)` — thins a mask to the trades one
   contract could actually have taken. Without it, clustered signals inflate
   every result.

@@ -522,6 +522,36 @@ def session_hold_limit(bars: BarSeries, timezone: str, start: str, end: str,
     return np.clip(room, 0, hold_bars(horizon))
 
 
+def block_hold_limit(n: int, split: int, horizon: int) -> np.ndarray:
+    """How long a trade may run before it hits the end of its own block.
+
+    A search splits the series in two and scores each block separately. Without
+    this, a trade signalled a few bars before the split runs on into the locked
+    block and its full result is counted in the RESEARCH figure -- so the
+    number the search ranks on is partly determined by data the search is not
+    allowed to see. It is one trade per block, and on a swing candidate it was
+    worth $478 of a $4,297 research result: 11% of the per-trade figure, on a
+    candidate whose rank it could move.
+
+    It also made the two layers disagree. The engine, handed the research block
+    as a standalone series, closes that position at the block's last close --
+    which is the right answer -- and the finder then reported "the engine did
+    not reproduce the figure the search ranked on" against a candidate that was
+    perfectly sound.
+
+    Capping here rather than at scoring time means one cache still serves both
+    blocks, and every consumer of it -- the summary, the matched control, the
+    neighbourhood -- gets the corrected outcome without knowing there was ever
+    a question.
+    """
+    n = max(0, int(n))
+    fill = np.arange(n, dtype="int64") + 1
+    split = max(0, min(int(split), n))
+    boundary = np.where(fill < split, split, n)
+    room = np.maximum(0, boundary - fill).astype("int32")
+    return np.clip(room, 0, hold_bars(horizon))
+
+
 def session_entry_mask(bars: BarSeries, timezone: str, start: str | None,
                        end: str | None,
                        weekdays: Sequence[int] = (0, 1, 2, 3, 4),

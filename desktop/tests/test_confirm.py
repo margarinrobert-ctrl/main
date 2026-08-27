@@ -20,7 +20,6 @@ from tradingbacktester.core.timeframe import Timeframe
 from tradingbacktester.core.types import BacktestConfig
 from tradingbacktester.data.sample import generate_sample_data
 from tradingbacktester.finder.confirm import (AGREEMENT_TOLERANCE,
-                                              COUNT_TOLERANCE,
                                               HEADLINE_METRICS, Agreement,
                                               BlockRun, Confirmation,
                                               confirm)
@@ -154,12 +153,32 @@ def test_a_trade_count_mismatch_is_reported():
     truth = confirm(_Finding(_spec()), bars, split)
     trades = truth.research.trades
     assert trades > 10, "the fixture needs enough trades to be worth checking"
-    finding = _Finding(_spec(), research={
-        "trades": int(trades * (1 + COUNT_TOLERANCE * 4)) + 5,
-        "per_trade": 0.0})
+    finding = _Finding(_spec(), research={"trades": trades + 5,
+                                          "per_trade": 0.0})
     out = confirm(finding, bars, split)
     assert not out.agreement.agrees
     assert "trades" in out.agreement.reason
+
+
+def test_a_single_trade_of_difference_is_a_disagreement():
+    """No share-based slack: the two layers run the same rule on the same bars.
+
+    Every trade-count defect found in the fast path so far was a handful out of
+    thousands -- ten in 3,614, four in 152. A 10% tolerance swallowed all of
+    them, which is how they survived to be found by widening a different test.
+    """
+    bars = _bars()
+    split = int(len(bars) * 0.65)
+    truth = confirm(_Finding(_spec()), bars, split)
+    trades = truth.research.trades
+    per_trade = (float(truth.research.metrics.get("net_profit", 0.0)) / trades
+                 if trades else 0.0)
+    off_by_one = _Finding(_spec(), research={"trades": trades + 1,
+                                             "per_trade": per_trade})
+    assert not confirm(off_by_one, bars, split).agreement.agrees
+    exact = _Finding(_spec(), research={"trades": trades,
+                                        "per_trade": per_trade})
+    assert confirm(exact, bars, split).agreement.agrees
 
 
 # ---------------------------------------------------------------------------

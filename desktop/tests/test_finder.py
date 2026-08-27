@@ -782,6 +782,75 @@ def test_a_crossing_from_an_exact_touch_counts_for_both_engine_and_search():
     assert got.tolist() == [False, False, False, True, False, False]
 
 
+def test_a_trade_may_not_run_out_of_the_block_it_was_signalled_in():
+    """A research trade that finishes in the locked block is holdout data.
+
+    It is one trade per block -- the last one -- but its whole result lands in
+    the figure every candidate is ranked on, so the ranking is decided in part
+    by bars the search is not allowed to see. It also made the two layers
+    disagree: the engine, handed the research block as a standalone series,
+    closes that position at the block's last close, and the finder then
+    reported the candidate as unconfirmed.
+    """
+    import numpy as np
+
+    from tradingbacktester.finder.outcomes import (block_hold_limit,
+                                               hold_bars)
+
+    n, split, horizon = 100, 60, 10
+    room = block_hold_limit(n, split, horizon)
+
+    # A signal at 50 fills at 51 and has nine bars before the split at 60.
+    assert int(room[50]) == 9
+    # The last signal that can trade inside the research block.
+    assert int(room[58]) == 1
+    # A signal at 59 fills at 60, which is the first bar of the locked block,
+    # so it gets that block's room instead -- not zero.
+    assert int(room[59]) == min(hold_bars(horizon), n - 60)
+    # Nothing exceeds what the time stop allows.
+    assert int(room.max()) <= hold_bars(horizon)
+    # The last bar has no bar to fill on.
+    assert int(room[-1]) == 0
+
+
+def test_the_block_boundary_shows_up_in_a_real_search():
+    """End to end: the search's own number equals the engine's, to the cent."""
+    from tradingbacktester.data.bundled import find as find_bundled
+    from tradingbacktester.data.csv_loader import load_csv, sniff_csv
+    from tradingbacktester.data.instruments import default_instrument_for
+    from tradingbacktester.finder.candidates import build_spec
+    from tradingbacktester.finder.confirm import confirm
+    from tradingbacktester.finder.search import (default_costs,
+                                                 find_strategies, prepare_bars)
+    from tradingbacktester.finder.styles import style as get_style
+
+    chosen = get_style("swing")
+    dataset = find_bundled("US30 30m")
+    bars = load_csv(str(dataset.path()), sniff_csv(str(dataset.path())).mapping,
+                    default_instrument_for("US30"))
+    report = find_strategies(bars, chosen, timeframe="1h", control_draws=25,
+                             validate="quick")
+    working = prepare_bars(bars, "1h")
+    split = int(len(working) * 0.65)
+    timezone = working.instrument.timezone
+    costs = default_costs(working.instrument)
+
+    checked = 0
+    step = max(1, len(report.findings) // 8)
+    for finding in report.findings[::step]:
+        if getattr(finding, "spec", None) is None:
+            finding.spec = build_spec(
+                finding.candidate, chosen, "1h", finding.stop_atr,
+                finding.target_r, costs, instrument_timezone=timezone)
+        agreement = confirm(finding, working, split).agreement
+        checked += 1
+        assert agreement.fast_trades == agreement.engine_trades, finding.label
+        assert abs(agreement.fast_per_trade
+                   - agreement.engine_per_trade) < 0.01, finding.label
+        assert agreement.agrees, f"{finding.label}: {agreement.reason}"
+    assert checked >= 5
+
+
 def test_the_session_limit_uses_the_engines_own_session():
     """A trade must be flat at the session close, not at local midnight."""
     from tradingbacktester.data.bundled import find as find_bundled
