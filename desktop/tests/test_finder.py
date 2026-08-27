@@ -596,48 +596,39 @@ def test_cli_walk_forward_explains_a_malformed_range(tmp_path, capsys):
 # The fast path must be the engine, only faster
 # --------------------------------------------------------------------------
 
-def test_the_fast_path_agrees_with_the_engine_on_real_data():
-    """Every candidate, trade for trade, against the real simulator.
-
-    This is the test that makes the search worth running. The cached-outcome
-    path exists because it is a thousand times faster, not because it is
-    authoritative, and four separate defects were found by running exactly
-    this comparison rather than by reading the code:
-
-    * the entry was filled at the raw open, so the stop and target sat half a
-      spread away from where the engine put them;
-    * "the last bar of the session" was computed as the last bar of the
-      calendar day, which on an index CFD is seven hours later;
-    * entries were gated on the fill bar, but the engine gates on the signal
-      bar, which added a 09:30 trade every time a rule fired at 09:00;
-    * a signal on the bar a position closed was skipped, and the engine takes
-      it.
-    """
+def _agreement_case(style_key: str, timeframe: str, dataset_name: str):
+    """Bars, mask helpers and candidate sample for one style, ready to compare."""
     from tradingbacktester.data.bundled import find as find_bundled
     from tradingbacktester.data.csv_loader import load_csv, sniff_csv
     from tradingbacktester.data.instruments import default_instrument_for
-    from tradingbacktester.finder.candidates import (all_candidates, build_spec,
-                                                     signals_for, warmup_for)
+    from tradingbacktester.finder.candidates import all_candidates
     from tradingbacktester.finder.outcomes import (session_entry_mask,
-                                                   session_hold_limit,
-                                                   verify_against_engine)
+                                                   session_hold_limit)
     from tradingbacktester.finder.search import default_costs, prepare_bars
+    from tradingbacktester.finder.styles import style as get_style
 
-    dataset = find_bundled("US30 30m")
+    dataset = find_bundled(dataset_name)
     assert dataset is not None and dataset.exists()
     bars = load_csv(str(dataset.path()), sniff_csv(str(dataset.path())).mapping,
                     default_instrument_for("US30"))
-    chosen = style("intraday")
-    working = prepare_bars(bars, "30m")
+    chosen = get_style(style_key)
+    working = prepare_bars(bars, timeframe)
     timezone = working.instrument.timezone
     costs = default_costs(working.instrument)
-    entry_ok = session_entry_mask(working, timezone, chosen.session[0],
-                                  chosen.session[1], chosen.weekdays)
-    hold = session_hold_limit(working, timezone, chosen.session[0],
-                              chosen.session[1], chosen.max_bars,
-                              chosen.weekdays)
 
-    # A representative slice: every template, both sides.
+    # Exactly how search.py builds them, so the test cannot pass against a
+    # gate the real search does not apply.
+    entry_ok = session_entry_mask(
+        working, timezone,
+        chosen.session[0] if chosen.session else None,
+        chosen.session[1] if chosen.session else None,
+        chosen.weekdays, chosen.flat_at_session_end)
+    hold = None
+    if chosen.session is not None and chosen.flat_at_session_end:
+        hold = session_hold_limit(working, timezone, chosen.session[0],
+                                  chosen.session[1], chosen.max_bars,
+                                  chosen.weekdays)
+
     seen: set[tuple] = set()
     sample = []
     for candidate in all_candidates():
@@ -647,23 +638,148 @@ def test_the_fast_path_agrees_with_the_engine_on_real_data():
         seen.add(key)
         sample.append(candidate)
     assert len(sample) == 12
+    return working, chosen, timezone, costs, entry_ok, hold, sample
+
+
+@pytest.mark.parametrize("style_key,timeframe,dataset_name", [
+    # 5m is where the max-bars time stop actually binds and where a single bar
+    # can span both barriers; 30m is the everyday case; the last two have no
+    # session at all, which is its own code path.
+    ("scalp", "5m", "US30 5m"),
+    ("intraday", "30m", "US30 30m"),
+    ("swing", "1h", "US30 30m"),
+    ("position", "1D", "US30 30m"),
+])
+def test_the_fast_path_agrees_with_the_engine_on_real_data(
+        style_key, timeframe, dataset_name):
+    """Every candidate, every style, trade for trade, against the real simulator.
+
+    This is the test that makes the search worth running. The cached-outcome
+    path exists because it is a thousand times faster, not because it is
+    authoritative, and every defect below was found by running exactly this
+    comparison rather than by reading the code:
+
+    * the entry was filled at the raw open, so the stop and target sat half a
+      spread away from where the engine put them;
+    * "the last bar of the session" was computed as the last bar of the
+      calendar day, which on an index CFD is seven hours later;
+    * entries were gated on the fill bar, but the engine gates on the signal
+      bar, which added a 09:30 trade every time a rule fired at 09:00;
+    * a signal on the bar a position closed was skipped, and the engine takes
+      it;
+    * a bar that opened through the TARGET and later reached the stop was
+      recorded as a stop, when the open settles the order and the engine says
+      so;
+    * a crossing needed the previous bar strictly below, and the engine allows
+      an exact touch -- which on a stochastic is common;
+    * the max-bars time stop closed a bar early and never tested the barriers
+      on the final bar;
+    * a style with no session applied a weekday filter the shipped spec did
+      not carry, so the strategy could not reproduce its own search result.
+
+    The first four were caught with one style and one geometry. The last four
+    were not, and could not be: they need 5-minute bars where a 12-bar limit
+    binds, an oscillator pinned at its ceiling, and a style with no session.
+    Hence the parametrisation.
+    """
+    from tradingbacktester.finder.candidates import (build_spec, signals_for,
+                                                     warmup_for)
+    from tradingbacktester.finder.outcomes import verify_against_engine
+
+    (working, chosen, timezone, costs, entry_ok, hold,
+     sample) = _agreement_case(style_key, timeframe, dataset_name)
+
+    # Three corners of the style's own geometry grid, not one: the widest is
+    # where the time stop binds and the narrowest is where a single bar spans
+    # both barriers.
+    geometries = chosen.geometries()
+    corners = {geometries[0], geometries[-1], geometries[len(geometries) // 2]}
 
     problems = []
-    for candidate in sample:
-        cache = build_outcomes(
-            working, Geometry(candidate.side, 1.5, 2.0, chosen.max_bars, 14),
-            costs, hold)
-        mask = entry_ok & signals_for(working, candidate,
-                                      warmup_for(candidate, chosen.atr_period))
-        spec = build_spec(candidate, chosen, "30m", 1.5, 2.0, costs,
-                          instrument_timezone=timezone)
-        result = verify_against_engine(working, cache, mask, spec)
-        if (result["fast_only"] or result["engine_only"]
-                or result["worst_matched_difference"] > 0.01
-                or abs(result["net_difference"]) > 0.01):
-            problems.append(f"{candidate.describe()}: {result}")
-        assert result["fast_trades"] > 0, candidate.describe()
+    traded = 0
+    for stop_atr, target_r in sorted(corners):
+        for candidate in sample:
+            cache = build_outcomes(
+                working, Geometry(candidate.side, stop_atr, target_r,
+                                  chosen.max_bars, chosen.atr_period),
+                costs, hold)
+            mask = entry_ok & signals_for(
+                working, candidate, warmup_for(candidate, chosen.atr_period))
+            spec = build_spec(candidate, chosen, timeframe, stop_atr, target_r,
+                              costs, instrument_timezone=timezone)
+            result = verify_against_engine(working, cache, mask, spec)
+            traded += int(result["fast_trades"])
+            if (result["fast_only"] or result["engine_only"]
+                    or result["worst_matched_difference"] > 0.01
+                    or abs(result["net_difference"]) > 0.01):
+                problems.append(
+                    f"{candidate.describe()} @ {stop_atr}x/{target_r}R: {result}")
     assert not problems, "\n".join(problems)
+    assert traded > 0, "the comparison ran but no trade was taken by either side"
+
+
+def test_the_max_bars_stop_holds_for_a_full_max_bars_after_the_fill():
+    """``hold_bars`` is the engine's rule, not one bar less than it.
+
+    The engine closes a position on the first bar where
+    ``bar - entry_bar >= max_bars``, and it tests the barriers on that bar
+    first. So the trade occupies ``max_bars + 1`` bars and the stop and target
+    are live on all of them. Counting ``max_bars`` closed every timed trade one
+    bar early, at a different close, and never tested the last bar at all.
+    """
+    from tradingbacktester.finder.outcomes import hold_bars
+
+    assert hold_bars(12) == 13
+    assert hold_bars(1) == 2
+    assert hold_bars(0) == 2       # a zero-bar trade is not a thing
+
+
+def test_a_bar_that_opened_through_the_target_is_not_recorded_as_a_stop():
+    """The open settles the order; the pessimistic guess is only for a tie."""
+    import numpy as np
+
+    from tradingbacktester.core.types import CostModel
+    from tradingbacktester.data.models import BarSeries
+    from tradingbacktester.finder.outcomes import EXIT_TARGET, build_outcomes
+    from tradingbacktester.data.instruments import default_instrument_for
+
+    # Flat bars so ATR(14) settles at 2.0, then one bar that opens below the
+    # short's target and later trades above its stop. Both barriers are reached
+    # on that bar -- but the target was reached first, at the open, and there is
+    # nothing left to guess about.
+    n = 40
+    o = np.full(n, 100.0)
+    h = np.full(n, 101.0)
+    l = np.full(n, 99.0)
+    c = np.full(n, 100.0)
+    o[21], h[21], l[21], c[21] = 90.0, 130.0, 90.0, 120.0
+    ts = np.arange(n, dtype="int64") * 60_000_000_000 + 1_600_000_000_000_000_000
+    bars = BarSeries.from_arrays(ts, o, h, l, c, np.full(n, 1000.0),
+                                 default_instrument_for("US30"))
+    cache = build_outcomes(bars, Geometry(-1, 1.0, 1.0, 10, 14),
+                           CostModel(), None)
+    i = 19                                  # signals on 19, fills on 20 at 100
+    assert cache.valid[i]
+    assert float(cache.stop_price[i]) > float(cache.entry_price[i])   # a short
+    assert h[21] > float(cache.stop_price[i]), "the bar must reach the stop too"
+    assert o[21] < float(cache.target_price[i]), "and open through the target"
+    assert int(cache.exit_reason[i]) == EXIT_TARGET
+    # Filled at the open it gapped to, not at the target: better than the
+    # target, and the engine says the same.
+    assert float(cache.net_points[i]) == pytest.approx(100.0 - 90.0)
+
+
+def test_a_crossing_from_an_exact_touch_counts_for_both_engine_and_search():
+    """%K and %D sit together at 100; the cross out of that state is a cross."""
+    import numpy as np
+
+    from tradingbacktester.finder.candidates import _crossed_up
+
+    series = np.array([1.0, 2.0, 2.0, 3.0, 3.0, 2.0])
+    level = np.array([1.5, 2.0, 2.0, 2.0, 3.0, 3.0])
+    got = _crossed_up(series, level)
+    # bar 1: 2.0 == 2.0 is not above.  bar 3: above, previous bar was equal.
+    assert got.tolist() == [False, False, False, True, False, False]
 
 
 def test_the_session_limit_uses_the_engines_own_session():

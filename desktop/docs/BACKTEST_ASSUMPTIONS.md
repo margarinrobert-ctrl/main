@@ -58,6 +58,14 @@ Three settings are offered:
   first is taken. It is a more plausible guess than either extreme, but it is still a
   guess about intrabar order, dressed up as a measurement.
 
+None of the three applies when the bar's **open** already settles it. A bar that opened
+beyond one barrier reached that barrier at its first price, before any other price in it,
+and no guess about intrabar order can change that. So an open through the stop is a stop
+and an open through the target is a target, whatever the setting says — and only a bar that
+opened between the two, then covered both, falls through to the choice above. This is a
+fact the data does contain; treating it as a tie and applying the pessimistic rule would
+book a loss on a trade that was in profit at the open.
+
 The honest way to reduce the ambiguity is not to change the setting. It is to test on a
 faster timeframe, where fewer trades resolve inside a single bar, and to check how much of
 your result comes from bars where both barriers were in range at once. If most of your

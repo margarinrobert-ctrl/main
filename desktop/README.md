@@ -1137,7 +1137,10 @@ The short version; the full document is **Help → Backtesting Assumptions**
 4. **When one bar's range covers both the stop and the target**, bar data cannot
    say which came first. The default assumes the stop was hit. You can switch to
    optimistic, or to inferring the path from the bar's shape, but the
-   pessimistic setting is the only one that will not overstate results.
+   pessimistic setting is the only one that will not overstate results. The
+   exception is a bar that *opened* beyond one of them: that barrier was reached
+   at the bar's first price, which is a fact rather than a guess, and it settles
+   the order whatever the setting says.
 5. **Trailing stops are tested before they are updated.** Updating first would
    let a bar that stopped you out also move the stop, which is look-ahead.
 6. **Costs are always adverse.** Spread, slippage and commission are charged

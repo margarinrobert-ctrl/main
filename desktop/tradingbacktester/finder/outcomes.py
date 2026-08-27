@@ -15,7 +15,8 @@ of question, and it makes the same conservative choices:
 * the stop and target are placed from the ATR at bar *i*, the signal bar, which
   is the last thing known when the order is sent;
 * a bar that reaches both the stop and the target is assumed to have hit the
-  **stop** first;
+  **stop** first -- unless the bar *opened* through the target and not through
+  the stop, which settles the order rather than guessing at it;
 * an opening gap through the stop fills at the **open**, not at the stop;
 * costs are charged on both sides and are always adverse.
 
@@ -255,6 +256,25 @@ def wilder_atr(bars: BarSeries, period: int) -> np.ndarray:
     return values
 
 
+def hold_bars(max_bars: int) -> int:
+    """Bars a trade may occupy under the engine's max-bars time stop.
+
+    The engine closes a position on the first bar where
+    ``bar - entry_bar >= max_bars``, and it tests the barriers on that bar
+    *before* the time stop. So a trade fills on its entry bar and may still be
+    open ``max_bars`` bars later: ``max_bars + 1`` bars in total, every one of
+    them a bar the stop and the target are live on.
+
+    Counting ``max_bars`` bars instead is not a rounding error. It closes the
+    trade one bar early at the previous close and never tests the last bar at
+    all, so a trade the engine resolves at its target is recorded here as a
+    time stop at a different price. On 5-minute scalp geometry, where the
+    12-bar limit actually binds, that was 66 trades in 2,125 on a single
+    candidate.
+    """
+    return max(1, int(max_bars)) + 1
+
+
 def _first_hit(window: np.ndarray) -> np.ndarray:
     """Index of the first True in each row, or the row width when there is none."""
     width = window.shape[1]
@@ -278,7 +298,7 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
     """
     n = len(bars)
     side = 1 if geometry.side >= 0 else -1
-    horizon = max(1, int(geometry.max_bars))
+    horizon = hold_bars(geometry.max_bars)
     open_, high, low, close = bars.open, bars.high, bars.low, bars.close
 
     atr = wilder_atr(bars, geometry.atr_period)
@@ -362,9 +382,31 @@ def build_outcomes(bars: BarSeries, geometry: Geometry, costs: CostModel,
         first_target = _first_hit(target_hit)
         cap = limit[start:stop_at]
 
-        # Pessimistic: the same bar reaching both is recorded as the stop.
-        stopped = (first_stop <= first_target) & (first_stop < cap)
-        targeted = (first_target < first_stop) & (first_target < cap)
+        # One bar reaching both barriers is recorded as the stop -- unless the
+        # bar OPENED through the target and not through the stop, in which case
+        # there is nothing to guess about: the target was reached at the first
+        # price of the bar, before any other price in it. The engine calls that
+        # branch "a fact" and only falls back to the pessimistic assumption when
+        # the open settles nothing. Without this the fast path books a loss on a
+        # trade that was in profit at the open, and on 5-minute bars, where a
+        # bar can span both barriers, it happened on 28 of 36 style/geometry
+        # combinations -- invisibly, because the trade counts still matched.
+        #
+        # The comparisons are non-strict to match ``stop_fill_price`` and
+        # ``limit_fill_price``, which treat an open exactly ON a barrier as a
+        # gap. The fill price is the same either way there; the classification
+        # is not.
+        tie_bar = np.minimum(rows + first_stop, n - 1)
+        open_at_tie = open_[tie_bar]
+        s_col = stop[start:stop_at]
+        t_col = target[start:stop_at]
+        opened_through_stop = side * (open_at_tie - s_col) <= 0
+        opened_through_target = side * (open_at_tie - t_col) >= 0
+        target_first = ((first_stop == first_target) & opened_through_target
+                        & ~opened_through_stop)
+
+        stopped = (first_stop <= first_target) & (first_stop < cap) & ~target_first
+        targeted = ((first_target < first_stop) | target_first) & (first_target < cap)
         timed = ~(stopped | targeted)
 
         held = np.where(stopped, first_stop,
@@ -475,7 +517,9 @@ def session_hold_limit(bars: BarSeries, timezone: str, start: str, end: str,
         room = (next_close_at_fill - fill + 1).astype("int32")
         room[~in_session[fill]] = 0
         room[~valid[fill]] = 0
-    return np.clip(room, 0, horizon)
+    # Capped at what a trade may occupy, not at ``horizon`` itself: the engine
+    # holds a position for ``max_bars`` bars *after* the one it filled on.
+    return np.clip(room, 0, hold_bars(horizon))
 
 
 def session_entry_mask(bars: BarSeries, timezone: str, start: str | None,

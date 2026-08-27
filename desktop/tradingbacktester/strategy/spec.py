@@ -255,9 +255,17 @@ class Compare(Condition):
 class Cross(Condition):
     """True on the bar where ``left`` crosses ``right``.
 
-    A cross requires the relationship to have been strictly the other way on the
-    previous bar, so it fires once per crossing rather than on every bar the
-    inequality happens to hold.
+    A cross fires once per crossing rather than on every bar the inequality
+    happens to hold: "above" needs ``left > right`` now and ``left <= right``
+    on the previous bar.
+
+    That previous bar is at-or-below, **not** strictly below, which matters
+    more than it looks. Two series that touch exactly and then part -- %K and
+    %D pinned together at 100, a close sitting on its moving average -- have
+    crossed, and requiring strict inequality on both bars would silently
+    discard every crossing that began from a touch. ``rules.py::_cross`` is
+    where this is implemented and ``finder/candidates.py::_crossed_up`` is the
+    vectorised copy of it; the two must not drift.
     """
 
     left: Operand

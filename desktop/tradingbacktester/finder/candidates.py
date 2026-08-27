@@ -127,15 +127,28 @@ def _ind(bars: BarSeries, key: str, output: str = "value", **params) -> np.ndarr
 
 
 def _crossed_up(series: np.ndarray, level: np.ndarray | float) -> np.ndarray:
-    """True on the bar a series finishes above a level having been below it."""
+    """True on the bar a series finishes above a level, not having been above it.
+
+    The previous bar must be at or below the level -- **not** strictly below.
+    That is the engine's rule (``strategy/rules.py::_cross``), and the fast path
+    is only worth having if it is the engine.
+
+    Requiring the previous bar to be strictly below silently drops every
+    crossing that began from an exact touch. On a bounded oscillator those are
+    not rare: %K and %D sit together at 100 whenever price closes at the top of
+    its range, so a stochastic cross out of that state was never counted here
+    and always counted by the engine. It cost 10 trades in 3,614 on one
+    5-minute candidate -- invisible, because the outcome arithmetic agreed to
+    the last cent on every trade the two did share.
+    """
     level_arr = np.full_like(series, float(level)) if np.isscalar(level) else level
     out = np.zeros(series.shape, dtype=bool)
-    ok = np.isfinite(series) & np.isfinite(level_arr)
-    above = ok & (series > level_arr)
-    below = np.roll(ok & (series < level_arr), 1)
-    below[0] = False
-    out[1:] = (above & below)[1:]
-    return out
+    finite = np.isfinite(series) & np.isfinite(level_arr)
+    # Bar 0 has no previous bar, so no crossing can be observed there.
+    pair_finite = np.zeros(series.shape, dtype=bool)
+    pair_finite[1:] = finite[1:] & finite[:-1]
+    out[1:] = (series[1:] > level_arr[1:]) & (series[:-1] <= level_arr[:-1])
+    return out & pair_finite
 
 
 def _crossed_down(series: np.ndarray, level: np.ndarray | float) -> np.ndarray:
@@ -397,5 +410,18 @@ def build_spec(candidate: Candidate, style, timeframe: str,
             enabled=True, start=style.session[0], end=style.session[1],
             timezone=instrument_timezone, weekdays=tuple(style.weekdays),
             flat_at_session_end=style.flat_at_session_end)
+    elif len(style.weekdays) < 7:
+        # A style with no time window still has a weekday constraint, and the
+        # search applies it. Leaving it off the spec meant the shipped strategy
+        # traded bars the search never counted -- Sunday evening, when an index
+        # CFD reopens -- so it could not reproduce the result it was found by:
+        # four extra trades in 152 on one swing candidate, and the difference
+        # went the strategy's way. ``start == end`` is the engine's own
+        # spelling of a 24-hour session, so this adds the weekday filter and
+        # nothing else.
+        spec.session = SessionSettings(
+            enabled=True, start="00:00", end="00:00",
+            timezone=instrument_timezone, weekdays=tuple(style.weekdays),
+            flat_at_session_end=False)
     spec.costs = costs
     return spec

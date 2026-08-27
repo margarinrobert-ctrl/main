@@ -354,13 +354,30 @@ cached; after that a candidate rule is a boolean mask and scoring it is a sum.
 - `outcomes.build_outcomes(bars, Geometry, costs, hold_limit) -> OutcomeCache`
   — per-signal-bar net result, exit reason, bars held, entry/stop/target.
   Same conservative choices as the engine: fill at the next open, ATR read at
-  the signal bar, a bar reaching both barriers counts as the stop, a gap
-  through the stop fills at the open, costs always adverse.
+  the signal bar, a bar reaching both barriers counts as the stop *unless the
+  bar opened through the target and not the stop*, a gap through the stop fills
+  at the open, costs always adverse.
+- `outcomes.hold_bars(max_bars) -> max_bars + 1` — bars a trade may occupy. The
+  engine closes on the first bar where `bar - entry_bar >= max_bars` and tests
+  the barriers on that bar first, so the trade spans `max_bars + 1` bars and
+  the barriers are live on all of them. Used for the sliding window, for the
+  cap, and by `session_hold_limit`; the three must not drift.
 - `outcomes.select_sequential(cache, mask)` — thins a mask to the trades one
   contract could actually have taken. Without it, clustered signals inflate
   every result.
 - `outcomes.verify_against_engine(...)` — re-runs a result through the real
   `Backtester` and reports the difference rather than assuming it away.
+  Asserted at zero difference for **every style** (scalp / intraday / swing /
+  position) over three corners of each style's geometry grid, not one style
+  and one geometry: four defects lived where a 12-bar time stop binds, where
+  an oscillator pins at its ceiling, and where a style has no session at all.
+- `candidates._crossed_up` is the vectorised copy of `strategy/rules.py::_cross`
+  and must stay one: "above" is `left > right` now and `left <= right` on the
+  previous bar, at-or-below rather than strictly below.
+- `candidates.build_spec(...)` gives a style with no session window but a
+  weekday constraint an all-hours weekday session (`start == end`, which is the
+  engine's spelling of 24 hours), so the shipped strategy carries the filter the
+  search applied and can reproduce its own result.
 - `control.analytic_control(...)` / `control.sampled_control(...)` — random
   entries matched on time-of-day. The analytic one is closed-form and cheap
   enough to gate every candidate; the sampled one confirms the shortlist
