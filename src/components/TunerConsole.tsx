@@ -13,44 +13,17 @@
  * indexes a cached exit tensor, so those controls re-run on every keystroke. The rule costs an
  * indicator pass, so it re-runs on submit. That is the opposite of how a search is usually built
  * and it is what makes the loop feel immediate.
+ *
+ * Two things here exist because of what the numbers turned out to be, not because of taste. Every
+ * column is a RESEARCH-block number: the table used to lead with whole-sample trade counts and
+ * $/trade under a caption promising research-only figures, which is the holdout leaking into the
+ * ranking. And the default ranking is residual Sharpe, because `CLAUDE.md` records that 87% of the
+ * profit in the strategy this repository shipped was market beta that a raw Sharpe could not see.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogueEntry } from "@/lib/quant/tuner/indicators";
-import type { LoadedInfo } from "@/lib/quant/tuner/worker";
-
-type SweepRowLite = {
-  key: string;
-  rule: string;
-  params: Record<string, number>;
-  side: 1 | -1;
-  window: string;
-  stop: number;
-  target: number;
-  maxBars: number;
-  costLabel: string;
-  n: number;
-  perTrade: number;
-  netUsd: number;
-  winPct: number;
-  profitFactor: number;
-  maxDrawdown: number;
-  tStat: number;
-  stopPct: number;
-  nResearch: number;
-  perTradeResearch: number;
-  winPctResearch: number;
-};
-
-type SweepLite = { rows: SweepRowLite[]; evaluated: number; dropped: number; minTrades: number; ms: number; tensorMs: number };
-type RevealLite = {
-  row: SweepRowLite;
-  window: string;
-  locked: { n: number; perTrade: number; netUsd: number; winPct: number };
-  control: { draws: number; meanLocked: number; pLocked: number; meanResearch: number; pResearch: number };
-  shape: "decays" | "grew-on-locked";
-  searched: number;
-  bonferroni: number;
-};
+import { RANK_KEYS, type RankKey } from "@/lib/quant/tuner";
+import type { LoadedInfo, PublicReveal, PublicRow, PublicSweep } from "@/lib/quant/tuner/project";
 
 const num = (s: string): number[] =>
   s
@@ -64,35 +37,54 @@ const ROW_CAP = 25;
 const money = (v: number) => `${v < 0 ? "-" : ""}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const one = (v: number) => (Number.isFinite(v) ? v.toFixed(1) : "—");
 const two = (v: number) => (Number.isFinite(v) ? v.toFixed(2) : "—");
+const pct = (v: number) => (Number.isFinite(v) ? `${(100 * v).toFixed(0)}%` : "—");
+const mb = (v: number) => `${(v / (1024 * 1024)).toFixed(0)} MB`;
+
+const RANK_LABEL: Record<RankKey, string> = {
+  residSharpe: "residual Sharpe — Sharpe with the market regressed out",
+  sharpe: "Sharpe — annualised, flat sessions included",
+  perTrade: "$ per trade",
+  netUsd: "net $",
+  profitFactor: "profit factor",
+  calmar: "Calmar — annual $ over max drawdown",
+  tDaily: "t of mean session P&L",
+};
+
+/** A superseded sweep rejects with this; the UI drops it rather than showing it as an error. */
+class Cancelled extends Error {}
 
 /** Every request/response pair is promise-shaped so the component never juggles message ids. */
 function useTunerWorker() {
   const ref = useRef<Worker | null>(null);
   const seq = useRef(0);
-  const pending = useRef(new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; onProgress?: (d: number, t: number) => void }>());
+  const pending = useRef(new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; onProgress?: (p: { done: number; total: number; phase: string }) => void }>());
 
   useEffect(() => {
     const w = new Worker(new URL("../lib/quant/tuner/worker.ts", import.meta.url), { type: "module" });
     w.onmessage = (ev: MessageEvent) => {
-      const { id, ok, payload, error, progress } = ev.data ?? {};
+      const { id, ok, payload, error, cancelled, progress } = ev.data ?? {};
       const p = pending.current.get(id);
       if (!p) return;
       if (progress) {
-        p.onProgress?.(progress.done, progress.total);
+        p.onProgress?.(progress);
         return;
       }
       pending.current.delete(id);
       if (ok) p.resolve(payload);
-      else p.reject(new Error(error ?? "worker failed"));
+      else p.reject(cancelled ? new Cancelled(error) : new Error(error ?? "worker failed"));
     };
     ref.current = w;
     return () => {
       w.terminate();
+      // A terminated worker will never answer, so settle anything still waiting rather than
+      // leaving promises — and the components awaiting them — alive for the page's lifetime.
+      for (const p of pending.current.values()) p.reject(new Cancelled("worker closed"));
+      pending.current.clear();
       ref.current = null;
     };
   }, []);
 
-  return useCallback(<T,>(msg: Record<string, unknown>, onProgress?: (d: number, t: number) => void): Promise<T> => {
+  return useCallback(<T,>(msg: Record<string, unknown>, onProgress?: (p: { done: number; total: number; phase: string }) => void): Promise<T> => {
     const w = ref.current;
     if (!w) return Promise.reject(new Error("worker not ready"));
     const id = ++seq.current;
@@ -103,10 +95,13 @@ function useTunerWorker() {
   }, []);
 }
 
-function Panel({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function Panel({ title, hint, right, children }: { title: string; hint?: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="rounded-panel border border-white/[0.06] bg-white/[0.015] p-3 shadow-panel">
-      <h2 className="text-[10px] uppercase tracking-micro text-neutral-500">{title}</h2>
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="text-[10px] uppercase tracking-micro text-neutral-500">{title}</h2>
+        {right}
+      </div>
       {hint ? <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">{hint}</p> : null}
       <div className="mt-2.5">{children}</div>
     </section>
@@ -134,7 +129,7 @@ export function TunerConsole() {
   const [cat, setCat] = useState<CatalogueEntry[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number; phase: string } | null>(null);
 
   const [symbol, setSymbol] = useState("MNQ");
   const [timeframe, setTimeframe] = useState(30);
@@ -150,10 +145,11 @@ export function TunerConsole() {
   const [atrPeriod, setAtrPeriod] = useState("14");
   const [costMults, setCostMults] = useState("1");
   const [minTrades, setMinTrades] = useState("30");
+  const [rankBy, setRankBy] = useState<RankKey>("residSharpe");
 
-  const [sweep, setSweep] = useState<SweepLite | null>(null);
+  const [sweep, setSweep] = useState<PublicSweep | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
-  const [reveal, setReveal] = useState<RevealLite[] | null>(null);
+  const [reveal, setReveal] = useState<PublicReveal[] | null>(null);
 
   useEffect(() => {
     call<CatalogueEntry[]>({ kind: "catalogue" }).then(setCat).catch(() => undefined);
@@ -168,7 +164,7 @@ export function TunerConsole() {
       setSweep(null);
       setReveal(null);
     } catch (e) {
-      setError((e as Error).message);
+      if (!(e instanceof Cancelled)) setError((e as Error).message);
     } finally {
       setBusy(null);
     }
@@ -179,13 +175,14 @@ export function TunerConsole() {
       setBusy(`reading ${file.name}`);
       setError(null);
       try {
-        const text = await file.text();
-        const i = await call<LoadedInfo>({ kind: "load", source: { type: "csv", text }, symbol, timeframe });
+        // The File goes across as a handle; the worker reads it. Calling `file.text()` here would
+        // block the page on a hundred-megabyte decode and then clone the whole string anyway.
+        const i = await call<LoadedInfo>({ kind: "load", source: { type: "csv", file }, symbol, timeframe });
         setInfo(i);
         setSweep(null);
         setReveal(null);
       } catch (e) {
-        setError((e as Error).message);
+        if (!(e instanceof Cancelled)) setError((e as Error).message);
       } finally {
         setBusy(null);
       }
@@ -210,8 +207,21 @@ export function TunerConsole() {
       costs: num(costMults).map((m) => ({ fillModel: "taker" as const, mult: m })),
       params: p,
       minTrades: num(minTrades)[0] ?? 30,
+      rankBy,
     };
-  }, [liveRule, side, win, stops, targets, holds, atrPeriod, costMults, minTrades, params]);
+  }, [liveRule, side, win, stops, targets, holds, atrPeriod, costMults, minTrades, params, rankBy]);
+
+  /** What this grid will cost, computed before anything is built rather than discovered by a hang. */
+  const preflight = useMemo(() => {
+    let combos = 1;
+    for (const vals of Object.values(axes.params)) combos *= Math.max(vals.length, 1);
+    const geoms = axes.stops.length * axes.targets.length * axes.maxBars.length;
+    const total = axes.sides.length * axes.windows.length * combos * axes.costs.length * geoms;
+    const perTensor = info?.geometriesPerTensor ?? 0;
+    const tensors = perTensor ? Math.ceil(geoms / perTensor) : 0;
+    const bytes = info ? Math.min(geoms, perTensor || geoms) * info.bars * 13 : 0;
+    return { total, geoms, tensors, bytes };
+  }, [axes, info]);
 
   // Geometry knobs are free, so they re-run on change. The rule is not, so it waits for submit.
   useEffect(() => {
@@ -221,34 +231,43 @@ export function TunerConsole() {
       setBusy("sweeping");
       setError(null);
       setReveal(null);
-      call<SweepLite>({ kind: "sweep", axes }, (done, total) => setProgress({ done, total }))
+      call<PublicSweep>({ kind: "sweep", axes }, (p) => !cancelled && setProgress(p))
         .then((r) => {
           if (cancelled) return;
           setSweep(r);
           setPicked([]);
         })
-        .catch((e) => !cancelled && setError((e as Error).message))
+        .catch((e) => {
+          // A superseded sweep is the normal case while someone is typing, not a failure.
+          if (!cancelled && !(e instanceof Cancelled)) setError((e as Error).message);
+        })
         .finally(() => {
           if (!cancelled) {
             setBusy(null);
             setProgress(null);
           }
         });
-    }, 120);
+    }, 200);
     return () => {
       cancelled = true;
       clearTimeout(t);
     };
   }, [axes, info, call]);
 
+  const stop = useCallback(() => {
+    void call({ kind: "cancel" }).catch(() => undefined);
+    setBusy(null);
+    setProgress(null);
+  }, [call]);
+
   const doReveal = useCallback(async () => {
     if (!picked.length) return;
     setBusy("reading the locked block");
     try {
-      const r = await call<RevealLite[]>({ kind: "reveal", keys: picked, draws: 4000 });
+      const r = await call<PublicReveal[]>({ kind: "reveal", keys: picked, draws: 4000 });
       setReveal(r);
     } catch (e) {
-      setError((e as Error).message);
+      if (!(e instanceof Cancelled)) setError((e as Error).message);
     } finally {
       setBusy(null);
     }
@@ -256,7 +275,7 @@ export function TunerConsole() {
 
   const varying = useMemo(() => {
     const rows = sweep?.rows ?? [];
-    const distinct = (f: (r: SweepRowLite) => unknown) => new Set(rows.map(f)).size > 1;
+    const distinct = (f: (r: PublicRow) => unknown) => new Set(rows.map(f)).size > 1;
     return {
       stop: distinct((r) => r.stop),
       target: distinct((r) => r.target),
@@ -325,6 +344,7 @@ export function TunerConsole() {
             <span>
               research {info.researchSessions.toLocaleString()} / locked {info.lockedSessions.toLocaleString()} sessions
             </span>
+            <span className="text-neutral-500">{info.geometriesPerTensor.toLocaleString()} geometries per tensor</span>
             {info.synthetic ? (
               <span className="rounded border border-put/40 bg-put/10 px-1.5 py-0.5 text-put">
                 SYNTHETIC — no edge exists in these bars by construction
@@ -392,7 +412,28 @@ export function TunerConsole() {
           <Field label="ATR period" value={atrPeriod} onChange={setAtrPeriod} />
           <Field label="Cost ×" value={costMults} onChange={setCostMults} placeholder="1,2" />
           <Field label="Min trades" value={minTrades} onChange={setMinTrades} />
+          <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
+            <span className="text-[10px] uppercase tracking-micro text-neutral-500">Rank by (research block)</span>
+            <select
+              value={rankBy}
+              onChange={(e) => setRankBy(e.target.value as RankKey)}
+              className="min-h-9 rounded border border-white/10 bg-black/40 px-2 py-1.5 text-[12px] text-neutral-100 outline-none focus:border-accent/60"
+            >
+              {RANK_KEYS.map((k) => (
+                <option key={k} value={k}>
+                  {RANK_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
+
+        {info ? (
+          <p className="mt-2.5 border-t border-white/5 pt-2.5 text-[11px] leading-relaxed text-neutral-500">
+            {preflight.total.toLocaleString()} configurations · {preflight.geoms.toLocaleString()} geometries in{" "}
+            {preflight.tensors.toLocaleString()} tensor{preflight.tensors === 1 ? "" : "s"} · about {mb(preflight.bytes)} of exit tensor held at a time.
+          </p>
+        ) : null}
       </Panel>
 
       {error ? (
@@ -403,17 +444,32 @@ export function TunerConsole() {
 
       {/* ---------------- results ---------------- */}
       {sweep ? (
-        <Panel title="Research block">
+        <Panel
+          title="Research block"
+          right={
+            busy ? (
+              <button
+                type="button"
+                onClick={stop}
+                className="min-h-7 rounded border border-put/40 bg-put/10 px-2 text-[10px] uppercase tracking-micro text-put transition hover:bg-put/20"
+              >
+                Stop
+              </button>
+            ) : undefined
+          }
+        >
           <p className="text-[11px] leading-relaxed text-neutral-400">
             <span className="text-neutral-200">{sweep.evaluated.toLocaleString()}</span> configurations in{" "}
-            <span className="text-neutral-200">{(sweep.ms / 1000).toFixed(2)}s</span> ({(sweep.tensorMs / 1000).toFixed(2)}s building the exit tensor,{" "}
+            <span className="text-neutral-200">{(sweep.ms / 1000).toFixed(2)}s</span> ({(sweep.tensorMs / 1000).toFixed(2)}s building{" "}
+            {sweep.tensors} exit tensor{sweep.tensors === 1 ? "" : "s"},{" "}
             {((sweep.ms - sweep.tensorMs) / Math.max(sweep.evaluated, 1)).toFixed(2)} ms each after that)
-            {sweep.dropped ? ` · ${sweep.dropped.toLocaleString()} dropped for fewer than ${sweep.minTrades} trades` : ""}.
-            {sweep.rows.length > ROW_CAP ? ` Showing the top ${ROW_CAP} of ${sweep.rows.length.toLocaleString()} by research $/trade.` : ""}
+            {sweep.dropped ? ` · ${sweep.dropped.toLocaleString()} dropped for fewer than ${sweep.minTrades} trades` : ""}. Ranked on{" "}
+            <span className="text-neutral-300">{RANK_LABEL[sweep.rankBy]}</span>.
+            {sweep.rows.length > ROW_CAP ? ` Showing the top ${ROW_CAP} of ${sweep.rows.length.toLocaleString()}.` : ""}
           </p>
           <p className="mt-1 text-[11px] leading-relaxed text-neutral-500">
-            <span className="text-neutral-300">{(sweep.evaluated * 0.05).toFixed(1)}</span> of them are expected to reach p&lt;0.05 by chance. These are
-            research-block numbers only — the last 35% of sessions is not shown until you choose rows and read it once.
+            <span className="text-neutral-300">{(sweep.evaluated * 0.05).toFixed(1)}</span> of them are expected to reach p&lt;0.05 by chance. Every column
+            below is a research-block number — the last 35% of sessions is not computed into anything you can see until you choose rows and read it once.
           </p>
 
           {sweep.rows.length === 0 ? (
@@ -423,7 +479,7 @@ export function TunerConsole() {
             </p>
           ) : (
           <div className="mt-2.5 overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-[11px] tabular-nums">
+            <table className="w-full min-w-[860px] border-collapse text-[11px] tabular-nums">
               <thead>
                 <tr className="border-b border-white/10 text-left text-[10px] uppercase tracking-micro text-neutral-500">
                   <th className="py-1.5 pr-2 font-normal"> </th>
@@ -443,14 +499,23 @@ export function TunerConsole() {
                   <th className="py-1.5 pr-3 text-right font-normal">$/trade</th>
                   <th className="py-1.5 pr-3 text-right font-normal">win %</th>
                   <th className="py-1.5 pr-3 text-right font-normal">PF</th>
-                  <th className="py-1.5 pr-3 text-right font-normal">res trades</th>
-                  <th className="py-1.5 pr-3 text-right font-normal">res $/tr</th>
-                  <th className="py-1.5 pr-3 text-right font-normal">res win %</th>
+                  <th className="py-1.5 pr-3 text-right font-normal">sharpe</th>
+                  <th className="py-1.5 pr-3 text-right font-normal" title="Sharpe with the market's own move across the window regressed out">
+                    resid
+                  </th>
+                  <th className="py-1.5 pr-3 text-right font-normal" title="Share of P&L the market exposure explains">
+                    β share
+                  </th>
+                  <th className="py-1.5 pr-3 text-right font-normal" title="Largest share of P&L in any one fifth of the block">
+                    conc
+                  </th>
+                  <th className="py-1.5 pr-3 text-right font-normal">max DD</th>
                 </tr>
               </thead>
               <tbody>
                 {sweep.rows.slice(0, ROW_CAP).map((r) => {
                   const on = picked.includes(r.key);
+                  const p = r.research;
                   return (
                     <tr key={r.key} className={`border-b border-white/5 ${on ? "bg-accent/[0.07]" : ""}`}>
                       <td className="py-1 pr-2">
@@ -458,7 +523,7 @@ export function TunerConsole() {
                           type="checkbox"
                           checked={on}
                           aria-label={`select ${r.rule} ${r.stop}x${r.target}R`}
-                          onChange={() => setPicked((p) => (p.includes(r.key) ? p.filter((x) => x !== r.key) : [...p, r.key]))}
+                          onChange={() => setPicked((q) => (q.includes(r.key) ? q.filter((x) => x !== r.key) : [...q, r.key]))}
                           className="h-3.5 w-3.5 accent-emerald-400"
                         />
                       </td>
@@ -474,13 +539,19 @@ export function TunerConsole() {
                       {varying.target ? <td className="py-1 pr-3 text-neutral-400">{r.target}</td> : null}
                       {varying.maxBars ? <td className="py-1 pr-3 text-neutral-400">{r.maxBars}</td> : null}
                       {varying.cost ? <td className="py-1 pr-3 text-neutral-400">{r.costLabel}</td> : null}
-                      <td className="py-1 pr-3 text-right text-neutral-300">{r.n}</td>
-                      <td className={`py-1 pr-3 text-right ${r.perTrade > 0 ? "text-call" : "text-put"}`}>{one(r.perTrade)}</td>
-                      <td className="py-1 pr-3 text-right text-neutral-400">{one(r.winPct)}</td>
-                      <td className="py-1 pr-3 text-right text-neutral-400">{two(r.profitFactor)}</td>
-                      <td className="py-1 pr-3 text-right text-neutral-400">{r.nResearch}</td>
-                      <td className={`py-1 pr-3 text-right ${r.perTradeResearch > 0 ? "text-call" : "text-put"}`}>{one(r.perTradeResearch)}</td>
-                      <td className="py-1 pr-3 text-right text-neutral-400">{one(r.winPctResearch)}</td>
+                      <td className="py-1 pr-3 text-right text-neutral-300">{p.trades}</td>
+                      <td className={`py-1 pr-3 text-right ${p.perTrade > 0 ? "text-call" : "text-put"}`}>{one(p.perTrade)}</td>
+                      <td className="py-1 pr-3 text-right text-neutral-400">{one(p.winPct)}</td>
+                      <td className="py-1 pr-3 text-right text-neutral-400">{two(p.profitFactor)}</td>
+                      <td className="py-1 pr-3 text-right text-neutral-400">{two(p.sharpe)}</td>
+                      <td className={`py-1 pr-3 text-right ${p.residSharpe > 0 ? "text-call" : "text-put"}`}>{two(p.residSharpe)}</td>
+                      <td className={`py-1 pr-3 text-right ${Number.isFinite(p.betaPnlShare) && p.betaPnlShare > 0.5 ? "text-put" : "text-neutral-400"}`}>
+                        {pct(p.betaPnlShare)}
+                      </td>
+                      <td className={`py-1 pr-3 text-right ${Number.isFinite(p.concentration) && p.concentration > 0.6 ? "text-put" : "text-neutral-400"}`}>
+                        {pct(p.concentration)}
+                      </td>
+                      <td className="py-1 pr-3 text-right text-neutral-500">{money(p.maxDrawdown)}</td>
                     </tr>
                   );
                 })}
@@ -519,6 +590,7 @@ export function TunerConsole() {
                   <th className="py-1.5 pr-3 text-right font-normal">lok trades</th>
                   <th className="py-1.5 pr-3 text-right font-normal">lok $/tr</th>
                   <th className="py-1.5 pr-3 text-right font-normal">lok net</th>
+                  <th className="py-1.5 pr-3 text-right font-normal">lok resid</th>
                   <th className="py-1.5 pr-3 text-right font-normal">control</th>
                   <th className="py-1.5 pr-3 text-right font-normal">p</th>
                   <th className="py-1.5 pr-3 font-normal">shape</th>
@@ -531,10 +603,11 @@ export function TunerConsole() {
                     <td className="py-1 pr-3 text-right text-neutral-400">
                       {r.row.stop}×/{r.row.target}R
                     </td>
-                    <td className="py-1 pr-3 text-right text-neutral-400">{one(r.row.perTradeResearch)}</td>
-                    <td className="py-1 pr-3 text-right text-neutral-400">{r.locked.n}</td>
+                    <td className="py-1 pr-3 text-right text-neutral-400">{one(r.row.research.perTrade)}</td>
+                    <td className="py-1 pr-3 text-right text-neutral-400">{r.locked.trades}</td>
                     <td className={`py-1 pr-3 text-right ${r.locked.perTrade > 0 ? "text-call" : "text-put"}`}>{one(r.locked.perTrade)}</td>
                     <td className="py-1 pr-3 text-right text-neutral-400">{money(r.locked.netUsd)}</td>
+                    <td className={`py-1 pr-3 text-right ${r.locked.residSharpe > 0 ? "text-call" : "text-put"}`}>{two(r.locked.residSharpe)}</td>
                     <td className="py-1 pr-3 text-right text-neutral-500">{one(r.control.meanLocked)}</td>
                     <td className={`py-1 pr-3 text-right ${r.control.pLocked < 0.05 ? "text-call" : "text-neutral-400"}`}>{r.control.pLocked.toFixed(3)}</td>
                     <td className={`py-1 pr-3 ${r.shape === "decays" ? "text-neutral-500" : "text-put"}`}>
@@ -548,7 +621,8 @@ export function TunerConsole() {
           <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
             The shape to want is a research number that <span className="text-neutral-300">decays</span>. A configuration that is better on the holdout than on
             research is the wrong shape — the holdout is where an edge decays, not where it appears — and has twice been a defect in this project rather than a
-            result.
+            result. Read <span className="text-neutral-300">lok resid</span> next to <span className="text-neutral-300">lok $/tr</span>: a holdout that made
+            money with no residual made it by being in the market.
           </p>
         </Panel>
       ) : null}
@@ -574,7 +648,11 @@ export function TunerConsole() {
       {busy ? (
         <p aria-live="polite" className="text-[11px] text-neutral-500">
           {busy}
-          {progress ? ` ${Math.round((100 * progress.done) / Math.max(progress.total, 1))}%` : "…"}
+          {progress
+            ? progress.phase === "tensor"
+              ? ` — building exit tensor, geometry ${progress.done} of ${progress.total}`
+              : ` ${Math.round((100 * progress.done) / Math.max(progress.total, 1))}%`
+            : "…"}
         </p>
       ) : null}
     </div>

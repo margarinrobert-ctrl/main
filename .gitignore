@@ -46,3 +46,7 @@ research/**/__pycache__/
 catboost_info/
 research/trend_search_results.parquet
 research/portfolio_daily.parquet
+
+# Research parquet caches (see data/README.md)
+/data/*.parquet
+/data/*.npz

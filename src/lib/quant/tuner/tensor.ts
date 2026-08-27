@@ -26,6 +26,7 @@
 import { clockFor, inWindow, type Clock } from "../clock";
 import { commissionPoints, pointsToUsd, roundTurnCostPoints, snap, takerSideCostPoints } from "../instruments";
 import type { Bar, ExitReason, Instrument } from "../types";
+import type { BlockAccumulator } from "./performance";
 
 export const REASON = { stop: 1, target: 2, time: 3, session: 4, none: 0 } as const;
 export type ReasonCode = (typeof REASON)[keyof typeof REASON];
@@ -54,6 +55,34 @@ export interface TensorSpec {
   window: [number, number];
   /** Bars a hypothetical entry may be signalled on. Outside this, no exit is computed at all. */
   eligible?: Uint8Array;
+}
+
+/**
+ * A yield point. `phase` says which units `done`/`total` are counted in — geometries while the
+ * tensor is being built, configurations once the grid is running — because reporting them in one
+ * number would mean reporting a percentage that goes backwards.
+ */
+export interface Progress {
+  phase: "tensor" | "grid";
+  done: number;
+  total: number;
+}
+
+/** Bytes one (geometry, bar) cell of the tensor costs: Int32 exit bar + Uint8 reason + Float64 gross. */
+export const TENSOR_BYTES_PER_CELL = 4 + 1 + 8;
+
+/**
+ * How many geometries fit in a byte budget for a series of `n` bars — at least one, always.
+ *
+ * The tensor is the tuner's whole speed story and also the only thing in it big enough to kill a
+ * tab: 13 bytes x bars x geometries, so 300,000 bars against a 500-cell grid is 1.9 GB and the
+ * worker dies with no error a user can act on. Callers batch the geometry axis through this
+ * instead, which costs nothing — the axis is a loop either way — and turns an out-of-memory crash
+ * into a slightly longer run.
+ */
+export function geometriesPerBatch(n: number, budgetBytes: number): number {
+  const per = Math.max(n, 1) * TENSOR_BYTES_PER_CELL;
+  return Math.max(1, Math.floor(budgetBytes / per));
 }
 
 export interface ExitTensor {
@@ -88,7 +117,17 @@ function fillable(clock: Clock, i: number, n: number, session: [number, number])
   return clock.dayIndex[i + 1] === clock.dayIndex[i];
 }
 
-export function buildTensor(spec: TensorSpec): ExitTensor {
+/**
+ * Build the tensor one geometry at a time, yielding between them.
+ *
+ * The yield points are not cosmetic. This is the longest single blocking operation in the tuner —
+ * a 100-geometry batch over 300,000 bars is tens of seconds — and a worker that cannot reach its
+ * message queue for tens of seconds is, from the user's side, a frozen page. One geometry is a few
+ * hundred milliseconds at worst, which is the granularity a cancel needs to land at.
+ *
+ * `buildTensor` drives this to completion for callers that do not care.
+ */
+export function* buildTensorIter(spec: TensorSpec): Generator<Progress, ExitTensor, void> {
   const { bars, inst, side, geoms, atr, window } = spec;
   const n = bars.length;
   const g = geoms.length;
@@ -159,6 +198,7 @@ export function buildTensor(spec: TensorSpec): ExitTensor {
         }
       }
     }
+    yield { phase: "tensor", done: gi + 1, total: g };
   }
 
   return {
@@ -174,6 +214,14 @@ export function buildTensor(spec: TensorSpec): ExitTensor {
     eligible,
     bytes: exitBar.byteLength + reason.byteLength + gross.byteLength,
   };
+}
+
+export function buildTensor(spec: TensorSpec): ExitTensor {
+  const it = buildTensorIter(spec);
+  for (;;) {
+    const step = it.next();
+    if (step.done) return step.value;
+  }
 }
 
 // ------------------------------------------------------------------ costs, applied at read time
@@ -239,9 +287,17 @@ export function walk(
   gi: number,
   triggers: Int32Array,
   costs: CostModel,
-  lockedFromSession: number,
-  sessionOfBar: ArrayLike<number>,
+  /** First session ORDINAL of the locked block — dense 0-based, not a raw session id. */
+  lockedFrom: number,
+  /** Dense session ordinal of each bar. */
+  ordinalOfBar: ArrayLike<number>,
   collect?: WalkTrade[],
+  /**
+   * Optional per-block statistics. Passing this is what turns the walk from "count the trades"
+   * into a full performance report, and it costs one branch per trade — see `performance.ts` for
+   * why every statistic there is expressible as a running sum.
+   */
+  perf?: { research: BlockAccumulator; locked: BlockAccumulator },
 ): WalkStats {
   const base = gi * t.n;
   const s: WalkStats = { ...EMPTY, byReason: [0, 0, 0, 0] };
@@ -268,14 +324,17 @@ export function walk(
     eq += pnl;
     if (eq > peak) peak = eq;
     if (peak - eq > s.maxDrawdown) s.maxDrawdown = peak - eq;
-    if (sessionOfBar[i] < lockedFromSession) {
+    const ordinal = ordinalOfBar[i];
+    if (ordinal < lockedFrom) {
       s.nResearch++;
       s.netResearch += pnl;
       if (pnl > 0) s.winsResearch++;
+      perf?.research.add(pnl, ordinal, why, x - (i + 1));
     } else {
       s.nLocked++;
       s.netLocked += pnl;
       if (pnl > 0) s.winsLocked++;
+      perf?.locked.add(pnl, ordinal, why, x - (i + 1));
     }
     if (collect) collect.push({ signalBar: i, entryBar: i + 1, exitBar: x, reason: REASON_NAME[why], pnl });
   }
@@ -357,8 +416,8 @@ export function matchedControl(
   gi: number,
   triggers: Int32Array,
   costs: CostModel,
-  lockedFromSession: number,
-  sessionOfBar: ArrayLike<number>,
+  lockedFrom: number,
+  ordinalOfBar: ArrayLike<number>,
   actual: { all: number; research: number; locked: number },
   draws = 2000,
   seed = 7,
@@ -380,7 +439,7 @@ export function matchedControl(
       pick[m++] = mi.idx[a + Math.floor(rand() * (b - a))];
     }
     const sample = pick.slice(0, m).sort();
-    const st = walk(t, gi, sample, costs, lockedFromSession, sessionOfBar);
+    const st = walk(t, gi, sample, costs, lockedFrom, ordinalOfBar);
     perAll[d] = st.n ? st.netUsd / st.n : 0;
     perRes[d] = st.nResearch ? st.netResearch / st.nResearch : 0;
     perLok[d] = st.nLocked ? st.netLocked / st.nLocked : 0;

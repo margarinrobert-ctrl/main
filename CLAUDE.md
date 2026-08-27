@@ -73,6 +73,66 @@ should look better there; the holdout is where an edge decays, not where it appe
 now: a feature family (ranked over both blocks by mistake) and the whole daily-trend pullback
 family. Treat it as a defect, not a result.
 
+**A matched-control p-value computed on a SELECTED winner is not a p-value.** The control is still
+the right instrument -- it is what makes an individual configuration interpretable -- but the
+objective and the excess are correlated, so the maximum of a large grid is extreme in both. Proof:
+run the identical pipeline on the SHORT MIRROR. On US30 60m the short winner beat its own control
+by $122.17/trade at p 0.008, against the long winner's $69.10 at p 0.002 -- the side the sample was
+*against* scored the larger excess. Both then lost money on the holdout. Compute the control
+BEFORE selection, over the space: `share of a uniform grid sample that beats its own control` is a
+number nothing was selected to produce. See `docs/ib/STUDY_TURTLE_SCALP.md`.
+
+**Score the SPACE, not its maximum.** Reading only the best cell of each run said the Turtle
+breakout carried information on US30, gold and BTC alike and only the cost line differed. Over a
+uniform 500-cell grid sample the share beating its own control is 60-87% on US30 and 7.6-33% on
+gold and BTC, where the median excess is NEGATIVE. Taking the max of 645,120 draws from a
+distribution centred below zero lands above zero, and reporting that is how a negative result gets
+written up as "the signal is there, the costs are too high".
+
+**The short-mirror gate test predicted the holdout; PBO and walk-forward did not.** Four US30
+timeframes, ranked by locked Sharpe: 15m +0.22, 5m -0.05, 60m -0.27, 30m -0.63. The mirror test --
+*does the identical pipeline produce a candidate at all from the short side?* -- got that order
+exactly right (0 of 8,000 cells clear on the short side at 15m and 5m; 8,000 of 8,000 at 60m and
+30m). PBO and walk-forward chose 60m and 15m, and 60m was the second-worst holdout result. Both are
+computed INSIDE the research block, so both answer "does selection work on this sample" -- and on a
+sample where the family is a directionless breakout effect, selection works fine and forecasts
+nothing.
+
+**A Sharpe computed on raw dollars cannot tell an edge from leverage.** The shipped 15m Turtle
+scalp reads holdout Sharpe 0.222 and PF 1.04. Regress its session P&L on the market's own
+07:00-11:00 move and **87% of the profit is beta**: strip it and the Sharpe is 0.032, the $16,789
+becomes $2,147 of alpha. The matched control differences out only part of this, because a control
+drawn at random has a different holding profile from a breakout's -- its excess reads +$28/trade
+where the regression says +$2.39. Report `resid_sharpe` and `beta_pnl_share` next to every Sharpe,
+and RANK on the residual. See `docs/ib/STUDY_TURTLE_SCALP.md` §7.
+
+**Apply the sub-period gate to the RESEARCH block, not only to the holdout.** Gate 9 (no single
+period > 60% of P&L) caught nothing on the 15m scalp because it is specified out-of-sample. On
+research, 20% of the sessions (2020-10 -> 2022-06) carried 76% of the profit and the other 80% had
+a residual Sharpe of 0.008. That candidate should never have been selected, and the gate that would
+have said so was pointed at the wrong block.
+
+**Optimising for market-neutrality works only on the block it is optimised on.** Ranking 901,120
+cells on residual Sharpe found configurations with beta 0.166 instead of 0.490 and 30% beta-share
+instead of 96% -- the lever is a hold cap, since beta is time-in-market x size. On an untouched
+validation block they lose money, and the correlation between selection-block and validation-block
+residual Sharpe *within the gate survivors* is **-0.057**. The survivors also do WORSE than
+unselected cells (39% vs 46% positive). The +0.775 correlation in the unselected sample is the
+broad quality axis; condition on being good and none of it is left.
+
+**The limit entry substitutes for a breakout signal too.** `limit_k` from 0 to 1.0 ATR takes the
+median per-trade result from +$1.18 to -$12.92 across four geometries, while cutting beta 0.363 ->
+0.137 (a limit that never fills is a trade never taken). The mechanic's documented behaviour on
+the nine validated NQ strategies replicates on a family it was never measured on: it is a better
+FILL on a trade you were making anyway, never a reason to make one.
+
+**The Turtle confined to 07:00-11:00 New York is exhausted. Do not re-run it.** 14,261,040
+configurations over US30, XAU and BTC at 5/15/30/60m, both sides. Five of six candidates lost money
+out of sample; the survivor is US30 15m at holdout Sharpe 0.22, PF 1.04, 6/10 gates, drawdown 2.4x
+its total gain. The Turtle's mechanism is the multi-day hold -- the same presets score 0.47-0.78
+unconstrained and 0.05-0.30 inside the window. What would move it: more index instruments (NQ, ES,
+DAX), not more parameters. See `docs/ib/STUDY_TURTLE_SCALP.md`.
+
 **The daily trend can dictate DIRECTION so the optimiser never picks it.** Worth keeping as a
 protocol even though the pullback family failed: `research/daily_trend.py` keys the daily state on
 a known-at timestamp so an intraday bar sees the last RTH close and nothing after. Note 81% of bars
@@ -153,6 +213,20 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/limit_entry.py` | limit-order entries, bar-level and true 1-minute, with pessimism knobs |
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
+| `research/turtle_data.py` | ingest + instrument/timezone identification for the uploaded US30/XAU/BTC files |
+| `research/turtle_bars.py` | their bars, NY-anchored resampling, the 65/35 session split |
+| `research/turtle_sim.py` | the Turtle engine, Pine execution semantics reproduced exactly |
+| `research/turtle_test.py` | its verification: literal Pine transcription, null, truncation, window, tensor |
+| `research/turtle_tensor.py` | cached per-bar exits + the clock- and volatility-matched controls |
+| `research/turtle_search.py`, `turtle_run_sweep.py` | the 645,120-cell-per-run sweep |
+| `research/turtle_select.py` | cross-instrument coherence on the union of proposals |
+| `research/turtle_refine.py` | session/gate refinement, and the marginal-supported adoption rule |
+| `research/turtle_validate.py` | DSR, PBO/CSCV, walk-forward, bootstrap, re-simulated neighbourhoods |
+| `research/turtle_final.py` | the protocol's ten gates, cost sensitivity, Monte Carlo |
+| `research/turtle_ship.py`, `turtle_reveal.py` | pick + refine, then the single locked read |
+| `research/turtle_pine.py`, `turtle_emit.py` | the Pine emitter and its round-trip verifier |
+| `research/turtle_neutral.py` | market-neutralised scoring (beta, residual Sharpe) + the nested split |
+| `research/turtle_nsearch.py`, `turtle_nvalidate.py` | the residual-Sharpe sweep and its research-B validation |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
