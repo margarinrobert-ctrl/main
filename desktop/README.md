@@ -59,6 +59,7 @@ SVG, no external assets and no network requests.
 - [Finding strategies automatically](#finding-strategies-automatically)
 - [Importing a strategy you already have](#importing-a-strategy-you-already-have)
 - [The research loop](#the-research-loop)
+- [The research dashboard](#the-research-dashboard)
 - [Which indicators actually predict anything](#which-indicators-actually-predict-anything)
 - [Finding anomalies](#finding-anomalies)
 - [Optimisation](#optimisation)
@@ -656,6 +657,37 @@ combinations and reports that nothing survived. That is the expected outcome.
 `--save` keeps the run under `research/` in the workspace, as plain JSON — one
 file per run, readable without this application, because a research record that
 needs its own software to open is a research record that will not be read.
+
+---
+
+## The research dashboard
+
+**Backtest → Research Dashboard…**, `Ctrl+Shift+R`. Every research run this
+workspace has kept, the experiments inside each one, and what survived them.
+Runs can be started from here too.
+
+Three panes in the order the questions arrive: which run, which experiment,
+which candidate.
+
+A dashboard makes things look authoritative — rows read as facts whether or not
+they are, and a big number in a large font reads as a conclusion. Three choices
+push against that, and each has a test:
+
+- **The first column of the candidate table is the robustness grade, not the
+  profit.** What a rule made is three columns to the right of how much of it
+  held up.
+- **Experiments that found nothing are listed beside the ones that did.** They
+  are what tell you the ground has been covered, and a dashboard that hides
+  them is a dashboard that will re-search the same ground next week.
+- **A disqualified candidate shows its blockers where its score would be**, and
+  no score at all. A number printed beside a disqualifying reason is a number
+  someone will quote without the reason.
+
+Selecting a candidate gives its whole research report: every robustness
+dimension with the sentence that justifies it, the engine's own backtest with
+research and locked as two columns, any disagreement between the search's fast
+path and the engine, and the caveats. There is no view here that shows a return
+without showing what it survived.
 
 ---
 

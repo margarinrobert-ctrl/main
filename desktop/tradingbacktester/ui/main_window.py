@@ -148,6 +148,9 @@ class MainWindow(QMainWindow):
         act("export_strategy", "Export Strategy…", "export", "",
             "Save the current strategy to a JSON file", self.on_export_strategy)
 
+        act("dashboard", "Research Dashboard…", "compare", "Ctrl+Shift+R",
+            "Every research run this workspace has kept, and what survived",
+            self.on_dashboard)
         act("find", "Find Strategies…", "search", "Ctrl+F",
             "Search this data for entry rules that beat a matched random "
             "control", self.on_find_strategies)
@@ -309,6 +312,7 @@ class MainWindow(QMainWindow):
 
         m = bar.addMenu("&Backtest")
         m.addAction(self.act_find)
+        m.addAction(self.act_dashboard)
         m.addSeparator()
         m.addAction(self.act_run)
         m.addAction(self.act_cancel)
@@ -1411,6 +1415,19 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Finding strategies
     # ------------------------------------------------------------------
+
+    def on_dashboard(self) -> None:
+        """Past research runs, the experiments in them, and what survived."""
+        from ..storage.research_store import ResearchStore
+        from .dialogs.dashboard_dialog import DashboardDialog
+
+        try:
+            store = ResearchStore(self.workspace)
+        except BacktesterError as exc:
+            show_error(self, exc)
+            return
+        DashboardDialog(store, self.datasets, self.instruments,
+                        self._view_bars, self).exec()
 
     def on_paste_strategy(self) -> None:
         """Paste a strategy in any supported format and see what came across."""
