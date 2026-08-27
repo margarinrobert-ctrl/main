@@ -22,7 +22,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QFrame, QHBoxLayout,
 from ...analytics.comparison import compare_results
 from ...logging_setup import get_logger
 from ..theme import PALETTE, Fonts, duration, money, number, pct
-from .chart_items import PriceAxisItem, TimeAxisItem
+from .chart_items import (PriceAxisItem, TimeAxisItem,
+                          clip_to_view as _clip_to_view)
 
 log = get_logger(__name__)
 
@@ -228,11 +229,19 @@ class ComparisonView(QWidget):
                 continue
             colour = PALETTE.series_color(index)
             x = np.arange(values.size, dtype="float64")
-            self.eq_plot.plot(x, values, pen=pg.mkPen(colour, width=1.7),
-                              connect="finite", antialias=True)
-            self.dd_plot.plot(x, self._drawdown_of(values),
-                              pen=pg.mkPen(colour, width=1.2),
-                              connect="finite", antialias=True)
+            # These plots auto-range, so every point of every curve is always
+            # on screen at once -- and an equity curve carries one point per
+            # bar, so comparing a few runs over a large dataset is millions of
+            # points.  Peak downsampling draws the same shape for the cost of
+            # the widget's width.  (clipToView correctly does nothing while
+            # auto-range is on; it earns its keep if the user zooms in.)
+            _clip_to_view(
+                self.eq_plot.plot(x, values, pen=pg.mkPen(colour, width=1.7),
+                                  connect="finite", antialias=True))
+            _clip_to_view(
+                self.dd_plot.plot(x, self._drawdown_of(values),
+                                  pen=pg.mkPen(colour, width=1.2),
+                                  connect="finite", antialias=True))
             self._add_legend_entry(colour, curve.label, values)
 
         self.legend_layout.addStretch(1)

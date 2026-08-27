@@ -579,3 +579,43 @@ def test_choosing_a_strategy_keeps_the_view_where_it_was(tmp_path, qapp):
         f"choosing a strategy changed the view from {before[1] - before[0]:.0f} "
         f"bars to {after[1] - after[0]:.0f}")
     assert after[0] == pytest.approx(before[0], abs=2.0)
+
+
+# ---------------------------------------------------------------------------
+# comparing runs
+# ---------------------------------------------------------------------------
+
+#: Drawing three equity curves over a 500,000-bar dataset.  Measured: 0.96s
+#: downsampled against 12.68s not, so this sits between them.
+COMPARE_BUDGET_SECONDS = 4.0
+
+
+def test_comparing_runs_over_a_large_dataset_is_not_a_freeze(qapp):
+    """The comparison plots auto-range, so every point of every curve is on
+    screen at once -- and an equity curve carries one point per bar.  Clipping
+    to the view cannot help when the view is everything; downsampling can."""
+    import types
+
+    from tradingbacktester.ui.widgets.comparison_view import ComparisonView
+
+    n = BIG
+    rng = np.random.default_rng(21)
+    ts = (np.arange(n, dtype="int64") * 300 + 1_500_000_000) * 1_000_000_000
+    curves = [types.SimpleNamespace(
+        label=f"run {i}", ts=ts,
+        values=100_000.0 + np.cumsum(rng.normal(0.4, 30.0, n)))
+        for i in range(3)]
+
+    view = ComparisonView()
+    view.resize(1000, 700)
+    view._results = [types.SimpleNamespace(bars=None)]
+    view.show()
+    started = time.monotonic()
+    view._draw_curves(types.SimpleNamespace(equity_curves=curves))
+    qapp.processEvents()
+    elapsed = time.monotonic() - started
+    view.close()
+    qapp.processEvents()
+    assert elapsed < COMPARE_BUDGET_SECONDS, (
+        f"drawing three {n:,}-point equity curves took {elapsed:.1f}s; "
+        f"undownsampled it took 6.1s to build and 6.6s more to paint")
