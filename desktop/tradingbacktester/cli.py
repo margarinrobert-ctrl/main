@@ -457,6 +457,63 @@ def _default_ranges(spec, ceiling: int = 200, unit: str = " per fold"):
     return ranges
 
 
+def cmd_continuous(args: argparse.Namespace) -> int:
+    from .data.continuous import (Adjustment, Contract, RollRule,
+                                  build_continuous, describe)
+
+    contracts = []
+    for entry in args.contract:
+        label, _, source = str(entry).partition("=")
+        label, source = label.strip(), source.strip()
+        if not label or not source:
+            raise BacktesterError(
+                f"Could not read the contract '{entry}'. Write it as "
+                f"LABEL=dataset, for example ESH24='ES Mar 24'.")
+        holder = argparse.Namespace(**vars(args))
+        holder.data = source
+        holder.mirror = False       # reflecting one leg of a splice is nonsense
+        bars, name = _load_bars(holder)
+        contracts.append(Contract(label, bars))
+        print(f"  {label}: {name} — {len(bars):,} bars, "
+              f"{bars.timeframe.label}", file=sys.stderr)
+
+    series = build_continuous(
+        contracts, adjustment=Adjustment(args.adjust),
+        rule=RollRule(args.roll), days_before_end=args.roll_days)
+
+    if args.json:
+        print(json.dumps(series.to_dict(), indent=2))
+        return 0
+
+    currency = getattr(series.bars.instrument, "currency", "USD")
+    print()
+    print(f"{'from':<10} {'to':<10} {'at':<20} {'gap':>12} {'ratio':>10}")
+    import pandas as pd
+
+    for roll in series.rolls:
+        stamp = str(pd.Timestamp(roll.at_ts, tz="UTC"))[:19]
+        print(f"{roll.from_label:<10} {roll.to_label:<10} {stamp:<20} "
+              f"{roll.gap:>12,.2f} {roll.ratio:>10.6f}")
+        for line in row("           ", roll.rule):
+            print(line)
+    print()
+    for line in row("", describe(series, currency)):
+        print(line)
+    for note in series.notes:
+        print()
+        for line in row("", note):
+            print(line)
+
+    if args.save:
+        repository = _repository(args)
+        meta = repository.add_from_bars(
+            series.bars, name=args.save,
+            notes=describe(series, currency))
+        print()
+        print(f"Saved as '{meta.name}' in the workspace.")
+    return 0
+
+
 def cmd_optimise(args: argparse.Namespace) -> int:
     from .optimize.holdout import format_holdout, optimise_with_holdout
 
@@ -718,6 +775,7 @@ def cmd_strategies(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     # Imported here rather than at module scope: the help text quotes these
     # defaults, and `cli --help` should not pay for loading the optimiser.
+    from .data.continuous import Adjustment, DEFAULT_ROLL_DAYS, RollRule
     from .optimize.holdout import DEFAULT_REVEAL, RESEARCH_FRACTION
 
     parser = argparse.ArgumentParser(
@@ -797,6 +855,42 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")
     p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser(
+        "continuous",
+        help="Splice several futures contracts into one continuous series",
+        description="A futures contract expires, so a long backtest needs "
+                    "several spliced into one series. Where the join is put "
+                    "and how the price gap across it is handled are modelling "
+                    "decisions that change every number downstream, so both "
+                    "are yours to make and the report states what each one "
+                    "costs you.")
+    p.add_argument("--contract", action="append", default=[], required=True,
+                   metavar="LABEL=DATASET",
+                   help="One delivery month, oldest first; repeat for each. "
+                        "The dataset is any name or path --data accepts.")
+    p.add_argument("--adjust", default=Adjustment.BACK_ADJUSTED.value,
+                   choices=[a.value for a in Adjustment],
+                   help="back_adjusted: shift older prices so returns across "
+                        "each join are the ones a rolled position earned. "
+                        "ratio: scale instead, keeping percentage returns and "
+                        "positive prices. unadjusted: splice raw, so every "
+                        "price is real and every join contains its roll gap.")
+    p.add_argument("--roll", default=RollRule.VOLUME.value,
+                   choices=[r.value for r in RollRule],
+                   help="volume: roll where the next contract out-trades this "
+                        "one. days_before_end: a fixed number of days early. "
+                        "last_bar: on the contract's final bar, which "
+                        "backtests the days nobody is trading it.")
+    p.add_argument("--roll-days", type=int, default=DEFAULT_ROLL_DAYS,
+                   dest="roll_days",
+                   help="Days for --roll days_before_end, and the fallback "
+                        "when a volume crossover never happens")
+    p.add_argument("--save", default="", metavar="NAME",
+                   help="Save the spliced series into the workspace")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_continuous)
 
     p = sub.add_parser(
         "optimize", aliases=["optimise"],
@@ -957,7 +1051,8 @@ def build_parser() -> argparse.ArgumentParser:
     # option. Track the objects, not the names.
     seen: set[int] = set()
     for name, subparser in sub.choices.items():
-        if name in ("mirror", "data", "import", "strategies", "convert"):
+        if name in ("mirror", "data", "import", "strategies", "convert",
+                    "continuous"):
             continue
         if id(subparser) in seen:
             continue

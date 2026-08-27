@@ -309,6 +309,34 @@ Every plain-text formatter is asserted against its own declared width in
   `format_holdout(result, bars)` renders it as two columns and the notes; the
   notes always state the grid size and that the split does not correct for it.
 
+### `tradingbacktester/data/continuous.py` — splicing futures contracts
+`build_continuous(contracts, *, adjustment, rule, days_before_end)
+-> ContinuousSeries`. Three decisions, all explicit and none guessed:
+
+- **When to roll** — `RollRule.VOLUME` (the next contract out-trades this one
+  for `VOLUME_CONFIRM_BARS` consecutive bars, so one busy print cannot roll it;
+  falls back to days-before-end and says so when the crossover never happens),
+  `DAYS_BEFORE_END`, `LAST_BAR`. The chosen bar is clamped into the two
+  contracts' overlap in whichever direction it fell outside it, and the `Roll`
+  records that it moved.
+- **How to join** — `Adjustment.BACK_ADJUSTED` (shift older prices by the roll
+  gap), `RATIO` (scale them), `UNADJUSTED` (splice raw).
+- **What that costs** — `describe(series)` states it in a sentence, and it is
+  different for each: back-adjusted prices are not tradeable levels and can go
+  negative (flagged when they do), ratio prices are not levels either,
+  unadjusted joins contain the roll gap as though it were a market move.
+
+The front contract always keeps its real prices; history is moved onto it. The
+result is strictly ascending with no duplicate bar at a join — the roll bar is
+supplied once, by the contract handing over — so the engine will run on it.
+Mixed bar sizes, mixed instruments, fewer than two contracts and contracts that
+never overlap are all errors rather than silent choices. `meta` and the series'
+`source` name the splice, so a saved continuous series is never mistaken for a
+raw one.
+
+Reachable from the terminal as `cli continuous --contract LABEL=DATASET ...`,
+with `--save` to put the result in the workspace carrying its caveat as notes.
+
 ### `tradingbacktester/reports/*`
 - `csv_export.py` — `export_trades_csv`, `export_equity_csv`, `export_metrics_csv`.
 - `html_report.py` — a single self-contained dark-themed HTML report with inline

@@ -347,6 +347,38 @@ holiday half-day is a complete daily bar with few bars in it; a Monday whose fil
 start at 09:00 is not. `meta` records both drops when they happen, and data covering no whole
 period at all is refused rather than turned into one partial bar.
 
+## Futures: what a continuous series is, and what it is not
+
+A futures contract expires, so a ten-year backtest of one future is really a backtest of forty
+contracts spliced together. The splice is a modelling decision, not a formatting step, and it
+changes every number downstream.
+
+**When the roll happens.** The front contract stops being the one people trade some days before
+it expires. Rolling on expiry itself backtests a market with almost no volume in it. The default
+rolls where the next contract out-trades the front one, confirmed over three consecutive bars so
+a single busy print cannot move it; a fixed number of days before the end is the fallback, and is
+also the option for data whose volume cannot be trusted.
+
+**What the join costs.** The old contract's last price and the new one's first price differ — for
+a stock index usually by the cost of carry, tens of points — and a raw splice puts a jump there
+that no trader ever paid. A breakout rule will trade that jump. Every adjustment is a lie of some
+kind, and the question is which one you can live with:
+
+| | returns across a join | prices | safe for |
+| --- | --- | --- | --- |
+| **Back-adjusted** (difference) | what a rolled position earned | only the front contract's are real; can go negative | P&L, point-based stops |
+| **Ratio** | proportionally right | only the front contract's are real; always positive | percentage stops, long histories |
+| **Unadjusted** | contain the roll gap as if it were a move | all real | reading levels off a chart |
+
+Nothing here is right for everything, so the series records which one made it and the report
+states the consequence in a sentence rather than leaving you to remember it. A back-adjusted
+history long enough to push the oldest prices below zero says so explicitly — that is arithmetic,
+not a market.
+
+The front contract always keeps its real prices; history is moved onto it, never the reverse.
+The roll bar is supplied once, by the contract handing over, so the spliced series has no
+duplicate timestamp at a join.
+
 ## How the out-of-sample split is cut, and why the locked block is read once
 
 The grid optimiser's **Out of Sample** tab (`optimize/holdout.py`) cuts the series in two:
