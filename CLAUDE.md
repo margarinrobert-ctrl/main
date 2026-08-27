@@ -263,6 +263,31 @@ Short-INVERTED (fade a flush in an uptrend) looked significant on three equity b
 elsewhere, bootstrap P(mean<=0) 0.099, and XAU PF 0.77 at p 1.000. Check WHICH FOLD carries a
 result before believing it.
 
+**Report the SHARE OF THE GRID that is profitable before reporting its top row.** A 1,290,240-cell
+grid on 07:00-11:00 US30+US100 came back 58% profitable on BOTH instruments long and 44% short, so
+the top of the ranking is the maximum of ~750,000 profitable draws. Row 1 showed PF 2.79/3.10 and
+0.3% OF THE TOP 1000 STAYED PROFITABLE ON 2026 (0.0% kept PF>1.2, median 2026 PF 0.52). The short
+side of the same grid held at 73.3%. Read what the TOP 1000 AGREE ON, never the best row. See
+`docs/ib/STUDY_V14_WINDOW_GRID.md`.
+
+**A cached exit tensor makes a million-cell grid cost one walk of the bars.** A trade's outcome
+depends only on its SIGNAL BAR and its GEOMETRY, not on which indicator fired -- so walk the price
+once per (bar, geometry) and every config becomes an array lookup plus a numba position-lock loop
+over the signal bars only: **5.16M cells in 16 seconds** (`research/v14/v14tensor.py`). Verify it
+before use: 16 geometries x 2 sides x 2 markets, exact trade counts and net within 1 point. The one
+discrepancy found was the exit channel indexed a bar staler than eem.run, worth 0.20 pts/trade --
+caught because the trade COUNT matched exactly while the net did not.
+
+**In 07:00-11:00 the SHORT side works and it is mostly the ENTRY MECHANIC.** Same geometry, same
+window, no indicator: a market order gives PF 0.77 on US30 train and a resting limit 0.75xATR(5)
+gives 1.44; on US30 2026 it is 1.05 vs 1.43. Indicators add on top consistently (1.43 -> 1.82 on
+US30 2026). Shorting a rally back UP into a resting limit is SELLING STRENGTH, which is why a short
+book works here when "shorts lose by existing" holds everywhere else. Top-1000 consensus: ADX>=22
+(80%), exit channel 25 (69%), limit entry (100%), stop 2.5N, TP 1.5-2R -- and MA mode OFF in 58%,
+so the moving average is the LEAST important of the four components. CAVEAT THAT MATTERS: only 15m
+bars exist for US30/US100, so this could NOT be settled on limit_entry.run_1m. A through-fill proxy
+at 0.20N leaves all four cells positive (1.20-1.67) but that is reassurance, not proof.
+
 **Tune with `research/tune.py`, not by editing a module.** A trade's outcome depends only on its
 signal bar and the geometry, so the price walk is cached per bar and every exit knob — stop,
 target, flatten time, max hold, entry mechanic, cost model — becomes an array index: 0.4 us per
