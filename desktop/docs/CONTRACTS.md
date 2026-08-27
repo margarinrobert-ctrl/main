@@ -443,11 +443,64 @@ cached; after that a candidate rule is a boolean mask and scoring it is a sum.
 - `report.format_report(report)` — plain text, multiplicity and disclaimer
   included on every path.
 
+### `finder/autosearch.py` — the exhaustive grid
+
+Every style × every bar size the data can build × every rule family × every
+geometry × both sides, in one run. The module exists for the correction, not
+for the fan-out.
+
+- `plan(bars, styles, timeframes) -> [(TradingStyle, timeframe)]` — only pairs
+  the data can actually build. Bars combine into longer ones and never the
+  reverse, so a pair that cannot be built is left out of the plan rather than
+  attempted and reported as an error.
+- `auto_search(bars, ...) -> AutoSearchReport` — runs the plan and pools
+  **every p-value from every sweep into ONE Benjamini–Hochberg correction**.
+  This is the invariant the module is for: correcting each of *k* sweeps for
+  its own size calls a result significant about *k* times more often than it
+  should, because the correction was applied to a *k*-th of the search that
+  actually happened. `tests/test_autosearch.py` asserts the pooled survivor
+  count is `<=` the sum of the per-sweep counts, so it cannot regress quietly.
+- A sweep that cannot run — a style the data is too short for, an unexpected
+  failure — is recorded on its `Sweep` with the reason and named in the notes.
+  It never loses the grid.
+- `_null_best(scored, seed) -> float` — what the best of *N* tries scores on
+  data with no edge. Each scored combination's excess is drawn from
+  `N(0, its own control's standard error)`, one draw per combination per
+  repetition, and the median of the maxima is the answer. **Deliberately
+  optimistic**: drawing the tries independently, when they in fact share bars,
+  geometries and rules, over-states how much ground a search of that size
+  covers, so the true best-of-N under the null is if anything smaller. A
+  result that fails to clear even this has certainly not cleared the search
+  that produced it. `AutoSearchReport.beats_its_own_null` is the comparison.
+- The yardstick and the correction are two different tests and may disagree.
+  When the best result clears the yardstick and the correction still rejects
+  everything, `_notes` says so and says which of the two is the stricter —
+  a reader must never be left to conclude that one of them is broken.
+- The grid is gated with `validate="quick"`; only what survives the pooled
+  correction is re-run with engine confirmation, concentration, Monte Carlo,
+  mirror and walk-forward. A survivor that does not come back in its sweep's
+  shortlist on that second pass is reported carrying the cheap gate's numbers
+  and labelled unverified.
+- `VALIDATION_CAP` bounds that second pass at the best 25 survivors, **and the
+  bound is stated in the report**. Data with a real effect in it passes most of
+  its own grid — a planted edge produced 1,441 survivors of 2,436 scored — and
+  a coverage limit the reader cannot see reads as "we checked everything".
+  Survivors are then ordered verified-first, then by excess: leading a table
+  with a row whose money columns say "not run" is how "not run" gets read as a
+  result.
+- `format_auto_search` distinguishes a blocked robustness score, a NaN one and
+  a real one, exactly as `report._robustness_lines` does. `nan/100` is not a
+  score, and a number printed beside a disqualifying reason is a number
+  someone will quote without the reason.
+- `format_auto_search(report)` — the cost of the search first, then the
+  yardstick, then the survivors. The disclaimer is on every path, including
+  when nothing was found.
+
 ## `tradingbacktester/cli.py`
 
-`data`, `import`, `find`, `run`, `strategies`. Reads and writes the same
-workspace as the GUI. `--json` for machine-readable output; `--workspace` to
-point elsewhere. Imports no Qt.
+`data`, `import`, `find`, `autosearch`, `optimize`, `continuous`, `run`,
+`strategies`. Reads and writes the same workspace as the GUI. `--json` for
+machine-readable output; `--workspace` to point elsewhere. Imports no Qt.
 
 
 ## `tradingbacktester/research/` — indicators and anomalies

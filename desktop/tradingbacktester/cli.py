@@ -324,6 +324,60 @@ def cmd_find(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_autosearch(args: argparse.Namespace) -> int:
+    from .finder import auto_search, format_auto_search, plan
+
+    bars, name = _resolve_bars(args)
+    stream = sys.stderr if args.json else sys.stdout
+    pairs = plan(bars,
+                 [s.strip() for s in str(args.style).split(",") if s.strip()],
+                 [t.strip() for t in str(args.timeframe).split(",") if t.strip()])
+    print(f"{name}: {len(bars):,} bars, {len(pairs)} searches planned",
+          file=stream)
+    for style_def, timeframe in pairs:
+        print(f"  {style_def.label} on {timeframe}", file=stream)
+    if args.plan:
+        return 0
+
+    report = auto_search(
+        bars,
+        styles=[s.strip() for s in str(args.style).split(",") if s.strip()],
+        timeframes=[t.strip() for t in str(args.timeframe).split(",")
+                    if t.strip()],
+        templates=tuple(t.strip() for t in str(args.template).split(",")
+                        if t.strip()),
+        sides=((1,) if args.side == "long" else (-1,) if args.side == "short"
+               else (1, -1)),
+        research_fraction=args.research, alpha=args.alpha,
+        control_draws=args.draws, validate=args.validate, top_n=args.top,
+        progress=_stderr_progress("searching"))
+    _clear_progress()
+
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print()
+        print(format_auto_search(
+            report, currency=getattr(bars.instrument, "currency", "USD"),
+            top=args.top))
+
+    if args.save and report.survivors:
+        from .strategy.storage import StrategyStore
+
+        store = StrategyStore(_workspace(args))
+        saved = 0
+        for finding in report.survivors:
+            if getattr(finding, "spec", None) is None:
+                continue
+            store.save(finding.spec)
+            saved += 1
+        print(f"Saved {saved} strategy file(s) into the workspace. They "
+              f"survived a correction over {report.scored:,} combinations, "
+              f"which makes them candidates for further testing, not "
+              f"recommendations.")
+    return 0
+
+
 def cmd_indicators(args: argparse.Namespace) -> int:
     from .research import format_study, study_features
     from .finder import style as get_style
@@ -913,6 +967,46 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", help="Machine-readable output")
     p.add_argument("--symbol", default="")
     p.set_defaults(func=cmd_find)
+
+    p = sub.add_parser(
+        "autosearch",
+        help="Search every style and bar size this data supports, at once",
+        description="Runs the whole grid -- every trading style, every bar "
+                    "size the data can build, every entry-rule family, every "
+                    "geometry, both sides -- and applies ONE multiplicity "
+                    "correction across all of it. Correcting each search for "
+                    "its own size would call a result significant several "
+                    "times more often than it should. The consequence is that "
+                    "searching harder makes every individual result harder to "
+                    "believe, which is the point.")
+    p.add_argument("--data", required=True)
+    p.add_argument("--style", default="",
+                   help="Comma-separated styles to include (default: all)")
+    p.add_argument("--timeframe", default="",
+                   help="Comma-separated bar sizes to include (default: every "
+                        "one the data can build)")
+    p.add_argument("--template", default="",
+                   help="Comma-separated entry-rule families (default: all)")
+    p.add_argument("--side", default="both", choices=("both", "long", "short"))
+    p.add_argument("--alpha", type=float, default=0.10,
+                   help="False-discovery rate for the pooled correction")
+    p.add_argument("--draws", type=int, default=500,
+                   help="Draws for the sampled control on the shortlist")
+    p.add_argument("--research", type=float, default=0.65)
+    p.add_argument("--validate", choices=("quick", "standard", "full"),
+                   default="standard",
+                   help="How hard to check whatever survives the correction. "
+                        "The grid itself is always gated cheaply; this is what "
+                        "the survivors then go through.")
+    p.add_argument("--top", type=int, default=8,
+                   help="How many survivors to detail")
+    p.add_argument("--plan", action="store_true",
+                   help="List the searches that would run, then stop")
+    p.add_argument("--save", action="store_true",
+                   help="Save the survivors as strategies in the workspace")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_autosearch)
 
     p = sub.add_parser("indicators",
                        help="Rank indicators by what they predict")

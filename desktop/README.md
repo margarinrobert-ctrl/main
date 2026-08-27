@@ -57,6 +57,7 @@ SVG, no external assets and no network requests.
 - [Running a backtest](#running-a-backtest)
 - [Reading the metrics](#reading-the-metrics)
 - [Finding strategies automatically](#finding-strategies-automatically)
+- [Searching everything at once](#searching-everything-at-once)
 - [Importing a strategy you already have](#importing-a-strategy-you-already-have)
 - [The research loop](#the-research-loop)
 - [The research dashboard](#the-research-dashboard)
@@ -72,6 +73,7 @@ SVG, no external assets and no network requests.
 - [Saving and exporting](#saving-and-exporting)
 - [Where your files live](#where-your-files-live)
 - [Large datasets](#large-datasets)
+- [How fast the search is, and why it is not faster](#how-fast-the-search-is-and-why-it-is-not-faster)
 - [How orders are simulated](#how-orders-are-simulated)
 - [Using it without the window](#using-it-without-the-window)
 - [Building from source](#building-from-source)
@@ -402,9 +404,9 @@ The full formula for every metric is in **Help → Metric Definitions**
 ## Finding strategies automatically
 
 **Backtest → Find Strategies…**, `Ctrl+F`, or the button on the toolbar. The
-window has three tabs — *Strategies*, *Indicators*, *Anomalies* — asking three
-questions of the same data with the same machinery underneath. This section is
-the first; the next two sections are the others.
+window has four tabs — *Strategies*, *Indicators*, *Anomalies*, *Everything* —
+asking four questions of the same data with the same machinery underneath. This
+section is the first; the sections after it are the others.
 
 Pick the data and the kind of trading you want. That is the whole form, and the
 style fixes the rest — bar size, stop and target geometry, session window, how
@@ -564,6 +566,111 @@ to recommend nothing.
 
 **Everything it produces is historical analysis, not a prediction.** The report
 says so in those words, on every path, including when nothing was found.
+
+---
+
+## Searching everything at once
+
+The *Everything* tab, or `autosearch` from the terminal. One search asks a
+single style on a single bar size; this asks **every style, every bar size the
+data can build, every entry-rule family, every geometry the style allows and
+both sides**, in one go. On the shipped US30 5-minute file that is seven
+searches and roughly nine thousand combinations in about thirty seconds.
+
+```bash
+python -m tradingbacktester.cli autosearch --data "US30 5m"
+python -m tradingbacktester.cli autosearch --data "US30 5m" --plan
+python -m tradingbacktester.cli autosearch --data "US30 5m" \
+    --style intraday,swing --validate full --save
+```
+
+`--plan` lists the searches that would run and stops, which is the cheap way to
+see what a file supports. Bars combine into longer ones and never the reverse,
+so five-minute data can be a scalp on 5m but never on 1m, and a pair the data
+cannot build is left out of the plan rather than attempted and reported as an
+error.
+
+The tab ignores the style buttons and the constraints card, and greys them out
+so it cannot be mistaken for honouring them. It searches them all; that is what
+it is for.
+
+### The correction is pooled, and that is the whole point
+
+A search of *N* combinations has *N* chances to be lucky. Run seven searches of
+1,500 each and correct each one for 1,500, and a result looks significant about
+**seven times more often than it should** — the correction was applied to a
+seventh of the search that actually happened. So every p-value from every sweep
+goes into **one** Benjamini–Hochberg correction over the whole grid.
+
+The direct consequence, stated because it surprises people: **searching harder
+makes every individual result harder to believe, not easier.** Ten thousand
+combinations means the best one has to clear a bar ten thousand combinations
+high. If that feels like the tool fighting you, the alternative is a tool that
+hands you the best of ten thousand coin flips and calls it a strategy.
+
+`tests/test_autosearch.py` asserts the pooled correction is strictly harder
+than correcting each sweep for its own size, so this cannot quietly regress.
+
+### The best-of-N yardstick
+
+Correction aside, there is a second question worth answering directly: **on
+data with no edge at all, how good would the best of N tries look?**
+
+That number is computable. Every scored combination reports an excess and a
+standard error from its own matched control; under the null its excess is
+centred on zero with that error, so one repetition of the whole search is one
+draw per combination and the best of them is the maximum. Repeat that two
+thousand times and the median is the answer — the excess a search this size
+typically produces on nothing at all.
+
+It is drawn rather than derived, because a closed form would assume the
+combinations are independent and they emphatically are not: they share bars,
+geometries and rules. Drawing them independently makes this an *optimistic*
+bar — correlated tries explore less ground, so the real best-of-N under the
+null is if anything smaller. A result that fails to clear even this has
+certainly not cleared the search that produced it.
+
+Both numbers are reported side by side, and the verdict says which way it went:
+
+```
+Best found: +389.55 USD per trade. Best a search of 7,890 tries produces on
+data with no edge: +392.42. The finding DOES NOT clear it.
+```
+
+That is a real run on the shipped US30 5-minute data — 9,360 combinations
+across seven searches, 7,890 scored, **nothing survived**. The best thing the
+grid found is indistinguishable from what a search that size produces on noise.
+Reported in those words rather than as a leaderboard entry at p = 0.012, which
+is what it also was.
+
+### What survives is then checked properly
+
+The grid itself is gated cheaply — pushing ten thousand combinations through
+the full engine to reject all but a handful would take hours. Whatever survives
+the pooled correction is then re-run with the real checks on: engine
+confirmation on both blocks, sub-period concentration, Monte Carlo, the mirror
+market and walk-forward. `--validate quick` skips that pass; `standard` is the
+default and `full` is the slowest.
+
+That pass covers the **best 25 survivors**, and the report says so. Data with a
+real effect in it passes most of its own grid — a synthetic series with a
+strong planted edge produces 1,441 survivors out of 2,436 scored combinations —
+and pushing every one of those through the engine, the mirror, Monte Carlo and
+walk-forward is hours of work for a list nobody reads past the top of. A limit
+on coverage that the reader cannot see reads as "we checked everything", so it
+is printed rather than applied quietly.
+
+Survivors are listed **verified first**, then by excess. If a survivor does not
+come back in its sweep's shortlist when that sweep is re-run with validation
+on, it is reported carrying the cheap gate's numbers and labelled unverified
+rather than quietly presented as confirmed.
+
+### It will usually find nothing, and more loudly than one search does
+
+A single search finding nothing is a small result. An exhaustive grid finding
+nothing means the ground has been covered: every style, every bar size, every
+family, both sides. The report says so in those words. That is a result, and on
+one instrument over one period it is the ordinary one.
 
 ---
 
@@ -1159,6 +1266,66 @@ thread.
 
 ---
 
+## How fast the search is, and why it is not faster
+
+A day-trading search over the shipped 581,195-bar US30 5-minute file — 1,170
+rule/geometry combinations — takes **about nine seconds**. It used to take
+about thirty-three.
+
+That came from profiling rather than guessing, and the profile said something
+different from what everyone assumes:
+
+| where the time went | share |
+|---|---|
+| `_recursive_smooth` — the Python loop behind EMA, RSI, ATR, ADX | **46%** |
+| `_score` — scoring candidate masks | 14% |
+| **`build_outcomes` — the simulation itself** | **13%** |
+| `confirm` — re-running the shortlist through the real engine | 8% |
+| everything else | 19% |
+
+The simulation was never the bottleneck. Three changes account for the whole
+difference:
+
+1. **The recursive smoother was vectorised.** A first-order IIR filter
+   `y[i] = α·x[i] + β·y[i-1]` looks inherently sequential, but over a block it
+   is a cumulative sum of `x[i]/βⁱ` scaled back by `βⁱ`. The block length is
+   chosen so `βⁿ` stays inside float64's range. That one function was being
+   entered 132 times per search over half a million bars.
+2. **Indicators are cached within a search.** The candidate generator was
+   computing 188 indicator arrays that were only 34 distinct things — a 5.5×
+   redundancy, because a dozen rules ask for EMA(20) and each asked for its
+   own.
+3. **The control's population summary is built once per geometry**, not once
+   per candidate. Summarising the pool means sorting and grouping half a
+   million values; doing it 991 times for an answer that never changed cost
+   1.3 seconds of a 15-second search.
+
+The test suite went from about 265 seconds to about 193 in the same change.
+
+### Why vectorbt is not used
+
+vectorbt is a fast vectorised backtester, and it would replace `build_outcomes`
+— the 13% row above. At *infinite* speed it would make the search about 1.15×
+faster, not 10×, because Amdahl's law does not care how good the library is.
+The three changes above were worth 3.6× precisely because they targeted the
+46%, the 14% and a redundancy the profile exposed.
+
+There is also a correctness reason. The fast path is asserted **equal to the
+real engine trade for trade**, at zero difference, across all four styles and
+three corners of each style's geometry grid — and widening that assertion from
+one style to four is what exposed four separate defects, including a bar that
+opened through the target being booked as a stop. Adding a third simulator with
+its own intrabar tie-break conventions would mean either re-deriving that
+equality against it or quietly having two answers to "what did this trade pay".
+It would also add numba and llvmlite — roughly 150MB and a well-known source of
+PyInstaller packaging failures — to a desktop application that currently ships
+as one self-contained executable.
+
+If the simulation ever does become the bottleneck, the profile will say so, and
+`tests/test_performance.py` is where that measurement lives.
+
+---
+
 ## How orders are simulated
 
 The short version; the full document is **Help → Backtesting Assumptions**
@@ -1202,6 +1369,11 @@ python -m tradingbacktester.cli data                    # what is available
 python -m tradingbacktester.cli import ~/data/5m.csv --symbol US30
 python -m tradingbacktester.cli find --data "US30 15m" --style intraday
 python -m tradingbacktester.cli find --data "US30 15m" --style swing --save
+python -m tradingbacktester.cli autosearch --data "US30 5m" --plan
+python -m tradingbacktester.cli autosearch --data "US30 5m" --validate full
+python -m tradingbacktester.cli optimize "EMA Cross + RSI" --data "US30 30m" \
+    --param ema_fast=8:20:4 --reveal 3
+python -m tradingbacktester.cli continuous ~/data/contracts --symbol NQ
 python -m tradingbacktester.cli indicators --data "US30 15m" --style intraday
 python -m tradingbacktester.cli anomalies --data "US30 15m"
 python -m tradingbacktester.cli run "EMA Cross + RSI" --data "US30 30m"
@@ -1217,8 +1389,9 @@ python -m tradingbacktester.cli report "MACD Trend" --data "US30 30m" \
 `report` writes the same self-contained HTML or PDF the window's File → Export
 menu produces; the suffix chooses the format and the PDF renders with no display
 attached. `--mirror` on any command that reads data reflects the series first. `--json`
-prints machine-readable output on `find`, `indicators`, `anomalies`,
-`run`, `optimize`, `walkforward`, `montecarlo` and `mirror`; everything else then goes to stderr so the output can
+prints machine-readable output on `find`, `autosearch`, `indicators`,
+`anomalies`, `run`, `optimize`, `continuous`, `walkforward`, `montecarlo` and
+`mirror`; everything else then goes to stderr so the output can
 be piped straight into a tool that expects one document. `--workspace` points at
 a different folder. Nothing here reaches the network.
 

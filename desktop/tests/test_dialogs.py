@@ -1029,9 +1029,10 @@ def test_finder_constraints_follow_the_selected_style(qapp, tmp_path, registry):
 
 
 def test_finder_dialog_runs_all_three_studies(qapp, tmp_path, registry):
-    """One dialog, three questions, and each of them fills its own tab."""
+    """One dialog, four questions, and each of them fills its own tab."""
     from tradingbacktester.config import Workspace
     from tradingbacktester.finder import find_strategies
+    from tradingbacktester.finder.autosearch import auto_search
     from tradingbacktester.research import scan, study_features
     from tradingbacktester.strategy.storage import StrategyStore
     from tradingbacktester.ui.dialogs.finder_dialog import (STUDIES,
@@ -1054,6 +1055,10 @@ def test_finder_dialog_runs_all_three_studies(qapp, tmp_path, registry):
         "strategies": lambda: find_strategies(bars, chosen, control_draws=50),
         "indicators": lambda: study_features(bars, chosen),
         "anomalies": lambda: scan(bars, chosen, control_draws=50),
+        # Narrowed to one style: the point here is that the tab fills, and the
+        # whole grid is exercised on its own in the tests further down.
+        "everything": lambda: auto_search(bars, styles=("swing",),
+                                          control_draws=20, validate="quick"),
     }
     for index, (key, _label, _question) in enumerate(STUDIES):
         dialog.tabs.setCurrentIndex(index)
@@ -1351,3 +1356,129 @@ def test_the_smoke_test_reports_whether_the_window_painted(qapp, tmp_path,
     crumbs = (tmp_path / "TradingBacktester" / "startup.log").read_text("utf-8")
     assert "window is visible at 1200x800" in crumbs
     assert "painted=False" in crumbs
+
+
+# --------------------------------------------------------------------------
+# Find Strategies: the exhaustive grid
+# --------------------------------------------------------------------------
+
+def test_finder_dialog_offers_the_exhaustive_grid(qapp, tmp_path, registry):
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import FinderDialog
+
+    workspace = Workspace(tmp_path).ensure()
+    dialog = FinderDialog(DatasetRepository(workspace), registry,
+                          StrategyStore(workspace))
+    labels = [dialog.tabs.tabText(i) for i in range(dialog.tabs.count())]
+    assert labels == ["Strategies", "Indicators", "Anomalies", "Everything"]
+    dialog.tabs.setCurrentIndex(labels.index("Everything"))
+    qapp.processEvents()
+    assert dialog._study == "everything"
+    dialog.close()
+
+
+def test_the_grid_greys_out_the_settings_it_does_not_read(qapp, tmp_path,
+                                                          registry):
+    """It searches every style and fixes every geometry itself.
+
+    Left live, a user could set a session, watch the grid ignore it, and
+    reasonably believe the search had honoured it.
+    """
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import FinderDialog
+
+    workspace = Workspace(tmp_path).ensure()
+    dialog = FinderDialog(DatasetRepository(workspace), registry,
+                          StrategyStore(workspace))
+    assert dialog._style_card.isEnabled()
+    assert dialog._constraints.isEnabled()
+
+    dialog.tabs.setCurrentIndex(3)
+    qapp.processEvents()
+    assert dialog._style_card.isEnabled() is False
+    assert dialog._constraints.isEnabled() is False
+    assert "everything" in dialog.search_button.text().lower()
+
+    dialog.tabs.setCurrentIndex(0)
+    qapp.processEvents()
+    assert dialog._style_card.isEnabled()
+    assert dialog._constraints.isEnabled()
+    assert "everything" not in dialog.search_button.text().lower()
+    dialog.close()
+
+
+@pytest.fixture(scope="module")
+def _grid_report():
+    """One real grid over a planted edge, shared by the tests below."""
+    from tradingbacktester.finder.autosearch import auto_search
+
+    from tests.test_finder import _planted
+
+    return auto_search(_planted(n=30_000, strength=9.0, seed=5),
+                       styles=("intraday",), control_draws=100,
+                       validate="quick")
+
+
+def test_the_grid_puts_its_survivors_and_its_yardstick_on_screen(
+        qapp, tmp_path, registry, _grid_report):
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import FinderDialog
+
+    workspace = Workspace(tmp_path).ensure()
+    dialog = FinderDialog(DatasetRepository(workspace), registry,
+                          StrategyStore(workspace))
+    dialog.tabs.setCurrentIndex(3)
+    dialog._running = "everything"
+    dialog._on_finished(_grid_report)
+    qapp.processEvents()
+
+    table = dialog._tables["everything"]
+    assert table.rowCount() == len(_grid_report.survivors)
+    status = dialog.status.text()
+    assert f"{_grid_report.combinations:,} combinations" in status
+    assert "no edge" in status, "the best-of-N yardstick is not on screen"
+
+    # The pane is wrapped to a fixed width, so match on phrases that cannot
+    # land across a line break rather than on whole sentences.
+    detail = " ".join(dialog._details["everything"].toPlainText().split())
+    assert "ONCE over all" in detail, "the pooled correction is not explained"
+    assert "not a prediction" in detail
+    dialog.close()
+
+
+def test_a_survivor_names_the_sweep_it_came_out_of(qapp, tmp_path, registry,
+                                                   _grid_report):
+    """On a grid, "what did you search" is most of the answer."""
+    from tradingbacktester.config import Workspace
+    from tradingbacktester.strategy.storage import StrategyStore
+    from tradingbacktester.ui.dialogs.finder_dialog import FinderDialog
+
+    if not _grid_report.survivors:
+        pytest.skip("nothing survived the grid, so there is no row to read")
+
+    workspace = Workspace(tmp_path).ensure()
+    store = StrategyStore(workspace)
+    dialog = FinderDialog(DatasetRepository(workspace), registry, store)
+    dialog.tabs.setCurrentIndex(3)
+    dialog._running = "everything"
+    dialog._on_finished(_grid_report)
+    qapp.processEvents()
+
+    table = dialog._tables["everything"]
+    assert table.item(0, 1).text() == "intraday"
+    assert table.item(0, 2).text() in {"5m", "15m", "30m", "1h"}
+
+    table.selectRow(0)
+    qapp.processEvents()
+    detail = dialog._details["everything"].toPlainText()
+    assert "found by the intraday search" in detail
+    assert f"{_grid_report.scored:,} scored combinations" in detail
+
+    if _grid_report.survivors[0].spec is not None:
+        assert dialog.save_button.isEnabled()
+        dialog._save_selected()
+        assert store.list(), "the saved strategy did not reach the workspace"
+    dialog.close()

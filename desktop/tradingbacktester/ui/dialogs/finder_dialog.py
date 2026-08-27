@@ -7,12 +7,16 @@ control, the multiplicity correction -- is decided by the protocol rather than
 by the user, because those are exactly the settings that, left adjustable,
 turn a search into a machine for finding coincidences.
 
-Three tabs, three questions, one set of machinery underneath:
+Four tabs, four questions, one set of machinery underneath:
 
 * **Strategies** -- is there an entry rule that beats entering at random?
 * **Indicators** -- which measurements predict what a trade will pay, and is
   the prediction worth more than the spread?
 * **Anomalies** -- which bars are unusual, and does anything follow them?
+* **Everything** -- the same strategy question asked of every style, every bar
+  size the data can build and every rule family at once, with ONE correction
+  over the whole grid. It ignores the style and the constraints above by
+  design: it is the search that tries them all.
 
 What they give back is deliberately not a leaderboard. Every row carries what
 it was measured against, what the locked block said, and a verdict in plain
@@ -33,6 +37,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox,
 
 from ...core.errors import BacktesterError, CancelledError
 from ...finder import find_strategies, format_report
+from ...finder.autosearch import auto_search, format_auto_search
 from ...finder.styles import STYLES
 from ...research import format_anomalies, format_study, scan, study_features
 from ...logging_setup import get_logger
@@ -55,6 +60,11 @@ _INDICATOR_COLUMNS = ("Indicator", "Family", "Says", "Predictive power",
 _ANOMALY_COLUMNS = ("Event", "Count", "Share", "Side", "Edge per trade", "p",
                     "Verdict")
 
+#: The exhaustive grid.  Which sweep a survivor came out of leads, because on a
+#: grid the answer to "what did you search" is most of the answer.
+_AUTO_COLUMNS = ("Rule", "Style", "Bars", "Robustness", "Trades (IS | OOS)",
+                 "Net (IS | OOS)", "Vs. random", "Verdict")
+
 #: The three questions, in the order the tabs show them.
 STUDIES = (
     ("strategies", "Strategies",
@@ -64,6 +74,11 @@ STUDIES = (
      "the spread?"),
     ("anomalies", "Anomalies",
      "Which bars are unusual, and does anything follow them?"),
+    ("everything", "Everything",
+     "Every style, every bar size, every rule family — corrected ONCE over the "
+     "whole grid. Ignores the style and the constraints above: it searches "
+     "them all. Searching harder makes each result harder to believe, not "
+     "easier, and that is what makes the answer worth having."),
 )
 
 
@@ -148,7 +163,8 @@ class FinderDialog(QDialog):
         self._bars = current_bars
         self._reports: dict[str, Any] = {"strategies": None,
                                          "indicators": None,
-                                         "anomalies": None}
+                                         "anomalies": None,
+                                         "everything": None}
         self._running: str = "strategies"
         self._worker: Any = None
 
@@ -204,9 +220,11 @@ class FinderDialog(QDialog):
         self.style_detail.setStyleSheet(f"color:{PALETTE.text_muted};")
         style_card.add(self.style_detail)
         top.addWidget(style_card, 1)
+        self._style_card = style_card
         outer.addLayout(top)
 
-        outer.addWidget(self._constraints_card())
+        self._constraints = self._constraints_card()
+        outer.addWidget(self._constraints)
 
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
@@ -215,7 +233,8 @@ class FinderDialog(QDialog):
         for key, label, question in STUDIES:
             columns = {"strategies": _COLUMNS,
                        "indicators": _INDICATOR_COLUMNS,
-                       "anomalies": _ANOMALY_COLUMNS}[key]
+                       "anomalies": _ANOMALY_COLUMNS,
+                       "everything": _AUTO_COLUMNS}[key]
             page = QWidget()
             layout = QVBoxLayout(page)
             layout.setContentsMargins(0, 8, 0, 0)
@@ -529,6 +548,14 @@ class FinderDialog(QDialog):
     def _on_tab_changed(self, *_args) -> None:
         self._on_row_selected()
         study = self._study
+        # The grid searches every style and fixes every geometry itself, so
+        # leaving these live would let a user set them and reasonably believe
+        # the search honoured them.
+        applies = study != "everything"
+        self._style_card.setEnabled(applies)
+        self._constraints.setEnabled(applies)
+        self.search_button.setText("  Search everything" if not applies
+                                   else "  Search")
         if self._reports.get(study) is None:
             index = max(0, min(self.tabs.currentIndex(), len(STUDIES) - 1))
             self.status.setText(
@@ -578,6 +605,8 @@ class FinderDialog(QDialog):
                 return study_features(bars, style, progress=forward)
             if study == "anomalies":
                 return scan(bars, style, progress=forward)
+            if study == "everything":
+                return auto_search(bars, progress=forward)
             return find_strategies(bars, style, progress=forward)
 
         # start(fn, *args, **kwargs) forwards everything after `fn` to the job.
@@ -620,6 +649,8 @@ class FinderDialog(QDialog):
             self._fill_indicators(report)
         elif study == "anomalies":
             self._fill_anomalies(report)
+        elif study == "everything":
+            self._fill_everything(report)
         else:
             self._fill_strategies(report)
 
@@ -659,6 +690,55 @@ class FinderDialog(QDialog):
                 f"survived. That is the usual outcome of an honest search — "
                 f"see below for what it would take to change it.")
             self.status.setStyleSheet(f"color:{PALETTE.warning};")
+
+    def _fill_everything(self, report: Any) -> None:
+        """The grid's survivors, with what the search itself cost stated first.
+
+        The status line leads with the best-of-N yardstick rather than with the
+        money, because on a grid of ten thousand tries the money is the thing
+        least worth reading first: a search that size produces a good-looking
+        best result on data with no edge at all, and the only way to know which
+        kind you are looking at is to compare the two.
+        """
+        import math
+
+        table = self._tables["everything"]
+        rows = list(report.survivors)
+        table.setRowCount(len(rows))
+        for row, finding in enumerate(rows):
+            cells = _strategy_cells(finding)
+            where = report.sweep_of(finding)
+            self._put(table, row, [
+                cells[0], where[0], where[1], cells[1], cells[3], cells[4],
+                cells[7], cells[8],
+            ], finding.verdict.startswith("worth"))
+        self._finish_table(table, "everything", format_auto_search(report))
+
+        cost = (f"{report.combinations:,} combinations across "
+                f"{len(report.sweeps)} searches in {report.elapsed:.0f}s; "
+                f"{report.scored:,} scored.")
+        if not rows:
+            self.status.setText(
+                f"{cost} Nothing survived the correction over the whole grid. "
+                f"That is the ordinary outcome of an honest exhaustive search "
+                f"on one instrument over one period, and it is a result.")
+            self.status.setStyleSheet(f"color:{PALETTE.warning};")
+            return
+
+        yardstick = ""
+        if report.best is not None and math.isfinite(report.null_best):
+            yardstick = (
+                f" The best excess found is "
+                f"{float(report.best.control.excess_per_trade):+,.2f}/trade "
+                f"against {report.null_best:+,.2f} for the best of a search "
+                f"this size on data with no edge — it "
+                + ("clears that bar." if report.beats_its_own_null
+                   else "does NOT clear that bar."))
+        self.status.setText(
+            f"{cost} {len(rows)} survived.{yardstick} Select a row to read the "
+            f"detail.")
+        self.status.setStyleSheet(
+            f"color:{PALETTE.success if report.beats_its_own_null else PALETTE.warning};")
 
     def _fill_indicators(self, study: Any) -> None:
         table = self._tables["indicators"]
@@ -723,14 +803,20 @@ class FinderDialog(QDialog):
         study = self._study
         finding = self._selected_finding()
         self.save_button.setEnabled(
-            study == "strategies" and finding is not None
+            study in ("strategies", "everything") and finding is not None
             and getattr(finding, "spec", None) is not None)
         if finding is None:
             return
-        if study == "strategies":
+        if study in ("strategies", "everything"):
             from ...finder.report import _finding_lines
 
             lines = [finding.label, ""]
+            if study == "everything":
+                report = self._reports["everything"]
+                where = report.sweep_of(finding)
+                lines[1:1] = [f"found by the {where[0]} search on "
+                              f"{where[1]} bars, one of "
+                              f"{report.scored:,} scored combinations", ""]
             lines.extend(_finding_lines(finding, "USD"))
         elif study == "indicators":
             report = self._reports["indicators"]
@@ -780,6 +866,8 @@ class FinderDialog(QDialog):
         index = rows[0].row()
         if study == "strategies":
             items = list(report.shortlist)
+        elif study == "everything":
+            items = list(report.survivors)
         elif study == "indicators":
             items = [f for f in report.findings if f.research.significant][:30]
         else:
