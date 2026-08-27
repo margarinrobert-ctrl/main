@@ -17,3 +17,6 @@ __all__ = [
     "format_study", "newey_west", "redundancy_groups", "scan",
     "study_features",
 ]
+
+from .loop import run_loop  # noqa: E402
+from .loop_report import format_loop  # noqa: E402

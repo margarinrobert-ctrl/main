@@ -58,6 +58,7 @@ SVG, no external assets and no network requests.
 - [Reading the metrics](#reading-the-metrics)
 - [Finding strategies automatically](#finding-strategies-automatically)
 - [Importing a strategy you already have](#importing-a-strategy-you-already-have)
+- [The research loop](#the-research-loop)
 - [Which indicators actually predict anything](#which-indicators-actually-predict-anything)
 - [Finding anomalies](#finding-anomalies)
 - [Optimisation](#optimisation)
@@ -593,6 +594,68 @@ across.
 One more caveat it raises on sight: Pine's `==` compares floating-point values
 exactly, and this engine compares them within a tolerance. On continuous series
 the two rarely agree, so any `==` in a rule is flagged.
+
+---
+
+## The research loop
+
+`cli research --data "US30 30m" --style intraday`. One command that runs the
+whole cycle:
+
+```
+research → hypothesis → generate → backtest → analyse →
+reject/improve → validate → walk-forward → rank → report
+```
+
+Each round asks a **proposer** what is worth testing next given everything
+learned so far, runs each hypothesis as a real search over its family, confirms
+survivors through the engine, validates and scores them, and records what
+happened — including the experiments that found nothing, and why.
+
+### The proposer proposes; the engine disposes
+
+This is the structural rule the module is built around, and it is the reason a
+language-model proposer can be plugged in safely.
+
+A proposer emits a `Hypothesis`: a family to try, a direction, a bar size, and
+a sentence saying why. **It has no field for a result.** No expected return, no
+Sharpe ratio, no win rate — and that is not an oversight. A proposer that could
+state a number could state a false one. Every figure that reaches a report
+comes from the engine by way of the confirmation stage, and every verdict comes
+from the robustness score. A model that hallucinates a Sharpe ratio hallucinates
+it into a field that does not exist. A test asserts that field stays absent.
+
+The default proposer is **systematic**: no network, no model, no API key. It
+tries each entry-rule family alone first, because a family that beats its
+matched control by itself is the only evidence worth building on; then it moves
+one variable at a time on whatever survived — the other direction, then a
+coarser bar size. Dull on purpose: every hypothesis it emits can be justified
+in one sentence from what came before.
+
+### Failures are the output too
+
+A hypothesis that fails is not discarded — it is the input to the next round.
+"Trend-following on this instrument beats nothing at 15m" is a finding, and a
+loop that only remembers its successes keeps re-proposing its failures. The
+text report prints the empty experiments beside the productive ones.
+
+The loop does **not** stop when it finds something, because the first thing
+found is not evidence that it is the best thing.
+
+### The multiplicity it creates
+
+The report states the loop's own total: every combination across every
+experiment. That number is much larger than any single search's, and it is the
+honest price of automating this. Each experiment corrects for its own
+multiplicity; **none of them corrects for the others**, and the report says so
+in those words rather than leaving you to work it out.
+
+On the shipped US30 30m data the loop runs three experiments over 504
+combinations and reports that nothing survived. That is the expected outcome.
+
+`--save` keeps the run under `research/` in the workspace, as plain JSON — one
+file per run, readable without this application, because a research record that
+needs its own software to open is a research record that will not be read.
 
 ---
 

@@ -78,10 +78,13 @@ class Workspace:
     def logs(self) -> Path: return self.root / "logs"
     @property
     def samples(self) -> Path: return self.root / "samples"
+    @property
+    def research(self) -> Path: return self.root / "research"
 
     def all_dirs(self) -> list[Path]:
         return [self.root, self.data, self.strategies, self.backtests,
-                self.reports, self.settings, self.logs, self.samples]
+                self.reports, self.settings, self.logs, self.samples,
+                self.research]
 
     def ensure(self) -> "Workspace":
         """Create every directory if it does not already exist."""

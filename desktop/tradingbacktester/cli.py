@@ -564,6 +564,35 @@ def cmd_mirror(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_research(args: argparse.Namespace) -> int:
+    """The research loop, end to end, reporting failures as well as findings."""
+    from .finder import style as get_style
+    from .research.loop import run_loop
+    from .research.loop_report import format_loop
+
+    bars, _name = _resolve_bars(args)
+    chosen = get_style(args.style)
+    progress = _stderr_progress()
+    report = run_loop(bars, chosen, rounds=args.rounds,
+                      validate=args.validate, control_draws=args.draws,
+                      progress=progress)
+    _clear_progress()
+
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        print(format_loop(report,
+                          currency=getattr(bars.instrument, "currency", "USD")))
+
+    if args.save:
+        from .storage.research_store import ResearchStore
+
+        store = ResearchStore(_workspace(args))
+        row = store.save(report, timeframe=bars.timeframe.label)
+        print(f"Saved as {row.id} in the workspace's research folder.")
+    return 0
+
+
 def cmd_convert(args: argparse.Namespace) -> int:
     """Translate a pasted strategy and say exactly what did not come across.
 
@@ -817,6 +846,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("strategies", help="List strategies")
     p.set_defaults(func=cmd_strategies)
+
+    p = sub.add_parser(
+        "research",
+        help="Run the automated research loop: hypothesis, experiment, "
+             "verdict, repeat")
+    p.add_argument("--data", required=True,
+                   help="Dataset name, shipped dataset, or a path to a CSV")
+    p.add_argument("--style", default="intraday",
+                   help="scalp | intraday | swing | position")
+    p.add_argument("--rounds", type=int, default=3)
+    p.add_argument("--validate", choices=("quick", "standard", "full"),
+                   default="standard")
+    p.add_argument("--draws", type=int, default=500)
+    p.add_argument("--save", action="store_true",
+                   help="Keep the run in the workspace's research folder")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_research)
 
     p = sub.add_parser(
         "convert",
