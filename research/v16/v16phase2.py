@@ -41,10 +41,15 @@ def ctx(tf, entry_n=30, exit_n=20):
     return P, pool, res, lock
 
 
-def leg(P, pool, side, blockbar, feat, off, stop_mult=2.0, tp_r=0.0):
+def leg(P, pool, side, blockbar, feat, off, stop_mult=2.0, tp_r=0.0, win=None, flat_mod=0):
     sig_all = C.signals(P, side)
-    sig = sig_all[blockbar[sig_all]]
-    O = C.outcomes(P, side, sig, stop_mult=stop_mult, tp_r=tp_r)
+    m = blockbar[sig_all]
+    if win is not None:
+        lo, hi = win
+        md = P["mod"][sig_all]
+        m = m & ((md >= lo) & (md < hi) if lo <= hi else ((md >= lo) | (md < hi)))
+    sig = sig_all[m]
+    O = C.outcomes(P, side, sig, stop_mult=stop_mult, tp_r=tp_r, flat_mod=flat_mod)
     if feat is None:
         keep = np.ones(len(sig), bool)
     else:

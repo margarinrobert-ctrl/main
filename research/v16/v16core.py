@@ -34,7 +34,7 @@ STOP, TARGET, CHAN = 1, 2, 3
 
 @njit(cache=True)
 def _walk(o, h, l, c, sig, ex_lo, ex_hi, atr, side, stop_mult, tp_r,
-          fee2, f_taker, f_stop, flat_mod, mod, out_xb, out_pnl, out_why):
+          fee2, f_taker, f_stop, flat_mod, mod, flat_open, out_xb, out_pnl, out_why):
     n = len(c)
     for k in range(len(sig)):
         i = sig[k]
@@ -84,8 +84,17 @@ def _walk(o, h, l, c, sig, ex_lo, ex_hi, atr, side, stop_mult, tp_r,
                 out_why[k] = TARGET
                 break
             if flat_mod > 0 and mod[j] >= flat_mod:
-                out_xb[k] = j
-                out_pnl[k] = side * (c[j] - px0) - fee2 - f_taker[eb] - f_taker[j]
+                # A SCRIPT CANNOT SELL THIS BAR'S CLOSE. `strategy.close_all()` issued at a bar's
+                # close fills at the NEXT bar's open unless the whole strategy is switched to
+                # process_orders_on_close, which changes every other fill in it. So `flat_open`
+                # exits at o[j+1], which is what the shipped script actually does. The difference
+                # is one bar's gap and it is not small enough to leave unmodelled.
+                if flat_open == 1 and j + 1 < n:
+                    out_xb[k] = j + 1
+                    out_pnl[k] = side * (o[j + 1] - px0) - fee2 - f_taker[eb] - f_taker[j + 1]
+                else:
+                    out_xb[k] = j
+                    out_pnl[k] = side * (c[j] - px0) - fee2 - f_taker[eb] - f_taker[j]
                 out_why[k] = TARGET
                 break
             j += 1
@@ -134,13 +143,13 @@ def signals(P, side):
     return np.flatnonzero(m).astype(np.int64)
 
 
-def outcomes(P, side, sig, stop_mult=2.0, tp_r=0.0, flat_mod=0):
+def outcomes(P, side, sig, stop_mult=2.0, tp_r=0.0, flat_mod=0, flat_open=True):
     xb = np.full(len(sig), -1, np.int64)
     pnl = np.zeros(len(sig))
     why = np.zeros(len(sig), np.int64)
     _walk(P["o"], P["h"], P["l"], P["c"], sig, P["ex_lo"], P["ex_hi"], P["atr"], side,
           float(stop_mult), float(tp_r), float(P["fee2"]), P["f_taker"], P["f_stop"],
-          int(flat_mod), P["mod"], xb, pnl, why)
+          int(flat_mod), P["mod"], 1 if flat_open else 0, xb, pnl, why)
     R = pnl / (stop_mult * P["atr"][sig])
     return dict(xb=xb, pnl=pnl, R=R, why=why, sig=sig, stop_mult=stop_mult)
 

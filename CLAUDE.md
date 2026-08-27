@@ -58,6 +58,20 @@ not the second.
 by edge (0.25%: 25.5% pass, 12.8% bust) is also the one where **61.7% of 60-day runs end neither
 passed nor busted**. Sized to survive, it grinds. Print P(neither) beside P(pass) or the table lies.
 
+**A SESSION PREFERENCE DOES NOT TRANSFER BETWEEN STRATEGIES.** 09:30-11:00 New York, which
+`STUDY_TREND_PULLBACK` preferred on a different instrument and family, is the WORST of seven windows
+on V16 (+0.0705 research -> +0.0119 locked, control p 0.487). The only window better than all hours
+on BOTH blocks is 08:00-12:00 (+0.1521 / +0.1872, locked control p 0.024) — and seven windows tested
+corrects that to 0.168, so it ships OFF as a candidate. 13:00-16:00 has the best RESEARCH profit
+factor in the table (1.423) and dies out of sample, which is the whole reason the table is read on
+both blocks.
+
+**A FIXED-TIME FLATTEN COSTS ABOUT HALF THE PER-TRADE EDGE** when there is no entry window
+(+0.1033 -> +0.0481 locked on V16): it truncates exactly the trades a channel exit exists to hold.
+It is roughly free inside a morning window, where the trade would have closed anyway. And it fills
+at the NEXT BAR'S OPEN — `strategy.close_all()` cannot sell the close of the bar that triggers it —
+so the engine was changed to match the script (`flat_open`), not the other way round.
+
 **A MOMENTUM FILTER CANNOT IMPROVE A BREAKOUT, BECAUSE A BREAKOUT IS A MOMENTUM EVENT.** 2,167
 conditions (58 scores x 366 rungs x 3 timeframes x 2 sides): 99 beat a same-selectivity control on
 research against 37 expected by chance, and on the holdout only **28%** still beat the UNFILTERED

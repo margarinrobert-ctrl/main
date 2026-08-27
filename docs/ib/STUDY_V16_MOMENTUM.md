@@ -157,6 +157,51 @@ The short side loses on both blocks (−0.0950 research, −0.0552 locked) and s
 
 ---
 
+## 4b. The trading window and the flatten
+
+Added to the script on request, both **off by default**, and measured rather than offered. Seven
+windows and three flatten times — a set fixed in advance, not a sweep, because a swept start and end
+is a free lottery on a sample where the intraday constraint has already failed eleven independent
+times here.
+
+| entry window | research R/trade | locked R/trade | locked PF | control p (locked) |
+| --- | --- | --- | --- | --- |
+| all hours | +0.1126 | +0.1033 | 1.188 | 0.152 |
+| **08:00–12:00** | **+0.1521** | **+0.1872** | **1.339** | **0.024** |
+| 07:00–11:00 | +0.0394 | +0.1736 | 1.287 | 0.100 |
+| 09:30–12:00 | +0.0972 | +0.0491 | 1.098 | 0.246 |
+| 09:30–16:00 | +0.0903 | +0.0198 | 1.040 | 0.416 |
+| 13:00–16:00 | +0.1440 | +0.0289 | 1.075 | 0.368 |
+| 09:30–11:00 | +0.0705 | +0.0119 | 1.023 | 0.487 |
+
+**08:00–12:00 New York is the only window better than all hours on both blocks**, and the only one
+clearing a minute-of-day matched control out of sample. It is a **candidate, not a finding**: seven
+windows were tested, so p 0.024 corrects to **0.168** and does not clear its own multiplicity.
+
+Read the other rows for what they are. 13:00–16:00 has the best *research* profit factor in the
+table (1.423) and dies out of sample. 09:30–11:00 — which `STUDY_TREND_PULLBACK` preferred on a
+different instrument and a different family — is the **worst** cell here, +0.0705 → +0.0119 at
+p 0.487. A session preference does not transfer across strategies.
+
+The flatten costs about half the per-trade edge when there is no window, because it truncates
+exactly the trades the channel exit exists to hold:
+
+| configuration | research R/trade | locked R/trade | locked PF | locked Sharpe |
+| --- | --- | --- | --- | --- |
+| window off, flatten off | +0.1126 | +0.1033 | 1.188 | 1.03 |
+| window off, flatten 16:00 | +0.0380 | +0.0481 | 1.116 | 0.73 |
+| 08:00–12:00, flatten off | +0.1521 | +0.1872 | 1.339 | 1.79 |
+| 08:00–12:00, flatten 16:00 | +0.0957 | +0.1853 | 1.347 | 1.94 |
+
+Inside the window the flatten is roughly free — a trade entered before noon rarely survives to 16:00
+— and on research it still costs 0.06 R a trade.
+
+**The flatten fills at the next bar's open**, not at the close of the bar that triggers it, because
+that is what `strategy.close_all()` does. The research engine was changed to match the script rather
+than the other way round (`flat_open` in `v16core._walk`), so the figures above are the script's.
+
+---
+
 ## 5. Parity
 
 `research/v16/v16_parity.py` re-implements the shipped script's order model and diffs it against the
@@ -172,4 +217,4 @@ is placed at this bar's close and is live on the next.
 `research/v16/v16mom.py` (the 58-score pool) · `v16core.py` (precomputed outcomes + numba position
 lock) · `v16run.py` (the 2,167-test sweep and its selectivity null) · `v16phase2.py` (ladders,
 geometry, minute-of-day control) · `v16final.py` · `v16verdict.py` (the replication test) ·
-`v16ship.py` · `v16_parity.py` · `pine/turtle/V16_DONCHIAN_MOM_strategy.pine`.
+`v16ship.py` · `v16window.py` (the window and flatten measurements) · `v16_parity.py` · `pine/turtle/V16_DONCHIAN_MOM_strategy.pine`.
