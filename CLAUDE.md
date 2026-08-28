@@ -1010,6 +1010,24 @@ best configuration has no moving average in it -- **30m Donchian 30/20, 2.0N sto
 CHOP<=40**, locked PF 1.318 / +0.1542 R / 11.6 R drawdown / ret-DD 1.67.
 See `docs/ib/STUDY_V24_MA_CROSSOVER.md`.
 
+**A LINEAR-REGRESSION 9/21 CROSS ADDS NOTHING EITHER, AND THE LAG TABLE PREDICTED IT.**
+`ta.linreg(close,n,0)` fits a straight line exactly, so its RAMP LAG IS ZERO AT EVERY WINDOW -- it
+sits with DEMA and TEMA, V24's worst two types. 484 declared cells (6 pairs x 5 readings x 4 R^2
+floors + off, x 2 CHOP x 2 timeframes) on V24's winner: **197 of 478 beat their own baseline on
+PROFIT FACTOR = 41%, and only 162 = 34% on SHARPE**, chance 50%, mean edge -0.048 PF and **-0.26
+Sharpe**. Research-to-locked PF correlation **+0.025**. THE LITERAL ASK IS THE WORST READING: `9/21
+VALUE cross` on 30m goes research PF 1.309 -> **locked 0.853 with Sharpe -0.43** (control p 0.880),
+and on 15m 1.293 -> 0.858, Sharpe -0.52, p 0.917 -- against a baseline of 1.318 / +0.98. By reading,
+the CROSS forms have the HIGHEST research PF (VALUE cross 1.181) and the LOWEST locked (1.021, Sharpe
+0.02, 22% beat) while the STATE forms are neutral. **THE R-SQUARED GATE -- the one condition a moving
+average cannot express -- IS MONOTONICALLY WRONG-WAY**: research PF rises 1.124 -> 1.141 with the
+floor while locked PF falls 1.123 -> 1.088 and Sharpe 0.46 -> 0.27. 9/21 is the BEST of its six-pair
+neighbourhood and still has a NEGATIVE mean edge (-0.026); pair spread is only 0.070 PF. Top 100 mean
+research PF 1.299 -> locked 1.129 and Sharpe 0.70 -> 0.33, with 35/99 beating baseline PF and 28/99
+beating its Sharpe. `9/21 SLOPE state` is the only cell above baseline on locked (1.370 / 1.08) and
+it FAILS research at p 0.583 -- the wrong shape. Ship nothing.
+See `docs/ib/STUDY_V25_LINREG_CROSS.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1064,6 +1082,7 @@ See `docs/ib/STUDY_V24_MA_CROSSOVER.md`.
 | `research/v23/v23mom.py` | momentum x ADX x CHOP on the V20 base: marginal averages, top 100, controls, lift |
 | `research/v24/v24ma.py` | 7 MA types x 9 pairs x 2 modes x CHOP: the lag table, drawdowns, and the no-MA baseline |
 | `research/v24/v24hma.py` | HMA CROSS cell by cell, and the lag-matched test that withdrew the type gradient |
+| `research/v25/v25lr.py` | the linreg 9/21 cross: 484 cells, value/slope/forecast readings, R^2 gate, controls |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
