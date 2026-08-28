@@ -98,6 +98,13 @@ useWin   = input.bool(false, "Restrict signals to a session", group = gT)
 winSess  = input.session("0930-1100", "Entry session, New York time", group = gT,
      tooltip="Best of seven tested (pooled -0.0179 -> +0.0345) and inconsistent underneath: it helps NQ and gold and hurts US30 and US100. A candidate, not a finding.")
 
+gRisk    = "ATR in real money -- reads the chart's own ticker"
+showRisk = input.bool(true, "Show the live ATR / risk panel", group = gRisk)
+riskMode = input.string("percent of equity", "Size risk by", options = ["percent of equity", "fixed cash"], group = gRisk)
+riskPct  = input.float(0.5, "  risk per trade, % of equity", minval = 0.01, step = 0.05, group = gRisk,
+     tooltip="Every figure in the research is ONE CONTRACT. Sizing changes the equity path and the drawdown; it does not change the per-trade edge.")
+riskCash = input.float(500, "  or a fixed cash amount", minval = 1, step = 50, group = gRisk)
+
 gX       = "Levels"
 atrLen   = input.int(14, "ATR length", minval = 2, group = gX,
      tooltip="ATR here is ema(TR, n), NOT ta.atr -- ta.atr is Wilder's RMA and a different series.")
@@ -131,6 +138,28 @@ okShortC = lrMode == "off" ? true : lrMode == "slope" ? lrSlope < 0 :
 
 // BARE `hour`/`minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME, an hour off New York.
 inWin = not useWin or not na(time(timeframe.period, winSess, "America/New_York"))
+// ---------------------------------------------------------- ATR IN THE CHART'S OWN UNITS
+// `syminfo.pointvalue` is the currency value of ONE FULL POINT of this symbol for one contract, and
+// `syminfo.mintick` is its smallest increment. Together they turn an ATR -- which is in points and
+// therefore means nothing across instruments -- into ticks and into money, automatically, for
+// whatever ticker the chart is on. Nothing here is hard-coded to a market.
+// CAVEAT WORTH KNOWING: these two fields come from the BROKER'S symbol record. On CFD and spot
+// symbols a broker sometimes reports a point value of 1 when the real contract is 100 units, so the
+// panel prints the raw fields as well as the derived money -- if `pt value` looks wrong, the money
+// column is wrong by the same factor and nothing else in the script is affected.
+tickMoney = syminfo.pointvalue * syminfo.mintick        // currency per tick, one contract
+atrPts    = atrN                                        // ATR in price points
+atrTicks  = atrN / syminfo.mintick
+atrMoney  = atrN * syminfo.pointvalue
+stopPts   = stopMult * atrN                             // the ATR leg of the working stop
+stopTicks = stopPts / syminfo.mintick
+stopMoney = stopPts * syminfo.pointvalue
+tgtPts    = useTp ? tpR * stopPts : na
+tgtMoney  = useTp ? tgtPts * syminfo.pointvalue : na
+acctSize  = input.float(100000, "Account size for the % option", minval = 1, step = 1000, group = gRisk)
+riskAmt   = riskMode == "percent of equity" ? acctSize * riskPct / 100.0 : riskCash
+sizeSug   = stopMoney > 0 ? math.floor(riskAmt / stopMoney) : na
+
 // CHOP(14) = 100 * log10(sum(TR,14) / (14-bar range)) / log10(14). LOW means trending.
 chopV  = 100 * math.log10(math.sum(ta.tr(true), 14) /
      math.max(ta.highest(high, 14) - ta.lowest(low, 14), syminfo.mintick)) / math.log10(14)
@@ -197,3 +226,41 @@ if barstate.islast
          text_color = color.white, bgcolor = color.new(color.orange, 20))
     table.cell(hud, 0, 2, "Supported by the data: take profit OFF, and a session starting at 09:30 not before",
          text_color = color.white, bgcolor = color.new(color.teal, 30))
+
+// ---------------------------------------------------------- the live ATR / risk panel
+var table rk = table.new(position.bottom_right, 2, 10, border_width = 1)
+if barstate.islast and showRisk
+    bg = color.new(color.gray, 88)
+    hd = color.new(color.teal, 25)
+    table.cell(rk, 0, 0, "ATR in real units", text_color = color.white, bgcolor = hd)
+    table.cell(rk, 1, 0, syminfo.ticker + "  " + timeframe.period, text_color = color.white, bgcolor = hd)
+    table.cell(rk, 0, 1, "tick size", bgcolor = bg)
+    table.cell(rk, 1, 1, str.tostring(syminfo.mintick, format.mintick), bgcolor = bg)
+    table.cell(rk, 0, 2, "pt value / tick value", bgcolor = bg)
+    table.cell(rk, 1, 2, str.tostring(syminfo.pointvalue, "#.##") + " / " +
+         str.tostring(tickMoney, "#.####") + " " + syminfo.currency, bgcolor = bg)
+    table.cell(rk, 0, 3, "ATR(" + str.tostring(atrLen) + ")", bgcolor = bg)
+    table.cell(rk, 1, 3, str.tostring(atrPts, format.mintick) + " pts  |  " +
+         str.tostring(atrTicks, "#.#") + " ticks  |  " +
+         str.tostring(atrMoney, "#.##") + " " + syminfo.currency, bgcolor = bg)
+    table.cell(rk, 0, 4, "stop = " + str.tostring(stopMult, "#.##") + " x ATR", bgcolor = bg)
+    table.cell(rk, 1, 4, str.tostring(stopPts, format.mintick) + " pts  |  " +
+         str.tostring(stopTicks, "#.#") + " ticks  |  " +
+         str.tostring(stopMoney, "#.##") + " " + syminfo.currency, bgcolor = bg)
+    table.cell(rk, 0, 5, useTp ? "target = " + str.tostring(tpR, "#.##") + "R" : "target", bgcolor = bg)
+    table.cell(rk, 1, 5, useTp ? str.tostring(tgtPts, format.mintick) + " pts  |  " +
+         str.tostring(tgtMoney, "#.##") + " " + syminfo.currency : "none", bgcolor = bg)
+    table.cell(rk, 0, 6, "risk per trade", bgcolor = bg)
+    table.cell(rk, 1, 6, str.tostring(riskAmt, "#.##") + " " + syminfo.currency +
+         (riskMode == "percent of equity" ? "  (" + str.tostring(riskPct, "#.##") + "% of " +
+         str.tostring(acctSize, "#") + ")" : ""), bgcolor = bg)
+    table.cell(rk, 0, 7, "contracts at that risk", bgcolor = bg)
+    table.cell(rk, 1, 7, na(sizeSug) or sizeSug < 1 ? "0 -- one contract already risks more" :
+         str.tostring(sizeSug, "#"), bgcolor = sizeSug >= 1 ? color.new(color.teal, 70) : color.new(color.red, 70))
+    table.cell(rk, 0, 8, "1 contract risks", bgcolor = bg)
+    table.cell(rk, 1, 8, str.tostring(stopMoney, "#.##") + " " + syminfo.currency + " = " +
+         str.tostring(stopMoney / math.max(acctSize, 1) * 100, "#.##") + "% of account", bgcolor = bg)
+    table.cell(rk, 0, 9, "the stop is the NEARER of this and the channel", text_color = color.white,
+         bgcolor = color.new(color.orange, 40))
+    table.cell(rk, 1, 9, "so the real risk is <= the figure above", text_color = color.white,
+         bgcolor = color.new(color.orange, 40))
