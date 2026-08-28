@@ -79,6 +79,37 @@
 // so it ships off. The sign check does pass (the inverse is worst on research), so this is a
 // candidate worth watching rather than a rejected idea.
 //
+// ================================ THE CROSS-INDEX RELATIVE-STRENGTH GATE ================================
+// Added on request: take the long only when THIS symbol is up more on the day than a peer index.
+//
+// *** IT IS UNTESTED, AND THAT IS NOT A FORMALITY. *** Every other number in this header comes from
+// a measured grid with a same-selectivity control. This one has none, because a relative-strength
+// filter needs TWO instruments by construction and repeated container recycles left only NQ on
+// disk -- US30, US100, XAU, EURUSD and BTC were all wiped. `research/v26/v26rs.py` holds the test
+// with its grid already fixed (2 anchors x 4 margins x 3 comparison modes + off, x 2 CHOP x 2
+// timeframes = 100 cells); it runs the moment a second index is re-uploaded. Until then this gate
+// is an IDEA WIRED UP CORRECTLY, not a validated filter, and it ships OFF.
+//
+// THE MECHANISM CONCERN, so it is on the record before any backtest flatters it. 15-minute return
+// correlation is US30/US100 0.758, US30/NQ 0.679, NQ/US100 0.874. Two series that correlated share
+// most of their variance, so the SPREAD between their daily percentage moves is a small residual on
+// a large common factor. A filter built on that residual may be selecting noise. It may also be the
+// one genuinely cross-sectional thing tried here -- every filter tested so far reads one
+// instrument's own history. Both are live possibilities; only data settles it.
+//
+// THE ANCHOR CHOICE IS THE PART MOST LIKELY TO GO WRONG. "Percent on the day" needs a reference
+// price, and the obvious one is the previous DAILY close -- but `request.security` on a daily bar
+// returns the 24-HOUR range on a futures feed and the broker's day on a cash index
+// (STUDY_TICK_RECALC). Comparing MNQ's 24-hour change against US100's cash day is comparing two
+// different windows, and the gap between them is a calendar artifact, not relative strength. So the
+// DEFAULT anchor here is the SESSION OPEN at a chosen New York time: both symbols are measured from
+// the same minute, which is apples-to-apples whatever the two symbol types are. "Prior daily close"
+// is available and is the literal reading of the request; use it only when both symbols are the
+// same instrument type.
+//
+// Everything is pulled with `lookahead_off` and read on CONFIRMED bars only, so no future data
+// enters. A peer symbol that does not trade on this bar simply holds its last price.
+//
 // ================================ SETTINGS THAT DECIDE WHETHER THE REPORT IS REAL ===============
 // Script execution / recalculate: ALL THREE BOXES OFF. If a checkbox changes the report, the report
 // is about the checkbox. Every var-state write below is guarded by barstate.isconfirmed.
@@ -123,6 +154,24 @@ lrBars  = input.int(5, "  cross counts for this many bars", minval = 1, group = 
 useR2   = input.bool(false, "  also require an R-squared floor", group = gL,
      tooltip = "Wrong-way monotone: raising the floor improves RESEARCH profit factor (1.124 -> 1.141) while LOCKED PF falls 1.123 -> 1.088 and Sharpe 0.46 -> 0.27.")
 r2Min   = input.float(0.2, "  R-squared floor", minval = 0.0, maxval = 1.0, step = 0.05, group = gL)
+
+gRS     = "Cross-index relative strength -- OFF and UNTESTED; see the header"
+useRs   = input.bool(false, "Only go long if this symbol leads its peers on the day", group = gRS,
+     tooltip = "UNTESTED. A relative-strength filter needs two instruments and only NQ survived the container recycles, so this has no control, no holdout and no p-value behind it -- unlike every other setting in this script. research/v26/v26rs.py runs the 100-cell test the moment a second index is re-uploaded.")
+rsAnchor = input.string("session open", "  measure the day from",
+     options = ["session open", "prior daily close"], group = gRS,
+     tooltip = "SESSION OPEN measures both symbols from the same New York minute and is apples-to-apples. PRIOR DAILY CLOSE is the literal 'percent on the day' -- but a daily bar is the 24-hour range on a futures feed and the broker's day on a cash index, so mixing symbol types compares two different windows.")
+rsAnchorH = input.int(9,  "  session anchor hour, New York", minval = 0, maxval = 23, group = gRS)
+rsAnchorM = input.int(30, "  session anchor minute", minval = 0, maxval = 59, group = gRS)
+rsSym1  = input.symbol("CAPITALCOM:US100", "  peer index 1", group = gRS)
+rsUse2  = input.bool(false, "  use a second peer index", group = gRS)
+rsSym2  = input.symbol("CAPITALCOM:US500", "  peer index 2", group = gRS)
+rsMode  = input.string("beat best of the peers", "  requirement",
+     options = ["beat best of the peers", "beat their average"], group = gRS,
+     tooltip = "With one peer both are identical. `beat best` is the strict reading -- this symbol must lead every peer named.")
+rsMargin = input.float(0.0, "  required lead, in percentage points", minval = 0.0, step = 0.05,
+     group = gRS,
+     tooltip = "0 means any lead counts. A margin makes the gate more selective, and a more selective filter raises profit factor by selectivity alone -- which is exactly why this needs a same-selectivity control before it is believed.")
 
 gV      = "Volatility-adaptive stop -- OFF; better on locked, worse on research"
 useAdapt = input.bool(false, "Scale the stop by the volatility state", group = gV,
@@ -169,22 +218,61 @@ lrBase   = lrRead == "value state" ? lrStateV : lrRead == "slope state" ? lrStat
 lrOk = not useLr or (not na(lrVf) and not na(lrVs) and lrBase
      and (not useR2 or (not na(lrR2) and lrR2 >= r2Min)))
 
-// The volatility state: 20-bar close-to-close vol, ranked within its own trailing 250 bars.
-lr1    = math.log(close / close[1])
-ccVol  = math.sqrt(ta.sma(lr1 * lr1, volLen))
-volPct = ta.percentrank(ccVol, rankLen - 1)
-smult  = not useAdapt ? stopN : volPct <= volSplit ? stopCalm : stopFast
-
 // BARE `hour`/`minute` ARE EXCHANGE TIME in Pine -- Chicago for CME, an hour off New York.
+// Declared BEFORE the relative-strength block, which reads modNY: Pine has no forward references.
 modNY    = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
 startMod = startH * 60 + startM
 endMod   = endH * 60 + endM
 inWin = not useWin or (startMod <= endMod ? modNY >= startMod and modNY < endMod
      : modNY >= startMod or modNY < endMod)
 
+// ---------------------------------------------------------------------------- relative strength
+// Peer prices on THIS chart's timeframe, `lookahead_off` so no future bar can be read. A symbol
+// that is not trading holds its last print, which is the correct behaviour for a comparison.
+rsP1 = request.security(rsSym1, timeframe.period, close, lookahead = barmerge.lookahead_off)
+rsP2 = request.security(rsSym2, timeframe.period, close, lookahead = barmerge.lookahead_off)
+// `close[1]` on the daily timeframe with lookahead_off is the last COMPLETED daily bar.
+rsD0 = request.security(syminfo.tickerid, "D", close[1], lookahead = barmerge.lookahead_off)
+rsD1 = request.security(rsSym1, "D", close[1], lookahead = barmerge.lookahead_off)
+rsD2 = request.security(rsSym2, "D", close[1], lookahead = barmerge.lookahead_off)
+
+rsAnchorMod = rsAnchorH * 60 + rsAnchorM
+var float rsA0 = na
+var float rsA1 = na
+var float rsA2 = na
+var int   rsDay = na
+nyDay = dayofmonth(time, "America/New_York") + 100 * month(time, "America/New_York")
+     + 10000 * year(time, "America/New_York")
+if barstate.isconfirmed
+    if na(rsDay) or nyDay != rsDay
+        rsDay := nyDay
+        rsA0 := na
+        rsA1 := na
+        rsA2 := na
+    if na(rsA0) and modNY >= rsAnchorMod
+        rsA0 := close
+        rsA1 := rsP1
+        rsA2 := rsP2
+
+b0 = rsAnchor == "session open" ? rsA0 : rsD0
+b1 = rsAnchor == "session open" ? rsA1 : rsD1
+b2 = rsAnchor == "session open" ? rsA2 : rsD2
+rsOwn = not na(b0) and b0 > 0 ? (close / b0 - 1) * 100 : na
+rsPc1 = not na(b1) and b1 > 0 ? (rsP1 / b1 - 1) * 100 : na
+rsPc2 = not na(b2) and b2 > 0 ? (rsP2 / b2 - 1) * 100 : na
+rsRef = not rsUse2 ? rsPc1 : na(rsPc1) or na(rsPc2) ? na :
+     rsMode == "beat their average" ? (rsPc1 + rsPc2) / 2 : math.max(rsPc1, rsPc2)
+rsOk = not useRs or (not na(rsOwn) and not na(rsRef) and (rsOwn - rsRef) >= rsMargin)
+
+// The volatility state: 20-bar close-to-close vol, ranked within its own trailing 250 bars.
+lr1    = math.log(close / close[1])
+ccVol  = math.sqrt(ta.sma(lr1 * lr1, volLen))
+volPct = ta.percentrank(ccVol, rankLen - 1)
+smult  = not useAdapt ? stopN : volPct <= volSplit ? stopCalm : stopFast
+
 chopOk = not useChop or (not na(chopV) and chopV <= chopMax)
 ready  = not na(entHi) and not na(atrN) and atrN > 0 and (not useAdapt or not na(volPct))
-sigOK  = ready and high > entHi and chopOk and lrOk and inWin
+sigOK  = ready and high > entHi and chopOk and lrOk and rsOk and inWin
 
 // ---------------------------------------------------------------------------- state
 var float stopAnchor = na
@@ -232,8 +320,9 @@ plot(strategy.position_size > 0 ? stopAnchor : na, "ATR stop", color.new(color.r
 plot(useLr ? lrVf : na, "Linreg fast", color.new(color.aqua, 20))
 plot(useLr ? lrVs : na, "Linreg slow", color.new(color.purple, 20))
 bgcolor(useChop and not chopOk ? color.new(color.gray, 92) : na, title = "CHOP blocked")
+bgcolor(useRs and not rsOk ? color.new(color.maroon, 90) : na, title = "RS blocked")
 
-var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "Defaults are the measured best: 30m, Donchian 30/20, 2.0N, no target, CHOP<=40",
          text_color = color.white, bgcolor = color.new(color.teal, 30))
@@ -241,3 +330,6 @@ if barstate.islast
          text_color = color.white, bgcolor = color.new(color.orange, 20))
     table.cell(hud, 0, 2, "Do NOT switch the reading to 'value cross': locked PF 1.318 -> 0.853, Sharpe +0.98 -> -0.43",
          text_color = color.white, bgcolor = color.new(color.red, 25))
+    table.cell(hud, 0, 3, useRs ? "RELATIVE-STRENGTH GATE IS ON AND IT IS UNTESTED - no control, no holdout, no p-value" :
+         "Relative-strength gate off (untested - needs a second index feed to measure)",
+         text_color = color.white, bgcolor = useRs ? color.new(color.red, 10) : color.new(color.gray, 40))
