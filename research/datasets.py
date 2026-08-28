@@ -301,6 +301,46 @@ REGISTRY = {
               "US30_ISO_15m BEGINS 2024-08 -- so they overlap by only eleven months and the pre-2024 "
               "history is unseen by every study on this branch."),
 
+    "SPX_DAILY": Dataset(
+        key="SPX_DAILY", instrument="SPX", timeframe_min=1440,
+        restore_to="data/SPX.csv",
+        rows=23323, span="1927-12-30 to 2020-11-04 (daily sessions)", bytes=1681649,
+        sha256_16="54aa877d5d275b66",
+        fmt="SEVENTH export format -- comma-separated Yahoo-style daily with an Adj Close column",
+        columns="Date, Open, High, Low, Close, Adj Close, Volume",
+        order="ASCENDING as delivered",
+        clock="DATE ONLY, no intraday stamp, so no offset applies. Sessions are US equity "
+              "sessions and align one-to-one with the VIX file by date.",
+        volume="Volume is ZERO for the whole pre-1950 span and real thereafter; unused here.",
+        defects="Adj Close equals Close throughout the VIX-overlapping era, so the split/dividend "
+                "adjustment is inert on the only span this branch reads. NINETY-THREE YEARS is "
+                "mostly unusable for a modern microstructure question -- only the 2012-2020 "
+                "VIX overlap is read.",
+        loader="research/v22/v22vix.py",
+        provenance="user upload, 2026-08-28, as SPX.csv.zip and archive4.zip (identical files)",
+        notes="ONLY VALUABLE FOR ITS VIX OVERLAP: 2,226 sessions 2012-01-03 to 2020-11-04 where "
+              "both files carry a price. That overlap is what makes the implied-minus-realised "
+              "spread computable at all on this branch."),
+
+    "VIX_DAILY": Dataset(
+        key="VIX_DAILY", instrument="VIX", timeframe_min=1440,
+        restore_to="data/VIX_daily.csv",
+        rows=2517, span="2012-01-03 to 2021-12-31 (daily sessions)", bytes=256270,
+        sha256_16="f9359c32ff985a31",
+        fmt="comma-separated Yahoo-style daily, NO Volume column",
+        columns="Date, Open, High, Low, Close, Adj Close -- Adj Close == Close throughout",
+        order="ASCENDING as delivered",
+        clock="DATE ONLY. The VIX is a US-session index and needs no offset.",
+        volume="none -- an index level has no volume",
+        defects="no missing or zero closes in 2,517 rows. Close ranges 9.14 to 82.69.",
+        loader="research/v22/v22vix.py",
+        provenance="user upload, 2026-08-28 (uploaded twice, byte-identical)",
+        notes="ZERO OVERLAP WITH EVERY FUTURES FEED ON THIS BRANCH. It ends 2021-12-31 and the NQ "
+              "file begins 2022-12-26, a 360-day gap, so the VIX can NEVER be joined to NQ, "
+              "US30_ISO or US100_ISO here. Its only usable partner is SPX_DAILY. Any VIX finding "
+              "on this branch is therefore evidence about the equity complex at DAILY scale, "
+              "transferred to intraday futures by analogy and never by a join."),
+
     "XAU_ISO_15m": Dataset(
         key="XAU_ISO_15m", instrument="XAUUSD", timeframe_min=15,
         restore_to="data/XAU_ISO_15m.csv",

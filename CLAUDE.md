@@ -901,6 +901,40 @@ divergence` feature filled forward to the NEXT pivot's confirmation bar, so bar 
 pivot would confirm: the truncation audit read **+37 full against +999 truncated**. Fixed with a
 plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
 
+**THE VIX FORECASTS THE SIZE OF THE NEXT MOVE AND NOT ITS STRAIGHTNESS.** Positive control first:
+VIX vs forward realised vol scores IC **+0.63 research, +0.78 locked**, sign kept 91% -- the harness
+is fine. Against a CHOP label the same 39 features give research-to-locked IC correlation
+**-0.638**, a systematic sign INVERSION: 44 of 117 pass at alpha 0.05 against 6 expected, 29 survive
+BH, and **21% keep their sign**; 7 of the top 50 do. The families with the LARGEST research IC keep
+their sign LEAST (term structure proxy 0%, level 6%) while the volatility risk premium -- the one
+column a price history cannot reproduce -- has a middling IC and the best stability (36%). Replicated
+on NQ with 71 realised features: 426 IC tests give -0.047, and 2,556 control-gated trade conditions
+give **-0.183**. A volatility reading does not tell you whether the next stretch trends.
+
+**BUT HEAT IN ATR UNITS IS NOT FLAT, AND THAT IS A REAL SIZING ERROR.** Median MAE measured in ATR
+units is **1.8-2.2x larger** in the LOW realised-volatility-percentile bucket than the high one --
+NQ 15m locked 2.09 -> 1.24, NQ 30m locked 2.18 -> 0.98, monotone, stop-out 45.6% -> 31.5% -- and the
+locked block reproduces the research slope value for value. The direction is the counter-intuitive
+one: the ATR stop is BACKWARD-looking and volatility MEAN-REVERTS, so when vol sits low in its own
+distribution ATR(14) has already contracted and a 2.0N stop is too SMALL. On SPX the VIX LEVEL is
+flat across the same table (the ATR already scaled for it) while `VIX / realised20` roughly DOUBLES
+heat from bottom quintile to top. Both instruments say one thing: heat is large exactly when forward
+vol will exceed trailing vol. Ship: `stop = 2.5N if vol percentile <= 0.5 else 1.5N`. Locked PF
+1.158 -> 1.249 (15m) and 1.156 -> 1.181 (30m); the NAIVE INVERSE is worse than flat on all six
+cells, the threshold is a smooth plateau not a spike, and the exit mix moves 45% -> 18% stop-outs, so
+it is not the R-denominator artifact that widening a stop always risks. It is a sizing correction on
+an existing rule, not an edge. Caveats: 30m research POINTS fall while R rises; SPX daily leaves 8
+locked trades after the position lock so nothing rests on that backtest; the SPX locked block
+contains COVID; there is no VIX9D/VIX3M so the IMPLIED term structure was never testable.
+See `docs/ib/STUDY_V22_VOLATILITY.md`.
+
+**THE VIX CANNOT BE JOINED TO ANY FUTURES FEED HERE.** `data/VIX_daily.csv` ends 2021-12-31 and NQ
+begins 2022-12-26 -- a 360-day gap, zero shared sessions. Its only partner on disk is
+`data/SPX.csv` (2,226 overlapping sessions, 2012-01-03 to 2020-11-04). Every VIX number on this
+branch is daily-scale evidence about the equity complex, transferred to intraday futures BY ANALOGY
+and never by a join. What would unblock a real join: a VIX series covering 2022-2026, or a re-upload
+of `US30_LONG_15m` / `US100_LONG_15m` / `XAU_ISO_15m`, whose spans do straddle 2012-2021.
+
 ## Tooling
 
 | module | what it does |
@@ -945,6 +979,11 @@ plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
 | `research/vbt/prop.py` | prop-firm evaluation: trailing DD, daily loss, P(pass) by day-block bootstrap |
 | `research/vbt/mae_mfe.py` | per-trade MFE/MAE in R on the finest series; capture and heat |
 | `research/turtle2/` | the original Turtle and the YouTube variant, frozen, with risk-matched controls |
+| `research/v22/v22vol.py` | 71 causal realised-volatility features + the forward efficiency-ratio label |
+| `research/v22/v22run.py`, `v22trade.py` | 426 IC tests and 2,556 control-gated trade conditions on NQ |
+| `research/v22/v22stop.py`, `v22destroy.py` | the declared stop policies, and the three attacks on them |
+| `research/v22/v22vix.py` | SPX x VIX daily: 39 causal VIX features, the VRP, a small daily engine |
+| `research/v22/v22vixrun.py`, `v22vixtrade.py` | the positive control, the chop IC test, the VIX heat table |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
