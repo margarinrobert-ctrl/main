@@ -72,6 +72,17 @@ It is roughly free inside a morning window, where the trade would have closed an
 at the NEXT BAR'S OPEN — `strategy.close_all()` cannot sell the close of the bar that triggers it —
 so the engine was changed to match the script (`flat_open`), not the other way round.
 
+**CHOP EARNS ITS PLACE, ADX DOES NOT, AND STACKING THEM MAKES THE HOLDOUT WORSE.** 110-cell
+ADX x CHOP grid on the V20 base, five markets pooled in R. Against a random filter of the SAME
+selectivity: every ADX floor fails both blocks (p 0.248 / 0.372 at 25, 0.736 / 0.269 at 40), while
+CHOP clears all four rungs on research and **CHOP <= 45 clears both blocks (p 0.005 / 0.015)**.
+ADX>=25 + CHOP<=35 scores p 0.215 on locked against CHOP<=35 alone at 0.083 — the stack is worse.
+Mechanically: on breakout bars ADX >= 25 passes 55.6% against 50.0% of bars in general, a lift of
+**1.11x**, while CHOP <= 40 passes 41.1% against 21.3%, a lift of **1.93x** — and 68.3% of the bars
+CHOP keeps already pass ADX. The research-PF-to-locked-PF correlation across the 110 cells is
+**+0.035**, so the top-20 ranking transferred only because CHOP did. See
+`docs/ib/STUDY_V21_ADX_CHOP.md`.
+
 **EVERY ENTRY WINDOW THAT STARTS AT 09:30 IS POOLED-POSITIVE AND EVERY ONE THAT STARTS EARLIER IS
 NOT.** Seven windows x five markets on V20's locked block: all hours -0.0179, 07:00-11:00 -0.0078,
 08:00-12:00 -0.0010, then 09:30-11:00 **+0.0345**, 09:30-12:00 +0.0187, 09:30-16:00 +0.0075,
@@ -955,6 +966,7 @@ plain forward scan. See `docs/ib/STUDY_DIVERGENCE_CONFIRM.md`.
 | `research/v15/v15book.py` | the V15 book: features, both legs, the two geometries |
 | `research/v15/v15_parity.py` | **the order-model diff** — the script's one live order vs the engine's eight |
 | `research/v15/run_book.py` | the whole V15 table: mechanic, control gate, walk-forward, MC, prop |
+| `research/v21/v21regime.py` | the 110-cell ADX x CHOP grid, with selectivity and drift-priced nulls |
 | `research/v20/v20linreg.py` | validated rolling OLS + four pre-declared "regression confirms" readings |
 | `research/v19/v19frozen.py` | V17's rule frozen and run on four markets that never saw it |
 | `research/v19/v19attack.py` | drop-one, perturbation, walk-forward, cost stress, Monte Carlo |

@@ -29,6 +29,46 @@
 // +0.158 on US100, -0.002 -> +0.156 on gold, +0.016 -> +0.099 on NQ), and starting the session at
 // the 09:30 cash open rather than before it -- every window beginning at 09:30 is pooled-positive
 // and every window beginning earlier is not.
+// ================================ ADX vs CHOP, MEASURED ================================
+// A 110-cell ADX x CHOP grid on this base, five markets, pooled in R. The population first: 22% of
+// cells have profit factor > 1 on research and 36% on locked, and the correlation between a cell's
+// research PF and its locked PF is **+0.035** -- so a ranking of this grid should not transfer.
+//
+//   family        cells   research PF   LOCKED PF   % of cells with PF>1 on locked
+//   ADX alone        10         0.959       0.961                10%
+//   CHOP alone        9         0.965       0.986                44%
+//   both             90         0.969       0.981                39%
+//   no filter         1         0.959       0.968                 0%
+//
+// CHOP's ladder is monotone on BOTH blocks -- ceiling 100/55/50/45/40/35 gives research
+// 0.959/0.965/0.992/1.007/1.029/1.027 and locked 0.968/0.971/0.986/1.022/1.015/1.044. ADX's is
+// flat: every floor from 10 to 40 sits between 0.911 and 0.977 on research and 0.951 and 1.025 on
+// locked.
+//
+// AGAINST A RANDOM FILTER OF THE SAME SELECTIVITY -- the only null a restrictive condition cannot
+// beat by being restrictive:
+//
+//   filter             research p   LOCKED p
+//   ADX >= 25              0.248      0.372     nothing
+//   ADX >= 40              0.736      0.269     nothing
+//   CHOP <= 50             0.003      0.133
+//   **CHOP <= 45**         0.005      0.015     <- the only setting clearing BOTH blocks
+//   CHOP <= 40             0.005      0.108
+//   CHOP <= 35             0.041      0.083
+//   ADX>=25 + CHOP<=35     0.040      0.215     <- ADX makes CHOP WORSE out of sample
+//   ADX>=18 + CHOP<=35     0.016      0.127
+//
+// WHY ADX FAILS AND CHOP DOES NOT, mechanically: on US30 breakout bars ADX >= 25 passes 55.6%
+// against 50.0% of bars in general -- a lift of **1.11x**, so it barely discriminates. CHOP <= 40
+// passes 41.1% against 21.3% -- a lift of **1.93x**. And 68.3% of the bars CHOP keeps already pass
+// ADX, so stacking them removes little that CHOP has not already removed.
+//
+// Against the harder minute-of-day matched control, CHOP <= 40 clears BOTH blocks only on US30
+// (p 0.016 research, 0.039 locked; CHOP <= 35 gives 0.010 and 0.001). On US100, NQ, the 8.5-year
+// US30 history and gold, research passes and the holdout does not. So: CHOP is a real filter and
+// ADX is not, but "real" here means it clears a selectivity null broadly and a drift-priced null on
+// one market of five.
+//
 // ==========================================================================================
 
 indicator("V20 Donchian 30/20 + linear regression [signals]", overlay = true, max_lines_count = 200)
@@ -44,6 +84,14 @@ lrLen    = input.int(50, "Regression length", minval = 5, group = gR,
      tooltip="Inert. 20/30/50/75/100 give pooled EV -0.029/-0.030/-0.024/-0.021/-0.019 across five markets.")
 lrMode   = input.string("close>value", "Confirmation", options = ["off", "slope", "forecast", "close>value", "both"], group = gR,
      tooltip="forecast: only 12.1% of breakout bars pass this -- it mostly REJECTS breakouts. close>value: passes 89.1% of them and adds +0.005 R.")
+
+gRg      = "Regime filter -- CHOP earns its place, ADX does not"
+useChop  = input.bool(false, "Require CHOP(14) below a ceiling", group = gRg,
+     tooltip="CHOP <= 45 is the only regime setting that beats a random filter of the same selectivity on BOTH blocks (p 0.005 research, 0.015 locked). The pooled profit factor ladder is monotone on both: 100 -> 0.959/0.968, 50 -> 0.992/0.986, 45 -> 1.007/1.022, 40 -> 1.029/1.015, 35 -> 1.027/1.044.")
+chopMax  = input.float(45, "  CHOP ceiling", minval = 1, maxval = 100, step = 1, group = gRg)
+useAdx   = input.bool(false, "Require ADX(14) above a floor", group = gRg,
+     tooltip="OFF because it does nothing. Every ADX floor from 10 to 40 fails a same-selectivity control on both blocks (p 0.248 and 0.372 at 25). On breakout bars ADX >= 25 has a lift of 1.11x -- it barely discriminates. Adding it ON TOP of CHOP makes the holdout WORSE: CHOP<=35 alone p 0.083, with ADX>=25 p 0.215.")
+adxMin   = input.float(25, "  ADX floor", minval = 0, step = 1, group = gRg)
 
 gT       = "Trading window"
 useWin   = input.bool(false, "Restrict signals to a session", group = gT)
@@ -83,12 +131,19 @@ okShortC = lrMode == "off" ? true : lrMode == "slope" ? lrSlope < 0 :
 
 // BARE `hour`/`minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME, an hour off New York.
 inWin = not useWin or not na(time(timeframe.period, winSess, "America/New_York"))
+// CHOP(14) = 100 * log10(sum(TR,14) / (14-bar range)) / log10(14). LOW means trending.
+chopV  = 100 * math.log10(math.sum(ta.tr(true), 14) /
+     math.max(ta.highest(high, 14) - ta.lowest(low, 14), syminfo.mintick)) / math.log10(14)
+[_p2, _m2, adxV] = ta.dmi(14, 14)        // returns [+DI, -DI, ADX] IN THAT ORDER
+regimeOk = (not useChop or (not na(chopV) and chopV <= chopMax))
+     and (not useAdx or (not na(adxV) and adxV >= adxMin))
+
 ready = not na(atrN) and atrN > 0 and not na(lrVal)
 
 // SIGNALS ARE CONFIRMED-BAR ONLY. Without `barstate.isconfirmed` a marker appears and disappears as
 // the bar ticks, and an alert fires on a bar that never satisfied the rule at its close.
-sigL = useLong  and ready and inWin and okLongC  and not na(entHi) and high > entHi and barstate.isconfirmed
-sigS = useShort and ready and inWin and okShortC and not na(entLo) and low  < entLo and barstate.isconfirmed
+sigL = useLong  and ready and inWin and regimeOk and okLongC  and not na(entHi) and high > entHi and barstate.isconfirmed
+sigS = useShort and ready and inWin and regimeOk and okShortC and not na(entLo) and low  < entLo and barstate.isconfirmed
 
 // ----------------------------------------------------------------- the levels a signal implies
 // The strategy enters at the NEXT bar's open, so these are drawn from the signal bar's close as an
