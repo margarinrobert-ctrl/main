@@ -144,9 +144,69 @@ Caveats: one market, two timeframes; the research→locked PF correlation is −
 negative conclusion rests on the marginal averages rather than on any cell; and realised drawdown is
 one path — `STUDY_V11_MARKET` saw it triple out of sample on a rule whose PF barely moved.
 
+## 8. HMA CROSS, broken out — and a correction to §3
+
+### 8a. HMA CROSS on its own
+
+Hull was in the grid, but §3 pooled STATE and CROSS. Broken out, 9 pairs × 4 CHOP × 2 timeframes:
+
+```
+HMA CROSS cells that beat their own no-MA baseline on locked: 29 of 72 = 40%.  Chance is 50%.
+mean edge -0.048 PF
+```
+
+**Worse than the all-MA average of 45%**, which is what its near-zero lag predicts. Its best
+research cell (15m `HMA 50/200 CROSS` + CHOP≤40, research PF 1.450) lands at locked PF 1.068 —
++0.041 over baseline, on 50 trades.
+
+Several 15m HMA cells show large positive edges (`21/55` off: +0.476, `9/50` off: +0.248) and every
+one of them has **research PF below 1** (0.969, 1.021) rising to 1.6/1.4 on locked. That is the
+wrong shape — the branch treats passing on the holdout while failing on research as a defect, not a
+result — and it is why those rows are not carried forward.
+
+### 8b. The lag gradient in §3 does not survive lag-matching
+
+§3 reported locked PF falling monotonically with lag and called it the one non-flat result in the
+study. **That was a pooling artifact and this section withdraws it.**
+
+The discriminating test is to solve for the window giving each type the *same* average lag and see
+whether the types converge. Solving:
+
+| target lag | SMA | EMA | WMA | HMA |
+| --- | --- | --- | --- | --- |
+| 2 / 5 | 5/11 | 5/11 | 7/16 | 32/134 |
+| 4 / 10 | 9/21 | 9/21 | 13/31 | unreachable |
+| 6 / 15 | 13/31 | 13/31 | 19/46 | unreachable |
+| 10 / 25 | 21/51 | 21/51 | 31/76 | unreachable |
+| 24 / 60 | 49/121 | 49/121 | 73/181 | unreachable |
+
+SMA and EMA need the *identical* window at every target — they are the same average. DEMA, TEMA and
+KAMA cannot be matched at any lag, which is `STUDY_MA_LAG`'s result reproducing.
+
+**Locked PF by matched lag is not monotone:** 5 → 1.079, 10 → 1.165, 15 → 1.158, 25 → 1.082,
+60 → 1.263. The clean ordering in §3 came from pooling nine pairs per type, not from lag.
+
+**And the apparent type effect is a sample-size effect:**
+
+| mode | rows | mean n | mean within-row spread across the four types |
+| --- | --- | --- | --- |
+| STATE | 10 | 161 | **0.080** |
+| CROSS | 9 | 60 | **0.424** |
+
+At matched lag with 100–235 trades per cell the types collapse onto each other — spread as low as
+**0.007 PF** at the 4/10 row. At 30–90 trades they scatter by five times as much. `STUDY_MA_LAG`
+predicted exactly this: at matched lag these averages correlate 0.9999+ and their trigger sets
+overlap 89.5–97.3%, so the residual is noise on the 5–10% of triggers that differ.
+
+What does survive: the **lag axis is 2.28× the type axis** (mean spread 0.553 vs 0.243), so if you
+must pick, pick a lag and stop worrying about the letter in front of it. That is a restatement of
+`STUDY_MA_LAG` on a new base, not a new edge — none of these rows beats the no-MA 30m/CHOP≤40
+baseline's locked PF of 1.318 with any reliability.
+
 ## Files
 
 | file | what it does |
 | --- | --- |
+| `research/v24/v24hma.py` | HMA CROSS cell by cell, and the lag-matched test that withdraws the §3 gradient |
 | `research/v24/v24ma.py` | the 1,016-cell grid, the lag table, marginals by type/pair/mode, top 40 with drawdowns, controls |
 | `docs/ib/v24_top40_ma.txt` | the raw top-40 table |
