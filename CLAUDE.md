@@ -926,7 +926,25 @@ it is not the R-denominator artifact that widening a stop always risks. It is a 
 an existing rule, not an edge. Caveats: 30m research POINTS fall while R rises; SPX daily leaves 8
 locked trades after the position lock so nothing rests on that backtest; the SPX locked block
 contains COVID; there is no VIX9D/VIX3M so the IMPLIED term structure was never testable.
+Shipped as `pine/v22/V22_ADAPTIVE_VOL_STOP_strategy.pine`.
 See `docs/ib/STUDY_V22_VOLATILITY.md`.
+
+**A STOP CAN ANCHOR TO THE SIGNAL BAR'S CLOSE, AND THAT IS WHAT LETS A SCRIPT PROTECT THE ENTRY
+BAR.** The engine anchors to the ENTRY BAR'S OPEN, which no script can do -- at the moment the exit
+order is written the fill price does not exist -- so placing the exit a bar late leaves the entry bar
+naked (`STUDY_PINE_PARITY`: 4.4-13.0% of trades, -33 to -118 points). Anchoring to the signal close
+is knowable at order time, so entry and exit go out together. Measured before adopting: **99.03% /
+99.50% identical exit bars, R correlation 0.9935 / 0.9998**, locked PF 1.249 -> 1.241 and
+1.181 -> 1.182. `research/v22/v22anchor.py`.
+
+**AND PARITY CAUGHT THE BUG READING COULD NOT: an exit-bar marker updated BELOW the entry block.**
+The first V22 draft was lint-clean and read correctly, and the stale `lastExitBar` let it re-enter on
+the bar a trade closed -- **95 extra trades on 15m, 61 on 30m**, dragging script points per trade to
++0.92 against the engine's +4.31. Order the guard blocks so the exit is recorded BEFORE the entry
+test runs on the same bar, and count `strategy.closedtrades` rather than watching
+`strategy.position_size[1]`, which misses a trade that opens and stops out inside ONE bar. After the
+fix: every series exact, **100.00% identical exit bars**, per-trade correlation 0.99997, and the only
+residual is the round turn the engine nets and the harness does not.
 
 **THE VIX CANNOT BE JOINED TO ANY FUTURES FEED HERE.** `data/VIX_daily.csv` ends 2021-12-31 and NQ
 begins 2022-12-26 -- a 360-day gap, zero shared sessions. Its only partner on disk is
@@ -984,6 +1002,7 @@ of `US30_LONG_15m` / `US100_LONG_15m` / `XAU_ISO_15m`, whose spans do straddle 2
 | `research/v22/v22stop.py`, `v22destroy.py` | the declared stop policies, and the three attacks on them |
 | `research/v22/v22vix.py` | SPX x VIX daily: 39 causal VIX features, the VRP, a small daily engine |
 | `research/v22/v22vixrun.py`, `v22vixtrade.py` | the positive control, the chop IC test, the VIX heat table |
+| `research/v22/v22anchor.py`, `v22_parity.py` | the signal-close stop anchor, and the shipped script diffed against the engine |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |

@@ -296,6 +296,44 @@ condition, measured directly instead of inferred.
 
 Everything else in the volatility complex tested null or inverted.
 
+## 7. The shipped script, and the bug parity caught
+
+`pine/v22/V22_ADAPTIVE_VOL_STOP_strategy.pine` — Donchian 30/20 long, 20-bar channel exit, no take
+profit, one unit, with the adaptive stop as the only addition. The window and the flatten are inputs
+and both default **OFF**, because every number in this study is all-hours.
+
+**The stop anchors to the signal bar's close, not the entry bar's open.** A script cannot use the
+engine's anchor: at the moment the exit order must be written, the fill price does not exist yet.
+Placing the exit a bar late leaves the entry bar unprotected — `STUDY_PINE_PARITY` measured that at
+4.4–13.0% of trades averaging −33 to −118 points. Anchoring to the signal close lets entry and exit
+be placed together, and it was measured before being adopted (`v22anchor.py`):
+
+| | 15m | 30m |
+| --- | --- | --- |
+| identical exit bar | 99.03% | 99.50% |
+| per-trade R correlation | 0.9935 | 0.9998 |
+| locked PF, engine anchor → script anchor | 1.249 → 1.241 | 1.181 → 1.182 |
+
+**Parity found a real bug in the first draft**, which was lint-clean and read correctly. The
+`lastExitBar` update sat below the entry block, so on the bar a trade closed the entry test read a
+stale value and the script re-entered immediately — **95 extra trades on 15m and 61 on 30m** that the
+research position lock forbids, dragging script points per trade to +0.92 against the engine's
++4.31. Counting `strategy.closedtrades` instead of watching `strategy.position_size[1]` also catches
+a trade that opens and stops out inside one bar, where `position_size` reads 0 at both closes.
+
+After the fix (`research/v22/v22_parity.py`, two runs as the protocol requires):
+
+| check | 15m | 30m |
+| --- | --- | --- |
+| percentile rank / ATR / entry channel / exit channel | **0 disagreements** | **0 disagreements** |
+| trades | 1162 of 1163 | 664 of 665 |
+| identical exit bar | **100.00%** | **100.00%** |
+| per-trade points correlation | **0.999971** | **0.999983** |
+
+The one missing trade on each is open at the end of the data. The residual +4.08 and +4.03 points
+per trade is exactly the round turn the engine nets and the harness does not — which is the check
+that the fee is the only thing left between them.
+
 ## Files
 
 | file | what it does |
@@ -308,3 +346,6 @@ Everything else in the volatility complex tested null or inverted.
 | `research/v22/v22vix.py` | SPX×VIX loader, 39 causal VIX features, the daily Donchian engine |
 | `research/v22/v22vixrun.py` | the positive control, the chop IC test, top 50, family table |
 | `research/v22/v22vixtrade.py` | VIX heat table, the implied-vs-realised stop policy, condition table |
+| `research/v22/v22anchor.py` | the stop anchor a script can actually place, measured against the engine's |
+| `research/v22/v22_parity.py` | the shipped script's order model in Python, diffed against the engine |
+| `pine/v22/V22_ADAPTIVE_VOL_STOP_strategy.pine` | the shipped strategy |
