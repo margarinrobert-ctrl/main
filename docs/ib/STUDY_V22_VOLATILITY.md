@@ -334,6 +334,60 @@ The one missing trade on each is open at the end of the data. The residual +4.08
 per trade is exactly the round turn the engine nets and the harness does not — which is the check
 that the fee is the only thing left between them.
 
+## 8. Should it ship on the bare Donchian or on the V20/V21 stack?
+
+The first V22 script shipped on the plain Donchian 30/20 with a 2.0N stop and no target — which is
+**not** the base V20 and V21 were built on. Three components were left out, and only two of them for
+a reason:
+
+| component | why it was left out | was that justified? |
+| --- | --- | --- |
+| linreg 50 confirmation | V20 measured all four declared readings; the best adds +0.005 R and the most literal is mechanically backwards on a breakout bar (lift 0.24×) | yes, on evidence |
+| 2R take profit | no take profit has beaten every target tested here seven independent times | yes, on evidence |
+| **CHOP ≤ 45** | **it had never been tested with an adaptive stop** | **no — a gap, not a judgement** |
+
+So all three went back on the bench, jointly with the adaptive stop (`research/v22/v22stack.py`).
+R per trade, NQ:
+
+| configuration | 15m research | 15m locked | 30m research | 30m locked |
+| --- | --- | --- | --- | --- |
+| flat 2.0N, no target (the old base) | −0.0286 | +0.0939 | +0.0870 | +0.0873 |
+| **ADAPTIVE, no target (shipped default)** | +0.0082 | **+0.1454** | **+0.1093** | +0.1008 |
+| ADAPTIVE + CHOP ≤ 45 | +0.0700 | +0.0820 | +0.0970 | +0.1007 |
+| ADAPTIVE + linreg C | −0.0028 | +0.1336 | +0.1036 | +0.1027 |
+| ADAPTIVE + CHOP + linreg (full stack) | +0.0748 | +0.0752 | +0.1082 | **+0.1105** |
+| flat 2.0N + CHOP ≤ 45 | +0.0013 | +0.0426 | +0.1105 | +0.0622 |
+| ADAPTIVE + 2R target | −0.0146 | +0.0535 | +0.0130 | +0.0493 |
+
+**CHOP ≤ 45 against a selectivity-matched control, on the adaptive base:**
+
+| block | n | R/trade | control mean | excess | p |
+| --- | --- | --- | --- | --- | --- |
+| 15m research | 551 | +0.0700 | +0.0240 | +0.0460 | **0.037** |
+| 15m locked | 293 | +0.0820 | +0.1300 | **−0.0480** | **0.932** |
+| 30m research | 314 | +0.0970 | +0.1180 | −0.0210 | 0.740 |
+| 30m locked | 164 | +0.1007 | +0.0903 | +0.0104 | 0.398 |
+
+It passes once and inverts — on 15m locked a **random filter of the same selectivity earns more**.
+
+**And it is not redundant with the volatility state**, which was the obvious explanation and is wrong:
+correlation over breakout signals is only **−0.230 (15m) / −0.258 (30m)**, and CHOP leans slightly
+*away* from the calm bucket (40.7% of CHOP-kept signals are calm against 48.0% of all signals — lift
+**0.85×**). This is a filter that does not replicate on this base, not two filters doing one job.
+
+**The caveat that keeps CHOP as a switch rather than a deletion.** V21's CHOP result was pooled over
+**five markets** on the flat-stop V20 base. A container recycle destroyed every feed except NQ, so
+the re-test above is **one market on a different base** — weaker evidence than the finding it checks.
+CHOP is *unconfirmed here*, not refuted. Note also that on the flat base CHOP helps research on both
+timeframes (−0.0286→+0.0013 and +0.0870→+0.1105), which is where V21 found it, and hurts locked on
+both — so the one-market disagreement is with the holdout, not the research block.
+
+**One cell worth knowing about:** on 30m the full stack is the best locked cell in the table
+(+0.1105, PF 1.205, Sharpe 1.13). It is also the best of seven configurations on one timeframe while
+being far worse on the other, so it ships as an option, not a default.
+
+All three are now inputs on the shipped script, defaulting OFF. Nothing validated was removed.
+
 ## Files
 
 | file | what it does |
@@ -348,4 +402,5 @@ that the fee is the only thing left between them.
 | `research/v22/v22vixtrade.py` | VIX heat table, the implied-vs-realised stop policy, condition table |
 | `research/v22/v22anchor.py` | the stop anchor a script can actually place, measured against the engine's |
 | `research/v22/v22_parity.py` | the shipped script's order model in Python, diffed against the engine |
+| `research/v22/v22stack.py` | the three V20/V21 components re-tested jointly, and the CHOP overlap diagnostic |
 | `pine/v22/V22_ADAPTIVE_VOL_STOP_strategy.pine` | the shipped strategy |

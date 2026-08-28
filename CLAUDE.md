@@ -929,6 +929,20 @@ contains COVID; there is no VIX9D/VIX3M so the IMPLIED term structure was never 
 Shipped as `pine/v22/V22_ADAPTIVE_VOL_STOP_strategy.pine`.
 See `docs/ib/STUDY_V22_VOLATILITY.md`.
 
+**V21'S CHOP FILTER DOES NOT SURVIVE ON THE ADAPTIVE-STOP BASE, AND IT IS NOT REDUNDANCY.** Re-tested
+jointly on NQ: against a selectivity-matched control it scores 15m research p **0.037** then 15m
+locked p **0.932** -- where a RANDOM filter of the same selectivity earns MORE -- and 30m 0.740 /
+0.398. It passes once and inverts. The obvious explanation is wrong: correlation with the volatility
+percentile over breakout signals is only **-0.230 / -0.258** and CHOP leans slightly AWAY from the
+calm bucket (lift **0.85x / 0.88x**), so these are not two names for one filter. KEEP THE CAVEAT
+ATTACHED: V21's result was POOLED OVER FIVE MARKETS on the FLAT-stop base and only NQ survived the
+recycle, so this is one market on a different base -- CHOP is UNCONFIRMED here, not refuted, and it
+ships as a default-off input rather than being deleted. The same re-test confirms the other two
+V20/V21 components on evidence: linreg reading C is worth ~+0.005 R, and a 2R target is worse on
+both timeframes and both blocks, which is the EIGHTH independent time no-take-profit has won. And
+note the shape trap: on 30m the FULL STACK is the best locked cell in the table (+0.1105, PF 1.205)
+while being far worse on 15m -- best-of-seven on one timeframe is not a finding.
+
 **A STOP CAN ANCHOR TO THE SIGNAL BAR'S CLOSE, AND THAT IS WHAT LETS A SCRIPT PROTECT THE ENTRY
 BAR.** The engine anchors to the ENTRY BAR'S OPEN, which no script can do -- at the moment the exit
 order is written the fill price does not exist -- so placing the exit a bar late leaves the entry bar
@@ -1003,6 +1017,7 @@ of `US30_LONG_15m` / `US100_LONG_15m` / `XAU_ISO_15m`, whose spans do straddle 2
 | `research/v22/v22vix.py` | SPX x VIX daily: 39 causal VIX features, the VRP, a small daily engine |
 | `research/v22/v22vixrun.py`, `v22vixtrade.py` | the positive control, the chop IC test, the VIX heat table |
 | `research/v22/v22anchor.py`, `v22_parity.py` | the signal-close stop anchor, and the shipped script diffed against the engine |
+| `research/v22/v22stack.py` | the V20/V21 components re-tested jointly with the adaptive stop |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
