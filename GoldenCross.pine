@@ -1,0 +1,88 @@
+//@version=5
+// Golden Cross 50/200, long only, with the benchmarks that decide whether the equity curve means
+// anything. A v5 port of ChartArt's 2016 script (v2), with three things the original leaves out:
+//
+//   1. COSTS. The original sets no commission or slippage, so the Strategy Tester charges whatever
+//      is in Properties -- usually zero. They are declared here so the default run is honest.
+//   2. CONFIRMED BARS. Entries are gated on barstate.isconfirmed, so the "Recalculate on every
+//      tick" checkbox in Properties cannot change the result.
+//   3. THE SAMPLE SIZE AND THE EXPOSURE. A 50/200 cross fires a handful of times per decade and is
+//      flat for roughly half of it. The table prints trade count, time in market, and buy and hold
+//      over the same span, because "it made money" is not a claim until those three are next to it.
+//
+// The signal logic is unchanged and is not repainting: the cross is read at a confirmed close and
+// the fill is the next bar's open.
+
+strategy("Golden Cross 50/200, benchmarked", shorttitle="GC_bench", overlay=true,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     initial_capital=100000, currency=currency.NONE,
+     commission_type=strategy.commission.percent, commission_value=0.02,
+     slippage=1, pyramiding=0, calc_on_every_tick=false)
+
+// Input
+grpS = "Signal"
+fastLen  = input.int(50,  "Fast SMA length", minval=1, group=grpS)
+slowLen  = input.int(200, "Slow SMA length", minval=2, group=grpS)
+grpD = "Display"
+showBars = input.bool(true,  "Colour bars by trend", group=grpD)
+showFast = input.bool(false, "Show fast moving average", group=grpD)
+showSlow = input.bool(true,  "Show slow moving average", group=grpD)
+showStat = input.bool(true,  "Show benchmark table", group=grpD)
+
+// Calculation
+maFast = ta.sma(close, fastLen)
+maSlow = ta.sma(close, slowLen)
+
+bullishCross = ta.crossover(maFast, maSlow)
+bearishCross = ta.crossunder(maFast, maSlow)
+
+// Strategy -- confirmed close only, so tick evaluation cannot fire a signal the bar never had
+if bullishCross and barstate.isconfirmed
+    strategy.entry("long", strategy.long)
+
+if bearishCross and barstate.isconfirmed
+    strategy.close("long")
+
+// Benchmarks. Buy and hold is measured from the first bar the strategy could ever have traded,
+// not from bar 0, so the warm-up of the slow average is not silently credited to either side.
+var float benchOpen = na
+var int   barsHeld   = 0
+var int   barsLive    = 0
+firstTradable = not na(maSlow) and not na(maSlow[1])
+if firstTradable and na(benchOpen)
+    benchOpen := open
+if firstTradable
+    barsLive += 1
+    barsHeld += strategy.position_size != 0 ? 1 : 0
+
+buyHoldPct  = na(benchOpen) ? na : (close - benchOpen) / benchOpen * 100.0
+stratPct    = (strategy.equity - strategy.initial_capital) / strategy.initial_capital * 100.0
+exposurePct = barsLive > 0 ? barsHeld / barsLive * 100.0 : na
+
+if showStat and barstate.islast
+    var table t = table.new(position.top_right, 2, 6, border_width=1)
+    table.cell(t, 0, 0, "closed trades",  text_halign=text.align_left)
+    table.cell(t, 1, 0, str.tostring(strategy.closedtrades))
+    table.cell(t, 0, 1, "time in market", text_halign=text.align_left)
+    table.cell(t, 1, 1, str.tostring(exposurePct, "#.0") + "%")
+    table.cell(t, 0, 2, "strategy",       text_halign=text.align_left)
+    table.cell(t, 1, 2, str.tostring(stratPct, "#.0") + "%")
+    table.cell(t, 0, 3, "buy and hold",   text_halign=text.align_left)
+    table.cell(t, 1, 3, str.tostring(buyHoldPct, "#.0") + "%")
+    table.cell(t, 0, 4, "excess",         text_halign=text.align_left)
+    table.cell(t, 1, 4, str.tostring(stratPct - buyHoldPct, "#.0") + "%")
+    table.cell(t, 0, 5, "sample",         text_halign=text.align_left)
+    table.cell(t, 1, 5, strategy.closedtrades < 30 ? "TOO SMALL" : "ok")
+
+// Colours
+upTrend   = close > maFast and close > maSlow and ta.change(maSlow) > 0
+downTrend = close < maFast and close < maSlow and ta.change(maSlow) < 0
+barTrendColor = upTrend ? color.green : downTrend ? color.red : color.blue
+barcolor(showBars ? barTrendColor : na)
+
+// Output
+plot(showFast ? maFast : na, "Fast SMA", ta.change(maFast) > 0 ? color.green : color.red, 3)
+plot(showSlow ? maSlow : na, "Slow SMA", ta.change(maSlow) > 0 ? color.green : color.red, 3)
+
+alertcondition(bullishCross, title="Golden Cross (bullish)", message="Bullish")
+alertcondition(bearishCross, title="Death Cross (bearish)", message="Bearish")
