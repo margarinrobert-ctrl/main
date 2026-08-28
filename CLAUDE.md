@@ -985,6 +985,26 @@ of 531. Grid population: 68.9% research PF>1, 54.9% locked, research-to-locked P
 top 100 mean research PF 1.369 against locked 1.163 -- that gap is the selection premium.
 See `docs/ib/STUDY_V23_MOMENTUM_REGIME.md`.
 
+**AN MA CROSSOVER ADDS NOTHING TO A DONCHIAN+CHOP BREAKOUT, AND THE ONLY GRADIENT IS LAG.** 1,016
+declared cells (7 MA types x 9 pairs x 2 modes + off, x 4 CHOP x 2 timeframes) on the simplest base.
+**442 of 988 MA cells beat their own same-CHOP same-timeframe no-MA baseline on locked = 45%, chance
+is 50%**; mean locked PF change from adding an MA **+0.015**; research-to-locked PF correlation
+**-0.097**. Type spread across all seven is **0.093 PF** and pair spread across all nine is **0.135**
+-- but locked PF falls MONOTONICALLY WITH LAG: SMA (lag 10.0) 1.208, EMA (10.0) 1.183, WMA (6.67)
+1.161, KAMA (1.25) 1.138, DEMA (0) 1.131, HMA (1.0) 1.115, TEMA (0) 1.114. **The lagging averages
+beat the extrapolators and the "responsive" ones are the worst three** -- same direction as chasing
+a breakout being the most destructive choice on the branch. SMA and EMA have IDENTICAL lag at every
+window and differ 0.025 PF, which is the noise `STUDY_MA_LAG` predicted. The 9/21 golden cross ranks
+FIFTH OF NINE pairs. **A LOWER DRAWDOWN HERE IS JUST TRADING LESS**: adding an MA cuts locked
+drawdown 4.6 R while keeping 68% of the trades, and no MA type reaches the no-MA baseline's
+return/DD of 1.67. CROSS beats STATE on PF (1.182 vs 1.118) and drawdown (16.4 vs 23.0 R) on HALF
+the trades (108 vs 222) -- the same artifact. Best research cell 15m `WMA 50/200 CROSS`+CHOP<=40
+goes p 0.013 -> **locked PF 0.858, p 0.685**; the 30m best scores research PF **3.190 at p 0.000**
+and cannot muster 30 locked trades. Top 40 mean research PF 1.623 -> locked 1.167. SHIP NOTHING: the
+best configuration has no moving average in it -- **30m Donchian 30/20, 2.0N stop, no target,
+CHOP<=40**, locked PF 1.318 / +0.1542 R / 11.6 R drawdown / ret-DD 1.67.
+See `docs/ib/STUDY_V24_MA_CROSSOVER.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1037,6 +1057,7 @@ See `docs/ib/STUDY_V23_MOMENTUM_REGIME.md`.
 | `research/v22/v22anchor.py`, `v22_parity.py` | the signal-close stop anchor, and the shipped script diffed against the engine |
 | `research/v22/v22stack.py` | the V20/V21 components re-tested jointly with the adaptive stop |
 | `research/v23/v23mom.py` | momentum x ADX x CHOP on the V20 base: marginal averages, top 100, controls, lift |
+| `research/v24/v24ma.py` | 7 MA types x 9 pairs x 2 modes x CHOP: the lag table, drawdowns, and the no-MA baseline |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
