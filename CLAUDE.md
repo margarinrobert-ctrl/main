@@ -72,6 +72,13 @@ It is roughly free inside a morning window, where the trade would have closed an
 at the NEXT BAR'S OPEN — `strategy.close_all()` cannot sell the close of the bar that triggers it —
 so the engine was changed to match the script (`flat_open`), not the other way round.
 
+**EVERY ENTRY WINDOW THAT STARTS AT 09:30 IS POOLED-POSITIVE AND EVERY ONE THAT STARTS EARLIER IS
+NOT.** Seven windows x five markets on V20's locked block: all hours -0.0179, 07:00-11:00 -0.0078,
+08:00-12:00 -0.0010, then 09:30-11:00 **+0.0345**, 09:30-12:00 +0.0187, 09:30-16:00 +0.0075,
+13:00-16:00 +0.0161. The SHAPE is consistent and is the finding; the best single window is not — it
+helps three markets and hurts two badly, and it is the best of seven. Consistent with the pre-open
+block being subtractive on all three indices (`STUDY_TREND_PULLBACK`, `STUDY_INTRADAY_SESSION`).
+
 **A LINEAR REGRESSION CANNOT CONFIRM A BREAKOUT, AND ITS MOST LITERAL READING IS BACKWARDS.** On a
 breakout bar the 50-period regression's one-bar-ahead FORECAST is BELOW the current price **88% of
 the time** (12.1% of breakout bars pass, against 50.5% of bars in general — lift **0.24x**), because

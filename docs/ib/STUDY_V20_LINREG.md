@@ -100,6 +100,36 @@ target ships on because the brief asked for it; the input turns it off.
 
 ---
 
+## 4b. The trading window and the flatten
+
+Added on request, both **off by default**. Seven windows and three flatten times, a set fixed in
+advance. Pooled EV in R across all five markets, locked block:
+
+| entry window | US30 | US100 | NQ | US30L | XAU | **pooled** | PF | n |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| all hours | +0.0174 | −0.0082 | +0.0163 | −0.0778 | −0.0022 | −0.0179 | 0.968 | 3,305 |
+| 07:00–11:00 | +0.0556 | −0.0372 | +0.0386 | −0.0894 | +0.0197 | −0.0078 | 0.986 | 1,891 |
+| 08:00–12:00 | −0.0357 | −0.0463 | +0.0741 | −0.0710 | +0.0328 | −0.0010 | 0.998 | 1,928 |
+| **09:30–11:00** | −0.1102 | −0.0699 | +0.1005 | −0.0099 | +0.0857 | **+0.0345** | 1.069 | 1,185 |
+| 09:30–12:00 | −0.1592 | −0.1243 | +0.0900 | −0.0221 | +0.0762 | +0.0187 | 1.038 | 1,376 |
+| 09:30–16:00 | −0.1649 | −0.0435 | +0.0214 | −0.0248 | +0.0556 | +0.0075 | 1.016 | 1,779 |
+| 13:00–16:00 | −0.2259 | −0.0213 | +0.0769 | −0.0011 | +0.0467 | +0.0161 | 1.038 | 815 |
+
+**Every window that starts at the 09:30 cash open is pooled-positive and every window that starts
+before it is not.** That shape is consistent and is the useful part. The best single window,
+09:30–11:00, is not: it helps NQ, gold and the 8.5-year US30 history while taking US30 to −0.1102
+and US100 to −0.0699. Three of five, best of seven — it ships as the default *value* of the input
+with the input itself off.
+
+**The flatten costs money in every configuration measured:** all hours −0.0179 → −0.0461 at 16:00
+and −0.0360 at 19:00; 09:30–16:00 +0.0075 → −0.0209 at 16:00. It truncates exactly the trades the
+channel exit exists to hold. It fills at the **next bar's open**, because `strategy.close_all()`
+issued at a bar's close cannot sell that close — the engine was changed to match the script for V16,
+so these are the script's figures.
+
+
+---
+
 ## 5. Verdict
 
 The configuration as briefed should not be traded as it stands. The regression is redundant with the
@@ -113,4 +143,5 @@ target.
 
 `research/v20/v20linreg.py` (rolling OLS, validated; the four declared readings) · `v20run.py`
 (40 research cells, redundancy) · `v20judge.py` (locked read, controls, perturbation, geometry,
-cost stress, Monte Carlo) · `pine/turtle/V20_DONCHIAN_LINREG_strategy.pine`.
+cost stress, Monte Carlo) · `v20window.py` (the window and flatten measurements) ·
+`pine/turtle/V20_DONCHIAN_LINREG_strategy.pine` · `pine/turtle/V20_DONCHIAN_LINREG_indicator.pine`.
