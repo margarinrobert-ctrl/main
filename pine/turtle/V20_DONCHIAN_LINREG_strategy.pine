@@ -155,6 +155,62 @@
 // ADX is not, but "real" here means it clears a selectivity null broadly and a drift-priced null on
 // one market of five.
 //
+// ================================ AND MOMENTUM ON TOP? MEASURED, AND NO ================================
+// A declared grid crossed momentum against the two regime filters on this base: 12 momentum
+// readings x 3 rungs (plus OFF) x 4 ADX floors x 4 CHOP ceilings x 2 timeframes = 1,184 cells, of
+// which 531 clear a 25-trade floor. NQ only -- every other feed was lost to a container recycle --
+// so this is two timeframes on one market, weaker than the five-market table above.
+//
+// THE POPULATION FIRST. 68.9% of cells have research PF > 1 and 54.9% keep it on locked, and a
+// cell's research PF correlates +0.489 with its locked PF. So the ranking half-transfers, and row 1
+// of 531 still carries a selection premium: the top 100 average research PF 1.369 and LOCKED 1.163.
+//
+// THE MARGINAL AVERAGE PER AXIS, which is how a grid should be read:
+//
+//   momentum setting   cells   research PF   LOCKED PF   LOCKED Sharpe   % cells locked PF>1
+//   tsi >= 5              14         1.113       1.151            0.36                  64%
+//   ao >= 0.25            14         1.185       1.133            0.34                  64%
+//   cmo14 >= 20           15         1.093       1.125            0.27                  60%
+//   **OFF (no momentum)** 17         1.061       1.037            0.09                  47%
+//   roc20 >= 2            13         1.099       0.947           -0.22                  23%
+//   aroon21 >= 80         10         1.089       0.939           -0.40                  10%
+//
+// **16 of the 36 momentum settings beat the no-momentum baseline on the locked block = 44%, where
+// chance is 50%.** That is V16's finding reproducing on a different base: 2,167 conditions there,
+// 28% beat the unfiltered rule out of sample.
+//
+// AGAINST A SAME-SELECTIVITY CONTROL, the three-way question asked directly:
+//
+//   configuration                       research PF / p        LOCKED PF / p
+//   30m  no filter (V20 default)          1.082   1.000          1.014   1.000
+//   30m  MOMENTUM alone (best cell)       1.252   0.003          0.977   0.750   <- inverts
+//   30m  **CHOP <= 45 alone**             1.191   0.000          1.138   **0.048**  <- clears BOTH
+//   30m  ADX >= 20 alone                  1.135   0.417          0.990   0.680
+//   30m  ADX >= 20 + CHOP <= 45           1.204   0.345          1.212   0.395
+//   30m  CHOP <= 45 + momentum            1.257   0.022          1.064   0.427
+//   30m  ALL THREE                        under 25 trades -- not scorable
+//   15m  MOMENTUM alone (best cell)       1.448   0.005          0.726   0.943   <- control WINS
+//
+// CHOP alone is the only cell that clears its control on both blocks. ADX makes it worse, momentum
+// makes it worse, and all three together does not have enough trades to score at all.
+//
+// WHY, MECHANICALLY -- the same reason V16 found. A breakout IS a momentum event, so a momentum
+// filter has almost nothing left to remove:
+//
+//   reading          all bars   BREAKOUT bars    lift   signals it removes
+//   rsi14 >= 55         39.9%           96.3%   2.41x                 3.7%
+//   stoch14 >= 70       37.4%           91.8%   2.46x                 8.2%
+//   cci21 >= 100        22.6%           89.0%   3.94x                11.0%
+//   slope50 >= 0        54.9%           77.8%   1.42x                22.2%
+//
+// The cleanest demonstration is in the grid itself: every momentum reading set at its zero rung --
+// `cmo14>=0`, `aroon21>=0`, `roc20>=0`, `tsmom20>=0`, `agree20_60>=0` -- reproduces the NO-MOMENTUM
+// row EXACTLY, same 277 research and 147 locked trades, same PF to three decimals. They are not
+// weak filters; on a breakout bar they are not filters at all.
+//
+// So the momentum input below ships OFF, like ADX. The configuration these measurements support is
+// the one already available: 30 minutes, CHOP on, ADX off, momentum off.
+//
 // ==========================================================================================
 
 strategy("V20 Donchian 30/20 + linear regression", overlay = true, pyramiding = 0,
@@ -187,6 +243,12 @@ chopMax  = input.float(45, "  CHOP ceiling", minval = 1, maxval = 100, step = 1,
 useAdx   = input.bool(false, "Require ADX(14) above a floor", group = gRg,
      tooltip="OFF because it does nothing. Every ADX floor from 10 to 40 fails a same-selectivity control on both blocks (p 0.248 and 0.372 at 25). On breakout bars ADX >= 25 has a lift of 1.11x -- it barely discriminates. Adding it ON TOP of CHOP makes the holdout WORSE: CHOP<=35 alone p 0.083, with ADX>=25 p 0.215.")
 adxMin   = input.float(25, "  ADX floor", minval = 0, step = 1, group = gRg)
+useMom   = input.bool(false, "Require a MOMENTUM reading above a floor", group = gRg,
+     tooltip="OFF because it does not earn a place. 16 of 36 momentum settings beat the no-momentum baseline on the locked block -- 44%, where chance is 50%. The best momentum-only cell scores research p 0.003 and locked p 0.750 on 30m, and on 15m the control BEATS it (p 0.943). Adding momentum to CHOP<=45 takes the locked control p from 0.048 to 0.427. On a breakout bar RSI>=55 removes 3.7% of signals -- a breakout is already a momentum event.")
+momKind  = input.string("RSI", "  reading", options = ["RSI", "Stochastic K", "CMO", "CCI", "Awesome Osc", "MACD hist"], group = gRg)
+momLen   = input.int(14, "  reading length", minval = 2, group = gRg)
+momMin   = input.float(55, "  floor", step = 1, group = gRg,
+     tooltip="Defaults suit RSI. Stochastic K ~70, CMO ~20, CCI ~100, Awesome Osc ~0.25 (in ATR units), MACD hist ~0.05 (in ATR units).")
 
 gT       = "Trading window -- both OFF; the header has the measurements"
 useWin   = input.bool(false, "Restrict ENTRIES to a session", group = gT,
@@ -270,8 +332,23 @@ sizeSug   = stopMoney > 0 ? math.floor(riskAmt / stopMoney) : na
 chopV  = 100 * math.log10(math.sum(ta.tr(true), 14) /
      math.max(ta.highest(high, 14) - ta.lowest(low, 14), syminfo.mintick)) / math.log10(14)
 [_p2, _m2, adxV] = ta.dmi(14, 14)        // returns [+DI, -DI, ADX] IN THAT ORDER
+// The momentum reading. CMO and the two ATR-normalised oscillators are written out rather than
+// borrowed so the script has no dependency on a library build.
+momUp   = math.sum(math.max(ta.change(close), 0), momLen)
+momDn   = math.sum(math.max(-ta.change(close), 0), momLen)
+cmoV    = momUp + momDn > 0 ? 100 * (momUp - momDn) / (momUp + momDn) : na
+medPr   = (high + low) / 2
+aoV     = (ta.sma(medPr, 5) - ta.sma(medPr, 34)) / math.max(atrN, syminfo.mintick)
+[mlV, msV, _mh] = ta.macd(close, 12, 26, 9)
+macdhV  = (mlV - msV) / math.max(atrN, syminfo.mintick)
+momV    = momKind == "RSI" ? ta.rsi(close, momLen) :
+     momKind == "Stochastic K" ? ta.stoch(close, high, low, momLen) :
+     momKind == "CMO" ? cmoV : momKind == "CCI" ? ta.cci(close, momLen) :
+     momKind == "Awesome Osc" ? aoV : macdhV
+
 regimeOk = (not useChop or (not na(chopV) and chopV <= chopMax))
      and (not useAdx or (not na(adxV) and adxV >= adxMin))
+     and (not useMom or (not na(momV) and momV >= momMin))
 
 ready = not na(atrN) and atrN > 0 and not na(lrVal)
 sigL  = useLong  and ready and inWin and regimeOk and okLongC  and not na(entHi) and high > entHi
@@ -343,7 +420,7 @@ plot(strategy.position_size > 0 ? lvlL : na, "Working stop", color = color.fuchs
 plot(strategy.position_size < 0 ? lvlS : na, "Working stop", color = color.fuchsia, style = plot.style_linebr)
 bgcolor(useWin and inWin ? color.new(color.teal, 94) : na, title = "entry window")
 
-var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "V20 as briefed - NO demonstrable edge: bootstrap p 0.41 to 0.97, dies at 1.5x spread",
          text_color = color.white, bgcolor = color.new(color.red, 20))
@@ -351,6 +428,8 @@ if barstate.islast
          text_color = color.white, bgcolor = color.new(color.orange, 20))
     table.cell(hud, 0, 2, "Turning the take profit OFF is worth +0.08 to +0.17 R on three of five markets",
          text_color = color.white, bgcolor = color.new(color.teal, 30))
+    table.cell(hud, 0, 3, "Momentum adds nothing: 44% of settings beat no-momentum out of sample, chance is 50%",
+         text_color = color.white, bgcolor = color.new(color.orange, 20))
 
 // ---------------------------------------------------------- the live ATR / risk panel
 var table rk = table.new(position.bottom_right, 2, 10, border_width = 1)

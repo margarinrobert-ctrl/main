@@ -967,6 +967,24 @@ branch is daily-scale evidence about the equity complex, transferred to intraday
 and never by a join. What would unblock a real join: a VIX series covering 2022-2026, or a re-upload
 of `US30_LONG_15m` / `US100_LONG_15m` / `XAU_ISO_15m`, whose spans do straddle 2012-2021.
 
+**MOMENTUM DOES NOT ADD TO ADX OR CHOP EITHER -- CHOP ALONE IS THE ANSWER.** A declared 1,184-cell
+grid on the V20 base (12 momentum readings x 3 rungs + OFF, x 4 ADX floors x 4 CHOP ceilings x 2
+timeframes; 531 clear a 25-trade floor). **16 of 36 momentum settings beat the no-momentum baseline
+on locked = 44%, chance is 50%** -- V16 reproducing on a different base. Against a same-selectivity
+control on 30m: CHOP<=45 alone research p 0.000 -> **locked p 0.048**, the ONLY cell clearing both;
+momentum alone 0.003 -> 0.750; ADX>=20 alone 0.417 -> 0.680; ADX+CHOP 0.345 -> 0.395; CHOP+momentum
+0.022 -> 0.427. **Both additions destroy the one thing that worked.** On 15m the best momentum cell
+goes research p 0.005 -> locked p **0.943**, where a random filter of the same selectivity beats it
+94% of the time. THE PROOF OF REDUNDANCY IS IN THE GRID: every momentum reading at its ZERO rung
+(`cmo14>=0`, `aroon21>=0`, `roc20>=0`, `tsmom20>=0`, `agree20_60>=0`) reproduces the no-momentum row
+EXACTLY -- same 277/147 trades, same PF to three decimals. On a breakout bar they are not filters at
+all; RSI>=55 removes **3.7%** of signals. And STACKING STARVES THE SAMPLE: 653 of 1,184 cells are
+unscorable, 31 of the top 100 have ZERO locked trades, ADX>=30 vanishes entirely. Best readable cell
+in the grid beats the no-momentum row by +0.047 PF on 4 fewer trades, which is noise and is the best
+of 531. Grid population: 68.9% research PF>1, 54.9% locked, research-to-locked PF correlation +0.489,
+top 100 mean research PF 1.369 against locked 1.163 -- that gap is the selection premium.
+See `docs/ib/STUDY_V23_MOMENTUM_REGIME.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1018,6 +1036,7 @@ of `US30_LONG_15m` / `US100_LONG_15m` / `XAU_ISO_15m`, whose spans do straddle 2
 | `research/v22/v22vixrun.py`, `v22vixtrade.py` | the positive control, the chop IC test, the VIX heat table |
 | `research/v22/v22anchor.py`, `v22_parity.py` | the signal-close stop anchor, and the shipped script diffed against the engine |
 | `research/v22/v22stack.py` | the V20/V21 components re-tested jointly with the adaptive stop |
+| `research/v23/v23mom.py` | momentum x ADX x CHOP on the V20 base: marginal averages, top 100, controls, lift |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
