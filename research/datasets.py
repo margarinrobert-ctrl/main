@@ -284,9 +284,11 @@ REGISTRY = {
     "US30_LONG_15m": Dataset(
         key="US30_LONG_15m", instrument="US30", timeframe_min=15,
         restore_to="data/US30_LONG_15m.csv",
-        rows=193942, span="2016-10-26 18:30 to 2025-07-15 13:30 New York", bytes=10967281,
-        sha256_16="e2c84cbb30347510",
-        fmt="GZIPPED TAB-separated csv, delivered NEWEST FIRST",
+        rows=193942, span="2016-10-26 18:30 to 2025-07-15 13:30 New York", bytes=11549125,
+        sha256_16="24dcf2e1c7ba398f",
+        fmt="TAB-separated csv, delivered NEWEST FIRST. Re-uploaded 2026-08-29 UNCOMPRESSED; the "
+            "earlier checksum e2c84cbb30347510 was of the GZIPPED delivery of the same content -- "
+            "row count and span match exactly, so the bars are identical and the hash is not.",
         columns="DateTime, Open, High, Low, Close, Volume, TickVolume -- `Volume` is ZERO "
                 "throughout and `TickVolume` is the real activity column",
         order="DESCENDING as delivered -- sort ascending before use",

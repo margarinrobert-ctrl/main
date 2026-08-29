@@ -1028,6 +1028,24 @@ beating its Sharpe. `9/21 SLOPE state` is the only cell above baseline on locked
 it FAILS research at p 0.583 -- the wrong shape. Ship nothing.
 See `docs/ib/STUDY_V25_LINREG_CROSS.md`.
 
+**AN HMM READ THE STANDARD WAY IS A TWO-SIDED FILTER, AND THE MARKOV APPARATUS COLLAPSES TO THE STATE
+LABEL.** Hand-rolled Gaussian HMM (Baum-Welch, validated on a simulated chain: means +0.796/-0.003/
+-0.896 against true +0.8/0.0/-0.9; state accuracy SMOOTHED 97.5% vs FILTERED 93.8%). On NQ 30m as a
+breakout gate: fit-on-all + smoothed decode gives locked PF **1.351**, the CAUSAL version of the same
+model and rule gives **0.973** -- and the TRADE COUNTS ARE NEARLY IDENTICAL (194/194, 111/109), so
+the leak is invisible in the count and shows only in which bars got labelled. A causal HMM needs BOTH
+fixes: parameters from a block ending before the labelled bar, and the FILTERED posterior, never
+smoothed or Viterbi. **AND THE FORECASTING MACHINERY IS A ROW LOOKUP**: 1/5/12/24-step
+`p_bull - p_bear` each take exactly **3 distinct values over 35,701 bars**, the stationary
+distribution takes **ONE**, and `state==Bull` vs `signal>0.3` has **Jaccard 1.0000** -- the same
+filter wearing two names. Matrix powers add nothing to the state. As a directional gate in
+07:00-11:00 NY on the Donchian+CHOP base, the regime is WORSE than no filter on locked in EVERY cell
+with control p 0.95-1.00; the all-hours long goes research control p **0.00** -> locked **1.00**.
+07:00-11:00 is worse than 09:30-11:00 on every comparable row, replicating STUDY_TREND_PULLBACK.
+Fitted structure is stable across instruments though: NQ and US30 both give drifts ~+0.3/-0.24/+0.03,
+diagonals ~0.94/0.94/0.91, and **Bull and Bear never transition directly** -- every change passes
+through Sideways. See `docs/ib/STUDY_V27_HMM_REGIME.md`.
+
 ## Tooling
 
 | module | what it does |
