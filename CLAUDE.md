@@ -1342,6 +1342,39 @@ pool has been caught duplicating. Collapsing is CONSERVATIVE, so nothing publish
 drop-one test on a stack containing such a pair reports a filter contributing nothing when it was
 never a second filter. See `docs/ib/STUDY_V40_INDEPENDENT_FILTERS.md`.
 
+**AN EMA CROSS AS "FIRST SIGNAL" WITH A DONCHIAN "CONFIRMATION" IS WORTH EXACTLY NOTHING, AND THE
+GRID ANTI-PREDICTS.** 103,680 nominal cells / **62,208 EFFECTIVE** (under mode `state` the
+confirmation-window rungs are one cell -- an inert axis, and correcting against the nominal count
+corrects for tests never run). The grid carries its own ablation: `cross` with win=0 IS the
+Donchian-alone twin, giving 51,216 MATCHED PAIRS. Result: the EMA helps in 42.0% of pairs on
+research and **50.0% on locked -- exactly chance** -- and the two modes invert in OPPOSITE
+directions between blocks (`state` 63.5% research / 31.2% locked; `cross` 36.5% / 54.7%), which is
+the signature of noise rather than of two mechanisms. Research-to-locked PF correlation
+**-0.391 Pearson / -0.388 Spearman**, top-100 mean PF **2.781 -> 0.733**. 60m is the BEST research
+marginal (1.374) and the WORST locked one (0.876) and the top 100 is 84% 60m. Cross-market on
+US30/US100, which chose nothing: the EMA beats its own no-EMA twin in **3 of 6 cells where chance
+is 3.0**, mean contribution **-$4.15/trade**, and the sign is decided by the MARKET -- it hurts in
+all three US30 cells and helps in all three US100 cells. Walk-forward reads 5/6, 4/6 and 5/6 folds
+positive and that is misleading: fold 5 is catastrophic in all three (PF 0.205/0.174/0.101) and
+folds 5-6 are the recent block, so it is a decay curve wearing a robustness score.
+See `docs/ib/STUDY_V41_EMA_DONCHIAN.md`.
+
+**A CONFIRMATION THAT THE TRIGGER ALREADY IMPLIES CANNOT ADD ANYTHING -- measure the overlap first.**
+EMA13 > EMA48 holds on **82.6% of Donchian breakout bars** against 36.9% of all bars (lift 2.24,
+stable at 81.6% / 83.2% on 30m and 60m). So the state form removes a sixth of the signals and is
+nearly free of information; only the RECENCY form is selective (a cross within 5 bars covers 16.8%
+of breakouts, lift 3.64), which is why the top of the grid picks it exclusively. Same mechanism as
+`STUDY_V16_MOMENTUM`'s 94.7% RSI pass rate. One cheap query before any sweep.
+
+**THE INTRABAR STOP-VERSUS-EXIT CONVENTION IS WORTH UP TO 23x THE REPORTED EDGE ON HOURLY BARS.**
+The V41 candidates re-run in vectorbt agree on the SIGNAL SET (trade-count ratio 0.92-1.00, one
+cell exact at 130/130) and report **+$303.50/trade against my +$13.23** on US30 60m -- 22.9x --
+and 2.5-3.0x on US100. The whole gap is that this branch takes the STOP when an ATR stop and a
+channel exit fall in the same bar. V38 measured 2.1x for the same thing on 30-minute bars: **the
+coarser the bar and the tighter the exit channel, the more of the "result" is the tie-break rule**.
+Run the second engine as a TRANSCRIPTION check (the count must match) and read the gap as a
+statement about the convention, never about the edge.
+
 ## Tooling
 
 | module | what it does |
@@ -1418,6 +1451,8 @@ never a second filter. See `docs/ib/STUDY_V40_INDEPENDENT_FILTERS.md`.
 | `research/v38/run_v38.py`, `run_v38b.py`, `run_v38c.py`, `run_v38_vbt.py` | grid shape and marginals; three candidates and one locked read; the two controls; vectorbt as a second engine |
 | `research/v39/v39mc.py`, `run_v39.py` | **the per-rule Monte Carlo** — 40 indicator rules x 3 markets x 2 blocks, bootstrap for the edge, permutation for the path, same-selectivity control on every cell |
 | `research/v40/v40feat.py`, `run_v40.py` | 17 features in 8 declared families, signal-bar correlation, family-then-rho selection, the stop sweep and the window table |
+| `research/v41/v41seq.py` | the sequenced EMA-cross -> Donchian-confirmation grid, with inert-axis and built-in-control flags |
+| `research/v41/run_v41.py` … `run_v41d.py` | the 103,680-cell sweep and pairwise ablation; signal and strategy correlation; perturbation, walk-forward, bootstrap, cost stress, DSR; the cross-market controls and vectorbt |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
