@@ -344,7 +344,7 @@ def stage_mom(bk, F):
     return [o for o in out if o]
 
 
-if __name__ == "__main__":
+def main():
     t0 = time.time()
     bk = Book()
     print("=" * 118)
@@ -352,29 +352,34 @@ if __name__ == "__main__":
           f"stop {STOP} ATR / targ {TARG} ATR, 1 trade/session, RESEARCH BLOCK")
     print(f"  {len(bk.idx):,} triggers in the research block, "
           f"{(bk.side > 0).mean():.1%} long")
-    b, nb = bk.exp(np.ones(len(bk.idx), bool))
-    g0, _ = lab.sig_gate(SYM, bk.idx, bk.side, stop_mult=STOP, targ_mult=TARG,
-                         max_hold=MAXH, flat_tod=FLAT, label="BASELINE", n_draws=600)
+    lab.sig_gate(SYM, bk.idx, bk.side, stop_mult=STOP, targ_mult=TARG,
+                 max_hold=MAXH, flat_tod=FLAT, label="BASELINE", n_draws=600)
     print("=" * 118)
-    which = sys.argv[1] if len(sys.argv) > 1 else "all"
-    R = []
-    if which in ("all", "ref"):
-        stage_ref(bk)
-    if which in ("all", "main"):
-        F = build(bk)
-        R += stage_ema(bk, F)
-        R += stage_htf(bk, F)
-        R += stage_struct(bk, F)
-        R += stage_adx(bk, F)
-        R += stage_mom(bk, F)
-        print(f"\n  configurations gated so far: {CFG}")
-        good = [r for r in R if r["excess"] > 0 and r["p"] < 0.05]
-        print(f"  rows with excess>0 and matched-control p<0.05: {len(good)}"
-              f"   (expected by chance at 46 tests: ~2.3)")
-        for r in sorted(R, key=lambda x: -x["z"])[:8]:
-            print(f"    {r['label']:<34} exc={r['excess']:+6.2f} z={r['z']:+5.2f} "
-                  f"p={r['p']:.3f} pS={r['pS']:.3f} pN={r['pN']:.3f} sel={r['sel']:.2f}")
-    print(f"\n  elapsed {time.time() - t0:.0f}s")
+    stage_ref(bk)
+    F = build(bk)
+    R = stage_ema(bk, F) + stage_htf(bk, F) + stage_struct(bk, F) + \
+        stage_adx(bk, F) + stage_mom(bk, F)
+    stage_adx_diag(bk, F)
+    stage_adx_sweep(bk, F)
+    stage_adx_stab(bk, F)
+    stage_tod(bk, F)
+    stage_corrob(bk)
+    b = stage_eff(bk)
+    stage_eff_deep(bk, 28, 0.30)
+    stage_prewin(bk)
+    stage_prewin_sweep(bk)
+    stage_composite(bk)
+    stage_prewin_diag(bk)
+    stage_replicate([("ADX14>26", "ADX14", ">", 26), ("ADX14>30", "ADX14", ">", 30),
+                     ("ADX28>18", "ADX28", ">", 18), ("ER28>0.30", "ER28", ">", 0.30)])
+    for sym, ne in (("NAS", 10), ("NAS", 20), ("NAS", 40), ("NAS", 80),
+                    ("US30", 10), ("US30", 20), ("US30", 40)):
+        stage_shape(sym, ne)
+    stage_final(bk)
+    for thr, n in ((30, 14), (26, 14), (35, 14), (18, 28)):
+        stage_shift(bk, thr, n)
+    print(f"\n  TOTAL CONFIGURATIONS GATED: {CFG}")
+    print(f"  elapsed {time.time() - t0:.0f}s")
 
 
 # ================================================================== STAGE 2
@@ -1153,3 +1158,7 @@ def stage_shift(bk, thr=30, n=14):
         hits += first_p(bk, m, e, nrep=2000, seed=int(L))[0] < 0.05
     print(f"{hits}/{tested} = {hits/max(tested,1):.1%}  (nominal 5%)")
     return p
+
+
+if __name__ == "__main__":
+    main()

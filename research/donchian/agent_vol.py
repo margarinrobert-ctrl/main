@@ -113,20 +113,19 @@ def perm_p(bk, keep, real, nrep=NPERM, seed=0):
 
 
 def count_p(bk, ntr, real, nrep=NPERM, seed=1):
-    """p of a random filter matched on the FINAL TRADE COUNT (one random
-    trigger inside each of ntr randomly chosen sessions)."""
+    """p of a control matched on the FINAL TRADE COUNT: the FIRST trigger of
+    ntr randomly chosen sessions.  (Picking a UNIFORMLY RANDOM trigger inside
+    the session, as an earlier lab script does, is a LOOKAHEAD TRAP: sessions
+    that fire 6 triggers average +6.3 pts/trigger and sessions that fire 1
+    average -22.0, so that control lands at -7.5 and passes everything.  The
+    trigger count of a session is only knowable at its end.)"""
     rng = np.random.default_rng(seed)
-    ok = np.flatnonzero(bk.ok)
-    s = bk.sess[ok]
-    starts = np.r_[0, np.flatnonzero(s[1:] != s[:-1]) + 1]
-    ends = np.r_[starts[1:], len(s)]
-    ns = len(starts)
+    f = bk.first(np.ones(len(bk.idx), bool))
+    ns = len(f)
     ntr = min(ntr, ns)
     e = np.empty(nrep)
     for d in range(nrep):
-        pick = rng.choice(ns, size=ntr, replace=False)
-        off = (rng.random(ntr) * (ends[pick] - starts[pick])).astype(int)
-        e[d] = bk.net[ok[starts[pick] + off]].mean()
+        e[d] = bk.net[rng.choice(f, size=ntr, replace=False)].mean()
     return float((e >= real).mean()), float(e.mean()), float(e.std(ddof=1))
 
 
@@ -408,9 +407,11 @@ def stage_cuts(bk, F, specs, fam="", nperm=NPERM, n_draws=300):
                  fam=fam + ":" + k)
 
 
-PRIMARY = ["atrpct1500", "atrrel1500", "width20", "width7", "nr7",
-           "atr5_20", "barexp", "thru", "atrslope8", "vov50",
-           "on8h", "on13h_adr", "spent", "spent_adr"]
+PRIMARY = ["atrpct4500", "atrrel4500", "atrpct1500", "atrpct500",
+           "width20", "width10", "width7", "atr5_20",
+           "barexp", "bodyexp", "thru",
+           "atrslope8", "vov50",
+           "on8h_adr", "spent_adr"]
 
 
 def main(stage="all"):
