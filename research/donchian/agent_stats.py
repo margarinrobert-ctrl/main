@@ -564,6 +564,60 @@ def kd_seed(a_, b_, c_):
     return int(abs(hash((round(a_, 2), round(b_, 2), c_))) % 100000)
 
 
+def sec_I(df, w, r, sym="NAS"):
+    """The only place a candidate is allowed to be born: matched-control gates in
+    POINTS on re-simulated triggers. Everything above is measurement."""
+    print("=" * 122)
+    print("I. MATCHED-CONTROL GATES (points, cost 2.0 + 0.25 slip). Triggers are FILTERED and")
+    print("   RE-SIMULATED; no conditional split of realised trades anywhere.")
+    print("=" * 122)
+    a = lab.atr(df, 14)
+    nc = 0
+    for n_entry in (20,):
+        idx0, side0, _ = breakout_pop(df, n_entry, mask=r)
+        F = sig_features(df, n_entry, idx0, side0)
+        tod0 = df.tod.values[idx0]
+        print(f"\n  --- n_entry={n_entry}, geometry 1.5/2.0, max_hold 16 ---")
+        for lbl, keep in [
+                ("ALL triggers", np.ones(len(idx0), bool)),
+                ("drop dead 10:45 slot", tod0 < 645),
+                ("drop 10:30+10:45", tod0 < 630),
+                ("mom4 >= 0.00", F["mom4"] >= 0.0),
+                ("mom4 >= 0.25", F["mom4"] >= 0.25),
+                ("mom4 >= 0.50", F["mom4"] >= 0.50),
+                ("mom4 >= 0.75", F["mom4"] >= 0.75),
+                ("mom4 >= 1.00", F["mom4"] >= 1.00),
+                ("mom4 >= 1.50", F["mom4"] >= 1.50),
+                ("mom4>=0.5 & tod<645", (F["mom4"] >= 0.5) & (tod0 < 645)),
+                ("atr_ratio >= 1.0", F["atr_ratio"] >= 1.0),
+                ("atr_ratio >= 1.2", F["atr_ratio"] >= 1.2),
+                ("ext >= 0.25", F["ext"] >= 0.25),
+                ("ext >= 0.50", F["ext"] >= 0.50)]:
+            nc += 1
+            lab.sig_gate(sym, idx0[keep], side0[keep], stop_mult=1.5, targ_mult=2.0,
+                         max_hold=16, one_per_session=False, mask=r,
+                         label=lbl, n_draws=400)
+        print(f"\n  --- the wide-stop geometry the surface points at: 2.0 stop / 3.0 target ---")
+        for lbl, keep, kd, ku in [
+                ("ALL triggers 2.0/3.0", np.ones(len(idx0), bool), 2.0, 3.0),
+                ("mom4>=0.5 2.0/3.0", F["mom4"] >= 0.5, 2.0, 3.0),
+                ("mom4>=0.5 tod<645 2.0/3.0", (F["mom4"] >= 0.5) & (tod0 < 645), 2.0, 3.0),
+                ("ALL triggers 1.5/3.0", np.ones(len(idx0), bool), 1.5, 3.0),
+                ("mom4>=0.5 1.5/3.0", F["mom4"] >= 0.5, 1.5, 3.0)]:
+            nc += 1
+            lab.sig_gate(sym, idx0[keep], side0[keep], stop_mult=kd, targ_mult=ku,
+                         max_hold=16, one_per_session=False, mask=r,
+                         label=lbl, n_draws=400)
+        print(f"\n  --- one trade per session (the lab's baseline convention) ---")
+        for lbl, keep in [("ALL 1/sess", np.ones(len(idx0), bool)),
+                          ("mom4>=0.5 1/sess", F["mom4"] >= 0.5),
+                          ("mom4>=0.5 tod<645 1/sess", (F["mom4"] >= 0.5) & (tod0 < 645))]:
+            nc += 1
+            lab.sig_gate(sym, idx0[keep], side0[keep], stop_mult=1.5, targ_mult=2.0,
+                         max_hold=16, one_per_session=True, mask=r, label=lbl, n_draws=400)
+    print(f"\n  {nc} gated configurations in this section.")
+
+
 SECS = {}
 if __name__ == "__main__":
     which = sys.argv[1:] or ["A"]
