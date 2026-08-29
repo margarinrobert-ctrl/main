@@ -495,40 +495,6 @@ PRIMARY = ["atrpct4500", "atrrel4500", "atrpct1500", "atrpct500",
            "on8h_adr", "spent_adr"]
 
 
-def main(stage="all"):
-    t0 = time.time()
-    bk = Book()
-    FB = build_bars(bk.df)
-    F = sig_feats(bk, FB)
-    print(f"loaded: {len(bk.idx):,} triggers in research block, "
-          f"{len(F)} volatility features  ({time.time()-t0:.1f}s)")
-    if stage in ("all", "0"):
-        stage_ref(bk)
-    if stage in ("all", "1"):
-        stage_rho(bk, F)
-    if stage in ("all", "2"):
-        stage_shape(bk, F, PRIMARY, q=5, fam="A")
-    if stage in ("all", "4"):
-        stage_regime(bk, FB, F)
-    if stage in ("all", "5"):
-        stage_cuts(bk, FB, F, CUTS_A, fam="A",
-                   title="V1 ATR LEVEL. exclude the high-vol tail; where does it stop paying?")
-        stage_cuts(bk, FB, F, CUTS_B, fam="B",
-                   title="V3 DECISIVE BREAK. keep only breaks whose bar travels far, in ATR")
-        stage_cuts(bk, FB, F, CUTS_C, fam="C",
-                   title="V5 OVERNIGHT SPEND. keep only sessions whose overnight range is small")
-    print(f"\nCONFIGURATIONS GATED SO FAR: {CFG}    ({time.time()-t0:.0f}s)")
-    return bk, F
-
-
-if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "all")
-
-
-
-
-
-
 # ============================================================== named rules
 def rule_arrays(bk):
     FB = build_bars(bk.df)
@@ -628,3 +594,134 @@ def stage_halves(bk, F, rules):
             e = bk.net[f][m]; b = bk.net[fb][mb]
             print(f"  {nm:<30}{lbl:<8}{len(e):>6}{e.mean():>+9.2f}{b.mean():>+9.2f}"
                   f"{e.mean()-b.mean():>+8.2f}{(e>0).mean():>8.1%}")
+
+
+def shuffle_p(bk, keep, real, nrep=NPERM, seed=5):
+    """SIDE-SHUFFLE control: the SAME signal bars, sides randomly permuted.
+    Isolates DIRECTION.  If a 'decisive bar' is simply a good place to be in the
+    market, the shuffle keeps the edge; if the edge is directional continuation,
+    the shuffle destroys it."""
+    rng = np.random.default_rng(seed)
+    k = np.flatnonzero(keep & bk.ok)
+    if len(k) == 0:
+        return np.nan, np.nan
+    s = bk.sess[k]
+    first = k[np.r_[True, s[1:] != s[:-1]]]
+    idx, side = bk.idx[first], bk.side[first]
+    e = np.empty(nrep)
+    for d in range(nrep):
+        sh = rng.permutation(side)
+        tr = lab.book(bk.sym, idx, sh, stop_mult=bk.stop, targ_mult=bk.targ,
+                      max_hold=bk.maxh, flat_tod=bk.flat, one_per_session=False)
+        e[d] = tr.net.mean()
+    return float((e >= real).mean()), float(e.mean())
+
+
+def stage_dissect(bk, FB, F):
+    """What is VOLATILITY about the decisive-break result?"""
+    print("\n" + "=" * 145)
+    print("STAGE 9  DISSECTION of the decisive-break effect")
+    print("=" * 145)
+
+    df = bk.df
+    c = df.close.values
+    hi20, lo20 = lab.donchian(df, NENT)
+    i = bk.idx
+    raw = np.where(bk.side > 0, c[i] - hi20[i], lo20[i] - c[i])
+    F2 = dict(F)
+    F2["thru_bps"] = raw / c[i] * 1e4          # same distance, normalised by PRICE
+    F2["thru_raw"] = raw                        # same distance, in index points
+
+    print("\n  (a) IS IT VOLATILITY?  the SAME break distance, normalised three ways.")
+    print("      thru = d/ATR(i-1) is the volatility reading; thru_bps = d/price is a")
+    print("      pure size reading; thru_raw = d in points ignores both.")
+    print("      Thresholds are set to the SAME SELECTIVITY so the rows are comparable.")
+    print(f"  {'norm':<12}{'sel':>6}{'thr':>9}{'n':>6}{'exp':>8}{'ctrl':>8}{'exc':>8}"
+          f"{'z':>7}{'p':>8}{'pS':>7}")
+    global CFG
+    for sel in (0.45, 0.34, 0.26, 0.16, 0.08):
+        for nm in ("thru", "thru_bps", "thru_raw"):
+            v = F2[nm]
+            t = np.nanquantile(v, 1 - sel)
+            keep = (v > t) & ~np.isnan(v)
+            real, ntr = bk.exp(keep)
+            if ntr < 60:
+                continue
+            CFG += 1
+            g, _ = lab.sig_gate(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=bk.stop,
+                                targ_mult=bk.targ, max_hold=bk.maxh, flat_tod=bk.flat,
+                                n_draws=400, quiet=True)
+            pS = perm_p(bk, keep, real, nrep=1500)[0]
+            print(f"  {nm:<12}{keep.mean():>6.2f}{t:>9.3f}{ntr:>6}{real:>+8.2f}"
+                  f"{g['ctrl']:>+8.2f}{g['excess']:>+8.2f}{g['z']:>+7.2f}{g['p']:>8.4f}{pS:>7.3f}")
+        print()
+
+    print("\n  (b) IS IT DIRECTIONAL?  side-shuffle control (same bars, sides permuted)")
+    print(f"  {'rule':<28}{'n':>6}{'exp':>9}{'shuf':>9}{'d':>8}{'pShuf':>8}")
+    for nm, spec in (("all triggers", []),
+                     ("thru > 1.0", [("thru", ">", 1.0)]),
+                     ("barexp > 3.8", [("barexp", ">", 3.8)]),
+                     ("atrpct1500 > 0.89", [("atrpct1500", ">", 0.89)])):
+        keep = apply_rule(F, spec) if spec else np.ones(len(bk.idx), bool)
+        real, ntr = bk.exp(keep)
+        p, m = shuffle_p(bk, keep, real, nrep=400)
+        print(f"  {nm:<28}{ntr:>6}{real:>+9.2f}{m:>+9.2f}{real-m:>+8.2f}{p:>8.3f}")
+
+    print("\n  (c) INTERACTION: decisive break x ATR regime.  3x3 of exp (n).")
+    tq = np.nanquantile(F["thru"], [1/3, 2/3])
+    aq = np.nanquantile(F["atrpct1500"], [1/3, 2/3])
+    print(f"      thru terciles at {tq.round(2)}, atrpct1500 terciles at {aq.round(2)}")
+    print(f"      {'':<14}" + "".join(f"{f'ATR T{j+1}':>16}" for j in range(3)))
+    for a_ in range(3):
+        row = f"      thru T{a_+1}   "
+        for b_ in range(3):
+            kt = (np.digitize(F["thru"], tq) == a_)
+            ka = (np.digitize(F["atrpct1500"], aq) == b_) & ~np.isnan(F["atrpct1500"])
+            e, n_ = bk.exp(kt & ka)
+            row += f"{f'{e:+.2f} ({n_})':>16}"
+        print(row)
+
+    print("\n  (d) EXIT SPLIT.  A rule earning at the TIME stop is a direction bet,")
+    print("      not a barrier edge.")
+    for nm, spec in (("all triggers", []), ("thru > 1.0", [("thru", ">", 1.0)]),
+                     ("barexp > 3.8", [("barexp", ">", 3.8)]),
+                     ("atrpct1500 > 0.89", [("atrpct1500", ">", 0.89)])):
+        keep = apply_rule(F, spec) if spec else np.ones(len(bk.idx), bool)
+        f = bk.first(keep)
+        print(f"    {nm}  n={len(f)}  exp={bk.net[f].mean():+.2f}")
+        for r_ in sorted(set(bk.reason[f])):
+            m = bk.reason[f] == r_
+            print(f"      {lab.REASONS[r_]:<9} n={m.sum():>5} ({m.mean():>5.1%})"
+                  f"  exp={bk.net[f][m].mean():>+8.2f}  contrib={bk.net[f][m].sum()/len(f):>+7.2f}")
+
+
+def main(stage="all"):
+    t0 = time.time()
+    bk = Book()
+    FB = build_bars(bk.df)
+    F = sig_feats(bk, FB)
+    print(f"loaded: {len(bk.idx):,} triggers in research block, "
+          f"{len(F)} volatility features  ({time.time()-t0:.1f}s)")
+    if stage in ("all", "0"):
+        stage_ref(bk)
+    if stage in ("all", "1"):
+        stage_rho(bk, F)
+    if stage in ("all", "2"):
+        stage_shape(bk, F, PRIMARY, q=5, fam="A")
+    if stage in ("all", "4"):
+        stage_regime(bk, FB, F)
+    if stage in ("all", "5"):
+        stage_cuts(bk, FB, F, CUTS_A, fam="A",
+                   title="V1 ATR LEVEL. exclude the high-vol tail; where does it stop paying?")
+        stage_cuts(bk, FB, F, CUTS_B, fam="B",
+                   title="V3 DECISIVE BREAK. keep only breaks whose bar travels far, in ATR")
+        stage_cuts(bk, FB, F, CUTS_C, fam="C",
+                   title="V5 OVERNIGHT SPEND. keep only sessions whose overnight range is small")
+    if stage in ("all", "9"):
+        stage_dissect(bk, FB, F)
+    print(f"\nCONFIGURATIONS GATED SO FAR: {CFG}    ({time.time()-t0:.0f}s)")
+    return bk, F
+
+
+if __name__ == "__main__":
+    main(sys.argv[1] if len(sys.argv) > 1 else "all")

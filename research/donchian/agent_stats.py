@@ -197,6 +197,71 @@ def sec_B(df, w, r, sym="NAS"):
                       "   " + f"{q(d)[0]:>9.2f}" + "".join(f"{v:>7.2f}" for v in q(d)[1:]))
 
 
+KS = (0.25, 0.4, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0)
+
+
+def sec_C(df, w, r, sym="NAS"):
+    print("=" * 128)
+    print("C. FOLLOW-THROUGH CURVE - P(+k*ATR touched before -k*ATR), symmetric barriers,")
+    print("   16-bar cap, 11:00 flatten. Same-bar-both booked as a LOSS (engine convention).")
+    print("   The driftless base for a symmetric race is 50%. The honest base is the CONTROL column.")
+    print("=" * 128)
+    a = lab.atr(df, 14)
+    tod = df.tod.values
+    inwin = r & (tod >= WIN[0]) & (tod < WIN[1])
+    print(f"  ATR(14) in-window: median {np.nanmedian(a[inwin]):.1f} pts, "
+          f"p10 {np.nanquantile(a[inwin],.1):.1f}, p90 {np.nanquantile(a[inwin],.9):.1f}. "
+          f"Round turn 2.25 pts = {2.25/np.nanmedian(a[inwin]):.3f} ATR.")
+    for n in (10, 20, 40):
+        idx, side, _ = breakout_pop(df, n, mask=r)
+        cidx, cside = matched_pop(df, w, idx, side, r)
+        print(f"\n  --- n_entry={n}  (breakout n={len(idx):,}, control n={len(cidx):,}) ---")
+        print(f"  {'k(ATR)':>7} {'BRK win%':>9} {'ctl win%':>9} {'diff':>7} {'z':>7} "
+              f"{'BRK unres%':>11} {'ctl unres%':>11} {'BRK amb%':>9} {'med bars':>9}")
+        for k in KS:
+            o, b, am = barrier_race(w, idx, side, a, k, k)
+            oc, bc, amc = barrier_race(w, cidx, cside, a, k, k)
+            res = o != 0; resc = oc != 0
+            wr = (o[res] == 1).mean(); wc = (oc[resc] == 1).mean()
+            se = np.sqrt(wr * (1 - wr) / res.sum() + wc * (1 - wc) / resc.sum())
+            print(f"  {k:>7.2f} {wr:>8.1%} {wc:>8.1%} {wr-wc:>+7.1%} "
+                  f"{(wr-wc)/se:>7.2f} {1-res.mean():>10.1%} {1-resc.mean():>10.1%} "
+                  f"{am.mean():>8.1%} {np.nanmedian(b):>9.1f}")
+    # long / short split at n=20
+    idx, side, _ = breakout_pop(df, 20, mask=r)
+    cidx, cside = matched_pop(df, w, idx, side, r)
+    print("\n  --- n_entry=20, LONG vs SHORT ---")
+    print(f"  {'k':>5} | {'LONG brk':>9}{'ctl':>8}{'diff':>8}{'z':>6} | "
+          f"{'SHORT brk':>10}{'ctl':>8}{'diff':>8}{'z':>6}")
+    for k in KS:
+        row = f"  {k:>5.2f} |"
+        for sd in (1, -1):
+            m = side == sd; mc = cside == sd
+            o, _, _ = barrier_race(w, idx[m], side[m], a, k, k)
+            oc, _, _ = barrier_race(w, cidx[mc], cside[mc], a, k, k)
+            res = o != 0; resc = oc != 0
+            wr = (o[res] == 1).mean(); wc = (oc[resc] == 1).mean()
+            se = np.sqrt(wr*(1-wr)/res.sum() + wc*(1-wc)/resc.sum())
+            row += f" {wr:>8.1%}{wc:>8.1%}{wr-wc:>+8.1%}{(wr-wc)/se:>6.2f} |"
+        print(row)
+    # asymmetric: the 1.5 stop / 2.0 target the lab actually trades
+    print("\n  --- asymmetric races, n_entry=20 (stop kd, target ku). Breakeven win rate")
+    print("      ignoring cost is kd/(kd+ku); cost adds ~0.02-0.05 ATR to the target leg. ---")
+    print(f"  {'stop':>5}{'targ':>6} {'BRK win%':>9} {'ctl win%':>9} {'diff':>7} {'z':>6} "
+          f"{'breakeven':>10} {'BRK-be':>8} {'unres%':>7}")
+    for kd, ku in ((1.5, 2.0), (1.5, 1.5), (1.0, 1.0), (2.0, 1.0), (1.0, 2.0),
+                   (1.5, 1.0), (1.0, 1.5), (2.0, 2.0), (2.0, 3.0), (0.75, 1.5),
+                   (3.0, 1.5), (0.5, 1.0), (1.0, 0.5)):
+        o, _, _ = barrier_race(w, idx, side, a, ku, kd)
+        oc, _, _ = barrier_race(w, cidx, cside, a, ku, kd)
+        res = o != 0; resc = oc != 0
+        wr = (o[res] == 1).mean(); wc = (oc[resc] == 1).mean()
+        se = np.sqrt(wr*(1-wr)/res.sum() + wc*(1-wc)/resc.sum())
+        be = kd / (kd + ku)
+        print(f"  {kd:>5.2f}{ku:>6.2f} {wr:>8.1%} {wc:>8.1%} {wr-wc:>+7.1%} "
+              f"{(wr-wc)/se:>6.2f} {be:>9.1%} {wr-be:>+8.1%} {1-res.mean():>6.1%}")
+
+
 SECS = {}
 if __name__ == "__main__":
     which = sys.argv[1:] or ["A"]
