@@ -161,6 +161,48 @@ def ctrl_wr(bk, tr, n_draws=200, seed=3):
     return float(out.mean())
 
 
+def test_pool(bk, keep, pool, label, nperm=NPERM, n_draws=400, minn=45, fam=""):
+    """Same configuration scored TWICE:
+        ctrl  - the standard matched control (random entries, same side mix,
+                same minute-of-day, ATR-scaled geometry) drawn from the WHOLE
+                research window.
+        ctrlR - a REGIME-MATCHED control: the draw pool is restricted to bars
+                that themselves satisfy the volatility condition.  This is the
+                one that matters for a REGIME statement - it removes 'wide
+                barriers behave differently' from the comparison and leaves only
+                'does the breakout beat a coin flip inside this regime'.
+    """
+    global CFG
+    real, ntr = bk.exp(keep)
+    sel = keep.sum() / len(keep)
+    if ntr < minn:
+        print(f"{label:<38}{sel:>6.2f}{ntr:>6}   too few trades")
+        return None
+    CFG += 1
+    tr = lab.book(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=bk.stop,
+                  targ_mult=bk.targ, max_hold=bk.maxh, flat_tod=bk.flat)
+    g = lab.gate(bk.sym, tr, bk.stop, bk.targ, mask=bk.r, n_draws=n_draws,
+                 max_hold=bk.maxh, flat_tod=bk.flat, quiet=True)
+    gp = lab.gate(bk.sym, tr, bk.stop, bk.targ, mask=bk.r & pool, n_draws=n_draws,
+                  max_hold=bk.maxh, flat_tod=bk.flat, quiet=True)
+    assert g["n"] == ntr and gp["n"] == ntr, (g["n"], gp["n"], ntr)
+    pS = perm_p(bk, keep, real, nrep=nperm)[0]
+    print(f"{label:<38}{sel:>6.2f}{ntr:>6}{real:>+8.2f}{g['ctrl']:>+8.2f}"
+          f"{g['excess']:>+8.2f}{g['z']:>+7.2f}{g['p']:>8.4f}"
+          f"{gp['ctrl']:>+8.2f}{gp['excess']:>+8.2f}{gp['z']:>+7.2f}{gp['p']:>8.4f}"
+          f"{pS:>7.3f}{pool.mean()*100:>6.1f}")
+    row = dict(fam=fam, label=label, sel=float(sel), n=ntr, exp=real,
+               ctrl=g["ctrl"], excess=g["excess"], z=g["z"], p=g["p"],
+               ctrlR=gp["ctrl"], excessR=gp["excess"], zR=gp["z"], pR=gp["p"],
+               pS=pS, wr=g["wr"], pool=float(pool.mean()))
+    ROWS.append(row)
+    return row
+
+
+HDRP = (f"{'rule':<38}{'sel':>6}{'n':>6}{'exp':>8}{'ctrl':>8}{'exc':>8}{'z':>7}"
+        f"{'p':>8}{'ctrlR':>8}{'excR':>8}{'zR':>7}{'pR':>8}{'pS':>7}{'pool%':>6}")
+
+
 def test(bk, keep, label, nperm=NPERM, n_draws=300, minn=60, fam="", wr=True):
     """One configuration: matched control + two random-filter controls."""
     global CFG
@@ -188,102 +230,101 @@ def test(bk, keep, label, nperm=NPERM, n_draws=300, minn=60, fam="", wr=True):
 
 
 # =================================================================== features
-def build(bk):
-    """Every volatility state, causal, evaluated at the SIGNAL bars.
+def build_bars(df):
+    """Every volatility state as a FULL-LENGTH BAR-LEVEL array, causal.
 
-    a       = ATR(14) at bar i          (bar i is CLOSED at signal time)
-    ap      = ATR(14) at bar i-1        (pre-breakout, cannot see the break bar)
+    a  = ATR(14) at bar i      (bar i is CLOSED when the signal fires)
+    ap = ATR(14) at bar i-1    (pre-breakout; the break bar's own range cannot
+                                leak into a statement about the prior state)
+
+    Bar-level is what lets the matched control be REGIME-MATCHED: the control's
+    draw pool can be restricted to bars in the same volatility state, so a
+    high-ATR bin is not scored against normal-ATR barrier geometry.
     """
-    df = bk.df
     h, l, c, o = (df.high.values, df.low.values, df.close.values, df.open.values)
-    i = bk.idx
     a = lab.atr(df, 14)
     ap = np.r_[np.nan, a[:-1]]
     rng_ = h - l
-    F, S = {}, {}
+    n = len(df)
+    F = {}
 
-    # ---- V1 ATR percentile, trailing causal rank in W bars ------------------
+    # ---- V1 ATR level: trailing causal rank, and trailing relative level -----
     for W in (250, 500, 1500, 4500):
-        F[f"atrpct{W}"] = pd.Series(a).rolling(W).rank(pct=True).values[i]
-    # scale-free level, same idea without the rank
+        F[f"atrpct{W}"] = pd.Series(a).rolling(W).rank(pct=True).values
     for W in (500, 1500, 4500):
-        m = pd.Series(a).rolling(W).mean().values
-        F[f"atrrel{W}"] = (a / m)[i]
+        F[f"atrrel{W}"] = a / pd.Series(a).rolling(W).mean().values
 
-    # ---- V2 compression: channel width over the bars BEFORE the break -------
-    for n in (4, 7, 10, 20, 40):
-        hi, lo = lab.donchian(df, n)          # already excludes bar i
-        F[f"width{n}"] = ((hi - lo) / ap)[i]
-    # NR4 / NR7 on bar i-1 (the bar before the break)
+    # ---- V2 compression before the break ------------------------------------
+    for k in (4, 7, 10, 20, 40):
+        hi, lo = lab.donchian(df, k)          # already excludes bar i
+        F[f"width{k}"] = (hi - lo) / ap
     rp = np.r_[np.nan, rng_[:-1]]
     for k in (4, 7):
-        mn = pd.Series(rp).rolling(k).min().values
-        F[f"nr{k}"] = (rp <= mn + 1e-12).astype(float)[i]
-    # short/long ATR ratio, pre-breakout
+        F[f"nr{k}"] = (rp <= pd.Series(rp).rolling(k).min().values + 1e-12).astype(float)
     for ns, nl in ((5, 20), (5, 50), (10, 50)):
-        s_ = lab.atr(df, ns); L = lab.atr(df, nl)
-        F[f"atr{ns}_{nl}"] = (np.r_[np.nan, s_[:-1]] / np.r_[np.nan, L[:-1]])[i]
+        F[f"atr{ns}_{nl}"] = (np.r_[np.nan, lab.atr(df, ns)[:-1]] /
+                              np.r_[np.nan, lab.atr(df, nl)[:-1]])
 
-    # ---- V3 expansion on the breakout bar itself ----------------------------
-    F["barexp"] = (rng_ / ap)[i]
-    F["bodyexp"] = (np.abs(c - o) / ap)[i]
-    hi20, lo20 = lab.donchian(df, NENT)
-    thru = np.where(bk.side > 0, (c[i] - hi20[i]), (lo20[i] - c[i])) / ap[i]
-    F["thru"] = thru
-    F["closepos"] = np.where(rng_ > 0, (c - l) / np.where(rng_ > 0, rng_, np.nan), np.nan)[i]
-    F["closepos"] = np.where(bk.side > 0, F["closepos"], 1 - F["closepos"])
+    # ---- V3 expansion on the bar itself -------------------------------------
+    F["barexp"] = rng_ / ap
+    F["bodyexp"] = np.abs(c - o) / ap
 
     # ---- V4 ATR trend and vol of vol, pre-breakout --------------------------
     for k in (4, 8, 16, 32):
-        F[f"atrslope{k}"] = (ap / np.r_[np.full(k, np.nan), ap[:-k]])[i]
-    tr_ = lab.true_range(h, l, c)
-    z = tr_ / np.where(a > 0, a, np.nan)
+        F[f"atrslope{k}"] = ap / np.r_[np.full(k, np.nan), ap[:-k]]
+    z = lab.true_range(h, l, c) / np.where(a > 0, a, np.nan)
     for W in (20, 50):
-        F[f"vov{W}"] = pd.Series(np.r_[np.nan, z[:-1]]).rolling(W).std().values[i]
+        F[f"vov{W}"] = pd.Series(np.r_[np.nan, z[:-1]]).rolling(W).std().values
     la = np.log(np.where(a > 0, a, np.nan))
-    dla = np.r_[np.nan, np.diff(la)]
-    F["vovlog50"] = pd.Series(np.r_[np.nan, dla[:-1]]).rolling(50).std().values[i]
+    F["vovlog50"] = pd.Series(np.r_[np.nan, np.r_[np.nan, np.diff(la)][:-1]]
+                              ).rolling(50).std().values
 
-    # ---- V5 overnight / spent range ----------------------------------------
-    sess = df.sess.values; tod = df.tod.values
-    n = len(df)
-    # index of the first in-window bar of each session (the 07:00 anchor)
+    # ---- V5 overnight range and range already spent -------------------------
+    sess, tod = df.sess.values, df.tod.values
     inw = tod >= WIN[0]
+    newsess = np.r_[True, sess[1:] != sess[:-1]]
+    first_in = inw & (newsess | ~np.r_[False, inw[:-1]])
     firstw = np.full(sess.max() + 1, -1)
-    ff = np.flatnonzero(inw & np.r_[True, (sess[1:] != sess[:-1]) | ~inw[:-1]])
-    for j in ff:
+    for j in np.flatnonzero(first_in):
         if firstw[sess[j]] < 0:
             firstw[sess[j]] = j
-    anch = firstw[sess]                          # 07:00 anchor bar of my session
-    rmax = pd.Series(h).rolling(1).max().values  # placeholder
-    for K in (4, 8, 13):                         # hours before 07:00
-        m = 4 * K
-        hh = pd.Series(h).rolling(m).max().shift(1).values
-        ll = pd.Series(l).rolling(m).min().shift(1).values
-        # read AT the anchor bar -> covers [07:00-K h, 07:00)
-        v = np.full(n, np.nan)
-        good = anch >= 0
-        v[good] = (hh[anch[good]] - ll[anch[good]])
-        F[f"on{K}h"] = (v / ap[np.clip(anch, 0, n - 1)])[i]
-    # average daily range of the last 20 completed sessions (causal)
+    anch = firstw[sess]                       # my session's 07:00 anchor bar
+    good = anch >= 0
+    ai = np.clip(anch, 0, n - 1)
     g = df.groupby("sess")
     dr = (g.high.max() - g.low.min()).values
-    adr = pd.Series(dr).rolling(20).mean().shift(1).values
-    for K in (8, 13):
+    adr = pd.Series(dr).rolling(20).mean().shift(1).values      # causal ADR(20)
+    for K in (4, 8, 13):                      # hours of range before 07:00
         m = 4 * K
         hh = pd.Series(h).rolling(m).max().shift(1).values
         ll = pd.Series(l).rolling(m).min().shift(1).values
-        v = np.full(n, np.nan); good = anch >= 0
-        v[good] = hh[anch[good]] - ll[anch[good]]
-        F[f"on{K}h_adr"] = (v / adr[sess])[i]
-    # intraday range already spent before the signal bar (bars <= i-1, same sess)
-    cm = np.maximum.accumulate  # per-session running extremes, shifted by 1
+        v = np.where(good, hh[ai] - ll[ai], np.nan)
+        F[f"on{K}h"] = v / np.where(good, ap[ai], np.nan)
+        if K in (8, 13):
+            F[f"on{K}h_adr"] = v / adr[sess]
     runh = g.high.cummax().values; runl = g.low.cummin().values
-    sh = np.r_[np.nan, runh[:-1]]; sl = np.r_[np.nan, runl[:-1]]
     same = np.r_[False, sess[1:] == sess[:-1]]
-    spent = np.where(same, sh - sl, np.nan)
-    F["spent"] = (spent / ap)[i]
-    F["spent_adr"] = (spent / adr[sess])[i]
+    spent = np.where(same, np.r_[np.nan, runh[:-1]] - np.r_[np.nan, runl[:-1]], np.nan)
+    F["spent"] = spent / ap                   # today's range so far, bars <= i-1
+    F["spent_adr"] = spent / adr[sess]
+    return F
+
+
+#: features that are a property of the BAR/regime (a pool can be matched on
+#: them) versus features that only exist for a SIGNAL (they cannot).
+def sig_feats(bk, FB):
+    """Bar-level features read at the signal bars, plus the two signal-only
+    ones (distance through the channel, close position - both signed by side)."""
+    i = bk.idx
+    F = {k: v[i] for k, v in FB.items()}
+    df = bk.df
+    c, h, l = df.close.values, df.high.values, df.low.values
+    ap = np.r_[np.nan, lab.atr(df, 14)[:-1]]
+    hi20, lo20 = lab.donchian(df, NENT)
+    F["thru"] = np.where(bk.side > 0, c[i] - hi20[i], lo20[i] - c[i]) / ap[i]
+    r_ = np.where((h - l) > 0, (h - l), np.nan)
+    cp = ((c - l) / r_)[i]
+    F["closepos"] = np.where(bk.side > 0, cp, 1 - cp)
     return F
 
 
@@ -417,7 +458,8 @@ PRIMARY = ["atrpct4500", "atrrel4500", "atrpct1500", "atrpct500",
 def main(stage="all"):
     t0 = time.time()
     bk = Book()
-    F = build(bk)
+    FB = build_bars(bk.df)
+    F = sig_feats(bk, FB)
     print(f"loaded: {len(bk.idx):,} triggers in research block, "
           f"{len(F)} volatility features  ({time.time()-t0:.1f}s)")
     if stage in ("all", "0"):
@@ -426,9 +468,32 @@ def main(stage="all"):
         stage_rho(bk, F)
     if stage in ("all", "2"):
         stage_shape(bk, F, PRIMARY, q=5, fam="A")
+    if stage in ("all", "4"):
+        stage_regime(bk, FB, F)
     print(f"\nCONFIGURATIONS GATED SO FAR: {CFG}    ({time.time()-t0:.0f}s)")
     return bk, F
 
 
 if __name__ == "__main__":
     main(sys.argv[1] if len(sys.argv) > 1 else "all")
+
+
+def stage_regime(bk, FB, F):
+    """V1 / V5 with a REGIME-MATCHED control.  The bin edges come from the
+    trigger distribution; the same numeric edges define the bar-level pool."""
+    print("\n" + "=" * 145)
+    print("STAGE 4  REGIME-MATCHED CONTROL.  A high-ATR bin scored against random")
+    print("  entries DRAWN FROM THE SAME ATR REGIME, so wide barriers are on both")
+    print("  sides of the comparison and only the breakout's information is left.")
+    print("=" * 145)
+    for k in ("atrpct4500", "atrpct1500", "atrpct500", "atrrel1500",
+              "on8h_adr", "spent_adr", "barexp", "bodyexp", "width20"):
+        v, vb = F[k], FB[k]
+        ed = np.nanquantile(v[~np.isnan(v)], np.linspace(0, 1, 6))
+        ed[0], ed[-1] = -np.inf, np.inf
+        print(f"\n  {k}   quintile edges " + " ".join(f"{e:.3f}" for e in ed[1:-1]))
+        print("  " + HDRP)
+        for j in range(5):
+            keep = (v > ed[j]) & (v <= ed[j + 1]) & ~np.isnan(v)
+            pool = (vb > ed[j]) & (vb <= ed[j + 1]) & ~np.isnan(vb)
+            test_pool(bk, keep, pool, f"  {k} Q{j+1}", fam="regime:" + k)
