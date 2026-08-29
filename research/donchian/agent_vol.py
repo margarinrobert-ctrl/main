@@ -67,6 +67,7 @@ class Book:
                  maxh=MAXH, flat=FLAT):
         self.df, self.w, self.r = lab.research(sym)
         self.sym, self.stop, self.targ, self.maxh, self.flat = sym, stop, targ, maxh, flat
+        self.n_entry = n_entry
         idx, side, a = lab.signals(self.df, n_entry=n_entry, win=win)
         keep = self.r[idx]
         self.idx, self.side, self.atr = idx[keep], side[keep], a
@@ -320,7 +321,7 @@ def sig_feats(bk, FB):
     df = bk.df
     c, h, l = df.close.values, df.high.values, df.low.values
     ap = np.r_[np.nan, lab.atr(df, 14)[:-1]]
-    hi20, lo20 = lab.donchian(df, NENT)
+    hi20, lo20 = lab.donchian(df, bk.n_entry)
     F["thru"] = np.where(bk.side > 0, c[i] - hi20[i], lo20[i] - c[i]) / ap[i]
     r_ = np.where((h - l) > 0, (h - l), np.nan)
     cp = ((c - l) / r_)[i]
@@ -625,7 +626,7 @@ def stage_dissect(bk, FB, F):
 
     df = bk.df
     c = df.close.values
-    hi20, lo20 = lab.donchian(df, NENT)
+    hi20, lo20 = lab.donchian(df, bk.n_entry)
     i = bk.idx
     raw = np.where(bk.side > 0, c[i] - hi20[i], lo20[i] - c[i])
     F2 = dict(F)

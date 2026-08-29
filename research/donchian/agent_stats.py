@@ -262,6 +262,118 @@ def sec_C(df, w, r, sym="NAS"):
               f"{(wr-wc)/se:>6.2f} {be:>9.1%} {wr-be:>+8.1%} {1-res.mean():>6.1%}")
 
 
+def sess_boot(df, val_r, sess_r, val_c, sess_c, nb=800, seed=3):
+    """Session-block bootstrap of a difference in means. Breakout triggers cluster
+    ~3/session, so the naive n over-states independence."""
+    rng = np.random.default_rng(seed)
+    ur = np.unique(sess_r); uc = np.unique(sess_c)
+    gr = {u: val_r[sess_r == u] for u in ur}; gc = {u: val_c[sess_c == u] for u in uc}
+    d = np.empty(nb)
+    for b in range(nb):
+        pr = np.concatenate([gr[u] for u in rng.choice(ur, len(ur))])
+        pc = np.concatenate([gc[u] for u in rng.choice(uc, len(uc))])
+        d[b] = pr.mean() - pc.mean()
+    return float(d.mean()), float(d.std(ddof=1)), float((d <= 0).mean())
+
+
+def sec_D(df, w, r, sym="NAS"):
+    """Survival, hazard and time-to-resolution."""
+    print("=" * 120)
+    print("D. SURVIVAL AND TIME-TO-RESOLUTION after the break (n_entry=20, all triggers, research)")
+    print("=" * 120)
+    a = lab.atr(df, 14)
+    idx, side, _ = breakout_pop(df, 20, mask=r)
+    cidx, cside = matched_pop(df, w, idx, side, r, mult=20)
+    sess = df.sess.values
+    for kd, ku in ((1.5, 2.0), (1.5, 1.5), (1.0, 1.0)):
+        o, b, am = barrier_race(w, idx, side, a, ku, kd)
+        oc, bc, _ = barrier_race(w, cidx, cside, a, ku, kd)
+        print(f"\n  --- stop {kd} / target {ku} ATR ---")
+        print(f"  {'bar':>4} {'alive%':>7} {'haz targ':>9} {'haz stop':>9} "
+              f"{'cum targ':>9} {'cum stop':>9} | {'ctl haz T':>10} {'ctl haz S':>10}")
+        alive = np.ones(len(idx), bool); alivec = np.ones(len(cidx), bool)
+        ct = cs = 0.0
+        for h in range(8):
+            tt = (o == 1) & (b == h); ss = (o == -1) & (b == h)
+            ttc = (oc == 1) & (bc == h); ssc = (oc == -1) & (bc == h)
+            na = alive.sum(); nac = alivec.sum()
+            if na == 0:
+                break
+            ct += tt.mean(); cs += ss.mean()
+            print(f"  {h+1:>4} {na/len(idx):>6.1%} {tt.sum()/na:>9.1%} {ss.sum()/na:>9.1%} "
+                  f"{ct:>9.1%} {cs:>9.1%} | {ttc.sum()/max(nac,1):>9.1%} {ssc.sum()/max(nac,1):>9.1%}")
+            alive &= ~(tt | ss); alivec &= ~(ttc | ssc)
+        # session-block bootstrap on the win-rate excess among resolved
+        res = o != 0; resc = oc != 0
+        d, sd, pv = sess_boot(df, (o[res] == 1).astype(float), sess[idx[res]],
+                              (oc[resc] == 1).astype(float), sess[cidx[resc]])
+        print(f"  win-rate excess among resolved: {d:>+.3%}  session-block SE {sd:.3%}"
+              f"  z {d/sd:>+.2f}  p(one-sided) {pv:.4f}")
+    # how close did the losers get
+    print("\n  --- of the trades that STOP at 1.5 ATR, how far did they run first? ---")
+    o, b, _ = barrier_race(w, idx, side, a, 2.0, 1.5)
+    fav, adv, _ = excursions(w, idx, side, a)
+    for lbl, m in (("stopped", o == -1), ("target", o == 1), ("unresolved", o == 0)):
+        print(f"    {lbl:<11} n={m.sum():>5,} ({m.mean():>5.1%})  peak MFE before exit: "
+              f"mean {fav[m, 3].mean():.2f} p50 {np.median(fav[m, 3]):.2f} "
+              f"| MAE h=1 {np.median(adv[m, 0]):.2f}")
+
+
+def sec_E(df, w, r, sym="NAS"):
+    """False breakout: how often does price close back inside the channel, and is
+    that more or less often than for a DISTANCE-MATCHED random level?"""
+    print("=" * 124)
+    print("E. FALSE-BREAKOUT PROFILE - P(close back inside the channel within k bars).")
+    print("   Control = the SAME test applied to random entries with a level placed the")
+    print("   same ATR-distance behind the fill (CLAUDE.md: always distance-match a level).")
+    print("=" * 124)
+    a = lab.atr(df, 14)
+    for n in (10, 20, 40):
+        hi, lo = lab.donchian(df, n)
+        idx, side, _ = breakout_pop(df, n, mask=r)
+        entry = w["opens"][idx, 0]
+        lvl = np.where(side > 0, hi[idx], lo[idx])
+        dist = (entry - lvl) * side / a[idx]          # ATR from fill back to the edge
+        alive = alive_mask(w, idx, FLAT, H)
+        cl = w["closes"][idx, :H]
+        back = ((cl - lvl[:, None]) * side[:, None] <= 0) & alive
+        # distance-matched control
+        cidx, cside = matched_pop(df, w, idx, side, r, mult=10)
+        rng = np.random.default_rng(11)
+        cd = rng.choice(dist, size=len(cidx))
+        ce = w["opens"][cidx, 0]
+        clvl = ce - cside * cd * a[cidx]
+        ca = alive_mask(w, cidx, FLAT, H)
+        ccl = w["closes"][cidx, :H]
+        cback = ((ccl - clvl[:, None]) * cside[:, None] <= 0) & ca
+        print(f"\n  --- n_entry={n}  (n={len(idx):,}; median break extension "
+              f"{np.median(dist):+.2f} ATR beyond the edge) ---")
+        print(f"  {'within':>7} {'ALL brk':>8} {'ctl':>7} {'diff':>7} | {'LONG':>7} {'ctl':>7} "
+              f"{'diff':>7} | {'SHORT':>7} {'ctl':>7} {'diff':>7}")
+        for k in (1, 2, 4, 8, 16):
+            row = f"  {k:>7}"
+            for m, mc in ((np.ones(len(idx), bool), np.ones(len(cidx), bool)),
+                          (side > 0, cside > 0), (side < 0, cside < 0)):
+                p1 = back[m, :k].any(1).mean(); p2 = cback[mc, :k].any(1).mean()
+                row += f" {p1:>7.1%} {p2:>6.1%} {p1-p2:>+7.1%} |"
+            print(row)
+    # what it costs, descriptively (a forward event, NOT a usable filter)
+    print("\n  --- descriptive only: outcome split by whether the break failed back inside")
+    print("      within 2 bars. This is a FORWARD event, it cannot be a filter. ---")
+    hi, lo = lab.donchian(df, 20)
+    idx, side, _ = breakout_pop(df, 20, mask=r)
+    lvl = np.where(side > 0, hi[idx], lo[idx])
+    alive = alive_mask(w, idx, FLAT, H)
+    back2 = (((w["closes"][idx, :H] - lvl[:, None]) * side[:, None] <= 0) & alive)[:, :2].any(1)
+    o, b, _ = barrier_race(w, idx, side, a, 2.0, 1.5)
+    fav, adv, _ = excursions(w, idx, side, a)
+    for lbl, m in (("closed back in <=2", back2), ("held outside", ~back2)):
+        res = o[m] != 0
+        print(f"    {lbl:<20} n={m.sum():>5,} ({m.mean():>5.1%})  "
+              f"win%(1.5/2.0, resolved) {(o[m][res]==1).mean():>5.1%}  "
+              f"MFE16 {np.nanmean(fav[m,15]):>5.2f}  MAE16 {np.nanmean(adv[m,15]):>6.2f}")
+
+
 SECS = {}
 if __name__ == "__main__":
     which = sys.argv[1:] or ["A"]
