@@ -275,3 +275,49 @@ def selectivity_control(n_draws=400, seed=41):
 
 if __name__ == "__main__":
     selectivity_control()
+
+
+def is_it_just_chop():
+    """US30 passed the gate on all four models regardless of AUC. That is the signature of every
+    model rediscovering ONE simple thing rather than four models each learning something.
+
+    The obvious candidate is the regime state: CHOP is the only filter on this branch that has ever
+    cleared a same-selectivity control on both blocks, and 74 of the 141 columns are volatility or
+    regime readings. If the models' selection overlaps CHOP heavily, and CHOP alone earns the same
+    excess, then 141 features and a gradient booster have reproduced a one-line condition.
+    """
+    import v21regime as RG
+    V.hdr("IS THE US30 RESULT JUST CHOP? -- overlap with the one-line filter, and its own excess")
+    for mkt in ("US30", "NQ"):
+        X, yR, yw, meta = D.build(mkt, 30, 1)
+        u = np.unique(meta["sess"])
+        cut = u[int(len(u) * 0.65)]
+        res, lk = meta["sess"] < cut, meta["sess"] >= cut
+        Xv = X.to_numpy(float)
+        chop = X["reg.chop14"].to_numpy()
+        rl, cl = yR[lk], chop[lk]
+        rng = np.random.default_rng(41)
+        k = int(lk.sum()) // 2
+        ctrl = np.array([rl[rng.choice(len(rl), k, replace=False)].mean() for _ in range(400)])
+        # CHOP alone, matched to the SAME 50% selectivity so the comparison is like for like
+        thr = np.median(cl)
+        chop_sel = cl <= thr
+        print(f"\n   {mkt}: {int(lk.sum())} locked signals, baseline {rl.mean():+.4f} R,"
+              f" control mean {ctrl.mean():+.4f}")
+        print(f"   {'selector':<30}{'n':>7}{'R':>10}{'excess':>9}{'p':>7}{'overlap w/ CHOP':>18}")
+        r = float(rl[chop_sel].mean())
+        print(f"   {'CHOP14 <= median (one line)':<30}{int(chop_sel.sum()):>7}{r:>+10.4f}"
+              f"{r-ctrl.mean():>+9.4f}{float((ctrl>=r).mean()):>7.3f}{'1.000':>18}")
+        for name, spec in (("random forest 300", "rf"), ("LightGBM 400", "lgbm"),
+                           ("MLP 6x256 (deeper)", ("mlp", 6, 256))):
+            sc = StandardScaler().fit(Xv[res])
+            p = run_model(spec, sc.transform(Xv[res]), yw[res], sc.transform(Xv[lk]))
+            sel = p >= np.median(p)
+            r = float(rl[sel].mean())
+            jac = (sel & chop_sel).sum() / max((sel | chop_sel).sum(), 1)
+            print(f"   {name:<30}{int(sel.sum()):>7}{r:>+10.4f}{r-ctrl.mean():>+9.4f}"
+                  f"{float((ctrl>=r).mean()):>7.3f}{jac:>18.3f}")
+
+
+if __name__ == "__main__":
+    is_it_just_chop()
