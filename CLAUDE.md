@@ -1236,6 +1236,21 @@ LATER had RTH bars. And a boosted quality score on 11 pre-entry features is null
 TWIN BEATING IT at the 25% and 10% keep rungs. Do not re-run this family.
 See `docs/ib/STUDY_V36_SWEEP_IFVG.md`.
 
+**THE IFVG MODEL'S OWN TIMEFRAME GRADIENT IS A COST GRADIENT.** The thread's model -- an
+inversion aligned with order flow on M15 and M5, entered on the confirming M1 candle -- loses on
+**0 of 32 declared cells** with a mean GROSS profit factor of **1.003**: a coin flip before a $4.78
+round turn. Re-run at 5m and 15m entry with the barrier scaled to the entry timeframe's own ATR,
+gross PF climbs monotonically 1.025 -> 1.053 -> **1.173** while the round turn stays flat at $4.7,
+and the NET sign flips at 15 minutes (75% of cells profitable, best cell +13.71/trade clearing its
+matched control at **p 0.005**). It is not an edge: the barrier grew, the edge did not. Out of
+sample **0 of 16** 15-minute cells is profitable and the family mean goes +3.04 -> **-15.92**. Read
+the ZERO-COST variant before believing a timeframe gradient. What DID replicate is order-flow
+alignment itself -- +0.63 net, +0.63 gross, correct sign on both blocks and at every entry
+timeframe -- and it is worth an order of magnitude less than the cost floor. The confirmation entry
+is worth nothing. Order flow is made objective with NO new parameter, as the polarity of the most
+recent inversion, which is the source's own definition ("disrespects bearish PD arrays" IS a
+bullish inversion). See `docs/ib/STUDY_V37_IFVG_ORDERFLOW.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1305,6 +1320,8 @@ See `docs/ib/STUDY_V36_SWEEP_IFVG.md`.
 | `research/v36/levels.py` | liquidity pools with confirmation-lagged pivots, roll-relative session freezes and a truncation audit |
 | `research/v36/setup.py`, `engine.py` | four sweep definitions, the FVG->IFVG chain, and a one-live-order 1-minute engine |
 | `research/v36/run_grid.py`, `run_valid.py`, `run_filter.py`, `quartile_fix.py` | the 5,400-cell grid, the neighbourhood and validation reads, and the best-of-N correction |
+| `research/v37/ofa.py` | order flow as inversion polarity; age-bounded FVG/IFVG; HTF->1m mapping |
+| `research/v37/run_v37.py`, `run_tf.py` | the thread's IFVG model, its ablations, the zero-cost gate, entry-timeframe sweep |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
