@@ -1136,6 +1136,29 @@ owns `vol.` for 71 VOLATILITY columns, so the volume family had to become `vlm.`
 family-importance table credits volatility's weight to volume.
 See `docs/ib/STUDY_V32_FLOW_ML.md`.
 
+**A FULL OPTIMISATION PIPELINE RAISES OOS SHARPE 0.33 -> 1.13 AND STILL SHIPS NOTHING, BECAUSE THE
+STATISTIC FAILS AT N=1.** 60/20/20 chronological split, ten parameter axes, **207,360**
+configurations, objective 0.35 Sharpe + 0.30 PF + 0.20 return/DD + 0.15 neighbourhood robustness,
+candidate taken as the CENTRE of the top-20 surviving region rather than its top row. US30 long
+(60m Donchian 40/20, adaptive 2.5/1.5N stop, 2R, CHOP<=45, 09:30-16:00) reads OOS **PF 1.412,
+Sharpe +1.13, DD 10.5R on 124 trades** against a baseline 1.118 / +0.33 / 24.7R, with stability
+1.000 on every informative axis, 5/6 walk-forward folds and BOTH post-selection folds positive, and
+PF still 1.019 at 3x costs. **THE DEFLATED SHARPE IS 0.0016 AGAINST 51,840 TRIALS -- AND 0.8101
+AGAINST ONE.** Multiplicity is not what kills it; the observed +0.471 Sharpe on train+valid is not
+significant before any correction, and positive skew (1.98) with kurtosis 11.3 makes it worse.
+Report the DSR as a CURVE over assumed N, never one number, because the assumption is doing the
+work. Two more things to carry: **TRAIN -> VALIDATION SHARPE RANK CORRELATION IS NEGATIVE IN ALL
+FOUR CELLS** (-0.181, -0.330, -0.050, -0.375), the third independent measurement after V30's
+surrogate (0.96 -> 0.07) and V31's cross-family (+0.215) that in-sample ranking carries no
+information here; and the generalization gap is **POSITIVE** (+0.690 Sharpe), the wrong shape, for
+the fifth time. Two objective defects worth not repeating: bounded normalisation that SATURATES at
+1.000 cannot rank, and an ABSOLUTE trade floor admits 60m configs with 67 train trades and ZERO
+validation trades -- use trades per year. And an axis that changes nothing must be excluded from a
+stability score: `stop` is INERT whenever an adaptive vol policy is on, `adx_min` empties the sample
+at 60m, and counting a flat line as four passing rungs is how a score reaches 1.000 measuring
+nothing. Grid shape before its top row: PF>1 on train in 62.1% (US30 long), 2.2% (US30 short), 72.5%
+(NQ long), 16.0% (NQ short). See `docs/ib/STUDY_V33_OPTIMIZER.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1194,6 +1217,9 @@ See `docs/ib/STUDY_V32_FLOW_ML.md`.
 | `research/v31/v31mc.py` | **the two Monte Carlos** — day-block bootstrap for the edge, permutation for the path, over all 34 declared configurations |
 | `research/v32/v32flow.py` | 43 causal volume / absorption / exhaustion / anomaly / flow-proxy columns, truncation-audited |
 | `research/v32/v32run.py`, `v32sum.py`, `v32imp.py` | XGB + LightGBM on both objectives, shuffled twin, selectivity control; the counts, and importance by source frame |
+| `research/v33/v33core.py` | the strategy spec, its parameter classification, a cached engine and the multi-objective score |
+| `research/v33/v33opt.py`, `run_grid.py`, `rescore.py` | the 207,360-cell grid on TRAIN, neighbourhood robustness, one read of VALID |
+| `research/v33/v33robust.py`, `run_final.py`, `dsr_sweep.py` | perturbation, regimes, walk-forward, MC, cost stress, deflated Sharpe as a curve, and the ONE OOS read |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |

@@ -126,8 +126,12 @@ def full(market, side, n_trials):
             f"{'[' if r.at_optimum else ' '}{r.value}:{r.sharpe:+.2f}/{r.pf:.2f}"
             f"{']' if r.at_optimum else ' '}" for r in g.itertuples())
         print(f"      {axis:<10} {cells}")
-    stab = RB.stability_score(pt)
-    print(f"      STABILITY SCORE (share of the whole ladder with PF>1 and Sharpe>0): {stab:.3f}")
+    stab, inert = RB.stability_score(pt)
+    if inert:
+        print(f"      INERT AXES (identical at every rung, excluded from the score): "
+              f"{', '.join(inert)}")
+    print(f"      STABILITY SCORE (share of the INFORMATIVE ladder with PF>1 and Sharpe>0): "
+          f"{stab:.3f}")
 
     sub("REGIME BREAKDOWN on VALID -- signal bars split, then re-simulated")
     rg = RB.regimes(market, cand, "valid")

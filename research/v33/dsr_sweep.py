@@ -52,7 +52,7 @@ def sweep(market, p, ns=(1, 5, 20, 50, 100, 250, N_WALKS, 2000, 10000, GRID)):
 
 
 if __name__ == "__main__":
-    cand = V.Params(tf=60, entry_n=55, exit_n=20, stop=2.5, tp_r=3.0, chop_max=50.0,
+    cand = V.Params(tf=60, entry_n=40, exit_n=20, stop=2.5, tp_r=2.0, chop_max=45.0,
                     adx_min=None, session=(570, 960), vol_policy=(2.5, 1.5), side=1)
     print("=" * 116)
     print("DEFLATED SHARPE vs the assumed number of independent trials -- US30 long candidate")

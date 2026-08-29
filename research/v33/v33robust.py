@@ -96,7 +96,13 @@ AXES = dict(entry_n=V.ENTRY_N, exit_n=V.EXIT_N, stop=V.STOP, tp_r=V.TP_R,
 
 
 def perturb(market, p, block_name="valid"):
-    """Every axis walked over its whole declared ladder, on the named block."""
+    """Every axis walked over its whole declared ladder, on the named block.
+
+    AN AXIS THAT CHANGES NOTHING IS MARKED INERT AND EXCLUDED FROM THE STABILITY SCORE. Two do so
+    here and both would otherwise inflate it: `stop` is inert whenever `vol_policy` is on, because
+    the policy supplies its own two stops and the scalar is never read; and `adx_min` is inert at
+    60 minutes because every rung above None empties the sample. Counting a flat line as four
+    passing rungs is how a stability score reaches 1.000 without measuring anything."""
     rows = []
     for axis, values in AXES.items():
         for v in values:
@@ -111,12 +117,23 @@ def perturb(market, p, block_name="valid"):
     return pd.DataFrame(rows)
 
 
+def inert_axes(pt, tol=1e-9):
+    """Axes whose whole ladder returns the identical result -- they measure nothing."""
+    out = []
+    for axis, g in pt.groupby("axis"):
+        v = g.sharpe.dropna()
+        if len(v) < 2 or float(v.max() - v.min()) <= tol:
+            out.append(axis)
+    return out
+
+
 def stability_score(pt):
-    """Share of the whole declared ladder, across all axes, that keeps PF > 1 and Sharpe > 0."""
-    ok = pt.dropna(subset=["sharpe"])
+    """Share of the declared ladder, across the INFORMATIVE axes, keeping PF > 1 and Sharpe > 0."""
+    inert = inert_axes(pt)
+    ok = pt[~pt.axis.isin(inert)].dropna(subset=["sharpe"])
     if not len(ok):
-        return 0.0
-    return float(((ok.pf > 1.0) & (ok.sharpe > 0)).mean())
+        return 0.0, inert
+    return float(((ok.pf > 1.0) & (ok.sharpe > 0)).mean()), inert
 
 
 # ---- regimes --------------------------------------------------------------------------------------
