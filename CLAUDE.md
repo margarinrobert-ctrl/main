@@ -1062,6 +1062,23 @@ baseline (best LightGBM +0.1275). **THE MECHANISM IS THE TAIL**: both markets sh
 tail, so that objective is misaligned and whether it helps depends on whether the tail survives.
 Read p90 of R in the selected set, not AUC. See `docs/ib/STUDY_V28_ML_CAPACITY.md`.
 
+**THE US30 ML RESULT IS NOT CHOP, AND FORWARD CHOP IS NOT PREDICTABLE.** Two diagnostics settled
+V28. First: CHOP14 <= median at the SAME 50% selectivity earns excess +0.0279 at **p 0.188** on US30
+and **-0.1149 at p 0.988** on NQ, while the models earn +0.104 to +0.139 at **p 0.000** on US30 with
+a Jaccard overlap of only **0.32-0.36** -- so the models select a substantially different half and
+found something the one-line filter does not. Second: XGBoost on 74 volatility features + ADX fits
+the FORWARD efficiency ratio at in-sample IC **0.41-0.70** and delivers locked IC **-0.017 to
++0.040**, AUC 0.49-0.52, and NEVER beats simply reading CHOP(14) today. CHOP describes the last 14
+bars; nothing here forecasts the next 24. **ATR AS AN ENTRY REGIME FILTER IS ALSO NULL ON NQ**: 240
+declared cells (4 families x parameters x 2 directions), only **4% clear a same-selectivity control
+at p<=0.05 on either block against a 5% chance rate**, mean excess negative. On US30 25% clear on
+research and 15% on locked, and exactly TWO cells survive both -- `atr_pct 500 <= 0.2` (research
++0.3682 p 0.003, locked +0.1611 PF 1.207 **p 0.003**) and its near-duplicate `atr_price 500 <= 0.2`
+-- i.e. trade only when ATR sits in the bottom fifth of its own last 500 bars. Two survivors of 240
+is what chance delivers at p<=0.05, and US30's locked baseline is NEGATIVE (-0.0139) so they rescue
+a loser rather than improve a winner. Watch, do not trade. A published visual ledger of all sixteen
+tested families lives at `docs/ib/verdict_ledger.html`.
+
 ## Tooling
 
 | module | what it does |
