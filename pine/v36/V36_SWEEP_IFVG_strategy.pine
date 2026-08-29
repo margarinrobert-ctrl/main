@@ -25,8 +25,12 @@
 //   * Every block that writes `var` state is guarded by barstate.isconfirmed, not just the entries.
 //     Mid-bar `close` is the current price; unguarded state makes the report about the "Script
 //     execution" checkboxes rather than about the rules.
-//   * A pivot needs `right` bars to confirm, so ta.pivothigh(n,n) is only knowable n bars later.
-//     That lag is respected, not back-dated.
+//   * Swings are ICT three-candle pivots read from COMPLETED higher-timeframe candles at offsets
+//     [1] to [3], so a swing never appears and then vanishes. They are fetched with lookahead_on,
+//     which is safe HERE and only here: nothing the expression reads comes from the forming HTF
+//     candle, so there is no leak, and it delivers each level the moment it becomes knowable rather
+//     than a full HTF period late -- late enough that price can sweep a level before the script has
+//     created it, which loses the sweep entirely.
 // =================================================================================================
 //@version=5
 strategy("V36 Sweep -> IFVG Reversal [FAILED VALIDATION]", overlay=true,
@@ -46,13 +50,17 @@ poolLife  = input.int(480, "Pool lifetime (bars)", minval=20, group=grpS,
 cooldown  = input.int(12, "Bars between setups", minval=1, group=grpS)
 
 grpL = "Liquidity pools"
-usePiv    = input.bool(true, "Higher-timeframe swings", group=grpL)
-pivLen    = input.int(3, "Pivot left/right", minval=1, group=grpL)
-htf1      = input.timeframe("60", "Swing timeframe 1", group=grpL)
-htf2      = input.timeframe("240", "Swing timeframe 2", group=grpL)
-useAsia   = input.bool(true, "Asia high/low", group=grpL)
-useLondon = input.bool(true, "London high/low", group=grpL)
-usePD     = input.bool(true, "Previous day high/low", group=grpL)
+use1h     = input.bool(true,  "1H swing highs/lows", group=grpL)
+use4h     = input.bool(true,  "4H swing highs/lows", group=grpL)
+tfD       = input.timeframe("D", "Previous-period timeframe", group=grpL,
+     tooltip="Period for the previous high/low. Default is the previous day.")
+usePD     = input.bool(true,  "Previous period high/low", group=grpL)
+useW      = input.bool(true,  "Previous week high/low", group=grpL)
+useM      = input.bool(false, "Previous month high/low", group=grpL)
+useAsia   = input.bool(true,  "Asia high/low", group=grpL)
+useLondon = input.bool(true,  "London high/low", group=grpL)
+maxPools  = input.int(20, "Max live pools per side", minval=4, maxval=200, group=grpL,
+     tooltip="The oldest pool is dropped when the cap is reached, so the book stays a set of RECENT levels.")
 
 grpF = "IFVG"
 maxGap    = input.int(12, "Max bars, sweep to inversion", minval=1, group=grpF)
@@ -126,44 +134,91 @@ if barstate.isconfirmed
             lonLF := lonL
 
 // ---- higher-timeframe swings, with the confirmation lag respected -------------------------------
-ph1 = request.security(syminfo.tickerid, htf1, ta.pivothigh(pivLen, pivLen), lookahead=barmerge.lookahead_off)
-pl1 = request.security(syminfo.tickerid, htf1, ta.pivotlow(pivLen, pivLen),  lookahead=barmerge.lookahead_off)
-ph2 = request.security(syminfo.tickerid, htf2, ta.pivothigh(pivLen, pivLen), lookahead=barmerge.lookahead_off)
-pl2 = request.security(syminfo.tickerid, htf2, ta.pivotlow(pivLen, pivLen),  lookahead=barmerge.lookahead_off)
+// ---- ICT three-candle swings on completed higher-timeframe candles -------------------------------
+//
+// A swing high is a candle whose high exceeds BOTH neighbours; a swing low is the mirror. Only
+// offsets [1] to [3] are read, so the value never depends on the higher-timeframe candle that is
+// still forming and a swing cannot appear and then vanish.
+//
+// WHY lookahead_on IS CORRECT HERE, and why lookahead_off was WORSE. With lookahead_on, at the
+// first chart bar of HTF bar t the expression is evaluated on bar t -- but it only reads bars
+// t-1, t-2 and t-3, all of which have closed. Nothing from the forming bar reaches the result, so
+// there is no leak. What it buys is timeliness: the swing at t-2 is confirmed the moment t-1
+// closes, and lookahead_on delivers it then. With lookahead_off the same level arrives a full HTF
+// period late, by which time price may already have swept it -- the sweep is missed and the level
+// is never consumed. The general rule stands (lookahead_on leaks) and this is the specific case
+// where the [1]+ offsets make it safe.
+f_ictSwings() =>
+    sh = high[2] > high[3] and high[2] > high[1] ? high[2] : na
+    sl = low[2]  < low[3]  and low[2]  < low[1]  ? low[2]  : na
+    [sh, sl, time[2]]
 
-var float[] poolHi = array.new_float()
+f_prevHL() =>
+    [high[1], low[1], time]
+
+[sh1h, sl1h, t1h] = request.security(syminfo.tickerid, "60",  f_ictSwings(), lookahead=barmerge.lookahead_on)
+[sh4h, sl4h, t4h] = request.security(syminfo.tickerid, "240", f_ictSwings(), lookahead=barmerge.lookahead_on)
+[hD, lD, tD]      = request.security(syminfo.tickerid, tfD,   f_prevHL(),    lookahead=barmerge.lookahead_on)
+[hW, lW, tW]      = request.security(syminfo.tickerid, "W",   f_prevHL(),    lookahead=barmerge.lookahead_on)
+[hM, lM, tM]      = request.security(syminfo.tickerid, "M",   f_prevHL(),    lookahead=barmerge.lookahead_on)
+
+new1h = t1h != t1h[1]
+new4h = t4h != t4h[1]
+newDp = tD  != tD[1]
+newWp = tW  != tW[1]
+newMp = tM  != tM[1]
+
+// Pools carry a RANK -- 1H 1, 4H 2, session 2, previous period 3, week 4, month 5 -- so a filter can
+// later ask whether higher-timeframe liquidity behaves differently. Ranks are recorded, not used to
+// gate anything, because nothing in the research justified gating on them.
+var float[] poolHi  = array.new_float()
 var int[]   poolHiB = array.new_int()
-var float[] poolLo = array.new_float()
+var int[]   poolHiR = array.new_int()
+var float[] poolLo  = array.new_float()
 var int[]   poolLoB = array.new_int()
+var int[]   poolLoR = array.new_int()
 
-addPool(float lvl, bool isHigh) =>
+addPool(float lvl, bool isHigh, int rank) =>
     if not na(lvl)
         if isHigh
             array.push(poolHi, lvl)
             array.push(poolHiB, bar_index)
+            array.push(poolHiR, rank)
+            if array.size(poolHi) > maxPools
+                array.shift(poolHi)
+                array.shift(poolHiB)
+                array.shift(poolHiR)
         else
             array.push(poolLo, lvl)
             array.push(poolLoB, bar_index)
+            array.push(poolLoR, rank)
+            if array.size(poolLo) > maxPools
+                array.shift(poolLo)
+                array.shift(poolLoB)
+                array.shift(poolLoR)
 
 if barstate.isconfirmed
-    if usePiv
-        if not na(ph1) and (na(ph1[1]) or ph1 != ph1[1])
-            addPool(ph1, true)
-        if not na(pl1) and (na(pl1[1]) or pl1 != pl1[1])
-            addPool(pl1, false)
-        if not na(ph2) and (na(ph2[1]) or ph2 != ph2[1])
-            addPool(ph2, true)
-        if not na(pl2) and (na(pl2[1]) or pl2 != pl2[1])
-            addPool(pl2, false)
+    if use1h and new1h
+        addPool(sh1h, true, 1)
+        addPool(sl1h, false, 1)
+    if use4h and new4h
+        addPool(sh4h, true, 2)
+        addPool(sl4h, false, 2)
+    if usePD and newDp
+        addPool(hD, true, 3)
+        addPool(lD, false, 3)
+    if useW and newWp
+        addPool(hW, true, 4)
+        addPool(lW, false, 4)
+    if useM and newMp
+        addPool(hM, true, 5)
+        addPool(lM, false, 5)
     if useAsia and not na(asiaHF) and na(asiaHF[1])
-        addPool(asiaHF, true)
-        addPool(asiaLF, false)
+        addPool(asiaHF, true, 2)
+        addPool(asiaLF, false, 2)
     if useLondon and not na(lonHF) and na(lonHF[1])
-        addPool(lonHF, true)
-        addPool(lonLF, false)
-    if usePD and not na(pdH) and na(pdH[1])
-        addPool(pdH, true)
-        addPool(pdL, false)
+        addPool(lonHF, true, 2)
+        addPool(lonLF, false, 2)
 
 // ---- the sweep. A pool is CONSUMED when swept, so a level is never traded twice. -----------------
 var int   lastSweep   = -10000
@@ -171,6 +226,7 @@ var int   sweepBar    = na
 var int   sweepSide   = 0
 var float sweepExt    = na
 var float sweptLevel  = na
+var int   sweptRank   = 0
 
 sweepHit(float lvl, int side) =>
     bool pierced = side > 0 ? low < lvl - penATR * atr : high > lvl + penATR * atr
@@ -195,11 +251,16 @@ sweepHit(float lvl, int side) =>
 // Two passes instead. Prune first, so the array is stable; then search, and remove the match at the
 // moment it is found, while the index is still valid. Nothing outside this function ever holds an
 // index into these arrays.
+// THREE parallel arrays now -- level, birth bar and rank -- so every removal must touch all three
+// or they desync and a pool reports another pool's rank. Adding the rank array without updating the
+// removals would have been the same class of defect as the index bug above, one step removed.
 scanPools(bool isHigh) =>
     arr  = isHigh ? poolHi : poolLo
     arrB = isHigh ? poolHiB : poolLoB
+    arrR = isHigh ? poolHiR : poolLoR
     int  side = isHigh ? -1 : 1
     float hitLvl = na
+    int   hitRank = 0
 
     // pass 1 -- expire. Downward, so surviving lower indices are never disturbed.
     if array.size(arrB) > 0
@@ -207,6 +268,7 @@ scanPools(bool isHigh) =>
             if i < array.size(arrB) and bar_index - array.get(arrB, i) > poolLife
                 array.remove(arr, i)
                 array.remove(arrB, i)
+                array.remove(arrR, i)
 
     // pass 2 -- match. The array is stable now, so the index is valid when it is used.
     if array.size(arr) > 0
@@ -215,25 +277,29 @@ scanPools(bool isHigh) =>
                 float lvl = array.get(arr, i)
                 if sweepHit(lvl, side)
                     hitLvl := lvl
+                    hitRank := array.get(arrR, i)
                     array.remove(arr, i)
                     array.remove(arrB, i)
+                    array.remove(arrR, i)
                     break
-    hitLvl
+    [hitLvl, hitRank]
 
 if barstate.isconfirmed and bar_index - lastSweep >= cooldown and not na(atr) and atr > 0
-    float lvlL = scanPools(false)
-    float lvlH = scanPools(true)
+    [lvlL, rankL] = scanPools(false)
+    [lvlH, rankH] = scanPools(true)
     if not na(lvlL)
         sweepBar   := bar_index
         sweepSide  := 1
         sweepExt   := low
         sweptLevel := lvlL
+        sweptRank  := rankL
         lastSweep  := bar_index
     else if not na(lvlH)
         sweepBar   := bar_index
         sweepSide  := -1
         sweepExt   := high
         sweptLevel := lvlH
+        sweptRank  := rankH
         lastSweep  := bar_index
 
 // ---- FVG, invalidation, and the inversion --------------------------------------------------------
