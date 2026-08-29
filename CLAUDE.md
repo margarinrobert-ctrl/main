@@ -1115,6 +1115,27 @@ locked paths rougher; locked MC p99 runs to **2.15x** the realised drawdown, whi
 number. The edge belongs to the FAMILY, not to any choice made inside it.
 See `docs/ib/STUDY_V31_MONTECARLO.md`.
 
+**THE WIN RATE GOES UP 25-41% OUT OF SAMPLE AND SHARPE GOES DOWN, AND THAT IS THE WHOLE FINDING.**
+43 new causal columns -- volume level against an expanding time-of-day baseline, ABSORPTION as
+effort-without-result, EXHAUSTION as climax/wick-rejection/breakout-on-falling-volume, ANOMALY as a
+joint outlier in (return, range, volume) plus the residual of the move on the participation, and a
+flow proxy NAMED a proxy because no feed here carries bid/ask -- under XGBoost and LightGBM, purged
+and embargoed, 240 scorable cells over 2 markets x 2 blocks x 2 objectives x 3 feature sets x 5
+rungs. Trained on WIN/LOSE the ask is met and overshot: NQ locked **0.353 -> 0.441 (+25%,
+control p 0.010)**, US30 locked **0.311 -> 0.440 (+41%, p 0.000)**, monotone in selectivity, 24-30
+of 30 cells above baseline. **And Sharpe is LOWER than the unfiltered rule in three of the four
+best cells** (NQ locked +0.21 against +0.45; the fourth is US30 locked where the baseline itself
+loses), NO cell clears its control on PROFIT FACTOR on NQ, and Sharpe beats baseline in 2/30, 1/30,
+2/30 and 14/30. **THE MECHANISM IS ISOLATED BY RUNNING BOTH OBJECTIVES ON THE SAME FOLDS**: trained
+on win, p90 of R falls in ALL FOUR market-block cells (2.369->1.785, 1.788->1.558, 2.583->2.341,
+2.069->1.696); trained on R it falls in NONE. **AND THE SHUFFLED-LABEL TWIN OUTSCORES THE REAL MODEL
+IN 83 OF 120 RESEARCH CELLS (69%)** -- worst at the rungs that read best, real PF 1.433 against
+shuffled 1.671. Above 50% means the noise floor is higher than the signal. Print p90 of R beside any
+reported win-rate improvement on a breakout system. Note the prefix trap found here: `v22vol.build`
+owns `vol.` for 71 VOLATILITY columns, so the volume family had to become `vlm.` or the
+family-importance table credits volatility's weight to volume.
+See `docs/ib/STUDY_V32_FLOW_ML.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1171,6 +1192,8 @@ See `docs/ib/STUDY_V31_MONTECARLO.md`.
 | `research/v24/v24hma.py` | HMA CROSS cell by cell, and the lag-matched test that withdrew the type gradient |
 | `research/v25/v25lr.py` | the linreg 9/21 cross: 484 cells, value/slope/forecast readings, R^2 gate, controls |
 | `research/v31/v31mc.py` | **the two Monte Carlos** — day-block bootstrap for the edge, permutation for the path, over all 34 declared configurations |
+| `research/v32/v32flow.py` | 43 causal volume / absorption / exhaustion / anomaly / flow-proxy columns, truncation-audited |
+| `research/v32/v32run.py`, `v32sum.py`, `v32imp.py` | XGB + LightGBM on both objectives, shuffled twin, selectivity control; the counts, and importance by source frame |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |

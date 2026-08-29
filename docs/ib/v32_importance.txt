@@ -1,0 +1,68 @@
+
+==================================================================================================================================
+NQ 30m   FEATURE IMPORTANCE, research block only, LightGBM trained on R   (43 FLOW + 141 BASE columns)
+==================================================================================================================================
+   by SOURCE FRAME:  BASE 84.1% over 141 columns (1.10x its column share)   FLOW 15.9% over 43 columns (0.68x its column share)
+   by FAMILY:        BASE:vol 52.2%   BASE:mom 26.0%   FLOW:flw 6.0%   FLOW:ano 4.6%   BASE:ses 2.3%   FLOW:exh 1.9%   BASE:reg 1.8%   FLOW:abs 1.7%   FLOW:vlm 1.6%   BASE:hmm 0.9%   BASE:str 0.9%
+
+   top 15 FLOW columns
+      ano.beta_move_vol                   70    3.89%
+      flw.cum_delta20                     37    2.06%
+      flw.div20                           32    1.78%
+      flw.cum_delta50                     29    1.61%
+      vlm.tod                             15    0.83%
+      exh.vol_bias10                      15    0.83%
+      abs.z_gap                            9    0.50%
+      flw.cum_delta10                      8    0.44%
+      exh.vol_bias20                       6    0.33%
+      ano.mahal3                           5    0.28%
+      abs.er_sum3                          5    0.28%
+      abs.effort_result                    5    0.28%
+      abs.range_per_vol                    4    0.22%
+      abs.body_per_vol                     4    0.22%
+      ano.z_range                          4    0.22%
+   top 10 BASE columns
+      vol.semid120                        72    4.00%
+      mom.roc240                          51    2.83%
+      vol.vov60                           43    2.39%
+      mom.slope200                        39    2.17%
+      mom.tsmom240                        37    2.06%
+      vol.semid20                         35    1.94%
+      vol.z_cc60_500                      33    1.83%
+      vol.cc120                           33    1.83%
+      mom.roc120                          32    1.78%
+      ses.mod                             31    1.72%
+
+==================================================================================================================================
+US30 30m   FEATURE IMPORTANCE, research block only, LightGBM trained on R   (43 FLOW + 141 BASE columns)
+==================================================================================================================================
+   by SOURCE FRAME:  BASE 88.1% over 141 columns (1.15x its column share)   FLOW 11.9% over 43 columns (0.51x its column share)
+   by FAMILY:        BASE:vol 59.4%   BASE:mom 23.9%   FLOW:ano 4.6%   FLOW:flw 2.5%   FLOW:vlm 2.4%   FLOW:exh 2.2%   BASE:reg 1.8%   BASE:ses 1.5%   BASE:str 1.1%   BASE:hmm 0.4%   FLOW:abs 0.3%
+
+   top 15 FLOW columns
+      ano.beta_move_vol                   73    4.06%
+      flw.cum_delta50                     27    1.50%
+      exh.upper_wick                      15    0.83%
+      exh.vol_bias20                      12    0.67%
+      vlm.z50                             12    0.67%
+      vlm.tod_z                           10    0.56%
+      flw.div20                            8    0.44%
+      vlm.tod                              7    0.39%
+      flw.cum_delta10                      6    0.33%
+      exh.vol_vs_max20                     4    0.22%
+      ano.move_on_vol_resid                4    0.22%
+      exh.ext_per_vol                      3    0.17%
+      ano.mahal3                           3    0.17%
+      flw.cum_delta20                      3    0.17%
+      vlm.trend20                          3    0.17%
+   top 10 BASE columns
+      vol.z_cc20_500                      58    3.22%
+      vol.semiu120                        54    3.00%
+      vol.z_cc60_250                      53    2.94%
+      mom.slope200                        52    2.89%
+      vol.vov20                           48    2.67%
+      vol.semid120                        43    2.39%
+      vol.semi_ratio120                   41    2.28%
+      vol.vov60                           37    2.06%
+      vol.gk120                           36    2.00%
+      vol.park_cc120                      34    1.89%
