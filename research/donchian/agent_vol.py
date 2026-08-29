@@ -433,19 +433,59 @@ def stage_shape(bk, F, keys, q=5, fam="", nperm=1000, n_draws=250):
                  minn=45, fam=fam + ":" + k)
 
 
-def stage_cuts(bk, F, specs, fam="", nperm=NPERM, n_draws=300):
-    """Cumulative one-sided cuts across the whole range, so the decay is visible."""
-    print("\n" + "=" * 118)
-    print(f"STAGE 3{fam}  CUMULATIVE CUTS (nested; the shape of the decay is the point)")
-    print("=" * 118)
+def stage_cuts(bk, FB, F, specs, fam="", nperm=NPERM, n_draws=400, title=""):
+    """Cumulative one-sided cuts across the WHOLE range.  Nested, so the rows are
+    not independent - the point is the SHAPE of the decay, not 9 p-values.  A
+    real effect decays smoothly; a mined one is a spike at one rung."""
+    print("\n" + "=" * 145)
+    print(f"STAGE 5{fam}  CUMULATIVE CUTS - {title}")
+    print("=" * 145)
     for k, op, ths in specs:
-        v = F[k]
-        print(f"\n  {k} {op} thr")
-        print("  " + HDR)
+        v = F[k]; vb = FB.get(k)
+        print(f"\n  {k} {op} thr        (control pool restricted to bars meeting"
+              f" the same condition)" if vb is not None else f"\n  {k} {op} thr")
+        print("  " + HDRP)
         for t in ths:
             keep = ((v > t) if op == ">" else (v < t)) & ~np.isnan(v)
-            test(bk, keep, f"  {k} {op} {t:g}", nperm=nperm, n_draws=n_draws,
-                 fam=fam + ":" + k)
+            if vb is None:
+                pool = bk.r.copy()
+            else:
+                pool = ((vb > t) if op == ">" else (vb < t)) & ~np.isnan(vb)
+            test_pool(bk, keep, pool, f"  {k} {op} {t:g}", nperm=nperm,
+                      n_draws=n_draws, fam=fam + ":" + k)
+
+
+def stage_regime(bk, FB, F):
+    """V1 / V5 with a REGIME-MATCHED control.  The bin edges come from the
+    trigger distribution; the same numeric edges define the bar-level pool."""
+    print("\n" + "=" * 145)
+    print("STAGE 4  REGIME-MATCHED CONTROL.  A high-ATR bin scored against random")
+    print("  entries DRAWN FROM THE SAME ATR REGIME, so wide barriers are on both")
+    print("  sides of the comparison and only the breakout's information is left.")
+    print("=" * 145)
+    for k in ("atrpct4500", "atrpct1500", "atrpct500", "atrrel1500",
+              "on8h_adr", "spent_adr", "barexp", "bodyexp", "width20"):
+        v, vb = F[k], FB[k]
+        ed = np.nanquantile(v[~np.isnan(v)], np.linspace(0, 1, 6))
+        ed[0], ed[-1] = -np.inf, np.inf
+        print(f"\n  {k}   quintile edges " + " ".join(f"{e:.3f}" for e in ed[1:-1]))
+        print("  " + HDRP)
+        for j in range(5):
+            keep = (v > ed[j]) & (v <= ed[j + 1]) & ~np.isnan(v)
+            pool = (vb > ed[j]) & (vb <= ed[j + 1]) & ~np.isnan(vb)
+            test_pool(bk, keep, pool, f"  {k} Q{j+1}", fam="regime:" + k)
+
+
+CUTS_A = [("atrpct1500", "<", [0.55, 0.65, 0.75, 0.80, 0.85, 0.89, 0.93, 0.97]),
+          ("atrpct4500", "<", [0.55, 0.65, 0.75, 0.80, 0.85, 0.89, 0.93, 0.97]),
+          ("atrpct500",  "<", [0.55, 0.65, 0.75, 0.80, 0.85, 0.90, 0.95]),
+          ("atrrel1500", "<", [1.0, 1.2, 1.4, 1.6, 1.7, 1.9, 2.2, 2.6])]
+CUTS_B = [("thru",    ">", [0.1, 0.2, 0.4, 0.6, 0.8, 1.0, 1.4, 2.0]),
+          ("bodyexp", ">", [0.4, 0.7, 1.0, 1.4, 1.8, 2.1, 2.6, 3.2]),
+          ("barexp",  ">", [0.8, 1.2, 1.6, 2.1, 2.6, 3.1, 3.8, 4.6])]
+CUTS_C = [("on8h_adr",  "<", [0.18, 0.21, 0.24, 0.28, 0.32, 0.40, 0.50]),
+          ("on13h_adr", "<", [0.24, 0.28, 0.32, 0.38, 0.45, 0.55, 0.70]),
+          ("on8h",      "<", [2.0, 2.6, 3.2, 4.0, 5.0, 6.5, 8.0])]
 
 
 PRIMARY = ["atrpct4500", "atrrel4500", "atrpct1500", "atrpct500",
@@ -470,6 +510,13 @@ def main(stage="all"):
         stage_shape(bk, F, PRIMARY, q=5, fam="A")
     if stage in ("all", "4"):
         stage_regime(bk, FB, F)
+    if stage in ("all", "5"):
+        stage_cuts(bk, FB, F, CUTS_A, fam="A",
+                   title="V1 ATR LEVEL. exclude the high-vol tail; where does it stop paying?")
+        stage_cuts(bk, FB, F, CUTS_B, fam="B",
+                   title="V3 DECISIVE BREAK. keep only breaks whose bar travels far, in ATR")
+        stage_cuts(bk, FB, F, CUTS_C, fam="C",
+                   title="V5 OVERNIGHT SPEND. keep only sessions whose overnight range is small")
     print(f"\nCONFIGURATIONS GATED SO FAR: {CFG}    ({time.time()-t0:.0f}s)")
     return bk, F
 
@@ -478,22 +525,5 @@ if __name__ == "__main__":
     main(sys.argv[1] if len(sys.argv) > 1 else "all")
 
 
-def stage_regime(bk, FB, F):
-    """V1 / V5 with a REGIME-MATCHED control.  The bin edges come from the
-    trigger distribution; the same numeric edges define the bar-level pool."""
-    print("\n" + "=" * 145)
-    print("STAGE 4  REGIME-MATCHED CONTROL.  A high-ATR bin scored against random")
-    print("  entries DRAWN FROM THE SAME ATR REGIME, so wide barriers are on both")
-    print("  sides of the comparison and only the breakout's information is left.")
-    print("=" * 145)
-    for k in ("atrpct4500", "atrpct1500", "atrpct500", "atrrel1500",
-              "on8h_adr", "spent_adr", "barexp", "bodyexp", "width20"):
-        v, vb = F[k], FB[k]
-        ed = np.nanquantile(v[~np.isnan(v)], np.linspace(0, 1, 6))
-        ed[0], ed[-1] = -np.inf, np.inf
-        print(f"\n  {k}   quintile edges " + " ".join(f"{e:.3f}" for e in ed[1:-1]))
-        print("  " + HDRP)
-        for j in range(5):
-            keep = (v > ed[j]) & (v <= ed[j + 1]) & ~np.isnan(v)
-            pool = (vb > ed[j]) & (vb <= ed[j + 1]) & ~np.isnan(vb)
-            test_pool(bk, keep, pool, f"  {k} Q{j+1}", fam="regime:" + k)
+
+

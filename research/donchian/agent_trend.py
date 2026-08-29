@@ -378,6 +378,7 @@ def main():
     stage_final(bk)
     for thr, n in ((30, 14), (26, 14), (35, 14), (18, 28)):
         stage_shift(bk, thr, n)
+    stage_shift_xinst(30)
     print(f"\n  TOTAL CONFIGURATIONS GATED: {CFG}")
     print(f"  elapsed {time.time() - t0:.0f}s")
 
@@ -1158,6 +1159,37 @@ def stage_shift(bk, thr=30, n=14):
         hits += first_p(bk, m, e, nrep=2000, seed=int(L))[0] < 0.05
     print(f"{hits}/{tested} = {hits/max(tested,1):.1%}  (nominal 5%)")
     return p
+
+
+def stage_shift_xinst(thr=30):
+    """The survivor's honest p on every instrument x lookback cell, using the
+    circular-shift null (selectivity AND session-run structure preserved)."""
+    print("\n" + "=" * 118)
+    print(f"CROSS-INSTRUMENT CIRCULAR-SHIFT TEST, ADX(14)@07:00 > {thr}")
+    print("=" * 118)
+    print(f"  {'instrument / n_entry':<24}{'n':>6}{'exp':>8}{'base':>8}{'gap':>8}"
+          f"{'shift mean':>12}{'sd':>7}{'shift p':>9}")
+    for sym, ne in (("NAS", 20), ("NAS", 40), ("NAS", 10),
+                    ("US30", 20), ("US30", 40), ("US30", 10)):
+        bk = Book(sym=sym, n_entry=ne); df = bk.df; i = bk.idx
+        sess = df.sess.values
+        pre = np.flatnonzero(df.tod.values < 420); s = sess[pre]
+        last = pre[np.r_[s[1:] != s[:-1], True]]
+        ns = int(sess[i].max()) + 1; a = adx_di(df, 14)[0]
+        v = np.full(ns, np.nan); m = sess[last] < ns
+        v[sess[last][m]] = a[last][m]
+
+        def rs(vv):
+            pv = vv[sess[i]]
+            return bk.exp((pv > thr) & np.isfinite(pv))
+
+        real, n = rs(v)
+        base = bk.exp(np.ones(len(i), bool))[0]
+        res = np.array([rs(np.roll(v, int(L)))[0] for L in range(1, ns)])
+        g = np.isfinite(res)
+        print(f"  {sym + ' n_entry=' + str(ne):<24}{n:>6}{real:>+8.2f}{base:>+8.2f}"
+              f"{real - base:>+8.2f}{res[g].mean():>+12.2f}{res[g].std(ddof=1):>7.2f}"
+              f"{float((res[g] >= real).mean()):>9.4f}")
 
 
 if __name__ == "__main__":
