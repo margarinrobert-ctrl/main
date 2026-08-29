@@ -54,13 +54,18 @@ CANDS = {
 MAX_HOLD = G.MAX_HOLD
 
 
-def script_walk(P, cfg, anchor_close, exit_next_open):
+def script_walk(P, cfg, anchor_close, exit_next_open, sess=None):
     """The Pine order model, bar by bar.
 
     `anchor_close`   True  = stop from the signal bar's close, live on the entry bar (a script)
                      False = stop from the fill price (the engine)
     `exit_next_open` True  = the channel exit fills at the NEXT bar's open (a script)
                      False = it fills at the triggering bar's close (the engine)
+    `sess`           None, or (start, end, flat) in New York minutes of day. ENTRIES are
+                     restricted to [start, end); EXITS never are, except by the hard flatten at
+                     `flat`, which -- like every other close order in Pine -- fills at the NEXT
+                     bar's open. `strategy.close_all()` cannot sell the close of the bar that
+                     triggers it.
     """
     o, h, l, c = P["o"], P["h"], P["l"], P["c"]
     atr, n, pv = P["atr"], P["n"], P.get("pv", G.PV)
@@ -70,10 +75,13 @@ def script_walk(P, cfg, anchor_close, exit_next_open):
     ex_lo = I.shift(I.rmin(l, cfg["don_x"]), 1)
     sig = set(S.signal(P, cfg["ema_f"], cfg["ema_s"], cfg["mode"], cfg["win"],
                        cfg["don_e"], cfg["gate"]).tolist())
+    mod = P["mod"]
     out = []
     free = -1
     for i in range(n - 2):
         if i < free or i not in sig:
+            continue
+        if sess is not None and not (sess[0] <= mod[i] < sess[1]):
             continue
         a = atr[i]
         if not np.isfinite(a) or a <= 0:
@@ -96,6 +104,9 @@ def script_walk(P, cfg, anchor_close, exit_next_open):
             if l[j] <= st:                                   # the stop is a resting order
                 xp = (o[j] if o[j] < st else st) - se
                 why, xb = 1, j
+                break
+            if sess is not None and mod[j] >= sess[2] and j + 1 <= n - 1:
+                xp, why, xb = o[j + 1], 3, j + 1          # the flatten, at the NEXT open
                 break
             if j > f and np.isfinite(ex_lo[j]) and c[j] < ex_lo[j]:
                 if exit_next_open and j + 1 <= n - 1:
