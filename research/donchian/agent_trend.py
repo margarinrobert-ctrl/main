@@ -677,3 +677,362 @@ def stage_boot(bk, F):
         print(f"  {nm:<44} mean={x.mean():>+7.2f}  95% CI "
               f"[{np.percentile(bsr,2.5):>+7.2f}, {np.percentile(bsr,97.5):>+7.2f}]"
               f"  p(<=0)={float((bsr<=0).mean()):.3f}")
+
+
+# ================================================================== STAGE 4
+def stage_eff(bk):
+    """Trend EFFICIENCY, on ABSOLUTE thresholds (a quantile taken over the whole
+    research block would let a 2017 trade see a threshold set by 2021 data)."""
+    print("\n" + "=" * 118)
+    print("H7  TREND EFFICIENCY at the signal bar, ABSOLUTE thresholds.")
+    print("  ER(n) = |c[i]-c[i-n]| / sum|dc| over the same n bars: 1 = a straight")
+    print("  line, 0 = pure chop. No quantile is taken over the block, so no bar")
+    print("  sees a threshold set by later data.")
+    print("=" * 118)
+    df = bk.df; i = bk.idx
+    global CFG
+    a = bk.atr[bk.idx]
+    dec = pd.qcut(a, 10, labels=False, duplicates="drop")
+    tod = df.tod.values[i]; sd = (bk.side > 0).astype(int)
+    strata = (tod * 2 + sd) * 3 + pd.qcut(a, 3, labels=False, duplicates="drop")
+    print(f"  {'n':>4}{'thr':>6}{'sel':>6}{'n_tr':>6}{'exp':>8}{'ctrl':>8}{'exc':>8}"
+          f"{'z':>7}{'p':>8}{'pS':>7}{'pStrat':>8}{'pCnt':>7}{'wr':>7}")
+    best = None
+    for n in (14, 20, 28, 40, 56):
+        er = kaufman_er(df, n)[i]
+        for thr in (0.15, 0.20, 0.25, 0.30, 0.35, 0.40):
+            keep = (er > thr) & ~np.isnan(er)
+            real, ntr = bk.exp(keep)
+            if ntr < 100:
+                continue
+            CFG += 1
+            g, _ = lab.sig_gate(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=STOP,
+                                targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT,
+                                n_draws=300, quiet=True)
+            pS = perm_p(bk, keep, real, nrep=1000)[0]
+            pT = strat_p(bk, keep, real, strata, nrep=1000)[0]
+            pC = first_p(bk, ntr, real, nrep=1000)[0]
+            print(f"  {n:>4}{thr:>6.2f}{keep.mean():>6.2f}{ntr:>6}{real:>+8.2f}"
+                  f"{g['ctrl']:>+8.2f}{g['excess']:>+8.2f}{g['z']:>+7.2f}"
+                  f"{g['p']:>8.4f}{pS:>7.3f}{pT:>8.3f}{pC:>7.3f}{g['wr']:>7.1%}")
+            if best is None or g["z"] > best[0]:
+                best = (g["z"], n, thr, keep, g)
+        print()
+    return best
+
+
+def stage_eff_deep(bk, n, thr):
+    print("\n" + "=" * 118)
+    print(f"DEEP DIVE  ER({n}) > {thr}: bootstrap, exits, sides, years, and the")
+    print("  paired gap to the baseline entry on the SAME sessions.")
+    print("=" * 118)
+    er = kaufman_er(bk.df, n)[bk.idx]
+    keep = (er > thr) & ~np.isnan(er)
+    ok = np.flatnonzero(bk.ok); s0 = bk.sess[ok]
+    base = ok[np.r_[True, s0[1:] != s0[:-1]]]
+    k = np.flatnonzero(keep & bk.ok); s1 = bk.sess[k]
+    filt = k[np.r_[True, s1[1:] != s1[:-1]]]
+    rng = np.random.default_rng(5)
+    for nm, x in ((f"ER({n})>{thr} book", bk.net[filt]), ("baseline book", bk.net[base])):
+        b = np.array([x[rng.integers(0, len(x), len(x))].mean() for _ in range(4000)])
+        print(f"  {nm:<26} n={len(x):>5} mean={x.mean():>+7.2f} sd={x.std(ddof=1):>6.2f}"
+              f"  SE={x.std(ddof=1)/np.sqrt(len(x)):>5.2f}  95% CI "
+              f"[{np.percentile(b,2.5):>+6.2f},{np.percentile(b,97.5):>+6.2f}]"
+              f"  p(mean<=0)={float((b<=0).mean()):.3f}")
+    bs = pd.Series(bk.net[base], index=bk.sess[base])
+    fs = pd.Series(bk.net[filt], index=bk.sess[filt])
+    j = bs.index.intersection(fs.index)
+    print(f"  on the {len(j)} sessions the filter trades, the UNFILTERED first-of-session")
+    print(f"    entry made {bs[j].mean():+.2f} and the filtered entry {fs[j].mean():+.2f}"
+          f"  (delay costs {fs[j].mean()-bs[j].mean():+.2f})")
+    g, tr = lab.sig_gate(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=STOP,
+                         targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT, quiet=True)
+    tr = tr[np.isin(tr.sig_bar, np.where(bk.r)[0])]
+    row = "  exits: "
+    for r_ in range(4):
+        sl = tr[tr.reason == r_]
+        row += (f"{lab.REASONS[r_]} {len(sl)/len(tr):>5.1%} "
+                f"({sl.net.mean() if len(sl) else 0:>+6.2f})  ")
+    print(row)
+    print(f"  long  n={(tr.side>0).sum():>4} exp={tr[tr.side>0].net.mean():>+6.2f}"
+          f"    short n={(tr.side<0).sum():>4} exp={tr[tr.side<0].net.mean():>+6.2f}")
+    yr = bk.df.ts.values[bk.idx[filt]].astype("datetime64[Y]").astype(int) + 1970
+    yb = bk.df.ts.values[bk.idx[base]].astype("datetime64[Y]").astype(int) + 1970
+    print("  year:  " + "  ".join(f"{y}:{bk.net[filt][yr==y].mean():>+6.2f}"
+                                  f"/{bk.net[base][yb==y].mean():>+6.2f}"
+                                  f"(n{int((yr==y).sum())})" for y in np.unique(yr)))
+    print("         (filtered / baseline mean net per trade, per calendar year)")
+
+
+# ================================================================== STAGE 5
+def prewin_map(df, feat, cut=420):
+    """Value of `feat` at the LAST bar of each session with tod < cut, broadcast
+    to every bar of that session.  A bar stamped 06:45 closes at 07:00, before the
+    first window bar has even opened, so this state is fixed before any signal can
+    fire and it does NOT move the entry."""
+    tod = df.tod.values; sess = df.sess.values
+    n = len(df)
+    pre = np.flatnonzero(tod < cut)
+    s = sess[pre]
+    last = pre[np.r_[s[1:] != s[:-1], True]]          # last pre-window bar / session
+    val = np.full(sess.max() + 2, np.nan)
+    val[sess[last]] = feat[last]
+    return val[sess]
+
+
+def stage_prewin(bk):
+    print("\n" + "=" * 118)
+    print("H8  SESSION SELECTION vs ENTRY DELAY - the decomposition.")
+    print("  Both ADX and ER pick sessions in which the UNFILTERED first breakout")
+    print("  made +3.3 to +4.4, then give ~4.0 back by waiting.  So: read the same")
+    print("  trend state at 07:00, BEFORE the window, where it cannot delay the")
+    print("  entry, and let it decide only WHETHER the session trades.")
+    print("=" * 118)
+    df = bk.df; i = bk.idx
+    cov = np.isfinite(prewin_map(df, df.close.values))[i].mean()
+    print(f"  pre-window state available for {cov:.1%} of triggers")
+    global CFG
+    print(f"\n  {'rule (state fixed at 07:00)':<38}{'sel':>6}{'n':>6}{'exp':>8}"
+          f"{'ctrl':>8}{'exc':>8}{'z':>7}{'p':>8}{'pS':>7}{'pCnt':>7}{'wr':>7}{'tod':>7}")
+    adx14 = adx_di(df, 14)[0]; adx28 = adx_di(df, 28)[0]
+    feats = {}
+    for n in (14, 28, 56):
+        feats[f"ER{n}"] = kaufman_er(df, n)
+        feats[f"CHOP{n}"] = choppiness(df, n)
+    feats["ADX14"] = adx14; feats["ADX28"] = adx28
+    rows = []
+    tod = df.tod.values[i]
+    for nm, f in feats.items():
+        pv = prewin_map(df, f)[i]
+        if nm.startswith("ER"):
+            grid = [(">", t) for t in (0.20, 0.30, 0.40)]
+        elif nm.startswith("CHOP"):
+            grid = [("<", t) for t in (50, 55, 60)]
+        else:
+            grid = [(">", t) for t in (18, 22, 26)]
+        for op, t in grid:
+            keep = (pv > t if op == ">" else pv < t) & ~np.isnan(pv)
+            real, ntr = bk.exp(keep)
+            if ntr < 100:
+                continue
+            CFG += 1
+            g, _ = lab.sig_gate(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=STOP,
+                                targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT,
+                                n_draws=300, quiet=True)
+            pS = perm_p(bk, keep, real, nrep=1000)[0]
+            pC = first_p(bk, ntr, real, nrep=1000)[0]
+            k = np.flatnonzero(keep & bk.ok); s = bk.sess[k]
+            f2 = k[np.r_[True, s[1:] != s[:-1]]]
+            rows.append((g["z"], nm, op, t))
+            print(f"  {f'{nm} at 07:00 {op} {t}':<38}{keep.mean():>6.2f}{ntr:>6}"
+                  f"{real:>+8.2f}{g['ctrl']:>+8.2f}{g['excess']:>+8.2f}{g['z']:>+7.2f}"
+                  f"{g['p']:>8.4f}{pS:>7.3f}{pC:>7.3f}{g['wr']:>7.1%}"
+                  f"{tod[f2].mean():>7.0f}")
+    print(f"\n  (baseline book entry tod mean 510; a pre-window gate must leave it there -")
+    print(f"   if it does, the gate is pure session selection with no delay cost.)")
+    return rows
+
+
+# ================================================================== STAGE 6
+def prewin_feats(df):
+    F = {}
+    F["ADX14"] = adx_di(df, 14)[0]; F["ADX28"] = adx_di(df, 28)[0]
+    F["ER28"] = kaufman_er(df, 28); F["ER56"] = kaufman_er(df, 56)
+    F["nCHOP28"] = -choppiness(df, 28)
+    return F
+
+
+def stage_prewin_sweep(bk):
+    print("\n" + "=" * 118)
+    print("NEIGHBOURHOOD of the pre-window gate: is it a PLATEAU or a SPIKE?")
+    print("  The gate never moves an entry, so the filtered book is a strict SUBSET")
+    print("  of the baseline book and pCnt (random subsets of the SAME 1,395 trades)")
+    print("  is an exact conditional randomisation test of the selection itself.")
+    print("=" * 118)
+    df = bk.df; i = bk.idx
+    global CFG
+    for nm, grid in (("ADX14", range(10, 39, 2)), ("ADX28", range(8, 33, 2))):
+        pv = prewin_map(df, adx_di(df, 14 if nm == "ADX14" else 28)[0])[i]
+        print(f"\n  {nm} at 07:00 >  " + " " * 4 +
+              f"{'sel':>6}{'n':>6}{'exp':>8}{'ctrl':>8}{'exc':>8}{'z':>7}"
+              f"{'p':>8}{'pCnt':>7}{'wr':>7}")
+        for t in grid:
+            keep = (pv > t) & ~np.isnan(pv)
+            real, ntr = bk.exp(keep)
+            if ntr < 80:
+                continue
+            CFG += 1
+            g, _ = lab.sig_gate(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=STOP,
+                                targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT,
+                                n_draws=300, quiet=True)
+            pC = first_p(bk, ntr, real, nrep=2000)[0]
+            print(f"  {nm} at 07:00 > {t:<6}{keep.mean():>6.2f}{ntr:>6}{real:>+8.2f}"
+                  f"{g['ctrl']:>+8.2f}{g['excess']:>+8.2f}{g['z']:>+7.2f}"
+                  f"{g['p']:>8.4f}{pC:>7.3f}{g['wr']:>7.1%}")
+
+
+def stage_composite(bk):
+    print("\n" + "=" * 118)
+    print("COMPOSITE: rank-average of FIVE trend-strength estimators at 07:00")
+    print("  (ADX14, ADX28, ER28, ER56, -choppiness28).  If the mechanism is real")
+    print("  the composite should be at least as good as its parts and far less")
+    print("  sensitive to which rung you pick.  Ranks are taken WITHIN EACH SESSION'S")
+    print("  own history is impossible, so they are taken over research triggers -")
+    print("  a mild in-sample normalisation, noted, and cross-checked below on US30.")
+    print("=" * 118)
+    df = bk.df; i = bk.idx
+    global CFG
+    P = prewin_feats(df)
+    R = []
+    for nm, f in P.items():
+        v = prewin_map(df, f)[i]
+        R.append(pd.Series(v).rank(pct=True).values)
+    comp = np.nanmean(np.vstack(R), 0)
+    print(f"  {'gate':<26}{'sel':>6}{'n':>6}{'exp':>8}{'ctrl':>8}{'exc':>8}"
+          f"{'z':>7}{'p':>8}{'pCnt':>7}{'wr':>7}")
+    for q in (0.3, 0.4, 0.5, 0.6, 0.7, 0.8):
+        keep = (comp > q) & ~np.isnan(comp)
+        real, ntr = bk.exp(keep)
+        if ntr < 80:
+            continue
+        CFG += 1
+        g, _ = lab.sig_gate(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=STOP,
+                            targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT,
+                            n_draws=300, quiet=True)
+        pC = first_p(bk, ntr, real, nrep=2000)[0]
+        print(f"  composite > {q:<14.2f}{keep.mean():>6.2f}{ntr:>6}{real:>+8.2f}"
+              f"{g['ctrl']:>+8.2f}{g['excess']:>+8.2f}{g['z']:>+7.2f}{g['p']:>8.4f}"
+              f"{pC:>7.3f}{g['wr']:>7.1%}")
+    return comp
+
+
+def stage_replicate(rules):
+    """rules: list of (name, feat_key, op, thr). Same rule, other instrument,
+    other entry lookback, other geometry. Research block throughout."""
+    print("\n" + "=" * 118)
+    print("REPLICATION of the pre-window gates. US30 is an INDEPENDENT INSTRUMENT")
+    print("  (different index, different broker file); n_entry and the barriers are")
+    print("  free parameters the rule was never chosen on.")
+    print("=" * 118)
+    global CFG
+    print(f"  {'variant':<40}{'nb':>6}{'expb':>8}{'excb':>7}{'n':>6}{'exp':>8}"
+          f"{'exc':>8}{'z':>7}{'p':>8}{'pCnt':>7}")
+    for sym in ("NAS", "US30", "US30RTF"):
+        for ne in (10, 20, 40):
+            try:
+                b = Book(sym=sym, n_entry=ne)
+            except Exception as e:
+                print(f"  {sym} n={ne}: {e}"); continue
+            P = prewin_feats(b.df)
+            g0, _ = lab.sig_gate(sym, b.idx, b.side, stop_mult=STOP, targ_mult=TARG,
+                                 max_hold=MAXH, flat_tod=FLAT, quiet=True)
+            for nm, key, op, thr in rules:
+                pv = prewin_map(b.df, P[key])[b.idx]
+                keep = (pv > thr if op == ">" else pv < thr) & ~np.isnan(pv)
+                real, ntr = b.exp(keep)
+                if ntr < 80:
+                    continue
+                CFG += 1
+                g, _ = lab.sig_gate(sym, b.idx[keep], b.side[keep], stop_mult=STOP,
+                                    targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT,
+                                    quiet=True)
+                pC = first_p(b, ntr, real, nrep=2000)[0]
+                print(f"  {f'{sym} n={ne}  {nm}':<40}{g0['n']:>6}{g0['exp']:>+8.2f}"
+                      f"{g0['excess']:>+7.2f}{ntr:>6}{real:>+8.2f}{g['excess']:>+8.2f}"
+                      f"{g['z']:>+7.2f}{g['p']:>8.4f}{pC:>7.3f}")
+            print()
+
+
+def stage_shape(sym, ne):
+    """Is the monotone ADX-at-07:00 ramp present at all, elsewhere?"""
+    global CFG
+    b = Book(sym=sym, n_entry=ne)
+    pv = prewin_map(b.df, adx_di(b.df, 14)[0])[b.idx]
+    tod = b.df.tod.values[b.idx]
+    k = np.flatnonzero(b.ok); s = b.sess[k]
+    f = k[np.r_[True, s[1:] != s[:-1]]]
+    base, nb = b.exp(np.ones(len(b.idx), bool))
+    print(f"\n  {sym} n_entry={ne}: baseline n={nb} exp={base:+.2f} "
+          f"mean entry tod={tod[f].mean():.0f} "
+          f"({int(tod[f].mean())//60:02d}:{int(tod[f].mean())%60:02d})  "
+          f"wr={(b.net[f]>0).mean():.1%}")
+    print(f"    {'ADX@07:00 >':<14}{'sel':>6}{'n':>6}{'exp':>8}{'exc':>8}"
+          f"{'z':>7}{'p':>8}{'pCnt':>7}{'wr':>7}")
+    for t in (14, 18, 22, 26, 30, 34):
+        keep = (pv > t) & ~np.isnan(pv)
+        real, ntr = b.exp(keep)
+        if ntr < 80:
+            continue
+        CFG += 1
+        g, _ = lab.sig_gate(sym, b.idx[keep], b.side[keep], stop_mult=STOP,
+                            targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT, quiet=True)
+        pC = first_p(b, ntr, real, nrep=2000)[0]
+        print(f"    {t:<14}{keep.mean():>6.2f}{ntr:>6}{real:>+8.2f}{g['excess']:>+8.2f}"
+              f"{g['z']:>+7.2f}{g['p']:>8.4f}{pC:>7.3f}{g['wr']:>7.1%}")
+
+
+def stage_prewin_diag(bk):
+    print("\n" + "=" * 118)
+    print("CONFOUND CHECK on the pre-window gate. High ADX at 07:00 could just mean")
+    print("  a big overnight move (scale), or a high-ATR day (barrier width). The")
+    print("  gate is a strict SUBSET of the baseline book, so ATR-stratified random")
+    print("  subsets are an exact test of the SELECTION.")
+    print("=" * 118)
+    df = bk.df; i = bk.idx
+    global CFG
+    a = bk.atr[i]
+    pv = prewin_map(df, adx_di(df, 14)[0])[i]
+    dec = pd.qcut(a, 10, labels=False, duplicates="drop")
+    sd = (bk.side > 0).astype(int)
+    print(f"  {'bucket':<24}{'n':>6}{'meanATR':>9}{'exp':>8}{'exp in R':>10}{'wr':>7}")
+    for lo, hi in ((0, 18), (18, 22), (22, 26), (26, 30), (30, 100)):
+        m = (pv >= lo) & (pv < hi) & ~np.isnan(pv)
+        e, ntr = bk.exp(m)
+        k = np.flatnonzero(m & bk.ok); s = bk.sess[k]
+        f = k[np.r_[True, s[1:] != s[:-1]]]
+        print(f"  ADX@07:00 [{lo:>2},{hi:>3})       {ntr:>6}{a[f].mean():>9.2f}"
+              f"{e:>+8.2f}{(bk.net[f]/a[f]).mean():>+10.3f}"
+              f"{(bk.net[f]>0).mean():>7.1%}")
+    print(f"\n  {'rule':<18}{'strata':<24}{'exp':>8}{'rand':>8}{'sd':>7}{'p':>8}")
+    for t in (26, 30):
+        keep = (pv > t) & ~np.isnan(pv)
+        real, ntr = bk.exp(keep)
+        for nm, s in (("side", sd), ("ATRdecile x side", dec * 2 + sd)):
+            p, m_, s_ = strat_p(bk, keep, real, s, nrep=2000)
+            print(f"  {'ADX@07:00>'+str(t):<18}{nm:<24}{real:>+8.2f}{m_:>+8.2f}"
+                  f"{s_:>7.2f}{p:>8.3f}")
+    print("\n  PLACEBOS at 07:00 built from SIZE not EFFICIENCY (same family of gate,")
+    print("  no directional-persistence content):"); print(HDR)
+    c = df.close.values
+    onr = prewin_map(df, np.abs(c - np.r_[np.full(28, np.nan), c[:-28]]) /
+                     np.where(bk.atr > 0, bk.atr, np.nan))[i]
+    atr_pre = prewin_map(df, bk.atr)[i]
+    out = []
+    for q in (0.61, 0.73):
+        out.append(test(bk, onr > np.nanquantile(onr, q),
+                        f"PLACEBO |28-bar move|/atr q{q:.2f}"))
+        out.append(test(bk, atr_pre > np.nanquantile(atr_pre, q),
+                        f"PLACEBO atr at 07:00 > q{q:.2f}"))
+    print("\n  the gate's own book:")
+    for t in (26, 30):
+        keep = (pv > t) & ~np.isnan(pv)
+        real, ntr = bk.exp(keep)
+        k = np.flatnonzero(keep & bk.ok); s = bk.sess[k]
+        f = k[np.r_[True, s[1:] != s[:-1]]]
+        g, tr = lab.sig_gate(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=STOP,
+                             targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT, quiet=True)
+        tr = tr[np.isin(tr.sig_bar, np.where(bk.r)[0])]
+        rng = np.random.default_rng(4); x = bk.net[f]
+        bs = np.array([x[rng.integers(0, len(x), len(x))].mean() for _ in range(4000)])
+        print(f"  ADX@07:00>{t}  n={ntr}  exp={real:+.2f}  SE={x.std(ddof=1)/np.sqrt(len(x)):.2f}"
+              f"  95% CI [{np.percentile(bs,2.5):+.2f},{np.percentile(bs,97.5):+.2f}]"
+              f"  p(mean<=0)={float((bs<=0).mean()):.3f}")
+        print(f"     long n={(tr.side>0).sum():>4} exp={tr[tr.side>0].net.mean():>+6.2f}"
+              f"   short n={(tr.side<0).sum():>4} exp={tr[tr.side<0].net.mean():>+6.2f}"
+              + "   exits: " + "  ".join(
+                  f"{lab.REASONS[r_]} {len(tr[tr.reason==r_])/len(tr):.0%}"
+                  f"({tr[tr.reason==r_].net.mean() if len(tr[tr.reason==r_]) else 0:+.1f})"
+                  for r_ in range(4)))
+        yr = df.ts.values[bk.idx[f]].astype("datetime64[Y]").astype(int) + 1970
+        print("     year " + " ".join(f"{y}:{x[yr==y].mean():+.1f}(n{int((yr==y).sum())})"
+                                      for y in np.unique(yr)))

@@ -237,7 +237,8 @@ def E4():
         hi, lo = lab.donchian(df, n)
         wd = (hi - lo) / a
         idx0, _ = trig(df, hi, lo, a)
-        pool = wd[idx0]
+        idx0 = idx0[r[idx0]]          # RESEARCH-BLOCK triggers only: the cut
+        pool = wd[idx0]               # points must not be read off the holdout
         pool = pool[np.isfinite(pool)]
         qs = np.percentile(pool, [20, 40, 60, 80])
         print(f"\n  -- n={n}  width quintile cuts (research triggers): "
@@ -450,6 +451,195 @@ def E6d():
 
 
 EXP.update(E6a=E6a, E6b=E6b, E6c=E6c, E6d=E6d)
+
+
+# ================= E7  DOES THE CHANNEL DO ANY WORK, AND IS THE P HONEST? ===
+def E7():
+    """Four things the E6 result still has to survive.
+    (a) LOOKBACK -> 1.  `close > upper(n) + b*ATR` implies `close - close[i-1]
+        > b*ATR`.  If n=1 works as well as n=20 the 'channel' is a one-bar
+        return in disguise and this is not a Donchian finding at all.
+    (b) the pure ONE-BAR RETURN rule, no channel: |c - c[-1]| >= t*ATR.
+    (c) one_per_session=False - does the effect need the first-of-day filter?
+    (d) cluster-robust inference: a 20-session BLOCK bootstrap of the excess,
+        plus the exit-reason split (earning at the TIME stop = a direction bet)
+        and a 2x cost / 3x slippage stress."""
+    df, w, r, a, c, o, h, l, trg = _prep("NAS")
+    tod = df.tod.values
+    inwin = (tod >= WIN[0]) & (tod < WIN[1]) & ~np.isnan(a) & (a > 0)
+    cp = np.roll(c, 1); cp[0] = np.nan
+    ret1 = (c - cp) / a
+    print("\n" + "=" * 104)
+    print("E7  DOES THE CHANNEL DO ANY WORK?")
+    print("=" * 104)
+    print("\n  (a) lookback -> 1 at buf=1.0 (n=1 is just 'close 1 ATR above the last bar's high')")
+    for n in (1, 2, 3, 5, 8, 20):
+        hi, lo = lab.donchian(df, n)
+        idx, sd = trig(df, hi, lo, a, buffer_atr=1.0)
+        G("NAS", idx, sd, f"n={n} buf=1.0", ndraws=300)
+    print("\n  (b) ONE-BAR RETURN only, no channel: side=sign(c-c[-1]), |ret|>=t*ATR")
+    for t in (0.5, 0.75, 1.0, 1.25, 1.5):
+        up = ret1 >= t; dn = ret1 <= -t
+        idx = np.where((up | dn) & inwin & ~np.isnan(ret1))[0]
+        sd = np.where(up[idx], 1, -1).astype(np.int64)
+        G("NAS", idx, sd, f"ret1 >= {t}*ATR (no channel)", ndraws=300)
+    print("\n  (c) EVERY qualifying break, not just the first of the session")
+    for n in (10, 20, 40):
+        hi, lo = lab.donchian(df, n)
+        idx, sd = trig(df, hi, lo, a, buffer_atr=1.0)
+        G("NAS", idx, sd, f"n={n} buf=1.0 ALL breaks", ndraws=300, one_per_session=False)
+    print("\n  (d) cost / slippage stress on n=20 buf=1.0 (excess is cost-INVARIANT -")
+    print("      the control pays the same - so this only moves exp)")
+    hi, lo = lab.donchian(df, 20)
+    idx, sd = trig(df, hi, lo, a, buffer_atr=1.0)
+    for cm, lb in ((1.0, "1x cost"), (2.0, "2x cost"), (3.0, "3x cost")):
+        tr = lab.book("NAS", idx, sd, cost_mult=cm)
+        tr = tr[np.isin(tr.sig_bar, np.where(r)[0])]
+        print(f"      {lb:<10} n={len(tr):>5,} exp={tr.net.mean():>+7.2f} "
+              f"wr={(tr.net>0).mean():>5.1%}")
+    tr = lab.book("NAS", idx, sd)
+    tr = tr[np.isin(tr.sig_bar, np.where(r)[0])].reset_index(drop=True)
+    print("\n      exit split (a rule earning at the TIME stop is a direction bet):")
+    for rr in sorted(tr.reason.unique()):
+        sl = tr[tr.reason == rr]
+        print(f"        {lab.REASONS[rr]:<9} n={len(sl):>5,} ({len(sl)/len(tr):>5.1%})"
+              f"  exp={sl.net.mean():>+8.2f}  contrib={sl.net.sum()/len(tr):>+7.2f}")
+    print("\n      BLOCK BOOTSTRAP of mean net (20-session blocks, 4,000 draws)")
+    sess = df.sess.values[tr.sig_bar.values]
+    blk = sess // 20
+    ub = np.unique(blk)
+    rng = np.random.default_rng(7)
+    vals = tr.net.values
+    by = {b: vals[blk == b] for b in ub}
+    bs = np.empty(4000)
+    for i in range(4000):
+        pick = rng.choice(ub, size=len(ub), replace=True)
+        bs[i] = np.concatenate([by[b] for b in pick]).mean()
+    print(f"        mean={vals.mean():+.2f}  block-bootstrap sd={bs.std(ddof=1):.2f} "
+          f" 5-95% [{np.percentile(bs,5):+.2f}, {np.percentile(bs,95):+.2f}]")
+    ctrl = -2.46
+    print(f"        P(mean <= matched-control mean {ctrl:+.2f}) = {(bs<=ctrl).mean():.4f}"
+          f"   <- cluster-robust one-sided p")
+    print("\n  (e) BAND control done properly (pool banded, trades NOT subset)")
+    from control import matched_control
+    trr_ = trg / a
+    for n in (10, 20, 40):
+        hi, lo = lab.donchian(df, n)
+        idx, sd = trig(df, hi, lo, a, buffer_atr=1.0)
+        tb = lab.book("NAS", idx, sd)
+        tb = tb[np.isin(tb.sig_bar, np.where(r)[0])].reset_index(drop=True)
+        pool = r & inwin & (trr_ >= 1.0) & (trr_ < 2.5)
+        mn, p = matched_control(df, w, tb, n_draws=400, seed=3, cost_pts=2.0,
+                                slip_pts=0.25, stop_mult=1.5, targ_mult=2.0,
+                                pool_idx=pool)
+        z = (tb.net.mean() - mn.mean()) / mn.std(ddof=1)
+        print(f"      n={n:<3} buf=1.0  n_tr={len(tb):>5,} exp={tb.net.mean():>+7.2f} "
+              f"ctrl={mn.mean():>+7.2f} excess={tb.net.mean()-mn.mean():>+7.2f} "
+              f"z={z:>+6.2f} p={p:.4f}   (pool {pool.sum():,} bars, 1.0<=TR/ATR<2.5)")
+
+
+EXP.update(E7=E7)
+
+
+# ============ E8  PERMUTATION NULL, SUB-WINDOWS, GEOMETRY NEIGHBOURHOOD =====
+def E8():
+    """(a) DAY-SHIFT PERMUTATION.  Take the real rule's (session, minute-of-day)
+        signal stamps and apply them D sessions later.  This preserves the
+        minute-of-day histogram EXACTLY, preserves the rule's day-level
+        clustering, and destroys only the link to the actual bar.  60 shifts
+        give a null distribution of mean net that the matched control's
+        i.i.d. resampling cannot produce.
+    (b) does the effect live in one half of the window?
+    (c) is it specific to stop 1.5 / targ 2.0 / max_hold 16?"""
+    df, w, r, a, c, o, h, l, trg = _prep("NAS")
+    sess, tod = df.sess.values, df.tod.values
+    print("\n" + "=" * 104)
+    print("E8  PERMUTATION NULL / SUB-WINDOWS / GEOMETRY NEIGHBOURHOOD")
+    print("=" * 104)
+    hi, lo = lab.donchian(df, 20)
+    idx, sd = trig(df, hi, lo, a, buffer_atr=1.0)
+    tb = lab.book("NAS", idx, sd)
+    keep = np.isin(tb.sig_bar, np.where(r)[0])
+    tb = tb[keep].reset_index(drop=True)
+    real = tb.net.mean()
+    # (session, tod) -> bar
+    key = sess.astype(np.int64) * 10000 + tod
+    order = np.argsort(key); ks = key[order]
+    def barof(s_, t_):
+        kk = s_.astype(np.int64) * 10000 + t_
+        pos = np.searchsorted(ks, kk)
+        pos = np.clip(pos, 0, len(ks) - 1)
+        ok = ks[pos] == kk
+        return order[pos], ok
+    s0, t0 = sess[tb.sig_bar.values], tod[tb.sig_bar.values]
+    sides = tb.side.values.astype(np.int64)
+    rmax = sess[r].max()
+    nulls = []
+    for D in list(range(-60, 0)) + list(range(1, 61)):
+        b2, ok = barof(s0 + D, t0)
+        b2, sd2 = b2[ok], sides[ok]
+        b2m = r[b2] & ~np.isnan(a[b2]) & (a[b2] > 0)
+        b2, sd2 = b2[b2m], sd2[b2m]
+        if len(b2) < 100: continue
+        u, ui = np.unique(b2, return_index=True)
+        tn = lab.book("NAS", u, sd2[ui], one_per_session=False)
+        if len(tn) > 50: nulls.append(tn.net.mean())
+    nulls = np.array(nulls)
+    print(f"\n  (a) day-shift permutation, {len(nulls)} shifts of +/-1..60 sessions")
+    print(f"      REAL mean net = {real:+.2f}")
+    print(f"      null mean = {nulls.mean():+.2f}  sd = {nulls.std(ddof=1):.2f}"
+          f"  min={nulls.min():+.2f}  max={nulls.max():+.2f}")
+    print(f"      z = {(real-nulls.mean())/nulls.std(ddof=1):+.2f}"
+          f"   p(one-sided) = {(nulls>=real).mean():.4f}"
+          f"   [{(nulls>=real).sum()} of {len(nulls)} shifts beat the real rule]")
+    print("\n  (b) window halves (diagnostic, both gated against their own control)")
+    for lbl, win in (("07:00-09:30", (420, 570)), ("09:30-11:00", (570, 660))):
+        for b in (0.0, 1.0):
+            i2, s2 = trig(df, hi, lo, a, buffer_atr=b, win=win)
+            G("NAS", i2, s2, f"n=20 buf={b} {lbl}", ndraws=300, flat_tod=win[1])
+    print("\n  (c) geometry neighbourhood at n=20 buf=1.0 (stop/targ/max_hold)")
+    for sm, tm, mh in ((1.5, 2.0, 16), (1.0, 1.5, 16), (2.0, 2.5, 16),
+                       (1.5, 3.0, 16), (1.5, 2.0, 8), (1.5, 2.0, 24)):
+        G("NAS", idx, sd, f"stop={sm} targ={tm} hold={mh}", ndraws=300,
+          stop_mult=sm, targ_mult=tm, max_hold=mh)
+    print("\n      same geometry neighbourhood at buf=0.0 (the dead baseline)")
+    i0, s0b = trig(df, hi, lo, a, buffer_atr=0.0)
+    for sm, tm, mh in ((1.0, 1.5, 16), (2.0, 2.5, 16), (1.5, 3.0, 16),
+                       (1.5, 2.0, 8), (1.5, 2.0, 24)):
+        G("NAS", i0, s0b, f"BASE stop={sm} targ={tm} hold={mh}", ndraws=300,
+          stop_mult=sm, targ_mult=tm, max_hold=mh)
+
+
+EXP.update(E8=E8)
+
+
+# ================================= E9  LAST CHECKS + FINALIST SUMMARY ======
+def E9():
+    """(a) does the buffer resurrect the anchored channels of E1?
+       (b) does the buffer need confirm='close'?  (E2 said yes - restate cleanly)
+       (c) plateau statistics: mean excess over the (n, buf) region, and the
+           same statistic for the dead buf<=0.25 region, so the reader can see
+           the surface is a PLATEAU and not a spike."""
+    df, w, r, a, c, o, h, l, trg = _prep("NAS")
+    print("\n" + "=" * 104)
+    print("E9  LAST CHECKS")
+    print("=" * 104)
+    print("\n  (a) session-ANCHORED channels + the 1.0 ATR buffer")
+    for anc, nm in (("sess", "anch 00:00"), ("fut", "anch 18:00p"), ("win", "anch 07:00")):
+        for b in (0.5, 1.0, 1.25):
+            hu, hl, nb = anchored(df, anc, min_bars=2)
+            idx, sd = trig(df, hu, hl, a, buffer_atr=b)
+            G("NAS", idx, sd, f"{nm} buf={b}", ndraws=300)
+    print("\n  (b) confirm=high (TOUCH beyond) at the same buffers - the close is")
+    print("      what carries the information, not reaching the level")
+    for n in (10, 20, 40):
+        hu, hl = lab.donchian(df, n)
+        for b in (1.0, 1.25):
+            idx, sd = trig(df, hu, hl, a, confirm="high", buffer_atr=b)
+            G("NAS", idx, sd, f"TOUCH n={n} buf={b}", ndraws=300)
+
+
+EXP.update(E9=E9)
 
 
 if __name__ == "__main__":
