@@ -1,0 +1,36 @@
+================================================================================================================
+SETUP CENSUS -- NQ 1m, 2022-12-26 to 2025-12-11
+================================================================================================================
+   liquidity pools in the book: 4596 highs, 4570 lows
+   low pools by source: 60m 1657  asia 766  london 765  prevday 765  240m 617
+
+   sweep definition   longs  shorts  per year  median pen (ATR)
+   wick              4074    4359      2849             0.460
+   close             4060    4335      2837             1.107
+   pen_only          4146    4557      2941             1.708
+   displace          3953    4202      2755             0.430
+
+     tf     FVGs    IFVGs  bull IFVG  bear IFVG
+      5    41767    36460      17263      19197
+     15    14014    12311       5749       6562
+
+   JOINED SETUPS -- sweep then IFVG within 12 entry-timeframe bars
+   sweep def       tf   longs  shorts   total  per year  median gap
+   wick             5    2635    2890    5525      1867         4.0
+   wick            15    2666    2884    5550      1875         4.0
+   close            5    2745    2977    5722      1933         3.0
+   close           15    2712    2945    5657      1911         4.0
+   pen_only         5    2703    2969    5672      1916         5.0
+   pen_only        15    2730    2932    5662      1913         5.0
+   displace         5    2684    2880    5564      1880         3.0
+   displace        15    2659    2821    5480      1852         3.0
+
+   saved 44832 setup rows across all definitions
+   by liquidity source:
+      60m        16762  (37.4%)
+      asia        7943  (17.7%)
+      london      7399  (16.5%)
+      prevday     7296  (16.3%)
+      240m        5432  (12.1%)
+
+   elapsed 966s

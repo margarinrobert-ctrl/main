@@ -1207,6 +1207,35 @@ extension** and +0.518 with reversion, though only 0.094 R^2 with excess, and th
 CLIFF below 90 minutes (-0.097) rather than a gradient. Do not re-run the Initial Balance in any
 form. See `docs/ib/STUDY_V35_BALANCE.md`.
 
+**THE LIQUIDITY-SWEEP -> IFVG REVERSAL HAS NO EDGE, AND TWO OF THE FINDINGS ARE MEASUREMENT ERRORS
+OF MINE.** 1-minute NQ, four objective sweep definitions, the full FVG -> invalidation -> IFVG chain,
+one live order, true 1-minute path, real MNQ costs. 5,400 declared cells: scored in R **1.4% clear
+PF 1**, scored in dollars **16.1%**, and **ALL 24 MARGINAL AVERAGES ARE NEGATIVE IN BOTH UNITS**. The
+best cell has no plateau (family mean -0.0067, entry edge +0.292 -> mid **-0.554** one step away) and
+loses 84% of its edge on validation (+0.2510 -> -0.0064 over the top five). OOS was never opened
+because nothing earned it.
+
+**R IS NOT A SAFE UNIT WHEN THE STOP IS STRUCTURAL.** A stop beyond the sweep extreme can sit ticks
+from entry: minimum risk **0.015 points**, 3.4% of trades under two points, and the smallest-risk
+quintile reads **+0.6741 R while LOSING 1.41 points per trade**. Same failure as the channel stop in
+`STUDY_SWEEP_110K` where 94% of the contribution was the denominator. It produced PF 7.332 and
+R/trade +4.39 quartiles before it was caught. Score a structural-stop system in DOLLARS and report R
+only as a diagnostic. Note the two units DISAGREE IN SIGN here and both are right: at one contract
+the large-risk winners dominate, sized to constant risk the small-risk losers weigh equally -- so the
+sizing rule decides the verdict, not the rule.
+
+**A BEST-OF-N SUBGROUP SEARCH MUST BE SCORED AGAINST A NULL THAT ALSO TAKES ITS BEST OF N.** Reporting
+the best of four quartiles per feature against a single-random-subset control gave **5 of 11 features
+at p<=0.05 against 0.6 expected**. Under a null that shuffles, cuts into groups of the same sizes and
+takes ITS best: **0 of 11**. The effective test count was 44, not 11.
+
+Also: two causality leaks caught by the truncation audit BEFORE any result -- a session freeze in
+wall-clock minutes handed evening bars NEXT-MORNING London levels (the trading day rolls at 18:00, so
+freezes must be in minutes since the roll), and previous-day levels existed only if the current day
+LATER had RTH bars. And a boosted quality score on 11 pre-entry features is null with the SHUFFLED
+TWIN BEATING IT at the 25% and 10% keep rungs. Do not re-run this family.
+See `docs/ib/STUDY_V36_SWEEP_IFVG.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1273,6 +1302,9 @@ form. See `docs/ib/STUDY_V35_BALANCE.md`.
 | `research/v34/v34mech.py`, `run_v34.py`, `expiry_cal.py` | the five pre-registered hypotheses, 32 declared cells, per-SIGNAL accounting |
 | `research/v35/v35bal.py` | any window as a mechanism — 25 causal features, first break, extension, reversion, and a same-length random-start control |
 | `research/v35/v35run.py`, `v35ml.py`, `v35why.py` | the 44-cell window sweep, the boosters on both targets, and the anatomy of the 0.86 direction AUC |
+| `research/v36/levels.py` | liquidity pools with confirmation-lagged pivots, roll-relative session freezes and a truncation audit |
+| `research/v36/setup.py`, `engine.py` | four sweep definitions, the FVG->IFVG chain, and a one-live-order 1-minute engine |
+| `research/v36/run_grid.py`, `run_valid.py`, `run_filter.py`, `quartile_fix.py` | the 5,400-cell grid, the neighbourhood and validation reads, and the best-of-N correction |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
