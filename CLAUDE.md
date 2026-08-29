@@ -1079,6 +1079,23 @@ is what chance delivers at p<=0.05, and US30's locked baseline is NEGATIVE (-0.0
 a loser rather than improve a winner. Watch, do not trade. A published visual ledger of all sixteen
 tested families lives at `docs/ib/verdict_ledger.html`.
 
+**A GRADIENT BOOSTER FITS A PARAMETER SURFACE AT rho 0.96 AND PREDICTS THE HELD-OUT ONE AT 0.07.**
+1,600 TPE (Bayesian) trials over 10 Turtle parameters, 07:00-11:00 New York with an 11:00 flatten,
+both sides, two markets, research block only. **76-83% of the trial population is profitable on
+research and 2-71% on locked** -- US30 long goes **83% -> 2%**. Rank (Spearman) transfer runs
++0.074 to +0.426, and PICKING THE TOP RESEARCH DECILE GIVES A NEGATIVE MEAN LOCKED SHARPE IN TWO OF
+FOUR CELLS (-0.347, -0.780). The decisive test is the SURROGATE: XGBoost fits research at +0.906 to
+**+0.960** and predicts locked at +0.049 to +0.445 -- a model with the capacity to find non-linear
+structure found the research surface in full detail, and that detail does not survive the split.
+**TWO OF FOUR OPTIMA CANNOT MUSTER 25 TRADES OUT OF SAMPLE**: optimising Sharpe in a hostile window
+selects configurations that barely trade (NQ long best takes 48 of 377 available research signals).
+The un-optimised baseline in that window is Sharpe **-2.2 to -3.8** on both sides of both markets,
+the optimiser reaches +0.8/+1.2 on research, and the best locked result anywhere is US30 short at
+Sharpe **+0.025** / PF 1.013 on 116 trades. A NEIGHBOURHOOD MEAN (best mean Sharpe over the 20
+nearest trials) lands within 0.1 of the point optimum everywhere and rescues nothing. Run the
+surrogate test before reading the top row of any future search.
+See `docs/ib/STUDY_V30_BAYES_OPT.md`.
+
 ## Tooling
 
 | module | what it does |

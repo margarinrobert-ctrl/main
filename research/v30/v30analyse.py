@@ -97,3 +97,59 @@ if __name__ == "__main__":
             print(f"   {mkt:<8}{side:<7}{name:<11}"
                   f"{spearmanr(p, v.res_sharpe).statistic:>+16.3f}"
                   f"{spearmanr(p, v.lk_sharpe).statistic:>+18.3f}")
+
+
+def part_d():
+    """The winner, read once, against the un-optimised starting point and a matched control."""
+    d = pd.read_csv("/tmp/v30_trials.csv")
+    hdr("D. THE WINNER -- one locked read, against not searching at all")
+    print("   `spec` is the Turtle's own defaults in this window, with no search: entry 20,")
+    print("   exit 10, ATR 20, 2.0N, 0.5N ladder to 4 units, no gates. `best` is the top trial of")
+    print("   400 by research Sharpe. `robust` is the trial with the best MEAN Sharpe over its own")
+    print("   neighbourhood -- the 20 nearest trials in normalised parameter space.\n")
+    spec = dict(entry1=20, exit1=10, atr_len=20, atr_mult=2.0, pyr_step=0.5, max_units=4,
+                adx_max=0.0, ext_max=0.0, ao_min=-999.0, skip_win=True)
+    print(f"   {'market':<7}{'side':<7}{'config':<9}{'RESEARCH':>26}{'|':>3}{'LOCKED':>26}")
+    print(f"   {'':<7}{'':<7}{'':<9}{'n':>6}{'Sharpe':>9}{'PF':>8}{'|':>3}"
+          f"{'n':>6}{'Sharpe':>9}{'PF':>8}{'R/trade':>9}")
+    for mkt in ("NQ", "US30"):
+        b = O.load(mkt, 30)
+        u = np.unique(b["sess"]); cut = u[int(len(u) * 0.65)]
+        res, lk = b["sess"] < cut, b["sess"] >= cut
+        for side_s, side in (("long", 1), ("short", -1)):
+            g = d[(d.market == mkt) & (d.side == side_s)].copy()
+            if not len(g):
+                continue
+            # neighbourhood mean, on normalised parameters
+            P = g[PARAMS].to_numpy(float)
+            Z = (P - P.mean(0)) / np.maximum(P.std(0), 1e-9)
+            nbr = np.empty(len(g))
+            for i in range(len(g)):
+                dist = np.sqrt(((Z - Z[i]) ** 2).sum(1))
+                nbr[i] = g.res_sharpe.to_numpy()[np.argsort(dist)[:20]].mean()
+            g["nbr"] = nbr
+            cfgs = [("spec", spec),
+                    ("best", {k: g.loc[g.res_sharpe.idxmax(), k] for k in PARAMS}),
+                    ("robust", {k: g.loc[g.nbr.idxmax(), k] for k in PARAMS})]
+            for name, p in cfgs:
+                p = {k: (bool(v) if k == "skip_win" else
+                         (int(v) if k in ("entry1", "exit1", "atr_len", "max_units") else float(v)))
+                     for k, v in p.items()}
+                r = O.score(b, p, side, res, COST[mkt])
+                l = O.score(b, p, side, lk, COST[mkt])
+                line = f"   {mkt:<7}{side_s:<7}{name:<9}"
+                for s in (r, l):
+                    if s is None:
+                        line += f"{'-- under 25 trades':>26}" if s is l else f"{'--':>6}{'':>9}{'':>8}"
+                    elif s is r:
+                        line += f"{s['n']:>6}{s['sharpe']:>+9.3f}{s['pf']:>8.3f}"
+                    else:
+                        line += f"{s['n']:>6}{s['sharpe']:>+9.3f}{s['pf']:>8.3f}{s['R']:>+9.4f}"
+                    if s is r:
+                        line += f"{'|':>3}"
+                print(line)
+    print("\n   A search is only worth its multiplicity if `best` beats `spec` OUT OF SAMPLE.")
+
+
+if __name__ == "__main__":
+    part_d()
