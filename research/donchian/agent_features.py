@@ -416,3 +416,86 @@ def random_filter_control(sym, idx, side, keep, n_draws=400, seed=7,
     p = float((means >= obs).mean())
     return dict(obs=obs, ctrl=float(means.mean()), excess=float(obs - means.mean()),
                 z=float(z), p=p, n=len(real))
+
+
+# ==================================================================== the driver
+def population(sym, n_entry=N_ENTRY, win=WIN):
+    df, w, r = lab.research(sym)
+    idx, side, _ = lab.signals(df, n_entry=n_entry, win=win)
+    P, C, PR = build_features(df)
+    return df, w, r, idx, side, P, C, PR, np.isin(idx, np.where(r)[0])
+
+
+def thrust(C, idx, side, k=3):
+    """THE SURVIVING FEATURE.  side * (close[i] - close[i-k]) / (ATR14[i]*sqrt(k)),
+    read at the SIGNAL bar. On this population the aligned return is essentially
+    always positive, so the feature measures the SIZE of the approach thrust in
+    volatility units, not its direction."""
+    return C[f"ret_r{k}"][idx] * np.asarray(side, float)
+
+
+def stage_ic(sym, n_boot=800):
+    df, w, r, tr = trade_population(sym)
+    P, C, PR = build_features(df)
+    X, nm = assemble(P, C, PR, tr.sig_bar.values, tr.side.values.astype(float))
+    Y, onm = outcome_matrix(sym, df, w, tr)
+    fin = np.isfinite(X).all(1) & np.isfinite(Y).all(1)
+    X, Y, tr = X[fin], Y[fin], tr[fin].reset_index(drop=True)
+    s = df.sess.values[tr.sig_bar.values]
+    pt, se, z, p, _ = ic_bootstrap(X, Y, s, n_boot=n_boot)
+    return dict(pt=pt, se=se, z=z, p=p, names=nm, outcomes=onm, X=X, ntr=len(tr))
+
+
+def stage_filters(sym, feats, qs=(0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80)):
+    df, w, r, idx, side, P, C, PR, rm = population(sym)
+    rows = []
+    for f, d in feats:
+        v = (P[f][idx] if f in P else (C[f][idx] * side if f in C else
+             np.where(side > 0, PR[f][0][idx], PR[f][1][idx])))
+        for q in qs:
+            t = np.nanquantile(v[rm], q if d > 0 else 1 - q)
+            keep = ((v >= t) if d > 0 else (v <= t)) & np.isfinite(v)
+            for ops in (True, False):
+                g, _ = lab.sig_gate(sym, idx[keep], side[keep], stop_mult=SM,
+                                    targ_mult=TM, max_hold=MH, one_per_session=ops,
+                                    n_draws=300, quiet=True)
+                g.update(feat=f, q=q, pop="1/sess" if ops else "all")
+                rows.append(g)
+    return pd.DataFrame(rows)
+
+
+if __name__ == "__main__":
+    stage = sys.argv[1] if len(sys.argv) > 1 else "all"
+    if stage in ("audit", "all"):
+        df, _, _ = lab.research("NAS")
+        names, bad = audit(df, n_probe=12)
+        print(f"CAUSALITY AUDIT: {len(names)} features, 12 truncation probes -> "
+              f"{'LEAKY: ' + str(bad) if bad else 'no leakage'}")
+    if stage in ("ic", "all"):
+        for sym in ("NAS", "US30"):
+            R = stage_ic(sym)
+            rej, crit = bh(R["p"][:, 0], q=0.10)
+            print(f"\n{sym}: {R['ntr']} research trades, {len(R['names'])} features x "
+                  f"{len(R['outcomes'])} outcomes")
+            print(f"  BH q=0.10 on the primary outcome -> {rej.sum()} survivors (crit p={crit:.5f})")
+            o = np.argsort(-np.abs(R["z"][:, 0]))[:10]
+            for i in o:
+                print(f"    {R['names'][i]:<22} IC={R['pt'][i,0]:+.4f} z={R['z'][i,0]:+.2f} p={R['p'][i,0]:.2e}")
+            if sym == "NAS":
+                _, cl, dims = cluster_report(R["X"], R["names"])
+                print(f"  independent dimensions: {dims['n_clusters']} clusters at |rho|>0.7, "
+                      f"{dims['n_pc90']} PCs for 90% var, participation ratio {dims['part_ratio']:.1f}")
+    if stage in ("filter", "all"):
+        for sym in ("NAS", "US30"):
+            df, w, r, idx, side, P, C, PR, rm = population(sym)
+            v = thrust(C, idx, side)
+            print(f"\n{sym} THRUST FILTER, one trade per session:")
+            for q in (0.5, 0.6, 0.7, 0.8):
+                t = np.nanquantile(v[rm], q)
+                keep = (v >= t) & np.isfinite(v)
+                g, _ = lab.sig_gate(sym, idx[keep], side[keep], stop_mult=SM, targ_mult=TM,
+                                    max_hold=MH, one_per_session=True, n_draws=2000, quiet=True)
+                rf = random_filter_control(sym, idx, side, keep, n_draws=400)
+                print(f"  q{q:.2f} thr={t:.2f}  n={g['n']:>4} exp={g['exp']:+6.2f} "
+                      f"matched-ctrl excess={g['excess']:+6.2f} z={g['z']:+5.2f} p={g['p']:.4f} | "
+                      f"random-filter excess={rf['excess']:+6.2f} z={rf['z']:+5.2f} p={rf['p']:.4f}")
