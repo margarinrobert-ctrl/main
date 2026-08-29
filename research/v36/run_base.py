@@ -35,36 +35,40 @@ def splits(tday, bars):
     return dict(train=t < a, valid=(t >= a) & (t < b), oos=t >= b)
 
 
-def metrics(R, pnl, tday_of_trade):
-    if len(R) < 20 or not (R < 0).any():
+def metrics(R, pnl, tday_of_trade, pv=None):
+    """SCORED IN DOLLARS, NOT IN R. A structural stop placed beyond the sweep extreme can sit a few
+    ticks from the entry, so risk collapses and R explodes: the smallest-risk quintile of the
+    sweep-stop configuration reads +0.6741 R while LOSING 1.41 points per trade. `CLAUDE.md` records
+    the same failure for a channel stop -- "94% of the apparent contribution is the denominator".
+    Profit factor and expectancy are therefore computed from P&L, and R is reported beside them as a
+    diagnostic only."""
+    if len(R) < 20 or not (pnl < 0).any():
         return None
-    eq = np.cumsum(R)
+    eq = np.cumsum(pnl)
     dd = float(np.max(np.maximum.accumulate(eq) - eq))
     days = np.unique(tday_of_trade)
-    ser = pd.Series(R).groupby(pd.Series(tday_of_trade)).sum().reindex(
-        np.arange(days.min(), days.max() + 1)).dropna()
-    d = pd.Series(R).groupby(pd.Series(tday_of_trade)).sum()
+    d = pd.Series(pnl).groupby(pd.Series(tday_of_trade)).sum()
     alld = np.arange(len(days))
     dz = d.reindex(days, fill_value=0.0).to_numpy()
     sd = dz.std(ddof=1)
     down = dz[dz < 0]
-    w, lo = R[R > 0], R[R < 0]
-    return dict(n=len(R), R=float(R.mean()), net=float(R.sum()), usd=float(pnl.sum()),
-                pf=float(w.sum() / abs(lo.sum())), win=float((R > 0).mean()),
+    w, lo = pnl[pnl > 0], pnl[pnl < 0]
+    return dict(n=len(R), R=float(R.mean()), usd=float(pnl.mean()), net=float(pnl.sum()),
+                pf=float(w.sum() / abs(lo.sum())), win=float((pnl > 0).mean()),
                 avg_w=float(w.mean()), avg_l=float(lo.mean()),
-                dd=dd, retdd=float(R.sum() / dd) if dd > 0 else np.nan,
+                dd=dd, retdd=float(pnl.sum() / dd) if dd > 0 else np.nan,
                 sharpe=float(dz.mean() / sd * np.sqrt(252)) if sd > 0 else np.nan,
                 sortino=float(dz.mean() / down.std(ddof=1) * np.sqrt(252))
                 if len(down) > 1 and down.std(ddof=1) > 0 else np.nan,
-                p90=float(np.percentile(R, 90)), p10=float(np.percentile(R, 10)))
+                p90=float(np.percentile(pnl, 90)), p10=float(np.percentile(pnl, 10)))
 
 
 def line(tag, m, extra=""):
     if m is None:
         return f"      {tag:<26} fewer than 20 trades"
-    return (f"      {tag:<26} n {m['n']:>5}  R/trade {m['R']:>+8.4f}  PF {m['pf']:>6.3f}  "
-            f"win {m['win']:.3f}  Sharpe {m['sharpe']:>+6.2f}  DD {m['dd']:>7.1f}R  "
-            f"net {m['net']:>+8.1f}R{extra}")
+    return (f"      {tag:<26} n {m['n']:>5}  $/trade {m['usd']:>+8.2f}  PF {m['pf']:>6.3f}  "
+            f"win {m['win']:.3f}  Sharpe {m['sharpe']:>+6.2f}  DD ${m['dd']:>8.0f}  "
+            f"net ${m['net']:>+9.0f}{extra}")
 
 
 def hdr(t):

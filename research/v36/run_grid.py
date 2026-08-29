@@ -105,7 +105,7 @@ if __name__ == "__main__":
           f"best PF {df.pf.max():.3f}   median R/trade {df.R.median():+.4f}")
     print("\n   MARGINAL AVERAGE PER AXIS -- this is what the grid says, not its maximum")
     for ax in ("defn", "tf", "entry", "stop", "atr_p", "stop_k", "tp_r"):
-        g = df.groupby(ax).agg(n=("R", "size"), R=("R", "mean"), pf=("pf", "mean"),
+        g = df.groupby(ax).agg(n=("R", "size"), R=("usd", "mean"), pf=("pf", "mean"),
                                win=("win", "mean"), sh=("sharpe", "mean"))
         print(f"      {ax}")
         for k_, r_ in g.iterrows():
@@ -114,8 +114,8 @@ if __name__ == "__main__":
     hdr("TOP 15 CELLS ON TRAIN -- the maximum of a 5,400-cell search, read with that in mind")
     print(f"   {'defn':<10}{'tf':>4}{'entry':>7}{'stop':>7}{'atrP':>6}{'k':>6}{'tp':>6}"
           f"{'fill':>7}{'n':>6}{'R/trade':>10}{'PF':>7}{'win':>7}{'Sharpe':>8}{'DD':>8}")
-    for r_ in df.nlargest(15, "R").itertuples():
+    for r_ in df.nlargest(15, "usd").itertuples():
         print(f"   {r_.defn:<10}{r_.tf:>4}{r_.entry:>7}{r_.stop:>7}{r_.atr_p:>6}{r_.stop_k:>6.2f}"
-              f"{r_.tp_r:>6.2f}{r_.fill:>7.3f}{r_.n:>6}{r_.R:>+10.4f}{r_.pf:>7.3f}{r_.win:>7.3f}"
+              f"{r_.tp_r:>6.2f}{r_.fill:>7.3f}{r_.n:>6}{r_.usd:>+10.2f}{r_.pf:>7.3f}{r_.win:>7.3f}"
               f"{r_.sharpe:>+8.2f}{r_.dd:>8.1f}")
     print(f"\n   elapsed {time.perf_counter() - t0:.0f}s")
