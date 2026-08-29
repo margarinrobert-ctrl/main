@@ -37,12 +37,15 @@ for _, x in top.iterrows():
     print(f"  {x['sym']:<6} {int(x.side):>5} {int(x.n_entry):>6} {x.buffer:>5.1f} "
           f"{x.stop:>5.2f} {x.targ:>5.2f} {int(x.trades):>7} {x.exp:>+8.2f} {x.net:>+9.0f}")
 
-nulls = sorted(glob.glob("/home/user/main/data/donchian/vbt_null_*.parquet"))
+nulls = sorted(glob.glob("/home/user/main/data/donchian/vbtshift_NAS_*.parquet"))
 if nulls:
     print("\n" + "=" * 112)
-    print(f"NULL CALIBRATION - the identical grid on {len(nulls)} driftless synthetic series")
+    print(f"NULL CALIBRATION - {len(nulls)} circular-shift nulls on NAS, identical pipeline")
+    print("  Real prices, real bar geometry, real signal density; only the ALIGNMENT")
+    print("  between signal and forward return is destroyed, so cell counts match and")
+    print("  max-vs-max is a fair comparison.")
     print("=" * 112)
-    print(f"  {'series':<10} {'cells':>7} {'median exp':>11} {'MAX exp':>9} {'frac exp>0':>11}")
+    print(f"  {'shift':<10} {'cells':>7} {'median exp':>11} {'MAX exp':>9} {'frac exp>0':>11}")
     mx = []
     for f in nulls:
         N = pd.read_parquet(f); N = N[N.trades >= 100]
@@ -50,10 +53,16 @@ if nulls:
         mx.append(N.exp.max())
         print(f"  {f.split('_')[-1][:-8]:<10} {len(N):>7,} {N.exp.median():>+11.2f} "
               f"{N.exp.max():>+9.2f} {(N.exp>0).mean():>11.1%}")
-    real_max = R[R.sym == "NAS"].exp.max()
+    RN = R[R.sym == "NAS"]
+    real_max = RN.exp.max()
     mx = np.array(mx)
+    print(f"\n  REAL NAS grid          : {len(RN):,} cells, median exp {RN.exp.median():+.2f}, "
+          f"frac>0 {(RN.exp>0).mean():.1%}")
     print(f"\n  REAL NAS best cell     : {real_max:+.2f} pts/trade")
     print(f"  NULL best cell (mean)  : {mx.mean():+.2f}   range [{mx.min():+.2f}, {mx.max():+.2f}]")
-    if mx.std(ddof=1) > 0:
-        print(f"  z of real vs null max  : {(real_max-mx.mean())/mx.std(ddof=1):+.2f}")
+    if len(mx) >= 4 and mx.std(ddof=1) > 0:
+        print(f"  z of real vs null max  : {(real_max-mx.mean())/mx.std(ddof=1):+.2f}"
+              f"   (from {len(mx)} nulls - treat as indicative, not a p-value)")
+    else:
+        print(f"  too few nulls for a dispersion estimate; comparing to the null RANGE only")
     print(f"  VERDICT: {'real max exceeds the null max' if real_max > mx.max() else 'the real best cell is INSIDE the range this grid produces from pure noise'}")
