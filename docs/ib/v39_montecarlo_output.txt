@@ -1,0 +1,167 @@
+
+====================================================================================================================================
+V39 -- MONTE CARLO MEAN OF EVERY INDIVIDUAL INDICATOR RULE
+====================================================================================================================================
+   base: Donchian 30 entry / 20-bar channel exit / 2.0xATR(14) stop / NO take profit /
+         one unit / LONG / market order at the next open / real per-instrument costs.
+   1,000-draw day-block bootstrap for the EDGE, 1,000 permutations for the
+   PATH, and a 400-draw same-selectivity control so restrictiveness alone cannot
+   pass. Each indicator is added to the base ALONE.
+   NQ: 35,721 bars, 40 rules scored on both blocks (6s)
+   US30L: 97,038 bars, 39 rules scored on both blocks (19s)
+   US100L: 103,693 bars, 39 rules scored on both blocks (34s)
+
+====================================================================================================================================
+NQ -- bootstrap mean $/trade with a 5th-95th interval, and the control p
+====================================================================================================================================
+   rule                            blk          n   MC mean      5th     95th  P(<=0)  ctrl p   blk          n   MC mean  P(<=0)  ctrl p
+   (no filter -- the base)         research   326    +17.31    -7.45   +44.11   0.129      --   LOCKED     161    +37.65   0.110      --
+   CHOP14 <= 35                    research   138    +20.14   -12.92   +57.15   0.174   0.549   LOCKED      74    +31.14   0.199   0.277
+   CHOP14 <= 40                    research   197    +30.85    -0.32   +64.39   0.052   0.354   LOCKED     102    +49.60   0.059   0.145
+   CHOP14 <= 45                    research   248    +26.84    -1.84   +56.62   0.065   0.499   LOCKED     120    +51.67   0.054   0.100
+   CHOP14 <= 50                    research   288    +21.12    -6.66   +48.89   0.105   0.658   LOCKED     141    +34.96   0.116   0.187
+   ADX14 >= 20                     research   256    +12.77   -13.17   +42.90   0.228   0.830   LOCKED     118    +51.42   0.090   0.132
+   ADX14 >= 25                     research   176    +33.92    +2.73   +64.72   0.038   0.342   LOCKED      96     -0.90   0.542   0.608
+   ADX14 >= 30                     research   121    +38.81    +0.25   +77.69   0.050   0.242   LOCKED      64     -7.67   0.602   0.646
+   +DI > -DI                       research   320    +17.94    -6.53   +43.68   0.114   0.741   LOCKED     157    +34.66   0.144   0.219
+   RSI14 >= 50                     research   326    +17.31    -7.45   +44.11   0.129   0.733   LOCKED     161    +37.65   0.110   0.162
+   RSI14 >= 55                     research   326    +17.25    -7.51   +43.99   0.129   0.736   LOCKED     161    +37.65   0.110   0.162
+   RSI14 >= 60                     research   317    +17.52    -7.57   +44.95   0.155   0.738   LOCKED     154    +35.55   0.138   0.172
+   close > linreg(9)               research   325    +16.35    -8.75   +40.27   0.129   0.766   LOCKED     159    +37.63   0.112   0.204
+   linreg(9) slope > 0             research   325    +16.13    -7.70   +41.20   0.139   0.763   LOCKED     161    +35.03   0.125   0.180
+   close > linreg(21)              research   326    +16.54    -8.25   +42.69   0.140   0.758   LOCKED     158    +40.98   0.091   0.152
+   linreg(21) slope > 0            research   297    +25.69    -2.38   +52.99   0.058   0.469   LOCKED     155    +36.04   0.119   0.155
+   close > linreg(50)              research   326    +16.57    -6.57   +41.93   0.135   0.768   LOCKED     161    +37.29   0.112   0.167
+   linreg(50) slope > 0            research   251    +25.11    -5.78   +54.32   0.080   0.494   LOCKED     123    +21.97   0.226   0.327
+   linreg 9/21 value state         research   316    +13.79   -11.34   +39.57   0.198   0.850   LOCKED     149    +29.46   0.147   0.254
+   linreg 9/21 slope state         research   316    +15.52    -9.68   +42.10   0.161   0.810   LOCKED     155    +15.45   0.285   0.426
+   close > SMA50                   research   324    +16.69    -7.83   +41.83   0.144   0.788   LOCKED     160    +39.31   0.108   0.167
+   close > EMA50                   research   323    +17.54    -7.64   +42.47   0.128   0.746   LOCKED     160    +38.33   0.111   0.177
+   close > SMA100                  research   300    +16.89    -6.61   +43.79   0.153   0.741   LOCKED     153    +17.28   0.310   0.411
+   close > EMA100                  research   307    +17.28   -10.19   +46.33   0.158   0.721   LOCKED     156    +19.63   0.292   0.337
+   close > SMA200                  research   272    +22.24    -5.39   +51.19   0.094   0.581   LOCKED     140     +7.88   0.396   0.511
+   close > EMA200                  research   282    +23.51    -3.29   +51.15   0.077   0.509   LOCKED     143     +9.52   0.377   0.496
+   EMA50 > EMA200                  research   219    +23.24    -4.01   +53.36   0.083   0.561   LOCKED     117     +2.73   0.473   0.531
+   efficiency ratio(20) >= 0.2     research   295    +17.66    -7.40   +42.81   0.123   0.686   LOCKED     154    +12.53   0.367   0.499
+   efficiency ratio(20) >= 0.3     research   237    +31.26    +2.68   +62.08   0.034   0.327   LOCKED     126     +9.68   0.378   0.504
+   ATR expanding (>= 1.10x mean)   research   280    +18.68   -10.83   +46.94   0.146   0.676   LOCKED     130    +46.48   0.090   0.122
+   ATR contracting (<= 0.90x mean) research   110    +16.63   -26.03   +63.95   0.289   0.596   LOCKED      68     +7.01   0.454   0.504
+   vol percentile <= 0.5 (calm)    research   170     +1.29   -26.81   +29.74   0.487   0.893   LOCKED     100    +19.43   0.261   0.327
+   vol percentile > 0.5 (fast)     research   258    +17.31   -12.09   +47.89   0.171   0.711   LOCKED     130    +48.33   0.099   0.127
+   ATR pct rank(500) <= 0.2        research    80     -7.87   -42.27   +32.63   0.644   0.895   LOCKED      50    +67.96   0.083   0.087
+   close > Bollinger upper(20,2)   research   299    +13.88   -10.82   +40.99   0.203   0.796   LOCKED     148    +15.64   0.298   0.414
+   BB width > its 20-bar mean      research   291    +19.95    -8.77   +48.63   0.118   0.656   LOCKED     140    +43.57   0.111   0.140
+   MACD histogram > 0              research   323    +15.06   -10.32   +41.21   0.158   0.800   LOCKED     161    +36.64   0.114   0.170
+   close > prior 55-bar high       research   214    +32.36    -0.05   +63.99   0.051   0.307   LOCKED     112    +17.15   0.321   0.449
+   body >= 60% of range            research   289    +18.80    -7.62   +45.29   0.128   0.666   LOCKED     146    +31.35   0.188   0.267
+   body <= 30% of range            research    96    +43.47    -4.95   +94.35   0.064   0.197   LOCKED      53     +3.28   0.491   0.554
+   volume > 1.5x its 20-bar mean   research   293    +18.42    -9.30   +47.37   0.146   0.666   LOCKED     141    +39.66   0.117   0.132
+
+====================================================================================================================================
+US30L -- bootstrap mean $/trade with a 5th-95th interval, and the control p
+====================================================================================================================================
+   rule                            blk          n   MC mean      5th     95th  P(<=0)  ctrl p   blk          n   MC mean  P(<=0)  ctrl p
+   (no filter -- the base)         research   720    +85.64   +18.61  +158.12   0.021      --   LOCKED     485    +14.38   0.395      --
+   CHOP14 <= 35                    research   335    +80.87   -11.29  +169.87   0.072   0.364   LOCKED     190    +37.09   0.345   0.332
+   CHOP14 <= 40                    research   467   +114.35   +36.85  +191.94   0.003   0.160   LOCKED     281    +58.90   0.219   0.232
+   CHOP14 <= 45                    research   586   +113.88   +42.60  +189.05   0.002   0.167   LOCKED     373    +47.54   0.218   0.232
+   CHOP14 <= 50                    research   657    +92.43   +22.97  +164.67   0.013   0.342   LOCKED     425    +46.10   0.240   0.234
+   ADX14 >= 20                     research   568    +66.98    +4.12  +137.21   0.040   0.554   LOCKED     381     +8.32   0.442   0.501
+   ADX14 >= 25                     research   425    +68.34    -3.46  +146.37   0.062   0.479   LOCKED     280    +52.94   0.238   0.287
+   ADX14 >= 30                     research   333     -5.05   -80.97   +73.30   0.545   0.870   LOCKED     191    +37.95   0.352   0.347
+   +DI > -DI                       research   719    +82.85   +16.73  +151.06   0.022   0.451   LOCKED     471    +30.95   0.282   0.339
+   RSI14 >= 50                     research   720    +85.64   +18.61  +158.12   0.021   0.374   LOCKED     485    +14.38   0.395   0.461
+   RSI14 >= 55                     research   721    +84.96   +17.47  +157.19   0.022   0.404   LOCKED     485    +14.38   0.395   0.461
+   RSI14 >= 60                     research   703    +94.84   +25.62  +165.84   0.012   0.309   LOCKED     461    +30.96   0.303   0.354
+   close > linreg(9)               research   720    +80.28   +11.03  +153.87   0.032   0.449   LOCKED     482    +11.91   0.416   0.531
+   linreg(9) slope > 0             research   716    +89.80   +21.89  +158.09   0.018   0.372   LOCKED     479    +17.00   0.390   0.466
+   close > linreg(21)              research   714    +86.10   +15.04  +154.46   0.020   0.404   LOCKED     482    +14.96   0.398   0.524
+   linreg(21) slope > 0            research   692    +84.23   +14.48  +154.76   0.020   0.431   LOCKED     437    +35.18   0.282   0.337
+   close > linreg(50)              research   719    +84.51   +14.32  +154.79   0.023   0.419   LOCKED     479    +19.36   0.358   0.446
+   linreg(50) slope > 0            research   579    +61.08   -15.57  +138.12   0.098   0.596   LOCKED     345    +57.83   0.200   0.195
+   linreg 9/21 value state         research   681    +93.02   +19.36  +165.83   0.023   0.322   LOCKED     453    +44.45   0.218   0.269
+   linreg 9/21 slope state         research   685    +94.12   +23.24  +164.26   0.018   0.322   LOCKED     454    +32.03   0.268   0.322
+   close > SMA50                   research   720    +86.03   +21.11  +155.02   0.016   0.374   LOCKED     480    +16.75   0.375   0.519
+   close > EMA50                   research   719    +85.79   +14.13  +158.51   0.021   0.414   LOCKED     480    +17.27   0.378   0.491
+   close > SMA100                  research   670    +92.69   +20.95  +163.17   0.020   0.314   LOCKED     431    +33.67   0.274   0.344
+   close > EMA100                  research   685   +107.10   +42.24  +177.85   0.005   0.224   LOCKED     444    +31.21   0.300   0.317
+   close > SMA200                  research   611   +105.35   +37.80  +176.16   0.003   0.252   LOCKED     382    +56.38   0.181   0.200
+   close > EMA200                  research   638   +100.31   +33.05  +165.83   0.009   0.242   LOCKED     406    +22.65   0.365   0.409
+   EMA50 > EMA200                  research   482   +142.54   +73.41  +212.05   0.000   0.057   LOCKED     316    +49.38   0.222   0.279
+   efficiency ratio(20) >= 0.2     research   661    +81.05    +7.38  +150.24   0.038   0.466   LOCKED     424    +39.32   0.262   0.262
+   efficiency ratio(20) >= 0.3     research   574    +90.24   +17.73  +161.12   0.023   0.342   LOCKED     354    +52.01   0.217   0.222
+   ATR expanding (>= 1.10x mean)   research   587    +52.50   -20.08  +119.27   0.115   0.716   LOCKED     427    +25.66   0.342   0.377
+   ATR contracting (<= 0.90x mean) research   343    +81.27   -12.64  +176.46   0.076   0.377   LOCKED     153    -64.43   0.806   0.845
+   vol percentile <= 0.5 (calm)    research   482   +132.36   +56.56  +206.09   0.001   0.085   LOCKED     250    -49.63   0.789   0.818
+   vol percentile > 0.5 (fast)     research   568    +44.45   -30.24  +120.48   0.164   0.783   LOCKED     399    +40.89   0.252   0.269
+   ATR pct rank(500) <= 0.2        research   253   +124.03   +38.78  +218.19   0.010   0.182   LOCKED     113    +81.41   0.216   0.262
+   close > Bollinger upper(20,2)   research   657    +76.44    +7.41  +150.46   0.036   0.539   LOCKED     440    +17.34   0.397   0.496
+   BB width > its 20-bar mean      research   659    +87.63   +22.15  +158.39   0.013   0.334   LOCKED     429    +23.85   0.353   0.419
+   MACD histogram > 0              research   715    +92.14   +18.89  +161.29   0.020   0.359   LOCKED     474    +22.07   0.356   0.461
+   close > prior 55-bar high       research   539    +63.42   -20.00  +143.97   0.109   0.539   LOCKED     312    +55.74   0.210   0.190
+   body >= 60% of range            research   639    +89.45   +13.56  +166.41   0.030   0.352   LOCKED     415    +42.13   0.232   0.262
+   body <= 30% of range            research   224    +34.79   -60.47  +132.18   0.267   0.613   LOCKED     134    +42.21   0.336   0.344
+
+====================================================================================================================================
+US100L -- bootstrap mean $/trade with a 5th-95th interval, and the control p
+====================================================================================================================================
+   rule                            blk          n   MC mean      5th     95th  P(<=0)  ctrl p   blk          n   MC mean  P(<=0)  ctrl p
+   (no filter -- the base)         research   906     -4.09   -15.52    +7.86   0.726      --   LOCKED     513    +16.21   0.124      --
+   CHOP14 <= 35                    research   408     -6.79   -19.58    +6.42   0.808   0.840   LOCKED     226    +39.84   0.016   0.057
+   CHOP14 <= 40                    research   584     +0.50   -10.98   +12.65   0.474   0.549   LOCKED     315    +25.52   0.059   0.252
+   CHOP14 <= 45                    research   721     +0.81    -8.74   +11.81   0.462   0.516   LOCKED     385    +25.48   0.038   0.202
+   CHOP14 <= 50                    research   821     -1.88   -13.37    +9.66   0.591   0.773   LOCKED     457    +15.13   0.143   0.504
+   ADX14 >= 20                     research   693     -0.25   -12.97   +13.01   0.527   0.628   LOCKED     387    +22.33   0.079   0.282
+   ADX14 >= 25                     research   508    -12.09   -25.25    +1.53   0.932   0.965   LOCKED     283    +10.21   0.261   0.491
+   ADX14 >= 30                     research   359     -5.46   -20.37   +10.11   0.731   0.748   LOCKED     204     -5.84   0.648   0.843
+   +DI > -DI                       research   892     -3.82   -14.97    +7.57   0.703   0.855   LOCKED     497    +17.81   0.112   0.426
+   RSI14 >= 50                     research   906     -4.09   -15.52    +7.86   0.726   0.843   LOCKED     513    +16.21   0.124   0.506
+   RSI14 >= 55                     research   904     -4.34   -15.76    +7.55   0.755   0.845   LOCKED     512    +16.10   0.130   0.484
+   RSI14 >= 60                     research   871     -1.34   -12.84   +10.16   0.569   0.693   LOCKED     498    +16.11   0.121   0.531
+   close > linreg(9)               research   901     -3.81   -15.37    +7.25   0.710   0.833   LOCKED     507    +16.50   0.122   0.509
+   linreg(9) slope > 0             research   892     -3.75   -15.90    +7.75   0.695   0.840   LOCKED     512    +14.83   0.132   0.526
+   close > linreg(21)              research   903     -4.04   -15.38    +7.58   0.720   0.840   LOCKED     509    +16.67   0.116   0.519
+   linreg(21) slope > 0            research   862     -1.95   -12.76   +10.28   0.614   0.686   LOCKED     470    +22.54   0.062   0.292
+   close > linreg(50)              research   898     -3.56   -14.92    +8.83   0.690   0.830   LOCKED     509    +16.78   0.099   0.521
+   linreg(50) slope > 0            research   689     +7.47    -4.21   +19.58   0.162   0.217   LOCKED     400    +10.86   0.233   0.668
+   linreg 9/21 value state         research   854     -2.72   -14.45    +8.71   0.646   0.763   LOCKED     489    +12.39   0.162   0.618
+   linreg 9/21 slope state         research   862     -4.74   -16.15    +6.83   0.751   0.835   LOCKED     489    +11.63   0.172   0.671
+   close > SMA50                   research   894     -2.81   -13.47    +9.09   0.673   0.771   LOCKED     510    +15.90   0.127   0.501
+   close > EMA50                   research   894     -3.69   -15.40    +8.54   0.696   0.783   LOCKED     508    +17.31   0.116   0.526
+   close > SMA100                  research   817     +1.46    -9.51   +13.25   0.433   0.486   LOCKED     469     +8.13   0.259   0.751
+   close > EMA100                  research   842     +2.49    -8.64   +14.45   0.369   0.439   LOCKED     482     +8.99   0.283   0.736
+   close > SMA200                  research   721    +12.48    +0.40   +24.51   0.045   0.045   LOCKED     426    +13.40   0.175   0.574
+   close > EMA200                  research   776     +8.33    -3.02   +19.88   0.112   0.127   LOCKED     440    +13.75   0.150   0.531
+   EMA50 > EMA200                  research   623     +3.58    -7.18   +14.25   0.282   0.384   LOCKED     344     +8.74   0.261   0.653
+   efficiency ratio(20) >= 0.2     research   804     +0.54   -10.13   +11.78   0.473   0.539   LOCKED     452    +25.13   0.043   0.204
+   efficiency ratio(20) >= 0.3     research   703     -0.75   -13.08   +12.17   0.541   0.611   LOCKED     382    +24.51   0.038   0.264
+   ATR expanding (>= 1.10x mean)   research   718     +2.52   -10.38   +16.90   0.391   0.454   LOCKED     434    +19.01   0.120   0.436
+   ATR contracting (<= 0.90x mean) research   387     -3.21   -16.47   +10.60   0.655   0.731   LOCKED     201     -3.90   0.599   0.798
+   vol percentile <= 0.5 (calm)    research   553     +5.64    -6.71   +17.90   0.232   0.314   LOCKED     290     +2.88   0.445   0.768
+   vol percentile > 0.5 (fast)     research   710     -3.45   -17.42   +10.32   0.649   0.796   LOCKED     408    +22.41   0.087   0.294
+   ATR pct rank(500) <= 0.2        research   257    +14.45    -3.00   +32.54   0.085   0.135   LOCKED     139     -0.63   0.524   0.736
+   close > Bollinger upper(20,2)   research   805     -0.29   -12.72   +11.86   0.506   0.596   LOCKED     465     +6.33   0.327   0.771
+   BB width > its 20-bar mean      research   786     +2.27    -9.72   +14.52   0.381   0.481   LOCKED     444    +20.92   0.077   0.352
+   MACD histogram > 0              research   892     -3.33   -15.18    +8.43   0.690   0.848   LOCKED     510    +15.34   0.129   0.516
+   close > prior 55-bar high       research   634     +6.15    -6.34   +19.73   0.230   0.279   LOCKED     345    +19.24   0.121   0.367
+   body >= 60% of range            research   808     -1.49   -12.81   +10.42   0.592   0.681   LOCKED     460    +16.89   0.120   0.484
+   body <= 30% of range            research   235     -2.95   -22.24   +18.98   0.609   0.651   LOCKED     151    +13.68   0.280   0.451
+
+====================================================================================================================================
+THE SUMMARY THAT MATTERS -- how many rules clear their control, against chance
+====================================================================================================================================
+   NQ      research    0 of  40 rules clear the control at p<=0.05  (2.0 expected by chance)   mean MC $ +19.86   median $ +17.60
+   NQ      LOCKED      0 of  40 rules clear the control at p<=0.05  (2.0 expected by chance)   mean MC $ +28.57   median $ +34.81
+   US30L   research    0 of  39 rules clear the control at p<=0.05  (2.0 expected by chance)   mean MC $ +85.20   median $ +86.03
+   US30L   LOCKED      0 of  39 rules clear the control at p<=0.05  (2.0 expected by chance)   mean MC $ +29.95   median $ +32.03
+   US100L  research    1 of  39 rules clear the control at p<=0.05  (2.0 expected by chance)   mean MC $  -0.46   median $  -1.88
+   US100L  LOCKED      0 of  39 rules clear the control at p<=0.05  (2.0 expected by chance)   mean MC $ +15.11   median $ +16.10
+
+====================================================================================================================================
+RESEARCH-TO-LOCKED TRANSFER, per market
+====================================================================================================================================
+   NQ       n  40   Pearson -0.516   Spearman -0.322   sign kept 0.925
+   US30L    n  39   Pearson -0.036   Spearman +0.140   sign kept 0.923
+   US100L   n  39   Pearson -0.205   Spearman -0.094   sign kept 0.385
+
+   elapsed 35s

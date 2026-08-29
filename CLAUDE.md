@@ -1288,6 +1288,28 @@ clocks re-derived independently: mean bar range peaks at minute-of-day 570 = 09:
 one, with the ISO feed -- whose offset is STATED rather than derived -- agreeing, which is the
 positive control. Cross-market validation is no longer blocked.
 
+**A BOOTSTRAP MEAN THAT EXCLUDES ZERO IS NOT AN EDGE, AND 236 CELLS SAY SO.** 40 individual
+indicator rules x 3 markets x 2 blocks on the shipped base (Donchian 30/20, 2.0N, no target, long),
+each given a 1,000-draw day-block bootstrap, 1,000 permutations, and a 400-draw same-selectivity
+control. Almost every rule reads a POSITIVE bootstrap mean -- NQ locked median **+$34.81/trade**,
+30 of 40 with P(mean<=0) under 0.35 -- and **exactly 1 of 236 cells clears its control at p<=0.05
+where 12 are expected by chance**, best p anywhere 0.087. It is ONE edge, the base geometry,
+measured forty times: the unfiltered base itself reads +$17.31 research and +$37.65 locked on NQ.
+CHOP is the best-behaved family and still does not clear (CHOP<=45 mean control p **0.178**,
+CHOP<=40 **0.209** -- the two lowest in the table, positive on both blocks in all three markets),
+which corroborates the shipped choice without proving it. **ADX GETS WORSE THE TIGHTER IT GETS AND
+INVERTS**: >=20/25/30 runs +27.36/+20.75/+8.14 locked with control p 0.305/0.462/0.612, and on NQ
+the two rules whose RESEARCH bootstrap excludes zero (ADX>=25 p 0.038, ADX>=30 p 0.050) both go
+NEGATIVE on locked. **VOLATILITY-STATE RULES INVERT HARDEST**: calm +46.43 -> **-9.11** and ATR
+contracting +31.56 -> **-20.44**, while their mirrors are top-five on locked -- which does not
+refute V22, because where a STOP goes given heat is a different question from whether calm is a
+profitable ENTRY filter. Every `close > MA` variant (SMA/EMA 50/100/200, linreg 9/21/50) lands in
++$19.69..+$25.89 with control p 0.377-0.502 on 1,050-1,150 of the base's ~1,160 trades -- they keep
+99% of the signals and change nothing. Research-to-locked correlation is NEGATIVE in all three
+markets (-0.516 / -0.036 / -0.205). **MC p99 drawdown is 1.7-2.2x the realised drawdown on every
+cell** -- that is the sizing number and the most usable output here.
+See `docs/ib/STUDY_V39_RULE_MONTECARLO.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1362,6 +1384,7 @@ positive control. Cross-market validation is no longer blocked.
 | `research/v38/v38grid.py` | the 113,400-cell grid: cached exit tensor, 756 signal sets x 75 geometries, position lock |
 | `research/v38/v38feeds.py` | the three restored feeds, clocks re-derived, per-instrument tick and point value |
 | `research/v38/run_v38.py`, `run_v38b.py`, `run_v38c.py`, `run_v38_vbt.py` | grid shape and marginals; three candidates and one locked read; the two controls; vectorbt as a second engine |
+| `research/v39/v39mc.py`, `run_v39.py` | **the per-rule Monte Carlo** — 40 indicator rules x 3 markets x 2 blocks, bootstrap for the edge, permutation for the path, same-selectivity control on every cell |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
