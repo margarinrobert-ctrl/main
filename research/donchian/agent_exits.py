@@ -376,6 +376,82 @@ def surface():
     return allres
 
 
+
+# ------------------------------------------------------------------- stage 2
+HOLDS = [2, 3, 4, 6, 8, 10, 12, 16, 20, 24, 28, 32]
+
+
+def timing():
+    """H2a: if a break carries momentum the excess should peak at some hold and
+    decay smoothly either side.  Null: flat and ~0 for every hold.
+    H2b: letting a winner run past 11:00 (flat_tod > 660) helps if the edge is
+    trend; hurts if the 07:00-11:00 window itself is doing the work."""
+    print("\n" + "=" * 100)
+    print("STAGE 2a  MAX_HOLD SWEEP   stop 1.5 / targ 2.0 ATR, flat_tod=660")
+    print(f"  {'config':<42} {'n':>5} {'exp':>7} {'ctrl':>7} {'exc':>6} {'z':>6} {'p':>5}")
+    for ne in (10, 20, 40):
+        idx, side = triggers("NAS", ne)
+        for mh in HOLDS:
+            gate2("NAS", idx, side, dict(stop_mult=1.5, targ_mult=2.0,
+                                         max_hold=mh, flat_tod=660),
+                  label=f"n{ne} maxhold {mh}", n_draws=250)
+        print()
+    print("  same sweep at the best-excess corner of the surface (0.75 / 3.0), n=20")
+    idx, side = triggers("NAS", 20)
+    for mh in HOLDS:
+        gate2("NAS", idx, side, dict(stop_mult=0.75, targ_mult=3.0,
+                                     max_hold=mh, flat_tod=660),
+              label=f"n20 s0.75 t3.0 maxhold {mh}", n_draws=250)
+
+    print("\n" + "=" * 100)
+    print("STAGE 2b  FLATTEN TIME -- letting winners run past 11:00")
+    print("  entry window stays 07:00-11:00; max_hold=32 so TIME never binds first")
+    for ne in (10, 20, 40):
+        idx, side = triggers("NAS", ne)
+        for ft in (660, 690, 720, 780, 840, 960):
+            g, tr = gate2("NAS", idx, side, dict(stop_mult=1.5, targ_mult=2.0,
+                                                 max_hold=32, flat_tod=ft),
+                          label=f"n{ne} flat_tod {ft}", n_draws=250)
+            if ne == 20:
+                rsplit(tr, f"n{ne} flat {ft}")
+        print()
+
+    print("=" * 100)
+    print("STAGE 2c  EARLY FLATTEN -- entry window truncated to match flat_tod")
+    for ne in (10, 20, 40):
+        for ft in (570, 600, 660):
+            idx, side = triggers("NAS", ne, win=(420, ft))
+            gate2("NAS", idx, side, dict(stop_mult=1.5, targ_mult=2.0,
+                                         max_hold=16, flat_tod=ft),
+                  label=f"n{ne} win 420-{ft} flat {ft}", n_draws=250)
+        print()
+
+
+# ------------------------------------------------------------------- stage 3
+def timestop():
+    """H3: THE cleanest directional test.  No stop, no target -- hold k bars and
+    exit at the close.  Excess>0 here means price genuinely travels further in
+    the break direction than from a minute-matched random entry.  Excess~0 means
+    any surface structure was barrier shape, not direction."""
+    print("\n" + "=" * 100)
+    print("STAGE 3  PURE TIME STOP (no barriers at all): stop 999 ATR, no target")
+    ks = [1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24, 32]
+    for ne in (10, 20, 40):
+        idx, side = triggers("NAS", ne)
+        for k in ks:
+            g, tr = gate2("NAS", idx, side, dict(stop_mult=999.0, targ_mult=0.0,
+                                                 max_hold=k, flat_tod=660),
+                          label=f"n{ne} hold {k} bars, no barriers", n_draws=400)
+        print()
+    print("  --- side split at n=20 (control permutes the SAME side mix, so drift is priced)")
+    idx, side = triggers("NAS", 20)
+    for nm, m in (("long only", side > 0), ("short only", side < 0)):
+        for k in (2, 4, 8, 16):
+            gate2("NAS", idx[m], side[m], dict(stop_mult=999.0, targ_mult=0.0,
+                                               max_hold=k, flat_tod=660),
+                  label=f"n20 {nm} hold {k}", n_draws=400)
+        print()
+
 # ================================================================ MAIN
 if __name__ == "__main__":
     t0 = time.time()
