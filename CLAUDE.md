@@ -1184,6 +1184,29 @@ Score PER SIGNAL, never per trade: fills run 4-30%, and `donch 15m` long at dept
 `limit_entry.py` is left untouched so earlier results stay reproducible.
 See `docs/ib/STUDY_V34_MECHANIC.md`.
 
+**THE INITIAL BALANCE IS A LEVEL PRICE IS ALREADY TOUCHING -- that is why it predicts direction and
+why the prediction is worth nothing.** A booster on 25 causal window features predicts WHICH SIDE
+BREAKS FIRST at **AUC 0.86** on a 0.495 base rate, which is far too high for a market prediction. It
+is geometry: `f_close_pos` ALONE scores **0.8766**, beating the whole 25-feature model, and "the
+high is nearer than the low" stated as pure arithmetic scores **0.8703** -- **the nearer edge breaks
+first 78.6% of the time**. Dropping all seven position features only moves it to 0.822-0.833,
+because when the extremes formed and the volume balance encode position indirectly. The median
+distance from the window close to the edge that broke is **0.779 ATR**, so the level is already at
+price, and break-trade R by that distance is NON-MONOTONE (+0.118, +0.278, -0.133, -0.076 by
+quartile): 79% direction accuracy buys no edge. **THE 80% RULE IS NOT 80%** -- reversion is **0.937
+across 38 window cells** (min 0.715, max 1.000), 0.969 for the classic IB, against **0.968 for
+random same-length windows**, so breaks do not hold anywhere. **AND 09:30 IS NOT SPECIAL**: swept
+over 11 starts x 4 lengths against 150 random same-length same-session controls each, **0 of 38
+cells clear p<=0.05 on research where 1.9 are expected by chance**; the classic IB scores excess
++0.0314 at p 0.353. A coherent midday shape exists on research (windows ending 13:00-14:00 at
++0.063 to +0.090) and DOES NOT REPRODUCE: research-to-locked Spearman **+0.185**, sign kept
+**0.447** -- worse than a coin flip -- and the top five research cells go +0.0895 -> -0.0113,
++0.0783 -> +0.0220, +0.0782 -> -0.0102, +0.0766 -> -0.0407, +0.0744 -> -0.0143. **EXTENSION IS
+GOVERNED BY THE CLOCK, NOT THE WINDOW**: minutes remaining after the window correlate **+0.693 with
+extension** and +0.518 with reversion, though only 0.094 R^2 with excess, and the tail effect is a
+CLIFF below 90 minutes (-0.097) rather than a gradient. Do not re-run the Initial Balance in any
+form. See `docs/ib/STUDY_V35_BALANCE.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1248,6 +1271,8 @@ See `docs/ib/STUDY_V34_MECHANIC.md`.
 | `research/v34/v34one.py` | **the corrected limit walker** — one live resting order, which is what a script can place |
 | `research/v34/order_audit.py` | counts simultaneous resting orders directly, rather than arguing about them from the source |
 | `research/v34/v34mech.py`, `run_v34.py`, `expiry_cal.py` | the five pre-registered hypotheses, 32 declared cells, per-SIGNAL accounting |
+| `research/v35/v35bal.py` | any window as a mechanism — 25 causal features, first break, extension, reversion, and a same-length random-start control |
+| `research/v35/v35run.py`, `v35ml.py`, `v35why.py` | the 44-cell window sweep, the boosters on both targets, and the anatomy of the 0.86 direction AUC |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
