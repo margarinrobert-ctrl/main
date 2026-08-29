@@ -1,5 +1,8 @@
 """THE REVEAL - one pass over the locked block. Run exactly once.
 
+Frozen rule set: A (plain n=20 Donchian baseline) and B (A gated on ADX(14) at
+07:00 above 30). Rule C was dropped before the reveal - see NPRE below.
+
 Rules are FROZEN before this script is executed. Nothing here may be tuned,
 re-run with different parameters, or cherry-picked afterwards. The multiplicity
 is declared before any locked number is printed.
@@ -30,7 +33,13 @@ MULTIPLICITY = {
     "vol agent (its own count, partial)":                  42,
 }
 K = sum(MULTIPLICITY.values())
-NPRE = 6   # pre-registered locked comparisons: 3 frozen rules x 2 instruments
+NPRE = 4   # pre-registered locked comparisons: 2 frozen rules x 2 instruments
+#   Rule C (ADX>30 AND low ATR percentile) was DROPPED before the reveal.
+#   Its low-ATR leg was justified by "high volatility hurts these breakouts",
+#   but that damage is 74-77% concentrated in five crisis months. Under a
+#   criterion fixed before looking - keep C only if it beats B on BOTH
+#   instruments after excluding those months - it beat B on US30 (+7.05 vs
+#   +4.69) and LOST on NAS (+5.81 vs +6.46). Criterion failed, rule dropped.
 
 def adx(dfx, n_=14):
     hh, ll, cc = dfx.high.values, dfx.low.values, dfx.close.values
@@ -70,10 +79,6 @@ def rules(sym):
     out["A baseline n=20"] = (idx[ok], side[ok], 1.5, 2.0)
     m = ok & (at7[idx] > 30)
     out["B ADX@07:00>30"] = (idx[m], side[m], 1.5, 2.0)
-    # C: trending but not volatile. Threshold frozen at the research-block value.
-    thr = np.nanquantile(tp7[idx[ok]], 1 - (at7[idx[ok]] > 30).mean())
-    m2 = ok & (at7[idx] > 30) & (tp7[idx] <= thr)
-    out["C ADX>30 & low ATR pct"] = (idx[m2], side[m2], 1.5, 2.0)
     return df, w, r, h, out
 
 if __name__ == "__main__":

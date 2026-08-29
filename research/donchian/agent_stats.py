@@ -793,6 +793,84 @@ def sec_M(df, w, r, sym="NAS"):
     print(f"\n  {nc} gated configurations in this section.")
 
 
+def sec_N(df, w, r, sym="NAS"):
+    """The neighbourhood in the momentum LOOKBACK, plus placebos."""
+    print("=" * 122)
+    print("N. NEIGHBOURHOOD IN k (the momentum lookback), the ATR normaliser, and placebos")
+    print("=" * 122)
+    c = df.close.values
+    idx0, side0, _ = breakout_pop(df, 20, mask=r)
+    a14 = lab.atr(df, 14)
+    nc = 0
+    print("\n  --- mom_k = (close[i]-close[i-k])*side/ATR14 >= its own median, break n_entry=20 ---")
+    for k in (1, 2, 3, 4, 5, 6, 8, 12, 16):
+        x = (c[idx0] - c[idx0 - k]) * side0 / a14[idx0]
+        kk = x >= np.nanquantile(x, .5)
+        nc += 1
+        lab.sig_gate(sym, idx0[kk], side0[kk], stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                     one_per_session=False, mask=r, label=f"mom{k}>=med", n_draws=400)
+    print("\n  --- normaliser: raw points, ATR(7), ATR(14), ATR(50), bar range (k=4) ---")
+    for lbl, den in (("raw points", np.ones(len(df))), ("ATR(7)", lab.atr(df, 7)),
+                     ("ATR(14)", a14), ("ATR(50)", lab.atr(df, 50)),
+                     ("close price", c)):
+        x = (c[idx0] - c[idx0 - 4]) * side0 / den[idx0]
+        kk = x >= np.nanquantile(x, .5)
+        nc += 1
+        lab.sig_gate(sym, idx0[kk], side0[kk], stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                     one_per_session=False, mask=r, label=f"mom4/{lbl}>=med", n_draws=400)
+    print("\n  --- placebos: the same filter built from a bar it may not see, and from noise ---")
+    x = (c[idx0] - c[idx0 - 4]) * side0 / a14[idx0]
+    lag = (c[idx0 - 1] - c[idx0 - 5]) * side0 / a14[idx0 - 1]
+    rng = np.random.default_rng(5)
+    for lbl, v in (("LAGGED mom4 (bar i-1)", lag),
+                   ("SHUFFLED mom4", rng.permutation(x)),
+                   ("pure noise", rng.standard_normal(len(idx0)))):
+        kk = v >= np.nanquantile(v, .5)
+        nc += 1
+        lab.sig_gate(sym, idx0[kk], side0[kk], stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                     one_per_session=False, mask=r, label=lbl, n_draws=400)
+    print("\n  --- one trade per session (the lab's baseline convention), correct thresholds ---")
+    F = sig_features(df, 20, idx0, side0)
+    for qv in (0.4, 0.5, 0.6, 0.8):
+        kk = F["mom4"] >= np.nanquantile(F["mom4"], qv)
+        nc += 1
+        lab.sig_gate(sym, idx0[kk], side0[kk], stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                     one_per_session=True, mask=r, label=f"1/sess mom4>=q{qv:.1f}", n_draws=400)
+    print(f"\n  {nc} gated configurations in this section.")
+
+
+def sec_O(df, w, r, sym="NAS"):
+    """Final shape of the one surviving family, on both instruments."""
+    print("=" * 122)
+    print("O. THE SURVIVING FAMILY - fine threshold grid, both instruments, research only")
+    print("   RULE: Donchian(20) break in 07:00-11:00 NY, taken only when")
+    print("         (close[i] - close[i-4]) * side / ATR14[i]  >=  q  (its own quantile)")
+    print("         entry next open, stop 1.5 ATR, target 2.0 ATR, max_hold 16, flat 11:00.")
+    print("=" * 122)
+    nc = 0
+    for s_, ne in (("NAS", 20), ("US30", 20)):
+        d2, w2, r2 = lab.research(s_)
+        ii, ss, _ = breakout_pop(d2, ne, mask=r2)
+        f2 = sig_features(d2, ne, ii, ss)
+        tod = d2.tod.values[ii]
+        print(f"\n  --- {s_} ---")
+        for qv in (0.0, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9):
+            thr = np.nanquantile(f2["mom4"], qv)
+            kk = f2["mom4"] >= thr
+            nc += 1
+            lab.sig_gate(s_, ii[kk], ss[kk], stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                         one_per_session=False, mask=r2,
+                         label=f"{s_} mom4>=q{qv:.1f} (abs {thr:+.2f})", n_draws=600)
+        print("   + drop the structurally dead last slot (fill bar is the flatten bar):")
+        for qv in (0.5, 0.6):
+            kk = (f2["mom4"] >= np.nanquantile(f2["mom4"], qv)) & (tod < 645)
+            nc += 1
+            lab.sig_gate(s_, ii[kk], ss[kk], stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                         one_per_session=False, mask=r2,
+                         label=f"{s_} mom4>=q{qv:.1f} & tod<10:45", n_draws=600)
+    print(f"\n  {nc} gated configurations in this section.")
+
+
 SECS = {}
 if __name__ == "__main__":
     which = sys.argv[1:] or ["A"]
