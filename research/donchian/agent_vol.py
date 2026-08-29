@@ -527,3 +527,104 @@ if __name__ == "__main__":
 
 
 
+
+
+# ============================================================== named rules
+def rule_arrays(bk):
+    FB = build_bars(bk.df)
+    return FB, sig_feats(bk, FB)
+
+
+def apply_rule(F, spec):
+    """spec = list of (key, op, thr).  AND of the terms, NaN dropped."""
+    keep = np.ones(len(next(iter(F.values()))), bool)
+    for k, op, t in spec:
+        v = F[k]
+        keep &= ((v > t) if op == ">" else (v < t)) & ~np.isnan(v)
+    return keep
+
+
+def pool_of(FB, r, spec):
+    pool = r.copy()
+    for k, op, t in spec:
+        if k not in FB:
+            continue
+        v = FB[k]
+        pool &= ((v > t) if op == ">" else (v < t)) & ~np.isnan(v)
+    return pool
+
+
+def stage_combo(bk, FB, F, rules):
+    print("\n" + "=" * 145)
+    print("STAGE 6  COMBINATIONS.  Are the surviving conditions independent, or")
+    print("  are they three readings of one thing?")
+    print("=" * 145)
+    print("  " + HDRP)
+    for nm, spec in rules:
+        keep = apply_rule(F, spec)
+        test_pool(bk, keep, pool_of(FB, bk.r, spec), f"  {nm}", fam="combo")
+
+
+def stage_robust(rules, syms=("NAS",), nents=(10, 20, 40),
+                 geoms=((1.5, 2.0), (1.0, 2.0), (2.0, 3.0), (1.5, 1.5)),
+                 maxhs=(16,)):
+    """Same rule, parameters it was never chosen on.  A real effect survives a
+    change of lookback and of barrier ratio; a fitted one does not."""
+    print("\n" + "=" * 145)
+    print("STAGE 7  ROBUSTNESS.  n_entry, barrier ratio, max hold and INSTRUMENT")
+    print("  are all free parameters the rules were never selected on.")
+    print("=" * 145)
+    print(f"  {'sym  ne  stop/targ  hold':<28}{'rule':<26}{'nB':>6}{'expB':>8}"
+          f"{'excB':>7}{'n':>6}{'exp':>8}{'exc':>8}{'z':>7}{'p':>8}{'pS':>7}{'d(exp)':>8}")
+    global CFG
+    out = []
+    for sym in syms:
+        for ne in nents:
+            for (st, tg) in geoms:
+                for mh in maxhs:
+                    bk = Book(sym=sym, n_entry=ne, stop=st, targ=tg, maxh=mh)
+                    FB, F = rule_arrays(bk)
+                    b0, n0 = bk.exp(np.ones(len(bk.idx), bool))
+                    g0, _ = lab.sig_gate(sym, bk.idx, bk.side, stop_mult=st,
+                                         targ_mult=tg, max_hold=mh, flat_tod=FLAT,
+                                         n_draws=300, quiet=True)
+                    tag = f"{sym} {ne:>3} {st}/{tg} h{mh}"
+                    for nm, spec in rules:
+                        keep = apply_rule(F, spec)
+                        real, ntr = bk.exp(keep)
+                        if ntr < 60:
+                            continue
+                        CFG += 1
+                        g, _ = lab.sig_gate(sym, bk.idx[keep], bk.side[keep],
+                                            stop_mult=st, targ_mult=tg, max_hold=mh,
+                                            flat_tod=FLAT, n_draws=300, quiet=True)
+                        pS = perm_p(bk, keep, real, nrep=1500)[0]
+                        print(f"  {tag:<28}{nm:<26}{n0:>6}{b0:>+8.2f}{g0['excess']:>+7.2f}"
+                              f"{ntr:>6}{real:>+8.2f}{g['excess']:>+8.2f}{g['z']:>+7.2f}"
+                              f"{g['p']:>8.4f}{pS:>7.3f}{real-b0:>+8.2f}")
+                        out.append(dict(sym=sym, ne=ne, st=st, tg=tg, mh=mh, rule=nm,
+                                        n=ntr, exp=real, base=b0, excess=g["excess"],
+                                        z=g["z"], p=g["p"], pS=pS))
+    return out
+
+
+def stage_halves(bk, F, rules):
+    """Stability inside the research block: first half vs second half of the
+    research sessions.  Not a holdout - a consistency check."""
+    print("\n" + "=" * 145)
+    print("STAGE 8  STABILITY INSIDE THE RESEARCH BLOCK (first vs second half of")
+    print("  the research sessions).  A regime effect should be present in both.")
+    print("=" * 145)
+    f_all = bk.first(np.ones(len(bk.idx), bool))
+    smax = bk.sess[f_all].max(); smid = np.median(bk.sess[f_all])
+    print(f"  research sessions {bk.sess.min()}..{smax}, split at {smid:.0f}")
+    print(f"  {'rule':<30}{'half':<8}{'n':>6}{'exp':>9}{'base':>9}{'d':>8}{'wr':>8}")
+    for nm, spec in [("(baseline, no filter)", [])] + list(rules):
+        keep = apply_rule(F, spec) if spec else np.ones(len(bk.idx), bool)
+        f = bk.first(keep)
+        fb = bk.first(np.ones(len(bk.idx), bool))
+        for lbl, m in (("first", bk.sess[f] < smid), ("second", bk.sess[f] >= smid)):
+            mb = (bk.sess[fb] < smid) if lbl == "first" else (bk.sess[fb] >= smid)
+            e = bk.net[f][m]; b = bk.net[fb][mb]
+            print(f"  {nm:<30}{lbl:<8}{len(e):>6}{e.mean():>+9.2f}{b.mean():>+9.2f}"
+                  f"{e.mean()-b.mean():>+8.2f}{(e>0).mean():>8.1%}")
