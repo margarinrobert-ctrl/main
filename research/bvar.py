@@ -263,6 +263,9 @@ def fit(Y, cfg: MinnCfg = MinnCfg()) -> Posterior:
 
 def draw(post: Posterior, S=200, rng=None):
     """S draws from the NIW posterior. Returns (Bs (S,kp+1,k), Sigmas (S,k,k))."""
+    S = int(S)
+    if S < 2:
+        raise ValueError("at least 2 posterior draws are needed for an epistemic variance")
     rng = rng or np.random.default_rng(0)
     k = post.Sigma.shape[0]; m = post.B.shape[0]
     Ls = np.linalg.cholesky(np.linalg.inv(post.Spost + 1e-12 * np.eye(k)))

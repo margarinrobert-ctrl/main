@@ -13,6 +13,12 @@ property of the code, verified by a self-test named in the text, or (b) a prior 
 another study in this repository, cited. **There is no backtest result in this document, and you
 should be suspicious of one that appears before §4's protocol has been run.**
 
+**Directional variant.** This manual builds the system with the Donchian rule supplying the side
+and the model layer supplying second moments. [`SKILL_DIRECTIONAL_ALPHA.md`](SKILL_DIRECTIONAL_ALPHA.md)
+builds it the other way round — the BVAR and the network forecast the side — and covers the one
+problem that variant has on this sample: NQ rose 89%, so "predicts direction" and "is long" are
+nearly the same statement, and separating them takes machinery rather than care.
+
 ---
 
 ## 0. The prior you should start from

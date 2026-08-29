@@ -161,6 +161,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/uq_net.py` | heteroscedastic deep ensemble + MC dropout: aleatoric vs epistemic |
 | `research/dbu.py` | the Donchian x BVAR x uncertainty strategy, its simulator and its control |
 | `research/dbu_live.py` | its live/paper loop, latency budget and kill switches |
+| `research/dbu_dir.py` | the DIRECTIONAL version: the model picks the side, drift removed by a prior shift |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine
