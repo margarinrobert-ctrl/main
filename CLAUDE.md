@@ -1046,6 +1046,22 @@ Fitted structure is stable across instruments though: NQ and US30 both give drif
 diagonals ~0.94/0.94/0.91, and **Bull and Bear never transition directly** -- every change passes
 through Sideways. See `docs/ib/STUDY_V27_HMM_REGIME.md`.
 
+**MODEL CAPACITY IS MONOTONICALLY HARMFUL HERE, AND A GOOD CLASSIFIER CAN STILL DESTROY THE
+STRATEGY.** 141 causal features at breakout signal bars, label = the R the trade actually earned,
+PURGED+EMBARGOED walk-forward (overlapping trades make a naive K-fold train on the answer), every
+model run again on SHUFFLED labels. AUC falls with depth in EVERY family: XGBoost d3 0.5603 -> d6
+0.5347 -> d10 0.5233; MLP 2x64 0.5394 -> 4x128 0.5132 -> 6x256 **0.5060**, which is chance. The two
+best models in the whole ladder are a REGULARISED RANDOM FOREST (0.5732) and LOGISTIC REGRESSION
+(0.5585). **THE SHUFFLED TWIN IS MANDATORY**: the deepest net's shuffled twin earned **+0.2633** on
+the headline "R top decile" statistic, more than any real model, which is how you learn that column
+is noise. ON THE LOCKED BLOCK THE MARKETS DISAGREE: on NQ all nine models turn +0.0304 R NEGATIVE
+(best -0.0028, worst -0.1194) while scoring AUC 0.52-0.58; on US30 all nine improve a -0.0090
+baseline (best LightGBM +0.1275). **THE MECHANISM IS THE TAIL**: both markets show win rate rising
+30-33% -> 36-39% exactly as trained, but NQ's p90 R FALLS 1.740 -> 1.340 while US30's HOLDS
+1.872 -> 1.896. Train on win/lose and you get a win-rate optimiser; a breakout system earns in the
+tail, so that objective is misaligned and whether it helps depends on whether the tail survives.
+Read p90 of R in the selected set, not AUC. See `docs/ib/STUDY_V28_ML_CAPACITY.md`.
+
 ## Tooling
 
 | module | what it does |
