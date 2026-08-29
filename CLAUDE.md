@@ -156,6 +156,11 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
+| `research/donchian.py` | Donchian channels excluding the current bar, breakout triggers, indpool rows |
+| `research/bvar.py` | Minnesota-prior BVAR, per-bar predictive density, h-step functionals, IRF |
+| `research/uq_net.py` | heteroscedastic deep ensemble + MC dropout: aleatoric vs epistemic |
+| `research/dbu.py` | the Donchian x BVAR x uncertainty strategy, its simulator and its control |
+| `research/dbu_live.py` | its live/paper loop, latency budget and kill switches |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine
