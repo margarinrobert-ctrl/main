@@ -1,8 +1,9 @@
 """THE REVEAL - one pass over the locked block. Run exactly once.
 
 Frozen rule set: A (plain n=20 Donchian baseline), B (A gated on ADX(14) at
-07:00 above 30) and D (A requiring the close to exceed the channel by 1.0 x
-ATR14). Rule C was dropped before the reveal - see NPRE below.
+07:00 above 30) D (A requiring the close to exceed the channel by 1.0 x
+ATR14) and E (A filtered on aligned 3-bar thrust, the mechanism of which D is a
+shadow). Rule C was dropped before the reveal - see NPRE below.
 
 Rules are FROZEN before this script is executed. Nothing here may be tuned,
 re-run with different parameters, or cherry-picked afterwards. The multiplicity
@@ -33,9 +34,23 @@ MULTIPLICITY = {
     "ML filter (model configs + thresholds)":              25,
     "vol agent (final count)":                            353,
     "donchian agent (final count)":                       302,
+    "features agent":                                    1217,
+    "session agent":                                       334,
+    "optimization agent":                                 6912,
+    "exits agent":                                         463,
+    "stats agent":                                          432,
 }
 K = sum(MULTIPLICITY.values())
-NPRE = 6   # pre-registered locked comparisons: 3 frozen rules x 2 instruments
+NPRE = 8   # pre-registered locked comparisons: 4 frozen rules x 2 instruments
+#
+# PRE-REGISTERED PREDICTION, recorded before the locked block is opened:
+#   E should beat D. The feature agent's dissection says D (break distance beyond
+#   the channel) is a SHADOW of E (short-lag thrust): they correlate +0.516;
+#   residualising D on E drops D to +1.19 (p 0.150) while residualising E on D
+#   keeps E at +2.86 (p 0.005); and the double sort gives "break far, thrust low"
+#   -0.05 (p 0.53) against "thrust high, break near" +2.98 (p 0.040).
+#   If the holdout reproduces the ordering E > D, that is evidence for the
+#   MECHANISM, not merely for a rule. If it reverses, the dissection was wrong.
 #   Rule C (ADX>30 AND low ATR percentile) was DROPPED before the reveal.
 #   Its low-ATR leg was justified by "high volatility hurts these breakouts",
 #   but that damage is 74-77% concentrated in five crisis months. Under a
@@ -87,6 +102,22 @@ def rules(sym):
     idxD, sideD, _ = lab.signals(df, 20, buffer_atr=1.0)
     okD = tod[idxD] > 420
     out["D break > 1.0 ATR buffer"] = (idxD[okD], sideD[okD], 1.5, 2.0)
+    # E: aligned 3-bar THRUST at the trigger bar, threshold = q0.70 of the
+    # RESEARCH trigger population for this instrument (never recomputed on
+    # locked data). This is the mechanism the feature agent isolated; D is its
+    # shadow. Every quantity is read at the closed signal bar i.
+    from engine import atr as _atr
+    A = _atr(df, 14); c_ = df.close.values
+    c3 = np.concatenate([[np.nan]*3, c_[:-3]])
+    idxE, sideE, _ = lab.signals(df, 20)
+    okE = tod[idxE] > 420
+    idxE, sideE = idxE[okE], sideE[okE]
+    T = sideE * (c_[idxE] - c3[idxE]) / (A[idxE] * np.sqrt(3.0))
+    res_trig = np.isin(idxE, np.where(r)[0]) & ~np.isnan(T)
+    thrE = float(np.nanquantile(T[res_trig], 0.70))
+    keepE = ~np.isnan(T) & (T >= thrE)
+    print(f"    [rule E] thrust threshold from RESEARCH triggers only: q0.70 = {thrE:.4f}")
+    out["E thrust q0.70"] = (idxE[keepE], sideE[keepE], 1.5, 2.0)
     return df, w, r, h, out
 
 if __name__ == "__main__":

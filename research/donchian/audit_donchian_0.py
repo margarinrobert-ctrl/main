@@ -993,3 +993,133 @@ def secM():
         mn = control_means(d2, a2, t2, pool2, n_draws=3000, seed=103,
                            cost=4.0, slip=0.5)
         score(t2, mn, f"    US30 n=20 buf={b}")
+
+
+# ================================================================ SECTION N
+def secN():
+    """N. THE SCALE CONFOUND.  The score is mean net in INDEX POINTS.  A trade's
+    point scale is set by ATR at its own signal bar, and the barriers are
+    +-1.5/2.0 ATR.  The matched control matches the ATR-SCALED GEOMETRY but not
+    the ATR LEVEL, so if the rule fires preferentially in high-ATR periods every
+    point of gross edge (or of luck) is multiplied.  Score in R units instead."""
+    E = env(); d, a, r, tr, pool = E["d"], E["a"], E["r"], E["tr"], E["pool"]
+    inwin = E["inwin"]
+    print("=" * 100)
+    print("N. POINTS vs R UNITS - THE VOLATILITY-SCALE CONFOUND")
+    print("=" * 100)
+    W = walk(d); tod = d.tod.values
+    ar = a[tr.sig.values]
+    elig = pool & ~np.isnan(a) & (a > 0) & ~np.isnan(W["OP"][:, 0])
+    print(f"  ATR14 at the 628 signal bars : mean={ar.mean():7.2f} "
+          f"median={np.median(ar):7.2f}")
+    ap = a[elig]
+    print(f"  ATR14 over the control pool  : mean={ap.mean():7.2f} "
+          f"median={np.median(ap):7.2f}")
+    print(f"  the rule trades bars that are {ar.mean()/ap.mean():.2f}x the pool's "
+          f"volatility -> every P&L number is scaled by that factor")
+    yr = d.ts.dt.year.values
+    print("\n  mean ATR14 at signal bars, by year (research)")
+    for y in sorted(set(yr[r])):
+        m = (yr[tr.sig.values] == y)
+        if m.sum() < 10:
+            continue
+        print(f"    {y}: n={int(m.sum()):>4}  ATR={a[tr.sig.values][m].mean():7.2f}"
+              f"  mean net={tr.net.values[m].mean():>+7.2f}"
+              f"  mean net/ATR={np.mean(tr.net.values[m]/a[tr.sig.values][m]):>+7.3f}")
+    # R-unit scoring: divide every trade's net by the ATR that sized its barriers
+    def rmeans(idx_arr, side_arr, cost=COST, slip=SLIP):
+        fill = W["OP"][idx_arr, 0]
+        entry = fill + side_arr * slip
+        av = a[idx_arr]
+        t = sim(d, idx_arr, side_arr, entry, entry - side_arr * 1.5 * av,
+                entry + side_arr * 2.0 * av)
+        return (t.net.values / a[t.sig.values])
+    realR = tr.net.values / ar
+    want = pd.Series(tod[tr.sig.values]).value_counts()
+    by = {t: np.where(elig & (tod == t))[0] for t in want.index}
+    by = {t: v for t, v in by.items() if len(v) > 0}
+    rng = np.random.default_rng(111)
+    sides = tr.side.values.astype(float)
+    mR = np.empty(6000)
+    for dd in range(6000):
+        ii = np.concatenate([rng.choice(by[t], size=int(k), replace=True)
+                             for t, k in want.items() if t in by])
+        ss = rng.permutation(sides)[:len(ii)]
+        mR[dd] = rmeans(ii, ss).mean()
+    exc = realR.mean() - mR.mean()
+    z = exc / mR.std(ddof=1)
+    p = (mR >= realR.mean()).mean()
+    print(f"\n  SCORED IN R UNITS (net / ATR at the signal bar), same control:")
+    print(f"    real  = {realR.mean():+.4f} R/trade   control = {mR.mean():+.4f} R"
+          f"   excess = {exc:+.4f} R   z={z:+.2f}  p={p:.4f}")
+    print(f"    in POINTS the same comparison was excess +3.32, z=+2.32, p=0.012")
+    print(f"    R-unit excess x pool ATR ({ap.mean():.1f}) = "
+          f"{exc*ap.mean():+.2f} pts; the claim is +3.32 pts.")
+    print(f"    -> {100*(1 - exc*ap.mean()/3.32):.0f}% of the headline excess is the "
+          f"VOLATILITY LEVEL of the bars the\n       rule selects, not the direction it picks.")
+    # per-trade % of index level, an alternative scale-free unit
+    lv = d.close.values[tr.sig.values]
+    realP = tr.net.values / lv * 100
+    mP = np.empty(3000)
+    for dd in range(3000):
+        ii = np.concatenate([rng.choice(by[t], size=int(k), replace=True)
+                             for t, k in want.items() if t in by])
+        ss = rng.permutation(sides)[:len(ii)]
+        fill = W["OP"][ii, 0]; entry = fill + ss * SLIP; av = a[ii]
+        t = sim(d, ii, ss, entry, entry - ss * 1.5 * av, entry + ss * 2.0 * av)
+        mP[dd] = (t.net.values / d.close.values[t.sig.values] * 100).mean()
+    print(f"\n  SCORED IN %-OF-INDEX-LEVEL:")
+    print(f"    real = {realP.mean():+.5f}%  control = {mP.mean():+.5f}%  "
+          f"excess = {realP.mean()-mP.mean():+.5f}%  z="
+          f"{(realP.mean()-mP.mean())/mP.std(ddof=1):+.2f}  "
+          f"p={(mP>=realP.mean()).mean():.4f}")
+
+
+# ================================================================ SECTION O
+def secO():
+    """O. IS THE US30 'OUT-OF-INSTRUMENT REPLICATION' AN INDEPENDENT SAMPLE?
+    Same calendar, same regimes, ~0.9 correlated index.  Check (i) whether the
+    US30 result lives in the same 2020-2022 window and (ii) how much of the two
+    books is literally the same trading sessions."""
+    E = env(); d, a, r, tr = E["d"], E["a"], E["r"], E["tr"]
+    print("=" * 100)
+    print("O. INDEPENDENCE OF THE US30 REPLICATION")
+    print("=" * 100)
+    d2 = load("/home/user/main/data/donchian/US30_15m_NY.parquet")
+    a2 = my_atr(d2, 14); r2, k2 = split_mask(d2)
+    inwin2 = (d2.tod.values >= WIN[0]) & (d2.tod.values < WIN[1])
+    i2, s2 = triggers(d2, a2, 20, 1.0)
+    t2 = book(d2, a2, i2, s2, cost=4.0, slip=0.5)
+    t2 = t2[r2[t2.sig.values]].reset_index(drop=True)
+    yr2 = d2.ts.dt.year.values
+    print(f"  US30 research block: {d2.ts[r2].min().date()} -> {d2.ts[r2].max().date()}"
+          f"  (NAS: {d.ts[r].min().date()} -> {d.ts[r].max().date()})")
+    print("\n  US30 n=20 buf=1.0 by year")
+    for y in sorted(set(yr2[r2])):
+        m = r2 & (yr2 == y)
+        s = t2[m[t2.sig.values]]
+        if len(s) < 20:
+            continue
+        mn = control_means(d2, a2, s.reset_index(drop=True), m & inwin2,
+                           n_draws=3000, seed=121, cost=4.0, slip=0.5)
+        g = score(s.reset_index(drop=True), mn, f"    {y}")
+        print(f"        net={s.net.sum():>+9,.0f}")
+    for lbl, m in (("US30 2016-2019", r2 & (yr2 <= 2019)),
+                   ("US30 2020-2022", r2 & (yr2 >= 2020))):
+        s = t2[m[t2.sig.values]].reset_index(drop=True)
+        mn = control_means(d2, a2, s, m & inwin2, n_draws=4000, seed=122,
+                           cost=4.0, slip=0.5)
+        score(s, mn, f"  {lbl}")
+    # session overlap between the two books
+    dt1 = set(pd.to_datetime(d.ts.values[tr.sig.values]).normalize())
+    dt2 = set(pd.to_datetime(d2.ts.values[t2.sig.values]).normalize())
+    print(f"\n  NAS book trades on {len(dt1):,} distinct dates, US30 on {len(dt2):,};"
+          f"  shared dates = {len(dt1 & dt2):,}")
+    print(f"  Jaccard of trading DATES = {len(dt1&dt2)/len(dt1|dt2):.3f}"
+          f"  ({len(dt1&dt2)/len(dt1):.0%} of the NAS book's dates are also US30 trade dates)")
+    # daily return correlation of the two instruments in the window
+    g1 = pd.Series(d.close.values[r], index=pd.to_datetime(d.ts.values[r])).resample("1D").last().dropna()
+    g2 = pd.Series(d2.close.values[r2], index=pd.to_datetime(d2.ts.values[r2])).resample("1D").last().dropna()
+    j = pd.concat([g1.pct_change(), g2.pct_change()], axis=1).dropna()
+    print(f"  daily return correlation NAS vs US30 over the research block = "
+          f"{j.corr().iloc[0,1]:.3f}")
