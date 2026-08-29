@@ -1378,7 +1378,7 @@ def build_parser() -> argparse.ArgumentParser:
     seen: set[int] = set()
     for name, subparser in sub.choices.items():
         if name in ("mirror", "data", "import", "strategies", "convert",
-                    "continuous", "combine"):
+                    "continuous"):
             continue
         if id(subparser) in seen:
             continue

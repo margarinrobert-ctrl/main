@@ -1636,7 +1636,8 @@ python -m tradingbacktester.cli report "MACD Trend" --data "US30 30m" \
 menu produces; the suffix chooses the format and the PDF renders with no display
 attached. `--mirror` on any command that reads data reflects the series first. `combine` with `--data`
 backtests the merged strategy and each of its parts on the same bars, side by
-side. `--json`
+side — and takes `--mirror` like every other command that reads data, so
+"would this combination survive on a market that fell?" is one flag away. `--json`
 prints machine-readable output on `find`, `autosearch`, `indicators`,
 `anomalies`, `run`, `optimize`, `continuous`, `walkforward`, `montecarlo`,
 `mirror`, `convert` and `combine`; everything else then goes to stderr so the output can
