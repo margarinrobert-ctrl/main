@@ -21,14 +21,14 @@ W = 100
 
 
 def load(tf):
-    Z = np.load(f"/tmp/af2_{tf}m.npz", allow_pickle=True)
+    Z = np.load(f"results/alpha/af2_{tf}m.npz", allow_pickle=True)
     return dict(rn=Z["res_net"], rN=Z["res_n"], ln=Z["lok_net"], lN=Z["lok_n"],
                 combos=Z["combos"], names=[str(x) for x in Z["names"]])
 
 
 def main():
     tfs = sorted(int(re.search(r"af2_(\d+)m", p).group(1))
-                 for p in glob.glob("/tmp/af2_*m.npz"))
+                 for p in glob.glob("results/alpha/af2_*m.npz"))
     print(f"timeframes available: {', '.join(str(t)+'m' for t in tfs)}\n")
     Ds = {t: load(t) for t in tfs}
     ref = Ds[tfs[0]]

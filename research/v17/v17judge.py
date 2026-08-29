@@ -87,7 +87,7 @@ if __name__ == "__main__":
     print("=" * 116)
     print("A. THE FAMILY'S OWN NULL, FIRST")
     print("=" * 116)
-    df = pd.read_csv("/tmp/v17_sweep.csv")
+    df = pd.read_csv("results/v17/v17_sweep.csv")
     print(f"   285 scorable conditions. Beat the same-selectivity control on Sharpe at p <= 0.05: "
           f"{int((df.p_sh <= 0.05).sum())}, expected {0.05*len(df):.1f}.")
     print(f"   On net R: {int((df.p_R <= 0.05).sum())}, expected {0.05*len(df):.1f}. "

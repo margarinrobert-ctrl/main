@@ -174,7 +174,7 @@ if __name__ == "__main__":
                                      base_lk=float(O["R"][base_l].mean())))
     df = pd.DataFrame(rows)
     df["exc_lk"] = df.R_lk - df.base_lk
-    df.to_csv("/tmp/v22_trade.csv", index=False)
+    df.to_csv("results/v22/v22_trade.csv", index=False)
 
     print(f"\n   {len(df)} scorable conditions. At alpha 0.05 against the matched control,"
           f" {0.05*len(df):.0f} pass by chance;")

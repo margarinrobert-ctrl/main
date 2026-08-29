@@ -51,8 +51,8 @@ def sweep(block_name):
 if __name__ == "__main__":
     res = sweep("research")
     lock = sweep("locked")
-    res.to_csv("/tmp/v21_res.csv", index=False)
-    lock.to_csv("/tmp/v21_lock.csv", index=False)
+    res.to_csv("results/v21/v21_res.csv", index=False)
+    lock.to_csv("results/v21/v21_lock.csv", index=False)
     j = res.merge(lock[["adx", "chop", "pf", "ev", "n", "mkts_pf1"]], on=["adx", "chop"],
                   suffixes=("", "_lk"))
 

@@ -184,7 +184,7 @@ if __name__ == "__main__":
                                  R_lk=(b["R"] if b else np.nan),
                                  sharpe_lk=(b["sharpe"] if b else np.nan)))
     df = pd.DataFrame(rows)
-    df.to_csv("/tmp/v23_grid.csv", index=False)
+    df.to_csv("results/v23/v23_grid.csv", index=False)
 
     hdr("0. THE POPULATION, BEFORE ANY RANKING -- a 1,184-cell grid's top row is the max of 1,184 draws")
     print(f"   scorable cells: {len(df)}   (declared grid: 37 momentum x 4 ADX x 4 CHOP x 2 timeframes)")

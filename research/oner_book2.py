@@ -65,7 +65,7 @@ def styles(r, s):
     return t, hold_min, crosses, per_year
 
 
-def load_all(path="/tmp/oner_robust.npy", cap=200):
+def load_all(path="results/oner/oner_robust.npy", cap=200):
     rows = list(np.load(path, allow_pickle=True))[:cap]
     out = []
     for r in rows:

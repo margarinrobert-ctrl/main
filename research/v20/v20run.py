@@ -70,7 +70,7 @@ if __name__ == "__main__":
                       f"{m['sharpe']:>8.2f}{m['ev'] - mb['ev']:>+13.4f}")
             print()
     df = pd.DataFrame(rows)
-    df.to_csv("/tmp/v20_readings.csv", index=False)
+    df.to_csv("results/v20/v20_readings.csv", index=False)
 
     hdr("2. THE READINGS RANKED BY WHAT THEY ADD, POOLED -- 40 cells, state the multiplicity")
     print("   4 readings x 5 markets x 2 timeframes = 40 research cells. At alpha 0.05 two pass by")

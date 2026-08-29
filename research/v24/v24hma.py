@@ -174,7 +174,7 @@ if __name__ == "__main__":
                       + (f"{spread:>13.3f}" if np.isfinite(spread) else f"{'--':>13}"))
             print()
     L = pd.DataFrame(out)
-    L.to_csv("/tmp/v24_lag.csv", index=False)
+    L.to_csv("results/v24/v24_lag.csv", index=False)
 
     V.hdr("B3. THE VERDICT -- is the variation in the TYPE or in the LAG?")
     within = L.groupby(["tf", "mode", "lag"]).pf_lk.agg(lambda x: x.max() - x.min())

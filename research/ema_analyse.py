@@ -1,7 +1,7 @@
 """Read the EMA search results and answer: is there an edge, and does it ADD to the BOS book?"""
 import sys; sys.path.insert(0,'research')
 import numpy as np
-R = np.load("/tmp/ema_rows.npy")
+R = np.load("results/ema/ema_rows.npy")
 rn, rs, ln, ls, ntr, side, ef, es, tp, sl, mins = [R[:, i] for i in range(11)]
 rng = np.random.default_rng(20260823)
 N = len(R)

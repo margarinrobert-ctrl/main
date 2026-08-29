@@ -55,5 +55,5 @@ if __name__ == "__main__":
                                  lk_dd=(l["dd"] if l else np.nan)))
             print(f"   {mkt} {'long' if side>0 else 'short':<5} done: "
                   f"{len(st.trials)} trials, best research Sharpe {st.best_value:+.3f}", flush=True)
-    pd.DataFrame(rows).to_csv("/tmp/v30_trials.csv", index=False)
+    pd.DataFrame(rows).to_csv("results/v30/v30_trials.csv", index=False)
     print(f"   wrote {len(rows)} scorable trials")

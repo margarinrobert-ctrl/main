@@ -166,7 +166,7 @@ if __name__ == "__main__":
     df = pd.DataFrame(rows)
     df["edge_pf"] = df.pf_lk - df.base_pf
     df["edge_sh"] = df.sharpe_lk - df.base_sh
-    df.to_csv("/tmp/v25_grid.csv", index=False)
+    df.to_csv("results/v25/v25_grid.csv", index=False)
     g = df[df.cond != "LINREG OFF"]
     gv = g.dropna(subset=["edge_pf"])
 

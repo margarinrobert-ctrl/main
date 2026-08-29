@@ -56,7 +56,7 @@ def surrogate(X, y, name):
 
 
 if __name__ == "__main__":
-    d = pd.read_csv("/tmp/v30_trials.csv")
+    d = pd.read_csv("results/v30/v30_trials.csv")
     d["skip_win"] = d.skip_win.astype(int)
     hdr("A. THE POPULATION -- what the optimiser was searching, before any ranking")
     print(f"   {len(d)} scorable trials across 2 markets x 2 sides, 07:00-11:00 New York,"
@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
 def part_d():
     """The winner, read once, against the un-optimised starting point and a matched control."""
-    d = pd.read_csv("/tmp/v30_trials.csv")
+    d = pd.read_csv("results/v30/v30_trials.csv")
     hdr("D. THE WINNER -- one locked read, against not searching at all")
     print("   `spec` is the Turtle's own defaults in this window, with no search: entry 20,")
     print("   exit 10, ATR 20, 2.0N, 0.5N ladder to 4 units, no gates. `best` is the top trial of")

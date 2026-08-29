@@ -15,7 +15,7 @@ import pine_lint as PL
 from oner_book2 import load_all, greedy_book, styles
 from test_suite import _daily, _dd, _sharpe
 
-ART = ("/tmp/claude-0/-home-user-main/e473d7de-e277-515e-b24b-75724aaa9da5/"
+ART = ("results/oner/claude-0/-home-user-main/e473d7de-e277-515e-b24b-75724aaa9da5/"
        "scratchpad/edge-finder.html")
 
 

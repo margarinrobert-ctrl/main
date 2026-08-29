@@ -33,7 +33,7 @@ EXITS = [(2.0, 1.0, 960), (3.0, 1.0, 960), (4.0, 1.0, 960), (2.5, 1.0, 0)]
 SPLIT = "2022-01-01"
 
 
-def run(tf=30, max_k=3, out="/tmp/us100_search.npz"):
+def run(tf=30, max_k=3, out="results/us100/us100_search.npz"):
     t0 = time.time()
     d = us100.to_bars(tf)
     names, M = build_ladder(d)

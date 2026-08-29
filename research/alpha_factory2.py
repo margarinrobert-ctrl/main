@@ -286,7 +286,7 @@ def main(tf=30, seed=20260823, out_path=None):
     sweep(B, combos, nbars, EB, EP, OK, sidx, cut, res_net, res_n, lok_net, lok_n)
     print(f"   sweep done, {time.time()-t0:.0f}s", flush=True)
 
-    path = out_path or f"/tmp/af2_{tf}m.npz"
+    path = out_path or f"results/alpha/af2_{tf}m.npz"
     np.savez_compressed(path, res_net=res_net, res_n=res_n,
                         lok_net=lok_net, lok_n=lok_n, combos=combos,
                         names=np.array(names), exits=np.array(EXITS), tf=np.array([tf]))

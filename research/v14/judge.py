@@ -1,7 +1,7 @@
 import sys; sys.path.insert(0,"research/v14"); sys.path.insert(0,"research/v8opt")
 sys.path.insert(0,"research"); sys.path.insert(0,"research/turtleshort")
 import numpy as np, pandas as pd, v14grid as G, v14tensor as T, analyse as A, mirror, fastbars
-OUT="/tmp/claude-0/-home-user-main/e473d7de-e277-515e-b24b-75724aaa9da5/scratchpad"
+OUT="results/v14/claude-0/-home-user-main/e473d7de-e277-515e-b24b-75724aaa9da5/scratchpad"
 frac=1.72/(2*np.nanmedian(mirror.wilder_atr(*[fastbars.bars(15)[k] for k in "hlc"],20)))
 gl=G.geoms()
 def block_stats(path,side,which):

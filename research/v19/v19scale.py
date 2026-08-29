@@ -86,5 +86,5 @@ if __name__ == "__main__":
                   f"{m['sharpe']:>8.2f}{m['sortino']:>9.2f}{p:>8.3f}")
         print()
     import pickle
-    with open("/tmp/v19scale.pkl", "wb") as fh:
+    with open("results/v19/v19scale.pkl", "wb") as fh:
         pickle.dump({k: (v[3], v[4]) for k, v in keep.items()}, fh)

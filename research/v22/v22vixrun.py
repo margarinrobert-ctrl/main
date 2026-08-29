@@ -58,7 +58,7 @@ if __name__ == "__main__":
     df["same_sign"] = np.sign(df.ic) == np.sign(df.ic_lk)
     for lab in df.target.unique():
         df.loc[df.target == lab, "bh"] = X.bh(df[df.target == lab].p.to_numpy(), 0.10)
-    df.to_csv("/tmp/v22_vix_ic.csv", index=False)
+    df.to_csv("results/v22/v22_vix_ic.csv", index=False)
 
     X.hdr("A0. THE POSITIVE CONTROL -- does the VIX forecast FORWARD REALISED VOLATILITY?")
     print("   It must. If this table is null the harness is broken and nothing below is readable.\n")

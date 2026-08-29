@@ -24,7 +24,7 @@ import v16phase2 as P2       # noqa: E402
 
 
 def replicate():
-    df = pd.read_csv("/tmp/v16_sweep.csv")
+    df = pd.read_csv("results/v16/v16_sweep.csv")
     surv = df[(df.R > 0) & (df.p <= 0.05)].copy()
     rows = []
     for tf, g in surv.groupby("tf"):
@@ -59,7 +59,7 @@ if __name__ == "__main__":
     print("A. DO THE 99 RESEARCH SURVIVORS REPLICATE? -- locked block, read once, to reject")
     print("=" * 104)
     R = replicate()
-    R.to_csv("/tmp/v16_replicate.csv", index=False)
+    R.to_csv("results/v16/v16_replicate.csv", index=False)
     pos = R.lock_R > 0
     beat = R.beats_base
     print(f"   survivors carried forward           : {len(R)}")
@@ -91,7 +91,7 @@ if __name__ == "__main__":
         for ax, lab in (("exit_n", "exit channel"), ("stop", "ATR stop multiple"),
                         ("tp", "target in R (0 = none)")):
             P2.marginal(G, ax, lab)
-        G.to_csv(f"/tmp/v16_geo_unf_{tf}.csv", index=False)
+        G.to_csv(f"results/v16/v16_geo_unf_{tf}.csv", index=False)
 
     print("\n" + "=" * 104)
     print("C. THE CHOSEN GEOMETRY, READ ONCE ON LOCKED")

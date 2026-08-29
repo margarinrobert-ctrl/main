@@ -80,7 +80,7 @@ if __name__ == "__main__":
         lambda z: 0.5 * (1 + math.erf(z / np.sqrt(2)))))
     df["bh"] = bh(df.p.to_numpy(), 0.10)
     df["same_sign"] = np.sign(df.ic) == np.sign(df.ic_lk)
-    df.to_csv("/tmp/v22_ic.csv", index=False)
+    df.to_csv("results/v22/v22_ic.csv", index=False)
 
     hdr("A. DOES A VOLATILITY STATE FORECAST CHOP? -- IC against the forward efficiency ratio")
     print(f"   {len(df)} tests = 71 features x {len(HS)} horizons x {len(TFS)} timeframes.")

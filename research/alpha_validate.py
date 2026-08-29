@@ -9,8 +9,8 @@ import numpy as np
 sys.path.insert(0, "research")
 from bos_choch import prep
 
-out = np.load("/tmp/af_out.npy"); meta = np.load("/tmp/af_meta.npy")
-names, rules, EXITS = pickle.load(open("/tmp/af_rules.pkl", "rb"))
+out = np.load("results/alpha/af_out.npy"); meta = np.load("results/alpha/af_meta.npy")
+names, rules, EXITS = pickle.load(open("results/alpha/af_rules.pkl", "rb"))
 
 RN, RNET, RW, RGW, RGL, RDD, RTG = (out[:, i] for i in range(7))
 LN, LNET, LW, LGW, LGL, LDD, LTG = (out[:, 7 + i] for i in range(7))

@@ -78,7 +78,7 @@ def main(tf, out=None):
     keep = np.flatnonzero(live)
     print(f"     {len(keep):,} of {total:,} ({100*len(keep)/total:.2f}%) have "
           f"{MIN_RES}+/{MIN_LOK}+ trades and are research-profitable", flush=True)
-    path = out or f"/tmp/mega2_{tf}m.npz"
+    path = out or f"results/oner/mega2_{tf}m.npz"
     np.savez(path, idx=keep.astype(np.int64),
              r_n=r_n[keep], r_sum=r_sum[keep], r_win=r_win[keep],
              l_n=l_n[keep], l_sum=l_sum[keep], l_win=l_win[keep],

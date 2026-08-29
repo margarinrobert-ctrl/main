@@ -202,7 +202,7 @@ if __name__ == "__main__":
                     retdd_lk=(b["retdd"] if b else np.nan),
                     sharpe_lk=(b["sharpe"] if b else np.nan)))
     df = pd.DataFrame(rows)
-    df.to_csv("/tmp/v24_grid.csv", index=False)
+    df.to_csv("results/v24/v24_grid.csv", index=False)
     v = df.dropna(subset=["pf_lk"])
 
     hdr("1. THE POPULATION, BEFORE ANY RANKING")

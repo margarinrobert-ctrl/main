@@ -93,7 +93,7 @@ if __name__ == "__main__":
     P2.marginal(G, "exit_n", "exit channel length")
     P2.marginal(G, "stop", "ATR stop multiple")
     P2.marginal(G, "tp", "target, in R (0 = none)")
-    G.to_csv("/tmp/v16_geom.csv", index=False)
+    G.to_csv("results/v16/v16_geom.csv", index=False)
 
     print("\n" + "=" * 104)
     print("E. THE LOCKED BLOCK, READ ONCE")

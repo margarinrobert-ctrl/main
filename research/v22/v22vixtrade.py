@@ -165,7 +165,7 @@ if __name__ == "__main__":
                                  R_lk=float(O["R"][il].mean()) if len(il) >= 12 else np.nan))
     df = pd.DataFrame(rows)
     df["exc_lk"] = df.R_lk - float(np.nanmean(O["R"][lk & ok]))
-    df.to_csv("/tmp/v22_vix_trade.csv", index=False)
+    df.to_csv("results/v22/v22_vix_trade.csv", index=False)
 
     X.hdr("F. EDGE BY VIX CONDITION, against a SELECTIVITY-MATCHED CONTROL -- top 50 by excess")
     print(f"   {len(df)} scorable conditions. At alpha 0.05, {0.05*len(df):.0f} pass by chance;"

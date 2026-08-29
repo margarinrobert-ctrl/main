@@ -51,4 +51,4 @@ if __name__ == "__main__":
             rows.append(r)
             print(f"   {mkt:<8}{h:>4}{r['n']:>8}{r['ic_model_res']:>+16.4f}{r['ic_model']:>+19.4f}"
                   f"{r['ic_naive']:>+19.4f}{r['auc_model']:>11.4f}{r['auc_naive']:>11.4f}")
-    pd.DataFrame(rows).to_csv("/tmp/v29_chop_pred.csv", index=False)
+    pd.DataFrame(rows).to_csv("results/v29/v29_chop_pred.csv", index=False)

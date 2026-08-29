@@ -85,7 +85,7 @@ if __name__ == "__main__":
                                     ("n", "ev", "pf", "net", "dd", "mar", "sharpe")}))
         g = pd.DataFrame(rows)
         grids[k] = g
-        g.to_csv(f"/tmp/v18_grid_{k}.csv", index=False)
+        g.to_csv(f"results/v18/v18_grid_{k}.csv", index=False)
         print(f"   {k}: {len(g)} cells, {float((g.ev > 0).mean()):.0%} with positive EV, "
               f"{float((g.pf > 1).mean()):.0%} with PF > 1, median EV {g.ev.median():+.4f}, "
               f"median PF {g.pf.median():.3f}")

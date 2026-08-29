@@ -6,7 +6,7 @@ sys.path.insert(0, "research/v29")
 import v24ma as V, v29chop as Q
 if __name__ == "__main__":
     out = pd.concat([Q.part2_atr_grid(m, 30) for m in ("NQ", "US30")], ignore_index=True)
-    out.to_csv("/tmp/v29_atr_grid.csv", index=False)
+    out.to_csv("results/v29/v29_atr_grid.csv", index=False)
     V.hdr("C. THE ATR REGIME GRID -- every declared cell against a same-selectivity control")
     for mkt in ("NQ", "US30"):
         for blk in ("research", "locked"):

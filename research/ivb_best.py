@@ -5,7 +5,7 @@ import numpy as np
 sys.path.insert(0, "research")
 import ivb_sweep as S
 
-out = np.load("/tmp/ivb_out.npy"); meta = np.load("/tmp/ivb_meta.npy"); G = np.load("/tmp/ivb_grid.npy")
+out = np.load("results/ivb/ivb_out.npy"); meta = np.load("results/ivb/ivb_meta.npy"); G = np.load("results/ivb/ivb_grid.npy")
 GG = np.tile(G, (len(out) // len(G), 1))
 RN, RNET, RW, RGW, RGL = out[:, 0], out[:, 1], out[:, 2], out[:, 3], out[:, 4]
 LN, LNET, LW, LGW, LGL = out[:, 7], out[:, 8], out[:, 9], out[:, 10], out[:, 11]

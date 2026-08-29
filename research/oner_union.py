@@ -289,7 +289,7 @@ if __name__ == "__main__":
               f"{cand:>8}")
     print(f"  {'total':<7}{'':>9}{tot_s:>9,.0f}{'':>9}{tot_b:>9,.0f}")
 
-    np.save("/tmp/union.npy", np.array(
+    np.save("results/oner/union.npy", np.array(
         [{"key": k, "trig": v[0]["trig"], "loose_trig": v[0]["loose_trig"],
           "loose_p": v[0]["loose"]["p"], "kept": len(v[0]["kept"]),
           "am": v[0]["am"], "flat": v[0]["flat"], "side": v[0]["side"], "tf": v[0]["tf"],

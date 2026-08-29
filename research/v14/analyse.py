@@ -15,7 +15,7 @@ that passes is reported FIRST, because it is what tells you how to read everythi
 from __future__ import annotations
 import sys
 import numpy as np, pandas as pd
-OUT="/tmp/claude-0/-home-user-main/e473d7de-e277-515e-b24b-75724aaa9da5/scratchpad"
+OUT="results/v14/claude-0/-home-user-main/e473d7de-e277-515e-b24b-75724aaa9da5/scratchpad"
 KEY=["mask","geom"]
 DESC=["f","s","mode","adx","chop","lim","stop","tp","exl"]
 MODE={0:"off",1:"state",2:"fresh8"}

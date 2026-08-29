@@ -131,7 +131,7 @@ def fam(name):
 if __name__ == "__main__":
     df = sweep()
     df["family"] = df.cond.str.split(">=").str[0].map(fam)
-    df.to_csv("/tmp/v16_sweep.csv", index=False)
+    df.to_csv("results/v16/v16_sweep.csv", index=False)
     n = len(df)
     print(f"{n} conditions tested on the RESEARCH block "
           f"({len(TFS)} timeframes x {len(SIDES)} sides x {len(M.conditions(M.build(C.prep(15)['b'])))} rungs,"

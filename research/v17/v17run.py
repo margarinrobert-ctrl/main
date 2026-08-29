@@ -163,7 +163,7 @@ if __name__ == "__main__":
                          p_sh=float((csh >= s["sharpe"]).mean()),
                          p_R=float((crr >= s["R"]).mean())))
     df = pd.DataFrame(rows)
-    df.to_csv("/tmp/v17_sweep.csv", index=False)
+    df.to_csv("results/v17/v17_sweep.csv", index=False)
     print(f"   {len(df)} conditions scorable (>= 30 trades kept)\n")
     print("=" * 112)
     print("A. HOW MANY BEAT A RANDOM FILTER OF THE SAME SELECTIVITY ON SHARPE")
