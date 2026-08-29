@@ -332,3 +332,48 @@ def outcome_matrix(sym, df, w, tr):
         fwd = w["closes"][sb, hh - 1]
         cols.append(sd * (fwd - fill) / (a14[sb] + 1e-9)); names.append(f"fwdret_h{hh}")
     return np.column_stack(cols), names
+
+
+# ============================================================ redundancy / dims
+def cluster_report(X, names, rho_cut=0.70):
+    Xr = rankit(X)
+    Cm = np.corrcoef(Xr, rowvar=False)
+    Cm = np.nan_to_num(Cm, nan=0.0)
+    d = 1.0 - np.abs(Cm)
+    np.fill_diagonal(d, 0.0)
+    iu = np.triu_indices_from(d, 1)
+    Z = linkage(d[iu], method="average")
+    lab_ = fcluster(Z, t=1.0 - rho_cut, criterion="distance")
+    ev = np.linalg.eigvalsh(Cm)[::-1]
+    ev = np.clip(ev, 0, None); frac = ev / ev.sum()
+    cum = np.cumsum(frac)
+    n90 = int(np.searchsorted(cum, 0.90) + 1); n95 = int(np.searchsorted(cum, 0.95) + 1)
+    pr = float(ev.sum() ** 2 / (ev ** 2).sum())          # participation ratio
+    return Cm, lab_, dict(n_clusters=int(lab_.max()), n_pc90=n90, n_pc95=n95,
+                          part_ratio=pr, evfrac=frac)
+
+
+# ================================================================ filter gating
+def filter_gate(sym, feat_arr_at_bar, direction, qs, label, n_draws=300,
+                one_per_session=True, n_entry=N_ENTRY, quiet=True):
+    """Convert a feature into a TRIGGER filter and re-simulate. Filtering the
+    triggers (never conditionally splitting realised trades) is the only valid
+    way to test a filter."""
+    df, w, r = lab.research(sym)
+    idx, side, a = lab.signals(df, n_entry=n_entry, win=WIN)
+    resmask = np.isin(idx, np.where(r)[0])
+    v = feat_arr_at_bar
+    thr_pool = v[resmask & np.isfinite(v)]
+    rows = []
+    for q in qs:
+        t = np.nanquantile(thr_pool, q if direction > 0 else 1 - q)
+        keep = (v >= t) if direction > 0 else (v <= t)
+        keep &= np.isfinite(v)
+        if keep.sum() < 40:
+            continue
+        g, _ = lab.sig_gate(sym, idx[keep], side[keep], stop_mult=SM, targ_mult=TM,
+                            max_hold=MH, one_per_session=one_per_session,
+                            label=f"{label} q{q:.2f}", n_draws=n_draws, quiet=quiet)
+        g["q"] = q; g["thr"] = float(t); g["kept_frac"] = float(keep[resmask].mean())
+        rows.append(g)
+    return pd.DataFrame(rows)
