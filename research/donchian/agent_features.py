@@ -251,3 +251,84 @@ def audit(df, n_probe=14, seed=3):
             if not np.allclose(f1, f2, rtol=1e-6, atol=1e-8):
                 bad[nm] = bad.get(nm, 0) + 1
     return names, bad
+
+
+# ==================================================================== IC engine
+def rankit(A_):
+    """column-wise average rank, NaN -> mid rank."""
+    R = np.empty_like(A_, dtype=float)
+    for j in range(A_.shape[1]):
+        R[:, j] = sstats.rankdata(A_[:, j])
+    return R
+
+
+def ic_bootstrap(X, Y, sess_of_trade, n_boot=800, seed=1):
+    """Spearman IC of every column of X against every column of Y, with a
+    CLUSTER BOOTSTRAP over sessions. Trades inside a session overlap in time and
+    are not independent; an ordinary Spearman p-value would be far too small."""
+    Xr, Yr = rankit(X), rankit(Y)
+    n, k = Xr.shape; q = Yr.shape[1]
+
+    def ic_of(rows):
+        A_ = Xr[rows]; B = Yr[rows]; m = len(rows)
+        sx = A_.sum(0); sxx = (A_ * A_).sum(0)
+        sy = B.sum(0);  syy = (B * B).sum(0)
+        sxy = A_.T @ B
+        cov = sxy / m - np.outer(sx / m, sy / m)
+        vx = sxx / m - (sx / m) ** 2; vy = syy / m - (sy / m) ** 2
+        return cov / (np.sqrt(np.outer(vx, vy)) + 1e-12)
+
+    point = ic_of(np.arange(n))
+    us = np.unique(sess_of_trade)
+    groups = [np.where(sess_of_trade == s)[0] for s in us]
+    rng = np.random.default_rng(seed)
+    boots = np.empty((n_boot, k, q))
+    for b in range(n_boot):
+        pick = rng.integers(0, len(groups), size=len(groups))
+        rows = np.concatenate([groups[i] for i in pick])
+        boots[b] = ic_of(rows)
+    se = boots.std(0, ddof=1)
+    z = point / (se + 1e-12)
+    p = 2 * (1 - sstats.norm.cdf(np.abs(z)))
+    return point, se, z, p, boots
+
+
+def bh(pvals, q=0.10):
+    """Benjamini-Hochberg. Returns boolean reject vector and the critical p."""
+    p = np.asarray(pvals, float).ravel()
+    m = len(p); order = np.argsort(p); ranked = p[order]
+    thresh = q * (np.arange(1, m + 1) / m)
+    ok = ranked <= thresh
+    if not ok.any():
+        return np.zeros(m, bool), 0.0
+    kmax = np.where(ok)[0].max()
+    crit = ranked[kmax]
+    rej = np.zeros(m, bool); rej[order[: kmax + 1]] = True
+    return rej, float(crit)
+
+
+def trade_population(sym, n_entry=N_ENTRY, one_per_session=False):
+    df, w, r = lab.research(sym)
+    idx, side, a = lab.signals(df, n_entry=n_entry, win=WIN)
+    tr = lab.book(sym, idx, side, stop_mult=SM, targ_mult=TM, max_hold=MH,
+                  one_per_session=one_per_session)
+    keep = np.isin(tr.sig_bar.values, np.where(r)[0])
+    tr = tr[keep].reset_index(drop=True)
+    return df, w, r, tr
+
+
+def outcome_matrix(sym, df, w, tr):
+    """Six outcomes. O1 is the primary (the baseline geometry's net P&L)."""
+    sb = tr.sig_bar.values; sd = tr.side.values.astype(float)
+    a14 = atr(df, 14)
+    cols, names = [tr.net.values], ["net_1.5/2.0"]
+    for sm, tm in ((1.0, 1.5), (2.5, 2.5)):
+        idx = sb.copy()
+        t2 = lab.book(sym, idx, sd.astype(np.int64), stop_mult=sm, targ_mult=tm,
+                      max_hold=MH, one_per_session=False)
+        cols.append(t2.net.values); names.append(f"net_{sm}/{tm}")
+    fill = w["opens"][sb, 0]
+    for hh in (4, 8, 16):
+        fwd = w["closes"][sb, hh - 1]
+        cols.append(sd * (fwd - fill) / (a14[sb] + 1e-9)); names.append(f"fwdret_h{hh}")
+    return np.column_stack(cols), names
