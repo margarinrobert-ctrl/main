@@ -452,6 +452,98 @@ def timestop():
                   label=f"n20 {nm} hold {k}", n_draws=400)
         print()
 
+
+# ------------------------------------------------------------------- stage 4
+def trailing():
+    """H4: a fixed target truncates the right tail.  If the break carries trend
+    information, a TRAILING exit that lets the tail run should show positive
+    excess where the fixed target does not.  Two trails, both causal (the level
+    on bar k was fixed by bars <= k-1), both ratcheting (never loosen):
+      chandelier : stop = running favourable extreme -/+ p * ATR(14 at entry)
+      donchian   : stop = the L-bar opposite channel, excluding the current bar
+    Control uses the IDENTICAL trail."""
+    print("\n" + "=" * 100)
+    print("STAGE 4a  ATR CHANDELIER TRAIL   init stop 1.5 ATR, NO target, hold 16, flat 660")
+    for ne in (10, 20, 40):
+        idx, side = triggers("NAS", ne)
+        for tp in (1.0, 1.5, 2.0, 2.5, 3.0, 4.0):
+            g, tr = gate2("NAS", idx, side,
+                          dict(stop_mult=1.5, targ_mult=0.0, max_hold=16,
+                               flat_tod=660, trail="chand", trail_p=tp),
+                          label=f"n{ne} chandelier {tp} ATR", n_draws=250)
+            if ne == 20:
+                rsplit(tr, f"n20 chand {tp}")
+        print()
+    print("  chandelier WITH a 3.0 ATR target (cap the tail as well), n=20")
+    idx, side = triggers("NAS", 20)
+    for tp in (1.0, 1.5, 2.0, 2.5, 3.0, 4.0):
+        gate2("NAS", idx, side, dict(stop_mult=1.5, targ_mult=3.0, max_hold=16,
+                                     flat_tod=660, trail="chand", trail_p=tp),
+              label=f"n20 chandelier {tp} + targ 3.0", n_draws=250)
+
+    print("\n" + "=" * 100)
+    print("STAGE 4b  DONCHIAN EXIT CHANNEL   exit a long on the L-bar low")
+    for ne in (10, 20, 40):
+        idx, side = triggers("NAS", ne)
+        for L in (2, 3, 5, 8, 10, 14, 20):
+            g, tr = gate2("NAS", idx, side,
+                          dict(stop_mult=1.5, targ_mult=0.0, max_hold=16,
+                               flat_tod=660, trail="donch", trail_p=L),
+                          label=f"n{ne} donch exit L={L} (+1.5 ATR init stop)", n_draws=250)
+            if ne == 20:
+                rsplit(tr, f"n20 donchL{L}")
+        print()
+    print("  pure channel exit, NO initial ATR stop, n=20")
+    idx, side = triggers("NAS", 20)
+    for L in (2, 3, 5, 8, 10, 14, 20):
+        gate2("NAS", idx, side, dict(stop_mult=999.0, targ_mult=0.0, max_hold=16,
+                                     flat_tod=660, trail="donch", trail_p=L),
+              label=f"n20 pure donch exit L={L}", n_draws=250)
+
+
+# ------------------------------------------------------------------- stage 5
+def bepart():
+    """H5a: a breakeven stop removes the give-back on trades that go your way and
+    then fail.  It can only help if the break's winners rarely retrace through
+    entry -- i.e. if the signal has an immediacy property the control lacks.
+    H5b: a partial at t1 with the rest running to t2 raises the win rate; it
+    raises EXCESS only if the near target is hit more often after a break than
+    after a random entry at the same minute."""
+    print("\n" + "=" * 100)
+    print("STAGE 5a  BREAKEVEN STOP   geometry 1.5 / 2.0, stop -> entry once fav >= b ATR")
+    for ne in (10, 20, 40):
+        idx, side = triggers("NAS", ne)
+        for b in (0.25, 0.5, 0.75, 1.0, 1.5, 2.0):
+            gate2("NAS", idx, side, dict(stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                                         flat_tod=660, be_trig=b, be_off=0.0),
+                  label=f"n{ne} breakeven at {b} ATR", n_draws=250)
+        print()
+    print("  breakeven with a +0.25 ATR profit lock instead of exact entry, n=20")
+    idx, side = triggers("NAS", 20)
+    for b in (0.5, 0.75, 1.0, 1.5):
+        gate2("NAS", idx, side, dict(stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                                     flat_tod=660, be_trig=b, be_off=0.25),
+              label=f"n20 BE+0.25 at {b} ATR", n_draws=250)
+
+    print("\n" + "=" * 100)
+    print("STAGE 5b  PARTIAL TARGET   half off at t1, remainder to 3.0 ATR, stop 1.5")
+    idx, side = triggers("NAS", 20)
+    for pb in (False, True):
+        for t1 in (0.5, 0.75, 1.0, 1.5, 2.0):
+            g, tr = gate2("NAS", idx, side,
+                          dict(stop_mult=1.5, targ_mult=3.0, max_hold=16, flat_tod=660,
+                               part_frac=0.5, part_targ=t1, part_be=pb, be_off=0.0),
+                          label=f"n20 half at {t1} ATR, rest->3.0, BE={pb}", n_draws=250)
+        print()
+    print("  best partial shape carried to the other two lookbacks")
+    for ne in (10, 40):
+        idx, side = triggers("NAS", ne)
+        for t1 in (1.0, 1.5):
+            gate2("NAS", idx, side,
+                  dict(stop_mult=1.5, targ_mult=3.0, max_hold=16, flat_tod=660,
+                       part_frac=0.5, part_targ=t1, part_be=True),
+                  label=f"n{ne} half at {t1} ATR, rest->3.0, BE=True", n_draws=250)
+
 # ================================================================ MAIN
 if __name__ == "__main__":
     t0 = time.time()

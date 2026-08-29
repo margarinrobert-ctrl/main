@@ -146,8 +146,8 @@ def build_features(df):
     C["dch_mid_slope20"]  = (mid20 - S(mid20).shift(20).values) / (a14 + eps)
     PR["dch_edge_slope"]  = ((hi20 - S(hi20).shift(10).values) / (a14 + eps),
                              -(lo20 - S(lo20).shift(10).values) / (a14 + eps))
-    PR["dch_opp_slope"]   = (-(lo20 - S(lo20).shift(10).values) / (a14 + eps) * -1.0,
-                             (hi20 - S(hi20).shift(10).values) / (a14 + eps) * -1.0)
+    PR["dch_opp_slope"]   = ((lo20 - S(lo20).shift(10).values) / (a14 + eps),
+                             -(hi20 - S(hi20).shift(10).values) / (a14 + eps))
     # breakout DISTANCE beyond the channel, in ATR
     PR["dch_break_close"] = ((c - hi20) / (a14 + eps), (lo20 - c) / (a14 + eps))
     PR["dch_break_ext"]   = ((h - hi20) / (a14 + eps), (lo20 - l) / (a14 + eps))
