@@ -1251,6 +1251,43 @@ is worth nothing. Order flow is made objective with NO new parameter, as the pol
 recent inversion, which is the source's own definition ("disrespects bearish PD arrays" IS a
 bullish inversion). See `docs/ib/STUDY_V37_IFVG_ORDERFLOW.md`.
 
+**113,400 DONCHIAN x ATR x LINREG-MA x MA CELLS, AND EVERY AXIS INVERTS.** 92.5% of the grid is
+profitable on research, so the top row is the max of ~105,000 profitable draws, and the
+research-to-locked PF correlation is **-0.036 Pearson / +0.002 Spearman**. Top-100 mean research PF
+**1.799 -> locked 0.978**. The best cell (30m Donchian 70/30, 2.5N, NO take profit, LRMA(50) both
+readings, MA(250) with lrma>ma) reads research PF **1.909** and locked **0.907**. On all four
+informative axes the setting research likes best is the one locked likes least, in exactly reversed
+order: don_e 90 res 1.272/lock 1.035 against 15 at 1.129/1.093; lr_len 80 1.229/1.041 against 30 at
+1.162/1.097; ma_read `lrma>ma` 1.250/1.061 against OFF at 1.140/1.072; stop 2.5N 1.250/1.056 against
+1.0N at 1.131/1.097. **NO TAKE PROFIT is 91% of the top 100 against a 20% population share** -- the
+ninth time, and the only axis whose research preference has ever held. Frozen and run on US30 and
+US100, which had NO part in the search, it shows the `STUDY_V12_DONCHIAN_3020` shape -- **fails on
+the market that chose it, holds on the ones that chose nothing** (US30 PF 1.324 over 551 trades,
+US100 1.332 over 621, and the pre-2023 slices containing 2018/COVID/the 2022 bear are the BEST cells
+at 1.364 and 1.386, 8 and 7 of 10 years positive). **AND 0 OF 8 CELLS CLEAR A MATCHED CONTROL
+(p 0.077-0.382) AND 0 OF 8 CLEAR A SELECTIVITY CONTROL (p 0.090-0.554)**: the rule earns 2-3x a
+random entry with the same geometry, consistently and in the right direction, and never at p<=0.05
+-- while a RANDOM FILTER keeping the same number of breakout bars matches the LRMA/MA stack in every
+cell. The exit geometry is the asset; the moving averages are not. A neighbourhood criterion
+(best mean PF over +/-1 on every ordered axis) beat the top row on every fresh-market cell, so it
+earns its keep. See `docs/ib/STUDY_V38_LINREG_GRID.md`.
+
+**A SECOND ENGINE ON IDENTICAL SIGNALS PAID 2.1x MORE.** The V38 winner re-run in vectorbt 1.1.0
+agrees on the SIGNAL SET (trade count ratio 0.92-0.94) and reports **+$256.25/trade against my
++$122.85** on US30 and +$67.37 against +$25.88 on US100. The entire gap is one convention: when a
+stop and a channel exit fall inside the SAME bar, this branch takes the stop and vectorbt does not.
+`STUDY_V10_LIMIT`'s lesson arriving through a different door -- any figure from a bar-level backtest
+whose stop and exit can fall in one bar is a statement about the convention, not the edge. Run the
+second engine as a TRANSCRIPTION check first (the count must match) and only then read the gap.
+
+**THREE FEEDS RESTORED 2026-08-29 AND VERIFIED.** `US30_LONG_15m` sha256 **matches the registry
+exactly** (24dcf2e1c7ba398f) so its bars are provably the studied copy; `US100_LONG_15m` matches on
+row count and is now hashed (c449dddfbc06a943); the RTF unwraps to exactly the recorded 48,937 rows
+and span, and its byte size is of the DERIVATIVE so rows+span are its identity, not bytes. All three
+clocks re-derived independently: mean bar range peaks at minute-of-day 570 = 09:30 New York on every
+one, with the ISO feed -- whose offset is STATED rather than derived -- agreeing, which is the
+positive control. Cross-market validation is no longer blocked.
+
 ## Tooling
 
 | module | what it does |
@@ -1322,6 +1359,9 @@ bullish inversion). See `docs/ib/STUDY_V37_IFVG_ORDERFLOW.md`.
 | `research/v36/run_grid.py`, `run_valid.py`, `run_filter.py`, `quartile_fix.py` | the 5,400-cell grid, the neighbourhood and validation reads, and the best-of-N correction |
 | `research/v37/ofa.py` | order flow as inversion polarity; age-bounded FVG/IFVG; HTF->1m mapping |
 | `research/v37/run_v37.py`, `run_tf.py` | the thread's IFVG model, its ablations, the zero-cost gate, entry-timeframe sweep |
+| `research/v38/v38grid.py` | the 113,400-cell grid: cached exit tensor, 756 signal sets x 75 geometries, position lock |
+| `research/v38/v38feeds.py` | the three restored feeds, clocks re-derived, per-instrument tick and point value |
+| `research/v38/run_v38.py`, `run_v38b.py`, `run_v38c.py`, `run_v38_vbt.py` | grid shape and marginals; three candidates and one locked read; the two controls; vectorbt as a second engine |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |

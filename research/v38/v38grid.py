@@ -142,12 +142,14 @@ def _lock(sig, xb, pnl, out_pnl, out_sig):
     return k
 
 
-def prep(tf):
+def prep(tf, d=None, pv=PV):
     """Bars plus every indicator any configuration can ask for, computed once."""
-    d = FB.bars(tf)
+    if d is None:
+        d = FB.bars(tf)
     o, h, l, c = d["o"], d["h"], d["l"], d["c"]
     atr = I.ema(I.true_range(h, l, c), 14)
-    P = dict(o=o, h=h, l=l, c=c, atr=atr, n=len(c),
+    P = dict(o=o, h=h, l=l, c=c, atr=atr, n=len(c), pv=float(pv),
+             ts=d["ts"],
              day=(pd.to_datetime(d["ts"]).normalize().astype("int64").to_numpy()))
     P["don_hi"] = {e: I.shift(I.rmax(h, e), 1) for e in DON_E}
     P["ex_lo"] = {x: I.shift(I.rmin(l, x), 1) for x in DON_X}
@@ -183,7 +185,8 @@ def masks(P):
 def tensor(P):
     """The exit tensor: one walk of the bars per (exit channel, stop, target)."""
     n = P["n"]
-    comm, ecpv, se = COMM * COST_MULT, EC * COST_MULT * PV, SE * COST_MULT
+    pv = P.get("pv", PV)
+    comm, ecpv, se = COMM * COST_MULT, EC * COST_MULT * pv, SE * COST_MULT
     out = {}
     for x in DON_X:
         el = P["ex_lo"][x]
@@ -193,7 +196,7 @@ def tensor(P):
                 pnl = np.zeros(n)
                 why = np.zeros(n, np.int64)
                 _walk(P["o"], P["h"], P["l"], P["c"], P["atr"], el, float(sn), float(tp),
-                      comm, ecpv, se, PV, MAX_HOLD, xb, pnl, why)
+                      comm, ecpv, se, pv, MAX_HOLD, xb, pnl, why)
                 out[(x, sn, tp)] = (xb, pnl, why)
     return out
 
