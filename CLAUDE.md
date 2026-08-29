@@ -1096,6 +1096,25 @@ nearest trials) lands within 0.1 of the point optimum everywhere and rescues not
 surrogate test before reading the top row of any future search.
 See `docs/ib/STUDY_V30_BAYES_OPT.md`.
 
+**THE MEAN OF EVERY RESULT ON THIS BRANCH IS +0.04 TO +0.08 R, AND NOT ONE ROW SEPARATES FROM IT.**
+34 declared configurations -- the shipped rule, its regime ladder, six geometry axes, the five
+rejected additions, four entry windows, the short mirror, the adaptive stop, four US30 rows -- each
+given a day-block BOOTSTRAP for the edge and a PERMUTATION for the path. Equal-weighted the mean is
++0.0830 R research and +0.0846 locked; trade-weighted +0.0704 -> +0.0440. Both bootstraps exclude
+zero. But **research-to-locked R correlation across the 32 shared rows is +0.215 Pearson / +0.088
+Spearman**, and **all four rows the bootstrap called significant on research fail on locked** -- the
+two STRONGEST of them (US30 base p 0.002, US30 CHOP<=40 p 0.007) INVERT to negative. Four passes
+against 1.6 expected by chance is barely above the null, and research significance ran the wrong
+way. The single row significant on locked failed research (p 0.215 -> 0.045), the WRONG SHAPE, for
+the fourth time here. **THE WEIGHTING DECIDES THE SIGN OF THE DECAY**: equal-weighted the mean does
+not decay at all (+0.0040) while trade-weighted it falls a third, entirely because US30 is 4 of 32
+rows and a third of the locked trades. And the permutation splits the blocks cleanly -- mean
+realised drawdown percentile **0.254 on research against 0.647 on locked** (share above the median
+0.12 vs 0.69), so the research paths were smoother than a reshuffle of their own trades and the
+locked paths rougher; locked MC p99 runs to **2.15x** the realised drawdown, which is the sizing
+number. The edge belongs to the FAMILY, not to any choice made inside it.
+See `docs/ib/STUDY_V31_MONTECARLO.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1151,6 +1170,7 @@ See `docs/ib/STUDY_V30_BAYES_OPT.md`.
 | `research/v24/v24ma.py` | 7 MA types x 9 pairs x 2 modes x CHOP: the lag table, drawdowns, and the no-MA baseline |
 | `research/v24/v24hma.py` | HMA CROSS cell by cell, and the lag-matched test that withdrew the type gradient |
 | `research/v25/v25lr.py` | the linreg 9/21 cross: 484 cells, value/slope/forecast readings, R^2 gate, controls |
+| `research/v31/v31mc.py` | **the two Monte Carlos** — day-block bootstrap for the edge, permutation for the path, over all 34 declared configurations |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
