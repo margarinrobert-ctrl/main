@@ -56,6 +56,8 @@ sys.path.insert(0, "research")
 import indicators as I        # noqa: E402
 import intrabar as IB         # noqa: E402
 import limit_entry as LE      # noqa: E402
+sys.path.insert(0, "research/v34")
+import v34one as O           # noqa: E402
 
 COST_MULT = 1.44              # the real MNQ stack; the module ships broker-only
 STOP_MULT = 2.0
@@ -109,8 +111,15 @@ def signals(kind, tf, side, intraday=True):
     return np.flatnonzero(m).astype(np.int64), mod
 
 
-def run_limit(tf, trig, side, depth, through=0.0, cost=COST_MULT, intraday=True):
-    pnl, sb, xb, why, nfill, ntry = LE.run_1m(
+def run_limit(tf, trig, side, depth, through=0.0, cost=COST_MULT, intraday=True, one=True):
+    """`one=True` uses the CORRECTED walker, in which a resting order holds the lock until it
+    fills or expires. `limit_entry._walk_limit` releases the lock only on EXIT, so an unfilled
+    resting order blocks nothing and the backtest holds a BOOK of simultaneous orders -- a mean of
+    2.45 at expiry 2 and 15.9 at expiry 18 (`order_audit.py`). A script holds one. Everything V34
+    reports is scored with `one=True`; `one=False` exists only to measure the artifact."""
+    fn = O.run_1m_one if one else LE.run_1m
+    kw = {} if one else dict(lim_atr_n=5)
+    pnl, sb, xb, why, nfill, ntry = fn(
         tf, trig, side=side, lim_mult=depth, lim_atr_n=5, stop_mult=STOP_MULT, tp_r=TP_R,
         flat_min=FLAT_MIN if intraday else 0, expiry=EXPIRY,
         cancel_mod=CANCEL_MOD if intraday else 0, cost_mult=cost, entry_ec_mult=1.0,

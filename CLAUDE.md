@@ -1159,6 +1159,31 @@ at 60m, and counting a flat line as four passing rungs is how a score reaches 1.
 nothing. Grid shape before its top row: PF>1 on train in 62.1% (US30 long), 2.2% (US30 short), 72.5%
 (NQ long), 16.0% (NQ short). See `docs/ib/STUDY_V33_OPTIMIZER.md`.
 
+**`limit_entry._walk_limit` HOLDS A BOOK OF RESTING ORDERS WHERE A SCRIPT HOLDS ONE, AND THAT WAS
+THE WHOLE ENTRY-MECHANIC RESULT.** It assigns its position lock only on EXIT, so an order that is
+resting and UNFILLED blocks nothing and trigger i+1 places its own while i's is still live. Counted:
+on every-bar 5m signals a MEAN OF 2.45 orders are live at once with a maximum of 3 at `expiry=2`,
+rising to a mean of 15.9 and a maximum of 19 at `expiry=18`, with more than one live **97.7%** of the
+time. **THE SIGNATURE IS A RISING EDGE ON AN AXIS WHERE THE FILL RATE IS FLAT**: lengthening the
+resting window leaves the fill rate at 0.139 from expiry 6 through 18 while $/signal climbs
+-0.505 -> +0.228 -> +0.895 -> +1.400 -> +1.759 -> +2.115. Extra profit with no extra fills is the
+engine choosing among orders it should not have had. The fix is ONE LINE -- an unfilled order holds
+the lock until it expires -- and it deletes the effect: everybar 5m goes -0.022/+0.481/+0.748 to
+**-0.127/-0.130/-0.192** at expiry 2/6/12, donch 5m +0.854/+2.285/+2.942 to **+0.335/+0.235/+0.019**,
+and the monotone rise with resting time VANISHES. Trade count keeps 0.75-0.97, falling fastest where
+concurrency was highest -- the same tell as `STUDY_V15_BOOK`. **THIS CORRECTS A MODULE THE BRANCH HAS
+PUBLISHED FROM**: any figure in `STUDY_V10_LIMIT` or `STUDY_LIMIT_ENTRY` that let an order rest more
+than a bar is inflated the same way, and `research/atme/`'s headline (+0.24 to +0.43 R/trade,
+monotone in depth) is EXACTLY the shape this artifact produces and must be re-measured under a
+one-order policy before it is relied on. On the corrected engine the pre-registered test fails on
+every hypothesis: limit beats market in **17 of 32 cells on research (53%, chance is 50%)** and 18 of
+32 on locked with a mean of **-0.515 $/signal**, depth is not monotone, research long **+0.351**
+against short **-0.212** so it is drift not a mechanic, and research-to-locked Spearman is **+0.139**.
+Score PER SIGNAL, never per trade: fills run 4-30%, and `donch 15m` long at depth 1.00 reads
+**+$41.56 per trade** and **+$5.08 per signal**. `research/v34/v34one.py` is the corrected walker;
+`limit_entry.py` is left untouched so earlier results stay reproducible.
+See `docs/ib/STUDY_V34_MECHANIC.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1220,6 +1245,9 @@ nothing. Grid shape before its top row: PF>1 on train in 62.1% (US30 long), 2.2%
 | `research/v33/v33core.py` | the strategy spec, its parameter classification, a cached engine and the multi-objective score |
 | `research/v33/v33opt.py`, `run_grid.py`, `rescore.py` | the 207,360-cell grid on TRAIN, neighbourhood robustness, one read of VALID |
 | `research/v33/v33robust.py`, `run_final.py`, `dsr_sweep.py` | perturbation, regimes, walk-forward, MC, cost stress, deflated Sharpe as a curve, and the ONE OOS read |
+| `research/v34/v34one.py` | **the corrected limit walker** — one live resting order, which is what a script can place |
+| `research/v34/order_audit.py` | counts simultaneous resting orders directly, rather than arguing about them from the source |
+| `research/v34/v34mech.py`, `run_v34.py`, `expiry_cal.py` | the five pre-registered hypotheses, 32 declared cells, per-SIGNAL accounting |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
