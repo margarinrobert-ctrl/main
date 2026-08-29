@@ -162,6 +162,84 @@ stop gives back more than the fill gained. Best cell still loses 0.78 pts/trade.
   against a next-open control and produced an untrustworthy `excess` column. The
   paired design replaced it.
 
+
+## 8. What the agent fleet found
+
+Nine specialist quants were dispatched over the research block, each with stated
+hypotheses and the matched control as a gate. Four have reported: **1,331
+configurations**, 43 hypothesis families killed.
+
+### The convergence
+
+Three agents, starting from different hypotheses and sharing no code path,
+arrived at the same mechanism — **break magnitude**:
+
+| agent | its framing | result |
+| --- | --- | --- |
+| Donchian discovery | `buffer_atr`: close must exceed the channel by k·ATR | plateau, 28/28 cells positive |
+| Volatility | ATR-normalised break distance `thru > 1.0` | *"the cleanest shape in the study"* |
+| Breakout statistics | normalised thrust, median split | exc +2.93, p=0.005; US30 +4.3 |
+
+The volatility agent measured the overlap itself: **70% Jaccard** with the
+Donchian agent's book. So three agents produced *two* findings, not four —
+break magnitude, and pre-window trend state (ADX@07:00).
+
+### The decisive measurement
+
+The breakout statistics agent measured the population rather than searching it,
+and produced the sentence that contains the whole study:
+
+> At the traded 1.5 stop / 2.0 target the break wins **43.1%** against a **40.1%**
+> control with breakeven at **42.9%** — it clears its own geometry by 0.3 points
+> and its cost by nothing.
+
+The break *is* informative. In a symmetric k·ATR race it beats a matched control
+at every width from 1.0 ATR up, peaking at 51.1% vs 47.7% (z=+3.72), and a
+session-block bootstrap that prices in ~3 triggers/session gives **+3.39% ± 1.06%,
+p=0.0025**. At tight barriers it is *worse* than random (23.7% vs 25.0% at 0.25 ATR).
+A 108-cell geometry surface gives a maximum gross excess of **+0.085R**.
+
+So: real information, roughly an order of magnitude below the cost floor.
+
+### Killed by the fleet
+
+EMA structure · EMA slope · higher-timeframe trend · session-anchored channels ·
+channel compression · close-position-in-bar · range compression · ATR percentile
+regime · overnight range · intraday range spent · the false breakout (26.2/37.6/56.2%
+re-entry vs 25.5/36.6/56.5% distance-matched) · strong-close confirmation
+(monotonically *worse*) · **momentum without the channel** (−0.21, which rules out
+reading rule D as a momentum filter in Donchian clothing).
+
+### Two corrections the fleet forced on me
+
+1. **The episode check.** The volatility agent killed its own ATR-regime finding —
+   *"this is the finding I most wanted to be real"* — by showing the damage was
+   59% concentrated in five months. I had made a similar claim without that check.
+   Running it on my numbers showed I had overstated the effect ~3× (74–77% of the
+   damage in five crisis months).
+2. **Rule C dropped.** That correction removed the justification for the low-ATR
+   leg of my sharpened rule. Under a criterion fixed before looking, C failed and
+   was dropped, leaving the simpler rule B.
+
+## 9. The frozen rule set
+
+| rule | definition |
+| --- | --- |
+| **A** | Donchian(20) breakout, stop 1.5 ATR, target 2.0 ATR, 07:00–11:00 NY, one trade/session |
+| **B** | A, gated on ADX(14)@07:00 > 30 |
+| **D** | A, requiring close to exceed the channel by 1.0 × ATR14 |
+
+Frozen in `reveal.py` before the locked block is opened. **6 pre-registered
+comparisons** (3 rules × 2 instruments), threshold **p < 0.0083**.
+
+Declared research multiplicity: **1,485**. That correction applies to the
+research p-values, which selected these rules — *not* to the holdout, which is
+pre-registered. Applying it twice would double-count the search.
+
+Rule D is the only configuration in the study with positive post-cost expectancy
+on research (+0.858 pts/trade, excess +3.33, p=0.0075), and was reproduced
+independently from its written description alone, agreeing to machine precision.
+
 ## Files
 
 | file | role |
