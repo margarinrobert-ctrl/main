@@ -9,6 +9,9 @@ THE FOUR FAMILIES, declared before anything is fitted:
 
   VOLUME LEVEL   how much participation, relative to this bar's own recent history and to its own
                  TIME OF DAY -- an expanding per-minute baseline, shifted, so no bar sees itself.
+                 Prefixed `vlm.` and NOT `vol.`, because `v22vol.build` already owns `vol.` for
+                 the 71 VOLATILITY columns and a shared prefix makes a family-importance table
+                 read the wrong answer.
 
   ABSORPTION     effort without result: large volume, small range. The classic reading is that
                  size is being taken without price moving, so a limit seller is absorbing.
@@ -89,32 +92,32 @@ def build(o, h, l, c, v, mod, atr=None):
 
     # ---- VOLUME LEVEL -------------------------------------------------------------------------
     for n in (20, 50, 250):
-        F[f"vol.rel{n}"] = v / np.maximum(pd.Series(v).rolling(n).median().to_numpy(), EPS)
-        F[f"vol.z{n}"] = _z(lv, n)
-    F["vol.pct250"] = _pct(v, 250)
+        F[f"vlm.rel{n}"] = v / np.maximum(pd.Series(v).rolling(n).median().to_numpy(), EPS)
+        F[f"vlm.z{n}"] = _z(lv, n)
+    F["vlm.pct250"] = _pct(v, 250)
     tod = _tod_baseline(v, mod)
-    F["vol.tod"] = v / np.maximum(tod, EPS)
-    F["vol.tod_z"] = _z(v / np.maximum(tod, EPS), 250)
-    F["vol.trend20"] = (pd.Series(v).rolling(5).mean()
+    F["vlm.tod"] = v / np.maximum(tod, EPS)
+    F["vlm.tod_z"] = _z(v / np.maximum(tod, EPS), 250)
+    F["vlm.trend20"] = (pd.Series(v).rolling(5).mean()
                         / np.maximum(pd.Series(v).rolling(20).mean(), EPS)).to_numpy()
-    F["vol.dollar_z"] = _z(np.log(np.maximum(v * c, 1.0)), 250)
+    F["vlm.dollar_z"] = _z(np.log(np.maximum(v * c, 1.0)), 250)
 
     # ---- ABSORPTION: effort without result ----------------------------------------------------
-    eff = F["vol.rel50"] / np.maximum(rng_a, EPS)
+    eff = F["vlm.rel50"] / np.maximum(rng_a, EPS)
     F["abs.effort_result"] = eff
     F["abs.er_pct250"] = _pct(eff, 250)
     F["abs.er_sum3"] = pd.Series(eff).rolling(3).sum().to_numpy()
     F["abs.z_gap"] = _z(lv, 250) - _z(rng_a, 250)         # heavy volume, quiet range
-    F["abs.range_per_vol"] = rng_a / np.maximum(F["vol.rel50"], EPS)
-    F["abs.body_per_vol"] = (body * rng_a) / np.maximum(F["vol.rel50"], EPS)
+    F["abs.range_per_vol"] = rng_a / np.maximum(F["vlm.rel50"], EPS)
+    F["abs.body_per_vol"] = (body * rng_a) / np.maximum(F["vlm.rel50"], EPS)
     # volume on this bar against the volume that BUILT the channel it is breaking
     for n in (20, 55):
         F[f"abs.vs_chan{n}"] = v / np.maximum(
             I.shift(pd.Series(v).rolling(n).mean().to_numpy(), 1), EPS)
 
     # ---- EXHAUSTION: climax and rejection -----------------------------------------------------
-    F["exh.climax"] = F["vol.rel50"] * rng_a
-    F["exh.climax_pct"] = _pct(F["vol.rel50"] * rng_a, 250)
+    F["exh.climax"] = F["vlm.rel50"] * rng_a
+    F["exh.climax_pct"] = _pct(F["vlm.rel50"] * rng_a, 250)
     F["exh.upper_wick"] = (h - np.maximum(o, c)) / rng    # long: sellers rejected the high
     F["exh.lower_wick"] = (np.minimum(o, c) - l) / rng
     F["exh.close_pos"] = pos
@@ -129,7 +132,7 @@ def build(o, h, l, c, v, mod, atr=None):
         F[f"exh.vol_bias{n}"] = (up - dn) / np.maximum(up + dn, EPS)
         F[f"exh.run{n}"] = (c - I.shift(c, n)) / np.maximum(atr, EPS)
     # price extension against participation: extended AND unparticipated is exhaustion
-    F["exh.ext_per_vol"] = F["exh.run20"] / np.maximum(F["vol.rel50"], EPS)
+    F["exh.ext_per_vol"] = F["exh.run20"] / np.maximum(F["vlm.rel50"], EPS)
 
     # ---- ANOMALY ------------------------------------------------------------------------------
     zr, zg, zv = _z(ret, 250), _z(rng_a, 250), _z(lv, 250)
@@ -151,7 +154,7 @@ def build(o, h, l, c, v, mod, atr=None):
         (np.abs(np.nan_to_num(zr)) > 3.0).astype(float)).rolling(20).mean().to_numpy()
 
     # ---- FLOW PROXY (no bid/ask exists here -- this is a proxy and is named one) ---------------
-    delta = (2.0 * pos - 1.0) * F["vol.rel50"]
+    delta = (2.0 * pos - 1.0) * F["vlm.rel50"]
     F["flw.delta_proxy"] = delta
     for n in (10, 20, 50):
         F[f"flw.cum_delta{n}"] = pd.Series(delta).rolling(n).sum().to_numpy()
