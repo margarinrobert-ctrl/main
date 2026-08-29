@@ -151,13 +151,22 @@ def simulate(walk, idx, side, entry_px, stop_px, targ_px,
     reason = np.full(m, TIME_EXIT, dtype=np.int8)
     ar = np.arange(m)
 
-    # resolution order: forced flatten, then stop, then target; a bar holding
-    # both stop and target is booked as the LOSS.
-    ambig = (f_s == f_t) & any_t & any_s & (f_s <= f_d)
-    reason[(f_t <= f_s) & (f_t <= f_d) & any_t] = TARG_EXIT
-    reason[(f_s <= f_t) & (f_s <= f_d) & any_s] = STOP_EXIT
-    reason[(f_d < f_s) & (f_d < f_t) & any_d] = FLAT_EXIT
-    reason[ambig] = STOP_EXIT
+    # Resolution priority AT THE FIRST DECIDING BAR, matching a bar-by-bar loop:
+    #   1. forced flatten  - a bar at/after flat_tod, or in a new session, is a
+    #      bar we are already out of. We exit at its OPEN and never see its range.
+    #      This must win TIES: resolving a stop or target on such a bar would use
+    #      price action after the position was closed.
+    #   2. stop            - a bar holding both stop and target is booked as the
+    #      LOSS, since the intrabar path is unknown.
+    #   3. target
+    #   4. otherwise the time stop at max_hold.
+    is_d = any_d & (f_d == first)
+    is_s = any_s & (f_s == first) & ~is_d
+    is_t = any_t & (f_t == first) & ~is_d & ~is_s
+    ambig = (f_s == f_t) & any_t & any_s & is_s
+    reason[is_t] = TARG_EXIT
+    reason[is_s] = STOP_EXIT
+    reason[is_d] = FLAT_EXIT
 
     exit_px = np.empty(m)
     r_t = reason == TARG_EXIT; r_s = reason == STOP_EXIT
