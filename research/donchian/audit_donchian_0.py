@@ -1123,3 +1123,25 @@ def secO():
     j = pd.concat([g1.pct_change(), g2.pct_change()], axis=1).dropna()
     print(f"  daily return correlation NAS vs US30 over the research block = "
           f"{j.corr().iloc[0,1]:.3f}")
+
+
+# ============================================================== SECTION Z
+def secZ():
+    """Z. VERDICT ARITHMETIC."""
+    print("=" * 100)
+    print("Z. VERDICT ARITHMETIC")
+    print("=" * 100)
+    p = 0.0115
+    print(f"  claimed research p (matched control) = {p}")
+    print("  Bonferroni-survivable multiplicity for this p:")
+    for k in (1, 2, 4, 5, 8, 20, 56, 302):
+        thr = 0.05 / k
+        print(f"    k={k:>4}  threshold={thr:.5f}  ->  {'PASS' if p < thr else 'FAIL'}")
+    print(f"  the largest search budget this p could survive is k={int(np.floor(0.05/p))}."
+          f"  The stated budget is 302.")
+    print("\n  the strongest test the candidate PASSES (random filter of matched")
+    print("  selectivity, 20,000 draws): p=0.00190  ->  x302 = 0.574  FAIL")
+    print("\n  Monte-Carlo resolution: the published control used 200-300 draws, so the")
+    print("  smallest p it can report is 1/300 = 0.0033 - 20x coarser than the")
+    print("  Bonferroni threshold of 1.66e-04.  The test as run cannot clear the bar")
+    print("  even in principle.")

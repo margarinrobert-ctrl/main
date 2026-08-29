@@ -287,7 +287,7 @@ def part_E():
         "   *** INSIDE THE LOCKED PERIOD. IT IS USED ONLY TO CHECK THAT THE ENGINE\n"
         "   *** AND THE FEED BEHAVE THE SAME WAY. NOTHING IS SELECTED ON IT.")
     dr, wr_, rr = lab.research("US30RTF")
-    d2, w2, r2, h2 = lab.bars("US30RTF")
+    d2 = lab.bars("US30RTF")[0]          # bars only; the holdout mask is never unpacked
     full = np.ones(len(d2), dtype=bool)
     print(f"  {len(d2):,} bars, {d2.sess.max()+1:,} sessions, "
           f"{d2.ts.min().date()} -> {d2.ts.max().date()}")
