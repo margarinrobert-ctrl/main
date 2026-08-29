@@ -124,6 +124,59 @@ def _walk(o, h, l, c, atr, ex_lo, stop_n, tp_r, comm, ecpv, se, pv, max_hold, xb
 
 
 @njit(cache=True)
+def _walk_flat(o, h, l, c, mod, atr, ex_lo, stop_n, tp_r, flat_mod,
+               comm, ecpv, se, pv, max_hold, xb, pnl, why):
+    """As `_walk`, plus a HARD FLATTEN at a minute of day.
+
+    The flatten fills at the CLOSE of the bar whose minute reaches the cutoff. A Pine script cannot
+    do that -- `strategy.close_all()` fills at the NEXT bar's open -- so `flat_open` below is what
+    the shipped script actually gets, and it is the number reported. This engine matches the
+    script rather than the other way round (`CLAUDE.md`)."""
+    n = len(c)
+    for i in range(n - 2):
+        xb[i] = -1
+        a = atr[i]
+        if not np.isfinite(a) or a <= 0.0:
+            continue
+        f = i + 1
+        px = o[f]
+        st = px - stop_n * a
+        risk = px - st
+        if risk <= 0.0:
+            continue
+        tg = px + tp_r * risk if tp_r > 0.0 else 1.0e18
+        j = f
+        last = min(f + max_hold, n - 1)
+        w = 0
+        xp = 0.0
+        while j <= last:
+            if l[j] <= st:
+                xp = (o[j] if o[j] < st else st) - se
+                w = 1
+                break
+            if h[j] >= tg:
+                xp = o[j] if o[j] > tg else tg
+                w = 2
+                break
+            if flat_mod > 0 and mod[j] >= flat_mod:
+                xp = o[j]                      # the NEXT open, which is what a script gets
+                w = 3
+                break
+            if j > f and np.isfinite(ex_lo[j]) and c[j] < ex_lo[j]:
+                xp = c[j]
+                w = 4
+                break
+            j += 1
+        if w == 0:
+            j = last
+            xp = c[j]
+            w = 5
+        xb[i] = j
+        why[i] = w
+        pnl[i] = (xp - px) * pv - comm - 2.0 * ecpv
+
+
+@njit(cache=True)
 def _lock(sig, xb, pnl, out_pnl, out_sig):
     """One position at a time. A signal inside a live trade is skipped, not queued."""
     k = 0
@@ -215,3 +268,18 @@ def score(pnl, days, all_days):
                 net=float(pnl.sum()), win=float((pnl > 0).mean()), dd=dd,
                 retdd=float(pnl.sum() / dd) if dd > 0 else np.nan,
                 sharpe=float(dz.mean() / sd * np.sqrt(252)) if sd > 0 else np.nan)
+
+
+def tensor_stop(P, exit_n, stop_n, tp_r, flat_mod=0):
+    """One geometry, with an optional hard flatten at a minute of day."""
+    n = P["n"]
+    pv = P.get("pv", PV)
+    comm, ecpv, se = COMM * COST_MULT, EC * COST_MULT * pv, SE * COST_MULT
+    el = I.shift(I.rmin(P["l"], exit_n), 1)
+    xb = np.full(n, -1, np.int64)
+    pnl = np.zeros(n)
+    why = np.zeros(n, np.int64)
+    _walk_flat(P["o"], P["h"], P["l"], P["c"], P["mod"].astype(np.int64), P["atr"], el,
+               float(stop_n), float(tp_r), int(flat_mod),
+               comm, ecpv, se, pv, MAX_HOLD, xb, pnl, why)
+    return xb, pnl, why

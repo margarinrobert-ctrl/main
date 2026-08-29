@@ -1310,6 +1310,38 @@ markets (-0.516 / -0.036 / -0.205). **MC p99 drawdown is 1.7-2.2x the realised d
 cell** -- that is the sizing number and the most usable output here.
 See `docs/ib/STUDY_V39_RULE_MONTECARLO.md`.
 
+**A MOVING AVERAGE IS PRICED BY ITS DISTANCE, AND THAT IS THE ONLY FILTER OF SEVENTEEN THAT
+EARNED A PLACE.** Donchian 40/25 long, MA(200) support, 07:00-11:00 NY with an 11:00 flatten, stop
+swept: the base LOSES at every stop from 1.0N to 3.5N (PF 0.75-0.90, curve flat-to-falling, 15m
+worse than 30m). 17 features in 8 declared concept families, each cut at two research quantiles and
+scored against a same-selectivity control: **3 of 34 cells clear p<=0.05 against 1.7 expected, and
+all three are the SAME family**. The survivor is `(close - MA200) / ATR`, top half of breakout bars,
+p **0.017** -- NOT "close above the MA200", which is the base condition and worth nothing alone.
+NQ research PF 0.903 -> 1.171 and locked 0.957 -> **1.208**. Restatement of `STUDY_KAMA_ENTRY` on a
+new base. CAVEATS THAT STAY ATTACHED: bootstrap P(mean<=0) **0.300** on both blocks at n=46 locked;
+realised locked drawdown $1,556 EXCEEDS the MC p99 of $1,457, so the path was unlucky and sizing
+must exceed what is visible; helps US100 (1.055 -> 1.328) and does not rescue US30 (0.708 -> 0.757).
+
+**A SESSION PREFERENCE DOES NOT TRANSFER, AND THIS TIME IT INVERTED THE OTHER WAY.** On the
+Donchian 40/25 base, 09:30-11:00 is the **WORST** of seven windows (research PF 0.713 / locked
+0.699, -$16.42 a trade) while 07:00-11:00 reads 0.903/0.957 and ALL HOURS WITH NO FLATTEN reads
+**1.366 / 1.140**. The branch's standing finding -- 07:00-09:00 worst, a 09:30 start rescues an
+intraday window -- is backwards here. The mechanism is the FLATTEN, not the start: a 40-bar entry
+channel with a 25-bar exit needs room, and a four-hour box truncates exactly the trades the channel
+exit exists to hold. The largest single improvement available to that strategy is switching the
+session off.
+
+**MEASURE FILTER CORRELATION ON THE SIGNAL BARS, AND PICK BY FAMILY BEFORE PICKING BY RHO.** A
+filter only ever acts on the bars the base fires on, and family-first ordering is what stops a set
+of picks that all pass a |rho| ceiling from being one idea (the recorded failure: five of six
+"independent" picks were all volatility level). Doing it that way found **two EXACT duplicates in
+this branch's own pool** -- `CHOP(14)` vs range efficiency at rho **1.0000**, because CHOP is
+100*log10(sumTR/range)/log10(14), a monotone transform of range/sumTR; and close-position vs
+upper-wick share at rho **1.0000**, because on an up bar one is the other minus one. Fourth time the
+pool has been caught duplicating. Collapsing is CONSERVATIVE, so nothing published changes -- but a
+drop-one test on a stack containing such a pair reports a filter contributing nothing when it was
+never a second filter. See `docs/ib/STUDY_V40_INDEPENDENT_FILTERS.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1385,6 +1417,7 @@ See `docs/ib/STUDY_V39_RULE_MONTECARLO.md`.
 | `research/v38/v38feeds.py` | the three restored feeds, clocks re-derived, per-instrument tick and point value |
 | `research/v38/run_v38.py`, `run_v38b.py`, `run_v38c.py`, `run_v38_vbt.py` | grid shape and marginals; three candidates and one locked read; the two controls; vectorbt as a second engine |
 | `research/v39/v39mc.py`, `run_v39.py` | **the per-rule Monte Carlo** — 40 indicator rules x 3 markets x 2 blocks, bootstrap for the edge, permutation for the path, same-selectivity control on every cell |
+| `research/v40/v40feat.py`, `run_v40.py` | 17 features in 8 declared families, signal-bar correlation, family-then-rho selection, the stop sweep and the window table |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
