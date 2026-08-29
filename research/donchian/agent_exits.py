@@ -544,6 +544,70 @@ def bepart():
                        part_frac=0.5, part_targ=t1, part_be=True),
                   label=f"n{ne} half at {t1} ATR, rest->3.0, BE=True", n_draws=250)
 
+
+# ------------------------------------------------------------------- stage 6
+def replicate():
+    """The only structure NAS showed is a hold-length shape: excess peaks near
+    3-4 bars and goes NEGATIVE for long holds.  Nothing reached p<0.05.  The
+    decisive test is not more NAS configs (that is mining the same block) but
+    whether the SHAPE repeats on an independent instrument.  US30, research
+    block only, same window, same geometry, its own costs (4.0 + 0.5)."""
+    print("\n" + "=" * 100)
+    print("STAGE 6a  US30 REPLICATION -- max_hold shape, stop 1.5 / targ 2.0, flat 660")
+    for ne in (10, 20, 40):
+        idx, side = triggers("US30", ne)
+        for mh in HOLDS:
+            gate2("US30", idx, side, dict(stop_mult=1.5, targ_mult=2.0,
+                                          max_hold=mh, flat_tod=660),
+                  label=f"US30 n{ne} maxhold {mh}", n_draws=250)
+        print()
+    print("  US30 pure time stop (no barriers), n=20 -- the directional test")
+    idx, side = triggers("US30", 20)
+    for k in (1, 2, 3, 4, 6, 8, 10, 12, 16):
+        gate2("US30", idx, side, dict(stop_mult=999.0, targ_mult=0.0,
+                                      max_hold=k, flat_tod=660),
+              label=f"US30 n20 hold {k}, no barriers", n_draws=400)
+
+
+def stability():
+    """Seed stability + a high-precision control on everything that reached
+    |z| > 0.9 on NAS.  A control p that moves with the seed is noise."""
+    print("\n" + "=" * 100)
+    print("STAGE 6b  SEED STABILITY   the five best-looking NAS configs, 5 seeds each")
+    cands = [
+        ("n20 maxhold 4",            20, dict(stop_mult=1.5, targ_mult=2.0, max_hold=4, flat_tod=660)),
+        ("n40 maxhold 4",            40, dict(stop_mult=1.5, targ_mult=2.0, max_hold=4, flat_tod=660)),
+        ("n20 s0.75 t3.0 hold 10",   20, dict(stop_mult=0.75, targ_mult=3.0, max_hold=10, flat_tod=660)),
+        ("n20 chandelier 2.0",       20, dict(stop_mult=1.5, targ_mult=0.0, max_hold=16, flat_tod=660,
+                                              trail="chand", trail_p=2.0)),
+        ("n20 s0.75 t3.0 hold 16",   20, dict(stop_mult=0.75, targ_mult=3.0, max_hold=16, flat_tod=660)),
+    ]
+    for nm, ne, cfg in cands:
+        idx, side = triggers("NAS", ne)
+        zs, ps = [], []
+        for sd in range(5):
+            g, _ = gate2("NAS", idx, side, cfg, label=f"{nm} seed{sd}", n_draws=500,
+                         seed=sd, quiet=True)
+            zs.append(g["z"]); ps.append(g["p"])
+        print(f"  {nm:<28} exc={g['excess']:+.2f}  z over 5 seeds "
+              f"[{min(zs):+.2f}, {max(zs):+.2f}]  p [{min(ps):.3f}, {max(ps):.3f}]")
+
+    print("\n" + "=" * 100)
+    print("STAGE 6c  HIGH-PRECISION CONTROL, 3000 draws")
+    for nm, ne, cfg in cands[:3]:
+        idx, side = triggers("NAS", ne)
+        gate2("NAS", idx, side, cfg, label=f"{nm} (3000 draws)", n_draws=3000, seed=7)
+    print("\n  and the strongest NEGATIVE result -- long holds after a break")
+    for ne, k in ((10, 12), (20, 12), (40, 16)):
+        idx, side = triggers("NAS", ne)
+        gate2("NAS", idx, side, dict(stop_mult=999.0, targ_mult=0.0, max_hold=k,
+                                     flat_tod=660),
+              label=f"NAS n{ne} hold {k} no barriers (3000 draws)", n_draws=3000, seed=7)
+    idx, side = triggers("US30", 20)
+    gate2("US30", idx, side, dict(stop_mult=999.0, targ_mult=0.0, max_hold=12,
+                                  flat_tod=660),
+          label="US30 n20 hold 12 no barriers (3000 draws)", n_draws=3000, seed=7)
+
 # ================================================================ MAIN
 if __name__ == "__main__":
     t0 = time.time()
