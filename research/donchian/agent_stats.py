@@ -7,10 +7,32 @@ only defensible baseline (a minute-of-day + side matched random entry).
 Everything below is RESEARCH BLOCK ONLY.  lab.reveal is never called.
 
 Sections (python3 agent_stats.py <sec> ...):
-  A  population census                     E  false-breakout profile
-  B  MFE / MAE distributions               F  signal-bar discriminators
-  C  follow-through (barrier win) curve    G  per-slot (16 x 15m) profile
-  D  survival / time-to-resolution         H  geometry surface + gates
+  A  population census                     H  geometry surface (excess R)
+  B  MFE / MAE distributions               I  first matched-control gates
+  C  follow-through (barrier win) curve    J  threshold neighbourhoods
+  D  survival / time-to-resolution         K  why R-edge != points-edge
+  E  false-breakout profile                L  robustness of the survivor
+  F  signal-bar discriminators             M  channel-vs-momentum + US30
+  G  per-slot (16 x 15m) profile           N  lookback grid + placebos
+                                           O  final shape, both instruments
+
+HEADLINE MEASUREMENTS
+  1. A Donchian break beats a tod+side matched control by +2 to +3.5 points of
+     BARRIER WIN RATE, but only once the barriers are >= ~1.0-1.25 ATR wide. At
+     0.25-0.5 ATR the break is WORSE than random. The whole information content
+     of the break is a wide-barrier effect.
+  2. That is +0.07R of gross expectancy. The round turn is 0.179R at the median
+     in-window ATR. The plain break can never pay for itself here.
+  3. A Donchian edge is NOT a support level: price closes back inside the channel
+     at 26.2% within 1 bar / 56.2% within 16, against 25.5% / 56.5% for a
+     DISTANCE-MATCHED random level. The "false breakout" is not a phenomenon.
+  4. The one signal-bar condition that separates the population is the break bar's
+     own normalised thrust, mom4 = (close[i]-close[i-4])*side/ATR14[i]. Above its
+     median the break has excess +1.95 pts/trade (p 0.0017); below it, -2.28
+     (p 0.998). It works by cutting the STOP rate 44.9% -> 35.4% at an unchanged
+     target rate, so it is a barrier effect and not a direction bet.
+  5. It is the CONJUNCTION that matters: the same thrust filter applied to every
+     in-window bar, with no channel, scores excess -0.21 to +0.88, all p > 0.09.
 """
 import sys, numpy as np, pandas as pd
 import lab

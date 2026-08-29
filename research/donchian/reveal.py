@@ -1,7 +1,8 @@
 """THE REVEAL - one pass over the locked block. Run exactly once.
 
-Frozen rule set: A (plain n=20 Donchian baseline) and B (A gated on ADX(14) at
-07:00 above 30). Rule C was dropped before the reveal - see NPRE below.
+Frozen rule set: A (plain n=20 Donchian baseline), B (A gated on ADX(14) at
+07:00 above 30) and D (A requiring the close to exceed the channel by 1.0 x
+ATR14). Rule C was dropped before the reveal - see NPRE below.
 
 Rules are FROZEN before this script is executed. Nothing here may be tuned,
 re-run with different parameters, or cherry-picked afterwards. The multiplicity
@@ -22,7 +23,7 @@ import lab
 
 # ------------------------------------------------------------- declared search
 MULTIPLICITY = {
-    "trend agent (ADX family, its own count)":            238,
+    "trend agent (final count)":                          244,
     "my ADX follow-ups (walkforward/fixed/us30/confound)": 58,
     "DSR trial universe":                                 160,
     "baseline lookback sweep":                              8,
@@ -30,10 +31,11 @@ MULTIPLICITY = {
     "predictability budget event studies":                170,
     "entry mechanic (paired + geometry)":                  25,
     "ML filter (model configs + thresholds)":              25,
-    "vol agent (its own count, partial)":                  42,
+    "vol agent (final count)":                            353,
+    "donchian agent (final count)":                       302,
 }
 K = sum(MULTIPLICITY.values())
-NPRE = 4   # pre-registered locked comparisons: 2 frozen rules x 2 instruments
+NPRE = 6   # pre-registered locked comparisons: 3 frozen rules x 2 instruments
 #   Rule C (ADX>30 AND low ATR percentile) was DROPPED before the reveal.
 #   Its low-ATR leg was justified by "high volatility hurts these breakouts",
 #   but that damage is 74-77% concentrated in five crisis months. Under a
@@ -79,6 +81,12 @@ def rules(sym):
     out["A baseline n=20"] = (idx[ok], side[ok], 1.5, 2.0)
     m = ok & (at7[idx] > 30)
     out["B ADX@07:00>30"] = (idx[m], side[m], 1.5, 2.0)
+    # D: displaced break - the channel must be exceeded by 1.0 x ATR14 at the
+    # signal bar. Found independently by the Donchian and volatility agents
+    # (70% Jaccard). buffer 0 IS rule A, so the grid carries its own null control.
+    idxD, sideD, _ = lab.signals(df, 20, buffer_atr=1.0)
+    okD = tod[idxD] > 420
+    out["D break > 1.0 ATR buffer"] = (idxD[okD], sideD[okD], 1.5, 2.0)
     return df, w, r, h, out
 
 if __name__ == "__main__":
