@@ -705,6 +705,66 @@ def stage_dissect(bk, FB, F):
                   f"  exp={bk.net[f][m].mean():>+8.2f}  contrib={bk.net[f][m].sum()/len(f):>+7.2f}")
 
 
+def stage_final(sym="NAS"):
+    """Final stress on the one surviving rule."""
+    print("\n" + "=" * 130)
+    print(f"STAGE 10  FINAL STRESS on {sym}: cost, session slice, threshold neighbourhood,")
+    print("  and the win rate against its own geometry's base rate.")
+    print("=" * 130)
+    global CFG
+    bk = Book(sym=sym)
+    FB, F = rule_arrays(bk)
+    base = np.ones(len(bk.idx), bool)
+    B = apply_rule(F, [("thru", ">", 1.0)])
+
+    print("\n  (a) COST STRESS - 1x and 2x the modelled round turn + slippage")
+    print(f"  {'rule':<24}{'cost':>7}{'n':>6}{'exp':>9}{'net':>10}{'pf':>7}{'wr':>7}")
+    for nm, keep in (("baseline", base), ("thru > 1.0", B)):
+        f = bk.first(keep)
+        for cm in (1.0, 2.0):
+            tr = lab.book(sym, bk.idx[f], bk.side[f], stop_mult=bk.stop, targ_mult=bk.targ,
+                          max_hold=bk.maxh, flat_tod=bk.flat, one_per_session=False,
+                          cost_mult=cm)
+            st = lab.stats(tr)
+            print(f"  {nm:<24}{cm:>7.0f}{st['n']:>6}{st['exp']:>+9.2f}{st['net']:>+10,.0f}"
+                  f"{st['pf']:>7.2f}{st['wr']:>7.1%}")
+
+    print("\n  (b) SESSION SLICE - is 'thru > 1.0' just 'trade after 09:30'?")
+    print("      Each slice is its own book with its own flatten time and its own")
+    print("      matched control, so the time-of-day is on both sides.")
+    print(f"  {'slice':<16}{'rule':<14}{'n':>6}{'exp':>9}{'ctrl':>9}{'exc':>8}{'z':>7}{'p':>8}{'pS':>7}")
+    for lbl, win in (("07:00-09:30", (420, 570)), ("09:30-11:00", (570, 660))):
+        b2 = Book(sym=sym, win=win, flat=win[1])
+        _, F2 = rule_arrays(b2)
+        for nm, spec in (("baseline", []), ("thru > 1.0", [("thru", ">", 1.0)])):
+            k2 = apply_rule(F2, spec) if spec else np.ones(len(b2.idx), bool)
+            real, ntr = b2.exp(k2)
+            if ntr < 50:
+                continue
+            CFG += 1
+            g, _ = lab.sig_gate(sym, b2.idx[k2], b2.side[k2], stop_mult=b2.stop,
+                                targ_mult=b2.targ, max_hold=b2.maxh, flat_tod=win[1],
+                                n_draws=600, quiet=True)
+            pS = perm_p(b2, k2, real, nrep=2000)[0]
+            print(f"  {lbl:<16}{nm:<14}{ntr:>6}{real:>+9.2f}{g['ctrl']:>+9.2f}"
+                  f"{g['excess']:>+8.2f}{g['z']:>+7.2f}{g['p']:>8.4f}{pS:>7.3f}")
+
+    print("\n  (c) HEADLINE, 1,500 control draws, with the control's OWN win rate")
+    print(f"  {'rule':<20}{'n':>6}{'exp':>9}{'ctrl':>9}{'exc':>8}{'z':>7}{'p':>8}"
+          f"{'wr':>7}{'ctrl wr':>9}{'pf':>7}{'hold':>6}")
+    for nm, keep in (("baseline", base), ("thru > 1.0", B)):
+        f = bk.first(keep)
+        tr = lab.book(sym, bk.idx[f], bk.side[f], stop_mult=bk.stop, targ_mult=bk.targ,
+                      max_hold=bk.maxh, flat_tod=bk.flat, one_per_session=False)
+        g = lab.gate(sym, tr, bk.stop, bk.targ, mask=bk.r, n_draws=1500,
+                     max_hold=bk.maxh, flat_tod=bk.flat, quiet=True)
+        cw = ctrl_wr(bk, tr, n_draws=600)
+        CFG += 1
+        print(f"  {nm:<20}{g['n']:>6}{g['exp']:>+9.2f}{g['ctrl']:>+9.2f}{g['excess']:>+8.2f}"
+              f"{g['z']:>+7.2f}{g['p']:>8.4f}{g['wr']:>7.1%}{cw:>9.1%}{g['pf']:>7.2f}"
+              f"{g['med_bars']:>6.1f}")
+
+
 def main(stage="all"):
     t0 = time.time()
     bk = Book()
@@ -727,6 +787,8 @@ def main(stage="all"):
                    title="V3 DECISIVE BREAK. keep only breaks whose bar travels far, in ATR")
         stage_cuts(bk, FB, F, CUTS_C, fam="C",
                    title="V5 OVERNIGHT SPEND. keep only sessions whose overnight range is small")
+    if stage in ("all", "10"):
+        stage_final("NAS"); stage_final("US30")
     if stage in ("all", "9"):
         stage_dissect(bk, FB, F)
     if stage in ("all", "6"):
