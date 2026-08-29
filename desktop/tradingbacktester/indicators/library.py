@@ -1528,5 +1528,12 @@ def register_all() -> IndicatorRegistry:
     return REGISTRY
 
 
+# The rest of the standard set. Imported HERE, at the very bottom, so that
+# `extended` can import this module's private helpers without a circular
+# import: by this line everything it needs is defined. It is deliberately not
+# imported by `register_all()` -- REQUIRED_KEYS must be checked against a
+# registry that is already complete.
+from . import extended as _extended            # noqa: E402,F401  (side effect)
+
 register_all()
 log.debug("indicator library registered %d indicators", len(REGISTRY.all()))

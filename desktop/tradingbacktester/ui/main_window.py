@@ -145,6 +145,9 @@ class MainWindow(QMainWindow):
         act("paste_strategy", "Paste a Strategy…", "import", "Ctrl+Shift+V",
             "Paste Pine Script or exported JSON, see exactly what could be "
             "translated, and run it", self.on_paste_strategy)
+        act("combine_strategies", "Combine Strategies…", "compare", "Ctrl+Shift+C",
+            "Merge two or more strategies into one: all must agree, any one "
+            "is enough, or a majority", self.on_combine_strategies)
         act("export_strategy", "Export Strategy…", "export", "",
             "Save the current strategy to a JSON file", self.on_export_strategy)
 
@@ -306,6 +309,7 @@ class MainWindow(QMainWindow):
             m.addAction(a)
         m.addSeparator()
         m.addAction(self.act_paste_strategy)
+        m.addAction(self.act_combine_strategies)
         m.addSeparator()
         m.addAction(self.act_import_strategy)
         m.addAction(self.act_export_strategy)
@@ -1436,6 +1440,17 @@ class MainWindow(QMainWindow):
         dialog = ImportStrategyDialog(self.strategies, self._view_bars, self)
         dialog.exec()
         # An import can save into the library, so the picker has to catch up.
+        self.strategy_panel.refresh(self.strategy_panel.current_strategy_id()
+                                    or None)
+        self._update_start_here()
+
+    def on_combine_strategies(self) -> None:
+        """Merge several strategies into one and, optionally, keep it."""
+        from .dialogs.combine_dialog import CombineStrategiesDialog
+
+        dialog = CombineStrategiesDialog(self.strategies, self._view_bars, self)
+        dialog.exec()
+        # Combining can save into the library, so the picker has to catch up.
         self.strategy_panel.refresh(self.strategy_panel.current_strategy_id()
                                     or None)
         self._update_start_here()

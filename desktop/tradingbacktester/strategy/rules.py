@@ -31,7 +31,7 @@ import numpy as np
 from ..core.errors import StrategyError
 from .expression import EvalContext, evaluate_operand
 from .spec import (Always, Compare, Condition, ConditionGroup, Cross,
-                   SessionWindow, State)
+                   SessionWindow, State, Vote)
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +69,8 @@ def evaluate_condition(cond: Condition | None, ctx: EvalContext) -> np.ndarray:
         return _session(cond, ctx)
     if isinstance(cond, Always):
         return np.full(n, bool(cond.value), dtype=bool)
+    if isinstance(cond, Vote):
+        return _vote(cond, ctx)
     raise StrategyError(
         f"'{type(cond).__name__}' is not a condition this application can evaluate.")
 
@@ -249,6 +251,36 @@ def _group(cond: ConditionGroup, ctx: EvalContext) -> np.ndarray:
             out = out & other
         else:
             out = out | other
+    return ~out if cond.negate else out
+
+
+def _vote(cond: Vote, ctx: EvalContext) -> np.ndarray:
+    """At least ``threshold`` of the children true, counted in one pass.
+
+    The children are summed as ``uint16`` rather than OR-ed, which is what
+    makes this different from a group: the count is the answer.  Each child is
+    evaluated exactly once, so a five-way vote costs five evaluations and not
+    the thirty an OR-of-ANDs expansion would.
+
+    ``NaN`` needs no special handling here because every child has already
+    masked itself to False wherever its inputs were undefined, and False
+    contributes zero to the count.  An unknown is therefore a withheld vote,
+    never a cast one -- which is the same rule the rest of this module follows.
+    """
+    children = [c for c in cond.children if c is not None]
+    threshold = int(cond.threshold)
+    if threshold <= 0:
+        out = np.ones(ctx.n, dtype=bool)
+    elif threshold > len(children):
+        # Unsatisfiable.  ``StrategySpec.validate`` rejects this, but a rule
+        # tree can be evaluated without being validated, and the honest answer
+        # to "at least 4 of 3" is that it never happens.
+        out = np.zeros(ctx.n, dtype=bool)
+    else:
+        count = np.zeros(ctx.n, dtype=np.uint16)
+        for child in children:
+            count += evaluate_condition(child, ctx).astype(np.uint16)
+        out = count >= threshold
     return ~out if cond.negate else out
 
 

@@ -229,6 +229,11 @@ class Condition:
                                  tuple(d.get("weekdays", (0, 1, 2, 3, 4))))
         if kind == "always":
             return Always(bool(d.get("value", True)))
+        if kind == "vote":
+            return Vote(int(d.get("threshold", 1)),
+                        [c for c in (Condition.from_dict(x)
+                                     for x in d.get("children", [])) if c],
+                        bool(d.get("negate", False)))
         raise StrategyError(f"'{kind}' is not a condition kind this application knows.")
 
 
@@ -367,8 +372,60 @@ class ConditionGroup(Condition):
         return out
 
 
+@dataclass
+class Vote(Condition):
+    """True on a bar where at least ``threshold`` of the children are true.
+
+    AND and OR are the two ends of a scale and this is the middle of it: "two
+    of these three agree".  It exists because there is no way to write that as
+    a :class:`ConditionGroup` without expanding it into an OR over every
+    combination of ``threshold`` children -- C(5,3) is ten AND groups holding
+    thirty copies of five conditions, which evaluates each child six times and
+    describes itself in a paragraph nobody can read.  Counting is one pass and
+    one sentence.
+
+    A child that is ``None`` is dropped rather than counted as false, but the
+    threshold is *not* lowered to match: :func:`combine.combine_strategies`
+    keys the threshold on how many strategies were combined, so a strategy
+    that has no rule for this direction correctly withholds its vote instead
+    of making the remaining ones easier to satisfy.
+    """
+
+    threshold: int = 1
+    children: list[Condition] = field(default_factory=list)
+    negate: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"kind": "vote", "threshold": int(self.threshold),
+                "children": [c.to_dict() for c in self.children],
+                "negate": self.negate}
+
+    def describe(self) -> str:
+        inner = ", ".join(
+            f"({c.describe()})" if isinstance(c, (ConditionGroup, Vote))
+            else c.describe()
+            for c in self.children)
+        head = f"at least {int(self.threshold)} of {len(self.children)}: {inner}"
+        return f"NOT ({head})" if self.negate else head
+
+    def referenced_indicators(self) -> set[str]:
+        out: set[str] = set()
+        for c in self.children:
+            out |= c.referenced_indicators()
+        return out
+
+
 def Group(op: str, children: Iterable[Condition], negate: bool = False) -> ConditionGroup:
     return ConditionGroup(op.upper(), list(children), negate)
+
+
+def walk_conditions(cond: "Condition | None"):
+    """Yield ``cond`` and every condition nested inside it, depth first."""
+    if cond is None:
+        return
+    yield cond
+    for child in getattr(cond, "children", ()) or ():
+        yield from walk_conditions(child)
 
 
 def _refs(op: Operand) -> set[str]:
@@ -534,6 +591,20 @@ class StrategySpec:
                 f"Indicator(s) {', '.join(sorted(unused))} are calculated and plotted "
                 f"but no rule uses them."
             )
+
+        for cond in (self.entry_long, self.entry_short,
+                     self.exit_long, self.exit_short):
+            for node in walk_conditions(cond):
+                if isinstance(node, Vote):
+                    if int(node.threshold) > len(node.children):
+                        raise StrategyError(
+                            f"A vote asks for {int(node.threshold)} of "
+                            f"{len(node.children)} conditions to hold, which "
+                            f"can never happen.")
+                    if int(node.threshold) <= 0:
+                        warnings.append(
+                            "A vote asks for at least 0 conditions to hold, "
+                            "so it is true on every bar.")
 
         if self.entry_long is None and self.entry_short is None:
             raise StrategyError("A strategy needs at least one entry rule.")

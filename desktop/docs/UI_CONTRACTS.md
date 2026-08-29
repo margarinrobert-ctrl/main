@@ -90,6 +90,65 @@ Provide a **Preview** button when `bars` is not None: compile the strategy and
 report the signal counts (`entry_long.sum()` etc.) so the user can see whether a
 rule fires at all before running.
 
+The rule tree also carries **Common rule**, **Duplicate**, **Up**, **Down** and
+`Delete` (scoped to the tree widget, so it cannot fire while a number in the
+panel beside it is being edited).
+
+*Common rule* opens `_PresetPicker` over `_PRESETS` and adds a whole rule in one
+step — its indicator slots, its threshold `ParamSpec`s and the condition over
+them. Every preset builds the *same objects* the tree builds by hand; there is
+no second rule format and nothing the editor cannot then take apart. Slot and
+parameter names go through `_PresetContext.unique` / `unique_param`, so applying
+a preset to a strategy that already uses `rsi` and `rsi_period` cannot collide,
+and an identical slot is reused rather than added twice. Thresholds are
+`ParamSpec`s with **explicit** bounds — the class defaults to `minimum=1`, which
+silently rejects an RSI level of 0 or a 0.5% volatility level at compile time.
+Each preset is tested to build a rule that validates, compiles and actually
+fires at its own defaults, in both directions where it has one.
+
+*Duplicate* deep-copies through `Condition.from_dict(node.to_dict())`: two tree
+items sharing one condition object look independent and then change together,
+and the strategy that gets saved is not the one on screen. *Up*/*Down* move a
+node within its own group only — moving a condition out of an OR and into the
+AND above it changes what the rule means, which is not something an arrow key
+should do. Both restore the selection to the node, not to the index.
+
+### `ui/dialogs/import_strategy_dialog.py` — `ImportStrategyDialog(store, bars, parent)`
+The line table is the main surface and the headline says *faithful* or *partial*
+in those words. A partial conversion cannot be backtested or saved from here.
+
+It can be **edited**: `Edit it…` opens `StrategyEditor` on a *copy* of the spec,
+after a `confirm` naming what did not translate, and saves only if the editor is
+accepted. Refusing to run a half-strategy is the rule; refusing to show one just
+makes the refusal useless.
+
+Pasted text is read automatically by a 350 ms single-shot `QTimer` restarted on
+`textChanged`; the auto-read never raises a modal, because a syntax error while
+someone is still typing is not an event worth interrupting them for. Any edit
+calls `_invalidate()`, which drops the report and disables Backtest, Save and
+Edit, so a result can never belong to text no longer on screen. `Paste from
+clipboard` replaces the box rather than appending. Selecting a row moves the
+source cursor to that line.
+
+### `ui/dialogs/combine_dialog.py` — `CombineStrategiesDialog(store, bars, parent)`
+Tick two or more saved or built-in strategies; entry mode, exit mode, vote
+threshold and the settings source are four controls, and the preview recomputes
+on every change (the merge touches no bars). The decisions panel is the bottom
+half of the window, not a disclosure: it lists the shared indicators, **every**
+settings conflict and which strategy's value won, and the notes. `Backtest it`
+runs the combination *and each of its parts* on the loaded bars, side by side,
+and says in as many words that beating them here is not evidence of beating them
+anywhere else.
+
+The vote box follows how many strategies are ticked until the user sets it by
+hand, tracked by a `_threshold_touched` flag set from a dedicated slot —
+`_sync_threshold` blocks signals, so anything reaching that slot is a real edit.
+Inferring it by comparing against the previous default does not work: the box
+starts at 1, which is a legitimate default for nothing. A hand-set vote is
+clamped down when strategies are unticked, never raised. `_sync_primary`
+preserves the settings source **by name**, so ticking a fourth strategy cannot
+silently move whose stop loss the result uses.
+
 ### `ui/dialogs/dataset_manager.py` — `DatasetManagerDialog(repository, parent)`
 Table of `DatasetMeta` (name, symbol, timeframe, bars, first, last, size, source).
 Rename, delete (with `confirm`), reveal the source file, and a Refresh that calls

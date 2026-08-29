@@ -18,6 +18,7 @@ import copy
 from typing import Any
 
 from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog,
                                QDoubleSpinBox, QFormLayout, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QListWidget,
@@ -31,10 +32,11 @@ from ...core.errors import BacktesterError, StrategyError
 from ...indicators.base import ParamSpec
 from ...indicators.registry import REGISTRY
 from ...logging_setup import get_logger
-from ...strategy.spec import (Always, Compare, ConditionGroup, ConstOperand,
-                              Cross, ExprOperand, IndicatorOperand,
-                              IndicatorSlot, ParamOperand, PriceOperand,
-                              SessionWindow, State, StrategySpec)
+from ...strategy.spec import (Always, Compare, Condition, ConditionGroup,
+                              ConstOperand, Cross, ExprOperand,
+                              IndicatorOperand, IndicatorSlot, ParamOperand,
+                              PriceOperand, SessionWindow, State,
+                              StrategySpec, Vote)
 from ..theme import PALETTE, Fonts
 from ..widgets.common import (Card, ask_text, confirm, hline, show_error,
                               show_info, show_warning)
@@ -288,10 +290,20 @@ class StrategyEditor(QDialog):
         top.addWidget(self.rule_box)
         top.addStretch(1)
         for text, ico, tip, slot in (
+                ("Common rule", "strategy",
+                 "Add a whole rule -- its indicators and its condition -- in "
+                 "one step", self._add_preset),
                 ("Condition", "plus", "Add a condition to the selected group",
                  self._add_condition),
                 ("Group", "layers", "Add a nested AND/OR group", self._add_group),
-                ("Remove", "trash", "Remove the selected node", self._remove_node)):
+                ("Duplicate", "copy", "Copy the selected node beside itself",
+                 self._duplicate_node),
+                ("Up", "arrow-up", "Move the selected node earlier",
+                 lambda: self._move_node(-1)),
+                ("Down", "arrow-down", "Move the selected node later",
+                 lambda: self._move_node(1)),
+                ("Remove", "trash", "Remove the selected node (Delete)",
+                 self._remove_node)):
             button = QPushButton(f"  {text}")
             button.setIcon(icon(ico, 15))
             button.setToolTip(tip)
@@ -303,6 +315,12 @@ class StrategyEditor(QDialog):
         splitter.setChildrenCollapsible(False)
 
         self.tree = QTreeWidget()
+        # Delete removes the selected node.  Scoped to the tree so pressing it
+        # while editing a number in the panel beside it does not delete the
+        # condition being edited.
+        remove_key = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.tree)
+        remove_key.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        remove_key.activated.connect(self._remove_node)
         self.tree.setHeaderLabels(["Rule"])
         self.tree.setFont(Fonts.numeric(9))
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -652,7 +670,7 @@ class StrategyEditor(QDialog):
         item.setData(0, Qt.ItemDataRole.UserRole, node)
         if parent is not None:
             parent.addChild(item)
-        if isinstance(node, ConditionGroup):
+        if isinstance(node, (ConditionGroup, Vote)):
             for child in node.children:
                 self._add_tree_item(item, child)
         return item
@@ -700,7 +718,7 @@ class StrategyEditor(QDialog):
             root_item = self.tree.topLevelItem(0)
             return self._current_root(), root_item
         node = item.data(0, Qt.ItemDataRole.UserRole)
-        if isinstance(node, ConditionGroup):
+        if isinstance(node, (ConditionGroup, Vote)):
             return node, item
         parent = item.parent()
         if parent is not None:
@@ -728,6 +746,93 @@ class StrategyEditor(QDialog):
         self.tree.setCurrentItem(child)
         self._refresh_english()
 
+    def _duplicate_node(self) -> None:
+        """Copy the selected node in beside itself.
+
+        A deep copy through the dictionary form, not a shared reference: two
+        tree items pointing at the same condition object look independent and
+        then change together, which is the worst kind of editor bug because
+        the strategy that gets saved is not the one on screen.
+        """
+        item = self.tree.currentItem()
+        if item is None or item.parent() is None:
+            show_info(self, "Duplicate",
+                      "The outermost group cannot be duplicated. Select a "
+                      "condition or a nested group inside it.")
+            return
+        parent_item = item.parent()
+        parent_node = parent_item.data(0, Qt.ItemDataRole.UserRole)
+        node = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(parent_node, (ConditionGroup, Vote)) or \
+                node not in parent_node.children:
+            return
+        copy = Condition.from_dict(node.to_dict())
+        parent_node.children.insert(parent_node.children.index(node) + 1, copy)
+        self._reload_tree()
+        self._select_node(copy)
+
+    def _move_node(self, delta: int) -> None:
+        """Move the selected node one place within its own group.
+
+        Within its group only.  Dragging a condition out of an OR and into the
+        AND above it changes what the rule means, and doing that by nudging an
+        arrow key is not something anyone would intend.
+        """
+        item = self.tree.currentItem()
+        if item is None or item.parent() is None:
+            return
+        parent_node = item.parent().data(0, Qt.ItemDataRole.UserRole)
+        node = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(parent_node, (ConditionGroup, Vote)) or \
+                node not in parent_node.children:
+            return
+        children = parent_node.children
+        index = children.index(node)
+        target = index + delta
+        if not 0 <= target < len(children):
+            return
+        children[index], children[target] = children[target], children[index]
+        self._reload_tree()
+        self._select_node(node)
+
+    def _select_node(self, node: Any) -> None:
+        """Put the cursor back on ``node`` after the tree was rebuilt."""
+        stack = [self.tree.topLevelItem(i)
+                 for i in range(self.tree.topLevelItemCount())]
+        while stack:
+            item = stack.pop()
+            if item is None:
+                continue
+            if item.data(0, Qt.ItemDataRole.UserRole) is node:
+                self.tree.setCurrentItem(item)
+                return
+            stack.extend(item.child(i) for i in range(item.childCount()))
+
+    def _add_preset(self) -> None:
+        """Add a whole rule: its indicators, its parameters and its condition.
+
+        The click count is the point.  "Price closes above a 200 EMA" is three
+        objects -- a slot, a parameter and a comparison -- and building it by
+        hand means the indicator tab, then the rule tab, then two operand
+        editors.  Here it is one dialog and one number.
+        """
+        dialog = _PresetPicker(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or dialog.preset is None:
+            return
+        group, item = self._selected_group()
+        try:
+            condition = dialog.preset.build(self.spec, dialog.values)
+        except Exception as exc:            # noqa: BLE001
+            log.exception("Building a preset rule failed")
+            show_error(self, exc, "Could not add that rule")
+            return
+        group.children.append(condition)
+        self._reload_slots()
+        self._reload_params()
+        self._reload_tree()
+        self._select_node(condition)
+        self._refresh_summary()
+
     def _remove_node(self) -> None:
         item = self.tree.currentItem()
         if item is None or item.parent() is None:
@@ -737,7 +842,8 @@ class StrategyEditor(QDialog):
         parent_item = item.parent()
         parent_node = parent_item.data(0, Qt.ItemDataRole.UserRole)
         node = item.data(0, Qt.ItemDataRole.UserRole)
-        if isinstance(parent_node, ConditionGroup) and node in parent_node.children:
+        if isinstance(parent_node, (ConditionGroup, Vote)) and \
+                node in parent_node.children:
             parent_node.children.remove(node)
         parent_item.removeChild(item)
         self.tree.setCurrentItem(parent_item)
@@ -835,6 +941,369 @@ class StrategyEditor(QDialog):
 
 
 # --------------------------------------------------------------------------
+# Common rules
+# --------------------------------------------------------------------------
+
+class _Preset:
+    """One ready-made rule: some indicator slots and the condition over them.
+
+    Every preset builds the *same objects* the tree builds by hand -- an
+    ``IndicatorSlot``, a ``ParamSpec``, a ``Compare`` or a ``Cross``.  There is
+    no second rule format and nothing here the editor cannot then take apart,
+    which is the only reason a preset is safe: it is a shortcut through the
+    clicks, not a shortcut around the model.
+    """
+
+    def __init__(self, name: str, blurb: str, fields: tuple, build) -> None:
+        self.name = name
+        self.blurb = blurb
+        #: ``(key, label, default, minimum, maximum)`` per number to ask for.
+        self.fields = fields
+        self._build = build
+
+    def build(self, spec: StrategySpec, values: dict) -> Any:
+        return self._build(_PresetContext(spec), values)
+
+
+class _PresetContext:
+    """Adds slots and parameters to a spec without ever colliding with one.
+
+    A strategy that already has ``ema`` must still be able to take "price
+    above an EMA" twice.  Every name goes through :meth:`unique`, and an
+    identical slot -- same indicator, same parameters, same source -- is
+    reused rather than added again, so applying the same preset twice does not
+    compute the same average twice.
+    """
+
+    def __init__(self, spec: StrategySpec) -> None:
+        self.spec = spec
+
+    def unique(self, stem: str) -> str:
+        taken = {s.ref for s in self.spec.indicators}
+        if stem not in taken:
+            return stem
+        n = 2
+        while f"{stem}{n}" in taken:
+            n += 1
+        return f"{stem}{n}"
+
+    def unique_param(self, stem: str) -> str:
+        taken = {p.name for p in self.spec.params}
+        if stem not in taken:
+            return stem
+        n = 2
+        while f"{stem}_{n}" in taken:
+            n += 1
+        return f"{stem}_{n}"
+
+    def slot(self, key: str, params: dict, source: str = "close",
+             stem: str = "") -> str:
+        for existing in self.spec.indicators:
+            if (existing.indicator == key and existing.params == params
+                    and existing.source == source):
+                return existing.ref
+        ref = self.unique(stem or key.lower())
+        self.spec.indicators.append(
+            IndicatorSlot(ref=ref, indicator=key, params=dict(params),
+                          source=source))
+        return ref
+
+    def number(self, stem: str, label: str, value: float, low: float,
+               high: float, kind: str = "float") -> str:
+        """A strategy parameter, so the threshold can be optimised later.
+
+        The bounds are passed explicitly and are not optional: ``ParamSpec``
+        defaults to a minimum of 1, which quietly rejects any threshold below
+        it -- a 0.5% volatility level, an RSI level of 0 -- at compile time
+        rather than here.  They also give the optimiser the range to sweep.
+        """
+        name = self.unique_param(stem)
+        self.spec.params.append(
+            ParamSpec(name=name, label=label, kind=kind, default=value,
+                      minimum=low, maximum=high,
+                      step=1 if kind == "int" else 0.1))
+        return name
+
+
+def _p_price_vs_ma(context, values):
+    period = int(values["period"])
+    ref = context.slot(values["kind"], {"period": period}, stem="trend")
+    op = ">" if values["above"] else "<"
+    return Compare(PriceOperand(field="close"), op, IndicatorOperand(ref=ref))
+
+
+def _p_ma_cross(context, values):
+    fast = context.slot(values["kind"], {"period": int(values["fast"])},
+                        stem="fast")
+    slow = context.slot(values["kind"], {"period": int(values["slow"])},
+                        stem="slow")
+    return Cross(IndicatorOperand(ref=fast),
+                 "above" if values["above"] else "below",
+                 IndicatorOperand(ref=slow))
+
+
+def _p_rsi_level(context, values):
+    ref = context.slot("RSI", {"period": int(values["period"])}, stem="rsi")
+    name = context.number("rsi_level", "RSI level", float(values["level"]),
+                          0.0, 100.0)
+    return Cross(IndicatorOperand(ref=ref),
+                 "above" if values["above"] else "below",
+                 ParamOperand(name=name))
+
+
+def _p_channel_break(context, values):
+    ref = context.slot("DONCHIAN", {"period": int(values["period"])},
+                       stem="chan")
+    edge = "upper" if values["above"] else "lower"
+    return Cross(PriceOperand(field="close"),
+                 "above" if values["above"] else "below",
+                 IndicatorOperand(ref=ref, output=edge, offset=1))
+
+
+def _p_band_break(context, values):
+    ref = context.slot("BBANDS", {"period": int(values["period"]),
+                                  "deviation": float(values["deviation"])},
+                       stem="bb")
+    return Cross(PriceOperand(field="close"),
+                 "above" if values["above"] else "below",
+                 IndicatorOperand(ref=ref,
+                                  output="upper" if values["above"] else "lower"))
+
+
+def _p_macd_cross(context, values):
+    ref = context.slot("MACD", {"fast": int(values["fast"]),
+                                "slow": int(values["slow"]),
+                                "signal": int(values["signal"])}, stem="macd")
+    return Cross(IndicatorOperand(ref=ref, output="macd"),
+                 "above" if values["above"] else "below",
+                 IndicatorOperand(ref=ref, output="signal"))
+
+
+def _p_volatility_level(context, values):
+    """Normalised ATR against a threshold.
+
+    NATR rather than ATR because the comparison has to be scale free: an ATR
+    of 40 means something different on an index at 18,000 than on one at 400,
+    and a rule with a raw-points threshold in it stops meaning anything the
+    moment the instrument changes.  The obvious alternative -- ATR against a
+    moving average of ATR -- cannot be expressed here at all: an indicator
+    slot reads a price series, never another indicator's output.
+    """
+    ref = context.slot("NATR", {"period": int(values["period"])}, stem="natr")
+    name = context.number("volatility_level", "Volatility level (%)",
+                          float(values["level"]), 0.0, 50.0)
+    return Compare(IndicatorOperand(ref=ref),
+                   ">" if values["above"] else "<", ParamOperand(name=name))
+
+
+def _p_time_window(context, values):
+    return SessionWindow(start=str(values["start"]), end=str(values["end"]),
+                         timezone="America/New_York")
+
+
+def _p_adx_trending(context, values):
+    ref = context.slot("ADX", {"period": int(values["period"])}, stem="adx")
+    name = context.number("adx_level", "ADX level", float(values["level"]),
+                          0.0, 100.0)
+    return Compare(IndicatorOperand(ref=ref, output="adx"), ">",
+                   ParamOperand(name=name))
+
+
+#: Shown in the order a beginner would want them, not alphabetically.
+_PRESETS: tuple[_Preset, ...] = (
+    _Preset("Price is above a moving average",
+            "A trend filter. Adds one moving average and compares the close "
+            "to it.",
+            (("kind", "Average", "EMA", ("EMA", "SMA", "WMA", "HMA"), None),
+             ("period", "Period", 200, 2, 1000),
+             ("above", "Direction", True, None, None)),
+            _p_price_vs_ma),
+    _Preset("A moving average crosses another",
+            "The classic entry. Adds a fast and a slow average of the same "
+            "kind and fires on the crossing, not on every bar after it.",
+            (("kind", "Average", "EMA", ("EMA", "SMA", "WMA", "HMA"), None),
+             ("fast", "Fast period", 20, 2, 1000),
+             ("slow", "Slow period", 50, 2, 1000),
+             ("above", "Direction", True, None, None)),
+            _p_ma_cross),
+    _Preset("RSI crosses a level",
+            "Adds an RSI and a strategy parameter for the level, so the "
+            "threshold can be swept by the optimiser instead of edited.",
+            (("period", "RSI period", 14, 2, 500),
+             ("level", "Level", 30.0, 0.0, 100.0),
+             ("above", "Direction", True, None, None)),
+            _p_rsi_level),
+    _Preset("Price breaks a Donchian channel",
+            "A breakout. Compares against the PREVIOUS bar's channel edge, "
+            "because this bar's high is part of today's channel.",
+            (("period", "Channel period", 20, 2, 1000),
+             ("above", "Direction", True, None, None)),
+            _p_channel_break),
+    _Preset("Price breaks a Bollinger band",
+            "Adds Bollinger bands and fires when the close crosses the outer "
+            "band.",
+            (("period", "Period", 20, 2, 1000),
+             ("deviation", "Deviations", 2.0, 0.1, 10.0),
+             ("above", "Direction", True, None, None)),
+            _p_band_break),
+    _Preset("MACD crosses its signal line",
+            "Adds one MACD and crosses its two outputs.",
+            (("fast", "Fast", 12, 2, 500), ("slow", "Slow", 26, 2, 500),
+             ("signal", "Signal", 9, 2, 500),
+             ("above", "Direction", True, None, None)),
+            _p_macd_cross),
+    _Preset("ADX says the market is trending",
+            "A regime filter rather than an entry. Adds an ADX and a "
+            "parameter for the level.",
+            (("period", "ADX period", 14, 2, 500),
+             ("level", "Level", 25.0, 0.0, 100.0)),
+            _p_adx_trending),
+    _Preset("Volatility is above a level",
+            "A regime filter. Adds a normalised ATR -- true range as a "
+            "percentage of price, so the threshold means the same thing on "
+            "any instrument -- and a parameter for the level.",
+            (("period", "ATR period", 14, 2, 500),
+             ("level", "Level (%)", 0.5, 0.0, 50.0),
+             ("above", "Direction", True, None, None)),
+            _p_volatility_level),
+    _Preset("Only inside a time window",
+            "A session filter in New York time. Add it to an AND group "
+            "alongside your entry.",
+            (("start", "From", "09:30", None, None),
+             ("end", "To", "11:00", None, None)),
+            _p_time_window),
+)
+
+
+class _PresetPicker(QDialog):
+    """Choose a common rule and fill in its numbers."""
+
+    def __init__(self, editor: StrategyEditor) -> None:
+        super().__init__(editor)
+        self.setWindowTitle("Add a common rule")
+        self.resize(620, 560)
+        self.preset: _Preset | None = None
+        self.values: dict[str, Any] = {}
+        self._widgets: dict[str, Any] = {}
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(16, 14, 16, 12)
+        lay.setSpacing(9)
+
+        note = QLabel(
+            "Each of these adds the indicators it needs and the condition "
+            "over them, in one step. Everything it adds is an ordinary "
+            "indicator and an ordinary condition, so you can take it apart "
+            "afterwards.")
+        note.setWordWrap(True)
+        note.setObjectName("Hint")
+        lay.addWidget(note)
+
+        self.list = QListWidget()
+        for preset in _PRESETS:
+            self.list.addItem(QListWidgetItem(preset.name))
+        self.list.currentRowChanged.connect(self._on_preset_changed)
+        lay.addWidget(self.list, 1)
+
+        self.blurb = QLabel("")
+        self.blurb.setWordWrap(True)
+        self.blurb.setObjectName("Hint")
+        lay.addWidget(self.blurb)
+
+        self.form_host = QWidget()
+        self.form = QFormLayout(self.form_host)
+        self.form.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(self.form_host)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        cancel = QPushButton("Cancel")
+        cancel.setObjectName("Ghost")
+        cancel.clicked.connect(self.reject)
+        row.addWidget(cancel)
+        self.ok = QPushButton("Add")
+        self.ok.setObjectName("Primary")
+        self.ok.setDefault(True)
+        self.ok.clicked.connect(self._accept)
+        row.addWidget(self.ok)
+        lay.addLayout(row)
+
+        self.list.setCurrentRow(0)
+
+    def _on_preset_changed(self, row: int) -> None:
+        while self.form.rowCount():
+            self.form.removeRow(0)
+        self._widgets.clear()
+        if not 0 <= row < len(_PRESETS):
+            return
+        preset = _PRESETS[row]
+        self.blurb.setText(preset.blurb)
+        for key, label, default, low, high in preset.fields:
+            widget = self._field(key, default, low, high)
+            self._widgets[key] = widget
+            self.form.addRow(label, widget)
+
+    def _field(self, key: str, default: Any, low: Any, high: Any):
+        if key == "above":
+            box = QComboBox()
+            box.addItem("Long / above", True)
+            box.addItem("Short / below", False)
+            return box
+        if isinstance(default, str) and isinstance(low, tuple):
+            box = QComboBox()
+            for choice in low:
+                box.addItem(choice, choice)
+            box.setCurrentIndex(max(0, list(low).index(default)))
+            return box
+        if isinstance(default, str):
+            from PySide6.QtWidgets import QLineEdit
+
+            edit = QLineEdit(default)
+            return edit
+        if isinstance(default, bool):           # pragma: no cover - none today
+            box = QComboBox()
+            box.addItem("Yes", True)
+            box.addItem("No", False)
+            return box
+        if isinstance(default, int):
+            spin = QSpinBox()
+            spin.setRange(int(low), int(high))
+            spin.setValue(int(default))
+            return spin
+        spin = QDoubleSpinBox()
+        spin.setDecimals(2)
+        spin.setRange(float(low), float(high))
+        spin.setValue(float(default))
+        return spin
+
+    def _read(self, widget) -> Any:
+        if isinstance(widget, QComboBox):
+            return widget.currentData()
+        if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+            return widget.value()
+        return widget.text()
+
+    def _accept(self) -> None:
+        row = self.list.currentRow()
+        if not 0 <= row < len(_PRESETS):
+            return
+        self.preset = _PRESETS[row]
+        self.values = {key: self._read(widget)
+                       for key, widget in self._widgets.items()}
+        # A cross of an average with itself is not a rule; catch it here
+        # rather than let it into the tree as a condition that never fires.
+        if "fast" in self.values and "slow" in self.values:
+            if int(self.values["fast"]) >= int(self.values["slow"]):
+                show_warning(self, "Those periods cross the wrong way",
+                             "The fast average has to be shorter than the "
+                             "slow one, or the crossing this builds is not "
+                             "the one you mean.")
+                self.preset = None
+                return
+        self.accept()
+
+
+# --------------------------------------------------------------------------
 # Small helpers on the condition tree
 # --------------------------------------------------------------------------
 
@@ -843,6 +1312,10 @@ def _node_title(node: Any) -> str:
         label = f"{'NOT ' if node.negate else ''}{node.op}"
         return f"{label}  ({len(node.children)} condition"\
                f"{'s' if len(node.children) != 1 else ''})"
+    if isinstance(node, Vote):
+        label = "NOT " if node.negate else ""
+        return (f"{label}VOTE  (at least {int(node.threshold)} of "
+                f"{len(node.children)})")
     try:
         return node.describe()
     except Exception:                       # pragma: no cover - defensive
@@ -859,7 +1332,7 @@ def _walk_operands(condition: Any):
 
 
 def _rename_in_condition(condition: Any, old: str, new: str) -> None:
-    if isinstance(condition, ConditionGroup):
+    if isinstance(condition, (ConditionGroup, Vote)):
         for child in condition.children:
             _rename_in_condition(child, old, new)
         return
@@ -869,7 +1342,7 @@ def _rename_in_condition(condition: Any, old: str, new: str) -> None:
 
 
 def _rename_param_in_condition(condition: Any, old: str, new: str) -> None:
-    if isinstance(condition, ConditionGroup):
+    if isinstance(condition, (ConditionGroup, Vote)):
         for child in condition.children:
             _rename_param_in_condition(child, old, new)
         return
@@ -1034,6 +1507,8 @@ class _ConditionPicker(QDialog):
 def _node_editor(editor: StrategyEditor, node: Any) -> QWidget | None:
     if isinstance(node, ConditionGroup):
         return _GroupEditor(editor, node)
+    if isinstance(node, Vote):
+        return _VoteEditor(editor, node)
     if isinstance(node, Compare):
         return _CompareEditor(editor, node)
     if isinstance(node, Cross):
@@ -1075,6 +1550,56 @@ class _GroupEditor(QWidget):
         note.setWordWrap(True)
         note.setObjectName("Hint")
         lay.addWidget(note)
+
+
+class _VoteEditor(QWidget):
+    """The threshold on a vote, and a warning when it cannot be met.
+
+    Votes are not built by hand here -- `combine_strategies` makes them -- but
+    a combined strategy has to be as editable as any other once it is open, or
+    combining is a one-way door.
+    """
+
+    def __init__(self, editor: StrategyEditor, node: Vote) -> None:
+        super().__init__()
+        self._editor, self._node = editor, node
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        form = QFormLayout()
+
+        spin = QSpinBox()
+        spin.setRange(1, max(1, len(node.children)))
+        spin.setValue(max(1, min(int(node.threshold), len(node.children) or 1)))
+        spin.setSuffix(f" of {len(node.children)}")
+        spin.valueChanged.connect(
+            lambda v: (setattr(node, "threshold", int(v)), editor.node_changed()))
+        form.addRow("Conditions needed", spin)
+
+        from PySide6.QtWidgets import QCheckBox
+
+        negate = QCheckBox("Invert this vote (NOT)")
+        negate.setChecked(node.negate)
+        negate.toggled.connect(
+            lambda on: (setattr(node, "negate", on), editor.node_changed()))
+        form.addRow("", negate)
+        lay.addLayout(form)
+
+        note = QLabel(
+            "True on a bar where at least this many of the conditions below "
+            "hold. A condition whose indicators are still warming up does not "
+            "count towards the total, and does not count against it either.")
+        note.setWordWrap(True)
+        note.setObjectName("Hint")
+        lay.addWidget(note)
+        if int(node.threshold) > len(node.children):
+            bad = QLabel(
+                f"This asks for {int(node.threshold)} of "
+                f"{len(node.children)}, which can never happen, so the "
+                f"strategy will not save until it is corrected.")
+            bad.setWordWrap(True)
+            bad.setStyleSheet(f"color:{PALETTE.short};")
+            lay.addWidget(bad)
 
 
 class _OperandEditor(QWidget):

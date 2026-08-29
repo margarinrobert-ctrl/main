@@ -62,6 +62,7 @@ SVG, no external assets and no network requests.
 - [Importing a strategy you already have](#importing-a-strategy-you-already-have)
 - [The research loop](#the-research-loop)
 - [The research dashboard](#the-research-dashboard)
+- [Combining strategies](#combining-strategies)
 - [Which indicators actually predict anything](#which-indicators-actually-predict-anything)
 - [Finding anomalies](#finding-anomalies)
 - [Optimisation](#optimisation)
@@ -295,16 +296,37 @@ can build one without programming and why the optimiser can sweep it.
 
 ### Indicators
 
-48 are built in, across moving averages, oscillators, trend, volatility and
-volume: SMA, EMA, WMA, HMA, DEMA, TEMA, RMA, VWMA, RSI, MACD, Bollinger Bands,
-ATR, Stochastic, ADX, VWAP, OBV, CCI, MFI, ROC, Momentum, standard deviation,
-Keltner, Donchian, SuperTrend, Parabolic SAR, Williams %R, CMF, Aroon, true
-range, z-score, linear regression, pivots, Choppiness, Ultimate Oscillator, TSI,
-Elder Ray, highest/lowest and more.
+78 are built in, across moving averages, oscillators, trend, volatility and
+volume.
+
+**Moving averages** — SMA, EMA, WMA, HMA, DEMA, TEMA, RMA, VWMA, KAMA, ZLEMA,
+ALMA, T3, McGinley Dynamic.
+**Oscillators** — RSI, MACD, Stochastic, CCI, MFI, ROC, Momentum, Williams %R,
+Ultimate Oscillator, TSI, Awesome Oscillator, CMO, PPO, TRIX, DPO, KST, Fisher
+Transform, Balance of Power, RVGI, SMI, Schaff Trend Cycle.
+**Trend** — ADX with ±DI, Aroon, SuperTrend, Parabolic SAR, linear regression,
+pivots, Ichimoku, Vortex, Heikin-Ashi.
+**Volatility** — ATR, Bollinger Bands, Keltner, Donchian, standard deviation,
+z-score, Choppiness, true range, Chandelier Exit, normalised ATR, Mass Index,
+Ulcer Index, historical volatility.
+**Volume** — OBV, VWAP, CMF, Elder Ray, Accumulation/Distribution, Chaikin
+Oscillator, Ease of Movement, Force Index, PVT, PVI/NVI.
 
 Each one is a registered function of the bars. Adding another is a single
-decorated function in `tradingbacktester/indicators/library.py` — no other file
-changes.
+decorated function in `tradingbacktester/indicators/library.py` (or
+`extended.py`) — no other file changes.
+
+Two things are deliberately *not* separate entries. **+DI / −DI** are outputs of
+`ADX`, and the **Aroon oscillator** is an output of `AROON`; registering them
+again under their own keys would compute the same arrays twice and give the
+optimiser two names for one idea.
+
+Ichimoku returns four lines and no lagging span. The cloud is displaced
+**backwards** into the present — `span_a` and `span_b` at bar *i* are what was
+computed 26 bars ago — because a forward displacement would put a value at a bar
+before the data that produced it exists. The chikou span is a forward-shifted
+close and has no causal reading at all, so it is not returned rather than
+returned wrong.
 
 ### Rules
 
@@ -317,7 +339,16 @@ deeply as you like:
 | **Cross** | `left` crosses above / below / either way through `right` |
 | **State** | a series is rising, falling, positive, negative, or has risen for *N* bars |
 | **Session** | the bar falls inside a time window on an allowed weekday |
+| **Vote** | at least *k* of *n* child conditions hold on the same bar |
 | **Always** | a constant, useful as a placeholder |
+
+**Vote** is the middle of the scale AND and OR sit at either end of. It exists
+because "two of these three agree" cannot be written as an AND/OR tree without
+expanding it into an OR over every combination — C(5,3) is ten AND groups
+holding thirty copies of five conditions, evaluating each child six times and
+describing itself in a paragraph nobody can read. Counting is one pass and one
+sentence. A child whose inputs are undefined withholds its vote rather than
+casting one, the same rule every other condition follows.
 
 Either side of a condition can be a price series (open/high/low/close/volume/
 hlc3/hl2/ohlc4), an indicator output, a constant, a **strategy parameter**, or
@@ -696,6 +727,34 @@ If anything is unsupported, the conversion is labelled **partial** and the
 dialog will not backtest it at all. A backtest of a partial conversion is a
 backtest of a strategy nobody wrote.
 
+It is not a dead end either. **Edit it…** opens the part that converted in the
+strategy editor, with the untranslated lines listed, so you finish it by hand;
+it is not saved to the library on the way in. Refusing to *run* a
+half-strategy is the rule. Refusing to let you look at one just makes the
+refusal useless.
+
+Everything else in the dialog exists to remove a click:
+
+- pasted text is **read as you type**, one beat after you stop. Nothing here
+  touches bars or indicators — it is a parse — so the answer arrives faster
+  than the keystroke that asked for it.
+- **Paste from clipboard** and **Open a file…** for text that is not already
+  in the box.
+- clicking any line in the table puts the **cursor on that line** of the
+  source. Listing the line that could not be translated is only useful if you
+  can then find it.
+- editing the source disarms Backtest, Save and Edit immediately, so a result
+  can never belong to text that is no longer on screen.
+
+One line-level guarantee is worth stating on its own, because it was wrong
+until recently: an assignment is reported as *converted* only if its
+right-hand side really was. `higher = request.security(...)` used to be
+labelled converted the moment the name was bound, and a script that computed
+it without trading on it was reported as converted **in full**. Now an
+assignment that cannot be expressed here is *unsupported* when a rule depends
+on it — the rule's own line already was — and *ignored*, with the reason, when
+nothing that trades does.
+
 ### Why it parses rather than pattern-matches
 
 A regular expression that matches `ta.ema(close, 20)` also matches it inside a
@@ -730,6 +789,9 @@ and `strategy.entry` / `strategy.close` / `strategy.exit` with point-based
 
 ### What does not, and is listed instead
 
+MQL4/MQL5, EasyLanguage, thinkScript and C# (cTrader, NinjaTrader, Quantower)
+are **detected and named** but not converted — the refusal says which language
+it found and why, rather than "could not be identified". Within Pine:
 `for`/`while` loops, user-defined functions, `var` declarations that carry a
 value between bars, `request.security`, arrays and matrices, indicators with no
 equivalent here, variable-length lookbacks, and stops or targets at an absolute
@@ -744,6 +806,66 @@ across.
 One more caveat it raises on sight: Pine's `==` compares floating-point values
 exactly, and this engine compares them within a tolerance. On continuous series
 the two rarely agree, so any `==` in a rule is flagged.
+
+---
+
+## Combining strategies
+
+**Strategy → Combine Strategies…**, `Ctrl+Shift+C`, or
+`cli combine --strategy A --strategy B --mode all`.
+
+Tick two or more strategies and choose how they must agree:
+
+| mode | entries fire when | trades |
+|---|---|---|
+| **all** | every strategy signals on the same bar | least |
+| **majority** | at least *k* of *n* agree (a strict majority by default) | between |
+| **any** | one signal is enough | most |
+
+Exits default to **any** even when entries are **all**, on purpose: a position
+whose reason for existing has ended under one of the strategies is not one to
+keep open on another's rule.
+
+The whole job is namespacing. Two strategies that both call an indicator `ema`
+and both have a parameter called `period` cannot be pasted into one spec — the
+second would take over the first's slot and the result would trade something
+neither of them describes. So every source is rewritten into its own prefix:
+indicator refs, strategy parameters, the `$name` references inside indicator
+parameters, and every operand in every rule. Identical slots with literal
+parameters are then folded together and computed once; slots driven by a
+`$parameter` are **not**, because sharing them would tie two knobs the
+optimiser has to be able to move separately.
+
+Three things it deliberately will not do.
+
+**It will not merge risk, exit, execution, session or cost settings.** A stop
+of 1.5 ATR and a stop of 3 ATR have no average either author would accept, and
+picking one silently is how a combination ends up backtested under a risk
+model nobody chose. One source is the primary, its settings are used whole, and
+**every** field the others disagree about is listed — in the dialog, in the CLI
+output whether you asked for it or not, and in the saved strategy's own
+description.
+
+**It will not lower a vote to match how many strategies happen to have a rule
+for that direction.** Three strategies of which one is long-only, combined with
+`majority`, needs two of *three* to agree on a long entry; the two short-only
+ones never do, so the long side goes quiet. Quietly turning that into "one of
+one" would be a different strategy that trades far more.
+
+**It will not combine backtest results.** Merging two equity curves is a
+portfolio question — correlation, capital allocation, concurrent positions —
+and this produces a single strategy holding one position at a time. Under
+`any` in particular the result is *not* the sum of its parts, and the dialog
+says so.
+
+One interaction is worth knowing about because it costs signals. A strategy has
+one warm-up, the longest of its indicators', and no rule fires before it. So a
+20-bar Donchian combined with a 200-bar filter does not give you the Donchian's
+early trades — the first 200 bars go quiet. Measured across 936 signal-array
+comparisons on 193,942 bars of US30 15m, that is the *only* way a merged rule
+differs from the set operation its mode names, and it is always in the safe
+direction. The report says how much warm-up was added and which strategies
+needed less.
 
 ---
 
@@ -1502,16 +1624,22 @@ python -m tradingbacktester.cli walkforward "EMA Cross + RSI" --data "US30 30m" 
 python -m tradingbacktester.cli montecarlo "EMA Cross + RSI" --data "US30 30m" \
     --method block --draws 5000
 python -m tradingbacktester.cli mirror "MACD Trend" --data "US30 30m"
+python -m tradingbacktester.cli convert my_strategy.pine --save
+python -m tradingbacktester.cli combine --strategy "MACD Trend" \
+    --strategy "Donchian Channel Breakout" --mode majority \
+    --data "US30 15m" --save
 python -m tradingbacktester.cli report "MACD Trend" --data "US30 30m" \
     --out report.html --trades
 ```
 
 `report` writes the same self-contained HTML or PDF the window's File → Export
 menu produces; the suffix chooses the format and the PDF renders with no display
-attached. `--mirror` on any command that reads data reflects the series first. `--json`
+attached. `--mirror` on any command that reads data reflects the series first. `combine` with `--data`
+backtests the merged strategy and each of its parts on the same bars, side by
+side. `--json`
 prints machine-readable output on `find`, `autosearch`, `indicators`,
-`anomalies`, `run`, `optimize`, `continuous`, `walkforward`, `montecarlo` and
-`mirror`; everything else then goes to stderr so the output can
+`anomalies`, `run`, `optimize`, `continuous`, `walkforward`, `montecarlo`,
+`mirror`, `convert` and `combine`; everything else then goes to stderr so the output can
 be piped straight into a tool that expects one document. `--workspace` points at
 a different folder. Nothing here reaches the network.
 

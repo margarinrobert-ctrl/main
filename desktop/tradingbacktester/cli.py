@@ -418,10 +418,15 @@ def cmd_anomalies(args: argparse.Namespace) -> int:
 
 def _resolve_spec(args: argparse.Namespace):
     """Find the strategy named on the command line, saved or built in."""
+    return _spec_named(args, str(getattr(args, "strategy", "") or ""))
+
+
+def _spec_named(args: argparse.Namespace, wanted: str):
+    """One strategy by name, from the workspace or the built-in set."""
     from .strategy.builtin import BUILTIN_STRATEGIES
     from .strategy.storage import StrategyStore
 
-    wanted = str(getattr(args, "strategy", "") or "").strip()
+    wanted = str(wanted or "").strip()
     store = StrategyStore(_workspace(args))
     for entry in store.list():
         if wanted.lower() in (entry.name.lower(), entry.id.lower()):
@@ -872,6 +877,103 @@ def cmd_convert(args: argparse.Namespace) -> int:
     return 0 if report.faithful else 2
 
 
+def cmd_combine(args: argparse.Namespace) -> int:
+    """Merge several strategies into one and say what the merge decided.
+
+    Everything the merge had to choose -- which settings were kept, which
+    rules could not be joined, how much warm-up it costs -- is printed whether
+    or not it is asked for.  A combined strategy that quietly inherits one
+    author's stop loss is worse than no combining at all.
+    """
+    import sys as _sys
+
+    from .strategy.combine import combine_strategies
+
+    names = list(args.strategy or [])
+    if len(names) < 2:
+        print("Combining needs at least two strategies: give --strategy "
+              "twice.", file=_sys.stderr)
+        return 1
+    specs = [_spec_named(args, n) for n in names]
+
+    primary = 0
+    if args.primary:
+        matches = [i for i, s in enumerate(specs)
+                   if args.primary.lower() in (s.name.lower(), s.id.lower())]
+        if not matches:
+            print(f"--primary '{args.primary}' is not one of the strategies "
+                  f"being combined ({', '.join(s.name for s in specs)}).",
+                  file=_sys.stderr)
+            return 1
+        primary = matches[0]
+
+    report = combine_strategies(
+        specs, mode=args.mode, exit_mode=args.exit_mode,
+        name=args.name or "", primary=primary, threshold=args.threshold)
+
+    if args.json:
+        print(json.dumps({
+            "name": report.spec.name, "mode": report.mode,
+            "exit_mode": report.exit_mode, "threshold": report.threshold,
+            "sources": report.sources, "notes": report.notes,
+            "conflicts": report.conflicts, "shared": report.shared,
+            "warnings": report.warnings, "spec": report.spec.to_dict(),
+        }, indent=2))
+        return 0
+
+    print(report.summary())
+    print()
+    for line in report.spec.summary_lines():
+        print(f"  {line}")
+    print()
+    for label, items in (("Shared", report.shared),
+                         ("Conflict", report.conflicts),
+                         ("Note", report.notes),
+                         ("Warning", report.warnings)):
+        for item in items:
+            print(f"{label}: {item}")
+
+    if args.save:
+        from .strategy.storage import StrategyStore
+
+        StrategyStore(_workspace(args)).save(report.spec)
+        print(f"\nSaved '{report.spec.name}'.")
+    if args.data:
+        _run_combined(args, report)
+    return 0
+
+
+def _run_combined(args: argparse.Namespace, report) -> None:
+    """Backtest the merged strategy, and each part, on the same bars.
+
+    Printed side by side because the only honest way to read a combined
+    result is against what the parts did on that same data -- and because
+    ``any`` in particular does not add the parts up, whatever it looks like.
+    """
+    from .engine.backtester import Backtester
+
+    bars, data_name = _resolve_bars(args)
+    print(f"\nOn {data_name}, {len(bars):,} bars:")
+    rows = [(s, _spec_named(args, s)) for s in (args.strategy or [])]
+    rows.append((report.spec.name, report.spec))
+    # A combined name is a list of its parts, so it can be far longer than
+    # every other row; without a cap it pushes the numbers off the terminal.
+    width = min(46, max(len(n) for n, _ in rows))
+    for name, spec in rows:
+        shown = name if len(name) <= width else name[:width - 1] + "\u2026"
+        result = Backtester(bars, spec, _config_for(spec, args.capital)).run()
+        metrics = result.metrics
+        # `max_drawdown_pct` is already a percentage, not a fraction: the
+        # metrics layer and every other display treat it as one.
+        print(f"  {shown:<{width}}  {len(result.trades):6d} trades  "
+              f"net {metrics.get('net_profit', float('nan')):12,.2f}  "
+              f"Sharpe {metrics.get('sharpe_ratio', float('nan')):7.3f}  "
+              f"max DD {metrics.get('max_drawdown_pct', float('nan')):7.2f}%")
+    print("\nThese are backtests of this data only. A combined strategy that "
+          "beats its parts here has not been shown to beat them anywhere "
+          "else.")
+
+
 def cmd_strategies(args: argparse.Namespace) -> int:
     from .strategy.builtin import BUILTIN_STRATEGIES
     from .strategy.storage import StrategyStore
@@ -898,6 +1000,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Imported here rather than at module scope: the help text quotes these
     # defaults, and `cli --help` should not pay for loading the optimiser.
     from .data.continuous import Adjustment, DEFAULT_ROLL_DAYS, RollRule
+    from .strategy.combine import COMBINE_MODES
     from .optimize.holdout import DEFAULT_REVEAL, RESEARCH_FRACTION
 
     parser = argparse.ArgumentParser(
@@ -1205,6 +1308,37 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_strategies)
 
     p = sub.add_parser(
+        "combine",
+        help="Merge two or more strategies into one")
+    p.add_argument("--strategy", action="append", required=True,
+                   help="Name of a saved or built-in strategy. Give it twice "
+                        "or more; the first is the primary unless --primary "
+                        "says otherwise.")
+    p.add_argument("--mode", default="all", choices=list(COMBINE_MODES),
+                   help="How entry rules are joined: all (every strategy must "
+                        "signal on the same bar), any (one is enough), or "
+                        "majority (at least half agree). Default all.")
+    p.add_argument("--exit-mode", default="any", dest="exit_mode",
+                   choices=list(COMBINE_MODES),
+                   help="How exit rules are joined. Default any, so a "
+                        "position whose thesis has ended under one strategy "
+                        "is closed rather than held on another's rule.")
+    p.add_argument("--threshold", type=int, default=None,
+                   help="Override how many strategies a majority needs")
+    p.add_argument("--primary", default="",
+                   help="Whose risk, exit, execution, session and cost "
+                        "settings the result uses. Default the first.")
+    p.add_argument("--name", default="", help="Name for the combined strategy")
+    p.add_argument("--save", action="store_true",
+                   help="Save the result into the workspace")
+    p.add_argument("--data", default="",
+                   help="Backtest the result and each part on this dataset")
+    p.add_argument("--capital", type=float, default=100_000.0,
+                   help="Starting capital for --data")
+    p.add_argument("--json", action="store_true", help="Machine-readable output")
+    p.set_defaults(func=cmd_combine)
+
+    p = sub.add_parser(
         "research",
         help="Run the automated research loop: hypothesis, experiment, "
              "verdict, repeat")
@@ -1244,7 +1378,7 @@ def build_parser() -> argparse.ArgumentParser:
     seen: set[int] = set()
     for name, subparser in sub.choices.items():
         if name in ("mirror", "data", "import", "strategies", "convert",
-                    "continuous"):
+                    "continuous", "combine"):
             continue
         if id(subparser) in seen:
             continue

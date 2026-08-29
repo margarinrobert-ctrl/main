@@ -190,6 +190,12 @@ Deciding the column layout from the values, not the header names. Called by
   NaN anywhere in an operand ⇒ condition False at that bar.
   Offsets shift *backwards* (`offset=1` is the previous bar), NaN-filled at the front.
   `SessionWindow` uses the timezone to build a per-bar boolean; must be vectorised.
+  `Vote(threshold, children, negate)` is true where at least `threshold` children
+  are true on the same bar, counted in one `uint16` pass rather than expanded
+  into an OR of ANDs. `threshold <= 0` is true everywhere; `threshold >
+  len(children)` is false everywhere and `StrategySpec.validate` rejects it. A
+  child masked to False by its own NaN contributes zero, so an unknown is a
+  withheld vote and never a cast one.
 - `builtin.py` — at least six ready strategies as `StrategySpec` factories, all
   validating cleanly: `EMA Cross + RSI` (exactly the spec's example),
   `RSI Mean Reversion`, `Bollinger Breakout`, `MACD Trend`,
@@ -199,6 +205,43 @@ Deciding the column layout from the values, not the header names. Called by
   `delete(id)`, `duplicate(id, new_name)`, `rename(id, name)`,
   `export_to(id, path)`, `import_from(path)`. One `.json` per strategy,
   filename `<slug>-<id>.json`, atomic writes, corrupt files reported not crashed.
+
+### `tradingbacktester/strategy/combine.py`
+- `combine_strategies(specs, mode="all", exit_mode="any", name="", primary=0,
+  threshold=None) -> CombineReport`. `mode`/`exit_mode` are one of
+  `COMBINE_MODES = ("all", "any", "majority")`; `default_threshold(n)` is a
+  strict majority, `n // 2 + 1`.
+- Namespacing is the contract. Every source is rewritten under a unique prefix
+  derived from its name — indicator refs, `ParamSpec` names (rebuilt, since
+  `ParamSpec` is frozen), the `$name` references inside `IndicatorSlot.params`,
+  and every `IndicatorOperand.ref` / `ParamOperand.name` in every rule tree.
+  Maps are built first and applied in one pass: renaming one name at a time
+  lets `a -> b` followed by `b -> c` turn the original `a` into `c`.
+- The inputs are never mutated. `_namespace` works on `spec.copy()`.
+- Slots with all-literal parameters that match on `(indicator, source, params)`
+  are folded together and reported in `CombineReport.shared`. Slots whose
+  parameters reference a `$parameter` are **never** shared: they are identical
+  today but separately optimisable tomorrow.
+- `_rule_of` reads `risk.allow_long` / `allow_short`, so a direction a source
+  has disabled counts as a withheld vote rather than as agreement.
+- Under `all`, a source with no rule for a slot makes the conjunction
+  unsatisfiable and the merged rule is `None` — not "all of the others". A
+  `majority` threshold is keyed on the number of strategies combined, never on
+  how many happen to have a rule.
+- An exit rule for a direction with no entry rule is dropped and noted.
+- Risk, exits, execution, session and cost settings are taken **whole** from
+  `primary`; every differing field is reported in `CombineReport.conflicts` and
+  written into `spec.description`. Nothing is averaged or merged.
+  `risk.allow_long` / `allow_short` are set by the merge, not copied.
+- A merge that would leave no entry rule at all raises `StrategyError` naming
+  which strategies can enter which way, rather than returning a strategy that
+  never trades.
+- Verified: across 3 entry modes × 3 exit modes × every 2-to-5 combination of
+  the five rule-based built-ins, each merged signal array equals the set
+  operation its mode names, bar for bar, after the merged strategy's own
+  warm-up — 936 comparisons on 193,942 bars of US30 15m, 0 failures. Inside the
+  merged warm-up the merged strategy may be quieter (one strategy has one
+  warm-up, the longest of its indicators') but never fires where no source did.
 
 ### `tradingbacktester/engine/*`
 - `execution.py` — `CostCalculator(costs, instrument)` with

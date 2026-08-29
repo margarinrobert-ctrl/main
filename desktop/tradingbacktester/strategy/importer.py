@@ -36,7 +36,8 @@ from .spec import (Compare, ConditionGroup, ConstOperand, Cross,
 log = logging.getLogger(__name__)
 
 #: What the detector can tell apart.
-FORMATS = ("pine", "json", "mql", "easylanguage", "thinkscript", "unknown")
+FORMATS = ("pine", "json", "mql", "easylanguage", "thinkscript", "csharp",
+           "unknown")
 
 #: Pine's price series, and what they are called here.
 _PRICE_FIELDS = {
@@ -105,6 +106,13 @@ _EL_HINTS = ("Inputs:", "Vars:", "Buy(", "SellShort(", "ExitLong",
              "Begin", "End;")
 _TS_HINTS = ("declare lower", "declare upper", "def ", "plot ", "AddOrder(",
              "input ")
+#: cTrader cBots and NinjaTrader/Quantower strategies are all C#.  None of
+#: them can be imported, but naming the language beats "could not be
+#: identified": it tells the reader the refusal is about the format and not
+#: about something they typed wrong.
+_CSHARP_HINTS = ("using cAlgo", "namespace cAlgo", ": Robot", "OnBar()",
+                 "ExecuteMarketOrder(", "using NinjaTrader", "protected "
+                 "override void On", "public class", "[Parameter(")
 
 
 @dataclass
@@ -203,6 +211,7 @@ def detect_format(text: str) -> tuple[str, float, list[str]]:
         "mql": hits(_MQL_HINTS),
         "easylanguage": hits(_EL_HINTS),
         "thinkscript": hits(_TS_HINTS),
+        "csharp": hits(_CSHARP_HINTS),
     }
     best = max(scores, key=lambda k: len(scores[k]))
     found = scores[best]
@@ -233,6 +242,9 @@ class _Converter:
         self.tuple_bindings: dict[str, tuple[str, str]] = {}
         self._counter = 0
         self._resolving: set[str] = set()
+        #: Bindings a rule successfully resolved through.  Only these were
+        #: really converted; the rest are classified after the rules are in.
+        self.used: set[str] = set()
 
     # -- indicator slots -------------------------------------------------
 
@@ -315,9 +327,11 @@ class _Converter:
                         f"format has no way to express")
                 self._resolving.add(name)
                 try:
-                    return self.operand(self.bindings[name], offset)
+                    resolved = self.operand(self.bindings[name], offset)
                 finally:
                     self._resolving.discard(name)
+                self.used.add(name)
+                return resolved
             if name == "na":
                 raise _Unconvertible("`na` is not a value this format has")
             raise _Unconvertible(f"`{name}` is not defined anywhere this "
@@ -414,9 +428,11 @@ class _Converter:
                                          f"itself")
                 self._resolving.add(name)
                 try:
-                    return self.condition(self.bindings[name])
+                    resolved = self.condition(self.bindings[name])
                 finally:
                     self._resolving.discard(name)
+                self.used.add(name)
+                return resolved
             raise _Unconvertible(f"`{name}` is not defined anywhere this "
                                  f"importer could see")
         if node.kind == "bool":
@@ -477,6 +493,7 @@ def import_pine(text: str, report: ImportReport) -> ImportReport:
     converter = _Converter(report)
     entries: list[tuple[int, Any, int]] = []      # (side, condition, line)
     exits: list[tuple[int, Any, int]] = []
+    assignments: list[tuple[int, Any, str]] = []  # (row in report.lines, ...)
 
     # Pass one: bind every variable, so a rule may use a name defined below it.
     for statement in statements:
@@ -491,9 +508,12 @@ def import_pine(text: str, report: ImportReport) -> ImportReport:
             continue
 
         if statement.kind == "assignment":
-            report.lines.append(Line(statement.line, source, "converted",
-                                     f"`{statement.target}` is available to "
-                                     f"the rules"))
+            # Classified after the rules are in: whether an assignment was
+            # really converted depends on whether anything that trades could
+            # resolve it.  Reserve its place in the table so the lines stay in
+            # source order.
+            assignments.append((len(report.lines), statement, source))
+            report.lines.append(Line(statement.line, source, "converted", ""))
             continue
 
         name = statement.target
@@ -527,8 +547,154 @@ def import_pine(text: str, report: ImportReport) -> ImportReport:
             f"translate"))
 
     _apply(converter, entries, exits, report)
+    _classify_assignments(converter, report, assignments,
+                          _rule_roots(statements))
     report.spec = converter.spec
     return report
+
+
+def _rule_roots(statements: list) -> set[str]:
+    """Every Pine name a ``strategy.*`` call or its guard mentions.
+
+    Syntactic on purpose.  ``_Converter.used`` only records bindings a rule
+    resolved *successfully*, so a rule that failed on the very binding in
+    question would leave no trace there -- which is precisely the case that
+    has to be reported.  Reading the names out of the source cannot miss it.
+    """
+    roots: set[str] = set()
+    for statement in statements:
+        name = str(getattr(statement, "target", "") or "")
+        if not name.split("(")[0].startswith("strategy."):
+            continue
+        roots |= _names_in(getattr(statement, "value", None))
+        roots |= _names_in(getattr(statement, "guard", None))
+    return roots
+
+
+def _classify_assignments(converter: _Converter, report: ImportReport,
+                          assignments: list, roots: set[str]) -> None:
+    """Say what really became of each ``x = ...`` line.
+
+    A binding used to be reported as converted the moment its name was bound,
+    without anyone having tried to convert its value.  So
+    ``higher = request.security(...)`` -- the one construct the placeholder
+    text promises will be listed rather than guessed at -- was reported as
+    *converted*, and a script that computed it but never traded on it was
+    reported as converted **in full**.  The line table is the whole premise of
+    this dialog; a row in it that says "converted" about a line that was not
+    is the exact failure the module exists to prevent.
+
+    Three outcomes, matching the module's three buckets:
+
+    * a rule resolved through it -- **converted**, and now it is true.
+    * its value cannot be expressed here and no rule uses it -- **ignored**,
+      because it changes nothing about what is traded.  The reason is stated
+      rather than hidden: a reader looking for their higher-timeframe filter
+      needs to find out here that it is not in the strategy.
+    * its value cannot be expressed here and a rule does use it --
+      **unsupported**.  The rule's own line is already unsupported for the
+      same reason, and it stays that way; this makes the cause visible where
+      the cause is written.
+    """
+    for row, statement, source in assignments:
+        name = str(statement.target)
+        line = statement.line
+        if name in converter.used:
+            report.lines[row] = Line(line, source, "converted",
+                                     f"`{name}` was used by a rule")
+            continue
+        detail = _why_not(converter, statement)
+        if detail is None:
+            report.lines[row] = Line(
+                line, source, "converted",
+                f"`{name}` was translated, but no rule uses it")
+            continue
+        depends = _depends_on(converter, name, roots)
+        if depends:
+            report.lines[row] = Line(
+                line, source, "unsupported",
+                f"{detail} \u2014 and what this strategy trades depends on it "
+                f"through {', '.join(sorted(depends))}")
+        else:
+            report.lines[row] = Line(
+                line, source, "ignored",
+                f"{detail}; no rule uses it, so nothing that is traded "
+                f"depends on it")
+
+
+def _why_not(converter: _Converter, statement: Statement) -> str | None:
+    """``None`` if the value converts, else why it does not.
+
+    The attempt is made on a copy of the slot table so a probe cannot leave an
+    indicator behind in the spec: this runs after the rules are assembled, and
+    a slot added here would be one nothing plots and nothing uses.
+    """
+    node = statement.value
+    if node is None:
+        return "there is nothing on the right-hand side of this assignment"
+    slots = dict(converter.slots)
+    counter = converter._counter
+    used = set(converter.used)
+    try:
+        converter.operand(node)
+        return None
+    except _Unconvertible:
+        # Not an operand.  It may still be a boolean expression -- `longCond =
+        # ta.crossover(a, b)` is not a value here but is a perfectly good
+        # condition -- so try that before calling it untranslatable.
+        pass
+    except Exception:                       # pragma: no cover - defensive
+        return "this could not be translated"
+    finally:
+        converter.slots = slots
+        converter._counter = counter
+        converter.used = used
+    try:
+        converter.condition(node)
+        return None
+    except _Unconvertible as exc:
+        return str(exc)
+    except Exception:                       # pragma: no cover - defensive
+        return "this could not be translated"
+    finally:
+        converter.slots = slots
+        converter._counter = counter
+        converter.used = used
+
+
+def _depends_on(converter: _Converter, name: str,
+                roots: set[str]) -> set[str]:
+    """Which rule roots reach ``name``, directly or through other bindings."""
+    direct = {target: _names_in(node)
+              for target, node in converter.bindings.items()}
+    out: set[str] = set()
+    for candidate in roots:
+        if candidate == name:
+            out.add(candidate)
+            continue
+        seen: set[str] = set()
+        stack = [candidate]
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            for referenced in direct.get(current, ()):
+                if referenced == name:
+                    out.add(candidate)
+                stack.append(referenced)
+    return out
+
+
+def _names_in(node: Node | None) -> set[str]:
+    if node is None:
+        return set()
+    out: set[str] = set()
+    if node.kind == "name":
+        out.add(str(node.value))
+    for child in list(node.args) + list(node.keywords.values()):
+        out |= _names_in(child)
+    return out
 
 
 def _read_header(statement: Statement, spec: StrategySpec,
@@ -724,7 +890,8 @@ def import_strategy(text: str) -> ImportReport:
         return import_pine(text, report)
 
     known = {"mql": "MQL4/MQL5", "easylanguage": "EasyLanguage",
-             "thinkscript": "thinkScript"}
+             "thinkscript": "thinkScript",
+             "csharp": "C# (cTrader, NinjaTrader or Quantower)"}
     if report.detected in known:
         report.errors.append(
             f"This looks like {known[report.detected]} ({report.evidence[0]}). "
