@@ -289,23 +289,39 @@ def _n(x, lo, hi):
     return float(np.clip((x - lo) / (hi - lo), 0.0, 1.0))
 
 
-def score(m, robust=0.0, n_floor=60):
+TPY_FLOOR = 40.0        # trades per year a configuration must sustain to be a candidate at all
+
+
+def score(m, robust=0.0, tpy_floor=TPY_FLOOR):
     """Score = 0.35 Sharpe + 0.30 PF + 0.20 Return/DD + 0.15 Robustness, with penalties.
 
-    Penalties, applied multiplicatively so a failure on any one of them cannot be bought back by
-    another: too few trades, excessive drawdown, and profit concentrated in the top 1% of trades
+    NORMALISATION BOUNDS ARE WIDE ON PURPOSE. A first pass used 2.0 / 1.8 / 3.0 and the top of the
+    NQ ranking SATURATED at exactly 1.000 across hundreds of configurations, which destroys the
+    ordering precisely where it matters. Widened to 3.0 / 2.5 / 5.0 so the objective still
+    discriminates at the top. This was changed after seeing the TRAIN ranking and before any
+    out-of-sample read, on the structural ground that a saturated score cannot rank -- not because
+    of which configuration won.
+
+    THE TRADE-COUNT PENALTY IS PER YEAR, NOT ABSOLUTE, for the same reason. The first pass used an
+    absolute floor of 60 and let through 60-minute configurations with 67 TRAIN trades that
+    produced ZERO validation trades -- unusable as candidates whatever they scored. Step 6 of the
+    brief: a Sharpe of 3.5 on 30 trades is not better than 2.2 on 2,000.
+
+    Penalties are multiplicative so a failure on one cannot be bought back by another: too few
+    trades per year, a poor return over drawdown, and profit concentrated in the top 1% of trades
     (`STUDY_DONCHIAN_ADX_CHOP` found a cell where the top 1% supplied 171% of net P&L)."""
     if m is None:
         return -1.0, {}
-    base = (0.35 * _n(m["sharpe"], 0.0, 2.0)
-            + 0.30 * _n(m["pf"], 1.0, 1.8)
-            + 0.20 * _n(m["retdd"], 0.0, 3.0)
+    base = (0.35 * _n(m["sharpe"], 0.0, 3.0)
+            + 0.30 * _n(m["pf"], 1.0, 2.5)
+            + 0.20 * _n(m["retdd"], 0.0, 5.0)
             + 0.15 * float(np.clip(robust, 0.0, 1.0)))
     pen = 1.0
-    if m["n"] < n_floor:
-        pen *= m["n"] / n_floor                        # linear, not a cliff
+    tpy = m.get("trades_per_year", np.nan)
+    if np.isfinite(tpy) and tpy < tpy_floor:
+        pen *= max(tpy / tpy_floor, 0.05) ** 1.5       # steep, because thin samples flatter Sharpe
     if m["dd"] > 0 and m["net"] > 0 and m["retdd"] < 0.5:
         pen *= 0.7
     if np.isfinite(m["top1_share"]) and m["top1_share"] > 0.5:
         pen *= 0.8
-    return float(base * pen), dict(base=base, pen=pen)
+    return float(base * pen), dict(base=base, pen=pen, tpy=tpy)

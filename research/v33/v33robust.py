@@ -164,7 +164,7 @@ def regimes(market, p, block_name="valid"):
         m = V.metrics(R, days, P, all_sess=V.block_days(P, blk, block_name)) if len(R) else None
         rows.append(dict(regime=name, n=len(R), pf=m["pf"] if m else np.nan,
                          sharpe=m["sharpe"] if m else np.nan, R=float(R.mean()) if len(R) else
-                         np.nan, share=float(m_.sum() / max(keep.sum(), 1))))
+                         np.nan, share=float((m_ & keep).sum() / max(keep.sum(), 1))))
     return pd.DataFrame(rows)
 
 
