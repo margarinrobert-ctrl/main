@@ -84,9 +84,18 @@ def build_pools(d, htf=((60, 3), (240, 2))):
 # ------------------------------------------------------------------------------------------------
 # sweeps
 # ------------------------------------------------------------------------------------------------
+MAX_AGE = 5 * 1440          # a pool is live for 5 trading days after it becomes knowable
+
+
 def find_sweeps(d, pools, side, defn="wick", pen=0.10, reclaim_bars=15, disp_bars=10,
-                disp_mult=1.0, atr=None, cooldown=60):
+                disp_mult=1.0, atr=None, cooldown=60, max_age=MAX_AGE):
     """A sweep of a LOW (side +1, a long setup) or of a HIGH (side -1, a short setup).
+
+    ITERATES OVER POOLS, NOT BARS. The first version walked every bar against every live pool,
+    which is 1M bars x thousands of pools and does not terminate. It also implied that a swing low
+    from two years ago is still a liquidity pool. Both are fixed by the same change: each pool is
+    live for `max_age` minutes from the bar it becomes knowable, and its sweep is found by a
+    vectorised scan of that bounded window.
 
     Returns one row per sweep: the bar it completes on, the level, its source, the penetration in
     ATR, and the sweep extreme -- which is what a structural stop is placed beyond."""
@@ -95,56 +104,64 @@ def find_sweeps(d, pools, side, defn="wick", pen=0.10, reclaim_bars=15, disp_bar
     if atr is None:
         atr = I.ema(I.true_range(h, l, c), 14)
     book = pools["lo"] if side > 0 else pools["hi"]
-    used = np.zeros(len(book), bool)
-    prices = np.array([b[0] for b in book], float)
-    from_b = np.array([b[1] for b in book], np.int64)
-    srcs = [b[2] for b in book]
-    order = np.argsort(from_b)
     rows = []
-    last = -10 ** 9
-    ptr = 0
-    live = []                                    # indices of pools currently knowable
-    for t in range(200, n - 5):
-        while ptr < len(order) and from_b[order[ptr]] <= t:
-            live.append(order[ptr]); ptr += 1
-        a = atr[t]
-        if not np.isfinite(a) or a <= 0 or t - last < cooldown:
+    for lev, b0, src in book:
+        a0, b1 = max(b0 + 1, 200), min(b0 + max_age, n - 5)
+        if b1 <= a0:
             continue
-        for j in list(live):
-            if used[j]:
-                continue
-            lev = prices[j]
-            if side > 0:
-                pierced = l[t] < lev - pen * a
-                back_in = c[t] > lev
-                beyond_close = c[t] < lev
-            else:
-                pierced = h[t] > lev + pen * a
-                back_in = c[t] < lev
-                beyond_close = c[t] > lev
-            hit = False
-            if defn == "pen_only":
-                hit = pierced
-            elif defn == "wick":
-                hit = pierced and back_in
-            elif defn == "close":
-                if beyond_close and pierced:
-                    w = slice(t + 1, min(t + 1 + reclaim_bars, n))
-                    hit = bool((c[w] > lev).any() if side > 0 else (c[w] < lev).any())
-            elif defn == "displace":
-                if pierced and back_in:
-                    w = slice(t + 1, min(t + 1 + disp_bars, n))
-                    body = (c[w] - o[w]) * side
-                    hit = bool((body >= disp_mult * a).any())
-            if hit:
-                used[j] = True
-                ext = float(l[t]) if side > 0 else float(h[t])
-                rows.append(dict(bar=t, level=float(lev), src=srcs[j], side=side,
-                                 pen_atr=float(abs(ext - lev) / a), sweep_ext=ext, atr=float(a)))
-                last = t
-                break
-        live = [j for j in live if not used[j]]
-    return pd.DataFrame(rows)
+        sl = slice(a0, b1)
+        a = atr[sl]
+        ok = np.isfinite(a) & (a > 0)
+        if side > 0:
+            pierced = ok & (l[sl] < lev - pen * a)
+            back_in = c[sl] > lev
+            beyond = c[sl] < lev
+        else:
+            pierced = ok & (h[sl] > lev + pen * a)
+            back_in = c[sl] < lev
+            beyond = c[sl] > lev
+
+        if defn == "pen_only":
+            hit = pierced
+        elif defn == "wick":
+            hit = pierced & back_in
+        elif defn == "close":
+            # closed beyond, then a later close back inside within reclaim_bars
+            cand = np.flatnonzero(pierced & beyond)
+            hit = np.zeros(b1 - a0, bool)
+            for j in cand:
+                w = slice(a0 + j + 1, min(a0 + j + 1 + reclaim_bars, n))
+                if ((c[w] > lev).any() if side > 0 else (c[w] < lev).any()):
+                    hit[j] = True
+                    break
+        elif defn == "displace":
+            cand = np.flatnonzero(pierced & back_in)
+            hit = np.zeros(b1 - a0, bool)
+            for j in cand:
+                w = slice(a0 + j + 1, min(a0 + j + 1 + disp_bars, n))
+                if ((c[w] - o[w]) * side >= disp_mult * atr[a0 + j]).any():
+                    hit[j] = True
+                    break
+        else:
+            raise ValueError(defn)
+
+        f = np.flatnonzero(hit)
+        if not len(f):
+            continue
+        t = a0 + int(f[0])
+        ext = float(l[t]) if side > 0 else float(h[t])
+        rows.append(dict(bar=t, level=float(lev), src=src, side=side,
+                         pen_atr=float(abs(ext - lev) / atr[t]), sweep_ext=ext,
+                         atr=float(atr[t]), age=int(t - b0)))
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows).sort_values("bar").reset_index(drop=True)
+    # one setup at a time: drop any sweep inside the cooldown of the one before it
+    keep, last = [], -10 ** 9
+    for i, b in enumerate(df.bar.to_numpy()):
+        if b - last >= cooldown:
+            keep.append(i); last = b
+    return df.iloc[keep].reset_index(drop=True)
 
 
 # ------------------------------------------------------------------------------------------------
