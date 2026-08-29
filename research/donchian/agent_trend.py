@@ -375,3 +375,305 @@ if __name__ == "__main__":
             print(f"    {r['label']:<34} exc={r['excess']:+6.2f} z={r['z']:+5.2f} "
                   f"p={r['p']:.3f} pS={r['pS']:.3f} pN={r['pN']:.3f} sel={r['sel']:.2f}")
     print(f"\n  elapsed {time.time() - t0:.0f}s")
+
+
+# ================================================================== STAGE 2
+def strat_p(bk, keep, real, strata, nrep=NPERM, seed=3):
+    """Random filter matched on ARBITRARY STRATA (e.g. ATR decile x side)."""
+    rng = np.random.default_rng(seed)
+    n = len(keep)
+    cells = {}
+    for s in np.unique(strata):
+        g = np.flatnonzero(strata == s)
+        cells[s] = (g, int(keep[g].sum()))
+    e = np.empty(nrep)
+    for d in range(nrep):
+        m = np.zeros(n, bool)
+        for g, c in cells.values():
+            if c:
+                m[rng.choice(g, size=c, replace=False)] = True
+        e[d] = bk.exp(m)[0]
+    e = e[~np.isnan(e)]
+    return float((e >= real).mean()), float(e.mean()), float(e.std(ddof=1))
+
+
+def first_p(bk, ntr, real, nrep=NPERM, seed=1):
+    """Random filter matched on the FINAL TRADE COUNT, keeping the book's
+    'first trigger of the session' semantics so only the COUNT differs."""
+    rng = np.random.default_rng(seed)
+    ok = np.flatnonzero(bk.ok)
+    s = bk.sess[ok]
+    firsts = ok[np.r_[True, s[1:] != s[:-1]]]
+    nets = bk.net[firsts]
+    ntr = min(ntr, len(nets))
+    e = np.array([nets[rng.choice(len(nets), size=ntr, replace=False)].mean()
+                  for _ in range(nrep)])
+    return float((e >= real).mean()), float(e.mean()), float(e.std(ddof=1))
+
+
+def stage_adx_diag(bk, F):
+    print("\n" + "=" * 118)
+    print("DIAGNOSTIC 1: is the ADX gate just picking LOW-ATR bars?")
+    print("  exp is in POINTS. If a filter selects smaller-ATR signals its P&L is")
+    print("  compressed toward zero while the matched control keeps the population")
+    print("  scale - that manufactures a positive 'excess' with no information.")
+    print("=" * 118)
+    a = bk.atr[bk.idx]
+    print(f"  {'bucket':<20}{'n':>7}{'mean ATR':>10}{'med ATR':>10}{'exp':>9}"
+          f"{'exp in R':>10}{'wr':>8}")
+    edges = [0, 15, 20, 25, 30, 100]
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        m = (F["adx"] >= lo) & (F["adx"] < hi) & ~np.isnan(F["adx"])
+        e, ntr = bk.exp(m)
+        k = np.flatnonzero(m & bk.ok)
+        rr = bk.net[k] / a[k]
+        print(f"  adx14 in [{lo:>2},{hi:>3})    {m.sum():>7}{a[m].mean():>10.2f}"
+              f"{np.median(a[m]):>10.2f}{e:>+9.2f}{rr.mean():>+10.3f}"
+              f"{(bk.net[k] > 0).mean():>8.1%}")
+    print(f"  {'ALL':<20}{len(a):>7}{a.mean():>10.2f}{np.median(a):>10.2f}"
+          f"{bk.exp(np.ones(len(a), bool))[0]:>+9.2f}"
+          f"{(bk.net[bk.ok] / a[bk.ok]).mean():>+10.3f}"
+          f"{(bk.net[bk.ok] > 0).mean():>8.1%}")
+
+    print("\n" + "=" * 118)
+    print("DIAGNOSTIC 2: ATR-DECILE x SIDE stratified random filter.")
+    print("  Draws random trigger subsets with the SAME ATR histogram and the SAME")
+    print("  side mix as the ADX rule. If ADX carries trend information it must beat")
+    print("  this; if it is an ATR proxy it will not.")
+    print("=" * 118)
+    dec = pd.qcut(a, 10, labels=False, duplicates="drop")
+    strata = dec * 2 + (bk.side > 0)
+    print(f"  {'rule':<28}{'sel':>6}{'n':>6}{'exp':>8}{'ATRmatched rand':>17}"
+          f"{'sd':>7}{'pATR':>8}{'pCount':>8}")
+    for t in (20, 25, 30):
+        keep = (F["adx"] > t) & ~np.isnan(F["adx"])
+        real, ntr = bk.exp(keep)
+        pA, mA, sA = strat_p(bk, keep, real, strata)
+        pC, mC, sC = first_p(bk, ntr, real)
+        print(f"  adx14 > {t:<20}{keep.mean():>6.2f}{ntr:>6}{real:>+8.2f}"
+              f"{mA:>+17.2f}{sA:>7.2f}{pA:>8.3f}{pC:>8.3f}")
+
+    print("\n" + "=" * 118)
+    print("DIAGNOSTIC 3: PLACEBO gates of the same selectivity built from ATR alone")
+    print("  and from raw activity - none of which is a trend statistic.")
+    print("=" * 118); print(HDR)
+    out = []
+    tr15 = lab.true_range(bk.df.high.values, bk.df.low.values, bk.df.close.values)
+    rel = (tr15 / np.where(bk.atr > 0, bk.atr, np.nan))[bk.idx]
+    for q, lbl in ((0.51, "low"), (0.32, "low")):
+        thr = np.nanquantile(a, q)
+        out.append(test(bk, a < thr, f"PLACEBO atr < q{q:.2f} ({lbl})"))
+    for q in (0.49, 0.68):
+        thr = np.nanquantile(a, q)
+        out.append(test(bk, a > thr, f"PLACEBO atr > q{q:.2f} (high)"))
+    for q in (0.51, 0.32):
+        thr = np.nanquantile(rel, 1 - q)
+        out.append(test(bk, rel > thr, f"PLACEBO bar range/atr > q{1-q:.2f}"))
+    return [o for o in out if o]
+
+
+def stage_adx_sweep(bk, F):
+    print("\n" + "=" * 118)
+    print("NEIGHBOURHOOD: fine ADX threshold grid. A real effect decays smoothly")
+    print("  across the grid; a mined one is a spike at one rung.")
+    print("=" * 118)
+    print(f"  {'thr':>5}{'sel':>7}{'n':>7}{'exp':>8}{'ctrl':>8}{'exc':>8}"
+          f"{'z':>7}{'p':>8}{'pS':>7}{'wr':>7}{'expR':>8}")
+    a = bk.atr[bk.idx]
+    rows = []
+    for t in range(8, 41, 2):
+        keep = (F["adx"] > t) & ~np.isnan(F["adx"])
+        real, ntr = bk.exp(keep)
+        if ntr < 60:
+            continue
+        g, _ = lab.sig_gate(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=STOP,
+                            targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT,
+                            n_draws=300, quiet=True)
+        pS = perm_p(bk, keep, real, nrep=1000)[0]
+        k = np.flatnonzero(keep & bk.ok)
+        s = bk.sess[k]; f = k[np.r_[True, s[1:] != s[:-1]]]
+        expR = (bk.net[f] / a[f]).mean()
+        rows.append((t, g))
+        print(f"  {t:>5}{keep.mean():>7.2f}{ntr:>7}{real:>+8.2f}{g['ctrl']:>+8.2f}"
+              f"{g['excess']:>+8.2f}{g['z']:>+7.2f}{g['p']:>8.4f}{pS:>7.3f}"
+              f"{g['wr']:>7.1%}{expR:>+8.3f}")
+    return rows
+
+
+def stage_adx_stab(bk, F):
+    print("\n" + "=" * 118)
+    print("STABILITY: does the ADX>25 result live in one period, or throughout?")
+    print("=" * 118)
+    keep = (F["adx"] > 25) & ~np.isnan(F["adx"])
+    a = bk.atr[bk.idx]
+    for lbl, m in (("ALL triggers", np.ones(len(keep), bool)), ("adx14>25", keep)):
+        k = np.flatnonzero(m & bk.ok)
+        s = bk.sess[k]; f = k[np.r_[True, s[1:] != s[:-1]]]
+        yr = bk.df.ts.values[bk.idx[f]].astype("datetime64[Y]").astype(int) + 1970
+        print(f"  {lbl}")
+        for y in np.unique(yr):
+            sl = bk.net[f][yr == y]
+            print(f"     {y}  n={len(sl):>4}  exp={sl.mean():>+7.2f}"
+                  f"  wr={(sl > 0).mean():>5.1%}")
+    print("\n  exit-reason split for adx14>25 (a rule earning at the TIME stop is a")
+    print("  direction bet, not a barrier edge):")
+    g, tr = lab.sig_gate(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=STOP,
+                         targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT, quiet=True)
+    _, tr0 = lab.sig_gate(bk.sym, bk.idx, bk.side, stop_mult=STOP, targ_mult=TARG,
+                          max_hold=MAXH, flat_tod=FLAT, quiet=True)
+    for nm, t in (("baseline", tr0), ("adx>25", tr)):
+        t = t[np.isin(t.sig_bar, np.where(bk.r)[0])]
+        row = f"  {nm:<10}"
+        for r_ in range(4):
+            sl = t[t.reason == r_]
+            row += (f"  {lab.REASONS[r_]}: {len(sl)/len(t):>5.1%} "
+                    f"exp={sl.net.mean() if len(sl) else 0:>+7.2f}")
+        print(row)
+        print(f"             long n={(t.side>0).sum():>4} exp={t[t.side>0].net.mean():>+6.2f}"
+              f"   short n={(t.side<0).sum():>4} exp={t[t.side<0].net.mean():>+6.2f}")
+
+
+# ================================================================== STAGE 3
+def kaufman_er(df, n):
+    c = df.close.values
+    d = np.abs(np.r_[0.0, np.diff(c)])
+    s = pd.Series(d).rolling(n).sum().values
+    ch = np.abs(c - np.r_[np.full(n, np.nan), c[:-n]])
+    return ch / np.where(s > 0, s, np.nan)
+
+
+def choppiness(df, n):
+    h, l, c = df.high.values, df.low.values, df.close.values
+    tr = lab.true_range(h, l, c)
+    s = pd.Series(tr).rolling(n).sum().values
+    rng = (pd.Series(h).rolling(n).max().values -
+           pd.Series(l).rolling(n).min().values)
+    return 100 * np.log10(s / np.where(rng > 0, rng, np.nan)) / np.log10(n)
+
+
+def stage_tod(bk, F):
+    print("\n" + "=" * 118)
+    print("DIAGNOSTIC 4: the ADX gate ENTERS LATER. Is that all it is?")
+    print("=" * 118)
+    tod = bk.df.tod.values[bk.idx]
+    for lbl, m in (("all triggers", np.ones(len(tod), bool)),
+                   ("adx14>25", (F["adx"] > 25) & ~np.isnan(F["adx"])),
+                   ("adx14>30", (F["adx"] > 30) & ~np.isnan(F["adx"]))):
+        k = np.flatnonzero(m & bk.ok); s = bk.sess[k]
+        f = k[np.r_[True, s[1:] != s[:-1]]]
+        t = tod[f]
+        print(f"  {lbl:<14} book entry tod: mean {t.mean():>6.1f} "
+              f"({int(t.mean())//60:02d}:{int(t.mean())%60:02d})  "
+              f"median {np.median(t):>5.0f}  q25 {np.percentile(t,25):>5.0f} "
+              f" q75 {np.percentile(t,75):>5.0f}   n={len(f)}")
+    a = bk.atr[bk.idx]
+    dec = pd.qcut(a, 10, labels=False, duplicates="drop")
+    ter = pd.qcut(a, 3, labels=False, duplicates="drop")
+    sd = (bk.side > 0).astype(int)
+    STR = {"side": sd,
+           "tod x side": tod * 2 + sd,
+           "ATRdecile x side": dec * 2 + sd,
+           "tod x side x ATRtercile": (tod * 2 + sd) * 3 + ter}
+    print(f"\n  random filters matched on ever-tighter strata (2,000 draws each):")
+    print(f"  {'rule':<12}{'strata':<26}{'exp':>8}{'randmean':>10}{'sd':>7}{'p':>8}")
+    for t in (25, 30):
+        keep = (F["adx"] > t) & ~np.isnan(F["adx"])
+        real, ntr = bk.exp(keep)
+        for nm, s in STR.items():
+            p, m_, sd_ = strat_p(bk, keep, real, s)
+            print(f"  {'adx>'+str(t):<12}{nm:<26}{real:>+8.2f}{m_:>+10.2f}"
+                  f"{sd_:>7.2f}{p:>8.3f}")
+
+
+def stage_corrob(bk):
+    print("\n" + "=" * 118)
+    print("CORROBORATION: if 'trend strength' is the mechanism, INDEPENDENT trend-")
+    print("  strength estimators must show it too. If only ADX does, it is a mined")
+    print("  threshold, not a mechanism.")
+    print("=" * 118); print(HDR)
+    df = bk.df; i = bk.idx; out = []
+    for n in (14, 28):
+        er = kaufman_er(df, n)[i]
+        for q in (0.5, 0.68, 0.8):
+            thr = np.nanquantile(er, q)
+            out.append(test(bk, (er > thr) & ~np.isnan(er),
+                            f"Kaufman ER({n}) > q{q:.2f}"))
+    for n in (14, 28):
+        ch = choppiness(df, n)[i]
+        for q in (0.5, 0.32, 0.2):
+            thr = np.nanquantile(ch, q)
+            out.append(test(bk, (ch < thr) & ~np.isnan(ch),
+                            f"choppiness({n}) < q{q:.2f}"))
+    e20, e50 = lab.ema(df.close.values, 20), lab.ema(df.close.values, 50)
+    sep = (np.abs(e20 - e50) / np.where(bk.atr > 0, bk.atr, np.nan))[i]
+    for q in (0.5, 0.68, 0.8):
+        thr = np.nanquantile(sep, q)
+        out.append(test(bk, (sep > thr) & ~np.isnan(sep),
+                        f"|ema20-ema50|/atr > q{q:.2f}"))
+    return [o for o in out if o]
+
+
+def stage_robust(bk, F):
+    print("\n" + "=" * 118)
+    print("ROBUSTNESS of adx14>25: other entry lookbacks, other geometry, other")
+    print("  instrument. Research block throughout.")
+    print("=" * 118)
+    print(f"  {'variant':<34}{'nb':>6}{'expb':>8}{'excb':>8}{'n':>6}{'exp':>8}"
+          f"{'ctrl':>8}{'exc':>8}{'z':>7}{'p':>8}{'pS':>7}")
+    global CFG
+    for sym in ("NAS", "US30"):
+        for ne in (10, 15, 20, 30, 40):
+            b = Book(sym=sym, n_entry=ne)
+            adx = adx_di(b.df, 14)[0][b.idx]
+            keep = (adx > 25) & ~np.isnan(adx)
+            g0, _ = lab.sig_gate(sym, b.idx, b.side, stop_mult=STOP, targ_mult=TARG,
+                                 max_hold=MAXH, flat_tod=FLAT, quiet=True)
+            real, ntr = b.exp(keep)
+            if ntr < 60:
+                continue
+            g, _ = lab.sig_gate(sym, b.idx[keep], b.side[keep], stop_mult=STOP,
+                                targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT,
+                                quiet=True)
+            CFG += 1
+            pS = perm_p(b, keep, real, nrep=1000)[0]
+            print(f"  {sym+' donchian n='+str(ne):<34}{g0['n']:>6}{g0['exp']:>+8.2f}"
+                  f"{g0['excess']:>+8.2f}{ntr:>6}{real:>+8.2f}{g['ctrl']:>+8.2f}"
+                  f"{g['excess']:>+8.2f}{g['z']:>+7.2f}{g['p']:>8.4f}{pS:>7.3f}")
+    keep = (F["adx"] > 25) & ~np.isnan(F["adx"])
+    for sm, tm, mh in ((1.0, 2.0, 16), (2.0, 2.0, 16), (1.5, 1.5, 16),
+                       (1.5, 3.0, 16), (1.5, 2.0, 8), (1.5, 2.0, 32)):
+        tr0 = lab.book(SYM, bk.idx, bk.side, stop_mult=sm, targ_mult=tm,
+                       max_hold=mh, flat_tod=FLAT, one_per_session=True)
+        g0 = lab.gate(SYM, tr0, sm, tm, max_hold=mh, flat_tod=FLAT, quiet=True)
+        tr1 = lab.book(SYM, bk.idx[keep], bk.side[keep], stop_mult=sm, targ_mult=tm,
+                       max_hold=mh, flat_tod=FLAT, one_per_session=True)
+        g = lab.gate(SYM, tr1, sm, tm, max_hold=mh, flat_tod=FLAT, quiet=True)
+        CFG += 1
+        print(f"  {f'NAS stop{sm} targ{tm} hold{mh}':<34}{g0['n']:>6}{g0['exp']:>+8.2f}"
+              f"{g0['excess']:>+8.2f}{g['n']:>6}{g['exp']:>+8.2f}{g['ctrl']:>+8.2f}"
+              f"{g['excess']:>+8.2f}{g['z']:>+7.2f}{g['p']:>8.4f}{'':>7}")
+
+
+def stage_boot(bk, F):
+    print("\n" + "=" * 118)
+    print("BOOTSTRAP over SESSIONS (the unit of independence): 95% CI on the")
+    print("  adx14>25 book's mean net, and on its gap to the baseline book on the")
+    print("  SAME sessions (paired where both trade).")
+    print("=" * 118)
+    keep = (F["adx"] > 25) & ~np.isnan(F["adx"])
+    ok = np.flatnonzero(bk.ok); s0 = bk.sess[ok]
+    base = ok[np.r_[True, s0[1:] != s0[:-1]]]
+    k = np.flatnonzero(keep & bk.ok); s1 = bk.sess[k]
+    filt = k[np.r_[True, s1[1:] != s1[:-1]]]
+    bs = pd.Series(bk.net[base], index=bk.sess[base])
+    fs = pd.Series(bk.net[filt], index=bk.sess[filt])
+    j = bs.index.intersection(fs.index)
+    d = (fs[j] - bs[j]).values
+    rng = np.random.default_rng(11)
+    for nm, x in (("adx>25 mean net", bk.net[filt]),
+                  ("baseline mean net", bk.net[base]),
+                  (f"paired diff on {len(j)} shared sessions", d)):
+        bsr = np.array([x[rng.integers(0, len(x), len(x))].mean() for _ in range(4000)])
+        print(f"  {nm:<44} mean={x.mean():>+7.2f}  95% CI "
+              f"[{np.percentile(bsr,2.5):>+7.2f}, {np.percentile(bsr,97.5):>+7.2f}]"
+              f"  p(<=0)={float((bsr<=0).mean()):.3f}")
