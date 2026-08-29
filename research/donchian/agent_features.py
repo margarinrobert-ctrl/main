@@ -377,3 +377,42 @@ def filter_gate(sym, feat_arr_at_bar, direction, qs, label, n_draws=300,
         g["q"] = q; g["thr"] = float(t); g["kept_frac"] = float(keep[resmask].mean())
         rows.append(g)
     return pd.DataFrame(rows)
+
+
+# ============================================ random-filter control (selectivity)
+def random_filter_control(sym, idx, side, keep, n_draws=400, seed=7,
+                          one_per_session=True, stratify_tod=True):
+    """Hold the TRIGGER population fixed and randomise only WHICH triggers are
+    kept, at identical selectivity (optionally preserving the kept set's
+    minute-of-day histogram). This is the control the matched control cannot be:
+    it asks whether the FEATURE picked the trades, or merely picked fewer.
+    """
+    df, w, r = lab.research(sym)
+    resmask = np.isin(idx, np.where(r)[0])
+    real = lab.book(sym, idx[keep], side[keep], stop_mult=SM, targ_mult=TM,
+                    max_hold=MH, one_per_session=one_per_session)
+    real = real[np.isin(real.sig_bar.values, np.where(r)[0])]
+    obs = float(real.net.mean())
+    tod = df.tod.values
+    pool = np.where(resmask)[0]                       # positions inside idx
+    kp = np.where(keep & resmask)[0]
+    rng = np.random.default_rng(seed)
+    if stratify_tod:
+        want = pd.Series(tod[idx[kp]]).value_counts()
+        by = {t: pool[tod[idx[pool]] == t] for t in want.index}
+    means = np.empty(n_draws)
+    for d in range(n_draws):
+        if stratify_tod:
+            sel = np.concatenate([rng.choice(by[t], size=int(k), replace=False)
+                                  for t, k in want.items() if len(by[t]) >= k])
+        else:
+            sel = rng.choice(pool, size=len(kp), replace=False)
+        b = lab.book(sym, idx[sel], side[sel], stop_mult=SM, targ_mult=TM,
+                     max_hold=MH, one_per_session=one_per_session)
+        b = b[np.isin(b.sig_bar.values, np.where(r)[0])]
+        means[d] = b.net.mean() if len(b) else np.nan
+    means = means[~np.isnan(means)]
+    z = (obs - means.mean()) / means.std(ddof=1)
+    p = float((means >= obs).mean())
+    return dict(obs=obs, ctrl=float(means.mean()), excess=float(obs - means.mean()),
+                z=float(z), p=p, n=len(real))

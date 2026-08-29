@@ -1,4 +1,25 @@
-"""EXIT / RISK QUANT -- Donchian breakout exit design.
+"""EXIT / RISK QUANT -- Donchian breakout exit design.   RESULT: CLEAN NEGATIVE.
+
+Run order and multiplicity (every gate2() call is one configuration):
+    python3 agent_exits.py verify        engine check, 0 gates
+    python3 agent_exits.py surface       168   7 stops x 8 targets x 3 lookbacks
+    python3 agent_exits.py timing         75   max_hold, flat_tod, truncated window
+    python3 agent_exits.py timestop       44   no barriers at all + side split
+    python3 agent_exits.py trailing       52   ATR chandelier + Donchian exit channel
+    python3 agent_exits.py bepart         36   breakeven stop, partial target
+    python3 agent_exits.py replicate      45   the same shapes on US30
+    python3 agent_exits.py stability      32   5 seeds x 5 leaders, 3000-draw controls
+    python3 agent_exits.py summary        11   family table with the gross split
+                                        ----
+                                         463 configurations evaluated
+
+Headline: 0 of 463 reached excess>0 with control p<0.05 (8.4 expected by chance
+at 5% under a pure null -- so this family under-performs its own null).  Best
+p anywhere is 0.107 and it is seed-stable, i.e. genuinely 0.107, not noise.
+Mean z over the 168-cell stop/target surface is -0.30: the Donchian break is, if
+anything, slightly WORSE than a minute-of-day-matched random entry.  Excess is
+invariant to the cost model (both books pay the same round turn), so no exit
+here is "nearly profitable with cheaper fills" in the score.
 
 Entry is FIXED at the plain Donchian close-break in 07:00-11:00 New York,
 n_entry in {10,20,40}, both sides, one trade per session.  Everything varied
@@ -607,6 +628,44 @@ def stability():
     gate2("US30", idx, side, dict(stop_mult=999.0, targ_mult=0.0, max_hold=12,
                                   flat_tod=660),
           label="US30 n20 hold 12 no barriers (3000 draws)", n_draws=3000, seed=7)
+
+
+# ------------------------------------------------------------------- stage 7
+def summary():
+    """Final table: one representative per exit family, at 1500 control draws,
+    with the GROSS decomposition.  Note excess is invariant to the cost model
+    (both books pay the same round turn), so nothing here is 'nearly profitable
+    with cheaper fills' in the score -- only in absolute terms."""
+    print("\n" + "=" * 108)
+    print("STAGE 7  FAMILY SUMMARY   NAS research block, 07:00-11:00, one trade/session")
+    fams = [
+        ("BASELINE 1.5/2.0 hold16",      "NAS", 20, dict(stop_mult=1.5, targ_mult=2.0, max_hold=16, flat_tod=660)),
+        ("best barrier corner 0.75/3.0", "NAS", 20, dict(stop_mult=0.75, targ_mult=3.0, max_hold=16, flat_tod=660)),
+        ("widest stop 3.0/5.0",          "NAS", 20, dict(stop_mult=3.0, targ_mult=5.0, max_hold=16, flat_tod=660)),
+        ("best time stop hold 4",        "NAS", 20, dict(stop_mult=1.5, targ_mult=2.0, max_hold=4, flat_tod=660)),
+        ("pure time stop hold 4",        "NAS", 20, dict(stop_mult=999.0, targ_mult=0.0, max_hold=4, flat_tod=660)),
+        ("pure time stop hold 12",       "NAS", 20, dict(stop_mult=999.0, targ_mult=0.0, max_hold=12, flat_tod=660)),
+        ("run to 16:00 flat_tod 960",    "NAS", 20, dict(stop_mult=1.5, targ_mult=2.0, max_hold=32, flat_tod=960)),
+        ("chandelier 2.0 ATR",           "NAS", 20, dict(stop_mult=1.5, targ_mult=0.0, max_hold=16, flat_tod=660,
+                                                         trail="chand", trail_p=2.0)),
+        ("donchian exit L=2",            "NAS", 20, dict(stop_mult=1.5, targ_mult=0.0, max_hold=16, flat_tod=660,
+                                                         trail="donch", trail_p=2)),
+        ("breakeven at 1.5 ATR",         "NAS", 20, dict(stop_mult=1.5, targ_mult=2.0, max_hold=16, flat_tod=660,
+                                                         be_trig=1.5)),
+        ("half at 1.5 ATR + BE",         "NAS", 20, dict(stop_mult=1.5, targ_mult=3.0, max_hold=16, flat_tod=660,
+                                                         part_frac=0.5, part_targ=1.5, part_be=True)),
+    ]
+    print(f"  {'family':<32} {'n':>5} {'gross':>7} {'exp':>7} {'ctrl':>7} {'exc':>6} "
+          f"{'z':>6} {'p':>6} {'pf':>5} {'wr':>6}")
+    for nm, sym, ne, cfg in fams:
+        idx, side = triggers(sym, ne)
+        g, tr = gate2(sym, idx, side, cfg, label=nm, n_draws=1500, seed=11, quiet=True)
+        gross = tr.gross.mean()
+        print(f"  {nm:<32} {g['n']:>5,} {gross:>+7.2f} {g['exp']:>+7.2f} {g['ctrl']:>+7.2f} "
+              f"{g['excess']:>+6.2f} {g['z']:>+6.2f} {g['p']:>6.3f} {g['pf']:>5.2f} {g['wr']:>5.1%}")
+        rsplit(tr, "")
+    print("\n  round turn charged: 2.00 pts cost + 0.25 pts entry slippage = 2.25 pts")
+    print("  gross column = mean(exit-entry) BEFORE the 2.00 cost, AFTER slippage.")
 
 # ================================================================ MAIN
 if __name__ == "__main__":
