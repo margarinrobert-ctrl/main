@@ -36,6 +36,47 @@
 // system that takes thousands of trades. Set both to your instrument below before reading any
 // number this produces. Defaults are the research's own assumption on a 1-point-per-unit index
 // CFD; on a futures contract use the contract's real per-order fee instead.
+// =============================================================================================
+// FOUR OPTIONAL ADDITIONS, ALL OFF BY DEFAULT, ALL MEASURED ON A DIFFERENT BASE
+// ---------------------------------------------------------------------------------------------
+// AO >= 0.25 + CHOP <= 40, the volatility-adaptive stop, an EMA crossover and pullback entry
+// confirmation are all available below. Every one of them ships OFF, and every one carries the
+// same warning: THE FIGURES BEHIND THEM WERE MEASURED ON A DONCHIAN 30/20 BASE WITH A SINGLE
+// UNIT AND A 2.0N STOP -- not on a four-unit Turtle ladder with 20-period ATR and a skip rule.
+// Transplanting a filter across bases is untested here, and this branch has watched a filter
+// invert when moved (STUDY_V12: the ADX gate that survived selection is the thing that flips).
+//
+//   AO >= 0.25 WITH CHOP <= 40 is the one that was asked for by name. On the Donchian base it is
+//   row 25 of a top-100 ranked on research out of a 1,184-cell grid:
+//       research  n 258  PF 1.416  R +0.1970  Sharpe 1.58
+//       LOCKED    n 143  PF 1.276  R +0.1322  Sharpe 1.18
+//   Read it against the NO-MOMENTUM row of that same table -- `30m off / ADX off / CHOP<=40`:
+//       research  PF 1.355                    LOCKED  PF 1.229
+//   So AO buys +0.047 of locked profit factor. In the same grid, 16 of 36 momentum settings beat
+//   the no-momentum baseline on the locked block -- 44%, where chance is 50%. The CHOP gate is
+//   doing the work; AO is inside the noise. See STUDY_V23_MOMENTUM_REGIME.md.
+//
+//   THE VOLATILITY-ADAPTIVE STOP widens when 20-bar realised volatility sits LOW in its own
+//   250-bar percentile, because ATR is backward-looking and volatility mean-reverts, so a fixed
+//   multiple is too tight exactly when vol is about to expand. On the Donchian base it took
+//   locked PF 1.158 -> 1.249 and the naive inverse was worse than flat on all six cells tested.
+//   But it is BETTER ON LOCKED THAN ON RESEARCH, which is the wrong shape and why it is off.
+//   See STUDY_V22_VOLATILITY.md.
+//
+//   THE EMA CROSSOVER is included because it was asked for, and the measurement is unambiguous:
+//   over 1,016 declared MA-crossover cells, 45% beat the no-MA baseline out of sample where
+//   chance is 50%, mean locked PF change +0.015, and a lag-matched follow-up showed the apparent
+//   differences between MA TYPES are a sample-size effect. See STUDY_V24_MA_CROSSOVER.md.
+//
+//   PULLBACK ENTRY CONFIRMATION is the one with a mechanism against it rather than just a null.
+//   Waiting for price to retrace before entering discards precisely the trades whose edge is
+//   IMMEDIACY. Measured two independent ways on this branch: a resting limit 0.75xATR below the
+//   signal took a validated book from $55,424 to $13,415 (STUDY_LIMIT_ENTRY.md), and a moving
+//   average tap earned -0.0223 R on the 31% of breakouts that pulled back against +0.1387 R on
+//   simply taking all of them -- despite the fill being 1.44 ATR cheaper (STUDY_KAMA_ENTRY.md).
+//   A pullback entry SUBSTITUTES for a signal; it does not complement one. On a Turtle, whose
+//   whole premise is that the breakout itself is the event, expect this to hurt.
+// =============================================================================================
 strategy("Turtle Long-Only (measured presets)", overlay = true, pyramiding = 4,
          default_qty_type = strategy.fixed, default_qty_value = 1,
          initial_capital = 100000, calc_on_every_tick = false,
@@ -113,6 +154,46 @@ sessStart = input.session("0000-0000", "Entry session", group = "Entry session (
 sessTZ    = input.string("America/New_York", "Session timezone", group = "Entry session (free)",
      options = ["America/New_York", "America/Chicago", "Europe/London", "UTC"])
 
+// ----------------------------------------------------------------- OPTIONAL ADD-ONS (all OFF)
+gAO = "Add-on: AO + CHOP gate (OFF -- measured on a different base)"
+useAO   = input.bool(false, "Require Awesome Oscillator above a floor", group = gAO,
+     tooltip = "AO normalised by ATR. On the Donchian base, AO>=0.25 with CHOP<=40 scored locked PF 1.276 against the no-momentum row's 1.229 -- +0.047, inside the noise of a 1,184-cell grid where only 44% of momentum settings beat baseline out of sample and chance is 50%.")
+aoMin   = input.float(0.25, "  AO floor, in ATR units", step = 0.05, group = gAO)
+useChop = input.bool(false, "Require CHOP(14) at or below a ceiling", group = gAO,
+     tooltip = "The only regime filter on this branch that has cleared a same-selectivity control on both blocks (locked p 0.048). In the AO grid it is doing most of the work that the AO row appears to show.")
+chopMax = input.float(40.0, "  CHOP ceiling", minval = 1, maxval = 100, group = gAO)
+
+gVS = "Add-on: volatility-adaptive stop and target (OFF)"
+useVolStop = input.bool(false, "Scale the ATR stop by the volatility percentile", group = gVS,
+     tooltip = "Wider when 20-bar realised vol sits LOW in its own 250-bar range, because ATR is backward-looking and vol mean-reverts. Donchian base: locked PF 1.158 -> 1.249, and the naive inverse was worse than flat on all six cells. It is BETTER ON LOCKED THAN RESEARCH -- the wrong shape -- which is why it is off.")
+volLen     = input.int(20, "  realised-vol window", minval = 2, group = gVS)
+volRankLen = input.int(250, "  percentile lookback", minval = 20, group = gVS)
+volSplit   = input.float(50.0, "  percentile split", minval = 1, maxval = 99, group = gVS)
+stopCalm   = input.float(2.5, "  ATR multiple when CALM (at or below split)", step = 0.1, group = gVS)
+stopFast   = input.float(1.5, "  ATR multiple when FAST (above split)", step = 0.1, group = gVS)
+useTp      = input.bool(false, "Take profit at a multiple of the stop", group = gVS,
+     tooltip = "OFF. No take profit has beaten every target tested on this branch eight independent times, and a Turtle in particular earns in the tail -- a target truncates exactly the trades the channel exit exists to hold.")
+tpR        = input.float(2.0, "  target, in R", minval = 0.1, step = 0.1, group = gVS)
+
+gMA = "Add-on: EMA crossover (OFF)"
+useMa   = input.bool(false, "Require an EMA crossover condition", group = gMA,
+     tooltip = "Over 1,016 declared MA-crossover cells, 45% beat the no-MA baseline out of sample where chance is 50%, and the mean locked profit-factor change was +0.015. A lag-matched follow-up showed the apparent differences between MA types are a sample-size effect.")
+maFast  = input.int(20, "  fast EMA", minval = 2, group = gMA)
+maSlow  = input.int(50, "  slow EMA", minval = 3, group = gMA)
+maMode  = input.string("state (fast above slow)", "  reading", group = gMA,
+     options = ["state (fast above slow)", "cross (within N bars)"],
+     tooltip = "STATE forms were neutral in the grid; CROSS forms carried the highest research profit factor and the lowest locked one -- classic selection decay.")
+maBars  = input.int(5, "  cross counts for this many bars", minval = 1, group = gMA)
+
+gPB = "Add-on: pullback entry confirmation (OFF -- a mechanism argues against it)"
+usePb   = input.bool(false, "Wait for a pullback before entering", group = gPB,
+     tooltip = "Measured twice, independently: a resting limit 0.75xATR below the signal took a validated book from $55,424 to $13,415, and a moving-average tap earned -0.0223 R on the 31% of breakouts that pulled back against +0.1387 R on taking all of them. A pullback entry SUBSTITUTES for a signal rather than complementing one, and a Turtle's premise is that the breakout IS the event.")
+pbAtr   = input.float(0.75, "  retrace this many ATR below the signal close", minval = 0.05,
+     step = 0.05, group = gPB)
+pbBars  = input.int(6, "  cancel if unfilled after this many bars", minval = 1, group = gPB)
+pbApply = input.string("entries only", "  apply to", options = ["entries only", "entries and adds"],
+     group = gPB, tooltip = "Pyramid adds are momentum events by construction; requiring a pullback on them fights the ladder's purpose.")
+
 // ----------------------------------------------------------------- custom (used only by Custom)
 cEntry1   = input.int(20,  "Custom entry 1 (bars)", minval = 2, group = "Custom only")
 cEntry2   = input.int(55,  "Custom entry 2 (bars)", minval = 2, group = "Custom only")
@@ -172,11 +253,34 @@ ema100  = ta.ema(close, 100)
 [diPlus, diMinus, adxVal] = ta.dmi(14, 14)
 distEma = atrN > 0 ? (close - ema100) / atrN : 0.0
 
+// ---- add-on series. Each is only consulted when its own switch is on.
+// Awesome Oscillator, normalised by ATR so the floor means the same thing at any price level.
+aoRaw  = ta.sma(hl2, 5) - ta.sma(hl2, 34)
+aoV    = atrN > 0 ? aoRaw / atrN : na
+// Choppiness Index: 100 * log10(sum(TR,14) / 14-bar range) / log10(14). LOW means trending.
+chopV  = 100 * math.log10(math.sum(ta.tr(true), 14) /
+     math.max(ta.highest(high, 14) - ta.lowest(low, 14), syminfo.mintick)) / math.log10(14)
+// Realised volatility ranked inside its own trailing window, in [0,1].
+lr1    = math.log(close / close[1])
+ccVol  = math.sqrt(ta.sma(lr1 * lr1, volLen))
+volPct = ta.percentrank(ccVol, volRankLen - 1)
+// The stop multiple actually used. `atrMult` is the preset's locked constant unless the
+// volatility-adaptive switch is on, in which case the percentile chooses between two multiples.
+effMult = not useVolStop ? atrMult : (na(volPct) ? atrMult : (volPct <= volSplit ? stopCalm : stopFast))
+emaF   = ta.ema(close, maFast)
+emaS   = ta.ema(close, maSlow)
+maUp   = emaF > emaS
+maFresh = ta.barssince(maUp and not maUp[1]) <= maBars - 1
+maOk   = not useMa or (not na(emaF) and not na(emaS) and
+     (maMode == "state (fast above slow)" ? maUp : maFresh))
+aoOk   = not useAO or (not na(aoV) and aoV >= aoMin)
+chopOk = not useChop or (not na(chopV) and chopV <= chopMax)
+
 // ----------------------------------------------------------------- gates
 adxOk  = adxMax <= 0 or adxVal < adxMax
 extOk  = extMax <= 0 or distEma < extMax
 inSess = not sessOn or not na(time(timeframe.period, sessStart, sessTZ))
-gateOk = adxOk and extOk and inSess and onDesignTF
+gateOk = adxOk and extOk and inSess and onDesignTF and aoOk and chopOk and maOk
 
 // ----------------------------------------------------------------- state
 // The stop and the pyramid ladder are anchored to the ACTUAL FILL, not to the signal bar's
@@ -188,6 +292,8 @@ var float stopLvl   = na
 var float nextAdd   = na
 var float firstFill = na
 var float pendAtr   = na
+var float pendMult  = na
+var int   pbExpiry  = na
 var int   unitsOn   = 0
 var int   sysOn     = 0
 var int   lastCount = 0
@@ -221,8 +327,12 @@ if barstate.isconfirmed and strategy.opentrades > lastCount
     anchorAtr = na(pendAtr) ? atrN : pendAtr
     if lastCount == 0
         firstFill := fillPx
-    stopLvl   := fillPx - atrMult * anchorAtr
+    anchorMult = na(pendMult) ? atrMult : pendMult
+    stopLvl   := fillPx - anchorMult * anchorAtr
     nextAdd   := fillPx + pyrStep * anchorAtr
+    if useTp
+        strategy.exit("tp", limit = fillPx + tpR * anchorMult * anchorAtr)
+    pbExpiry  := na
     unitsOn   := strategy.opentrades
     lastCount := strategy.opentrades
 
@@ -232,24 +342,50 @@ flat = strategy.position_size == 0
 sig2 = high > chanHi2[1]
 sig1 = high > chanHi1[1]
 
+// A pullback entry rests a LIMIT below the signal close instead of taking the next open. The
+// order is cancelled after `pbBars` bars, because an unfilled order left live would eventually
+// fill on an unrelated move -- which is a different strategy, not a delayed version of this one.
+pbLevel = close - pbAtr * atrN
+
 if barstate.isconfirmed and flat and gateOk and atrN > 0
     if sig2
-        strategy.entry("S2", strategy.long, qty = unitQty)
-        sysOn   := 2
-        pendAtr := atrN
+        if usePb
+            strategy.entry("S2", strategy.long, qty = unitQty, limit = pbLevel)
+            pbExpiry := bar_index + pbBars
+        else
+            strategy.entry("S2", strategy.long, qty = unitQty)
+        sysOn    := 2
+        pendAtr  := atrN
+        pendMult := effMult
     else if sig1
         if skipWin and lastWin
             lastWin := false
         else
-            strategy.entry("S1", strategy.long, qty = unitQty)
-            sysOn   := 1
-            pendAtr := atrN
+            if usePb
+                strategy.entry("S1", strategy.long, qty = unitQty, limit = pbLevel)
+                pbExpiry := bar_index + pbBars
+            else
+                strategy.entry("S1", strategy.long, qty = unitQty)
+            sysOn    := 1
+            pendAtr  := atrN
+            pendMult := effMult
+
+// Expire an unfilled pullback order. `flat` is still true because nothing filled.
+if barstate.isconfirmed and usePb and flat and not na(pbExpiry) and bar_index > pbExpiry
+    strategy.cancel("S1")
+    strategy.cancel("S2")
+    pbExpiry := na
 
 // ----------------------------------------------------------------- pyramid adds
 if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
     if high >= nextAdd
-        strategy.entry("add" + str.tostring(unitsOn + 1), strategy.long, qty = unitQty)
-        pendAtr := atrN
+        addId = "add" + str.tostring(unitsOn + 1)
+        if usePb and pbApply == "entries and adds"
+            strategy.entry(addId, strategy.long, qty = unitQty, limit = close - pbAtr * atrN)
+        else
+            strategy.entry(addId, strategy.long, qty = unitQty)
+        pendAtr  := atrN
+        pendMult := effMult
 
 // ----------------------------------------------------------------- exit
 // One stop order at the HIGHER of the ATR stop and the channel low: falling price reaches that
