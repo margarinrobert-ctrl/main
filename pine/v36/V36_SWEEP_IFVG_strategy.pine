@@ -185,43 +185,56 @@ sweepHit(float lvl, int side) =>
         res := pierced and backIn and (side > 0 ? close[1] < lvl : close[1] > lvl)
     res
 
+// Returns the swept LEVEL, or na. It deliberately does NOT return an index.
+//
+// The first version did, and it was wrong: it pruned expired pools in the same downward pass that
+// searched for a match, so every removal at a lower index shifted the recorded hit index down by
+// one, and the caller's array.remove() then addressed a slot past the end -- "Index 14 is out of
+// bounds, array size is 14". An index into a mutating array is not a durable reference.
+//
+// Two passes instead. Prune first, so the array is stable; then search, and remove the match at the
+// moment it is found, while the index is still valid. Nothing outside this function ever holds an
+// index into these arrays.
 scanPools(bool isHigh) =>
     arr  = isHigh ? poolHi : poolLo
     arrB = isHigh ? poolHiB : poolLoB
     int  side = isHigh ? -1 : 1
-    int  hitIdx = -1
     float hitLvl = na
-    if array.size(arr) > 0
-        for i = array.size(arr) - 1 to 0
-            int born = array.get(arrB, i)
-            if bar_index - born > poolLife
+
+    // pass 1 -- expire. Downward, so surviving lower indices are never disturbed.
+    if array.size(arrB) > 0
+        for i = array.size(arrB) - 1 to 0
+            if i < array.size(arrB) and bar_index - array.get(arrB, i) > poolLife
                 array.remove(arr, i)
                 array.remove(arrB, i)
-            else
-                if hitIdx < 0 and sweepHit(array.get(arr, i), side)
-                    hitIdx := i
-                    hitLvl := array.get(arr, i)
-    [hitIdx, hitLvl]
+
+    // pass 2 -- match. The array is stable now, so the index is valid when it is used.
+    if array.size(arr) > 0
+        for i = array.size(arr) - 1 to 0
+            if i < array.size(arr)
+                float lvl = array.get(arr, i)
+                if sweepHit(lvl, side)
+                    hitLvl := lvl
+                    array.remove(arr, i)
+                    array.remove(arrB, i)
+                    break
+    hitLvl
 
 if barstate.isconfirmed and bar_index - lastSweep >= cooldown and not na(atr) and atr > 0
-    [iL, lvlL] = scanPools(false)
-    [iH, lvlH] = scanPools(true)
-    if iL >= 0
+    float lvlL = scanPools(false)
+    float lvlH = scanPools(true)
+    if not na(lvlL)
         sweepBar   := bar_index
         sweepSide  := 1
         sweepExt   := low
         sweptLevel := lvlL
         lastSweep  := bar_index
-        array.remove(poolLo, iL)
-        array.remove(poolLoB, iL)
-    else if iH >= 0
+    else if not na(lvlH)
         sweepBar   := bar_index
         sweepSide  := -1
         sweepExt   := high
         sweptLevel := lvlH
         lastSweep  := bar_index
-        array.remove(poolHi, iH)
-        array.remove(poolHiB, iH)
 
 // ---- FVG, invalidation, and the inversion --------------------------------------------------------
 bullFVG = low > high[2]
