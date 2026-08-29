@@ -1036,3 +1036,120 @@ def stage_prewin_diag(bk):
         yr = df.ts.values[bk.idx[f]].astype("datetime64[Y]").astype(int) + 1970
         print("     year " + " ".join(f"{y}:{x[yr==y].mean():+.1f}(n{int((yr==y).sum())})"
                                       for y in np.unique(yr)))
+
+
+def stage_final(bk):
+    print("\n" + "=" * 118)
+    print("FINAL STRESS on ADX@07:00 > 30 (the one survivor).")
+    print("=" * 118)
+    df = bk.df; i = bk.idx
+    pv = prewin_map(df, adx_di(df, 14)[0])[i]
+    keep = (pv > 30) & ~np.isnan(pv)
+    real, ntr = bk.exp(keep)
+    ok = np.flatnonzero(bk.ok); s0 = bk.sess[ok]
+    base = ok[np.r_[True, s0[1:] != s0[:-1]]]
+    k = np.flatnonzero(keep & bk.ok); s1 = bk.sess[k]
+    filt = k[np.r_[True, s1[1:] != s1[:-1]]]
+    yb = df.ts.values[bk.idx[base]].astype("datetime64[Y]").astype(int) + 1970
+    yf = df.ts.values[bk.idx[filt]].astype("datetime64[Y]").astype(int) + 1970
+    nb, nf = bk.net[base], bk.net[filt]
+    print("  LEAVE-ONE-YEAR-OUT jackknife (drop a year from BOTH arms):")
+    print(f"  {'dropped':<10}{'n':>6}{'gate exp':>10}{'base exp':>10}{'gap':>8}"
+          f"{'pCnt':>8}")
+    rng = np.random.default_rng(21)
+    for y in [None] + list(np.unique(yf)):
+        mf = np.ones(len(nf), bool) if y is None else (yf != y)
+        mb = np.ones(len(nb), bool) if y is None else (yb != y)
+        x, pool = nf[mf], nb[mb]
+        e = np.array([pool[rng.integers(0, len(pool), len(x))].mean()
+                      for _ in range(20000)])
+        # sampling WITHOUT replacement is the exact test; with replacement is
+        # conservative here because the gate's trades are inside the pool
+        e2 = np.array([pool[rng.permutation(len(pool))[:len(x)]].mean()
+                       for _ in range(5000)])
+        print(f"  {'none' if y is None else y:<10}{len(x):>6}{x.mean():>+10.2f}"
+              f"{pool.mean():>+10.2f}{x.mean()-pool.mean():>+8.2f}"
+              f"{float((e2 >= x.mean()).mean()):>8.4f}")
+    print("\n  HIGH-RESOLUTION matched control (5,000 draws) and exact conditional")
+    print("  randomisation (50,000 random subsets of the baseline book):")
+    g, _ = lab.sig_gate(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=STOP,
+                        targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT,
+                        n_draws=5000, quiet=True)
+    pC = first_p(bk, ntr, real, nrep=50000, seed=77)[0]
+    print(f"  n={g['n']} exp={g['exp']:+.2f} ctrl={g['ctrl']:+.2f} "
+          f"excess={g['excess']:+.2f} z={g['z']:+.2f} matched-control p={g['p']:.5f}"
+          f"  pCnt={pC:.5f}  pf={g['pf']:.2f} wr={g['wr']:.1%}")
+    print("\n  IS IT A GRADIENT OR A SINGLE TOP BUCKET? disjoint buckets, not")
+    print("  cumulative thresholds (a cumulative sweep looks monotone whenever the")
+    print("  effect sits only in the tail):")
+    print(f"  {'bucket':<22}{'n':>6}{'exp':>9}{'wr':>8}{'vs base':>9}")
+    for lo, hi in ((0, 20), (20, 25), (25, 30), (30, 35), (35, 100)):
+        m = (pv >= lo) & (pv < hi) & ~np.isnan(pv)
+        e, n_ = bk.exp(m)
+        kk = np.flatnonzero(m & bk.ok); ss = bk.sess[kk]
+        ff = kk[np.r_[True, ss[1:] != ss[:-1]]]
+        print(f"  ADX@07:00 [{lo:>2},{hi:>3})   {n_:>6}{e:>+9.2f}"
+              f"{(bk.net[ff] > 0).mean():>8.1%}{e - nb.mean():>+9.2f}")
+    print("\n  COST STRESS (2x costs) and a 2-contract-equivalent slippage:")
+    for cm in (1.0, 2.0, 3.0):
+        tr = lab.book(bk.sym, bk.idx[keep], bk.side[keep], stop_mult=STOP,
+                      targ_mult=TARG, max_hold=MAXH, flat_tod=FLAT, cost_mult=cm)
+        tr = tr[np.isin(tr.sig_bar, np.where(bk.r)[0])]
+        tr0 = lab.book(bk.sym, bk.idx, bk.side, stop_mult=STOP, targ_mult=TARG,
+                       max_hold=MAXH, flat_tod=FLAT, cost_mult=cm)
+        tr0 = tr0[np.isin(tr0.sig_bar, np.where(bk.r)[0])]
+        print(f"    cost x{cm:.0f}: gate exp={tr.net.mean():+.2f}  "
+              f"baseline exp={tr0.net.mean():+.2f}  gap={tr.net.mean()-tr0.net.mean():+.2f}")
+
+
+def stage_shift(bk, thr=30, n=14):
+    """CIRCULAR-SHIFT control - the one the earlier controls were missing.
+
+    ADX@07:00 is a persistent SESSION-LEVEL state, so a gate on it selects
+    contiguous RUNS of sessions. Session outcomes are themselves serially
+    correlated (volatility clustering), so an i.i.d. random subset of trades is
+    NOT an adequate null: it scatters where the real gate clusters, and it
+    therefore has far too little variance. Circularly shifting the state by L
+    sessions keeps the selectivity AND the run structure and destroys only the
+    alignment with price. That is the correct null for this rule.
+    """
+    print("\n" + "=" * 118)
+    print(f"CIRCULAR-SHIFT CONTROL for ADX({n})@07:00 > {thr}")
+    print("=" * 118)
+    df = bk.df; i = bk.idx
+    sess = df.sess.values
+    a = adx_di(df, n)[0]
+    pre = np.flatnonzero(df.tod.values < 420); s = sess[pre]
+    last = pre[np.r_[s[1:] != s[:-1], True]]
+    ns = int(sess[bk.idx].max()) + 1
+    val = np.full(ns, np.nan); val[sess[last][sess[last] < ns]] = a[last][sess[last] < ns]
+    ok = np.isfinite(val)
+    base = bk.exp(np.ones(len(i), bool))[0]
+
+    def run_state(v):
+        pv = v[sess[i]]
+        k = (pv > thr) & np.isfinite(pv)
+        return bk.exp(k) + (k.mean(),)
+
+    real, ntr, sel = run_state(val)
+    shifts = np.arange(1, ns)
+    res = np.array([run_state(np.roll(val, int(L)))[0] for L in shifts])
+    good = np.isfinite(res)
+    p = float((res[good] >= real).mean())
+    print(f"  real  : n={ntr:>4} sel={sel:.2f} exp={real:+7.2f}  (baseline {base:+.2f})")
+    print(f"  shifts: {good.sum():,} circular shifts of the SAME state")
+    print(f"          mean {res[good].mean():+7.2f}  sd {res[good].std(ddof=1):6.2f}"
+          f"  q95 {np.percentile(res[good],95):+7.2f}  max {res[good].max():+7.2f}")
+    print(f"  p(shifted >= real) = {p:.4f}"
+          f"    <- the honest p for a session-level gate")
+    print(f"  fraction of SHIFTED (i.e. meaningless) states that would have passed")
+    print(f"    the i.i.d. subset test at 0.05: ", end="")
+    hits = 0; tested = 0
+    for L in shifts[::37]:
+        e, m = run_state(np.roll(val, int(L)))[:2]
+        if m < 80 or not np.isfinite(e):
+            continue
+        tested += 1
+        hits += first_p(bk, m, e, nrep=2000, seed=int(L))[0] < 0.05
+    print(f"{hits}/{tested} = {hits/max(tested,1):.1%}  (nominal 5%)")
+    return p
