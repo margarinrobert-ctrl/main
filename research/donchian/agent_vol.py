@@ -489,6 +489,15 @@ CUTS_C = [("on8h_adr",  "<", [0.18, 0.21, 0.24, 0.28, 0.32, 0.40, 0.50]),
           ("on8h",      "<", [2.0, 2.6, 3.2, 4.0, 5.0, 6.5, 8.0])]
 
 
+RULES = [
+    ("A  avoid top ATR decile",   [("atrpct1500", "<", 0.89)]),
+    ("A- TOP ATR decile only",    [("atrpct1500", ">", 0.89)]),
+    ("B  thru > 1.0 ATR",         [("thru", ">", 1.0)]),
+    ("B2 bar range > 3.8 ATR",    [("barexp", ">", 3.8)]),
+    ("AB thru>1.0 & atr<0.89",    [("thru", ">", 1.0), ("atrpct1500", "<", 0.89)]),
+]
+
+
 PRIMARY = ["atrpct4500", "atrrel4500", "atrpct1500", "atrpct500",
            "width20", "width10", "width7", "atr5_20",
            "barexp", "bodyexp", "thru",
@@ -720,6 +729,14 @@ def main(stage="all"):
                    title="V5 OVERNIGHT SPEND. keep only sessions whose overnight range is small")
     if stage in ("all", "9"):
         stage_dissect(bk, FB, F)
+    if stage in ("all", "6"):
+        stage_combo(bk, FB, F, RULES)
+        stage_halves(bk, F, RULES)
+    if stage in ("all", "7"):
+        stage_robust(RULES)
+    if stage in ("all", "8"):
+        stage_robust(RULES, syms=("US30",), nents=(10, 20, 40),
+                     geoms=((1.5, 2.0), (1.0, 2.0)))
     print(f"\nCONFIGURATIONS GATED SO FAR: {CFG}    ({time.time()-t0:.0f}s)")
     return bk, F
 

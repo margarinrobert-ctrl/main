@@ -374,6 +374,103 @@ def sec_E(df, w, r, sym="NAS"):
               f"MFE16 {np.nanmean(fav[m,15]):>5.2f}  MAE16 {np.nanmean(adv[m,15]):>6.2f}")
 
 
+def sig_features(df, n_entry, idx, side):
+    """Everything measured AT THE SIGNAL BAR i (closed). No fill-bar reads."""
+    o, h, l, c = (df.open.values, df.high.values, df.low.values, df.close.values)
+    v = df.tickvol.values.astype(float)
+    a14 = lab.atr(df, 14); a50 = lab.atr(df, 50)
+    e20 = lab.ema(c, 20); e50 = lab.ema(c, 50); e200 = lab.ema(c, 200)
+    hi, lo = lab.donchian(df, n_entry)
+    ev = lab.ema(v, 20)
+    rng_ = (h - l)
+    pc = np.roll(c, 1); pc[0] = c[0]
+    sd = side.astype(float)
+    A = a14[idx]
+    lvl = np.where(sd > 0, hi[idx], lo[idx])
+    # donchian edge age: bars since the extreme that set the channel
+    hs = pd.Series(h).rolling(n_entry).apply(lambda x: len(x) - 1 - np.argmax(x), raw=True).shift(1).values
+    ls = pd.Series(l).rolling(n_entry).apply(lambda x: len(x) - 1 - np.argmin(x), raw=True).shift(1).values
+    # bars since session start, and same-direction break count so far this session
+    sess = df.sess.values
+    F = {}
+    F["ext"] = (c[idx] - lvl) * sd / A                       # break extension beyond edge
+    F["bar_rng"] = rng_[idx] / A
+    F["cls_pos"] = np.where(sd > 0, (c[idx] - l[idx]), (h[idx] - c[idx])) / np.maximum(rng_[idx], 1e-9)
+    F["body"] = np.abs(c[idx] - o[idx]) / np.maximum(rng_[idx], 1e-9)
+    F["atr_ratio"] = a14[idx] / a50[idx]
+    F["chan_w"] = (hi[idx] - lo[idx]) / A
+    F["d_ema50"] = (c[idx] - e50[idx]) * sd / A
+    F["d_ema200"] = (c[idx] - e200[idx]) * sd / A
+    F["ema_slope"] = (e20[idx] - e20[idx - 4]) * sd / A
+    F["ema_sep"] = (e20[idx] - e50[idx]) * sd / A
+    F["vol_ratio"] = v[idx] / np.maximum(ev[idx], 1e-9)
+    F["mom4"] = (c[idx] - c[idx - 4]) * sd / A
+    F["mom8"] = (c[idx] - c[idx - 8]) * sd / A
+    F["gap"] = (o[idx] - pc[idx]) * sd / A
+    F["edge_age"] = np.where(sd > 0, hs[idx], ls[idx])
+    F["atr_pts"] = A
+    F["tod"] = df.tod.values[idx].astype(float)
+    # number of same-direction triggers already fired this session
+    ordr = np.arange(len(idx))
+    key = pd.DataFrame(dict(s=sess[idx], sd=side, i=ordr))
+    F["brk_seq"] = key.groupby(["s", "sd"]).cumcount().values.astype(float)
+    return F
+
+
+def sec_F(df, w, r, sym="NAS", n_entry=20):
+    print("=" * 132)
+    print(f"F. SIGNAL-BAR DISCRIMINATORS (n_entry={n_entry}, all triggers, research).")
+    print("   Target metrics: gross R at stop1.5/targ2.0 (points/ATR, cost-free), resolved")
+    print("   win% at 1.5/1.5, and the <=2-bar failure-back-inside rate. Quintiles Q1..Q5.")
+    print("=" * 132)
+    a = lab.atr(df, 14)
+    idx, side, _ = breakout_pop(df, n_entry, mask=r)
+    F = sig_features(df, n_entry, idx, side)
+    from engine import simulate
+    entry = w["opens"][idx, 0]
+    t = simulate(w, idx, side.astype(float), entry, entry - side * 1.5 * a[idx],
+                 entry + side * 2.0 * a[idx], max_hold=16, flat_tod=FLAT, cost_pts=0.0)
+    pos = np.searchsorted(idx, t.sig_bar.values)          # sig_bar -> row in idx
+    R = np.full(len(idx), np.nan); R[pos] = t.net.values / a[t.sig_bar.values]
+    o15, _, _ = barrier_race(w, idx, side, a, 1.5, 1.5)
+    hi, lo = lab.donchian(df, n_entry)
+    lvl = np.where(side > 0, hi[idx], lo[idx])
+    al = alive_mask(w, idx, FLAT, H)
+    fail2 = (((w["closes"][idx, :H] - lvl[:, None]) * side[:, None] <= 0) & al)[:, :2].any(1)
+    sess = df.sess.values[idx]
+    base_R = np.nanmean(R); base_wr = (o15[o15 != 0] == 1).mean()
+    print(f"  population: n={len(idx):,}  mean R={base_R:+.4f}  resolved win%={base_wr:.1%}"
+          f"  fail<=2={fail2.mean():.1%}")
+    print(f"\n  {'feature':<11} {'rho(R)':>7} | " + "".join(f"{'Q'+str(i+1):>7}" for i in range(5))
+          + f"  {'Q5-Q1':>7} {'z_blk':>6} |" + "".join(f"{'w'+str(i+1):>6}" for i in range(5))
+          + f" |" + "".join(f"{'f'+str(i+1):>6}" for i in range(5)))
+    rows = []
+    for k, x in F.items():
+        ok = np.isfinite(x) & np.isfinite(R)
+        b = pd.qcut(pd.Series(x).rank(method="first"), 5, labels=False).values
+        b = np.where(np.isfinite(x), b, -1)
+        rho = stats_spearman(x[ok], R[ok])
+        rq = [np.nanmean(R[(b == i) & ok]) for i in range(5)]
+        wq = [(o15[(b == i) & (o15 != 0)] == 1).mean() for i in range(5)]
+        fq = [fail2[b == i].mean() for i in range(5)]
+        nb_ = int(np.nanmax(b)) + 1
+        m5 = (b == nb_ - 1) & ok; m1 = (b == 0) & ok
+        d, sdv, pv = sess_boot(df, R[m5], sess[m5], R[m1], sess[m1], nb=400)
+        rows.append((k, rho, rq, wq, fq, d, d / sdv if sdv > 0 else 0, pv))
+        print(f"  {k:<11} {rho:>+7.3f} | " + "".join(f"{u:>+7.3f}" for u in rq) +
+              f"  {rq[4]-rq[0]:>+7.3f} {d/sdv if sdv>0 else 0:>+6.2f} |" +
+              "".join(f"{u:>6.1%}" for u in wq) + " |" + "".join(f"{u:>6.1%}" for u in fq))
+    print("\n  rho = Spearman(feature, gross R). z_blk = session-block bootstrap z on Q5-Q1 of R.")
+    print(f"  {len(F)} features x 1 geometry screened here = {len(F)} tests; nothing is")
+    print("  selected from this table without a matched-control gate on re-simulated triggers.")
+    return rows
+
+
+def stats_spearman(x, y):
+    from scipy.stats import spearmanr
+    return float(spearmanr(x, y).statistic)
+
+
 SECS = {}
 if __name__ == "__main__":
     which = sys.argv[1:] or ["A"]
