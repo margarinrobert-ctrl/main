@@ -686,6 +686,113 @@ def sec_K(df, w, r, sym="NAS"):
     print("  how a clean +0.07R becomes +0.0 points.")
 
 
+def sec_L(df, w, r, sym="NAS"):
+    """Robustness of the one lead that has a plateau: the extended-break family.
+    Is it one factor or three? Is it a volatility proxy? Does it hold on US30?"""
+    print("=" * 122)
+    print("L. ROBUSTNESS OF THE EXTENDED-BREAK FAMILY (mom4 / ext / d_ema50)")
+    print("=" * 122)
+    idx0, side0, _ = breakout_pop(df, 20, mask=r)
+    F = sig_features(df, 20, idx0, side0)
+    from scipy.stats import spearmanr
+    ks = ["mom4", "ext", "d_ema50", "atr_pts", "atr_ratio", "bar_rng", "vol_ratio"]
+    M = np.array([[spearmanr(F[i], F[j]).statistic for j in ks] for i in ks])
+    print("\n  Spearman correlation among the candidate features:")
+    print("  " + " " * 11 + "".join(f"{k:>11}" for k in ks))
+    for i, k in enumerate(ks):
+        print(f"  {k:<11}" + "".join(f"{M[i,j]:>11.2f}" for j in range(len(ks))))
+    nc = 0
+    print("\n  --- is mom4 just a low-ATR proxy?  mom4>=median WITHIN each ATR tercile ---")
+    at = F["atr_pts"]; qs = np.nanquantile(at, [1/3, 2/3])
+    b = np.digitize(at, qs)
+    for i in range(3):
+        for lbl, keep in (("all", b == i), ("mom4>=med", (b == i) & (F["mom4"] >= np.nanquantile(F["mom4"], .5)))):
+            nc += 1
+            lab.sig_gate(sym, idx0[keep], side0[keep], stop_mult=1.5, targ_mult=2.0,
+                         max_hold=16, one_per_session=False, mask=r,
+                         label=f"ATR tercile {i+1} [{np.nanmin(at[b==i]):.0f}-{np.nanmax(at[b==i]):.0f}pt] {lbl}",
+                         n_draws=400)
+    print("\n  --- does it hold across the entry lookback? mom4>=its own median ---")
+    for n_ in (10, 15, 20, 30, 40, 60):
+        ii, ss, _ = breakout_pop(df, n_, mask=r)
+        f = sig_features(df, n_, ii, ss)
+        keep = f["mom4"] >= np.nanquantile(f["mom4"], .5)
+        nc += 1
+        lab.sig_gate(sym, ii[keep], ss[keep], stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                     one_per_session=False, mask=r, label=f"n_entry={n_} mom4>=med", n_draws=400)
+    print("\n  --- does it hold across geometry? mom4>=median, n_entry=20 ---")
+    for kd, ku, mh in ((1.0, 1.5, 16), (1.5, 1.5, 16), (1.5, 2.0, 16), (1.5, 2.0, 8),
+                       (2.0, 2.0, 16), (2.0, 3.0, 16), (1.5, 3.0, 16), (3.0, 3.0, 16)):
+        keep = F["mom4"] >= np.nanquantile(F["mom4"], .5)
+        nc += 1
+        lab.sig_gate(sym, idx0[keep], side0[keep], stop_mult=kd, targ_mult=ku, max_hold=mh,
+                     one_per_session=False, mask=r, label=f"stop{kd}/targ{ku}/hold{mh}", n_draws=400)
+    print("\n  --- long vs short, and first vs second half of the RESEARCH block ---")
+    keep = F["mom4"] >= np.nanquantile(F["mom4"], .5)
+    sess = df.sess.values
+    kmid = int(np.median(sess[r]))
+    for lbl, extra in (("long only", side0 > 0), ("short only", side0 < 0),
+                       ("research 1st half", sess[idx0] < kmid),
+                       ("research 2nd half", sess[idx0] >= kmid)):
+        nc += 1
+        kk = keep & extra
+        lab.sig_gate(sym, idx0[kk], side0[kk], stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                     one_per_session=False, mask=r, label=f"mom4>=med, {lbl}", n_draws=400)
+    print(f"\n  {nc} gated configurations in this section.")
+
+
+def _mom_pop(df, w, r, thr_q=0.5, k=4, atr_n=14):
+    """ALL in-window bars, side = sign of the k-bar move, |move| >= its quantile.
+    The breakout condition is REMOVED. If this scores like the filtered breakout,
+    the edge belongs to momentum, not to the channel."""
+    c = df.close.values; a = lab.atr(df, atr_n); tod = df.tod.values
+    m = (tod >= WIN[0]) & (tod < WIN[1]) & r & ~np.isnan(a) & (a > 0)
+    m[:k] = False
+    idx = np.where(m)[0]
+    mv = (c[idx] - c[idx - k]) / a[idx]
+    side = np.where(mv >= 0, 1, -1).astype(np.int64)
+    keep = np.abs(mv) >= np.nanquantile(np.abs(mv), thr_q)
+    return idx[keep], side[keep], np.abs(mv)
+
+
+def sec_M(df, w, r, sym="NAS"):
+    print("=" * 122)
+    print("M. IS THE EDGE IN THE CHANNEL OR IN THE MOMENTUM? and does it travel to US30?")
+    print("=" * 122)
+    nc = 0
+    idx0, side0, _ = breakout_pop(df, 20, mask=r)
+    F = sig_features(df, 20, idx0, side0)
+    mm = F["mom4"] >= np.nanquantile(F["mom4"], .5)
+    ee = F["ext"] >= np.nanquantile(F["ext"], .5)
+    print("\n  --- 2x2: does mom4 add anything to the plain break extension? ---")
+    for lbl, kk in (("mom4 LO & ext LO", ~mm & ~ee), ("mom4 LO & ext HI", ~mm & ee),
+                    ("mom4 HI & ext LO", mm & ~ee), ("mom4 HI & ext HI", mm & ee)):
+        nc += 1
+        lab.sig_gate(sym, idx0[kk], side0[kk], stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                     one_per_session=False, mask=r, label=lbl, n_draws=400)
+    print("\n  --- momentum WITHOUT the channel: every in-window bar, side = sign of the")
+    print("      k-bar move, |move| above its own quantile. Same geometry, same control. ---")
+    for k in (4, 8):
+        for qv in (0.5, 0.7, 0.8, 0.9):
+            ii, ss, _ = _mom_pop(df, w, r, qv, k)
+            nc += 1
+            lab.sig_gate(sym, ii, ss, stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                         one_per_session=False, mask=r,
+                         label=f"NO-CHANNEL mom{k}>=q{qv:.1f}  n_bars", n_draws=400)
+    print("\n  --- the same break + mom4 filter on US30 (research block, cost 4.0 + 0.5) ---")
+    df2, w2, r2 = lab.research("US30")
+    for lbl, qv in (("US30 break, no filter", None), ("US30 mom4>=q0.4", .4),
+                    ("US30 mom4>=q0.5", .5), ("US30 mom4>=q0.6", .6),
+                    ("US30 mom4>=q0.8", .8)):
+        ii, ss, _ = breakout_pop(df2, 20, mask=r2)
+        f2 = sig_features(df2, 20, ii, ss)
+        kk = np.ones(len(ii), bool) if qv is None else f2["mom4"] >= np.nanquantile(f2["mom4"], qv)
+        nc += 1
+        lab.sig_gate("US30", ii[kk], ss[kk], stop_mult=1.5, targ_mult=2.0, max_hold=16,
+                     one_per_session=False, mask=r2, label=lbl, n_draws=400)
+    print(f"\n  {nc} gated configurations in this section.")
+
+
 SECS = {}
 if __name__ == "__main__":
     which = sys.argv[1:] or ["A"]
