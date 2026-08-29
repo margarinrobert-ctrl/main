@@ -1,5 +1,8 @@
 # Donchian breakout scalping, 07:00–11:00 New York
 
+> **VERDICT: NO VALIDATED EDGE FOUND.** All 8 pre-registered holdout comparisons
+> failed. See §10.
+
 Research into whether a Donchian-channel trend-following breakout has a tradable
 edge in the 07:00–11:00 New York window, on 15-minute bars.
 
@@ -239,6 +242,74 @@ pre-registered. Applying it twice would double-count the search.
 Rule D is the only configuration in the study with positive post-cost expectancy
 on research (+0.858 pts/trade, excess +3.33, p=0.0075), and was reproduced
 independently from its written description alone, agreeing to machine precision.
+
+
+## 10. THE REVEAL — no validated edge found
+
+The locked block was opened **once**, with four rules frozen in `reveal.py`
+before any locked number was read: **8 pre-registered comparisons at p < 0.00625**.
+
+**All eight fail.**
+
+| rule | instrument | research excess | research p | locked excess | locked p |
+| --- | --- | --- | --- | --- | --- |
+| A baseline | NAS | −0.21 | 0.585 | +0.40 | 0.403 |
+| B ADX@07:00>30 | NAS | **+5.08** | **0.0025** | **−0.75** | 0.576 |
+| D break > 1 ATR | NAS | +2.44 | 0.039 | +0.59 | 0.439 |
+| E thrust q0.70 | NAS | **+3.80** | **0.0013** | **−1.62** | 0.740 |
+| A baseline | US30 | −0.75 | 0.646 | −0.37 | 0.558 |
+| B ADX@07:00>30 | US30 | +2.88 | 0.228 | −0.75 | 0.536 |
+| D break > 1 ATR | US30 | **+7.12** | **0.0125** | **−6.66** | 0.920 |
+| E thrust q0.70 | US30 | +4.88 | 0.041 | +1.91 | 0.338 |
+
+Every rule that was significant on research **decays** rather than appearing on
+the holdout — the correct shape for an overfit rule, not the "wrong shape" defect.
+
+### The audits called it in advance
+
+The adversarial auditors refuted all three Donchian candidates *before* the
+reveal, and for the right reasons:
+
+- **Not leakage.** Eight independent probes came back clean; the rule was
+  reproduced exactly from its text; the selectivity test *passed* at p=0.0019
+  against 20,000 random filters.
+- **Effective multiplicity.** The "28 cells, 100% positive" plateau I had called
+  the study's best evidence sits on a nested surface with mean pairwise
+  session-P&L correlation **0.60** — worth **~2.4 independent observations, not 28**.
+  Li & Ji effective test count on the 56-cell surface: **M_eff = 19**.
+  Perturbation verdict on rule D: **ridge**, not plateau.
+- **Regime concentration.** Dropping 2021 alone took US30 rule D from
+  excess +7.57 (z=2.41) to **+4.99 (z=1.43, p=0.079)**; dropping 2020+2021 turned
+  expectancy negative.
+
+The audit predicted rule D's US30 result would not generalise. On the locked
+block it returns **−11.89 pts/trade, excess −6.66**.
+
+Twenty of the thirty-two audit agents failed on a spend limit, so **rules B and E
+reached the holdout unaudited**. Both failed there anyway.
+
+### The pre-registered prediction was not confirmed
+
+E>D was recorded in code before the reveal, on the strength of the residualisation
+dissection. NAS gives the **reverse** ordering (D +0.59, E −1.62); US30 gives the
+predicted one (E +1.91, D −6.66). One each way, both statistically zero — so the
+dissection did not predict out-of-sample behaviour, though with both effects
+absent the test had no power to detect an ordering.
+
+### Final answer
+
+**NO VALIDATED EDGE FOUND.**
+
+The Donchian breakout in 07:00–11:00 New York, on NAS and US30 15-minute bars,
+2016–2025, has no tradable edge. The central claim is confirmed out of sample:
+the baseline is negative on the locked block on both instruments with excess over
+a matched control indistinguishable from zero.
+
+What the study *did* establish is narrower and more durable: the break carries
+real, bootstrap-confirmed information about which way price races to a wide
+barrier (+3.39% ± 1.06%, p=0.0025), worth **0.3 percentage points against a
+breakeven of 42.9%** — which pays for nothing against a 2.25-point round turn.
+Real signal, an order of magnitude below the cost floor.
 
 ## Files
 
