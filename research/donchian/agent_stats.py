@@ -618,6 +618,74 @@ def sec_I(df, w, r, sym="NAS"):
     print(f"\n  {nc} gated configurations in this section.")
 
 
+def sec_J(df, w, r, sym="NAS"):
+    """Threshold NEIGHBOURHOODS, anchored on the feature's own quantiles, gated in
+    points. A real effect decays smoothly across the rungs; a mined one spikes."""
+    print("=" * 122)
+    print("J. THRESHOLD NEIGHBOURHOODS, quantile-anchored, matched-control gated (points).")
+    print("   Geometry 1.5/2.0, max_hold 16, all triggers, n_entry=20, research only.")
+    print("=" * 122)
+    idx0, side0, _ = breakout_pop(df, 20, mask=r)
+    F = sig_features(df, 20, idx0, side0)
+    QQ = (0.0, 0.2, 0.4, 0.5, 0.6, 0.8)
+    nc = 0
+    for k in ("mom4", "ext", "atr_ratio", "d_ema50", "vol_ratio", "cls_pos"):
+        x = F[k]
+        print(f"\n  --- {k} >= quantile q (keeps the top 1-q of breaks) ---")
+        for qv in QQ:
+            thr = np.nanquantile(x, qv)
+            keep = x >= thr
+            nc += 1
+            lab.sig_gate(sym, idx0[keep], side0[keep], stop_mult=1.5, targ_mult=2.0,
+                         max_hold=16, one_per_session=False, mask=r,
+                         label=f"{k}>=q{qv:.1f} ({thr:+.2f})", n_draws=400)
+    print("\n  --- volatility cap: keep breaks with ATR(14) BELOW quantile q ---")
+    for qv in (0.4, 0.6, 0.8, 0.9):
+        thr = np.nanquantile(F["atr_pts"], qv)
+        keep = F["atr_pts"] <= thr
+        nc += 1
+        lab.sig_gate(sym, idx0[keep], side0[keep], stop_mult=1.5, targ_mult=2.0,
+                     max_hold=16, one_per_session=False, mask=r,
+                     label=f"atr<=q{qv:.1f} ({thr:.1f}pt)", n_draws=400)
+    print(f"\n  {nc} gated configurations in this section.")
+
+
+def sec_K(df, w, r, sym="NAS"):
+    """Why a +0.07R excess is worth zero points: the ATR interaction."""
+    from engine import simulate
+    print("=" * 118)
+    print("K. WHY THE R-SPACE EDGE DOES NOT BECOME A POINTS EDGE")
+    print("=" * 118)
+    a = lab.atr(df, 14)
+    idx, side, _ = breakout_pop(df, 20, mask=r)
+    cidx, cside = matched_pop(df, w, idx, side, r, mult=40)
+    sess = df.sess.values
+    def bk(ii, ss, kd=1.5, ku=2.0):
+        e = w["opens"][ii, 0]
+        t = simulate(w, ii, ss.astype(float), e, e - ss * kd * a[ii],
+                     e + ss * ku * a[ii], max_hold=16, flat_tod=FLAT, cost_pts=0.0)
+        return t.net.values, a[t.sig_bar.values], t.sig_bar.values
+    P, A, sb = bk(idx, side); Pc, Ac, sbc = bk(cidx, cside)
+    R, Rc = P / A, Pc / Ac
+    print(f"  gross R    breakout {R.mean():+.4f}   control {Rc.mean():+.4f}   excess {R.mean()-Rc.mean():+.4f}")
+    print(f"  gross pts  breakout {P.mean():+.3f}   control {Pc.mean():+.3f}   excess {P.mean()-Pc.mean():+.3f}")
+    print(f"  cost 2.25 pts = {2.25/np.median(A):.3f} R at the median break's ATR ({np.median(A):.1f} pts)")
+    qs = np.quantile(A, [.2, .4, .6, .8])
+    b = np.digitize(A, qs); bc = np.digitize(Ac, qs)
+    print(f"\n  {'ATR decile band':<16}{'ATRmed':>8}{'n':>7}{'R brk':>9}{'R ctl':>9}{'excR':>9}"
+          f"{'z_blk':>7}{'pts brk':>9}{'pts ctl':>9}{'exc pts':>9}{'wt%':>6}")
+    for i in range(5):
+        m = b == i; mc = bc == i
+        d, sd_, _ = sess_boot(df, R[m], sess[sb[m]], Rc[mc], sess[sbc[mc]], nb=400)
+        print(f"  Q{i+1:<15}{np.median(A[m]):>8.1f}{m.sum():>7,}{R[m].mean():>+9.4f}"
+              f"{Rc[mc].mean():>+9.4f}{R[m].mean()-Rc[mc].mean():>+9.4f}{d/sd_ if sd_>0 else 0:>+7.2f}"
+              f"{P[m].mean():>+9.3f}{Pc[mc].mean():>+9.3f}{P[m].mean()-Pc[mc].mean():>+9.3f}"
+              f"{100*A[m].sum()/A.sum():>6.1f}")
+    print("\n  wt% = share of the points-weighted book carried by that band. The top ATR")
+    print("  quintile carries ~half the points and its excess is NEGATIVE, which is exactly")
+    print("  how a clean +0.07R becomes +0.0 points.")
+
+
 SECS = {}
 if __name__ == "__main__":
     which = sys.argv[1:] or ["A"]
