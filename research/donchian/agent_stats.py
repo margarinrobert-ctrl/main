@@ -471,6 +471,99 @@ def stats_spearman(x, y):
     return float(spearmanr(x, y).statistic)
 
 
+def sec_G(df, w, r, sym="NAS", n_entry=20):
+    from engine import simulate
+    print("=" * 134)
+    print(f"G. PER-SLOT PROFILE - the 16 individual 15m slots of 07:00-11:00 NY (n_entry={n_entry},")
+    print("   all triggers, research). 'dead' = the fill bar is already at/after the 11:00 flatten,")
+    print("   so the trade opens and closes at the same price and books a pure round turn.")
+    print("=" * 134)
+    a = lab.atr(df, 14)
+    idx, side, _ = breakout_pop(df, n_entry, mask=r)
+    cidx, cside = matched_pop(df, w, idx, side, r, mult=25)
+    tod = df.tod.values
+    entry = w["opens"][idx, 0]
+    t = simulate(w, idx, side.astype(float), entry, entry - side * 1.5 * a[idx],
+                 entry + side * 2.0 * a[idx], max_hold=16, flat_tod=FLAT, cost_pts=0.0)
+    pos = np.searchsorted(idx, t.sig_bar.values)
+    R = np.full(len(idx), np.nan); R[pos] = t.net.values / a[t.sig_bar.values]
+    P = np.full(len(idx), np.nan); P[pos] = t.net.values
+    ce = w["opens"][cidx, 0]
+    tc = simulate(w, cidx, cside.astype(float), ce, ce - cside * 1.5 * a[cidx],
+                  ce + cside * 2.0 * a[cidx], max_hold=16, flat_tod=FLAT, cost_pts=0.0)
+    cR = tc.net.values / a[tc.sig_bar.values]; ctod = tod[tc.sig_bar.values]
+    o15, _, _ = barrier_race(w, idx, side, a, 1.5, 1.5)
+    fav, adv, al = excursions(w, idx, side, a)
+    hi, lo = lab.donchian(df, n_entry)
+    lvl = np.where(side > 0, hi[idx], lo[idx])
+    fail2 = (((w["closes"][idx, :H] - lvl[:, None]) * side[:, None] <= 0)
+             & alive_mask(w, idx, FLAT, H))[:, :2].any(1)
+    dead0 = ~alive_mask(w, idx, FLAT, H)[:, 0]
+    print(f"  {'slot':>6} {'n':>5} {'long%':>6} {'dead%':>6} {'bars left':>9} {'MFE4':>6} "
+          f"{'MAE4':>6} {'win%':>6} {'ctlwin':>7} {'R':>7} {'ctlR':>7} {'excR':>7} "
+          f"{'fail2':>6} {'pts':>7}")
+    for tt in range(420, 660, 15):
+        m = tod[idx] == tt
+        if m.sum() == 0:
+            continue
+        mc = ctod == tt
+        res = m & (o15 != 0)
+        oc, _, _ = barrier_race(w, cidx[ctod[:0].shape[0]:][:0], cside[:0], a, 1.5, 1.5)             if False else (None, None, None)
+        cwin = np.nan
+        mcm = tod[cidx] == tt
+        if mcm.sum() > 40:
+            oo, _, _ = barrier_race(w, cidx[mcm], cside[mcm], a, 1.5, 1.5)
+            cwin = (oo[oo != 0] == 1).mean()
+        hh = f"{tt//60:02d}:{tt%60:02d}"
+        print(f"  {hh:>6} {m.sum():>5,} {(side[m]>0).mean():>5.0%} {dead0[m].mean():>5.0%} "
+              f"{(660-tt)//15:>9} {np.nanmean(fav[m,3]):>6.2f} {np.nanmean(adv[m,3]):>6.2f} "
+              f"{(o15[res]==1).mean():>6.1%} {cwin:>7.1%} {np.nanmean(R[m]):>+7.3f} "
+              f"{cR[mc].mean():>+7.3f} {np.nanmean(R[m])-cR[mc].mean():>+7.3f} "
+              f"{fail2[m].mean():>6.1%} {np.nanmean(P[m]):>+7.2f}")
+    print("\n  the last two slots are structurally broken, not unlucky: at 10:45 the fill bar IS")
+    print("  the 11:00 flatten bar, so 100% of those trades book the round turn and nothing else.")
+
+
+def sec_H(df, w, r, sym="NAS"):
+    """Geometry surface, then matched-control gates on the few motivated rules."""
+    from engine import simulate
+    print("=" * 128)
+    print("H. WHICH GEOMETRY THE POPULATION ACTUALLY SUPPORTS")
+    print("   gross R = cost-free points/ATR(signal). excess = R over the tod+side matched control.")
+    print("   The round turn is 2.25 pts = 0.179 R at the median in-window ATR of 12.6.")
+    print("=" * 128)
+    a = lab.atr(df, 14)
+    idx, side, _ = breakout_pop(df, 20, mask=r)
+    cidx, cside = matched_pop(df, w, idx, side, r, mult=30)
+    sess = df.sess.values
+    STOPS = (0.75, 1.0, 1.5, 2.0, 2.5, 3.0)
+    TARGS = (0.75, 1.0, 1.5, 2.0, 3.0, 4.0)
+    MH = (4, 8, 16)
+    def bookR(ii, ss, kd, ku, mh):
+        e = w["opens"][ii, 0]
+        t = simulate(w, ii, ss.astype(float), e, e - ss * kd * a[ii],
+                     e + ss * ku * a[ii], max_hold=mh, flat_tod=FLAT, cost_pts=0.0)
+        return t.net.values / a[t.sig_bar.values], t.sig_bar.values
+    ncfg = 0
+    for mh in MH:
+        print(f"\n  --- max_hold={mh} bars.  cell = excess R (breakout - control) / z_blk ---")
+        print("   stop\\targ" + "".join(f"{ku:>16.2f}" for ku in TARGS))
+        for kd in STOPS:
+            row = f"  {kd:>8.2f}"
+            for ku in TARGS:
+                ncfg += 1
+                Rr, sb = bookR(idx, side, kd, ku, mh)
+                Rc, sbc = bookR(cidx, cside, kd, ku, mh)
+                d, sd_, pv = sess_boot(df, Rr, sess[sb], Rc, sess[sbc], nb=250, seed=kd_seed(kd, ku, mh))
+                row += f"{d:>+9.3f}/{d/sd_ if sd_>0 else 0:>+5.2f}"
+            print(row)
+    print(f"\n  {ncfg} geometry configurations evaluated in this surface.")
+
+
+def kd_seed(a_, b_, c_):
+    return int(abs(hash((round(a_, 2), round(b_, 2), c_))) % 100000)
+
+
 SECS = {}
 if __name__ == "__main__":
     which = sys.argv[1:] or ["A"]
