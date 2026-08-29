@@ -9,7 +9,25 @@
 //   research 234   1.177     0.54            12.8
 //   LOCKED   125   1.318     0.98  +0.1542    11.6     1.67
 //
-// THE LINEAR-REGRESSION CROSS IS OFF BY DEFAULT AND THE MEASUREMENTS ARE WHY. 484 declared cells
+// THE LINEAR-REGRESSION CONDITION IS ON BY DEFAULT BY USER INSTRUCTION, AND IT COSTS. Re-measured
+// 2026-08-29 on NQ 30m with this file's own defaults, one engine, both blocks:
+//
+//   configuration                          research PF   LOCKED PF   LOCKED Sharpe   ret/DD    n
+//   base breakout only                        1.193        1.326         +1.02        1.80    161
+//   + CHOP <= 40            <- the numbers    1.398        1.518         +1.34        2.41    102
+//                              quoted above
+//   + CHOP + linreg slope state  <- DEFAULT   1.339        1.308         +0.85        1.53     97
+//
+// So the defaults as shipped are NOT the configuration the table above describes: turning the
+// linear-regression condition on takes locked profit factor 1.518 -> 1.308 and Sharpe +1.34 ->
+// +0.85 while removing only five trades. Set `Require a linear-regression condition` to FALSE to
+// run the measured best. It is left on because it was asked for, and recorded here so the decision
+// can be revisited on evidence -- the same treatment V9's Donchian trigger got.
+//
+// An earlier version of this header said the condition was off by default while the input said
+// true. That contradiction is the defect this note replaces.
+//
+// THE SUPPORTING MEASUREMENT, unchanged. 484 declared cells
 // (6 pairs x 5 readings x 4 R-squared floors + off, x 2 CHOP x 2 timeframes):
 //
 //   beat this baseline on LOCKED PROFIT FACTOR   197 of 478 = 41%   (chance 50%)  mean -0.048
@@ -190,9 +208,9 @@ atrRankLen = input.int(500, "  ATR percentile lookback", minval = 20, group = gA
 atrRankMax = input.float(0.2, "  trade only below this percentile", minval = 0.01, maxval = 1.0,
      step = 0.05, group = gA)
 
-gL      = "Linear-regression cross -- ON by request; the header has the 484-cell measurement"
+gL      = "Linear-regression cross -- ON BY REQUEST, and it costs locked PF 1.518 -> 1.308"
 useLr   = input.bool(true, "Require a linear-regression condition", group = gL,
-     tooltip = "41% of 478 cells beat this baseline on profit factor and 34% on Sharpe, where chance is 50%. The literal 9/21 value cross takes locked PF 1.318 -> 0.853 and Sharpe +0.98 -> -0.43.")
+     tooltip = "ON by request, and measured to cost: locked PF 1.518 -> 1.308 and Sharpe +1.34 -> +0.85 on five fewer trades. Across 478 declared cells only 41% beat baseline on profit factor and 34% on Sharpe, where chance is 50%. Set this FALSE to run the measured best.")
 lrFast  = input.int(9,  "  fast length", minval = 2, group = gL)
 lrSlow  = input.int(21, "  slow length", minval = 3, group = gL)
 lrRead  = input.string("slope state", "  reading",
