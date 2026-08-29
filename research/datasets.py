@@ -231,8 +231,8 @@ REGISTRY = {
     "US30_ISO_15m": Dataset(
         key="US30_ISO_15m", instrument="US30", timeframe_min=15,
         restore_to="data/US30_ISO_15m.csv",
-        rows=48937, span="2024-08-19 01:45 to 2026-08-26 17:30 New York", bytes=2859078, sha256_16="f319104b7cd70a6b",
-        fmt="RTF-WRAPPED CSV as delivered -- an eighth export format, and the first that is not a "
+        rows=48937, span="2024-08-19 01:45 to 2026-08-26 17:30 New York", bytes=2761204, sha256_16="f319104b7cd70a6b",
+        fmt="RTF-WRAPPED CSV as delivered -- an eighth export format. NOTE the byte size recorded here is of the UNWRAPPED derivative, which depends on how the unwrapping script formats floats, so rows+span are its identity and bytes is only a hint, and the first that is not a "
             "plain text file. Unwrap it: drop the RTF header, split the body on `\\par`, strip "
             "control words with the regex `\\\\[a-zA-Z]+-?\\d* ?` and the braces, keep lines "
             "matching `^\\d{4}-\\d{2}-\\d{2}T`, then `tz_convert('America/New_York')` and save "
@@ -267,7 +267,8 @@ REGISTRY = {
     "US100_LONG_15m": Dataset(
         key="US100_LONG_15m", instrument="US100", timeframe_min=15,
         restore_to="data/US100_LONG_15m.csv",
-        rows=206703, span="2016-11 to 2025-10", bytes=0, sha256_16="",
+        rows=206703, span="2016-11 to 2025-10", bytes=11971933,
+        sha256_16="c449dddfbc06a943",
         fmt="TAB-separated, delivered NEWEST FIRST",
         columns="DateTime, Open, High, Low, Close, Volume, TickVolume",
         order="DESCENDING as delivered -- sort ascending before use",
@@ -277,7 +278,7 @@ REGISTRY = {
         volume="tick volume; a separate TickVolume column is also present",
         defects="not re-measured after the identification.",
         loader="research/v13/*, research/us100.py",
-        provenance="user upload, 2026-08-26, unlabelled -- the instrument had to be inferred",
+        provenance="user upload, 2026-08-26, unlabelled -- the instrument had to be inferred; re-uploaded 2026-08-29 as `nasdaq_20252016_15m_data.csv`, row count identical, and the sha256 recorded here is from THAT delivery -- the 2026-08-26 copy was never hashed uncompressed, so a future mismatch means a different delivery, not necessarily different bars.",
         notes="NINE years against the ISO feed's two, so it is where a rule gets tested on 2018, "
               "COVID and the 2022 bear. Everything before 2022-12-26 is unseen by any NQ study."),
 
