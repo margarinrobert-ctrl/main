@@ -1,0 +1,29 @@
+{
+  "real_cells": 62640,
+  "real_median": -2.3668398474311356,
+  "real_max": 7.21741094167556,
+  "real_frac_pos": 0.18140166028097063,
+  "nulls": [
+    {
+      "shift": "2131",
+      "cells": 62352,
+      "max": 7.521158750417617
+    },
+    {
+      "shift": "5119",
+      "cells": 62064,
+      "max": 5.865189209980706
+    }
+  ],
+  "n_nulls": 2,
+  "null_max_range": [
+    5.865189209980706,
+    7.521158750417617
+  ],
+  "real_inside_null_range": true,
+  "top50_median_trades": 125.0,
+  "grid_median_trades": 285.0,
+  "corr_trades_exp": -0.2590712491988058,
+  "total_combinations": 169344,
+  "qualifying_cells": 118800
+}

@@ -311,6 +311,47 @@ barrier (+3.39% ± 1.06%, p=0.0025), worth **0.3 percentage points against a
 breakeven of 42.9%** — which pays for nothing against a 2.25-point round turn.
 Real signal, an order of magnitude below the cost floor.
 
+
+## 11. VectorBT max-combination sweep — the best of 62,640 is inside the null
+
+A 169,344-cell sweep (14 lookbacks x 21 ATR buffers x 12 stops x 12 targets, both
+sides, both instruments), 118,800 cells clearing a 100-trade floor.
+
+**The apparent result:** US30 long showed 56% of cells positive and a best cell at
+**+25.99 pts/trade**.
+
+**Why it is an artefact:** the top-50 cells use a median of **125 trades against the
+grid median of 285**, all sit in one narrow region, and across all 118,800 cells the
+correlation between trade count and expectancy is **−0.259**. The winners of a large
+sweep are its smallest samples.
+
+**The calibration.** A first null using driftless synthetic bars was *discarded, not
+reported*: it produced only ~15,000 qualifying cells against the real grid's ~62,000,
+so max-of-15k vs max-of-62k favoured the real data by construction. The replacement
+keeps real prices, real bar geometry and real signal density, destroying only the
+signal-to-forward-return alignment via a circular shift — so cell counts match to
+within 0.5%.
+
+| grid | cells | median exp | max exp | frac > 0 |
+| --- | --- | --- | --- | --- |
+| **Real NAS** | 62,640 | −2.37 | **+7.22** | 18.1% |
+| shift-null 2131 | 62,352 | −3.01 | **+7.52** | 9.6% |
+| shift-null 5119 | 62,064 | −3.51 | **+5.87** | 3.9% |
+
+**The real grid's best cell sits inside the null range.** The best of 62,640
+combinations is indistinguishable from what the identical machinery produces with
+the signal alignment destroyed.
+
+The real grid does have more positive cells than the null (18.1% vs 9.6%) — that is
+genuine long-side drift in a bull sample, not edge, since the *extreme*, which is what
+a sweep selects on, is indistinguishable.
+
+*Caveats: only 2 of 4 planned nulls completed (two died under memory pressure, two
+container restarts interrupted the run), so this is a range, not a dispersion
+estimate — no z or p is quoted. Two vectorbt harness bugs were found and fixed before
+any result was produced: default close-fill instead of next-open, and a NaN exit
+price on every forced session exit.*
+
 ## Files
 
 | file | role |
