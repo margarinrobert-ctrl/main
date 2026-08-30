@@ -1406,6 +1406,27 @@ explained. `turtle/core.control` already had the right form. Fourth time a name-
 control-construction error has produced a too-good number here -- and `agg` as a DataFrame column
 shadows `DataFrame.agg`, after `.first` and `.align`.
 
+**A STOP CENSORS MAE, SO MEASURE ENTRY HEAT WITH THE STOP UNABLE TO BIND.** MAE is the right
+statistic for how much heat an entry takes -- but a trade heading for -3.0 ATR that is stopped at
+-2.0 records -2.0, so a mean MAE mixes real heat on survivors with the stop distance on the
+stopped, weighted by a stop-out rate that runs **19% to 62%** across eight declared Donchian
+configurations. Measured: the exit bar is **1.7% of MFE and 42.6% of MAE** (on a stopped trade it
+is where the worst excursion happened, by construction) and **stop-out share correlates +0.978
+with mean MAE**. Removing the exit bar is NOT the repair -- it discards real excursion. Widen the
+stop until it cannot bind, or drop exits and read a FIXED HORIZON, and report in ATR AT ENTRY
+never in R (R = atr_mult x ATR puts the stop back in the denominator: V40 at 1.5N is 8th of 8 on
+MAE-in-R and 2nd on MAE-in-ATR). **The spread is LARGER uncensored than censored, 1.534 ATR against
+0.779** -- the stop was compressing the differences between entries, not creating them, and V40
+goes from mid-table as declared to the worst entry in the set. Against random bars in the same
+regime at a fixed 20-bar horizon, **seven of eight breakouts take MORE adverse excursion**
+(+0.18 to +0.87 ATR, p 0.83-1.00) -- a breakout enters at the top of its own range, the same
+mechanism `research/atme/` found from the other side. They get more MFE too, so the ratio decides:
+the UNFILTERED base scores **+0.002** against its control while every regime-filtered configuration
+scores **+0.073 to +0.096**, and V40/V38 are negative. The trigger alone is nothing; the filter is
+what makes it worth taking, which is STUDY_V21 reached from the excursion side. Lowest heat of any
+tradeable configuration is the SHIPPED CHOP<=40 (2.449 uncensored / 2.990 at h20), below the base
+it is built on. See `docs/ib/STUDY_V43_MAE_MFE.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1487,6 +1508,7 @@ shadows `DataFrame.agg`, after `.first` and `.align`.
 | `research/v42/v42grid.py` | the 1.84M-cell Turtle space, the fold-median objective, inert-axis accounting |
 | `research/v42/v42surro.py` | the grid surrogate and its held-out-by-axis fit test |
 | `research/v42/run_v42.py`, `run_v42b.py`, `run_v42c.py` | the parallel sweep; shape, marginals and robust regions; the frozen read on held-back markets with the matched control |
+| `research/v43/` | MAE/MFE on eight declared Donchian configurations: both normalisations, the censoring diagnostic, uncensored heat at a fixed horizon, matched controls |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
