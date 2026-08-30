@@ -156,6 +156,69 @@ parameter" is: *there is no best value for any of them, and the one that appeare
 an artefact of the simulator.* A single 50-year backtest would have reported `tp=3.0, don=20,
 adx=30` with confidence.
 
+## 4b. The full statistical profile of the best configuration
+
+`python3 research/dbt50_stats.py --regime trend_realistic`
+
+"Best" here is the configuration with the best **mean** out-of-sample R across the twelve
+realistic-trend worlds, not the winner of any single world: **Donchian 20 / ADX > 30 / stop
+1.5 x ATR / target 3R / max hold 24 bars**. Out-of-sample block only, both sides, mean +- standard
+error across worlds. The same configuration is run in the martingale world beside it, which is the
+column that says how much of any of this is trend.
+
+| | realistic trend | martingale null |
+| --- | --- | --- |
+| **mean R per trade** | **+0.0487 ± 0.0068** | **−0.0266 ± 0.0134** |
+| t-statistic within world | +1.74 ± 0.24 | −0.94 ± 0.47 |
+| R per year | +7.8 ± 1.1 | −4.1 ± 2.0 |
+| **Sharpe** (session R, annualised) | **0.41 ± 0.06** | −0.22 ± 0.11 |
+| Sortino | 0.89 ± 0.13 | −0.40 ± 0.19 |
+| profit factor | 1.08 | 0.96 |
+| win rate | 35.7% | 34.7% |
+| average win / average loss | +1.796R / −0.921R | +1.739R / −0.966R |
+| payoff ratio | 1.95 | 1.81 |
+| max drawdown | 54.7R ± 5.2 | 145.5R ± 27.2 |
+| total R / max drawdown | 3.01 | −0.27 |
+| longest losing streak | 15 trades | 15 trades |
+| trades per year | 160 | 158 |
+| average hold / time in market | 8.3 bars / 4.9% | 8.2 bars / 4.8% |
+| long share (long R / short R) | 51.8% (+0.0643 / +0.0315) | 50.7% (−0.0292 / −0.0243) |
+| profitable years | 64% | 40% |
+| **excess over matched control** | **+0.0133 ± 0.0066, t=+2.01** | **−0.0149 ± 0.0062, t=−2.41** |
+| worlds beating their control | 7 / 12 | 2 / 12 |
+
+Exit mix, realistic regime: stop **56.0%** at −1.003R, target **14.8%** at +2.998R, 11:00 flat
+**25.6%** at +0.524R, max-hold **3.6%** at +0.876R. The median trade is a stop-out. The null world
+has essentially the same mix (56.8 / 14.0 / 26.0 / 3.3), which is the point — the geometry decides
+the shape of the distribution, and the trend decides only where its mean sits.
+
+Four things in that table are worth more than the headline:
+
+1. **The trend-attributable edge is the difference between the columns: +0.075R per trade.**
+   Everything else — the shape of the payoff, the drawdown profile, the exit mix — is geometry, and
+   is identical in a world with nothing to trade.
+2. **In the null world the rule is significantly WORSE than random** (−0.0149R, t=−2.41, beaten by
+   its control in 10 of 12 worlds). A Donchian break filtered by stacked EMAs and ADX > 30 does not
+   merely fail without trend, it actively selects worse-than-average entries: it concentrates the
+   book precisely where breakouts fail. The filter is not free.
+3. **The measured cost robustness in the realistic column is an artefact and should be ignored.**
+   There, 1x/1.5x/2x costs give +0.0487 / +0.0475 / +0.0463 — almost flat — because 50 years at 7%
+   drift compound the index to about 430,000, so a fixed $14 round turn becomes negligible against
+   an ATR-scaled risk unit. In the martingale world the price stays near its start and the same
+   sweep gives **−0.0266 / −0.0491 / −0.0716**: a slope of about **−0.045R per extra 1x of cost**.
+   That slope is the honest one, and at 2x costs it would eat more than half of the +0.075R the
+   trend contributes.
+4. **The 3:1 discretisation optimism of §1 is inside both columns and cancels between them.** The
+   null's raw −0.0266R contains roughly +0.037R of it, so the true no-trend result is near −0.064R
+   — which is approximately the cost line, exactly where a rule with no edge should sit.
+
+So the full answer to "what are the stats of the best": a Sharpe **0.41**, profit factor **1.08**
+system that wins **36%** of the time at a **1.95** payoff, takes 160 trades a year, spends 5% of
+the session in the market, and whose worst drawdown is **7 years of its own average annual return**
+— of which roughly **73% of the gross per-trade number is what a random entry with the same
+barriers at the same times of day already earns**, and whose remaining edge exists only because
+the world it trades has a trend.
+
 ## 5. The deep learning layer
 
 A heteroscedastic deep ensemble (5 members x 20 MC-dropout passes, `research/uq_net.py`) used as a
@@ -207,6 +270,8 @@ python3 research/synth50.py                     # generator calibration self-tes
 python3 research/dbt50.py --stage0              # the discretisation table in §1
 python3 research/dbt50_run.py --paths 12 --years 50 --meta --out /tmp/r.json
 python3 research/dbt50_report.py /tmp/r.json    # §3, §4, §5
+python3 research/dbt50_stats.py --regime trend_realistic   # §4b, the full stat sheet
+python3 research/dbt50_stats.py --regime null_martingale   # §4b, its ablation column
 ```
 
 Runtime is about 6.5 minutes for the full 1,800-year experiment on one core.
