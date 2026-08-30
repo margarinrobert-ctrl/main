@@ -32,6 +32,12 @@ next-env.d.ts
 # recorded in each study's header. Never commit raw or canonical bar files.
 /data/*.csv
 /data/*.json
+# uploaded bar files arrive in several formats; the registry in research/datasets.py is
+# the durable memory of the data, so no raw feed is ever committed.
+/data/*.rtf
+/data/*.txt
+/data/*.7z
+/data/*.parquet
 
 # Python research layer
 __pycache__/
