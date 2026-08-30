@@ -140,8 +140,10 @@ if ready and isFlat and inSession and inWindow and barstate.isconfirmed
 // order signalled at the close of bar t fills at the open of t+1, so strategy.position_size is
 // still 0 while the signal bar is being evaluated -- a hand-rolled "entryBar := bar_index" there
 // gets reset by the very next flat check and the time stop never fires.
-heldBars = strategy.opentrades > 0 ? bar_index - strategy.opentrades.entry_bar_index(0) : 0
+// entry_bar_index(0) is only legal while a trade is open, so the call lives INSIDE the guard
+// rather than in a ternary that Pine may evaluate on both branches.
 if strategy.position_size != 0 and barstate.isconfirmed
+    heldBars = bar_index - strategy.opentrades.entry_bar_index(0)
     if atFlatten or not inWindow
         strategy.close_all(comment = "session flat")
     else if heldBars >= maxHold
