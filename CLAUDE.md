@@ -1493,6 +1493,29 @@ ratios 0.12-0.98, and with stops disabled it still gave 24 trades to my 165, so 
 not exist in 1.1.0. No gap is read from it in either direction. MC p99 drawdown is 1.1-2.2x realised.
 Ships nothing. See `docs/ib/STUDY_V46_CARVER.md`.
 
+**PEAD IS NOT MEASURABLE ON THIS DATA AND THE TREND PREMIUM IS INVERTED.** Post-earnings
+announcement drift is defined on SINGLE NAMES -- SUE from actual-vs-consensus EPS, drift over ~60
+days -- and needs earnings dates, analyst consensus and per-stock returns. None exist here. What can
+be tested is an INDEX-LEVEL ANALOGUE of the mechanism with the event identified endogenously from a
+standardised move. Likewise most classical risk premia need a cross-section or a bond curve, and
+**the variance risk premium needs IMPLIED vol, which no feed here carries** -- a realised variance
+term structure is a proxy and must not be called the VRP. 30 causal daily features, 763 NQ sessions,
+truncation-audit clean. **NOTHING SURVIVES BH**: over 120 tests the threshold is |t| >= 3.35 and the
+best achieved is 2.50. THE OVERLAP CORRECTION IS THE STORY -- Newey-West at lag h deflates the naive
+t by **1.9x to 3.2x**, so an IC of 0.31 that looks like t = -6.8 is t = -2.3; every "significant"
+daily-horizon IC is manufactured by ignoring it. What replicates is the SIGN, and only for one
+family: 56/80 risk-premium tests keep their sign on locked (p 0.0005) against **22/40 for the PEAD
+family (p 0.636, exactly chance)**. **THE CLASSICAL TIME-SERIES MOMENTUM PREMIUM IS REVERSAL ON NQ**
+-- 11 of 12 momentum cells negative on BOTH blocks and tsmom120 MONOTONE IN HORIZON on both
+(research -0.112/-0.192/-0.246/-0.305, locked -0.070/-0.121/-0.212/-0.271). Eighth independent route
+to mean reversion on this branch. The PEAD analogue's shape is SHORT-HORIZON CONTINUATION AND
+LONG-HORIZON REVERSAL -- overreaction, the opposite of PEAD at the horizon PEAD is defined on -- and
+not one cell reaches |t| >= 2 on both blocks. **THE NIGHT PREMIUM DOES NOT REPLICATE**: intraday
+contributed MORE in total (+0.357 vs +0.292 log) and overnight wins only risk-adjusted, by 0.07
+Sharpe. Turn of month, the one declared calendar hypothesis, fails at every horizon. Note the
+binomial p on sign agreement OVERSTATES -- the 120 tests are not independent. See
+`docs/ib/STUDY_V47_RISK_PREMIA_PEAD.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1578,6 +1601,7 @@ Ships nothing. See `docs/ib/STUDY_V46_CARVER.md`.
 | `research/v44/` | 36 causal features scored by excursion in ATR **and points**; the ratio-picked scalp, its no-filter ablation, a 1-minute barrier walker and time-to-target/time-to-stop |
 | `research/v45/` | take-profit engineering from MFE/MAE: the break-even algebra, the p_lower/p_upper bracket, a 1-minute first-touch walker, and the what-would-it-take calculation |
 | `research/v46/` | Carver's breakout forecast + causality audit; the 999,717-cell sweep in 73s; freeze, held-back markets, random-entry control, both Monte Carlos, and the vectorbt check that failed parity |
+| `research/v47/` | causal daily frame with an exact RTH/overnight split; 30 risk-premium and PEAD-analogue features; drift-vs-reversal test, Newey-West ICs, BH |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
