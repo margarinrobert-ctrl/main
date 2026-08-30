@@ -137,13 +137,18 @@ goLong  = haveP and edge >= conf and not vetoed
 goShort = haveP and edge <= -conf and not vetoed
 
 // the stop widens with the model's own aleatoric spread, so barrier probabilities stay stable
-aleaScale = useAlea and not na(alea) and alea > 0 ? math.min(math.max(alea / aleaRef, 0.7), 1.6) : 1.0
+aleaOk = useAlea and not na(alea) and alea > 0
+aleaScale = aleaOk ? math.min(math.max(alea / aleaRef, 0.7), 1.6) : 1.0
 stopPts = atrMult * atrV * aleaScale
 
 // fractional Kelly on the barrier bet, shrunk toward the base rate by model disagreement
 baseP = 1.0 / (1.0 + tpR)
-pAdj = haveP ? (useEpi and not na(epi) and not na(alea) and alea > 0 ?
-     baseP + (pUp - baseP) / (1.0 + epi / alea) : pUp) : baseP
+canShrink = haveP and useEpi and not na(epi) and not na(alea) and alea > 0
+pAdj = baseP
+if haveP and canShrink
+    pAdj := baseP + (pUp - baseP) / (1.0 + epi / alea)
+else if haveP
+    pAdj := pUp
 fStar = math.max(math.min((pAdj * (1.0 + tpR) - 1.0) / tpR, 1.0), 0.0) * kellyFrac
 tickValue = syminfo.mintick * syminfo.pointvalue
 riskTicks = math.max(math.round(stopPts / syminfo.mintick), 1)
