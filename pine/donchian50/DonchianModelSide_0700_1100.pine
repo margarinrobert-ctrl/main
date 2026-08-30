@@ -155,7 +155,7 @@ riskTicks = math.max(math.round(stopPts / syminfo.mintick), 1)
 stopDollars = riskTicks * tickValue
 kellyQty = stopDollars > 0 ? math.floor(fStar * strategy.equity / stopDollars) : 0
 capQty = stopDollars > 0 ? math.floor(riskCap / stopDollars) : 0
-qty = sizeMode == "One contract" ? 1 : math.max(math.min(math.min(kellyQty, capQty), maxQty), 0)
+qty = sizeMode == "One contract" ? 1.0 : math.max(math.min(math.min(kellyQty, capQty), maxQty), 0)
 
 ready = not na(atrV) and atrV > 0 and not na(upBand)
 isFlat = strategy.position_size == 0
@@ -204,7 +204,7 @@ if barstate.islast
     table.cell(st, 1, 2, goLong ? "long" : goShort ? "short" : vetoed ? "vetoed" : "flat",
          text_size = size.small, text_color = goLong or goShort ? color.teal : color.gray)
     table.cell(st, 0, 3, "size", text_size = size.small, text_color = color.gray)
-    table.cell(st, 1, 3, str.tostring(qty, "#") + " @ " + str.tostring(riskTicks) + " ticks risk",
+    table.cell(st, 1, 3, str.tostring(qty, "#") + " @ " + str.tostring(riskTicks, "#") + " ticks risk",
          text_size = size.small, text_color = color.gray)
     table.cell(st, 0, 4, "event", text_size = size.small, text_color = color.gray)
     table.cell(st, 1, 4, event ? evMode : "none", text_size = size.small,
