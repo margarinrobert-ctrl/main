@@ -1687,6 +1687,29 @@ cells of the pivot-width x recency-window grid on BOTH blocks (research +0.163..
 scores +0.550/+0.631 -- and w20 ships anyway because it carries n=88 locked against w5's n=37; the
 larger sample is worth more than the larger number. See `docs/ib/STUDY_V55_AUTOMATED_CVD.md`.
 
+**THE SHIPPED PINE AND ITS OWN BACKTEST DID NOT AGREE, AND THE SCRIPT READ BETTER -- WHICH IS THE
+GAP, NOT AN EDGE.** V55's order model rebuilt in Python and diffed against the engine on identical
+signals: **245 trades against 254 (96.5%), one exit bar in five elsewhere, R corr 0.9833, and with a
+4 ATR target the script read +15.2% BETTER than the research.** Three causes, two fixable:
+(1) NO EXIT ORDER WAS LIVE DURING THE ENTRY BAR -- `strategy.exit` only runs on a bar where a
+position already exists, so the first stop is placed at the CLOSE of the fill bar; fixed by placing
+a FILL-RELATIVE bracket (`loss`/`profit` in ticks) at the SIGNAL bar. (2) THE RISK WAS ANCHORED TO
+THE FILL BAR'S ATR; fixed with a `var pendAtr` stored at the signal bar. (3) NOT FIXABLE -- an order
+placed at the close of bar j is live during bar j+1 while the engine applies bar j's level at bar j;
+that residual is the remaining 12.3% of differing exit bars. After the fix: **trade count 99.6%,
+same exit bar 87.7%, R correlation 0.9997, and the gap now reads CONSERVATIVE (-3.2%)** -- the right
+direction. Same procedure as `STUDY_PINE_PARITY`; run it on every script that ships. **THE CVD
+RESULT SURVIVES THE HONEST MODEL** (research +0.3051 p 0.002 / locked +0.3125 p 0.003 against
++0.3509/+0.3176 under the engine), so it is not an order-model artifact. **ADX: NOT ONE OF FOUR
+EARNS A PLACE** -- the conventional floors LOWER the edge and fail research (>=20 p 0.281, >=25
+p 0.553); the inverted ADX<=20 scores best and is **MODEL-DEPENDENT (p 0.100 under the script's
+model against 0.027 under the engine's)**, which is not a result, on n=39 locked. **AN ATR TARGET
+CLEARS ITS CONTROL ON BOTH BLOCKS AT 3/4/6 ATR AND STILL LOSES TO NO TARGET** on per-trade AND total
+R (research 166 x 0.3051 = 50.6R against 210 x 0.1949 = 40.9R at 4 ATR): a target closes positions
+sooner, frees the position lock, and admits more trades at a lower edge -- and the p-value improves
+only because the CONTROL degrades too. Eleventh time no-target has won here.
+See `docs/ib/STUDY_V56_PARITY_ADX_TP.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1780,6 +1803,7 @@ larger sample is worth more than the larger number. See `docs/ib/STUDY_V55_AUTOM
 | `research/v53/` | parameter-free lower-timeframe absorption, the 280,320-cell underfitting sweep, and the vectorbt transcription check |
 | `research/v54/` | the CVD proxy, confirmed-pivot four-pattern divergence, KAMA on an independent timeframe sampled causally |
 | `research/v55/` | the automated CVD gate: union vs single pattern, the EMA cross, and the full k x w neighbourhood |
+| `research/v56/` | **the dual order-model walker** -- the research engine and the Pine script's own model in one function, diffed trade for trade; plus ADX and an ATR target |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
