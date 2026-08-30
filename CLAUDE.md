@@ -118,6 +118,17 @@ asserted trade-for-trade against `runBacktest`; note the app sizes stops in WILD
 `runBacktest` uses) while the research layer uses `ema(tr, n)`, so compare the two on shape, not to
 the dollar. See `docs/ib/STUDY_TUNER.md`.
 
+**An ASYMMETRIC barrier is optimistic when it is judged from bar OHLC, and the optimiser will find
+it.** Stage 0 over a driftless synthetic world with costs off: a 1:1 geometry earns 0.000R at every
+bar resolution, a 3:1 geometry earns **+0.232R per trade when a bar is one sub-step, +0.088R at six,
++0.037R at twenty-four, +0.029R at fifty**. It is discretisation, not drift: a bar whose range
+grazes the 3R target books the full +3R while the same graze against the 1R stop is capped at -1R,
+and coarse bars graze more often. In a 36-world Monte Carlo the in-sample optimiser picked tp=3.0 in
+**34 of 36 worlds**, and the target multiple was the only parameter whose marginal profile was not
+flat -- in the martingale world too. Never read a raw per-trade number off an asymmetric geometry;
+read the excess over a matched control, which shares the geometry and therefore the bias. See
+`docs/ib/STUDY_SYNTH50_DONCHIAN.md`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -156,6 +167,15 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
+| `research/donchian.py` | Donchian channels excluding the current bar, breakout triggers, indpool rows |
+| `research/bvar.py` | Minnesota-prior BVAR, per-bar predictive density, h-step functionals, IRF |
+| `research/uq_net.py` | heteroscedastic deep ensemble + MC dropout: aleatoric vs epistemic |
+| `research/dbu.py` | the Donchian x BVAR x uncertainty strategy, its simulator and its control |
+| `research/dbu_live.py` | its live/paper loop, latency budget and kill switches |
+| `research/dbu_dir.py` | the DIRECTIONAL version: the model picks the side, drift removed by a prior shift |
+| `research/synth50.py` | synthetic index futures: SV, t-tails, an explicit trend knob, real intraday shape |
+| `research/dbt50.py` | Donchian+EMA+ADX trend follower, exit tensor, matched control, `--stage0` |
+| `research/dbt50_run.py`, `dbt50_report.py` | the 1,800-year Monte Carlo and its marginals |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine

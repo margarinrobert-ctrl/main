@@ -1,0 +1,211 @@
+//@version=6
+// =============================================================================================
+// DONCHIAN EVENT + MODEL-CHOSEN SIDE  --  07:00-11:00 New York
+//
+// The companion to DonchianTrendScalp. There, the Donchian rule picks the side and the geometry
+// is fixed. Here the BREAK IS ONLY THE EVENT and a model picks the side, sizes the trade and can
+// veto it -- the design in docs/ib/SKILL_DIRECTIONAL_ALPHA.md and
+// docs/ib/SKILL_DONCHIAN_BVAR_UQ.md.
+//
+// WHAT PINE CANNOT DO, AND WHAT THIS SCRIPT THEREFORE IS
+// -----------------------------------------------------
+// The model layer is a Minnesota-prior Bayesian VAR producing a per-bar predictive density, plus
+// a heteroscedastic deep ensemble with MC dropout producing a calibrated P(win) and a split of
+// the uncertainty into aleatoric and epistemic parts. None of that can be fitted in Pine: no
+// matrix posterior, no gradient descent, no ensemble.
+//
+// So this script is the EXECUTION SHELL for that model, not the model. You wire the model's
+// outputs in through "input.source" from a companion indicator plotting them on the same chart
+// (research/pine_export.py can emit one, or feed them from your own bridge), and this script does
+// the part Pine is good at: the event, the session, the barriers, the sizing arithmetic and the
+// order management.
+//
+// WITH NOTHING WIRED IT TAKES NO TRADES. That is deliberate. A directional script that quietly
+// defaults to "long" when its model is missing is the exact failure this whole study was built to
+// avoid: on a sample where the index rose 89%, "predicts direction" and "is long" are nearly the
+// same statement, and a default would look like an edge for years.
+//
+// WHAT HAS AND HAS NOT BEEN MEASURED
+// ----------------------------------
+// Measured, on synthetic data with known ground truth (research/dbu_dir.py selftest):
+//     null series, no structure      AUC 0.502, drift-adjusted edge t = -0.99   (finds nothing)
+//     planted AR(1), phi = 0.35      AUC 0.589, drift-adjusted edge t = +8.51   (finds it)
+//     drift only, prior shift off    97.3% long, raw edge entirely explained by the drift term
+//     drift only, prior shift on     55.5% long, nothing left
+//     price series mirrored          97.6% of calls flip, 100% of confident calls
+// NOT measured: any strategy-level P&L for this variant, on synthetic or real data. There is no
+// backtest behind this file. The repository's own prior is discouraging -- 1,072 information-
+// coefficient tests on NQ produced one survivor worth 0.28 ticks against a 6-tick round turn --
+// so treat a positive result here as something to disprove, starting with a matched control.
+//
+// THE MODEL INPUTS THIS EXPECTS
+// -----------------------------
+//   P(long wins)   a CALIBRATED probability that the long side wins this barrier race, already
+//                  PRIOR-SHIFTED so that 0.5 means "nothing beyond the unconditional drift".
+//                  If you feed a raw classifier probability instead, you are feeding it the drift
+//                  and this script will happily trade it.
+//   epistemic sd   the ensemble's disagreement. Used to shrink size toward the base rate and to
+//                  veto unfamiliar states. Optional; leave unwired to disable both.
+//   aleatoric sd   the irreducible spread of the outcome, in the same units. Optional; when wired
+//                  it scales the stop so barrier probabilities stay stable across regimes.
+//
+// THE PINE TRAPS, HANDLED: ATR is ta.ema(ta.tr(true), 14) and not ta.atr; the session goes
+// through an explicit timezone because bare hour/minute are EXCHANGE time; the Donchian channel
+// excludes the current bar; entries require barstate.isconfirmed.
+//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+strategy("Donchian event + model side | 07:00-11:00 NY", overlay = true,
+     initial_capital = 25000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 2.00,
+     slippage = 2, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// ---- the model bridge ------------------------------------------------------------------------
+wired    = input.bool(false, "Model source IS wired (otherwise this script does not trade)",
+     group = "Model", tooltip = "Leave this off until P(long wins) below is actually pointing at " +
+     "a plotted model output. With it off the script draws its signals and takes no trades.")
+pUpSrc   = input.source(close, "P(long wins), prior-shifted, 0..1", group = "Model")
+useEpi   = input.bool(false, "Epistemic sd is wired", group = "Model")
+epiSrc   = input.source(close, "Epistemic sd", group = "Model")
+useAlea  = input.bool(false, "Aleatoric sd is wired (scales the stop)", group = "Model")
+aleaSrc  = input.source(close, "Aleatoric sd", group = "Model")
+aleaRef  = input.float(1.0, "Aleatoric sd reference (its median)", minval = 0.0001, group = "Model")
+conf     = input.float(0.03, "Required |P - 0.5|", minval = 0.0, maxval = 0.5, step = 0.005,
+     group = "Model", tooltip = "The whole trade-count knob. Zero is a first-class outcome: " +
+     "on most bars a calibrated prior-shifted model says nothing.")
+epiVeto  = input.float(0.0, "Veto when epistemic sd exceeds (0 = off)", minval = 0.0, group = "Model")
+
+// ---- the event -------------------------------------------------------------------------------
+evMode   = input.string("Donchian break, either way", "Event", group = "Event",
+     options = ["Donchian break, either way", "Every bar in session", "Failed break"])
+donN     = input.int(20, "Donchian lookback (excludes this bar)", minval = 2, group = "Event")
+bufTicks = input.int(0,  "Break buffer (ticks)", minval = 0, group = "Event")
+
+// ---- geometry and sizing ---------------------------------------------------------------------
+atrMult  = input.float(1.5, "Stop = N x ATR(14)", minval = 0.25, step = 0.25, group = "Risk")
+tpR      = input.float(1.0, "Target = N x risk", minval = 0.25, step = 0.25, group = "Risk",
+     tooltip = "1.0 is the symmetric geometry, which is the one with no bar-discretisation " +
+     "artefact. See DonchianTrendScalp's header for the measurement.")
+maxHold  = input.int(24, "Time stop (bars)", minval = 1, group = "Risk")
+sizeMode = input.string("Fractional Kelly", "Position size", group = "Risk",
+     options = ["One contract", "Fractional Kelly"])
+kellyFrac = input.float(0.25, "Kelly fraction", minval = 0.01, maxval = 1.0, step = 0.05,
+     group = "Risk", tooltip = "Kelly assumes the probability is KNOWN. It is estimated, and the " +
+     "variance of an estimated-p Kelly is enormous. A quarter is the usual compromise and is " +
+     "still aggressive.")
+riskCap  = input.float(100.0, "Hard cap on $ risked per trade", minval = 1.0, group = "Risk")
+maxQty   = input.int(3, "Maximum contracts", minval = 1, group = "Risk")
+
+startHM  = input.int(700,  "Session start (HHMM, New York)", group = "Session")
+endHM    = input.int(1100, "Session end / flatten (HHMM, New York)", group = "Session")
+tz       = input.string("America/New_York", "Timezone", group = "Session")
+
+winMode  = input.string("All available history", "Backtest window", group = "Backtest window",
+     options = ["All available history", "Last 90 days", "Last 365 days", "Last 3 years", "Custom dates"])
+fromDate = input.time(timestamp("01 Jan 2023 00:00 +0000"), "Custom from", group = "Backtest window")
+toDate   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "Custom to", group = "Backtest window")
+
+// ---- primitives ------------------------------------------------------------------------------
+atrV = ta.ema(ta.tr(true), 14)                 // NOT ta.atr
+upBand = ta.highest(high, donN)[1]             // the [1] excludes this bar, which is the rule
+dnBand = ta.lowest(low, donN)[1]
+buf = bufTicks * syminfo.mintick
+
+nowHM = hour(time, tz) * 100 + minute(time, tz)
+inSession = nowHM >= startHM and nowHM < endHM
+atFlatten = nowHM >= endHM
+daysBack = winMode == "Last 90 days" ? 90 : winMode == "Last 365 days" ? 365 : winMode == "Last 3 years" ? 1095 : 0
+inWindow = winMode == "Custom dates" ? (time >= fromDate and time <= toDate) : daysBack == 0 ? true : (time >= timenow - daysBack * 86400000)
+
+brokeUp = close > upBand + buf
+brokeDn = close < dnBand - buf
+failedUp = brokeUp[1] and close < upBand[1]
+failedDn = brokeDn[1] and close > dnBand[1]
+event = evMode == "Every bar in session" ? true : evMode == "Failed break" ? (failedUp or failedDn) : (brokeUp or brokeDn)
+
+// ---- the model's call ------------------------------------------------------------------------
+pUp = wired ? pUpSrc : na
+epi = useEpi ? epiSrc : na
+alea = useAlea ? aleaSrc : na
+haveP = wired and not na(pUp) and pUp > 0 and pUp < 1
+edge = haveP ? pUp - 0.5 : 0.0
+vetoed = epiVeto > 0 and useEpi and not na(epi) and epi > epiVeto
+goLong  = haveP and edge >= conf and not vetoed
+goShort = haveP and edge <= -conf and not vetoed
+
+// the stop widens with the model's own aleatoric spread, so barrier probabilities stay stable
+aleaOk = useAlea and not na(alea) and alea > 0
+aleaScale = aleaOk ? math.min(math.max(alea / aleaRef, 0.7), 1.6) : 1.0
+stopPts = atrMult * atrV * aleaScale
+
+// fractional Kelly on the barrier bet, shrunk toward the base rate by model disagreement
+baseP = 1.0 / (1.0 + tpR)
+canShrink = haveP and useEpi and not na(epi) and not na(alea) and alea > 0
+pAdj = baseP
+if haveP and canShrink
+    pAdj := baseP + (pUp - baseP) / (1.0 + epi / alea)
+else if haveP
+    pAdj := pUp
+fStar = math.max(math.min((pAdj * (1.0 + tpR) - 1.0) / tpR, 1.0), 0.0) * kellyFrac
+tickValue = syminfo.mintick * syminfo.pointvalue
+riskTicks = math.max(math.round(stopPts / syminfo.mintick), 1)
+stopDollars = riskTicks * tickValue
+kellyQty = stopDollars > 0 ? math.floor(fStar * strategy.equity / stopDollars) : 0
+capQty = stopDollars > 0 ? math.floor(riskCap / stopDollars) : 0
+qty = sizeMode == "One contract" ? 1.0 : math.max(math.min(math.min(kellyQty, capQty), maxQty), 0)
+
+ready = not na(atrV) and atrV > 0 and not na(upBand)
+isFlat = strategy.position_size == 0
+
+// ---- entries ---------------------------------------------------------------------------------
+if ready and isFlat and inSession and inWindow and event and qty > 0 and barstate.isconfirmed
+    if goLong
+        strategy.entry("L", strategy.long, qty = qty)
+        strategy.exit("Lx", "L", loss = riskTicks, profit = tpR * riskTicks)
+    else if goShort
+        strategy.entry("S", strategy.short, qty = qty)
+        strategy.exit("Sx", "S", loss = riskTicks, profit = tpR * riskTicks)
+
+// The hold clock comes from the ENGINE, not from a variable set on the signal bar. A market
+// order signalled at the close of bar t fills at the open of t+1, so strategy.position_size is
+// still 0 while the signal bar is being evaluated -- a hand-rolled "entryBar := bar_index" there
+// gets reset by the very next flat check and the time stop never fires.
+// entry_bar_index(0) is only legal while a trade is open, so the call lives INSIDE the guard
+// rather than in a ternary that Pine may evaluate on both branches.
+if strategy.position_size != 0 and barstate.isconfirmed
+    heldBars = bar_index - strategy.opentrades.entry_bar_index(0)
+    if atFlatten or not inWindow
+        strategy.close_all(comment = "session flat")
+    else if heldBars >= maxHold
+        strategy.close_all(comment = "time stop")
+
+// ---- plots -----------------------------------------------------------------------------------
+plot(upBand, "Donchian upper", color = color.new(color.teal, 60))
+plot(dnBand, "Donchian lower", color = color.new(color.red, 60))
+plotshape(event and goLong,  "long",  shape.triangleup,   location.belowbar, color.teal, size = size.tiny)
+plotshape(event and goShort, "short", shape.triangledown, location.abovebar, color.red,  size = size.tiny)
+plotshape(event and not haveP and inSession, "no model", shape.xcross, location.belowbar,
+     color.new(color.gray, 40), size = size.tiny)
+bgcolor(inSession ? color.new(color.blue, 94) : na, title = "session")
+
+// ---- state -----------------------------------------------------------------------------------
+var table st = table.new(position.top_right, 2, 5, border_width = 1)
+if barstate.islast
+    table.cell(st, 0, 0, "model wired", text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 0, wired ? "yes" : "NO -- not trading", text_size = size.small,
+         text_color = wired ? color.teal : color.red)
+    table.cell(st, 0, 1, "P(long wins)", text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 1, haveP ? str.tostring(pUp, "#.###") : "n/a", text_size = size.small,
+         text_color = haveP ? color.teal : color.gray)
+    table.cell(st, 0, 2, "call", text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 2, goLong ? "long" : goShort ? "short" : vetoed ? "vetoed" : "flat",
+         text_size = size.small, text_color = goLong or goShort ? color.teal : color.gray)
+    table.cell(st, 0, 3, "size", text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 3, str.tostring(qty, "#") + " @ " + str.tostring(riskTicks, "#") + " ticks risk",
+         text_size = size.small, text_color = color.gray)
+    table.cell(st, 0, 4, "event", text_size = size.small, text_color = color.gray)
+    table.cell(st, 1, 4, event ? evMode : "none", text_size = size.small,
+         text_color = event ? color.teal : color.gray)

@@ -1,0 +1,189 @@
+//@version=6
+// =============================================================================================
+// DONCHIAN BREAKOUT TREND SCALP  --  07:00-11:00 New York, both sides
+//
+//   trigger   close breaks the 20-bar Donchian channel formed by the PREVIOUS 20 bars
+//   filters   EMA 13 > 48 > 200 stacked with the trade, ADX(14) > 30
+//   stop      1.5 x ATR(14) from the fill        target  3 x that risk
+//   time      entries 07:00-11:00 New York, flat at 11:00, hard time stop at 24 bars
+//
+// MEASURED ON SYNTHETIC DATA ONLY. There is no real-instrument result behind this script.
+// 12 independent simulated worlds x 50 years of index-futures-like 5-minute bars, out-of-sample
+// block only, NQ costs ($4 round turn + 1 tick each side + 1 extra tick on stops), 1 contract.
+// See docs/ib/STUDY_SYNTH50_DONCHIAN.md for how the worlds were built and calibrated.
+//
+//     mean per trade              +0.0487R  +- 0.0068   (R = the risk taken on that trade)
+//     Sharpe (session R, ann.)    0.41  +- 0.06
+//     profit factor               1.08
+//     win rate / payoff           35.7% / 1.95
+//     max drawdown                54.7R  (about 7 years of its own average annual return)
+//     trades per year             160,  average hold 8.3 bars,  4.9% of session in the market
+//     exits                       56.0% stop, 14.8% target, 25.6% 11:00 flat, 3.6% time stop
+//     profitable years            64%
+//
+// THE THREE NUMBERS THAT MATTER MORE THAN THE ONES ABOVE:
+//
+//   1. A MATCHED CONTROL -- random entries with the same side, the same barriers and the same
+//      minute-of-day distribution -- earned +0.0355R in the same worlds. The rule's excess is
+//      +0.0133R at t = +2.01, and it beat its own control in only 7 of 12 worlds. So roughly
+//      THREE QUARTERS of the headline number is what shooting at random in this session with
+//      these barriers already pays.
+//   2. In a MARTINGALE world (same generator, trend switched off) the identical configuration
+//      earns -0.0266R and is beaten by its control in 10 of 12 worlds. Stacked EMAs plus
+//      ADX > 30 do not merely fail without trend, they concentrate the book exactly where
+//      breakouts fail. This strategy is a bet that trend exists, and nothing else.
+//   3. The 3R target is where a simulation artefact lives. Judging barrier crossings from bar
+//      OHLC is optimistic for asymmetric payoffs -- a bar whose range grazes the 3R target books
+//      the full +3R while the same graze against the 1R stop is capped at -1R. Measured on a
+//      driftless world with costs off: +0.037R per trade at the resolution used here, 0.000R for
+//      a symmetric 1:1 geometry. TradingView fills intrabar and is NOT subject to this, so if
+//      this script's live-forward results come in below the simulated ones, that gap is the
+//      first place to look. Set "Target = N x risk" to 1.0 to trade the geometry with no artefact.
+//
+// THREE THINGS THAT ARE EASY TO GET WRONG IN PINE, AND ARE HANDLED HERE:
+//   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14 and is
+//     a DIFFERENT number. ADX below is deliberately Wilder's, because that is what ADX means.
+//   * The session goes through an explicit timezone. Pine's bare hour/minute are EXCHANGE time
+//     -- Chicago for CME -- and 07:00-11:00 here is New York.
+//   * The Donchian channel EXCLUDES the current bar. ta.highest(high, n) includes it, which makes
+//     "high >= highest" true on every bar that is its own n-bar high. The [1] is the whole rule.
+//
+// TICK-SETTING IMMUNE: entries require barstate.isconfirmed, so the Strategy Tester's
+// "Script execution" checkboxes cannot change the result. Exits stay tick-sensitive on purpose:
+// a resting stop or target SHOULD fill when price touches it.
+//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+strategy("Donchian 20 trend scalp | 07:00-11:00 NY | 1.5xATR 3R", overlay = true,
+     initial_capital = 25000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 2.00,
+     slippage = 2, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// ---- inputs ----------------------------------------------------------------------------------
+donN     = input.int(20,   "Donchian lookback (bars, excludes this bar)", minval = 2, group = "Rule")
+bufTicks = input.int(0,    "Break buffer (ticks beyond the band)", minval = 0, group = "Rule")
+adxMin   = input.float(30, "ADX(14) minimum", minval = 0, step = 1, group = "Rule")
+useEma   = input.bool(true, "Require EMA 13/48/200 stacked", group = "Rule")
+emaFast  = input.int(13,  "EMA fast",   minval = 2, group = "Rule")
+emaMid   = input.int(48,  "EMA middle", minval = 2, group = "Rule")
+emaSlow  = input.int(200, "EMA slow",   minval = 2, group = "Rule")
+
+atrMult  = input.float(1.5, "Stop = N x ATR(14)", minval = 0.25, step = 0.25, group = "Risk")
+tpR      = input.float(3.0, "Target = N x risk", minval = 0.25, step = 0.25, group = "Risk",
+     tooltip = "3.0 is what the parameter sweep chose, and it is also where the bar-discretisation " +
+     "artefact described in the header lives. 1.0 is the geometry with no artefact.")
+maxHold  = input.int(24,  "Time stop (bars)", minval = 1, group = "Risk")
+
+startHM  = input.int(700,  "Session start (HHMM, New York)", group = "Session")
+endHM    = input.int(1100, "Session end / flatten (HHMM, New York)", group = "Session")
+tz       = input.string("America/New_York", "Timezone", group = "Session")
+
+allowLong  = input.bool(true, "Allow longs",  group = "Direction")
+allowShort = input.bool(true, "Allow shorts", group = "Direction",
+     tooltip = "Both sides were measured. In the simulated worlds longs earned +0.0643R and " +
+     "shorts +0.0315R per trade, on a 51.8/48.2 split.")
+
+winMode  = input.string("All available history", "Backtest window", group = "Backtest window",
+     options = ["All available history", "Last 90 days", "Last 365 days", "Last 3 years", "Custom dates"])
+fromDate = input.time(timestamp("01 Jan 2023 00:00 +0000"), "Custom from", group = "Backtest window")
+toDate   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "Custom to", group = "Backtest window")
+
+// ---- primitives, defined to match the research exactly ---------------------------------------
+atrV = ta.ema(ta.tr(true), 14)                      // NOT ta.atr -- see the header
+[diPlus, diMinus, adxV] = ta.dmi(14, 14)            // Wilder, which is what ADX means
+e13 = ta.ema(close, emaFast)
+e48 = ta.ema(close, emaMid)
+e200 = ta.ema(close, emaSlow)
+
+// the channel formed by the PREVIOUS donN bars: the [1] is not cosmetic
+upBand = ta.highest(high, donN)[1]
+dnBand = ta.lowest(low, donN)[1]
+buf = bufTicks * syminfo.mintick
+
+// ---- session, in New York --------------------------------------------------------------------
+nowHM = hour(time, tz) * 100 + minute(time, tz)
+inSession = nowHM >= startHM and nowHM < endHM
+atFlatten = nowHM >= endHM
+
+daysBack = winMode == "Last 90 days" ? 90 : winMode == "Last 365 days" ? 365 : winMode == "Last 3 years" ? 1095 : 0
+inWindow = winMode == "Custom dates" ? (time >= fromDate and time <= toDate) : daysBack == 0 ? true : (time >= timenow - daysBack * 86400000)
+
+// ---- the rule --------------------------------------------------------------------------------
+stackUp = not useEma or (e13 > e48 and e48 > e200)
+stackDn = not useEma or (e13 < e48 and e48 < e200)
+trendOk = adxV > adxMin
+
+longTrig  = close > upBand + buf and stackUp and trendOk
+shortTrig = close < dnBand - buf and stackDn and trendOk
+
+ready = not na(atrV) and atrV > 0 and not na(adxV) and not na(e200) and not na(upBand)
+isFlat = strategy.position_size == 0
+
+// ---- entries ---------------------------------------------------------------------------------
+// Stop and target are measured from the FILL -- the open of the bar after the signal -- using the
+// ATR of the signal bar, which is what the research engine does. Whole ticks are the one
+// unavoidable difference: at most half a tick per side.
+if ready and isFlat and inSession and inWindow and barstate.isconfirmed
+    riskTicks = math.max(math.round(atrMult * atrV / syminfo.mintick), 1)
+    if longTrig and allowLong
+        strategy.entry("L", strategy.long)
+        strategy.exit("Lx", "L", loss = riskTicks, profit = tpR * riskTicks)
+    else if shortTrig and allowShort
+        strategy.entry("S", strategy.short)
+        strategy.exit("Sx", "S", loss = riskTicks, profit = tpR * riskTicks)
+
+// ---- time stop and the 11:00 flatten ---------------------------------------------------------
+// The hold clock comes from the ENGINE, not from a variable set on the signal bar. A market
+// order signalled at the close of bar t fills at the open of t+1, so strategy.position_size is
+// still 0 while the signal bar is being evaluated -- a hand-rolled "entryBar := bar_index" there
+// gets reset by the very next flat check and the time stop never fires.
+// entry_bar_index(0) is only legal while a trade is open, so the call lives INSIDE the guard
+// rather than in a ternary that Pine may evaluate on both branches.
+if strategy.position_size != 0 and barstate.isconfirmed
+    heldBars = bar_index - strategy.opentrades.entry_bar_index(0)
+    if atFlatten or not inWindow
+        strategy.close_all(comment = "session flat")
+    else if heldBars >= maxHold
+        strategy.close_all(comment = "time stop")
+
+// ---- plots -----------------------------------------------------------------------------------
+plot(upBand, "Donchian upper", color = color.new(color.teal, 40))
+plot(dnBand, "Donchian lower", color = color.new(color.red, 40))
+plot(e200, "EMA 200", color = color.new(color.gray, 50))
+plotshape(longTrig and inSession and allowLong,  "long",  shape.triangleup,
+     location.belowbar, color.teal, size = size.tiny)
+plotshape(shortTrig and inSession and allowShort, "short", shape.triangledown,
+     location.abovebar, color.red, size = size.tiny)
+bgcolor(inSession ? color.new(color.blue, 94) : na, title = "session")
+
+// ---- what history this chart actually gave you -----------------------------------------------
+var int firstBarT = na
+if inWindow and na(firstBarT)
+    firstBarT := time
+var table dr = table.new(position.bottom_left, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(dr, 0, 0, "backtested " + str.format_time(firstBarT, "yyyy-MM-dd") + "  to  " +
+         str.format_time(time, "yyyy-MM-dd"), text_size = size.small, text_color = color.gray)
+    table.cell(dr, 0, 1, str.tostring(bar_index + 1) + " bars loaded on this chart",
+         text_size = size.small, text_color = color.gray)
+    table.cell(dr, 0, 2, "synthetic-only result: a matched control earned 73% of it",
+         text_size = size.small, text_color = color.gray)
+
+// ---- which conditions are live right now ------------------------------------------------------
+var table rt = table.new(position.top_right, 2, 4, border_width = 1)
+if barstate.islast
+    table.cell(rt, 0, 0, "break", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 1, 0, longTrig ? "long" : shortTrig ? "short" : "no", text_size = size.small,
+         text_color = longTrig or shortTrig ? color.teal : color.gray)
+    table.cell(rt, 0, 1, "ADX > " + str.tostring(adxMin), text_size = size.small, text_color = color.gray)
+    table.cell(rt, 1, 1, str.tostring(adxV, "#.0"), text_size = size.small,
+         text_color = trendOk ? color.teal : color.gray)
+    table.cell(rt, 0, 2, "EMA stack", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 1, 2, stackUp ? "up" : stackDn ? "down" : "mixed", text_size = size.small,
+         text_color = stackUp or stackDn ? color.teal : color.gray)
+    table.cell(rt, 0, 3, "session", text_size = size.small, text_color = color.gray)
+    table.cell(rt, 1, 3, inSession ? "open" : "closed", text_size = size.small,
+         text_color = inSession ? color.teal : color.gray)
