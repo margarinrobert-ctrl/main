@@ -1618,6 +1618,34 @@ off) while the control says they are worth nothing — that gap is why the contr
 is destructive on every window again (all-hours +0.1604 vs flattened -0.0000..+0.0172), the ninth
 confirmation. See `docs/ib/STUDY_V52_TURTLE_ONE_SYSTEM.md`.
 
+**ADDING A CONDITION BUYS RESEARCH SCORE AND NOT LOCKED SCORE, AND THE POPULATION SHOWS IT DIRECTLY.**
+280,320 configurations on NQ (4 tf x 4 entry x 4 exit x 4 stop x 5 MA200 x 3 cross x 73 absorption),
+every trading timeframe resampled from the SAME 1-minute series so lower-timeframe absorption and
+trading bars align exactly. Grouped by NUMBER OF ACTIVE CONDITIONS: mean research R rises +0.0517 ->
++0.0709 -> +0.0812 while mean locked R does not move (+0.0780 -> +0.0895 -> +0.0845), and
+**corr(research R, locked R) COLLAPSES from +0.2366 with no filter to +0.0579 with one and goes
+NEGATIVE (-0.0382) with two.** That correlation, computed within a slice of the population, is an
+overfitting diagnostic that needs no cell to be named -- use it. Same reading on the timeframe axis:
+research rises monotonically to 60m (+0.1965) while locked FALLS to it (+0.0304), so 60m is the
+overfit end and 30m is where the blocks agree (+0.1192/+0.0896). **PARAMETER-FREE ABSORPTION** --
+volume >= its OWN rolling mean (ratio exactly 1.0) and the close on the wrong side of the bar's
+MIDPOINT (exactly 0.5), replacing two tuned numbers -- read on 1/2/3/4/5/15m and mapped up to the
+chart bar: **NO GRADIENT ACROSS THE LOWER TIMEFRAME** (locked +0.0734..+0.1357 scattered around the
++0.0808 no-filter baseline), and the surviving window parameter is INERT (50/100/200 -> +0.0887/
++0.0871/+0.0904), which is what removing a tuned number should look like. Nothing clears its control
+on both blocks: the BARE BASE fails a random ENTRY (p 0.051 research, 0.109 locked) and every filter
+fails a same-selectivity random filter on at least one block, with buyer absorption 3m/4m passing
+LOCKED (p 0.048/0.007) while FAILING research (0.455/0.636) -- the wrong shape, fifth occurrence.
+Absorption has now given THREE DIFFERENT ANSWERS in three studies (V51 60m US100: requiring it is in
+0.00% of the top 1000; V52 240m: it clears both US100 blocks on n=22; V53 30m NQ: no gradient),
+which is itself the answer. **VECTORBT FAILED ITS TRANSCRIPTION CHECK A THIRD TIME**: on the
+ATR-stop-only geometry it produced **6 trades against the engine's 175** (ratio 0.034), unchanged
+across five configurations (full OHLC, exits as an all-False Series, no exits arg, a scalar sl_stop,
+stop_entry_price='fillprice'); its stop LEVEL is exact and its TIMING is not -- a position stayed
+open 2023-01-31 to 2023-03-01 through a month price spent below the stop, swallowing 175 entry
+signals into 11 orders. 30-SECOND ABSORPTION IS UNTESTABLE HERE (1m is the finest data) and was not
+proxied. See `docs/ib/STUDY_V53_UNDERFIT.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1708,6 +1736,7 @@ confirmation. See `docs/ib/STUDY_V52_TURTLE_ONE_SYSTEM.md`.
 | `research/v50/` | SELECTION at a FIXED fill rate: a cost-invariant time-to-fill calibrator, both sides, the PRICE split into entry offset and exit path, and the chasing test |
 | `research/v51/` | the 1.16M-config single-entry Donchian sweep: MA200 as a level, 13x48, an absorption proxy, session+flatten; tensor verified against an independent reference |
 | `research/v52/` | the Turtle reduced to one entry/one exit: 4.64M cells, its own ADX and EMA100 gates swept in BOTH directions, same-selectivity control on three blocks |
+| `research/v53/` | parameter-free lower-timeframe absorption, the 280,320-cell underfitting sweep, and the vectorbt transcription check |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |

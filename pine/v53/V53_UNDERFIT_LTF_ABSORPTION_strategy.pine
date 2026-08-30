@@ -1,0 +1,200 @@
+// ================================================================================================
+// V53 -- THE UNDERFIT VERSION. Lower-timeframe absorption, and every tuned number deleted.
+//
+// WHAT CHANGED, ALL AS REQUESTED
+//   * ABSORPTION IS NOW TWO OPTIONS -- buyer or seller -- and it is detected on a LOWER TIMEFRAME
+//     than the chart, automatically. On a 15-minute chart a 1-minute absorption inside the current
+//     bar is seen without switching charts, via `request.security_lower_tf`.
+//   * ITS TWO TUNED NUMBERS ARE GONE. The volume-spike multiple and the close-inside-the-range
+//     fraction were both free parameters a sweep can fit. They are replaced by the two values that
+//     cannot be tuned: volume at or above its OWN rolling mean (a ratio of exactly 1.0) and the
+//     close on the wrong side of the bar's MIDPOINT (exactly 0.5).
+//   * THE EMA 100 IS GONE, with the ADX gate, the session window, the flatten, the pyramid ladder,
+//     the "near/far" bands and every preset. What is left is the 200 EMA, the 13 and the 48.
+//
+// ============================ AND THE MEASUREMENT SAYS: USE NO FILTER ============================
+// 280,320 configurations on NQ, every trading timeframe resampled from the same 1-minute series so
+// the lower-timeframe absorption and the trading bars align exactly. Read for UNDERFITTING rather
+// than for a top row -- the diagnostic is whether a cell's research score SURVIVES to the locked
+// block, which needs no single cell to be named:
+//
+//   active conditions   cells    research R   locked R   corr(research, locked)   median n
+//        0                254      +0.0517     +0.0780         +0.2366              727
+//        1             18,544      +0.0709     +0.0895         +0.0579              459
+//        2             93,098      +0.0812     +0.0845         -0.0382              308
+//        3             94,540      +0.0755     +0.0925         +0.0480              250
+//
+// RESEARCH SCORE RISES WITH EVERY CONDITION ADDED (+0.0517 -> +0.0812) AND LOCKED SCORE DOES NOT
+// (+0.0780 -> +0.0845). The correlation between the two blocks COLLAPSES from +0.24 with no filter
+// to +0.06 with one and goes NEGATIVE with two. That is what overfitting looks like when you can
+// see the whole population: each extra condition buys in-sample score that does not survive the
+// split. The most underfit version -- zero conditions -- has the best cross-block agreement and
+// gives up nothing out of sample. Hence every condition below defaults to OFF.
+//
+// THE SAME READING ON THE TIMEFRAME AXIS: research rises monotonically to 60m (+0.1965) while
+// locked FALLS to it (+0.0304). 60m is the overfit end. 30m is where the two blocks agree most
+// closely (+0.1192 / +0.0896) and is the default here.
+//
+// ======================== AND NOTHING CLEARS ITS CONTROL ON BOTH BLOCKS ========================
+// Base = NQ 30m, Donchian 20 in / 20 out, 2.0N stop, one unit, long, no target. Each condition
+// against a RANDOM FILTER keeping the same share of the same signals, 2,000 draws; the bare base
+// against a RANDOM ENTRY with identical exits. Low p is good.
+//
+//   condition                        research              locked
+//   base (vs a random ENTRY)      +0.0945 p 0.051      +0.1280 p 0.109
+//   MA200 above                   +0.1212 p 0.084      +0.0861 p 0.979
+//   MA200 >= 1.5 ATR above        +0.1149 p 0.259      +0.0380 p 1.000
+//   EMA13 > EMA48                 +0.1027 p 0.408      +0.1087 p 0.878
+//   EMA13 x 48 cross <= 20 bars   +0.1042 p 0.722      +0.1661 p 0.297
+//   buyer absorption 4m           +0.1002 p 0.636      +0.2320 p 0.007   <- WRONG SHAPE
+//   buyer absorption 3m           +0.1035 p 0.455      +0.1809 p 0.048   <- WRONG SHAPE
+//   seller absorption 15m         +0.2131 p 0.113      +0.0333 p 0.880
+//
+// THE BARE BASE DOES NOT CLEAR A RANDOM ENTRY on either block (p 0.051 and 0.109), and no filter
+// clears a random filter on BOTH. The absorption readings that look strongest on locked FAIL on
+// research: a rule chosen on research should look better there, so passing out of sample while
+// failing in sample is a defect, not a result. It has now happened five times on this branch.
+//
+// THE LOWER-TIMEFRAME AXIS HAS NO GRADIENT, which is the tell. Locked mean R by the timeframe
+// absorption is read on, against +0.0808 for absorption OFF:
+//   1m buyer +0.0967 seller +0.0759 | 2m +0.0951 / +0.0706 | 3m +0.0734 / +0.0776
+//   4m +0.1132 / +0.0831 | 5m +0.0819 / +0.1357 | 15m +0.0833 / +0.0656
+// Scattered around the no-filter baseline with no monotone structure in either direction. A real
+// mechanism decays smoothly across a parameter; this does not.
+//
+// THE ONE REASSURING RESULT: the volume mean's window is INERT, which is what removing a tuned
+// number is supposed to look like. Locked mean R at windows 50 / 100 / 200 is +0.0887 / +0.0871 /
+// +0.0904. Nothing in this script depends on that choice.
+//
+// ================================ LIMITS, STATED NOT IMPLIED ================================
+// 30-SECOND ABSORPTION IS UNMEASURED. The finest bars on this branch are 1-minute, so the 30s
+// option below was never tested and is not backed by anything above. It was not proxied.
+// `request.security_lower_tf` returns only a BOUNDED history of intrabars -- TradingView caps how
+// far back it can go, so on a long chart the earliest bars will simply have no absorption marked.
+// The Strategy Tester will silently report fewer signals there rather than warn you.
+// VECTORBT WAS RUN AND FAILED ITS TRANSCRIPTION CHECK for the third time on this branch: 175
+// engine trades against 6, a count ratio of 0.034, unchanged across five configurations. Its stop
+// LEVEL is right and its TIMING is not -- one position stayed open from 2023-01-31 to 2023-03-01
+// through a month in which price traded well below the stop. No vectorbt number is reported.
+// The engine behind every figure above was diffed against a plain-Python reference on 10 cells:
+// trade counts identical, mean R equal to 1e-9.
+//
+// ATR is `ta.atr(14)`, Wilder's RMA. Entries require `barstate.isconfirmed`. The working stop is
+// capped at the PRIOR BAR'S CLOSE, because a Donchian exit channel can sit above the fill and a
+// sell stop resting above the market is not a stop. COSTS ARE NOT SET -- set commission and
+// slippage in Properties; the research charged 0.72 points round turn plus 0.25 per fill on MNQ.
+// See docs/ib/STUDY_V53_UNDERFIT.md.
+// ================================================================================================
+
+//@version=5
+strategy("V53 Underfit -- LTF absorption", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 100000,
+     calc_on_every_tick = false, process_orders_on_close = false, pyramiding = 0)
+
+gG = "Geometry"
+gF = "Conditions -- all OFF by default, and the measurement says leave them there"
+
+entN  = input.int(20, "Entry channel (bars)", minval = 2, group = gG)
+exitN = input.int(20, "Exit channel (bars)", minval = 2, group = gG)
+stopN = input.float(2.0, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG)
+maxHold = input.int(480, "Max hold (bars)", minval = 1, group = gG)
+
+maMode = input.string("off", "MA 200 condition", group = gF,
+     options = ["off", "above", "at least 1.5 ATR above"])
+cxMode = input.string("off", "EMA 13 x 48 condition", group = gF,
+     options = ["off", "13 > 48", "cross within 20 bars"])
+absMode = input.string("off", "Absorption condition", group = gF,
+     options = ["off", "buyer absorption", "seller absorption"])
+absTF = input.string("1", "Absorption timeframe", group = gF,
+     options = ["30S", "1", "2", "3", "4", "5", "15"],
+     tooltip = "Read on this lower timeframe regardless of the chart's. 30S was NEVER MEASURED -- the finest data in the research is 1-minute.")
+absBars = input.int(5, "Absorption counts if it fired within N bars", minval = 1, group = gF)
+volW = input.int(200, "Volume mean window", minval = 10, group = gF,
+     tooltip = "Measured inert: locked mean R is +0.0887 / +0.0871 / +0.0904 at 50 / 100 / 200.")
+
+// ------------------------------------------------------------------------------------------------
+// Absorption on a lower timeframe. PARAMETER-FREE: volume at or above its own rolling mean, and
+// the close on the wrong side of the bar's midpoint. `request.security_lower_tf` returns one array
+// per chart bar holding every closed intrabar, so reading it at the bar's close is causal.
+// ------------------------------------------------------------------------------------------------
+ltfSell() =>
+    v = volume
+    base = ta.sma(v, volW)[1]
+    hv = not na(base) and base > 0 and v >= base
+    mid = 0.5 * (high + low)
+    hv and close > open and close < mid ? 1 : 0
+
+ltfBuy() =>
+    v = volume
+    base = ta.sma(v, volW)[1]
+    hv = not na(base) and base > 0 and v >= base
+    mid = 0.5 * (high + low)
+    hv and close < open and close > mid ? 1 : 0
+
+sellArr = request.security_lower_tf(syminfo.tickerid, absTF, ltfSell())
+buyArr  = request.security_lower_tf(syminfo.tickerid, absTF, ltfBuy())
+sellHit = array.size(sellArr) > 0 and array.sum(sellArr) > 0
+buyHit  = array.size(buyArr) > 0 and array.sum(buyArr) > 0
+
+// ------------------------------------------------------------------------------------------------
+atrN   = ta.atr(14)
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)[1]
+ma200  = ta.ema(close, 200)
+eFast  = ta.ema(close, 13)
+eSlow  = ta.ema(close, 48)
+maDist = atrN > 0 ? (close - ma200) / atrN : na
+
+maOk = maMode == "off" ? true : maMode == "above" ? (maDist > 0) : (maDist >= 1.5)
+cxState = eFast > eSlow
+cxFresh = cxState and not cxState[1]
+// `barssince` is `na` until the event has happened once; nz() keeps that from blocking entries.
+// A window of N bars INCLUDES the current bar, so the test is `<= N-1`.
+cxOk = cxMode == "off" ? true : cxMode == "13 > 48" ? cxState
+     : (nz(ta.barssince(cxFresh), 1000000) <= 19)
+absOk = absMode == "off" ? true :
+     absMode == "buyer absorption" ? (nz(ta.barssince(buyHit), 1000000) <= absBars - 1)
+     : (nz(ta.barssince(sellHit), 1000000) <= absBars - 1)
+
+gateOk = maOk and cxOk and absOk and atrN > 0 and not na(entHi)
+
+var float stopLvl = na
+var int   heldBars = 0
+
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk and high > entHi
+    stopLvl := na
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+
+if barstate.isconfirmed and strategy.position_size > 0
+    if na(stopLvl)
+        stopLvl := strategy.position_avg_price - stopN * atrN
+    lvl = math.max(stopLvl, nz(exitLo, stopLvl))
+    lvl := math.min(lvl, close[1])
+    strategy.exit("x", from_entry = "L", stop = lvl)
+
+if barstate.isconfirmed and strategy.position_size > 0 and heldBars >= maxHold
+    strategy.close_all("max hold")
+
+plot(ma200, "MA 200", color = color.new(color.purple, 0), linewidth = 2)
+plot(eFast, "EMA 13", color = color.new(color.aqua, 40))
+plot(eSlow, "EMA 48", color = color.new(color.orange, 40))
+plot(entHi, "Entry channel", color = color.new(color.teal, 50))
+plot(exitLo, "Exit channel", color = color.new(color.maroon, 50))
+plotshape(sellHit, "Seller absorption (LTF)", shape.triangledown, location.abovebar,
+     color.new(color.red, 0), size = size.tiny)
+plotshape(buyHit, "Buyer absorption (LTF)", shape.triangleup, location.belowbar,
+     color.new(color.lime, 0), size = size.tiny)
+
+anyOn = maMode != "off" or cxMode != "off" or absMode != "off"
+var table hud = table.new(position.top_right, 1, 2, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, anyOn ? "CONDITIONS ON -- none cleared both blocks"
+         : "no condition -- the most underfit setting", text_color = color.white,
+         bgcolor = anyOn ? color.new(color.orange, 20) : color.new(color.teal, 30))
+    table.cell(hud, 0, 1, "absorption read on " + absTF + (absTF == "30S" ? "  (UNMEASURED)" : ""),
+         text_color = color.white,
+         bgcolor = absTF == "30S" ? color.new(color.red, 20) : color.new(color.gray, 40))
