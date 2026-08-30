@@ -1598,6 +1598,26 @@ cached exit tensor did **1,161,216 configurations in 17.7 seconds**, verified ag
 plain-Python reference on 15 cells (trade counts identical, mean R to 1e-9).
 See `docs/ib/STUDY_V51_MA_ABSORPTION.md`.
 
+**THE TURTLE SCRIPT'S OWN TWO GATES DO NOT SURVIVE, AND A FILTER IS A PROPERTY OF A GEOMETRY, NOT
+OF A MARKET.** The shipped `TURTLE_LONG` presets hard-code `ADX < 22` and `EMA100 distance < 3.964
+ATR`. Reduced to ONE entry and ONE exit and swept over 4,644,864 configurations (2 entry x 2 exit x
+4 stop x 6 MA200 x 4 cross x 14 absorption x 4 ADX x 4 EMA-distance x 9 session x 3 tf x 2 markets,
+19.3 s, kernel verified against an independent reference on 10 cells): `ADX < 22` clears research at
+p 0.005 and is **BEATEN BY A RANDOM FILTER OF THE SAME SELECTIVITY on held-back US30 (+0.2039 vs
++0.2658, p 0.940)**; both gates together read **p 0.983** there. NOTHING in the table clears all
+three blocks. **The inversions are real and the WRONG SHAPE**: ADX>=22 and ADX>=25 clear US30 at
+p 0.014/0.011 and FAIL research at 0.334/1.000 — and `STUDY_TURTLE_15M` found these same two gates
+inverted on **15m** where they DID transfer, so THE TIMEFRAME IS THE DIFFERENCE and that caveat
+belongs on the 15m result. **V51's MA200 floor does not transfer either**: p 0.001 on all three
+blocks at 60m Donchian geometry, **p 0.994** on US100 locked at 240m Turtle geometry. Same market,
+same feature, different geometry. `require SELLER absorption` clears both US100 blocks (p 0.004,
+0.017) on **n=48 and n=22** and fails US30 — and its sign is OPPOSITE to the 60m reading, so the
+absorption axis is unresolved. Population: 237,681 scorable cells, **77.3% profitable**, the stop
+axis runs off the grid edge, and the marginal average LIKES the script's gates (+0.1112 vs +0.1018
+off) while the control says they are worth nothing — that gap is why the control exists. The flatten
+is destructive on every window again (all-hours +0.1604 vs flattened -0.0000..+0.0172), the ninth
+confirmation. See `docs/ib/STUDY_V52_TURTLE_ONE_SYSTEM.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1687,6 +1707,7 @@ See `docs/ib/STUDY_V51_MA_ABSORPTION.md`.
 | `research/v48/` | Donchian base + 39 risk-premium/PEAD/release-clock features; purged embargoed CV with ridge, LightGBM and a small MLP; family ablation and coefficient attribution |
 | `research/v50/` | SELECTION at a FIXED fill rate: a cost-invariant time-to-fill calibrator, both sides, the PRICE split into entry offset and exit path, and the chasing test |
 | `research/v51/` | the 1.16M-config single-entry Donchian sweep: MA200 as a level, 13x48, an absorption proxy, session+flatten; tensor verified against an independent reference |
+| `research/v52/` | the Turtle reduced to one entry/one exit: 4.64M cells, its own ADX and EMA100 gates swept in BOTH directions, same-selectivity control on three blocks |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
