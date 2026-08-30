@@ -67,6 +67,42 @@
 // hours at 240m and 5/14 hours at 15m; and the round turn is a fixed cash amount, which is a far
 // larger share of a 15m bar's ATR stop than of a 240m one. Re-fit both before reading a result.
 //
+// ------------------------------- SESSION (start / stop / flatten) -------------------------------
+// DEFAULT OFF. Every number above was measured ALL HOURS, so switching the session on means the
+// tables at the top no longer describe the strategy you are running.
+//
+// ON 240-MINUTE BARS A TIME WINDOW IS AN ALIASED SELECTOR, NOT A SESSION. A 240m bar opens only at
+// New York 01, 05, 09, 13, 17 and 21, so a window admits whole four-hour bars by their OPEN:
+//   07:00-11:00 and 08:00-12:00 select the SAME single 09:00 bar and give byte-identical results
+//   (766 bars, 32 trades, +290.195 pts each) -- and 09:30-11:00 contains NO bar open at all and
+//   silently yields ZERO TRADES. If you want a real intraday window, unlock the timeframe first.
+//
+// Measured here on NQ, SPEC geometry, entry window only, net of the research cost assumption:
+//
+//     window          15m trades  pts/trade  |  60m trades  pts/trade  |  240m trades  pts/trade
+//     all hours            961     +15.545   |      224      +11.542   |       56      +358.471
+//     07:00-11:00          351     +20.499   |      118       -3.600   |       32      +290.195
+//     08:00-12:00          341     +26.986   |      137       -8.684   |       32      +290.195
+//     09:30-11:00          181     +35.307   |       56      +53.076   |        0         (none)
+//     09:30-16:00          348     +21.216   |      130      +37.674   |       33      +271.130
+//
+// Read it as ORIENTATION, not as a setting to copy: one market, one block, no matched control, and
+// fifteen cells were looked at, so the best of them is the max of fifteen draws. Two things in it
+// are consistent with what this branch has measured repeatedly and are the parts worth trusting:
+// a window RAISES per-trade return while CUTTING total return, because it removes far more trades
+// than it removes losses (15m: +15.5 -> +35.3 a trade, but 14,939 -> 6,391 net); and the pre-open
+// block is subtractive -- at 60m the two windows that start before 09:30 are NEGATIVE (-3.6,
+// -8.7) while 09:30-11:00 is +53.1.
+//
+// THE FLATTEN IS NOT MEASURED HERE and is expected to COST. `strategy.close_all()` cannot sell the
+// close of the bar that triggers it, so it fills at the NEXT BAR'S OPEN. STUDY_V16 measured a
+// fixed-time flatten at roughly HALF the per-trade edge when there is no entry window
+// (+0.1033 -> +0.0481 locked), because it truncates exactly the trades a channel exit exists to
+// hold; STUDY_V40 found that on a Donchian channel-exit base, switching the session OFF was the
+// single largest improvement available. This strategy has a channel exit. Expect the same.
+// The resting stop is deliberately NOT cancelled when the flatten is issued -- it is what protects
+// the position over the bar between the decision and the fill.
+//
 // Costs default to the research's own assumption on a 1-point-per-unit index CFD. On a futures
 // contract set the contract's real per-order fee before reading any number this produces.
 // See docs/ib/STUDY_V42_TURTLE_MILLION.md and docs/ib/STUDY_TURTLE.md.
@@ -87,13 +123,23 @@ strategy("V42 Turtle -- four measured configurations", overlay = true, pyramidin
 gP = "Configuration"
 preset = input.string("SPEC  preset T1  (best EXCESS over control)", "Preset", group = gP,
      options = ["SPEC  preset T1  (best EXCESS over control)",
-                "NEIGHBOURHOOD  (best RAW mean)",
-                "TOP-MEDIAN  (best fold-median on the search block)",
-                "SURROGATE  (the model's robust region)",
-                "Custom"],
+         "NEIGHBOURHOOD  (best RAW mean)",
+         "TOP-MEDIAN  (best fold-median on the search block)",
+         "SURROGATE  (the model's robust region)",
+         "Custom"],
      tooltip = "The two rankings are reversed. SPEC has the lowest raw return of the four and the highest excess over a random entry with the same exits, and it is the only one that clears its control on both held-back markets.")
 tfLock = input.bool(true, "Restrict to the measured timeframe (240m)", group = gP,
      tooltip = "Every preset was measured on 240-minute bars. With this ON the script takes no entry on any other timeframe, so a 15m backtest cannot be read as one of the measured results. The Custom preset releases it automatically. Untick it to run a measured preset on another timeframe -- the channel lengths are in bars and the round turn is a fixed cash amount, so neither carries across, and the header's tables no longer describe what you are looking at.")
+
+gS = "Session (New York, DST-aware)"
+useSess = input.bool(false, "Restrict trading to a session", group = gS,
+     tooltip = "OFF by default. The header's tables were all measured ALL HOURS, so turning this on means they no longer describe what you are running. On 240m bars a window selects whole four-hour bars by their open and 09:30-11:00 selects none at all -- see the header.")
+startH = input.int(9,  "Start hour (NY)",   minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute",      minval = 0, maxval = 59, group = gS)
+stopH  = input.int(16, "Stop hour (NY)",    minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute",       minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(true, "Flatten at the stop time", group = gS,
+     tooltip = "Closes any open position once the bar's New York time is at or past the stop. It is a market order, so it fills at the NEXT bar's open -- Pine cannot sell the close of the bar that triggers it. The resting stop is left live on purpose so the position is not naked over that bar. Expect this to cost: a fixed-time flatten truncates the long trades a channel exit exists to hold.")
 
 gC = "Custom only"
 cE1 = input.int(20, "Entry 1 (bars)", minval = 2, group = gC)
@@ -145,7 +191,20 @@ extOk = extG == "off" ? true : extG == "ext<3.193" ? distEma < 3.193
 measuredTF = timeframe.period == "240"
 lockOn = tfLock and not isC
 onTF   = measuredTF or not lockOn
-gateOk = adxOk and extOk and onTF and atrN > 0
+
+// Session. `hour`/`minute` are given an EXPLICIT timezone -- the bare forms are EXCHANGE time
+// (Chicago for a CME symbol), which is the trap this repo has shipped broken before. The two-arg
+// form follows US daylight saving on its own, so 09:30 is 09:30 in both January and July.
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+// A window whose stop is BEFORE its start wraps through midnight, which is how an overnight
+// session has to be expressed on a 23-hour instrument.
+inWin  = not useSess ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = useSess and flatOn and not inWin
+
+gateOk = adxOk and extOk and onTF and inWin and atrN > 0
 
 // ------------------------------------------------------------------------------------------------
 // state
@@ -226,6 +285,13 @@ exitLevel = na(stopLvl) ? chanExit : (na(chanExit) ? stopLvl : math.max(stopLvl,
 if barstate.isconfirmed and not flat and lastCount > 0 and not na(exitLevel)
     strategy.exit("x", stop = exitLevel)
 
+// The flatten is issued AFTER the stop is placed, and the stop is NOT cancelled. close_all is a
+// market order that fills at the NEXT bar's open, so between this bar's close and that fill the
+// resting stop is the only protection the position has -- cancelling it to keep the exit "clean"
+// would reproduce the naked-bar defect the header already quantifies at the entry.
+if barstate.isconfirmed and doFlat and strategy.position_size != 0
+    strategy.close_all("flat")
+
 // ------------------------------------------------------------------------------------------------
 // plots and HUD
 // ------------------------------------------------------------------------------------------------
@@ -241,7 +307,7 @@ plot(flat ? na : exitLevel, "Active stop", color.fuchsia, style = plot.style_lin
 // same script and range. Default capital here is 1M for that reason.
 ladderCost = close * maxU * syminfo.pointvalue
 fundsOk = ladderCost <= strategy.equity * 0.9
-var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, preset, text_color = color.white,
          bgcolor = isSpec ? color.new(color.teal, 20) : color.new(color.orange, 25))
@@ -250,7 +316,15 @@ if barstate.islast
          "Chart is " + timeframe.period + ", measured on 240 - the header's numbers DO NOT apply"
     tfBg = measuredTF ? color.new(color.teal, 40) : lockOn ? color.red : color.new(color.orange, 25)
     table.cell(hud, 0, 1, tfMsg, text_color = color.white, bgcolor = tfBg)
-    table.cell(hud, 0, 2, fundsOk ? "ladder funded" :
+    sessMsg = not useSess ? "all hours - as measured" :
+         (measuredTF ? "SESSION ON, 240m: window selects whole 4h bars by their OPEN - " :
+              "SESSION ON - ") +
+         str.format("{0,number,00}:{1,number,00}-{2,number,00}:{3,number,00} NY", startH, startM, stopH, stopM) +
+         (flatOn ? " + flatten (fills next open)" : " (no flatten)") +
+         " - the header's tables are ALL HOURS and no longer apply"
+    table.cell(hud, 0, 2, sessMsg, text_color = color.white,
+         bgcolor = useSess ? color.new(color.orange, 25) : color.new(color.teal, 40))
+    table.cell(hud, 0, 3, fundsOk ? "ladder funded" :
          "LADDER DOES NOT FIT - orders will be REJECTED (needs " +
          str.tostring(math.round(ladderCost)) + " vs " + str.tostring(math.round(strategy.equity)) + ")",
          text_color = color.white, bgcolor = fundsOk ? color.new(color.teal, 40) : color.red)
