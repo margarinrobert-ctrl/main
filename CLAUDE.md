@@ -1646,6 +1646,30 @@ open 2023-01-31 to 2023-03-01 through a month price spent below the stop, swallo
 signals into 11 orders. 30-SECOND ABSORPTION IS UNTESTABLE HERE (1m is the finest data) and was not
 proxied. See `docs/ib/STUDY_V53_UNDERFIT.md`.
 
+**ONE OF THE FOUR CVD STRUCTURE PATTERNS CLEARS BOTH BLOCKS, AND TESTING THEM SEPARATELY IS WHAT
+MADE IT VISIBLE.** Price/CVD divergence implemented as four distinct patterns at CONFIRMED pivots
+(a pivot at i needs i-k..i+k so it is stamped at i+k, never at the pivot), CVD read at the PRICE
+pivot's own bar rather than from a pivot of the CVD series. On NQ 30m, Donchian 20/20, 2.0N, against
+a same-selectivity random filter: **EXHAUSTED SELLERS (price LL + CVD HL) at k=3 within 20 bars
+scores +0.3509 PF 1.696 p 0.001 on research and +0.3176 PF 1.648 p 0.009 on locked** -- and it
+DECAYS across the split, the right shape. The other three fail locked (ABSORBED SELLING p 0.903,
+EXHAUSTED BUYERS p 0.179, ABSORBED BUYING p 0.926), and **ABSORBED BUYING -- the most bearish of the
+four -- is the only NEGATIVE row on both blocks** (-0.0852 research at k5, -0.0109 locked), which is
+the sign a long-only system predicts. Collapsed into one "CVD divergence" flag the four would have
+averaged into nothing. CAVEATS: n=88 on locked, ONE MARKET (CVD needs 1-minute bars and NQ is the
+only feed with them, so no cross-market read), and **the CVD IS A PROXY** -- true aggressor delta is
+unavailable here, so each lower-timeframe bar's whole volume is signed by its own direction, which
+is TradingView's own rule; the Pine computes it with `request.security_lower_tf` rather than calling
+a built-in so the identity with the research is provable. **THE KAMA EARNS NOTHING: not one of
+SIXTEEN readings clears locked** (2 timeframes x 4 lengths x 2 modes). Three clear research at
+p 0.000-0.007 then read 0.801-1.000. The length axis is non-monotone and flat (20 best, 100 worst,
+10 between), exactly as `STUDY_MA_LAG` predicts from KAMA's 1.25-bar lag AT EVERY WINDOW -- there is
+no best setting to ship. Session 08:00-12:00 passes LOCKED and FAILS research (p 0.185 -> 0.029, and
+with the flatten 0.632 -> 0.000), the wrong shape for the sixth time; the flatten turns research
+NEGATIVE (+0.1686 -> -0.0058). Implementation note: a recursive indicator that goes all-NaN reads as
+"no signal" rather than as an error -- the first KAMA returned 99.9% NaN because ONE non-finite
+smoothing constant propagated through the recursion. See `docs/ib/STUDY_V54_CVD_KAMA.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1737,6 +1761,7 @@ proxied. See `docs/ib/STUDY_V53_UNDERFIT.md`.
 | `research/v51/` | the 1.16M-config single-entry Donchian sweep: MA200 as a level, 13x48, an absorption proxy, session+flatten; tensor verified against an independent reference |
 | `research/v52/` | the Turtle reduced to one entry/one exit: 4.64M cells, its own ADX and EMA100 gates swept in BOTH directions, same-selectivity control on three blocks |
 | `research/v53/` | parameter-free lower-timeframe absorption, the 280,320-cell underfitting sweep, and the vectorbt transcription check |
+| `research/v54/` | the CVD proxy, confirmed-pivot four-pattern divergence, KAMA on an independent timeframe sampled causally |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
