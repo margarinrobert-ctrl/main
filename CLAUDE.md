@@ -1516,6 +1516,31 @@ Sharpe. Turn of month, the one declared calendar hypothesis, fails at every hori
 binomial p on sign agreement OVERSTATES -- the 120 tests are not independent. See
 `docs/ib/STUDY_V47_RISK_PREMIA_PEAD.md`.
 
+**THE BREAKOUT'S OWN CONTEXT CARRIES NOTHING; THE RISK-PREMIUM / PEAD / RELEASE-CLOCK MATERIAL
+CARRIES EVERYTHING -- AND NONE OF IT SURVIVES.** 39 causal features on a Donchian 30/20 base
+(2.0N stop, channel exit, one unit, no target, long), searched on US100 with US30 held back, scored
+with PURGED EMBARGOED CV because a trade occupies [signal, exit] and those windows OVERLAP -- a
+naive time split leaks. Family ablation on US100 15m: **`bo only` (excess over channel, channel
+width, ADX, CHOP, close position) scores CV IC -0.0784 at p 0.307**, and DROPPING IT IMPROVES THE
+MODEL (+0.087 -> **+0.117** IC, lift +0.152, p 0.000). Coefficient mass rp 45.0% / pead 27.2% /
+news 19.9% / **bo 7.9%**. So if a filter exists for this base it is in that material and not in the
+channel. **But nothing clears a same-selectivity control on BOTH holdouts**: best locked p 0.117,
+and **PEAD-only goes NEGATIVE on the unseen market** (-0.0434, p 0.891), the second study running to
+find the PEAD family worthless. **THE NEURAL NETWORK LOSES TO RIDGE ON EVERY TIMEFRAME** -- OOF IC
++0.020 against +0.087 at 15m and NEGATIVE at 30m (-0.055) and 60m (-0.074). With 506-2,207 trades
+against 39 features the net memorises and the linear model wins; deep learning bought nothing.
+Only 15m is coherent (CV/locked/unseen IC +0.087/+0.086/+0.073, p 0.099/0.144); 30m fails its
+holdout; **60m is negative for ALL THREE MODELS on research and then "passes" out of sample, the
+wrong shape**. Largest coefficients: `rp.tsmom960_vs` **-0.19** (momentum negative again, NINTH
+route to mean reversion here) and `news.in_window` -0.17. That second one is interpretable so it was
+tested WITHOUT the model: breakouts inside a declared release window are worse in **6 of 6 US100
+cells** and **INVERT on US30** (30m +0.2296 research, +0.2555 locked) -- 8 of 12 overall against 6
+expected, 1 of 12 at p<=0.05 against 0.6. A market-specific artifact. **NO NEWS FEED IS ATTACHED AND
+NONE WAS SCRAPED**: the 08:30/10:00/14:00 New York release windows are DECLARED, fixed, never
+searched, and identify WHEN a release could land, never which or what it said -- a real release
+calendar with surprise values is worth more than any further modelling. See
+`docs/ib/STUDY_V48_ML_BREAKOUT_FILTER.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1602,6 +1627,7 @@ binomial p on sign agreement OVERSTATES -- the 120 tests are not independent. Se
 | `research/v45/` | take-profit engineering from MFE/MAE: the break-even algebra, the p_lower/p_upper bracket, a 1-minute first-touch walker, and the what-would-it-take calculation |
 | `research/v46/` | Carver's breakout forecast + causality audit; the 999,717-cell sweep in 73s; freeze, held-back markets, random-entry control, both Monte Carlos, and the vectorbt check that failed parity |
 | `research/v47/` | causal daily frame with an exact RTH/overnight split; 30 risk-premium and PEAD-analogue features; drift-vs-reversal test, Newey-West ICs, BH |
+| `research/v48/` | Donchian base + 39 risk-premium/PEAD/release-clock features; purged embargoed CV with ridge, LightGBM and a small MLP; family ablation and coefficient attribution |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
