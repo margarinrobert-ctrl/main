@@ -1670,6 +1670,23 @@ NEGATIVE (+0.1686 -> -0.0058). Implementation note: a recursive indicator that g
 "no signal" rather than as an error -- the first KAMA returned 99.9% NaN because ONE non-finite
 smoothing constant propagated through the recursion. See `docs/ib/STUDY_V54_CVD_KAMA.md`.
 
+**A UNION IS DILUTED BY ITS WEAKER MEMBER, MEASURED AGAIN AND THIS TIME ON THE ONE RULE THAT WORKS.**
+Asked to fire on BOTH bullish CVD structures and to add the EMA 13x48 cross, both additions were
+measured against the same 2,000-draw same-selectivity control that certified the original: EXHAUSTED
+SELLERS alone holds at **research +0.3509 PF 1.696 p 0.000 / locked +0.3176 PF 1.648 p 0.005**;
+adding ABSORBED SELLING takes the kept share from 21.5% to 41.8%, HALVES the edge to +0.1842 and
+loses locked at **p 0.210**; the EMA13>EMA48 state takes locked from p 0.005 to **p 0.158** while
+keeping research respectable (p 0.014) -- the classic shape of a filter fitted to the search block;
+the FRESH cross destroys research outright (p 0.677). Absorbed selling clears RESEARCH at p 0.050
+alone and p 0.002 with the EMA state and fails locked at 0.908/0.611/0.685 -- exactly how a weaker
+member sneaks into a union when only the research block is read. Third independent failure of the
+13x48 cross on a held-back read (V51 US30 p 0.400-1.000, V52 US30 p 0.400, V55 locked p 0.158).
+**THE NEIGHBOURHOOD IS THE REAL EVIDENCE, NOT THE P-VALUE**: exhausted sellers is positive in ALL 16
+cells of the pivot-width x recency-window grid on BOTH blocks (research +0.163..+0.550, locked
++0.043..+0.631) and falls monotonically as the window widens. k3/w20 is NOT the maximum -- k3/w5
+scores +0.550/+0.631 -- and w20 ships anyway because it carries n=88 locked against w5's n=37; the
+larger sample is worth more than the larger number. See `docs/ib/STUDY_V55_AUTOMATED_CVD.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1762,6 +1779,7 @@ smoothing constant propagated through the recursion. See `docs/ib/STUDY_V54_CVD_
 | `research/v52/` | the Turtle reduced to one entry/one exit: 4.64M cells, its own ADX and EMA100 gates swept in BOTH directions, same-selectivity control on three blocks |
 | `research/v53/` | parameter-free lower-timeframe absorption, the 280,320-cell underfitting sweep, and the vectorbt transcription check |
 | `research/v54/` | the CVD proxy, confirmed-pivot four-pattern divergence, KAMA on an independent timeframe sampled causally |
+| `research/v55/` | the automated CVD gate: union vs single pattern, the EMA cross, and the full k x w neighbourhood |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
