@@ -1427,6 +1427,26 @@ what makes it worth taking, which is STUDY_V21 reached from the excursion side. 
 tradeable configuration is the SHIPPED CHOP<=40 (2.449 uncensored / 2.990 at h20), below the base
 it is built on. See `docs/ib/STUDY_V43_MAE_MFE.md`.
 
+**MAXIMISING MFE AND MINIMISING MAE ARE THE SAME AXIS WITH OPPOSITE SIGNS, AND THE MAE RANKING
+INVERTS ON THE UNIT.** 36 causal features (truncation-audit clean), NQ 5m/15m, 07:00-11:00 NY, long.
+Across 78 cells the correlation between a cell's mean MFE and its mean MAE is **+0.617 to +0.945
+Pearson**, and at a 90-minute horizon THREE OF FOUR features appear in BOTH top-4 lists in OPPOSITE
+directions (`atr_pct250`, `atr_ratio`, `range_exp` wanted LOW for high MFE and HIGH for low MAE).
+Worse, `vol.atr_pct250 high` has the LOWEST MAE of all 78 cells in ATR (1.63) and one of the HIGHEST
+in POINTS (41.77) -- its ATR is 24.5 points against a 12-15 baseline, so "low MAE in ATR" is just a
+HIGH-ATR BAR. **Report both units; the ratio MFE/MAE is the only one of the three where the ATR
+denominator cancels.** Built on the ratio, four features per timeframe picked family-first
+(max |rho| 0.414 / 0.701) and combined as a count, walked on the TRUE 1-MINUTE path: the no-filter
+ABLATION is PF **0.865 / 0.903** -- 07:00-11:00 loses before any feature is applied -- and the stack
+reaches 1.181 / 1.151 on research then **INVERTS on locked (PF 0.555 / 0.798, -6.25 / -4.51 pts a
+trade), LOSING MORE THAN ITS OWN RANDOM CONTROL**. Barrier marginals are monotone toward wider on
+both axes with the best setting at the GRID EDGE. Ships nothing. **What replicates is the TIMING: a
+stop arrives about TWICE AS FAST AS A TARGET in all four cells and on both blocks** (5m 19 vs 38 min,
+locked 25 vs 46; 15m 63 vs 76, locked 53 vs 110) -- a capital-efficiency fact, not an edge. And a
+09:30-11:00 window flattened at 11:00 is structurally broken: **0 of 169 trades reached a 2R target
+and 90-93% were flattened**, median time-to-flatten ZERO minutes. See
+`docs/ib/STUDY_V44_SCALP_FEATURES.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1509,6 +1529,7 @@ it is built on. See `docs/ib/STUDY_V43_MAE_MFE.md`.
 | `research/v42/v42surro.py` | the grid surrogate and its held-out-by-axis fit test |
 | `research/v42/run_v42.py`, `run_v42b.py`, `run_v42c.py` | the parallel sweep; shape, marginals and robust regions; the frozen read on held-back markets with the matched control |
 | `research/v43/` | MAE/MFE on eight declared Donchian configurations: both normalisations, the censoring diagnostic, uncensored heat at a fixed horizon, matched controls |
+| `research/v44/` | 36 causal features scored by excursion in ATR **and points**; the ratio-picked scalp, its no-filter ablation, a 1-minute barrier walker and time-to-target/time-to-stop |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
