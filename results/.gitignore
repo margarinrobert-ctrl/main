@@ -15,9 +15,13 @@
 !*.txt
 !*.md
 
-# Large binary intermediates stay out: they are caches and chunk files, not
-# results, and they are what made these sweeps slow to store in the first place.
+# Parquet IS admitted: it is how a seven-figure grid becomes storable. V42's 1,131,227-cell
+# sweep is 192 MB as CSV -- past GitHub's 100 MB hard limit, and it failed the push with a 408
+# before this rule existed -- and 29 MB as zstd parquet with the same rows. This repo already
+# tracks parquet grids under research/turtle/.
+!*.parquet
+
+# Other binary intermediates stay out: caches and chunk files, not results.
 *.npy
 *.npz
 *.pkl
-*.parquet

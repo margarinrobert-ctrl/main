@@ -1375,6 +1375,37 @@ coarser the bar and the tighter the exit channel, the more of the "result" is th
 Run the second engine as a TRANSCRIPTION check (the count must match) and read the gap as a
 statement about the convention, never about the edge.
 
+**A MILLION-CELL SEARCH FOUND GATE SETTINGS WHERE A COIN FLIP ALSO WORKS.** 1,843,200 nominal /
+**1,152,000 EFFECTIVE** Turtle cells (the ladder is off whenever pyramid_step=0 OR max_units=1, so
+7 of 16 (step, units) pairs collapse to one), scored by the **MEDIAN OF 8 WALK-FORWARD FOLDS**,
+searched on US100 with US30 and NQ held back. **97.9% of the space is positive on that objective**
+and 24.0% has all eight folds positive, so the best cell is the max of ~1.1M positive draws. The
+three search-derived picks converge (240m, entry 40/40, exit2 30, 2.0N, pyr 0.25, 4 units) and
+**ALL THREE FAIL their random-entry control on BOTH held-back markets (p 0.179-0.736)**, while the
+un-searched preset the script already ships clears at **p 0.005 on all three**. THE MECHANISM IS IN
+THE CONTROL COLUMN: a random entry in the population the SEARCHED gates admit earns **+0.68 to
++1.66 R/trade**, while in the population the SPEC's gates admit it **LOSES money on two of three
+markets** (-0.285, -0.228, +0.111). The search did not find a trigger; it found a regime where
+almost any entry works, and against that null the breakout has nothing left to add. Caveat: NQ is
+25-56 trades and two picks produce NO scorable fold there at all.
+See `docs/ib/STUDY_V42_TURTLE_MILLION.md`.
+
+**A SURROGATE'S RANDOM-ROW CV IS INTERPOLATION ON A DENSE GRID -- HOLD OUT A WHOLE AXIS VALUE.**
+The V42 surrogate reads in-sample R^2 **0.8765** and random-row 80/20 **0.8759** -- indistinguishable,
+because every held-out cell has neighbours in training. Removing a whole axis VALUE from training
+drops it to **0.3455 for timeframe**, 0.6488 for max_units, 0.7407 for the ATR multiple. Report the
+by-axis number, not the random-row one: the first asks whether the model generalises to settings it
+has not seen and the second asks whether it can interpolate between ones it has. Better than V30's
+0.96-fits/0.07-predicts, and still not a forecaster.
+
+**A CONTROL'S ENTRY RATE MUST BE n_target / ELIGIBLE BARS, NOT n_target / ALL BARS.** V42's first
+random-entry control doubled the rate, which clustered the random entries, degraded the control and
+made **every configuration clear at p 0.005**. It was caught only because `STUDY_TURTLE` measured
+the ungated spec on the same market and timeframe at p 0.475 and the disagreement had to be
+explained. `turtle/core.control` already had the right form. Fourth time a name-shadowing or
+control-construction error has produced a too-good number here -- and `agg` as a DataFrame column
+shadows `DataFrame.agg`, after `.first` and `.align`.
+
 ## Tooling
 
 | module | what it does |
@@ -1453,6 +1484,9 @@ statement about the convention, never about the edge.
 | `research/v40/v40feat.py`, `run_v40.py` | 17 features in 8 declared families, signal-bar correlation, family-then-rho selection, the stop sweep and the window table |
 | `research/v41/v41seq.py` | the sequenced EMA-cross -> Donchian-confirmation grid, with inert-axis and built-in-control flags |
 | `research/v41/run_v41.py` … `run_v41d.py` | the 103,680-cell sweep and pairwise ablation; signal and strategy correlation; perturbation, walk-forward, bootstrap, cost stress, DSR; the cross-market controls and vectorbt |
+| `research/v42/v42grid.py` | the 1.84M-cell Turtle space, the fold-median objective, inert-axis accounting |
+| `research/v42/v42surro.py` | the grid surrogate and its held-out-by-axis fit test |
+| `research/v42/run_v42.py`, `run_v42b.py`, `run_v42c.py` | the parallel sweep; shape, marginals and robust regions; the frozen read on held-back markets with the matched control |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |

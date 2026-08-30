@@ -1,0 +1,51 @@
+
+============================================================================================================================
+6. THE FOUR FROZEN CONFIGURATIONS
+============================================================================================================================
+   TOP-MEDIAN         entry1=40  entry2=40  exit1=5  exit2=30  atr_mult=2.0  pyr=0.25  units=4  tf=240  adx=adx>=20  ext=ext<3.193  skip=True
+   SURROGATE          entry1=40  entry2=40  exit1=20  exit2=30  atr_mult=2.0  pyr=0.25  units=4  tf=240  adx=adx<22  ext=ext<3.964  skip=False
+   NEIGHBOURHOOD      entry1=40  entry2=40  exit1=20  exit2=30  atr_mult=2.0  pyr=0.25  units=4  tf=240  adx=adx>=20  ext=ext<3.964  skip=True
+   SPEC (preset T1)   entry1=20  entry2=55  exit1=10  exit2=20  atr_mult=2.0  pyr=0.5  units=4  tf=240  adx=adx<22  ext=ext<3.964  skip=True
+
+   NEIGHBOURHOOD's own median-fold +2.5764, neighbourhood mean +2.2429
+   TOP-MEDIAN's own median-fold +2.8461
+
+============================================================================================================================
+7. US100   (the search block)
+============================================================================================================================
+   config                 n  median fold    agg R      PF  folds +  control mean       p
+   TOP-MEDIAN            72      +2.8461  +2.0477   2.291   5/6          +0.8773   0.040
+   SURROGATE             93      +2.2382  +1.9970   2.175   8/8          +0.8397   0.025
+   NEIGHBOURHOOD         96      +2.5764  +2.0048   2.240   7/8          +0.8330   0.035
+   SPEC (preset T1)     155      +1.0289  +1.2229   2.374   8/8          -0.2847   0.005
+
+============================================================================================================================
+7. US30   (HELD BACK -- read once, here)
+============================================================================================================================
+   config                 n  median fold    agg R      PF  folds +  control mean       p
+   TOP-MEDIAN            81      +0.3616  +1.5443   1.544   4/7          +1.6595   0.532
+   SURROGATE             99      -0.3862  +0.7764   1.178   3/8          +0.6838   0.398
+   NEIGHBOURHOOD        108      +1.0299  +1.2210   1.531   5/8          +1.5131   0.736
+   SPEC (preset T1)     152      +0.6538  +0.5117   1.540   5/8          -0.2280   0.005
+
+============================================================================================================================
+7. NQ   (HELD BACK -- read once, here)
+============================================================================================================================
+   config                 n  median fold    agg R      PF  folds +  control mean       p
+/home/user/main/research/v42/v42grid.py:75: UserWarning: no explicit representation of timezones available for np.datetime64
+  idx=np.asarray(d["idx"]).astype("datetime64[ns]").astype("int64"),
+/home/user/main/research/v42/run_v42c.py:80: RuntimeWarning: All-NaN slice encountered
+  return dict(n=len(pnl), med=float(np.nanmedian(per)), aggR=float(R.mean()),
+   TOP-MEDIAN            25         +nan  +1.2348   1.854   0/0          +0.9516   0.383
+   SURROGATE             39      +0.5295  +1.7707   2.837   1/1          +0.4102   0.050
+   NEIGHBOURHOOD         32         +nan  +1.6459   2.396   0/0          +0.8130   0.179
+   SPEC (preset T1)      56      +1.0184  +1.5738   3.120   3/3          +0.1106   0.005
+
+============================================================================================================================
+8. THE CONTROL, SUMMARISED
+============================================================================================================================
+   held-back cells beating their random-entry control at p<=0.05: 3 of 8
+   held-back cells with a POSITIVE excess over the control: 6 of 8  (chance 4.0)
+   mean excess over control, held-back markets: +0.5456 R/trade
+
+   elapsed 16s
