@@ -434,3 +434,139 @@ def test_releasing_twice_is_harmless(variants_dialog):
 def test_closing_before_any_search_is_fine(variants_dialog):
     variants_dialog.reject()
     assert variants_dialog._thread is None
+
+
+# --------------------------------------------------------------------------
+# The dead end in the screenshot
+# --------------------------------------------------------------------------
+#
+# "This strategy has no parameters to optimise. Add some in the strategy
+# editor first."  True, and useless: the numbers were already in the strategy,
+# in its indicator periods and its rule thresholds.  Optimise and Find a Better
+# Version now offer to name them instead of sending the user away.
+
+_PINE = ('//@version=5\nstrategy("Turtle")\n'
+         'hi = ta.highest(high, 20)\n'
+         'lo = ta.lowest(low, 10)\n'
+         'e = ta.ema(close, 100)\n'
+         'if high > hi[1] and close - e < 3.5 * ta.atr(20)\n'
+         '    strategy.entry("L", strategy.long)\n'
+         'if low < lo[1]\n'
+         '    strategy.close("L")\n')
+
+
+@pytest.fixture
+def unparameterised(window):
+    """A strategy saved the way an older build saved a pasted one."""
+    from tradingbacktester.strategy.importer import import_strategy
+
+    report = import_strategy(_PINE, name_numbers=False)
+    assert report.spec is not None and not report.spec.params
+    saved = window.strategies.save(report.spec)
+    window.strategy_panel.refresh(saved.id)
+    window.on_strategy_selected(saved.id)
+    window._view_bars = generate_sample_data("US100", "15m", n_bars=2000, seed=3)
+    return window
+
+
+def test_optimise_offers_to_name_the_numbers(unparameterised, monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    import tradingbacktester.ui.dialogs.optimizer_dialog as optimizer
+    import tradingbacktester.ui.main_window as module
+
+    seen: dict = {}
+    monkeypatch.setattr(module, "confirm",
+                        lambda *a, **k: seen.setdefault("asked", a[2]) or True)
+
+    class Fake:
+        chosen_params = None
+
+        def __init__(self, *args, **kwargs):
+            seen["opened"] = True
+
+        def exec(self):
+            return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(optimizer, "OptimizerDialog", Fake)
+
+    assert not unparameterised._spec.params
+    unparameterised.on_optimize()
+
+    assert len(unparameterised._spec.params) >= 4, "nothing was named"
+    assert seen.get("opened"), "the optimiser still did not open"
+    assert "trades exactly as before" in seen["asked"], (
+        "the offer must say the strategy is unchanged, or it reads as a "
+        "suggestion to alter the rules")
+
+
+def test_declining_the_offer_leaves_the_strategy_alone(unparameterised,
+                                                       monkeypatch):
+    import tradingbacktester.ui.main_window as module
+
+    monkeypatch.setattr(module, "confirm", lambda *a, **k: False)
+    unparameterised.on_optimize()
+    assert not unparameterised._spec.params
+
+
+def test_naming_is_saved_so_it_is_offered_only_once(unparameterised,
+                                                    monkeypatch):
+    from PySide6.QtWidgets import QDialog
+
+    import tradingbacktester.ui.dialogs.optimizer_dialog as optimizer
+    import tradingbacktester.ui.main_window as module
+
+    monkeypatch.setattr(module, "confirm", lambda *a, **k: True)
+    monkeypatch.setattr(optimizer, "OptimizerDialog",
+                        type("F", (), {"chosen_params": None,
+                                       "__init__": lambda s, *a, **k: None,
+                                       "exec": lambda s: QDialog.DialogCode.Rejected}))
+    unparameterised.on_optimize()
+    ident = unparameterised._spec.id
+    assert unparameterised.strategies.load(ident).params, (
+        "the naming was not written to the library, so it would be offered "
+        "again on the next run")
+
+
+def test_find_a_better_version_offers_the_same_thing(unparameterised,
+                                                     monkeypatch):
+    from tradingbacktester.finder.variants import axes_for
+    import tradingbacktester.ui.main_window as module
+
+    assert axes_for(unparameterised._spec) == [], (
+        "the fixture must have nothing to search, or this proves nothing")
+
+    monkeypatch.setattr(module, "confirm", lambda *a, **k: True)
+    opened: dict = {}
+    def _record(self, *args, **kwargs):
+        opened["y"] = True
+
+    monkeypatch.setattr(
+        "tradingbacktester.ui.dialogs.variants_dialog.VariantsDialog",
+        type("F", (), {"__init__": _record, "exec": lambda self: 0}))
+    unparameterised.on_find_variants()
+    assert len(axes_for(unparameterised._spec)) >= 4
+    assert opened.get("y")
+
+
+def test_a_strategy_with_no_numbers_at_all_is_told_so(window, monkeypatch):
+    """It must not offer, then silently do nothing."""
+    from tradingbacktester.strategy.spec import (Always, Compare, PriceOperand,
+                                                 StrategySpec)
+    import tradingbacktester.ui.main_window as module
+
+    spec = StrategySpec(name="Bare")
+    spec.entry_long = Compare(PriceOperand("close"), ">", PriceOperand("open"))
+    spec.exit_long = Compare(PriceOperand("close"), "<", PriceOperand("open"))
+    saved = window.strategies.save(spec)
+    window.strategy_panel.refresh(saved.id)
+    window.on_strategy_selected(saved.id)
+    window._view_bars = generate_sample_data("US100", "15m", n_bars=1000, seed=3)
+
+    told: dict = {}
+    monkeypatch.setattr(module, "show_info",
+                        lambda *a, **k: told.setdefault("text", a[2]))
+    monkeypatch.setattr(module, "confirm",
+                        lambda *a, **k: pytest.fail("it offered with nothing to name"))
+    window.on_optimize()
+    assert "no numbers" in told.get("text", "")
