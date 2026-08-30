@@ -1710,6 +1710,27 @@ sooner, frees the position lock, and admits more trades at a lower edge -- and t
 only because the CONTROL degrades too. Eleventh time no-target has won here.
 See `docs/ib/STUDY_V56_PARITY_ADX_TP.md`.
 
+**A BAR COUNT IS NOT A SETTING -- IT IS A SETTING TIMES A TIMEFRAME, AND MOVING A SCRIPT BETWEEN
+CHARTS SILENTLY DIVIDES IT.** Asked why two specific longs never fired on a 1-minute US30 chart, the
+answer was three separate blockers and one root cause. The researched pivot k=3 and window w=20 are
+on 30-MINUTE bars = **90 and 600 MINUTES**; run as raw bar counts on a 1-minute chart they became 3
+and 20 minutes, one THIRTIETH of their reach. The nearest exhaustion events were **320 and 54
+minutes back** -- inside 600, far outside 20. The rule was not rejecting those setups, it could not
+see them. Two smaller blockers: `high > channel` FAILED ON AN EXACT TICK EQUALITY (52985.6 vs
+52985.6), and the user's own "require EMA13 > EMA48" override blocked the second bar independently
+(53219.2 < 53219.9). FIXES: order-flow settings are now declared in MINUTES and converted via
+`timeframe.in_seconds()`, so the same numbers mean the same thing on any chart; and a TOUCH now
+counts as a break, which is measurably free on the researched base (research p 0.000 -> 0.001,
+locked p 0.005 -> 0.005, 62 extra signal bars in 5,000). Also worth keeping: **a TradingView plot
+export can be reverse-engineered to recover the settings that produced it** -- `highest(high,30)[1]`
+and `lowest(low,20)[1]` were recovered EXACTLY by matching candidate lengths against the plotted
+columns, which is how the entry channel was found to be 30 and not the shipped 20. And
+`request.security_lower_tf` with a timeframe NOT strictly below the chart's returns nothing, so a
+1-minute chart with the delta source left on "1" produces a FLAT CVD and no divergence can ever
+fire -- the HUD now warns. Fitting the entry channel to <=26 WOULD make both bars fire and is
+recorded as curve-fitting to two events on eleven days.
+See `docs/ib/STUDY_V57_REVERSE_ENGINEER.md`.
+
 ## Tooling
 
 | module | what it does |

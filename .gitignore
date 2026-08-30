@@ -58,3 +58,5 @@ research/hypo/_*.parquet
 
 # sweep artefacts are large and regenerable
 research/vbt/_*.npz
+
+data/CAPITALCOM_US30_1m_export.csv

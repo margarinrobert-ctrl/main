@@ -1,0 +1,243 @@
+// ================================================================================================
+// V57 -- why those two longs did not fire, and the settings that make them fire.
+//
+// ===================== THE DIAGNOSIS, FROM YOUR OWN CAPITAL.COM EXPORT =====================
+// 9,018 one-minute bars, 2026-08-20 09:22 to 2026-08-30 18:57. The ISO timestamps carry an explicit
+// -04:00 offset, which IS New York in August, so no shift was applied or needed. Recovered from the
+// export itself: your entry channel is `highest(high, 30)[1]` and your exit channel is
+// `lowest(low, 20)[1]`.
+//
+//   FRIDAY 21 AUG 07:15   high 52985.6   entry channel 52985.6   -> `high > channel` is FALSE
+//                         It TOUCHED the channel to the tick and did not exceed it. The strict `>`
+//                         blocked it. The actual break was the NEXT bar, 07:16 (high 52988.6).
+//                         Nearest exhausted-sellers event: 320 bars back (01:55).
+//                         Nearest absorbed-selling event:   21 bars back (06:54).
+//
+//   MONDAY 24 AUG 09:29   high 53248.4   entry channel 53249.4   -> short by 1.0 point.
+//                         Not a touch either. The break was the 09:30 bar (high 53334.4).
+//                         Nearest exhausted-sellers event:  54 bars back (08:35).
+//                         Nearest absorbed-selling event:  317 bars back (04:12).
+//                         EMA13 53219.2 < EMA48 53219.9, so your "require EMA 13 > EMA 48"
+//                         override ALSO blocked this bar independently.
+//
+// THREE SEPARATE THINGS BLOCKED THEM, and all three are addressed below.
+//
+// ======================= THE ROOT CAUSE IS A UNIT ERROR, NOT A THRESHOLD =======================
+// Every one of these settings is a count of BARS. The research measured them on 30-MINUTE bars:
+//
+//   setting          research (30m)   = minutes    your 1m chart   = minutes   ratio
+//   pivot k                3               90            3              3       30x
+//   window w              20              600           20             20       30x
+//   entry channel         20              600           30             30       20x
+//
+// A 20-bar window reaches back 600 minutes on the chart it was measured on and 20 minutes on
+// yours. Friday's exhaustion was 320 minutes back and Monday's was 54 -- BOTH inside 600, and both
+// far outside 20. The rule was never rejecting those setups; it could not see them.
+//
+// SO THE ORDER-FLOW SETTINGS ARE NOW EXPRESSED IN MINUTES and converted to bars from the chart's
+// own timeframe. The defaults -- 90 and 600 -- ARE the researched k=3 / w=20, and they now mean the
+// same thing on any chart. On your 1-minute chart they become a 90-bar pivot and a 600-bar window,
+// which covers both moments.
+//
+// ============================ AND A TOUCH NOW COUNTS AS A BREAK ============================
+// Friday failed on `>` against an exact tick-for-tick equality. Re-measured on the researched NQ
+// 30m base under this script's own order model, allowing `high >= channel` is FREE:
+//
+//                signal bars   research                    LOCKED
+//   strict `>`       4945      +0.3389 PF 1.658 p 0.000    +0.3086 PF 1.621 p 0.005
+//   touch  `>=`      5007      +0.3311 PF 1.639 p 0.001    +0.3162 PF 1.646 p 0.005
+//
+// It adds 62 signal bars in 5,000 and moves nothing. It ships ON.
+//
+// ==================== IF YOU WANT THOSE TWO BARS EXACTLY, ON 1-MINUTE ====================
+// Reverse-engineered from the export, the minimum that fires at BOTH 07:15 and 09:29:
+//   * count a touch as a break                     (Friday is an exact equality)
+//   * entry channel <= 26                          (at 27+ Monday's channel rises above its high;
+//                                                   at 30, which you are running, neither fires)
+//   * order-flow window >= 54 bars WITH absorbed selling enabled, or >= 320 bars without it
+//   * "require EMA 13 > EMA 48" turned OFF          (it blocks Monday independently)
+// With the minutes-based defaults below on a 1-minute chart the window is 600 bars, which already
+// satisfies the third line without tuning anything.
+//
+// BE CLEAR ABOUT WHAT THAT IS: entry channel <= 26 and the exact window are FITTED TO TWO EVENTS
+// on eleven days of one market. The researched configuration is 30-minute bars, entry channel 20,
+// and it is the only version with a control behind it. On the 30-minute chart both of these
+// moments are unambiguous breakouts anyway -- Friday's 07:00 bar (high 53056.6 vs channel 52991.1)
+// and Monday's 09:30 bar (high 53476.4 vs 53318.9).
+//
+// =============================== EVERYTHING ELSE IS V56 ===============================
+// The gate is EXHAUSTED SELLERS -- price Lower Low with CVD Higher Low at a confirmed pivot.
+// Under this script's own order model: research +0.3051 PF 1.588 p 0.002, locked +0.3125 PF 1.634
+// p 0.003, against a random filter of the same selectivity, 2,000 draws. n = 88 on locked. ONE
+// MARKET (NQ) -- the CVD needs 1-minute bars and NQ is the only feed with them.
+// The V56 PARITY FIX is retained: the risk is anchored to the SIGNAL bar's ATR and a fill-relative
+// bracket is placed at the signal bar so a stop is live during the fill bar. Trade count 99.6% of
+// the research engine, R correlation 0.9997.
+// ADX: not one of four readings cleared both blocks. An ATR target clears its control and still
+// loses to no target on per-trade AND total R. Both default OFF.
+// CVD IS A PROXY -- true aggressor delta is in no feed here.
+// COSTS ARE NOT SET. Set commission and slippage in Properties before reading any number.
+// See docs/ib/STUDY_V57_REVERSE_ENGINEER.md.
+// ================================================================================================
+
+//@version=5
+strategy("V57 CVD exhaustion, timeframe-scaled", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 100000,
+     calc_on_every_tick = false, process_orders_on_close = false, pyramiding = 0)
+
+gG = "Geometry"
+gC = "Order flow -- set in MINUTES so it means the same on every chart"
+gA = "ADX -- none of the four cleared both blocks"
+gT = "Take profit -- clears its control and still loses to no target"
+gO = "Overrides"
+gS = "Session"
+
+entN    = input.int(20, "Entry channel (bars)", minval = 2, group = gG)
+exitN   = input.int(20, "Exit channel (bars)", minval = 2, group = gG)
+stopN   = input.float(2.0, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG)
+maxHold = input.int(480, "Max hold (bars)", minval = 1, group = gG)
+touchOk = input.bool(true, "Count a TOUCH of the channel as a break (>= instead of >)", group = gG,
+     tooltip = "Friday 21 Aug 07:15 failed on an exact tick-for-tick equality. Re-measured on the researched base this costs nothing: research p 0.000 -> 0.001, locked p 0.005 -> 0.005.")
+
+useMinutes = input.bool(true, "Set pivot and window in MINUTES (recommended)", group = gC,
+     tooltip = "The researched settings are a 3-bar pivot and a 20-bar window on 30-MINUTE bars = 90 and 600 minutes. As raw bar counts they mean 1/30th as much on a 1-minute chart, which is why the 21 Aug and 24 Aug setups were invisible.")
+pivMin  = input.int(90,  "Pivot half-width (minutes)", minval = 1, group = gC)
+winMin  = input.int(600, "Window (minutes)", minval = 1, group = gC)
+pivBars = input.int(3,  "Pivot half-width (bars)  -- used when MINUTES is off", minval = 1, group = gC)
+winBars = input.int(20, "Window (bars)  -- used when MINUTES is off", minval = 1, group = gC)
+cvLTF   = input.string("1", "Volume-delta lower timeframe", group = gC,
+     options = ["1S", "5S", "10S", "30S", "1", "5"],
+     tooltip = "Must be STRICTLY LOWER than the chart's timeframe or no delta is produced at all. On a 1-minute chart use a seconds setting.")
+
+adxMode = input.string("off", "ADX condition", group = gA,
+     options = ["off", "ADX >= 20", "ADX >= 25", "ADX <= 20"])
+adxLen  = input.int(14, "ADX length", minval = 2, group = gA)
+tpATR   = input.float(0.0, "Take profit (ATR, 0 = none)", minval = 0.0, step = 0.5, group = gT)
+
+useAbs   = input.bool(false, "Also enter on ABSORBED SELLING (price HL + CVD LL)", group = gO,
+     tooltip = "MEASURED COST on the researched base: halves the edge and loses locked (p 0.005 -> 0.210). It is what makes Friday 21 Aug reachable with a 54-bar window instead of 320.")
+useCross = input.bool(false, "Also require EMA 13 > EMA 48", group = gO,
+     tooltip = "MEASURED COST: locked p 0.005 -> 0.158. It also blocked Monday 24 Aug 09:29 on its own.")
+
+sessOn = input.bool(false, "Restrict entries to a window", group = gS)
+startH = input.int(9,  "Start hour (New York)",  minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(16, "Stop hour (New York)",   minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute", minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "Flatten at the stop time", group = gS)
+
+// ------------------------------------------------------------------------------------------------
+// Minutes -> bars, from the chart's own timeframe. `timeframe.in_seconds()` covers seconds, minutes,
+// hours and daily alike, so one expression is right on every chart.
+// ------------------------------------------------------------------------------------------------
+barMin  = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+pivK    = useMinutes ? math.max(1, math.round(pivMin / barMin)) : pivBars
+cvWin   = useMinutes ? math.max(1, math.round(winMin / barMin)) : winBars
+
+ltfDelta() =>
+    close > open ? volume : close < open ? -volume : 0.0
+
+dArr = request.security_lower_tf(syminfo.tickerid, cvLTF, ltfDelta())
+barDelta = array.size(dArr) > 0 ? array.sum(dArr) : 0.0
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := cvd + barDelta
+
+pvLow = ta.pivotlow(low, pivK, pivK)
+var float prevLowP = na
+var float prevLowC = na
+var bool exhaustedSellers = false
+var bool absorbedSelling = false
+
+if barstate.isconfirmed
+    exhaustedSellers := false
+    absorbedSelling := false
+    if not na(pvLow)
+        curP = pvLow
+        curC = cvd[pivK]
+        if not na(prevLowP)
+            exhaustedSellers := curP < prevLowP and curC > prevLowC
+            absorbedSelling := curP > prevLowP and curC < prevLowC
+        prevLowP := curP
+        prevLowC := curC
+
+sinceES = nz(ta.barssince(exhaustedSellers), 1000000)
+sinceAS = nz(ta.barssince(absorbedSelling), 1000000)
+flowOk = (sinceES <= cvWin - 1) or (useAbs and sinceAS <= cvWin - 1)
+
+atrN   = ta.atr(14)
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)[1]
+eFast  = ta.ema(close, 13)
+eSlow  = ta.ema(close, 48)
+[_dip, _dim, adxVal] = ta.dmi(adxLen, adxLen)      // [+DI, -DI, ADX] -- the THIRD element is ADX
+
+broke = touchOk ? (high >= entHi) : (high > entHi)
+crossOk = not useCross or eFast > eSlow
+adxOk = adxMode == "off" ? true :
+     adxMode == "ADX >= 20" ? (adxVal >= 20.0) :
+     adxMode == "ADX >= 25" ? (adxVal >= 25.0) : (adxVal <= 20.0)
+
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin = not sessOn ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = sessOn and flatOn and not inWin
+
+gateOk = flowOk and crossOk and adxOk and inWin and atrN > 0 and not na(entHi)
+
+var float pendAtr = na
+var int   heldBars = 0
+
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk and broke
+    pendAtr := atrN
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+    lossTk = stopN * pendAtr / syminfo.mintick
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", loss = lossTk,
+             profit = tpATR * pendAtr / syminfo.mintick)
+    else
+        strategy.exit("x", from_entry = "L", loss = lossTk)
+
+if barstate.isconfirmed and strategy.position_size > 0 and not na(pendAtr)
+    fillStop = strategy.position_avg_price - stopN * pendAtr
+    lvl = math.max(fillStop, nz(exitLo, fillStop))
+    lvl := math.min(lvl, close[1])
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", stop = lvl,
+             limit = strategy.position_avg_price + tpATR * pendAtr)
+    else
+        strategy.exit("x", from_entry = "L", stop = lvl)
+
+if barstate.isconfirmed and strategy.position_size > 0 and (doFlat or heldBars >= maxHold)
+    strategy.close_all(doFlat ? "flat" : "max hold")
+
+plot(entHi, "Entry channel", color = color.new(color.teal, 50))
+plot(exitLo, "Exit channel", color = color.new(color.maroon, 50))
+plot(eFast, "EMA 13", color = color.new(color.aqua, 55))
+plot(eSlow, "EMA 48", color = color.new(color.orange, 55))
+plotshape(exhaustedSellers, "Exhausted sellers (gating)", shape.triangleup, location.belowbar,
+     color.new(color.lime, 0), size = size.small)
+plotshape(absorbedSelling, "Absorbed selling", shape.circle, location.belowbar,
+     color.new(color.green, 30), size = size.tiny)
+
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    ltfBad = timeframe.in_seconds(cvLTF) >= timeframe.in_seconds()
+    table.cell(hud, 0, 0, "pivot " + str.tostring(pivK) + " bars   window " + str.tostring(cvWin)
+         + " bars   (" + str.tostring(math.round(pivK * barMin)) + " / "
+         + str.tostring(math.round(cvWin * barMin)) + " minutes)",
+         text_color = color.white, bgcolor = color.new(color.teal, 30))
+    table.cell(hud, 0, 1, ltfBad ? "CVD TIMEFRAME " + cvLTF + " IS NOT BELOW THE CHART -- NO DELTA"
+         : "CVD from " + cvLTF, text_color = color.white,
+         bgcolor = ltfBad ? color.red : color.new(color.gray, 40))
+    over = (useAbs ? "+absorbed " : "") + (useCross ? "+EMA13>48 " : "")
+         + (adxMode != "off" ? "+" + adxMode + " " : "") + (tpATR > 0 ? "+TP" : "")
+    table.cell(hud, 0, 2, over == "" ? "exhausted sellers only" : "OVERRIDES: " + over,
+         text_color = color.white,
+         bgcolor = over == "" ? color.new(color.teal, 30) : color.new(color.orange, 20))
