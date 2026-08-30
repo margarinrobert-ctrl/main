@@ -80,6 +80,60 @@ Widening the expiry now, having seen this, would be searching after the fact. **
 single variable worth pre-registering in the next run of this brief**, with the fill rate declared
 as a control variable rather than left to fall out.
 
+## WHY IT FAILED — the delta is a residual of two large, near-cancelling forces
+
+Decomposing the tested quantity on 44 families, research block:
+
+```
+delta = (SELECTION: which signals the limit fills) + (PRICE: the better fill)
+
+component                                   mean    median    <0 in
+SELECTION  mkt(on fills) - mkt(all)      -0.5492   -0.5628    44/44
+PRICE      lim(on fills) - mkt(on fills)  +0.5366   +0.5342     0/44
+DELTA      the tested quantity            -0.0126   -0.0266    30/44
+```
+
+**Each component is about 0.54 R and they cancel to −0.013.** The hypothesis was aimed at a residual
+roughly **forty times smaller than its own parts**, so a pre-registered threshold of ρ ≤ −0.50 was
+asking for a clean gradient in a quantity dominated by noise in either half. That is a design fault
+in the test, not a property of the market.
+
+**The PRICE term is close to an arithmetic identity, not an edge.** Entering 1.0 × ATR lower with a
+risk denominator of 2.0 × ATR is worth exactly **0.5 R** by construction; the measured +0.5366
+is that identity plus a +0.037 residual from path and cost differences. The limit does not earn
++0.54 R — it *relocates* the entry, and R is measured off the new base.
+
+**The SELECTION term is what the market charges for that relocation**, and it is −0.5492: the
+signals a limit actually fills are worth half an R *less* at market prices than the average signal
+of the same family. **The two are within 0.013 R of each other in 44 of 44 families.** That is as
+clean a statement of efficiency at this horizon as anything measured on this branch — you can move
+your entry a full ATR, and the population of trades you get instead costs you almost exactly what
+the price improvement is worth.
+
+**And the hypothesised mechanism is real — it just lives in the wrong term.**
+
+```
+rho(immediacy, SELECTION) = -0.3844
+rho(immediacy, PRICE)     = +0.1377
+rho(immediacy, DELTA)     = -0.3205
+```
+
+The gradient is **stronger against selection than against the net**, and in the predicted direction:
+the more front-loaded a signal's edge, the worse the trades a limit ends up filling. The hypothesis
+named the right mechanism and then tested the wrong quantity.
+
+**A second design fault: the independent variable barely varies.** Immediacy spans −0.119 to +0.034
+and **only 2 of 44 families are positive**. A gradient across immediacy was tested without supplying
+a front-loaded end of the range — and the predicted zero-crossing was always going to be absent
+because the delta never approaches zero from above.
+
+### What to pre-register next time
+
+Test **SELECTION**, not the net delta: for a fixed fill rate, does the market-price value of the
+filled subset fall as signal immediacy rises? Declare fill rate as a control variable and sweep the
+expiry to hold it constant across families, so the fill population is comparable. And build the
+ladder to span positive immediacy, which this one did not.
+
 ## Caveats
 
 One market. Cross-market (gate 6) **could not be run** — a container recycle wiped US100 and US30
