@@ -52,6 +52,25 @@ def marginals(reg, col="per_oos"):
     return out
 
 
+def null_adjusted(res, reg_name, null_name="null_martingale"):
+    """Marginals with the martingale world's own marginals subtracted, value by value.
+
+    The null world has no trend, so whatever a parameter earns THERE is the harness's residual
+    discretisation optimism plus the cost line -- not skill. Subtracting it value-by-value leaves
+    the part of each parameter's profile that is attributable to the trend the generator actually
+    contains. It is the single most useful table in this study, because without it `tp` looks like
+    it has a strong optimum in every regime, including the one with no trend at all.
+    """
+    if null_name not in res or reg_name == null_name:
+        return None
+    a = marginals(res[reg_name]); b = marginals(res[null_name])
+    out = {}
+    for k in a:
+        bm = {v: m for v, m, _, _ in b[k]}
+        out[k] = [(v, m - bm.get(v, np.nan), se) for v, m, se, _ in a[k]]
+    return out
+
+
 def show(res, path=None):
     lines = []
     P = lines.append
@@ -100,6 +119,11 @@ def show(res, path=None):
             best[pname] = (bv, bm, bse, flat)
             P(f"          best mean: {pname}={bv:g} at {bm:+.4f}R"
               + ("   [FLAT within error bars -- there is no best value here]" if flat else ""))
+        na = null_adjusted(res, reg)
+        if na:
+            P("\n  THE SAME MARGINALS WITH THE MARTINGALE WORLD SUBTRACTED (trend-attributable)")
+            for pname, tab in na.items():
+                P(f"    {pname:<5} " + "  ".join(f"{v:g}: {m:+.4f}" for v, m, _ in tab))
         if d.get("meta"):
             m = d["meta"]
             b = np.array([x["oos_R"] for x in m]); f = np.array([x["oos_R_filtered"] for x in m])
