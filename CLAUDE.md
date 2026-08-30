@@ -1447,6 +1447,28 @@ locked 25 vs 46; 15m 63 vs 76, locked 53 vs 110) -- a capital-efficiency fact, n
 and 90-93% were flattened**, median time-to-flatten ZERO minutes. See
 `docs/ib/STUDY_V44_SCALP_FEATURES.md`.
 
+**MFE/MAE CANNOT ENGINEER A SCALPING TAKE PROFIT, AND THE REASON IS A BOUND, NOT A BACKTEST.**
+P(MFE >= T) is an UPPER bound on the target-hit rate, never a win rate: the excursions record
+whether each barrier was reached, never WHICH CAME FIRST. The distributions give a bracket --
+p_lower = P(MFE>=T AND MAE<S), p_upper = P(MFE>=T) -- and the realised hit rate lands inside it in
+**49 of 49** cells, so the theory is right. It is also nearly empty where a scalp lives: mean
+bracket width **0.666 at a 0.5 ATR stop** against 0.167 at 3.0 ATR, narrowing monotonically as
+barriers widen. Two corrections that bit here: the bound is on the TARGET-HIT rate, not the
+PROFITABLE rate (a trade flattened in profit never touched the target, so the profitable rate can
+legitimately exceed p_upper), and the two-outcome break-even p* = (S+C)/(T+S) is only valid where
+the FLATTEN SHARE is small -- 1.4-5.0% at 0.5 ATR but **36.2%** at 3.0 ATR/5R. In practice, 7 stops
+x 7 targets x 2 timeframes x 2 blocks on the unfiltered 07:00-11:00 population: **0 of 49
+profitable on three blocks** and 1 of 49 on the fourth, every marginal average negative on every
+axis, and **the target-hit rate below its own break-even in 196 of 196 cells** (mean shortfall
+-0.088 to -0.118). THE TAKE PROFIT IS DOWNSTREAM OF THE ENTRY and that is now arithmetic, not
+opinion. What it would take: **+36.0% relative lift in the target-hit rate; the best of 78 feature
+cells delivers +28.9%**, so the pool's best filter covers 80% of the gap and stops. The single
+candidate (`loc.d_ema200` top quintile, 0.75 ATR stop, 5R) beats its matched control on BOTH blocks
+(p 0.067 / 0.253) and is unprofitable on both -- PF 1.000 research, 0.868 locked. And the position
+lock is not cosmetic: the same cell reads 1.073 / +0.60 pts unlocked and 1.000 / -0.001 locked.
+Timing sharpens as the stop tightens -- at 0.75 ATR a stop resolves in **6 minutes** against 32 for
+a target, **5.3x**, against 2x at 1.5 ATR in STUDY_V44. See `docs/ib/STUDY_V45_TP_ENGINEERING.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1530,6 +1552,7 @@ and 90-93% were flattened**, median time-to-flatten ZERO minutes. See
 | `research/v42/run_v42.py`, `run_v42b.py`, `run_v42c.py` | the parallel sweep; shape, marginals and robust regions; the frozen read on held-back markets with the matched control |
 | `research/v43/` | MAE/MFE on eight declared Donchian configurations: both normalisations, the censoring diagnostic, uncensored heat at a fixed horizon, matched controls |
 | `research/v44/` | 36 causal features scored by excursion in ATR **and points**; the ratio-picked scalp, its no-filter ablation, a 1-minute barrier walker and time-to-target/time-to-stop |
+| `research/v45/` | take-profit engineering from MFE/MAE: the break-even algebra, the p_lower/p_upper bracket, a 1-minute first-touch walker, and the what-would-it-take calculation |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
