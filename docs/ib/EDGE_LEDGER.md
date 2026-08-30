@@ -5,7 +5,12 @@ the search does not restart from zero. Newest first.
 
 ## QUEUE
 
-1. **The exit geometry, attacked directly** — V50 sharpened this from a general target to a
+1. **Why US100 locked fails the random-entry control while US30 clears at p 0.001** — V51's one
+   asymmetry. Same rule, same geometry, same costs; the locked block's random entry earns +0.2751
+   against US30's +0.1879, so the CONTROL is what differs, not the rule. Print what the control
+   earned per block beside the index move, per the drift-harvester rule. *(from V51)*
+
+2. **The exit geometry, attacked directly** — V50 sharpened this from a general target to a
    specific one: two trades on the same signal with the same risk denominator, differing only in
    that one entered 1 ATR lower (so its stop sits 1 ATR lower and its clock starts later), diverge
    by up to **0.29 R**, and that divergence is 99.8% of PRICE's cross-family variance. Ask what the
@@ -24,3 +29,4 @@ the search does not restart from zero. Newest first.
 | --- | --- | --- | --- | --- | --- |
 | 2026-08-30 | The limit entry's advantage falls as signal immediacy rises, crossing zero | **failed at gate 2** | ρ −0.193 vs required −0.50; permutation p 0.122 | delta is a residual of SELECTION −0.5492 and PRICE +0.5366, near-cancelling in 44/44 families; PRICE is ~an arithmetic identity (1.0 ATR entry ÷ 2.0 ATR risk = 0.5 R); the mechanism is **stronger in SELECTION (ρ −0.384) than in the net (−0.321)**; immediacy spanned only −0.119 to +0.034 with 2 of 44 positive | test SELECTION at fixed fill rate → queue item 1 |
 | 2026-08-30 | At a FIXED fill rate, adverse selection on a resting limit grows with the signal's immediacy | **passed gates 1-5; gate 6 unavailable** | rho -0.5887 vs required -0.50, permutation p 0.0000; monotone on all 5 quintiles; within side L -0.472 / S -0.473; locked -0.312, sign held | a THIRD component: PRICE is an identity only in its MEAN — its sd 0.0674 matches SELECTION's 0.0689 and it moves the OTHER way (rho +0.4711), cancelling to a net 8.3x smaller than its parts; the chasing explanation is refuted (open gap +0.0000 ATR, rho -0.039) and **99.8% of PRICE's variance is the EXIT PATH** | attack the stop's LOCATION directly -> queue item 1 |
+| 2026-08-30 | A single-entry Donchian plus MA200-as-support, a 13x48 cross, absorption and a session flatten (user-specified, 1,161,216 cells) | **cleared the selectivity control on 3/3 blocks for ONE feature; random-entry control 2/3** | MA200 >= 1.5 ATR ABOVE p 0.001/0.001/0.001; the SUPPORT reading p 0.001/0.241/**0.999** | the MA200 is a FLOOR not support (third inversion here); the 13x48 cross clears both US100 blocks and fails held-back US30 at p 0.400-1.000; requiring seller absorption LOSES money on locked and is in 0.00% of the top 1000 in 5 of 6 variants; the flatten takes +0.2548 to -0.0239 | first candidate here to survive 2x spread — find why US100 locked fails the random-entry control while US30 clears at p 0.001 |

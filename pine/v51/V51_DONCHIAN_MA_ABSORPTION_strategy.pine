@@ -1,0 +1,248 @@
+// ================================================================================================
+// V51 -- ONE ENTRY, ONE EXIT, and the four requested filters, from a 1,161,216-configuration sweep.
+//
+// A Donchian breakout in; an ATR stop or a Donchian channel out, whichever is nearer the market;
+// no second system, no pyramid ladder, no take profit. Four filters on top, each a selector:
+//   * MA 200 as a LEVEL -- above it, above and near it, or above and extended from it
+//   * EMA 13 x 48 -- the state, or a fresh cross within K bars
+//   * ABSORPTION -- a volume-spike bar whose close is rejected back into its own range
+//   * a session window, with an optional flatten
+//
+// ================== ONE OF THE FOUR EARNED ITS PLACE, AND IT IS INVERTED ==================
+// Every filter was scored against a RANDOM FILTER KEEPING THE SAME SHARE OF THE SAME SIGNALS,
+// 2,000 draws, on three blocks: US100 research (the only block used to search), US100 locked, and
+// the whole of US30, which had no part in anything. p is the share of random filters that did as
+// well or better -- so LOW is good.
+//
+//   feature                              research      locked       US30 held back
+//   MA200 >= 1.5 ATR ABOVE            +0.4720 p.001  +0.3475 p.001  +0.3534 p.001   <- ALL THREE
+//   MA200 >= 3.0 ATR above            +0.3293 p.198  +0.5018 p.000  +0.3923 p.000   wrong shape
+//   MA200 above                       +0.4170 p.000  +0.2834 p.029  +0.3003 p.147
+//   MA200 above & within 3.0 ATR      +0.5044 p.001  +0.3142 p.241  +0.1333 p.999   <- SUPPORT FAILS
+//   MA200 above & within 1.5 ATR      +0.4699 p.017  +0.2781 p.390  +0.2186 p.800
+//   EMA13 > EMA48 (state)             +0.4091 p.000  +0.3626 p.000  +0.2878 p.400
+//   EMA13 x 48 cross <= 20 bars       +0.4208 p.009  +0.3986 p.023  +0.1853 p.995
+//   EMA13 x 48 cross <= 5 bars        +0.4185 p.037  +0.2971 p.324  +0.0777 p1.000
+//   require BUYER absorption <= 5     +0.2061 p.518  +0.3442 p.272  +0.0946 p.883
+//   avoid SELLER absorption <= 20     +0.3211 p.208  +0.2866 p.021  +0.3159 p.007   wrong shape
+//   require SELLER absorption <= 20   +0.2403 p.548  -0.0995 p.996  +0.0983 p.991   <- LOSES MONEY
+//   session 08:00-12:00               +0.2548 p.717  +0.2282 p.501  +0.3241 p.347
+//   session 09:30-16:00               +0.3045 p.433  +0.2524 p.334  +0.3135 p.394
+//   (base, no filter at all)          +0.3063         +0.2394        +0.2785
+//
+// THE MA 200 WORKS AS A FLOOR AND NOT AS SUPPORT, WHICH IS THE OPPOSITE OF WHAT WAS ASKED FOR.
+// Requiring price to be at least 1.5 ATR ABOVE the average clears its control on all three blocks
+// at p 0.001, and it decays from research to holdout, which is the right shape. Requiring price to
+// be NEAR the average -- the support reading -- clears research at p 0.001 and then reads p 0.241
+// and p 0.999, and on US30 a random filter of the same selectivity earns MORE THAN DOUBLE
+// (+0.3066 against +0.1333). This is the third time on this branch that a "not extended" ceiling
+// has inverted into a floor; `STUDY_TURTLE_15M` took PF 0.94 -> 1.58 the same way.
+//
+// THE 13 x 48 CROSS DOES NOT TRANSFER. It clears its control on both US100 blocks and then fails
+// on the market that had no part in the search, at p 0.400 / 0.995 / 1.000 -- with the random
+// filter earning +0.3059 against the cross's +0.1853. Two US100 blocks are one index over an
+// overlapping calendar, not two tests.
+//
+// ABSORPTION: NOTHING CLEARS, AND THE SIGN IS THE USABLE PART. Requiring seller absorption -- the
+// large-volume up bar closing back in the lower 40% of its range, the pattern this was built from
+// -- fails on all three blocks and LOSES MONEY on locked (-0.0995 R, PF 0.866). It appears in
+// 0.00% of the sweep's top 1000 in five of its six variants against a 2.2-4.3% population share,
+// and it gets worse as the volume threshold rises (1.5x: +0.031, +0.022; 2.0x: -0.015, +0.001).
+// That is `STUDY_DIVERGENCE_CONFIRM`'s monotone volume-spike result reproducing: a spike marks
+// maximum participation, which is where a short-horizon move is most likely already over. Avoiding
+// it clears locked and US30 but FAILS research (p 0.208), which is the wrong shape, so it ships
+// OFF. Absorption is a PROXY here -- real absorption needs bid/ask volume at price and no feed
+// on this branch carries it.
+//
+// ===================== WHAT THE SHIPPED DEFAULT DOES AGAINST A RANDOM ENTRY =====================
+// The harder null: a random ENTRY with the identical stop, exits, max hold and costs.
+//
+//   block                          n     R/trade    PF     Sharpe   random entry     p
+//   US100 research (first 70%)   434     +0.4720   1.724    1.08       +0.2642     0.003
+//   US100 LOCKED   (last 30%)    206     +0.3475   1.496    0.55       +0.2751     0.241   <- FAILS
+//   US30  held back, whole file  616     +0.3534   1.513    0.92       +0.1879     0.001
+//
+// TWO OF THREE. It clears on the search block and on the market that had no part in the search,
+// and it does NOT clear on US100's own locked block. Sharpe is computed over EVERY trading day in
+// the block, zero-filled on days that did not trade. All of it survives 2x the assumed costs
+// (p 0.004 / 0.232 / 0.003) -- the first candidate on this branch to do so.
+//
+// THE BASE WITH NO FILTER AT ALL fails the same null on US100 (p 0.140 research, 0.596 locked) and
+// clears on US30 (p 0.001). So the breakout trigger is close to a coin flip and the MA200 floor is
+// what moves it.
+//
+// ============================== AND WHAT THE POPULATION SAYS ==============================
+// 248,172 of the 1.16M cells carry >= 100 research trades and 187,372 of those -- 75.5% -- are
+// profitable, so any single cell is the maximum of ~187,000 positive draws. 31.4% reach PF > 1.2
+// and 5.3% reach PF > 1.5 with no skill required. Read the marginal average per axis, never a row.
+//
+// FOUR OF FOUR GEOMETRY AXES RUN TO THE EDGE OF THE DECLARED GRID: the marginal average rises
+// monotonically to 60m (the slowest tested), to a 30-bar exit channel (the longest), to a 55-bar
+// entry channel (the longest) and DOWN to a 1.5 ATR stop (the tightest). The optimum was never
+// bracketed, and the grid was NOT extended after seeing that, deliberately.
+//
+// THE FLATTEN COSTS ABOUT HALF THE EDGE AND SOMETIMES ALL OF IT, on every window measured:
+//   07:00-11:00  +0.0778 -> -0.0347      08:00-12:00  +0.1111 -> +0.0049
+//   09:30-12:00  +0.1062 -> -0.0011      09:30-16:00  +0.1251 -> +0.0434
+// At the shipped geometry it takes 08:00-12:00 from +0.2548 to -0.0239 (PF 0.950) on research and
+// from +0.3241 to -0.0099 (PF 0.977) on US30. It truncates exactly the trades a channel exit
+// exists to hold. It is provided because it was asked for, defaulted OFF, and it fills at the
+// NEXT BAR'S OPEN because `strategy.close_all()` cannot sell the close of the bar that triggers it.
+//
+// ================================== DEFINITIONS AND TRAPS ==================================
+// ATR is `ta.atr(14)`, Wilder's RMA, matching the research layer's `rma(TR, 14)` exactly.
+// Hours are NEW YORK, read with `hour(time, "America/New_York")` -- bare `hour` is EXCHANGE time.
+// The working stop is capped at the PRIOR BAR'S CLOSE: a Donchian exit channel can sit ABOVE the
+// fill, and a sell stop resting above the market is not a stop -- that bug produced 3,170 trades
+// averaging +1.14 on a median hold of ONE bar in an earlier study.
+// Entries require `barstate.isconfirmed` so the Strategy Tester's recalculation checkboxes cannot
+// change the result, and every `var` write is guarded for the same reason.
+//
+// ABSORPTION USES `volume`, WHICH ON A CFD OR INDEX SYMBOL IS TICK COUNT, NOT CONTRACTS. The
+// research ran on the broker's TickVolume column, so the two agree -- but on a futures symbol
+// TradingView reports real contract volume and the thresholds will not mean the same thing.
+//
+// COSTS ARE NOT SET IN THIS SCRIPT. Set commission and slippage in Properties before reading any
+// number: the research charged 1.0 index point round turn plus 0.25 per fill on US100 and 2.0 plus
+// 0.5 on US30, and every figure above survives 2x that.
+//
+// THE ENGINE WAS VERIFIED BEFORE IT WAS TRUSTED. The cached exit tensor was diffed against an
+// independent plain-Python simulation on 15 cells across two markets and two timeframes: trade
+// counts identical and mean R equal to 1e-9 on every one.
+// ================================================================================================
+
+//@version=5
+strategy("V51 Donchian + MA200 + 13x48 + Absorption", overlay = true,
+     default_qty_type = strategy.percent_of_equity, default_qty_value = 100,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     pyramiding = 0)
+
+gG = "Geometry"
+gM = "MA 200 as a level"
+gX = "EMA 13 x 48"
+gA = "Absorption"
+gS = "Session"
+
+entN  = input.int(20, "Entry channel (bars)", minval = 2, group = gG)
+exitN = input.int(30, "Exit channel (bars)", minval = 2, group = gG,
+     tooltip = "The marginal average rises to 30, the longest tested -- this axis runs off the grid.")
+stopN = input.float(1.5, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG,
+     tooltip = "1.5 is the tightest tested and the best marginal average. Also off the grid edge.")
+maxHold = input.int(480, "Max hold (bars)", minval = 1, group = gG)
+
+maMode = input.string("at least 1.5 ATR above", "MA200 condition", group = gM,
+     options = ["off", "above", "above & within 1.5 ATR", "above & within 3.0 ATR",
+     "at least 1.5 ATR above", "at least 3.0 ATR above"])
+maLen = input.int(200, "MA length", minval = 2, group = gM)
+
+cxMode = input.string("off", "EMA 13 x 48 condition", group = gX,
+     options = ["off", "13 > 48 (state)", "cross within 5 bars", "cross within 20 bars"])
+fastLen = input.int(13, "Fast EMA", minval = 1, group = gX)
+slowLen = input.int(48, "Slow EMA", minval = 2, group = gX)
+
+absMode = input.string("off", "Absorption condition", group = gA,
+     options = ["off", "require BUYER absorption <= 5", "require BUYER absorption <= 20",
+     "avoid SELLER absorption <= 5", "avoid SELLER absorption <= 20",
+     "require SELLER absorption <= 5", "require SELLER absorption <= 20"])
+volMult = input.float(1.5, "Volume spike (x the 200-bar mean)", minval = 1.0, step = 0.1,
+     group = gA)
+wickFrac = input.float(0.40, "Close inside this fraction of the range", minval = 0.05,
+     maxval = 0.95, step = 0.05, group = gA,
+     tooltip = "Seller absorption: an UP bar on spike volume whose close sits in the LOWER 40% of its own range. Buyer absorption is the mirror.")
+
+useSess = input.bool(false, "Restrict entries to a window", group = gS)
+startH = input.int(8,  "Start hour (New York)",   minval = 0, maxval = 23, group = gS)
+startM = input.int(0,  "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(12, "Stop hour (New York)",    minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute",  minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "Flatten at the stop time", group = gS,
+     tooltip = "Costs about half the per-trade edge on every window measured, and all of it on two. Fills at the NEXT bar's open.")
+
+// ------------------------------------------------------------------------------------------------
+// Indicators. Everything reads bars up to and including the signal bar, and nothing further.
+// ------------------------------------------------------------------------------------------------
+atrN   = ta.atr(14)
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)[1]
+maV    = ta.ema(close, maLen)
+eFast  = ta.ema(close, fastLen)
+eSlow  = ta.ema(close, slowLen)
+
+maDist = atrN > 0 ? (close - maV) / atrN : na
+maOk = maMode == "off" ? true :
+     maMode == "above" ? (maDist > 0) :
+     maMode == "above & within 1.5 ATR" ? (maDist > 0 and maDist <= 1.5) :
+     maMode == "above & within 3.0 ATR" ? (maDist > 0 and maDist <= 3.0) :
+     maMode == "at least 1.5 ATR above" ? (maDist >= 1.5) : (maDist >= 3.0)
+
+cxState = eFast > eSlow
+cxFresh = cxState and not cxState[1]
+// `barssince` is `na` until the event has happened once, and `na <= 5` is `na`, which would make
+// the AVOID modes below silently block every early entry. nz() to a large number fixes both.
+// The research window of K bars INCLUDES the current bar, so the test is `<= K-1`, not `<= K`.
+bsCross = nz(ta.barssince(cxFresh), 1000000)
+cxOk = cxMode == "off" ? true :
+     cxMode == "13 > 48 (state)" ? cxState :
+     cxMode == "cross within 5 bars" ? (bsCross <= 4) :
+     (bsCross <= 19)
+
+rngB  = math.max(high - low, syminfo.mintick)
+posB  = (close - low) / rngB
+volMA = ta.sma(volume, 200)[1]
+hiVol = not na(volMA) and volMA > 0 and volume >= volMult * volMA
+sellAbs = hiVol and close > open and posB <= wickFrac
+buyAbs  = hiVol and close < open and posB >= 1.0 - wickFrac
+bsBuy  = nz(ta.barssince(buyAbs), 1000000)
+bsSell = nz(ta.barssince(sellAbs), 1000000)
+absOk = absMode == "off" ? true :
+     absMode == "require BUYER absorption <= 5" ? (bsBuy <= 4) :
+     absMode == "require BUYER absorption <= 20" ? (bsBuy <= 19) :
+     absMode == "avoid SELLER absorption <= 5" ? not (bsSell <= 4) :
+     absMode == "avoid SELLER absorption <= 20" ? not (bsSell <= 19) :
+     absMode == "require SELLER absorption <= 5" ? (bsSell <= 4) :
+     (bsSell <= 19)
+
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin = not useSess ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = useSess and flatOn and not inWin
+
+// ------------------------------------------------------------------------------------------------
+// State. Every var write is guarded by `barstate.isconfirmed` -- an unguarded one reads a mid-bar
+// `close`, and durable state taken from a price the bar-close run cannot see is how an earlier
+// script chose which breakouts to take.
+// ------------------------------------------------------------------------------------------------
+var float sigAtr = na
+var int   heldBars = 0
+
+trigger = barstate.isconfirmed and high > entHi and maOk and cxOk and absOk and inWin
+     and atrN > 0 and not na(entHi)
+
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+
+if trigger and strategy.position_size == 0
+    sigAtr := atrN
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+
+if strategy.position_size > 0 and not na(sigAtr)
+    atrStop = strategy.position_avg_price - stopN * sigAtr
+    lvl = math.max(atrStop, nz(exitLo, atrStop))
+    lvl := math.min(lvl, close[1])                 // a sell stop never rests above the market
+    strategy.exit("x", from_entry = "L", stop = lvl)
+
+if strategy.position_size > 0 and (doFlat or heldBars >= maxHold)
+    strategy.close_all(doFlat ? "flat" : "max hold")
+
+plot(maV, "MA 200", color = color.new(color.purple, 0), linewidth = 2)
+plot(eFast, "EMA 13", color = color.new(color.aqua, 40))
+plot(eSlow, "EMA 48", color = color.new(color.orange, 40))
+plot(entN > 1 ? entHi : na, "Entry channel", color = color.new(color.teal, 50))
+plot(exitN > 1 ? exitLo : na, "Exit channel", color = color.new(color.maroon, 50))
+plotshape(sellAbs, "Seller absorption", shape.triangledown, location.abovebar,
+     color.new(color.red, 0), size = size.tiny)
+plotshape(buyAbs, "Buyer absorption", shape.triangleup, location.belowbar,
+     color.new(color.lime, 0), size = size.tiny)

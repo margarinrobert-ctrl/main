@@ -1567,6 +1567,37 @@ both sides negative and MIRRORING DOES NOT FIX IT. Also fixed here: V49's `roc` 
 WHOLE-SAMPLE `np.nanquantile`, a threshold that reads the future, flipping 0.82-1.30% of bars.
 See `docs/ib/STUDY_V50_SELECTION.md`.
 
+**THE MA 200 IS A FLOOR, NOT SUPPORT — AND IT IS THE ONLY ONE OF FOUR REQUESTED FILTERS THAT
+EARNS ITS PLACE.** 1,161,216 configurations (4 entry x 4 exit x 4 stop x 6 MA200 x 4 cross x 14
+absorption x 9 session x 3 timeframes x 2 markets) on a fresh SINGLE-entry / SINGLE-exit Donchian,
+searched on US100's first 70% with US100 locked and the WHOLE of US30 held back. Scored against a
+RANDOM FILTER OF THE SAME SELECTIVITY, 2,000 draws, on all three blocks: **price at least 1.5 ATR
+ABOVE the MA200 clears at p 0.001 / 0.001 / 0.001** and decays research -> holdout, the right shape.
+**The SUPPORT reading — above and WITHIN 3.0 ATR — clears research at p 0.001 and then reads 0.241
+and 0.999**, with a random filter earning MORE THAN DOUBLE on US30 (+0.3066 against +0.1333). Third
+inversion of a "not extended" ceiling into a floor on this branch (`STUDY_TURTLE_15M` did it on
+EMA100 for PF 0.94 -> 1.58), now on a third market. The 13x48 CROSS clears BOTH US100 blocks
+(p 0.000) and fails the market that had no part in the search (p 0.400 state, 0.995 cross<=20,
+1.000 cross<=5) — two blocks of one index over an overlapping calendar are not two tests. ABSORPTION,
+defined from the user's own chart as a spike-volume UP bar closing in the lower 40% of its range
+(sellers absorbing the buying) and LABELLED A PROXY because no feed here carries bid/ask at price:
+REQUIRING it fails all three blocks and LOSES MONEY on locked (-0.0995 R, PF 0.866), appears in
+**0.00% of the sweep's top 1000 in five of six variants**, and worsens monotonically as the volume
+threshold rises (1.5x +0.031/+0.022, 2.0x -0.015/+0.001) — `STUDY_DIVERGENCE_CONFIRM`'s volume-spike
+result from the other side. Avoiding it clears locked and US30 and FAILS research, the wrong shape,
+so it ships OFF. THE FLATTEN IS DESTRUCTIVE on every window (07:00-11:00 +0.0778 -> -0.0347;
+08:00-12:00 +0.1111 -> +0.0049; at the shipped geometry +0.2548 -> **-0.0239, PF 0.950**) — eighth
+confirmation of the intraday constraint. The shipped default beats a RANDOM ENTRY on research
+(p 0.003) and on held-back US30 (p 0.001) and **FAILS on US100 locked (p 0.241)**, two of three —
+and it is **THE FIRST CANDIDATE ON THIS BRANCH TO SURVIVE 2x THE ASSUMED SPREAD** (p 0.004/0.232/
+0.003). Population first: 248,172 cells clear 100 trades and **75.5% of them are profitable**, so a
+cell is the max of ~187,000 positive draws, and FOUR OF FOUR GEOMETRY AXES RUN TO THE GRID EDGE.
+VECTORBT COULD NOT DO THIS: 1.1.0's `sl_stop` is a fraction of PRICE, not a per-trade ATR multiple,
+and `td_stop`/`dt_stop` do not exist — the same defect that made V46's cross-check inconclusive. The
+cached exit tensor did **1,161,216 configurations in 17.7 seconds**, verified against an independent
+plain-Python reference on 15 cells (trade counts identical, mean R to 1e-9).
+See `docs/ib/STUDY_V51_MA_ABSORPTION.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1655,6 +1686,7 @@ See `docs/ib/STUDY_V50_SELECTION.md`.
 | `research/v47/` | causal daily frame with an exact RTH/overnight split; 30 risk-premium and PEAD-analogue features; drift-vs-reversal test, Newey-West ICs, BH |
 | `research/v48/` | Donchian base + 39 risk-premium/PEAD/release-clock features; purged embargoed CV with ridge, LightGBM and a small MLP; family ablation and coefficient attribution |
 | `research/v50/` | SELECTION at a FIXED fill rate: a cost-invariant time-to-fill calibrator, both sides, the PRICE split into entry offset and exit path, and the chasing test |
+| `research/v51/` | the 1.16M-config single-entry Donchian sweep: MA200 as a level, 13x48, an absorption proxy, session+flatten; tensor verified against an independent reference |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
