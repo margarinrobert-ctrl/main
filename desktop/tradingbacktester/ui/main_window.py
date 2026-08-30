@@ -32,8 +32,8 @@ from ..strategy.spec import StrategySpec
 from .icons import icon
 from .theme import PALETTE, Fonts, currency_symbol, money, pct
 from .widgets.chart_widget import ChartWidget
-from .widgets.common import (Card, ask_text, confirm, show_error, show_info,
-                             show_warning)
+from .widgets.common import (Card, ask_text, confirm, install_global_wheel_guard,
+                             show_error, show_info, show_warning)
 from .widgets.data_panel import DataPanel
 from .widgets.equity_widget import EquityWidget
 from .widgets.periodic_table import DrawdownTable, PeriodicReturnsTable
@@ -72,6 +72,9 @@ class MainWindow(QMainWindow):
                             QMainWindow.DockOption.AllowTabbedDocks |
                             QMainWindow.DockOption.AnimatedDocks)
 
+        # Before any widget exists: a stray scroll over the sidebar used to
+        # change the selected strategy and rewrite the risk settings.
+        install_global_wheel_guard()
         self._build_services()
         self._build_actions()
         self._build_toolbar()
@@ -79,6 +82,7 @@ class MainWindow(QMainWindow):
         self._build_central()
         self._build_docks()
         self._build_statusbar()
+        self._build_context_bar()
         self._connect()
         self._restore_geometry()
         QTimer.singleShot(0, self._first_run)
@@ -145,6 +149,9 @@ class MainWindow(QMainWindow):
         act("paste_strategy", "Paste a Strategy…", "import", "Ctrl+Shift+V",
             "Paste Pine Script or exported JSON, see exactly what could be "
             "translated, and run it", self.on_paste_strategy)
+        act("variants", "Find a Better Version…", "optimize", "Ctrl+Shift+B",
+            "Search this strategy's own neighbourhood for a better version, "
+            "priced for how many were tried", self.on_find_variants)
         act("combine_strategies", "Combine Strategies…", "compare", "Ctrl+Shift+C",
             "Merge two or more strategies into one: all must agree, any one "
             "is enough, or a majority", self.on_combine_strategies)
@@ -225,7 +232,9 @@ class MainWindow(QMainWindow):
         tb.addAction(self.act_sample)
         tb.addSeparator()
         tb.addAction(self.act_new_strategy)
+        tb.addAction(self.act_paste_strategy)
         tb.addAction(self.act_edit_strategy)
+        tb.addAction(self.act_combine_strategies)
         tb.addAction(self.act_save_strategy)
         tb.addSeparator()
 
@@ -310,6 +319,7 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addAction(self.act_paste_strategy)
         m.addAction(self.act_combine_strategies)
+        m.addAction(self.act_variants)
         m.addSeparator()
         m.addAction(self.act_import_strategy)
         m.addAction(self.act_export_strategy)
@@ -376,6 +386,7 @@ class MainWindow(QMainWindow):
 
         self.start_here = StartHere()
         self.start_here.importRequested.connect(self.on_import_csv)
+        self.start_here.pasteRequested.connect(self.on_paste_strategy)
         self.start_here.findRequested.connect(self.on_find_strategies)
         self.start_here.dismissed.connect(self._on_start_here_dismissed)
         ll.addWidget(self.start_here)
@@ -468,6 +479,28 @@ class MainWindow(QMainWindow):
         reset.triggered.connect(self.on_reset_layout)
         self.view_menu.addAction(reset)
 
+    def _build_context_bar(self) -> None:
+        """One strip that always says what is on screen, above everything."""
+        from .widgets.context_bar import ContextBar
+
+        self.context_bar = ContextBar()
+        holder = self.centralWidget()
+        if holder is None:                  # pragma: no cover - defensive
+            return
+        layout = holder.layout()
+        if layout is not None:
+            layout.setMenuBar(self.context_bar)
+
+    def _refresh_context(self) -> None:
+        """Keep the strip in step with the four things it reports."""
+        bar = getattr(self, "context_bar", None)
+        if bar is None:
+            return
+        bar.set_data(self._view_bars)
+        bar.set_strategy(self._spec)
+        bar.set_result(self._result,
+                       self._spec.name if self._spec is not None else None)
+
     def _build_statusbar(self) -> None:
         sb = QStatusBar()
         self.setStatusBar(sb)
@@ -509,6 +542,7 @@ class MainWindow(QMainWindow):
         self.strategy_panel.renameRequested.connect(self.on_rename_strategy)
         self.strategy_panel.deleteRequested.connect(self.on_delete_strategy)
         self.strategy_panel.importRequested.connect(self.on_import_strategy)
+        self.strategy_panel.pasteRequested.connect(self.on_paste_strategy)
         self.strategy_panel.exportRequested.connect(self.on_export_strategy)
         self.strategy_panel.saveRequested.connect(self.on_save_strategy)
 
@@ -730,6 +764,7 @@ class MainWindow(QMainWindow):
         if not dataset_id:
             self._bars = None
             self._view_bars = None
+            self._clear_result()
             self.data_panel.set_bars(None)
             self.chart.clear()
             self._update_actions()
@@ -783,10 +818,16 @@ class MainWindow(QMainWindow):
         except BacktesterError as exc:
             show_error(self, exc)
             return
+        # A result is a result *on a dataset*.  Loading different bars makes
+        # the trades on screen belong to a series that is no longer shown.
+        self._clear_result(
+            "Cleared the previous results: they were run on a different "
+            "dataset.")
         self._view_bars = bars
         self.chart.set_bars(bars)
         self._show_strategy_indicators()
         self.status_data.setText(bars.describe())
+        self._refresh_context()
         self._update_actions()
 
     def _show_strategy_indicators(self) -> None:
@@ -872,7 +913,9 @@ class MainWindow(QMainWindow):
     def on_strategy_selected(self, strategy_id: str) -> None:
         if not strategy_id:
             self._spec = None
+            self._clear_result()
             self.strategy_panel.set_spec(None)
+            self._refresh_context()
             self._update_actions()
             return
         try:
@@ -880,13 +923,21 @@ class MainWindow(QMainWindow):
         except BacktesterError as exc:
             show_error(self, exc)
             return
+        previous = self._spec.name if self._spec is not None else ""
         self._spec = spec
         self._dirty_strategy = False
         self.settings.last_strategy = strategy_id
         self.settings.save()
+        if previous and previous != spec.name:
+            self._clear_result(
+                f"Cleared the results of '{previous}'. Run '{spec.name}' to see "
+                f"its own.")
+        else:
+            self._clear_result()
         self.strategy_panel.set_spec(spec)
         self._apply_strategy_config(spec)
         self._show_strategy_indicators()
+        self._refresh_context()
         self._update_actions()
         self._update_start_here()
 
@@ -922,6 +973,9 @@ class MainWindow(QMainWindow):
 
     def on_parameters_changed(self) -> None:
         self._dirty_strategy = True
+        self._clear_result(
+            "The parameters changed, so the last run no longer describes this "
+            "strategy. Run it again.")
         self._show_strategy_indicators()
         self._update_actions()
 
@@ -1140,6 +1194,36 @@ class MainWindow(QMainWindow):
     def on_task_cancelled(self) -> None:
         self.status("Cancelled.")
 
+    def _clear_result(self, reason: str = "") -> None:
+        """Drop everything on screen that belonged to the previous run.
+
+        Selecting a different strategy used to leave the last run's trade
+        markers on the chart, its rows in the blotter, its equity curve and
+        its net profit in the headline, while the picker named something else
+        entirely. The chart's *indicators* followed the selection, so the two
+        halves of the window disagreed and the numbers were the ones that
+        looked authoritative.
+
+        A backtest belongs to one strategy, one set of parameters and one
+        dataset. Change any of them and the result on screen is no longer a
+        result of what is named, so it goes -- rather than being relabelled,
+        greyed out, or left for the user to notice.
+        """
+        if self._result is None:
+            return
+        self._result = None
+        self.chart.set_trades([])
+        self.equity.clear()
+        self.stats.clear()
+        self.trade_table.clear()
+        self.monthly.clear()
+        self.drawdowns.clear()
+        self.headline.setText("")
+        if reason:
+            self.status(reason)
+        self._refresh_context()
+        self._update_actions()
+
     def _show_result(self, result: BacktestResult) -> None:
         self._result = result
         elapsed = time.monotonic() - getattr(self, "_run_started", time.monotonic())
@@ -1155,6 +1239,7 @@ class MainWindow(QMainWindow):
         self.equity.set_result(result)
         self.stats.set_metrics(result.metrics, currency, decimals)
         self.trade_table.set_trades(result.trades, decimals, currency, tz)
+        self._refresh_context()
 
         try:
             from ..analytics.equity import drawdown_table
@@ -1443,6 +1528,25 @@ class MainWindow(QMainWindow):
         self.strategy_panel.refresh(self.strategy_panel.current_strategy_id()
                                     or None)
         self._update_start_here()
+
+    def on_find_variants(self) -> None:
+        """Search the selected strategy's neighbourhood for a better version."""
+        if self._spec is None:
+            show_info(self, "No Strategy",
+                      "Select a strategy first — this searches around the one "
+                      "you have, rather than for a new one.")
+            return
+        if self._view_bars is None:
+            show_info(self, "No Data",
+                      "Load a dataset first: a variant is only better on data.")
+            return
+        from .dialogs.variants_dialog import VariantsDialog
+
+        dialog = VariantsDialog(self._spec, self._view_bars,
+                                self._config_from_spec(self._spec), self)
+        dialog.exec()
+        self.strategy_panel.refresh(self.strategy_panel.current_strategy_id()
+                                    or None)
 
     def on_combine_strategies(self) -> None:
         """Merge several strategies into one and, optionally, keep it."""

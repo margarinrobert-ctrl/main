@@ -12,11 +12,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Sequence
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                               QDoubleSpinBox, QFormLayout, QFrame, QGridLayout,
-                               QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
-                               QPushButton, QSizePolicy, QSpinBox, QToolButton,
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
+from PySide6.QtGui import QWheelEvent
+from PySide6.QtWidgets import (QAbstractScrollArea, QAbstractSpinBox,
+                               QApplication, QCheckBox, QComboBox, QDialog,
+                               QDialogButtonBox, QDoubleSpinBox, QFormLayout,
+                               QFrame, QGridLayout, QHBoxLayout, QLabel,
+                               QLineEdit, QPlainTextEdit, QPushButton,
+                               QSizePolicy, QSlider, QSpinBox, QToolButton,
                                QVBoxLayout, QWidget)
 
 from ...core.errors import BacktesterError
@@ -26,6 +29,103 @@ from ..theme import PALETTE, Fonts
 # --------------------------------------------------------------------------
 # Layout helpers
 # --------------------------------------------------------------------------
+
+class _WheelGuard(QObject):
+    """Stops a scroll gesture from rewriting the value it passes over.
+
+    Qt sends a wheel event to whatever is under the pointer, so dragging the
+    sidebar's scrollbar past a combo box or a spin box changes it.  Measured
+    before this existed: one three-notch scroll down the left panel switched
+    the selected strategy from one to another, moved starting capital from
+    100,000 to 97,000, and took units per trade from 1.0 to 0.0001 -- silently,
+    with the only symptom being that the chart no longer matched what the user
+    thought was selected.
+
+    The rule is that a wheel over an *unfocused* value widget belongs to the
+    thing that scrolls, not to the value.  Clicking into a box first and then
+    scrolling it still works, because that is unambiguous.
+
+    The event is forwarded to the scrolling ancestor rather than swallowed --
+    blocking it would fix the value and break the scrolling, which is the same
+    bug wearing a different hat.  Where there is no scrolling ancestor nothing
+    is changed: the defect only exists inside a scroll area.
+    """
+
+    def eventFilter(self, obj: Any, event: Any) -> bool:  # noqa: N802 - Qt
+        if event.type() != QEvent.Type.Wheel:
+            return False
+        # Installed per-widget *and* application-wide, so the type check has to
+        # happen here: application-wide it sees every wheel event in the
+        # program, including the ones the chart and the tables want.
+        if not isinstance(obj, _VALUE_WIDGETS):
+            return False
+        if obj.hasFocus():
+            return False
+        area = _scrolling_ancestor(obj)
+        if area is None:
+            return False
+        clone = QWheelEvent(
+            event.position(), event.globalPosition(), event.pixelDelta(),
+            event.angleDelta(), event.buttons(), event.modifiers(),
+            event.phase(), event.inverted())
+        QApplication.sendEvent(area.viewport(), clone)
+        return True
+
+
+def _scrolling_ancestor(widget: Any) -> Any:
+    parent = widget.parentWidget() if hasattr(widget, "parentWidget") else None
+    while parent is not None:
+        if isinstance(parent, QAbstractScrollArea):
+            return parent
+        parent = parent.parentWidget()
+    return None
+
+
+#: One filter for the whole application.  An event filter is stateless here, so
+#: a single instance can serve every widget; it also has to outlive the widgets
+#: it is installed on, which a module-level object does and a local does not.
+_WHEEL_GUARD = _WheelGuard()
+
+#: What a stray scroll must not silently rewrite.
+_VALUE_WIDGETS = (QComboBox, QAbstractSpinBox, QSlider)
+
+
+def install_global_wheel_guard(app: Any = None) -> None:
+    """Guard every value widget in the application, including future ones.
+
+    Installing per-widget only protects what exists at that moment, and this
+    application rebuilds its forms whenever the sizing mode changes -- so the
+    boxes most worth protecting are exactly the ones a one-time sweep misses.
+    One filter on the application object sees every wheel event and decides by
+    the target's type.
+    """
+    target = app or QApplication.instance()
+    if target is not None:
+        target.installEventFilter(_WHEEL_GUARD)
+
+
+def guard_value_wheels(root: QWidget) -> int:
+    """Protect every value widget under ``root`` from a passing scroll.
+
+    Returns how many were guarded, which is what the test asserts on.  Safe to
+    call repeatedly: Qt ignores a duplicate event filter installation.
+    """
+    guarded = 0
+    for widget in root.findChildren(QWidget):
+        if isinstance(widget, _VALUE_WIDGETS):
+            widget.installEventFilter(_WHEEL_GUARD)
+            # Without this a wheel could still give the box focus on some
+            # platforms and the next notch would be "deliberate".
+            if widget.focusPolicy() == Qt.FocusPolicy.WheelFocus:
+                widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            guarded += 1
+    if isinstance(root, _VALUE_WIDGETS):
+        root.installEventFilter(_WHEEL_GUARD)
+        if root.focusPolicy() == Qt.FocusPolicy.WheelFocus:
+            root.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        guarded += 1
+    return guarded
+
 
 class SectionLabel(QLabel):
     """A small uppercase heading used inside panels."""

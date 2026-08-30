@@ -243,6 +243,35 @@ Deciding the column layout from the values, not the header names. Called by
   merged warm-up the merged strategy may be quieter (one strategy has one
   warm-up, the longest of its indicators') but never fires where no source did.
 
+### `tradingbacktester/finder/variants.py`
+- `search_variants(spec, bars, config, max_variants=400, combine_top=3,
+  progress=None) -> VariantReport`. Walks one strategy's own neighbourhood:
+  `axes_for(spec)` yields a `VariantAxis` per numeric `ParamSpec` and per
+  enabled exit level, with rungs on a **ratio** scale (×0.6, ×0.8, ×1.25,
+  ×1.6) clamped to the parameter's own bounds. A fixed step would spend the
+  same budget on a 5-period average and a 200-period one.
+- The inputs are never mutated; every variant is built on `spec.copy()`.
+- `progress(done, total, label)` may return False to stop. A stopped search is
+  deflated against what it **tried**, never what it planned.
+- `_safe_score` wraps `_score` at both call sites: one exploding variant must
+  not end a 400-variant walk, and the cost of being wrong about which
+  exceptions the engine can raise is the whole search.
+- `VariantReport.improved` requires `deflated.significant` (DSR > 0.95), not
+  `deflated.clears`. Clearing the best-of-N benchmark is the weaker test, and
+  reporting it as "survives" beside a line reading "not significant" invites
+  the flattering reading.
+- `_flag_lonely_peaks` notes when the winning value beats the baseline at
+  exactly one rung and at none of its neighbours — the shape of a coincidence.
+- `fit_learned_filter(trades, split=0.65, purge=5)` fits a small ridge-penalised
+  logistic model in pure numpy. Deliberately linear: 1,072 IC tests on this
+  data produced one survivor at 0.28 ticks against a 6-tick round turn, so
+  there is nothing for a high-capacity model to find that is not noise.
+  Standardisation uses **training** statistics only; the purge gap keeps a
+  trade that was still open off both sides; features are restricted to what was
+  known at the *open* (never MAE, MFE, bars held or the exit price, which are
+  outcomes). `LearnedFilter.degenerate` catches the majority-class trap, so an
+  "accuracy" equal to the losing rate is never reported as skill.
+
 ### `tradingbacktester/engine/*`
 - `execution.py` — `CostCalculator(costs, instrument)` with
   `apply_entry(price, side, atr) -> (fill_price, spread_cost_per_unit, slippage_per_unit)`,

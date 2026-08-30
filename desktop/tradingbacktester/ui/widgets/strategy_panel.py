@@ -45,6 +45,7 @@ class StrategyPanel(QWidget):
     renameRequested = Signal()
     deleteRequested = Signal()
     importRequested = Signal()
+    pasteRequested = Signal()
     exportRequested = Signal()
     saveRequested = Signal()
 
@@ -82,6 +83,19 @@ class StrategyPanel(QWidget):
         edit.clicked.connect(self.editRequested.emit)
         row.addWidget(edit)
         self.card.add_layout(row)
+
+        # Pasting Pine is the way most people arrive with a strategy, and it
+        # was reachable only from a menu item nobody found -- reported as
+        # "there no feature to paste my strategy in pine".  A labelled button
+        # beside the picker is where someone holding a script will look.
+        paste = QPushButton("  Paste Pine\u2026")
+        paste.setIcon(icon("import", 15))
+        paste.setIconSize(QSize(15, 15))
+        paste.setToolTip(
+            "Paste a Pine Script strategy, or one this application exported. "
+            "It is read as you type and every line is accounted for.")
+        paste.clicked.connect(self.pasteRequested.emit)
+        self.card.add(paste)
 
         tools = QHBoxLayout()
         tools.setSpacing(4)

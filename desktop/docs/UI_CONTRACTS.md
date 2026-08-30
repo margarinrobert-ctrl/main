@@ -130,6 +130,61 @@ Edit, so a result can never belong to text no longer on screen. `Paste from
 clipboard` replaces the box rather than appending. Selecting a row moves the
 source cursor to that line.
 
+### The result on screen belongs to one strategy, one dataset, one parameter set
+`MainWindow._clear_result(reason)` drops the trade markers, the equity curve,
+the statistics, the blotter, the monthly table, the drawdown table and the
+headline. It is called from **every** path that invalidates a run: selecting a
+different strategy, selecting none, changing a parameter, and loading different
+bars.
+
+The defect it fixes: the chart's *indicators* followed the selection while the
+trades, blotter and headline did not, so the window named one strategy and
+showed another's profit — reported as "the charts is not the same as selected".
+The early return when there is no result keeps a second call from overwriting
+the status line with a message about something already gone.
+
+`ui/widgets/context_bar.py` — `ContextBar` is the other half: a fixed strip
+above everything, monospace and fixed-order, reporting symbol, timeframe, bar
+count, date range, selected strategy, and **whose results are on screen**.
+`MainWindow._refresh_context()` is called from the same set of paths. A strip
+reading "Donchian Channel Breakout" beside "showing MACD Trend · 101 trades"
+would be a visible contradiction; the two silently disagreeing was not.
+
+### A scroll must not rewrite what it passes over
+`ui/widgets/common.py` — `install_global_wheel_guard()` puts one event filter
+on the `QApplication`, so widgets created later (the risk form rebuilds itself
+whenever the sizing mode changes) are covered without a per-site sweep.
+
+A wheel over an **unfocused** `QComboBox`, `QAbstractSpinBox` or `QSlider` is
+forwarded to the nearest `QAbstractScrollArea` viewport and blocked from the
+widget; over a focused one it passes through, because clicking in first is
+unambiguous. Where there is no scrolling ancestor nothing changes — the defect
+only exists inside a scroll area.
+
+Measured before it existed: one three-notch scroll down the left sidebar
+switched the selected strategy, moved starting capital from 100,000 to 97,000
+and took units per trade from 1.0 to 0.0001. Forwarding rather than swallowing
+matters as much as the block: fixing the value and breaking the scrolling is
+the same bug wearing a different hat, and `test_the_panel_still_scrolls_when_
+the_wheel_is_guarded` is what keeps both halves honest.
+
+### `ui/dialogs/variants_dialog.py` — `VariantsDialog(spec, bars, config, parent)`
+Runs `finder.variants.search_variants` on a `QThread` so the window keeps
+answering, with a progress bar naming the variant in flight and a Stop that
+leaves the report correctly priced for what was actually tried.
+
+The table sorts on **values**, not on the rendered strings: a column sorted as
+text puts `-703.32` above `+356.42` because `-` precedes `+`, silently
+reversing the ranking the whole dialog exists to show. `_SortableItem` carries
+the numeric key on a private role and compares on that.
+
+The headline is green only when `report.improved` — which requires the
+deflated Sharpe to clear **0.95**, not merely to beat the best-of-N benchmark.
+Anything else is amber, including "clears the benchmark but is not
+significant", because that is not a green light. Saving a winner is allowed
+either way, and writes the try count and the verdict into the strategy's
+description so the number travels with what produced it.
+
 ### `ui/dialogs/combine_dialog.py` — `CombineStrategiesDialog(store, bars, parent)`
 Tick two or more saved or built-in strategies; entry mode, exit mode, vote
 threshold and the settings source are four controls, and the preview recomputes

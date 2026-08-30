@@ -21,6 +21,7 @@ class StartHere(QWidget):
 
     importRequested = Signal()
     findRequested = Signal()
+    pasteRequested = Signal()
     dismissed = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -49,7 +50,7 @@ class StartHere(QWidget):
 
         self._steps: list[QLabel] = []
         for text in ("Load some data",
-                     "Pick or find a strategy",
+                     "Pick a strategy, paste one, or search for one",
                      "Press RUN BACKTEST"):
             label = QLabel(text)
             label.setFont(Fonts.body(9))
@@ -62,6 +63,14 @@ class StartHere(QWidget):
         self.import_button = QPushButton("Import a CSV")
         self.import_button.clicked.connect(self.importRequested)
         buttons.addWidget(self.import_button)
+        # Someone who already has a strategy arrives holding a Pine script.
+        # Until this button existed the only route was a menu item, and the
+        # feature was reported missing by a user who had been using the app.
+        self.paste_button = QPushButton("Paste Pine")
+        self.paste_button.setToolTip(
+            "Paste a Pine Script strategy and see exactly what converted")
+        self.paste_button.clicked.connect(self.pasteRequested)
+        buttons.addWidget(self.paste_button)
         self.find_button = QPushButton("Find strategies")
         self.find_button.setObjectName("Primary")
         self.find_button.clicked.connect(self.findRequested)
@@ -75,7 +84,8 @@ class StartHere(QWidget):
         """Tick the steps off, and hide the strip once all three are done."""
         for label, done, text in zip(
                 self._steps, (has_data, has_strategy, has_result),
-                ("Load some data", "Pick or find a strategy",
+                ("Load some data",
+                 "Pick a strategy, paste one, or search for one",
                  "Press RUN BACKTEST")):
             mark = "✓" if done else "•"
             colour = PALETTE.success if done else PALETTE.text_dim

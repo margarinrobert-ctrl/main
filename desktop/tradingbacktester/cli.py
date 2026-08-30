@@ -877,6 +877,62 @@ def cmd_convert(args: argparse.Namespace) -> int:
     return 0 if report.faithful else 2
 
 
+def cmd_variants(args: argparse.Namespace) -> int:
+    """Search one strategy's neighbourhood and price whatever wins.
+
+    Exits 0 whether or not a better version was found: "nothing beat what you
+    have" is a result, and a script that treats it as failure would retry the
+    search until noise obliged.
+    """
+    from .finder.variants import search_variants
+
+    spec = _resolve_spec(args)
+    bars, data_name = _resolve_bars(args)
+    report = search_variants(spec, bars, _config_for(spec, args.capital),
+                             max_variants=args.max_variants)
+
+    if args.json:
+        print(json.dumps({
+            "strategy": spec.name, "dataset": data_name,
+            "tried": report.tried, "improved": report.improved,
+            "headline": report.headline(),
+            "baseline": {"trades": report.baseline.trades,
+                         "per_trade": report.baseline.per_trade},
+            "best": None if report.best is None else {
+                "label": report.best.label,
+                "trades": report.best.trades,
+                "per_trade": report.best.per_trade,
+                "excess_per_trade": report.best.excess_per_trade,
+                "changes": report.best.changes,
+            },
+            "deflated": (report.deflated.to_dict()
+                         if report.deflated is not None else None),
+            "notes": report.notes,
+            "spec": None if report.best is None else report.best.spec.to_dict(),
+        }, indent=2))
+        return 0
+
+    print(f"{spec.name} on {data_name}, {len(bars):,} bars")
+    print()
+    for line in report.lines():
+        print(line)
+
+    if args.save and report.best is not None:
+        from .strategy.storage import StrategyStore
+
+        winner = report.best
+        kept = winner.spec.copy(f"{spec.name} — {winner.label}")
+        verdict = "survived" if report.improved else "did NOT survive"
+        kept.description = (
+            f"A variant of '{spec.name}' found by searching {report.tried} of "
+            f"them.\nChange: {winner.label}.\nIt {verdict} being priced for "
+            f"that search.")
+        kept.tags = list(kept.tags) + ["variant"]
+        StrategyStore(_workspace(args)).save(kept)
+        print(f"\nSaved '{kept.name}'.")
+    return 0
+
+
 def cmd_combine(args: argparse.Namespace) -> int:
     """Merge several strategies into one and say what the merge decided.
 
@@ -1306,6 +1362,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("strategies", help="List strategies")
     p.set_defaults(func=cmd_strategies)
+
+    p = sub.add_parser(
+        "variants",
+        help="Search a strategy's own neighbourhood for a better version")
+    p.add_argument("strategy", help="Name of a saved or built-in strategy")
+    p.add_argument("--data", required=True,
+                   help="Dataset name, shipped dataset, or a path to a CSV")
+    p.add_argument("--max-variants", type=int, default=400,
+                   dest="max_variants",
+                   help="Cap on how many variants to try. Trying more makes "
+                        "the deflation stricter, not the result better.")
+    p.add_argument("--capital", type=float, default=100_000.0,
+                   help="Starting capital")
+    p.add_argument("--save", action="store_true",
+                   help="Save the winner as a new strategy, with how many "
+                        "were tried recorded in its description")
+    p.add_argument("--json", action="store_true", help="Machine-readable output")
+    p.set_defaults(func=cmd_variants)
 
     p = sub.add_parser(
         "combine",

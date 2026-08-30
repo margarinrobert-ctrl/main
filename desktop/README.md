@@ -62,6 +62,7 @@ SVG, no external assets and no network requests.
 - [Importing a strategy you already have](#importing-a-strategy-you-already-have)
 - [The research loop](#the-research-loop)
 - [The research dashboard](#the-research-dashboard)
+- [Finding a better version of what you have](#finding-a-better-version-of-what-you-have)
 - [Combining strategies](#combining-strategies)
 - [Which indicators actually predict anything](#which-indicators-actually-predict-anything)
 - [Finding anomalies](#finding-anomalies)
@@ -806,6 +807,64 @@ across.
 One more caveat it raises on sight: Pine's `==` compares floating-point values
 exactly, and this engine compares them within a tolerance. On continuous series
 the two rarely agree, so any `==` in a rule is flagged.
+
+---
+
+## Finding a better version of what you have
+
+**Strategy → Find a Better Version…**, `Ctrl+Shift+B`, or
+`cli variants "MACD Trend" --data "US30 15m"`.
+
+This takes the strategy you have selected and walks its own neighbourhood:
+every numeric parameter and every exit level moved up and down its own scale,
+one change at a time, then the best few together. Rungs are on a *ratio*
+scale, not a fixed step — +2 on a 5-period average is a different change from
++2 on a 200-period one, and a sweep that treats them alike spends all its
+tries in the wrong place on one of them.
+
+Three things make it different from turning the optimiser loose:
+
+**The winner is priced for the number of tries that found it.** Trying
+twenty-eight variants and keeping the best is a search with twenty-eight tries
+in it, and the best of twenty-eight coin flips looks impressive. The winner is
+deflated against that count, and the headline says **does NOT survive** in
+those words whenever it does not — which, on the shipped US30 data, is what it
+says.
+
+**"Survives" means the 0.95 threshold, not merely clearing the benchmark.**
+Clearing says the result is above what luck *typically* reaches; significance
+says it is above what luck *plausibly* reaches. Reporting the first as success
+while the line underneath reads "not significant" is a contradiction the
+reader resolves in the flattering direction.
+
+**A lonely peak is flagged.** A parameter that beats the baseline at exactly
+one value and at none of its neighbours is the shape of a coincidence, and the
+report says so rather than leaving you to notice.
+
+Saving a winner writes how many variants were tried, and whether it survived,
+into the strategy's own description — so the number can never be separated
+from what produced it.
+
+### Why there is no neural network in here
+
+Because it was measured, not assumed. 134 causal features × 4 horizons × 2
+timeframes is 1,072 information-coefficient tests; **one** survives
+multiplicity correction, and its edge is 0.28 ticks against a 6-tick round
+turn. There is no deep structure for a model to find that a parameter sweep
+cannot, and a model with the capacity to fit a few hundred trades will fit the
+noise in them.
+
+What ships instead is a deliberately small logistic model over a strategy's
+own trades, trained on the earlier ones and scored on the later ones with a
+purge gap between, using only what was known when the trade *opened* — never
+MAE, MFE, bars held or the exit price, which are outcomes and would produce a
+model that predicts the winner perfectly and generalises to nothing.
+
+On US30 15m it rejects every held-out trade. With a 31.4% win rate the
+cheapest way to look accurate is to call everything a loser, and that is what
+it learns; its 68.6% "accuracy" is the losing rate. **The tool says exactly
+that**, because a filter reported at 68.6% accuracy and nothing else would be
+a lie told with a true number.
 
 ---
 
@@ -1625,6 +1684,7 @@ python -m tradingbacktester.cli montecarlo "EMA Cross + RSI" --data "US30 30m" \
     --method block --draws 5000
 python -m tradingbacktester.cli mirror "MACD Trend" --data "US30 30m"
 python -m tradingbacktester.cli convert my_strategy.pine --save
+python -m tradingbacktester.cli variants "MACD Trend" --data "US30 15m" --save
 python -m tradingbacktester.cli combine --strategy "MACD Trend" \
     --strategy "Donchian Channel Breakout" --mode majority \
     --data "US30 15m" --save
