@@ -1,0 +1,157 @@
+//@version=6
+// =============================================================================================
+// DONCHIAN DISPLACED BREAK — 07:00-11:00 New York, 15m.   v1
+//
+// A Donchian(20) breakout that requires the close to clear the channel by a FULL ATR before it
+// counts. One trade per session, stop 1.5 ATR, target 2.0 ATR, flat by 11:00.
+//
+// ┌───────────────────────────────────────────────────────────────────────────────────────────┐
+// │ READ THIS BEFORE TRADING IT.  THIS STRATEGY FAILED ITS OUT-OF-SAMPLE TEST.                │
+// │                                                                                            │
+// │ It is published because it was the best of 10,257 configurations on the research block,    │
+// │ not because it works. On the locked block it does not.                                     │
+// └───────────────────────────────────────────────────────────────────────────────────────────┘
+//
+// WHAT IT MEASURED
+// Research block (first 65% of sessions, 2016-11 -> 2022-08), NAS 15m, one contract, 2.0 pts
+// round turn + 0.25 pts slippage per side, scored against a matched control (random entries with
+// the same side mix, same ATR geometry, same minute-of-day histogram):
+//
+//     628 trades   exp +0.86 pts/trade   excess over control +3.33   z +2.28   p 0.0075
+//
+// It was the ONLY configuration in the whole study with positive post-cost expectancy on the
+// research block, and it was found independently by three separate search agents.
+//
+// AND THEN, ON THE LOCKED BLOCK (2022-08 -> 2025-10), READ ONCE, RULES FROZEN IN CODE FIRST:
+//
+//     NAS    excess +0.59   p 0.439      (research was +2.44, p 0.039)
+//     US30   excess -6.66   p 0.920      (research was +7.12, p 0.013)
+//
+// It decayed to nothing on NAS and reversed hard on US30. That is the correct shape for an
+// overfit rule -- it decayed rather than appearing -- but it is still a failure.
+//
+// WHY IT FAILED, FROM THE ADVERSARIAL AUDIT (which called it BEFORE the holdout was opened)
+//   * NOT leakage. Eight independent probes came back clean, the rule reproduces exactly from
+//     its written description, and the selectivity test PASSED at p 0.0019 against 20,000
+//     random filters of identical selectivity.
+//   * Effective multiplicity. The "28-cell, 100% positive plateau" it was chosen on is a NESTED
+//     surface with mean pairwise session-P&L correlation 0.60 -- worth ~2.4 independent
+//     observations, not 28. Li & Ji effective test count over the 56-cell surface: M_eff = 19.
+//     The perturbation verdict is a RIDGE, not a plateau.
+//   * Regime concentration. Dropping 2021 alone took the US30 result from excess +7.57 (z 2.41)
+//     to +4.99 (z 1.43, p 0.079). Dropping 2020+2021 turned expectancy negative.
+//
+// A 169,344-cell VectorBT sweep of this same family later produced a best cell of +7.22 pts on
+// NAS. A matched circular-shift null -- real prices, real bar geometry, real signal density,
+// only the signal ALIGNMENT destroyed -- produced best cells of +7.52 and +5.87 on matched cell
+// counts. The best of 62,640 real combinations sits INSIDE the null range.
+//
+// WHAT THE FAMILY ACTUALLY HAS
+// The break does carry information: in a symmetric k-ATR race it beats a matched control at
+// every width from 1.0 ATR up, peaking 51.1% vs 47.7% (z +3.72), session-block bootstrapped to
+// +3.39% +/- 1.06%, p 0.0025. At the traded geometry that is 43.1% against a 40.1% control with
+// breakeven at 42.9% -- it clears its own geometry by 0.3 points and its cost by nothing.
+// Gross expectancy is negative at every lookback on both instruments, so it also loses at a
+// round turn of ZERO. This is not an edge that costs destroyed; there is no edge to destroy.
+//
+// USE THIS AS A REFERENCE IMPLEMENTATION AND A NULL BASELINE. Not as a trading system.
+//
+// TRADINGVIEW SETUP
+//   * "Script execution" must have ONLY "On bar close" ticked. Every rule reads a bar's CLOSE;
+//     the intrabar options replace `close` with the running price and fire a different strategy.
+//   * Chart timeframe 15m. The window and the ATR are 15m-specific.
+// =============================================================================================
+
+strategy("Donchian Displaced Break 07-11 NY", overlay=true,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     initial_capital=100000, currency=currency.NONE,
+     commission_type=strategy.commission.cash_per_order, commission_value=1.0,
+     slippage=1, calc_on_every_tick=false, process_orders_on_close=false,
+     pyramiding=0)
+
+// ------------------------------------------------------------------------------- inputs
+lenEntry  = input.int(20,    "Donchian lookback",       minval=2,   group="Signal")
+bufAtr    = input.float(1.0, "Break buffer (x ATR)",    minval=0.0, step=0.05, group="Signal")
+atrLen    = input.int(14,    "ATR length",              minval=2,   group="Signal")
+stopMult  = input.float(1.5, "Stop (x ATR)",            minval=0.1, step=0.05, group="Exit")
+targMult  = input.float(2.0, "Target (x ATR)",          minval=0.1, step=0.05, group="Exit")
+maxHold   = input.int(16,    "Max hold (bars)",         minval=1,   group="Exit")
+winStart  = input.int(420,   "Window start (min past NY midnight)", group="Session")
+winEnd    = input.int(660,   "Window end / flatten",                group="Session")
+allowLong = input.bool(true,  "Longs",  group="Direction")
+allowShort= input.bool(true,  "Shorts", group="Direction")
+
+// ------------------------------------------------------------------- ATR, house convention
+// ta.atr() is Wilder-smoothed. Every number quoted above uses ema(tr, n). They are NOT the same
+// and swapping them changes the barrier sizes. This has shipped broken once before.
+atrV = ta.ema(ta.tr(true), atrLen)
+
+// ------------------------------------------------------- Donchian, EXCLUDING the current bar
+// A bar must not be able to break out of a channel it is itself setting. `[1]` is the whole
+// difference between a strategy and a look-ahead.
+upper = ta.highest(high, lenEntry)[1]
+lower = ta.lowest(low,  lenEntry)[1]
+
+// ------------------------------------------------------------------------ New York clock
+// Bare `hour` / `minute` are EXCHANGE time -- Chicago for CME products, not New York. Every
+// window in the research is New York wall clock, so the timezone is passed explicitly.
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+inWin  = nyMin >= winStart and nyMin < winEnd
+mustFlat = nyMin >= winEnd
+
+// one trade per session; the flag resets on the New York calendar day
+newDay = ta.change(time("D", "America/New_York")) != 0
+var bool tookToday = false
+if newDay
+    tookToday := false
+
+// ----------------------------------------------------------------------------- triggers
+okBar  = barstate.isconfirmed and not na(upper) and not na(lower) and not na(atrV) and atrV > 0
+longSig  = okBar and inWin and allowLong  and close > upper + bufAtr * atrV
+shortSig = okBar and inWin and allowShort and close < lower - bufAtr * atrV
+
+flat = strategy.position_size == 0
+canEnter = flat and not tookToday
+
+// ATR frozen at the SIGNAL bar sizes the barriers -- not the fill bar's ATR, which is a
+// different number and would be read after the order was sent.
+var float sigAtr = na
+var int   entryBar = na
+
+if canEnter and longSig
+    sigAtr := atrV
+    tookToday := true
+    strategy.entry("L", strategy.long)
+
+if canEnter and shortSig
+    sigAtr := atrV
+    tookToday := true
+    strategy.entry("S", strategy.short)
+
+if flat[1] and not flat
+    entryBar := bar_index
+
+// -------------------------------------------------------------------------------- exits
+longStop  = strategy.position_avg_price - stopMult * sigAtr
+longTarg  = strategy.position_avg_price + targMult * sigAtr
+shortStop = strategy.position_avg_price + stopMult * sigAtr
+shortTarg = strategy.position_avg_price - targMult * sigAtr
+
+if strategy.position_size > 0
+    strategy.exit("L-x", from_entry="L", stop=longStop, limit=longTarg)
+
+if strategy.position_size < 0
+    strategy.exit("S-x", from_entry="S", stop=shortStop, limit=shortTarg)
+
+// time stop and the 11:00 flatten. Both close at market on the next open, which is what the
+// research engine does.
+heldTooLong = not flat and not na(entryBar) and (bar_index - entryBar) >= maxHold
+if heldTooLong or (not flat and mustFlat)
+    strategy.close_all(comment = mustFlat ? "flat 11:00" : "time stop")
+
+// --------------------------------------------------------------------------------- plots
+plot(inWin ? upper + bufAtr * atrV : na, "Break level up",   color=color.new(color.teal, 0),   style=plot.style_linebr)
+plot(inWin ? lower - bufAtr * atrV : na, "Break level down", color=color.new(color.maroon, 0), style=plot.style_linebr)
+plot(inWin ? upper : na, "Channel up",   color=color.new(color.teal, 60),   style=plot.style_linebr)
+plot(inWin ? lower : na, "Channel down", color=color.new(color.maroon, 60), style=plot.style_linebr)
+bgcolor(inWin ? color.new(color.blue, 94) : na, title="07:00-11:00 NY")
