@@ -184,6 +184,10 @@ class MainWindow(QMainWindow):
         act("mirror", "Mirror-Market Test…", "compare", "",
             "Run this strategy again on a market with the same volatility and "
             "the opposite drift", self.on_mirror_test)
+        act("diagnose", "Diagnose This Run…", "search", "Ctrl+D",
+            "Measure what this result actually rests on — the matched control, "
+            "concentration, costs, exit mix — and how correlated it is with "
+            "the other runs", self.on_diagnose)
 
         act("export_trades", "Export Trades to CSV…", "export", "",
             "Save the trade list", self.on_export_trades)
@@ -266,6 +270,7 @@ class MainWindow(QMainWindow):
         # Kept so Simple Mode can take them off the toolbar rather than merely
         # disabling them: a greyed-out button still has to be understood.
         self._advanced_toolbar = [tb.addAction(self.act_optimize),
+                                  tb.addAction(self.act_diagnose),
                                   tb.addAction(self.act_compare)]
         tb.addAction(self.act_save_run)
         tb.addSeparator()
@@ -336,6 +341,7 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_compare)
         m.addSeparator()
         m.addAction(self.act_optimize)
+        m.addAction(self.act_diagnose)
         m.addAction(self.act_montecarlo)
         m.addAction(self.act_mirror)
 
@@ -1003,21 +1009,74 @@ class MainWindow(QMainWindow):
             return
         from .dialogs.strategy_editor import StrategyEditor
 
-        editor = StrategyEditor(self._spec.copy(self._spec.name), self,
-                                bars=self._view_bars)
-        editor.spec.id = self._spec.id
+        draft = self._spec.copy(self._spec.name)
+        draft.id = self._spec.id
+        # Carry unsaved risk-panel edits *into* the editor, so its Risk tab
+        # opens showing what is visible behind the dialog rather than the last
+        # saved values.  Folding the panel back in afterwards -- which is what
+        # this used to do -- silently discarded every edit made on that tab:
+        # set a 4.25 ATR stop there, accept, save, and the strategy still had
+        # the old 2.0.  The dialog is downstream of the panel, so it wins.
+        self._apply_panel_settings(draft)
+        editor = StrategyEditor(draft, self, bars=self._view_bars)
         if editor.exec() != editor.DialogCode.Accepted:
             return
         try:
             edited = editor.spec
             edited.id = self._spec.id
-            self._apply_panel_settings(edited)
             saved = self.strategies.save(edited)
         except BacktesterError as exc:
             show_error(self, exc)
             return
         self.strategy_panel.refresh(saved.id)
         self.on_strategy_selected(saved.id)
+
+    def _offer_extraction(self, what: str) -> bool:
+        """Offer to name a strategy's hard-coded numbers, and do it if accepted.
+
+        A strategy pasted from Pine arrives as literals, so ``spec.params`` is
+        empty and the optimiser, walk-forward and the variant search all have
+        nothing to move.  Telling the user to "add some in the strategy editor
+        first" is true and useless: the numbers are already there, in the
+        indicator periods and the rule thresholds, and naming them is
+        mechanical.  So offer to do it rather than sending them away.
+
+        Returns True when the strategy now has parameters.
+        """
+        from ..strategy.parameterise import extract_parameters
+
+        if self._spec is None:
+            return False
+        try:
+            extraction = extract_parameters(self._spec)
+        except BacktesterError as exc:
+            show_error(self, exc)
+            return False
+        if not extraction.changed:
+            show_info(
+                self, "Nothing To Tune",
+                f"This strategy has no numbers to {what} — no indicator "
+                f"periods and no thresholds in its rules.\n\n"
+                + extraction.describe())
+            return False
+        if not confirm(
+                self, "Name The Numbers?",
+                f"'{self._spec.name}' has no named parameters, so there is "
+                f"nothing to {what} yet. Its numbers can be named "
+                f"automatically:\n\n{extraction.describe()}\n\n"
+                f"Name them now? The strategy keeps trading exactly as it "
+                f"does today — every default is the number already in it."):
+            return False
+        try:
+            saved = self.strategies.save(extraction.spec)
+        except BacktesterError as exc:
+            show_error(self, exc)
+            return False
+        self.strategy_panel.refresh(saved.id)
+        self.on_strategy_selected(saved.id)
+        self.status(f"Named {len(extraction.added)} parameters on "
+                    f"'{saved.name}'. It still trades exactly as before.")
+        return bool(self._spec is not None and self._spec.params)
 
     def _apply_panel_settings(self, spec: StrategySpec) -> None:
         """Fold the risk panel's current values back into the strategy."""
@@ -1418,10 +1477,7 @@ class MainWindow(QMainWindow):
             show_info(self, "Optimise",
                       "Load a dataset and select a strategy first.")
             return
-        if not self._spec.params:
-            show_info(self, "Optimise",
-                      "This strategy has no parameters to optimise. Add some in "
-                      "the strategy editor first.")
+        if not self._spec.params and not self._offer_extraction("optimise"):
             return
         from .dialogs.optimizer_dialog import OptimizerDialog
 
@@ -1438,6 +1494,65 @@ class MainWindow(QMainWindow):
                         "Remember that a grid search reports the best result on "
                         "past data, not a prediction.")
             self.on_run_backtest()
+
+    def on_diagnose(self) -> None:
+        """Measure what the current result actually rests on."""
+        if self._result is None or not self._result.trades:
+            show_info(self, "Diagnose",
+                      "Run a backtest first. There is nothing to measure until "
+                      "a run has produced trades — and a diagnosis of no "
+                      "trades would only be able to tell you that.")
+            return
+        from .dialogs.diagnose_dialog import DiagnoseDialog
+
+        DiagnoseDialog(self._result, self._spec, self._correlation_partners(),
+                       self).exec()
+
+    def _correlation_partners(self, limit: int = 11) -> list[Any]:
+        """Other runs worth correlating this one against.
+
+        Only runs on the **same instrument and timeframe**: correlating a
+        15-minute US100 strategy against an hourly NQ one measures the two
+        markets, not the two strategies, and the resulting matrix would look
+        like a diversification finding.  Anything already loaded for a
+        comparison comes first, then the most recent saved runs; one per
+        strategy, because the same strategy twice is not a second bet.
+        """
+        seen: set[str] = {str(getattr(self._result, "strategy_id", ""))
+                          or str(id(self._result))}
+        symbol = getattr(self._result, "instrument_symbol", "")
+        timeframe = getattr(self._result, "timeframe_label", "")
+        out: list[Any] = []
+
+        def _take(run: Any) -> None:
+            key = str(getattr(run, "strategy_id", "")) or str(id(run))
+            if key in seen or len(out) >= limit:
+                return
+            if (getattr(run, "instrument_symbol", "") != symbol
+                    or getattr(run, "timeframe_label", "") != timeframe):
+                return
+            seen.add(key)
+            out.append(run)
+
+        for run in (self._saved_results or []):
+            if run is not self._result:
+                _take(run)
+        try:
+            metas = self.backtests.list()
+        except BacktesterError:
+            return out
+        for meta in metas:
+            if len(out) >= limit:
+                break
+            if (meta.instrument_symbol != symbol
+                    or meta.timeframe_label != timeframe
+                    or str(meta.strategy_id) in seen or not meta.readable):
+                continue
+            try:
+                _take(self.backtests.load(meta.id))
+            except BacktesterError:
+                continue
+        return out
 
     def on_monte_carlo(self) -> None:
         if self._result is None or not self._result.trades:
@@ -1539,6 +1654,14 @@ class MainWindow(QMainWindow):
         if self._view_bars is None:
             show_info(self, "No Data",
                       "Load a dataset first: a variant is only better on data.")
+            return
+        # No axes means no search.  Without this the dialog opened, reported
+        # zero variants and gave no reason -- the reason being that a pasted
+        # strategy's numbers have no names yet.
+        from ..finder.variants import axes_for
+
+        if not axes_for(self._spec) and not self._offer_extraction(
+                "search around"):
             return
         from .dialogs.variants_dialog import VariantsDialog
 

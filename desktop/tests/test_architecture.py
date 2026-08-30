@@ -29,6 +29,8 @@ QT_FREE_MODULES = [
     "tradingbacktester.core.presentation",
     "tradingbacktester.core.textfmt",
     "tradingbacktester.core.types",
+    "tradingbacktester.analytics.correlation",
+    "tradingbacktester.analytics.diagnose",
     "tradingbacktester.analytics.metrics",
     "tradingbacktester.analytics.montecarlo",
     "tradingbacktester.data.csv_loader",
@@ -40,7 +42,9 @@ QT_FREE_MODULES = [
     "tradingbacktester.reports.html_report",
     "tradingbacktester.research.mirror",
     "tradingbacktester.storage.backtest_store",
+    "tradingbacktester.indicators.quant",
     "tradingbacktester.strategy.compiler",
+    "tradingbacktester.strategy.parameterise",
     "tradingbacktester.cli",
 ]
 

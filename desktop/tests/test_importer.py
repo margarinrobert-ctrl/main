@@ -151,7 +151,11 @@ def test_a_working_strategy_converts_faithfully():
 
 
 def test_identical_indicators_share_one_slot():
-    report = import_strategy(WORKING + "dup = ta.ema(close, 12)\n")
+    # ``name_numbers=False`` because this is about the *conversion*: with
+    # naming on, the periods read back as "$ema1_period" and the duplicate
+    # would be just as invisible whether or not it had been merged.
+    report = import_strategy(WORKING + "dup = ta.ema(close, 12)\n",
+                             name_numbers=False)
     periods = [s.params.get("period") for s in report.spec.indicators
                if s.indicator == "EMA"]
     assert sorted(periods) == [12, 26], "ta.ema(close, 12) was slotted twice"

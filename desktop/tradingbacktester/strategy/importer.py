@@ -141,6 +141,15 @@ class ImportReport:
     lines: list[Line] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    named: tuple[Any, ...] = ()
+    """Numbers that were turned into parameters on the way in.
+
+    A pasted strategy is all literals -- ``ta.ema(close, 100)`` and ``adx <
+    22`` -- so ``spec.params`` would be empty and the optimiser, walk-forward
+    and the variant search would each have nothing to move.  Naming them costs
+    nothing and changes nothing about what the strategy trades; see
+    :mod:`tradingbacktester.strategy.parameterise`.
+    """
 
     @property
     def unsupported(self) -> list[Line]:
@@ -172,6 +181,7 @@ class ImportReport:
             "spec": self.spec.to_dict() if self.spec is not None else None,
             "lines": [l.to_dict() for l in self.lines],
             "errors": list(self.errors), "warnings": list(self.warnings),
+            "named": [p.name for p in self.named],
         }
 
 
@@ -934,14 +944,40 @@ def _apply(converter: _Converter, entries: list, exits: list,
             "run. The lines below say what stopped each one.")
 
 
-def import_strategy(text: str) -> ImportReport:
+def import_strategy(text: str, *, name_numbers: bool = True) -> ImportReport:
     """Detect, parse and convert a pasted strategy.
 
     Always returns a report.  ``report.faithful`` is the flag that matters: it
     is True only when every behaviour-carrying line was represented, and a
     caller must not describe a backtest of ``report.spec`` as a backtest of the
     pasted strategy unless it is.
+
+    ``name_numbers`` promotes the strategy's hard-coded numbers to named
+    parameters as the last step.  It is on by default because a strategy
+    arriving without any is the reason three of this application's features --
+    the optimiser, walk-forward and the variant search -- would refuse to open
+    on it.  The promotion is a change of shape only, and
+    :func:`~tradingbacktester.strategy.parameterise.extract_parameters` is
+    tested trade-for-trade to keep it that way; pass False for the literal
+    conversion, which is what the round-trip tests want.
     """
+    report = _import_strategy(text)
+    if name_numbers and report.spec is not None:
+        from .parameterise import extract_parameters
+
+        try:
+            extraction = extract_parameters(report.spec)
+        except Exception:                     # noqa: BLE001
+            log.exception("Naming the numbers of an imported strategy failed")
+            return report
+        if extraction.changed:
+            report.spec = extraction.spec
+            report.named = extraction.added
+    return report
+
+
+def _import_strategy(text: str) -> ImportReport:
+    """The conversion itself, before anything is named."""
     report = ImportReport()
     report.detected, report.confidence, report.evidence = detect_format(text)
 

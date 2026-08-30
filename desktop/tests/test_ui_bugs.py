@@ -255,3 +255,182 @@ def test_the_context_bar_survives_having_no_data_at_all(window):
     window._refresh_context()
     assert window.context_bar.span.value.text() == "no data loaded"
     assert window.context_bar.state.value.text() == "nothing run yet"
+
+
+# --------------------------------------------------------------------------
+# Editing risk and exits must survive the dialog closing
+# --------------------------------------------------------------------------
+#
+# Reported as "when I try to edit the risk and exits select and apply some
+# selection and I press save and then backtest it doesn't save it goes back to
+# the previous settings".  It did exactly that: after the editor was accepted,
+# on_edit_strategy folded the MAIN WINDOW's risk panel back over the spec, and
+# that panel still held the values from before the dialog opened.  Every edit
+# made on the editor's Risk tab was overwritten a moment after being made.
+
+
+def _drive_editor(window, monkeypatch, change):
+    """Open Edit Strategy, apply ``change`` to its risk panel, accept."""
+    from PySide6.QtWidgets import QDialog
+
+    from tradingbacktester.ui.dialogs import strategy_editor as module
+
+    real = module.StrategyEditor
+
+    class Driven(real):
+        def exec(self):
+            config = self.risk_panel.build_config()
+            change(config)
+            self.risk_panel.apply_config(config)
+            self._accept()
+            return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(module, "StrategyEditor", Driven)
+    window.on_edit_strategy()
+
+
+def _select_first(window):
+    ident = window.strategy_panel.current_strategy_id()
+    if ident is None:
+        ident = window.strategies.list()[0].id
+        window.strategy_panel.refresh(ident)
+    window.on_strategy_selected(ident)
+    return ident
+
+
+def test_editing_the_exit_geometry_survives_the_dialog(window, monkeypatch):
+    ident = _select_first(window)
+    before = window._spec.exits.stop_loss_value
+
+    def change(config):
+        config.exits.stop_loss_enabled = True
+        config.exits.stop_loss_value = 4.25
+        config.exits.take_profit_enabled = True
+        config.exits.take_profit_value = 7.5
+
+    _drive_editor(window, monkeypatch, change)
+
+    assert before != 4.25, "the fixture already had the value under test"
+    assert window._spec.exits.stop_loss_value == 4.25
+    assert window._spec.exits.take_profit_value == 7.5
+    saved = window.strategies.load(window._spec.id)
+    assert saved.exits.stop_loss_value == 4.25, "it was not written to disk"
+    assert saved.id == ident
+
+
+def test_editing_risk_survives_the_dialog(window, monkeypatch):
+    _select_first(window)
+
+    def change(config):
+        config.risk.starting_capital = 250_000.0
+        config.starting_capital = 250_000.0
+        config.risk.fixed_units = 3.0
+
+    _drive_editor(window, monkeypatch, change)
+
+    assert window._spec.risk.starting_capital == 250_000.0
+    assert window._spec.risk.fixed_units == 3.0
+
+
+def test_the_panel_shows_what_was_just_saved(window, monkeypatch):
+    """Otherwise the next run uses the panel and ignores the edit."""
+    _select_first(window)
+
+    def change(config):
+        config.exits.stop_loss_enabled = True
+        config.exits.stop_loss_value = 3.75
+
+    _drive_editor(window, monkeypatch, change)
+    assert window.risk_panel.build_config().exits.stop_loss_value == 3.75
+
+
+def test_unsaved_panel_edits_are_carried_into_the_editor(window, monkeypatch):
+    """The old behaviour existed to keep these; the fix must not lose them."""
+    _select_first(window)
+    live = window.risk_panel.build_config()
+    live.exits.trailing_enabled = True
+    live.exits.trailing_value = 6.25
+    window.risk_panel.apply_config(live)
+
+    seen: dict[str, float] = {}
+
+    def change(config):
+        seen["trailing"] = config.exits.trailing_value
+        seen["enabled"] = config.exits.trailing_enabled
+
+    _drive_editor(window, monkeypatch, change)
+
+    assert seen["enabled"] is True
+    assert seen["trailing"] == 6.25, (
+        "the editor opened on the saved values, not on what the user could "
+        "see behind it")
+    assert window._spec.exits.trailing_value == 6.25
+
+
+# --------------------------------------------------------------------------
+# Closing a dialog must never take the application with it
+# --------------------------------------------------------------------------
+#
+# Qt destroys a running QThread by calling qFatal: the process aborts with
+# SIGABRT, no dialog, no log line, no chance to save.  "Find a Better
+# Version…" started its search on a thread and connected Close straight to
+# reject(), so closing it mid-search killed the whole application.  Measured
+# before the fix: exit code 134 and "QThread: Destroyed while thread is still
+# running" on stderr.
+
+
+@pytest.fixture
+def variants_dialog(qapp, bars):
+    from tradingbacktester.ui.dialogs.variants_dialog import VariantsDialog
+
+    return VariantsDialog(builtin.donchian_breakout(), bars, BacktestConfig())
+
+
+def test_closing_mid_search_stops_the_thread(variants_dialog):
+    variants_dialog.on_search()
+    assert variants_dialog._thread is not None
+    variants_dialog.reject()
+    assert variants_dialog._thread is None, (
+        "the dialog still owns a thread it is about to destroy")
+
+
+def test_the_close_event_releases_it_too(variants_dialog):
+    from PySide6.QtGui import QCloseEvent
+
+    variants_dialog.on_search()
+    variants_dialog.closeEvent(QCloseEvent())
+    assert variants_dialog._thread is None
+
+
+def test_a_search_that_will_not_stop_is_parked_not_destroyed(variants_dialog,
+                                                             monkeypatch):
+    """The case that actually aborts: wait() times out and it is still running."""
+    from tradingbacktester.ui.dialogs import variants_dialog as module
+
+    variants_dialog.on_search()
+    thread = variants_dialog._thread
+    assert thread is not None
+    monkeypatch.setattr(type(thread), "wait", lambda self, ms=0: False)
+    variants_dialog.reject()
+
+    assert thread in module._ORPHANS, (
+        "a thread that would not stop was dropped on the floor; destroying it "
+        "aborts the process")
+    # Let it actually finish so the test does not leak it.
+    monkeypatch.undo()
+    thread.stop()
+    thread.wait(30_000)
+    module._prune_orphans()
+    assert thread not in module._ORPHANS
+
+
+def test_releasing_twice_is_harmless(variants_dialog):
+    variants_dialog.on_search()
+    variants_dialog._release_search()
+    variants_dialog._release_search()
+    assert variants_dialog._thread is None
+
+
+def test_closing_before_any_search_is_fine(variants_dialog):
+    variants_dialog.reject()
+    assert variants_dialog._thread is None

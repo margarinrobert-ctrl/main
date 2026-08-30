@@ -1534,6 +1534,7 @@ def register_all() -> IndicatorRegistry:
 # imported by `register_all()` -- REQUIRED_KEYS must be checked against a
 # registry that is already complete.
 from . import extended as _extended            # noqa: E402,F401  (side effect)
+from . import quant as _quant                  # noqa: E402,F401  (side effect)
 
 register_all()
 log.debug("indicator library registered %d indicators", len(REGISTRY.all()))

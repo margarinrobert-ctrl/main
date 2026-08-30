@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -787,6 +788,87 @@ def cmd_mirror(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_diagnose(args: argparse.Namespace) -> int:
+    """Measure what a finished run actually rests on."""
+    from .analytics.diagnose import diagnose
+
+    bars, name = _resolve_bars(args)
+    spec = _resolve_spec(args)
+    config = _config_for(spec, args.capital)
+    stream = sys.stderr if args.json else sys.stdout
+    print(f"{spec.name} on {name} ({len(bars):,} bars, {bars.timeframe.label})",
+          file=stream)
+
+    from .engine.backtester import Backtester
+
+    result = Backtester(bars, spec, config, progress=_stderr_progress()).run()
+    _clear_progress()
+    report = diagnose(result, spec, control=not args.no_control,
+                      draws=args.draws)
+    if args.json:
+        print(json.dumps({
+            "trades": report.trades,
+            "findings": [{"key": f.key, "severity": f.severity,
+                          "headline": f.headline,
+                          "measurement": f.measurement,
+                          "suggestion": f.suggestion}
+                         for f in report.findings],
+            "notes": list(report.notes),
+        }, indent=2))
+    else:
+        print()
+        print(report.describe())
+    # A blocker is not a crash: the run happened and the report is the point.
+    return 0
+
+
+def cmd_correlate(args: argparse.Namespace) -> int:
+    """How much of a set of strategies is really one bet."""
+    from .analytics.correlation import correlate_results
+    from .engine.backtester import Backtester
+
+    bars, name = _resolve_bars(args)
+    stream = sys.stderr if args.json else sys.stdout
+    specs = [_spec_named(args, n) for n in args.strategies]
+    print(f"{len(specs)} strategies on {name} ({len(bars):,} bars, "
+          f"{bars.timeframe.label})", file=stream)
+
+    results = []
+    for spec in specs:
+        config = _config_for(spec, args.capital)
+        results.append(Backtester(bars, spec, config).run())
+    report = correlate_results(results, unit=args.unit)
+
+    if args.json:
+        print(json.dumps({
+            "names": list(report.names),
+            "matrix": [[None if not math.isfinite(v) else round(float(v), 6)
+                        for v in row] for row in report.matrix],
+            "effective_bets": report.effective_bets,
+            "pairs": [{"a": p.a, "b": p.b, "correlation": p.correlation,
+                       "shared_periods": p.shared_periods,
+                       "exposure_overlap": p.exposure_overlap,
+                       "same_side_share": p.same_side_share,
+                       "entry_coincidence": p.entry_coincidence}
+                      for p in report.pairs],
+            "notes": list(report.notes),
+        }, indent=2))
+    else:
+        print()
+        width = max(len(n) for n in report.names) + 2
+        header = " " * width + "".join(f"{n[:10]:>12s}" for n in report.names)
+        print(header)
+        for i, row_name in enumerate(report.names):
+            cells = "".join(
+                f"{'   —':>12s}" if not math.isfinite(report.matrix[i, j])
+                else f"{report.matrix[i, j]:>+12.2f}"
+                for j in range(len(report.names)))
+            print(f"{row_name[:width - 2]:<{width}s}{cells}")
+        print()
+        print(report.describe())
+    return 0
+
+
 def cmd_research(args: argparse.Namespace) -> int:
     """The research loop, end to end, reporting failures as well as findings."""
     from .finder import style as get_style
@@ -1359,6 +1441,46 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")
     p.set_defaults(func=cmd_mirror)
+
+    p = sub.add_parser(
+        "diagnose",
+        help="Measure what a run rests on, and what to test next",
+        description="Runs the strategy, then measures the result: whether it "
+                    "beat random entries matched to its own timing, where the "
+                    "money is made, how much of it is a handful of trades, "
+                    "what it costs to trade, and whether it can be tuned at "
+                    "all. Every finding carries the numbers behind it and "
+                    "names an experiment; none of them predicts that a change "
+                    "will help.")
+    p.add_argument("strategy")
+    p.add_argument("--data", required=True)
+    p.add_argument("--capital", type=float, default=100_000.0)
+    p.add_argument("--draws", type=int, default=2000,
+                   help="Random entry sets drawn for the matched control")
+    p.add_argument("--no-control", action="store_true",
+                   help="Skip the matched control, which is the slow part")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_diagnose)
+
+    p = sub.add_parser(
+        "correlate",
+        help="Measure how much of a set of strategies is really one bet",
+        description="Runs each strategy on the same data and correlates their "
+                    "returns, their time in the market and their entries. The "
+                    "summary is the effective number of independent bets, "
+                    "which is what five strategies at 0.8 correlation "
+                    "actually amount to. A low correlation is not by itself a "
+                    "reason to add a strategy.")
+    p.add_argument("strategies", nargs="+",
+                   help="Two or more saved or built-in strategy names")
+    p.add_argument("--data", required=True)
+    p.add_argument("--capital", type=float, default=100_000.0)
+    p.add_argument("--unit", default="day", choices=("day", "week", "month"),
+                   help="Calendar the returns are correlated on")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--symbol", default="")
+    p.set_defaults(func=cmd_correlate)
 
     p = sub.add_parser("strategies", help="List strategies")
     p.set_defaults(func=cmd_strategies)

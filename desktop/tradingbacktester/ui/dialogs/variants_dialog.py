@@ -32,6 +32,27 @@ _COLUMNS = ("Change", "Trades", "Per trade", "vs current", "Sharpe", "Max DD")
 #: Qt sorts on this role when it is present, so the numbers sort as numbers.
 _SORT_ROLE = Qt.ItemDataRole.UserRole + 1
 
+#: How long to wait for a stopped search before giving up on it.  The search
+#: only checks its stop flag between variants, so on a large dataset one
+#: variant can still be running when the dialog closes.
+_STOP_WAIT_MS = 5000
+
+#: Searches that outlived their dialog.
+#:
+#: Destroying a running QThread aborts the whole process -- Qt calls
+#: ``qFatal``, and the application dies with no dialog, no log line and no
+#: chance to save.  Closing this dialog mid-search did exactly that.  A search
+#: that will not stop in time is therefore parked here, where a reference
+#: outlives the dialog, and is collected once it has actually finished.
+_ORPHANS: set[QThread] = set()
+
+
+def _prune_orphans() -> None:
+    for thread in list(_ORPHANS):
+        if thread.isFinished():
+            thread.wait(0)
+            _ORPHANS.discard(thread)
+
 
 class _SortableItem(QTableWidgetItem):
     """A cell that sorts on its value and displays its formatting."""
@@ -187,6 +208,42 @@ class VariantsDialog(QDialog):
         if self._thread is not None:
             self._thread.stop()
             self.headline.setText("Stopping after the current variant…")
+
+    # -- closing, without taking the application with it -----------------
+
+    def _release_search(self) -> None:
+        """Make it safe for this dialog to be destroyed.
+
+        Qt aborts the process outright when a running QThread is destroyed, so
+        closing the dialog while the search was still walking killed the whole
+        application. The search is asked to stop and waited for; if it will not
+        stop in time it is parked in :data:`_ORPHANS` rather than destroyed,
+        with its signals disconnected so it cannot touch a dialog that is on
+        its way out.
+        """
+        _prune_orphans()
+        thread = self._thread
+        if thread is None:
+            return
+        self._thread = None
+        thread.stop()
+        for signal in (thread.progressed, thread.finished_ok, thread.failed,
+                       thread.finished):
+            try:
+                signal.disconnect()
+            except (RuntimeError, TypeError):   # already disconnected
+                pass
+        if not thread.wait(_STOP_WAIT_MS):
+            log.info("A variant search outlived its dialog; letting it finish.")
+            _ORPHANS.add(thread)
+
+    def done(self, code: int) -> None:      # noqa: D102 - QDialog override
+        self._release_search()
+        super().done(code)
+
+    def closeEvent(self, event: Any) -> None:   # noqa: D102 - QWidget override
+        self._release_search()
+        super().closeEvent(event)
 
     def _on_progress(self, done: int, total: int, label: str) -> None:
         self.progress.setRange(0, max(1, total))

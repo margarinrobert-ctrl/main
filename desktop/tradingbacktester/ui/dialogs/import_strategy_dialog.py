@@ -384,6 +384,16 @@ class ImportStrategyDialog(QDialog):
             out.append("Could not be translated:")
             for line in report.unsupported:
                 out.append(f"  line {line.line}: {line.detail}")
+        if report.named:
+            out.append("")
+            out.append(
+                f"{len(report.named)} hard-coded number"
+                f"{'' if len(report.named) == 1 else 's'} became named "
+                f"parameters, so this can be optimised, walked forward and "
+                f"searched around. Each keeps the value it already had, so "
+                f"what the strategy trades is unchanged:")
+            for param in report.named:
+                out.append(f"  • {param.describe()}")
         if report.spec is not None:
             out.append("")
             out.append(report.spec.describe()

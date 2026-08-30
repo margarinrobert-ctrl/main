@@ -72,6 +72,8 @@ SVG, no external assets and no network requests.
 - [Monte Carlo: what else could have happened?](#monte-carlo-what-else-could-have-happened)
 - [The mirror market: was it the rule or the rally?](#the-mirror-market-was-it-the-rule-or-the-rally)
 - [Is it an edge, or is it exposure?](#is-it-an-edge-or-is-it-exposure)
+- [Diagnosing a run](#diagnosing-a-run)
+- [How much of a book is really one bet](#how-much-of-a-book-is-really-one-bet)
 - [Comparing runs](#comparing-runs)
 - [Saving and exporting](#saving-and-exporting)
 - [Where your files live](#where-your-files-live)
@@ -297,8 +299,8 @@ can build one without programming and why the optimiser can sweep it.
 
 ### Indicators
 
-78 are built in, across moving averages, oscillators, trend, volatility and
-volume.
+90 are built in, across moving averages, oscillators, trend, volatility, volume
+and statistics.
 
 **Moving averages** — SMA, EMA, WMA, HMA, DEMA, TEMA, RMA, VWMA, KAMA, ZLEMA,
 ALMA, T3, McGinley Dynamic.
@@ -312,10 +314,28 @@ z-score, Choppiness, true range, Chandelier Exit, normalised ATR, Mass Index,
 Ulcer Index, historical volatility.
 **Volume** — OBV, VWAP, CMF, Elder Ray, Accumulation/Distribution, Chaikin
 Oscillator, Ease of Movement, Force Index, PVT, PVI/NVI.
+**Statistics** — Kaufman efficiency ratio, trend R², return autocorrelation at
+a chosen lag, percentile rank, drawdown from a rolling high, semivariance
+ratio, rolling return skew, rolling conditional value at risk, volatility
+ratio, volatility z-score. Plus Connors RSI and the Coppock curve, which the
+standard set was missing.
+
+The statistics family measures what the market has been *doing*, not what shape
+it drew: how much of the last twenty bars was trend rather than noise, whether
+returns have been continuing or reversing, where today sits in its own recent
+distribution, how asymmetric the falls have been. Those decide whether a rule
+should be trading at all, and none of them can be read off a price chart.
+
+A caution that applies to all of them: a regime measurement is not a signal.
+`EFFICIENCY_RATIO` says the last twenty bars were mostly one direction; it does
+not say the next twenty will be. They are built to be *conditions* on a rule
+that already has an edge, and the matched control in the Diagnose dialog is
+what says whether they added anything.
 
 Each one is a registered function of the bars. Adding another is a single
 decorated function in `tradingbacktester/indicators/library.py` (or
-`extended.py`) — no other file changes.
+`extended.py`, or `quant.py` for the statistics family) — no other file
+changes.
 
 Two things are deliberately *not* separate entries. **+DI / −DI** are outputs of
 `ADX`, and the **Aroon oscillator** is an output of `AROON`; registering them
@@ -810,6 +830,49 @@ across.
 One more caveat it raises on sight: Pine's `==` compares floating-point values
 exactly, and this engine compares them within a tolerance. On continuous series
 the two rarely agree, so any `==` in a rule is flagged.
+
+### Its numbers are named on the way in
+
+A pasted strategy is all literals. `ta.ema(close, 100)` arrives as
+`EMA(period=100)` and `adx < 22.0` as a comparison against a constant, so
+`spec.params` is empty — and three features read exactly that list and find
+nothing there:
+
+- **Optimise Parameters** used to say "this strategy has no parameters to
+  optimise. Add some in the strategy editor first";
+- **Find a Better Version** built zero axes and reported zero variants with no
+  reason given;
+- **Walk-forward** had nothing to re-fit on each fold.
+
+The numbers were already there — in the indicator periods and the rule
+thresholds — so naming them is mechanical, and the importer now does it. The
+nine-line Turtle script in the tour becomes nine named parameters, and **the
+strategy trades exactly as before**: every default is the number it replaced.
+`tests/test_parameterise.py` asserts that trade for trade, on the imported
+strategy and on all seven built-ins, across three instruments.
+
+The bounds are not invented. An indicator's period gets the range the
+**registry** declares for that indicator; a threshold compared against an
+oscillator gets that oscillator's own 0–100 scale. Where neither exists — a
+bare multiplier like `3.964 × ATR` — the band is a stated ratio around the
+value the author chose, and the report says so in those words:
+
+```
+Adx1 Adx Level = 22   (from the threshold in `adx1.adx < 22`;
+                       range 0 to 100, the indicator's own scale)
+Atr5 Mult = 3.964     (from the multiplier in `(Close - ema4) < (3.964 * atr5)`;
+                       range 0.991 to 15.856, no declared range for this
+                       number, so the band is 0.25x to 4x the value the
+                       strategy already used)
+```
+
+A constant of zero is refused rather than named — it has no proportional band
+to sweep — and the refusal is listed rather than dropped.
+
+For a strategy already in the library without parameters, the same thing is a
+button: **Extract From The Numbers**, on the Parameters tab of the strategy
+editor. Optimise and Find a Better Version also offer it in place of the old
+dead end, showing exactly what they would name before they name it.
 
 ---
 
@@ -1361,6 +1424,98 @@ them and call the result robust.
 
 ---
 
+## Diagnosing a run
+
+**Backtest → Diagnose This Run…**, or `Ctrl+D`, or `cli diagnose`.
+
+A green number at the top of the window is not a result, it is a prompt for
+about ten questions, and this reads the finished run and answers them. Each
+finding names a measured property of the run, gives the numbers behind it, and
+names the experiment that would settle it. **None of them predicts that a
+change will help** — the application cannot know that, and a suggestion phrased
+as a prediction is a fabricated backtest.
+
+| Check | The question |
+|---|---|
+| Outcome | Did it make money at all |
+| Matched control | Did it beat entering at random, at the same times, for the same holding periods, paying the same costs |
+| Costs | Does the edge survive paying twice as much — and did it pay anything |
+| Exit mix | Where the money is made: at the target, at the time stop, or on the signal |
+| Concentration | Take the best 5% of trades away and does the rest still make money |
+| Consistency | How many months were positive |
+| Direction | Is one side carrying it, and is the sample simply trending |
+| Geometry | Did the losers first go as far in your favour as the winners did |
+| Win rate | Does it clear the break-even rate implied by its own payoff ratio |
+| Exposure | Is it in the market so much that it is a position rather than a rule |
+| Tunability | Can it be optimised and walked forward at all |
+
+The matched control is the one that can fail a strategy which made money, and
+it is the reason the rest is worth reading. Random entries are drawn to match
+the strategy's own side, minute of day, holding period in bars and per-trade
+cost, so drift, session timing, how long it stays exposed and what it pays are
+all priced in at once. It is **not** matched on the exit barriers — a random
+entry held for the same number of bars carries no stop and no target — so it
+tests the entry timing rather than the geometry, and it says so everywhere it
+is shown.
+
+It also states what it could not match. Trades that open and close inside a
+single bar have no bar-data path to match a random entry against, so they are
+excluded — and they are systematically the worst ones, so the run's own overall
+per-trade figure is printed beside the matched subset's. On the shipped US30
+15m file that difference is +2.57 against −0.25, which is the whole result.
+
+On that same file, `Donchian Channel Breakout` at zero cost reads:
+
+```
+[BLOCKER] This strategy lost money over the sample it was run on.
+    Net USD -1,660.32 over 6,661 trades, USD -0.25 each.
+[BLOCKER] This run paid nothing to trade.
+[WARNING] The edge over random entry is not clearly separable from chance.
+    ... the edge over timing alone is +2.18 USD (p=0.120).
+[WARNING] A handful of trades are most of the winnings.
+    The best 333 of 6,661 (5%) take 55% of everything won.
+[WARNING] Only the long side makes money.
+    Long: 3,397 trades at +2.62 each. Short: 3,264 at -3.23 each.
+```
+
+---
+
+## How much of a book is really one bet
+
+**The Correlation tab of the same dialog**, or `cli correlate A B C --data …`.
+
+Running five strategies is not running five bets. If they are the same trade
+wearing different indicators, the book has one bet at five times the size, and
+the smoother combined equity curve is an arithmetic accident rather than a
+property of the strategies.
+
+Three measurements, because return correlation alone misses the two ways
+strategies are most often secretly identical:
+
+| | |
+|---|---|
+| **Return correlation** | Pearson over a shared calendar, daily by default — two intraday strategies correlated bar by bar mostly measure their shared sampling |
+| **Exposure overlap** | the share of in-market bars they hold at once, and how often on the same side |
+| **Entry coincidence** | the share of the rarer strategy's entries within two bars of the other's — this is what catches "the same signal, one bar apart" |
+
+The summary is the **effective number of independent bets**, from the
+eigenvalues of the correlation matrix: `n` for `n` uncorrelated strategies,
+falling towards 1 as they converge. On the shipped US30 15m file, four of the
+built-in strategies come to **2.5 independent bets**, and Donchian and
+Bollinger breakouts share 76% of their entries on the same side 99% of the
+time.
+
+A pair that shares too few periods to correlate is **left out** of that count
+rather than assumed uncorrelated, and the report says how many.
+
+**A low correlation is not on its own a reason to add a strategy.** A
+decorrelated leg with no edge of its own still raises a book's net profit while
+cutting its Sharpe and deepening its drawdown, and nothing in a correlation
+matrix would show that. The report refuses to recommend anything and prints
+each strategy's own result beside its correlation.
+
+---
+
 ## Comparing runs
 
 Save a run with **Backtest → Save Backtest**, then **Compare Runs** to put two
@@ -1686,6 +1841,9 @@ python -m tradingbacktester.cli walkforward "EMA Cross + RSI" --data "US30 30m" 
 python -m tradingbacktester.cli montecarlo "EMA Cross + RSI" --data "US30 30m" \
     --method block --draws 5000
 python -m tradingbacktester.cli mirror "MACD Trend" --data "US30 30m"
+python -m tradingbacktester.cli diagnose "MACD Trend" --data "US30 15m"
+python -m tradingbacktester.cli correlate "MACD Trend" "Donchian Channel Breakout" \
+    "EMA Cross + RSI" --data "US30 15m"
 python -m tradingbacktester.cli convert my_strategy.pine --save
 python -m tradingbacktester.cli variants "MACD Trend" --data "US30 15m" --save
 python -m tradingbacktester.cli combine --strategy "MACD Trend" \
@@ -1697,13 +1855,18 @@ python -m tradingbacktester.cli report "MACD Trend" --data "US30 30m" \
 
 `report` writes the same self-contained HTML or PDF the window's File → Export
 menu produces; the suffix chooses the format and the PDF renders with no display
-attached. `--mirror` on any command that reads data reflects the series first. `combine` with `--data`
+attached. `diagnose` runs the strategy and then measures what the result rests
+on — `--no-control` skips the matched control, which is the slow part, and
+`--draws` sets how many random-entry sets it draws. `correlate` runs two or
+more strategies on the same bars and prints the matrix, the pair table and the
+effective number of independent bets; `--unit` chooses the calendar the returns
+are correlated on. `--mirror` on any command that reads data reflects the series first. `combine` with `--data`
 backtests the merged strategy and each of its parts on the same bars, side by
 side — and takes `--mirror` like every other command that reads data, so
 "would this combination survive on a market that fell?" is one flag away. `--json`
 prints machine-readable output on `find`, `autosearch`, `indicators`,
 `anomalies`, `run`, `optimize`, `continuous`, `walkforward`, `montecarlo`,
-`mirror`, `convert` and `combine`; everything else then goes to stderr so the output can
+`mirror`, `diagnose`, `correlate`, `convert` and `combine`; everything else then goes to stderr so the output can
 be piped straight into a tool that expects one document. `--workspace` points at
 a different folder. Nothing here reaches the network.
 
@@ -1856,6 +2019,24 @@ format is unusual, type it in the format box using Python `strftime` codes.
 rows; backtesting runs at a few hundred thousand bars per second. If you are
 working with years of 1-minute data, run on a coarser timeframe while developing
 the strategy and only drop to 1m for the final run.
+
+**Optimise says the strategy has no parameters.** It used to send you to the
+strategy editor; it now offers to name the numbers for you. Accept, and the
+indicator periods and rule thresholds become parameters with the values they
+already had. See [its numbers are named on the way
+in](#its-numbers-are-named-on-the-way-in).
+
+**My risk or exit settings went back to what they were.** Fixed. Accepting the
+strategy editor used to fold the *main window's* risk panel back over the
+strategy, overwriting everything set on the editor's Risk tab a moment after it
+was set. Unsaved edits made in the main panel are now carried *into* the editor
+instead, and what leaves the editor is what gets saved.
+
+**The application vanished while searching for a better version.** Fixed.
+Closing that dialog mid-search destroyed a running thread, which Qt turns into
+an immediate process abort — no dialog, no log line, no chance to save. The
+search is now stopped and waited for on close, and one that will not stop in
+time is left to finish rather than destroyed.
 
 **SmartScreen blocks the installer.** The build is unsigned. Choose
 **More info → Run anyway**, or build it yourself with the instructions above.

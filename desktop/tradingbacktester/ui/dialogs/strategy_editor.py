@@ -388,9 +388,46 @@ class StrategyEditor(QDialog):
             button.setIcon(icon(ico, 15))
             button.clicked.connect(slot)
             row.addWidget(button)
+        row.addSpacing(12)
+        self.extract_button = QPushButton("  Extract From The Numbers")
+        self.extract_button.setIcon(icon("optimize", 15))
+        self.extract_button.setToolTip(
+            "Turn the hard-coded numbers in this strategy -- indicator periods "
+            "and the thresholds in its rules -- into named parameters.\n"
+            "Each one keeps the value it already had, so the strategy trades "
+            "exactly as before; it just becomes something the optimiser, the "
+            "variant search and walk-forward can move.")
+        self.extract_button.clicked.connect(self._extract_params)
+        row.addWidget(self.extract_button)
         row.addStretch(1)
         lay.addLayout(row)
         return page
+
+    def _extract_params(self) -> None:
+        """Promote this strategy's literals into named parameters."""
+        from ...strategy.parameterise import extract_parameters
+
+        try:
+            extraction = extract_parameters(self.spec)
+        except BacktesterError as exc:
+            show_error(self, exc)
+            return
+        if not extraction.changed:
+            show_info(self, "Nothing To Extract", extraction.describe())
+            return
+        self.spec = extraction.spec
+        self._loading = True
+        try:
+            self._reload_slots()
+            self._reload_params()
+            self._reload_tree()
+        finally:
+            self._loading = False
+        self._refresh_summary()
+        self._say(f"Extracted {len(extraction.added)} parameters. "
+                  f"The strategy still trades exactly as it did.",
+                  PALETTE.accent)
+        show_info(self, "Parameters Extracted", extraction.describe())
 
     def _build_risk_tab(self) -> QWidget:
         page = QScrollArea()
