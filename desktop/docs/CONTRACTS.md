@@ -243,6 +243,27 @@ Deciding the column layout from the values, not the header names. Called by
   merged warm-up the merged strategy may be quieter (one strategy has one
   warm-up, the longest of its indicators') but never fires where no source did.
 
+### `tradingbacktester/strategy/pine_parse.py` — tuple assignment
+- `Statement.kind` gains `tuple_assignment`, carrying `targets: tuple[str, ...]`.
+  `Parser._tuple_targets()` reads `[a, b, c]` at the head of a line and returns
+  `None` — so the caller rewinds rather than failing the line — for anything
+  that is not a plain list of identifiers, keeping `x = close[1]` an index
+  expression.
+- This was a dead-map bug: `importer._MULTI` had named the outputs of MACD,
+  Bollinger Bands, DMI, Stochastic and SuperTrend since the importer was
+  written, and `_Converter.tuple_bindings` existed to hold them, but the parser
+  rejected `[a, b, c] =` with "unexpected '['" before either was reached. Every
+  multi-output indicator was unreachable through the only syntax Pine has for
+  them.
+- `_Converter.bind_tuple(targets, node)` creates **one** slot and binds each
+  name to one of its outputs. Three slots would compute the same thing three
+  times and give the optimiser three names for one knob. `_` is accepted as a
+  discarded output. Returns "" or the reason it could not be done, reported on
+  the line rather than raised.
+- Argument convention matches `_call_operand`: `ADX`, `STOCH` and `SUPERTREND`
+  read the whole bar and take no Pine source argument; the rest take source
+  first.
+
 ### `tradingbacktester/finder/variants.py`
 - `search_variants(spec, bars, config, max_variants=400, combine_top=3,
   progress=None) -> VariantReport`. Walks one strategy's own neighbourhood:

@@ -234,14 +234,27 @@ class Statement:
     """
 
     kind: str
-    """assignment | call | unsupported"""
+    """assignment | call | unsupported | tuple_assignment"""
     line: int
     target: str = ""
     value: Node | None = None
+    targets: tuple[str, ...] = ()
+    """Names bound by a tuple assignment, in Pine's own order.
+
+    ``[macdLine, signalLine, hist] = ta.macd(...)`` is the only way to write a
+    multi-output indicator in Pine, and it is how MACD, Bollinger Bands, DMI,
+    Stochastic and SuperTrend all appear in real scripts. The importer has
+    mapped their outputs since it was written; the parser rejected the line
+    before the map was ever consulted, so every one of them was unreachable.
+    """
     reason: str = ""
     source: str = ""
     guard: Node | None = None
     indent: int = 0
+
+
+def _tuple_targets_doc() -> None:                    # pragma: no cover - doc
+    """See ``Parser._tuple_targets``; kept here so the grammar reads in order."""
 
 
 def _current_guard(stack: list) -> Node | None:
@@ -364,6 +377,31 @@ class Parser:
             self.expect_op("]")
             node = Node("index", line, None, [node, index])
         return node
+
+    def _tuple_targets(self) -> tuple[str, ...] | None:
+        """``[a, b, c]`` at the head of a line, or ``None`` if it is not that.
+
+        Returns None rather than raising for anything that is not a plain list
+        of identifiers -- ``[1]`` is an index expression and ``[a[0], b]`` is
+        not a destructuring target -- so the caller can rewind and try the
+        other productions instead of failing the whole line.
+        """
+        if not self.current.is_op("["):
+            return None
+        self.advance()
+        names: list[str] = []
+        while True:
+            if self.current.kind != IDENT:
+                return None
+            names.append(self.advance().value)
+            if self.current.is_op(","):
+                self.advance()
+                continue
+            break
+        if not self.current.is_op("]"):
+            return None
+        self.advance()
+        return tuple(names)
 
     def dotted_name(self) -> str:
         parts = [self.advance().value]
@@ -552,6 +590,25 @@ class Parser:
                         and self.current.value in _TYPES
                         and self.tokens[self.pos + 1].kind == IDENT):
                     declared = f"{declared} {self.advance().value}"
+
+            if self.current.is_op("["):
+                # `[a, b, c] = ta.macd(...)` -- Pine's multi-output form.
+                save = self.pos
+                names = self._tuple_targets()
+                if names is not None and self.current.is_op("=", ":="):
+                    self.advance()
+                    value = self.expression()
+                    statement = Statement("tuple_assignment", line,
+                                          target=names[0], targets=names,
+                                          value=value)
+                    if declared:
+                        statement.reason = (
+                            f"`{declared}` keeps a value between bars, which "
+                            f"this format has no way to express")
+                        statement.kind = "unsupported"
+                        statement.source = f"{declared} [{', '.join(names)}] = ..."
+                    return statement
+                self.pos = save
 
             if self.current.kind == IDENT:
                 save = self.pos

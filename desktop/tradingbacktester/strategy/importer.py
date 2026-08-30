@@ -395,6 +395,61 @@ class _Converter:
             f"application knows are listed in the Indicators panel; anything "
             f"else has to be rewritten in terms of them.")
 
+    def bind_tuple(self, targets: tuple[str, ...], node: Node) -> str:
+        """Bind ``[a, b, c] = ta.macd(...)`` to one slot's three outputs.
+
+        Returns "" on success, or why it could not be done. Pine has no other
+        way to write a multi-output indicator, so until this existed MACD,
+        Bollinger Bands, DMI, Stochastic and SuperTrend could not be imported
+        at all -- the map naming their outputs had been in place from the
+        start, and nothing ever reached it.
+
+        One slot is created, not three: the outputs of a MACD are three views
+        of a single computation, and registering them separately would compute
+        it three times and give the optimiser three names for one knob.
+        """
+        if node is None or node.kind != "call":
+            return "the right-hand side is not an indicator call"
+        name = str(node.value)
+        if name not in _MULTI:
+            return (f"`{name}(...)` does not return a tuple this application "
+                    f"knows how to unpack")
+        key, parameters, outputs = _MULTI[name]
+        if len(targets) > len(outputs):
+            return (f"`{name}(...)` returns {len(outputs)} values and "
+                    f"{len(targets)} names were given")
+
+        args = list(node.args)
+        source = "close"
+        if key in ("ADX", "STOCH", "SUPERTREND"):
+            # Read the whole bar, so Pine gives them no source argument.
+            values = args
+        elif args:
+            source = self._source_field(args[0])
+            values = args[1:]
+        else:
+            values = []
+
+        params: dict[str, Any] = {}
+        for index, parameter in enumerate(parameters):
+            if index >= len(values):
+                continue
+            number = self._number(values[index])
+            if number is None:
+                return (f"`{name}(...)` has a {parameter} that is not a fixed "
+                        f"number, and an indicator here needs a fixed one")
+            params[parameter] = (int(number)
+                                 if parameter.endswith(
+                                     ("period", "_period", "fast", "slow",
+                                      "signal"))
+                                 else number)
+        ref = self._slot(key, params, source)
+        for target, output in zip(targets, outputs):
+            # Pine allows `_` for a value the script does not want.
+            if target != "_":
+                self.tuple_bindings[target] = (ref, output)
+        return ""
+
     # -- conditions ------------------------------------------------------
 
     def condition(self, node: Node) -> Any:
@@ -496,15 +551,32 @@ def import_pine(text: str, report: ImportReport) -> ImportReport:
     assignments: list[tuple[int, Any, str]] = []  # (row in report.lines, ...)
 
     # Pass one: bind every variable, so a rule may use a name defined below it.
+    tuple_errors: dict[int, str] = {}
     for statement in statements:
         if statement.kind == "assignment" and statement.value is not None:
             converter.bindings[statement.target] = statement.value
+        elif statement.kind == "tuple_assignment":
+            problem = converter.bind_tuple(statement.targets, statement.value)
+            if problem:
+                tuple_errors[statement.line] = problem
 
     for statement in statements:
         source = _source_line(text, statement.line) or statement.source
         if statement.kind == "unsupported":
             report.lines.append(Line(statement.line, source, "unsupported",
                                      statement.reason))
+            continue
+
+        if statement.kind == "tuple_assignment":
+            names = ", ".join(statement.targets)
+            problem = tuple_errors.get(statement.line, "")
+            if problem:
+                report.lines.append(Line(statement.line, source, "unsupported",
+                                         problem))
+            else:
+                report.lines.append(Line(
+                    statement.line, source, "converted",
+                    f"`{names}` are the outputs of one indicator"))
             continue
 
         if statement.kind == "assignment":

@@ -783,6 +783,9 @@ reason.
 
 `ta.` moving averages (SMA/EMA/WMA/HMA/VWMA/RMA/DEMA/TEMA), RSI, ATR, CCI,
 MFI, ROC, MOM, stdev, highest, lowest, Williams %R, linreg, OBV, TR, VWAP;
+the multi-output indicators in Pine's own `[a, b, c] = ta.macd(...)` form —
+MACD, Bollinger Bands, DMI/ADX, Stochastic and SuperTrend, each becoming **one**
+indicator with named outputs rather than three copies of the same computation;
 comparisons, `and`/`or`/`not`, `ta.crossover`/`crossunder`/`cross`,
 `ta.rising`/`falling`, `ta.change`, bar offsets like `close[1]`, arithmetic,
 and `strategy.entry` / `strategy.close` / `strategy.exit` with point-based

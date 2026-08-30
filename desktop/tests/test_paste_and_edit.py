@@ -486,3 +486,114 @@ def test_the_outermost_group_cannot_be_moved_or_duplicated(editor, monkeypatch):
     editor._move_node(1)
     editor._duplicate_node()
     assert len(editor._current_root().children) == before
+
+
+# --------------------------------------------------------------------------
+# Multi-output indicators: `[a, b, c] = ta.macd(...)`
+# --------------------------------------------------------------------------
+
+MACD_PINE = """//@version=5
+strategy("m", overlay=true)
+[macdLine, signalLine, hist] = ta.macd(close, 12, 26, 9)
+if macdLine > signalLine
+    strategy.entry("L", strategy.long)
+"""
+
+
+def test_tuple_destructuring_parses_at_all():
+    """It did not. `_MULTI` named the outputs of MACD, Bollinger Bands, DMI,
+    Stochastic and SuperTrend from the day the importer was written, and the
+    parser rejected the only syntax Pine has for reaching them, so the whole
+    table was unreachable."""
+    from tradingbacktester.strategy.pine_parse import parse
+
+    statement = parse("[m, s, h] = ta.macd(close, 12, 26, 9)")[0]
+    assert statement.kind == "tuple_assignment"
+    assert statement.targets == ("m", "s", "h")
+
+
+def test_a_macd_written_the_way_pine_writes_it_imports():
+    report = import_strategy(MACD_PINE)
+    assert report.faithful, [l.detail for l in report.unsupported]
+    assert [s.indicator for s in report.spec.indicators] == ["MACD"]
+    assert report.spec.entry_long.describe() == "macd1.macd > macd1.signal"
+
+
+def test_bollinger_and_dmi_import_too():
+    for text, indicator in (
+        ('[mid, up, lo] = ta.bb(close, 20, 2)\nif close > up\n'
+         '    strategy.entry("L", strategy.long)\n', "BBANDS"),
+        ('[dp, dm, adxv] = ta.dmi(14, 14)\nif adxv > 25\n'
+         '    strategy.entry("L", strategy.long)\n', "ADX"),
+    ):
+        report = import_strategy(
+            f'//@version=5\nstrategy("t", overlay=true)\n{text}')
+        assert report.faithful, [l.detail for l in report.unsupported]
+        assert [s.indicator for s in report.spec.indicators] == [indicator]
+
+
+def test_the_three_outputs_share_one_indicator_slot():
+    """They are three views of one computation. Three slots would compute it
+    three times and hand the optimiser three names for one knob."""
+    report = import_strategy(MACD_PINE.replace(
+        "if macdLine > signalLine",
+        "if macdLine > signalLine and hist > 0"))
+    assert report.faithful
+    assert len(report.spec.indicators) == 1
+    text = report.spec.entry_long.describe()
+    assert "macd1.macd" in text and "macd1.signal" in text and "macd1.histogram" in text
+
+
+def test_a_tuple_from_something_unmappable_is_refused_by_name():
+    report = import_strategy(
+        '//@version=5\nstrategy("t", overlay=true)\n'
+        '[a, b] = ta.nonsense(1, 2)\nif a > b\n'
+        '    strategy.entry("L", strategy.long)\n')
+    assert not report.faithful
+    assert any("does not return a tuple" in l.detail
+               for l in report.unsupported)
+
+
+def test_an_index_expression_is_still_an_index_not_a_tuple_target():
+    """`[1]` at the head of a line must not be mistaken for destructuring."""
+    from tradingbacktester.strategy.pine_parse import parse
+
+    statement = parse("x = close[1]")[0]
+    assert statement.kind == "assignment"
+    assert statement.targets == ()
+
+
+def test_a_var_tuple_is_still_refused_for_carrying_state():
+    report = import_strategy(
+        '//@version=5\nstrategy("t", overlay=true)\n'
+        'var [a, b] = ta.macd(close, 12, 26, 9)\n'
+        'if a > b\n    strategy.entry("L", strategy.long)\n')
+    assert not report.faithful
+
+
+def test_the_turtle_gate_the_user_pasted_now_converts():
+    """The ADX + extension gate from the script that reported 87 unsupported
+    lines. The `switch` presets are what it could not read; flattened to their
+    constants, the whole gate comes across."""
+    report = import_strategy("""//@version=5
+strategy("Turtle Long-Only T1", overlay = true)
+atrN     = ta.atr(20)
+entryHi1 = ta.highest(high, 20)
+entryHi2 = ta.highest(high, 55)
+exitLo1  = ta.lowest(low, 10)
+ema100   = ta.ema(close, 100)
+[diPlus, diMinus, adxVal] = ta.dmi(14, 14)
+adxOk    = adxVal < 22.0
+extOk    = close - ema100 < 3.964 * atrN
+breakout = high > entryHi1[1] or high > entryHi2[1]
+longSignal = breakout and adxOk and extOk
+exitSignal = low < exitLo1[1]
+if longSignal
+    strategy.entry("L", strategy.long)
+if exitSignal
+    strategy.close("L")
+""")
+    assert report.faithful, [l.detail for l in report.unsupported]
+    kinds = {s.indicator for s in report.spec.indicators}
+    assert {"ADX", "HIGHEST", "LOWEST", "EMA", "ATR"} <= kinds
+    assert report.spec.validate() == []
