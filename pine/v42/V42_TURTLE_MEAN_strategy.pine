@@ -57,6 +57,16 @@
 // usual ema(TR,n): the Turtle definition and the Python engine both use Wilder.
 // ta.dmi RETURNS [+DI, -DI, ADX]; the third element is the one this file reads.
 //
+// ---------------------------------- TIMEFRAME ----------------------------------
+// All four presets were measured on 240-MINUTE bars and nothing here rescales with the chart.
+// "Restrict to the measured timeframe" (default ON) therefore blocks entries off 240m so a 15m
+// backtest cannot be mistaken for one of the numbers above. It is released automatically by the
+// Custom preset -- exploring another timeframe is what Custom is for -- and can be unticked for
+// the four measured presets as well. OFF 240m THE TABLES ABOVE DO NOT APPLY TO WHAT YOU SEE.
+// Two axes do not carry across: the channel lengths are in BARS, so entry 20/55 spans 80/220
+// hours at 240m and 5/14 hours at 15m; and the round turn is a fixed cash amount, which is a far
+// larger share of a 15m bar's ATR stop than of a 240m one. Re-fit both before reading a result.
+//
 // Costs default to the research's own assumption on a 1-point-per-unit index CFD. On a futures
 // contract set the contract's real per-order fee before reading any number this produces.
 // See docs/ib/STUDY_V42_TURTLE_MILLION.md and docs/ib/STUDY_TURTLE.md.
@@ -82,6 +92,8 @@ preset = input.string("SPEC  preset T1  (best EXCESS over control)", "Preset", g
                 "SURROGATE  (the model's robust region)",
                 "Custom"],
      tooltip = "The two rankings are reversed. SPEC has the lowest raw return of the four and the highest excess over a random entry with the same exits, and it is the only one that clears its control on both held-back markets.")
+tfLock = input.bool(true, "Restrict to the measured timeframe (240m)", group = gP,
+     tooltip = "Every preset was measured on 240-minute bars. With this ON the script takes no entry on any other timeframe, so a 15m backtest cannot be read as one of the measured results. The Custom preset releases it automatically. Untick it to run a measured preset on another timeframe -- the channel lengths are in bars and the round turn is a fixed cash amount, so neither carries across, and the header's tables no longer describe what you are looking at.")
 
 gC = "Custom only"
 cE1 = input.int(20, "Entry 1 (bars)", minval = 2, group = gC)
@@ -128,7 +140,11 @@ adxOk = adxG == "off" ? true : adxG == "adx<22" ? adxVal < 22.0
      : adxG == "adx>=20" ? adxVal >= 20.0 : adxVal >= 25.0
 extOk = extG == "off" ? true : extG == "ext<3.193" ? distEma < 3.193
      : extG == "ext<3.964" ? distEma < 3.964 : distEma >= 3.0
-onTF  = timeframe.period == "240"
+// Custom exists to explore other timeframes, so it releases the lock on its own; the four
+// measured presets keep it until the user unticks tfLock deliberately.
+measuredTF = timeframe.period == "240"
+lockOn = tfLock and not isC
+onTF   = measuredTF or not lockOn
 gateOk = adxOk and extOk and onTF and atrN > 0
 
 // ------------------------------------------------------------------------------------------------
@@ -229,9 +245,11 @@ var table hud = table.new(position.top_right, 1, 3, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, preset, text_color = color.white,
          bgcolor = isSpec ? color.new(color.teal, 20) : color.new(color.orange, 25))
-    table.cell(hud, 0, 1, onTF ? "240-minute: as measured" : "WRONG TIMEFRAME - measured on 240m",
-         text_color = color.white,
-         bgcolor = onTF ? color.new(color.teal, 40) : color.new(color.red, 10))
+    tfMsg = measuredTF ? "240-minute: as measured" :
+         lockOn ? "NO TRADES - locked to 240m. Untick \"Restrict to the measured timeframe\", or pick Custom." :
+         "Chart is " + timeframe.period + ", measured on 240 - the header's numbers DO NOT apply"
+    tfBg = measuredTF ? color.new(color.teal, 40) : lockOn ? color.red : color.new(color.orange, 25)
+    table.cell(hud, 0, 1, tfMsg, text_color = color.white, bgcolor = tfBg)
     table.cell(hud, 0, 2, fundsOk ? "ladder funded" :
          "LADDER DOES NOT FIT - orders will be REJECTED (needs " +
          str.tostring(math.round(ladderCost)) + " vs " + str.tostring(math.round(strategy.equity)) + ")",
