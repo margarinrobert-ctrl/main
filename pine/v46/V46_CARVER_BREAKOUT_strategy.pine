@@ -55,6 +55,34 @@
 // points, correlation 1.00000000, and the ENTRY CROSSES FIRE ON IDENTICAL BARS -- 269 of 269 at
 // threshold 0 and 110 of 110 at threshold 5. The seeding difference does not reach the trades.
 //
+// ==================== THE MACD FILTER, AND WHY IT DEFAULTS TO OFF ====================
+// Added because it was asked for, measured before being wired in, and defaulted OFF because the
+// measurement says it does not earn a place.
+//
+// OVERLAP FIRST -- a confirmation the trigger already implies cannot add anything. Share of CARVER
+// ENTRY BARS that already pass, against the share of all bars:
+//
+//   condition            all bars   entry bars   lift
+//   macd > 0               56-59%     95-98%     1.6-1.7x   <- removes 2-5% of signals: inert
+//   macd > signal          49%        68-84%     1.4-1.7x
+//   hist rising            50%        42-55%     0.85-1.10x <- leans AWAY from entry bars
+//
+// That is `STUDY_V16_MOMENTUM` reproducing: RSI>=55 passed 94.7% of breakout bars there and added
+// nothing, because a breakout IS a momentum event.
+//
+// AND THE TEST. Every reading against a RANDOM FILTER KEEPING THE SAME NUMBER OF SIGNALS, 2,000
+// draws, both presets x three markets = 23 scorable cells:
+//
+//   cells beating their own no-MACD baseline on points : 9 of 23  (chance expects 11.5)
+//   cells clearing the selectivity control at p <= 0.05: 2 of 23  (chance expects 1.2)
+//
+// MACD makes it WORSE more often than better. The two that clear are both TOP ROW on US30
+// (`macd>0` p 0.043, `macd>signal and >0` p 0.034) and every cell on US100 and NQ fails -- one
+// market of three, uncorrected. On NQ under CONSENSUS, `macd>signal` takes +20.34 points a trade
+// to MINUS 18.36.
+//
+// It is provided as a switch so the finding can be reproduced from the chart, not because it helps.
+//
 // ATR is ta.atr(14), Wilder's RMA, matching the research layer's rma(TR, 14).
 // This is a 60-MINUTE system holding up to 480 bars -- twenty days. It is not a scalp.
 //
@@ -95,6 +123,14 @@ useTP = input.bool(false, "Use a take profit", group = gG,
      tooltip = "OFF is correct on the evidence: no-take-profit beat every target in the grid, the tenth independent time on this branch.")
 tpR = input.float(3.0, "Take profit (R)", minval = 0.1, step = 0.5, group = gG)
 
+gM = "MACD filter -- default OFF, it does not earn its place (see header)"
+macdMode = input.string("off", "MACD condition", group = gM,
+     options = ["off", "macd > signal", "macd > 0", "hist rising", "macd > signal and > 0"],
+     tooltip = "Measured on both presets across three markets: 9 of 23 cells beat their own no-MACD baseline where chance expects 11.5, and 2 of 23 clear a same-selectivity random filter where chance expects 1.2. `macd > 0` already passes 95-98% of Carver entry bars, so it removes almost nothing. Switch it on to reproduce that, not to improve the strategy.")
+macdFast = input.int(12, "MACD fast", minval = 1, group = gM)
+macdSlow = input.int(26, "MACD slow", minval = 2, group = gM)
+macdSig  = input.int(9,  "MACD signal", minval = 1, group = gM)
+
 gS = "Session (New York) -- default OFF, all figures above are all-hours"
 useSess = input.bool(false, "Restrict entries to a window", group = gS)
 startH = input.int(9,  "Start hour",   minval = 0, maxval = 23, group = gS)
@@ -121,6 +157,16 @@ fc = math.max(-20.0, math.min(20.0, 40.0 * ta.ema(raw, emaLen)))
 
 atrN = ta.atr(14)
 
+// ta.macd returns THREE values -- [macdLine, signalLine, histLine]. Destructuring fewer, or
+// assuming the order, is the same class of trap as ta.dmi returning [+DI, -DI, ADX] and silently
+// handing back +DI when only the first element is taken.
+[macdLine, macdSignal, macdHist] = ta.macd(close, macdFast, macdSlow, macdSig)
+macdOk = macdMode == "off" ? true :
+     macdMode == "macd > signal" ? macdLine > macdSignal :
+     macdMode == "macd > 0" ? macdLine > 0 :
+     macdMode == "hist rising" ? macdHist > macdHist[1] :
+     (macdLine > macdSignal and macdLine > 0)
+
 nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
 sStart = startH * 60 + startM
 sStop  = stopH * 60 + stopM
@@ -135,7 +181,7 @@ var int   entBar  = na
 flat = strategy.position_size == 0
 trig = ta.crossover(fc, entThr)
 
-if barstate.isconfirmed and flat and trig and inWin and not doFlat and atrN > 0
+if barstate.isconfirmed and flat and trig and inWin and not doFlat and macdOk and atrN > 0
     risk = stopN * atrN
     stopLvl := close - risk
     tgtLvl  := useTP ? close + tpR * risk : na
@@ -157,7 +203,7 @@ plot(flat ? na : tgtLvl, "Target", color.new(color.teal, 0), style = plot.style_
 plot(hiN, "Carver channel high", color.new(color.aqua, 60))
 plot(loN, "Carver channel low", color.new(color.aqua, 60))
 
-var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+var table hud = table.new(position.top_right, 1, 5, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, preset, text_color = color.white,
          bgcolor = isTop ? color.new(color.teal, 20) : color.new(color.orange, 25))
@@ -167,7 +213,11 @@ if barstate.islast
     table.cell(hud, 0, 2, str.format("stop {0,number,#.#} ATR   max hold {1} bars   {2}",
          stopN, maxHold, useTP ? "TP " + str.tostring(tpR) + "R" : "no take profit"),
          text_color = color.white, bgcolor = color.new(color.gray, 40))
-    table.cell(hud, 0, 3, timeframe.period == "60" ?
+    table.cell(hud, 0, 3, macdMode == "off" ? "MACD filter off - as measured" :
+         "MACD \"" + macdMode + "\" ON - measured as NOT earning its place",
+         text_color = color.white,
+         bgcolor = macdMode == "off" ? color.new(color.teal, 40) : color.new(color.orange, 25))
+    table.cell(hud, 0, 4, timeframe.period == "60" ?
          "60m: as measured - but a RANDOM ENTRY earns +40 to +82 pts here too" :
          "measured on 60m - this chart is " + timeframe.period,
          text_color = color.white,
