@@ -1469,6 +1469,30 @@ lock is not cosmetic: the same cell reads 1.073 / +0.60 pts unlocked and 1.000 /
 Timing sharpens as the stop tightens -- at 0.75 ATR a stop resolves in **6 minutes** against 32 for
 a target, **5.3x**, against 2x at 1.5 ATR in STUDY_V44. See `docs/ib/STUDY_V45_TP_ENGINEERING.md`.
 
+**CARVER'S BREAKOUT IS PROFITABLE ON EVERY MARKET AND LOSES TO A COIN FLIP ON NQ.** 999,717 of
+1,036,800 declared cells (3 tf x 8 spans x 3 smoothings x 4 forecast exits x 5 stops x 5 targets x
+3 holds x 6 entry thresholds x 2 modes x 4 chop ceilings), searched on US100 research only, US30 and
+NQ held back, objective the MEDIAN of 8 walk-forward folds. Implementation verified against Carver's
+own design target -- he scales so mean |forecast| ~ 10 and it measures **10.70-12.16** -- and the
+truncation audit is clean at every span. **61.3% of the grid is profitable and 0.00% has all eight
+folds positive.** Both frozen configurations are profitable on all four blocks INCLUDING the two
+markets they never saw (PF 1.16-1.74) and **7 of 8 fail a random-entry control**; on NQ the random
+entry EARNS MORE in both (+82.10 vs +20.34, +78.00 vs +55.43), and the control makes +40 to +82
+points a trade on its own -- with a 3.0 ATR stop, no target and a 480-bar hold on markets that rose,
+a coin flip is profitable. STUDY_TURTLE's drift-harvester finding on a different indicator. The
+day-block bootstrap DOES exclude zero in three cells (0.009-0.044), which is the other question and
+both are reported. Marginals: monotone to 60m, to a 3.0 ATR stop and to a 480-bar hold -- **three
+axes at the GRID EDGE** -- NO TAKE PROFIT best for the **tenth** time, the forecast EXIT worthless,
+CHOP off best, cross beating state. Top-1000 mean folds-positive 4.3/8 on 132 trades against the
+grid's 1,825, so the ranking buys low-count cells again. **THE ONE DURABLE FINDING IS ABOUT CARVER:
+his published span range 10-320 BRACKETS the optimum and span 5 -- faster than anything he publishes
+-- is the ONLY NEGATIVE ROW** (PF 0.952), confirming his own caveat that fast breakouts are eaten by
+costs. **AND THE vectorbt CROSS-CHECK FAILED TRANSCRIPTION AND IS REPORTED AS INCONCLUSIVE**: count
+ratios 0.12-0.98, and with stops disabled it still gave 24 trades to my 165, so it is the EXITS --
+`sl_stop` is a FRACTION OF PRICE while the stop here is a per-trade ATR multiple, and `td_stop` does
+not exist in 1.1.0. No gap is read from it in either direction. MC p99 drawdown is 1.1-2.2x realised.
+Ships nothing. See `docs/ib/STUDY_V46_CARVER.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1553,6 +1577,7 @@ a target, **5.3x**, against 2x at 1.5 ATR in STUDY_V44. See `docs/ib/STUDY_V45_T
 | `research/v43/` | MAE/MFE on eight declared Donchian configurations: both normalisations, the censoring diagnostic, uncensored heat at a fixed horizon, matched controls |
 | `research/v44/` | 36 causal features scored by excursion in ATR **and points**; the ratio-picked scalp, its no-filter ablation, a 1-minute barrier walker and time-to-target/time-to-stop |
 | `research/v45/` | take-profit engineering from MFE/MAE: the break-even algebra, the p_lower/p_upper bracket, a 1-minute first-touch walker, and the what-would-it-take calculation |
+| `research/v46/` | Carver's breakout forecast + causality audit; the 999,717-cell sweep in 73s; freeze, held-back markets, random-entry control, both Monte Carlos, and the vectorbt check that failed parity |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
