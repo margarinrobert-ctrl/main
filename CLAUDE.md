@@ -1541,6 +1541,32 @@ searched, and identify WHEN a release could land, never which or what it said --
 calendar with surprise values is worth more than any further modelling. See
 `docs/ib/STUDY_V48_ML_BREAKOUT_FILTER.md`.
 
+**ADVERSE SELECTION ON A RESTING LIMIT GROWS WITH THE SIGNAL'S IMMEDIACY — CONFIRMED — AND AN EQUAL
+AND OPPOSITE FORCE IN THE EXIT PATH CANCELS IT.** V49's post-mortem said the mechanism lived in a
+COMPONENT and not in the net; tested directly at a FIXED fill rate (expiry swept per cell to
+0.342-0.359 against V49's uncontrolled 0.173; rho(fill, SELECTION) +0.134 p 0.894 and
+rho(expiry, SELECTION) +0.012, so both confounds are clean), SELECTION scores rho **-0.5887** at
+permutation p 0.0000 against a pre-registered -0.50, monotone on all five quintiles (-0.4654 ->
+-0.5751), holding SEPARATELY on each side (L -0.472, S -0.473, so it is not this sample's 89%
+up-drift), surviving 2x cost (-0.545) and keeping its sign on locked (-0.312, decayed, the right
+shape). The phi-invariant gap carries the identical gradient (-0.5890), and SELECTION = (1-phi) x gap
+holds to 1e-6. **BUT V49 WAS WRONG TO CALL PRICE AN ARITHMETIC IDENTITY**: its MEAN is one (+0.4959
+against a constructed 0.5000), its **DISPERSION IS AS LARGE AS SELECTION'S** (sd 0.0674 vs 0.0689,
+range +0.21..+0.68) and it moves the OTHER WAY with immediacy at rho **+0.4711** — so the net is
+8.3x smaller than its parts and reads only -0.228. **THE CHASING EXPLANATION IS REFUTED**: the
+adverse open gap is +0.0000 ATR (worst cell 0.0054 R, rho -0.039 at p 0.718) because on continuous
+futures the next open IS the prior close — there is no chasing cost here, and no market-entry
+backtest on this branch is quietly paying one. **99.8% OF PRICE'S CROSS-FAMILY VARIANCE IS THE EXIT
+PATH**: entry offset sd 0.0017, exit path sd 0.0673 spanning -0.289..+0.182 — two trades on the same
+signal with the same risk denominator, differing only in a stop sitting 1 ATR lower and a clock
+starting later. The entry price is an identity; the STOP'S LOCATION is the whole variable. SELECTION
+is a COST, not an edge (negative in 88/88 cells; the limit beats the market in 34/88 = 38.6%), and
+gate 6 could NOT be run because a recycle wiped US100/US30, so the brief's success criterion is not
+met. Two rounds have now failed to span positive immediacy — a ~0.04 R common-mode cost drag pushes
+both sides negative and MIRRORING DOES NOT FIX IT. Also fixed here: V49's `roc` families cut at a
+WHOLE-SAMPLE `np.nanquantile`, a threshold that reads the future, flipping 0.82-1.30% of bars.
+See `docs/ib/STUDY_V50_SELECTION.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1628,6 +1654,7 @@ calendar with surprise values is worth more than any further modelling. See
 | `research/v46/` | Carver's breakout forecast + causality audit; the 999,717-cell sweep in 73s; freeze, held-back markets, random-entry control, both Monte Carlos, and the vectorbt check that failed parity |
 | `research/v47/` | causal daily frame with an exact RTH/overnight split; 30 risk-premium and PEAD-analogue features; drift-vs-reversal test, Newey-West ICs, BH |
 | `research/v48/` | Donchian base + 39 risk-premium/PEAD/release-clock features; purged embargoed CV with ridge, LightGBM and a small MLP; family ablation and coefficient attribution |
+| `research/v50/` | SELECTION at a FIXED fill rate: a cost-invariant time-to-fill calibrator, both sides, the PRICE split into entry offset and exit path, and the chasing test |
 | `research/datasets.py` | **the dataset registry** — every feed's format, clock, defects and checksum; `verify()` |
 | `research/edgelab/fx.py` | EURUSD 30m: the fifth instrument, an independent era, and the measured spread |
 | `research/edgelab/spread_truth.py` | what a real spread does against the three things the cost model assumes |
