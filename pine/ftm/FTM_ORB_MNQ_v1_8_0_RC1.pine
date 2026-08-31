@@ -184,12 +184,17 @@ orbLookback = input.int(40, "Opening ranges required before trading", minval = 5
      group = gC, tooltip = "THE SOURCE'S VALUE IS 120 AND THAT IS THE DEFAULT. It is also the single most common reason this strategy shows no trades: 120 sessions of 15-minute history is about 11,000 bars, and only the largest TradingView plans load that many. Measured over 1.05M bars by varying ONLY this number: 120 -> 342 trades at +0.1620 R, 90 -> 371 at +0.1905, 60 -> 399 at +0.1607, 40 -> 417 at +0.1600, 20 -> 434 at +0.1476. FORTY IS AS GOOD AS 120 AND LOADS ON ANY PLAN. If the panel says warming up, set this to 40.")
 trendCloses = input.int(21, "Session closes required before trading", minval = 2, maxval = 200,
      group = gC, tooltip = "The source's value is 21 (a 20-session return needs 21 closes).")
-refOpenFallback = input.bool(false, "If the 23:00 UTC bar is missing, use the session's first bar",
-     group = gC, tooltip = "The source REQUIRES the 23:00 UTC reference open and blocks the whole date without it. On a chart with extended hours switched OFF that bar never exists, so every date blocks and nothing can ever trade. Turning this on substitutes the first bar of the cash session, which changes feature 1 and the prior-day override. Prefer switching extended hours ON.")
+refOpenFallback = input.bool(true, "If the 23:00 UTC bar is missing, use the session's first bar",
+     group = gC, tooltip = "The source REQUIRES the 23:00 UTC reference open and blocks the whole date without it. On a chart with extended hours switched OFF that bar never exists, so every date blocks and nothing can ever trade. ON BY DEFAULT so that no chart setting can block every single date. It substitutes the first bar of the cash session, which changes feature 1 and the prior-day override only. Extended hours ON is still preferable and the panel says whether the real bar was found. Untick this to reproduce the NinjaScript exactly.")
 strictContiguity = input.bool(false, "A missing minute blocks the whole date",
      group = gC, tooltip = "OFF BY DEFAULT BECAUSE THE TWO DATA FEEDS DIFFER. The source demands contiguous completed one-minute bars and fails closed, which is safe on NinjaTrader's feed because it carries a bar for every minute. TradingView OMITS minutes with no trades, so on this feed the same rule can kill dates the NinjaScript would have traded. This switch governs all three contiguity hard-fails: the opening range's minute sequence, its 15-bar count, and the signal bar's 15 constituents. Measured cost of switching it off, on a feed with no holes: 342 trades either way, +0.1620 R -> +0.1583 R. Turn it ON to reproduce the NinjaScript exactly.")
 
+selfTest = input.bool(false, "SELF-TEST: bypass every rule and take one long a day", group = gC,
+     tooltip = "A BISECTION PROBE, NOT A STRATEGY. It ignores the opening range, the admission tests, the direction model, the refinement branches, the warm-up and every data-quality gate, and simply buys at the first quarter-hour close after 10:00 with a 20-point stop and a 60-point target, flat at 16:00. Its only purpose is to answer one question: can THIS CHART produce a trade at all? If the Strategy Tester is still empty with this ticked, the problem is the chart -- timeframe, symbol or session -- and not the strategy. If it fills with trades, the harness works and the panel's counters say which rule is stopping the real thing.")
+
 showHud = input.bool(true, "Show panel", group = "Display")
+showStatusLabel = input.bool(true, "Show the status as a label on the last bar", group = "Display",
+     tooltip = "The panel can sit off-screen. This puts the one line that matters on the chart itself.")
 
 baseRiskFraction = baseRiskPercent / 100.0
 minRiskFraction  = minRiskPercent / 100.0
@@ -1074,8 +1079,26 @@ if strategy.position_size != 0 and activeInitialStopTicks >= 1 and activeTargetT
         strategy.exit("FTMx", from_entry = "FTM", loss = activeInitialStopTicks,
              profit = activeTargetTicks)
 
+// ============================================================== SELF-TEST
+// Bypasses every rule and every gate. See the input's tooltip: this exists only
+// to separate "the chart cannot produce a trade" from "a rule is refusing".
+var float stStop = na
+var float stTgt = na
+if selfTest and oneMinuteChart and isQuarterHourClose and strategy.position_size == 0
+     and not breakoutConsumed and not cashExitTriggered
+    breakoutConsumed := true
+    stStop := 20.0
+    stTgt := 60.0
+    strategy.entry("FTM", strategy.long, qty = 1)
+    strategy.exit("FTMx", from_entry = "FTM",
+         loss = math.round(stStop / syminfo.mintick),
+         profit = math.round(stTgt / syminfo.mintick))
+if selfTest and oneMinuteChart and sameCashDate and barCloseMin >= FLATTEN_MIN
+     and strategy.position_size != 0
+    strategy.close_all(comment = "SelfTestFlat")
+
 // ======================================== EvaluateAdmissionAndDirection
-if oneMinuteChart and isQuarterHourClose and strategy.position_size == 0
+if not selfTest and oneMinuteChart and isQuarterHourClose and strategy.position_size == 0
      and not dayBlocked and orbFinalized and not breakoutConsumed and not cashExitTriggered
      and not sessionEnding
     longBreak  = close >= roundPrice(orbHigh + confirmation)
@@ -1253,7 +1276,7 @@ if oneMinuteChart and isQuarterHourClose and strategy.position_size == 0
 // =================================================== the single order gateway
 // [EXACT SubmitEntry] -- the plan is computed by a pure function and the order,
 // the state mutation and the two skip counters happen here.
-if submitNow and strategy.position_size == 0
+if submitNow and not selfTest and strategy.position_size == 0
     [qty, stopTicks, targetTicks, trg, lck] = computeEntryPlan(submitSide)
     if stopTicks < 1 or targetTicks < 1
         cntFailClosed += 1
@@ -1359,3 +1382,29 @@ if showHud and barstate.islast
     table.cell(hud, 1, 12, str.tostring(strategy.closedtrades) + " closed, "
          + str.tostring(strategy.opentrades) + " open", text_size = size.small,
          text_color = strategy.closedtrades > 0 ? color.new(color.green, 0) : color.new(color.red, 0))
+
+// The same line again, on the chart, where it cannot be missed.
+var label statusLabel = na
+if showStatusLabel and barstate.islast
+    stx = not oneMinuteChart ? "FTM: CHART IS NOT 1 MINUTE -- switch to a 1-minute chart"
+         : selfTest ? "FTM SELF-TEST: " + str.tostring(strategy.closedtrades)
+           + " trades. If this is 0 the CHART cannot produce a trade, not the strategy."
+         : strategy.closedtrades > 0
+             ? "FTM: trading -- " + str.tostring(strategy.closedtrades) + " closed trades"
+         : not sawRefEver and not refOpenFallback
+             ? "FTM: no 23:00 UTC bar -- turn EXTENDED HOURS on, or tick the fallback"
+         : requireWarmContext and (orbRows < orbLookback or closeRows < trendCloses)
+             ? "FTM: blocked warming up " + str.tostring(orbRows) + "/"
+               + str.tostring(orbLookback) + " -- untick 'Refuse to trade until warm'"
+         : cntAdmitted == 0
+             ? "FTM: no signal admitted. dates " + str.tostring(daysSeen) + ", blocked gap "
+               + str.tostring(blkGap) + " / noRef " + str.tostring(blkNoRef) + " / ORB "
+               + str.tostring(blkOrb) + " / excluded " + str.tostring(blkExcluded)
+         : "FTM: " + str.tostring(cntAdmitted) + " signals admitted, "
+           + str.tostring(cntSizingSkip) + " sizing skips, "
+           + str.tostring(cntContextWarmup) + " warm-up refusals"
+    label.delete(statusLabel)
+    statusLabel := label.new(bar_index, high, stx, style = label.style_label_down,
+         color = strategy.closedtrades > 0 ? color.new(color.green, 20)
+             : color.new(color.red, 10),
+         textcolor = color.white, size = size.normal)
