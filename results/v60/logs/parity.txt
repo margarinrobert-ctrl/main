@@ -1,0 +1,25 @@
+============================================================================================================
+11. PINE PARITY -- the shipped script's order model against the engine, GROSS
+============================================================================================================
+
+  A - research top cell: EMA 21/62 cross w40, don 10/10, 3.0N, tp none, adx>=20, aroon off
+  market  block       script  engine   count  matched  same exit bar  script pts  engine pts      gap
+  US100L  research       211     212   99.5%      211          14.7%      +35.41      +35.22    +0.5%
+  US100L  locked         139     139  100.0%      138          18.8%      +16.93      +17.36    -2.5%
+  NQ      research        83      83  100.0%       83          18.1%      +41.26      +41.28    -0.1%
+  NQ      locked          50      50  100.0%       50          18.0%       +6.63       +6.81    -2.6%
+  US30L   research       208     208  100.0%      208          15.9%      +53.96      +53.49    +0.9%
+  US30L   locked         103     103  100.0%      103          17.5%      +14.69      +14.94    -1.6%
+
+  B - marginal consensus: EMA 21/62 cross w40, don 55/20, 3.0N, tp none, chop<=45, aroon off
+  market  block       script  engine   count  matched  same exit bar  script pts  engine pts      gap
+  US100L  research       157     157  100.0%      157          28.0%      +26.38      +26.61    -0.9%
+  US100L  locked          87      87  100.0%       87          37.9%      +43.82      +44.71    -2.0%
+  NQ      research        54      54  100.0%       54          35.2%      +67.33      +67.30    +0.0%
+  NQ      locked          33      33  100.0%       33          39.4%      -20.00      -20.02    +0.1%
+  US30L   research       162     162  100.0%      162          36.4%      +49.74      +48.44    +2.7%
+  US30L   locked          79      79  100.0%       79          35.4%      +21.21      +20.28    +4.6%
+
+  A NEGATIVE gap is the correct direction: the script gives back the channel exit's
+  fill convention, which the engine takes for free. A POSITIVE gap would mean the
+  script reads BETTER than the research, which is the shape STUDY_V56 had to fix.

@@ -1878,18 +1878,24 @@ on all three markets too, in a hump shape that is weakest at both ends. Coherenc
 the SEARCH; it cannot see a REGIME. And `corr(research, locked)` was **-0.4426 on NQ** over 121,282
 configurations -- when that number is negative, selecting on research is worse than not selecting.
 
-**THE EXIT'S FILL CONVENTION CAN BE THE WHOLE RESULT, and vectorbt is how it was found.** `eem`/`v38grid`
-exit a Donchian channel break at the CLOSE of the bar that breaks it -- a market-on-close order decided
-by the very close it fills at, the `flat_open` defect again. An independent vectorbt build agreed on the
-SIGNAL SET at 99.6-99.9% (every disagreement inside the EMA(62) warm-up) and on the TRADE COUNT at
-97.6-100%, then put the same locked block at **+5.98 / -12.28 / -0.09 points against the engine's
-+17.36 / +6.81 / +14.94**: a next-open fill costs 1.9-10.3 points a trade and **up to 353 points on one
-trade**, because on 60m "the next bar" can be across an overnight gap. Two traps in the harness itself,
-both worth more than the finding: **vectorbt anchors `sl_stop` to the bar's CLOSE, not to the `price=`
-fill** (solve for the fraction that reproduces your engine's ABSOLUTE level, or you are measuring the
-API), and **an unshifted exit signal with `price=open` is lookahead** -- it fills at the open of the bar
-whose close triggered it, worth +22 to +100 points a trade. Run the second opinion TWICE: transcription
-(signal sets, must be ~100%) then order model.
+**MEASURE THE MECHANISM YOU NAME -- I ATTRIBUTED A 4-22 POINT ENGINE GAP TO A CONVENTION WORTH 0.2
+POINTS.** An independent vectorbt build of the V60 leader agreed on the SIGNAL SET at 99.6-99.9%
+(every disagreement inside the EMA(62) warm-up) and on the TRADE COUNT at 97.6-100%, then reported
+4 to 22 fewer points a trade. The obvious explanation -- `eem`/`v38grid` exit a Donchian channel
+break at the CLOSE of the breaking bar, which no script can place, while a script fills at the NEXT
+OPEN -- is WRONG: `mean(open[j+1] - close[j])` over those exits is **-0.21 / +0.10 / -0.03 / -0.22 /
++0.55 / -0.31 points**, an order of magnitude out and not even consistently signed. The real gap is
+vectorbt's own execution: its STOP exits land on the SAME bar as the engine's and price **9 to 110
+points worse**, and **10-18% of its exits do not fill at the `price=` series at all**. Three
+vectorbt traps now recorded: `sl_stop` is a fraction resolved against the bar's CLOSE and not the
+`price=` fill (solve for the fraction that reproduces your engine's ABSOLUTE level); an unshifted
+exit signal with `price=open` is LOOKAHEAD, filling at the open of the bar whose close triggered it,
+worth +22 to +100 points a trade; and its exit-price selection is not fully controlled by
+`stop_exit_price`. **THE ARBITER OF WHAT A SHIPPED SCRIPT DOES IS THE SCRIPT'S OWN ORDER MODEL,
+WRITTEN OUT** -- `research/v60/v60_parity.py` does that and lands at 99.5-100% of the trade count
+and **-2.6% to +4.6%** of the engine's points, negative on every locked block, which is the
+conservative direction. A third engine is a second opinion about EXECUTION; it is not a correction
+to the research.
 
 ## Tooling
 
@@ -2034,7 +2040,8 @@ whose close triggered it, worth +22 to +100 points a trade. Run the second opini
 | `research/v60/v60judge.py` | the condition correlation matrix and the marginal-per-axis table |
 | `research/v60/v60aroon.py` | the Aroon-Donchian identity, checked bar by bar |
 | `research/v60/v60robust.py` | the ladder, the one-rung box, and the in-block walk-forward |
-| `research/v60/v60_vbt.py` | the vectorbt second opinion: transcription, order model, trade-by-trade diff |
+| `research/v60/v60_vbt.py` | the vectorbt second opinion: transcription, order model, fill attribution |
+| `research/v60/v60_parity.py` | the shipped V60 Pine's own order model, diffed against the engine |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine

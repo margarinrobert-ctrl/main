@@ -15,10 +15,8 @@ does bind (`osc ≥ 50`) makes every locked block worse.
 
 **And the strategy underneath it does not survive either.** The top-of-grid configuration clears a
 minute-of-day matched control on two of three markets and decays hard out of sample; its
-neighbourhood is **100% profitable on research and 26.6% profitable on NQ's locked block**; the
-research→locked rank correlation across 121,282 NQ configurations is **−0.4426**; and an
-independent vectorbt re-implementation puts the locked block at **+5.98 / −12.28 / −0.09 points a
-trade** against the engine's **+17.36 / +6.81 / +14.94**.
+neighbourhood is **100% profitable on research and 26.6% profitable on NQ's locked block**; and the
+research→locked rank correlation across 121,282 NQ configurations is **−0.4426**.
 
 ---
 
@@ -327,23 +325,72 @@ Under vectorbt's execution the locked block is **+5.98, −12.28 and −0.09** p
 the engine's **+17.36, +6.81 and +14.94** — two of three flip sign. The §6 conclusion that the
 leader survives out of sample "small but positive on all three" does not survive a second engine.
 
-**Pass 3, trade by trade, matched on the fill bar.** This is where the gap is, and it is not noise:
+**Pass 3, trade by trade, matched on the fill bar, split by exit reason.**
 
-| market | block | matched | stop n | Δbar | Δpx | chan n | Δbar | Δpx | worst |
+| market | block | matched | stop n | Δbar | Δpx | chan n | Δbar | Δpx | vbt fills at o / c / stop |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| US100L | research | 210 | 31 | +0.10 | −9.37 | 179 | +1.00 | −3.43 | 151.9 |
-| US100L | locked | 138 | 26 | +1.46 | −10.66 | 112 | +1.00 | −10.29 | 353.3 |
-| NQ | locked | 50 | 8 | +0.00 | −109.79 | 41 | +1.00 | −1.86 | 233.4 |
-| US30L | locked | 103 | 18 | +0.11 | −44.74 | 85 | +1.00 | −8.74 | 254.0 |
+| US100L | research | 210 | 31 | +0.10 | −9.37 | 179 | +1.00 | −3.43 | 80% / 11% / 9% |
+| US100L | locked | 138 | 26 | +1.46 | −10.66 | 112 | +1.00 | −10.29 | 73% / 14% / 13% |
+| NQ | research | 81 | 15 | +2.60 | +8.19 | 66 | +1.00 | −9.40 | 73% / 15% / 12% |
+| NQ | locked | 50 | 8 | +0.00 | **−109.79** | 41 | +1.00 | −1.86 | 80% / 18% / 2% |
+| US30L | research | 207 | 32 | +0.06 | −17.49 | 175 | +0.71 | −7.00 | 79% / 10% / 11% |
+| US30L | locked | 103 | 18 | +0.11 | −44.74 | 85 | +1.00 | −8.74 | 77% / 14% / 10% |
 
-**80–86% of exits are channel exits, and the engine takes them at the CLOSE of the bar that breaks
-the channel.** That is a market-on-close order decided by the very close it fills at — the same
-defect `CLAUDE.md` records for the fixed-time flatten, where the engine was changed to `flat_open`
-to match the script rather than the other way round. Filling at the next open instead costs a mean
-of **1.9 to 10.3 points a trade** and, on a 60-minute chart where "the next bar" can be across an
-overnight gap, **up to 353 points on a single trade.** (The stop column has n = 8–32 and is
-outlier-driven; a resting stop order at the channel level is a third convention and is not measured
-here.)
+**Pass 4, and a correction I have to make to my own first reading of pass 2.** The obvious
+explanation for the pass-2 gap is the channel exit's fill convention: the engine sells at the
+**close of the bar that breaks the channel** — a market-on-close order decided by the very close it
+fills at, which no script can place — while a script sells at the **next open**. That is exactly
+`mean(open[j+1] − close[j])` over the engine's own channel exits, and it is **measurable in one
+line**:
+
+| market | block | channel exits | give-up per channel exit | worst single |
+| --- | --- | --- | --- | --- |
+| US100L | research | 181 | **−0.21** | −24.50 |
+| US100L | locked | 113 | **+0.10** | −5.20 |
+| NQ | research | 68 | **−0.03** | −1.00 |
+| NQ | locked | 41 | **−0.22** | −3.25 |
+| US30L | research | 175 | **+0.55** | −96.00 |
+| US30L | locked | 85 | **−0.31** | −46.00 |
+
+**About a fifth of a point, and not always in the same direction.** The pass-2 gap is 4 to 22
+points. **So the convention is not the mechanism, and my first version of this section said it
+was.** What pass 3 actually shows is vectorbt's own execution: its **stop** exits land on the
+*same bar* as the engine's and price **9 to 110 points worse**, and 10–18% of its exits do not fill
+at the `price=` series at all. The channel column's Δpx is likewise larger than the convention
+because a tenth to a fifth of those trades are resolved by vectorbt's stop machinery rather than by
+the exit signal.
+
+The correct reading of the vectorbt columns is therefore the weaker one, and it is still worth
+having: **two independent implementations agree on the rule (99.6–99.9% of signal bars) and on
+which trades it takes (97.6–100%), and disagree on the exits by 12–100%.** That is a statement
+about how much of a bar-level backtest's number is its exit convention — the third time this branch
+has measured that, after V38's 2.1× and V41's 22.9× — not a correction to the research.
+
+### The arbiter: the shipped script's own order model
+
+`research/v60/v60_parity.py` settles what the Pine actually does, by writing its order model out
+directly rather than through a third library: one live position, market entry at the next open, a
+fill-relative bracket in whole ticks placed **with** the entry so the fill bar is protected, the
+channel exit tested only from the bar after the fill and filling at the next open, and the earliest
+re-entry one bar after the exit.
+
+| preset | market | block | script n | engine n | count | script pts | engine pts | gap |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A | US100L | research | 211 | 212 | 99.5% | +35.41 | +35.22 | +0.5% |
+| A | US100L | locked | 139 | 139 | 100.0% | +16.93 | +17.36 | **−2.5%** |
+| A | NQ | research | 83 | 83 | 100.0% | +41.26 | +41.28 | −0.1% |
+| A | NQ | locked | 50 | 50 | 100.0% | +6.63 | +6.81 | **−2.6%** |
+| A | US30L | research | 208 | 208 | 100.0% | +53.96 | +53.49 | +0.9% |
+| A | US30L | locked | 103 | 103 | 100.0% | +14.69 | +14.94 | **−1.6%** |
+| B | US100L | locked | 87 | 87 | 100.0% | +43.82 | +44.71 | −2.0% |
+| B | NQ | locked | 33 | 33 | 100.0% | −20.00 | −20.02 | +0.1% |
+| B | US30L | locked | 79 | 79 | 100.0% | +21.21 | +20.28 | +4.6% |
+
+**Trade counts 99.5–100%, per-trade result within −2.6% to +4.6%, and negative on every locked
+block** — the conservative direction, which is the one `STUDY_V56.md` had to work to achieve. The
+"same exit bar" share is 14.7–39.4% and that is *expected and checked*: every differing trade is a
+channel exit and differs by exactly **+1 bar**, so the matching share is simply the stop/target
+share of exits (14.6% of US100L research exits are stops, against a 14.7% same-bar rate).
 
 ### Two execution traps found while building the harness
 
@@ -376,11 +423,16 @@ place.
    shape here shows what it actually measures.
 4. **A negative research→locked rank correlation is a stop sign.** NQ: −0.4426 over 121,282
    configurations. When it is negative, selection on that market is worse than not selecting.
-5. **Settle the exit convention before believing a channel-exit result.** The engine's
-   fill-at-the-breaking-close is worth 1.9–10.3 points a trade against a next-open fill, which is
-   enough to flip this study's locked block on two of three markets.
-6. **`sl_stop` in vectorbt anchors to the close, not to `price=`.** Solve for the fraction that
-   reproduces your engine's absolute level, or the second opinion is measuring the harness.
+5. **Measure the mechanism you name.** I attributed a 4–22 point engine-vs-vectorbt gap to the
+   channel exit's fill convention without measuring the convention. It is worth **0.2 points**, an
+   order of magnitude out, and not always in the same direction. One line —
+   `mean(open[j+1] − close[j])` over the exits in question — would have caught it before the claim
+   was written, and a purpose-built parity harness confirms the script lands within 2.6% of the
+   engine. A plausible mechanism with the right sign is not a measurement.
+6. **`sl_stop` in vectorbt anchors to the close, not to `price=`**, and 10–18% of its exits do not
+   fill at the `price=` series at all. Solve for the fraction that reproduces your engine's
+   absolute level, and treat the residual as the library's execution rather than as your engine's
+   error — the arbiter of what a *script* does is the script's own order model, written out.
 7. **No take profit beat every target again** — fifth independent confirmation on this branch.
 
 ---
@@ -395,5 +447,7 @@ place.
 | `research/v60/v60aroon.py` | the Aroon–Donchian identity, checked bar by bar |
 | `research/v60/v60verdict.py` | consensus, matched control gate, the single locked read, Monte Carlo |
 | `research/v60/v60robust.py` | the ladder, the one-rung box, and the in-block walk-forward |
-| `research/v60/v60_vbt.py` | the vectorbt second opinion: transcription, order model, trade-by-trade diff |
+| `research/v60/v60_vbt.py` | the vectorbt second opinion: transcription, order model, trade-by-trade diff, fill attribution |
+| `research/v60/v60_parity.py` | **the shipped Pine's own order model in Python, diffed against the engine** |
+| `pine/v60/V60_AROON_DONCHIAN_strategy.pine` | the shipped script: two presets, every component switchable, the identity live in its panel |
 | `results/v60/logs/` | the raw output of all five |

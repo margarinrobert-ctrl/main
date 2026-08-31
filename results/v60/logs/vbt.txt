@@ -22,15 +22,28 @@
      vectorbt resolves that fraction against the bar's CLOSE, not the `price=` fill, so the stop
      lands (close - open) away from the engine's. The gap between the two columns is that trap.
 
-  PASS 3 -- TRADE BY TRADE, matched on the fill bar
-  market  block      matched eng only vbt only  stop n  d bar    d px  chan n  d bar    d px  worst px
-  US100L  research       210        2        1      31  +0.10   -9.37     179  +1.00   -3.43     151.9
-  US100L  locked         138        1        0      26  +1.46  -10.66     112  +1.00  -10.29     353.3
-  NQ      research        81        2        0      15  +2.60   +8.19      66  +1.00   -9.40     351.2
-  NQ      locked          50        0        0       8  +0.00 -109.79      41  +1.00   -1.86     233.4
-  US30L   research       207        1        0      32  +0.06  -17.49     175  +0.71   -7.00     270.3
-  US30L   locked         103        0        0      18  +0.11  -44.74      85  +1.00   -8.74     254.0
-     `d bar` is vectorbt's exit bar minus the engine's; +1 on every channel exit is the
-     next-open fill and is intended. `d px` is what that costs, and it is NEGATIVE everywhere:
-     the engine sells the CLOSE of the bar that breaks the channel, which is a market-on-close
-     order decided by the very close it fills at. `worst px` is the largest single-trade gap.
+  PASS 3 -- TRADE BY TRADE, matched on the fill bar, SPLIT BY EXIT REASON
+  market  block      matched  stop n  d bar     d px  chan n  d bar     d px     vbt fills at o / c / stop
+  US100L  research       210      31  +0.10    -9.37     179  +1.00    -3.43            80%  11%   9%
+  US100L  locked         138      26  +1.46   -10.66     112  +1.00   -10.29            73%  14%  13%
+  NQ      research        81      15  +2.60    +8.19      66  +1.00    -9.40            73%  15%  12%
+  NQ      locked          50       8  +0.00  -109.79      41  +1.00    -1.86            80%  18%   2%
+  US30L   research       207      32  +0.06   -17.49     175  +0.71    -7.00            79%  10%  11%
+  US30L   locked         103      18  +0.11   -44.74      85  +1.00    -8.74            77%  14%  10%
+
+  PASS 4 -- THE CHANNEL CONVENTION, MEASURED DIRECTLY rather than inferred from PASS 2.
+     The engine sells at the CLOSE of the bar that breaks the channel; a script sells at
+     the NEXT OPEN. That difference is exactly mean(open[j+1] - close[j]) over the
+     engine's own channel exits, and it is SMALL:
+  market  block       trades   stop   chan   hold  give-up per channel exit  worst single
+  US100L  research       212     31    181      0                     -0.21        -24.50
+  US100L  locked         139     26    113      0                     +0.10         -5.20
+  NQ      research        83     15     68      0                     -0.03         -1.00
+  NQ      locked          50      8     41      1                     -0.22         -3.25
+  US30L   research       208     33    175      0                     +0.55        -96.00
+  US30L   locked         103     18     85      0                     -0.31        -46.00
+     SO THE PASS-2 GAP IS NOT THE CONVENTION. It is vectorbt's own execution: its stop
+     exits land on the SAME bar as the engine's and price 9 to 110 points worse, and a
+     tenth to a fifth of its exits do not fill at the `price=` series at all. The
+     arbiter of what the SHIPPED SCRIPT does is `v60_parity.py`, which writes the
+     script's order model out directly and lands within -2.6% to +4.6% of the engine.

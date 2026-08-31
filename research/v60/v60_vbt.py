@@ -159,6 +159,21 @@ def engine_run(P, block_slice):
                 entpx=P["o"][s_ + 1], expx=P["o"][s_ + 1] + p_ / P["pv"])
 
 
+def fill_attribution(P, B, b):
+    """WHERE VECTORBT ACTUALLY FILLS ITS EXITS. Asserting this from the source is how the first
+    version of this module reached a wrong conclusion, so it is counted instead."""
+    idx = B["c"].index
+    pos = {ts: i for i, ts in enumerate(idx)}
+    t = b["rec"]
+    xi = np.array([pos[x] for x in t["Exit Timestamp"]])
+    xp = t["Avg Exit Price"].to_numpy()
+    if not len(xi):
+        return (np.nan, np.nan, np.nan)
+    at_o = np.isclose(xp, P["o"][xi])
+    at_c = np.isclose(xp, P["c"][xi]) & ~at_o
+    return (float(at_o.mean()), float(at_c.mean()), float((~at_o & ~at_c).mean()))
+
+
 def trade_diff(P, B, a, b):
     """Match the two engines TRADE BY TRADE on the fill bar and diff the exits.
 
@@ -187,6 +202,47 @@ def trade_diff(P, B, a, b):
         out[nm] = (len(s_), float(s_[:, 1].mean()) if len(s_) else np.nan,
                    float(s_[:, 2].mean()) if len(s_) else np.nan,
                    float(np.abs(s_[:, 2]).max()) if len(s_) else np.nan)
+    return out
+
+
+def exit_convention(P):
+    """WHERE THE TWO ENGINES ACTUALLY DIFFER ON THE CHANNEL EXIT, measured rather than inferred.
+
+    The engine exits a channel break at the CLOSE of the bar that breaks it. That is a
+    market-on-close order decided by the very close it fills at, which no script can place --
+    the same defect `CLAUDE.md` records for the fixed-time flatten. A script fills at the NEXT
+    open, so the cost of that convention is exactly the average of (next open - triggering close)
+    over the trades that exit on the channel.
+
+    THIS FUNCTION EXISTS BECAUSE THE FIRST READING OF THIS MODULE ATTRIBUTED THE PASS-2 GAP TO
+    THAT CONVENTION WITHOUT MEASURING IT, AND WAS WRONG BY AN ORDER OF MAGNITUDE. The convention
+    is worth about a fifth of a point; the gap is 4 to 22. Measure the mechanism you are naming.
+    """
+    import v38grid as G
+    import v39mc as MC
+    keep = (G.COMM, G.EC, G.SE)
+    G.COMM, G.EC, G.SE = 0.0, 0.0, 0.0
+    try:
+        xb, pnl, why = G.tensor_stop(P, LEAD_GEO["don_x"], LEAD_GEO["stop"], LEAD_GEO["tp"], 0)
+    finally:
+        G.COMM, G.EC, G.SE = keep
+    m = V.signal_mask(P, canon(LEAD))
+    cut = int(P["n"] * V.SPLIT)
+    out = {}
+    for bn, lo, hi in (("research", 0, cut), ("locked", cut, P["n"])):
+        sig = np.flatnonzero(m)
+        sig = sig[(sig >= lo) & (sig < hi)].astype(np.int64)
+        p_, s_ = MC.gather(P, xb, pnl, sig)
+        if not len(s_):
+            continue
+        x = xb[s_]
+        w = why[s_]
+        nxt = np.minimum(x + 1, P["n"] - 1)
+        give = np.where(w == 4, P["o"][nxt] - P["c"][x], 0.0)
+        ch = give[w == 4]
+        out[bn] = (len(s_), {int(k): int((w == k).sum()) for k in np.unique(w)},
+                   float(give.mean()), float(ch.mean()) if len(ch) else np.nan,
+                   float(ch.min()) if len(ch) else np.nan)
     return out
 
 
@@ -240,25 +296,38 @@ def main():
           " that trap.")
 
     print()
-    print("  PASS 3 -- TRADE BY TRADE, matched on the fill bar")
-    print(f"  {'market':<8}{'block':<10}{'matched':>8}{'eng only':>9}{'vbt only':>9}"
-          f"{'stop n':>8}{'d bar':>7}{'d px':>8}{'chan n':>8}{'d bar':>7}{'d px':>8}"
-          f"{'worst px':>10}")
+    print("  PASS 3 -- TRADE BY TRADE, matched on the fill bar, SPLIT BY EXIT REASON")
+    print(f"  {'market':<8}{'block':<10}{'matched':>8}{'stop n':>8}{'d bar':>7}{'d px':>9}"
+          f"{'chan n':>8}{'d bar':>7}{'d px':>9}{'  vbt fills at o / c / stop':>30}")
     for (mk, bn), (P, B, a, b) in keep.items():
         d = trade_diff(P, B, a, b)
         if not d:
             continue
         st, ch = d["stop"], d["channel"]
-        print(f"  {mk:<8}{bn:<10}{d['matched']:>8d}{d['eng_only']:>9d}{d['vbt_only']:>9d}"
-              f"{st[0]:>8d}{st[1]:>+7.2f}{st[2]:>+8.2f}"
-              f"{ch[0]:>8d}{ch[1]:>+7.2f}{ch[2]:>+8.2f}{max(st[3], ch[3]):>10.1f}")
-    print("     `d bar` is vectorbt's exit bar minus the engine's; +1 on every channel exit is the")
-    print("     next-open fill and is intended. `d px` is what that costs, and it is NEGATIVE"
-          " everywhere:")
-    print("     the engine sells the CLOSE of the bar that breaks the channel, which is a"
-          " market-on-close")
-    print("     order decided by the very close it fills at. `worst px` is the largest single-trade"
-          " gap.")
+        fo, fc, fs = fill_attribution(P, B, b)
+        print(f"  {mk:<8}{bn:<10}{d['matched']:>8d}"
+              f"{st[0]:>8d}{st[1]:>+7.2f}{st[2]:>+9.2f}"
+              f"{ch[0]:>8d}{ch[1]:>+7.2f}{ch[2]:>+9.2f}"
+              f"{fo * 100:>14.0f}% {fc * 100:>3.0f}% {fs * 100:>3.0f}%")
+
+    print()
+    print("  PASS 4 -- THE CHANNEL CONVENTION, MEASURED rather than inferred from PASS 2.")
+    print("     The engine sells at the CLOSE of the bar that breaks the channel; a script sells at")
+    print("     the NEXT OPEN. That difference is exactly mean(open[j+1] - close[j]) over the")
+    print("     engine's own channel exits, and it is SMALL:")
+    print(f"  {'market':<8}{'block':<10}{'trades':>8}{'stop':>7}{'chan':>7}{'hold':>7}"
+          f"{'give-up per channel exit':>26}{'worst single':>14}")
+    for mk in MARKETS:
+        P, B = Bs[mk]
+        for bn, (n, w, g_all, g_ch, worst) in exit_convention(P).items():
+            print(f"  {mk:<8}{bn:<10}{n:>8d}"
+                  + "".join(f"{w.get(k, 0):>7d}" for k in (1, 4, 5))
+                  + f"{g_ch:>+26.2f}{worst:>+14.2f}")
+    print("     SO THE PASS-2 GAP IS NOT THE CONVENTION. It is vectorbt's own execution: its stop")
+    print("     exits land on the SAME bar as the engine's and price 9 to 110 points worse, and a")
+    print("     tenth to a fifth of its exits do not fill at the `price=` series at all. The")
+    print("     arbiter of what the SHIPPED SCRIPT does is `v60_parity.py`, which writes the")
+    print("     script's order model out directly and lands within -2.6% to +4.6% of the engine.")
 
 
 if __name__ == "__main__":
