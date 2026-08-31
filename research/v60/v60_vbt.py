@@ -312,7 +312,7 @@ def main():
 
     print()
     print("  PASS 4 -- THE CHANNEL CONVENTION, MEASURED rather than inferred from PASS 2.")
-    print("     The engine sells at the CLOSE of the bar that breaks the channel; a script sells at")
+    print("     The engine sells at the CLOSE of the bar that breaks the channel; a script sells")
     print("     the NEXT OPEN. That difference is exactly mean(open[j+1] - close[j]) over the")
     print("     engine's own channel exits, and it is SMALL:")
     print(f"  {'market':<8}{'block':<10}{'trades':>8}{'stop':>7}{'chan':>7}{'hold':>7}"
