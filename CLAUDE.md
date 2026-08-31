@@ -1762,6 +1762,34 @@ to convert puts a 09:30 session window at 04:30 New York -- the pre-open block m
 part of the day four times -- and V58's NQ table went from 48 trades PF 1.80 to 89 trades PF 1.49
 on it. `research/datasets.py` states every feed's clock. Read it before loading.
 
+**AN EMA 16/64 CROSS WITH A FOUR-HOUR CEILING HAS NO EDGE ON THREE MARKETS, AND corr(RESEARCH,
+LOCKED) IS -0.070.** 243,000 configs per market (3 entry mechanics x 3 sides x 6 stops x 5 targets
+x 4 hold caps x 3 trails x 3 sessions x 5 ADX x 5 ATR): 21%/11% of the grid profitable, median
+negative. As briefed it scores PF 0.948/0.849 US30, 0.898/0.947 US100, 1.004 NQ and loses to a
+minute-of-day matched random entry running the SAME management at p 0.53-0.99; vectorbt agrees on
+the trade count 99.4-99.9% and puts the GROSS edge at -3.35 to +1.58 points against round turns of
+1.72 and 1.215 -- **smaller than the commission**. The ONLY condition beating `off` in all four
+market-block columns is the ATR FLOOR (>=1.2x its trailing median), worth ~+0.02 against a hole of
+-0.06 to -0.11; read once on NQ it earns +0.0567 where a RANDOM entry earns +0.0413 (control
+p 0.449). **THE FOUR-HOUR CEILING IS FREE AND WORTHLESS** -- 1h to 4h spans 0.02 ATR/trade with no
+consistent direction, so the holding constraint is not what is wrong with the family. The PLAIN
+CROSS beats both waiting for a close beyond the cross bar AND waiting for a pullback to the fast
+EMA, on both markets. `docs/ib/STUDY_V59_EMA_TREND_4H.md`.
+
+**THE MOST-AGREED CONDITION OF A TOP-1000 CONSENSUS HAS NOW FAILED THE MARGINAL READ TWICE.** V58's
+`EMA 13 under 48` was in 74% of the top 1000 and fails on both US100 columns; V59's `ADX <= 20` was
+in 55% and splits (+0.0244 US30 locked, -0.0220 US100 locked). A consensus over a ranking is a
+consensus over what the RANKING SELECTED FOR -- both markets were in it. Only the marginal average
+over the WHOLE grid asks what a condition does. Run both and believe the second.
+
+**A CONTROL THAT INHERITS A POSITION LOCK MUST INHERIT THE ORDER TOO.** V59's matched control samples
+one random bar per signal; those come out in signal order, not chronological order, so the lock
+(`skip while the previous trade is open`) rejected an arbitrary huge share and each draw kept a
+different fraction of its trades. The spread exploded and a rule beating its control by +0.18
+scored **p 0.404**. Sorting the sampled bars fixed it (0/25 clearing -> 6/25). **DIAGNOSE A NULL BY
+ITS SPREAD, NOT ONLY ITS MEDIAN**: a control whose median is far below the rule and which still
+cannot reject anything is broken.
+
 ## Tooling
 
 | module | what it does |
@@ -1868,6 +1896,8 @@ on it. `research/datasets.py` states every feed's clock. Read it before loading.
 | `research/atme/` | adaptive trade management: entry mechanics, trailing/breakeven stops, partials, mechanic isolation |
 | `research/atme/livesim.py` | true 1-minute path re-simulation of a 5-minute config, plus perturbation Monte Carlo |
 | `research/turtle15/pine_parity.py` | the shipped Pine's order model in Python, diffed against the engine |
+| `research/v59/v59core.py` | the EMA 16/64 exit tensor: 243,000 configs, dual lock kernels, duration-based hold |
+| `research/v59/v59judge.py`, `v59lock.py`, `v59_nq.py` | the sorted matched control, the one locked read, the NQ read |
 | `research/v58/v58ib.py` | the Initial Balance tensor: 777,600 configs in one walk, both exit models |
 | `research/v58/run_v58.py`, `v58judge.py`, `v58lock.py` | the sweep, the risk-matched control gate, the one locked read |
 | `research/v58/v58_vbt.py` | the vectorbt second opinion -- 100.0% trade-count agreement |
