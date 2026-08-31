@@ -1790,6 +1790,28 @@ scored **p 0.404**. Sorting the sampled bars fixed it (0/25 clearing -> 6/25). *
 ITS SPREAD, NOT ONLY ITS MEDIAN**: a control whose median is far below the rule and which still
 cannot reject anything is broken.
 
+**A NINJASCRIPT PORT'S HARDEST BUG IS A GUARD YOU DIDN'T NOTICE WAS LOad-BEARING.** Porting
+`FTM_OPENING_RANGE_BREAKOUT_MNQ_v1_8_0_RC1` (2,872 lines) to Pine, I dropped `sameCashDate` --
+the source's `barOpenEt.Date == currentCashDate` -- as apparent boilerplate. It is not: CME index
+futures reopen at 18:00 ET and that bar belongs to the NEXT exchange trading day, so its
+`closeMinuteEt` of 1082 is >= the 960 flatten and the 16:00 CASH-CLOSE BRANCH FIRED AT THE START
+OF EVERY SESSION, blocking the day before it could trade. Lint was clean, the logic read
+correctly, and the port produced **0 eligible sessions, 0 signals, 0 trades**. A Python
+transliteration of the SHIPPED PINE run over real 1-minute bars found it in one pass; with the
+guard restored the same run gives 473 eligible sessions, 458 admitted signals and 342 entries with
+all four exit reasons reached. **TRANSLITERATE THE PORT AND RUN IT ON BARS -- a port that compiles
+and does nothing looks exactly like a port that compiles and works.** `research/ftm/ftm_sim.py`.
+
+**PINE FUNCTIONS CANNOT ASSIGN TO GLOBALS, AND LINT WILL NOT TELL YOU.** `pine_lint` checks
+indentation, not scope. A helper that does `dayBlocked := true` is a compile error TradingView
+raises and nothing here catches, so the audit is mechanical: parse every `name(args) =>` body and
+flag any `:=`/`+=` on a name that is not a parameter or a local. Mutating an ARRAY handed to a
+function is fine, which is the standard workaround. Keep every `strategy.*` order call in the main
+scope too, so its placement is never in doubt -- V56's parity defect was exactly an order landing
+one bar later than intended. In the FTM port this meant hoisting every declaration above one
+contiguous main scope and turning SubmitEntry and ApplyFinalEntryRefinementOrSubmit into PURE
+functions that return a plan, with the mutation and the order at a single gateway.
+
 ## Tooling
 
 | module | what it does |
@@ -1896,6 +1918,7 @@ cannot reject anything is broken.
 | `research/atme/` | adaptive trade management: entry mechanics, trailing/breakeven stops, partials, mechanic isolation |
 | `research/atme/livesim.py` | true 1-minute path re-simulation of a 5-minute config, plus perturbation Monte Carlo |
 | `research/turtle15/pine_parity.py` | the shipped Pine's order model in Python, diffed against the engine |
+| `research/ftm/ftm_sim.py` | the shipped FTM Pine transliterated to Python and run on real 1m bars |
 | `research/v59/v59core.py` | the EMA 16/64 exit tensor: 243,000 configs, dual lock kernels, duration-based hold |
 | `research/v59/v59judge.py`, `v59lock.py`, `v59_nq.py` | the sorted matched control, the one locked read, the NQ read |
 | `research/v58/v58ib.py` | the Initial Balance tensor: 777,600 configs in one walk, both exit models |
