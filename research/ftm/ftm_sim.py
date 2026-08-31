@@ -90,7 +90,8 @@ def load_nq():
 
 def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         min_pct=0.5, max_pct=2.0, port_max=10, lev=4.0,
-        orb_lookback=ORB_LOOKBACK, trend_closes=REQ_TREND_CLOSES):
+        orb_lookback=ORB_LOOKBACK, trend_closes=REQ_TREND_CLOSES,
+        strict_contig=True, require_warm=True):
     f = load_nq()
     o, h, l, c = (f[k].to_numpy(float) for k in ("open", "high", "low", "close"))
     vol = f["volume"].to_numpy(float)
@@ -227,7 +228,8 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         in_cash = same_cash and open_min[i] >= ORB_START and close_min[i] <= FLATTEN \
             and dow[i] < 5
         if in_cash and not st["ending"]:
-            gap = st["lastClose"] != -1 and (open_min[i] != st["lastClose"] or not contiguous[i])
+            gap = strict_contig and st["lastClose"] != -1 \
+                and (open_min[i] != st["lastClose"] or not contiguous[i])
             if gap:
                 st.update(integrity=False, blocked=True, consumed=True, ending=True)
                 sp = ped = pfd = None
@@ -281,7 +283,7 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         # ---- opening range
         if same_cash and not st["blocked"] and not st["orbFin"] \
                 and ORB_START <= open_min[i] < ORB_END and dow[i] < 5:
-            if open_min[i] != st["expMin"]:
+            if strict_contig and open_min[i] != st["expMin"]:
                 st.update(integrity=False, blocked=True, consumed=True)
             else:
                 if st["orbN"] == 0:
@@ -292,7 +294,8 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                 st["orbN"] += 1
                 st["expMin"] += 1
                 if close_min[i] == ORB_END:
-                    if st["orbN"] != 15 or st["oh"] < st["ol"]:
+                    bad = (st["orbN"] != 15) if strict_contig else (st["orbN"] < 1)
+                    if bad or st["oh"] < st["ol"]:
                         st.update(integrity=False, blocked=True, consumed=True)
                     else:
                         st["orbFin"] = True
@@ -435,7 +438,8 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
             if lb or sb:
                 bside = 1 if lb else -1
                 sh_, sl_ = h[i - 14:i + 1].max(), l[i - 14:i + 1].min()
-                exact = (ts[i] - ts[i - 14]) == 14 * 60000 and sh_ > sl_
+                exact = sh_ > sl_ and ((ts[i] - ts[i - 14]) == 14 * 60000
+                                       if strict_contig else True)
                 if not exact:
                     st.update(consumed=True, integrity=False, blocked=True)
                     sp = ped = pfd = None
@@ -513,7 +517,7 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                                               bside=bside, ft=ft, key=int(ck), t=[])
                             if not st["blocked"]:
                                 ready = st["q75ok"] and st["trendOk"]
-                                sub = ready
+                                sub = ready or not require_warm
                                 if not ready:
                                     cnt["warm"] += 1
                                 if el == RC1_ELAPSED and ft[4] <= RC1_MAX_VWAP_BPS:

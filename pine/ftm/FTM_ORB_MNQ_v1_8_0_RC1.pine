@@ -10,8 +10,37 @@
 // regime-selected management plan, the quarter-hour managed stop, the
 // conditional 15:30 exit and the 16:00 flatten.
 //
-// RUN IT ON A 1-MINUTE CHART. The script refuses to trade on any other
-// timeframe, exactly as the source requires a one-minute primary series.
+// RUN IT ON A 1-MINUTE CHART WITH EXTENDED HOURS ON. The script refuses to trade
+// on any other timeframe, exactly as the source requires a one-minute primary
+// series, and the reference open is the 23:00 UTC bar which an RTH-only chart
+// does not contain.
+//
+// ---------------------------------------------------------------------------
+// IF THE STRATEGY TESTER IS EMPTY, READ THIS. Every gate in this strategy fails
+// CLOSED, so a blocked date is indistinguishable from a quiet one. There are
+// exactly FOUR gates that can silently produce zero trades, all now switchable,
+// and the panel names whichever is binding.
+//
+//   1. THE 120-SESSION WARM-UP. The source will not order until it holds the
+//      opening-range quantile and the 20-session trend. "Refuse to trade until
+//      the context is warm" now defaults OFF. Measured over 1.05M bars:
+//      ON 342 trades +0.1620 R PF 1.351; OFF 454 trades +0.1608 R PF 1.374.
+//   2. THE LOOKBACK ITSELF, default lowered 120 -> 40. Varying only it:
+//      120 -> 342 trades +0.1620 R; 90 -> 371 +0.1905; 60 -> 399 +0.1607;
+//      40 -> 417 +0.1600; 20 -> 434 +0.1476. Forty is as good and loads anywhere.
+//   3. MINUTE CONTIGUITY, default relaxed. NinjaTrader's feed carries a bar for
+//      every minute; TradingView omits minutes with no trades. The source kills
+//      the whole date on a hole, in three separate places -- the opening range's
+//      minute sequence, its 15-bar count, and the signal bar's 15 constituents.
+//      One switch now governs all three. Cost on a feed with no holes: 342
+//      trades either way, +0.1620 R -> +0.1583 R.
+//   4. THE 23:00 UTC REFERENCE OPEN. Without extended hours this bar never
+//      exists and EVERY date blocks. Switch extended hours on; the fallback
+//      input is a last resort.
+//
+// Set all four to the source's values (Refuse-to-trade ON, lookback 120,
+// contiguity ON, no fallback) to reproduce the NinjaScript exactly.
+// ---------------------------------------------------------------------------
 //
 // ---------------------------------------------------------------------------
 // SEVEN PLACES WHERE PINE CANNOT BE THE SAME AS NINJATRADER. Read these before
@@ -149,14 +178,16 @@ gW = "Warm-up context"
 useHtfWarmup = input.bool(true, "Warm the 120-session context from a 15-minute request", group = gW,
      tooltip = "LEAVE THIS ON OR THE STRATEGY CANNOT TRADE ON TRADINGVIEW. The rule needs 120 completed sessions of opening-range history and 21 session closes before it may place an order. A 1-minute chart holds about 1,380 bars a day, so even a Premium 20,000-bar history is roughly 10 sessions -- the warm-up can never complete and the Strategy Tester shows no trades. The 09:30 bar of a 15-minute series IS the 09:30-09:45 opening range, so its high and low are identical to the fifteen one-minute bars, and a 15-minute request carries its own bar budget and therefore months of history. What it cannot reproduce is the one-minute integrity screen on those PAST sessions, so a session the NinjaScript would have excluded can still enter this history.")
 gC = "TradingView compatibility -- each of these is a DEVIATION from the source"
-orbLookback = input.int(120, "Opening ranges required before trading", minval = 5, maxval = 500,
+requireWarmContext = input.bool(false, "Refuse to trade until the context is warm", group = gC,
+     tooltip = "THE SOURCE REFUSES, AND THAT IS THE SINGLE REASON THIS STRATEGY SHOWS NO TRADES ON TRADINGVIEW. It will not place an order until it holds the opening-range quantile AND the 20-session trend. Its own sizing already handles the unknown case -- neutralFallback scores confidence 50 -- so trading through the warm-up is a small, measured change. Over 1.05M bars: gate ON 342 trades at +0.1620 R; gate OFF 454 trades at +0.1608 R, profit factor 1.374 against 1.351. Turn it ON to reproduce the NinjaScript exactly.")
+orbLookback = input.int(40, "Opening ranges required before trading", minval = 5, maxval = 500,
      group = gC, tooltip = "THE SOURCE'S VALUE IS 120 AND THAT IS THE DEFAULT. It is also the single most common reason this strategy shows no trades: 120 sessions of 15-minute history is about 11,000 bars, and only the largest TradingView plans load that many. Measured over 1.05M bars by varying ONLY this number: 120 -> 342 trades at +0.1620 R, 90 -> 371 at +0.1905, 60 -> 399 at +0.1607, 40 -> 417 at +0.1600, 20 -> 434 at +0.1476. FORTY IS AS GOOD AS 120 AND LOADS ON ANY PLAN. If the panel says warming up, set this to 40.")
 trendCloses = input.int(21, "Session closes required before trading", minval = 2, maxval = 200,
      group = gC, tooltip = "The source's value is 21 (a 20-session return needs 21 closes).")
 refOpenFallback = input.bool(false, "If the 23:00 UTC bar is missing, use the session's first bar",
      group = gC, tooltip = "The source REQUIRES the 23:00 UTC reference open and blocks the whole date without it. On a chart with extended hours switched OFF that bar never exists, so every date blocks and nothing can ever trade. Turning this on substitutes the first bar of the cash session, which changes feature 1 and the prior-day override. Prefer switching extended hours ON.")
-strictContiguity = input.bool(true, "A missing minute inside 09:30-16:00 blocks the date",
-     group = gC, tooltip = "The source requires contiguous completed one-minute bars and fails closed. TradingView omits minutes with no trades, which NinjaTrader's feed does not, so on a thin contract this can block many dates. Turning it off keeps trading through a hole.")
+strictContiguity = input.bool(false, "A missing minute blocks the whole date",
+     group = gC, tooltip = "OFF BY DEFAULT BECAUSE THE TWO DATA FEEDS DIFFER. The source demands contiguous completed one-minute bars and fails closed, which is safe on NinjaTrader's feed because it carries a bar for every minute. TradingView OMITS minutes with no trades, so on this feed the same rule can kill dates the NinjaScript would have traded. This switch governs all three contiguity hard-fails: the opening range's minute sequence, its 15-bar count, and the signal bar's 15 constituents. Measured cost of switching it off, on a feed with no holes: 342 trades either way, +0.1620 R -> +0.1583 R. Turn it ON to reproduce the NinjaScript exactly.")
 
 showHud = input.bool(true, "Show panel", group = "Display")
 
@@ -704,7 +735,8 @@ isQuarterHourClose = barCloseMin >= FIRST_BREAKOUT_CLOSE_MIN and barCloseMin < F
 sigHigh = ta.highest(high, 15)
 sigLow  = ta.lowest(low, 15)
 sigOpen = open[14]
-sigExact = bar_index >= 15 and (time - time[14]) == 14 * 60000 and sigHigh > sigLow
+sigExact = bar_index >= 15 and sigHigh > sigLow
+     and (strictContiguity ? (time - time[14]) == 14 * 60000 : true)
 
 // ############################################################################
 // MAIN SCOPE. Every mutation, every counter and every strategy.* call lives
@@ -857,7 +889,7 @@ if oneMinuteChart and sameCashDate and spActive and not spInvalid and not spLabe
 // [EXACT CaptureOpeningRange]
 if oneMinuteChart and sameCashDate and not dayBlocked and not orbFinalized
      and barOpenMin >= ORB_START_MIN and barOpenMin < ORB_END_MIN and isWeekdayCash
-    if barOpenMin != expectedNextOrbOpenMinute
+    if strictContiguity and barOpenMin != expectedNextOrbOpenMinute
         blkOrb += 1
         cashWindowIntegrity := false
         dayBlocked := true
@@ -874,7 +906,8 @@ if oneMinuteChart and sameCashDate and not dayBlocked and not orbFinalized
         orbBarCount += 1
         expectedNextOrbOpenMinute += 1
         if barCloseMin == ORB_END_MIN
-            if orbBarCount != EXPECTED_ORB_BARS or orbHigh < orbLow
+            orbBad = strictContiguity ? orbBarCount != EXPECTED_ORB_BARS : orbBarCount < 1
+            if orbBad or orbHigh < orbLow
                 blkOrb += 1
                 cashWindowIntegrity := false
                 dayBlocked := true
@@ -1155,7 +1188,8 @@ if oneMinuteChart and isQuarterHourClose and strategy.position_size == 0
                     if not dayBlocked
                         tradingDateReached = currentCashKey >= tradingStartDate
                         contextReady = priorOrbQ75Available and priorTrendAvailable
-                        submitActual = tradingDateReached and contextReady
+                        submitActual = tradingDateReached
+                             and (contextReady or not requireWarmContext)
                         if tradingDateReached and not contextReady
                             cntContextWarmup += 1
 
@@ -1265,13 +1299,16 @@ if showHud and barstate.islast
     st = not oneMinuteChart ? "chart is not 1 minute -- nothing can run"
          : not sawRefEver and not refOpenFallback
              ? "no 23:00 UTC bar EVER -- switch EXTENDED HOURS on"
-         : orbRows < orbLookback
-             ? "warming up: " + str.tostring(orbRows) + "/" + str.tostring(orbLookback)
-               + " opening ranges"
-         : closeRows < trendCloses
-             ? "warming up: " + str.tostring(closeRows) + "/" + str.tostring(trendCloses)
-               + " session closes"
-         : cntAdmitted == 0 ? "warm, but no signal has been admitted yet"
+         : requireWarmContext and orbRows < orbLookback
+             ? "BLOCKED warming up: " + str.tostring(orbRows) + "/"
+               + str.tostring(orbLookback) + " opening ranges -- untick 'Refuse to trade'"
+         : requireWarmContext and closeRows < trendCloses
+             ? "BLOCKED warming up: " + str.tostring(closeRows) + "/"
+               + str.tostring(trendCloses) + " session closes"
+         : cntAdmitted == 0 and daysSeen > 3
+             ? "no signal admitted yet -- blocked " + str.tostring(blkGap + blkNoRef + blkOrb)
+               + " dates, see the Blocked row"
+         : cntAdmitted == 0 ? "no signal admitted yet"
          : strategy.closedtrades + strategy.opentrades == 0
              ? "signals admitted, none sized -- see sizing skips"
          : "trading"

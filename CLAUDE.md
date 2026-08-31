@@ -1812,6 +1812,19 @@ until it holds **120 completed sessions** of opening-range history and 21 sessio
 mismatches, and 735 cash closes identical to the 15:45 bar's close. Before blaming a port, compute
 how many sessions its warm-up needs and divide the plan's bar budget by bars-per-day.
 
+**A FAIL-CLOSED SYSTEM NEEDS EVERY GATE SWITCHABLE, NOT JUST THE ONE YOU SUSPECT.** The FTM port
+showed an empty Strategy Tester three times while compiling cleanly, and each round I fixed the
+gate I could see. There were FOUR that silently produce zero trades and only one was switchable:
+the 120-session warm-up refusal; the lookback itself; MINUTE CONTIGUITY, which hard-fails in THREE
+separate places (the opening range's minute sequence, its 15-bar count, and the signal bar's 15
+constituents) and matters because **NinjaTrader's feed carries a bar for every minute while
+TradingView omits minutes with no trades**; and the 23:00 UTC reference open, absent on any
+RTH-only chart. Measured cost of relaxing each over 1.05M bars: warm gate OFF 342 -> 454 trades at
++0.1620 -> +0.1608 R and PF 1.351 -> 1.374; lookback 120 -> 40, 417 trades at +0.1600; contiguity
+OFF, identical 342 trades at +0.1583. All four are now inputs, all four are counted separately, and
+the panel names the binding one. **Enumerate every fail-closed path FIRST and make each one both
+switchable and counted; debugging them one per round is how three rounds get spent.**
+
 **THE PARAMETER THAT MADE THE STRATEGY UNRUNNABLE WAS WORTH NOTHING -- MEASURE BEFORE BLAMING THE
 PLATFORM.** FTM refuses to trade until it holds **120** completed opening ranges, ~11,000
 fifteen-minute bars, which only the largest TradingView plans load; the Strategy Tester was empty
