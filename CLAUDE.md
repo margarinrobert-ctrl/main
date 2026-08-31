@@ -1897,6 +1897,29 @@ and **-2.6% to +4.6%** of the engine's points, negative on every locked block, w
 conservative direction. A third engine is a second opinion about EXECUTION; it is not a correction
 to the research.
 
+**AN INDICATOR THAT IS AN IDENTITY ON THE SIGNAL BAR CAN STILL BIND ONE BAR EARLIER, and that is
+the only version worth testing.** Aroon read at the bar BEFORE a Donchian breakout is not forced to
+100 -- the prior bar need not be the N-bar high -- so the condition can actually refuse a trade. On
+NQ 60m at Donchian 55, `osc>=0` / `up>=70` / `osc>=-50` at the SIGNAL bar return 54 trades and
++67.30 research / -20.02 locked, IDENTICAL TO THE CENT to `off`; at the PRIOR bar they give 52 /
+45 / 53 trades and +74.52 / +98.19 / +69.42. It is a different question ("was the trend already up
+before the break"), not a rescue of the original one, and one market with 30-50 locked trades does
+not overturn the whole-grid marginal. **Also: A PRESET MUST NOT DISARM A SWITCH.** The first build
+of the V60 script overwrote `aroonMode` during preset resolution, so the one input a reader would
+most want to try was dead unless they left the preset -- a preset sets what it has an opinion
+about, and nothing else.
+
+**A SESSION WINDOW AND A HARD FLATTEN, PRICED ON NQ 60m: the flatten costs 57% of the per-trade
+result at 16:00 and ALL of it at 12:00**, and it RAISES the trade count (83 -> 103), which is where
+the cost goes -- the clock closes trades a channel exit would have held. The windows that look best
+on research are the ones that go negative on locked (09:30-12:00 is the best research row at +73.37
+and reads -12.53 out of sample). Tenth independent confirmation of the intraday finding. Two
+mechanics the parity harness forced: **"flat by 16:00" means flat at the 16:00 OPEN**, so the order
+is submitted on the bar before (`nyMin + tfMin >= flatMin`), which is where `tensor_stop`'s
+`flat_mod` path fills; and **a signal whose fill would land at or after the cutoff must be REFUSED,
+not opened** -- the engine takes those and closes them at the same open for zero P&L, diluting the
+statistics. `research/v60/v60session.py`.
+
 ## Tooling
 
 | module | what it does |
@@ -2042,6 +2065,7 @@ to the research.
 | `research/v60/v60robust.py` | the ladder, the one-rung box, and the in-block walk-forward |
 | `research/v60/v60_vbt.py` | the vectorbt second opinion: transcription, order model, fill attribution |
 | `research/v60/v60_parity.py` | the shipped V60 Pine's own order model, diffed against the engine |
+| `research/v60/v60session.py` | the Aroon reading bar, and the session window x flatten grid |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine

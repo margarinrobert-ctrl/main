@@ -141,16 +141,55 @@ useChopIn = input.bool(false, "CHOP(14) ceiling", group = gR,
 chopMaxIn = input.float(45.0, "CHOP maximum", minval = 0.0, step = 1.0, group = gR)
 
 gA = "Aroon oscillator"
-aroonModeIn = input.string("off", "Aroon condition", group = gA,
+aroonMode = input.string("off", "Aroon condition", group = gA,
      options = ["off", "osc >= 0", "osc >= 50", "osc >= -50", "up >= 70"],
-     tooltip = "SHIPS OFF, and the reason is arithmetic rather than a weak result. Whenever the " +
-     "Aroon length is <= the Donchian entry length, `osc >= 0` and `up >= 70` are TRUE ON EVERY " +
-     "BREAKOUT BAR by construction and remove nothing. Watch the HUD's `pass on breakouts` row.")
-aroonLenIn = input.int(25, "Aroon length", minval = 2, group = gA)
+     tooltip = "THIS INPUT IS LIVE IN EVERY PRESET. An earlier build resolved the presets by " +
+     "overwriting it with `off`, so choosing a condition here did nothing unless the preset read " +
+     "Custom -- that was a defect and it is fixed. Ships off because of the identity below, not " +
+     "because it is merely weak.")
+aroonLen = input.int(25, "Aroon length", minval = 2, group = gA)
+aroonAt = input.string("prior bar", "Read Aroon at", group = gA,
+     options = ["signal bar", "prior bar"],
+     tooltip = "THIS IS THE SETTING THAT DECIDES WHETHER AROON CAN DO ANYTHING AT ALL. At the " +
+     "SIGNAL bar, whenever the Aroon length is <= the Donchian entry length the breakout bar IS " +
+     "the N-bar high, so `osc >= 0` and `up >= 70` are true by construction and remove nothing -- " +
+     "on preset B they return the same P&L to the cent as `off` (NQ 54 trades, +67.30, PF 2.03, " +
+     "identical). At the PRIOR bar the identity does not apply, because the bar before a breakout " +
+     "need not be the N-bar high, and the condition asks a real question: was the trend already " +
+     "up before the break. Measured on NQ 60m, gross, research then locked $/trade: " +
+     "preset B off +67.30 / -20.02; up>=70 signal +67.30 / -20.02 (INERT); up>=70 prior " +
+     "+98.19 / -11.82 on 45 and 30 trades. Preset A (donchian 10, so 25 > 10 and the signal-bar " +
+     "reading already binds): off +41.28 / +6.81; osc>=0 signal +48.55 / +10.57; osc>=0 prior " +
+     "+55.86 / +14.09. ONE MARKET, 30-50 locked trades, and the whole-grid marginal says no Aroon " +
+     "setting beats `off` in more than 2 of 6 market-block columns. Treat it as a knob to explore, " +
+     "not as an edge.")
 showAroonIn = input.bool(true, "Report the oscillator in the status line / data window", group = gA,
      tooltip = "This script is an overlay, so the oscillator is NOT drawn on the price scale -- " +
      "it would squash the chart. Its live value appears in the status line, the Data Window and " +
      "the panel instead.")
+
+gS = "Session -- entry window and hard flatten"
+useSession = input.bool(false, "Restrict entries to a window", group = gS,
+     tooltip = "OFF by default and the reason is measured, not a preference. NQ 60m, preset A, " +
+     "gross, research then locked $/trade: all hours +41.28 / +6.81; 09:30-11:00 +39.71 / -36.70; " +
+     "09:30-12:00 +73.37 / -12.53; 08:00-12:00 +46.84 / +4.92; 09:30-16:00 +71.64 / +6.11. The " +
+     "windows that look best on research are the ones that go NEGATIVE on the locked block. This " +
+     "is the tenth independent time the intraday constraint has come out negative on this branch.")
+entrySession = input.session("0930-1600", "Entry window (New York)", group = gS,
+     tooltip = "A bar is eligible when its OPEN falls inside the window. The window gates ENTRIES " +
+     "only -- a position already open is managed by its stop and channel exit unless the flatten " +
+     "below is also on.")
+useFlatten = input.bool(false, "Hard flatten", group = gS,
+     tooltip = "OFF by default. NQ 60m, preset A, all hours, gross, research then locked " +
+     "$/trade: no flatten +41.28 / +6.81 on 83 and 50 trades; flat by 16:00 +17.78 / +5.39 on 103 " +
+     "and 52; flat by 12:00 -0.57 / -5.02 on 89 and 36. A FIXED-TIME FLATTEN COSTS ABOUT 57% OF " +
+     "THE RESEARCH RESULT PER TRADE at 16:00 and ALL of it at 12:00, because it truncates exactly " +
+     "the trades a channel exit exists to hold. `Flat by 16:00` means FLAT AT THE 16:00 OPEN: the " +
+     "order goes in on the bar before, because strategy.close() cannot sell the close that " +
+     "triggers it. A signal whose fill would land at or after the cutoff is refused rather than " +
+     "opened and closed at the same price.")
+flatHour = input.int(16, "Flatten by -- hour (New York)", minval = 0, maxval = 23, group = gS)
+flatMinute = input.int(0, "Flatten by -- minute", minval = 0, maxval = 59, group = gS)
 
 gH = "Display"
 showHudIn = input.bool(true, "Show the diagnostic panel", group = gH)
@@ -174,8 +213,10 @@ useAdx = isA ? true : isB ? false : useAdxIn
 adxMin = isA or isB ? 20.0 : adxMinIn
 useChop = isA ? false : isB ? true : useChopIn
 chopMax = isA or isB ? 45.0 : chopMaxIn
-aroonMode = isA or isB ? "off" : aroonModeIn
-aroonLen = isA or isB ? 25 : aroonLenIn
+// THE AROON GROUP IS DELIBERATELY ABSENT FROM THIS BLOCK. Both presets were SELECTED with Aroon
+// off, so `off` is their researched value -- but overwriting the input made it impossible to turn
+// on without also leaving the preset, which is not what a switch is for. The presets now set the
+// entry, geometry and gate; Aroon, the session and the display are always the user's.
 
 // ------------------------------------------------------------------------------------------------
 // SERIES. ATR is ta.atr, which is Wilder's rma(TR, n) -- and that is deliberate here: the research
@@ -219,20 +260,40 @@ aroonUp = 100.0 * (ta.highestbars(high, aroonLen + 1) + aroonLen) / aroonLen
 aroonDn = 100.0 * (ta.lowestbars(low, aroonLen + 1) + aroonLen) / aroonLen
 aroonOsc = aroonUp - aroonDn
 
+// READ AT THE SIGNAL BAR OR THE BAR BEFORE IT. `[1]` is what breaks the Donchian identity: the bar
+// before a breakout is not required to be the N-bar high, so the condition can actually refuse.
+aroonOscRead = aroonAt == "prior bar" ? aroonOsc[1] : aroonOsc
+aroonUpRead = aroonAt == "prior bar" ? aroonUp[1] : aroonUp
+
 aroonOk = aroonMode == "off" ? true :
-     aroonMode == "osc >= 0" ? aroonOsc >= 0.0 :
-     aroonMode == "osc >= 50" ? aroonOsc >= 50.0 :
-     aroonMode == "osc >= -50" ? aroonOsc >= -50.0 : aroonUp >= 70.0
+     aroonMode == "osc >= 0" ? aroonOscRead >= 0.0 :
+     aroonMode == "osc >= 50" ? aroonOscRead >= 50.0 :
+     aroonMode == "osc >= -50" ? aroonOscRead >= -50.0 : aroonUpRead >= 70.0
 
 donHi = ta.highest(high, donEntry)[1]
 donLo = ta.lowest(low, donExit)[1]
+
+// SESSION. Bare `hour`/`minute` are EXCHANGE time in Pine -- Chicago for a CME future -- so New
+// York is named explicitly everywhere. That trap has shipped broken on this branch once.
+nyMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+tfMin = timeframe.in_seconds(timeframe.period) / 60.0
+flatMin = flatHour * 60 + flatMinute
+inWindow = not useSession or not na(time(timeframe.period, entrySession, "America/New_York"))
+// FLAT BY `flatMin` MEANS FLAT AT THAT BAR'S OPEN, so the order is submitted on the bar BEFORE it.
+// `strategy.close()` fills at the next open and cannot sell the close that triggers it, which is
+// the same `flat_open` correction this branch made in the engine rather than in the script.
+flatDue = useFlatten and nyMin + tfMin >= flatMin
 
 gateOk = (not useAdx or adxVal >= adxMin) and (not useChop or chopVal <= chopMax)
 breakout = close > donHi
 atrOk = not na(atrVal) and atrVal > 0
 warm = bar_index > math.max(math.max(emaSlow * 3, donEntry + 2), math.max(aroonLen + 2, 30))
 
-signal = breakout and emaOk and gateOk and aroonOk and atrOk and warm
+// `not flatDue` on the ENTRY as well as the exit. Without it a signal on the last bar before the
+// flatten fills at the open of the flatten bar and is closed at the same open -- a zero-P&L trade
+// that exists only to dilute the statistics. The engine takes those; this script refuses them, and
+// `v60_parity.py` reports the resulting trade-count difference rather than hiding it.
+signal = breakout and emaOk and gateOk and aroonOk and atrOk and warm and inWindow and not flatDue
 
 // ------------------------------------------------------------------------------------------------
 // ORDERS. Three rules of this branch's Pine discipline are load-bearing here:
@@ -267,7 +328,10 @@ pastFillBar = not na(signalBar) and bar_index > signalBar + 1
 // IT FILLS AT THE NEXT BAR'S OPEN. The engine fills at THIS bar's close, which no script can do.
 channelExit = inTrade and pastFillBar and not na(donLo) and close < donLo
 
-if channelExit and barstate.isconfirmed
+if inTrade and flatDue and barstate.isconfirmed
+    strategy.close("L", comment = "flatten")
+
+if channelExit and not flatDue and barstate.isconfirmed
     strategy.close("L", comment = "channel")
 
 if signal and flat and barstate.isconfirmed
@@ -288,6 +352,10 @@ var int nAroonOnBreak = 0
 var int nEmaOnBreak = 0
 var int nGateOnBreak = 0
 var int nSignal = 0
+var int nInWindow = 0
+
+if barstate.isconfirmed and warm and inWindow
+    nInWindow += 1
 
 if barstate.isconfirmed and warm
     if breakout and atrOk
@@ -315,8 +383,11 @@ plotshape(signal and barstate.isconfirmed, "signal", shape.triangleup, location.
      color.new(color.teal, 0), size = size.tiny)
 
 if showHudIn and barstate.islast
-    var table hud = table.new(position.top_right, 2, 13, border_width = 1)
-    identity = aroonMode != "off" and aroonLen <= donEntry
+    var table hud = table.new(position.top_right, 2, 15, border_width = 1)
+    // THE IDENTITY ONLY APPLIES TO THE SIGNAL-BAR READING. At the prior bar the breakout has not
+    // yet happened, so the Aroon is free to be anything and the condition can refuse a trade.
+    identity = aroonMode != "off" and aroonLen <= donEntry and aroonAt == "signal bar" and
+         aroonMode != "osc >= 50"
     table.cell(hud, 0, 0, "V60", bgcolor = color.new(color.teal, 70), text_size = size.small)
     table.cell(hud, 1, 0, preset, bgcolor = color.new(color.teal, 70), text_size = size.small)
     table.cell(hud, 0, 1, "EMA", text_size = size.tiny)
@@ -336,7 +407,7 @@ if showHudIn and barstate.islast
          (not useAdx and not useChop ? "off" : ""), text_size = size.tiny)
     table.cell(hud, 0, 5, "aroon", text_size = size.tiny)
     table.cell(hud, 1, 5, aroonMode == "off" ? "off" : aroonMode + " (" + str.tostring(aroonLen) +
-         ")", text_size = size.tiny)
+         ") @ " + aroonAt, text_size = size.tiny)
     table.cell(hud, 0, 6, "breakout bars", text_size = size.tiny)
     table.cell(hud, 1, 6, str.tostring(nBreak), text_size = size.tiny)
     table.cell(hud, 0, 7, "aroon pass on breakouts", text_size = size.tiny,
@@ -351,9 +422,15 @@ if showHudIn and barstate.islast
     table.cell(hud, 1, 10, str.tostring(nSignal), text_size = size.tiny)
     table.cell(hud, 0, 11, "closed trades", text_size = size.tiny)
     table.cell(hud, 1, 11, str.tostring(strategy.closedtrades), text_size = size.tiny)
-    table.cell(hud, 0, 12, identity ? "AROON IS INERT HERE" : "aroon length vs channel",
+    table.cell(hud, 0, 12, "session", text_size = size.tiny)
+    table.cell(hud, 1, 12, (useSession ? entrySession : "all hours") +
+         (useFlatten ? "  flat " + str.tostring(flatHour) + ":" +
+         (flatMinute < 10 ? "0" : "") + str.tostring(flatMinute) : ""), text_size = size.tiny)
+    table.cell(hud, 0, 13, "eligible bars in window", text_size = size.tiny)
+    table.cell(hud, 1, 13, useSession ? str.tostring(nInWindow) : "--", text_size = size.tiny)
+    table.cell(hud, 0, 14, identity ? "AROON IS INERT HERE" : "aroon length vs channel",
          text_size = size.tiny, bgcolor = identity ? color.new(color.orange, 60) : na)
-    table.cell(hud, 1, 12, identity ? "len " + str.tostring(aroonLen) + " <= entry " +
-         str.tostring(donEntry) : "len " + str.tostring(aroonLen) + " vs entry " +
-         str.tostring(donEntry), text_size = size.tiny,
+    table.cell(hud, 1, 14, identity ? "len " + str.tostring(aroonLen) + " <= entry " +
+         str.tostring(donEntry) + " @ signal bar" : "len " + str.tostring(aroonLen) + " vs entry " +
+         str.tostring(donEntry) + " @ " + aroonAt, text_size = size.tiny,
          bgcolor = identity ? color.new(color.orange, 60) : na)

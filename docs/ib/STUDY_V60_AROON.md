@@ -411,6 +411,104 @@ place.
 
 ---
 
+## 8b. Making the Aroon bind — a defect, and the only reading that can refuse a trade
+
+The shipped script's first build resolved its presets by overwriting `aroonMode` with `"off"`, so
+**selecting an Aroon condition did nothing unless the preset dropdown read "Custom".** That is a
+plain defect and it is fixed: the presets now set the entry, the geometry and the gate, and the
+Aroon group, the session and the display are always the user's. A switch that a preset can silently
+disarm is not a switch.
+
+But the input being live is only half of it, because of §2. **The only way to make Aroon do work on
+a breakout is to read it where the breakout has not already determined it** — the bar *before* the
+signal. The prior bar is not required to be the N-bar high, so the identity does not apply and the
+condition asks a different, genuinely testable question: *was the trend already up before the
+break?* Both readings are causal. Measured on NQ 60m, gross, research → locked $/trade:
+
+**Preset B (Donchian 55, Aroon 25 — the signal-bar reading is the identity):**
+
+| aroon | read at | res n | res pts | lock n | lock pts |
+| --- | --- | --- | --- | --- | --- |
+| off | — | 54 | +67.30 | 33 | −20.02 |
+| osc ≥ 0 | signal | **54** | **+67.30** | **33** | **−20.02** |
+| up ≥ 70 | signal | **54** | **+67.30** | **33** | **−20.02** |
+| osc ≥ −50 | signal | **54** | **+67.30** | **33** | **−20.02** |
+| osc ≥ 0 | prior | 52 | +74.52 | 32 | −16.07 |
+| up ≥ 70 | prior | 45 | +98.19 | 30 | −11.82 |
+
+Three conditions returning the trade count **and** the P&L of `off` to the cent is the identity
+printed in a results table rather than argued from arithmetic. Moving the read one bar back changes
+the trade count immediately.
+
+**Preset A (Donchian 10, Aroon 25 — 25 > 10, so even the signal-bar reading binds):**
+
+| aroon | read at | res n | res pts | res PF | lock n | lock pts | lock PF |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| off | — | 83 | +41.28 | 1.90 | 50 | +6.81 | 1.08 |
+| osc ≥ 0 | signal | 70 | +48.55 | 2.13 | 38 | +10.57 | 1.15 |
+| osc ≥ 0 | prior | 66 | +55.86 | 2.40 | 35 | +14.09 | 1.21 |
+| osc ≥ 50 | signal | 52 | +62.52 | 2.61 | 32 | +18.84 | 1.29 |
+| osc ≥ 50 | prior | 44 | +75.81 | 2.97 | 31 | +6.23 | 1.08 |
+| up ≥ 70 | prior | 51 | +68.55 | 2.87 | 33 | +15.25 | 1.22 |
+
+The prior-bar reading beats the signal-bar reading on research in every pair, and is mixed on
+locked. **This is one market with 30–50 locked trades, and §3's whole-grid marginal — computed over
+three markets and 142,560 configurations — says no Aroon setting beats `off` in more than 2 of 6
+columns.** Restrictiveness alone raises profit factor, and this branch has recorded an ATR filter
+going PF 1.42 → 1.77 while being indistinguishable from a random filter of the same selectivity.
+The reading bar ships as a knob with these numbers attached, not as a result. The two feeds that
+would settle it were wiped by a container recycle and need re-uploading.
+
+## 8c. The session window and the flatten, priced rather than warned about
+
+Both were asked for, both ship **off**, and each carries its measured cost in its own tooltip.
+NQ 60m, preset A, gross:
+
+| window (New York) | flatten | res n | res pts | res PF | lock n | lock pts | lock PF |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| all hours | none | 83 | +41.28 | 1.90 | 50 | **+6.81** | 1.08 |
+| all hours | 16:00 | 103 | +17.78 | 1.40 | 52 | +5.39 | 1.10 |
+| all hours | 12:00 | 89 | −0.57 | 0.99 | 36 | −5.02 | 0.93 |
+| 09:30–11:00 | none | 20 | +39.71 | 3.10 | 11 | **−36.70** | 0.57 |
+| 09:30–12:00 | none | 27 | +73.37 | 5.49 | 19 | **−12.53** | 0.85 |
+| 08:00–12:00 | none | 45 | +46.84 | 1.99 | 29 | +4.92 | 1.06 |
+| 09:30–16:00 | none | 46 | +71.64 | 4.56 | 34 | +6.11 | 1.07 |
+
+**A 16:00 flatten costs 57% of the research result per trade and a 12:00 flatten costs all of it**,
+and both raise the trade count — 83 → 103 — which is where the cost goes: the clock closes trades a
+channel exit would have held. **And the windows that look best on research are the ones that go
+negative on locked**: 09:30–12:00 is the best research row in the table at +73.37 and reads −12.53
+out of sample. Tenth independent confirmation of the intraday finding on this branch, and a
+textbook instance of `STUDY_V16`'s warning that the best research row in a window table is the one
+to distrust.
+
+Two implementation points the parity harness forced:
+
+* **"Flat by 16:00" means flat at the 16:00 *open*.** `strategy.close()` cannot sell the close of
+  the bar that triggers it, so the order is submitted on the bar before — `nyMin + tfMin >= flatMin`
+  — which lands the fill exactly where `tensor_stop`'s `flat_mod` path puts it.
+* **A signal whose fill would land at or after the cutoff is refused, not opened.** The engine takes
+  those and closes them at the same open for zero P&L, diluting the statistics; the script guards
+  its entry with `not flatDue`, and the measurement above was redone to match the script.
+
+Parity on all five configurations, NQ 60m, gross:
+
+| configuration | block | script n | engine n | count | script pts | engine pts | gap |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A | research | 83 | 83 | **100.0%** | +41.26 | +41.28 | −0.1% |
+| A | locked | 50 | 50 | **100.0%** | +6.63 | +6.81 | −2.6% |
+| B | research | 54 | 54 | **100.0%** | +67.33 | +67.30 | +0.0% |
+| A + aroon up≥70 @ prior | research | 51 | 51 | **100.0%** | +68.53 | +68.55 | −0.0% |
+| A + window 09:30–16:00 | research | 46 | 46 | **100.0%** | +71.60 | +71.64 | −0.0% |
+| A + flatten 16:00 | research | 103 | 103 | **100.0%** | +17.28 | +17.78 | −2.8% |
+| A + flatten 16:00 | locked | 52 | 52 | **100.0%** | +5.29 | +5.39 | −1.8% |
+
+Each optional feature is turned on **alone**, so a parity failure would name one feature rather
+than a combination.
+
+
+---
+
 ## 9. What to carry forward
 
 1. **Do not add a channel-position indicator to a channel breakout.** Aroon, Donchian, Williams %R
@@ -434,6 +532,13 @@ place.
    absolute level, and treat the residual as the library's execution rather than as your engine's
    error — the arbiter of what a *script* does is the script's own order model, written out.
 7. **No take profit beat every target again** — fifth independent confirmation on this branch.
+8. **A preset must not disarm a switch.** The first build of the shipped script overwrote
+   `aroonMode` during preset resolution, so the one input a reader would most want to experiment
+   with was dead unless they left the preset. A preset should set what it has an opinion about and
+   nothing else.
+9. **An indicator that is an identity on the signal bar can still bind one bar earlier**, and that
+   is the only version of it worth testing. It is a different question — "was the trend already up
+   before the break" — not a rescue of the original one.
 
 ---
 
@@ -449,5 +554,6 @@ place.
 | `research/v60/v60robust.py` | the ladder, the one-rung box, and the in-block walk-forward |
 | `research/v60/v60_vbt.py` | the vectorbt second opinion: transcription, order model, trade-by-trade diff, fill attribution |
 | `research/v60/v60_parity.py` | **the shipped Pine's own order model in Python, diffed against the engine** |
+| `research/v60/v60session.py` | the Aroon reading bar, and the session window x flatten grid |
 | `pine/v60/V60_AROON_DONCHIAN_strategy.pine` | the shipped script: two presets, every component switchable, the identity live in its panel |
 | `results/v60/logs/` | the raw output of all five |

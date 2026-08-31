@@ -42,16 +42,38 @@ import v38grid as G             # noqa: E402
 import v39mc as MC              # noqa: E402
 from run_v60 import MARKETS      # noqa: E402
 
+
+def available():
+    """Only the markets whose bars are on disk. A container recycle wipes the uploaded feeds, so
+    this is checked rather than assumed -- a parity harness that dies on a missing CSV tells you
+    nothing about the markets you DO have."""
+    out = []
+    for mk in MARKETS:
+        try:
+            V.load_market(mk, 60)
+            out.append(mk)
+        except Exception:
+            pass
+    return out
+
+BASE_A = dict(mode="cross", ema_f=21, ema_s=62, win=40, don_e=10, don_x=10,
+              stop=3.0, tp=0.0, gate="adx>=20", aroon="off", aroon_n=25)
+BASE_B = dict(mode="cross", ema_f=21, ema_s=62, win=40, don_e=55, don_x=20,
+              stop=3.0, tp=0.0, gate="chop<=45", aroon="off", aroon_n=25)
+
+# The two shipped presets, plus the three OPTIONAL features, each turned on alone so a parity
+# failure names one feature rather than a combination.
 PRESETS = {
-    "A - research top cell": dict(mode="cross", ema_f=21, ema_s=62, win=40, don_e=10, don_x=10,
-                                  stop=3.0, tp=0.0, gate="adx>=20", aroon="off", aroon_n=25),
-    "B - marginal consensus": dict(mode="cross", ema_f=21, ema_s=62, win=40, don_e=55, don_x=20,
-                                   stop=3.0, tp=0.0, gate="chop<=45", aroon="off", aroon_n=25),
+    "A - research top cell": BASE_A,
+    "B - marginal consensus": BASE_B,
+    "A + aroon up>=70 at the PRIOR bar": dict(BASE_A, aroon="up>=70", aroon_at="prior"),
+    "A + entry window 09:30-16:00 NY": dict(BASE_A, sess=(570, 960)),
+    "A + hard flatten at 16:00 NY": dict(BASE_A, flat=960),
 }
 TICK = {"NQ": 0.25, "US100L": 0.1, "US30L": 1.0}
 
 
-def script_walk(P, cfg, tick, blk):
+def script_walk(P, cfg, tick, blk, tf=60):
     """The shipped Pine's order model, bar by bar, with nothing shared with the engine.
 
     One live position. Signal on a confirmed close; market entry at the next open; a fill-relative
@@ -62,8 +84,18 @@ def script_walk(P, cfg, tick, blk):
     n = P["n"]
     ex_lo = I.shift(I.rmin(l, cfg["don_x"]), 1)
     sig = V.signal_mask(P, (cfg["mode"], cfg["ema_f"], cfg["ema_s"], cfg["win"], cfg["don_e"],
-                            cfg["gate"], 0 if cfg["aroon"] == "off" else cfg["aroon_n"],
-                            cfg["aroon"]))
+                            cfg["gate"], 0, "off"))
+    if cfg["aroon"] != "off":
+        a = P["aroon"][cfg["aroon_n"]][cfg["aroon"]]
+        if cfg.get("aroon_at") == "prior":
+            a = np.r_[False, a[:-1]]         # the identity-breaking reading
+        sig = sig & a
+    lo_m, hi_m = cfg.get("sess", (0, 1440))
+    if lo_m > 0 or hi_m < 1440:
+        sig = sig & (P["mod"] >= lo_m) & (P["mod"] < hi_m)
+    flat_m = cfg.get("flat", 0)
+    if flat_m:
+        sig = sig & (P["mod"] + tf < flat_m)   # `not flatDue` guards the ENTRY too
     lo, hi = blk
     out = []
     i = lo
@@ -93,6 +125,13 @@ def script_walk(P, cfg, tick, blk):
                 xp = o[j] if o[j] > tg else tg
                 why = 2
                 break
+            if flat_m and P["mod"][j] + tf >= flat_m:
+                if j + 1 >= n:
+                    break
+                xp = o[j + 1]                        # flat AT the cutoff bar's open
+                why = 3
+                j = j + 1
+                break
             if j > f and np.isfinite(ex_lo[j]) and c[j] < ex_lo[j]:
                 if j + 1 >= n:
                     break
@@ -110,16 +149,25 @@ def script_walk(P, cfg, tick, blk):
     return out
 
 
-def engine_walk(P, cfg, blk):
+def engine_walk(P, cfg, blk, tf=60):
     keep = (G.COMM, G.EC, G.SE)
     G.COMM, G.EC, G.SE = 0.0, 0.0, 0.0
     try:
-        xb, pnl, why = G.tensor_stop(P, cfg["don_x"], cfg["stop"], cfg["tp"], 0)
+        xb, pnl, why = G.tensor_stop(P, cfg["don_x"], cfg["stop"], cfg["tp"], cfg.get("flat", 0))
     finally:
         G.COMM, G.EC, G.SE = keep
     m = V.signal_mask(P, (cfg["mode"], cfg["ema_f"], cfg["ema_s"], cfg["win"], cfg["don_e"],
-                          cfg["gate"], 0 if cfg["aroon"] == "off" else cfg["aroon_n"],
-                          cfg["aroon"]))
+                          cfg["gate"], 0, "off"))
+    if cfg["aroon"] != "off":
+        a = P["aroon"][cfg["aroon_n"]][cfg["aroon"]]
+        if cfg.get("aroon_at") == "prior":
+            a = np.r_[False, a[:-1]]
+        m = m & a
+    lo_m, hi_m = cfg.get("sess", (0, 1440))
+    if lo_m > 0 or hi_m < 1440:
+        m = m & (P["mod"] >= lo_m) & (P["mod"] < hi_m)
+    if cfg.get("flat", 0):
+        m = m & (P["mod"] + tf < cfg["flat"])
     s = np.flatnonzero(m)
     s = s[(s >= blk[0]) & (s < blk[1])].astype(np.int64)
     p_, s_ = MC.gather(P, xb, pnl, s)
@@ -144,13 +192,17 @@ def main():
     print("=" * 108)
     print("11. PINE PARITY -- the shipped script's order model against the engine, GROSS")
     print("=" * 108)
+    mks = available()
+    print(f"  markets with bars on disk: {', '.join(mks) if mks else 'NONE'}")
+    if not mks:
+        return
     for name, cfg in PRESETS.items():
         print(f"\n  {name}: EMA {cfg['ema_f']}/{cfg['ema_s']} cross w{cfg['win']}, "
               f"don {cfg['don_e']}/{cfg['don_x']}, {cfg['stop']}N, "
               f"tp {'none' if cfg['tp'] == 0 else cfg['tp']}, {cfg['gate']}, aroon {cfg['aroon']}")
         print(f"  {'market':<8}{'block':<10}{'script':>8}{'engine':>8}{'count':>8}{'matched':>9}"
               f"{'same exit bar':>15}{'script pts':>12}{'engine pts':>12}{'gap':>9}")
-        for mk in MARKETS:
+        for mk in mks:
             P = V.prep(60, mk)
             cut = int(P["n"] * V.SPLIT)
             for bn, blk in (("research", (0, cut)), ("locked", (cut, P["n"]))):
