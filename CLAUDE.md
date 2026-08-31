@@ -1858,6 +1858,39 @@ the 1.8.0 headline behaviour is a DILUTION on this sample. The direction model f
 PF and 2.6x the drawdown, because it drops the defensive one-contract cap exactly where the
 drawdown comes from -- the caps are the risk model. `docs/ib/STUDY_FTM_ORB_BACKTEST.md`.
 
+**A CHANNEL-POSITION INDICATOR CANNOT FILTER A CHANNEL BREAKOUT -- AROON IS THE DONCHIAN, REARRANGED.**
+Where the Aroon period is no longer than the Donchian entry length, the breakout bar IS the N-bar high,
+so `Aroon Up = 100` and `osc >= 0` hold on **100.0% of breakout bars -- 60,000 bars, three markets, zero
+exceptions**. `osc>=0` and `up>=70` remove NOT ONE signal; the only rung that binds (`osc>=50`) costs
+10-20 $/trade on every locked block. Aroon also correlates **+0.57 to +0.60 with the EMA state it was
+being added to**. In the top 1000 the Aroon axis distributes 20-29% across its four inert settings --
+the signature of an axis the ranking cannot see. Third time on this branch (`STUDY_V16_MOMENTUM.md`:
+RSI>=55 on 94.7% of breakout bars; `STUDY_RULE_ANATOMY.md`: eight literal duplicates). **Compute a
+proposed filter's base rate ON THE TRIGGER'S OWN BARS before sweeping anything.** Also from the same
+grid: no take profit wins 5 of 6 market-block columns (fifth confirmation), and ADX>=20 -- which the
+leading cell uses -- beats `off` in only **2 of 6** while CHOP<=45 manages 4.
+See `docs/ib/STUDY_V60_AROON.md`.
+
+**A PERFECT PLATEAU IS STILL NOT EVIDENCE, and now there is a number.** The one-rung box around V60's
+leader -- 128 cells varying seven axes at once -- is **100.0% profitable on research on ALL THREE
+markets** and **26.6% on NQ's locked block** (39.8% US30). Every in-block walk-forward fold is positive
+on all three markets too, in a hump shape that is weakest at both ends. Coherence rejects artefacts of
+the SEARCH; it cannot see a REGIME. And `corr(research, locked)` was **-0.4426 on NQ** over 121,282
+configurations -- when that number is negative, selecting on research is worse than not selecting.
+
+**THE EXIT'S FILL CONVENTION CAN BE THE WHOLE RESULT, and vectorbt is how it was found.** `eem`/`v38grid`
+exit a Donchian channel break at the CLOSE of the bar that breaks it -- a market-on-close order decided
+by the very close it fills at, the `flat_open` defect again. An independent vectorbt build agreed on the
+SIGNAL SET at 99.6-99.9% (every disagreement inside the EMA(62) warm-up) and on the TRADE COUNT at
+97.6-100%, then put the same locked block at **+5.98 / -12.28 / -0.09 points against the engine's
++17.36 / +6.81 / +14.94**: a next-open fill costs 1.9-10.3 points a trade and **up to 353 points on one
+trade**, because on 60m "the next bar" can be across an overnight gap. Two traps in the harness itself,
+both worth more than the finding: **vectorbt anchors `sl_stop` to the bar's CLOSE, not to the `price=`
+fill** (solve for the fraction that reproduces your engine's ABSOLUTE level, or you are measuring the
+API), and **an unshifted exit signal with `price=open` is lookahead** -- it fills at the open of the bar
+whose close triggered it, worth +22 to +100 points a trade. Run the second opinion TWICE: transcription
+(signal sets, must be ~100%) then order model.
+
 ## Tooling
 
 | module | what it does |
@@ -1997,6 +2030,11 @@ drawdown comes from -- the caps are the risk model. `docs/ib/STUDY_FTM_ORB_BACKT
 | `research/v16/v16core.py` | Donchian outcomes precomputed per signal bar + numba position lock |
 | `research/v16/v16run.py` | the 2,167-condition sweep and its same-selectivity null |
 | `research/v16/v16verdict.py` | **the replication test** — research survivors read once on locked |
+| `research/v60/v60core.py` | the V41+Aroon tensor: 142,560 distinct cells a market, inert axes collapsed |
+| `research/v60/v60judge.py` | the condition correlation matrix and the marginal-per-axis table |
+| `research/v60/v60aroon.py` | the Aroon-Donchian identity, checked bar by bar |
+| `research/v60/v60robust.py` | the ladder, the one-rung box, and the in-block walk-forward |
+| `research/v60/v60_vbt.py` | the vectorbt second opinion: transcription, order model, trade-by-trade diff |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine
