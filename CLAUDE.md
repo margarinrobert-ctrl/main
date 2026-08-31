@@ -1822,6 +1822,20 @@ one bar later than intended. In the FTM port this meant hoisting every declarati
 contiguous main scope and turning SubmitEntry and ApplyFinalEntryRefinementOrSubmit into PURE
 functions that return a plan, with the mutation and the order at a single gateway.
 
+**THE FTM OPENING-RANGE STRATEGY CLEARS ITS MATCHED CONTROL, AND ITS OWN HEADLINE FEATURE IS ITS
+WEAKEST PATH.** Backtested on 1.05M one-minute bars with MNQ specs: 342 trades, +$11,661 on
+$50,000, PF 1.351, win 47.4%, +0.1620 R/trade, max DD -$3,032, ret/DD 3.85, Sharpe 1.46,
+bootstrap P(mean<=0) 0.005 -- and **excess +0.1013 R over a random quarter-hour entry with
+identical geometry and exits, p 0.004**. Three qualifications outrank the headline: the **top 5% of
+trades are 117% of net** (the other 95% lose in aggregate); 2023 is FLAT (-$214) with only 2024
+strong; and the **conditional 15:30 exit alone contributes MORE than the entire net result**
+(+$14,687 of $11,661), so the exits carry it. Tagged by decision path, the PLAIN path (no
+refinement branch) earns +0.20 R on 211 trades against the **RC1 direct action's +0.10 on 62** --
+the 1.8.0 headline behaviour is a DILUTION on this sample. The direction model fires 7 times in
+458 admitted signals. ConfidenceScaledPercent makes the most dollars ($24,676) and has the WORST
+PF and 2.6x the drawdown, because it drops the defensive one-contract cap exactly where the
+drawdown comes from -- the caps are the risk model. `docs/ib/STUDY_FTM_ORB_BACKTEST.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1928,6 +1942,7 @@ functions that return a plan, with the mutation and the order at a single gatewa
 | `research/atme/` | adaptive trade management: entry mechanics, trailing/breakeven stops, partials, mechanic isolation |
 | `research/atme/livesim.py` | true 1-minute path re-simulation of a 5-minute config, plus perturbation Monte Carlo |
 | `research/turtle15/pine_parity.py` | the shipped Pine's order model in Python, diffed against the engine |
+| `research/ftm/ftm_backtest.py` | its backtest report: sizing modes, exit split, decision path, matched control |
 | `research/ftm/ftm_sim.py` | the shipped FTM Pine transliterated to Python and run on real 1m bars |
 | `research/v59/v59core.py` | the EMA 16/64 exit tensor: 243,000 configs, dual lock kernels, duration-based hold |
 | `research/v59/v59judge.py`, `v59lock.py`, `v59_nq.py` | the sorted matched control, the one locked read, the NQ read |
