@@ -16,8 +16,9 @@ on:
   release:
     types: [published]
 
+# `contents: write` is what lets the build republish the rolling release below.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -109,3 +110,101 @@ jobs:
           path: desktop/dist/TradingBacktester/
           if-no-files-found: error
           retention-days: 30
+
+      # A run artifact is only downloadable by someone SIGNED IN to GitHub, and
+      # only as a zip of a zip. Reported as "i cant dowload it", with a run page
+      # whose artifact names rendered as plain text and a GitHub header offering
+      # "Sign in" -- the signed-out view.
+      #
+      # A release asset has none of that: a stable public URL, no account, the
+      # real file. So every green build also republishes one rolling release,
+      # and these two links always serve the newest build:
+      #
+      #   .../releases/latest/download/TradingBacktesterSetup.exe
+      #   .../releases/latest/download/TradingBacktester-portable.zip
+      #
+      # gh ships on the runner, so this needs no third-party action. It runs
+      # last, after the artifact uploads, so a failure here can never cost us
+      # the artifacts. And a release published with GITHUB_TOKEN does not
+      # trigger workflows, so this cannot re-trigger the `release` event above.
+      - name: Publish the build as a downloadable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # GitHub sets $ErrorActionPreference to Stop for pwsh steps. From
+          # PowerShell 7.4 that can ALSO make a native command's non-zero exit a
+          # terminating error, depending on the runner's version. Pin it off so
+          # the behaviour does not depend on which pwsh the runner ships, and
+          # check $LASTEXITCODE explicitly instead -- every gh call below does.
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          # The folder itself, not its contents, so it unzips into
+          # TradingBacktester\ rather than scattering files where it lands.
+          Compress-Archive -Path "dist\TradingBacktester" `
+                           -DestinationPath "dist\TradingBacktester-portable.zip" -Force
+
+          $tag     = "desktop-latest"
+          $short   = "${{ github.sha }}".Substring(0, 7)
+          $subject = git log -1 --pretty=%s "${{ github.sha }}"
+          $built   = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm")
+          $repo    = "${{ github.repository }}"
+          $run     = "${{ github.server_url }}/$repo/actions/runs/${{ github.run_id }}"
+
+          # An array joined by newlines, not a here-string: a here-string
+          # terminator has to sit in column 1, which YAML block indentation
+          # makes into a trap. `` is an escaped backtick, so it renders as the
+          # single backtick markdown wants around inline code.
+          $notes = @(
+            "The Windows build of the Trading Backtester, rebuilt on every change.",
+            "",
+            "**[Download the installer](https://github.com/$repo/releases/latest/download/TradingBacktesterSetup.exe)** -- run it and the application installs.",
+            "",
+            "**[Download the portable build](https://github.com/$repo/releases/latest/download/TradingBacktester-portable.zip)** -- no installation; unzip it and run ``TradingBacktester.exe``.",
+            "",
+            "Neither link needs a GitHub account.",
+            "",
+            "---",
+            "",
+            "Built $built UTC from [run ${{ github.run_id }}]($run), commit ``$short`` on ``${{ github.ref_name }}``:",
+            "",
+            "> $subject",
+            "",
+            "The test suite, the frozen build's self-test and the installer step all passed before this was published.",
+            "",
+            "This release is replaced by the next build, so the links above always point at the newest one."
+          ) -join "`n"
+
+          # `gh release list` succeeds with empty output when there is nothing,
+          # so the probe never has to fail on the very first run.
+          $existing = gh release list --json tagName --jq ".[].tagName"
+          if ($LASTEXITCODE -ne 0) { throw "gh release list failed (exit $LASTEXITCODE)" }
+
+          if ($existing -contains $tag) {
+            # A rolling tag has to be recreated: `gh release edit --target` is
+            # ignored once the tag exists.
+            Write-Host "replacing the existing $tag release"
+            gh release delete $tag --yes --cleanup-tag
+            if ($LASTEXITCODE -ne 0) { throw "could not delete the existing $tag release (exit $LASTEXITCODE)" }
+            Start-Sleep -Seconds 5
+          } else {
+            Write-Host "no $tag release yet; creating it"
+          }
+
+          # Deleting a tag and recreating it in the same second occasionally
+          # races on GitHub's side, and a failure here is exactly the download
+          # link the user cannot get. Give it three tries.
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            gh release create $tag `
+              "dist\TradingBacktesterSetup.exe#Installer for Windows" `
+              "dist\TradingBacktester-portable.zip#Portable build, no installation" `
+              --target "${{ github.sha }}" `
+              --title "Trading Backtester - latest Windows build" `
+              --notes $notes `
+              --latest
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq 3) { throw "gh release create failed three times (exit $LASTEXITCODE)" }
+            Write-Host "attempt $attempt failed (exit $LASTEXITCODE); retrying"
+            Start-Sleep -Seconds 10
+          }
+
+          Write-Host "published ${{ github.server_url }}/$repo/releases/tag/$tag"

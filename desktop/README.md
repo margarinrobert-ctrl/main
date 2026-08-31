@@ -92,7 +92,18 @@ SVG, no external assets and no network requests.
 
 ### Windows (the normal way)
 
-1. Download `TradingBacktesterSetup.exe`.
+1. Download the installer:
+   **<https://github.com/margarinrobert-ctrl/main/releases/latest/download/TradingBacktesterSetup.exe>**
+
+   That link always serves the newest build and needs no GitHub account. If you
+   would rather not install anything, the portable build unzips and runs in
+   place:
+   **<https://github.com/margarinrobert-ctrl/main/releases/latest/download/TradingBacktester-portable.zip>**
+
+   (The same files are attached to each Actions run as build artifacts, but a
+   run artifact is only downloadable while **signed in** to GitHub — signed out,
+   the names on the run page are plain text rather than links. The release links
+   above have no such condition.)
 2. Run it. It installs per-user by default, so it does **not** ask for
    administrator rights and works on a locked-down machine.
 3. Launch **Trading Backtester** from the Start menu.
@@ -1907,9 +1918,22 @@ on a failing test suite.
 ### Via GitHub Actions
 
 `.github/workflows/desktop-windows-build.yml` builds the installer on a
-`windows-latest` runner on every push and attaches `TradingBacktesterSetup.exe`
-as a downloadable artifact. Trigger it manually from the Actions tab if you
-prefer not to build locally.
+`windows-latest` runner on every push. Trigger it manually from the Actions tab
+if you prefer not to build locally.
+
+Each green run publishes its output twice:
+
+- as **run artifacts** on the run page — `TradingBacktesterSetup` and
+  `TradingBacktester-portable`. Downloadable only while signed in to GitHub,
+  and always as a zip, even around the single `.exe`.
+- as the rolling **`desktop-latest` release**, replaced by each new build, so
+  `releases/latest/download/<asset>` is a permanent public URL for the newest
+  installer and portable zip. This is the link to give to someone who just
+  wants to run the application.
+
+Publishing the release needs `contents: write`, which is why the workflow asks
+for it. A release published with `GITHUB_TOKEN` does not trigger workflows, so
+the `release:` trigger on this same workflow cannot fire itself in a loop.
 
 A Windows executable cannot be cross-compiled from Linux or macOS — PyInstaller
 freezes the interpreter it is running on — so the installer must be produced on
