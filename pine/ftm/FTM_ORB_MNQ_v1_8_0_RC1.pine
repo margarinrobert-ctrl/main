@@ -144,6 +144,10 @@ mergeTargetContract = input.int(202609, "MergeTargetContract (YYYYMM)", group = 
 gM = "Direction model"
 maxTrainingRows = input.int(1500, "Max retained training rows (0 = unlimited)", minval = 0,
      group = gM, tooltip = "PINE RUNTIME CAP, NOT THE SOURCE. The NinjaScript retains every row from 2021 forward. At any value but 0 this is not the source's model.")
+
+gW = "Warm-up context"
+useHtfWarmup = input.bool(true, "Warm the 120-session context from a 15-minute request", group = gW,
+     tooltip = "LEAVE THIS ON OR THE STRATEGY CANNOT TRADE ON TRADINGVIEW. The rule needs 120 completed sessions of opening-range history and 21 session closes before it may place an order. A 1-minute chart holds about 1,380 bars a day, so even a Premium 20,000-bar history is roughly 10 sessions -- the warm-up can never complete and the Strategy Tester shows no trades. The 09:30 bar of a 15-minute series IS the 09:30-09:45 opening range, so its high and low are identical to the fifteen one-minute bars, and a 15-minute request carries its own bar budget and therefore months of history. What it cannot reproduce is the one-minute integrity screen on those PAST sessions, so a session the NinjaScript would have excluded can still enter this history.")
 showHud = input.bool(true, "Show panel", group = "Display")
 
 baseRiskFraction = baseRiskPercent / 100.0
@@ -213,6 +217,53 @@ storedBackAdjustmentFor(cashKey) =>
              and cashKey < array.get(storedRollKeys, i)
             adj += array.get(storedOffsets, i)
     adj
+
+// ------------------------------------------------ the 15-minute warm-up context
+// [ADAPTED, and the reason the script can trade at all on TradingView]
+// The source accumulates 120 eligible opening ranges and 21 session closes from
+// its own one-minute stream. TradingView cannot hold that much one-minute
+// history, so the same three quantities are computed inside a 15-minute request,
+// which has its own bar budget. The 09:30 fifteen-minute bar IS the opening
+// range, so its high and low equal the fifteen one-minute bars exactly; the
+// 15:45 bar closes the cash session; and the 23:00 UTC bar is the reference open.
+// Values are read at 09:45, by which time the 09:30 bar has closed, and the
+// quantile is taken BEFORE today's range is pushed, so it stays strictly prior.
+warmupContext() =>
+    var orbArr = array.new<float>(0)
+    var closeArr = array.new<float>(0)
+    var float wRefOpen = na
+    var float wQ75 = na
+    var bool wQ75ok = false
+    var float wTrend = na
+    var bool wTrendOk = false
+    var float wSessRet = na
+    m = hour(time, TZ) * 60 + minute(time, TZ)
+    if hour(time, "UTC") == 23 and minute(time, "UTC") == 0 and open > 0
+        wRefOpen := open
+    if m == ORB_START_MIN and high > low
+        wQ75ok := array.size(orbArr) == CONF_ORB_LOOKBACK
+        if wQ75ok
+            wQ75 := linearPercentile(orbArr, CONF_ORB_QUANTILE)
+        mid = (high + low) / 2.0
+        array.push(orbArr, mid > 0 ? (high - low) / mid * 10000.0 : 0.0)
+        if array.size(orbArr) > CONF_ORB_LOOKBACK
+            array.shift(orbArr)
+    if m == FLATTEN_MIN - 15 and close > 0 and not na(wRefOpen) and wRefOpen > 0
+        wSessRet := safeReturnBps(close, wRefOpen)
+        array.push(closeArr, close)
+        if array.size(closeArr) > REQUIRED_TREND_CLOSES
+            array.shift(closeArr)
+        if array.size(closeArr) >= REQUIRED_TREND_CLOSES
+            f0 = array.get(closeArr, 0)
+            l0 = array.get(closeArr, array.size(closeArr) - 1)
+            if f0 > 0 and l0 > 0
+                wTrend := (l0 / f0 - 1.0) * 10000.0
+                wTrendOk := true
+    [wQ75, wQ75ok, wTrend, wTrendOk, wSessRet, array.size(orbArr), array.size(closeArr)]
+
+[htfQ75, htfQ75ok, htfTrend, htfTrendOk, htfSessRet, htfOrbRows, htfCloseRows] =
+     request.security(syminfo.tickerid, "15", warmupContext(),
+     lookahead = barmerge.lookahead_off)
 
 // ------------------------------------------------------- clock and trading day
 // [ADAPTED per note 1 and note 3]
@@ -679,8 +730,8 @@ if oneMinuteChart and cashKey != currentCashKey
     priorOrbQ75Bps := 0.0
     priorOrbQ75Available := false
     [ptOk, ptV] = tryPriorTrend()
-    priorTrendAvailable := ptOk
-    priorTrendBps := ptV
+    priorTrendAvailable := useHtfWarmup ? htfTrendOk : ptOk
+    priorTrendBps := useHtfWarmup ? nz(htfTrend) : ptV
     array.clear(rthMinuteCloses)
     rthTypicalVolumeSum := 0.0
     rthVolumeSum := 0.0
@@ -801,9 +852,13 @@ if oneMinuteChart and sameCashDate and not dayBlocked and not orbFinalized
                 orbFinalized := true
                 mid = (orbHigh + orbLow) / 2.0
                 currentOrbBps := mid > 0 ? (orbHigh - orbLow) / mid * 10000.0 : 0.0
-                priorOrbQ75Available := array.size(orbHistoryBps) == CONF_ORB_LOOKBACK
-                if priorOrbQ75Available
-                    priorOrbQ75Bps := linearPercentile(orbHistoryBps, CONF_ORB_QUANTILE)
+                if useHtfWarmup
+                    priorOrbQ75Available := htfQ75ok
+                    priorOrbQ75Bps := nz(htfQ75)
+                else
+                    priorOrbQ75Available := array.size(orbHistoryBps) == CONF_ORB_LOOKBACK
+                    if priorOrbQ75Available
+                        priorOrbQ75Bps := linearPercentile(orbHistoryBps, CONF_ORB_QUANTILE)
 
 if oneMinuteChart and inCashWindow and barCloseMin > ORB_END_MIN and not orbFinalized
      and not dayBlocked
@@ -998,9 +1053,10 @@ if oneMinuteChart and isQuarterHourClose and strategy.position_size == 0
                     // [EXACT TryBuildDirectionFeatures]
                     priorClose = array.size(rthCloseHistory) > 0
                          ? array.get(rthCloseHistory, array.size(rthCloseHistory) - 1) : orbOpen
-                    priorSessionRet = array.size(sessionReturnHistBps) > 0
+                    localSessRet = array.size(sessionReturnHistBps) > 0
                          ? array.get(sessionReturnHistBps, array.size(sessionReturnHistBps) - 1)
                          : 0.0
+                    priorSessionRet = useHtfWarmup ? nz(htfSessRet) : localSessRet
                     vwap = rthTypicalVolumeSum / rthVolumeSum
                     nCl = array.size(rthMinuteCloses)
                     trailingBase = nCl > 30 ? array.get(rthMinuteCloses, nCl - 31) : orbClose
@@ -1166,7 +1222,12 @@ bgcolor(barOpenMin >= ORB_START_MIN and barOpenMin < ORB_END_MIN and isWeekdayCa
      ? color.new(color.teal, 92) : na, title = "opening range")
 bgcolor(dayBlocked and inCashWindow ? color.new(color.red, 95) : na, title = "blocked date")
 
-var table hud = table.new(position.top_right, 2, 9, border_width = 1)
+// The panel's job is to answer "why did nothing trade", which is the failure the
+// design makes easy: the rule refuses to order until 120 sessions of opening-range
+// history and 21 session closes exist, and a 1-minute TradingView chart cannot
+// hold that. Both counters are shown so the state is never a guess.
+noRefSeen = barstate.islast and not referenceOpenCaptured
+var table hud = table.new(position.top_right, 2, 12, border_width = 1)
 if showHud and barstate.islast
     table.cell(hud, 0, 0, "FTM ORB 1.8.0-rc.1", text_color = color.white,
          bgcolor = color.new(color.teal, 20), text_size = size.small)
@@ -1196,3 +1257,25 @@ if showHud and barstate.islast
     table.cell(hud, 0, 8, "Sizing skips / fail-closed", text_size = size.small, text_color = color.gray)
     table.cell(hud, 1, 8, str.tostring(cntSizingSkip) + " / " + str.tostring(cntFailClosed),
          text_size = size.small)
+    orbRows = useHtfWarmup ? htfOrbRows : array.size(orbHistoryBps)
+    closeRows = useHtfWarmup ? htfCloseRows : array.size(rthCloseHistory)
+    table.cell(hud, 0, 9, "ORB history", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 9, str.tostring(orbRows) + " / 120 "
+         + (priorOrbQ75Available ? "ready" : "WARMING -- no orders yet"),
+         text_size = size.small,
+         text_color = priorOrbQ75Available ? color.new(color.green, 0) : color.new(color.orange, 0))
+    table.cell(hud, 0, 10, "Session closes", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 10, str.tostring(closeRows) + " / 21 "
+         + (priorTrendAvailable ? "ready" : "WARMING -- no orders yet"),
+         text_size = size.small,
+         text_color = priorTrendAvailable ? color.new(color.green, 0) : color.new(color.orange, 0))
+    table.cell(hud, 0, 11, "Blocking reason", text_size = size.small, text_color = color.gray)
+    reason = not oneMinuteChart ? "chart is not 1 minute"
+         : noRefSeen ? "no 23:00 UTC bar -- chart must include EXTENDED HOURS"
+         : not priorOrbQ75Available ? "opening-range warm-up incomplete"
+         : not priorTrendAvailable ? "trend warm-up incomplete"
+         : cntAdmitted == 0 ? "no admitted signal yet"
+         : "none -- orders are permitted"
+    table.cell(hud, 1, 11, reason, text_size = size.small,
+         text_color = reason == "none -- orders are permitted" ? color.new(color.green, 0)
+             : color.new(color.red, 0))

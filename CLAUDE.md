@@ -1802,6 +1802,16 @@ guard restored the same run gives 473 eligible sessions, 458 admitted signals an
 all four exit reasons reached. **TRANSLITERATE THE PORT AND RUN IT ON BARS -- a port that compiles
 and does nothing looks exactly like a port that compiles and works.** `research/ftm/ftm_sim.py`.
 
+**A WARM-UP LONGER THAN TRADINGVIEW'S BAR BUDGET IS A STRATEGY THAT NEVER TRADES.** The FTM port
+compiled, loaded, showed its inputs -- and produced NO TRADES, because the rule refuses to order
+until it holds **120 completed sessions** of opening-range history and 21 session closes. An ETH
+1-minute series is ~1,380 bars a day, so Basic's 5,000 bars is 2.6 sessions, Premium's 20,000 is
+**10.4** -- the warm-up can NEVER complete on any plan. Fix: compute the warm-up context inside a
+`request.security` on 15 minutes, which carries its own bar budget and months of history. **The
+09:30 15-minute bar IS the 09:30-09:45 opening range** -- verified on 764 dates, ZERO high/low
+mismatches, and 735 cash closes identical to the 15:45 bar's close. Before blaming a port, compute
+how many sessions its warm-up needs and divide the plan's bar budget by bars-per-day.
+
 **PINE FUNCTIONS CANNOT ASSIGN TO GLOBALS, AND LINT WILL NOT TELL YOU.** `pine_lint` checks
 indentation, not scope. A helper that does `dayBlocked := true` is a compile error TradingView
 raises and nothing here catches, so the audit is mechanical: parse every `name(args) =>` body and
