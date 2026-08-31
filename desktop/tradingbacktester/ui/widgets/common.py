@@ -16,6 +16,7 @@ from PySide6.QtCore import QEvent, QObject, QSize, Qt, Signal
 from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import (QAbstractScrollArea, QAbstractSpinBox,
                                QApplication, QCheckBox, QComboBox, QDialog,
+                               QLayout,
                                QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                QFrame, QGridLayout, QHBoxLayout, QLabel,
                                QLineEdit, QPlainTextEdit, QPushButton,
@@ -125,6 +126,45 @@ def guard_value_wheels(root: QWidget) -> int:
             root.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         guarded += 1
     return guarded
+
+
+def clear_layout(layout: QLayout | None) -> None:
+    """Empty a layout and destroy what was in it, without crashing the process.
+
+    The obvious version of this -- ``while layout.count(): item =
+    layout.takeAt(0)`` and ``deleteLater()`` on anything that is a widget --
+    is a memory error waiting to happen, and this application shipped five
+    copies of it.
+
+    ``takeAt`` hands ownership of the QLayoutItem to Python. When that wrapper
+    is collected, PySide6 destroys the item; and if the item held a **nested
+    layout**, destroying it also destroys that layout's own items -- whose
+    widgets are parented to the containing widget and are being deleted
+    separately by the loop. The two paths free the same memory.
+
+    Measured before this existed: rebuilding the indicator editor of a
+    strategy while adding indicators to it aborted the whole application with
+    ``free(): invalid pointer`` on the third one. Not an exception -- a
+    SIGABRT, with no dialog and no log line.
+
+    So the order matters. Reparent each widget out *first*, which is what
+    actually detaches it from the layout; recurse into a nested layout and
+    empty it before its wrapper can be released; and hold the item until its
+    contents have been dealt with.
+    """
+    if layout is None:
+        return
+    while layout.count():
+        item = layout.takeAt(0)
+        if item is None:                       # pragma: no cover - defensive
+            break
+        widget = item.widget()
+        if widget is not None:
+            widget.setParent(None)
+            widget.deleteLater()
+            continue
+        clear_layout(item.layout())
+        # A spacer has neither, and is destroyed with the item. Nothing to do.
 
 
 class SectionLabel(QLabel):

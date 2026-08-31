@@ -570,3 +570,151 @@ def test_a_strategy_with_no_numbers_at_all_is_told_so(window, monkeypatch):
                         lambda *a, **k: pytest.fail("it offered with nothing to name"))
     window.on_optimize()
     assert "no numbers" in told.get("text", "")
+
+
+# --------------------------------------------------------------------------
+# Adding indicators must not abort the process
+# --------------------------------------------------------------------------
+#
+# Reported as "it still crashes when I try to add more indicators to the
+# strategy I plug in outside the app".  Reproduced: adding the THIRD indicator
+# to an imported strategy killed the interpreter with `free(): invalid
+# pointer` and SIGABRT -- exit code 134, no exception, no dialog, no log line.
+#
+# The cause was five hand-written copies of "drain this layout": take each
+# item out and deleteLater() anything that is a widget.  takeAt() hands the
+# QLayoutItem's ownership to Python, so when that wrapper is collected PySide6
+# destroys the item -- and where the item held a NESTED layout, destroying it
+# also destroys that layout's items, whose widgets are parented to the
+# containing widget and are being deleted by the same loop.  Two paths, one
+# block of memory.  `common.clear_layout` is now the only teardown.
+
+
+def _pick(editor, key):
+    """Add one indicator the way the picker does, from its real widget."""
+    from PySide6.QtWidgets import QDialog
+
+    from tradingbacktester.ui.dialogs import strategy_editor as module
+
+    picker = module._IndicatorPicker(editor)
+    wanted = None
+    for i in range(picker.tree.topLevelItemCount()):
+        head = picker.tree.topLevelItem(i)
+        for j in range(head.childCount()):
+            child = head.child(j)
+            if child.data(0, Qt.ItemDataRole.UserRole) == key:
+                wanted = child
+    assert wanted is not None, f"{key} is not offered by the picker"
+    picker.tree.setCurrentItem(wanted)
+    assert picker.ok.isEnabled(), "selecting an indicator left Add disabled"
+    picker._accept()
+    assert picker.key == key
+
+    real = module._IndicatorPicker
+    picker.exec = lambda: QDialog.DialogCode.Accepted
+    module._IndicatorPicker = lambda *a, **k: picker
+    try:
+        editor._add_slot()
+    finally:
+        module._IndicatorPicker = real
+
+
+@pytest.fixture
+def imported_editor(qapp, bars):
+    """The editor open on a strategy that came in from Pine."""
+    from tradingbacktester.strategy.importer import import_strategy
+    from tradingbacktester.ui.dialogs.strategy_editor import StrategyEditor
+
+    spec = import_strategy(_PINE).spec
+    assert spec is not None and spec.indicators
+    return StrategyEditor(spec, None, bars=bars)
+
+
+def test_adding_many_indicators_does_not_abort(imported_editor):
+    """The reproduction: it died on the third one."""
+    before = len(imported_editor.spec.indicators)
+    keys = ("CCI", "EFFICIENCY_RATIO", "MACD", "BBANDS", "ADX", "SUPERTREND",
+            "ICHIMOKU", "STOCH", "VWAP", "CONNORS_RSI")
+    for key in keys:
+        _pick(imported_editor, key)
+        # Selecting the new slot is what rebuilds -- and tears down -- the
+        # parameter editors, which is where the double free happened.
+        imported_editor.slot_list.setCurrentRow(
+            len(imported_editor.spec.indicators) - 1)
+        imported_editor._rebuild_slot_editor()
+        imported_editor._refresh_summary()
+    assert len(imported_editor.spec.indicators) == before + len(keys)
+    imported_editor.spec.validate()
+
+
+def test_the_strategy_still_runs_after_indicators_are_added(imported_editor, bars):
+    for key in ("CCI", "MACD", "ADX"):
+        _pick(imported_editor, key)
+        imported_editor.slot_list.setCurrentRow(
+            len(imported_editor.spec.indicators) - 1)
+        imported_editor._rebuild_slot_editor()
+    result = Backtester(bars, imported_editor.spec, BacktestConfig()).run()
+    assert result.trades, "adding an unused indicator stopped it trading"
+
+
+def test_rebuilding_the_slot_editor_repeatedly_is_safe(imported_editor):
+    """Clicking down the indicator list is the same teardown, many times."""
+    for _ in range(6):
+        for row in range(len(imported_editor.spec.indicators)):
+            imported_editor.slot_list.setCurrentRow(row)
+            imported_editor._rebuild_slot_editor()
+    assert imported_editor.slot_form_layout.count() > 0
+
+
+def test_clear_layout_empties_a_nested_layout(qapp):
+    """The specific shape that crashed: a layout holding another layout."""
+    from PySide6.QtWidgets import (QFormLayout, QLabel, QLineEdit, QVBoxLayout,
+                                   QWidget)
+
+    from tradingbacktester.ui.widgets.common import clear_layout
+
+    holder = QWidget()
+    outer = QVBoxLayout(holder)
+    outer.addWidget(QLabel("top"))
+    inner = QFormLayout()
+    inner.addRow(QLabel("a"), QLineEdit())
+    inner.addRow(QLabel("b"), QLineEdit())
+    outer.addLayout(inner)
+    outer.addStretch(1)
+    assert outer.count() == 3
+
+    clear_layout(outer)
+    assert outer.count() == 0
+    # And again on the empty one, and on None: both must be no-ops.
+    clear_layout(outer)
+    clear_layout(None)
+
+
+def test_the_offer_reads_as_an_offer_not_a_refusal(unparameterised, monkeypatch):
+    """It opened with "has no named parameters" and was read as the old wall."""
+    from PySide6.QtWidgets import QDialog
+
+    import tradingbacktester.ui.dialogs.optimizer_dialog as optimizer
+    import tradingbacktester.ui.main_window as module
+
+    seen: dict = {}
+
+    def _confirm(parent, title, message, **kwargs):
+        seen["title"] = title
+        seen["message"] = message
+        seen["button"] = kwargs.get("confirm_text", "")
+        return True
+
+    monkeypatch.setattr(module, "confirm", _confirm)
+    monkeypatch.setattr(optimizer, "OptimizerDialog",
+                        type("F", (), {"chosen_params": None,
+                                       "__init__": lambda s, *a, **k: None,
+                                       "exec": lambda s: QDialog.DialogCode.Rejected}))
+    unparameterised.on_optimize()
+
+    first = seen["message"].split("\n")[0]
+    assert "can be optimise" in first, (
+        f"the offer opens with {first!r}, which reads as a refusal")
+    assert "no named parameters" not in first
+    assert seen["button"], "the confirm button has no label of its own"
+    assert "Delete" not in seen["button"]

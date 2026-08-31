@@ -24,6 +24,7 @@ from ...logging_setup import get_logger
 from ..theme import PALETTE, Fonts, duration, money, number, pct
 from .chart_items import (PriceAxisItem, TimeAxisItem,
                           clip_to_view as _clip_to_view)
+from .common import clear_layout
 
 log = get_logger(__name__)
 
@@ -198,11 +199,7 @@ class ComparisonView(QWidget):
     # -- drawing ---------------------------------------------------------
 
     def _clear_legend(self) -> None:
-        while self.legend_layout.count():
-            item = self.legend_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        clear_layout(self.legend_layout)
 
     def _draw_curves(self, table: Any) -> None:
         curves = list(getattr(table, "equity_curves", []) or [])

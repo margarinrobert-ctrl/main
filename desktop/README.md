@@ -2020,11 +2020,14 @@ rows; backtesting runs at a few hundred thousand bars per second. If you are
 working with years of 1-minute data, run on a coarser timeframe while developing
 the strategy and only drop to 1m for the final run.
 
-**Optimise says the strategy has no parameters.** It used to send you to the
-strategy editor; it now offers to name the numbers for you. Accept, and the
-indicator periods and rule thresholds become parameters with the values they
-already had. See [its numbers are named on the way
-in](#its-numbers-are-named-on-the-way-in).
+**Optimise says the strategy has no parameters.** A strategy imported by this
+version arrives with its numbers already named, so this should not come up for
+anything pasted from here on. For one that was saved *before* — by an older
+build — Optimise now opens an offer headed **Ready To Optimise** rather than
+sending you away: accept, and the indicator periods and rule thresholds become
+parameters with the values they already had. Find a Better Version does the
+same, and the strategy editor has the button on its Parameters tab. See [its
+numbers are named on the way in](#its-numbers-are-named-on-the-way-in).
 
 **My risk or exit settings went back to what they were.** Fixed. Accepting the
 strategy editor used to fold the *main window's* risk panel back over the
@@ -2037,6 +2040,19 @@ Closing that dialog mid-search destroyed a running thread, which Qt turns into
 an immediate process abort — no dialog, no log line, no chance to save. The
 search is now stopped and waited for on close, and one that will not stop in
 time is left to finish rather than destroyed.
+
+**The application vanished while adding indicators to a strategy.** Fixed, and
+it was a different abort with the same shape. Adding the third indicator to a
+pasted strategy killed the process with `free(): invalid pointer`. The cause
+was five hand-written copies of "empty this layout": `takeAt()` hands the
+layout item's ownership to Python, so when that wrapper is collected PySide6
+destroys the item — and where the item held a *nested* layout, destroying it
+also destroyed that layout's items, whose widgets were parented to the
+containing widget and were being deleted by the same loop. Two paths freeing
+one block of memory. `common.clear_layout` is now the only teardown, and
+`tests/test_ui_bugs.py` adds ten indicators through the real picker to hold
+the line — a test that aborts the interpreter, at exit code 134, if the old
+version comes back.
 
 **SmartScreen blocks the installer.** The build is unsigned. Choose
 **More info → Run anyway**, or build it yourself with the instructions above.

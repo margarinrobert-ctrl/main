@@ -1055,17 +1055,26 @@ class MainWindow(QMainWindow):
         if not extraction.changed:
             show_info(
                 self, "Nothing To Tune",
-                f"This strategy has no numbers to {what} — no indicator "
-                f"periods and no thresholds in its rules.\n\n"
+                f"This strategy has no numbers to {what}: it uses no "
+                f"indicator periods and no thresholds in its rules, so there "
+                f"is nothing a sweep could move.\n\n"
                 + extraction.describe())
             return False
+        # Lead with the action, not the obstacle. The first version of this
+        # opened "'X' has no named parameters, so there is nothing to
+        # optimise yet", and a user reading the first line reasonably took it
+        # for the old refusal and closed it -- reporting afterwards that the
+        # application still said their strategy could not be optimised. It is
+        # an offer; it has to read like one.
         if not confirm(
-                self, "Name The Numbers?",
-                f"'{self._spec.name}' has no named parameters, so there is "
-                f"nothing to {what} yet. Its numbers can be named "
-                f"automatically:\n\n{extraction.describe()}\n\n"
-                f"Name them now? The strategy keeps trading exactly as it "
-                f"does today — every default is the number already in it."):
+                self, "Ready To Optimise",
+                f"'{self._spec.name}' can be {what} — its numbers just need "
+                f"names first, and this does that in one step.\n\n"
+                f"{extraction.describe()}\n\n"
+                f"The strategy keeps trading exactly as it does today: every "
+                f"default below is the number already in it. Nothing about "
+                f"what it trades changes.",
+                confirm_text="Name Them And Continue", danger=False):
             return False
         try:
             saved = self.strategies.save(extraction.spec)

@@ -38,8 +38,8 @@ from ...strategy.spec import (Always, Compare, Condition, ConditionGroup,
                               PriceOperand, SessionWindow, State,
                               StrategySpec, Vote)
 from ..theme import PALETTE, Fonts
-from ..widgets.common import (Card, ask_text, confirm, hline, show_error,
-                              show_info, show_warning)
+from ..widgets.common import (Card, ask_text, clear_layout, confirm, hline,
+                              show_error, show_info, show_warning)
 from ..widgets.risk_panel import RiskPanel
 
 log = get_logger(__name__)
@@ -203,11 +203,7 @@ class StrategyEditor(QDialog):
         return page
 
     def _rebuild_slot_editor(self) -> None:
-        while self.slot_form_layout.count():
-            item = self.slot_form_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        clear_layout(self.slot_form_layout)
 
         index = self.slot_list.currentRow()
         if not (0 <= index < len(self.spec.indicators)):
@@ -713,11 +709,7 @@ class StrategyEditor(QDialog):
         return item
 
     def _on_node_selected(self, *_args) -> None:
-        while self.node_layout.count():
-            entry = self.node_layout.takeAt(0)
-            widget = entry.widget()
-            if widget is not None:
-                widget.deleteLater()
+        clear_layout(self.node_layout)
         item = self.tree.currentItem()
         if item is None:
             return
@@ -1815,13 +1807,7 @@ class _ConditionEditorBase(QWidget):
         self.rebuild()
 
     def rebuild(self) -> None:
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-            elif item.layout() is not None:
-                _clear_layout(item.layout())
+        clear_layout(self._layout)
         self.build()
         self._layout.addStretch(1)
 
@@ -2071,11 +2057,3 @@ class _SlotParamRow(QWidget):
         self._editor.set_slot_param(self._index, self._param.name, value)
 
 
-def _clear_layout(layout: Any) -> None:
-    while layout.count():
-        item = layout.takeAt(0)
-        widget = item.widget()
-        if widget is not None:
-            widget.deleteLater()
-        elif item.layout() is not None:
-            _clear_layout(item.layout())
