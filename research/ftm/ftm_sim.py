@@ -89,7 +89,8 @@ def load_nq():
 
 
 def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
-        min_pct=0.5, max_pct=2.0, port_max=10, lev=4.0):
+        min_pct=0.5, max_pct=2.0, port_max=10, lev=4.0,
+        orb_lookback=ORB_LOOKBACK, trend_closes=REQ_TREND_CLOSES):
     f = load_nq()
     o, h, l, c = (f[k].to_numpy(float) for k in ("open", "high", "low", "close"))
     vol = f["volume"].to_numpy(float)
@@ -202,7 +203,7 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                       orbFin=False, orbRec=False, closeRec=False, lastClose=-1,
                       orbN=0, expMin=ORB_START, oh=np.nan, ol=np.nan, oo=0.0, oc=0.0,
                       orbBps=0.0, q75=0.0, q75ok=False)
-            if len(close_hist) >= REQ_TREND_CLOSES and close_hist[0] > 0 and close_hist[-1] > 0:
+            if len(close_hist) >= trend_closes and close_hist[0] > 0 and close_hist[-1] > 0:
                 st["trend"] = (close_hist[-1] / close_hist[0] - 1.0) * 10000.0
                 st["trendOk"] = True
             else:
@@ -297,7 +298,7 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                         st["orbFin"] = True
                         mid = (st["oh"] + st["ol"]) / 2.0
                         st["orbBps"] = (st["oh"] - st["ol"]) / mid * 10000.0 if mid > 0 else 0.0
-                        st["q75ok"] = len(orb_hist) == ORB_LOOKBACK
+                        st["q75ok"] = len(orb_hist) >= orb_lookback
                         if st["q75ok"]:
                             st["q75"] = lin_pct(orb_hist, ORB_Q)
         if in_cash and close_min[i] > ORB_END and not st["orbFin"] and not st["blocked"]:
@@ -368,12 +369,12 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                     and st["refOk"] and st["lastClose"] == FLATTEN:
                 if not st["orbRec"]:
                     orb_hist.append(st["orbBps"])
-                    if len(orb_hist) > ORB_LOOKBACK:
+                    if len(orb_hist) > orb_lookback:
                         orb_hist.pop(0)
                     st["orbRec"] = True
                 if c[i] > 0:
                     close_hist.append(c[i])
-                    if len(close_hist) > REQ_TREND_CLOSES:
+                    if len(close_hist) > trend_closes:
                         close_hist.pop(0)
                     sess_ret.append(safe_bps(c[i], st["refOpen"]))
                     if len(sess_ret) > 1:

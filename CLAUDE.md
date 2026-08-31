@@ -1812,6 +1812,15 @@ until it holds **120 completed sessions** of opening-range history and 21 sessio
 mismatches, and 735 cash closes identical to the 15:45 bar's close. Before blaming a port, compute
 how many sessions its warm-up needs and divide the plan's bar budget by bars-per-day.
 
+**THE PARAMETER THAT MADE THE STRATEGY UNRUNNABLE WAS WORTH NOTHING -- MEASURE BEFORE BLAMING THE
+PLATFORM.** FTM refuses to trade until it holds **120** completed opening ranges, ~11,000
+fifteen-minute bars, which only the largest TradingView plans load; the Strategy Tester was empty
+twice. Varying ONLY that lookback over 1.05M bars: 120 -> 342 trades PF 1.351 +0.1620 R;
+90 -> 371 PF 1.421 **+0.1905**; 60 -> 399 +0.1607; **40 -> 417 PF 1.375 +0.1600**; 20 -> 434 +0.1476.
+**Forty sessions is as good as 120, loads on any plan, and costs 0.002 R a trade.** The 120 was
+never earning its constraint. Every fail-closed gate is now COUNTED and the panel names the binding
+one, because a blocked date and a date with no signal look identical from outside.
+
 **PINE FUNCTIONS CANNOT ASSIGN TO GLOBALS, AND LINT WILL NOT TELL YOU.** `pine_lint` checks
 indentation, not scope. A helper that does `dayBlocked := true` is a compile error TradingView
 raises and nothing here catches, so the audit is mechanical: parse every `name(args) =>` body and

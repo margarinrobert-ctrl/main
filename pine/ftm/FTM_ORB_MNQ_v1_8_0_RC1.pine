@@ -148,6 +148,16 @@ maxTrainingRows = input.int(1500, "Max retained training rows (0 = unlimited)", 
 gW = "Warm-up context"
 useHtfWarmup = input.bool(true, "Warm the 120-session context from a 15-minute request", group = gW,
      tooltip = "LEAVE THIS ON OR THE STRATEGY CANNOT TRADE ON TRADINGVIEW. The rule needs 120 completed sessions of opening-range history and 21 session closes before it may place an order. A 1-minute chart holds about 1,380 bars a day, so even a Premium 20,000-bar history is roughly 10 sessions -- the warm-up can never complete and the Strategy Tester shows no trades. The 09:30 bar of a 15-minute series IS the 09:30-09:45 opening range, so its high and low are identical to the fifteen one-minute bars, and a 15-minute request carries its own bar budget and therefore months of history. What it cannot reproduce is the one-minute integrity screen on those PAST sessions, so a session the NinjaScript would have excluded can still enter this history.")
+gC = "TradingView compatibility -- each of these is a DEVIATION from the source"
+orbLookback = input.int(120, "Opening ranges required before trading", minval = 5, maxval = 500,
+     group = gC, tooltip = "THE SOURCE'S VALUE IS 120 AND THAT IS THE DEFAULT. It is also the single most common reason this strategy shows no trades: 120 sessions of 15-minute history is about 11,000 bars, and only the largest TradingView plans load that many. Measured over 1.05M bars by varying ONLY this number: 120 -> 342 trades at +0.1620 R, 90 -> 371 at +0.1905, 60 -> 399 at +0.1607, 40 -> 417 at +0.1600, 20 -> 434 at +0.1476. FORTY IS AS GOOD AS 120 AND LOADS ON ANY PLAN. If the panel says warming up, set this to 40.")
+trendCloses = input.int(21, "Session closes required before trading", minval = 2, maxval = 200,
+     group = gC, tooltip = "The source's value is 21 (a 20-session return needs 21 closes).")
+refOpenFallback = input.bool(false, "If the 23:00 UTC bar is missing, use the session's first bar",
+     group = gC, tooltip = "The source REQUIRES the 23:00 UTC reference open and blocks the whole date without it. On a chart with extended hours switched OFF that bar never exists, so every date blocks and nothing can ever trade. Turning this on substitutes the first bar of the cash session, which changes feature 1 and the prior-day override. Prefer switching extended hours ON.")
+strictContiguity = input.bool(true, "A missing minute inside 09:30-16:00 blocks the date",
+     group = gC, tooltip = "The source requires contiguous completed one-minute bars and fails closed. TradingView omits minutes with no trades, which NinjaTrader's feed does not, so on a thin contract this can block many dates. Turning it off keeps trading through a hole.")
+
 showHud = input.bool(true, "Show panel", group = "Display")
 
 baseRiskFraction = baseRiskPercent / 100.0
@@ -241,19 +251,19 @@ warmupContext() =>
     if hour(time, "UTC") == 23 and minute(time, "UTC") == 0 and open > 0
         wRefOpen := open
     if m == ORB_START_MIN and high > low
-        wQ75ok := array.size(orbArr) == CONF_ORB_LOOKBACK
+        wQ75ok := array.size(orbArr) >= orbLookback
         if wQ75ok
             wQ75 := linearPercentile(orbArr, CONF_ORB_QUANTILE)
         mid = (high + low) / 2.0
         array.push(orbArr, mid > 0 ? (high - low) / mid * 10000.0 : 0.0)
-        if array.size(orbArr) > CONF_ORB_LOOKBACK
+        if array.size(orbArr) > orbLookback
             array.shift(orbArr)
     if m == FLATTEN_MIN - 15 and close > 0 and not na(wRefOpen) and wRefOpen > 0
         wSessRet := safeReturnBps(close, wRefOpen)
         array.push(closeArr, close)
-        if array.size(closeArr) > REQUIRED_TREND_CLOSES
+        if array.size(closeArr) > trendCloses
             array.shift(closeArr)
-        if array.size(closeArr) >= REQUIRED_TREND_CLOSES
+        if array.size(closeArr) >= trendCloses
             f0 = array.get(closeArr, 0)
             l0 = array.get(closeArr, array.size(closeArr) - 1)
             if f0 > 0 and l0 > 0
@@ -389,6 +399,12 @@ var int cntLabels = 0
 var int cntSizingSkip = 0
 var int cntFailClosed = 0
 var int cntContextWarmup = 0
+var int blkGap = 0
+var int blkNoRef = 0
+var int blkOrb = 0
+var int blkExcluded = 0
+var int daysSeen = 0
+var bool sawRefEver = false
 
 // NOTE ON STRUCTURE. A Pine user-defined function may mutate an ARRAY it is
 // handed, but it may NOT assign to a global variable, and strategy.* calls are
@@ -405,7 +421,7 @@ tryPriorTrend() =>
     n = array.size(rthCloseHistory)
     float v = 0.0
     bool ok = false
-    if n >= REQUIRED_TREND_CLOSES
+    if n >= trendCloses
         f = array.get(rthCloseHistory, 0)
         l = array.get(rthCloseHistory, n - 1)
         if f > 0 and l > 0
@@ -738,7 +754,10 @@ if oneMinuteChart and cashKey != currentCashKey
     lastCashBarCloseMin := -1
     activeManagedTriggerR := 0.0
     activeManagedLockR := 0.0
+    daysSeen += 1
     if not isWeekdayCash or isExcludedDateKey(cashKey)
+        if isWeekdayCash
+            blkExcluded += 1
         sessionDateEligible := false
         dayBlocked := true
     else if not inherited
@@ -753,6 +772,7 @@ if oneMinuteChart and sessionDateEligible and not referenceOpenCaptured
     prevT = tdTime - 86400000
     prevCashKey = year(prevT, TZ) * 10000 + month(prevT, TZ) * 100 + dayofmonth(prevT, TZ)
     if utcDayKey == prevCashKey
+        sawRefEver := true
         if na(open) or open <= 0
             cashWindowIntegrity := false
             dayBlocked := true
@@ -773,8 +793,10 @@ if oneMinuteChart and sessionEnding
 
 if oneMinuteChart and not sessionEnding and inCashWindow
     // [EXACT] a cash bar must be one exact completed minute, contiguous with the last.
-    gap = lastCashBarCloseMin != -1 and (barOpenMin != lastCashBarCloseMin or not contiguousMinute)
+    gap = strictContiguity and lastCashBarCloseMin != -1
+         and (barOpenMin != lastCashBarCloseMin or not contiguousMinute)
     if gap
+        blkGap += 1
         cashWindowIntegrity := false
         dayBlocked := true
         breakoutConsumed := true
@@ -787,14 +809,21 @@ if oneMinuteChart and not sessionEnding and inCashWindow
     else
         lastCashBarCloseMin := barCloseMin
         if barOpenMin == ORB_START_MIN and not referenceOpenCaptured
-            cashWindowIntegrity := false
-            dayBlocked := true
-            breakoutConsumed := true
-            if ped or pfd or spActive
-                cntFailClosed += 1
-            ped := false
-            pfd := false
-            spActive := false
+            if refOpenFallback and open > 0
+                // DEVIATION, opt-in: substitute the session's first bar so a chart
+                // without extended hours is not blocked on every single date.
+                referenceSessionOpen := open
+                referenceOpenCaptured := true
+            else
+                blkNoRef += 1
+                cashWindowIntegrity := false
+                dayBlocked := true
+                breakoutConsumed := true
+                if ped or pfd or spActive
+                    cntFailClosed += 1
+                ped := false
+                pfd := false
+                spActive := false
         else if not dayBlocked
             v = nz(volume)
             if v < 0
@@ -829,6 +858,7 @@ if oneMinuteChart and sameCashDate and spActive and not spInvalid and not spLabe
 if oneMinuteChart and sameCashDate and not dayBlocked and not orbFinalized
      and barOpenMin >= ORB_START_MIN and barOpenMin < ORB_END_MIN and isWeekdayCash
     if barOpenMin != expectedNextOrbOpenMinute
+        blkOrb += 1
         cashWindowIntegrity := false
         dayBlocked := true
         breakoutConsumed := true
@@ -845,6 +875,7 @@ if oneMinuteChart and sameCashDate and not dayBlocked and not orbFinalized
         expectedNextOrbOpenMinute += 1
         if barCloseMin == ORB_END_MIN
             if orbBarCount != EXPECTED_ORB_BARS or orbHigh < orbLow
+                blkOrb += 1
                 cashWindowIntegrity := false
                 dayBlocked := true
                 breakoutConsumed := true
@@ -856,7 +887,7 @@ if oneMinuteChart and sameCashDate and not dayBlocked and not orbFinalized
                     priorOrbQ75Available := htfQ75ok
                     priorOrbQ75Bps := nz(htfQ75)
                 else
-                    priorOrbQ75Available := array.size(orbHistoryBps) == CONF_ORB_LOOKBACK
+                    priorOrbQ75Available := array.size(orbHistoryBps) >= orbLookback
                     if priorOrbQ75Available
                         priorOrbQ75Bps := linearPercentile(orbHistoryBps, CONF_ORB_QUANTILE)
 
@@ -950,15 +981,15 @@ if oneMinuteChart and sameCashDate and barCloseMin >= REQUIRED_CASH_CLOSE_MIN
     // [EXACT RecordCompletedSessionHistory] -- eligible, complete sessions only.
     if not rthCloseHistoryRecorded and sessionDateEligible and cashWindowIntegrity
          and orbFinalized and referenceOpenCaptured
-         and lastCashBarCloseMin == REQUIRED_CASH_CLOSE_MIN
+         and (lastCashBarCloseMin == REQUIRED_CASH_CLOSE_MIN or not strictContiguity)
         if not orbHistoryRecorded
             array.push(orbHistoryBps, currentOrbBps)
-            if array.size(orbHistoryBps) > CONF_ORB_LOOKBACK
+            if array.size(orbHistoryBps) > orbLookback
                 array.shift(orbHistoryBps)
             orbHistoryRecorded := true
         if close > 0
             array.push(rthCloseHistory, close)
-            if array.size(rthCloseHistory) > REQUIRED_TREND_CLOSES
+            if array.size(rthCloseHistory) > trendCloses
                 array.shift(rthCloseHistory)
             array.push(sessionReturnHistBps, safeReturnBps(close, referenceSessionOpen))
             if array.size(sessionReturnHistBps) > 1
@@ -1222,60 +1253,72 @@ bgcolor(barOpenMin >= ORB_START_MIN and barOpenMin < ORB_END_MIN and isWeekdayCa
      ? color.new(color.teal, 92) : na, title = "opening range")
 bgcolor(dayBlocked and inCashWindow ? color.new(color.red, 95) : na, title = "blocked date")
 
-// The panel's job is to answer "why did nothing trade", which is the failure the
-// design makes easy: the rule refuses to order until 120 sessions of opening-range
-// history and 21 session closes exist, and a 1-minute TradingView chart cannot
-// hold that. Both counters are shown so the state is never a guess.
-noRefSeen = barstate.islast and not referenceOpenCaptured
-var table hud = table.new(position.top_right, 2, 12, border_width = 1)
+// The panel exists to answer one question -- "why did nothing trade" -- because
+// every gate in this strategy fails CLOSED and a blocked date looks exactly like
+// a date with no signal. Every gate is counted and the binding one is named.
+orbRows = useHtfWarmup ? htfOrbRows : array.size(orbHistoryBps)
+closeRows = useHtfWarmup ? htfCloseRows : array.size(rthCloseHistory)
+warmOk = orbRows >= orbLookback and closeRows >= trendCloses
+
+var table hud = table.new(position.top_right, 2, 13, border_width = 1)
 if showHud and barstate.islast
+    st = not oneMinuteChart ? "chart is not 1 minute -- nothing can run"
+         : not sawRefEver and not refOpenFallback
+             ? "no 23:00 UTC bar EVER -- switch EXTENDED HOURS on"
+         : orbRows < orbLookback
+             ? "warming up: " + str.tostring(orbRows) + "/" + str.tostring(orbLookback)
+               + " opening ranges"
+         : closeRows < trendCloses
+             ? "warming up: " + str.tostring(closeRows) + "/" + str.tostring(trendCloses)
+               + " session closes"
+         : cntAdmitted == 0 ? "warm, but no signal has been admitted yet"
+         : strategy.closedtrades + strategy.opentrades == 0
+             ? "signals admitted, none sized -- see sizing skips"
+         : "trading"
+    okNow = st == "trading"
     table.cell(hud, 0, 0, "FTM ORB 1.8.0-rc.1", text_color = color.white,
          bgcolor = color.new(color.teal, 20), text_size = size.small)
     table.cell(hud, 1, 0, timeframe.period, text_color = color.white,
          bgcolor = color.new(color.teal, 20), text_size = size.small)
-    table.cell(hud, 0, 1, "Timeframe", text_size = size.small, text_color = color.gray)
-    table.cell(hud, 1, 1, oneMinuteChart ? "1 minute -- ok" : "WRONG -- needs 1 minute",
+    table.cell(hud, 0, 1, "STATUS", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 1, st, text_size = size.small,
+         text_color = okNow ? color.new(color.green, 0) : color.new(color.red, 0))
+    table.cell(hud, 0, 2, "Extended hours", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 2, sawRefEver ? "23:00 UTC bar seen -- ok"
+         : refOpenFallback ? "not seen, using the fallback" : "NOT SEEN -- every date blocks",
          text_size = size.small,
-         text_color = oneMinuteChart ? color.new(color.green, 0) : color.new(color.red, 0))
-    table.cell(hud, 0, 2, "Eligible sessions", text_size = size.small, text_color = color.gray)
-    table.cell(hud, 1, 2, str.tostring(cntEligibleSessions), text_size = size.small)
-    table.cell(hud, 0, 3, "Admitted / geom / touch", text_size = size.small, text_color = color.gray)
-    table.cell(hud, 1, 3, str.tostring(cntAdmitted) + " / " + str.tostring(cntGeometryReject)
+         text_color = sawRefEver ? color.new(color.green, 0) : color.new(color.orange, 0))
+    table.cell(hud, 0, 3, "Opening ranges held", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 3, str.tostring(orbRows) + " / " + str.tostring(orbLookback)
+         + (useHtfWarmup ? "  (15m request)" : "  (1m only)"), text_size = size.small,
+         text_color = orbRows >= orbLookback ? color.new(color.green, 0) : color.new(color.orange, 0))
+    table.cell(hud, 0, 4, "Session closes held", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 4, str.tostring(closeRows) + " / " + str.tostring(trendCloses),
+         text_size = size.small,
+         text_color = closeRows >= trendCloses ? color.new(color.green, 0) : color.new(color.orange, 0))
+    table.cell(hud, 0, 5, "Dates seen / excluded", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 5, str.tostring(daysSeen) + " / " + str.tostring(blkExcluded),
+         text_size = size.small)
+    table.cell(hud, 0, 6, "Blocked: gap / noRef / ORB", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 6, str.tostring(blkGap) + " / " + str.tostring(blkNoRef) + " / "
+         + str.tostring(blkOrb), text_size = size.small,
+         text_color = (blkGap + blkNoRef + blkOrb) > 0 ? color.new(color.orange, 0) : color.gray)
+    table.cell(hud, 0, 7, "Eligible sessions", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 7, str.tostring(cntEligibleSessions), text_size = size.small)
+    table.cell(hud, 0, 8, "Admitted / geom / touch", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 8, str.tostring(cntAdmitted) + " / " + str.tostring(cntGeometryReject)
          + " / " + str.tostring(cntTouchVeto), text_size = size.small)
-    table.cell(hud, 0, 4, "RC1 direct / parent", text_size = size.small, text_color = color.gray)
-    table.cell(hud, 1, 4, str.tostring(cntRc1Direct) + " / " + str.tostring(cntRc1Parent),
+    table.cell(hud, 0, 9, "RC1 direct / parent", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 9, str.tostring(cntRc1Direct) + " / " + str.tostring(cntRc1Parent),
          text_size = size.small)
-    table.cell(hud, 0, 5, "Prior / kNN override", text_size = size.small, text_color = color.gray)
-    table.cell(hud, 1, 5, str.tostring(cntPriorOverride) + " / " + str.tostring(cntKnnOverride),
+    table.cell(hud, 0, 10, "Warm-up skips", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 10, str.tostring(cntContextWarmup)
+         + " signals refused for warm-up", text_size = size.small,
+         text_color = cntContextWarmup > 0 ? color.new(color.orange, 0) : color.gray)
+    table.cell(hud, 0, 11, "Sizing skips / fail-closed", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 11, str.tostring(cntSizingSkip) + " / " + str.tostring(cntFailClosed),
          text_size = size.small)
-    table.cell(hud, 0, 6, "Model labels / rows used", text_size = size.small, text_color = color.gray)
-    table.cell(hud, 1, 6, str.tostring(cntLabels) + " / " + str.tostring(modelRowsUsed),
-         text_size = size.small)
-    table.cell(hud, 0, 7, "Reversals: prior / intra", text_size = size.small, text_color = color.gray)
-    table.cell(hud, 1, 7, str.tostring(cntPriorReversal) + " / " + str.tostring(cntIntradayReverse)
-         + " keep " + str.tostring(cntIntradayKeep), text_size = size.small)
-    table.cell(hud, 0, 8, "Sizing skips / fail-closed", text_size = size.small, text_color = color.gray)
-    table.cell(hud, 1, 8, str.tostring(cntSizingSkip) + " / " + str.tostring(cntFailClosed),
-         text_size = size.small)
-    orbRows = useHtfWarmup ? htfOrbRows : array.size(orbHistoryBps)
-    closeRows = useHtfWarmup ? htfCloseRows : array.size(rthCloseHistory)
-    table.cell(hud, 0, 9, "ORB history", text_size = size.small, text_color = color.gray)
-    table.cell(hud, 1, 9, str.tostring(orbRows) + " / 120 "
-         + (priorOrbQ75Available ? "ready" : "WARMING -- no orders yet"),
-         text_size = size.small,
-         text_color = priorOrbQ75Available ? color.new(color.green, 0) : color.new(color.orange, 0))
-    table.cell(hud, 0, 10, "Session closes", text_size = size.small, text_color = color.gray)
-    table.cell(hud, 1, 10, str.tostring(closeRows) + " / 21 "
-         + (priorTrendAvailable ? "ready" : "WARMING -- no orders yet"),
-         text_size = size.small,
-         text_color = priorTrendAvailable ? color.new(color.green, 0) : color.new(color.orange, 0))
-    table.cell(hud, 0, 11, "Blocking reason", text_size = size.small, text_color = color.gray)
-    reason = not oneMinuteChart ? "chart is not 1 minute"
-         : noRefSeen ? "no 23:00 UTC bar -- chart must include EXTENDED HOURS"
-         : not priorOrbQ75Available ? "opening-range warm-up incomplete"
-         : not priorTrendAvailable ? "trend warm-up incomplete"
-         : cntAdmitted == 0 ? "no admitted signal yet"
-         : "none -- orders are permitted"
-    table.cell(hud, 1, 11, reason, text_size = size.small,
-         text_color = reason == "none -- orders are permitted" ? color.new(color.green, 0)
-             : color.new(color.red, 0))
+    table.cell(hud, 0, 12, "Trades", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 12, str.tostring(strategy.closedtrades) + " closed, "
+         + str.tostring(strategy.opentrades) + " open", text_size = size.small,
+         text_color = strategy.closedtrades > 0 ? color.new(color.green, 0) : color.new(color.red, 0))
