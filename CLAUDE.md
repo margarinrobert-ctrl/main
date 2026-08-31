@@ -1731,6 +1731,37 @@ fire -- the HUD now warns. Fitting the entry channel to <=26 WOULD make both bar
 recorded as curve-fitting to two events on eleven days.
 See `docs/ib/STUDY_V57_REVERSE_ENGINEER.md`.
 
+**A SWEEP OVER TWO LEVELS IS A SWEEP OVER THEIR DIFFERENCE.** The Initial Balance family sets the
+entry at retr x range inside the broken edge and the stop at stop x range from it, so the RISK is
+`(stop - retr) x range` -- a difference of two swept numbers, which the grid can drive to nearly
+zero. Ranked in R, all 25 leaders of 777,600 cells cleared a matched control at p 0.000 with the
+control losing 0.4-0.6 R; the winner was an **11.6-point stop at 10:1** on 15-minute bars. Score in
+ATR UNITS at the plan bar and take profit factor in POINTS. Same disease as `STUDY_SWEEP_110K`'s
+channel stop, reached by construction rather than by accident. **And the FILL BAR IS AN EXIT BAR** --
+when entry and stop sit a tenth of a range apart they are inside one 15m bar, and skipping it hands
+the config a free option worth up to +0.09 ATR/trade to **49.5%** of the grid. Run both models,
+print the gap, and place the bracket WITH the entry in the script so the two match.
+
+**THE INITIAL BALANCE RETRACEMENT LOSES ON THREE MARKETS, AND A CONSENSUS IS NOT A MARGINAL.** As
+published (60m IB, 25% entry, 60% stop, 50% target, both sides) it scores PF 0.83/0.78 US30,
+0.92/0.85 US100, 0.940 NQ and **loses to a risk-matched random entry at p 0.76-0.99** -- vectorbt
+agrees on the trade count 100.0% in all four cells, the first time it has matched here. 777,600
+configs x 2 markets: 13% profitable on research, EVERY marginal negative at EVERY setting of EVERY
+axis, 2/25 leaders positive on locked against 6-12 by chance, 0/25 clearing their control.
+`EMA 13 under 48` was in **74%** of the top 1000 and FAILS on both US100 columns of the marginal
+read; only the **ADX floor** beats `off` in all four market-block columns, and it only shrinks the
+loss. Trading the break ITSELF is the worst entry rung in all four columns (deeper is better to 0.5
+of the range, then the two markets disagree, so the pass-one ridge was an edge effect). No take
+profit ties for best -- twelfth time. One cluster (IB30 long, 0.5 entry, 1.0 stop, no target,
+ADX>=20 + range>=0.8x median + close upper half + EMA13 under 48) was read once on NQ, which chose
+nothing: **+0.354 ATR/trade, PF 1.80, control p 0.003 on 48 TRADES** -- a footing, not a result,
+and it was selected on two other markets' locked blocks. `docs/ib/STUDY_V58_INITIAL_BALANCE.md`.
+
+**`NQ_1m` IS STAMPED IN UTC AND EVERY OTHER FEED HERE IS ALREADY NEW YORK.** A loader that forgets
+to convert puts a 09:30 session window at 04:30 New York -- the pre-open block measured as the worst
+part of the day four times -- and V58's NQ table went from 48 trades PF 1.80 to 89 trades PF 1.49
+on it. `research/datasets.py` states every feed's clock. Read it before loading.
+
 ## Tooling
 
 | module | what it does |
@@ -1837,6 +1868,10 @@ See `docs/ib/STUDY_V57_REVERSE_ENGINEER.md`.
 | `research/atme/` | adaptive trade management: entry mechanics, trailing/breakeven stops, partials, mechanic isolation |
 | `research/atme/livesim.py` | true 1-minute path re-simulation of a 5-minute config, plus perturbation Monte Carlo |
 | `research/turtle15/pine_parity.py` | the shipped Pine's order model in Python, diffed against the engine |
+| `research/v58/v58ib.py` | the Initial Balance tensor: 777,600 configs in one walk, both exit models |
+| `research/v58/run_v58.py`, `v58judge.py`, `v58lock.py` | the sweep, the risk-matched control gate, the one locked read |
+| `research/v58/v58_vbt.py` | the vectorbt second opinion -- 100.0% trade-count agreement |
+| `research/v58/v58_nq.py` | the cluster read once on NQ, which chose nothing |
 | `research/tune.py` | **the tuning loop** — `tune.py -i`, or one command; indicators/time/entry/TP/SL |
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
