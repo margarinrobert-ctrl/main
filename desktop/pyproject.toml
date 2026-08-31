@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradingbacktester"
+version = "1.0.0"
+description = "A professional desktop backtesting platform for trading strategies"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "PySide6>=6.6,<7",
+    "pyqtgraph>=0.13",
+    "numpy>=1.26",
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+parquet = ["pyarrow>=14.0"]
+dev = ["pytest>=8.0", "pytest-qt>=4.4", "pyinstaller>=6.5"]
+
+[project.gui-scripts]
+tradingbacktester = "tradingbacktester.app:main"
+
+[tool.setuptools.packages.find]
+include = ["tradingbacktester*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "gui: tests that need a Qt application instance",
+    "slow: tests that take more than a second",
+]
+filterwarnings = ["ignore::DeprecationWarning"]

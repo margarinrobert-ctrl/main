@@ -1,0 +1,32 @@
+# UTF-8
+#
+# Windows version resource embedded in TradingBacktester.exe.  Windows shows
+# these strings in the file's Properties dialog and SmartScreen uses them when
+# describing an unsigned download.
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '040904B0',
+        [StringStruct('CompanyName', 'Trading Backtester'),
+         StringStruct('FileDescription', 'Trading Backtester - strategy backtesting platform'),
+         StringStruct('FileVersion', '1.0.0.0'),
+         StringStruct('InternalName', 'TradingBacktester'),
+         StringStruct('LegalCopyright', 'MIT Licence'),
+         StringStruct('OriginalFilename', 'TradingBacktester.exe'),
+         StringStruct('ProductName', 'Trading Backtester'),
+         StringStruct('ProductVersion', '1.0.0.0')])
+    ]),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)
