@@ -91,6 +91,40 @@ feed — removing them improves both — so two of the four described mechanisms
 - **Information coefficient** 0.068 (NQ) / 0.037 (US100) — small and plausible. Above ~0.15 would
   have suggested a leak.
 
+## Profit factor, win rate, timeframe, holding time
+
+**Timeframe:** signal on **daily** bars, executed intraday **08:00–15:45 New York = 7.75 hours a
+day**, flat overnight and at weekends. Execution bars are 1-minute on NQ, 15-minute on US100.
+
+Net of costs, full sample:
+
+| | NQ (3 yr) | US100 (9 yr) |
+|---|---:|---:|
+| **profit factor, per day** | **1.251** | **1.127** |
+| **win rate, per day** | **49.3%** | **47.7%** |
+| profit factor, per directional stance | 2.023 | 1.534 |
+| win rate, per stance | 76.3% | 71.7% |
+| **mean hold, per stance** | **6.56 trading days** (median 5, max 38) | **6.96** (median 5, max 65) |
+| exposure-hours per stance | 50.9 | 53.9 |
+| mean absolute target | 0.076 contracts | 0.085 |
+
+**The per-day and per-stance figures are the same strategy counted two ways, and the difference is
+not an improvement.** The position is a *continuous* target in [−1, 1] that is re-sized daily, so
+there is no discrete trade with an entry and an exit. Grouping consecutive same-side days into one
+"stance" nets winning days against losing days inside each run, which is what lifts the profit
+factor from 1.13 to 1.53 and the win rate from 47.7% to 71.7%. **The per-day row is the honest one**
+— it matches the unit the Sharpe is computed on. Quoting 71.7% as a win rate would be the same kind
+of framing error as the notebook's Sharpe.
+
+Two further readings from the same table:
+
+* **The short side is twice as frequent as the long and worse at it** — US100: 1,466 short days at
+  PF 1.103 and 45.2% wins against 796 long days at PF 1.161 and 52.5%. A contrarian signal on a
+  rising index is short most of the time, which is the fifth time on this branch that a short book
+  has lost by existing.
+* **Mean absolute exposure is 0.08 contracts.** The +0.49 to +1.21 points a day is earned on that,
+  not on one contract; scaled to full size the drawdowns scale with it.
+
 ## Weaknesses
 
 - The effect is smaller than the noise floor at this sample size. To distinguish Sharpe 0.4 from 0

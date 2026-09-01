@@ -2030,6 +2030,7 @@ class. See `docs/ib/STUDY_CMMA.md`.
 | `research/m4_anatomy.py` | why M4 is profitable: exit split, barrier sweep, day-vs-bar, bands |
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
 | `research/cmma/` | the CMMA notebook, re-implemented honestly: accounting, costs, deflation, holdout |
+| `research/cmma/cmma_stats.py` | its profit factor, win rate and hold time, per DAY and per stance |
 | `research/v58/v58_anatomy.py` | **what creates the IB edge** — exit split, infinite stop, day-vs-bar, drop-one, ladders |
 | `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
 | `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |
