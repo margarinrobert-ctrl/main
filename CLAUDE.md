@@ -2058,6 +2058,20 @@ one-decimal CFD quote); a two-decimal broker makes every tolerance 10x tighter a
 left edge of the scale ladder. Ninth bar-range-stop intraday entry on this branch to sit under
 the cost floor. See `docs/ib/STUDY_THE_STRAT.md`, `research/strat/`.
 
+**FTM 1.8.0-ALPHA.2 IS RC1 MINUS $641, and the two knobs it turns touch 21 of 342 sessions.**
+The alpha.2 NinjaScript keeps the whole 1.4.1-rc.1 parent and changes the entry policy in two
+places: the prior-session flip observes ONE minute instead of two (H5), and the intraday flip is
+capped at one contract (H2). Same simulator, same 1.05M one-minute bars, two knobs: RC1 342
+trades / $11,661 / +0.1620 R reproduced to the trade; alpha.2 342 / $11,020 / +0.1551 R; H5
+alone -$199, the cap alone -$441, additive. Sixteen flips fire a minute earlier and four of them
+land on the other side of a barrier (two each way); five intraday flips are halved and the path
+was net positive so the cap costs money. It still clears the matched control (excess +0.094 R,
+p 0.006) and EVERY qualification from STUDY_FTM_ORB_BACKTEST stands: top 5% of trades 121% of
+net, the 15:30 conditional exit $14,208 of an $11,020 net, 2023 flat, 86% of net in the
+unchanged control action. The 15m CFD feeds cannot run it -- the opening range, the admission
+test and every refinement observation are defined on exact one-minute bars. See
+`docs/ib/STUDY_FTM_ALPHA2.md`; `ftm_sim.run(prior_bars=, h2_cap=)`.
+
 **A DAILY-SIGNAL / INTRADAY-EXECUTION PINE PORT HAS FOUR TRAPS AND ONE OF THEM IS FATAL.** Porting
 the CMMA notebook: (1) the daily bars are NEW YORK CALENDAR DAYS, and `request.security(..., "D")`
 on a CME future gives the 18:00-17:00 ETH SESSION instead -- accumulate them from the chart's own

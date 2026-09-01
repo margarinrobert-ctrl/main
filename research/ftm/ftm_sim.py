@@ -91,7 +91,12 @@ def load_nq():
 def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         min_pct=0.5, max_pct=2.0, port_max=10, lev=4.0,
         orb_lookback=ORB_LOOKBACK, trend_closes=REQ_TREND_CLOSES,
-        strict_contig=True, require_warm=True):
+        strict_contig=True, require_warm=True, prior_bars=PRIOR_BARS, h2_cap=0):
+    """`prior_bars` and `h2_cap` are the two places 1.8.0-alpha.2 departs from RC1: the
+    prior-session-disagreement branch observes `prior_bars` completed minutes before flipping
+    (RC1 2, alpha.2 1 = "H5 delay1 flip"), and the intraday-continuation flip is capped at
+    `h2_cap` contracts when > 0 (alpha.2 1 = "H2 vote1 flip cap1"). Everything else is the
+    1.4.1-rc.1 parent both versions share."""
     f = load_nq()
     o, h, l, c = (f[k].to_numpy(float) for k in ("open", "high", "low", "close"))
     vol = f["volume"].to_numpy(float)
@@ -129,7 +134,8 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         realised[0] += usd
         sp = t["stopTicks"] * TICK
         trades.append((t["_t"], t["_p"], sd, t["entry"], px, t["qty"], reason, pts, usd,
-                       pts / sp, sp, abs(t["tgt"] - t["entry"]), t["trig"], t["lock"]))
+                       pts / sp, sp, abs(t["tgt"] - t["entry"]), t["trig"], t["lock"],
+                       t["action"]))
 
     def sel_plan(side):
         hv = st["q75ok"] and st["orbBps"] > st["q75"]
@@ -156,8 +162,9 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
             return 2
         return 0
 
-    def entry_plan(side, px, equity):
-        """[EXACT SubmitEntry + CalculateQuantity], all three sizing modes."""
+    def entry_plan(side, px, equity, policy_cap=0):
+        """[EXACT SubmitEntry + CalculateQuantity], all three sizing modes. `policy_cap`
+        is the alpha.2 H2 contract cap, applied after the defensive caps in every mode."""
         raw = max(MIN_STOP, min(MAX_STOP, (st["oh"] - st["ol"]) * STOP_ORB_MULT))
         stops = round_offset_ticks(raw, side == 1)
         tR, trg, lck = sel_plan(side)
@@ -176,6 +183,8 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         cap = FIXED_MAX_CTS if sizing == "FixedDollar" else port_max
         if sizing != "ConfidenceScaledPercent" and (hv or ct):
             cap = min(cap, DEF_MAX_CTS)
+        if policy_cap > 0:
+            cap = min(cap, policy_cap)
         planned_stop = round_price(px - side * stops * TICK)
         dist = side * (px - planned_stop)
         per = dist * POINT_VALUE + max(STOP_SLIP_TICKS, PLATFORM_SLIP) * TICK * POINT_VALUE \
@@ -308,6 +317,7 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
             st.update(integrity=False, blocked=True, consumed=True)
 
         submit_side, submit_now, submit_path = 0, False, ""
+        submit_action, submit_cap = "control", 0
 
         # ---- pending decisions
         if same_cash and ped is not None and not st["blocked"]:
@@ -334,7 +344,7 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                             submit_side, submit_now = fs, True
                             submit_path = "delay_" + ped_branch
                     else:
-                        pfd = dict(side=fs, req=PRIOR_BARS if b == 1 else INTRA_BARS, obs=0,
+                        pfd = dict(side=fs, req=prior_bars if b == 1 else INTRA_BARS, obs=0,
                                    first=0.0, submit=sub, branch=b)
 
         if same_cash and pfd is not None and not st["blocked"]:
@@ -349,14 +359,18 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                     mv = rs * (c[i] - pfd["first"])
                     if pfd["branch"] == 1:
                         fs = -rs; cnt["prev"] += 1
+                        act, capv = "h5", 0
                     elif mv > 0.0:
                         fs = -rs; cnt["irev"] += 1
+                        act, capv = ("h2cap", h2_cap) if h2_cap > 0 else ("control", 0)
                     else:
                         fs = rs; cnt["ikeep"] += 1
+                        act, capv = "control", 0
                     br = pfd["branch"]
                     sub, pfd = pfd["submit"], None
                     if sub:
                         submit_side, submit_now = fs, True
+                        submit_action, submit_cap = act, capv
                         submit_path = ("prior_session_reverse" if br == 1
                                        else "intraday_" + ("reverse" if fs != rs else "keep"))
 
@@ -525,6 +539,7 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                                     if sub:
                                         submit_side, submit_now = bside, True
                                         submit_path = "rc1_direct"
+                                        submit_action = "direct"
                                 else:
                                     cnt["parent"] += 1
                                     db = dside * (c[i] - so) / rng
@@ -550,20 +565,21 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                                                 submit_path = "parent_no_condition"
                                         else:
                                             pfd = dict(side=dside,
-                                                       req=PRIOR_BARS if b == 1 else INTRA_BARS,
+                                                       req=prior_bars if b == 1 else INTRA_BARS,
                                                        obs=0, first=0.0, submit=sub, branch=b)
 
         # ---- the order gateway; a market order fills at the NEXT bar's open
         if submit_now and pos is None and i + 1 < n:
             eq = START_EQUITY if sizing == "FixedDollar" else START_EQUITY + realised[0]
-            q, stops, tgts, trg, lck = entry_plan(submit_side, c[i], eq)
+            q, stops, tgts, trg, lck = entry_plan(submit_side, c[i], eq, submit_cap)
             if stops < 1 or tgts < 1:
                 cnt["fail"] += 1
             elif q < 1:
                 cnt["sizeskip"] += 1
             else:
                 fill = o[i + 1]
-                pos = dict(_t=ix[i + 1], _p=submit_path, side=submit_side, entry=fill, qty=q, stopTicks=stops,
+                pos = dict(_t=ix[i + 1], _p=submit_path, action=submit_action, side=submit_side,
+                           entry=fill, qty=q, stopTicks=stops,
                            stop=round_price(fill - submit_side * stops * TICK),
                            tgt=round_price(fill + submit_side * tgts * TICK),
                            trig=trg, lock=lck, managed=False, cond=False)
@@ -580,13 +596,13 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         if trades:
             t = pd.DataFrame(trades, columns=["time", "path", "side", "entry", "exit", "qty",
                                               "reason", "pts", "usd", "R", "stopPts",
-                                              "tgtPts", "trig", "lock"])
+                                              "tgtPts", "trig", "lock", "action"])
             print(f"\ntrades {len(t)}   net ${t['usd'].sum():,.0f}   "
                   f"win {(t['usd'] > 0).mean()*100:.1f}%   avg {t['pts'].mean():+.2f} pts")
             print(t["reason"].value_counts().to_string())
     return cnt, pd.DataFrame(trades, columns=[
         "time", "path", "side", "entry", "exit", "qty", "reason", "pts", "usd", "R",
-        "stopPts", "tgtPts", "trig", "lock"])
+        "stopPts", "tgtPts", "trig", "lock", "action"])
 
 
 if __name__ == "__main__":
