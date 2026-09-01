@@ -173,7 +173,7 @@ def main():
     print(f"  rule {base['atr']:+.4f} ATR/trade   vs   random-entry control median {med:+.4f}"
           f"   p {p_ctrl:.4f}   over {len(dist)} draws")
     print("  (the control keeps the side, the geometry, the costs and the SAME 48 DAYS; only the")
-    print("   entry moment is randomised, so it prices in drift, barrier width and session timing.)")
+    print("   entry moment is randomised, so it prices drift, barrier width and session timing.)")
 
     # ---------------------------------------------------------------- 4. what the days do
     print("\n" + "=" * 100)
@@ -249,7 +249,7 @@ def main():
 
     # ---------------------------------------------------------------- 7. the geometry ladder
     print("\n" + "=" * 100)
-    print("7. THE GEOMETRY LADDER, UNCONDITIONAL -- if the geometry is the edge, sweep the geometry")
+    print("7. THE GEOMETRY LADDER, UNCONDITIONAL -- if the geometry is the edge, sweep it")
     print("=" * 100)
     print("  All four conditions OFF, one geometry axis moved at a time from the cluster's values.")
     print(f"  {'axis':<10}{'setting':<12}{'n':>6}{'ATR/tr':>10}{'pts/tr':>10}"

@@ -29,7 +29,7 @@ REVERSE-ENGINEERING THE INITIAL BALANCE EDGE -- NQ, the block that chose nothing
 ====================================================================================================
   rule +0.3544 ATR/trade   vs   random-entry control median -0.1286   p 0.0030   over 2000 draws
   (the control keeps the side, the geometry, the costs and the SAME 48 DAYS; only the
-   entry moment is randomised, so it prices in drift, barrier width and session timing.)
+   entry moment is randomised, so it prices drift, barrier width and session timing.)
 
 ====================================================================================================
 4. WHAT DO THE SELECTED DAYS DO ON THEIR OWN? -- the session-picker test
@@ -84,7 +84,7 @@ REVERSE-ENGINEERING THE INITIAL BALANCE EDGE -- NQ, the block that chose nothing
   --------------------------------------------------------------
 
 ====================================================================================================
-7. THE GEOMETRY LADDER, UNCONDITIONAL -- if the geometry is the edge, sweep the geometry
+7. THE GEOMETRY LADDER, UNCONDITIONAL -- if the geometry is the edge, sweep it
 ====================================================================================================
   All four conditions OFF, one geometry axis moved at a time from the cluster's values.
   axis      setting          n    ATR/tr    pts/tr      PF     win   ctrl p
@@ -121,8 +121,8 @@ REVERSE-ENGINEERING THE INITIAL BALANCE EDGE -- NQ, the block that chose nothing
 ====================================================================================================
 MULTIPLICITY, STATED RATHER THAN BURIED
 ====================================================================================================
-  NQ was reserved as the block that chose nothing, and STUDY_V58 spent it on ONE read of
-  a pre-declared cluster. This anatomy has now read roughly SIXTY cells on it. Every
+  NQ was reserved as the block that chose nothing, and STUDY_V58 spent it on ONE read
+  of a pre-declared cluster. This anatomy has read roughly SIXTY cells on it. Every
   p-value above is therefore descriptive, not pre-registered: they say which parts of
   the rule carry its result, and they no longer say the result is significant. The next
   test of anything found here needs a block none of this touched.
