@@ -98,5 +98,9 @@ ClosedEquityPercent $16,360 / 1.386 / −$3,820 / 1.42; ConfidenceScaledPercent 
   17-trade tail carrying 121% of net, a 15:30 exit rule worth more than the strategy, and a
   2023 that is flat. A version 1.8.1 that spent its effort on the exit rather than the entry
   ordering would be testing the part of the system that has the money in it.
+* The TradingView port is `pine/ftm/FTM_ORB_MNQ_v1_8_0_ALPHA2.pine`: the verified RC1 port
+  with the two policy knobs as inputs ("Prior-session observation bars" 1, "H2 flip
+  contract cap" 1), 56 lines changed, lint clean; at 2 and 0 it is the RC1 port. The
+  Python simulator with the same two knobs is its order model.
 * Still unverified: NT8 parity (the file's own header says so), the basis-point features on a
   synthetic-level series, and anything on MNQ's real tick data rather than NQ's path.
