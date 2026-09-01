@@ -2039,6 +2039,25 @@ header's own one-month window holds 0 / 3 / 1 trades. Seventh Donchian breakout 
 to fail its control on two of three markets. See `docs/ib/STUDY_DOUBLE_DONCHIAN.md`,
 `research/ddc/`.
 
+**THE STRAT COMBO ENGINE BEATS A RANDOM BAR AND STILL LOSES, because its geometry costs more
+than its pattern earns.** Bar-type reversal combos (3-2, 1-3-2, 2-1-2, 3-1-2 with a colour rule
+and a hammer bonus) plus a four-filter location score, traded as a one-bar stop order 20 broker
+points past the trigger bar with the stop 20 points past the other side and a 2R target: 15m,
+as configured, **US30 -0.250 R (1,315 trades, PF 0.71), US100 -0.116 (1,459, 0.85), NQ -0.090
+(489, 0.88)**, negative on every block, both sides and 24 of 27 calendar years. At ZERO cost:
+0.000 / +0.071 / -0.001. The combos DO beat a random trigger with the identical order (control
+-0.379 / -0.256 / -0.145, p 0.000 / 0.000 / 0.18) -- worth +0.06 to +0.14 R -- and the cost of a
+one-bar-range stop entered on a stop order is larger than that on every feed; stopped trades
+lose 1.10-1.30 R because spread + stop slippage is 10-30% of that risk. The location score is
+decoration: it passes 68-93% of triggers (a 5-point tolerance always finds a fractal in 200
+bars), removing it is no worse, and a stricter score is worse. Every knob that helps -- wider
+buffers (0 -> 100 pts: -0.44 -> -0.09 on US30), slower bars -- helps by widening the stop
+relative to a fixed cost, and none crosses zero. Win rate tracks the driftless break-even at
+every RR within two points: the barriers are hit by noise. "Points" are BROKER points (0.1 on a
+one-decimal CFD quote); a two-decimal broker makes every tolerance 10x tighter and is off the
+left edge of the scale ladder. Ninth bar-range-stop intraday entry on this branch to sit under
+the cost floor. See `docs/ib/STUDY_THE_STRAT.md`, `research/strat/`.
+
 **A DAILY-SIGNAL / INTRADAY-EXECUTION PINE PORT HAS FOUR TRAPS AND ONE OF THEM IS FATAL.** Porting
 the CMMA notebook: (1) the daily bars are NEW YORK CALENDAR DAYS, and `request.security(..., "D")`
 on a CME future gives the 18:00-17:00 ETH SESSION instead -- accumulate them from the chart's own
@@ -2103,6 +2122,7 @@ position cap is load-bearing even though it never binds at a base of 50.
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 | `research/m4_anatomy.py` | why M4 is profitable: exit split, barrier sweep, day-vs-bar, bands |
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
+| `research/strat/` | The Strat combo engine: bar types, four location filters, one-bar stop order, trade-matched control |
 | `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
 | `research/ibs/` | the IBS session EA: cached tensor, bar-by-bar parity, stability / MC / clusters / walk-forward / judge |
 | `research/cmma/` | the CMMA notebook, re-implemented honestly: accounting, costs, deflation, holdout |
