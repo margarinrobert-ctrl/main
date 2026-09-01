@@ -141,7 +141,8 @@ Two further readings from the same table:
 ## The Pine port
 
 `pine/cmma/CMMA_MNQ_strategy.pine`, diffed against the research engine rather than asserted
-(`research/cmma/cmma_parity.py`):
+(`research/cmma/cmma_parity.py`), in both the shipped configuration (no tanh, no smoothing) and
+the notebook's original:
 
 | | NQ | US100 |
 | --- | --- | --- |
@@ -175,6 +176,40 @@ Four things the port has to get right, each of which would silently change the s
 
 At 50 and above the rounding is free; below 20 it is material noise in both directions. The script
 defaults to 50, which is a mean position near 4 MNQ and a maximum near 24.
+
+## Can it perform better — seven pre-declared candidates, two feeds
+
+`research/cmma/cmma_improve.py`. Because the component attribution inverts between NQ and US100, a
+change chosen on one feed is exactly the trap; a candidate survives only if it beats the notebook
+**in-sample on both**, and the holdout is read once, after. Net of costs:
+
+| candidate | NQ IS | US100 IS | survives | NQ holdout | US100 holdout |
+| --- | ---: | ---: | :---: | ---: | ---: |
+| A as briefed | +0.76 | +0.22 | base | +0.73 (PF 1.28) | +0.65 (PF 1.23) |
+| B start 09:30 instead of 08:00 | +0.57 | +0.00 | no | | |
+| **C no tanh, no EMA smoothing** | **+0.83** | **+0.47** | **yes** | **+1.99 (PF 1.83)** | **+0.96 (PF 1.32)** |
+| D = B + C | +0.69 | +0.27 | no | | |
+| E vol-targeted | +0.86 | +0.04 | no | | |
+| F dead band | +0.87 | +0.24 | yes | +0.86 (PF 1.39) | +0.73 (PF 1.31) |
+| G = D + E | +0.97 | +0.00 | no | | |
+
+Standard errors are 0.70 (NQ IS), 0.40 (US100 IS), 1.06 and 0.61 on the holdouts.
+
+**C ships as the default.** It is the only candidate that beats the notebook on both feeds
+in-sample *and* on both holdouts, and it is the removal of two components §4 had already measured
+as inert — not the addition of anything. Three caveats stay attached: its deflated Sharpe is
+**0.16** against a 40-trial search, so it is still not distinguishable from the best of 40 random
+tries; its holdout is *better* than its in-sample on both feeds, which this branch treats as a
+regime warning and not a result (the notebook's own version shows the same shape, so the recent
+block is simply kinder to this family); and without `tanh` the signal is unbounded — mean
+|signal| 0.076 → 0.137, 99th percentile 0.75, maximum seen 1.55 — so the Pine's position cap is
+load-bearing, though at a base of 50 it never actually binds.
+
+**Two results worth having even though they lost.** Starting at 09:30 instead of 08:00 (B) *hurt*
+on both feeds, against `CLAUDE.md`'s four prior findings that 07:00–09:30 is the worst part of the
+day — this daily-signal strategy wants the pre-open hour, which is consistent with it being a
+held directional position rather than an intraday entry. And vol-targeting (E) helped NQ and
+flattened US100 to zero, which is the inversion again.
 
 ## Next tests
 

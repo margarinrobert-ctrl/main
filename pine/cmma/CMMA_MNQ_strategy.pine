@@ -1,120 +1,100 @@
 // ================================================================================================
 // CMMA DAILY MEAN REVERSION, EXECUTED INTRADAY -- a 1:1 port of the uploaded notebook.
 //
-// THE RULE, unchanged from the source:
-//     cmma       = (close - SMA(close, 5)) / ATR(5)          on DAILY bars
-//     cmma_tanh  = tanh(cmma)                                bounds it to (-1, 1)
-//     ker        = |close - close[21]| / sum(|close - close[1]|, 21)     Kaufman efficiency ratio
-//     signal     = ewm(ker * -cmma_tanh, com = 2)            contrarian, conviction-weighted
-//     the daily target is carried into the next session and MNQ is held 08:00-15:45 New York.
+//     cmma      = (close - SMA(close, 5)) / ATR(5)        on DAILY bars (New York calendar days)
+//     signal    = ewm( KER(21) * -tanh(cmma), com = 2 )   contrarian, conviction-weighted
+//     held 08:00-15:45 New York, flat overnight; the target is set once a day at midnight.
 //
-// ============================ THE FOUR THINGS A PORT MUST GET RIGHT ============================
+// THE FOUR THINGS THIS PORT GETS RIGHT THAT A NAIVE ONE WOULD NOT:
+//  1. Daily bars are NEW YORK CALENDAR DAYS built from the chart's own bars, not the exchange's
+//     18:00-17:00 session that `request.security(.., "D", ..)` would give. EXTENDED HOURS MUST BE
+//     ON or every daily high, low and true range is missing the overnight.
+//  2. The lag is EIGHT HOURS, not a day: the signal finalised at midnight is the one traded that
+//     day. There is no extra shift -- the notebook's .shift(1) is consumed by its own resample
+//     convention. Verified against the data, correlation 1.0000000000 with the Python.
+//  3. `ewm(2)` is `com=2`, alpha 1/3 -- not a span.
+//  4. The signal is CONTINUOUS with a mean absolute value of 0.076. At a base size of 1 contract it
+//     rounds to ZERO every day and never trades. At 50 the rounding is free (Sharpe 0.71 against
+//     the fractional 0.70). Leave "Contracts at full signal" at 50 or above.
 //
-// 1. THE DAILY BARS ARE CALENDAR DAYS IN NEW YORK, NOT EXCHANGE SESSIONS. The notebook resamples
-//    1-minute data with `resample('1D', label='right', closed='right')`, which bins midnight to
-//    midnight. TradingView's "D" resolution on a CME future is the ETH SESSION day (18:00 to
-//    17:00) and would silently be a different series. So the daily bars are accumulated here from
-//    the chart's own intraday bars on New York midnight boundaries. **EXTENDED HOURS MUST BE ON**
-//    or the overnight range is missing from every daily high, low and true range.
+// EXECUTION IS TWO ORDERS A DAY: one entry at the session open sized to the day's target, one
+// close at the session end. Nothing is re-sized inside a session because the target cannot
+// change inside a session.
 //
-// 2. THE LAG IS EIGHT HOURS, NOT A DAY -- verified against the data rather than argued. With
-//    `label='right'` the daily bar labelled D covers calendar day D-1 and closes at midnight as
-//    day D begins; the notebook's `.shift(1)` is then consumed by its own `index - 1 day` remap.
-//    Net: the signal traded during day D's session is the one finalised at MIDNIGHT NEW YORK at
-//    the start of day D, eight hours before the 08:00 entry. That is what this script does, and
-//    there is no further shift. Adding one would be a day late; removing one would be lookahead.
+// WHAT SHIPS, AND WHY IT IS NOT THE NOTEBOOK'S EXACT DEFAULTS. Seven pre-declared candidates were
+// scored IN-SAMPLE on both NQ and US100, and a candidate survived only if it beat the notebook on
+// BOTH -- because the component attribution inverts between those feeds and a change chosen on one
+// is the trap. One survived cleanly: DROP THE tanh AND THE EMA SMOOTHING, both of which had already
+// measured as contributing nothing. Read once on the holdout:
 //
-// 3. `ewm(2)` IS `com = 2`, NOT `span = 2`. Pandas' first positional argument to `ewm` is the
-//    centre of mass, so the smoothing constant is 1/(1+2) = 1/3, not 2/(1+2). Reading it as a
-//    span makes the filter twice as fast and is the easiest mistake in this conversion.
+//                            in-sample NQ    in-sample US100     HOLDOUT NQ         HOLDOUT US100
+//   notebook as written      Sharpe +0.76    +0.22               +0.73  PF 1.28     +0.65  PF 1.23
+//   SHIPPED (no tanh/EMA)    Sharpe +0.83    +0.47               +1.99  PF 1.83     +0.96  PF 1.32
 //
-// 4. PINE CANNOT TRADE FRACTIONAL CONTRACTS, AND THIS IS THE ONE PLACE THE PORT CANNOT BE EXACT.
-//    The signal is a CONTINUOUS target in (-1, 1) whose mean absolute value is 0.076. Rounding
-//    that to whole contracts at a base size of 1 gives ZERO ON EVERY DAY -- the strategy would
-//    never place a trade. Measured on NQ, the cost of the rounding by base size:
+// The two switches are still in the inputs, so the notebook's exact version is two clicks away.
+// Without tanh the signal is unbounded: mean |signal| rises 0.076 -> 0.137, the 99th percentile is
+// 0.75 and the maximum seen is 1.55, so at a base of 50 the 100-contract cap never binds.
 //
-//      contracts at full signal    mean position    days traded    pts/day    Sharpe
-//                             1            0.000              0     +0.000       n/a
-//                             5            0.057            202     +0.913     +0.54
-//                            10            0.070            370     +1.615     +0.92
-//                            20            0.075            526     +1.137     +0.65
-//                            50            0.075            640     +1.225     +0.71
-//                           100            0.076            691     +1.195     +0.69
-//      exact, fractional            0.076            748     +1.205     +0.70
+// THREE CAVEATS THAT STAY ATTACHED. The deflated Sharpe of the shipped version is 0.16 against a
+// 40-trial search, so it is not distinguishable from the best of 40 random tries. Its holdout is
+// BETTER than its in-sample on both feeds, which this branch treats as a regime warning rather
+// than a result -- the same is true of the notebook's own version. And nine years of the index
+// give the notebook a Sharpe of +0.39 +- 0.33: not a leak, not a demonstrated edge.
+// `docs/ib/STUDY_CMMA.md`.
 //
-//    At 50 and above the rounding is free; below 20 it is material noise in both directions.
-//    The default is 50, which means a mean position of about 4 MNQ and a maximum near 24.
-//
-// ================================ WHAT THIS STRATEGY IS WORTH ================================
-// Evaluated in `docs/ib/STUDY_CMMA.md`. It is NOT a leak -- the audit and the execution-alignment
-// check are clean. It is an effect too small to demonstrate. On nine years of the same index,
-// net of costs: Sharpe +0.39 +- 0.33, profit factor 1.127 a day, win rate 47.7%, deflated Sharpe
-// 0.057 against a 34-configuration sweep whose expected best-of-noise is 0.85, three of nine years
-// negative, and the best 1% of days are 240% of net profit. The component attribution INVERTS
-// between feeds: on NQ the efficiency-ratio weighting is the whole strategy and bare sign(cmma)
-// earns nothing; on US100 bare sign(cmma) is the best row and every layer makes it worse.
-// `tanh` and the EMA smoothing never help on either feed.
-//
-// Trade it at your own risk. Research tooling for education and analysis. Not financial advice.
+// Research tooling for education and analysis. Not financial advice.
 // ================================================================================================
 //@version=6
 strategy("CMMA daily mean reversion | intraday MNQ", overlay = false,
-     pyramiding = 100, default_qty_type = strategy.fixed, default_qty_value = 1,
+     pyramiding = 0, default_qty_type = strategy.fixed, default_qty_value = 1,
      initial_capital = 100000, currency = currency.USD,
      commission_type = strategy.commission.cash_per_order, commission_value = 0.72,
      slippage = 1, calc_on_every_tick = false, process_orders_on_close = false)
 
 // ---------------------------------------------------------------------------------- inputs
 gR = "Rule"
-maLen    = input.int(5,  "MA length (daily)",  minval = 2, group = gR)
-atrLen   = input.int(5,  "ATR length (daily)", minval = 2, group = gR)
-kerLen   = input.int(21, "Efficiency ratio length", minval = 2, group = gR)
-smoothCom = input.float(2.0, "EMA smoothing, centre of mass", minval = 0.0, step = 0.5, group = gR,
-     tooltip = "The source writes ewm(2), which is com=2 -> alpha 1/3. Reading it as a span would " +
-     "make the filter twice as fast.")
-useTanh  = input.bool(true, "tanh bounding", group = gR,
-     tooltip = "Measured contribution: NONE on either feed. Removing it improves both (NQ +0.76 " +
-     "-> +0.78, US100 +0.22 -> +0.24). It is on because it is in the source.")
-useKer   = input.bool(true, "Efficiency-ratio weighting", group = gR,
-     tooltip = "The component whose attribution INVERTS between markets. On NQ it is the whole " +
-     "strategy (+0.76 with, +0.16 without). On US100 it does nothing (+0.22 with, +0.18 without) " +
-     "and bare sign(cmma) beats the full stack at +0.46.")
+maLen     = input.int(5,  "MA length (daily)",  minval = 2, group = gR)
+atrLen    = input.int(5,  "ATR length (daily)", minval = 2, group = gR)
+kerLen    = input.int(21, "Efficiency ratio length", minval = 2, group = gR)
+smoothCom = input.float(0.0, "EMA smoothing, centre of mass", minval = 0.0, step = 0.5, group = gR,
+     tooltip = "SHIPS AT 0 (off). The notebook uses 2 (com=2 -> alpha 1/3, not a span). Removing " +
+     "it beat the notebook in-sample on both feeds and on both holdouts; see the header.")
+useTanh   = input.bool(false, "tanh bounding", group = gR,
+     tooltip = "SHIPS OFF. The notebook has it on. Removing it beat the notebook in-sample on " +
+     "both feeds and on both holdouts. Without it the signal is unbounded -- 99th percentile " +
+     "0.75, max seen 1.55 -- which the position cap handles.")
+useKer    = input.bool(true, "Efficiency-ratio weighting", group = gR,
+     tooltip = "The component whose attribution INVERTS between markets: the whole strategy on " +
+     "NQ, a drag on US100. Kept on because it is in the source.")
 
-gS = "Session and sizing"
-sessStart = input.session("0800-1545", "Session (New York)", group = gS,
-     tooltip = "Entry at the first confirmed bar in the window, flat at the first bar past its end.")
+gS = "Session and sizing (New York time)"
+startH = input.int(8,  "Entry hour",   minval = 0, maxval = 23, group = gS)
+startM = input.int(0,  "Entry minute", minval = 0, maxval = 59, group = gS)
+endH   = input.int(15, "Exit hour",    minval = 0, maxval = 23, group = gS)
+endM   = input.int(45, "Exit minute",  minval = 0, maxval = 59, group = gS)
 contracts = input.int(50, "Contracts at full signal", minval = 1, group = gS,
-     tooltip = "The signal is continuous in (-1, 1) with a mean absolute value of 0.076, so at a " +
-     "base of 1 the rounded target is ZERO EVERY DAY and nothing trades. 50 gives a mean position " +
-     "near 4 and a maximum near 24. Below 20 the rounding is material noise; at 50+ it is free.")
-maxPos    = input.int(100, "Hard position cap, contracts", minval = 1, group = gS)
+     tooltip = "Mean |signal| is 0.076. At 1 the rounded target is ZERO every day and nothing " +
+     "trades. 50 = mean position ~4 MNQ, max ~24; at 50+ the rounding is free.")
+maxPos = input.int(100, "Hard position cap", minval = 1, group = gS)
 
 gD = "Display"
-showPanel = input.bool(true, "Diagnostic panel", group = gD)
+showPanel = input.bool(true, "Show panel", group = gD)
 
 // ---------------------------------------------------------------------------------- helpers
-// Pine has no math.tanh. tanh(x) = (e^2x - 1)/(e^2x + 1), with the argument clamped because
-// math.exp overflows well before tanh stops being 1.0 to machine precision.
+// Pine has no math.tanh. tanh(x) = (e^2x - 1)/(e^2x + 1), argument clamped before exp overflows.
 tanh(float x) =>
     z = math.max(math.min(x, 20.0), -20.0)
     e = math.exp(2.0 * z)
     (e - 1.0) / (e + 1.0)
 
-// ------------------------------------------------------- daily bars, on New York calendar days
-// Accumulated from the chart's own bars so the boundary is midnight New York, matching the
-// notebook's resample. `request.security(..., "D", ...)` would give the exchange session instead.
-nyY = year(time, "America/New_York")
-nyM = month(time, "America/New_York")
-nyD = dayofmonth(time, "America/New_York")
-dayId = nyY * 10000 + nyM * 100 + nyD
+// ------------------------------------------------------- daily bars on New York calendar days
+dayId = year(time, "America/New_York") * 10000 + month(time, "America/New_York") * 100 +
+     dayofmonth(time, "America/New_York")
 
-var int    curDay = na
-var float  dO = na
-var float  dH = na
-var float  dL = na
-var float  dC = na
-
-// the finalised daily chain
+var int   curDay = na
+var float dH = na
+var float dL = na
+var float dC = na
 var array<float> closes = array.new_float(0)
 var float atrD    = na
 var float prevC   = na
@@ -135,9 +115,6 @@ if barstate.isconfirmed
             array.shift(closes)
         n = array.size(closes)
         if n >= maLen and n >= kerLen + 1 and not na(atrD) and atrD > 0
-            // An explicit loop rather than array.avg(array.slice(...)): a slice is a VIEW that
-            // shares memory with its parent, and this is the form the Python parity harness
-            // models. The fix that was needed was `:=`, not a different API.
             s = 0.0
             for i = 0 to maLen - 1
                 s := s + array.get(closes, n - 1 - i)
@@ -151,21 +128,17 @@ if barstate.isconfirmed
             ker = denom > 0 ? math.abs(dC - array.get(closes, n - 1 - kerLen)) / denom : 0.0
             sigRaw := (useKer ? ker : 1.0) * (-bounded)
             alpha = 1.0 / (1.0 + smoothCom)
+            // com = 0 -> alpha = 1 -> no smoothing at all, which is the shipped default
             sigEma := na(sigEma) ? sigRaw : sigEma + alpha * (sigRaw - sigEma)
-            // THE SIGNAL FINALISED AT MIDNEW-YORK-MIDNIGHT IS THE ONE THE COMING SESSION TRADES.
-            // No further shift: the source's .shift(1) is consumed by its label='right' resample
-            // and its index remap, leaving an eight-hour gap to the 08:00 entry.
-            sigLive := sigEma
+            sigLive := sigEma          // finalised at midnight, traded from the session open
         prevC := dC
         curDay := dayId
-        dO := open
         dH := high
         dL := low
         dC := close
     else
         if na(curDay)
             curDay := dayId
-            dO := open
             dH := high
             dL := low
             dC := close
@@ -175,47 +148,49 @@ if barstate.isconfirmed
             dC := close
 
 // ---------------------------------------------------------------------------------- execution
-inSess = not na(time(timeframe.period, sessStart, "America/New_York"))
+// The entry order is placed on the bar that CLOSES at the session start, so it fills at the
+// session's first open; the close order on the bar that closes at the session end. Bare
+// hour/minute are exchange time, so New York is named.
+nyOpen  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+nyClose = hour(time_close, "America/New_York") * 60 + minute(time_close, "America/New_York")
+startMin = startH * 60 + startM
+endMin   = endH * 60 + endM
+atStart = nyOpen < startMin and nyClose >= startMin
+atEnd   = nyOpen < endMin and nyClose >= endMin
 
-// TYPES. `math.round` returns a FLOAT and `strategy.position_size` is a series float, so the
-// target and the order size have to be cast to int explicitly -- assigning either to an `int`
-// declaration is the "cannot assign series float to a variable declared const int" error. The
-// casts are exact here: `targetF` is already rounded, and the position is always a whole number
-// of contracts because every order placed below is an integer quantity.
-targetF = inSess and not na(sigLive) ? math.round(sigLive * contracts) : 0.0
+// math.round returns a float and strategy.position_size is a series float: cast once, exactly.
+targetF = na(sigLive) ? 0.0 : math.round(sigLive * contracts)
 targetF := math.max(math.min(targetF, maxPos), -maxPos)
 target = int(targetF)
 
 if barstate.isconfirmed
-    delta = target - int(strategy.position_size)
-    if delta > 0
-        strategy.order("cmma_buy", strategy.long, qty = delta)
-    else if delta < 0
-        strategy.order("cmma_sell", strategy.short, qty = -delta)
+    if atEnd and strategy.position_size != 0
+        strategy.close_all(comment = "flat")
+    else if atStart and target != 0
+        if target > 0
+            strategy.entry("L", strategy.long, qty = target)
+        else
+            strategy.entry("S", strategy.short, qty = -target)
 
 // ---------------------------------------------------------------------------------- display
-plot(na(sigLive) ? na : sigLive, "signal (traded)", color.new(color.teal, 0), 2)
-plot(na(sigEma) ? na : sigEma, "signal (live EMA)", color.new(color.gray, 40), 1,
-     display = display.data_window + display.status_line)
-hline(0, "zero", color.new(color.gray, 60))
-plot(strategy.position_size, "position", color.new(color.orange, 0), 1,
-     display = display.data_window + display.status_line)
+// One pane, one scale: the signal in (-1, 1) as columns, the position on the same scale by
+// dividing by the base size. Nothing else is drawn on the pane.
+plot(na(sigLive) ? na : sigLive, "signal", sigLive >= 0 ? color.new(color.teal, 30)
+     : color.new(color.red, 30), style = plot.style_columns)
+plot(strategy.position_size / contracts, "position / base size", color.new(color.orange, 0), 2,
+     style = plot.style_stepline)
+hline(0, "zero", color.new(color.gray, 70))
 
 if showPanel and barstate.islast
-    var table t = table.new(position.top_right, 2, 7, border_width = 1)
-    table.cell(t, 0, 0, "CMMA", bgcolor = color.new(color.teal, 70), text_size = size.small)
-    table.cell(t, 1, 0, str.tostring(maLen) + "/" + str.tostring(atrLen) + "/" +
-         str.tostring(kerLen), bgcolor = color.new(color.teal, 70), text_size = size.small)
-    table.cell(t, 0, 1, "daily bars built", text_size = size.tiny)
-    table.cell(t, 1, 1, str.tostring(array.size(closes)), text_size = size.tiny)
-    table.cell(t, 0, 2, "signal traded today", text_size = size.tiny)
-    table.cell(t, 1, 2, na(sigLive) ? "warming up" : str.tostring(sigLive, "#.####"),
-         text_size = size.tiny)
-    table.cell(t, 0, 3, "target contracts", text_size = size.tiny)
-    table.cell(t, 1, 3, str.tostring(target), text_size = size.tiny)
-    table.cell(t, 0, 4, "position", text_size = size.tiny)
-    table.cell(t, 1, 4, str.tostring(strategy.position_size), text_size = size.tiny)
-    table.cell(t, 0, 5, "in session", text_size = size.tiny)
-    table.cell(t, 1, 5, inSess ? "yes" : "no", text_size = size.tiny)
-    table.cell(t, 0, 6, "closed trades", text_size = size.tiny)
-    table.cell(t, 1, 6, str.tostring(strategy.closedtrades), text_size = size.tiny)
+    var table t = table.new(position.top_right, 2, 4, border_width = 1)
+    table.cell(t, 0, 0, "signal today", text_size = size.small)
+    table.cell(t, 1, 0, na(sigLive) ? "warming up" : str.tostring(sigLive, "#.###"),
+         text_size = size.small)
+    table.cell(t, 0, 1, "target", text_size = size.small)
+    table.cell(t, 1, 1, str.tostring(target) + " ct", text_size = size.small,
+         bgcolor = (not na(sigLive) and target == 0 and math.abs(sigLive) > 0.005)
+         ? color.new(color.orange, 50) : na)
+    table.cell(t, 0, 2, "position", text_size = size.small)
+    table.cell(t, 1, 2, str.tostring(strategy.position_size, "#") + " ct", text_size = size.small)
+    table.cell(t, 0, 3, "closed trades", text_size = size.small)
+    table.cell(t, 1, 3, str.tostring(strategy.closedtrades), text_size = size.small)

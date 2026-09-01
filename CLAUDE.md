@@ -2018,6 +2018,20 @@ fractional 748 (0.70). At 50+ the rounding is free; below 20 it is material nois
 the engine: correlation **1.0000000000**, max |diff| 6.9e-17, fractional P&L identical to the tenth
 of a point on both feeds. `research/cmma/cmma_parity.py`.
 
+**THE CMMA "IMPROVEMENT" THAT SURVIVED WAS A REMOVAL, AND THE ONE THAT CONTRADICTED FOUR PRIOR
+FINDINGS LOST.** Seven pre-declared candidates, each required to beat the notebook IN-SAMPLE ON
+BOTH FEEDS before the holdout was read: only DROPPING tanh AND THE EMA SMOOTHING survived cleanly
+(NQ +0.76 -> +0.83, US100 +0.22 -> +0.47 in-sample; holdout +0.73 -> **+1.99** and +0.65 ->
+**+0.96**, PF 1.28 -> 1.83 and 1.23 -> 1.32). Both were components §4 of `STUDY_CMMA.md` had
+already measured as inert. Deflated Sharpe still 0.16 against 40 trials; holdout better than
+in-sample on both feeds, which is the regime warning. **Starting the session at 09:30 instead of
+08:00 HURT on both feeds** (NQ +0.76 -> +0.57, US100 +0.22 -> 0.00) -- the opposite of the four
+prior 07:00-09:30-is-worst findings, because this is a HELD DAILY POSITION and not an intraday
+entry, and a held position wants the pre-open hour. Vol-targeting helped NQ and zeroed US100: the
+inversion again. Without tanh the signal is unbounded (99th pct 0.75, max 1.55), so the Pine's
+position cap is load-bearing even though it never binds at a base of 50.
+`research/cmma/cmma_improve.py`.
+
 ## Tooling
 
 | module | what it does |
@@ -2052,6 +2066,7 @@ of a point on both feeds. `research/cmma/cmma_parity.py`.
 | `research/cmma/` | the CMMA notebook, re-implemented honestly: accounting, costs, deflation, holdout |
 | `research/cmma/cmma_stats.py` | its profit factor, win rate and hold time, per DAY and per stance |
 | `research/cmma/cmma_parity.py` | the shipped Pine's own logic, diffed against the engine (corr 1.0000000000) |
+| `research/cmma/cmma_improve.py` | seven pre-declared candidates, two-feed agreement gate, one holdout read |
 | `research/v58/v58_anatomy.py` | **what creates the IB edge** — exit split, infinite stop, day-vs-bar, drop-one, ladders |
 | `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
 | `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |

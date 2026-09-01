@@ -85,14 +85,17 @@ def pine_logic(f, ma_len=5, atr_len=5, ker_len=21, com=2.0, use_tanh=True, use_k
     return pd.Series(live).sort_index()
 
 
-def main(market="NQ", contracts=50):
+def main(market="NQ", contracts=50, use_tanh=False, smooth=0.0):
+    """Defaults are the SHIPPED configuration (candidate C: no tanh, no EMA smoothing). Pass
+    use_tanh=True, smooth=2.0 to check the notebook's original."""
     print("=" * 100)
     print("CMMA PINE PARITY -- the script's own logic against the research engine")
+    print(f"  configuration: tanh {'on' if use_tanh else 'OFF'}, EMA com {smooth}")
     print("=" * 100)
     f = C.load_intraday(market)
     d = C.daily_from_intraday(f)
-    eng = C.signal(d)
-    pin = pine_logic(f)
+    eng = C.signal(d, use_tanh=use_tanh, smooth=smooth)
+    pin = pine_logic(f, com=smooth, use_tanh=use_tanh)
     pin.index = pd.DatetimeIndex(pin.index)
     eng.index = pd.DatetimeIndex(eng.index)
     both = eng.index.intersection(pin.index)
@@ -132,4 +135,6 @@ def main(market="NQ", contracts=50):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "NQ")
+    mk = sys.argv[1] if len(sys.argv) > 1 else "NQ"
+    main(mk)                                   # as shipped
+    main(mk, use_tanh=True, smooth=2.0)        # the notebook's original
