@@ -1999,6 +1999,28 @@ help on either. Same four components, opposite conclusions -- that is fitting no
 returns a figure sqrt(252) too small (0.04 instead of 0.58 here), which is the notebook's own error
 class. See `docs/ib/STUDY_CMMA.md`.
 
+**THE IBS SESSION EA IS A DRIFT EXPOSURE WEARING A SIGNAL, and no optimiser beats its own
+defaults.** Zeta FX's MQL5 expert (buy at the cash close after a session closing in its bottom
+fifth, hold up to five sessions or until a top-fifth close, stop one session-range below) on a
+2,352-cell grid over four feeds: research blocks 99.9% / 96.4% / 78.1% of cells positive (US100 /
+NQ / US30), and a RANDOM SESSION with the identical stop, exit rule and hold earns +0.13 / +0.14
+/ +0.09 R against the default's +0.24 / +0.22 / +0.05. On the three genuine test blocks the
+default's excess over that control is **−0.005, +0.014 and −0.008 R** (p 0.51 / 0.46 / 0.52); the
+only reserved block it clears is US30 ISO 2026 (p 0.035, n 27) where the control itself is
+negative. The surface is smooth (neighbourhood coherence 0.96-0.98, so nothing is a spike), the
+grid is genuinely diverse (117-137 clusters at corr 0.7, 37-47 components for 90% of variance,
+NOT one rule in 2,352 hats), and the walk-forward re-runs the whole sweep per fold and STILL
+loses to the author's fixed defaults on US100 (chosen cells +0.17-0.22 R at median WFE 0.09-0.39
+against +0.23 at 0.91). Two mechanics worth keeping: (1) the optimiser's favourite, a 0.5x-range
+stop, is the R DENOMINATOR shrinking -- R +0.377 vs +0.133 at 3.0x while POINTS per trade go
++15 vs +47 -- the channel-stop lesson again; (2) on a CFD feed "the first tick after 16:00" is
+the 18:30 re-open (US30 has no bars 16:00-18:30 on 94% of days) and the EA silently skips any
+day whose final session bar is missing -- both found by the bar-by-bar parity walk, which also
+caught that a STOPPED trade re-enters on the same session while a rule exit waits one. 9/9
+configs x 3 markets identical after those fixes. Costs are not the obstacle (0x-2x moves R by
+0.01-0.03). Bootstrap "passes" on 83.5% of US100 cells at P<0.05 is the shape of drift, not
+1,964 discoveries. See `docs/ib/STUDY_IBS_SESSION.md`, `research/ibs/`.
+
 **A DAILY-SIGNAL / INTRADAY-EXECUTION PINE PORT HAS FOUR TRAPS AND ONE OF THEM IS FATAL.** Porting
 the CMMA notebook: (1) the daily bars are NEW YORK CALENDAR DAYS, and `request.security(..., "D")`
 on a CME future gives the 18:00-17:00 ETH SESSION instead -- accumulate them from the chart's own
@@ -2063,6 +2085,7 @@ position cap is load-bearing even though it never binds at a base of 50.
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 | `research/m4_anatomy.py` | why M4 is profitable: exit split, barrier sweep, day-vs-bar, bands |
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
+| `research/ibs/` | the IBS session EA: cached tensor, bar-by-bar parity, stability / MC / clusters / walk-forward / judge |
 | `research/cmma/` | the CMMA notebook, re-implemented honestly: accounting, costs, deflation, holdout |
 | `research/cmma/cmma_stats.py` | its profit factor, win rate and hold time, per DAY and per stance |
 | `research/cmma/cmma_parity.py` | the shipped Pine's own logic, diffed against the engine (corr 1.0000000000) |
