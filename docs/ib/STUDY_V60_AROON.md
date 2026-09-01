@@ -440,47 +440,51 @@ Three conditions returning the trade count **and** the P&L of `off` to the cent 
 printed in a results table rather than argued from arithmetic. Moving the read one bar back changes
 the trade count immediately.
 
-**Preset A (Donchian 10, Aroon 25 — 25 > 10, so even the signal-bar reading binds):**
+**Preset A (Donchian 10, Aroon 25 — 25 > 10, so even the signal-bar reading binds), all three
+markets, `osc ≥ 0`:**
 
-| aroon | read at | res n | res pts | res PF | lock n | lock pts | lock PF |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| off | — | 83 | +41.28 | 1.90 | 50 | +6.81 | 1.08 |
-| osc ≥ 0 | signal | 70 | +48.55 | 2.13 | 38 | +10.57 | 1.15 |
-| osc ≥ 0 | prior | 66 | +55.86 | 2.40 | 35 | +14.09 | 1.21 |
-| osc ≥ 50 | signal | 52 | +62.52 | 2.61 | 32 | +18.84 | 1.29 |
-| osc ≥ 50 | prior | 44 | +75.81 | 2.97 | 31 | +6.23 | 1.08 |
-| up ≥ 70 | prior | 51 | +68.55 | 2.87 | 33 | +15.25 | 1.22 |
+| market | aroon | read at | res n | res pts | lock n | lock pts |
+| --- | --- | --- | --- | --- | --- | --- |
+| NQ | off | — | 83 | +41.28 | 50 | +6.81 |
+| NQ | osc ≥ 0 | signal | 70 | +48.55 | 38 | +10.57 |
+| NQ | osc ≥ 0 | prior | 66 | **+55.86** | 35 | **+14.09** |
+| US100L | off | — | 212 | +35.22 | 139 | +17.36 |
+| US100L | osc ≥ 0 | prior | 171 | **+29.22** | 104 | +26.25 |
+| US30L | off | — | 208 | +53.49 | 103 | +14.94 |
+| US30L | osc ≥ 0 | prior | 168 | **+42.48** | 84 | +13.60 |
 
-The prior-bar reading beats the signal-bar reading on research in every pair, and is mixed on
-locked. **This is one market with 30–50 locked trades, and §3's whole-grid marginal — computed over
-three markets and 142,560 configurations — says no Aroon setting beats `off` in more than 2 of 6
-columns.** Restrictiveness alone raises profit factor, and this branch has recorded an ATR filter
-going PF 1.42 → 1.77 while being indistinguishable from a random filter of the same selectivity.
-The reading bar ships as a knob with these numbers attached, not as a result. The two feeds that
-would settle it were wiped by a container recycle and need re-uploading.
+**On NQ the prior-bar reading improves both blocks. On US100L and US30L it makes RESEARCH WORSE
+and locked better.** That is the wrong shape on two of three markets — a rule chosen on research
+should look better *there*; the holdout is where an edge decays, not where it appears — and it
+agrees with §3's whole-grid marginal, which says no Aroon setting beats `off` in more than 2 of 6
+market-block columns. Restrictiveness alone raises profit factor, and this branch has recorded an
+ATR filter going PF 1.42 → 1.77 while being indistinguishable from a random filter of the same
+selectivity. **The NQ-only version of this table, published before the other two feeds were
+restored, read as mildly encouraging; the three-market version does not.** The reading bar ships as
+a knob with its numbers attached, not as a result.
 
 ## 8c. The session window and the flatten, priced rather than warned about
 
 Both were asked for, both ship **off**, and each carries its measured cost in its own tooltip.
-NQ 60m, preset A, gross:
+Preset A, gross, all three markets — research $/trade then locked:
 
-| window (New York) | flatten | res n | res pts | res PF | lock n | lock pts | lock PF |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| all hours | none | 83 | +41.28 | 1.90 | 50 | **+6.81** | 1.08 |
-| all hours | 16:00 | 103 | +17.78 | 1.40 | 52 | +5.39 | 1.10 |
-| all hours | 12:00 | 89 | −0.57 | 0.99 | 36 | −5.02 | 0.93 |
-| 09:30–11:00 | none | 20 | +39.71 | 3.10 | 11 | **−36.70** | 0.57 |
-| 09:30–12:00 | none | 27 | +73.37 | 5.49 | 19 | **−12.53** | 0.85 |
-| 08:00–12:00 | none | 45 | +46.84 | 1.99 | 29 | +4.92 | 1.06 |
-| 09:30–16:00 | none | 46 | +71.64 | 4.56 | 34 | +6.11 | 1.07 |
+| window | flatten | NQ | US100L | US30L |
+| --- | --- | --- | --- | --- |
+| all hours | none | +41.28 / +6.81 | +35.22 / +17.36 | +53.49 / +14.94 |
+| all hours | 16:00 | +17.78 / +5.39 | +10.83 / +11.18 | +20.98 / +38.35 |
+| all hours | 12:00 | −0.57 / −5.02 | +8.80 / −3.43 | +18.50 / +27.94 |
+| 09:30–11:00 | none | +39.71 / −36.70 | +18.04 / +33.63 | **−1.66 / −56.91** |
+| 09:30–12:00 | none | **+73.37 / −12.53** | +12.62 / +15.21 | **−16.06 / −5.54** |
 
-**A 16:00 flatten costs 57% of the research result per trade and a 12:00 flatten costs all of it**,
-and both raise the trade count — 83 → 103 — which is where the cost goes: the clock closes trades a
-channel exit would have held. **And the windows that look best on research are the ones that go
-negative on locked**: 09:30–12:00 is the best research row in the table at +73.37 and reads −12.53
-out of sample. Tenth independent confirmation of the intraday finding on this branch, and a
-textbook instance of `STUDY_V16`'s warning that the best research row in a window table is the one
-to distrust.
+**The 16:00 flatten costs 57%, 69% and 61% of the research result per trade on NQ, US100 and US30
+— every market, every time — and it RAISES the trade count** (83 → 103, 212 → 260, 208 → 259),
+which is where the cost goes: the clock closes trades a channel exit would have held. The locked
+column is mixed and does not rescue it.
+
+**No window beats all hours on research on more than one market, and US30 is negative in both
+morning windows on both blocks.** NQ's +73.37 at 09:30–12:00 is the best research cell in the whole
+table and reads −12.53 out of sample — which is exactly the single-market story a three-market
+table exists to prevent. Tenth independent confirmation of the intraday finding on this branch.
 
 Two implementation points the parity harness forced:
 
@@ -491,20 +495,114 @@ Two implementation points the parity harness forced:
   those and closes them at the same open for zero P&L, diluting the statistics; the script guards
   its entry with `not flatDue`, and the measurement above was redone to match the script.
 
-Parity on all five configurations, NQ 60m, gross:
+Parity on all seven configurations, all three markets, gross — **trade counts 99.5–100.0%
+everywhere**:
 
-| configuration | block | script n | engine n | count | script pts | engine pts | gap |
+| configuration | market | block | script n | engine n | count | script pts | engine pts |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| A | research | 83 | 83 | **100.0%** | +41.26 | +41.28 | −0.1% |
-| A | locked | 50 | 50 | **100.0%** | +6.63 | +6.81 | −2.6% |
-| B | research | 54 | 54 | **100.0%** | +67.33 | +67.30 | +0.0% |
-| A + aroon up≥70 @ prior | research | 51 | 51 | **100.0%** | +68.53 | +68.55 | −0.0% |
-| A + window 09:30–16:00 | research | 46 | 46 | **100.0%** | +71.60 | +71.64 | −0.0% |
-| A + flatten 16:00 | research | 103 | 103 | **100.0%** | +17.28 | +17.78 | −2.8% |
-| A + flatten 16:00 | locked | 52 | 52 | **100.0%** | +5.29 | +5.39 | −1.8% |
+| A | US100L | research | 211 | 212 | 99.5% | +35.41 | +35.22 |
+| A | NQ | locked | 50 | 50 | 100.0% | +6.63 | +6.81 |
+| A | US30L | research | 208 | 208 | 100.0% | +53.96 | +53.49 |
+| B | US100L | locked | 87 | 87 | 100.0% | +43.82 | +44.71 |
+| B | US30L | research | 162 | 162 | 100.0% | +49.74 | +48.44 |
+| A + aroon up≥70 @ prior | US30L | locked | 74 | 74 | 100.0% | +22.17 | +22.78 |
+| A + window 09:30–16:00 | NQ | research | 46 | 46 | 100.0% | +71.60 | +71.64 |
+| A + flatten 16:00 | US100L | research | 260 | 260 | 100.0% | +11.58 | +10.83 |
+| A + flatten 16:00 | US30L | locked | 119 | 119 | 100.0% | +36.31 | +38.35 |
+| A + MACD macd>0 @ prior | NQ | research | 66 | 66 | 100.0% | +52.15 | +52.16 |
+| B + MACD macd>0 @ signal | NQ | locked | 33 | 33 | 100.0% | −20.00 | −20.02 |
+
+Per-trade gaps run −2.8% to +8.5%, with one −85.7% outlier on US30L's locked entry-window cell
+where the engine's own figure is +1.31 — a percentage against a near-zero base, not a defect.
 
 Each optional feature is turned on **alone**, so a parity failure would name one feature rather
 than a combination.
+
+
+---
+
+## 8d. The MACD — a third indicator that turns out to be the breakout restated
+
+Asked to add the standard 12/26/9 MACD, the first number computed was not its P&L but **its base
+rate on the breakout's own bars**, because that is what `STUDY_V16_MOMENTUM.md` and §2 both say
+decides the answer. Eight readings, three parameter sets, NQ 60m:
+
+| reading | all bars | on breakouts (don 55) | on signals (preset B) | res pts | lock pts |
+| --- | --- | --- | --- | --- | --- |
+| *(no MACD condition)* | — | — | — | +67.30 | −20.02 |
+| `macd > 0` @ 12/26/9 | 58.4% | **99.8%** | 99.7% | +70.21 | −20.02 |
+| `macd > 0` @ 8/21/5 | 57.8% | **100.0%** | **100.0%** | **+67.30** | **−20.02** |
+| `macd > 0` @ 19/39/9 | 59.2% | 99.2% | 99.7% | +70.21 | −20.02 |
+| `hist > 0` @ 12/26/9 | 48.8% | 86.9% | 95.3% | +78.38 | −20.02 |
+| `fresh cross ≤ 10` @ 12/26/9 | 39.0% | 55.1% | 45.7% | +123.67 | **+9.48** |
+| `fresh cross ≤ 10` @ 8/21/5 | 54.8% | 68.9% | 60.9% | +77.32 | **−29.51** |
+
+**Confirmed on all three markets.** At 12/26/9, `macd > 0` passes **100.0%** of US30L's Donchian-55
+breakout bars — 162 trades, +48.44 research / +20.28 locked, identical to no condition — **99.9%**
+of US100L's and **99.8%** of NQ's; at 8/21/5 NQ reaches 100.0% and is identical too. A close above the 55-bar high on a 60-minute chart essentially
+guarantees EMA(12) > EMA(26) — the fast average cannot be below the slow one when price has just
+made a two-and-a-half-day high. **That is the third indicator on this branch to be the trigger
+restated**: RSI(14) ≥ 55 passes 94.7% of breakout bars, `aroon osc ≥ 0` passes 100.0% by
+construction, and now `macd > 0` passes 99.2–100.0% empirically.
+
+The one reading that binds is the **fresh bullish cross**, at 42–45% of signals — and it is the one
+to trust least. Preset B locked $/trade at 12/26/9: NQ −20.02 → **+9.48**, US100L +44.71 →
+**+99.44**, US30L +20.28 → **+0.94**. It looks spectacular and it fails every shape test at once:
+on US100L it makes *research* worse (+26.61 → +19.70) while more than doubling the locked block,
+and on NQ it flips from +9.48 at 12/26/9 to **−29.51** at 8/21/5. A result that flips sign across
+its own neighbourhood is a spike, and this branch rejects those *before* the holdout. This one was
+seen after, which is worse.
+
+The **prior-bar** reading of `macd > 0` on preset A is the better-behaved row: locked +15.00 /
++15.23 / +22.75 at 12/26/9, 8/21/5 and 19/39/9 against a +6.81 baseline — consistent across all
+three parameterisations rather than spiking on one. On preset B the prior-bar reading is itself
+near-inert (98.5–99.1% of signals on all three markets): a long entry channel makes the zero-line
+condition redundant however it is read. A knob, not a result.
+
+**One refinement to `STUDY_MA_LAG.md`.** That study established MA *type* is not a degree of
+freedom: at matched lag, SMA and EMA trigger sets overlap 89.5–97.3%. **That does not carry to the
+MACD**, because the MACD is a *difference* of two averages plus a third smoothing, so the lag
+mismatch compounds. At 12/26/9 the EMA and SMA readings of `hist > 0` agree on only **79.2%** of
+bars and `hist > 0 and rising` on **76.2%**. The SMA column reads better on locked (`macd > 0`:
+EMA +8.24, SMA +25.27) — but that difference lives on the ~20% of trades that differ, which is
+precisely what `STUDY_MA_LAG` calls noise until it replicates elsewhere. EMA ships as the default
+because it is the reference indicator's.
+
+## 8e. The same two session features on the YouTube Turtle — and they point the other way
+
+`research/turtle2/yt_gates.py`. The frozen `ytturtle.run` kernel is quoted by three studies, so it
+is **copied once** rather than parameterised, with a parity assertion that the gated engine
+reproduces it trade for trade when every gate is open — **158/158 in-sample and 70/70 out-of-sample,
+identical R**. NQ 1H only; the other five feeds were wiped by a container recycle.
+
+| window | flatten | ADX | IS n | IS R | OOS n | OOS R | OOS PF |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| all hours | none | off | 158 | **+0.193** | 70 | **−0.090** | 0.83 |
+| all hours | 12:00 | off | 261 | +0.121 | 138 | **+0.174** | 1.65 |
+| all hours | 16:00 | off | 326 | +0.123 | 168 | +0.111 | 1.36 |
+| 09:30–11:00 | none | off | 82 | +0.117 | 44 | +0.094 | 1.21 |
+| 09:30–12:00 | none | off | 90 | +0.169 | 51 | −0.006 | 0.99 |
+| 09:30–16:00 | none | off | 108 | +0.144 | 60 | −0.056 | 0.89 |
+| all hours | none | ≥ 20 | 138 | +0.147 | 62 | +0.140 | 1.34 |
+| all hours | none | ≥ 25 | 114 | +0.170 | 57 | +0.156 | 1.35 |
+| all hours | none | ≥ 30 | 96 | +0.140 | 36 | **+0.307** | 1.84 |
+
+**Every one of these appears to rescue the out-of-sample block, and every one does it in the wrong
+shape — in-sample worse, out-of-sample better.** That shape has been treated as a defect twice
+before on this branch and was right both times. Three further reasons it is not a discovery:
+
+* **NQ is the one market of six where the frozen rules failed out of sample** (−0.090 R, against
+  US30 +0.157, XAUUSD +0.161, EURUSD +0.102, BTC +0.063, US100 +0.039). Fixing the market that
+  failed, on the market that failed, is selection.
+* **The ADX gradient is what restrictiveness alone looks like**: OOS R rises +0.140 → +0.156 →
+  +0.307 as n falls 62 → 57 → 36. Compare the ATR filter that went PF 1.42 → 1.77 and was
+  indistinguishable from a random filter of the same selectivity.
+* **The flatten raises the trade count 158 → 326.** It is not filtering, it is cutting trades short
+  and letting new ones start.
+
+**And the flatten's sign is opposite to §8c's**, where the identical change cost 57% of the V60
+breakout's per-trade result. Two systems, opposite signs, one market each — which is the definition
+of not knowing. Both ship OFF with their numbers attached.
 
 
 ---
@@ -536,7 +634,16 @@ than a combination.
    `aroonMode` during preset resolution, so the one input a reader would most want to experiment
    with was dead unless they left the preset. A preset should set what it has an opinion about and
    nothing else.
-9. **An indicator that is an identity on the signal bar can still bind one bar earlier**, and that
+9. **Compute a confirmation's base rate on the trigger's own bars BEFORE its P&L.** Three
+   indicators have now failed that test on the same breakout: RSI ≥ 55 at 94.7%, Aroon `osc ≥ 0` at
+   100.0%, MACD `macd > 0` at 99.2–100.0%. It is two lines of code ahead of any sweep.
+10. **MA type is not a degree of freedom for a single average and IS one for the MACD** — a
+   difference of two averages plus a third smoothing compounds the lag mismatch, and EMA/SMA
+   readings of `hist > 0` agree on only 79.2% of bars, against 89.5–97.3% for price-vs-MA rules.
+11. **The same session feature can have opposite signs on two systems.** A hard flatten costs the
+   V60 breakout 57% of its per-trade result and appears to rescue the YouTube Turtle's NQ block —
+   both on one market, both in the wrong shape where it helps.
+12. **An indicator that is an identity on the signal bar can still bind one bar earlier**, and that
    is the only version of it worth testing. It is a different question — "was the trend already up
    before the break" — not a rescue of the original one.
 

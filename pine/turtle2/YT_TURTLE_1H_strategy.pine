@@ -59,6 +59,52 @@
 // 105 checks with 0 mismatches. Without the [1] this script would read up to 3h45m ahead
 // on the EMA and a full month ahead on the monthly level.
 //
+// ================== ADDED: SESSION WINDOW, HARD FLATTEN, ADX FLOOR ==================
+// All three are OFF by default and each carries its measured cost. They were measured on
+// NQ 1H only -- the other five feeds were wiped by a container recycle -- against the
+// frozen kernel, with a parity assertion that the gated engine reproduces the frozen one
+// trade for trade when every gate is open (158/158 in-sample, 70/70 out-of-sample,
+// identical R). `research/turtle2/yt_gates.py`.
+//
+//   window        flatten    ADX     IS n    IS R   IS PF    OOS n   OOS R   OOS PF
+//   all hours     none       off      158  +0.193    1.46       70  -0.090     0.83   <= frozen
+//   all hours     12:00      off      261  +0.121    1.39      138  +0.174     1.65
+//   all hours     16:00      off      326  +0.123    1.38      168  +0.111     1.36
+//   09:30-11:00   none       off       82  +0.117    1.27       44  +0.094     1.21
+//   09:30-12:00   none       off       90  +0.169    1.42       51  -0.006     0.99
+//   08:00-12:00   none       off      155  +0.164    1.40       84  -0.016     0.97
+//   09:30-16:00   none       off      108  +0.144    1.33       60  -0.056     0.89
+//   all hours     none      >=20      138  +0.147    1.33       62  +0.140     1.34
+//   all hours     none      >=25      114  +0.170    1.39       57  +0.156     1.35
+//   all hours     none      >=30       96  +0.140    1.30       36  +0.307     1.84
+//
+// READ THAT TABLE THE WAY THIS BRANCH READS TABLES, NOT THE WAY IT WANTS TO BE READ.
+// EVERY ONE of these additions appears to rescue the out-of-sample block, and EVERY ONE
+// does it in the WRONG SHAPE: in-sample gets WORSE and out-of-sample gets BETTER. A rule
+// chosen on research should look better there; the holdout is where an edge decays, not
+// where it appears. That shape has been treated as a DEFECT twice before on this branch
+// and was correct both times.
+//
+// Three further reasons not to switch these on and call it an improvement:
+//   * NQ IS THE ONE MARKET OF SIX WHERE THE FROZEN RULES FAILED OUT OF SAMPLE (-0.090 R,
+//     against US30 +0.157, XAUUSD +0.161, EURUSD +0.102, BTC +0.063, US100 +0.039). Fixing
+//     the market that failed, on the market that failed, is selection, not discovery.
+//   * THE ADX GRADIENT IS WHAT RESTRICTIVENESS ALONE LOOKS LIKE. OOS R rises +0.140 ->
+//     +0.156 -> +0.307 as n falls 62 -> 57 -> 36. This branch has already recorded an ATR
+//     filter going PF 1.42 -> 1.77 that was indistinguishable from a RANDOM filter of the
+//     same selectivity, and an ADX filter whose apparent gain came from concentrating
+//     trades in high-volatility bars while its control drew average ones.
+//   * THE FLATTEN RAISES THE TRADE COUNT (158 -> 326 at 16:00). It is not filtering; it is
+//     cutting trades short and letting new ones start. On the V60 breakout the identical
+//     change COST 57% of the per-trade result. Two systems, opposite signs, one market
+//     each -- which is the definition of not knowing.
+//
+// The flatten fills at the CUTOFF BAR'S OPEN: the order is submitted on the previous bar
+// (`nyMin + tfMin >= flatMin`) because `strategy.close_all()` cannot sell the close that
+// triggers it. An entry whose fill would land at or after the cutoff is refused outright
+// rather than opened and closed at the same price. Bare `hour`/`minute` in Pine are
+// EXCHANGE time, so New York is named explicitly.
+//
 // Research tooling for education and analysis. Not financial advice.
 // =====================================================================================
 
@@ -78,6 +124,32 @@ htf     = input.timeframe("240", "Higher timeframe", group = "Rules",
 tolR    = input.float(1.0, "Minimum clearance to major S/R, in R", minval = 0.0, step = 0.25,
      group = "Rules", tooltip = "A trade needs room to reach at least 1:1 before the nearest " +
      "major level, which is the source's own minimum target.")
+useSession = input.bool(false, "Restrict entries to a window", group = "Session",
+     tooltip = "OFF by default. NQ 1H, frozen rules, IS then OOS R/trade: all hours " +
+     "+0.193 / -0.090; 09:30-11:00 +0.117 / +0.094; 09:30-12:00 +0.169 / -0.006; " +
+     "08:00-12:00 +0.164 / -0.016; 09:30-16:00 +0.144 / -0.056. Every window makes the " +
+     "IN-SAMPLE block worse, which is the wrong shape for a rule you would choose there.")
+entrySession = input.session("0930-1600", "Entry window (New York)", group = "Session",
+     tooltip = "A bar is eligible when its OPEN falls inside the window. This gates ENTRIES " +
+     "only; a position already open runs on its stop and targets unless the flatten is on.")
+useFlatten = input.bool(false, "Hard flatten", group = "Session",
+     tooltip = "OFF by default. NQ 1H, IS then OOS R/trade: none +0.193 / -0.090; flat by " +
+     "16:00 +0.123 / +0.111 on 326 and 168 trades; flat by 12:00 +0.121 / +0.174 on 261 and " +
+     "138. It RAISES the trade count from 158 to 326, so it is not filtering -- it is cutting " +
+     "trades short and letting new ones start. On the V60 Donchian breakout the identical " +
+     "change cost 57% of the per-trade result, so the sign is not a property of flattening.")
+flatHour = input.int(16, "Flatten by -- hour (New York)", minval = 0, maxval = 23,
+     group = "Session")
+flatMinute = input.int(0, "Flatten by -- minute", minval = 0, maxval = 59, group = "Session")
+useAdx = input.bool(false, "ADX(14) floor", group = "Regime",
+     tooltip = "OFF by default. NQ 1H, IS then OOS R/trade: off +0.193 / -0.090; >=20 " +
+     "+0.147 / +0.140 on 138 and 62 trades; >=25 +0.170 / +0.156 on 114 and 57; >=30 " +
+     "+0.140 / +0.307 on 96 and 36. OOS RISES AS n FALLS, which is what restrictiveness " +
+     "alone looks like -- an ATR filter on this branch went PF 1.42 -> 1.77 and was " +
+     "indistinguishable from a random filter of the same selectivity. And in-sample gets " +
+     "worse at every setting.")
+adxLen = input.int(14, "ADX length", minval = 2, group = "Regime")
+adxMin = input.float(20.0, "ADX minimum", minval = 0.0, step = 1.0, group = "Regime")
 useLong  = input.bool(true, "Longs",  group = "Direction")
 useShort = input.bool(true, "Shorts", group = "Direction")
 drawIt   = input.bool(true, "Plot levels", group = "Display")
@@ -127,6 +199,22 @@ lo20 = ta.lowest(low,  entLen)[1]
 hi10 = ta.highest(high, stpLen)[1]
 lo10 = ta.lowest(low,  stpLen)[1]
 
+// ------------------------------------------------------- session and regime gates
+// Bare `hour`/`minute` are EXCHANGE time in Pine -- Chicago for a CME future -- so New York
+// is named explicitly. The clock was verified on the research side against mean bar RANGE by
+// New York hour: it peaks at 10:00 (60.6 bp) and collapses to 2.2 bp at the 17:00 CME break.
+// A bar COUNT proves nothing here, because the break leaves empty bars in the feed.
+nyMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+tfMin = timeframe.in_seconds(timeframe.period) / 60.0
+flatMin = flatHour * 60 + flatMinute
+inWindow = not useSession or not na(time(timeframe.period, entrySession, "America/New_York"))
+// FLAT BY `flatMin` MEANS FLAT AT THAT BAR'S OPEN, so the order goes in on the bar before.
+flattenDue = useFlatten and nyMin + tfMin >= flatMin
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER -- destructuring only the first element
+// substitutes +DI for ADX silently, which has shipped broken on this branch once.
+[diPlusV, diMinusV, adxV] = ta.dmi(adxLen, adxLen)
+adxOk = not useAdx or (not na(adxV) and adxV >= adxMin)
+
 ready = not na(hi20) and not na(lo20) and not na(hi10) and not na(lo10) and not na(htfEma)
 flat  = strategy.position_size == 0
 
@@ -137,11 +225,21 @@ shortRisk = hi10 - lo20
 longRoom  = na(resAbove) ? na : resAbove - hi20
 shortRoom = na(supBelow) ? na : lo20 - supBelow
 
-longOK  = useLong  and ready and close[1] > htfEma and longRisk  > 0 and not na(longRoom)  and longRoom  >= tolR * longRisk
-shortOK = useShort and ready and close[1] < htfEma and shortRisk > 0 and not na(shortRoom) and shortRoom >= tolR * shortRisk
+eligible = inWindow and adxOk and not flattenDue
+longOK  = useLong  and ready and eligible and close[1] > htfEma and longRisk  > 0 and not na(longRoom)  and longRoom  >= tolR * longRisk
+shortOK = useShort and ready and eligible and close[1] < htfEma and shortRisk > 0 and not na(shortRoom) and shortRoom >= tolR * shortRisk
 
 var float riskPts = na
 var bool  movedBE = false
+
+// THE FLATTEN GOES FIRST, and it cancels the resting entry stops as well as closing the
+// position -- a resting stop left live outside the window is exactly the kind of order that
+// makes a Strategy Tester report disagree with the rules.
+if flattenDue and barstate.isconfirmed
+    strategy.cancel("L")
+    strategy.cancel("S")
+    if strategy.position_size != 0
+        strategy.close_all(comment = "flatten")
 
 if flat and barstate.isconfirmed
     if longOK

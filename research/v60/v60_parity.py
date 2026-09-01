@@ -69,6 +69,8 @@ PRESETS = {
     "A + aroon up>=70 at the PRIOR bar": dict(BASE_A, aroon="up>=70", aroon_at="prior"),
     "A + entry window 09:30-16:00 NY": dict(BASE_A, sess=(570, 960)),
     "A + hard flatten at 16:00 NY": dict(BASE_A, flat=960),
+    "A + MACD 12/26/9 macd>0 at the PRIOR bar": dict(BASE_A, macd="macd > 0", macd_at="prior"),
+    "B + MACD 12/26/9 macd>0 at the SIGNAL bar (inert)": dict(BASE_B, macd="macd > 0"),
 }
 TICK = {"NQ": 0.25, "US100L": 0.1, "US30L": 1.0}
 
@@ -90,6 +92,12 @@ def script_walk(P, cfg, tick, blk, tf=60):
         if cfg.get("aroon_at") == "prior":
             a = np.r_[False, a[:-1]]         # the identity-breaking reading
         sig = sig & a
+    if cfg.get("macd"):
+        from v60macd import conditions
+        cm = conditions(c, 12, 26, 9)[cfg["macd"]]
+        if cfg.get("macd_at") == "prior":
+            cm = np.r_[False, cm[:-1]]
+        sig = sig & cm
     lo_m, hi_m = cfg.get("sess", (0, 1440))
     if lo_m > 0 or hi_m < 1440:
         sig = sig & (P["mod"] >= lo_m) & (P["mod"] < hi_m)
@@ -163,6 +171,12 @@ def engine_walk(P, cfg, blk, tf=60):
         if cfg.get("aroon_at") == "prior":
             a = np.r_[False, a[:-1]]
         m = m & a
+    if cfg.get("macd"):
+        from v60macd import conditions
+        cm = conditions(P["c"], 12, 26, 9)[cfg["macd"]]
+        if cfg.get("macd_at") == "prior":
+            cm = np.r_[False, cm[:-1]]
+        m = m & cm
     lo_m, hi_m = cfg.get("sess", (0, 1440))
     if lo_m > 0 or hi_m < 1440:
         m = m & (P["mod"] >= lo_m) & (P["mod"] < hi_m)

@@ -156,38 +156,89 @@ aroonAt = input.string("prior bar", "Read Aroon at", group = gA,
      "on preset B they return the same P&L to the cent as `off` (NQ 54 trades, +67.30, PF 2.03, " +
      "identical). At the PRIOR bar the identity does not apply, because the bar before a breakout " +
      "need not be the N-bar high, and the condition asks a real question: was the trend already " +
-     "up before the break. Measured on NQ 60m, gross, research then locked $/trade: " +
-     "preset B off +67.30 / -20.02; up>=70 signal +67.30 / -20.02 (INERT); up>=70 prior " +
-     "+98.19 / -11.82 on 45 and 30 trades. Preset A (donchian 10, so 25 > 10 and the signal-bar " +
-     "reading already binds): off +41.28 / +6.81; osc>=0 signal +48.55 / +10.57; osc>=0 prior " +
-     "+55.86 / +14.09. ONE MARKET, 30-50 locked trades, and the whole-grid marginal says no Aroon " +
-     "setting beats `off` in more than 2 of 6 market-block columns. Treat it as a knob to explore, " +
-     "not as an edge.")
+     "up before the break. THREE MARKETS, gross, research then locked $/trade at preset A with " +
+     "`osc >= 0`: NQ off +41.28 / +6.81, signal +48.55 / +10.57, PRIOR +55.86 / +14.09; US100 off " +
+     "+35.22 / +17.36, PRIOR +29.22 / +26.25; US30 off +53.49 / +14.94, PRIOR +42.48 / +13.60. " +
+     "READ THE SHAPE, NOT THE LOCKED COLUMN: the prior-bar reading improves NQ on both blocks and " +
+     "makes RESEARCH WORSE on US100 and US30 while improving their locked block. A rule chosen on " +
+     "research should look better THERE; the holdout is where an edge decays, not where it " +
+     "appears. That is the wrong shape on 2 of 3 markets, and the whole-grid marginal already " +
+     "said no Aroon setting beats `off` in more than 2 of 6 market-block columns. A knob to " +
+     "explore, not an edge.")
 showAroonIn = input.bool(true, "Report the oscillator in the status line / data window", group = gA,
      tooltip = "This script is an overlay, so the oscillator is NOT drawn on the price scale -- " +
      "it would squash the chart. Its live value appears in the status line, the Data Window and " +
      "the panel instead.")
 
+gM = "MACD"
+macdMode = input.string("off", "MACD condition", group = gM,
+     options = ["off", "hist > 0", "macd > 0", "hist > 0 and macd > 0", "hist rising",
+     "hist > 0 and rising", "fresh bullish cross"],
+     tooltip = "SHIPS OFF, and for the same arithmetic reason the Aroon does. On preset B " +
+     "(Donchian 55) `macd > 0` at 12/26/9 fires on 100.0% of US30 breakout bars, 99.9% of US100's " +
+     "and 99.8% of NQ's -- and on US30 that is exact: 162 trades, +48.44 research / +20.28 " +
+     "locked, IDENTICAL to no condition at all. On NQ at 8/21/5 it is 100.0% and identical too. A " +
+     "close above the 55-bar high on a 60-minute chart essentially guarantees EMA(12) > EMA(26), " +
+     "so the zero-line filter cannot refuse anything. This is the third indicator on this branch " +
+     "to turn out to be the breakout restated (RSI >= 55 passes 94.7% of breakout bars; Aroon " +
+     "osc >= 0 passes 100.0%). Watch the panel's `macd pass on breakouts` row.")
+macdFast = input.int(12, "Fast length", minval = 1, group = gM)
+macdSlow = input.int(26, "Slow length", minval = 1, group = gM)
+macdSig = input.int(9, "Signal length", minval = 1, group = gM)
+macdOscType = input.string("EMA", "Oscillator MA type", options = ["EMA", "SMA"], group = gM,
+     tooltip = "STUDY_MA_LAG says MA TYPE is not a degree of freedom for a single moving average, " +
+     "and that is NOT true here: the MACD is a DIFFERENCE of two averages plus a third smoothing, " +
+     "so the lag mismatch compounds. At 12/26/9 the EMA and SMA readings of `hist > 0` agree on " +
+     "only 79.2% of bars and `hist > 0 and rising` on 76.2%. The SMA column reads better on the " +
+     "locked block (NQ preset A, `macd > 0`: EMA +8.24, SMA +25.27) -- but that difference lives " +
+     "on the ~20% of trades that differ, which STUDY_MA_LAG calls noise until it replicates on a " +
+     "second market. EMA is the default because it is the reference indicator's.")
+macdSigType = input.string("EMA", "Signal MA type", options = ["EMA", "SMA"], group = gM)
+macdCrossWin = input.int(10, "Fresh cross: bars since the bullish cross", minval = 1, group = gM,
+     tooltip = "THE ONLY MACD READING THAT MEANINGFULLY BINDS -- 42-45% of preset B's signals -- " +
+     "and the one to trust least. Preset B locked $/trade at 12/26/9: NQ -20.02 -> +9.48, US100 " +
+     "+44.71 -> +99.44, US30 +20.28 -> +0.94. It looks spectacular and it fails every shape test: " +
+     "on US100 it makes RESEARCH WORSE (+26.61 -> +19.70) while more than doubling the locked " +
+     "block, and on NQ it flips from +9.48 at 12/26/9 to -29.51 at 8/21/5. A result that flips " +
+     "sign one parameter rung away is a spike, not a plateau; this branch rejects those BEFORE " +
+     "the holdout, and this one was seen after, which is worse.")
+macdAt = input.string("signal bar", "Read MACD at", options = ["signal bar", "prior bar"],
+     group = gM,
+     tooltip = "The same diagnostic as the Aroon's. The MACD is not an identity -- it is a " +
+     "difference of exponential averages, not a channel position -- but reading it one bar back " +
+     "is free to run. NQ preset A locked $/trade for `macd > 0`: signal bar +8.24 / +1.82 / " +
+     "+17.59 at 12/26/9, 8/21/5 and 19/39/9; prior bar +15.00 / +15.23 / +22.75 -- consistent " +
+     "across all three parameterisations, which is a better shape than the fresh cross. On preset " +
+     "B the prior-bar reading is itself near-inert (98.5-99.1% of signals on all three markets), " +
+     "because a long channel makes the zero-line condition redundant however it is read.")
+
 gS = "Session -- entry window and hard flatten"
 useSession = input.bool(false, "Restrict entries to a window", group = gS,
-     tooltip = "OFF by default and the reason is measured, not a preference. NQ 60m, preset A, " +
-     "gross, research then locked $/trade: all hours +41.28 / +6.81; 09:30-11:00 +39.71 / -36.70; " +
-     "09:30-12:00 +73.37 / -12.53; 08:00-12:00 +46.84 / +4.92; 09:30-16:00 +71.64 / +6.11. The " +
-     "windows that look best on research are the ones that go NEGATIVE on the locked block. This " +
-     "is the tenth independent time the intraday constraint has come out negative on this branch.")
+     tooltip = "OFF by default and the reason is measured on THREE markets, not preferred. " +
+     "Preset A, gross, research then locked $/trade. All hours: NQ +41.28 / +6.81, US100 " +
+     "+35.22 / +17.36, US30 +53.49 / +14.94. 09:30-11:00: NQ +39.71 / -36.70, US100 " +
+     "+18.04 / +33.63, US30 -1.66 / -56.91. 09:30-12:00: NQ +73.37 / -12.53, US100 " +
+     "+12.62 / +15.21, US30 -16.06 / -5.54. NO WINDOW BEATS ALL HOURS ON RESEARCH ON MORE THAN " +
+     "ONE MARKET, and US30 is NEGATIVE in both morning windows on both blocks. NQ's +73.37 at " +
+     "09:30-12:00 is the best research cell in the table and reads -12.53 out of sample -- the " +
+     "single-market story this table exists to prevent. Tenth independent time the intraday " +
+     "constraint has come out negative on this branch.")
 entrySession = input.session("0930-1600", "Entry window (New York)", group = gS,
      tooltip = "A bar is eligible when its OPEN falls inside the window. The window gates ENTRIES " +
      "only -- a position already open is managed by its stop and channel exit unless the flatten " +
      "below is also on.")
 useFlatten = input.bool(false, "Hard flatten", group = gS,
-     tooltip = "OFF by default. NQ 60m, preset A, all hours, gross, research then locked " +
-     "$/trade: no flatten +41.28 / +6.81 on 83 and 50 trades; flat by 16:00 +17.78 / +5.39 on 103 " +
-     "and 52; flat by 12:00 -0.57 / -5.02 on 89 and 36. A FIXED-TIME FLATTEN COSTS ABOUT 57% OF " +
-     "THE RESEARCH RESULT PER TRADE at 16:00 and ALL of it at 12:00, because it truncates exactly " +
-     "the trades a channel exit exists to hold. `Flat by 16:00` means FLAT AT THE 16:00 OPEN: the " +
-     "order goes in on the bar before, because strategy.close() cannot sell the close that " +
-     "triggers it. A signal whose fill would land at or after the cutoff is refused rather than " +
-     "opened and closed at the same price.")
+     tooltip = "OFF by default. Preset A, all hours, gross, research $/trade with the flatten at " +
+     "16:00: NQ +41.28 -> +17.78 (-57%), US100 +35.22 -> +10.83 (-69%), US30 +53.49 -> +20.98 " +
+     "(-61%). At 12:00: NQ -0.57 (-101%), US100 +8.80 (-75%), US30 +18.50 (-65%). A FIXED-TIME " +
+     "FLATTEN COSTS 57-69% OF THE RESEARCH RESULT PER TRADE ON EVERY MARKET, because it truncates " +
+     "exactly the trades a channel exit exists to hold, and it RAISES the trade count (NQ 83 -> " +
+     "103, US100 212 -> 260, US30 208 -> 259) which is where the cost goes. The locked column is " +
+     "mixed (NQ +6.81 -> +5.39, US100 +17.36 -> +11.18, US30 +14.94 -> +38.35) and does not " +
+     "rescue it. `Flat by 16:00` means FLAT AT THE 16:00 OPEN: the order goes in on the bar " +
+     "before, because strategy.close() cannot sell the close that triggers it. A signal whose " +
+     "fill would land at or after the cutoff is refused rather than opened and closed at the " +
+     "same price.")
 flatHour = input.int(16, "Flatten by -- hour (New York)", minval = 0, maxval = 23, group = gS)
 flatMinute = input.int(0, "Flatten by -- minute", minval = 0, maxval = 59, group = gS)
 
@@ -270,6 +321,33 @@ aroonOk = aroonMode == "off" ? true :
      aroonMode == "osc >= 50" ? aroonOscRead >= 50.0 :
      aroonMode == "osc >= -50" ? aroonOscRead >= -50.0 : aroonUpRead >= 70.0
 
+// MACD, built exactly as the reference indicator builds it: an oscillator MA type and a signal MA
+// type that switch independently, and the histogram as line minus signal.
+macdFastMa = macdOscType == "EMA" ? ta.ema(close, macdFast) : ta.sma(close, macdFast)
+macdSlowMa = macdOscType == "EMA" ? ta.ema(close, macdSlow) : ta.sma(close, macdSlow)
+macdLine = macdFastMa - macdSlowMa
+macdSignal = macdSigType == "EMA" ? ta.ema(macdLine, macdSig) : ta.sma(macdLine, macdSig)
+macdHist = macdLine - macdSignal
+macdCrossUp = ta.crossover(macdHist, 0.0)
+
+var int lastMacdCross = na
+if macdCrossUp and barstate.isconfirmed
+    lastMacdCross := bar_index
+macdSinceCross = na(lastMacdCross) ? -1 : bar_index - lastMacdCross
+
+macdLineRead = macdAt == "prior bar" ? macdLine[1] : macdLine
+macdHistRead = macdAt == "prior bar" ? macdHist[1] : macdHist
+macdHistPrev = macdAt == "prior bar" ? macdHist[2] : macdHist[1]
+macdRising = macdHistRead > macdHistPrev
+
+macdOk = macdMode == "off" ? true :
+     macdMode == "hist > 0" ? macdHistRead > 0.0 :
+     macdMode == "macd > 0" ? macdLineRead > 0.0 :
+     macdMode == "hist > 0 and macd > 0" ? macdHistRead > 0.0 and macdLineRead > 0.0 :
+     macdMode == "hist rising" ? macdRising :
+     macdMode == "hist > 0 and rising" ? macdHistRead > 0.0 and macdRising :
+     macdSinceCross >= 0 and macdSinceCross <= macdCrossWin
+
 donHi = ta.highest(high, donEntry)[1]
 donLo = ta.lowest(low, donExit)[1]
 
@@ -293,7 +371,8 @@ warm = bar_index > math.max(math.max(emaSlow * 3, donEntry + 2), math.max(aroonL
 // flatten fills at the open of the flatten bar and is closed at the same open -- a zero-P&L trade
 // that exists only to dilute the statistics. The engine takes those; this script refuses them, and
 // `v60_parity.py` reports the resulting trade-count difference rather than hiding it.
-signal = breakout and emaOk and gateOk and aroonOk and atrOk and warm and inWindow and not flatDue
+signal = breakout and emaOk and gateOk and aroonOk and macdOk and atrOk and warm and inWindow and
+     not flatDue
 
 // ------------------------------------------------------------------------------------------------
 // ORDERS. Three rules of this branch's Pine discipline are load-bearing here:
@@ -351,6 +430,7 @@ var int nBreak = 0
 var int nAroonOnBreak = 0
 var int nEmaOnBreak = 0
 var int nGateOnBreak = 0
+var int nMacdOnBreak = 0
 var int nSignal = 0
 var int nInWindow = 0
 
@@ -366,6 +446,8 @@ if barstate.isconfirmed and warm
             nEmaOnBreak += 1
         if gateOk
             nGateOnBreak += 1
+        if macdOk
+            nMacdOnBreak += 1
     if signal
         nSignal += 1
 
@@ -383,7 +465,7 @@ plotshape(signal and barstate.isconfirmed, "signal", shape.triangleup, location.
      color.new(color.teal, 0), size = size.tiny)
 
 if showHudIn and barstate.islast
-    var table hud = table.new(position.top_right, 2, 15, border_width = 1)
+    var table hud = table.new(position.top_right, 2, 17, border_width = 1)
     // THE IDENTITY ONLY APPLIES TO THE SIGNAL-BAR READING. At the prior bar the breakout has not
     // yet happened, so the Aroon is free to be anything and the condition can refuse a trade.
     identity = aroonMode != "off" and aroonLen <= donEntry and aroonAt == "signal bar" and
@@ -422,15 +504,24 @@ if showHudIn and barstate.islast
     table.cell(hud, 1, 10, str.tostring(nSignal), text_size = size.tiny)
     table.cell(hud, 0, 11, "closed trades", text_size = size.tiny)
     table.cell(hud, 1, 11, str.tostring(strategy.closedtrades), text_size = size.tiny)
-    table.cell(hud, 0, 12, "session", text_size = size.tiny)
-    table.cell(hud, 1, 12, (useSession ? entrySession : "all hours") +
+    macdInert = macdMode != "off" and pctBreak(nMacdOnBreak) == "100.0%"
+    table.cell(hud, 0, 12, "macd", text_size = size.tiny)
+    table.cell(hud, 1, 12, macdMode == "off" ? "off" : macdMode + " " + str.tostring(macdFast) +
+         "/" + str.tostring(macdSlow) + "/" + str.tostring(macdSig) + " @ " + macdAt,
+         text_size = size.tiny)
+    table.cell(hud, 0, 13, "macd pass on breakouts", text_size = size.tiny,
+         bgcolor = macdInert ? color.new(color.orange, 60) : na)
+    table.cell(hud, 1, 13, macdMode == "off" ? "--" : pctBreak(nMacdOnBreak), text_size = size.tiny,
+         bgcolor = macdInert ? color.new(color.orange, 60) : na)
+    table.cell(hud, 0, 14, "session", text_size = size.tiny)
+    table.cell(hud, 1, 14, (useSession ? entrySession : "all hours") +
          (useFlatten ? "  flat " + str.tostring(flatHour) + ":" +
          (flatMinute < 10 ? "0" : "") + str.tostring(flatMinute) : ""), text_size = size.tiny)
-    table.cell(hud, 0, 13, "eligible bars in window", text_size = size.tiny)
-    table.cell(hud, 1, 13, useSession ? str.tostring(nInWindow) : "--", text_size = size.tiny)
-    table.cell(hud, 0, 14, identity ? "AROON IS INERT HERE" : "aroon length vs channel",
+    table.cell(hud, 0, 15, "eligible bars in window", text_size = size.tiny)
+    table.cell(hud, 1, 15, useSession ? str.tostring(nInWindow) : "--", text_size = size.tiny)
+    table.cell(hud, 0, 16, identity ? "AROON IS INERT HERE" : "aroon length vs channel",
          text_size = size.tiny, bgcolor = identity ? color.new(color.orange, 60) : na)
-    table.cell(hud, 1, 14, identity ? "len " + str.tostring(aroonLen) + " <= entry " +
+    table.cell(hud, 1, 16, identity ? "len " + str.tostring(aroonLen) + " <= entry " +
          str.tostring(donEntry) + " @ signal bar" : "len " + str.tostring(aroonLen) + " vs entry " +
          str.tostring(donEntry) + " @ " + aroonAt, text_size = size.tiny,
          bgcolor = identity ? color.new(color.orange, 60) : na)

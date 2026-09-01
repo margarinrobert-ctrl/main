@@ -1909,16 +1909,45 @@ of the V60 script overwrote `aroonMode` during preset resolution, so the one inp
 most want to try was dead unless they left the preset -- a preset sets what it has an opinion
 about, and nothing else.
 
-**A SESSION WINDOW AND A HARD FLATTEN, PRICED ON NQ 60m: the flatten costs 57% of the per-trade
-result at 16:00 and ALL of it at 12:00**, and it RAISES the trade count (83 -> 103), which is where
-the cost goes -- the clock closes trades a channel exit would have held. The windows that look best
-on research are the ones that go negative on locked (09:30-12:00 is the best research row at +73.37
-and reads -12.53 out of sample). Tenth independent confirmation of the intraday finding. Two
+**A SESSION WINDOW AND A HARD FLATTEN, PRICED ON THREE MARKETS: the 16:00 flatten costs 57% / 69% /
+61% of the research result per trade on NQ / US100 / US30 -- every market, every time -- and it
+RAISES the trade count** (83 -> 103, 212 -> 260, 208 -> 259), which is where the cost goes: the
+clock closes trades a channel exit would have held. **NO WINDOW BEATS ALL HOURS ON RESEARCH ON MORE
+THAN ONE MARKET**, and US30 is NEGATIVE in both morning windows on both blocks (09:30-11:00
+-1.66 / -56.91). NQ's +73.37 at 09:30-12:00 is the best research cell in the table and reads
+-12.53 out of sample -- the single-market story a three-market table exists to prevent. Tenth
+independent confirmation of the intraday finding. Two
 mechanics the parity harness forced: **"flat by 16:00" means flat at the 16:00 OPEN**, so the order
 is submitted on the bar before (`nyMin + tfMin >= flatMin`), which is where `tensor_stop`'s
 `flat_mod` path fills; and **a signal whose fill would land at or after the cutoff must be REFUSED,
 not opened** -- the engine takes those and closes them at the same open for zero P&L, diluting the
 statistics. `research/v60/v60session.py`.
+
+**THE MACD IS THE THIRD INDICATOR TO TURN OUT TO BE THE BREAKOUT RESTATED, ON ALL THREE MARKETS.**
+`macd > 0` at 12/26/9 passes **100.0% of US30's Donchian-55 breakout bars** (162 trades, +48.44
+research / +20.28 locked -- IDENTICAL to no filter), **99.9%** of US100's and **99.8%** of NQ's; at
+8/21/5 NQ reaches 100.0% and is identical too. A close above the 55-bar high essentially guarantees EMA(12) > EMA(26). Joins
+RSI(14)>=55 at 94.7% and `aroon osc>=0` at 100.0%. **COMPUTE A CONFIRMATION'S BASE RATE ON THE
+TRIGGER'S OWN BARS BEFORE ITS P&L** -- two lines ahead of any sweep. The only MACD reading that
+binds is a FRESH bullish cross (42-45% of signals) and it fails every shape test at once: locked
++9.48 NQ / **+99.44** US100 / +0.94 US30, while making US100's RESEARCH block worse (+26.61 ->
++19.70), and flipping from +9.48 to **-29.51** one parameter rung away on NQ. A spike, seen after
+the holdout, which is worse than seeing one before. **And MA TYPE, which `STUDY_MA_LAG` established is NOT a degree of freedom
+for a single average, IS one for the MACD**: it is a difference of two averages plus a third
+smoothing, so the lag mismatch compounds and EMA/SMA readings of `hist > 0` agree on only **79.2%**
+of bars against 89.5-97.3% for price-vs-MA rules.
+
+**THE SAME SESSION FEATURE HAS OPPOSITE SIGNS ON TWO SYSTEMS, one market each -- which is the
+definition of not knowing.** A hard flatten costs the V60 Donchian breakout 57% of its per-trade
+result at 16:00 and appears to RESCUE the YouTube Turtle on NQ (IS +0.193 -> +0.121, OOS -0.090 ->
+**+0.174**). But every gate added to that Turtle -- window, flatten, ADX floor -- moves IS DOWN and
+OOS UP, which is the WRONG SHAPE and has been a defect twice before here; NQ is the ONE market of
+six where those frozen rules failed OOS, so fixing it there is selection; the ADX gradient rises
++0.140 -> +0.156 -> +0.307 as n falls 62 -> 57 -> 36, which is what RESTRICTIVENESS ALONE looks
+like; and the flatten RAISES the trade count 158 -> 326, so it is not filtering but cutting trades
+short. All ship OFF with their numbers. **A FROZEN KERNEL IS COPIED, NEVER PARAMETERISED** --
+`research/turtle2/yt_gates.py` duplicates `ytturtle.run` and ASSERTS parity with it (158/158 and
+70/70, identical R) rather than adding arguments three published studies would silently inherit.
 
 ## Tooling
 
@@ -2066,6 +2095,8 @@ statistics. `research/v60/v60session.py`.
 | `research/v60/v60_vbt.py` | the vectorbt second opinion: transcription, order model, fill attribution |
 | `research/v60/v60_parity.py` | the shipped V60 Pine's own order model, diffed against the engine |
 | `research/v60/v60session.py` | the Aroon reading bar, and the session window x flatten grid |
+| `research/v60/v60macd.py` | eight MACD readings x three parameter sets, base rate on breakout bars first |
+| `research/turtle2/yt_gates.py` | the YT Turtle with a window, a flatten and an ADX floor; parity-asserted copy |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine
