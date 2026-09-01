@@ -96,8 +96,8 @@ showPanel = input.bool(true, "Diagnostic panel", group = gD)
 // Pine has no math.tanh. tanh(x) = (e^2x - 1)/(e^2x + 1), with the argument clamped because
 // math.exp overflows well before tanh stops being 1.0 to machine precision.
 tanh(float x) =>
-    float z = math.max(math.min(x, 20.0), -20.0)
-    float e = math.exp(2.0 * z)
+    z = math.max(math.min(x, 20.0), -20.0)
+    e = math.exp(2.0 * z)
     (e - 1.0) / (e + 1.0)
 
 // ------------------------------------------------------- daily bars, on New York calendar days
@@ -127,26 +127,30 @@ rollover = not na(curDay) and dayId != curDay
 if barstate.isconfirmed
     if rollover
         // the calendar day that just ended is complete -- finalise it and advance the chain
-        float tr = na(prevC) ? dH - dL
+        tr = na(prevC) ? dH - dL
              : math.max(dH - dL, math.max(math.abs(dH - prevC), math.abs(dL - prevC)))
         atrD := na(atrD) ? tr : atrD + (tr - atrD) / atrLen        // Wilder, alpha = 1/n
         array.push(closes, dC)
         if array.size(closes) > kerLen + 8
             array.shift(closes)
-        int n = array.size(closes)
+        n = array.size(closes)
         if n >= maLen and n >= kerLen + 1 and not na(atrD) and atrD > 0
-            float s = 0.0
+            // An explicit loop rather than array.avg(array.slice(...)): a slice is a VIEW that
+            // shares memory with its parent, and this is the form the Python parity harness
+            // models. The fix that was needed was `:=`, not a different API.
+            s = 0.0
             for i = 0 to maLen - 1
-                s += array.get(closes, n - 1 - i)
-            float ma = s / maLen
-            float cmma = (dC - ma) / atrD
-            float bounded = useTanh ? tanh(cmma) : cmma
-            float denom = 0.0
+                s := s + array.get(closes, n - 1 - i)
+            ma = s / maLen
+            cmma = (dC - ma) / atrD
+            bounded = useTanh ? tanh(cmma) : cmma
+            denom = 0.0
             for i = 0 to kerLen - 1
-                denom += math.abs(array.get(closes, n - 1 - i) - array.get(closes, n - 2 - i))
-            float ker = denom > 0 ? math.abs(dC - array.get(closes, n - 1 - kerLen)) / denom : 0.0
+                denom := denom + math.abs(array.get(closes, n - 1 - i)
+                     - array.get(closes, n - 2 - i))
+            ker = denom > 0 ? math.abs(dC - array.get(closes, n - 1 - kerLen)) / denom : 0.0
             sigRaw := (useKer ? ker : 1.0) * (-bounded)
-            float alpha = 1.0 / (1.0 + smoothCom)
+            alpha = 1.0 / (1.0 + smoothCom)
             sigEma := na(sigEma) ? sigRaw : sigEma + alpha * (sigRaw - sigEma)
             // THE SIGNAL FINALISED AT MIDNEW-YORK-MIDNIGHT IS THE ONE THE COMING SESSION TRADES.
             // No further shift: the source's .shift(1) is consumed by its label='right' resample
@@ -172,11 +176,18 @@ if barstate.isconfirmed
 
 // ---------------------------------------------------------------------------------- execution
 inSess = not na(time(timeframe.period, sessStart, "America/New_York"))
-target = inSess and not na(sigLive) ? math.round(sigLive * contracts) : 0
-target := math.max(math.min(target, maxPos), -maxPos)
+
+// TYPES. `math.round` returns a FLOAT and `strategy.position_size` is a series float, so the
+// target and the order size have to be cast to int explicitly -- assigning either to an `int`
+// declaration is the "cannot assign series float to a variable declared const int" error. The
+// casts are exact here: `targetF` is already rounded, and the position is always a whole number
+// of contracts because every order placed below is an integer quantity.
+targetF = inSess and not na(sigLive) ? math.round(sigLive * contracts) : 0.0
+targetF := math.max(math.min(targetF, maxPos), -maxPos)
+target = int(targetF)
 
 if barstate.isconfirmed
-    int delta = target - strategy.position_size
+    delta = target - int(strategy.position_size)
     if delta > 0
         strategy.order("cmma_buy", strategy.long, qty = delta)
     else if delta < 0

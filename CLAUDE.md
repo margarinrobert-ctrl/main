@@ -2007,7 +2007,11 @@ intraday bars and require EXTENDED HOURS ON, or every daily high/low/TR loses th
 calendar day D-1 and closes at midnight as D begins, and pandas' `.shift(1)` is consumed by the
 notebook's own `index - 1 day` remap, so no further shift belongs in the script (an earlier draft
 of `STUDY_CMMA.md` said D-2 and was wrong by a day); (3) `ewm(2)` IS `com=2`, alpha 1/3, not a span;
-(4) **PINE CANNOT TRADE FRACTIONAL CONTRACTS AND A CONTINUOUS TARGET ROUNDS TO ZERO** -- mean
+(4) `math.round` RETURNS A FLOAT and `strategy.position_size` IS A SERIES FLOAT, so a continuous
+target and its order size must be cast with `int()` -- assigning either to an `int` declaration is
+the "cannot assign a value of the series float type to a variable declared with the const int type"
+compile error, and it is the one Pine emits INSTEAD of a report; (5) **PINE CANNOT TRADE FRACTIONAL
+CONTRACTS AND A CONTINUOUS TARGET ROUNDS TO ZERO** -- mean
 |signal| here is 0.076, so at a base size of 1 the strategy places NO TRADE ON ANY DAY. Measured:
 base 1 -> 0 days traded, 5 -> 202 (Sharpe 0.54), 20 -> 526 (0.65), 50 -> 640 (0.71) against the
 fractional 748 (0.70). At 50+ the rounding is free; below 20 it is material noise. Parity against
