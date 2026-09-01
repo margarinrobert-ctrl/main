@@ -2021,6 +2021,24 @@ configs x 3 markets identical after those fixes. Costs are not the obstacle (0x-
 0.01-0.03). Bootstrap "passes" on 83.5% of US100 cells at P<0.05 is the shape of drift, not
 1,964 discoveries. See `docs/ib/STUDY_IBS_SESSION.md`, `research/ibs/`.
 
+**A PUBLISHED PINE'S PARTIAL TAKE-PROFIT IS RE-ISSUED EVERY BAR, and the report you get is the
+literal one.** The "Double Donchian Channel Breakout" script (50/30 channels, width > 3%, TP 2% on
+50%, 100% equity, no stop) calls `strategy.exit("TP1", qty_percent = 50, limit = ...)` on every
+bar a position exists; once the order has filled the next call creates a fresh one for half of
+what REMAINS at a limit the market is already past, which fills at the open -- the position is
+halved every bar price stays beyond +2%. Reproducing that (literal) against the author's evident
+intent (one partial): US30 +22.2% vs +9.9%, US100 -43.6% vs -54.5%, NQ +0.1% vs -9.0% -- the
+accident is a scale-out into strength and it is the better exit. Run on the three indices instead
+of the BTC it was fitted to, 1-hour, whole file: it clears a trade-count-matched random-entry
+control on US30 (p 0.037 inside the width regime) and fails on US100 (p 0.84, and NEGATIVE AT
+ZERO COMMISSION, -23%) and NQ (p 0.37). The US30 pass is a two-rung island on the width filter
+(2% -22%, 3% +22%, 4% +17%, 5% -14%) that inverts across timeframes (15m -4%, 4h -19%), and the
+unfiltered breakout loses 34-51% on all three. Every control here is NEGATIVE: a 30-bar channel
+exit with no stop on 100% of equity loses money on a random entry in a rising market. Also: the
+header's own one-month window holds 0 / 3 / 1 trades. Seventh Donchian breakout on this branch
+to fail its control on two of three markets. See `docs/ib/STUDY_DOUBLE_DONCHIAN.md`,
+`research/ddc/`.
+
 **A DAILY-SIGNAL / INTRADAY-EXECUTION PINE PORT HAS FOUR TRAPS AND ONE OF THEM IS FATAL.** Porting
 the CMMA notebook: (1) the daily bars are NEW YORK CALENDAR DAYS, and `request.security(..., "D")`
 on a CME future gives the 18:00-17:00 ETH SESSION instead -- accumulate them from the chart's own
@@ -2085,6 +2103,7 @@ position cap is load-bearing even though it never binds at a base of 50.
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 | `research/m4_anatomy.py` | why M4 is profitable: exit split, barrier sweep, day-vs-bar, bands |
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
+| `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
 | `research/ibs/` | the IBS session EA: cached tensor, bar-by-bar parity, stability / MC / clusters / walk-forward / judge |
 | `research/cmma/` | the CMMA notebook, re-implemented honestly: accounting, costs, deflation, holdout |
 | `research/cmma/cmma_stats.py` | its profit factor, win rate and hold time, per DAY and per stance |

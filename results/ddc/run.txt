@@ -1,0 +1,89 @@
+====================================================================================================
+DOUBLE DONCHIAN CHANNEL BREAKOUT (50 / 30, width > 3%, TP 2% on 50%, 100% equity,
+0.05%/side, no stop) -- 1-hour bars, US30 / US100 / NQ, whole file, as configured
+====================================================================================================
+
+US30: 49,325 hourly bars 2016-10-26 to 2025-07-15; buy-and-hold +142.6%
+  width filter (slow channel > 3% of its low): passes on 18.3% of bars; raw breakouts up 1513 / down 941, after the filter 245 / 201
+  LITERAL (TP re-issued every bar)   n  152  net   +22.2%  PF  1.20  win 48.7%  maxDD  15.1%  move/trade +0.252%  median hold 51h
+  INTENDED (one partial per trade)   n  143  net    +9.9%  PF  1.10  win 48.3%  maxDD  16.1%  move/trade +0.187%  median hold 56h
+    literal, long only               n   84  net   +24.6%  PF  1.51  win 47.6%  maxDD   6.6%  move/trade +0.374%  median hold 64h
+    literal, short only              n   68  net    -2.0%  PF  0.97  win 50.0%  maxDD  19.9%  move/trade +0.101%  median hold 46h
+    literal, zero commission         n  152  net   +42.2%  PF  1.37  win 50.0%  maxDD  14.5%  move/trade +0.252%  median hold 51h
+    literal, 0.10%/side              n  152  net    +4.9%  PF  1.04  win 48.0%  maxDD  17.7%  move/trade +0.252%  median hold 51h
+  per year (literal):
+           n    win   move  equity_ret
+    year                              
+    2016   2 +0.500 -0.014      -0.032
+    2018  22 +0.364 +0.001      +0.017
+    2019  11 +0.364 -0.001      -0.031
+    2020  41 +0.537 +0.003      +0.078
+    2021  18 +0.444 -0.000      -0.026
+    2022  39 +0.513 +0.004      +0.118
+    2023   6 +0.667 +0.003      +0.012
+    2024   5 +0.800 +0.012      +0.056
+    2025   8 +0.375 +0.005      +0.028
+    header window 2024-01 only       n    0  net    +nan%  PF   nan  win  nan%  maxDD   nan%  move/trade +nan%  median hold nanh
+  time in market: long 11.6% of bars, short 6.9%; buy-and-hold over the same file +142.6%
+  control, random bar INSIDE the width regime   (300 draws, 150 trades/draw vs 152): median net -13.2%, mean -12.4%; P(control >= strategy) 0.037
+  control, random bar anywhere                  (300 draws, 151 trades/draw vs 152): median net -11.8%, mean -10.5%; P(control >= strategy) 0.010
+
+US100: 51,889 hourly bars 2016-11-14 to 2025-10-01; buy-and-hold +422.9%
+  width filter (slow channel > 3% of its low): passes on 35.1% of bars; raw breakouts up 1711 / down 935, after the filter 548 / 384
+  LITERAL (TP re-issued every bar)   n  313  net   -43.6%  PF  0.79  win 49.2%  maxDD  57.2%  move/trade -0.055%  median hold 47h
+  INTENDED (one partial per trade)   n  286  net   -54.5%  PF  0.69  win 48.3%  maxDD  60.7%  move/trade -0.147%  median hold 52h
+    literal, long only               n  172  net   -22.3%  PF  0.83  win 47.7%  maxDD  42.5%  move/trade -0.025%  median hold 52h
+    literal, short only              n  141  net   -27.4%  PF  0.79  win 51.1%  maxDD  39.8%  move/trade -0.090%  median hold 45h
+    literal, zero commission         n  313  net   -22.8%  PF  0.90  win 50.2%  maxDD  49.1%  move/trade -0.055%  median hold 47h
+    literal, 0.10%/side              n  313  net   -58.6%  PF  0.70  win 47.9%  maxDD  64.4%  move/trade -0.053%  median hold 47h
+  per year (literal):
+           n    win   move  equity_ret
+    year                              
+    2016   1 +0.000 -0.010      -0.011
+    2017   4 +0.000 -0.011      -0.047
+    2018  35 +0.514 +0.001      +0.022
+    2019  23 +0.435 -0.002      -0.071
+    2020  57 +0.509 -0.006      -0.336
+    2021  33 +0.394 -0.004      -0.146
+    2022  79 +0.582 +0.002      +0.071
+    2023  33 +0.424 -0.000      -0.051
+    2024  27 +0.444 +0.002      +0.022
+    2025  21 +0.571 +0.005      +0.088
+    header window 2024-01 only       n    3  net    +0.8%  PF  1.69  win 33.3%  maxDD   2.7%  move/trade +0.363%  median hold 71h
+  time in market: long 19.6% of bars, short 13.9%; buy-and-hold over the same file +422.9%
+  control, random bar INSIDE the width regime   (300 draws, 314 trades/draw vs 313): median net -25.3%, mean -21.2%; P(control >= strategy) 0.840
+  control, random bar anywhere                  (300 draws, 316 trades/draw vs 313): median net -21.2%, mean -19.8%; P(control >= strategy) 0.920
+
+NQ: 18,243 hourly bars 2022-12-26 to 2025-12-11; buy-and-hold +87.7%
+  width filter (slow channel > 3% of its low): passes on 19.9% of bars; raw breakouts up 555 / down 320, after the filter 110 / 63
+  LITERAL (TP re-issued every bar)   n   63  net    +0.1%  PF  1.00  win 44.4%  maxDD  12.7%  move/trade +0.117%  median hold 54h
+  INTENDED (one partial per trade)   n   62  net    -9.0%  PF  0.81  win 43.5%  maxDD  13.4%  move/trade -0.039%  median hold 53h
+    literal, long only               n   40  net    +3.4%  PF  1.13  win 45.0%  maxDD  11.3%  move/trade +0.196%  median hold 59h
+    literal, short only              n   23  net    -3.1%  PF  0.85  win 43.5%  maxDD  10.0%  move/trade -0.021%  median hold 46h
+    literal, zero commission         n   63  net    +6.6%  PF  1.14  win 46.0%  maxDD  11.9%  move/trade +0.117%  median hold 54h
+    literal, 0.10%/side              n   63  net    -6.0%  PF  0.88  win 44.4%  maxDD  13.6%  move/trade +0.117%  median hold 54h
+  per year (literal):
+           n    win   move  equity_ret
+    year                              
+    2023  14 +0.357 +0.002      +0.013
+    2024  20 +0.450 +0.002      +0.016
+    2025  29 +0.483 +0.000      -0.026
+    header window 2024-01 only       n    1  net    +1.9%  PF   inf  win 100.0%  maxDD   0.7%  move/trade +2.017%  median hold 105h
+  time in market: long 13.7% of bars, short 7.5%; buy-and-hold over the same file +87.7%
+  control, random bar INSIDE the width regime   (300 draws, 64 trades/draw vs 63): median net -3.9%, mean -3.5%; P(control >= strategy) 0.367
+  control, random bar anywhere                  (300 draws, 62 trades/draw vs 63): median net -6.2%, mean -6.1%; P(control >= strategy) 0.217
+
+LADDER on the two BTC-fitted knobs, literal model, net % over the whole file:
+  width filter %:        0        1        2        3        4        5
+  US30               -45%/652    -40%/560    -22%/298    +22%/152    +17%/71    -14%/46   (net / trades)
+  US100              -51%/713    -45%/671    -59%/492    -44%/313    -55%/190    -61%/114   (net / trades)
+  NQ                 -34%/251    -27%/236    -23%/147     +0%/63     -1%/25     -6%/12   (net / trades)
+  take-profit %:         1        2        3        5  (width 3%)
+  US30                -4%/161    +22%/152    +22%/149     +8%/147
+  US100              -42%/334    -44%/313    -35%/299    -38%/291
+  NQ                 +13%/64     +0%/63    -10%/62    -12%/62
+
+TIMEFRAME, as configured (literal), net / trades / PF:
+  15min    US30   -3.9% /   91 / 0.94     US100  -18.2% /  220 / 0.86     NQ   +7.5% /   28 / 1.54   
+  60min    US30  +22.2% /  152 / 1.20     US100  -43.6% /  313 / 0.79     NQ   +0.1% /   63 / 1.00   
+  240min   US30  -18.6% /  139 / 0.87     US100  +21.3% /  178 / 1.09     NQ  +13.4% /   58 / 1.20   
