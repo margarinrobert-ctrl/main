@@ -4,7 +4,8 @@
 
 **No demonstrable edge, but not a broken backtest either — and the distinction matters.** The
 notebook has no look-ahead: the audit is clean, the execution-alignment check is clean, and the
-signal traded on date *D* is built from data through the end of calendar day *D−2*. What it does
+signal traded on date *D* is finalised at **midnight New York as day *D* begins, eight hours
+before the 08:00 entry**. What it does
 not have is evidence. On nine years of the same index the strategy earns a **Sharpe of 0.39 ± 0.33
 net of costs**, its **deflated Sharpe is 0.057** against the 34-configuration sweep the notebook
 itself runs, and the **expected best-of-34 random tries would have scored 0.85** — nearly four
@@ -136,6 +137,44 @@ Two further readings from the same table:
   distorted; Sharpe, win rate and ATR-relative measures are not.
 - The position is a continuous target in [−1, 1] with mean absolute exposure of only 0.08. Scaled
   to a tradeable size the drawdowns scale with it.
+
+## The Pine port
+
+`pine/cmma/CMMA_MNQ_strategy.pine`, diffed against the research engine rather than asserted
+(`research/cmma/cmma_parity.py`):
+
+| | NQ | US100 |
+| --- | --- | --- |
+| signal days compared | 901 | 2,724 |
+| correlation | **1.0000000000** | **1.0000000000** |
+| max abs difference | 6.9e−17 | 1.3e−14 |
+| fractional P&L | +901.5 pts both | +1,099.0 pts both |
+
+Four things the port has to get right, each of which would silently change the strategy:
+
+1. **The daily bars are New York calendar days, not exchange sessions.** The notebook resamples
+   midnight-to-midnight; TradingView's `"D"` on a CME future is the 18:00–17:00 ETH session. The
+   script accumulates its own daily bars from the chart's intraday bars, so **extended hours must
+   be on** or every daily high, low and true range is missing the overnight.
+2. **The lag is eight hours, not a day.** With `label='right'` the daily bar labelled *D* covers
+   calendar day *D−1* and closes at midnight as *D* begins; the `.shift(1)` is then consumed by the
+   notebook's own `index − 1 day` remap. Verified against the data — an earlier draft of this study
+   said *D−2* and that was wrong by a day. Adding a shift would trade a day late; removing one
+   would be lookahead.
+3. **`ewm(2)` is `com=2`, not `span=2`** — pandas' first positional argument is the centre of mass,
+   so alpha is 1/3. Reading it as a span makes the filter twice as fast.
+4. **Pine cannot trade fractional contracts, and this is the only place the port is inexact.** Mean
+   absolute signal is 0.076, so at a base size of 1 the rounded target is **zero on every single
+   day and nothing trades at all**. Measured cost of the rounding by base size (NQ, per
+   contract-equivalent):
+
+| contracts at full signal | 1 | 5 | 10 | 20 | 50 | 100 | exact |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| days traded | **0** | 202 | 370 | 526 | 640 | 691 | 748 |
+| Sharpe | — | +0.54 | +0.92 | +0.65 | +0.71 | +0.69 | +0.70 |
+
+At 50 and above the rounding is free; below 20 it is material noise in both directions. The script
+defaults to 50, which is a mean position near 4 MNQ and a maximum near 24.
 
 ## Next tests
 

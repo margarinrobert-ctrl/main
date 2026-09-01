@@ -1981,7 +1981,8 @@ See `docs/ib/STUDY_V58_ANATOMY.md`.
 **THE CMMA MEAN-REVERSION NOTEBOOK: NO LOOK-AHEAD, NO EDGE, AND COSTS ARE NOT THE PROBLEM.** A
 daily `tanh((close - SMA5)/ATR5)` negated, scaled by a 21-day Kaufman efficiency ratio, EMA-smoothed
 and shifted, executed 08:00-15:45 NY. The audit and the execution-alignment check are CLEAN and the
-signal at date D uses data through calendar day D-2, so this is not a leak -- it is an effect too
+signal traded on day D is finalised at MIDNIGHT NEW YORK as day D begins, eight hours before the
+08:00 entry, so this is not a leak -- it is an effect too
 small to demonstrate. US100 nine years: **Sharpe +0.39 +- 0.33 net**, deflated Sharpe **0.057**
 against 34 trials whose expected best-of-noise is **0.85**, PBO 0.35, three of nine years negative,
 the best 1% of days **240% of net**. Three things inflate the notebook's number: `sr =
@@ -1997,6 +1998,21 @@ help on either. Same four components, opposite conclusions -- that is fitting no
 **AND `metrics.sharpe_standard_error` TAKES A PER-PERIOD SHARPE**: handing it an annualised one
 returns a figure sqrt(252) too small (0.04 instead of 0.58 here), which is the notebook's own error
 class. See `docs/ib/STUDY_CMMA.md`.
+
+**A DAILY-SIGNAL / INTRADAY-EXECUTION PINE PORT HAS FOUR TRAPS AND ONE OF THEM IS FATAL.** Porting
+the CMMA notebook: (1) the daily bars are NEW YORK CALENDAR DAYS, and `request.security(..., "D")`
+on a CME future gives the 18:00-17:00 ETH SESSION instead -- accumulate them from the chart's own
+intraday bars and require EXTENDED HOURS ON, or every daily high/low/TR loses the overnight;
+(2) THE LAG IS EIGHT HOURS, NOT A DAY -- with `label='right'` the daily bar labelled D covers
+calendar day D-1 and closes at midnight as D begins, and pandas' `.shift(1)` is consumed by the
+notebook's own `index - 1 day` remap, so no further shift belongs in the script (an earlier draft
+of `STUDY_CMMA.md` said D-2 and was wrong by a day); (3) `ewm(2)` IS `com=2`, alpha 1/3, not a span;
+(4) **PINE CANNOT TRADE FRACTIONAL CONTRACTS AND A CONTINUOUS TARGET ROUNDS TO ZERO** -- mean
+|signal| here is 0.076, so at a base size of 1 the strategy places NO TRADE ON ANY DAY. Measured:
+base 1 -> 0 days traded, 5 -> 202 (Sharpe 0.54), 20 -> 526 (0.65), 50 -> 640 (0.71) against the
+fractional 748 (0.70). At 50+ the rounding is free; below 20 it is material noise. Parity against
+the engine: correlation **1.0000000000**, max |diff| 6.9e-17, fractional P&L identical to the tenth
+of a point on both feeds. `research/cmma/cmma_parity.py`.
 
 ## Tooling
 
@@ -2031,6 +2047,7 @@ class. See `docs/ib/STUDY_CMMA.md`.
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
 | `research/cmma/` | the CMMA notebook, re-implemented honestly: accounting, costs, deflation, holdout |
 | `research/cmma/cmma_stats.py` | its profit factor, win rate and hold time, per DAY and per stance |
+| `research/cmma/cmma_parity.py` | the shipped Pine's own logic, diffed against the engine (corr 1.0000000000) |
 | `research/v58/v58_anatomy.py` | **what creates the IB edge** — exit split, infinite stop, day-vs-bar, drop-one, ladders |
 | `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
 | `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |
