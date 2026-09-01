@@ -285,4 +285,5 @@ stopped.
 | `research/ibs/ibs_core.py` | feeds, sessions, the cached tensor, position lock, matched control |
 | `research/ibs/ibs_parity.py` | the EA's order model bar by bar, diffed against the tensor |
 | `research/ibs/ibs_run.py` | `stability`, `montecarlo`, `cluster`, `walkforward`, `judge` |
+| `pine/ibs/IBS_SESSION_strategy.pine` | the TradingView port; stop from the signal close, a deviation measured at 0.000 R on NQ and −0.010 to +0.027 R on the CFD feeds |
 | `results/ibs/*.txt`, `*.csv` | every table above, every cell's sweep and Monte Carlo |
