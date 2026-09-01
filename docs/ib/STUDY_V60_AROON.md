@@ -602,7 +602,41 @@ before on this branch and was right both times. Three further reasons it is not 
 
 **And the flatten's sign is opposite to §8c's**, where the identical change cost 57% of the V60
 breakout's per-trade result. Two systems, opposite signs, one market each — which is the definition
-of not knowing. Both ship OFF with their numbers attached.
+of not knowing.
+
+### What the combined grid ships, and why it is not the top row
+
+`research/turtle2/yt_best.py` puts all five gates in one grid — window × flatten × ADX × MACD ×
+Aroon, 960 cells, 685 scorable at 40+ in-sample trades — selects on the **in-sample block only** by
+the **marginal average per axis**, and reads out-of-sample once. Aroon length is 25 against the
+Turtle's 20-bar entry channel, so §2's identity does not apply and the condition binds.
+
+| in-sample marginal R/trade | best → worst |
+| --- | --- |
+| MACD | `hist>0 and rising` **+0.390**, fresh cross +0.387, `hist>0` +0.314, `macd>0` +0.199, off +0.184 |
+| Aroon | `osc≥0` **+0.304**, `osc≥50` +0.302, `up≥70` +0.300, off +0.222 |
+| window | 08:00–12:00 **+0.312**, 09:30–16:00 +0.304, all hours +0.268, 09:30–12:00 +0.218 |
+| flatten | none +0.349, 16:00 +0.247, 12:00 +0.236 |
+| ADX | off +0.314, ≥20 +0.277, ≥25 +0.274, ≥30 +0.228 |
+
+| configuration | in-sample | out-of-sample |
+| --- | --- | --- |
+| frozen rules, no gates | n 158, +0.193, PF 1.46 | n 70, **−0.090**, PF 0.83 |
+| top row by in-sample R | n 40, **+0.682**, PF 4.00 | n 18, **−0.058**, PF 0.87 |
+| **marginal consensus (shipped)** | n 64, +0.414, PF 2.84 | n 34, **+0.207**, PF 1.75 |
+
+**The top row is the trap and the marginal is the answer.** Ranking on in-sample expectancy buys a
+40-trade cell that reads −0.058 out of sample — this branch has bought 30-trade configurations that
+way before. The marginal consensus keeps 64 in-sample trades and is the only one of the three
+positive on both blocks. Its neighbourhood is smooth rather than a spike: moving one axis at a time,
+out-of-sample R/trade reads all hours +0.239, flatten 12:00 +0.257, MACD `hist>0` +0.124, ADX off
++0.327.
+
+Shipped defaults: **08:00–12:00 entry window, hard flatten 16:00, ADX ≥ 20, MACD `hist>0 and
+rising` 12/26/9, Aroon `osc ≥ 0` (25)** — all ON. Two facts stated with them rather than buried:
+**ADX off scores better than any ADX floor on both blocks** (+0.438 / +0.327), and it is on at ≥20
+because it was asked for; and this is one market, the one of six where the frozen rules failed out
+of sample.
 
 
 ---

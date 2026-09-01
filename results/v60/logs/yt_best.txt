@@ -1,0 +1,72 @@
+========================================================================================================
+ONE TURTLE, EVERY GATE ON -- defaults chosen on the IN-SAMPLE block, OOS read once after
+========================================================================================================
+  parity is   frozen n   158  gated n   158  identical R: True
+  parity oos  frozen n    70  gated n    70  identical R: True
+
+  NQ 60m, mode 2 (scale out in thirds). Aroon length 25 against a 20-bar entry channel, so it is NOT the Donchian identity.
+  grid: 4 windows x 3 flattens x 4 ADX x 5 MACD x 4 Aroon = 960 cells, minimum 40 in-sample trades to be a candidate.
+
+  scorable cells: 685   profitable in-sample: 100.0%   median R/trade +0.265
+
+  FROZEN BASELINE (no gates):  IS n  158 R +0.193 PF 1.46   |   OOS n   70 R -0.090 PF 0.83
+
+  TOP 10 BY IN-SAMPLE R/TRADE -- read the CONSENSUS, not row 1: the top of any ranking
+  is the maximum of its draws, and this one has hundreds.
+   # window      flat   adx   macd                aroon      IS n    IS R  IS PF
+   1 08:00-12:00 none   >=20  fresh cross <= 10   osc>=50      40  +0.682   4.00
+   2 08:00-12:00 none   >=20  fresh cross <= 10   osc>=0       41  +0.673   4.03
+   3 08:00-12:00 none   >=20  fresh cross <= 10   up>=70       42  +0.665   4.07
+   4 08:00-12:00 none   off   fresh cross <= 10   osc>=50      47  +0.615   3.38
+   5 08:00-12:00 none   off   fresh cross <= 10   osc>=0       48  +0.608   3.41
+   6 08:00-12:00 16:00  off   fresh cross <= 10   osc>=50      61  +0.576   4.42
+   7 08:00-12:00 16:00  off   fresh cross <= 10   osc>=0       62  +0.572   4.46
+   8 08:00-12:00 none   off   fresh cross <= 10   up>=70       50  +0.570   3.17
+   9 08:00-12:00 16:00  >=20  fresh cross <= 10   osc>=50      47  +0.564   4.38
+  10 all hours   none   off   fresh cross <= 10   osc>=0       64  +0.563   3.09
+
+  CONSENSUS OF THE TOP 25 IN-SAMPLE CELLS (what the ranking actually agrees on):
+    win     08:00-12:00 76%   09:30-16:00 20%   all hours 4%
+    flat    none 72%   16:00 20%   12:00 8%
+    adx     >=20 56%   off 28%   >=30 16%
+    macd    fresh cross <= 10 60%   hist > 0 and rising 12%   hist > 0 12%   macd > 0 12%   off 4%
+    aroon   osc>=0 44%   up>=70 28%   osc>=50 24%   off 4%
+
+  MARGINAL AVERAGE PER AXIS over every scorable cell (in-sample R/trade):
+    win     08:00-12:00 +0.312   09:30-16:00 +0.304   all hours +0.268   09:30-12:00 +0.218
+    flat    none +0.349   16:00 +0.247   12:00 +0.236
+    adx     off +0.314   >=20 +0.277   >=25 +0.274   >=30 +0.228
+    macd    hist > 0 and rising +0.390   fresh cross <= 10 +0.387   hist > 0 +0.314   macd > 0 +0.199   off +0.184
+    aroon   osc>=0 +0.304   osc>=50 +0.302   up>=70 +0.300   off +0.222
+
+========================================================================================================
+  THE CHOSEN DEFAULTS, and the SINGLE out-of-sample read on them
+========================================================================================================
+  window 08:00-12:00   flatten none   ADX >=20   MACD fresh cross <= 10   Aroon osc>=50(25)
+  IN-SAMPLE   n   40  R/trade +0.682  PF 4.00  win 77.5%  total +27.3R
+  OUT-SAMPLE  n   18  R/trade -0.058  PF 0.87  win 55.6%  total -1.0R
+  against the ungated frozen rules: IS +0.193 -> +0.682, OOS -0.090 -> -0.058
+
+  THE NEIGHBOURHOOD OF THE CHOSEN CELL -- one axis moved at a time, IS then OOS.
+  A real setting decays smoothly; a spike with negative neighbours is an artifact.
+    axis    setting               IS n    IS R  OOS n   OOS R
+    win     all hours               54  +0.519     26  +0.112
+    win     09:30-16:00             38  +0.413     20  -0.184
+    win     09:30-12:00             31  +0.454     14  -0.427
+    win     08:00-12:00             40  +0.682     18  -0.058  <-- chosen
+    flat    none                    40  +0.682     18  -0.058  <-- chosen
+    flat    12:00                   39  +0.544     18  +0.226
+    flat    16:00                   47  +0.564     21  +0.181
+    adx     off                     47  +0.615     25  +0.308
+    adx     >=20                    40  +0.682     18  -0.058  <-- chosen
+    adx     >=25                    35  +0.552     10  -0.245
+    adx     >=30                    24  +0.617      6  -0.236
+    macd    off                     79  +0.340     39  -0.086
+    macd    hist > 0                54  +0.552     32  -0.133
+    macd    macd > 0                79  +0.340     39  -0.086
+    macd    hist > 0 and rising     51  +0.552     29  -0.087
+    macd    fresh cross <= 10       40  +0.682     18  -0.058  <-- chosen
+    aroon   off                     64  +0.417     36  -0.127
+    aroon   osc>=0                  41  +0.673     19  -0.003
+    aroon   osc>=50                 40  +0.682     18  -0.058  <-- chosen
+    aroon   up>=70                  42  +0.665     19  -0.003

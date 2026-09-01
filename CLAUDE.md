@@ -1945,7 +1945,15 @@ OOS UP, which is the WRONG SHAPE and has been a defect twice before here; NQ is 
 six where those frozen rules failed OOS, so fixing it there is selection; the ADX gradient rises
 +0.140 -> +0.156 -> +0.307 as n falls 62 -> 57 -> 36, which is what RESTRICTIVENESS ALONE looks
 like; and the flatten RAISES the trade count 158 -> 326, so it is not filtering but cutting trades
-short. All ship OFF with their numbers. **A FROZEN KERNEL IS COPIED, NEVER PARAMETERISED** --
+short. **READ SUCH A GRID BY ITS MARGINAL AVERAGE PER AXIS, NEVER ITS TOP ROW**: over 685 scorable cells
+of a combined window x flatten x ADX x MACD x Aroon grid, the top in-sample cell is a 40-trade
+configuration scoring +0.682 that reads **-0.058** out of sample, while the MARGINAL CONSENSUS
+(08:00-12:00, flatten 16:00, ADX>=20, MACD `hist>0 and rising`, Aroon `osc>=0` at length 25) keeps
+64 trades at +0.414 and is the only one of the three positive on BOTH blocks at **+0.207 / PF 1.75**
+-- with a smooth neighbourhood rather than a spike. That is what `pine/turtle2/YT_TURTLE_1H` ships
+with, gates ON. MACD is the strongest axis there (+0.390 against +0.184 for off) and ADX the
+weakest -- ADX OFF beats every floor on both blocks. **A FROZEN KERNEL IS COPIED, NEVER
+PARAMETERISED** --
 `research/turtle2/yt_gates.py` duplicates `ytturtle.run` and ASSERTS parity with it (158/158 and
 70/70, identical R) rather than adding arguments three published studies would silently inherit.
 
