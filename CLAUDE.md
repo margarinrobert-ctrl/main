@@ -1978,6 +1978,26 @@ barrier system. **NQ IS NOW SPENT** -- reserved as the block that chose nothing,
 and ~60 cells by the anatomy, so every p-value there is descriptive from here on.
 See `docs/ib/STUDY_V58_ANATOMY.md`.
 
+**THE CMMA MEAN-REVERSION NOTEBOOK: NO LOOK-AHEAD, NO EDGE, AND COSTS ARE NOT THE PROBLEM.** A
+daily `tanh((close - SMA5)/ATR5)` negated, scaled by a 21-day Kaufman efficiency ratio, EMA-smoothed
+and shifted, executed 08:00-15:45 NY. The audit and the execution-alignment check are CLEAN and the
+signal at date D uses data through calendar day D-2, so this is not a leak -- it is an effect too
+small to demonstrate. US100 nine years: **Sharpe +0.39 +- 0.33 net**, deflated Sharpe **0.057**
+against 34 trials whose expected best-of-noise is **0.85**, PBO 0.35, three of nine years negative,
+the best 1% of days **240% of net**. Three things inflate the notebook's number: `sr =
+eq.mean()/eq.std()` on a CUMSUM IS NOT A SHARPE (it prints 0.875 where the real annualised figure
+is 0.83 -- close by coincidence, and it hides a +-0.58 standard error); `pnl = signal *
+(close - open)` SUMMED OVER INTRADAY BARS drops every gap between bars, worth +13% on NQ and +24%
+on US100; and no costs, which here is the SMALLEST of the three because the EMA smoothing holds
+turnover at 0.04 contracts a day and the breakeven is 24-29 bps against 0.9-2.6 charged. **THE
+COMPONENT ATTRIBUTION INVERTS BETWEEN FEEDS**: on NQ the KER weighting is the whole strategy
+(+0.76 with, +0.16 without) and bare `sign(cmma)` earns -0.01; on US100 bare `sign(cmma)` is the
+BEST row at +0.46 and every layer of machinery makes it worse. `tanh` and the EMA smoothing never
+help on either. Same four components, opposite conclusions -- that is fitting noise.
+**AND `metrics.sharpe_standard_error` TAKES A PER-PERIOD SHARPE**: handing it an annualised one
+returns a figure sqrt(252) too small (0.04 instead of 0.58 here), which is the notebook's own error
+class. See `docs/ib/STUDY_CMMA.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2009,6 +2029,7 @@ See `docs/ib/STUDY_V58_ANATOMY.md`.
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 | `research/m4_anatomy.py` | why M4 is profitable: exit split, barrier sweep, day-vs-bar, bands |
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
+| `research/cmma/` | the CMMA notebook, re-implemented honestly: accounting, costs, deflation, holdout |
 | `research/v58/v58_anatomy.py` | **what creates the IB edge** — exit split, infinite stop, day-vs-bar, drop-one, ladders |
 | `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
 | `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |
