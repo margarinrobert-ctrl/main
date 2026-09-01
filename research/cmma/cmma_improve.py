@@ -120,8 +120,8 @@ def main():
 
     print("\n  IN-SAMPLE, net of costs.  A candidate survives only if it beats A on BOTH feeds.")
     print(f"  {'candidate':<22}" + "".join(
-        f"{mk + ' Sharpe':>13}{'+-SE':>6}{'PF':>7}{'pts/d':>8}{'vs A':>7}" for mk in R)
-        + f"{'survives':>10}")
+        f"{mk + ' Sharpe':>13}{'+-SE':>6}{'PF':>7}{'pts/d':>8}{'vs A':>7}"
+        for mk in R) + f"{'survives':>10}")
     survivors = []
     for name in CANDS:
         row = f"  {name:<22}"
