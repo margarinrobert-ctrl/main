@@ -112,7 +112,7 @@ def main():
             R[mk] = run(mk)
         except FileNotFoundError:
             print(f"  {mk}: feed not on disk -- skipped. A container recycle wipes the uploaded")
-            print(f"  files; re-upload to run the two-feed agreement test, which is the whole point.")
+            print("  files; re-upload to run the two-feed agreement test, which is the point.")
     if len(R) < 2:
         print("  ONLY ONE FEED IS PRESENT. The table below is DESCRIPTIVE: nothing is selected on")
         print("  one feed, because that is exactly the trap STUDY_CMMA.md documents.")
