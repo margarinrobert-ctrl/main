@@ -104,7 +104,8 @@ def main(market="NQ"):
     print("2. WHAT THE NOTEBOOK REPORTS, AND WHY IT IS NOT A SHARPE RATIO")
     print("=" * 104)
     eq = p_bar["gross"].cumsum()
-    print(f"  notebook:  eq = pnl.cumsum();  sr = eq.mean() / eq.std()   ->   {eq.mean() / eq.std():.3f}")
+    print(f"  notebook:  eq = pnl.cumsum();  sr = eq.mean() / eq.std()   ->   "
+          f"{eq.mean() / eq.std():.3f}")
     print("  That is the mean of an EQUITY CURVE divided by its own standard deviation. It is")
     print("  large for any curve that trends and it has no sampling interpretation: it does not")
     print("  scale with the square root of time, it is not comparable between strategies, and it")

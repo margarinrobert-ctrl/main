@@ -130,7 +130,8 @@ def main():
             r = R[mk][name]["is"]
             dlt = r["sharpe"] - base[mk]["is"]["sharpe"]
             ok &= dlt > 0 or name.startswith("A")
-            row += f"{r['sharpe']:>+13.2f}{r['se']:>6.2f}{r['pf']:>7.3f}{r['pts']:>+8.3f}{dlt:>+7.2f}"
+            row += (f"{r['sharpe']:>+13.2f}{r['se']:>6.2f}{r['pf']:>7.3f}"
+                    f"{r['pts']:>+8.3f}{dlt:>+7.2f}")
         verdict = "base" if name.startswith("A") else ("yes" if ok and len(R) == 2 else
                                                          ("1 feed" if ok else "no"))
         row += f"{verdict:>10}"
@@ -145,7 +146,8 @@ def main():
 
     print("\n  THE HOLDOUT, read once, for A and the survivors:")
     print(f"  {'candidate':<22}" + "".join(
-        f"{mk + ' Sharpe':>13}{'+-SE':>6}{'PF':>7}{'pts/d':>8}{'win':>7}{'maxDD':>8}" for mk in R))
+        f"{mk + ' Sharpe':>13}{'+-SE':>6}{'PF':>7}{'pts/d':>8}{'win':>7}{'maxDD':>8}"
+        for mk in R))
     for name in ["A  as briefed"] + survivors:
         row = f"  {name:<22}"
         for mk in R:
