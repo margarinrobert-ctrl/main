@@ -1957,6 +1957,27 @@ PARAMETERISED** --
 `research/turtle2/yt_gates.py` duplicates `ytturtle.run` and ASSERTS parity with it (158/158 and
 70/70, identical R) rather than adding arguments three published studies would silently inherit.
 
+**THE INITIAL BALANCE MODEL'S EDGE IS THE RETRACEMENT DEPTH -- A RESTING LIMIT WEARING AN IB
+COSTUME.** Reverse-engineering the one V58 survivor: the retracement axis is MONOTONE across all
+five rungs with its control p-value falling monotonically beside it -- 0.00 (buy the break)
+**+0.0226 at p 1.000**, 0.10 +0.1072 (p 0.902), 0.25 (as published) +0.2148 (p 0.075), 0.40 +0.2397
+(p 0.001), 0.50 **+0.3087 at p 0.000** on 329 trades. CHASING THE BREAK HAS NO EDGE AT ALL; the
+edge appears only as you make the market come back to you. A retracement fraction of the IB range
+IS a resting limit priced in IB units -- sixth independent route to `STUDY_LIMIT_ENTRY`/`atme`'s
+finding, and the first where the limit was hiding inside someone else's indicator. **THE FOUR
+DECLARED CONDITIONS BUY +0.0457 ATR/trade AND COST 85% OF THE SAMPLE** (unconditional geometry
++0.3087 on 329 trades at p 0.000 against the full rule's +0.3544 on 48). `ADX>=20` is BACKWARDS --
+removing it gives +0.6489, and its ladder falls monotonically with ADX strength. Exactly one
+condition carries: the LAST IB BAR'S CLOSE POSITION IN ITS OWN RANGE, alone +0.4132 on 222 trades,
+with bottom-40% at **-0.3211** against upper-half +0.3544. IB LENGTH BARELY MATTERS (30/60/90 all
+p 0.000), which is what a ruler rather than a signal looks like. Also here: no target beats every
+target for the SIXTH time; the 48 selected days travel **-0.5945 ATR** and finish up 47.9% against
++0.1775 and 57.1% for all other days, so this is NOT M4's drift-picker; but 275% of net comes from
+the 15:55 FLATTEN and -175% from the stops, so what is owned is a held directional position, not a
+barrier system. **NQ IS NOW SPENT** -- reserved as the block that chose nothing, read once by V58
+and ~60 cells by the anatomy, so every p-value there is descriptive from here on.
+See `docs/ib/STUDY_V58_ANATOMY.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -1988,6 +2009,7 @@ PARAMETERISED** --
 | `research/allstrats.py` | the nine shipped strategies in one registry |
 | `research/m4_anatomy.py` | why M4 is profitable: exit split, barrier sweep, day-vs-bar, bands |
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
+| `research/v58/v58_anatomy.py` | **what creates the IB edge** — exit split, infinite stop, day-vs-bar, drop-one, ladders |
 | `research/hpfilter.py` | HP trend, causal vs full-sample, and the leak between them |
 | `research/ma_lag.py` | moving-average lag/smoothness, matched-lag equivalence, turn delay |
 | `research/edgelab/crypto.py` | BTC 15m: the sixth instrument, a UTC clock, real taker-side flow |
