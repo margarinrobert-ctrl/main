@@ -1999,6 +1999,16 @@ help on either. Same four components, opposite conclusions -- that is fitting no
 returns a figure sqrt(252) too small (0.04 instead of 0.58 here), which is the notebook's own error
 class. See `docs/ib/STUDY_CMMA.md`.
 
+**RE-SELECTING THE TREND DESIGN ON GOLD PRODUCED THE ASK ON RESEARCH AND NOTHING ON LOCKED.**
+24,192 cells on XAUUSD15_MT (entry window, flatten, level session, side, EMA-distance and
+ATR-expansion floors added as axes): the only axis with a marginal is the ENTRY WINDOW, 08:30-11:30
+New York (gold's derived anchor) R +0.059 against -0.090 for 03:00-12:00. The marginal-consensus
+cell is research 63.1% / PF 1.50 (control p 0.000) and locked 50.0% / PF 0.91 (p 0.52); the top
+research cell is 1.75 -> 0.75; all eight locked neighbours are negative and "no target" is the
+worst of them, the reverse of every index. The NQ defaults unchanged are research PF 0.89 -> locked
+1.20 -- the wrong shape, gold's 2025 rally. No gold settings recommended. `research/mrl/tf_gold.py`,
+`docs/ib/STUDY_NEW_DESIGN.md` §6.
+
 **TWO STRATEGIES DESIGNED FROM THE LIBRARY, AND THE ARITHMETIC THAT SAYS WHY 66% AT PF 1.5 IS NOT
 ON THIS DATA.** w* = 1.5(1+c)/(1.5(1+c)+q-c): the ask is open only at a target >= 0.8x the stop
 and needs +10 to +13 points of win rate over a coin flip after costs, against honest lifts here of

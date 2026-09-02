@@ -158,3 +158,44 @@ hours on, the prior-session high accumulated from the chart's own RTH bars, entr
 New York, flat at the 16:00 open. Its header states the numbers above. The MRL design is not
 shipped as a script: a limit strategy whose evidence lives on a one-minute path should not be
 handed to a bar-level tester.
+
+---
+
+## 6. Addendum — "improve it for XAUUSD"
+
+`research/mrl/tf_gold.py`, on `XAUUSD15_MT` (UTC clock), research 2022-06 to 2024-12, locked
+2025-01 to 2026-08. Gold's cost floor is ~3× the indices' and its breakout was negative gross at
+scalping stops (`STUDY_XAUUSD_SCALP`), so the axes fixed for NQ became axes: entry window (four),
+flatten (12:00 / 16:00), the session the prior-day level is taken from (three), side, plus the two
+floors that flipped gold before (`STUDY_TURTLE_15M`): EMA(100) distance ≥ 2 ATR and ATR expansion
+≥ 1.1. 24,192 cells.
+
+**Research grid.** Longs: 56% of cells PF > 1, median R −0.008; shorts 34%, median −0.034. One
+axis moves the marginal: the entry window. 08:30–11:30 New York (gold's own anchor hour) gives
+R +0.059 / PF 1.18 against −0.090 for 03:00–12:00 and −0.022 for the NQ window 09:30–14:00. Every
+other axis is within ±0.03 R. Inside that window the marginal consensus is: prior-day level over
+the whole day, flat 16:00, channel 55, ADX ≥ 25, gate on, EMA-distance floor 2.0, no ATR floor,
+stop 1.5, exit 10, target 1.0 × stop.
+
+**The locked read, once, three cells:**
+
+| cell | research | locked | locked control p |
+| --- | --- | --- | ---: |
+| NQ defaults on gold, unchanged | n 152, 46.1%, **PF 0.89**, R −0.068 (p 0.68) | n 88, 53.4%, **PF 1.20**, R +0.055 | 0.167 |
+| gold consensus (marginal per axis in the window) | n 103, 63.1%, **PF 1.50**, R +0.222 (p 0.000) | n 64, 50.0%, **PF 0.91**, R −0.033 | 0.520 |
+| top research cell (max of 24,192) | n 94, 61.7%, **PF 1.75**, R +0.133 (p 0.000) | n 61, 50.8%, **PF 0.75**, R −0.086 | 0.947 |
+
+All eight locked neighbours of the consensus are negative (PF 0.68–0.91); "no target" is the
+worst of them (0.68), the opposite of every index result. Cost 1.5× takes the consensus to 0.85.
+2025 alone: the consensus R +0.004, the top cell −0.136.
+
+**Verdict.** Re-selecting on gold produces exactly the ask on research — 63% and PF 1.50 — and
+none of it survives 2025–26. The only cell that is positive on the locked block is the one that
+was NOT selected on gold, and it FAILED gold's research block, which is the wrong shape
+(`CLAUDE.md`: passing on the holdout while failing research is a defect, not a result) and is
+gold's 2025 rally wearing a channel. The 08:30–11:30 window is the one gold-specific finding and
+it agrees with the registry's derived anchor, but it did not carry. **No gold settings are
+recommended**; the script carries the extra inputs (level session, the two floors, the target) so
+the variants can be run, with the NQ defaults unchanged. What would change it: the twenty-year
+`XAU_ISO_15m` feed, absent from disk this session, which has the 2011–2020 gold regimes this
+four-year file does not.

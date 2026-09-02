@@ -19,6 +19,13 @@
 // earns when it may hold overnight. It does NOT reach 66% / PF 1.5; see the study for why nothing
 // honest on this data does.
 //
+// XAUUSD (STUDY_NEW_DESIGN §6): re-selecting every axis on gold's own research block gave 63% /
+// PF 1.50 there and PF 0.91 on 2025-26; the best research cell went 1.75 -> 0.75; the unchanged NQ
+// defaults went 0.89 -> 1.20, which is the wrong shape (gold's 2025 rally). NO GOLD SETTINGS ARE
+// RECOMMENDED. The "Extra gates" group carries what was tested so it can be re-run: the two
+// floors, and the session the prior-day level is taken from. On gold the one axis that moved
+// research was the entry window 08:30-11:30 New York, and it did not carry.
+//
 // EXTENDED HOURS ON, 15-MINUTE CHART. Every var write sits under barstate.isconfirmed.
 // Research tooling for education and analysis -- not financial advice.
 // ================================================================================================
@@ -41,6 +48,20 @@ useTarget = input.bool(false, "Use a target (measured worse; here for the win-ra
 tgtMult = input.float(1.0, "Target, x stop", minval = 0.25, step = 0.25, group = grpR)
 allowShort = input.bool(false, "Allow the short mirror (measured PF 0.85)", group = grpR)
 
+grpG = "Extra gates (measured on gold; default OFF, see STUDY_NEW_DESIGN §6)"
+emaFloor = input.float(0.0, "EMA(100) distance floor, x ATR (0 = off)", minval = 0.0, step = 0.5,
+     group = grpG)
+atrFloor = input.float(0.0, "ATR expansion floor, ATR / SMA(ATR, 50) (0 = off)", minval = 0.0,
+     step = 0.1, group = grpG)
+lvlStartH = input.int(9, "Prior-session level: session start hour", minval = 0, maxval = 23,
+     group = grpG)
+lvlStartM = input.int(30, "Prior-session level: session start minute", minval = 0, maxval = 59,
+     group = grpG)
+lvlEndH = input.int(16, "Prior-session level: session end hour", minval = 0, maxval = 24,
+     group = grpG)
+lvlEndM = input.int(0, "Prior-session level: session end minute", minval = 0, maxval = 59,
+     group = grpG)
+
 grpS = "Session (New York)"
 entStartH = input.int(9, "Entries from hour", minval = 0, maxval = 23, group = grpS)
 entStartM = input.int(30, "Entries from minute", minval = 0, maxval = 59, group = grpS)
@@ -57,11 +78,21 @@ tfMin = timeframe.multiplier
 entStart = entStartH * 60 + entStartM
 entEnd = entEndH * 60 + entEndM
 flatMin = flatH * 60 + flatM
-inRth = nyMod >= 570 and nyMod < 960
+lvlStart = lvlStartH * 60 + lvlStartM
+lvlEnd = lvlEndH * 60 + lvlEndM
+inRth = nyMod >= lvlStart and nyMod < lvlEnd       // the session the prior-day level is taken from
 inEntry = nyMod >= entStart and nyMod < entEnd
 
 // ---- indicators, the research definitions
 atr14 = ta.ema(ta.tr(true), 14)
+ema100 = ta.ema(close, 100)
+atrSma = ta.sma(atr14, 50)
+emaDist = atr14 > 0 ? (close - ema100) / atr14 : na
+atrExp = atrSma > 0 ? atr14 / atrSma : na
+floorsOkL = (emaFloor <= 0 or (not na(emaDist) and emaDist >= emaFloor))
+     and (atrFloor <= 0 or (not na(atrExp) and atrExp >= atrFloor))
+floorsOkS = (emaFloor <= 0 or (not na(emaDist) and emaDist <= -emaFloor))
+     and (atrFloor <= 0 or (not na(atrExp) and atrExp >= atrFloor))
 [diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)     // ta.dmi returns [+DI, -DI, ADX]
 donHi = ta.highest(high, donIn)[1]
 donLo = ta.lowest(low, donIn)[1]
@@ -88,10 +119,10 @@ if barstate.isconfirmed
         rthL := na(rthL) ? low : math.min(rthL, low)
 
 // ---- signals on the confirmed bar; orders fill at the next open
-longSig = close > donHi and close[1] <= donHi[1] and adxVal >= adxFloor
+longSig = close > donHi and close[1] <= donHi[1] and adxVal >= adxFloor and floorsOkL
      and (not useGate or (not na(priorH) and close > priorH))
 shortSig = allowShort and close < donLo and close[1] >= donLo[1] and adxVal >= adxFloor
-     and (not useGate or (not na(priorL) and close < priorL))
+     and floorsOkS and (not useGate or (not na(priorL) and close < priorL))
 flattenDue = nyMod + tfMin >= flatMin        // this bar's close is the last before the flat time
 
 var float stopLvl = na
