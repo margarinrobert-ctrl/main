@@ -2170,6 +2170,20 @@ inversion again. Without tanh the signal is unbounded (99th pct 0.75, max 1.55),
 position cap is load-bearing even though it never binds at a base of 50.
 `research/cmma/cmma_improve.py`.
 
+**A FILTERED STRATEGY CAN CARRY AN UNFILTERED ONE'S POSITION INSIDE IT, AND THE PORT HAS TO CARRY IT
+TOO.** The ATR-phase-momentum NinjaScript keeps a "control shadow" -- the position the raw
+oscillator rule WOULD hold -- and gates only the ENTRY on the VWAP filter: a cross to the side the
+shadow already holds is a no-op even when the real position is flat, an opposite cross outside the
+window flattens the shadow and exits only the held side, and a rejected reversal still exits. Drop
+the shadow and a rejected long is silently retried on the next cross, which is a different strategy
+with more trades. Ported as `pine/apm/APM_SESSION_VWAP_strategy.pine` with the recursions seeded as
+the source seeds them (EMA at the first close, ATR as the mean of the first 14 true ranges, not
+`ta.ema`/`ta.atr`) and every fail-closed path -- frozen calendar, decision-bar gap, session carry,
+reset with exposure -- COUNTED on the panel and, by default, converted to flatten-and-block rather
+than the source's permanent halt. Transliterated and run on NQ 1m built into exact UTC 10-minute
+buckets: 104 trades, 101 of them cash-close exits, 36 blocked sessions, zero reversals in three
+years. A control-flow check only; no control has been run on the family.
+
 ## Tooling
 
 | module | what it does |
@@ -2289,6 +2303,8 @@ position cap is load-bearing even though it never binds at a base of 50.
 | `research/turtle15/pine_parity.py` | the shipped Pine's order model in Python, diffed against the engine |
 | `research/ftm/ftm_backtest.py` | its backtest report: sizing modes, exit split, decision path, matched control |
 | `research/ftm/ftm_sim.py` | the shipped FTM Pine transliterated to Python and run on real 1m bars |
+| `pine/apm/APM_SESSION_VWAP_strategy.pine` | the ATR-phase-momentum / session-VWAP NinjaScript, ported: control shadow, cash close, every fail-closed path counted |
+| `research/apm/apm_sim.py` | that Pine's order model on exact UTC 10-minute buckets from NQ 1m; prints the source's terminal counts |
 | `research/v59/v59core.py` | the EMA 16/64 exit tensor: 243,000 configs, dual lock kernels, duration-based hold |
 | `research/v59/v59judge.py`, `v59lock.py`, `v59_nq.py` | the sorted matched control, the one locked read, the NQ read |
 | `research/v58/v58ib.py` | the Initial Balance tensor: 777,600 configs in one walk, both exit models |
