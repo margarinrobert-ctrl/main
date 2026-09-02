@@ -78,6 +78,9 @@ for ne in N_ENTRY:
         if len(bk) < 60: continue
         books[(ne,fast,slow,mode,af,sm,tm)] = (sess[bk.sig_bar.values], bk.net.values)
 print(f"  {len(books):,} candidate books")
+WF = {}
+import json
+base.sort_values("excess", ascending=False).head(12).to_csv("/home/user/main/docs/donchian/emacross_top12.csv", index=False)
 for tr_s, te_s in ((300, 100), (500, 150)):
     lo, hi = res_sess.min(), res_sess.max()
     folds, oos_all = [], []
@@ -106,3 +109,13 @@ for tr_s, te_s in ((300, 100), (500, 150)):
     print(f"    worst fold       : {F.oos_exp.min():+.2f}")
     cfgs = F.cfg.astype(str).value_counts()
     print(f"    config stability : modal choice kept in {cfgs.iloc[0]/len(F):.0%} of folds")
+    ci = [np.percentile([np.random.default_rng(i).choice(allo,len(allo)).mean() for i in range(2000)], q) for q in (2.5, 97.5)]
+    WF[f"{tr_s}/{te_s}"] = dict(folds=int(len(F)), frac_profitable=float((F.oos_exp>0).mean()),
+        median_is=float(F.is_exp.median()), median_oos=float(F.oos_exp.median()),
+        oos_n=int(len(allo)), oos_exp=float(allo.mean()), ci_lo=float(ci[0]), ci_hi=float(ci[1]),
+        worst=float(F.oos_exp.min()), modal_frac=float(cfgs.iloc[0]/len(F)),
+        pass_a=bool(allo.mean()>0 and ci[0]>0), pass_b=bool((F.oos_exp>0).mean()>=0.60), pass_c=bool(F.oos_exp.median()>0))
+    WF[f"{tr_s}/{te_s}"]["PASS"] = all(WF[f"{tr_s}/{te_s}"][k] for k in ("pass_a","pass_b","pass_c"))
+WF["VERDICT"] = "PASS" if all(v["PASS"] for k,v in WF.items() if k!="VERDICT") else "FAIL"
+json.dump(WF, open("/home/user/main/docs/donchian/emacross_walkforward.json","w"), indent=2)
+print(f"\n  WALK-FORWARD VERDICT against the pre-registered criterion: {WF['VERDICT']}")

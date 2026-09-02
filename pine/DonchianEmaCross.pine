@@ -7,11 +7,19 @@
 // ATR distance) and the ATR regime is not extreme. One trade per session, ATR stop and target,
 // time stop, flat at 11:00 New York.
 //
-// ┌───────────────────────────────────────────────────────────────────────────────────────────┐
-// │ THE DEFAULTS BELOW ARE THE RESEARCH-BLOCK WINNER OF A 2,160-CONFIGURATION SEARCH.          │
-// │ See the results block under the inputs for what it measured, walk-forward included.        │
-// │ Read that block before assuming the defaults mean anything. A best-of-2,160 always exists.  │
-// └───────────────────────────────────────────────────────────────────────────────────────────┘
+// ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
+// │ SEARCH RESULT: the defaults are the research-block best of 2,160 configurations, chosen     │
+// │ by a rule fixed BEFORE the results existed (n>=100, exp>0, p<0.05, then highest excess).    │
+// │   n=20  EMA 8/21  cross4  atr=pct<0.8  geom 2.0/3.0                                         │
+// │   438 trades  exp +1.05 pts/trade after costs  excess vs control +3.32  p 0.0467            │
+// │   3 of 1,014 cells met the rule; ~51 would at p<0.05 by chance alone.                       │
+// │                                                                                             │
+// │ WALK-FORWARD (out-of-sample, re-selecting the config on every training window): FAIL        │
+// │   300/100 sessions: 14 folds, 29% profitable, median OOS -2.72, stitched -3.90 [-8.32,+0.56]│
+// │   500/150 sessions: 8 folds, 38% profitable, median OOS -2.95, stitched -2.19 [-8.05,+3.37] │
+// │   The research-block winner did NOT survive. Treat these defaults as a description of the   │
+// │   past sample, not as an expectation. Do not trade this. Full account in the study doc.     │
+// └──────────────────────────────────────────────────────────────────────────────────────────────┘
 //
 // TRADINGVIEW SETUP
 //   * "Script execution": ONLY "On bar close". Every rule reads a CLOSED bar.
@@ -30,13 +38,13 @@ lenEntry   = input.int(20,   "Donchian lookback",      minval=2,  group="Breakou
 atrLen     = input.int(14,   "ATR length",             minval=2,  group="Breakout")
 emaFast    = input.int(8,    "EMA fast",               minval=1,  group="Trend (EMA cross)")
 emaSlow    = input.int(21,   "EMA slow",               minval=2,  group="Trend (EMA cross)")
-emaMode    = input.string("state", "Alignment mode",
+emaMode    = input.string("cross4", "Alignment mode",
      options=["state", "cross4", "cross8", "sep0.25", "sep0.5"], group="Trend (EMA cross)")
-atrFilter  = input.string("none", "ATR regime filter",
+atrFilter  = input.string("pct<0.8", "ATR regime filter",
      options=["none", "pct<0.8", "pct0.2-0.8", "exp>1.2"], group="Volatility")
 atrPctLen  = input.int(250,  "ATR percentile window",  minval=20, group="Volatility")
-stopMult   = input.float(1.5,"Stop (x ATR)",           minval=0.1, step=0.05, group="Exit")
-targMult   = input.float(2.0,"Target (x ATR)",         minval=0.1, step=0.05, group="Exit")
+stopMult   = input.float(2.0,"Stop (x ATR)",           minval=0.1, step=0.05, group="Exit")
+targMult   = input.float(3.0,"Target (x ATR)",         minval=0.1, step=0.05, group="Exit")
 maxHold    = input.int(16,   "Max hold (bars)",        minval=1,  group="Exit")
 winStart   = input.int(420,  "Window start (min past NY midnight)", group="Session")
 winEnd     = input.int(660,  "Window end / flatten",                group="Session")

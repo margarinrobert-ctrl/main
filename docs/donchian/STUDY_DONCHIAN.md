@@ -1,7 +1,8 @@
 # Donchian breakout scalping, 07:00–11:00 New York
 
 > **VERDICT: NO VALIDATED EDGE FOUND.** All 8 pre-registered holdout comparisons
-> failed. See §10.
+> failed (§10). The 62,640-cell VectorBT sweep's best sits inside its null (§11). The
+> EMA-cross × ATR variant failed walk-forward on every clause (§12).
 
 Research into whether a Donchian-channel trend-following breakout has a tradable
 edge in the 07:00–11:00 New York window, on 15-minute bars.
@@ -13,7 +14,7 @@ used only for timezone calibration and feed checks.
 
 **Split.** First 65% of *sessions* is research; the rest is locked. Chronological,
 computed on sessions so no partial day straddles the boundary. **The locked block
-has not been read.**
+was opened twice, for §10 and §11, and not again for §12.**
 
 > Research tooling for education and analysis. Nothing here is financial advice.
 
@@ -352,6 +353,105 @@ estimate — no z or p is quoted. Two vectorbt harness bugs were found and fixed
 any result was produced: default close-fill instead of next-open, and a NaN exit
 price on every forced session exit.*
 
+## 12. EMA-cross × ATR-regime variant — requested follow-up, walk-forward FAIL
+
+The follow-up asked for the most profitable Donchian breakout that also requires an
+EMA cross and an ATR condition, 07:00–11:00 New York, flat at 11:00. This section is
+that search, run under the same discipline as everything above. The locked block was
+**not** opened for it — it has already been read twice (§10, §11) — so the
+out-of-sample test here is a walk-forward *inside* the research block that re-selects
+the configuration on every training window. The selection rule and the pass criterion
+were both written into the ledger (E0021) before the search finished.
+
+**Grid.** Donchian lookback {10, 20, 40} × EMA pair {5/20, 8/21, 9/34, 13/50, 20/50,
+50/200} × alignment mode {state, cross within 4 bars, cross within 8 bars, separation
+≥ 0.25 ATR, ≥ 0.5 ATR} × ATR regime {none, percentile < 0.8, percentile 0.2–0.8,
+expansion ratio > 1.2} × stop/target {1.0/2.0, 1.5/2.0, 2.0/3.0} = 1,080 cells per
+instrument, 2,160 in total. The ATR percentile is a causal 250-bar rank; the
+expansion ratio is ATR(14) now over ATR(14) eight bars earlier. Every cell is a close-confirmed break of the
+prior-bar channel, one trade per session, market at the next open, ATR stop and target
+frozen at the signal bar, time stop 16 bars, forced flat at 11:00, costs as in §4.
+Every cell is scored against the matched control of §2.
+
+### 12a. Research block — the gate adds nothing
+
+| | NAS | US30 |
+| --- | --- | --- |
+| cells positive after costs | 12 / 1080 (1.1%) | 94 / 1080 (8.7%) |
+| cells with excess > 0 and p < 0.05 | 9 / 1080 | 21 / 1080 |
+| expected at p < 0.05 by chance | ~54 | ~54 |
+| median excess over control (pts) | +0.12 | +0.57 |
+
+Fewer cells pass than a nominal 5% rate would produce — the control's p-value is
+calibrated to a 0% false-positive rate on null series (§2), so this is a conservative
+p, not evidence of anti-edge. What it does say is that nothing in the family stands out.
+
+**No ingredient moves the family out of negative expectancy.** Mean expectancy after
+costs by alignment mode runs from -2.07 (sep0.5) to -3.17
+(cross8) pts per trade; by ATR filter from -2.19 (pct<0.8) to
+-2.88 (none). The fast-EMA marginal is not smooth: period 13 is
+the worst at -3.55 while 8 and 9 on either side of it sit at -2.27
+and -2.29. A real edge decays smoothly across a parameter; a spike like that
+is noise.
+
+**At identical geometry the EMA gate does not beat the ungated breakout.** For each of
+the nine (lookback, stop/target) pairs the mean expectancy of the 30 EMA-gated variants
+matches the ungated cell to within about a quarter point, and the *mean excess* over the
+control is the same sign and size. The gate's best cell in each row improves on the
+ungated only by taking fewer trades — selectivity 0.06–0.16 — which is what any random
+subsample of a losing population does at its upper tail.
+
+**The top of the table is where the variance is.** All 12 of the top 12 NAS cells
+by excess use the rarest alignment mode (a cross within the last 4 bars) together with an
+ATR-percentile filter, at selectivity 0.06–0.16. The cross-within-4 mode has the
+*second-worst* marginal mean. The extremes of a search come from its noisiest members,
+which is exactly what a pre-declared selector plus a walk-forward exist to catch.
+
+### 12b. The pre-declared selector
+
+The rule, fixed before the results: among NAS cells with ≥ 100 trades, the highest
+excess over the control subject to expectancy > 0 after costs and p < 0.05.
+3 cells qualified. The winner:
+
+| lookback | EMA | mode | ATR filter | stop/target | trades | exp (pts) | excess | z | p | selectivity |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 20 | 8/21 | cross4 | pct<0.8 | 2.0/3.0 | 438 | +1.05 | +3.32 | +1.78 | 0.0467 | 0.15 |
+
+That is a research-block number for the best of 1,080 with a 200-draw control; p 0.047
+at the extreme of that many cells is, on its own, nothing.
+
+### 12c. Walk-forward — FAIL on every clause, in both configurations
+
+Re-select the best configuration (by mean net per trade, ≥ 30 training trades) from
+all 1,053 candidate books on each training window; trade the next block with it;
+stitch the out-of-sample blocks. Pass required, in *both* configurations: (a) stitched
+OOS expectancy > 0 with a bootstrap 95% CI excluding zero; (b) ≥ 60% of folds
+profitable; (c) median OOS expectancy > 0.
+
+| train/test (sessions) | folds | profitable | median IS | median OOS | stitched OOS [95% CI] | worst fold | modal config kept | a / b / c |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 300/100 | 14 | 29% | +3.63 | -2.72 | -3.90 [-8.32, +0.56] | -13.70 | 14% | FAIL / FAIL / FAIL |
+| 500/150 | 8 | 38% | +2.65 | -2.95 | -2.19 [-8.05, +3.37] | -10.26 | 25% | FAIL / FAIL / FAIL |
+
+**Verdict: FAIL.** The in-sample median flips from clearly positive to clearly
+negative the moment the choice is charged for, the chosen configuration changes on
+almost every fold, and the stitched out-of-sample expectancy is negative in both
+configurations. This is the signature of selecting on noise, and it is the same shape
+as §10 and §11.
+
+### 12d. What was delivered
+
+`pine/DonchianEmaCross.pine` is a parameterised Pine v6 strategy implementing the whole
+family (all five alignment modes, all four ATR filters, the geometry, the window, the
+one-trade-per-session rule, ATR as `ta.ema(ta.tr(true), n)`, New York clock, confirmed
+bars). Its defaults are set to the pre-declared research winner because that was the
+declared procedure, and its header states in plain text that the walk-forward failed and
+that the defaults describe the past sample, not an expectation. Lint-clean under
+`research/pine_lint.py`.
+
+**Prior, as recorded in E0021 before the search: "the EMA gate is expected to add
+nothing."** It added nothing. The family joins the register: no validated edge.
+
 ## Files
 
 | file | role |
@@ -366,4 +466,6 @@ price on every forced session exit.*
 | `agent_ml.py`, `agent_ml_attack.py` | ML filter and its adversarial audit |
 | `stop_entry.py`, `stop_entry_paired.py` | entry-mechanic tests |
 | `indep.py`, `robust.py` | independence measurement; robustness battery |
+| `emacross.py`, `emacross_eval.py`, `emacross_finalize.py`, `emacross_report.py` | §12 EMA-cross × ATR search, walk-forward, pre-declared finalizer |
+| `pine/DonchianEmaCross.pine` | §12 parameterised strategy, defaults = research winner, header = walk-forward FAIL |
 | `docs/donchian/ledger.jsonl` | the experiment ledger |

@@ -1,0 +1,35 @@
+{
+  "300/100": {
+    "folds": 14,
+    "frac_profitable": 0.2857142857142857,
+    "median_is": 3.6341072289117613,
+    "median_oos": -2.71568062395466,
+    "oos_n": 356,
+    "oos_exp": -3.9042959640450867,
+    "ci_lo": -8.318607406997597,
+    "ci_hi": 0.5621914068010976,
+    "worst": -13.70370335689505,
+    "modal_frac": 0.14285714285714285,
+    "pass_a": false,
+    "pass_b": false,
+    "pass_c": false,
+    "PASS": false
+  },
+  "500/150": {
+    "folds": 8,
+    "frac_profitable": 0.375,
+    "median_is": 2.6548805739985153,
+    "median_oos": -2.95115852027092,
+    "oos_n": 217,
+    "oos_exp": -2.194831747217632,
+    "ci_lo": -8.051964307015483,
+    "ci_hi": 3.3670910328912673,
+    "worst": -10.26106227642197,
+    "modal_frac": 0.25,
+    "pass_a": false,
+    "pass_b": false,
+    "pass_c": false,
+    "PASS": false
+  },
+  "VERDICT": "FAIL"
+}
