@@ -304,6 +304,30 @@ REGISTRY = {
               "US30_ISO_15m BEGINS 2024-08 -- so they overlap by only eleven months and the pre-2024 "
               "history is unseen by every study on this branch."),
 
+    "XAUUSD15_MT": Dataset(
+        key="XAUUSD15_MT", instrument="XAUUSD", timeframe_min=15,
+        restore_to="data/XAUUSD15_MT.csv",
+        rows=100000, span="2022-06-07 04:30 to 2026-08-28 20:45 UTC", bytes=5699973,
+        sha256_16="fdd173af1c92a768",
+        fmt="NINTH export format -- MetaTrader 4 history export: TAB-separated, NO header, "
+            "`YYYY-MM-DD HH:MM` timestamp, exactly 100,000 rows (the MT4 export cap).",
+        columns="timestamp, open, high, low, close, tick volume",
+        order="ASCENDING as delivered",
+        clock="UTC, DERIVED from gold's own anchor and not assumed: the summer peak of mean "
+              "|15m return| sits at file 12:30 and the winter peak at 13:30, and gold's 08:30 "
+              "New York fixing/data anchor is 12:30 UTC in summer and 13:30 UTC in winter. So "
+              "this is the SECOND feed here (after BTC) that is not a fixed New York offset: "
+              "convert with a true UTC -> America/New_York conversion. Sunday bars (1,448) at "
+              "the 22:00 UTC weekly open agree.",
+        volume="tick volume",
+        defects="none measured: 0 zero-range bars, no duplicate stamps. NOT re-verified against "
+                "XAU_ISO_15m over their overlap.",
+        loader="research/mrl/ (bar-level shape check only; no 1-minute path exists for gold)",
+        provenance="user upload, 2026-09-02, as XAUUSD15.csv",
+        notes="Four years of 15m gold ending 2026-08, i.e. it overlaps XAU_ISO_15m and extends it "
+              "by nothing but carries a stated-format timestamp and a UTC clock. Uploaded during "
+              "the MRL design brief."),
+
     "SPX_DAILY": Dataset(
         key="SPX_DAILY", instrument="SPX", timeframe_min=1440,
         restore_to="data/SPX.csv",

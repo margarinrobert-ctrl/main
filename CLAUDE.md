@@ -1999,6 +1999,27 @@ help on either. Same four components, opposite conclusions -- that is fitting no
 returns a figure sqrt(252) too small (0.04 instead of 0.58 here), which is the notebook's own error
 class. See `docs/ib/STUDY_CMMA.md`.
 
+**TWO STRATEGIES DESIGNED FROM THE LIBRARY, AND THE ARITHMETIC THAT SAYS WHY 66% AT PF 1.5 IS NOT
+ON THIS DATA.** w* = 1.5(1+c)/(1.5(1+c)+q-c): the ask is open only at a target >= 0.8x the stop
+and needs +10 to +13 points of win rate over a coin flip after costs, against honest lifts here of
++1 to +5. The mean-reversion limit design (E1 + E9 + E2 + location features, true 1-minute path)
+first showed **81.3% / PF 1.90 on EVERY BAR with no rule** -- two engine artifacts: (1) `limit_entry`
+lets the TARGET fire on the FILL MINUTE, whose high was made before the dip that filled the order
+(STUDY_V10's artifact at minute scale; fixing it: 70.7% / PF 0.92); (2) it scans forward from
+each signal so several orders rest and the OLDEST fills first (the eem.run defect), which showed
+as every-bar 68% against 65% for random subsets. With one live order and a strict target the
+every-bar limit is PF 0.81-1.02 on 256 geometries and on three 15m feeds -- **E1 at real costs is a
+null**, corrected in the library. The best honest MRL design (quiet session + positive 30-min
+return, limit 0.75xATR5, stop 3xATR14, target 0.75x) is 60.8% / PF 1.17 on NQ locked, p 0.020 on
+win rate and 0.077 on PF against a random filter, bootstrap P(<=0) 0.21, and does not transfer.
+The trend design (Donchian 55 + ADX>=20 + PRIOR RTH SESSION HIGH gate + 2.5xATR stop + 20-bar
+exit + no target + 09:30-14:00, flat 15:45) is NQ research PF 1.40 p 0.013, locked 1.24 p 0.33,
+US100 1.34 / 1.56 / 1.20 with two control passes, US30 null; the gate is the component (without
+it locked PF 1.00) and no-target beat every target for the fourth time. It ships as
+`pine/tfi/TFI_NQ_strategy.pine` with those numbers in its header. `research/mrl/`,
+`docs/ib/STUDY_NEW_DESIGN.md`. A ninth export format arrived with it: `XAUUSD15_MT`, MT4 tab
+export, 100,000-row cap, UTC-stamped (derived from gold's 08:30 New York anchor).
+
 **REVERSE-ENGINEERING THE FTM OPENING-RANGE BREAKOUT: the edge is the breakout SIDE and the
 first-signal TIMING, and everything else in 2,700 lines is inert.** Fourteen component switches
 in `ftm_sim.KNOBS`, each removing one thing, over 1.05M one-minute bars: the kNN direction model
@@ -2161,6 +2182,7 @@ position cap is load-bearing even though it never binds at a base of 50.
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
 | `research/strat/` | The Strat combo engine: bar types, four location filters, one-bar stop order, trade-matched control |
 | `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
+| `research/mrl/` | the two library-built designs: strict 1-minute limit walk, 15m bar walk, ladders with a random-filter gate, the trend grid |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
 | `docs/ib/EDGE_LIBRARY.md` | **the mechanism library** -- what survived, what it is, how to take a new strategy apart |
 | `research/ibs/` | the IBS session EA: cached tensor, bar-by-bar parity, stability / MC / clusters / walk-forward / judge |

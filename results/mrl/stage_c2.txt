@@ -1,0 +1,36 @@
+
+====================================================================================================
+C2. SINGLES AND PAIRS, research, geometry (0.75, 3.0, 0.5, 3), random filter of the same selectivity
+====================================================================================================
+  every bar: n 2117 win 65.4% PF 0.908 $-4.25
+  orb_pos:top                                bars  6496 n  505 win 67.3% PF 1.028 $+1.11 | random: win 64.9% PF 0.924 | p 0.000 / 0.003
+  pdl_dist:top                               bars  6482 n  532 win 66.4% PF 1.055 $+1.75 | random: win 64.8% PF 0.918 | p 0.053 / 0.000
+  retr_from_high:bottom2                     bars 12989 n 1207 win 67.2% PF 1.015 $+0.63 | random: win 65.0% PF 0.922 | p 0.000 / 0.003
+  sess_range_atr:bottom                      bars  6495 n  800 win 67.1% PF 0.978 $-1.03 | random: win 64.9% PF 0.921 | p 0.013 / 0.070
+  ret30:top2                                 bars 12989 n 1555 win 66.4% PF 0.974 $-1.10 | random: win 65.0% PF 0.920 | p 0.023 / 0.040
+  orb_pos:top & pdl_dist:top                 bars  3342 n  261 win 67.8% PF 1.123 $+3.83 | random: win 64.7% PF 0.915 | p 0.000 / 0.000
+  orb_pos:top & retr_from_high:bottom2       bars  6114 n  484 win 66.5% PF 0.982 $-0.75 | random: win 64.8% PF 0.915 | p 0.027 / 0.037
+  orb_pos:top & ret30:top2                   bars  3970 n  458 win 67.2% PF 1.031 $+1.23 | random: win 64.8% PF 0.913 | p 0.010 / 0.010
+  pdl_dist:top & retr_from_high:bottom2      bars  4853 n  432 win 67.4% PF 1.081 $+2.54 | random: win 64.8% PF 0.917 | p 0.007 / 0.000
+  pdl_dist:top & ret30:top2                  bars  3480 n  450 win 66.0% PF 1.052 $+1.62 | random: win 64.6% PF 0.915 | p 0.150 / 0.007
+  retr_from_high:bottom2 & sess_range_atr:bottom bars  2270 n  470 win 68.5% PF 1.090 $+3.94 | random: win 64.6% PF 0.909 | p 0.010 / 0.010
+  retr_from_high:bottom2 & ret30:top2        bars  8263 n 1065 win 67.6% PF 1.042 $+1.72 | random: win 64.9% PF 0.917 | p 0.000 / 0.000
+  sess_range_atr:bottom & ret30:top2         bars  2454 n  480 win 69.2% PF 1.106 $+4.59 | random: win 64.8% PF 0.915 | p 0.000 / 0.000
+
+====================================================================================================
+C2. SINGLES AND PAIRS, research, geometry (0.75, 3.0, 0.75, 3), random filter of the same selectivity
+====================================================================================================
+  every bar: n 1703 win 57.0% PF 0.951 $-2.71
+  orb_pos:top                                bars  6496 n  430 win 59.1% PF 1.063 $+3.01 | random: win 55.9% PF 0.949 | p 0.000 / 0.000
+  pdl_dist:top                               bars  6482 n  452 win 57.7% PF 1.074 $+2.91 | random: win 55.9% PF 0.947 | p 0.023 / 0.000
+  retr_from_high:bottom2                     bars 12989 n  994 win 58.7% PF 1.066 $+3.39 | random: win 56.1% PF 0.950 | p 0.000 / 0.000
+  sess_range_atr:bottom                      bars  6495 n  698 win 57.9% PF 0.983 $-0.98 | random: win 55.9% PF 0.947 | p 0.013 / 0.197
+  ret30:top2                                 bars 12989 n 1278 win 57.7% PF 0.997 $-0.18 | random: win 56.1% PF 0.954 | p 0.010 / 0.073
+  orb_pos:top & pdl_dist:top                 bars  3342 n  230 win 60.9% PF 1.199 $+7.32 | random: win 55.8% PF 0.943 | p 0.000 / 0.000
+  orb_pos:top & retr_from_high:bottom2       bars  6114 n  414 win 58.5% PF 1.035 $+1.71 | random: win 55.7% PF 0.943 | p 0.000 / 0.003
+  orb_pos:top & ret30:top2                   bars  3970 n  389 win 58.6% PF 1.067 $+3.23 | random: win 55.7% PF 0.946 | p 0.003 / 0.010
+  pdl_dist:top & retr_from_high:bottom2      bars  4853 n  368 win 58.4% PF 1.056 $+2.28 | random: win 55.9% PF 0.946 | p 0.007 / 0.010
+  pdl_dist:top & ret30:top2                  bars  3480 n  392 win 57.4% PF 1.075 $+2.89 | random: win 55.8% PF 0.943 | p 0.080 / 0.013
+  retr_from_high:bottom2 & sess_range_atr:bottom bars  2270 n  418 win 61.5% PF 1.180 $+9.45 | random: win 55.4% PF 0.931 | p 0.000 / 0.000
+  retr_from_high:bottom2 & ret30:top2        bars  8263 n  883 win 58.8% PF 1.081 $+4.11 | random: win 55.9% PF 0.948 | p 0.000 / 0.000
+  sess_range_atr:bottom & ret30:top2         bars  2454 n  426 win 61.7% PF 1.182 $+9.52 | random: win 55.7% PF 0.945 | p 0.000 / 0.000
