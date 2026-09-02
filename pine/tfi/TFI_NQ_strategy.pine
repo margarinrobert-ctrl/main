@@ -75,7 +75,8 @@ var float rthL = na
 var float priorH = na
 var float priorL = na
 if barstate.isconfirmed
-    if nyDay != curDay
+    // a comparison against na is FALSE in Pine, so the first day must be caught explicitly
+    if na(curDay) or nyDay != curDay
         if not na(rthH)
             priorH := rthH
             priorL := rthL
