@@ -1,0 +1,150 @@
+//@version=6
+// =============================================================================================
+// DONCHIAN BREAKOUT x EMA-CROSS ALIGNMENT x ATR REGIME — 07:00-11:00 New York, 15m.   v1
+//
+// Trend-following intraday breakout: a Donchian(N) close-break, taken only when the fast EMA
+// is on the right side of the slow EMA (optionally freshly crossed, or separated by a minimum
+// ATR distance) and the ATR regime is not extreme. One trade per session, ATR stop and target,
+// time stop, flat at 11:00 New York.
+//
+// ┌───────────────────────────────────────────────────────────────────────────────────────────┐
+// │ THE DEFAULTS BELOW ARE THE RESEARCH-BLOCK WINNER OF A 2,160-CONFIGURATION SEARCH.          │
+// │ See the results block under the inputs for what it measured, walk-forward included.        │
+// │ Read that block before assuming the defaults mean anything. A best-of-2,160 always exists.  │
+// └───────────────────────────────────────────────────────────────────────────────────────────┘
+//
+// TRADINGVIEW SETUP
+//   * "Script execution": ONLY "On bar close". Every rule reads a CLOSED bar.
+//   * Chart timeframe 15m.
+// =============================================================================================
+
+strategy("Donchian x EMA Cross 07-11 NY", overlay=true,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     initial_capital=100000, currency=currency.NONE,
+     commission_type=strategy.commission.cash_per_order, commission_value=1.0,
+     slippage=1, calc_on_every_tick=false, process_orders_on_close=false,
+     pyramiding=0)
+
+// ------------------------------------------------------------------------------- inputs
+lenEntry   = input.int(20,   "Donchian lookback",      minval=2,  group="Breakout")
+atrLen     = input.int(14,   "ATR length",             minval=2,  group="Breakout")
+emaFast    = input.int(8,    "EMA fast",               minval=1,  group="Trend (EMA cross)")
+emaSlow    = input.int(21,   "EMA slow",               minval=2,  group="Trend (EMA cross)")
+emaMode    = input.string("state", "Alignment mode",
+     options=["state", "cross4", "cross8", "sep0.25", "sep0.5"], group="Trend (EMA cross)")
+atrFilter  = input.string("none", "ATR regime filter",
+     options=["none", "pct<0.8", "pct0.2-0.8", "exp>1.2"], group="Volatility")
+atrPctLen  = input.int(250,  "ATR percentile window",  minval=20, group="Volatility")
+stopMult   = input.float(1.5,"Stop (x ATR)",           minval=0.1, step=0.05, group="Exit")
+targMult   = input.float(2.0,"Target (x ATR)",         minval=0.1, step=0.05, group="Exit")
+maxHold    = input.int(16,   "Max hold (bars)",        minval=1,  group="Exit")
+winStart   = input.int(420,  "Window start (min past NY midnight)", group="Session")
+winEnd     = input.int(660,  "Window end / flatten",                group="Session")
+allowLong  = input.bool(true, "Longs",  group="Direction")
+allowShort = input.bool(true, "Shorts", group="Direction")
+
+// ------------------------------------------------------------------- ATR, house convention
+// ta.atr() is Wilder-smoothed; the research uses ema(tr, n). They differ and it matters.
+atrV = ta.ema(ta.tr(true), atrLen)
+
+// ------------------------------------------------------- Donchian, EXCLUDING the current bar
+upper = ta.highest(high, lenEntry)[1]
+lower = ta.lowest(low,  lenEntry)[1]
+
+// ------------------------------------------------------------------------- EMA alignment
+emaF = ta.ema(close, emaFast)
+emaS = ta.ema(close, emaSlow)
+above = emaF > emaS
+sepAtr = (emaF - emaS) / atrV
+crossUp = above and not above[1]
+crossDn = not above and above[1]
+// a cross within the last k bars
+recentUp4 = ta.barssince(crossUp) < 4
+recentDn4 = ta.barssince(crossDn) < 4
+recentUp8 = ta.barssince(crossUp) < 8
+recentDn8 = ta.barssince(crossDn) < 8
+
+gateLong = switch emaMode
+    "state"   => above
+    "cross4"  => above and recentUp4
+    "cross8"  => above and recentUp8
+    "sep0.25" => sepAtr > 0.25
+    "sep0.5"  => sepAtr > 0.5
+    => above
+gateShort = switch emaMode
+    "state"   => not above
+    "cross4"  => not above and recentDn4
+    "cross8"  => not above and recentDn8
+    "sep0.25" => sepAtr < -0.25
+    "sep0.5"  => sepAtr < -0.5
+    => not above
+
+// -------------------------------------------------------------------------- ATR regime
+// causal trailing percentile of ATR: the fraction of the prior window BELOW today's value
+atrPct = ta.percentrank(atrV, atrPctLen) / 100.0
+atrExp = atrV / atrV[8]
+gateAtr = switch atrFilter
+    "none"       => true
+    "pct<0.8"    => atrPct < 0.8
+    "pct0.2-0.8" => atrPct >= 0.2 and atrPct < 0.8
+    "exp>1.2"    => atrExp > 1.2
+    => true
+
+// ------------------------------------------------------------------------ New York clock
+// Bare hour/minute are EXCHANGE time. The window is New York wall clock.
+nyMin    = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+inWin    = nyMin >= winStart and nyMin < winEnd
+mustFlat = nyMin >= winEnd
+
+newDay = ta.change(time("D", "America/New_York")) != 0
+var bool tookToday = false
+if newDay
+    tookToday := false
+
+// ----------------------------------------------------------------------------- triggers
+okBar    = barstate.isconfirmed and not na(upper) and not na(lower) and not na(atrV) and atrV > 0
+okBar   := okBar and not na(emaS) and not na(atrPct)
+longSig  = okBar and inWin and allowLong  and close > upper and gateLong  and gateAtr
+shortSig = okBar and inWin and allowShort and close < lower and gateShort and gateAtr
+
+flat     = strategy.position_size == 0
+canEnter = flat and not tookToday
+
+var float sigAtr   = na
+var int   entryBar = na
+
+if canEnter and longSig
+    sigAtr := atrV
+    tookToday := true
+    strategy.entry("L", strategy.long)
+
+if canEnter and shortSig
+    sigAtr := atrV
+    tookToday := true
+    strategy.entry("S", strategy.short)
+
+if flat[1] and not flat
+    entryBar := bar_index
+
+// -------------------------------------------------------------------------------- exits
+longStop  = strategy.position_avg_price - stopMult * sigAtr
+longTarg  = strategy.position_avg_price + targMult * sigAtr
+shortStop = strategy.position_avg_price + stopMult * sigAtr
+shortTarg = strategy.position_avg_price - targMult * sigAtr
+
+if strategy.position_size > 0
+    strategy.exit("L-x", from_entry="L", stop=longStop, limit=longTarg)
+
+if strategy.position_size < 0
+    strategy.exit("S-x", from_entry="S", stop=shortStop, limit=shortTarg)
+
+heldTooLong = not flat and not na(entryBar) and (bar_index - entryBar) >= maxHold
+if heldTooLong or (not flat and mustFlat)
+    strategy.close_all(comment = mustFlat ? "flat 11:00" : "time stop")
+
+// --------------------------------------------------------------------------------- plots
+plot(emaF, "EMA fast", color=color.new(color.orange, 0))
+plot(emaS, "EMA slow", color=color.new(color.purple, 0))
+plot(inWin ? upper : na, "Channel up",   color=color.new(color.teal, 30),   style=plot.style_linebr)
+plot(inWin ? lower : na, "Channel down", color=color.new(color.maroon, 30), style=plot.style_linebr)
+bgcolor(inWin ? (above ? color.new(color.green, 94) : color.new(color.red, 94)) : na, title="Window / trend")
