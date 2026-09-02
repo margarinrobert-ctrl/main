@@ -2201,6 +2201,22 @@ Walk-forward re-selection loses to the author's constants on NQ (+0.2 vs +62.7) 
 p99 drawdown ~$2,400 per MNQ, and one contract on $50k cannot pass a 6% evaluation (two pass 42-70%,
 bust 15-24%). Not live-ready; forward-test 40+ trades. `research/apm/`.
 
+**THE APM EDGE IS A CONJUNCTION, AND THE OBVIOUS RESTATEMENT OF IT IS NULL.** Stripped of the
+indicator, the direction call is "a 3-bar-sustained displacement of >= 3 ATR from a PRE-MARKET-
+ANCHORED average (EMA21 on 10-minute bars carries the overnight), taken in the first hour while
+the session VWAP is still within 2.5 ATR of price, continues to the cash close" -- E11 in the
+library. The tempting restatement, a >= 3 ATR drive from the 09:30 open, is null at every rung
+of a 0.5-5.0 ladder on NQ and US100 (+5.5 / -1.0 on 4x the trades, p 0.19 / 0.41) even though 93
+of the APM's 104 NQ trades are such days: the rule is selecting the quarter of big-drive days that
+continue, and the drive's size is not how. The published first-half-hour momentum is +0.6 / +0.4.
+Remove the VWAP band (+13.3 / +3.6) or the smoothing (+9.3 / +4.9) and the research pass is gone
+on both feeds; remove both and it is +0.3 / +1.6; bolt the band onto the plain drive and nothing
+happens (+7.8 / +1.2). **Feature engineering on the rule's own trades ships nothing**: 17 causal
+features in 8 families, 34 tests a feed, 2 and 5 at p <= 0.10 against 3.4 expected; the one
+two-feed pick (VWAP distance below its median) reads NQ locked p 0.377 and US100 test p 0.872 with
+the kept half at -15.6 against a base of +15.3, and it is the rule's own admission variable
+restated. `research/apm/apm_edge.py`.
+
 ## Tooling
 
 | module | what it does |
@@ -2323,6 +2339,7 @@ bust 15-24%). Not live-ready; forward-test 40+ trades. `research/apm/`.
 | `pine/apm/APM_SESSION_VWAP_strategy.pine` | the ATR-phase-momentum / session-VWAP NinjaScript, ported: control shadow, cash close, every fail-closed path counted |
 | `research/apm/apm_sim.py` | that Pine's order model on exact UTC 10-minute buckets from NQ 1m; prints the source's terminal counts |
 | `research/apm/apm_core.py`, `apm_run.py` | **the APM battery** -- one numba walk per configuration, three matched controls, anatomy, 12,960-cell grid, walk-forward, both Monte Carlos, clusters, funded evaluation |
+| `research/apm/apm_edge.py` | the mechanism without the indicator (drive ladder, published momentum, the two-half decomposition) and 17 causal features on the rule's trades |
 | `research/v59/v59core.py` | the EMA 16/64 exit tensor: 243,000 configs, dual lock kernels, duration-based hold |
 | `research/v59/v59judge.py`, `v59lock.py`, `v59_nq.py` | the sorted matched control, the one locked read, the NQ read |
 | `research/v58/v58ib.py` | the Initial Balance tensor: 777,600 configs in one walk, both exit models |

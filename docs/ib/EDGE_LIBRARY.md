@@ -26,12 +26,14 @@ entry.** Every reverse-engineering below found the money somewhere the author wa
 | E8 | **The SIDE and the TIMING of the first quarter-hour close beyond a 15-minute opening range, held to the cash close with NO target** | `STUDY_FTM_ANATOMY` (from `STUDY_FTM_ORB_BACKTEST`, `STUDY_FTM_ALPHA2`) | beats a random quarter-hour entry with identical management at p 0.004–0.030 in every configuration that keeps a stop or a target; the breakout side is worth +0.10 R over a coin flip; no target +0.191 vs +0.155 R; at the 10:00 decision the control earns +0.020 and the rule +0.143 | the direction model (+0.003 R), the prior-day override, the high-ORB regime, the admission tests, the 15:30 rule, the stop (removable at +0.163 R) — each inert; the alpha.2 policy changes (−$641) | +0.09 R excess; top 5% of trades 121% of net; "always long" beats it in 2025 (+0.256 vs +0.096); the last six months are flat for all 200 cells; NQ path with synthetic levels |
 | E9 | **The session as a filter — trade 09:30–11:00 if you were going to trade 07:00–11:00, and never 07:00–09:00** | `STUDY_TREND_PULLBACK`, `STUDY_SCALP_TREND`, `STUDY_INTRADAY_SESSION` | 4× the per-trade result on 44% fewer trades; 07:00–09:00 is −0.18 to −0.43 R on all three indices, three independent confirmations; moving the open 06:00 → 09:30 raises OOS 35% | a transferable window (09:30–11:00 is the WORST of seven on V16); a reason to flatten (a fixed-time flatten costs half the edge without a window) | a session preference is strategy-specific: measure it per family |
 | E10 | **SAM scalps on the INTRABAR estimator, normalised** | `STUDY_SAM_SCALP` | four scalps beat a matched control on the holdout and lift book Sharpe 3.73 → 4.57; the same signal looked null across 4,032 combinations until normalised (ratio, trailing z, the CROSS) | the bar-return version (p 0.354); anything TradingView can compute at 5m | needs intrabar data |
+| E11 | **A SUSTAINED displacement of >= 3 ATR from a PRE-MARKET-ANCHORED average, taken in the first hour while the session VWAP is still within 2.5 ATR of price, continues to the cash close** (the APM phase-momentum rule, stripped) | `STUDY_APM_VWAP` §10 | against a coin-flip side on its own bars: NQ research +24.0 (p 0.050), NQ locked +62.8 (p 0.000), US100 research +10.8 (p 0.018), validation +34.5 (p 0.015) -- the constants are the author's, none was chosen on these blocks; inverting the side loses on every index block, always-long is negative, so it is the SIGN not drift; remove either half and the research pass is gone on both feeds (band off +13.3 / +3.6, no smoothing +9.3 / +4.9, both off +0.3 / +1.6) | the opening drive (>= 3 ATR from the 09:30 open is +5.5 / -1.0 on 4x the trades, p 0.19 / 0.41, and no rung of a 0.5-5.0 ladder passes); the published first-half-hour momentum (+0.6 / +0.4, null); the drive with the same VWAP band bolted on (+7.8 / +1.2); the entry window (the band is the clock, 0% of crosses after 11:00 are inside it); the opposite-cross exit; any of 17 causal features (§11) | US100 test p 0.279 with 2025 at -27 a trade; US30 null over nine years; gold research null; locked > research on NQ and gold (a regime); the fill is late by construction (a same-day same-side random bar beats it, with look-ahead, and the realisable earlier entry is worse); 70 research trades with P(mean<=0) 0.052; walk-forward re-selection loses to the constants |
 
 **What is NOT in this table, deliberately:** the Donchian trigger, MACD, Aroon, RSI-on-breakout,
 volume profile, Initial Balance features, calendar conditions, volume spikes, divergence,
 MA-type, the trend-pullback family, the intraday scalp at any bar-range stop, the ORB's direction
 model, the IBS session signal, the Double Donchian width filter, The Strat's combos and location
-score. Each failed its control or was found to be a restatement of the trigger. The ledger has
+score, the plain opening drive and the published first-half-hour intraday momentum (both null
+on NQ and US100 while E11 passes on the same days). Each failed its control or was found to be a restatement of the trigger. The ledger has
 the numbers.
 
 ---
@@ -40,7 +42,9 @@ the numbers.
 
 1. **It is an exit, a location or an execution rule, not an entry.** E1, E2, E4, E5, E7, E8 are
    all about WHERE the trade is placed or HOW it leaves. Five trend-following briefs resolved into
-   mean reversion; the entry mechanic was worth ten times the entry signal.
+   mean reversion; the entry mechanic was worth ten times the entry signal. The two exceptions,
+   E8 and E11, are DIRECTION calls held to the cash close with no target -- and in both the fill
+   itself is late and the money is in the sign and the hold.
 2. **It has a GRADIENT.** E4's ladder is sign-consistent in both directions; E5 is monotone over
    five rungs; E6's gate count is a monotone chop score; E3 fails at 15 and passes at 25. A win
    rate that exists at one threshold is not a mechanism.

@@ -266,3 +266,79 @@ direction call is worth +24 to +60 a trade, and the only evidence for it outside
 2020-2026 development window is US100 2016-2021 (passes) and US30 (null).
 
 Research tooling for education and analysis -- not financial advice.
+
+## 10. Reverse-engineering: what the direction call is, without the indicator
+
+`research/apm/apm_edge.py`, `results/apm/edge.txt`. The null throughout is a coin flip for the
+side on the rule's own fill and exit bars, 2,000 draws -- the test that isolates the direction
+call from everything else.
+
+**It is not the opening drive.** If the mechanism were "a large move from the 09:30 open
+continues to the close", a rule reading nothing but the signed distance from the 09:30 open would
+reproduce it. It does not, at any threshold, on either feed:
+
+| rule (exit 16:00) | NQ research | NQ locked | US100 research | validation | test |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| APM as specified | +24.0 on 70, p 0.050 | +62.8 on 34, p 0.000 | +10.8 on 176, p 0.018 | +34.5, p 0.015 | +15.3, p 0.279 |
+| drive >= 3.0 ATR from the 09:30 open, first hour | +5.5 on 247, p 0.194 | +9.8 on 148, p 0.234 | -1.0 on 503, p 0.407 | +7.2, p 0.203 | +10.5, p 0.135 |
+| drive ladder 0.5 .. 5.0 ATR | -8.4 to +5.5, no rung below p 0.16 | | -2.1 to +3.0, no rung below p 0.14 | | |
+| first 30 minutes' sign, enter 10:00 (the published intraday momentum) | +0.6 on 479, p 0.348 | -0.3, p 0.457 | +0.4 on 1,096, p 0.188 | +3.4 | +1.5 |
+| first 60 minutes' sign, enter 10:30 | +10.8, p 0.009 | -2.3, p 0.503 | -2.9, p 0.651 | +14.1, p 0.009 | +13.6, p 0.044 |
+
+93 of the APM's 104 NQ trades are also 3-ATR-drive days on the same side -- but the drive rule
+takes 395 such days and earns nothing on them. The APM is selecting the quarter of big-drive
+days that continue, and the drive's size is not how.
+
+**It is the conjunction of two things, neither of which works alone.** The displacement is
+measured from an EMA21 of 10-minute bars, which is a 3.5-hour average anchored in the pre-market;
+it must be sustained through a 3-bar smoothing; and it is taken only while the session VWAP still
+sits within 2.5 ATR of price.
+
+| variant | NQ research | NQ locked | US100 research | validation | test |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| both: smoothed phase AND the VWAP band (the rule) | **+24.0, p 0.050** | +62.8, p 0.000 | **+10.8, p 0.018** | +34.5, p 0.015 | +15.3, p 0.279 |
+| smoothed phase, band off | +13.3 on 101, p 0.133 | +32.9, p 0.043 | +3.6 on 226, p 0.163 | +26.6, p 0.042 | +10.1, p 0.317 |
+| raw phase (no EMA3), band on | +9.3 on 144, p 0.137 | +43.8, p 0.016 | +4.9 on 352, p 0.054 | +5.6, p 0.282 | +15.9, p 0.142 |
+| raw phase, band off | +0.3 on 185, p 0.401 | +29.0, p 0.060 | +1.6 on 422, p 0.191 | +10.2, p 0.150 | +0.5, p 0.434 |
+| 3-ATR drive from the open + the same VWAP band | +7.8 on 218, p 0.153 | +11.0, p 0.207 | +1.2 on 446, p 0.206 | +6.3, p 0.221 | +9.0, p 0.173 |
+
+Remove either half and the research pass is gone on both feeds; remove both and it is a coin
+flip (+0.3, +1.6). Bolt the VWAP band onto the plain drive and nothing happens (+7.8, +1.2). The
+anchor matters: the EMA21 carries the overnight, so "3 ATR from it" is a displacement against
+where the market spent the night, not against where it opened. The band matters because it is a
+clock (§3): the displacement is admitted only in the hour when the session's own average price
+has not yet moved away with it. The smoothing matters because the excursion must hold for three
+bars rather than print once.
+
+Stated for the library: **a sustained (3-bar) displacement of at least 3 ATR from a pre-market-
+anchored average, taken in the first hour while the session VWAP is still within 2.5 ATR of
+price, continues to the cash close.** Worth +24 / +63 a trade on NQ and +11 / +35 / +15 on US100
+over a coin flip on the same bars; null on US30 over nine years and on gold's research block; the
+plain drive, the published first-half-hour momentum and the first-hour sign are all null or
+inconsistent on the same data.
+
+## 11. Feature engineering on the rule's trades
+
+Seventeen causal features at the signal bar in eight declared families (gap and drive
+composition, timing, the rule's own magnitudes, participation, volatility, prior-day context,
+trend, candle), each split at its research median, each half scored against 2,000 random subsets
+of the same size, on NQ (70 research trades) and US100 (176). A feature is carried only if the
+SAME half beats the random filter at p <= 0.10 on BOTH research blocks; survivors are read once
+on the later blocks.
+
+| feed | tests | at p <= 0.10 | expected by chance | the ones that passed |
+| --- | ---: | ---: | ---: | --- |
+| NQ research | 34 | 2 | 3.4 | drive straightness high (0.033), VWAP distance low (0.091) |
+| US100 research | 34 | 5 | 3.4 | fill in the first bars (0.002), oscillator excess high (0.002), VWAP distance low (0.038), prior-day range high (0.038), daily trend against (0.068) |
+
+**One feature agrees on both feeds and it fails the later blocks.** VWAP distance below its
+median: NQ research +43.9 vs base +24.0 (p 0.091), US100 research +21.4 vs +10.8 (p 0.030); read
+once, NQ locked +68.8 vs +62.8 (p 0.377), US100 validation +41.3 vs +34.5 (p 0.348), US100 test
+**-15.6 vs +15.3 (p 0.872)**. It is also the rule's own admission variable restated, so a tighter
+band is what it proposes, and the grid already showed that cell failing the US100 test block. The
+two features that came closest on US100 -- an earlier fill and a larger oscillator excess -- are
+the mechanism's own magnitudes, not new information, and they miss the NQ gate (0.111, 0.104).
+Nothing from the prior day, the overnight, participation, the trend or the candle separates the
+trades on either feed. 74% of the rule's signal bars are already beyond the prior session's high
+or low, and the half that is not earns MORE on NQ and less on US100, so E4 does not transfer to
+this base either. Feature engineering ships nothing; the rule is its own best filter.
