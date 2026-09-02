@@ -78,7 +78,12 @@ random fill bar inside 09:30-10:50 earns MORE than the rule on every block of ev
 chased a median **3.97 ATR** of a day that travels **4.99 ATR** in its direction (US100: 3.96 of
 4.89), and captures a median 1.20 ATR of it. The oscillator identifies the day and the side; by
 the time it says so, 80% of the move is gone. `STUDY_ATME`'s "chasing a breakout is the most
-destructive choice in the search", from a new indicator.
+destructive choice in the search", from a new indicator. **Read this control as an upper bound,
+not as a tradeable alternative**: it is handed the rule's side, which the rule only learns at the
+cross, so a random bar drawn before the cross is entering on information the rule did not yet
+have. The realisable route to an earlier entry is a smaller distance threshold, and §4 shows that
+is WORSE (2.0 ATR: +9.9 / +21.8 against 3.0 ATR: +21.3 / +39.8 on NQ) -- the confirmation is worth
+more than the chase costs. The lateness is the price of the direction call, not a defect to fix.
 
 **The VWAP filter is real on the two feeds that work.** Against a random filter keeping the same
 share of intents (300 draws): NQ 10m keeps 66.7%, rule +36.7 vs random-filter median +20.7,
@@ -256,7 +261,8 @@ paper or with one MNQ on NQ, USIndex profile, defaults untouched, for at least 4
 14 months), and judge it against the numbers above: research mean +24 a trade, 58% win, a
 drawdown of up to $2,400 per contract. If traded, 1-2 MNQ per $50,000, never re-optimised, and
 with the knowledge that the short side and the 09:30-10:30 fills carry the result. What would
-actually move the verdict is not another parameter search but the entry: the direction call is
-worth +24 to +60 a trade and the entry timing gives 80% of the day back.
+actually move the verdict is not another parameter search but more independent history: the
+direction call is worth +24 to +60 a trade, and the only evidence for it outside the author's own
+2020-2026 development window is US100 2016-2021 (passes) and US30 (null).
 
 Research tooling for education and analysis -- not financial advice.
