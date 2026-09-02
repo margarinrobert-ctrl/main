@@ -1,0 +1,179 @@
+Reverse-engineering FTM 1.8.0-alpha.2: where is the edge, and does it survive the tests?
+
+Every experiment here re-runs the strategy's own simulator over the same 1.05M one-minute
+NQ bars with ONE thing changed, so a difference is attributable. Stages:
+
+  A. ANATOMY   -- drop or replace one component at a time (stop, target, managed stop, 15:30
+                  exit, kNN, prior-day override, refinement, direct action, admission, regime,
+                  first-signal-only, random / fixed side), each against the random-entry-time
+                  control where it matters.
+  B. GRID      -- 200 exit-geometry cells (stop x target x managed trigger x 15:30 on/off)
+                  plus one-at-a-time ladders on the admission and direction thresholds.
+  C. WALKFWD   -- anchored half-year folds over the grid, selection re-run inside each fold.
+  D. CLUSTER   -- how many strategies the grid contains; trade-level k-means on the 14
+                  features, fitted on 2023-24 and read on 2025.
+  E. ROBUST    -- +-20% perturbation on twelve parameters, cost stress, warm-up, contiguity,
+                  lookback, bootstrap, day-block bootstrap.
+  F. MONTECARLO-- permutation drawdown at the shipped $535 risk, 1%-of-equity compounding,
+                  and a 60-day funded-evaluation pass / bust / timeout from day-block draws.
+
+IS = trades before 2025-01-01, OOS = 2025. Nothing is selected on 2025 except in the
+walk-forward, whose folds are declared in advance.
+
+==============================================================================================================
+A. ANATOMY -- one component removed or replaced at a time (alpha.2, FixedDollar)
+==============================================================================================================
+  AS SHIPPED (alpha.2)                         n  342 net $  11,020 R +0.1551 PF 1.335 win 47.1% DD $ -2,870 top5  121% IS +0.200 OOS +0.096 | ctl +0.0651 p 0.008
+  RC1 (prior 2 bars, no H2 cap)                n  342 net $  11,661 R +0.1620 PF 1.351 win 47.4% DD $ -3,032 top5  117% IS +0.194 OOS +0.119
+  stop placed at 2x ORB (sizing unchanged)     n  342 net $  12,650 R +0.1779 PF 1.344 win 52.6% DD $ -2,154 top5  111% IS +0.217 OOS +0.126
+  stop placed at 4x ORB                        n  341 net $   8,426 R +0.1230 PF 1.211 win 52.8% DD $ -4,389 top5  159% IS +0.181 OOS +0.047
+  NO STOP (placed at 100x ORB)                 n  341 net $  10,400 R +0.1630 PF 1.273 win 53.1% DD $ -3,976 top5  129% IS +0.225 OOS +0.081 | ctl +0.0512 p 0.004
+  no profit target                             n  342 net $  13,654 R +0.1913 PF 1.410 win 43.9% DD $ -2,812 top5  120% IS +0.236 OOS +0.133 | ctl +0.0951 p 0.030
+  no managed stop                              n  342 net $   9,573 R +0.1309 PF 1.269 win 43.0% DD $ -3,010 top5  140% IS +0.158 OOS +0.094
+  no 15:30 conditional exit                    n  342 net $  11,250 R +0.1610 PF 1.339 win 49.4% DD $ -3,049 top5  119% IS +0.202 OOS +0.106 | ctl +0.0651 p 0.006
+  STOP + 16:00 FLATTEN ONLY (no target/managed/15:30) n  342 net $  10,524 R +0.1472 PF 1.280 win 43.0% DD $ -3,066 top5  150% IS +0.141 OOS +0.155 | ctl +0.0984 p 0.148
+  no kNN direction model                       n  342 net $  11,141 R +0.1546 PF 1.339 win 47.4% DD $ -2,600 top5  120% IS +0.190 OOS +0.107
+  no prior-day override                        n  342 net $  11,048 R +0.1584 PF 1.334 win 47.1% DD $ -2,870 top5  121% IS +0.200 OOS +0.103
+  RAW BREAKOUT SIDE (no kNN, no prior)         n  342 net $  11,168 R +0.1580 PF 1.338 win 47.4% DD $ -2,600 top5  120% IS +0.190 OOS +0.115 | ctl +0.0736 p 0.012
+  no refinement (submit at the signal)         n  342 net $   8,601 R +0.1155 PF 1.244 win 45.6% DD $ -4,163 top5  162% IS +0.210 OOS -0.010 | ctl +0.0698 p 0.120
+  no direct action                             n  342 net $  10,421 R +0.1430 PF 1.320 win 46.8% DD $ -3,284 top5  126% IS +0.179 OOS +0.095
+  no admission geometry                        n  345 net $  10,210 R +0.1295 PF 1.305 win 45.8% DD $ -3,454 top5  133% IS +0.140 OOS +0.116
+  no touch veto                                n  362 net $  10,939 R +0.1465 PF 1.310 win 46.7% DD $ -2,876 top5  128% IS +0.203 OOS +0.076
+  NO ADMISSION AT ALL                          n  364 net $  10,206 R +0.1255 PF 1.285 win 45.9% DD $ -3,386 top5  139% IS +0.150 OOS +0.095 | ctl +0.0632 p 0.062
+  always the 3R plan (no high-ORB regime)      n  342 net $  11,047 R +0.1555 PF 1.336 win 45.9% DD $ -3,079 top5  123% IS +0.193 OOS +0.105
+  10:00 SIGNAL ONLY (later breakouts skipped)  n  145 net $   4,358 R +0.1429 PF 1.277 win 45.5% DD $ -2,982 top5  142% IS +0.190 OOS +0.096 | ctl +0.0196 p 0.020
+  ALWAYS LONG                                  n  341 net $  13,032 R +0.1711 PF 1.362 win 45.7% DD $ -2,858 top5  105% IS +0.107 OOS +0.256 | ctl +0.0309 p 0.000
+  ALWAYS SHORT                                 n  342 net $     -46 R -0.0023 PF 0.999 win 40.9% DD $ -6,188 top5 -28702% IS +0.115 OOS -0.158
+  no warm-up requirement                       n  454 net $  15,219 R +0.1533 PF 1.352 win 46.3% DD $ -2,870 top5  116% IS +0.181 OOS +0.096
+  RANDOM SIDE seed 0                           n  342 net $   9,246 R +0.1182 PF 1.253 win 43.6% DD $ -2,496 top5  162% IS +0.177 OOS +0.041 | ctl +0.0130 p 0.000
+  RANDOM SIDE seed 1                           n  341 net $   5,718 R +0.0609 PF 1.157 win 43.1% DD $ -4,129 top5  243% IS +0.025 OOS +0.109
+  RANDOM SIDE seed 2                           n  341 net $   3,574 R +0.0636 PF 1.095 win 41.9% DD $ -3,335 top5  372% IS +0.108 OOS +0.005
+  RANDOM SIDE seed 3                           n  341 net $   3,201 R +0.0213 PF 1.088 win 41.9% DD $ -5,322 top5  412% IS -0.016 OOS +0.071
+  RANDOM SIDE seed 4                           n  341 net $     284 R +0.0141 PF 1.007 win 40.2% DD $ -4,010 top5 4418% IS +0.013 OOS +0.015
+  random side, five seeds: mean R +0.0556 (min +0.0141, max +0.1182)
+
+  exit split (sum of R by exit reason):
+    AS SHIPPED (alpha.2)                                 stop  -135.7  target  +104.5  15:30   +58.7  16:00   +25.5  stop share 49%
+    NO STOP (placed at 100x ORB)                         stop    +2.5  target  +119.0  15:30   -93.5  16:00   +27.6  stop share 10%
+    no profit target                                     stop  -137.7  target    +0.0  15:30  +174.5  16:00   +28.7  stop share 52%
+    no 15:30 conditional exit                            stop  -138.7  target  +108.7  15:30    +0.0  16:00   +85.0  stop share 50%
+    STOP + 16:00 FLATTEN ONLY (no target/managed/15:30)  stop  -161.0  target    +0.0  15:30    +0.0  16:00  +211.3  stop share 47%
+
+==============================================================================================================
+B. PARAMETER GRID -- stop x target x managed trigger x 15:30 exit (200 cells)
+==============================================================================================================
+  cells 200; share R>0 100.0%; PF>1.2 77.0%; median R +0.1207; IS R>0 96.0%; OOS R>0 100.0%
+  shipped cell percentile by R: 82.5%; by OOS R: 49.5%
+  marginal mean R per axis level (IS / OOS):
+    stop  0.75: +0.094/+0.132 (n 345)  1.0: +0.065/+0.109 (n 344)  1.25: +0.170/+0.108 (n 342)  1.5: +0.167/+0.078 (n 342)  2.0: +0.158/+0.066 (n 342)
+    tgt   1.5: +0.064/+0.080 (n 344)  2.0: +0.119/+0.081 (n 344)  3.0: +0.147/+0.102 (n 343)  4.0: +0.150/+0.117 (n 343)  8.0: +0.175/+0.114 (n 342)
+    trig  0.75: +0.141/+0.120 (n 343)  1.25: +0.139/+0.095 (n 343)  2.0: +0.127/+0.082 (n 343)  off: +0.116/+0.097 (n 343)
+    cond  False: +0.128/+0.098 (n 343)  True: +0.134/+0.099 (n 343)
+  rank stability IS->OOS: Spearman -0.052; IS top decile (20 cells) IS +0.221 -> OOS +0.099 (100% positive); all-cell OOS mean +0.099
+  neighbourhood coherence corr(cell IS R, neighbour mean) 0.953
+  top 5 cells by IS R -> OOS:
+     stop   tgt  trig  cond   n  R_is  R_oos    pf  plateau
+    1.500 8.000 1.250  True 342 0.238  0.090 1.370    0.220
+    1.250 8.000 0.750  True 342 0.237  0.116 1.463    0.208
+    1.250 8.000 1.250  True 342 0.236  0.120 1.409    0.202
+    1.500 8.000 2.000  True 342 0.235  0.077 1.330    0.208
+    1.500 8.000 0.750  True 342 0.230  0.098 1.442    0.221
+
+  one-at-a-time ladders (whole sample R / n; shipped value marked *):
+    ADM_BODY           0 : +0.163/342   0.15*: +0.155/342   0.3 : +0.155/343   0.45 : +0.158/341
+    ADM_CLOSE_LOC      0.4 : +0.132/345   0.5 : +0.143/344   0.6*: +0.155/342   0.7 : +0.172/339   0.8 : +0.117/334
+    ADM_TOUCHES        1 : +0.146/362   2 : +0.162/355   3*: +0.155/342   4 : +0.169/330   5 : +0.167/314
+    ORB_Q              0.5 : +0.154/342   0.75*: +0.155/342   0.9 : +0.143/342
+    FLIP_THRESH        0.55 : +0.130/342   0.65*: +0.155/342   0.75 : +0.155/342   2 : +0.155/342
+    PRIOR_DAY_BPS      150 : +0.157/342   300*: +0.155/342   600 : +0.158/342   1e+09 : +0.158/342
+    COND_PROFIT_R      0.5 : +0.151/342   1*: +0.155/342   1.5 : +0.160/342   2 : +0.164/342
+    COND_LOSS_R        -0.5 : +0.164/342   0*: +0.155/342   0.5 : +0.157/342
+    RC1_MAX_VWAP_BPS   10 : +0.143/342   20*: +0.155/342   40 : +0.128/342   1e+09 : +0.141/342
+    WEAK_BODY          0 : +0.155/342   0.2*: +0.155/342   0.4 : +0.150/342
+
+==============================================================================================================
+C. WALK-FORWARD over the 200-cell grid -- anchored, half-year folds, selection inside
+==============================================================================================================
+  best:
+    2024-H1  cell (1.5, 8.0, 1.25, True)  train n  39 R +0.112  ->  test n  73 R +0.267  $  4,580  WFE 2.37
+    2024-H2  cell (1.5, 8.0, 2.0, True)  train n 112 R +0.213  ->  test n  83 R +0.266  $  4,708  WFE 1.25
+    2025-H1  cell (1.5, 8.0, 1.25, True)  train n 195 R +0.238  ->  test n  70 R +0.215  $  3,372  WFE 0.90
+    2025-H2  cell (0.75, 8.0, 1.25, True)  train n 266 R +0.240  ->  test n  77 R +0.040  $    592  WFE 0.17
+    concatenated OOS: n 303 R +0.1969 $13,252 PF 1.432; folds positive 4/4
+  plateau:
+    2024-H1  cell (1.5, 8.0, 1.25, True)  train n  39 R +0.112  ->  test n  73 R +0.267  $  4,580  WFE 2.37
+    2024-H2  cell (1.5, 8.0, 1.25, True)  train n 112 R +0.213  ->  test n  83 R +0.273  $  4,876  WFE 1.28
+    2025-H1  cell (1.5, 8.0, 0.75, True)  train n 195 R +0.230  ->  test n  70 R +0.178  $  3,448  WFE 0.77
+    2025-H2  cell (1.5, 8.0, 1.25, True)  train n 265 R +0.232  ->  test n  77 R -0.024  $     36  WFE -0.10
+    concatenated OOS: n 303 R +0.1740 $12,940 PF 1.416; folds positive 3/4
+  default:
+    2024-H1  cell (1.25, 3.0, 1.25, True)  train n  39 R +0.036  ->  test n  73 R +0.180  $  2,644  WFE 5.00
+    2024-H2  cell (1.25, 3.0, 1.25, True)  train n 112 R +0.130  ->  test n  83 R +0.295  $  4,719  WFE 2.27
+    2025-H1  cell (1.25, 3.0, 1.25, True)  train n 195 R +0.200  ->  test n  70 R +0.165  $  2,800  WFE 0.83
+    2025-H2  cell (1.25, 3.0, 1.25, True)  train n 265 R +0.191  ->  test n  77 R +0.032  $  1,006  WFE 0.17
+    concatenated OOS: n 303 R +0.1704 $11,169 PF 1.377; folds positive 4/4
+
+==============================================================================================================
+D. CLUSTERS
+==============================================================================================================
+  200 cells -> 2 clusters at within-corr 0.7; 5 components explain 90% of variance; median pairwise corr 0.746
+  IS top decile spans 1 clusters
+  clusters with >= 5 cells, IS -> OOS:
+             cells   R_is  R_oos
+    cluster                     
+    1          120 +0.165 +0.084
+    2           80 +0.080 +0.121
+  trade-level k-means (k=4) on the 14 direction features, fitted on 2023-24:
+    cluster 0: IS n  38 R +0.156 | OOS n  25 R +0.053 | vwap_distance_bps +20, signal_elapsed_15m +4, orb_bps +31, touch_count +9, prior_ret5_bps -250
+    cluster 1: IS n  51 R +0.202 | OOS n  50 R +0.174 | vwap_distance_bps +21, signal_elapsed_15m +3, orb_bps +30, touch_count +12, prior_ret5_bps +217
+    cluster 2: IS n  19 R +0.423 | OOS n  29 R +0.074 | vwap_distance_bps +49, signal_elapsed_15m +3, orb_bps +67, touch_count +13, prior_ret5_bps +23
+    cluster 3: IS n  87 R +0.169 | OOS n  43 R +0.044 | vwap_distance_bps +24, signal_elapsed_15m +3, orb_bps +39, touch_count +10, prior_ret5_bps -20
+  per-feature tercile split on IS (top third minus bottom third of R), read on OOS:
+                      feature   d_is  d_oos
+    aligned_vwap_distance_bps +0.422 +0.098
+                  weekday_sin +0.354 +0.378
+           aligned_ret30m_bps +0.320 +0.266
+                      orb_bps -0.309 +0.064
+                    month_cos -0.243 +0.360
+    aligned_prior_session_bps -0.172 -0.054
+                  touch_count +0.109 -0.026
+      aligned_prior_ret20_bps -0.104 +0.409
+           signal_elapsed_15m -0.102 -0.030
+                breakout_side -0.095 +0.196
+              aligned_gap_bps -0.072 +0.236
+                    month_sin +0.065 +0.016
+       aligned_prior_ret5_bps -0.061 -0.148
+                  weekday_cos +0.040 +0.172
+    sign agreement IS->OOS across features: 57% (50% is chance)
+
+==============================================================================================================
+E. ROBUSTNESS
+==============================================================================================================
+  +-20% perturbation, R per trade (shipped +0.1551):
+    STOP_ORB_MULT      x0.8 +0.0870 (344)   x1.2 +0.1524 (342)
+    BASE_TGT_R         x0.8 +0.1471 (343)   x1.2 +0.1716 (342)
+    HIGH_ORB_TGT_R     x0.8 +0.1465 (342)   x1.2 +0.1517 (342)
+    BASE_TRIG_R        x0.8 +0.1496 (342)   x1.2 +0.1469 (342)
+    CT_TRIG_R          x0.8 +0.1524 (342)   x1.2 +0.1521 (342)
+    ADM_BODY           x0.8 +0.1594 (342)   x1.2 +0.1542 (342)
+    ADM_CLOSE_LOC      x0.8 +0.1416 (344)   x1.2 +0.1697 (339)
+    ORB_Q              x0.8 +0.1561 (342)   x1.2 +0.1429 (342)
+    PRIOR_DAY_BPS      x0.8 +0.1437 (342)   x1.2 +0.1519 (342)
+    FLIP_THRESH        x0.8 +0.1047 (342)   x1.2 +0.1546 (342)
+    COND_PROFIT_R      x0.8 +0.1503 (342)   x1.2 +0.1564 (342)
+    RC1_MAX_VWAP_BPS   x0.8 +0.1524 (342)   x1.2 +0.1465 (342)
+    largest move 0.0681 R; parameters whose 20% move flips the sign: 0
+  per-contract round-turn reserve $0 / 2.5 / 5 / 10: 0: +0.1551  2.5: +0.1551  5: +0.1551  10: +0.1551
+  no warm-up +0.1533 (454); loose contiguity +0.1579 (342); lookback 40 +0.1527; 60 +0.1545
+  bootstrap on trades: P(mean R <= 0) 0.006, 90% CI [+0.0490, +0.2648]
+  day-block bootstrap (whole days with their trades): P(mean R <= 0) 0.008, 90% CI [+0.0471, +0.2639]
+  shape: IS R +0.1999 (n 195) -> OOS R +0.0956 (n 147); decays, the right shape
+
+==============================================================================================================
+F. MONTE CARLO
+==============================================================================================================
+  permutation (10,000) of the realised trades at the shipped $535 risk: max DD median $2,935, p95 $4,655, p99 $5,604; realised $2,870 sits at the 47% percentile
+  1% of equity per trade: max DD median 11.5%, p95 17.6%, P(DD > 10%) 0.73; final equity multiple over the sample (bootstrap) median 1.657, 5th pct 1.154, P(< 1) 0.011
+  60-trading-day evaluation, $50,000, +6% target, 4% trailing floor, shipped sizing: P(pass) 19.9%, P(bust) 13.5%, P(neither) 66.6%
+
+[283s]

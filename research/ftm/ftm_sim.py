@@ -48,9 +48,38 @@ EXCLUDED = {20200311, 20200610, 20200909, 20210609, 20210908, 20220608, 20220907
             20220103, 20240918, 20240919, 20250917, 20250918, 20250924, 20250925,
             20251128, 20260316, 20260317, 20260410, 20260525, 20260730, 20260731}
 
+# ---- anatomy switches. Every default reproduces the shipped strategy exactly; each one
+# removes or replaces ONE component so its contribution can be measured (STUDY_FTM_ANATOMY).
+KNOBS = dict(
+    stop_place_mult=None,     # place the stop at this ORB multiple; SIZING keeps STOP_ORB_MULT
+    target_on=True,           # False: no profit target (exits are the managed stop, 15:30, 16:00)
+    managed_on=True,          # False: the quarter-hour managed stop never activates
+    cond_exit_on=True,        # False: no conditional 15:30 exit
+    knn_on=True,              # False: the quarterly kNN never overrides the direction
+    prior_override_on=True,   # False: the prior-day -300 bps override is off
+    refine_on=True,           # False: submit the direction side at the signal close, nothing else
+    direct_on=True,           # False: the RC1 direct near-VWAP action is off
+    adm_geom_on=True,         # False: no body / close-location admission test
+    adm_touch_on=True,        # False: no three-touch veto
+    high_orb_regime_on=True,  # False: every trade uses the 3R baseline plan
+    first_signal_only=False,  # True: only the 10:00 decision may trade; later breakouts are skipped
+    side_mode="rule",         # rule | random | long | short -- what decides the direction
+    side_seed=0,
+)
+
 TICK, POINT_VALUE = 0.25, 2.0          # MNQ geometry
 START_EQUITY, FIXED_RISK, FIXED_MAX_CTS = 50000.0, 535.0, 2
 EST_RT_COST, STOP_SLIP_TICKS, PLATFORM_SLIP = 2.50, 1, 1
+
+
+TRADE_COLS = ["time", "path", "side", "entry", "exit", "qty", "reason", "pts", "usd", "R",
+              "stopPts", "tgtPts", "trig", "lock", "action", "orbBps", "regime",
+              "f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11",
+              "f12", "f13"]
+FEATURE_NAMES = ["aligned_gap_bps", "aligned_prior_session_bps", "aligned_prior_ret5_bps",
+                 "aligned_prior_ret20_bps", "aligned_vwap_distance_bps", "aligned_ret30m_bps",
+                 "breakout_side", "signal_elapsed_15m", "orb_bps", "touch_count",
+                 "weekday_sin", "weekday_cos", "month_sin", "month_cos"]
 
 
 def round_price(p):
@@ -91,12 +120,15 @@ def load_nq():
 def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         min_pct=0.5, max_pct=2.0, port_max=10, lev=4.0,
         orb_lookback=ORB_LOOKBACK, trend_closes=REQ_TREND_CLOSES,
-        strict_contig=True, require_warm=True, prior_bars=PRIOR_BARS, h2_cap=0):
+        strict_contig=True, require_warm=True, prior_bars=PRIOR_BARS, h2_cap=0, knobs=None):
     """`prior_bars` and `h2_cap` are the two places 1.8.0-alpha.2 departs from RC1: the
     prior-session-disagreement branch observes `prior_bars` completed minutes before flipping
     (RC1 2, alpha.2 1 = "H5 delay1 flip"), and the intraday-continuation flip is capped at
     `h2_cap` contracts when > 0 (alpha.2 1 = "H2 vote1 flip cap1"). Everything else is the
     1.4.1-rc.1 parent both versions share."""
+    K = dict(KNOBS)
+    K.update(knobs or {})
+    side_rng = np.random.default_rng(K["side_seed"])
     f = load_nq()
     o, h, l, c = (f[k].to_numpy(float) for k in ("open", "high", "low", "close"))
     vol = f["volume"].to_numpy(float)
@@ -124,9 +156,10 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
     pos = None
     cnt = dict(elig=0, adm=0, geom=0, touch=0, prior=0, knn=0, rc1=0, parent=0, weak=0,
                hv=0, hvflip=0, prev=0, ikeep=0, irev=0, labels=0, sizeskip=0, fail=0,
-               warm=0, entries=0, longs=0, shorts=0)
+               warm=0, entries=0, longs=0, shorts=0, late=0, norefine=0)
     trades = []
     realised = [0.0]
+    last_ft = np.zeros(NFEAT)
 
     def close_trade(t, px, sd, reason):
         pts = sd * (px - t["entry"])
@@ -135,16 +168,20 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         sp = t["stopTicks"] * TICK
         trades.append((t["_t"], t["_p"], sd, t["entry"], px, t["qty"], reason, pts, usd,
                        pts / sp, sp, abs(t["tgt"] - t["entry"]), t["trig"], t["lock"],
-                       t["action"]))
+                       t["action"], t["orbBps"], t["regime"]) + tuple(t["ft"]))
 
-    def sel_plan(side):
+    def sel_plan(side, for_shadow=False):
         hv = st["q75ok"] and st["orbBps"] > st["q75"]
         ct = st["trendOk"] and side * st["trend"] < 0
-        if hv:
-            return HIGH_ORB_TGT_R, BASE_TRIG_R, BASE_LOCK_R
-        if ct:
-            return BASE_TGT_R, CT_TRIG_R, CT_LOCK_R
-        return BASE_TGT_R, BASE_TRIG_R, BASE_LOCK_R
+        if hv and (for_shadow or K["high_orb_regime_on"]):
+            tR, trg, lck = HIGH_ORB_TGT_R, BASE_TRIG_R, BASE_LOCK_R
+        elif ct:
+            tR, trg, lck = BASE_TGT_R, CT_TRIG_R, CT_LOCK_R
+        else:
+            tR, trg, lck = BASE_TGT_R, BASE_TRIG_R, BASE_LOCK_R
+        if not for_shadow and not K["managed_on"]:
+            trg = 1e9
+        return tR, trg, lck
 
     def refinement_branch(rside, bside, sig_close, ft):
         rng = st["oh"] - st["ol"]
@@ -167,8 +204,12 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         is the alpha.2 H2 contract cap, applied after the defensive caps in every mode."""
         raw = max(MIN_STOP, min(MAX_STOP, (st["oh"] - st["ol"]) * STOP_ORB_MULT))
         stops = round_offset_ticks(raw, side == 1)
+        placed = stops
+        if K["stop_place_mult"] is not None:
+            placed = round_offset_ticks(max(MIN_STOP, (st["oh"] - st["ol"]) * K["stop_place_mult"]),
+                                        side == 1)
         tR, trg, lck = sel_plan(side)
-        tgts = round_offset_ticks(raw * tR, side != 1)
+        tgts = round_offset_ticks(raw * tR, side != 1) if K["target_on"] else 10 ** 7
         aligned = st["trendOk"] and side * st["trend"] >= 0
         ct = st["trendOk"] and not aligned
         low_vol = st["q75ok"] and st["orbBps"] <= st["q75"]
@@ -198,7 +239,7 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                 q_risk = int(np.floor(pos_eq * frac / per))
                 q_lev = int(np.floor(pos_eq * lev / (px * POINT_VALUE)))
                 q = min(cap, q_risk, q_lev)
-        return q, stops, tgts, trg, lck
+        return q, stops, placed, tgts, trg, lck
 
     n = len(f)
     for i in range(20, n):
@@ -259,7 +300,7 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                 for sd in (sp["bside"], -sp["bside"]):
                     e = o[i] + sd * MODEL_ENTRY_SLIP * TICK
                     stp = round_price(e - sd * raw)
-                    tR, trg, lck = sel_plan(sd)
+                    tR, trg, lck = sel_plan(sd, for_shadow=True)
                     sp["t"].append(dict(side=sd, entry=e, stop=stp,
                                         tgt=round_price(e + sd * raw * tR),
                                         risk=sd * (e - stp), trig=trg, lock=lck,
@@ -434,7 +475,7 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                     if cr >= pos["trig"]:
                         pos["stop"] = round_price(pos["entry"] + sd * rp * pos["lock"])
                         pos["managed"] = True
-                if close_min[i] == COND_EXIT_MIN and not pos["cond"]:
+                if K["cond_exit_on"] and close_min[i] == COND_EXIT_MIN and not pos["cond"]:
                     cr = sd * (c[i] - pos["entry"]) / rp
                     if not (COND_LOSS_R <= cr < COND_PROFIT_R):
                         pos["cond"] = True
@@ -463,13 +504,16 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                     body = bside * (c[i] - so) / rng if rng > 0 else 0.0
                     loc = ((c[i] - sl_) / rng if bside == 1 else (sh_ - c[i]) / rng) \
                         if rng > 0 else 0.0
-                    if body < ADM_BODY or loc < ADM_CLOSE_LOC:
+                    el = (close_min[i] - ORB_END) / 15.0
+                    if K["adm_geom_on"] and (body < ADM_BODY or loc < ADM_CLOSE_LOC):
                         cnt["geom"] += 1
+                    elif K["first_signal_only"] and el != 1.0:
+                        st["consumed"] = True; cnt["late"] += 1
                     else:
                         lvl = st["oh"] + conf if bside == 1 else st["ol"] - conf
                         tch = int(np.sum(h[i - 14:i + 1] >= lvl) if bside == 1
                                   else np.sum(l[i - 14:i + 1] <= lvl))
-                        if tch < ADM_TOUCHES:
+                        if K["adm_touch_on"] and tch < ADM_TOUCHES:
                             st["consumed"] = True; cnt["touch"] += 1
                         elif st["oo"] <= 0 or st["oc"] <= 0 or vs <= 0 or not rth_closes:
                             st.update(consumed=True, integrity=False, blocked=True)
@@ -495,11 +539,12 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                                 np.cos(2 * np.pi * (mo - 1) / 12.0)])
                             st["consumed"] = True
                             cnt["adm"] += 1
-                            po = bside * psr < -PRIOR_DAY_BPS
+                            last_ft = ft
+                            po = K["prior_override_on"] and bside * psr < -PRIOR_DAY_BPS
                             if po:
                                 cnt["prior"] += 1
                             knn_ov = False
-                            if ck >= PREDICT_START_KEY:
+                            if K["knn_on"] and ck >= PREDICT_START_KEY:
                                 qk = td[i].year * 10 + ((td[i].month - 1) // 3 + 1)
                                 if qk != model["qk"]:
                                     model["qk"] = qk
@@ -523,6 +568,12 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                                     if (fl + 2.0) / (KNN + 4.0) > FLIP_THRESH:
                                         knn_ov = True; cnt["knn"] += 1
                             dside = -bside if (po or knn_ov) else bside
+                            if K["side_mode"] == "random":
+                                dside = int(side_rng.choice([-1, 1]))
+                            elif K["side_mode"] == "long":
+                                dside = 1
+                            elif K["side_mode"] == "short":
+                                dside = -1
                             if ck >= TRAIN_START_KEY:
                                 if sp is not None:
                                     cnt["fail"] += 1; sp = ped = pfd = None; st["blocked"] = True
@@ -534,7 +585,13 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                                 sub = ready or not require_warm
                                 if not ready:
                                     cnt["warm"] += 1
-                                if el == RC1_ELAPSED and ft[4] <= RC1_MAX_VWAP_BPS:
+                                if not K["refine_on"]:
+                                    cnt["norefine"] += 1
+                                    if sub:
+                                        submit_side, submit_now = dside, True
+                                        submit_path = "no_refine"
+                                elif K["direct_on"] and el == RC1_ELAPSED \
+                                        and ft[4] <= RC1_MAX_VWAP_BPS:
                                     cnt["rc1"] += 1
                                     if sub:
                                         submit_side, submit_now = bside, True
@@ -571,16 +628,19 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         # ---- the order gateway; a market order fills at the NEXT bar's open
         if submit_now and pos is None and i + 1 < n:
             eq = START_EQUITY if sizing == "FixedDollar" else START_EQUITY + realised[0]
-            q, stops, tgts, trg, lck = entry_plan(submit_side, c[i], eq, submit_cap)
+            q, stops, placed, tgts, trg, lck = entry_plan(submit_side, c[i], eq, submit_cap)
             if stops < 1 or tgts < 1:
                 cnt["fail"] += 1
             elif q < 1:
                 cnt["sizeskip"] += 1
             else:
                 fill = o[i + 1]
+                hv_now = st["q75ok"] and st["orbBps"] > st["q75"]
+                ct_now = st["trendOk"] and submit_side * st["trend"] < 0
                 pos = dict(_t=ix[i + 1], _p=submit_path, action=submit_action, side=submit_side,
-                           entry=fill, qty=q, stopTicks=stops,
-                           stop=round_price(fill - submit_side * stops * TICK),
+                           entry=fill, qty=q, stopTicks=stops, ft=last_ft, orbBps=st["orbBps"],
+                           regime="hv" if hv_now else ("ct" if ct_now else "base"),
+                           stop=round_price(fill - submit_side * placed * TICK),
                            tgt=round_price(fill + submit_side * tgts * TICK),
                            trig=trg, lock=lck, managed=False, cond=False)
                 cnt["entries"] += 1
@@ -594,15 +654,11 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
                   "sizeskip", "fail", "entries", "longs", "shorts"):
             print(f"   {k:9s} {cnt[k]:>7,d}")
         if trades:
-            t = pd.DataFrame(trades, columns=["time", "path", "side", "entry", "exit", "qty",
-                                              "reason", "pts", "usd", "R", "stopPts",
-                                              "tgtPts", "trig", "lock", "action"])
+            t = pd.DataFrame(trades, columns=TRADE_COLS)
             print(f"\ntrades {len(t)}   net ${t['usd'].sum():,.0f}   "
                   f"win {(t['usd'] > 0).mean()*100:.1f}%   avg {t['pts'].mean():+.2f} pts")
             print(t["reason"].value_counts().to_string())
-    return cnt, pd.DataFrame(trades, columns=[
-        "time", "path", "side", "entry", "exit", "qty", "reason", "pts", "usd", "R",
-        "stopPts", "tgtPts", "trig", "lock", "action"])
+    return cnt, pd.DataFrame(trades, columns=TRADE_COLS)
 
 
 if __name__ == "__main__":

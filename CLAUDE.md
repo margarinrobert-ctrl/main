@@ -1999,6 +1999,29 @@ help on either. Same four components, opposite conclusions -- that is fitting no
 returns a figure sqrt(252) too small (0.04 instead of 0.58 here), which is the notebook's own error
 class. See `docs/ib/STUDY_CMMA.md`.
 
+**REVERSE-ENGINEERING THE FTM OPENING-RANGE BREAKOUT: the edge is the breakout SIDE and the
+first-signal TIMING, and everything else in 2,700 lines is inert.** Fourteen component switches
+in `ftm_sim.KNOBS`, each removing one thing, over 1.05M one-minute bars: the kNN direction model
++0.003 R, the prior-day override -0.003, the high-ORB regime 0.000, the 15:30 rule -0.006, the
+stop REMOVABLE (+0.163 vs +0.155 R, still p 0.004 against a random quarter-hour entry), and NO
+TARGET better for the fourth time here (+0.191, p 0.030). The breakout side is worth +0.10 R over
+a coin flip (five seeds +0.056) -- and ALWAYS LONG with the identical machine earns +0.171 R
+overall and +0.256 against +0.096 in 2025. At the 10:00 decision the random-entry control earns
++0.020 and the rule +0.143; later signals ride drift the control rides too. Strip the target,
+managed stop AND 15:30 rule together and the pass is gone (p 0.148) because the CONTROL rises to
++0.098, so the excess over random is partly the exit machine harvesting a tail a random entry
+lacks. The 200-cell exit grid is 100% positive, collapses to 2 clusters / 5 components (median
+pairwise corr 0.746 -- one strategy scored 200 ways), has IS->OOS Spearman -0.05 with the IS top
+decile landing on the all-cell OOS mean, and its walk-forward "best" selector beats the defaults
+by +0.027 R only by picking the 8R target every fold, i.e. no target. All selectors earn nothing
+in 2025-H2. +-20% moves nothing by more than 0.07 R; costs survive 4x and die at 8x; DD realised
+at the 47th MC percentile; a 60-day 6%/4%-trailing evaluation passes 19.9%, busts 13.5%, times
+out 66.6%. The refinement delay branches are the fragile part: submit at the signal and 2025 goes
+to -0.010 R. `research/ftm/ftm_anatomy.py`, `docs/ib/STUDY_FTM_ANATOMY.md`. THE MECHANISM LIST
+NOW LIVES IN `docs/ib/EDGE_LIBRARY.md` -- ten controlled mechanisms, the five things they share,
+and the twelve-step reverse-engineering procedure; add to it only on a controlled, unselected
+block.
+
 **THE IBS SESSION EA IS A DRIFT EXPOSURE WEARING A SIGNAL, and no optimiser beats its own
 defaults.** Zeta FX's MQL5 expert (buy at the cash close after a session closing in its bottom
 fifth, hold up to five sessions or until a top-fifth close, stop one session-range below) on a
@@ -2138,6 +2161,8 @@ position cap is load-bearing even though it never binds at a base of 50.
 | `research/ib_features.py` | causal Initial Balance day features, control-gated, FDR |
 | `research/strat/` | The Strat combo engine: bar types, four location filters, one-bar stop order, trade-matched control |
 | `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
+| `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
+| `docs/ib/EDGE_LIBRARY.md` | **the mechanism library** -- what survived, what it is, how to take a new strategy apart |
 | `research/ibs/` | the IBS session EA: cached tensor, bar-by-bar parity, stability / MC / clusters / walk-forward / judge |
 | `research/cmma/` | the CMMA notebook, re-implemented honestly: accounting, costs, deflation, holdout |
 | `research/cmma/cmma_stats.py` | its profit factor, win rate and hold time, per DAY and per stance |
