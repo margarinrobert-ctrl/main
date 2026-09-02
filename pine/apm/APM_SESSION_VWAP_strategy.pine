@@ -45,13 +45,18 @@
 //     00:00 UTC, so it will rarely fire; use a back-adjusted series or a single contract.
 //  7. Costs: slippage 1 tick as the source; commission 0.72 per contract per side (real MNQ stack).
 //
-// MEASURED (research/apm/apm_sim.py, this file's order model on NQ 1-minute bars built into exact
-// UTC 10-minute buckets, 2022-12-26 to 2025-12-12, USIndex profile, MNQ costs): 100,511 decision
-// bars, 767 sessions, 36 blocked (30 by the frozen calendar, 6 by a gap), 156 intents of which 104
-// admitted (60 long, 44 short) and 52 rejected, 104 trades: 101 cash-close exits, 2 opposite-cross
-// exits, 1 session carry (a feed gap from 14:00 on 2023-04-05). Zero reversals in three years, so
-// that branch is transliterated but unexercised. This is a control-flow check, not a validation --
-// no matched control has been run on this family.
+// MEASURED (docs/ib/STUDY_APM_VWAP.md; research/apm/). As specified, MNQ costs: NQ 10m research
+// n 70, 58.6% win, PF 1.62, +24.0 pts/trade; locked n 34, 67.6%, PF 4.12, +62.8 -- the wrong shape,
+// 2022-2024 flatters it on every feed. Beats a random entry with its own exits on NQ research
+// (p 0.054), NQ 15m research (0.013), US100 research and validation (0.019, 0.032); FAILS the US100
+// test block (p 0.230, 2025 at -27 a trade) and is NULL on US30 over nine years. The DIRECTION call
+// is the asset (coin-flip side on the rule's bars: p 0.05 / 0.001); the ENTRY TIMING is a cost -- a
+// random bar on the same day with the same side beats the rule everywhere, because the fill has
+// already chased 3.97 ATR of a 4.99 ATR day. The VWAP band is also the clock: 0% of crosses after
+// 11:00 sit inside it. Walk-forward re-selection loses to these defaults on NQ and US100, so do not
+// tune it. Research-block P(mean<=0) 0.052; p99 drawdown about $2,400 per MNQ. One MNQ on $50k
+// cannot pass a 6% evaluation; two pass 42-70% and bust 15-24%. VERDICT: not live-ready on this
+// evidence -- forward-test with one contract for 40+ trades before sizing.
 //
 // CHART: 10-MINUTE, EXTENDED HOURS ON (the session date rolls at 18:00 New York and the VWAP window
 // needs the 09:20 bar). Every var write sits under barstate.isconfirmed. Not financial advice.

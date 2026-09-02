@@ -2184,6 +2184,23 @@ than the source's permanent halt. Transliterated and run on NQ 1m built into exa
 buckets: 104 trades, 101 of them cash-close exits, 36 blocked sessions, zero reversals in three
 years. A control-flow check only; no control has been run on the family.
 
+**THE APM SESSION-VWAP RULE'S DIRECTION CALL IS REAL AND ITS ENTRY IS A COST, and it is the first
+grid here whose research ranking transferred.** Three matched controls on the ported NinjaScript
+(docs/ib/STUDY_APM_VWAP.md): keep the rule's bars and flip a coin for the side and the rule wins
+(NQ p 0.05 / 0.001, US100 0.012 / 0.034); keep the rule's SESSIONS and SIDE and enter at a random
+bar in the window and the CONTROL wins on every block of every feed (p 0.85-1.00), because the fill
+has already chased a median **3.97 ATR of a 4.99 ATR day**. Always-long is negative on NQ research
+and every US100 block, so it is not drift. A 3-ATR excursion from the EMA21 is inside a 2.5-ATR VWAP
+band 85% of the time in the 09:00 hour and **0% after 11:00**, so the source's entry window is the
+filter restated. Random-entry control: NQ research p 0.054, US100 research / validation 0.019 /
+0.032, US100 test **0.230** with 2025 at -27 a trade, US30 null over nine years. Grid: NQ 89%
+profitable on research and **corr(research, locked) +0.52**, top decile +40.8 -> +57.8; US100
++0.31; US30 **-0.34** with the research top decile reading -50 on test -- the instrument decides.
+Walk-forward re-selection loses to the author's constants on NQ (+0.2 vs +62.7) and US100 (-1.7 vs
++25.3): the optimiser buys count. Research P(mean<=0) 0.052 on 70 trades, locked read 34 trades,
+p99 drawdown ~$2,400 per MNQ, and one contract on $50k cannot pass a 6% evaluation (two pass 42-70%,
+bust 15-24%). Not live-ready; forward-test 40+ trades. `research/apm/`.
+
 ## Tooling
 
 | module | what it does |
@@ -2305,6 +2322,7 @@ years. A control-flow check only; no control has been run on the family.
 | `research/ftm/ftm_sim.py` | the shipped FTM Pine transliterated to Python and run on real 1m bars |
 | `pine/apm/APM_SESSION_VWAP_strategy.pine` | the ATR-phase-momentum / session-VWAP NinjaScript, ported: control shadow, cash close, every fail-closed path counted |
 | `research/apm/apm_sim.py` | that Pine's order model on exact UTC 10-minute buckets from NQ 1m; prints the source's terminal counts |
+| `research/apm/apm_core.py`, `apm_run.py` | **the APM battery** -- one numba walk per configuration, three matched controls, anatomy, 12,960-cell grid, walk-forward, both Monte Carlos, clusters, funded evaluation |
 | `research/v59/v59core.py` | the EMA 16/64 exit tensor: 243,000 configs, dual lock kernels, duration-based hold |
 | `research/v59/v59judge.py`, `v59lock.py`, `v59_nq.py` | the sorted matched control, the one locked read, the NQ read |
 | `research/v58/v58ib.py` | the Initial Balance tensor: 777,600 configs in one walk, both exit models |

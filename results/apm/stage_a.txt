@@ -1,0 +1,109 @@
+====================================================================================================
+A. THE STRATEGY AS SPECIFIED, EVERY FEED
+====================================================================================================
+  StartTradingDate is 0 here: the source's 2020-02-03 was set for its own MNQ file and would discard 2016-2019 on the CFD feeds. NQ_1m begins 2022-12-26 either way.
+
+NQ 10m  2022-12-26 -> 2025-12-11  decision bars 100,511  blocked sessions 36  intents 156 (admitted 104, rejected 52, unavailable 4)  reversals 0
+  ALL       n  104  win  61.5%  PF  2.12  mean  +36.70 pts  net   +3816.6  Sharpe +1.68  DD   564.2  ret/DD  6.76  $+7,633
+  research  n   70  win  58.6%  PF  1.62  mean  +24.02 pts  net   +1681.1  Sharpe +1.12  DD   564.2  ret/DD  2.98  $+3,362
+  locked    n   34  win  67.6%  PF  4.12  mean  +62.81 pts  net   +2135.5  Sharpe +2.77  DD   243.4  ret/DD  8.78  $+4,271
+  exits: {'cash': 101, 'opposite': 2, 'carry': 1}  top-5% share of net 48%  longest losing run 3
+  by side: {-1: {'count': 44, 'mean': 46.2, 'sum': 2032.8}, 1: {'count': 60, 'mean': 29.7, 'sum': 1783.8}}
+  by year:
+          count  mean     sum
+    date                     
+    2022      2  69.2   138.3
+    2023     36   8.0   288.1
+    2024     36  43.0  1549.1
+    2025     30  61.4  1841.1
+  by fill half-hour: {'09:30': (50.0, 49.8), '10:00': (41.0, 40.8), '10:30': (13.0, -26.5)}
+
+NQ 5m  2022-12-26 -> 2025-12-11  decision bars 201,872  blocked sessions 36  intents 202 (admitted 104, rejected 98, unavailable 8)  reversals 0
+  ALL       n  104  win  63.5%  PF  2.29  mean  +47.77 pts  net   +4968.4  Sharpe +1.69  DD   851.8  ret/DD  5.83  $+9,937
+  research  n   69  win  58.0%  PF  2.06  mean  +35.05 pts  net   +2418.3  Sharpe +1.62  DD   604.8  ret/DD  4.00  $+4,837
+  locked    n   35  win  74.3%  PF  2.63  mean  +72.86 pts  net   +2550.0  Sharpe +1.90  DD   851.8  ret/DD  2.99  $+5,100
+  exits: {'cash': 96, 'opposite': 6, 'carry': 1, 'gap': 1}  top-5% share of net 49%  longest losing run 4
+  by side: {-1: {'count': 47, 'mean': 49.7, 'sum': 2334.9}, 1: {'count': 57, 'mean': 46.2, 'sum': 2633.5}}
+  by year:
+          count  mean     sum
+    date                     
+    2022      2  69.2   138.3
+    2023     38  24.6   936.6
+    2024     31  68.4  2119.4
+    2025     33  53.8  1774.0
+  by fill half-hour: {'09:30': (87.0, 52.8), '10:00': (17.0, 21.9)}
+
+NQ 15m  2022-12-26 -> 2025-12-11  decision bars 66,723  blocked sessions 36  intents 129 (admitted 108, rejected 21, unavailable 4)  reversals 0
+  ALL       n  108  win  63.9%  PF  1.59  mean  +23.80 pts  net   +2570.5  Sharpe +0.87  DD  1154.4  ret/DD  2.23  $+5,141
+  research  n   67  win  68.7%  PF  2.05  mean  +34.06 pts  net   +2282.0  Sharpe +1.60  DD   519.5  ret/DD  4.39  $+4,564
+  locked    n   41  win  56.1%  PF  1.13  mean   +7.04 pts  net    +288.5  Sharpe +0.21  DD  1154.4  ret/DD  0.25  $+577
+  exits: {'cash': 105, 'opposite': 1, 'carry': 1, 'gap': 1}  top-5% share of net 67%  longest losing run 7
+  by side: {-1: {'count': 47, 'mean': 49.1, 'sum': 2309.9}, 1: {'count': 61, 'mean': 4.3, 'sum': 260.6}}
+  by year:
+          count  mean     sum
+    date                     
+    2022      2  51.3   102.6
+    2023     32  28.7   918.2
+    2024     37  42.2  1561.1
+    2025     37  -0.3   -11.4
+  by fill half-hour: {'09:30': (26.0, 26.8), '10:00': (51.0, 44.8), '10:30': (31.0, -13.2)}
+
+US100 15m  2016-11-14 -> 2025-10-01  decision bars 206,123  blocked sessions 151  intents 396 (admitted 308, rejected 88, unavailable 27)  reversals 0
+  ALL       n  308  win  59.1%  PF  1.56  mean  +17.09 pts  net   +5263.1  Sharpe +0.77  DD  1323.7  ret/DD  3.98
+  research  n  176  win  57.4%  PF  1.53  mean  +10.77 pts  net   +1895.3  Sharpe +0.80  DD   638.2  ret/DD  2.97
+  validation n   70  win  64.3%  PF  1.89  mean  +34.55 pts  net   +2418.5  Sharpe +1.37  DD   477.8  ret/DD  5.06
+  test      n   62  win  58.1%  PF  1.31  mean  +15.31 pts  net    +949.3  Sharpe +0.45  DD  1323.7  ret/DD  0.72
+  exits: {'cash': 281, 'gap': 15, 'opposite': 7, 'carry': 5}  top-5% share of net 88%  longest losing run 8
+  by side: {-1: {'count': 132, 'mean': 31.4, 'sum': 4145.3}, 1: {'count': 176, 'mean': 6.4, 'sum': 1117.8}}
+  by year:
+          count  mean     sum
+    date                     
+    2016      8  18.2   145.7
+    2017     43   6.2   265.1
+    2018     35  14.7   514.8
+    2019     30  -6.8  -205.5
+    2020     22   5.1   112.9
+    2021     38  28.0  1062.3
+    2022     36  57.9  2085.8
+    2023     34   9.8   332.7
+    2024     33  52.8  1742.8
+    2025     29 -27.4  -793.5
+  by fill half-hour: {'09:30': (80.0, 40.1), '10:00': (156.0, 7.2), '10:30': (72.0, 13.1)}
+
+US30 15m  2016-10-26 -> 2025-07-15  decision bars 193,781  blocked sessions 77  intents 335 (admitted 267, rejected 68, unavailable 26)  reversals 0
+  ALL       n  267  win  48.3%  PF  1.01  mean   +0.69 pts  net    +184.7  Sharpe +0.02  DD  3551.0  ret/DD  0.05
+  research  n  148  win  48.6%  PF  0.88  mean   -7.87 pts  net   -1165.0  Sharpe -0.22  DD  2168.0  ret/DD -0.54
+  validation n   68  win  45.6%  PF  1.19  mean  +16.41 pts  net   +1116.0  Sharpe +0.37  DD  1957.0  ret/DD  0.57
+  test      n   51  win  51.0%  PF  1.06  mean   +4.58 pts  net    +233.7  Sharpe +0.13  DD  1150.4  ret/DD  0.20
+  exits: {'cash': 252, 'gap': 9, 'carry': 5, 'opposite': 1}  top-5% share of net 3878%  longest losing run 9
+  by side: {-1: {'count': 115, 'mean': -0.1, 'sum': -9.1}, 1: {'count': 152, 'mean': 1.3, 'sum': 193.8}}
+  by year:
+          count  mean     sum
+    date                     
+    2016      7   5.4    38.0
+    2017     29 -23.5  -681.0
+    2018     27   3.0    82.0
+    2019     30  32.7   980.0
+    2020     18 -61.6 -1108.0
+    2021     37 -12.9  -476.0
+    2022     31  86.2  2671.0
+    2023     37 -42.0 -1555.0
+    2024     36  -7.2  -258.7
+    2025     15  32.8   492.4
+  by fill half-hour: {'09:30': (58.0, 5.5), '10:00': (143.0, -9.9), '10:30': (66.0, 19.5)}
+
+XAUUSD 15m  2022-06-07 -> 2026-08-28  decision bars 99,969  blocked sessions 1  intents 164 (admitted 72, rejected 92, unavailable 4)  reversals 0
+  ALL       n   72  win  55.6%  PF  2.01  mean   +4.63 pts  net    +333.6  Sharpe +0.88  DD    59.6  ret/DD  5.60
+  research  n   46  win  47.8%  PF  1.11  mean   +0.46 pts  net     +21.1  Sharpe +0.17  DD    59.3  ret/DD  0.36
+  locked    n   26  win  69.2%  PF  3.44  mean  +12.02 pts  net    +312.4  Sharpe +1.45  DD    59.6  ret/DD  5.25
+  exits: {'cash': 72}  top-5% share of net 79%  longest losing run 4
+  by side: {-1: {'count': 31, 'mean': 4.7, 'sum': 146.5}, 1: {'count': 41, 'mean': 4.6, 'sum': 187.0}}
+  by year:
+          count  mean    sum
+    date                    
+    2022      8  -0.3   -2.7
+    2023     23   1.2   26.5
+    2024     15  -0.2   -2.7
+    2025     15  12.8  192.5
+    2026     11  10.9  119.9
+  by fill half-hour: {'08:30': (22.0, 6.5), '09:00': (26.0, -0.1), '09:30': (19.0, 7.8), '10:00': (1.0, 14.3), '10:30': (4.0, 7.2)}
