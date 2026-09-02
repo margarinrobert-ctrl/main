@@ -65,9 +65,17 @@ def atr_gate(P, mode):
     raise ValueError(mode)
 
 
-def run(sym):
+CKPT = "/home/user/main/data/donchian/emacross_partial.parquet"
+
+def _key(d):
+    return (d["sym"], d["n_entry"], d["fast"], d["slow"], d["mode"], d["atr"], d["stop"], d["targ"])
+
+def run(sym, done=None, sink=None):
+    """done: config keys already computed (resume). sink: shared list, checkpointed
+    every 100 configs so a container restart loses at most 100, not the run."""
     P = prep(sym); df = P["df"]
     rows, k = [], 0
+    done = done or set(); sink = sink if sink is not None else []
     t0 = time.time()
     base_idx = {}
     for ne in N_ENTRY:
@@ -77,6 +85,8 @@ def run(sym):
     for ne, (fast,slow), mode, af, (sm,tm) in itertools.product(
             N_ENTRY, EMA_PAIRS, EMA_MODE, ATR_FILT, GEOM):
         idx, side = base_idx[ne]
+        if (sym, ne, fast, slow, mode, af, sm, tm) in done:
+            k += 1; continue
         gl = ema_gate(P, fast, slow, mode, +1)[idx]
         gs = ema_gate(P, fast, slow, mode, -1)[idx]
         ag = atr_gate(P, af)[idx]
@@ -85,21 +95,31 @@ def run(sym):
             rows.append(dict(sym=sym, n_entry=ne, fast=fast, slow=slow, mode=mode,
                              atr=af, stop=sm, targ=tm, n=int(keep.sum()), exp=np.nan,
                              excess=np.nan, z=np.nan, p=np.nan, sel=float(keep.mean())))
-            k += 1; continue
+            sink.append(rows[-1]); k += 1; continue
         g, _ = lab.sig_gate(sym, idx[keep], side[keep], stop_mult=sm, targ_mult=tm,
                             n_draws=150, seed=k, quiet=True)
         rows.append(dict(sym=sym, n_entry=ne, fast=fast, slow=slow, mode=mode, atr=af,
                          stop=sm, targ=tm, n=g["n"], exp=g["exp"], excess=g["excess"],
                          z=g["z"], p=g["p"], pf=g["pf"], wr=g["wr"], sel=float(keep.mean())))
         k += 1
-        if k % 200 == 0:
+        sink.append(rows[-1])
+        if k % 100 == 0:
+            pd.DataFrame(sink).to_parquet(CKPT)
             print(f"    {sym} {k:>5}/{len(N_ENTRY)*len(EMA_PAIRS)*len(EMA_MODE)*len(ATR_FILT)*len(GEOM)}"
-                  f"  {time.time()-t0:>5.0f}s", flush=True)
+                  f"  {time.time()-t0:>5.0f}s  (checkpointed {len(sink)})", flush=True)
     return pd.DataFrame(rows)
 
 
 if __name__ == "__main__":
-    R = pd.concat([run("NAS"), run("US30")], ignore_index=True)
+    import os
+    sink, done = [], set()
+    if os.path.exists(CKPT):
+        prev = pd.read_parquet(CKPT); sink = prev.to_dict("records")
+        done = {_key(d) for d in sink}
+        print(f"  resuming: {len(done)} configs already computed", flush=True)
+    for sym in ("NAS", "US30"):
+        run(sym, done=done, sink=sink)
+    R = pd.DataFrame(sink)
     R.to_parquet("/home/user/main/data/donchian/emacross.parquet")
     R.to_csv("/home/user/main/docs/donchian/emacross_search.csv", index=False)
     print(f"\n  {len(R):,} configurations evaluated")
