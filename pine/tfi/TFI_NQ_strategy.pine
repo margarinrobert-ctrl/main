@@ -26,6 +26,17 @@
 // floors, and the session the prior-day level is taken from. On gold the one axis that moved
 // research was the entry window 08:30-11:30 New York, and it did not carry.
 //
+// US30 (STUDY_NEW_DESIGN §7): this design is a null on US30 on every cell (PF 0.92-1.01 on its
+// three blocks), and the branch's earlier US30 survivor (Donchian 30/20, ADX >= 15, 2.5 ATR, 2R
+// target, all hours, no flatten) re-measured here at one unit is PF 1.05 / 0.86 / 0.98 on US30's
+// own blocks and 1.25 on the ISO 2026 tail, where removing the ADX filter does BETTER (1.29) --
+// a regime, not a rule. NO US30 SETTINGS ARE RECOMMENDED. The flatten switch and the 24-hour
+// entry window are here so that form can be run.
+//
+// SECOND PASS (STUDY_NEW_DESIGN §7): window, flatten, ADX and stop re-chosen by two-feed
+// agreement on NQ and US100 research -- the consensus IS these defaults. Holding overnight is
+// worth PF 1.72 on US100 research and 1.22 on NQ, so the feeds disagree and it is not selected.
+//
 // EXTENDED HOURS ON, 15-MINUTE CHART. Every var write sits under barstate.isconfirmed.
 // Research tooling for education and analysis -- not financial advice.
 // ================================================================================================
@@ -65,8 +76,10 @@ lvlEndM = input.int(0, "Prior-session level: session end minute", minval = 0, ma
 grpS = "Session (New York)"
 entStartH = input.int(9, "Entries from hour", minval = 0, maxval = 23, group = grpS)
 entStartM = input.int(30, "Entries from minute", minval = 0, maxval = 59, group = grpS)
-entEndH = input.int(14, "Last entry hour", minval = 0, maxval = 23, group = grpS)
+entEndH = input.int(14, "Last entry hour (24 = all hours)", minval = 0, maxval = 24, group = grpS)
 entEndM = input.int(0, "Last entry minute", minval = 0, maxval = 59, group = grpS)
+useFlatten = input.bool(true, "Flatten at the time below (off = hold on the channel / stop)",
+     group = grpS)
 flatH = input.int(16, "Flat by hour", minval = 0, maxval = 23, group = grpS)
 flatM = input.int(0, "Flat by minute", minval = 0, maxval = 59, group = grpS)
 showHud = input.bool(true, "Show panel", group = "Display")
@@ -123,7 +136,7 @@ longSig = close > donHi and close[1] <= donHi[1] and adxVal >= adxFloor and floo
      and (not useGate or (not na(priorH) and close > priorH))
 shortSig = allowShort and close < donLo and close[1] >= donLo[1] and adxVal >= adxFloor
      and floorsOkS and (not useGate or (not na(priorL) and close < priorL))
-flattenDue = nyMod + tfMin >= flatMin        // this bar's close is the last before the flat time
+flattenDue = useFlatten and nyMod + tfMin >= flatMin   // last close before the flat time
 
 var float stopLvl = na
 var float tgtLvl = na

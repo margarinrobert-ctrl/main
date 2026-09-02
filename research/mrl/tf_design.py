@@ -68,11 +68,17 @@ def prep(market="NQ"):
         Fd = MB.Feed(market)
         o, h, l, c, mod, si = Fd.o, Fd.h, Fd.l, Fd.c, Fd.mod, Fd.sess
         ts = pd.DatetimeIndex(Fd.dates)
-        blocks = {
-            "research": np.asarray(ts < "2022-01-01"),
-            "validation": np.asarray((ts >= "2022-01-01") & (ts < "2024-01-01")),
-            "test": np.asarray(ts >= "2024-01-01"),
-        }
+        if market == "US30_ISO":
+            blocks = {
+                "iso_pre2026": np.asarray(ts < "2026-01-01"),
+                "iso_2026": np.asarray(ts >= "2026-01-01"),
+            }
+        else:
+            blocks = {
+                "research": np.asarray(ts < "2022-01-01"),
+                "validation": np.asarray((ts >= "2022-01-01") & (ts < "2024-01-01")),
+                "test": np.asarray(ts >= "2024-01-01"),
+            }
     n = len(c)
     atr14 = I.ema(I.true_range(h, l, c), 14)
     ax = adx(h, l, c, 14)
@@ -100,7 +106,7 @@ def prep(market="NQ"):
     ls = pd.Series(l)
     don = {
         N: (hs.rolling(N).max().shift(1).to_numpy(), ls.rolling(N).min().shift(1).to_numpy())
-        for N in (10, 20, 55)
+        for N in (10, 20, 30, 55)
     }
     return dict(
         o=o,
@@ -223,7 +229,9 @@ def signals(D, N, adx_floor, gate_psh, side=1):
 
 
 def run(D, sig_mask, side, stop, tp, exN, cost_mult=1.0):
-    cst = COSTS["NQ" if D["market"] == "NQ" else D["market"]]
+    cst = COSTS[
+        "NQ" if D["market"] == "NQ" else ("US30" if D["market"].startswith("US30") else D["market"])
+    ]
     comm = getattr(cst, "commission", 0.0) * cost_mult
     ex_hi, ex_lo = D["don"][exN]
     sig = np.where(sig_mask, side, 0).astype(np.int64)

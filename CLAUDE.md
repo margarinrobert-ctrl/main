@@ -1999,6 +1999,17 @@ help on either. Same four components, opposite conclusions -- that is fitting no
 returns a figure sqrt(252) too small (0.04 instead of 0.58 here), which is the notebook's own error
 class. See `docs/ib/STUDY_CMMA.md`.
 
+**THE SECOND PASS ON THE TREND DESIGN LANDED ON THE CELL ALREADY SHIPPED, AND US30 HAS NO VERSION.**
+Window x flatten x ADX x stop re-chosen by the MINIMUM of NQ and US100 research R: the consensus is
+09:30-14:00 / flat 16:00 / ADX 20 / stop 2.5, i.e. the defaults. Holding overnight is PF 1.72 on
+US100 research and 1.22 on NQ -- a change the feeds disagree on is not made. The NQ + US100 book
+on the overlapping OOS dates has daily correlation 0.90 (one index, no diversification). US30:
+the design is null on every cell, and STUDY_MEGA_144K's surviving US30 configuration re-measured at
+one unit with the CFD cost model is PF 1.05 / 0.86 / 0.98 on US30's own blocks and 1.25 on the
+ISO 2026 tail where NO ADX filter does better (1.29) -- a regime. A second read of an already-read
+block that disagrees with the first is recorded, not averaged. `research/mrl/tf_balance.py`,
+`tf_us30.py`, `docs/ib/STUDY_NEW_DESIGN.md` §7.
+
 **RE-SELECTING THE TREND DESIGN ON GOLD PRODUCED THE ASK ON RESEARCH AND NOTHING ON LOCKED.**
 24,192 cells on XAUUSD15_MT (entry window, flatten, level session, side, EMA-distance and
 ATR-expansion floors added as axes): the only axis with a marginal is the ENTRY WINDOW, 08:30-11:30

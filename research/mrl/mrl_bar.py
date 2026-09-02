@@ -175,7 +175,9 @@ class Feed:
         self.atr_lim = I.ema(I.true_range(self.h, self.l, self.c), 5)
         self.dates = ix
         self.tf = tf_min
-        cst = COSTS["XAUUSD" if market == "XAUUSD" else market]
+        cst = COSTS[
+            "XAUUSD" if market == "XAUUSD" else ("US30" if market.startswith("US30") else market)
+        ]
         self.cost = cst
         # session ids on the New York calendar day (the 17:00 roll is not needed for a
         # 09:30-15:00 window)

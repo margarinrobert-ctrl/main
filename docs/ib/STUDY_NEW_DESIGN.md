@@ -199,3 +199,53 @@ recommended**; the script carries the extra inputs (level session, the two floor
 the variants can be run, with the NQ defaults unchanged. What would change it: the twenty-year
 `XAU_ISO_15m` feed, absent from disk this session, which has the 2011–2020 gold regimes this
 four-year file does not.
+
+---
+
+## 7. Addendum — "more balanced, PF 1.50 on locked with a control pass", and a US30 version
+
+**The rule.** Nothing may be selected on the locked block, so "PF 1.50 on locked" cannot be a
+target; what can be done is to pull the levers the library names, choose by agreement on TWO
+feeds' research blocks, and read the reserved blocks once. `research/mrl/tf_balance.py`.
+
+**Second-pass grid** (window × flatten × ADX × stop, channel 55 / exit 20 / gate on / no target
+held; scored by the minimum of NQ and US100 research R):
+
+| axis | two-feed min R | NQ R / PF | US100 R / PF | US30 R |
+| --- | ---: | --- | --- | ---: |
+| window 09:30–11:00 / 12:00 / 14:00 | +0.059 / +0.071 / **+0.084** | +0.059 / +0.071 / +0.087 | +0.220 / +0.209 / +0.214 | +0.07 / +0.07 / +0.05 |
+| flat 16:00 / hold overnight | **+0.089** / +0.053 | +0.092 (1.29) / +0.053 (1.22) | +0.148 (1.37) / **+0.280 (1.72)** | +0.006 / +0.119 |
+| ADX 20 / 25 | **+0.100** / +0.043 | +0.103 / +0.043 | +0.213 / +0.216 | +0.066 / +0.059 |
+| stop 2.0 / 2.5 / 3.0 | +0.080 / **+0.091** / +0.044 | +0.082 / +0.092 / +0.044 | +0.211 / +0.222 / +0.209 | |
+
+**The two-feed consensus is the shipped cell** — 09:30–14:00, flat 16:00, ADX 20, stop 2.5 —
+so the reserved reads are unchanged: NQ locked PF 1.24 p 0.32, US100 validation 1.56 p 0.000,
+US100 test 1.20 p 0.09, US30 null. The one lever that moves anything is **holding overnight**,
+which takes US100 research to PF 1.72 (+0.28 R) but NQ to 1.22 (+0.05), and a change the two feeds
+disagree on is not made. **The two-market book** of NQ and US100 on their overlapping out-of-sample
+dates (2024-11 to 2025-09): daily-R PF 1.18, Sharpe 0.58, **daily correlation 0.90** — the two
+feeds are the same index, and there is no diversification to be had between them.
+
+**A US30 version.** `research/mrl/tf_us30.py`. This design is a null on US30 on every cell of the
+first pass (0.97 / 1.01 / 0.92). The one US30 configuration on this branch that survived a genuine
+forward block — `STUDY_MEGA_144K`'s Donchian 30/20, ADX ≥ 15, 2.5 × ATR stop, 2R target, all hours,
+no flatten — re-measured here at one unit with the retail CFD cost model:
+
+| block | n | win | PF | R | control p |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| US30 research | 1,491 | 38.0% | 1.05 | +0.016 | 0.87 |
+| US30 validation | 583 | 35.2% | 0.86 | −0.085 | 0.90 |
+| US30 test | 486 | 38.1% | 0.98 | −0.004 | 0.57 |
+| US30 ISO 2024–25 | 426 | 39.2% | 1.10 | +0.056 | 0.16 |
+| **US30 ISO 2026** | 203 | 40.4% | **1.25** | +0.112 | 0.095 |
+| NQ locked | 312 | 39.4% | 1.10 | +0.060 | 0.25 |
+| US100 test | 570 | 39.1% | 1.15 | +0.053 | 0.62 |
+
+It is positive on the 2026 tail only, and there **removing the ADX filter entirely does better
+(PF 1.29)**, as does every target from 1.5R to 3R — the whole neighbourhood is up in 2026 and
+down before it, which is a regime, not a rule. Its intraday form (09:30–14:00, flat 16:00) is
+1.04 / 1.02 / 1.00 on US30's blocks and 0.80 on 2026. The earlier study's US30 2026 figure (PF
+1.19, p 0.0013) was three units in a different engine with a different cost model, and it was
+already a one-time read; this is a second read, and it does not agree. **No US30 settings are
+recommended.** The script carries a flatten switch and a 24-hour entry window so that form can be
+run; its defaults remain the NQ cell.
