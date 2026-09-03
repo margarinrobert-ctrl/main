@@ -1,0 +1,185 @@
+The experiment: every declared condition, both triggers, both geometries, six feed-timeframes.
+What does a trend-following SCALP actually need? One experiment, two geometries, one base.
+
+THE QUESTION, MADE MEASURABLE. "Which indicators does a profitable trend-following scalp need" is
+not answerable by listing indicators. It is answerable by taking one trend-following trigger and
+asking, of each candidate condition, three things:
+
+  1. ITS BASE RATE ON THE TRIGGER'S OWN BARS. A condition that passes 95% of the bars the trigger
+     already fires on is the trigger restated and cannot help. This branch has measured that four
+     times -- RSI(14)>=55 at 94.7%, Aroon osc>=0 at 100.0%, MACD>0 at 99.8-100.0%, MFI>=50 at
+     91.7% -- and it is two lines of code that should precede any sweep.
+  2. WHAT IT CONTRIBUTES AT SCALP GEOMETRY -- a tight stop, a near target, a hold measured in
+     hours.
+  3. WHAT IT CONTRIBUTES AT SWING GEOMETRY -- a wide stop, no target, a hold measured in days.
+
+The third column is what makes the answer honest. A condition that helps at both is an edge; one
+that helps only at swing geometry is telling you the geometry is the asset; one that helps at
+neither is decoration. And the difference between the two columns is the actual answer to the
+question asked.
+
+Both triggers, both geometries, every condition, on three markets and every block.
+
+  .. NQ 5m done
+  .. NQ 30m done
+  .. US100 15m done
+  .. US100 60m done
+  .. US30 15m done
+  .. US30 60m done
+
+====================================================================================================================
+1. THE UNFILTERED TRIGGER AT BOTH GEOMETRIES -- before any indicator is added
+====================================================================================================================
+  trigger                          geometry  blocks  blocks +       n   %/trade
+  Donchian 20 breakout             scalp         16         4   39309   -0.0033
+  Donchian 20 breakout             swing         16        12    4679   +0.0948
+  EMA 13/34/89 stack, <=30 bars old scalp         16         3   36545   -0.0052
+  EMA 13/34/89 stack, <=30 bars old swing         16        14    3665   +0.1191
+
+  The scalp geometry is a 0.75 ATR stop, a 1.5 ATR target and a 24-bar cap; the swing
+  is a 2.5 ATR stop, no target and a 480-bar cap. Same triggers, same bars, same costs.
+
+====================================================================================================================
+2. BASE RATE ON THE TRIGGER'S OWN BARS -- what fraction of the signals each condition
+   would even remove. Pooled over the six feed-timeframes.
+====================================================================================================================
+
+  --- Donchian 20 breakout
+    momentum  ROC(20) > 0                    passes  97.9% of signals vs  54.4% of bars   lift 1.80  <-- INERT, removes under 10%
+    trend     close > EMA50                  passes  94.8% of signals vs  57.4% of bars   lift 1.65  <-- INERT, removes under 10%
+    momentum  RSI(14) >= 55                  passes  93.7% of signals vs  40.9% of bars   lift 2.30  <-- INERT, removes under 10%
+    trend     VWAP rising                    passes  92.5% of signals vs  57.0% of bars   lift 1.62  <-- INERT, removes under 10%
+    momentum  Aroon osc >= 0                 passes  91.2% of signals vs  53.5% of bars   lift 1.71  <-- INERT, removes under 10%
+    momentum  MACD > 0                       passes  90.1% of signals vs  56.5% of bars   lift 1.60  <-- INERT, removes under 10%
+    trend     close > session VWAP           passes  89.8% of signals vs  57.2% of bars   lift 1.57
+    momentum  MACD > signal                  passes  88.0% of signals vs  49.4% of bars   lift 1.78
+    momentum  MFI(14) >= 55                  passes  84.7% of signals vs  42.3% of bars   lift 2.00
+    trend     EMA13 > EMA48                  passes  82.2% of signals vs  57.3% of bars   lift 1.43
+    location  (close-VWAP)/ATR >= 0.5        passes  81.4% of signals vs  43.7% of bars   lift 1.90
+    trend     close > SMA200                 passes  78.3% of signals vs  59.1% of bars   lift 1.32
+    trend     (close-SMA200)/ATR >= 1        passes  72.8% of signals vs  53.1% of bars   lift 1.37
+    regime    ADX >= 20                      passes  69.3% of signals vs  67.9% of bars   lift 1.02
+    trend     EMA 13>34>89 stacked           passes  67.5% of signals vs  46.6% of bars   lift 1.45
+    location  close > prior RTH high         passes  59.1% of signals vs  28.5% of bars   lift 2.05
+    volume    volume >= its time-of-day mean passes  58.7% of signals vs  54.4% of bars   lift 1.11
+    momentum  RSI(14) >= 65                  passes  58.5% of signals vs  15.7% of bars   lift 3.78
+    regime    efficiency ratio >= 0.3        passes  57.7% of signals vs  34.9% of bars   lift 1.65
+    regime    CHOP <= 45                     passes  55.4% of signals vs  37.0% of bars   lift 1.50
+    regime    ATR <= its 50-bar mean         passes  55.1% of signals vs  55.2% of bars   lift 1.00
+    regime    vol pct(250) <= 0.5            passes  54.0% of signals vs  51.5% of bars   lift 1.05
+    regime    ADX >= 25                      passes  49.0% of signals vs  48.4% of bars   lift 1.01
+    location  close in top 30% of bar        passes  48.6% of signals vs  34.6% of bars   lift 1.41
+    regime    vol pct(250) >= 0.5            passes  46.4% of signals vs  48.9% of bars   lift 0.95
+    location  0 < (close-VWAP)/ATR <= 2      passes  46.0% of signals vs  37.5% of bars   lift 1.20
+    regime    ATR >= its 50-bar mean         passes  44.9% of signals vs  44.8% of bars   lift 1.00  <-- selective
+    clock     09:30-16:00 New York           passes  38.1% of signals vs  27.6% of bars   lift 1.39  <-- selective
+    regime    CHOP <= 38                     passes  29.6% of signals vs  16.9% of bars   lift 1.77  <-- selective
+    volume    volume >= 1.5x that mean       passes  28.1% of signals vs  28.2% of bars   lift 1.08  <-- selective
+    clock     09:30-11:00 New York           passes  11.5% of signals vs   5.8% of bars   lift 1.97  <-- selective
+
+  --- EMA 13/34/89 stack, <=30 bars old
+    trend     EMA 13>34>89 stacked           passes 100.0% of signals vs  46.6% of bars   lift 2.15  <-- INERT, removes under 10%
+    trend     EMA13 > EMA48                  passes  99.6% of signals vs  57.3% of bars   lift 1.74  <-- INERT, removes under 10%
+    momentum  MACD > 0                       passes  96.3% of signals vs  56.5% of bars   lift 1.71  <-- INERT, removes under 10%
+    trend     close > EMA50                  passes  92.7% of signals vs  57.4% of bars   lift 1.62  <-- INERT, removes under 10%
+    trend     close > SMA200                 passes  89.9% of signals vs  59.1% of bars   lift 1.52
+    momentum  Aroon osc >= 0                 passes  85.0% of signals vs  53.5% of bars   lift 1.59
+    momentum  ROC(20) > 0                    passes  84.1% of signals vs  54.4% of bars   lift 1.55
+    trend     (close-SMA200)/ATR >= 1        passes  81.6% of signals vs  53.1% of bars   lift 1.54
+    trend     VWAP rising                    passes  79.5% of signals vs  57.0% of bars   lift 1.40
+    trend     close > session VWAP           passes  78.6% of signals vs  57.2% of bars   lift 1.37
+    momentum  RSI(14) >= 55                  passes  69.6% of signals vs  40.9% of bars   lift 1.70
+    location  (close-VWAP)/ATR >= 0.5        passes  64.4% of signals vs  43.7% of bars   lift 1.46
+    momentum  MFI(14) >= 55                  passes  61.8% of signals vs  42.3% of bars   lift 1.46
+    regime    ADX >= 20                      passes  61.4% of signals vs  67.9% of bars   lift 0.91
+    momentum  MACD > signal                  passes  59.4% of signals vs  49.4% of bars   lift 1.20
+    regime    ATR <= its 50-bar mean         passes  57.7% of signals vs  55.2% of bars   lift 1.04
+    regime    vol pct(250) <= 0.5            passes  54.9% of signals vs  51.5% of bars   lift 1.07
+    volume    volume >= its time-of-day mean passes  49.0% of signals vs  54.4% of bars   lift 0.89
+    location  0 < (close-VWAP)/ATR <= 2      passes  46.9% of signals vs  37.5% of bars   lift 1.28
+    location  close > prior RTH high         passes  45.7% of signals vs  28.5% of bars   lift 1.60
+    regime    vol pct(250) >= 0.5            passes  45.4% of signals vs  48.9% of bars   lift 0.93
+    regime    ATR >= its 50-bar mean         passes  42.3% of signals vs  44.8% of bars   lift 0.95  <-- selective
+    regime    ADX >= 25                      passes  41.8% of signals vs  48.4% of bars   lift 0.87  <-- selective
+    regime    efficiency ratio >= 0.3        passes  40.6% of signals vs  34.9% of bars   lift 1.16  <-- selective
+    regime    CHOP <= 45                     passes  40.4% of signals vs  37.0% of bars   lift 1.09  <-- selective
+    location  close in top 30% of bar        passes  35.6% of signals vs  34.6% of bars   lift 1.03  <-- selective
+    clock     09:30-16:00 New York           passes  30.4% of signals vs  27.6% of bars   lift 1.10  <-- selective
+    momentum  RSI(14) >= 65                  passes  30.0% of signals vs  15.7% of bars   lift 1.92  <-- selective
+    volume    volume >= 1.5x that mean       passes  22.3% of signals vs  28.0% of bars   lift 0.78  <-- selective
+    regime    CHOP <= 38                     passes  19.7% of signals vs  16.9% of bars   lift 1.17  <-- selective
+    clock     09:30-11:00 New York           passes   6.1% of signals vs   5.8% of bars   lift 1.03  <-- selective
+
+====================================================================================================================
+3. WHAT EACH CONDITION CONTRIBUTES -- percent of price per trade over the unfiltered
+   trigger, at SCALP geometry and at SWING geometry, and the share of blocks improved
+====================================================================================================================
+  family    condition                       keeps | SCALP edge  helps | SWING edge  helps
+  trend     (close-SMA200)/ATR >= 1         77.2% |    +0.0064    78% |    +0.0662    72%
+  regime    ADX >= 25                       45.4% |    -0.0006    59% |    +0.0587    78%
+  momentum  RSI(14) >= 65                   44.2% |    +0.0066    69% |    +0.0469    75%
+  regime    efficiency ratio >= 0.3         49.1% |    +0.0031    69% |    +0.0460    78%
+  regime    ATR >= its 50-bar mean          43.6% |    +0.0044    72% |    +0.0431    72%
+  trend     close > SMA200                  84.1% |    +0.0041    69% |    +0.0407    69%
+  location  (close-VWAP)/ATR >= 0.5         72.9% |    +0.0025    78% |    +0.0277    75%
+  regime    CHOP <= 45                      47.9% |    +0.0020    66% |    +0.0274    62%
+  trend     close > EMA50                   93.7% |    +0.0025    88% |    +0.0258    81%
+  trend     EMA 13>34>89 stacked            83.8% |    +0.0035    50% |    +0.0228    34%
+  regime    ADX >= 20                       65.4% |    -0.0000    41% |    +0.0213    53%
+  trend     close > session VWAP            84.2% |    +0.0021    75% |    +0.0198    88%
+  momentum  MFI(14) >= 55                   73.3% |    +0.0005    44% |    +0.0180    59%
+  momentum  ROC(20) > 0                     91.0% |    +0.0005    44% |    +0.0175    69%
+  momentum  MACD > signal                   73.7% |    +0.0026    59% |    +0.0161    62%
+  volume    volume >= its time-of-day mean  53.9% |    +0.0020    69% |    +0.0155    44%
+  momentum  RSI(14) >= 55                   81.7% |    +0.0018    56% |    +0.0153    69%
+  momentum  MACD > 0                        93.2% |    +0.0001    47% |    +0.0135    62%
+  location  0 < (close-VWAP)/ATR <= 2       46.5% |    +0.0035    66% |    +0.0133    72%
+  trend     VWAP rising                     86.0% |    +0.0018    66% |    +0.0131    75%
+  regime    ATR <= its 50-bar mean          56.4% |    -0.0039    28% |    +0.0126    47%
+  trend     EMA13 > EMA48                   90.9% |    +0.0022    75% |    +0.0122    41%
+  regime    CHOP <= 38                      24.7% |    +0.0039    72% |    +0.0111    47%
+  momentum  Aroon osc >= 0                  88.1% |    -0.0011    56% |    +0.0106    59%
+  clock     09:30-11:00 New York             8.8% |    +0.0072    56% |    +0.0082    56%
+  regime    vol pct(250) <= 0.5             54.4% |    -0.0047    25% |    +0.0078    56%
+  location  close > prior RTH high          52.4% |    +0.0049    81% |    +0.0075    62%
+  clock     09:30-16:00 New York            34.3% |    +0.0080    78% |    +0.0068    69%
+  regime    vol pct(250) >= 0.5             45.9% |    +0.0030    75% |    +0.0055    72%
+  location  close in top 30% of bar         42.1% |    +0.0019    56% |    -0.0062    47%
+  volume    volume >= 1.5x that mean        25.2% |    +0.0093    61% |    -0.0549    33%
+
+====================================================================================================================
+4. BY FAMILY
+====================================================================================================================
+  family      conds   keeps |  SCALP edge   helps |  SWING edge   helps
+  trend           7   85.7% |     +0.0032     71% |     +0.0287     66%
+  regime          9   48.1% |     +0.0008     56% |     +0.0259     63%
+  momentum        7   77.9% |     +0.0016     54% |     +0.0197     65%
+  location        4   53.5% |     +0.0032     70% |     +0.0106     64%
+  clock           2   21.5% |     +0.0076     67% |     +0.0075     62%
+  volume          2   39.5% |     +0.0056     65% |     -0.0197     39%
+
+====================================================================================================================
+5. THE SHORT LIST -- conditions that improve on a MAJORITY of cells at BOTH geometries
+====================================================================================================================
+  clock     09:30-16:00 New York           keeps  34.3%   scalp +0.0080 (78%)   swing +0.0068 (69%)
+  clock     09:30-11:00 New York           keeps   8.8%   scalp +0.0072 (56%)   swing +0.0082 (56%)
+  momentum  RSI(14) >= 65                  keeps  44.2%   scalp +0.0066 (69%)   swing +0.0469 (75%)
+  trend     (close-SMA200)/ATR >= 1        keeps  77.2%   scalp +0.0064 (78%)   swing +0.0662 (72%)
+  location  close > prior RTH high         keeps  52.4%   scalp +0.0049 (81%)   swing +0.0075 (62%)
+  regime    ATR >= its 50-bar mean         keeps  43.6%   scalp +0.0044 (72%)   swing +0.0431 (72%)
+  trend     close > SMA200                 keeps  84.1%   scalp +0.0041 (69%)   swing +0.0407 (69%)
+  location  0 < (close-VWAP)/ATR <= 2      keeps  46.5%   scalp +0.0035 (66%)   swing +0.0133 (72%)
+  regime    efficiency ratio >= 0.3        keeps  49.1%   scalp +0.0031 (69%)   swing +0.0460 (78%)
+  regime    vol pct(250) >= 0.5            keeps  45.9%   scalp +0.0030 (75%)   swing +0.0055 (72%)
+  momentum  MACD > signal                  keeps  73.7%   scalp +0.0026 (59%)   swing +0.0161 (62%)
+  trend     close > EMA50                  keeps  93.7%   scalp +0.0025 (88%)   swing +0.0258 (81%)
+  location  (close-VWAP)/ATR >= 0.5        keeps  72.9%   scalp +0.0025 (78%)   swing +0.0277 (75%)
+  trend     close > session VWAP           keeps  84.2%   scalp +0.0021 (75%)   swing +0.0198 (88%)
+  regime    CHOP <= 45                     keeps  47.9%   scalp +0.0020 (66%)   swing +0.0274 (62%)
+  momentum  RSI(14) >= 55                  keeps  81.7%   scalp +0.0018 (56%)   swing +0.0153 (69%)
+  trend     VWAP rising                    keeps  86.0%   scalp +0.0018 (66%)   swing +0.0131 (75%)
+  regime    ADX >= 25                      keeps  45.4%   scalp -0.0006 (59%)   swing +0.0587 (78%)
+  momentum  Aroon osc >= 0                 keeps  88.1%   scalp -0.0011 (56%)   swing +0.0106 (59%)
+
+  19 of 31 conditions. Chance, if each cell were a coin flip, would
+  put roughly a quarter of them here.

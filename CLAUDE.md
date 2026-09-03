@@ -2500,6 +2500,30 @@ and never above PF 1.05. Note also what the port cannot represent: the 61.8 gold
 drawn and never traded on, and two of the twelve given numbers have no field to map to.
 See `docs/ib/STUDY_APM_WFO.md`.
 
+**WHAT A TREND-FOLLOWING SCALP NEEDS, MEASURED: THE CLOCK, PARTICIPATION AND A VOLATILITY FLOOR --
+AND IT STILL DOES NOT CLEAR.** 31 declared conditions x 2 triggers (Donchian 20 breakout, EMA
+13/34/89 stack) x 2 GEOMETRIES (scalp = 0.75N stop / 1.5 ATR target / 24-bar cap; swing = 2.5N / no
+target / 480 bars) x 6 feed-timeframes x every block. **THE GEOMETRY FLIPS THE SIGN BEFORE ANY
+INDICATOR**: the same triggers earn -0.0033 and -0.0052 %/trade at scalp geometry (4/16 and 3/16
+blocks positive) and **+0.0948 and +0.1191 at swing** (12/16 and 14/16). **AND THE ZERO-COST
+VARIANT SAYS IT IS NOT EXECUTION**: gross is only +0.0039 / +0.0023 while the cost is +0.0073 /
++0.0085 -- the round turn EXCEEDS the entire gross edge. Win rate at scalp is **34.3% / 33.6%
+against a driftless 2R bound of 33.3%**, so the trigger has no directional edge at that payoff at
+all. **COST AS A FRACTION OF RISK IS THE NUMBER**: 24.4% of a 0.75N stop on NQ 5m (break-even 41.5%)
+against 1.8% of a 2.5N stop on US100 60m (33.9%) -- a 13x spread that no indicator closes.
+**EVERY FAMILY IS WORTH A TENTH AS MUCH AT SCALP GEOMETRY**: trend +0.0032 vs +0.0287, regime
++0.0008 vs +0.0259, momentum +0.0016 vs +0.0197. **THE CLOCK IS THE ONLY FAMILY THAT DOES NOT
+SHRINK** (+0.0076 scalp vs +0.0075 swing) and is the largest scalp contributor of any family -- for
+a scalp, WHEN beats WHICH INDICATOR. **TWO CONDITIONS INVERT AND BOTH INVERSIONS ARE MECHANICAL**:
+`ADX>=25` is the 2nd-best swing condition (+0.0587, 78%) and NEGATIVE at scalp, because trend
+strength needs a trade long enough to pay; `volume >= 1.5x its time-of-day mean` is the BEST scalp
+condition (+0.0093) and the WORST swing one (**-0.0549**), because a participation spike marks a
+move resolving now. And the popular confirmations are the trigger restated once more --
+`close>EMA50` passes **93.7%** of signals, MACD>0 93.2%, ROC>0 91.0%, EMA13>48 90.9%, Aroon 88.1%.
+Ranked scalp answer: session filter, participation floor, ATR floor, MA200 DISTANCE (not the
+cross), prior-RTH-session high (81% of cells, the most consistent in the table).
+See `docs/ib/STUDY_SCALP_REQUIREMENTS.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2534,6 +2558,7 @@ See `docs/ib/STUDY_APM_WFO.md`.
 | `research/strat/` | The Strat combo engine: bar types, four location filters, one-bar stop order, trade-matched control |
 | `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
 | `research/mrl/` | the two library-built designs: strict 1-minute limit walk, 15m bar walk, ladders with a random-filter gate, the trend grid |
+| `research/scalpreq/` | the scalp-requirements experiment: 31 conditions x 2 triggers x 2 geometries x 6 feed-timeframes, with base rates, the cost-as-a-fraction-of-risk table and the zero-cost variant |
 | `research/v63/` | the VWAP / triple-EMA / ATR trend design: three feeds with real volume, a chandelier-trail tensor, search on one market and a frozen read on three, drop-one and the binding hold axis |
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
 | `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |

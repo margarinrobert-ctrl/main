@@ -1,0 +1,65 @@
+market,tf,trigger,geom,block,n,pct
+NQ,5,Donchian 20 breakout,scalp,research,7046,-0.0061348878360495615
+NQ,5,Donchian 20 breakout,scalp,locked,3791,-0.008273870484609893
+NQ,5,Donchian 20 breakout,swing,research,846,0.02922086112115402
+NQ,5,Donchian 20 breakout,swing,locked,409,0.07137086806473586
+NQ,5,"EMA 13/34/89 stack, <=30 bars old",scalp,locked,3668,-0.005522469987899059
+NQ,5,"EMA 13/34/89 stack, <=30 bars old",scalp,research,7281,-0.006672102935001914
+NQ,5,"EMA 13/34/89 stack, <=30 bars old",swing,locked,361,0.03194810334117566
+NQ,5,"EMA 13/34/89 stack, <=30 bars old",swing,research,729,0.02830300252436563
+NQ,30,Donchian 20 breakout,scalp,research,1342,-0.002229417908315253
+NQ,30,Donchian 20 breakout,scalp,locked,689,-0.014918596696886844
+NQ,30,Donchian 20 breakout,swing,research,150,0.3336033511792515
+NQ,30,Donchian 20 breakout,swing,locked,75,0.3163497025312361
+NQ,30,"EMA 13/34/89 stack, <=30 bars old",scalp,locked,589,-0.00815947997156031
+NQ,30,"EMA 13/34/89 stack, <=30 bars old",scalp,research,964,-0.004244573449218787
+NQ,30,"EMA 13/34/89 stack, <=30 bars old",swing,research,100,0.430343057296338
+NQ,30,"EMA 13/34/89 stack, <=30 bars old",swing,locked,71,-0.21465334300072153
+US100,15,Donchian 20 breakout,scalp,research,6250,-0.005055929156814444
+US100,15,Donchian 20 breakout,scalp,validation,2481,-0.002806771883000129
+US100,15,Donchian 20 breakout,scalp,test,2259,-0.0018216246895937916
+US100,15,Donchian 20 breakout,swing,validation,343,-0.022558538887508067
+US100,15,Donchian 20 breakout,swing,research,735,0.08382709503373867
+US100,15,Donchian 20 breakout,swing,test,245,0.23818645716322814
+US100,15,"EMA 13/34/89 stack, <=30 bars old",scalp,research,6107,-0.011574792164262618
+US100,15,"EMA 13/34/89 stack, <=30 bars old",scalp,validation,2173,-0.0005737231315774924
+US100,15,"EMA 13/34/89 stack, <=30 bars old",scalp,test,1992,0.004964257305833303
+US100,15,"EMA 13/34/89 stack, <=30 bars old",swing,research,573,0.103454931207309
+US100,15,"EMA 13/34/89 stack, <=30 bars old",swing,test,198,0.13933149590893026
+US100,15,"EMA 13/34/89 stack, <=30 bars old",swing,validation,224,0.06435587720804807
+US100,60,Donchian 20 breakout,scalp,test,577,0.016050002321012488
+US100,60,Donchian 20 breakout,scalp,validation,615,-0.005178577929721414
+US100,60,Donchian 20 breakout,scalp,research,1640,0.0005554539267078937
+US100,60,Donchian 20 breakout,swing,validation,90,-0.10824698622950789
+US100,60,Donchian 20 breakout,swing,research,147,0.5425546834822684
+US100,60,Donchian 20 breakout,swing,test,60,0.18214878812459065
+US100,60,"EMA 13/34/89 stack, <=30 bars old",scalp,validation,478,0.010605283102298035
+US100,60,"EMA 13/34/89 stack, <=30 bars old",scalp,research,1473,0.008419058048902708
+US100,60,"EMA 13/34/89 stack, <=30 bars old",scalp,test,492,-0.01785513549303035
+US100,60,"EMA 13/34/89 stack, <=30 bars old",swing,research,127,0.786458803216517
+US100,60,"EMA 13/34/89 stack, <=30 bars old",swing,validation,59,0.08788295356668908
+US100,60,"EMA 13/34/89 stack, <=30 bars old",swing,test,51,0.42172980831756546
+US30,15,Donchian 20 breakout,scalp,test,1923,-0.006052954442979528
+US30,15,Donchian 20 breakout,scalp,validation,2353,-0.003466644288774887
+US30,15,Donchian 20 breakout,scalp,research,5805,-0.0011822553491584566
+US30,15,Donchian 20 breakout,swing,research,722,0.0941613581419021
+US30,15,Donchian 20 breakout,swing,test,220,0.077698377142001
+US30,15,Donchian 20 breakout,swing,validation,347,-0.0524865386473166
+US30,15,"EMA 13/34/89 stack, <=30 bars old",scalp,research,5318,-0.00843082613261594
+US30,15,"EMA 13/34/89 stack, <=30 bars old",scalp,test,1738,-0.0010002046759331222
+US30,15,"EMA 13/34/89 stack, <=30 bars old",scalp,validation,2018,-0.00421436797079636
+US30,15,"EMA 13/34/89 stack, <=30 bars old",swing,test,162,0.1027376382110346
+US30,15,"EMA 13/34/89 stack, <=30 bars old",swing,validation,244,-0.013607338941732598
+US30,15,"EMA 13/34/89 stack, <=30 bars old",swing,research,537,0.11816034903849065
+US30,60,Donchian 20 breakout,scalp,test,474,-0.005462011972866051
+US30,60,Donchian 20 breakout,scalp,research,1521,0.008228034917361975
+US30,60,Donchian 20 breakout,scalp,validation,543,0.016152116961275987
+US30,60,Donchian 20 breakout,swing,research,160,0.313840924455093
+US30,60,Donchian 20 breakout,swing,test,51,0.3615059074117861
+US30,60,Donchian 20 breakout,swing,validation,79,-0.16454123316359212
+US30,60,"EMA 13/34/89 stack, <=30 bars old",scalp,validation,483,-0.004239339684223721
+US30,60,"EMA 13/34/89 stack, <=30 bars old",scalp,test,356,-0.00308868631053789
+US30,60,"EMA 13/34/89 stack, <=30 bars old",scalp,research,1415,-0.0011605004232907645
+US30,60,"EMA 13/34/89 stack, <=30 bars old",swing,test,40,0.27775331771337786
+US30,60,"EMA 13/34/89 stack, <=30 bars old",swing,research,135,0.36523481339028535
+US30,60,"EMA 13/34/89 stack, <=30 bars old",swing,validation,54,0.21394805366891603
