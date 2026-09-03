@@ -2400,6 +2400,29 @@ tail a scalp cuts off. Not a cost problem: at a 1-3 ATR stop on NQ 30m the round
 risk. Eleventh confirmation of the intraday-constraint finding.
 See `docs/ib/STUDY_V62_MFI_EMA.md`.
 
+**A TREND DESIGN ON A VWAP, A TRIPLE EMA CROSS AND ATR IS POSITIVE ON 7 OF 8 BLOCKS ACROSS THREE
+MARKETS -- AND THE VOLUME IN "VWAP" DOES NOTHING.** 146,880 configurations searched on US100's
+RESEARCH BLOCK ONLY, then frozen and read once on US100's later blocks, the WHOLE of US30 and the
+WHOLE of NQ. Shipped rule: 30m, long only, EMA 13>34>89 aligned for at most 30 bars, close above a
+RISING session VWAP, ATR(14) >= its own 50-bar mean, 1.5N stop, NO trail, NO target, hard cap 480
+bars. Percent of entry price: US100 +0.2200/+0.1596/+0.3842, US30 +0.1799/+0.1352/+0.1797, NQ
++0.3585 research and **-0.0401 locked**; PF 0.90-2.28; it clears a random ENTRY with identical
+geometry on **4 of the 7 blocks that chose nothing** and a random FILTER on 4. **THE COMPONENT TEST:
+over 69,003 matched pairs the volume-weighted anchor beats its UNWEIGHTED twin in 55.7%, mean
++0.0096 Sharpe** -- a session average price does the same job, so do not let a script depend on a
+volume feed for this. **REMOVING THE CHANDELIER TRAIL WAS WORTH 3.6x THE PER-TRADE RESULT**
+(+0.0406 -> +0.1465, PF 1.24 -> 1.46) and more in total: a trail is a take profit wearing a stop's
+name, which is the no-target finding reached from the exit side for the fifteenth time. **AND THE
+MAXIMUM HOLD, WHICH V61/V62 MEASURED INERT, IS LOAD-BEARING HERE** because there is no channel
+exit -- 60/120/240/480/960 bars pool at +0.0590/+0.1054/+0.1427/+0.1988/+0.2484, monotone toward
+longer, and the median WINNER exits on the cap after TEN TRADING DAYS. Read the trade profile before
+trading it: **it wins 9-19% of the time**, 86% of trades stop out, the capped 14% supply **261-264%
+of net**, and the longest out-of-sample losing run is **28**. Costs are not binding (+0.0225 at 4x).
+Watch the shape: the block that CHOSE the cell fails both its controls there (0.924 / 0.282) while
+the blocks that chose nothing pass, and the pooled bootstrap overstates because US100 and US30 are
+the same weeks. Parity: correlation 1.0000, gap +0.1%/+0.3%/-0.0%.
+See `docs/ib/STUDY_V63_TREND_VWAP.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2434,6 +2457,7 @@ See `docs/ib/STUDY_V62_MFI_EMA.md`.
 | `research/strat/` | The Strat combo engine: bar types, four location filters, one-bar stop order, trade-matched control |
 | `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
 | `research/mrl/` | the two library-built designs: strict 1-minute limit walk, 15m bar walk, ladders with a random-filter gate, the trend grid |
+| `research/v63/` | the VWAP / triple-EMA / ATR trend design: three feeds with real volume, a chandelier-trail tensor, search on one market and a frozen read on three, drop-one and the binding hold axis |
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
 | `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |

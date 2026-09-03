@@ -1,0 +1,190 @@
+// ================================================================================================
+// V63 -- a trend-following design on a VWAP, a triple EMA cross and ATR. Long only, 30-minute bars.
+//
+// THE RULE. Enter at the next bar's open when all three hold at the close of a bar:
+//   1. EMA 13 > EMA 34 > EMA 89, and that stack is no more than 900 minutes old (30 bars at 30m)
+//   2. close is above the session VWAP and the VWAP is RISING
+//   3. ATR(14) is at or above its own 50-bar mean
+// Exit: a 1.5 x ATR stop anchored to the SIGNAL bar's ATR, no trail, no target, and a hard cap at
+// 480 bars. There is no session window and no daily flatten.
+//
+// ==================== HOW IT WAS BUILT, AND WHERE IT HAS BEEN READ ====================
+// 146,880 configurations swept on US100's RESEARCH BLOCK ONLY (2016-11 to 2022-01): timeframe,
+// five EMA triples, a recency window, five VWAP readings, two anchors, two weightings, three ATR
+// gates, four stops, three trails, four targets. Then frozen and read ONCE on US100's later two
+// blocks, on the WHOLE of US30 and on the WHOLE of NQ -- two markets that had no part in the
+// search. Percent of ENTRY PRICE for one unit, after each feed's own costs.
+//
+//   market  block         n     %/trade   PF     vs a random FILTER   vs a random ENTRY
+//   US100   research    264     +0.2200   1.67        p 0.924              p 0.282     <- chose it
+//   US100   validation  116     +0.1596   1.31        p 0.123              p 0.018
+//   US100   test         91     +0.3842   2.03        p 0.000              p 0.013
+//   US30    research    261     +0.1799   1.69        p 0.726              p 0.250
+//   US30    validation  115     +0.1352   1.42        p 0.000              p 0.010
+//   US30    test         85     +0.1797   1.68        p 0.000              p 0.117
+//   NQ      research    113     +0.3585   2.28        p 0.045              p 0.018
+//   NQ      locked       69     -0.0401   0.90        p 0.171              p 0.863     <- the failure
+//
+// SEVEN OF EIGHT BLOCKS POSITIVE, on three markets, and it clears a random entry with the identical
+// geometry on four of the seven blocks that chose nothing. That is better than anything else on
+// this branch has managed across three markets. It is not significance: seven blocks over
+// overlapping calendars are not seven independent tests, and NQ's locked block loses.
+//
+// ============================ THE THINGS YOU MUST KNOW TO TRADE IT ============================
+//  * IT WINS 9-19% OF THE TIME. 86% of trades stop out for a small loss and 14% run to the cap for
+//    a large gain: the capped trades supply 261-264% of net and the top 5% of trades supply
+//    140-153%. The longest run of consecutive losers in the pooled out-of-sample stream is 28.
+//  * IT IS NOT A SCALP AND NOT AN INTRADAY SYSTEM. Median hold is 13-16 HOURS; the median WINNER
+//    holds 240 hours -- ten trading days -- and closes on the cap. It carries overnight and
+//    weekend gap risk. About 52-61 trades a year.
+//  * THE CAP IS LOAD-BEARING, not a formality. Pooled over the blocks that chose nothing:
+//        60 bars +0.0590 PF 1.24 | 120 +0.1054 1.40 | 240 +0.1427 1.48 | 480 +0.1988 1.60
+//        | 960 +0.2484 1.69     -- monotone toward longer, and 7/7 blocks positive at every rung
+//    except 480 (6/7). Shorten it and the edge goes with it.
+//  * THE VOLUME IN "VWAP" DOES NOTHING HERE. Over 69,003 matched pairs the volume-weighted anchor
+//    beats its UNWEIGHTED twin in 55.7% of them, mean difference +0.0096 Sharpe; at the shipped
+//    cell it is +0.0399 against +0.0406. A session average price would do the same job. The
+//    weighting is kept because it costs nothing and it is what a reader expects.
+//  * COMPONENTS, pooled over the blocks that chose nothing: dropping the VWAP filter takes
+//    +0.0406 to +0.0320; adding a 3 ATR target takes it to +0.0145; a chandelier trail was in the
+//    original candidate and REMOVING it took +0.0406 to +0.1465 -- a trail is a take profit
+//    wearing a stop's name, which is the same finding this branch has made fifteen times.
+//  * COST STRESS: pooled +0.0470 at zero cost, +0.0406 at 1x, +0.0344 at 2x, +0.0225 at 4x.
+//  * PARITY: this script's own order model, written out in Python and diffed against the research
+//    engine, agrees on the trade count within one and gives correlation 1.0000 with a gap of
+//    +0.1% / +0.3% / -0.0% on the three markets. The only structural difference is that a time cap
+//    fills at the NEXT bar's open, which the engine cannot do and which is worth ~0.2%.
+//  * COSTS ARE NOT SET HERE. Set commission and slippage in Properties before reading any number.
+// See docs/ib/STUDY_V63_TREND_VWAP.md.
+// ================================================================================================
+
+//@version=5
+strategy("V63 trend: VWAP + triple EMA + ATR", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 100000,
+     calc_on_every_tick = false, process_orders_on_close = false, pyramiding = 0)
+
+gT = "Trigger -- the triple EMA stack"
+gV = "Trend -- the session VWAP"
+gA = "ATR"
+gX = "Exit"
+
+f1 = input.int(13, "EMA fast", minval = 2, group = gT)
+f2 = input.int(34, "EMA mid", minval = 3, group = gT)
+f3 = input.int(89, "EMA slow", minval = 4, group = gT)
+winMin = input.int(900, "Enter within this many MINUTES of the stack forming", minval = 0,
+     group = gT,
+     tooltip = "900 minutes is 30 bars on a 30-minute chart, which is what was measured. Declared in minutes so the same number means the same thing on any chart. 0 = the stack bar only, which pooled at +0.0311 against +0.0406 for the full window.")
+
+useVwap = input.bool(true, "Require close above a RISING session VWAP", group = gV,
+     tooltip = "Dropping it takes the pooled out-of-sample result from +0.0406 to +0.0320 %/trade. Requiring `above` without `rising` gives +0.0374.")
+anchorMin = input.int(570, "VWAP anchor, minutes after New York midnight", minval = 0,
+     maxval = 1439, group = gV,
+     tooltip = "570 = 09:30 New York. 1080 = the 18:00 exchange roll, which scored the same (+0.0406 against +0.0395) on 6/7 blocks instead of 7/7.")
+volWeight = input.bool(true, "Weight the VWAP by volume", group = gV,
+     tooltip = "MEASURED AS DOING NOTHING: the volume-weighted anchor beats its unweighted twin in 55.7% of 69,003 matched pairs, mean +0.0096 Sharpe. Turn it off and you have a session average price, which scores the same.")
+
+atrLen = input.int(14, "ATR length", minval = 2, group = gA)
+useAtrG = input.bool(true, "Require ATR at or above its own mean", group = gA,
+     tooltip = "Adds +0.0195 %/trade pooled and was positive on 7 of 7 blocks that chose nothing. The 1.1x rung is worse than either.")
+atrMeanN = input.int(50, "ATR mean length", minval = 2, group = gA)
+atrGMult = input.float(1.0, "ATR gate multiple", minval = 0.1, step = 0.05, group = gA)
+
+stopN = input.float(1.5, "Stop (ATR at the SIGNAL bar)", minval = 0.1, step = 0.1, group = gX,
+     tooltip = "1.5 is the value the search chose on US100 research. Pooled over the blocks that chose nothing, 2.5 scored +0.2728 %/trade on 7/7 blocks against 1.5's +0.1988 on 6/7 -- but that comparison was made AFTER those blocks were read, so it is descriptive.")
+holdMin = input.int(14400, "Hard cap on a trade, in MINUTES", minval = 1, group = gX,
+     tooltip = "14400 minutes is 480 bars at 30m, about ten trading days. THIS IS LOAD-BEARING: 60/120/240/480/960 bars pool at +0.0590 / +0.1054 / +0.1427 / +0.1988 / +0.2484 %/trade. The median WINNER exits on this cap.")
+tpATR = input.float(0.0, "Take profit (ATR, 0 = none)", minval = 0.0, step = 0.5, group = gX,
+     tooltip = "A 3 ATR target takes the pooled result from +0.0406 to +0.0145. No target has beaten every target tested fifteen times on this branch.")
+trailATR = input.float(0.0, "Chandelier trail (ATR, 0 = none)", minval = 0.0, step = 0.5,
+     group = gX,
+     tooltip = "A 2.5 ATR trail was in the original candidate. REMOVING it took the pooled result from +0.0406 to +0.1465 %/trade and profit factor from 1.24 to 1.46. A trail is a take profit wearing a stop's name.")
+
+// ---------------------------------------------------------------------------------------------
+barMin = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+winBars = math.max(0, math.round(winMin / barMin))
+holdBars = math.max(1, math.round(holdMin / barMin))
+
+nyMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+newAnchor = nyMin >= anchorMin and (na(nyMin[1]) or nyMin[1] < anchorMin)
+
+var float cumPV = 0.0
+var float cumV = 0.0
+if barstate.isconfirmed
+    if newAnchor
+        cumPV := 0.0
+        cumV := 0.0
+    wgt = volWeight ? volume : 1.0
+    cumPV := cumPV + hlc3 * wgt
+    cumV := cumV + wgt
+vwapV = cumV > 0 ? cumPV / cumV : na
+
+eFast = ta.ema(close, f1)
+eMid  = ta.ema(close, f2)
+eSlow = ta.ema(close, f3)
+stack = eFast > eMid and eMid > eSlow
+fresh = stack and not stack[1]
+since = ta.barssince(fresh)
+
+atrN = ta.ema(ta.tr(true), atrLen)                 // NOT ta.atr, which is Wilder
+atrM = ta.sma(atrN, atrMeanN)
+
+trigOk = stack and not na(since) and since <= winBars
+vwapOk = not useVwap or (not na(vwapV) and not na(vwapV[1]) and close > vwapV and vwapV > vwapV[1])
+atrOk  = not useAtrG or (not na(atrM) and atrN >= atrGMult * atrM)
+gateOk = trigOk and vwapOk and atrOk and atrN > 0
+
+var float pendAtr = na
+var float runHi = na
+var int   held = 0
+
+if barstate.isconfirmed
+    held := strategy.position_size > 0 ? held + 1 : 0
+    runHi := strategy.position_size > 0 ? (na(runHi) ? high : math.max(runHi, high)) : na
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk
+    pendAtr := atrN
+    held := 0
+    runHi := na
+    strategy.entry("L", strategy.long)
+    lossTk = stopN * pendAtr / syminfo.mintick
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", loss = lossTk,
+             profit = tpATR * pendAtr / syminfo.mintick)
+    else
+        strategy.exit("x", from_entry = "L", loss = lossTk)
+
+if barstate.isconfirmed and strategy.position_size > 0 and not na(pendAtr)
+    fixed = strategy.position_avg_price - stopN * pendAtr
+    lvl = fixed
+    if trailATR > 0 and not na(runHi)
+        lvl := math.max(lvl, runHi - trailATR * pendAtr)
+    lvl := math.min(lvl, close[1])
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", stop = lvl,
+             limit = strategy.position_avg_price + tpATR * pendAtr)
+    else
+        strategy.exit("x", from_entry = "L", stop = lvl)
+
+if barstate.isconfirmed and strategy.position_size > 0 and held >= holdBars
+    strategy.close_all("cap")
+
+plot(vwapV, "Session VWAP", color = color.new(color.orange, 0), linewidth = 2)
+plot(eFast, "EMA fast", color = color.new(color.aqua, 55))
+plot(eMid,  "EMA mid",  color = color.new(color.teal, 55))
+plot(eSlow, "EMA slow", color = color.new(color.gray, 40))
+bgcolor(stack ? color.new(color.green, 92) : na, title = "EMA stack")
+
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "EMA " + str.tostring(f1) + "/" + str.tostring(f2) + "/"
+         + str.tostring(f3) + "   window " + str.tostring(winBars) + " bars   cap "
+         + str.tostring(holdBars) + " bars", text_color = color.white,
+         bgcolor = color.new(color.teal, 25))
+    table.cell(hud, 0, 1, "stop " + str.tostring(stopN) + "N"
+         + (tpATR > 0 ? "   TP " + str.tostring(tpATR) + "N" : "   no target")
+         + (trailATR > 0 ? "   trail " + str.tostring(trailATR) + "N" : "   no trail"),
+         text_color = color.white,
+         bgcolor = (tpATR > 0 or trailATR > 0) ? color.new(color.orange, 20)
+             : color.new(color.gray, 40))
+    table.cell(hud, 0, 2, "wins 9-19% of trades; 86% stop out. Median winner holds ~10 days.",
+         text_color = color.white, bgcolor = color.new(color.maroon, 40))
