@@ -2483,6 +2483,23 @@ corner is dead AND is a tie-break artifact: `0.75N / 0.5R` is -0.0044 %/trade on
 a **5.5% ambiguous share against 0.0% for every wide cell**.
 See `docs/ib/STUDY_V63_TREND_VWAP.md`.
 
+**A SIXTH RE-OPTIMISER LOSES TO THE AUTHOR'S CONSTANTS, THIS TIME 6 OF 6 CELLS AT MEAN WFE 0.17.**
+The Saty-phase / ATR-normalised-momentum configuration as specified (EMA 21, ATR 21, smoothing 4,
++/-100 zones, 09:30-10:30 entry, opposing-extreme exit, 2.5 ATR VWAP band) walked forward with all
+six parameters re-chosen inside every training window from a 2,304-cell grid CENTRED ON THE GIVEN
+VALUES, rolling and expanding, three markets. Re-chosen against given: NQ +0.0684 / +0.0592 against
+**+0.3123**, US100 +0.0006 / +0.0698 against **+0.2702**, US30 both worse and both negative -- and
+on FOLD CONSISTENCY the given constants win 7/7 and 11/13 against the re-chosen 5/7 and 7-9/13.
+**THE OPTIMISER NEVER SETTLES**: its per-fold choices agree with its own first fold only 38-52% of
+the time over six axes, and it keeps the given value in `vwap` 0/7 and `ema` 1/7 on NQ. A parameter
+whose optimum moves every fold has no information in it. **REPORT WFE ONLY AGAINST A POSITIVE
+BASELINE** -- US30's given baseline is -0.0195 and the ratio came out at -24 MILLION before the
+guard was added. The configuration itself is a TWO-MARKET one: US100 +0.1913/+0.2933/+0.2469 on
+three blocks at PF 1.90-2.53 and NQ +0.1394/+0.3805, against **US30 negative on two of three blocks**
+and never above PF 1.05. Note also what the port cannot represent: the 61.8 golden-ratio zone is
+drawn and never traded on, and two of the twelve given numbers have no field to map to.
+See `docs/ib/STUDY_APM_WFO.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2609,6 +2626,7 @@ See `docs/ib/STUDY_V63_TREND_VWAP.md`.
 | `pine/apm/APM_SESSION_VWAP_strategy.pine` | the ATR-phase-momentum / session-VWAP NinjaScript, ported: control shadow, cash close, every fail-closed path counted |
 | `research/apm/apm_sim.py` | that Pine's order model on exact UTC 10-minute buckets from NQ 1m; prints the source's terminal counts |
 | `research/apm/apm_core.py`, `apm_run.py` | **the APM battery** -- one numba walk per configuration, three matched controls, anatomy, 12,960-cell grid, walk-forward, both Monte Carlos, clusters, funded evaluation |
+| `research/apm/apm_wfo.py` | the walk-forward on a user-given configuration: explicit parameter mapping, a grid centred on it, rolling and expanding folds, WFE guarded against a negative baseline |
 | `research/apm/apm_edge.py` | the mechanism without the indicator (drive ladder, published momentum, the two-half decomposition) and 17 causal features on the rule's trades |
 | `research/trendday/td_core.py`, `td_run.py` | the Raschke trend-day / untouched-EMA EA: the exact order model, its 1m-vs-15m parity, day and mirrored-side controls, grid, walk-forward, MC, regimes |
 | `research/trendday/td_parity.py` | **the shipped Pine's order model in Python, diffed against the engine** — exact at 1m, a different strategy at 15m |
