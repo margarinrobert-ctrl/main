@@ -2446,6 +2446,22 @@ directions cancel; read the direction split, never the pooled share. Every readi
 edge on the one block that CHOSE the strategy. And the same gate scored 7/7 in the drop-one and 5/7
 here with nothing changed but the base (the drop-one still had the trail on) -- STUDY_V52's
 geometry lesson again.
+**A HARD FLATTEN COSTS 86% OF THE EDGE ON A TEN-DAY-HOLD TREND FOLLOWER, AND A WALK-FORWARD
+OPTIMISER FREE TO TAKE IT TOOK IT IN 0 OF 36 FOLDS.** Seven entry windows x flatten on/off on the
+V63 design, pooled over the seven blocks that chose nothing: **the flatten is -0.1710 %/trade
+averaged over the seven windows** and four of the seven flattened windows are NEGATIVE, closing
+55-72% of all trades on the clock -- mechanism plain, the median WINNER holds 240 hours and exits on
+the 480-bar cap. Twelfth confirmation and the most extreme instance. **NO ENTRY WINDOW BEATS ALL
+HOURS** (+0.1988); the one row worth knowing is 09:30-12:00 without a flatten at +0.1964 on HALF the
+trades and **7/7 blocks positive against 6/7** -- same edge, more consistent, less exposure, not an
+improvement. The flatten's real attraction is drawdown, 16.5% -> 4.3-5.6% pooled, and **the
+permutation puts those realised drawdowns at the 2nd-6th percentile of their own distributions with
+a p99 of 13-15%**, so most of that comfort is luck. WALK-FORWARD: the window, flatten and stop
+re-chosen in every training fold from 60 declared cells, expanding and rolling, three markets --
+WFE 1.38/1.28 on US100, **0.71/0.60 on US30**, 0.95/1.01 on NQ, **mean 0.99**, and the fixed
+constants are positive on 5-6 of 6 folds everywhere against the re-chosen 3-6. Fifth re-optimiser
+to lose to the author's constants here. The chosen windows disagree across markets, which is what a
+parameter with no information looks like. Both mechanics ship as inputs, DEFAULT OFF.
 See `docs/ib/STUDY_V63_TREND_VWAP.md`.
 
 ## Tooling

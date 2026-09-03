@@ -231,3 +231,83 @@ and it is not an argument in its favour.
 Note also that the ATR gate scored 7/7 in the stage-C drop-one and 5/7 here. Nothing changed but
 the base: stage C measured it on the candidate that still had the chandelier trail. A filter is a
 property of a geometry, not of a market (`STUDY_V52`), measured again.
+
+
+## 10. A time window and a hard flatten, with the full battery
+
+`research/v63/v63sess.py`, `run_v63h.py`, `run_v63i.py`; `results/v63/stage_h.txt`,
+`stage_i.txt`, `session.csv`. Two mechanics, kept separate: an ENTRY WINDOW takes only signals
+inside `[start, stop)` and then manages the trade normally; a HARD FLATTEN also closes any open
+position at the stop time. "Flat by the stop" means flat at the stop minute's OPEN, because
+`strategy.close_all()` cannot sell the close of the bar that triggers it — so the engine exits at
+the open of the first bar at or after the cutoff, which is what the script does.
+
+### IS / OOS — pooled over the seven blocks that chose nothing
+
+| window | no flatten | blocks + | with a flatten | blocks + | clock exits |
+|---|---|---|---|---|---|
+| all hours | **+0.1988** | 6/7 | — | — | — |
+| 09:30-12:00 | +0.1964 | **7/7** | −0.0060 | 3/7 | 64% |
+| 03:00-12:00 | +0.1894 | 6/7 | −0.0132 | 2/7 | 57% |
+| 08:00-12:00 | +0.1841 | 6/7 | −0.0165 | 2/7 | 60% |
+| 09:30-11:00 | +0.1803 | 6/7 | +0.0119 | 5/7 | 63% |
+| 09:30-16:00 | +0.1693 | 6/7 | +0.0350 | 6/7 | 60% |
+| 07:00-11:00 | +0.1590 | 6/7 | −0.0072 | 4/7 | 55% |
+| 13:00-16:00 | +0.1580 | 6/7 | +0.0356 | 6/7 | 72% |
+
+**The flatten costs −0.1710 %/trade averaged over the seven windows — 86% of the edge — and four of
+the seven flattened windows are outright negative.** The mechanism is not subtle: this rule's median
+WINNER holds 240 hours and exits on the 480-bar cap, so a daily flatten truncates every winner it
+has. Twelfth confirmation of the intraday-constraint finding on this branch, and the most extreme
+instance of it.
+
+**No entry window beats all hours.** The one row worth knowing is 09:30-12:00 without a flatten:
++0.1964 against +0.1988 on **half the trades** and positive on 7 of 7 blocks against 6 of 7. Same
+edge, more consistent, less exposure — a reasonable preference, not an improvement.
+
+### Monte Carlo — day-block bootstrap for the edge, permutation for the path
+
+| variant | n | %/trade | P(mean ≤ 0) | 95% CI | realised DD | MC p99 | percentile |
+|---|---|---|---|---|---|---|---|
+| shipped, all hours | 850 | +0.1988 | **0.0000** | [+0.0865, +0.3191] | 16.48% | 34.60% | 0.32 |
+| 09:30-12:00, no flatten | 437 | +0.1964 | 0.0015 | [+0.0619, +0.3450] | 8.40% | 22.78% | 0.06 |
+| 09:30-16:00 + flatten | 1132 | +0.0350 | 0.0027 | [+0.0093, +0.0610] | 5.62% | 15.13% | 0.06 |
+| 13:00-16:00 + flatten | 856 | +0.0356 | 0.0063 | [+0.0071, +0.0657] | 4.28% | 13.24% | 0.02 |
+
+All four exclude zero — the flattened ones at a fifth of the magnitude. **The flatten's real
+attraction is the drawdown, 16.5% down to 4.3–5.6% — and the permutation says most of that comfort
+is luck**: those realised drawdowns sit at the 2nd to 6th percentile of their own distributions with
+a p99 of 13–15%. The pooled interval is optimistic throughout: US100 and US30 are the same weeks.
+
+### Robustness
+
+Every variant holds at 4× the modelled cost (shipped +0.1811, flattened +0.0167 to +0.0173). The
+stop ladder is flat for the windowed variants (+0.1913 to +0.1964 across 1.5–3.0 N) and prefers
+2.5 N for the shipped one (+0.2728), which is the same post-hoc preference §4 already recorded.
+
+### Walk-forward optimisation
+
+The window, the flatten and the stop re-chosen inside every training fold from **60 declared
+cells**, then applied to the fold it had never seen — eight folds, expanding and rolling training
+windows, three markets.
+
+| market | mode | re-chosen | folds + | fixed constants | folds + | WFE |
+|---|---|---|---|---|---|---|
+| US100 | expanding | +0.3486 | 6/6 | +0.2523 | 6/6 | 1.38 |
+| US100 | rolling 2 | +0.3233 | 6/6 | +0.2523 | 6/6 | 1.28 |
+| US30 | expanding | +0.0966 | 3/6 | +0.1366 | 5/6 | **0.71** |
+| US30 | rolling 2 | +0.0818 | 4/6 | +0.1366 | 5/6 | **0.60** |
+| NQ | expanding | +0.1839 | 3/6 | +0.1936 | 5/6 | 0.95 |
+| NQ | rolling 2 | +0.1953 | 4/6 | +0.1936 | 5/6 | 1.01 |
+
+**Mean walk-forward efficiency 0.99 — re-optimising bought nothing**, and it cost consistency: the
+fixed constants are positive on 5–6 of 6 folds on all three markets while the re-chosen cells manage
+3–6. Fifth time on this branch that a re-optimiser has lost to the author's constants
+(`STUDY_IBS_SESSION`, `STUDY_APM_VWAP`, `STUDY_TRENDDAY_EMA`, `STUDY_V60`).
+
+**And the strongest single line in the study: the optimiser was free to take the flatten in 36 fold
+decisions and took it in 0 of 36.** What it did choose was 09:30-16:00 and 13:00-16:00 windows with
+wider stops on US100 and NQ, and all hours on US30 — no consensus across markets, which is what a
+parameter with no information looks like.
+
+Both mechanics ship in the script as inputs, **default off**, with these numbers in their tooltips.

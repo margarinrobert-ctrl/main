@@ -93,6 +93,47 @@
 //    +0.1% / +0.3% / -0.0% on the three markets. The only structural difference is that a time cap
 //    fills at the NEXT bar's open, which the engine cannot do and which is worth ~0.2%.
 //  * COSTS ARE NOT SET HERE. Set commission and slippage in Properties before reading any number.
+// ================== A TIME WINDOW AND A HARD FLATTEN: BOTH MEASURED, BOTH OFF ==================
+// Added because they were asked for, and priced on the seven blocks that had no part in the search.
+// Percent of entry price per trade, pooled:
+//
+//   window        no flatten                  with a hard flatten at the stop time
+//   all hours     +0.1988  6/7 blocks +       (not applicable)
+//   09:30-12:00   +0.1964  7/7              -0.0060  3/7   64% of trades closed by the clock
+//   03:00-12:00   +0.1894  6/7              -0.0132  2/7   57%
+//   09:30-11:00   +0.1803  6/7              +0.0119  5/7   63%
+//   08:00-12:00   +0.1841  6/7              -0.0165  2/7   60%
+//   09:30-16:00   +0.1693  6/7              +0.0350  6/7   60%
+//   13:00-16:00   +0.1580  6/7              +0.0356  6/7   72%
+//   07:00-11:00   +0.1590  6/7              -0.0072  4/7   55%
+//
+// THE FLATTEN COSTS -0.1710 %/TRADE AVERAGED OVER THE SEVEN WINDOWS -- 86% of the edge -- and four
+// of the seven flattened windows are outright negative. The mechanism is not subtle: this rule's
+// median WINNER holds 240 hours and exits on the 480-bar cap, so a daily flatten truncates every
+// winner it has and closes 55-72% of all trades on the clock. Twelfth confirmation on this branch.
+// It does cut drawdown, from 16.5% to 4.3-5.6% pooled -- but the permutation puts those realised
+// drawdowns at the 2nd to 6th percentile of their own distribution with a p99 of 13-15%, so most
+// of that comfort is luck rather than the flatten.
+//
+// NO ENTRY WINDOW BEATS ALL HOURS. The one row worth knowing about is 09:30-12:00 without a
+// flatten: +0.1964 against all hours' +0.1988 on HALF the trades, and positive on 7 of 7 blocks
+// against 6 of 7. Same edge, more consistent, less exposure -- a reasonable preference, not an
+// improvement.
+//
+// AND THE WALK-FORWARD OPTIMISER WOULD NOT TAKE THE FLATTEN. The window, the flatten and the stop
+// re-chosen inside every training fold from 60 declared cells and applied to the fold it had never
+// seen, expanding and rolling, three markets -- 36 fold decisions in total and **the flatten was
+// chosen in 0 of 36**. Walk-forward efficiency against the fixed shipped constants: US100 1.38 and
+// 1.28, US30 0.71 and 0.60, NQ 0.95 and 1.01 -- mean 0.99, so re-optimising bought nothing, and
+// the fixed constants are positive on 5-6 of 6 folds on all three markets against the re-chosen
+// 3-6. Fifth time on this branch that a re-optimiser has lost to the author's constants.
+//
+// MONTE CARLO on the pooled out-of-sample trades (day-block bootstrap for the edge, permutation
+// for the path): shipped P(mean<=0) 0.0000, 95% CI [+0.0865, +0.3191], realised drawdown 16.5%
+// against an MC p99 of 34.6%. Size for the p99. Both flattened variants also exclude zero, at a
+// fifth of the magnitude.
+// COST: the shipped design holds +0.1811 %/trade at 4x the modelled cost; the flattened variants
+// +0.0167 to +0.0173.
 // See docs/ib/STUDY_V63_TREND_VWAP.md.
 // ================================================================================================
 
@@ -105,6 +146,7 @@ gT = "Trigger -- the triple EMA stack"
 gV = "Trend -- the session VWAP"
 gA = "ATR"
 gX = "Exit"
+gS = "Session -- both MEASURED and both OFF"
 
 f1 = input.int(13, "EMA fast", minval = 2, group = gT)
 f2 = input.int(34, "EMA mid", minval = 3, group = gT)
@@ -140,6 +182,15 @@ holdMin = input.int(14400, "Hard cap on a trade, in MINUTES", minval = 1, group 
      tooltip = "14400 minutes is 480 bars at 30m, about ten trading days. THIS IS LOAD-BEARING: 60/120/240/480/960 bars pool at +0.0590 / +0.1054 / +0.1427 / +0.1988 / +0.2484 %/trade. The median WINNER exits on this cap.")
 tpATR = input.float(0.0, "Take profit (ATR, 0 = none)", minval = 0.0, step = 0.5, group = gX,
      tooltip = "A 3 ATR target takes the pooled result from +0.0406 to +0.0145. No target has beaten every target tested fifteen times on this branch.")
+sessOn = input.bool(false, "Restrict ENTRIES to a time window", group = gS,
+     tooltip = "No window beats all hours on the pooled out-of-sample read. The best is 09:30-12:00 at +0.1964 %/trade against all hours' +0.1988, on half the trades and positive on 7 of 7 blocks against 6 of 7. Same edge, more consistent, less exposure.")
+startH = input.int(9,  "Start hour (New York)",  minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(12, "Stop hour (New York)",   minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute", minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "FLATTEN any open position at the stop time", group = gS,
+     tooltip = "MEASURED COST -0.1710 %/trade averaged over seven windows -- 86% of the edge -- and four of the seven flattened windows are negative. The median WINNER of this rule holds 240 hours, so a daily flatten truncates every winner it has and closes 55-72% of all trades on the clock. A walk-forward optimiser free to pick it chose it in 0 of 36 folds.")
+
 trailATR = input.float(0.0, "Chandelier trail (ATR, 0 = none)", minval = 0.0, step = 0.5,
      group = gX,
      tooltip = "A 2.5 ATR trail was in the original candidate. REMOVING it took the pooled result from +0.0406 to +0.1465 %/trade and profit factor from 1.24 to 1.46. A trail is a take profit wearing a stop's name.")
@@ -151,6 +202,18 @@ holdBars = math.max(1, math.round(holdMin / barMin))
 
 nyMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
 newAnchor = nyMin >= anchorMin and (na(nyMin[1]) or nyMin[1] < anchorMin)
+
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin = not sessOn ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+// "flat at the stop time" means flat at the stop minute's OPEN, so the order goes out on the bar
+// BEFORE it -- `strategy.close_all()` fills at the next bar's open and cannot sell the close of the
+// bar that triggers it. And a signal whose fill would land at or after the cutoff is REFUSED rather
+// than opened for zero, which is the V60 mechanic.
+tfMin = math.max(1, math.round(timeframe.in_seconds() / 60))
+atCut = sessOn and flatOn and (nyMin + tfMin >= sStop) and (nyMin < sStop)
+willCut = sessOn and flatOn and (nyMin + tfMin >= sStop)
 
 var float cumPV = 0.0
 var float cumV = 0.0
@@ -185,7 +248,7 @@ atrOk = regMode == "off" ? true :
      regMode == "level: ATR percentile >= q" ? (not na(atrP) and atrP >= atrGQ) :
      regMode == "calm: ATR percentile <= q" ? (not na(atrP) and atrP <= atrGQ) :
      (not na(atrN[atrSlopeK]) and atrUp)
-gateOk = trigOk and vwapOk and atrOk and atrN > 0
+gateOk = trigOk and vwapOk and atrOk and atrN > 0 and inWin and not willCut
 
 var float pendAtr = na
 var float runHi = na
@@ -219,8 +282,8 @@ if barstate.isconfirmed and strategy.position_size > 0 and not na(pendAtr)
     else
         strategy.exit("x", from_entry = "L", stop = lvl)
 
-if barstate.isconfirmed and strategy.position_size > 0 and held >= holdBars
-    strategy.close_all("cap")
+if barstate.isconfirmed and strategy.position_size > 0 and (held >= holdBars or atCut)
+    strategy.close_all(atCut ? "flat" : "cap")
 
 plot(vwapV, "Session VWAP", color = color.new(color.orange, 0), linewidth = 2)
 plot(eFast, "EMA fast", color = color.new(color.aqua, 55))
@@ -240,5 +303,8 @@ if barstate.islast
          text_color = color.white,
          bgcolor = (tpATR > 0 or trailATR > 0) ? color.new(color.orange, 20)
              : color.new(color.gray, 40))
-    table.cell(hud, 0, 2, "wins 9-19% of trades; 86% stop out. Median winner holds ~10 days.",
-         text_color = color.white, bgcolor = color.new(color.maroon, 40))
+    sess = not sessOn ? "all hours" : str.tostring(startH) + ":" + str.tostring(startM)
+         + "-" + str.tostring(stopH) + ":" + str.tostring(stopM) + (flatOn ? " +FLATTEN" : "")
+    table.cell(hud, 0, 2, sess + "   -- wins 9-19%; 86% stop out; median winner holds ~10 days",
+         text_color = color.white,
+         bgcolor = (sessOn and flatOn) ? color.red : color.new(color.maroon, 40))
