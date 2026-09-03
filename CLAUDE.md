@@ -2462,6 +2462,25 @@ WFE 1.38/1.28 on US100, **0.71/0.60 on US30**, 0.95/1.01 on NQ, **mean 0.99**, a
 constants are positive on 5-6 of 6 folds everywhere against the re-chosen 3-6. Fifth re-optimiser
 to lose to the author's constants here. The chosen windows disagree across markets, which is what a
 parameter with no information looks like. Both mechanics ship as inputs, DEFAULT OFF.
+**A PER-TRADE OPTIMUM ON AN AXIS THAT ALSO CHANGES THE TRADE COUNT IS NOT AN OPTIMUM.** 405-cell
+stop x target x partial sweep on V63 (9 stops 0.75N-12N where 12N cannot bind, 15 targets in BOTH
+parameterisations because 2R behind a 1.5N stop is 3 ATR and behind a 3N stop is 6 ATR, 3 partials),
+pooled over the seven blocks that chose nothing; 405 of 405 scorable and **99.8% profitable**, so
+read the marginals. **THE STOP AXIS GIVES THREE DIFFERENT ANSWERS IN THREE UNITS**: per trade it is
+MONOTONE WIDER (+0.015 at 0.75N to +0.232 at 12N), in R it PEAKS AT 2.5N (+0.139), and in TOTAL
+MONEY AT ONE UNIT IT IS FLAT (+169.0 / +171.0 / +163.1 / +172.0 / +133.9 at 1.5/2.5/4/6/12N) while
+max drawdown climbs MONOTONICALLY 16.5 -> 21.4 -> 20.5 -> 26.1 -> 38.2. **Return-over-drawdown
+therefore picks the TIGHTEST rung, 1.5N at 10.3 against 8.0 / 7.9 / 6.6 / 3.5** -- and it risks
+0.37% of entry price a trade against 6N's 1.53%. The per-trade column is a trade-count artifact
+(434 trades at 6N against 850 at 1.5N). This CORRECTS two earlier per-trade readings in the same
+study that preferred 2.5N. **AND THE STOP EARNS ITS PLACE**: at 12N total falls to +133.9 and
+bootstrap P(mean<=0) rises 0.0003 -> 0.0137, so removing it is worse than having it. NO TAKE PROFIT
+wins monotonically in BOTH parameterisations -- the SIXTEENTH time -- and **every target clears its
+own break-even win rate and still loses to no target** (0.5R needs 66.7% and gets 68.5%; 8R needs
+11.1% and gets 30.5%), with the shortfall GROWING with the target because the trades that reach a
+wide one were going further. Partials subtract (none +0.1071, half at 1R +0.0746). The scalping
+corner is dead AND is a tie-break artifact: `0.75N / 0.5R` is -0.0044 %/trade on 4,399 trades with
+a **5.5% ambiguous share against 0.0% for every wide cell**.
 See `docs/ib/STUDY_V63_TREND_VWAP.md`.
 
 ## Tooling

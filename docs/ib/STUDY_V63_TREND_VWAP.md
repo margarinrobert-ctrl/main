@@ -311,3 +311,88 @@ wider stops on US100 and NQ, and all hours on US30 — no consensus across marke
 parameter with no information looks like.
 
 Both mechanics ship in the script as inputs, **default off**, with these numbers in their tooltips.
+
+
+## 11. Stop-loss and take-profit optimisation — 405 cells, and the unit decides
+
+`research/v63/v63exit.py`, `run_v63j.py`; `results/v63/stage_j.txt`, `sltp.csv`, `sltp_pooled.csv`.
+Nine stops (0.75N to 12N, where 12N cannot bind — `STUDY_V43`'s rule for measuring anything a stop
+censors) × fifteen targets (none, 0.5R–8R as a multiple of the stop, and 1–8 ATR absolute, because
+those are **not the same axis**: a 2R target sits at 3 ATR behind a 1.5N stop and 6 ATR behind a 3N
+stop) × three partials (none, half off at 1R or 2R). 405 of 405 scorable, **99.8% profitable**, so
+the marginals are the reading and the top row is the maximum of 405 draws.
+
+### No take profit wins in both parameterisations, monotonically — the sixteenth time
+
+| as a multiple of the stop | %/trade | win | target hit |
+|---|---|---|---|
+| **none** | **+0.2023** | 29.9% | — |
+| 8R | +0.1745 | 30.5% | 2.6% |
+| 6R | +0.1594 | 31.2% | 3.8% |
+| 4R | +0.1359 | 33.2% | 6.1% |
+| 3R | +0.1241 | 35.6% | 8.1% |
+| 2R | +0.1085 | 39.8% | 11.2% |
+| 1.5R | +0.0934 | 45.2% | 25.2% |
+| 1R | +0.0628 | 53.1% | 33.3% |
+| 0.5R | +0.0348 | 68.5% | 64.9% |
+
+Absolute ATR targets are worse still at every comparable distance: none +0.2023, 8 ATR +0.0951,
+6 +0.0725, 4 +0.0396, 3 +0.0261, 2 +0.0254, 1 +0.0181.
+
+**And every target clears its own break-even win rate, and still loses to no target.**
+
+| target | break-even | actual win | shortfall |
+|---|---|---|---|
+| 0.5R | 66.7% | 68.5% | +1.9% |
+| 1R | 50.0% | 53.1% | +3.1% |
+| 2R | 33.3% | 39.8% | +6.5% |
+| 4R | 20.0% | 33.2% | +13.2% |
+| 8R | 11.1% | 30.5% | **+19.4%** |
+
+Both statements are true at once: a target is profitable in isolation and worse than not truncating
+the trade. The shortfall GROWING with the target is the signature — the trades that reach a wide
+target were going much further than it.
+
+**Partial exits subtract**: none +0.1071, half at 1R +0.0746, half at 2R +0.0928. `STUDY_V8`
+confirmed on a new base; no partial input is offered.
+
+### The stop axis is the trap, and the unit decides the answer
+
+| stop | 0.75N | 1N | 1.5N | 2N | 2.5N | 3N | 4N | 6N | 12N |
+|---|---|---|---|---|---|---|---|---|---|
+| %/trade | +0.015 | +0.026 | +0.048 | +0.048 | +0.080 | +0.073 | +0.116 | +0.186 | **+0.232** |
+| in R | +0.077 | +0.099 | +0.128 | +0.094 | **+0.139** | +0.113 | +0.131 | +0.124 | +0.102 |
+| n (pooled) | — | — | 850 | — | 627 | — | 502 | 434 | 349 |
+| **total %** | — | — | **+169.0** | — | +171.0 | — | +163.1 | +172.0 | +133.9 |
+| max DD | — | — | **16.5** | — | 21.4 | — | 20.5 | 26.1 | 38.2 |
+| **return/DD** | — | — | **10.3** | — | 8.0 | — | 7.9 | 6.6 | 3.5 |
+| risk of one unit | — | — | **0.37%** | — | 0.64% | — | 1.02% | 1.53% | 3.08% |
+
+**Three units, three different answers, and only one of them is about money.** Per trade the wide
+stops look far better and it is a TRADE-COUNT ARTIFACT — 434 trades at 6N against 850 at 1.5N, and
+the total earned at one unit is flat at +163 to +172 percent while the drawdown nearly doubles. In
+R the axis peaks at 2.5N, which is the denominator. **On return-over-drawdown the shipped 1.5N is
+the best rung in the grid**, and it also risks the least per trade.
+
+This supersedes §4's note preferring 2.5N and §10's stop ladder: both were per-trade readings.
+**A per-trade optimum on an axis that also changes the trade count is not an optimum** — the same
+error class as scoring a filter on per-trade edge instead of against a same-selectivity control.
+
+**And the stop earns its place.** At 12N, where it cannot bind, total return falls to +133.9 and the
+day-block bootstrap's P(mean ≤ 0) rises from 0.0003 to 0.0137. Removing the stop is worse than
+having one, which is not what the per-trade column suggests.
+
+### The scalping corner of the grid is dead, and it is a tie-break artifact
+
+The ten worst cells are all 0.75N: `0.75N / 0.5R` is **−0.0044 %/trade on 4,399 trades** and
+`0.75N / 1R` is +0.0003 on 3,577. Their **ambiguous share** — stop and target inside the same
+30-minute bar, where OHLC cannot say which came first — is **5.5%** against **0.0% for every wide
+cell**, so those numbers are partly set by the tie-break rule (resolved as a stop, always) rather
+than by the market.
+
+### What changes
+
+Nothing in the shipped defaults. The optimisation confirms both of them: 1.5 × ATR and no target
+are the best rungs on the only unit that measures money adjusted for the path. 104 of 405 cells are
+positive on all seven blocks, so being consistent is not rare here; the shipped cell's distinction
+is return-over-drawdown, not consistency.

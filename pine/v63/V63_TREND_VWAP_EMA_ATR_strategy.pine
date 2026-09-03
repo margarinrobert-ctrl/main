@@ -134,6 +134,46 @@
 // fifth of the magnitude.
 // COST: the shipped design holds +0.1811 %/trade at 4x the modelled cost; the flattened variants
 // +0.0167 to +0.0173.
+// ================= STOP LOSS AND TAKE PROFIT: 405 CELLS, AND THE UNIT DECIDES =================
+// 9 stops (0.75N to 12N, where 12N cannot bind) x 15 targets (none, 0.5R-8R, and 1-8 ATR absolute,
+// because those are NOT the same axis) x 3 partial exits (none, half off at 1R or 2R), pooled over
+// the seven blocks that had no part in the search. 405 of 405 scorable, 99.8% profitable, so read
+// the marginals and not the top row.
+//
+// NO TAKE PROFIT WINS IN BOTH PARAMETERISATIONS, MONOTONICALLY -- the sixteenth time on this branch:
+//   as a multiple of the stop   none +0.2023 | 8R +0.1745 | 6R +0.1594 | 4R +0.1359 | 3R +0.1241
+//                               2R +0.1085 | 1.5R +0.0934 | 1R +0.0628 | 0.5R +0.0348
+//   as absolute ATR             none +0.2023 | 8 +0.0951 | 6 +0.0725 | 4 +0.0396 | 3 +0.0261
+//                               2 +0.0254 | 1 +0.0181
+// AND EVERY TARGET CLEARS ITS OWN BREAK-EVEN WIN RATE -- 0.5R needs 66.7% and gets 68.5%, 8R needs
+// 11.1% and gets 30.5% -- and still loses to having no target at all. Both are true: a target is
+// profitable in isolation and worse than not truncating the trade. The shortfall GROWS with the
+// target (+1.9% at 0.5R to +19.4% at 8R) because the trades that reach a wide target were going
+// much further than it.
+//
+// PARTIAL EXITS SUBTRACT: none +0.1071, half at 1R +0.0746, half at 2R +0.0928. No partial input
+// is offered, on purpose.
+//
+// THE STOP AXIS IS THE TRAP, AND THE UNIT DECIDES THE ANSWER:
+//   stop      0.75N    1N     1.5N    2N     2.5N    3N      4N      6N      12N
+//   %/trade  +0.015  +0.026  +0.048 +0.048  +0.080 +0.073  +0.116  +0.186  +0.232   monotone WIDER
+//   in R     +0.077  +0.099  +0.128 +0.094  +0.139 +0.113  +0.131  +0.124  +0.102   peaks at 2.5N
+//   TOTAL %  --      --      +169.0  --     +171.0  --     +163.1  +172.0  +133.9   FLAT
+//   max DD   --      --       16.5   --      21.4   --      20.5    26.1    38.2    monotone WORSE
+//   return/DD --     --       10.3   --       8.0   --       7.9     6.6     3.5
+//   risk of one unit, as a % of entry price:  1.5N 0.37% | 2.5N 0.64% | 4N 1.02% | 6N 1.53% | 12N 3.08%
+//
+// PER TRADE the wide stops look far better and it is a TRADE-COUNT ARTIFACT: 434 trades at 6N
+// against 850 at 1.5N, and the total money earned at one unit is the SAME (+163 to +172) while the
+// drawdown nearly doubles. On return-over-drawdown the SHIPPED 1.5N is the best rung in the grid.
+// This supersedes the note in an earlier section preferring 2.5N -- that was a per-trade reading.
+// A per-trade optimum on an axis that also changes the trade count is not an optimum.
+//
+// AND THE STOP DOES EARN ITS PLACE: at 12N, where it cannot bind, total return falls to +133.9 and
+// the bootstrap's P(mean<=0) rises from 0.0003 to 0.0137. Removing the stop is worse than having it.
+// The tightest cells are the scalping geometry and they are dead: 0.75N with a 0.5R target is
+// -0.0044 %/trade on 4,399 trades, and its ambiguous share (stop and target inside one bar) is
+// 5.5% against 0.0% for every wide cell, so those numbers are set by the tie-break rule.
 // See docs/ib/STUDY_V63_TREND_VWAP.md.
 // ================================================================================================
 
@@ -177,11 +217,11 @@ atrGQ = input.float(0.6, "q -- the percentile, 0 to 1", minval = 0.0, maxval = 1
 atrSlopeK = input.int(10, "Slope lookback (bars)", minval = 1, group = gA)
 
 stopN = input.float(1.5, "Stop (ATR at the SIGNAL bar)", minval = 0.1, step = 0.1, group = gX,
-     tooltip = "1.5 is the value the search chose on US100 research. Pooled over the blocks that chose nothing, 2.5 scored +0.2728 %/trade on 7/7 blocks against 1.5's +0.1988 on 6/7 -- but that comparison was made AFTER those blocks were read, so it is descriptive.")
+     tooltip = "SWEPT 0.75N to 12N. Per trade, wider is monotonically better (+0.015 at 0.75N to +0.232 at 12N) and that is a TRADE-COUNT ARTIFACT: total money earned at one unit is flat (+163 to +172 percent) while max drawdown goes 16.5 to 38.2. On return-over-drawdown 1.5N is the best rung in the grid at 10.3, against 8.0 at 2.5N and 6.6 at 6N. It also risks the least per trade: 0.37% of entry price against 1.53% at 6N. Widen it only if you want fewer, larger trades and can carry the drawdown.")
 holdMin = input.int(14400, "Hard cap on a trade, in MINUTES", minval = 1, group = gX,
      tooltip = "14400 minutes is 480 bars at 30m, about ten trading days. THIS IS LOAD-BEARING: 60/120/240/480/960 bars pool at +0.0590 / +0.1054 / +0.1427 / +0.1988 / +0.2484 %/trade. The median WINNER exits on this cap.")
 tpATR = input.float(0.0, "Take profit (ATR, 0 = none)", minval = 0.0, step = 0.5, group = gX,
-     tooltip = "A 3 ATR target takes the pooled result from +0.0406 to +0.0145. No target has beaten every target tested fifteen times on this branch.")
+     tooltip = "SWEPT in both parameterisations and no target wins monotonically in each. As absolute ATR: none +0.2023, 8 +0.0951, 6 +0.0725, 4 +0.0396, 3 +0.0261, 2 +0.0254, 1 +0.0181. As a multiple of the stop: none +0.2023 down to 0.5R +0.0348. Every target clears its own break-even win rate and still loses to no target, because it truncates exactly the trades that were going further.")
 sessOn = input.bool(false, "Restrict ENTRIES to a time window", group = gS,
      tooltip = "No window beats all hours on the pooled out-of-sample read. The best is 09:30-12:00 at +0.1964 %/trade against all hours' +0.1988, on half the trades and positive on 7 of 7 blocks against 6 of 7. Same edge, more consistent, less exposure.")
 startH = input.int(9,  "Start hour (New York)",  minval = 0, maxval = 23, group = gS)
