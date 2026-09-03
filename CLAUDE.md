@@ -2285,6 +2285,28 @@ entry filter wearing a stop's name. Placed INSIDE the channel it does fire (19% 
 risk-adjusted measure falls monotonically with entries (Sharpe 0.97 at 2x -> 0.71 -> 0.50 -> 0.42;
 drawdown -12% -> -20%). The frontier is a property of the DAY FILTER, which is the edge itself.
 
+**AN INDICATOR WHOSE WINDOW IS IN MINUTES CHANGES THE STRATEGY WHEN THE BAR SIZE CHANGES.** The RTH
+VWAP Drift study's efficiency ratio is `|C[i]-C[i-n]| / sum|C[j]-C[j-1]|` with n = 30 MINUTES / the
+bar size: at 1 minute that is 30 price points and 30 zig-zags in the denominator, at 15 minutes it is
+**TWO**, so the ratio saturates. Median ER on NQ is **0.154 at 1m against 0.742 at 15m**, its 0.30
+floor passes **18.7% of bars against 99.0%**, and the same code on the same three years produces
+**162 signals at 1 minute and 1,057 at 15**. A 15-minute run of that study is a materially LOOSER
+strategy, not a coarser view of the same one. Check a filter's PASS RATE at both resolutions before
+porting anything between them.
+
+**A REAL DIRECTION CALL WORTH LESS THAN THE ROUND TURN IS STILL A NULL.** RTH VWAP Drift EVO 1 (fade
+back INTO a trend: the prior 15m bucket closed above a rising session VWAP, this one dipped to touch
+it and closed back above, plus a drift and efficiency-ratio gate; stop at the bucket extreme, target
+2R) beats a coin-flip side ON ITS OWN BARS at **p 0.000 on every 15-minute block of three feeds**, and
+inverting it loses 0.2-0.4 R a trade -- the pattern genuinely knows which way to lean. Pooled over
+4,477 trades it earns **+0.079 R GROSS and -0.010 R NET** (P(mean<=0) 0.69), so the entire result sits
+inside the spread. Its own headline filter is inert or harmful (the ER floor changes 8 of 1,178 US100
+signals and the NQ grid marginal falls -0.10 -> -0.30 R as the floor rises), its VWAP-slope filter
+removes one signal in a thousand, and **its backtest books the entry at the bucket CLOSE -- a price
+that has already passed when the signal exists -- worth 0.03 to 0.09 R a trade against a -0.01 R
+edge**. Read the win rate against the geometry's own break-even (33.3% at a 2R target), not 50%.
+See `docs/ib/STUDY_VWAP_DRIFT.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2412,6 +2434,7 @@ drawdown -12% -> -20%). The frontier is a property of the DAY FILTER, which is t
 | `research/trendday/td_parity.py` | **the shipped Pine's order model in Python, diffed against the engine** — exact at 1m, a different strategy at 15m |
 | `research/trendday/td_sweep.py`, `td_analyse.py`, `td_finalist.py` | the 127,008-cell two-phase sweep (day filter cached per EMA/bucket), research-only selection by the worst feed, coherence gate, one reserved read |
 | `research/trendday/td_sweep2.py`, `td_dc_analyse.py`, `td_dc_final.py` | the same family with a Donchian gate / stop / midpoint target, 543,948 cells, and the vectorbt ladder |
+| `research/vwapdrift/vd_core.py`, `vd_run.py` | the RTH VWAP Drift EVO 1 ACSIL study: cached VWAP/ER indicators, both fill models, coin-flip-side controls, anatomy, grid, MC, regimes |
 | `research/v59/v59core.py` | the EMA 16/64 exit tensor: 243,000 configs, dual lock kernels, duration-based hold |
 | `research/v59/v59judge.py`, `v59lock.py`, `v59_nq.py` | the sorted matched control, the one locked read, the NQ read |
 | `research/v58/v58ib.py` | the Initial Balance tensor: 777,600 configs in one walk, both exit models |

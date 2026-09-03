@@ -1,0 +1,15 @@
+========================================================================================================
+THE EFFICIENCY RATIO IS RESOLUTION-DEPENDENT, AND IT IS THE ONLY BINDING FILTER
+========================================================================================================
+  raw ER = |C[i] - C[i-n]| / sum|C[j] - C[j-1]| over the last n bars, with n = 30 MINUTES / tf.
+  At 1 minute that is 30 price points and 30 zig-zags to divide by; at 15 minutes it is TWO
+  points and two, so the denominator can barely exceed the numerator and the ratio saturates.
+
+  feed           bars in the ER window   median ER  share > 0.30   signals
+  NQ 1m                             30       0.154         18.7%       162
+  NQ 5m                              6       0.383         65.5%       623
+  NQ 15m                             2       0.742         99.0%      1057
+
+  The same code, the same three years, the same instrument: 162 signals at 1 minute against
+  1,057 at 15. The 15-minute runs are a materially LOOSER strategy, not a coarser view of the
+  same one, so every CFD number in this study is that looser version.

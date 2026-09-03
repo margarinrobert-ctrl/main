@@ -1,0 +1,34 @@
+==============================================================================================================
+F. MONTE CARLO AND POOLED READ
+==============================================================================================================
+
+NQ 1m
+  ALL         n  112 mean -0.193R | P(mean<=0) 0.956 95% CI [-0.405, +0.031] | win 35.7% vs the 33.3% a 2R target needs
+  research    n   69 mean -0.346R | P(mean<=0) 0.995 95% CI [-0.582, -0.092] | win 31.9% vs the 33.3% a 2R target needs
+  locked      n   43 mean +0.053R | P(mean<=0) 0.393 95% CI [-0.329, +0.449] | win 41.9% vs the 33.3% a 2R target needs
+
+US100 15m
+  ALL         n 2154 mean -0.007R | P(mean<=0) 0.598 95% CI [-0.062, +0.049] | win 38.1% vs the 33.3% a 2R target needs
+  research    n 1178 mean -0.012R | P(mean<=0) 0.619 95% CI [-0.087, +0.063] | win 39.0% vs the 33.3% a 2R target needs
+  validation  n  538 mean -0.021R | P(mean<=0) 0.645 95% CI [-0.135, +0.092] | win 36.4% vs the 33.3% a 2R target needs
+  test        n  438 mean +0.022R | P(mean<=0) 0.358 95% CI [-0.101, +0.152] | win 37.4% vs the 33.3% a 2R target needs
+
+US30 15m
+  ALL         n 1742 mean -0.035R | P(mean<=0) 0.866 95% CI [-0.097, +0.028] | win 36.7% vs the 33.3% a 2R target needs
+  research    n  973 mean -0.073R | P(mean<=0) 0.957 95% CI [-0.155, +0.011] | win 36.1% vs the 33.3% a 2R target needs
+  validation  n  445 mean -0.082R | P(mean<=0) 0.900 95% CI [-0.208, +0.047] | win 34.4% vs the 33.3% a 2R target needs
+  test        n  324 mean +0.142R | P(mean<=0) 0.028 95% CI [-0.003, +0.293] | win 42.0% vs the 33.3% a 2R target needs
+
+US30_ISO 15m
+  ALL         n  469 mean +0.120R | P(mean<=0) 0.025 95% CI [-0.000, +0.244] | win 41.4% vs the 33.3% a 2R target needs
+  research    n  323 mean +0.164R | P(mean<=0) 0.016 95% CI [+0.015, +0.312] | win 43.3% vs the 33.3% a 2R target needs
+  locked      n  146 mean +0.021R | P(mean<=0) 0.428 95% CI [-0.189, +0.235] | win 37.0% vs the 33.3% a 2R target needs
+
+  POOLED over four feeds: n 4477, mean -0.0095R, win 37.8%, P(mean<=0) 0.6895, 95% CI [-0.048, +0.030]
+  per feed: {'NQ': (112, np.float64(-0.193)), 'US100': (2154, np.float64(-0.007)), 'US30': (1742, np.float64(-0.035)), 'US30_ISO': (469, np.float64(0.12))}
+
+  cost stress, pooled:
+    cost x0.0: n 4477 mean +0.0792R win 38.0%
+    cost x1.0: n 4477 mean -0.0095R win 37.8%
+    cost x2.0: n 4477 mean -0.0848R win 37.5%
+    cost x4.0: n 4477 mean -0.2103R win 36.7%

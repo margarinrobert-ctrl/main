@@ -1,0 +1,58 @@
+==============================================================================================================
+A. THE STRATEGY AS WRITTEN
+==============================================================================================================
+  Break-even at a 2R target is 33.3% before costs. Read the win rate against that, not against 50%.
+
+NQ 1m  2022-12-26 -> 2025-12-11  buckets 19,524  signals 162  in-window 113  blocked by the daily cap 0  blocked by an open position 1
+  ALL       n  112  win  35.7%  PF  1.00  mean   -0.14  R -0.19  Sharpe -0.01  DD   1318.9  $-30
+  research  n   69  win  31.9%  PF  0.48  mean  -15.60  R -0.35  Sharpe -1.65  DD   1243.2  $-2,153
+  locked    n   43  win  41.9%  PF  1.69  mean  +24.69  R +0.05  Sharpe +0.94  DD    414.2  $+2,123
+  exits {'stop': 69, 'flat': 23, 'target': 20}  longest losing run 13  median hold 76 bars  median risk 50.49 pts
+  by side: {'short': (55, np.float64(-0.185)), 'long': (57, np.float64(-0.2))}
+  by year: 2022:1/+1R 2023:42/-17R 2024:29/-8R 2025:40/+3R
+
+NQ 15m  2022-12-26 -> 2025-12-11  buckets 19,557  signals 1057  in-window 853  blocked by the daily cap 38  blocked by an open position 163
+  ALL       n  651  win  35.9%  PF  0.90  mean   -2.83  R -0.04  Sharpe -0.60  DD   2948.0  $-3,681
+  research  n  425  win  36.0%  PF  0.87  mean   -3.06  R -0.04  Sharpe -0.82  DD   1573.0  $-2,601
+  locked    n  226  win  35.8%  PF  0.93  mean   -2.39  R -0.03  Sharpe -0.39  DD   2208.8  $-1,080
+  exits {'stop': 401, 'target': 197, 'flat': 53}  longest losing run 10  median hold 3 bars  median risk 37.36 pts
+  by side: {'short': (318, np.float64(-0.057)), 'long': (333, np.float64(-0.016))}
+  by year: 2022:4/+1R 2023:233/-11R 2024:199/+1R 2025:215/-14R
+
+US100 15m  2016-11-14 -> 2025-10-01  buckets 58,095  signals 3488  in-window 2816  blocked by the daily cap 104  blocked by an open position 553
+  ALL       n 2154  win  38.1%  PF  1.00  mean   +0.09  R -0.01  Sharpe +0.03  DD   3051.8
+  research  n 1178  win  39.0%  PF  1.06  mean   +0.78  R -0.01  Sharpe +0.29  DD    813.5
+  validation n  538  win  36.4%  PF  0.99  mean   -0.33  R -0.02  Sharpe -0.09  DD   2123.9
+  test      n  438  win  37.4%  PF  0.96  mean   -1.23  R +0.02  Sharpe -0.26  DD   2156.4
+  exits {'stop': 1277, 'target': 701, 'flat': 176}  longest losing run 15  median hold 3 bars  median risk 24.65 pts
+  by side: {'short': (1067, np.float64(-0.065)), 'long': (1087, np.float64(0.049))}
+  by year: 2016:21/+1R 2017:166/-38R 2018:250/-10R 2019:229/+0R 2020:276/+27R 2021:236/+5R 2022:283/+20R 2023:255/-31R 2024:240/+24R 2025:198/-14R
+
+US30 15m  2016-10-26 -> 2025-07-15  buckets 57,214  signals 2831  in-window 2224  blocked by the daily cap 69  blocked by an open position 383
+  ALL       n 1742  win  36.7%  PF  0.97  mean   -1.21  R -0.04  Sharpe -0.17  DD   6452.0
+  research  n  973  win  36.1%  PF  0.88  mean   -4.25  R -0.07  Sharpe -0.66  DD   4639.0
+  validation n  445  win  34.4%  PF  0.90  mean   -4.25  R -0.08  Sharpe -0.59  DD   3265.0
+  test      n  324  win  42.0%  PF  1.29  mean  +12.09  R +0.14  Sharpe +1.43  DD   1039.8
+  exits {'stop': 1071, 'target': 549, 'flat': 122}  longest losing run 15  median hold 3 bars  median risk 48.50 pts
+  by side: {'short': (887, np.float64(-0.083)), 'long': (855, np.float64(0.014))}
+  by year: 2016:23/+0R 2017:111/-31R 2018:234/-2R 2019:196/-38R 2020:240/-0R 2021:169/-0R 2022:241/-16R 2023:204/-21R 2024:193/+34R 2025:131/+13R
+
+US30_ISO 15m  2024-08-19 -> 2026-08-26  buckets 13,550  signals 670  in-window 558  blocked by the daily cap 9  blocked by an open position 79
+  ALL       n  469  win  41.4%  PF  1.21  mean   +9.75  R +0.12  Sharpe +1.15  DD   3061.7
+  research  n  323  win  43.3%  PF  1.44  mean  +18.99  R +0.16  Sharpe +2.22  DD    907.7
+  locked    n  146  win  37.0%  PF  0.81  mean  -10.70  R +0.02  Sharpe -1.34  DD   2821.2
+  exits {'stop': 254, 'target': 157, 'flat': 58}  longest losing run 10  median hold 3 bars  median risk 72.60 pts
+  by side: {'short': (236, np.float64(0.167)), 'long': (233, np.float64(0.072))}
+  by year: 2024:90/-2R 2025:233/+55R 2026:146/+3R
+
+--------------------------------------------------------------------------------------------------------------
+THE FILL MODEL -- the source records the entry at a price it cannot reach
+--------------------------------------------------------------------------------------------------------------
+  The study evaluates a bucket on the bar that STARTS the next one, then books the entry
+  at the bucket's CLOSE, and its exit scan skips the following bar as well.
+
+  NQ 1m        as written R -0.193 on 112 | implementable R -0.226 on 112 | gap -0.033 R a trade
+  NQ 15m       as written R -0.036 on 651 | implementable R -0.124 on 686 | gap -0.088 R a trade
+  US100 15m    as written R -0.007 on 2154 | implementable R -0.073 on 2253 | gap -0.066 R a trade
+  US30 15m     as written R -0.035 on 1742 | implementable R -0.088 on 1817 | gap -0.052 R a trade
+  US30_ISO 15m as written R +0.120 on 469 | implementable R +0.027 on 479 | gap -0.093 R a trade
