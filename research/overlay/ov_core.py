@@ -95,15 +95,20 @@ def build(market="NQ", fast_tf=1):
 
 @njit(cache=True)
 def walk(o, h, l, c, z, sig_bar, sig_close, sig_atr, stop_mult, hold_bars, gate, K,
-         rand_delay, cost, slip):
+         rand_delay, cost, slip, lock):
     """One arm. `gate=0` is the baseline (fill at the next bar's open); `gate=1` waits for the
     fast signal to turn non-positive; `gate=2` waits a supplied number of bars (the placebo).
 
     Returns, per signal: entry bar, entry price, exit bar, exit price, delay in bars, and a status
-    (0 filled, 1 stopped out before the overlay could enter, 2 no room in the data).
+    (0 filled, 1 stopped out before the overlay could enter, 2 no room in the data, 3 blocked by
+    the position lock). With `lock=1` a signal is refused while a previous trade is still open,
+    which is what a one-contract book actually does; each arm locks on its OWN exit bars, so the
+    two arms can diverge in population -- that divergence is a real consequence of the overlay and
+    is reported by `decompose()` rather than hidden.
     """
     n = len(sig_bar)
     m = len(c)
+    busy_until = -1
     e_bar = np.full(n, -1, np.int64)
     e_px = np.full(n, np.nan)
     x_bar = np.full(n, -1, np.int64)
@@ -112,6 +117,9 @@ def walk(o, h, l, c, z, sig_bar, sig_close, sig_atr, stop_mult, hold_bars, gate,
     status = np.zeros(n, np.int64)
     for k in range(n):
         a = sig_bar[k]
+        if lock == 1 and a <= busy_until:
+            status[k] = 3               # a previous trade is still open
+            continue
         stop = sig_close[k] - stop_mult * sig_atr[k]
         end = a + hold_bars
         if end > m - 2:
@@ -168,16 +176,18 @@ def walk(o, h, l, c, z, sig_bar, sig_close, sig_atr, stop_mult, hold_bars, gate,
             out = c[end] - slip
         x_bar[k] = xb
         x_px[k] = out
+        if xb > busy_until:
+            busy_until = xb
     return e_bar, e_px, x_bar, x_px, delay, status
 
 
-def trades(D, gate=0, K=30, rand_delay=None, stop_mult=STOP_MULT, hold_min=HOLD_MIN):
+def trades(D, gate=0, K=30, rand_delay=None, stop_mult=STOP_MULT, hold_min=HOLD_MIN, lock=0):
     hold_bars = int(hold_min / D["fast_tf"])
     n = len(D["sig_bar"])
     rd = np.zeros(n, np.int64) if rand_delay is None else np.asarray(rand_delay, np.int64)
     e_bar, e_px, x_bar, x_px, delay, status = walk(
         D["o"], D["h"], D["l"], D["c"], D["z"], D["sig_bar"], D["sig_close"], D["sig_atr"],
-        float(stop_mult), hold_bars, int(gate), int(K), rd, D["cost"], D["slip"])
+        float(stop_mult), hold_bars, int(gate), int(K), rd, D["cost"], D["slip"], int(lock))
     keep = status == 0
     ids = np.arange(n)[keep]
     t = pd.DataFrame(dict(signal_id=ids, side=1, qty=1.0,

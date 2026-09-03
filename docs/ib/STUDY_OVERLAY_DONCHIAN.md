@@ -130,3 +130,91 @@ verdict legible**. A +0.41% headline with a non-significant paired test would no
 filed as "too small to matter". Splitting it into entry price and dropped trades turns it
 into a specific, falsifiable claim -- and that claim (four losing trades) is small enough
 to state exactly.
+
+---
+
+# Addendum: the position lock, and what it corrects
+
+The concurrency caveat above was the one real defect in the study, and repairing it changes
+which objection is the binding one. **It does not change the verdict.**
+
+`ov_core.walk` now takes `lock=1`: a signal is refused while a previous trade is still open,
+each arm locking on its own exit bars. `research/overlay/run_ov3.py`, `run_ov4.py`;
+`results/overlay/locked.txt`, `blocks.txt`, `concentration.txt`.
+
+## What the lock does to the baseline
+
+| | Unlocked | Locked |
+| --- | ---: | ---: |
+| Trades | 5,045 | **227** (4,873 blocked) |
+| Points / trade | +21.330 | **+62.043** |
+| % of entry price | +0.1378 | +0.3399 |
+| Total points | +107,608 | +14,084 |
+| Sharpe | 1.021 | **1.249** |
+| Max drawdown | -55,045 | -2,766 |
+
+The unlocked figure counted the same move up to twenty times. The locked book is the one an
+account can carry, and it is the correct baseline for the comparison.
+
+## The lock reverses four of the five falsification tests
+
+| Test | Unlocked | Locked |
+| --- | --- | --- |
+| Total Δ | +436.8 (+0.41%) | **+508.5 (+3.61%)** |
+| Attribution | 62.4% dropped trades, 37.6% entry price | **100.0% entry price**, 0 dropped, 0 added, 0 stopped while waiting |
+| Placebo (whole sample) | pctile 87.5, p 0.125 | **pctile 100.0, p 0.0000** |
+| Paired bootstrap | mean p 0.706, Sharpe p 0.357 | mean p **0.083**, Sharpe p **0.099** |
+| Haircut breakeven vs half-spread | 0.0210 bps, ratio **0.11** | 0.558 bps, ratio **2.98** |
+| Urgency sweep | shapeless (+862/+91/+367/+437/+700/+878) | **rises then plateaus** (+118/+150/+406/+508/+506/+518 at K = 5/10/15/30/60/120) |
+
+**This corrects the attribution finding in the main study.** "62.4% dropped trades, n=4" is a
+property of the unlocked baseline, not of the strategy: with the lock the overlay drops nothing
+at all and the entire difference is entry price. The cost stress confirms it -- Δ is exactly
++508 points at 1x, 2x, 4x and 8x the round turn, because the trade counts are identical and cost
+cancels. There is no population change left to hide behind.
+
+## And then the block split kills it anyway
+
+The overlay had never been read against the branch's own split. Splitting the 227 trades by the
+block their entry bar sits in:
+
+| Block | n | Baseline pts | Overlay pts | Δ / trade | Total Δ | Δ % | Placebo p |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| research | 151 | +56.161 | +56.747 | **+0.586** | +88 | +1.04% | **0.1250** |
+| locked | 76 | +73.728 | +79.255 | **+5.526** | +420 | +7.50% | 0.0000 |
+
+**Absent on research, appearing on locked.** 83% of the whole-sample gain lives in the block that
+should show decay, and the research block -- the only one the K of 30 could have been chosen on --
+fails its own placebo at p 0.125. The research-block **median** per-trade difference is exactly
+**+0.000 points**. This is the wrong shape, for the eighth time on this branch.
+
+## The concentration, which settles it
+
+| Share of trades | Share of the +508 point gain |
+| --- | ---: |
+| Top 1% (2 trades) | **32.0%** |
+| Top 3% (7 trades) | 76.7% |
+| Top 5% (11 trades) | **101.1%** |
+| Top 10% (23 trades) | 147.7% |
+
+Eleven trades supply the entire gain; the other 216 lose in aggregate. The single largest is
++107 points = 21.1% of the total, and it is in the research block. Per trade: **50.2% better,
+33.0% unchanged, 16.7% worse**, median +0.250 points against a mean of +2.240.
+
+## What it actually is, and why that matters
+
+The mean entry improvement is **+2.240 points = +1.162 bps**, against half the Roll implied
+effective spread of **0.1871 bps** -- **6.2x**. No amount of waiting captures six half-spreads.
+This is not a better fill at the same level; it is a **better level**, reached by waiting a
+median 3 minutes for a pullback. That is the branch's entry-mechanic finding
+(`STUDY_LIMIT_ENTRY`, `research/atme/`, `STUDY_V58_ANATOMY` -- the sixth route to it) arriving
+in execution costume.
+
+The distinction is not pedantic: an execution improvement is judged against half the spread and
+carries no selection burden, while a pullback entry is a **signal change** and carries the trial
+count of one. Judged as what it is -- a new entry rule read on 227 trades, failing on the
+research block, carried by eleven trades out of 227 -- it is not a result.
+
+**The verdict is unchanged: do not trade the overlay.** The reason changes. Under the unlocked
+baseline it was a four-trade filter mislabelled as fill quality; under the correct locked
+baseline it is a pullback entry that does not exist on the research block.
