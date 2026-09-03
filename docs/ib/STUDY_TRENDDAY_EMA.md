@@ -236,3 +236,62 @@ confirms it in the block where it should be strongest.
 was not selected on; the untouched-EMA filter clears one on NQ research and misses on NQ locked
 (0.097), fails on US100 research, and fails on US30 everywhere. One feed's research block is not a
 footing. What would change the verdict is a fifth instrument with a long history, or a stop.
+
+## 11. The Pine port, and what its order model does that the engine's does not
+
+`pine/trendday/TRENDDAY_EMA_strategy.pine`. `research/trendday/td_parity.py` re-implements the
+SHIPPED SCRIPT's order model from the Pine file — Pine's fill rules included, so an order placed at a
+bar's close fills at the next bar's open and a resting `strategy.exit(limit=)` set at a bar's close is
+live from the next bar — and diffs it against `td_core.walk` trade for trade.
+
+**On a 1-minute chart the port is exact.**
+
+| NQ 1-minute | value |
+| --- | ---: |
+| trades, engine vs script | 43 vs 43 |
+| same entry bar / same side / same exit bar | 43/43, 43/43, 43/43 |
+| P&L correlation | **1.0000** |
+| mean points, engine vs script | +40.88 vs +40.97 |
+
+The +0.09 is the flatten and nothing else: the engine closes at the CLOSE of the session's last bar,
+and `strategy.close_all()` cannot sell the close of the bar that triggers it, so the script places
+the order one bar earlier and fills at that last bar's OPEN. One trade in 43 exits on the clock, so
+the whole difference is one bar on one trade. Same lesson as the `flat_open` fix in
+`STUDY_NEW_DESIGN`.
+
+**On a coarser chart the script is a DIFFERENT STRATEGY, and the harness is what showed it.** The
+direction is decided from the session-open bar's open, so the earliest fill Pine can reach is the
+open of the bar AFTER it: minute 1 on a 1-minute chart, minute 5 on a 5-minute chart, minute 15 on a
+15-minute chart. The §1 parity block filled the 15-minute model at the 09:30 open, which Pine cannot
+do with a market order. Diffing the script against the engine on the same 15-minute files:
+
+| feed | engine trades | script trades | same side / exit bar | P&L corr | mean gap |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| US100 15m | 125 | 98 | 97/97, 97/97 | 0.903 | −5.7 pts |
+| US30 15m | 106 | 94 | 87/87, 87/87 | 0.930 | +12.8 pts |
+
+Every shared trade agrees on side and exit bar and **none agrees on the entry bar**, which is the
+signature of a pure fill-timing difference rather than a rule difference. But a fifth to a quarter of
+the trades simply do not exist: price reaches the EMA during 09:30–09:45 and the trade is never
+opened. **Section 2's US100 and US30 figures therefore describe the EA, not this script on a
+15-minute chart.**
+
+The same delay measured on NQ, where every resolution is available:
+
+| chart | fill minute | n | mean pts | win | PF |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1-minute | 1 | 43 | +40.97 | 86.0% | 4.68 |
+| 5-minute | 5 | 39 | +50.15 | 84.6% | 5.01 |
+| 15-minute | 15 | 29 | +44.89 | 79.3% | 4.28 |
+
+The later fills score HIGHER per trade on FEWER trades, which is selection and not improvement: the
+trades that survive to a later fill are the ones price had not already reverted. Net points are
++1,762 / +1,956 / +1,302. Forty-three trades cannot separate those, and the trade sets differ by a
+quarter, so read this as three related strategies rather than one sampled three ways. **Run the
+script on a 1-minute chart**; the `Require a 1-minute chart` input enforces it and is on by default.
+
+One EA behaviour is deliberately not ported: the check that the fill price is still on the entry side
+of the target. Pine cannot see a fill price before ordering, and the check never fired once across
+four feeds and 298 trades — when a session has just trended without touching its EMA, the EMA is far
+from the next open. A gap through the target would in any case exit at the target on the fill bar,
+because the resting limit is live from that bar.

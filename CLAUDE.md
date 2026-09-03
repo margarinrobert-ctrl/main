@@ -2239,6 +2239,18 @@ WORSE**, so every CFD figure is a floor rather than a flattery. A target-only ex
 ordering -- there is no stop competing with it -- which is why the approximation is confined to the
 entry. Measure the gap; never assume its sign.
 
+**THE CHART TIMEFRAME DECIDES WHETHER A PINE PORT IS THE STRATEGY OR A COUSIN OF IT.** The trend-day
+EA decides its direction from the SESSION-OPEN BAR'S OPEN, so the earliest fill Pine can reach is the
+open of the bar AFTER that one: minute 1 on a 1-minute chart, minute 15 on a 15-minute chart. Diffed
+against the engine by `td_parity.py`, the 1-minute port is EXACT — 43/43 trades, same entry bar, same
+side, same exit bar, correlation **1.0000**, and the only gap (+0.09 pts) is `strategy.close_all()`
+filling at the last bar's OPEN because it cannot sell the close of the bar that triggers it. On
+15-minute files the SAME script keeps 98 of 125 US100 trades and 94 of 106 US30 trades, every shared
+trade agreeing on side and exit bar and NONE on the entry bar: a fifth of the trades never open
+because price reaches the EMA inside the first bar. The research figures for a 15m feed describe the
+EA, not the script on that chart. And the later fills score HIGHER per trade on FEWER trades
+(+40.97 on 43, +50.15 on 39, +44.89 on 29), which is selection, not improvement.
+
 ## Tooling
 
 | module | what it does |
@@ -2363,6 +2375,7 @@ entry. Measure the gap; never assume its sign.
 | `research/apm/apm_core.py`, `apm_run.py` | **the APM battery** -- one numba walk per configuration, three matched controls, anatomy, 12,960-cell grid, walk-forward, both Monte Carlos, clusters, funded evaluation |
 | `research/apm/apm_edge.py` | the mechanism without the indicator (drive ladder, published momentum, the two-half decomposition) and 17 causal features on the rule's trades |
 | `research/trendday/td_core.py`, `td_run.py` | the Raschke trend-day / untouched-EMA EA: the exact order model, its 1m-vs-15m parity, day and mirrored-side controls, grid, walk-forward, MC, regimes |
+| `research/trendday/td_parity.py` | **the shipped Pine's order model in Python, diffed against the engine** — exact at 1m, a different strategy at 15m |
 | `research/v59/v59core.py` | the EMA 16/64 exit tensor: 243,000 configs, dual lock kernels, duration-based hold |
 | `research/v59/v59judge.py`, `v59lock.py`, `v59_nq.py` | the sorted matched control, the one locked read, the NQ read |
 | `research/v58/v58ib.py` | the Initial Balance tensor: 777,600 configs in one walk, both exit models |
