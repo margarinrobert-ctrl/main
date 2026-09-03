@@ -2420,7 +2420,14 @@ trading it: **it wins 9-19% of the time**, 86% of trades stop out, the capped 14
 of net**, and the longest out-of-sample losing run is **28**. Costs are not binding (+0.0225 at 4x).
 Watch the shape: the block that CHOSE the cell fails both its controls there (0.924 / 0.282) while
 the blocks that chose nothing pass, and the pooled bootstrap overstates because US100 and US30 are
-the same weeks. Parity: correlation 1.0000, gap +0.1%/+0.3%/-0.0%.
+the same weeks. Parity: correlation 1.0000, gap +0.1%/+0.3%/-0.0%. **AND THE VWAP IS NOT SUPPORT**: split the
+strategy's own trades by distance from it at entry and the NEAREST quartile is the WORST
+(+0.1325 against +0.2636 and +0.2538 for the two middle quartiles), the shape is a hump not a
+gradient, and Spearman(distance, result) is **-0.0495**. What the condition contributes is being on
+the right side of a RISING anchor -- a state, not a location -- worth +0.0385 %/trade over no VWAP
+at all. Its two LOCATION readings both score better than the shipped state form on the blocks that
+chose nothing (floor +0.2204 PF 1.67, ceiling +0.2076 on 7/7) and the floor was the WORST reading on
+the search block, so the same feature ranks oppositely on two geometries -- STUDY_V52 again.
 See `docs/ib/STUDY_V63_TREND_VWAP.md`.
 
 ## Tooling

@@ -1,0 +1,51 @@
+V63 stage F -- is the VWAP acting as SUPPORT, or as a direction filter?
+
+The shipped rule uses `close > VWAP and VWAP rising`, which is a STATE. It never places an order at
+the VWAP, never waits for a touch and never requires a pullback. So the question "is it support"
+is answerable two ways, and both are run here:
+
+  1. THE READING TABLE. Five VWAP readings were declared before the search, two of them LOCATION
+     readings -- a distance FLOOR (at least 0.5 ATR above) and the "not extended" CEILING (above,
+     but within 2.0 ATR). Their marginals say what location is worth on this design.
+  2. THE ANATOMY. Split the shipped strategy's OWN trades by how far price sat above the VWAP at
+     entry. If proximity to the VWAP is what pays, the near quartile earns more. `STUDY_KAMA_ENTRY`
+     ran the same test on a moving average and found the tap loses to just taking the trade.
+
+==============================================================================================================
+F1. THE FIVE DECLARED READINGS, at the shipped geometry, pooled over the seven blocks
+    that had no part in the search
+==============================================================================================================
+    off                                        blocks 6/7 positive   n   969   +0.1603 %/trade   PF  1.47   mean of block means +0.1579
+    above                                      blocks 6/7 positive   n   868   +0.1935 %/trade   PF  1.59   mean of block means +0.1885
+    above and rising                           blocks 6/7 positive   n   850   +0.1988 %/trade   PF  1.60   mean of block means +0.1939
+    dist>=0.5                                  blocks 6/7 positive   n   782   +0.2204 %/trade   PF  1.67   mean of block means +0.2107
+    0<dist<=2.0                                blocks 7/7 positive   n   801   +0.2076 %/trade   PF  1.65   mean of block means +0.2066
+
+  `dist>=0.5` is the FLOOR -- price well ABOVE the VWAP. `0<dist<=2.0` is the
+  not-extended CEILING, the closest thing in the pool to 'buying near support'.
+
+==============================================================================================================
+F2. THE ANATOMY -- the shipped strategy's own trades, split by distance from the VWAP
+    at entry, in ATR. If the VWAP were support, the NEAR quartile would earn more.
+==============================================================================================================
+  US100
+    Q1 nearest   n  118   distance  0.35 ATR   +0.2470 %/trade   PF  1.68   win  13.6%
+    Q2           n  118   distance  0.82 ATR   +0.0182 %/trade   PF  1.05   win  10.2%
+    Q3           n  117   distance  1.42 ATR   +0.4356 %/trade   PF  2.23   win  17.1%
+    Q4 furthest  n  118   distance  2.86 ATR   +0.2483 %/trade   PF  1.59   win  15.3%
+  US30
+    Q1 nearest   n  116   distance  0.27 ATR   +0.0664 %/trade   PF  1.24   win  12.9%
+    Q2           n  115   distance  0.78 ATR   +0.4814 %/trade   PF  3.06   win  19.1%
+    Q3           n  115   distance  1.37 ATR   +0.0290 %/trade   PF  1.10   win  13.9%
+    Q4 furthest  n  115   distance  2.67 ATR   +0.0991 %/trade   PF  1.33   win  13.9%
+  NQ
+    Q1 nearest   n   46   distance  0.33 ATR   -0.0179 %/trade   PF  0.95   win   8.7%
+    Q2           n   45   distance  0.90 ATR   +0.3465 %/trade   PF  2.15   win  17.8%
+    Q3           n   45   distance  1.52 ATR   +0.4313 %/trade   PF  2.37   win  17.8%
+    Q4 furthest  n   46   distance  2.94 ATR   +0.0775 %/trade   PF  1.22   win  10.9%
+  POOLED
+    Q1 nearest   n  279   distance  0.31 ATR   +0.1325 %/trade   PF  1.41   win  12.5%
+    Q2           n  278   distance  0.81 ATR   +0.2636 %/trade   PF  1.85   win  15.1%
+    Q3           n  278   distance  1.42 ATR   +0.2538 %/trade   PF  1.77   win  15.5%
+    Q4 furthest  n  279   distance  2.80 ATR   +0.1660 %/trade   PF  1.46   win  14.3%
+    Spearman correlation between distance-from-VWAP at entry and the trade's result: -0.0495

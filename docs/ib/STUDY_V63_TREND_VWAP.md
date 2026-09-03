@@ -132,3 +132,43 @@ worth about 0.2%.
 - **NQ's locked block loses**, and NQ is the market with the least history.
 - Forward-test before sizing. With a 14% win rate and a 28-loss streak, the psychological and the
   statistical requirements are the same: you need many trades before the tail arrives.
+
+
+## 8. Is the VWAP support, or a direction filter?
+
+`research/v63/run_v63f.py`, `results/v63/stage_f.txt`. Asked directly, and it is a filter, not a
+level: the shipped rule reads `close > VWAP and VWAP rising` once at the signal bar. It never places
+an order at the VWAP, never waits for a touch and never requires a pullback. Two tests settle
+whether it *could* be used as support.
+
+**The five declared readings, at the shipped geometry, pooled over the seven blocks that chose
+nothing** (this comparison is made AFTER those blocks were read, so it is descriptive):
+
+| reading | blocks positive | n | %/trade | PF |
+|---|---|---|---|---|
+| off | 6/7 | 969 | +0.1603 | 1.47 |
+| above | 6/7 | 868 | +0.1935 | 1.59 |
+| **above and rising** (shipped) | 6/7 | 850 | +0.1988 | 1.60 |
+| distance ≥ 0.5 ATR (the FLOOR) | 6/7 | 782 | **+0.2204** | **1.67** |
+| 0 < distance ≤ 2.0 ATR (the CEILING) | **7/7** | 801 | +0.2076 | 1.65 |
+
+Note the inversion against §2: on the search block, averaged over the whole grid, the FLOOR was the
+worst reading (+0.47 Sharpe against +0.52 for off) and the ceiling the best. At the final geometry
+on the blocks that chose nothing the floor is the best per trade. Same feature, two geometries,
+opposite ranking — `STUDY_V52`'s finding that a filter is a property of a geometry, not of a market.
+
+**The anatomy — the strategy's own trades split by distance from the VWAP at entry.** If the VWAP
+were support, the nearest quartile would earn most:
+
+| quartile | n | mean distance | %/trade | PF | win |
+|---|---|---|---|---|---|
+| Q1 nearest | 279 | 0.31 ATR | **+0.1325** | 1.41 | 12.5% |
+| Q2 | 278 | 0.81 ATR | +0.2636 | 1.85 | 15.1% |
+| Q3 | 278 | 1.42 ATR | +0.2538 | 1.77 | 15.5% |
+| Q4 furthest | 279 | 2.80 ATR | +0.1660 | 1.46 | 14.3% |
+
+**The nearest quartile is the worst**, the relationship is a hump rather than a gradient, and the
+Spearman correlation between distance-at-entry and the trade's result is **−0.0495**. Buying near
+the VWAP buys nothing. What the condition contributes is being on the right side of a rising
+anchor — a state, not a location — and even that is worth only +0.0385 %/trade over having no VWAP
+condition at all.
