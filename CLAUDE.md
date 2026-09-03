@@ -2524,6 +2524,32 @@ Ranked scalp answer: session filter, participation floor, ATR floor, MA200 DISTA
 cross), prior-RTH-session high (81% of cells, the most consistent in the table).
 See `docs/ib/STUDY_SCALP_REQUIREMENTS.md`.
 
+**AN EXECUTION OVERLAY CAN ONLY RECOVER IMPLEMENTATION SHORTFALL, AND ON CONTINUOUS FUTURES THERE
+IS NONE.** A 1-minute `(close - EMA20)/ATR20` reversion signal scheduling the entries of a 30m
+Donchian 20 / 2.5N breakout on NQ -- stop level, exit clock and size identical in both arms, so
+only the entry timestamp moves -- reads **+436.8 points on a +107,608 baseline (+0.41%, +0.104
+pts/trade, Sharpe 1.021 -> 1.030)** and is not believable on any of four tests. The RANDOM-DELAY
+PLACEBO (200 seeds drawing from the observed delay distribution) puts the observed value at
+**percentile 87.5, one-sided p 0.125**, inside the null band; the paired block bootstrap on 923
+daily differences gives **p 0.706** on the mean and **p 0.357** on the Sharpe; and the advantage
+vanishes at a fill haircut of **0.0210 bps/side against half the Roll implied effective spread of
+0.1871 -- ratio 0.11**, i.e. it claims nine times more price improvement than the spread it is
+trying to earn. **THE ATTRIBUTION IS WHAT MAKES IT LEGIBLE: 62.4% of the gain is DROPPED TRADES
+and 37.6% entry price, while the claim being sold is fill quality -- and the dropped trades are
+n=4**, all losers (mean -68.77 against the kept trades' +21.40). Exit improvement is exactly 0.0
+by construction, which rules the free-option-exit artifact out and leaves POPULATION CHANGE as the
+mechanism -- confirmed by the cost sweep, where the improvement GROWS with slippage (+430 at 0 bps
+to +450 at 1.5) because the overlay simply takes four fewer trades. Two of the four screening gates
+fail before anything is built: the fast drift at signal bars is **-0.0422 bps against a slow accrual
+of +1.4880 bps/min (0.03x**, where the skill asks for comparable), and the direct fast edge of
++0.0304 bps is **0.16x** half the Roll spread, so the reversion is substantially BID-ASK BOUNCE in
+the print series. The urgency sweep is shapeless -- total delta +862/+91/+367/+437/+700/+878 at
+K = 5/10/15/30/60/120 minutes with a median delay of 2 bars at EVERY K -- and a result that varies
+more across its own timeout than its headline is not a result. This confirms
+`STUDY_V50_SELECTION` from the execution side: the adverse open gap on continuous futures is
++0.0000 ATR because the next open IS the prior close, so there is no shortfall for a scheduler to
+recover. `research/overlay/`, `docs/ib/STUDY_OVERLAY_DONCHIAN.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2558,6 +2584,7 @@ See `docs/ib/STUDY_SCALP_REQUIREMENTS.md`.
 | `research/strat/` | The Strat combo engine: bar types, four location filters, one-bar stop order, trade-matched control |
 | `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
 | `research/mrl/` | the two library-built designs: strict 1-minute limit walk, 15m bar walk, ladders with a random-filter gate, the trend grid |
+| `research/overlay/` | the fast-alpha execution overlay: a 1-minute reversion gate scheduling Donchian entries, the four screening gates, and the seven-part battery (Roll bounce floor, random-delay placebo, PnL attribution, paired block bootstrap, tails, cost sweep and fill haircut, missed-trade census) |
 | `research/scalpreq/` | the scalp-requirements experiment: 31 conditions x 2 triggers x 2 geometries x 6 feed-timeframes, with base rates, the cost-as-a-fraction-of-risk table and the zero-cost variant |
 | `research/v63/` | the VWAP / triple-EMA / ATR trend design: three feeds with real volume, a chandelier-trail tensor, search on one market and a frozen read on three, drop-one and the binding hold axis |
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
