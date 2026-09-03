@@ -2307,6 +2307,31 @@ that has already passed when the signal exists -- worth 0.03 to 0.09 R a trade a
 edge**. Read the win rate against the geometry's own break-even (33.3% at a 2R target), not 50%.
 See `docs/ib/STUDY_VWAP_DRIFT.md`.
 
+**THE FIVE MOST PROFITABLE STRATEGIES ON THIS BRANCH SHARE ONE PLATEAU AND NOT ONE CONTROL PASS.**
+Eight shipped strategies put into ONE unit -- percent of entry price for one unit, after each
+feed's own costs -- and ranked on the RESEARCH block only: IBS session +9.91 %/yr, V56 CVD +7.94,
+FTM ORB +6.38, APM VWAP +2.44, TFI +2.43, then trend-day +1.02, VWAP drift +0.85, CMMA +0.63. The
+top five then took the same battery. **Every one of them passes the parameter neighbourhood
+(73-100% of perturbed out-of-sample cells profitable) and NO STRATEGY WITH MORE THAN ONE RESERVED
+BLOCK CLEARS ITS OWN MATCHED CONTROL ON A MAJORITY OF THEM** -- IBS 3 of 7, APM 1 of 5, TFI 1 of 7,
+FTM 0 of 1, V56 1 of 1. The day-block bootstrap is worse: 1/7, 2/5, 1/7, 0/1, 0/1. **THREE OF FIVE
+GREW OUT OF SAMPLE**, APM on all three feeds including one whose research block LOSES money --
+the seventh occurrence of the wrong shape here. **AND A CONTROL COMPUTED OVER ALL TRADES IS A
+RESEARCH-BLOCK STATISTIC**: FTM's published +0.1013 R excess at p 0.004 reproduces exactly over
+all 342 trades (p 0.005) and reads **p 0.152 on the 147 locked-block trades alone**. Same error
+class as ranking a feature over both blocks, reached from the other direction; it applies to any
+figure on this branch quoted over "all trades". What HAS changed is cost: all five survive 2x the
+assumed spread on the feeds where they are profitable, against the earlier candidates that
+*every one* died at 1.5x -- these hold wider barriers longer, so a fixed round turn is a smaller
+fraction of the trade. The binding objection is no longer execution, it is that +0.05 to +0.32
+percent of price a trade over 87-702 out-of-sample trades does not separate from a matched null.
+Funded evaluation, 60 days / +8% / -6% static, sampled over EVERY session zero-filled: at 2x
+notional **P(neither) is 57-87% on four of the five** and raising leverage buys pass and bust
+together. Permutation says the realised drawdown was LUCKY on IBS US100 (percentile 0.01, MC p99
+27.2% against a realised 8.4%) and UNLUCKY on V56 locked (0.94) and TFI US100 research (0.98) --
+size for the p99, not the backtest. What would move it is MORE RESERVED BLOCKS, not more
+strategies. See `docs/ib/STUDY_TOP5.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2341,6 +2366,7 @@ See `docs/ib/STUDY_VWAP_DRIFT.md`.
 | `research/strat/` | The Strat combo engine: bar types, four location filters, one-bar stop order, trade-matched control |
 | `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
 | `research/mrl/` | the two library-built designs: strict 1-minute limit walk, 15m bar walk, ladders with a random-filter gate, the trend grid |
+| `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
 | `docs/ib/EDGE_LIBRARY.md` | **the mechanism library** -- what survived, what it is, how to take a new strategy apart |
 | `research/ibs/` | the IBS session EA: cached tensor, bar-by-bar parity, stability / MC / clusters / walk-forward / judge |
