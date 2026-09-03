@@ -62,3 +62,4 @@ research/vbt/_*.npz
 data/CAPITALCOM_US30_1m_export.csv
 results/apm/*.pkl
 results/apm/.done
+results/trendday/sweep_*.csv

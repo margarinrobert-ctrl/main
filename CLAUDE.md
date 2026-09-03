@@ -2251,6 +2251,27 @@ because price reaches the EMA inside the first bar. The research figures for a 1
 EA, not the script on that chart. And the later fills score HIGHER per trade on FEWER trades
 (+40.97 on 43, +50.15 on 39, +44.89 on 29), which is selection, not improvement.
 
+**ENTRIES AND PROFIT FACTOR TRADE AGAINST EACH OTHER SMOOTHLY, AND THE BEST CELLS TRADE LESS.**
+Asked for 5x the entries at PF 2.0 on every market, a 127,008-cell sweep of the trend-day family
+returned **0 cells** -- on the RESEARCH block, the easiest number the data can produce -- and 0 at
+PF 1.5 or even 1.3. The frontier of the best worst-feed PF is monotone: 1.92 at 1x, 1.70 at 2x, 1.41
+at 3x, **1.28 at 5x**, 1.20 at 8x. **The top 1,000 cells have a MEDIAN ENTRY MULTIPLE OF 0.42x** --
+the grid's best configurations are TIGHTER than the shipped rule, not looser, which is what a day
+filter that IS the edge implies. The best 2x cell (EMA 15, trend 50%, up to 2 touched buckets) holds
+on every reserved block of every feed and lifts stitched Sharpe 0.79 -> 0.97, and its EMA axis is a
+SPIKE (1.01 / **1.70** / 0.96 / 0.97); requiring every immediate neighbour on every axis to clear
+even 1.30 leaves **0 cells at 2x**, the best worst-neighbour PF anywhere being 1.23. Research-to-
+reserved Spearman over 124,000 cells runs -0.074 to +0.219 and is NEGATIVE on US30's test block, so
+a survivor is one draw and not skill. Fifth large search on this branch to buy nothing.
+`docs/ib/STUDY_TRENDDAY_EMA.md` section 12.
+
+**CACHE THE DAY FILTER, NOT THE TRADES, WHEN THE FILTER IS SEQUENTIAL.** The trend-day EA's
+cross-session EMA, its resets and its causal touch test depend only on (EMA period, bucket length),
+so 14 sequential walks produce per-session statistics plus the EMA after every bucket, and the other
+SEVEN axes then cost a walk over the qualified sessions alone -- roughly 1% of the file. 127,008
+cells in **18 seconds**. Same idea as `research/v14/v14tensor.py` but keyed on the FILTER rather than
+the geometry, which is the right split whenever the expensive part is recursive state.
+
 ## Tooling
 
 | module | what it does |
@@ -2376,6 +2397,7 @@ EA, not the script on that chart. And the later fills score HIGHER per trade on 
 | `research/apm/apm_edge.py` | the mechanism without the indicator (drive ladder, published momentum, the two-half decomposition) and 17 causal features on the rule's trades |
 | `research/trendday/td_core.py`, `td_run.py` | the Raschke trend-day / untouched-EMA EA: the exact order model, its 1m-vs-15m parity, day and mirrored-side controls, grid, walk-forward, MC, regimes |
 | `research/trendday/td_parity.py` | **the shipped Pine's order model in Python, diffed against the engine** — exact at 1m, a different strategy at 15m |
+| `research/trendday/td_sweep.py`, `td_analyse.py`, `td_finalist.py` | the 127,008-cell two-phase sweep (day filter cached per EMA/bucket), research-only selection by the worst feed, coherence gate, one reserved read |
 | `research/v59/v59core.py` | the EMA 16/64 exit tensor: 243,000 configs, dual lock kernels, duration-based hold |
 | `research/v59/v59judge.py`, `v59lock.py`, `v59_nq.py` | the sorted matched control, the one locked read, the NQ read |
 | `research/v58/v58ib.py` | the Initial Balance tensor: 777,600 configs in one walk, both exit models |

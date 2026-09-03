@@ -295,3 +295,130 @@ of the target. Pine cannot see a fill price before ordering, and the check never
 four feeds and 298 trades — when a session has just trended without touching its EMA, the EMA is far
 from the next open. A gap through the target would in any case exit at the target on the fill bar,
 because the resting limit is live from that bar.
+
+## 12. A 127,008-cell sweep: can it be loosened 5x and still pay?
+
+`research/trendday/td_sweep.py`, `td_analyse.py`, `td_finalist.py`; output in
+`results/trendday/sweep_*.csv`, `sweep_analysis.txt`, `finalist.txt`.
+
+Nine axes: EMA period (7) × bucket length (2) × trend ratio (7) × **maximum touched buckets** (6,
+generalising the EA's untouched flag so 0 is the rule and 99 is off) × minimum entry gap (4) ×
+target fraction (3) × stop (3) × maximum hold (3) × flatten time (2) = **127,008 cells per market**,
+run on all four feeds. Two phases: the day filter depends only on (EMA, bucket) so it is walked once
+per pair and cached as per-session statistics plus the EMA after every bucket, and every other axis
+then costs a walk over the qualified sessions only. 127,008 cells in **18 seconds** on NQ.
+
+**Selection is on research only, scored by the WORST of the three long feeds** so a cell has to work
+everywhere rather than average out. The reserved blocks are read once, at the end, carrying the
+multiplicity: a Bonferroni threshold over 127,008 tests is 3.9e-07 and nothing here is within
+several orders of magnitude of it.
+
+### The ask is not available at any price
+
+The shipped rule takes 26 / 63 / 64 research trades on NQ / US100 / US30, so 5x means 130 / 315 /
+320 — about a quarter of all sessions against the shipped 5%.
+
+| gate, on research, on all three long feeds at once | cells |
+| --- | ---: |
+| 5x entries | 29,538 |
+| PF ≥ 2.0 | 194 |
+| **5x entries AND PF ≥ 2.0** | **0** |
+| 5x entries and PF ≥ 1.5 | 0 |
+| 5x entries and PF ≥ 1.3 | 0 |
+| 5x entries and PF ≥ 1.2 | 40 |
+| 4x, 3x or 2x entries and PF ≥ 2.0 | 0 |
+
+Not one configuration in 127,008 reaches five times the entries at a profit factor of two on all
+three markets, and that is **before** any out-of-sample penalty — it is the in-sample block, the
+easiest number the data can produce.
+
+### The frontier, and it is monotone
+
+Best worst-feed research profit factor available at each entry multiple:
+
+| entries | 1.0x | 1.5x | 2.0x | 2.5x | 3.0x | 4.0x | 5.0x | 8.0x |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| best min PF | 1.92 | 1.85 | **1.70** | 1.58 | 1.41 | 1.36 | **1.28** | 1.20 |
+
+Entries and profit factor trade against each other smoothly across two decades of data on three
+instruments. That is a property of the geometry, not a search failure: the day filter is the edge
+(§4), so every additional trade is drawn from a pool that has less of it.
+
+**The top 1,000 cells by worst-feed profit factor have a MEDIAN ENTRY MULTIPLE OF 0.42x.** The best
+configurations in the grid trade *less* than the shipped rule, not more.
+
+### The best thing the sweep found, and why it still fails
+
+The best worst-feed profit factor at 2x entries is EMA 15, trend ratio 50%, **up to 2 touched
+buckets**, full EMA target, flatten three quarters of the way through the session. It holds
+everywhere:
+
+| feed | research | reserved blocks |
+| --- | ---: | --- |
+| NQ | n 82, PF 1.70, +13.5 | locked n 38, PF 1.67, +25.8 |
+| US100 | n 140, PF 2.12, +13.3 | validation PF 1.44, test PF 1.85 |
+| US30 | n 145, PF 1.72, +16.3 | validation PF 1.34, test PF 2.04 |
+| US30_ISO | n 50, PF 1.23, +17.0 | locked PF 1.01 |
+
+Matched day controls: NQ p 0.050 / 0.117, US100 p 0.000 / 0.034 / 0.067, US30 p 0.004 / 0.178 /
+0.044. Pooled in percent of price, research +0.0794% at P(mean ≤ 0) 0.0005 and the reserved blocks
++0.0937% at 0.0125. Via vectorbt on the stitched four-feed equity: **Sharpe 0.97 against the shipped
+cell's 0.79**, total return 84.1% against 34.5%, and max drawdown −12.45% against −6.86%.
+
+**And its EMA axis is a spike.** Moving that one axis a single rung:
+
+| EMA period | 10 | **15** | 20 | 25 |
+| --- | ---: | ---: | ---: | ---: |
+| worst-feed research PF | 1.01 | **1.70** | 0.96 | 0.97 |
+
+`STUDY_V16_MOMENTUM` rejected its own best cell pre-holdout for exactly this, and the rule on this
+branch is that a plateau is necessary though not sufficient. Every other axis of this cell is fine —
+trend ratio 1.39/1.70/1.75/1.52, minimum gap 1.70/1.72/1.65, target fraction 1.39/1.70/1.70, and a
+stop makes it worse (1.70 → 1.19) — but one spiked axis out of nine is enough.
+
+**No coherent cell exists at any useful level.** Requiring every immediate neighbour on every axis to
+clear a floor on the worst feed:
+
+| gate | cells |
+| --- | ---: |
+| ≥ 2x entries, every neighbour ≥ 1.50 / 1.40 / 1.30 | 0 / 0 / 0 |
+| ≥ 3x entries, every neighbour ≥ 1.30 / 1.20 | 0 / 0 |
+| ≥ 5x entries, every neighbour ≥ 1.20 / 1.10 | 0 / 0 |
+
+The highest floor any cell reaches is a worst-neighbour PF of **1.23 at 2x**, **1.18 at 3x** and
+**1.07 at 5x**. For reference the shipped cell's own worst neighbour is 0.75 — so the shipped rule
+is no more coherent than its loosenings, which is consistent with §5's finding that its constants
+were not fitted here either.
+
+### And the ranking does not transfer
+
+Spearman correlation of a cell's per-trade mean between blocks, over ~124,000 scorable cells:
+
+| feed | research → next | research → last |
+| --- | ---: | ---: |
+| NQ | −0.074 | — |
+| US100 | +0.109 | +0.219 |
+| US30 | +0.124 | **−0.204** |
+
+Top-decile transfer is real on US100 but **negative on US30's test block** (+26.8 against a
+population of +31.5). A ranking that does not transfer means the 2x cell's out-of-sample survival is
+one draw, not skill.
+
+### Verdict on the sweep
+
+**5x entries at PF 2.0 does not exist in this family.** The best available at 5x is PF 1.28, and at
+2x it is 1.70 with a spiked EMA axis and no coherent neighbourhood anywhere in the grid. Fifth time
+on this branch that a large parameter search has bought nothing: `STUDY_SWEEP_110K` (110,250 cells),
+`STUDY_V14_WINDOW_GRID` (1,290,240), `STUDY_TREND_PULLBACK_2` (5,723,136), §5 above, and now this.
+
+If a looser version is wanted anyway, the honest statement is: **about twice the entries at a profit
+factor near 1.7, holding on all four feeds and roughly a fifth better on Sharpe than the shipped
+rule, chosen from 127,008 and sitting on a spike in its EMA.** That is a candidate to watch forward,
+not a validated setting, and the sweep is the reason to distrust it rather than the reason to trust
+it.
+
+**A note on vectorbt.** The sweep itself cannot be expressed in vectorbt's signal framework — the
+target trails a session EMA that is recomputed per bucket behind a causal touch test, which is
+path-dependent state, not a vectorisable signal — so the 127,008-cell search runs on the compiled
+walk above. vectorbt 1.1.0 is used for what it is genuinely good at: the portfolio statistics on the
+finalists' stitched equity, quoted in this section.
