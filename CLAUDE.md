@@ -2586,6 +2586,36 @@ risk on $100k with MNQ's $2 point value the median size is 3 lots, so **on 12.9%
 result -- US100/US30 are 15-minute here and can carry neither a 15-minute opening range nor a
 1-minute exit path. `research/orb/`, `docs/ib/STUDY_ORB_V1.md`.
 
+**THE ORB GATE WAS WRITTEN FOR A 15-MINUTE CHART, AND A SECOND TIMEFRAME IS WHAT SHOWED IT.** Run
+on 15-minute bars the opening range is ONE BAR, so `range_size / ATR(14)` is ~1 BY CONSTRUCTION --
+median 1.54 NQ / 1.61 US100 / 1.54 US30 / 1.88 US30_ISO against **2.45 on 5-minute bars** -- and
+the specified [0.3, 1.5] band passes **30-47% of sessions instead of 11%**. The spec's numbers are
+internally consistent only where the trading bar IS the range. Frozen and run unfiltered on four
+feeds (724 trades, 10 blocks): **1 of 10 blocks clears a random-entry control at p<=0.05 -- US30
+research at p 0.007 -- and it is the block that would choose**, while US30's own validation and
+test read **p 0.983 / 0.973** and an INDEPENDENT SECOND PROVIDER over a different span reads
+**p 0.990**. Cost is 3.7-5.4% of a 1xATR stop on every feed and 2x slippage moves expectancy
+$0.81-$5.14 and flips no sign, so execution is not the objection. **THE REGIME FILTER'S CHOP
+EXCLUSION IS THE ONE COMPONENT THAT AGREES ACROSS ALL FOUR FEEDS**: ADX(14)/DI on completed 15m
+bars with EMA20/50, a normalised slope and hysteresis classifies **17.0-18.2% BULL / 14.6-15.4%
+BEAR / 66.7-67.7% CHOP** on every market, and the trades it REMOVES lose money 4 of 4 (-$5.15,
+-$15.33, -$9.75, -$64.79; PF 0.49-0.95) while removing 54-58% of the sample. **BUT THE HYSTERESIS
+IS INERT** -- collapsing entry=exit=25 reclassifies **0.8-0.9% of bars**, because ADX(14) on 15m
+rarely lingers in the 20-25 band, and the `adx_exit` axis is flat TO THE CENT across 15/18/20. And
+the direction gate is the weak half: BEAR is the WORST bucket on NQ (-$83.10, PF 0.377) and
+US30_ISO (-$68.58, PF 0.291) while being fine on US30. Filtered vs unfiltered on the four reserved
+blocks: **two improve and two do not**, and the one that gets much worse (US30 test PF 0.537 ->
+0.332) is the market whose research block looked best; only US100's test crosses zero (PF 1.047,
+n 26). Drawdown falls on every feed and so does the trade count by 54-58%, which is the same
+artifact `STUDY_V24` recorded. **324-cell threshold sweep: 66.7% profitable in-sample and
+corr(IS, OOS) = -0.633 Pearson / -0.656 Spearman**, so tuning these thresholds is worse than not
+tuning them -- and the share profitable is EXACTLY 66.7% at every setting of every axis because
+two of three markets are profitable regardless: **the spread across MARKETS (-48 to +44) is an
+order of magnitude larger than the spread across THRESHOLDS within a market (<=10)**. ADX entry is
+the only axis with a gradient and it runs the OPPOSITE way on NQ (looser better) from US100/US30
+(tighter better). Ship nothing; keep the CHOP exclusion as a loss-avoidance finding, drop the ADX
+exit threshold as decoration.
+
 ## Tooling
 
 | module | what it does |
@@ -2620,7 +2650,7 @@ result -- US100/US30 are 15-minute here and can carry neither a 15-minute openin
 | `research/strat/` | The Strat combo engine: bar types, four location filters, one-bar stop order, trade-matched control |
 | `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
 | `research/mrl/` | the two library-built designs: strict 1-minute limit walk, 15m bar walk, ladders with a random-filter gate, the trend grid |
-| `research/orb/` | ORB v1 to spec: causal build with the ATR timeframe as an explicit axis, signals vectorised, exits walked on the TRUE 1-minute path, equity-compounding sizing with whole-lot flooring, a truncation audit, three matched controls and a 4,320-cell sensitivity sweep read by marginal average |
+| `research/orb/` | ORB v1 to spec: causal build with the ATR timeframe as an explicit axis, signals vectorised, exits walked on the TRUE 1-minute path, equity-compounding sizing with whole-lot flooring, a truncation audit, three matched controls and a 4,320-cell sensitivity sweep read by marginal average; `orb_feeds.py` adds the three 15m feeds with per-market contract specs and `orb_regime.py` the ADX/DI/slope regime as a sequential hysteresis state machine, frozen on completed 15m bars and forward-filled |
 | `research/overlay/` | the fast-alpha execution overlay: a 1-minute reversion gate scheduling Donchian entries, the four screening gates, the seven-part battery (Roll bounce floor, random-delay placebo, PnL attribution, paired block bootstrap, tails, cost sweep and fill haircut, missed-trade census), and the same battery re-run on a POSITION-LOCKED baseline with the placebo inside each block |
 | `research/scalpreq/` | the scalp-requirements experiment: 31 conditions x 2 triggers x 2 geometries x 6 feed-timeframes, with base rates, the cost-as-a-fraction-of-risk table and the zero-cost variant |
 | `research/v63/` | the VWAP / triple-EMA / ATR trend design: three feeds with real volume, a chandelier-trail tensor, search on one market and a frozen read on three, drop-one and the binding hold axis |

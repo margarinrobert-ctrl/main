@@ -35,11 +35,19 @@ for p in (os.path.join(HERE, ".."), os.path.join(HERE, "..", "v63")):
         sys.path.insert(0, p)
 
 import v63feeds as FD  # noqa: E402
+import orb_feeds as OF  # noqa: E402
 
 # ---- the session, stated explicitly -------------------------------------------------------
 SESS_OPEN = 9 * 60 + 30          # 09:30 New York
 SESS_CLOSE = 16 * 60             # 16:00
-LIQUIDATE = 15 * 60 + 55         # flatten here; the fill is the NEXT 1m bar's open
+# "flat by 16:00": the order goes on the last execution bar that starts before the close, and the
+# fill is that bar's open. On a 1-minute path that is 15:55; on a 15-minute feed it is 15:45,
+# because a 15-minute chart has no finer place to put it.
+def liquidate_at(exec_tf):
+    return SESS_CLOSE - max(exec_tf, 5)
+
+
+LIQUIDATE = SESS_CLOSE - 5       # 15:55, the 1-minute default; kept so v1 reproduces exactly
 RANGE_MIN = 15                   # the opening range is the first 15 completed minutes
 
 # ---- instrument ---------------------------------------------------------------------------
@@ -77,11 +85,13 @@ def _ema(x, n):
 
 
 def build(market="NQ", trade_tf=TRADE_TF, htf=HTF, ema_fast=EMA_FAST, ema_slow=EMA_SLOW,
-          atr_n=ATR_N, vol_n=VOL_N, atr_tf=None):
+          atr_n=ATR_N, vol_n=VOL_N, atr_tf=None, exec_tf=None):
     """Trading bars, the 1-minute execution path, and every indicator, all causal."""
-    m1 = FD.bars(market, 1)
-    tb = FD.bars(market, trade_tf)
-    hb = FD.bars(market, htf)
+    sp = OF.SPEC[market]
+    exec_tf = sp["native"] if exec_tf is None else exec_tf
+    m1 = OF.bars(market, exec_tf)
+    tb = OF.bars(market, trade_tf)
+    hb = OF.bars(market, htf)
 
     def rth(df):
         ix = pd.DatetimeIndex(df.index)
@@ -119,7 +129,7 @@ def build(market="NQ", trade_tf=TRADE_TF, htf=HTF, ema_fast=EMA_FAST, ema_slow=E
     tr = np.maximum(h - l, np.maximum(np.abs(h - pc), np.abs(l - pc)))
     atr = _wilder(tr, atr_n)
     if atr_tf is not None and atr_tf != trade_tf:
-        ab = FD.bars(market, atr_tf)
+        ab = OF.bars(market, atr_tf)
         aix = pd.DatetimeIndex(ab.index)
         ah, al, ac = (ab[k].to_numpy(float) for k in ("high", "low", "close"))
         apc = np.roll(ac, 1); apc[0] = ac[0]
@@ -152,7 +162,9 @@ def build(market="NQ", trade_tf=TRADE_TF, htf=HTF, ema_fast=EMA_FAST, ema_slow=E
 
     m1ix = pd.DatetimeIndex(m1.index)
     return dict(
-        market=market, trade_tf=trade_tf, htf=htf, atr_tf=atr_tf or trade_tf,
+        market=market, trade_tf=trade_tf, htf=htf, atr_tf=atr_tf or trade_tf, exec_tf=exec_tf,
+        tick=sp["tick"], pv=sp["pv"], spread=sp["spread"], slip=sp["slip"], fee=sp["fee"],
+        vol_kind=sp["vol"], liquidate=liquidate_at(exec_tf),
         ts=tix.to_numpy(), o=o, h=h, l=l, c=c, v=v, sess=sess, mod=mod, atr=atr,
         vsma=vsma, vwap=vwap, ema_f=ema_f, ema_s=ema_s, ema_f_prev=ema_f_prev,
         rh=rh, rl=rl, ra=ra, in_range=in_range,
@@ -160,7 +172,7 @@ def build(market="NQ", trade_tf=TRADE_TF, htf=HTF, ema_fast=EMA_FAST, ema_slow=E
         m1_o=m1["open"].to_numpy(float), m1_h=m1["high"].to_numpy(float),
         m1_l=m1["low"].to_numpy(float), m1_c=m1["close"].to_numpy(float),
         m1_sess=_sess_key(m1ix), m1_mod=(m1ix.hour * 60 + m1ix.minute).to_numpy(),
-        blocks=FD.blocks(market, tix))
+        blocks=OF.blocks(market, tix))
 
 
 def signals(D, vol_mult=VOL_MULT, ratio_lo=RATIO_LO, ratio_hi=RATIO_HI, buf_atr=BUF_ATR,
@@ -175,7 +187,7 @@ def signals(D, vol_mult=VOL_MULT, ratio_lo=RATIO_LO, ratio_hi=RATIO_HI, buf_atr=
     tradeable = (ratio >= ratio_lo) & (ratio <= ratio_hi) & np.isfinite(ratio)
     # breakouts are only evaluated AFTER the opening range is complete
     after = (D["mod"] >= SESS_OPEN + RANGE_MIN) & ~D["in_range"]
-    buf = np.maximum(buf_atr * atr, TICK)
+    buf = np.maximum(buf_atr * atr, D["tick"])
     volok = D["v"] > vol_mult * D["vsma"]
 
     up = rh + buf
@@ -184,6 +196,7 @@ def signals(D, vol_mult=VOL_MULT, ratio_lo=RATIO_LO, ratio_hi=RATIO_HI, buf_atr=
     short_t = (D["ema_f"] < D["ema_s"]) & (D["ema_f"] < D["ema_f_prev"]) & (c < D["vwap"])
 
     base = after & tradeable & volok & same_sess & np.isfinite(atr) & np.isfinite(D["ema_f"])
+    # allow_long / allow_short may be scalars or per-bar boolean arrays (the regime filter)
     lo = base & (c > up) & (prev_c <= up) & long_t & allow_long
     sh = base & (c < dn) & (prev_c >= dn) & short_t & allow_short
     side = np.where(lo, 1, np.where(sh, -1, 0)).astype(np.int64)

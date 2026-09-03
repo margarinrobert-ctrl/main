@@ -26,9 +26,12 @@ def blocks_of(D, dev=0.50, val=0.15):
             "out-of-sample": (D["sess"] >= c2)}, (c1, c2)
 
 
-def run(D, first_per_session=True, conservative=True, slip=C.SLIP, spread=C.SPREAD,
-        fee_pts=C.FEE_PTS, risk_pct=C.RISK_PCT, stop_atr=C.STOP_ATR, equity0=C.EQUITY0,
-        **sig_kw):
+def run(D, first_per_session=True, conservative=True, slip=None, spread=None,
+        fee_pts=None, risk_pct=C.RISK_PCT, stop_atr=C.STOP_ATR, equity0=C.EQUITY0,
+        slip_mult=1.0, **sig_kw):
+    spread = D["spread"] if spread is None else spread
+    slip = D["slip"] * slip_mult if slip is None else slip * slip_mult
+    fee_pts = D["fee"] if fee_pts is None else fee_pts
     side, ratio = C.signals(D, **sig_kw)
     idx = np.flatnonzero(side != 0)
     if len(idx) == 0:
@@ -47,7 +50,7 @@ def run(D, first_per_session=True, conservative=True, slip=C.SLIP, spread=C.SPRE
 
     # the liquidation bar of each signal's session; the walk ends the bar before it
     liq = pd.DataFrame({"s": D["m1_sess"], "m": D["m1_mod"], "i": np.arange(len(m1))})
-    liq = liq[liq["m"] >= C.LIQUIDATE].groupby("s", sort=True)["i"].first()
+    liq = liq[liq["m"] >= D["liquidate"]].groupby("s", sort=True)["i"].first()
     lb = liq.reindex(D["sess"][idx]).to_numpy()
     good = np.isfinite(lb.astype(float)) & (i0 < len(m1))
     idx, i0 = idx[good], i0[good]
@@ -59,8 +62,8 @@ def run(D, first_per_session=True, conservative=True, slip=C.SLIP, spread=C.SPRE
     e_bar, e_px, qty, q1, pnl, code, rmul, amb, eq = C._walk(
         i0, side[idx], D["atr"][idx], t_end,
         D["m1_o"], D["m1_h"], D["m1_l"], D["m1_c"], D["m1_mod"],
-        float(equity0), float(risk_pct), C.POINT_VALUE, float(spread), float(slip),
-        float(fee_pts), float(stop_atr), C.LIQUIDATE, 1 if conservative else 0)
+        float(equity0), float(risk_pct), D["pv"], float(spread), float(slip),
+        float(fee_pts), float(stop_atr), D["liquidate"], 1 if conservative else 0)
 
     took = qty > 0
     t = pd.DataFrame(dict(
