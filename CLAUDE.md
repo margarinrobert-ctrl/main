@@ -2554,6 +2554,38 @@ CONCURRENCY BEFORE REPORTING AN OVERLAY'S ATTRIBUTION** -- an unlocked baseline 
 twenty times and turns a price effect into a population effect.
 `research/overlay/`, `docs/ib/STUDY_OVERLAY_DONCHIAN.md`.
 
+**AN OPENING-RANGE GATE CALIBRATED TO THE WRONG TIMEFRAME MAKES A STRATEGY UNTESTABLE, AND THAT IS
+THE WHOLE RESULT OF ORB v1.** A one-trade-per-session opening-range breakout built exactly to
+spec on NQ (5m bars, 09:30-09:45 range, HTF EMA20/50 read from the last CLOSED 15m bar, session
+VWAP, ATR(14) frozen at the signal, volume SMA(20) shifted one bar, 0.25% equity risk, 1xATR stop,
+50% out at 1R then breakeven then 2R). **`range_size / ATR` compares a 15-MINUTE range to an ATR
+measured on an unstated timeframe, and that unstated choice moves the gate's pass rate from 1.4%
+(15m ATR) to 95.3% (240m)**. Under the literal reading -- ATR on the trading bars -- the median
+ratio is **2.45** so the specified [0.3, 1.5] band keeps the QUIETEST NINTH of sessions (11.1%), a
+compression filter, and the rule fires **31 times in 765 sessions**. Everything downstream rests
+on 15 / 5 / 11 trades. The shape is wrong for the ninth time here: **development -$88.31/trade at
+PF 0.367 and Sharpe -1.35, validation +$127.60 at PF 4.15, out-of-sample +$25.39 at PF 1.250** --
+it loses on the only block permitted to choose. It clears NO control: a random post-range bar with
+the same session, side and 1R/2R geometry scores **p 0.478**, a coin-flip side on its own bars
+**p 0.516**, day-block bootstrap P(mean<=0) **0.629** whole-sample and 0.379 out of sample. It does
+beat always-long on the same bars (-$28.29 against -$13.14), which is the weakest of the three
+nulls. **COSTS ARE NOT THE BINDING CONSTRAINT, WHICH IS RARE HERE**: doubling slippage costs
+$0.80-$1.83 a trade because a 1xATR stop on 5m NQ is ~28 points against a 1.72-point round turn --
+**6% of risk**, against the 24% a 0.75xATR scalping stop carries. 4,320-cell sensitivity: **only
+24.2% of 3,835 scorable cells are profitable in-sample**, corr(IS, OOS) +0.186 Pearson, and EVERY
+axis marginal is negative except a 240-minute ATR, which wins by making the gate inert. The spec's
+own values are the BEST setting on three axes (ratio band, HTF, trading timeframe) and the WORST on
+two (buffer, stop) -- the stop preferring 1.5N over 1.0N replicates the monotone-toward-wider
+finding for the seventh family. **The marginal consensus chosen on dev+validation goes +$6.22
+in-sample to -$26.50 out of sample with a 9-trade losing streak**, the seventh re-optimiser here to
+lose to its starting point. Two mechanics worth keeping: **the intrabar tie-break was ANSWERED
+rather than assumed** -- exits walked on the 1-minute path leave **0.00%** of trades with a stop
+and a target in the same minute, and flipping the assumption is worth exactly **$0**; and at 0.25%
+risk on $100k with MNQ's $2 point value the median size is 3 lots, so **on 12.9% of trades the
+"exit 50%" instruction rounds to ZERO lots** and is simply unavailable. ORB v1 is a SINGLE-MARKET
+result -- US100/US30 are 15-minute here and can carry neither a 15-minute opening range nor a
+1-minute exit path. `research/orb/`, `docs/ib/STUDY_ORB_V1.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2588,6 +2620,7 @@ twenty times and turns a price effect into a population effect.
 | `research/strat/` | The Strat combo engine: bar types, four location filters, one-bar stop order, trade-matched control |
 | `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
 | `research/mrl/` | the two library-built designs: strict 1-minute limit walk, 15m bar walk, ladders with a random-filter gate, the trend grid |
+| `research/orb/` | ORB v1 to spec: causal build with the ATR timeframe as an explicit axis, signals vectorised, exits walked on the TRUE 1-minute path, equity-compounding sizing with whole-lot flooring, a truncation audit, three matched controls and a 4,320-cell sensitivity sweep read by marginal average |
 | `research/overlay/` | the fast-alpha execution overlay: a 1-minute reversion gate scheduling Donchian entries, the four screening gates, the seven-part battery (Roll bounce floor, random-delay placebo, PnL attribution, paired block bootstrap, tails, cost sweep and fill haircut, missed-trade census), and the same battery re-run on a POSITION-LOCKED baseline with the placebo inside each block |
 | `research/scalpreq/` | the scalp-requirements experiment: 31 conditions x 2 triggers x 2 geometries x 6 feed-timeframes, with base rates, the cost-as-a-fraction-of-risk table and the zero-cost variant |
 | `research/v63/` | the VWAP / triple-EMA / ATR trend design: three feeds with real volume, a chandelier-trail tensor, search on one market and a frozen read on three, drop-one and the binding hold axis |

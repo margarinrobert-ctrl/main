@@ -1,0 +1,34 @@
+
+======================================================================================================================
+A. THREE MATCHED CONTROLS, whole sample (n = 31 trades)
+======================================================================================================================
+  control             median        mean                   5-95%    observed        p
+  random bar          -15.08      -14.52   [   -81.11,    +54.75]      -13.14    0.478
+  coin-flip side      -11.45      -11.31   [   -76.82,    +54.37]      -13.14    0.516
+  always long         -28.29      -28.29   [   -28.29,    -28.29]      -13.14    0.000
+
+  p is the share of control draws that EQUAL OR BEAT the strategy. With 31 trades the
+  control distribution is wide by construction, so a non-rejection here is a statement
+  about the sample size as much as about the rule.
+
+======================================================================================================================
+B. DAY-BLOCK BOOTSTRAP on the realised trades
+======================================================================================================================
+  development      n= 15  mean    -88.31  95% CI [  -175.02,    +10.32]  P(mean<=0) 0.962
+  validation       n=  5  mean   +127.60  95% CI [   -48.46,   +288.69]  P(mean<=0) 0.075
+  out-of-sample    n= 11  mean    +25.39  95% CI [  -118.77,   +172.41]  P(mean<=0) 0.379
+  ALL              n= 31  mean    -13.14  95% CI [   -91.16,    +66.77]  P(mean<=0) 0.629
+
+======================================================================================================================
+C. WHERE THE MONEY IS
+======================================================================================================================
+  net $-407 over 31 trades
+    the best 1 trade(s) supply    -94.2% of net ($384)
+    the best 3 trade(s) supply   -269.3% of net ($1,097)
+    the best 5 trade(s) supply   -429.4% of net ($1,749)
+  best trade $384   worst $-254
+
+  by calendar year:
+    2023   n  12   net $     -976   expectancy $  -81.36
+    2024   n   9   net $      +41   expectancy $   +4.55
+    2025   n  10   net $     +528   expectancy $  +52.81
