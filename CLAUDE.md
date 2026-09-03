@@ -2428,6 +2428,24 @@ the right side of a RISING anchor -- a state, not a location -- worth +0.0385 %/
 at all. Its two LOCATION readings both score better than the shipped state form on the blocks that
 chose nothing (floor +0.2204 PF 1.67, ceiling +0.2076 on 7/7) and the floor was the WORST reading on
 the search block, so the same feature ranks oppositely on two geometries -- STUDY_V52 again.
+**ATR AS A REGIME FILTER: THE DIRECTION IS THE FINDING, AND IT IS THE EXPANSION SIDE.** 86 declared
+readings (expansion vs a rolling mean, ATR percentile, the same on ATR/price, and the slope) x BOTH
+directions, each against a same-selectivity random filter, on eight blocks of three markets. Every
+FLOOR/RISING family is positive (+0.006 to +0.047 mean edge, beats the no-regime baseline 57-71%)
+and every CEILING/FALLING family is negative (-0.028 to -0.054, beats it 34-48%). **That INVERTS
+V28**, whose only survivor of 240 cells was `atr percentile 500 <= 0.2` -- the bottom fifth -- which
+re-run here improves **3 of 7** blocks at **-0.0615** and clears its control once. Fourth time a
+volatility-state rule's sign has moved: run both directions or run neither. Three readings improve
+on 7/7 blocks that chose nothing -- `atr/sma250>=1.2` (+0.0981, keeps 15.3%), `atr pct100>=0.6`
+(+0.0874), `atr/sma100>=1.0` (+0.0845) -- against 0.67 expected by chance, with the blocks NOT
+independent so read it as modest. **The shipped `atr/sma50>=1.0` is 5/7 at +0.0693 and the sma100
+rung at the SAME selectivity is 7/7 at +0.0845**, so it ships as an input rather than the default
+because it was picked after the blocks were read. **AND 21.9% OF 602 CELLS CLEAR THEIR CONTROL
+AGAINST A 5% CHANCE RATE WHILE ONLY 49.3% BEAT THE NO-REGIME BASELINE** -- both true because the two
+directions cancel; read the direction split, never the pooled share. Every reading has a NEGATIVE
+edge on the one block that CHOSE the strategy. And the same gate scored 7/7 in the drop-one and 5/7
+here with nothing changed but the base (the drop-one still had the trail on) -- STUDY_V52's
+geometry lesson again.
 See `docs/ib/STUDY_V63_TREND_VWAP.md`.
 
 ## Tooling

@@ -172,3 +172,62 @@ Spearman correlation between distance-at-entry and the trade's result is **−0.
 the VWAP buys nothing. What the condition contributes is being on the right side of a rising
 anchor — a state, not a location — and even that is worth only +0.0385 %/trade over having no VWAP
 condition at all.
+
+
+## 9. ATR as a regime filter — 86 declared readings, both directions
+
+`research/v63/run_v63g.py`, `results/v63/stage_g.txt`, `results/v63/atr_regime.csv`. Every reading
+replaces the shipped gate (not stacked on it), is scored against a random filter of the SAME
+selectivity over the base's own signals with the position lock applied, and is read on all eight
+blocks. The family was declared first: expansion against a rolling mean (32), the percentile of ATR
+in its own trailing window (24), the same on ATR/price (24), and the slope (6).
+
+**The direction is the finding, and it is consistent across all four families** on the seven blocks
+that had no part in the search:
+
+| family | direction | cells | mean edge | beats no-regime | clears its control |
+|---|---|---|---|---|---|
+| expansion | floor / rising | 112 | **+0.0471** | **71.4%** | 36.6% |
+| expansion | ceiling / falling | 112 | −0.0431 | 35.7% | 14.3% |
+| level | floor / rising | 84 | +0.0320 | 57.1% | 26.2% |
+| level | ceiling / falling | 84 | −0.0542 | 34.5% | 15.5% |
+| normalised | floor / rising | 84 | +0.0338 | 57.1% | 21.4% |
+| normalised | ceiling / falling | 84 | −0.0539 | 35.7% | 16.7% |
+| slope | rising | 21 | +0.0061 | 57.1% | 19.0% |
+| slope | falling | 21 | −0.0275 | 47.6% | 19.0% |
+
+**Trade the expansion, not the calm** — and that INVERTS this branch's two prior ATR results.
+`STUDY_V28`'s only survivor of 240 cells was `atr percentile 500 ≤ 0.2`, the bottom fifth; re-run
+here it improves **3 of 7** blocks with a mean edge of **−0.0615** and clears its control once.
+`STUDY_V39` found calm and contracting states inverting hardest of any family. Fourth measurement,
+same conclusion: a volatility-state rule's sign is not stable, so run both directions or run neither.
+
+**Three readings improve on every one of the seven blocks that chose nothing:**
+
+| reading | keeps | mean edge | 7/7? | clears control | worst block |
+|---|---|---|---|---|---|
+| `atr / sma(250) ≥ 1.2` | 15.3% | **+0.0981** | yes | 3/7 | +0.0025 (US30 research) |
+| `atr percentile(100) ≥ 0.6` | 28.9% | +0.0874 | yes | 4/7 | +0.0188 (NQ research) |
+| `atr / sma(100) ≥ 1.0` | 33.7% | +0.0845 | yes | 4/7 | +0.0092 (NQ research) |
+| `atr / sma(50) ≥ 1.0` (shipped) | 34.5% | +0.0693 | **no, 5/7** | 3/7 | −0.0248 (US30 research) |
+
+Three of 86 against **0.67 expected** if each block were a coin flip — but the blocks are not
+independent (US100 and US30 are the same weeks), so read that as modest, not decisive.
+
+**The sma(100) rung is strictly better than the shipped sma(50) at the same selectivity** — 7/7
+against 5/7, +0.0845 against +0.0693, clearing on 4 blocks against 3. It was picked after those
+blocks were read, so it ships as an INPUT and not as the default; the script's tooltip carries both
+sets of numbers.
+
+**Two cautions that belong with the table.** First, **21.9% of 602 out-of-sample cells clear their
+control at p ≤ 0.05 against a 5% chance rate, while only 49.3% beat the no-regime baseline —
+exactly chance.** Those two are consistent because the floor and ceiling directions cancel: the
+floor family beats the baseline 71.4% of the time and the ceiling family 35.7%. Read the direction
+split, never the pooled share. Second, **every reading — including all three survivors — has a
+NEGATIVE edge on US100 research, the block that chose the strategy.** The regime filter helps on
+the seven blocks that chose nothing and subtracts on the one that chose. That is an unusual shape
+and it is not an argument in its favour.
+
+Note also that the ATR gate scored 7/7 in the stage-C drop-one and 5/7 here. Nothing changed but
+the base: stage C measured it on the candidate that still had the chandelier trail. A filter is a
+property of a geometry, not of a market (`STUDY_V52`), measured again.

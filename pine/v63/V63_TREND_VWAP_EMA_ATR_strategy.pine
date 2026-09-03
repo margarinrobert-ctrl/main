@@ -50,6 +50,44 @@
 //    original candidate and REMOVING it took +0.0406 to +0.1465 -- a trail is a take profit
 //    wearing a stop's name, which is the same finding this branch has made fifteen times.
 //  * COST STRESS: pooled +0.0470 at zero cost, +0.0406 at 1x, +0.0344 at 2x, +0.0225 at 4x.
+//
+// ======================= ATR AS A REGIME FILTER: 86 DECLARED READINGS =======================
+// Expansion against a rolling mean, the percentile of ATR in its own trailing window, the same on
+// ATR/price, and the slope -- each in BOTH directions, each scored against a random filter of the
+// SAME selectivity over the base's own signals. THE DIRECTION IS THE FINDING, and it is consistent
+// across all four families on the seven blocks that had no part in the search:
+//
+//   family      direction           cells   mean edge   beats no-regime   clears its control
+//   expansion   floor / rising       112     +0.0471        71.4%              36.6%
+//   expansion   ceiling / falling    112     -0.0431        35.7%              14.3%
+//   level       floor / rising        84     +0.0320        57.1%              26.2%
+//   level       ceiling / falling     84     -0.0542        34.5%              15.5%
+//   normalised  floor / rising        84     +0.0338        57.1%              21.4%
+//   normalised  ceiling / falling     84     -0.0539        35.7%              16.7%
+//   slope       rising                21     +0.0061        57.1%              19.0%
+//   slope       falling               21     -0.0275        47.6%              19.0%
+//
+// TRADE THE EXPANSION, NOT THE CALM. That INVERTS two earlier results on this branch -- V28's only
+// ATR survivor was `atr percentile 500 <= 0.2`, the bottom fifth, and re-run here it improves 3 of
+// 7 blocks with a mean edge of -0.0615 and clears its control once. Volatility-state rules invert;
+// this is the fourth time.
+//
+// THREE READINGS IMPROVE ON EVERY ONE OF THE SEVEN BLOCKS THAT CHOSE NOTHING:
+//   atr / sma(100) >= 1.0   keeps 33.7%   mean edge +0.0845   clears its control on 4 of 7
+//   atr percentile(100) >= 0.6  keeps 28.9%   +0.0874   clears on 4 of 7
+//   atr / sma(250) >= 1.2   keeps 15.3%   +0.0981   clears on 3 of 7, and it is the most selective
+// against 0.67 expected by chance if each block were a coin flip -- and the blocks are NOT
+// independent, US100 and US30 being the same weeks, so read that as modest rather than decisive.
+//
+// THE SHIPPED DEFAULT is `atr / sma(50) >= 1.0`, which is what was declared BEFORE the blocks were
+// read. It improves 5 of 7 and its mean edge is +0.0693. The sma(100) rung is strictly better on
+// every count at the same selectivity -- 7 of 7, +0.0845, clears on 4 -- and it was picked AFTER
+// those blocks were read, so it is offered as an input and not as the default. Flip it knowingly.
+//
+// AND NOTE THE SHAPE: EVERY reading, including all three survivors, has a NEGATIVE edge on the
+// block that CHOSE the strategy (US100 research). The regime filter helps on the seven blocks that
+// chose nothing and subtracts on the one that chose. That is unusual and it is not an argument in
+// its favour.
 //  * PARITY: this script's own order model, written out in Python and diffed against the research
 //    engine, agrees on the trade count within one and gives correlation 1.0000 with a gap of
 //    +0.1% / +0.3% / -0.0% on the three markets. The only structural difference is that a time cap
@@ -84,10 +122,17 @@ volWeight = input.bool(true, "Weight the VWAP by volume", group = gV,
      tooltip = "MEASURED AS DOING NOTHING: the volume-weighted anchor beats its unweighted twin in 55.7% of 69,003 matched pairs, mean +0.0096 Sharpe. Turn it off and you have a session average price, which scores the same.")
 
 atrLen = input.int(14, "ATR length", minval = 2, group = gA)
-useAtrG = input.bool(true, "Require ATR at or above its own mean", group = gA,
-     tooltip = "Adds +0.0195 %/trade pooled and was positive on 7 of 7 blocks that chose nothing. The 1.1x rung is worse than either.")
-atrMeanN = input.int(50, "ATR mean length", minval = 2, group = gA)
-atrGMult = input.float(1.0, "ATR gate multiple", minval = 0.1, step = 0.05, group = gA)
+regMode = input.string("expansion: ATR / mean >= k", "ATR regime filter", group = gA,
+     options = ["off", "expansion: ATR / mean >= k", "contraction: ATR / mean <= k",
+                 "level: ATR percentile >= q", "calm: ATR percentile <= q",
+                 "slope: ATR rising over k bars"],
+     tooltip = "Measured over 86 declared readings on eight blocks of three markets. The FLOOR/RISING direction has a mean edge of +0.0471 (expansion), +0.0320 (level), +0.0338 (normalised) and beats the no-regime baseline 57-71% of the time; every CEILING/FALLING direction is negative (-0.027 to -0.054) and beats it 34-48%. Trade the expansion, not the calm.")
+atrMeanN = input.int(50, "Regime length (mean or percentile window)", minval = 2, group = gA,
+     tooltip = "50 is the pre-declared default and improves 5 of the 7 blocks that chose nothing, mean edge +0.0693. 100 improves 7 of 7 at +0.0845 with the same selectivity, and 250 with k=1.2 gives +0.0981 on 15% of the signals -- but both were picked AFTER those blocks were read.")
+atrGMult = input.float(1.0, "k -- the ATR / mean multiple", minval = 0.1, step = 0.05, group = gA)
+atrGQ = input.float(0.6, "q -- the percentile, 0 to 1", minval = 0.0, maxval = 1.0, step = 0.05,
+     group = gA)
+atrSlopeK = input.int(10, "Slope lookback (bars)", minval = 1, group = gA)
 
 stopN = input.float(1.5, "Stop (ATR at the SIGNAL bar)", minval = 0.1, step = 0.1, group = gX,
      tooltip = "1.5 is the value the search chose on US100 research. Pooled over the blocks that chose nothing, 2.5 scored +0.2728 %/trade on 7/7 blocks against 1.5's +0.1988 on 6/7 -- but that comparison was made AFTER those blocks were read, so it is descriptive.")
@@ -127,10 +172,19 @@ since = ta.barssince(fresh)
 
 atrN = ta.ema(ta.tr(true), atrLen)                 // NOT ta.atr, which is Wilder
 atrM = ta.sma(atrN, atrMeanN)
+// `ta.percentrank` ranks the current value against the PREVIOUS n; the research ranked it inside a
+// window that includes the current bar. On a 100-bar window the two differ by at most one rank.
+atrP = ta.percentrank(atrN, atrMeanN) / 100.0
+atrUp = atrN > atrN[atrSlopeK]
 
 trigOk = stack and not na(since) and since <= winBars
 vwapOk = not useVwap or (not na(vwapV) and not na(vwapV[1]) and close > vwapV and vwapV > vwapV[1])
-atrOk  = not useAtrG or (not na(atrM) and atrN >= atrGMult * atrM)
+atrOk = regMode == "off" ? true :
+     regMode == "expansion: ATR / mean >= k" ? (not na(atrM) and atrN >= atrGMult * atrM) :
+     regMode == "contraction: ATR / mean <= k" ? (not na(atrM) and atrN <= atrGMult * atrM) :
+     regMode == "level: ATR percentile >= q" ? (not na(atrP) and atrP >= atrGQ) :
+     regMode == "calm: ATR percentile <= q" ? (not na(atrP) and atrP <= atrGQ) :
+     (not na(atrN[atrSlopeK]) and atrUp)
 gateOk = trigOk and vwapOk and atrOk and atrN > 0
 
 var float pendAtr = na
@@ -180,7 +234,7 @@ if barstate.islast
          + str.tostring(f3) + "   window " + str.tostring(winBars) + " bars   cap "
          + str.tostring(holdBars) + " bars", text_color = color.white,
          bgcolor = color.new(color.teal, 25))
-    table.cell(hud, 0, 1, "stop " + str.tostring(stopN) + "N"
+    table.cell(hud, 0, 1, "regime: " + regMode + "   stop " + str.tostring(stopN) + "N"
          + (tpATR > 0 ? "   TP " + str.tostring(tpATR) + "N" : "   no target")
          + (trailATR > 0 ? "   trail " + str.tostring(trailATR) + "N" : "   no trail"),
          text_color = color.white,
