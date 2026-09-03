@@ -422,3 +422,92 @@ target trails a session EMA that is recomputed per bucket behind a causal touch 
 path-dependent state, not a vectorisable signal — so the 127,008-cell search runs on the compiled
 walk above. vectorbt 1.1.0 is used for what it is genuinely good at: the portfolio statistics on the
 finalists' stitched equity, quoted in this section.
+
+## 13. A Donchian channel on the 3x, 5x and 8x rungs — 543,948 more cells
+
+`research/trendday/td_sweep2.py`, `td_dc_analyse.py`, `td_dc_final.py`; output
+`results/trendday/dc_analysis.txt`, `dc_final.txt`.
+
+Section 12's frontier tops out at profit factor 1.41 / 1.28 / 1.20 at three, five and eight times
+the shipped entry count. A Donchian channel was added in the three ways that make sense for a fade,
+all causal and all at session scale over the n **completed** sessions before the one being judged:
+
+- **GATE** — the qualifying session must have closed at the extreme of its own channel, an up trend
+  day in the top `dc_gate` of it and a down day in the bottom. The structural reading of "trend day"
+  that the |close − open| / range ratio only approximates.
+- **STOP** — the fade is cut when price breaks the channel against it, from three quarters of the way
+  inside the channel out to half a width beyond it.
+- **TARGET** — aim at the channel midpoint instead of the live EMA. Direction still comes from the
+  EMA; a midpoint on the wrong side of the open is skipped rather than inverted.
+
+Eleven axes, **543,948 cells per market**, all four feeds, same discipline as section 12: research
+only, scored by the worst of the three long feeds, one reserved read.
+
+### It does not raise the rungs
+
+| entries | without Donchian | with Donchian | change |
+| --- | ---: | ---: | ---: |
+| 3x | 1.41 | 1.49 | **+0.07** |
+| 5x | 1.25 | 1.27 | **+0.02** |
+| 8x | 1.06 | 1.08 | **+0.01** |
+
+That comparison is within this grid, so the axes are otherwise identical. **The Donchian axes
+multiply the cell count by 129, and the best-of gain is +0.07, +0.02 and +0.01.** Searching 129
+times harder raises a maximum-of-draws by more than that on its own. There is no rung where the
+channel earns its place.
+
+Each use alone, at the same rungs:
+
+| entries | none | gate only | stop only | midpoint target only | gate + stop |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 3x | 1.41 | 1.36 | 1.49 | 1.37 | 1.38 |
+| 5x | 1.25 | 1.17 | 1.27 | 1.14 | 1.16 |
+| 8x | 1.06 | 1.05 | 1.08 | 1.02 | 1.05 |
+
+**The gate and the midpoint target both make it worse at every rung.** Only the "stop" ever helps,
+and the next paragraph is why that word is in quotes.
+
+### The stop that helps is not a stop
+
+Every finalist at 3x, 5x and 8x sets the stop at 1.25 or 1.5 — a quarter to a half of a channel
+width **beyond** the extreme — and **0% of their trades ever exit on it**. What that setting
+actually does is refuse the trade when the session opens already beyond an extended channel edge. It
+is an entry filter wearing a stop's name, and its whole contribution is trading less.
+
+The first pass only tested stops at or beyond the extreme, which is why none fired. Re-run with the
+stop placed **inside** the channel it does fire — 19% of trades at three quarters inside, 9% at the
+midpoint, 36% at the extreme itself — and none of those cells reaches the frontier at any rung. A
+Donchian stop that actually stops does not pay for what it costs, which is the same answer §4 gave
+for a gap-multiple stop (1.70 → 1.19).
+
+### Everything else points the same way as section 12
+
+- **Coherence got WORSE, not better.** Requiring every immediate neighbour on every axis to hold,
+  the best worst-neighbour profit factor is **1.07 at 3x** and **0.99 at 5x**, against 1.18 and 1.07
+  without the Donchian. Extra axes bought extra spikes.
+- **The top 1,000 cells have a median entry multiple of 0.05x.** With more knobs the search runs
+  *further* from the ask, not closer.
+- **The reserved blocks decay with every extra trade.** Research → reserved profit factor: the 3x
+  cell 1.44 → 1.15, the 5x cell 1.19 → 1.11, the 8x cell 1.08 → 1.11.
+
+### The whole ladder in vectorbt, four feeds stitched
+
+| configuration | n | PF | annualised | Sharpe | Sortino | max DD | Calmar | stop exits |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| shipped (1x) | 298 | 1.65 | 4.49% | 0.79 | 1.22 | −6.86% | 0.65 | 0% |
+| best 2x, no Donchian | 748 | 1.60 | 9.15% | **0.97** | 1.52 | −12.45% | **0.73** | 0% |
+| best 3x with Donchian | 1,068 | 1.28 | 4.37% | 0.71 | 0.94 | −8.33% | 0.52 | 0% |
+| best 5x with Donchian | 1,798 | 1.15 | 4.98% | 0.50 | 0.63 | −19.74% | 0.25 | 0% |
+| best 8x with Donchian | 2,567 | 1.10 | 3.91% | 0.42 | 0.53 | −17.36% | 0.23 | 0% |
+
+Every risk-adjusted measure falls monotonically as entries rise, and drawdown roughly triples from
+1x to 5x. **The 2x cell from section 12, with no Donchian at all, remains the best thing found in
+671,000 configurations across two sweeps** — and section 12 already disqualified it for sitting on a
+spike in its EMA axis.
+
+### Verdict
+
+**A Donchian channel does not raise the 3x, 5x or 8x rungs.** The frontier is a property of the day
+filter: the untouched-EMA-plus-trend-day conjunction *is* the edge (§4), so every additional trade is
+drawn from a pool with less of it, and no second indicator refills it. Sixth large search on this
+branch to buy nothing, and the second on this family.

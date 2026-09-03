@@ -2272,6 +2272,19 @@ SEVEN axes then cost a walk over the qualified sessions alone -- roughly 1% of t
 cells in **18 seconds**. Same idea as `research/v14/v14tensor.py` but keyed on the FILTER rather than
 the geometry, which is the right split whenever the expensive part is recursive state.
 
+**A SECOND INDICATOR CANNOT REFILL A POOL THE FIRST ONE EMPTIED.** Asked to raise the trend-day
+frontier at 3x/5x/8x entries with a Donchian channel, 543,948 more cells per market -- gate (closed
+at the channel extreme), stop (cut when price breaks it), midpoint target -- moved the rungs by
+**+0.07 / +0.02 / +0.01** profit factor, from a search **129x larger**. The gate and the midpoint
+target are NEGATIVE at every rung; only the "stop" helps, and **0% of the winning cells' trades ever
+exit on it** -- every finalist places it a quarter to a half width BEYOND the channel, so it is an
+entry filter wearing a stop's name. Placed INSIDE the channel it does fire (19% at three quarters in,
+36% at the extreme) and never reaches the frontier, the same answer a gap-multiple stop gave
+(1.70 -> 1.19). Coherence got WORSE with the extra axes (best worst-neighbour PF 1.07 at 3x against
+1.18 without), the top 1,000's median entry multiple fell to **0.05x**, and in vectorbt every
+risk-adjusted measure falls monotonically with entries (Sharpe 0.97 at 2x -> 0.71 -> 0.50 -> 0.42;
+drawdown -12% -> -20%). The frontier is a property of the DAY FILTER, which is the edge itself.
+
 ## Tooling
 
 | module | what it does |
@@ -2398,6 +2411,7 @@ the geometry, which is the right split whenever the expensive part is recursive 
 | `research/trendday/td_core.py`, `td_run.py` | the Raschke trend-day / untouched-EMA EA: the exact order model, its 1m-vs-15m parity, day and mirrored-side controls, grid, walk-forward, MC, regimes |
 | `research/trendday/td_parity.py` | **the shipped Pine's order model in Python, diffed against the engine** — exact at 1m, a different strategy at 15m |
 | `research/trendday/td_sweep.py`, `td_analyse.py`, `td_finalist.py` | the 127,008-cell two-phase sweep (day filter cached per EMA/bucket), research-only selection by the worst feed, coherence gate, one reserved read |
+| `research/trendday/td_sweep2.py`, `td_dc_analyse.py`, `td_dc_final.py` | the same family with a Donchian gate / stop / midpoint target, 543,948 cells, and the vectorbt ladder |
 | `research/v59/v59core.py` | the EMA 16/64 exit tensor: 243,000 configs, dual lock kernels, duration-based hold |
 | `research/v59/v59judge.py`, `v59lock.py`, `v59_nq.py` | the sorted matched control, the one locked read, the NQ read |
 | `research/v58/v58ib.py` | the Initial Balance tensor: 777,600 configs in one walk, both exit models |
