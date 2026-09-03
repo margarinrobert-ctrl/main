@@ -80,8 +80,8 @@ gS = "Session"
 preset = input.string("Incumbent 30m (the only pre-declared cell that cleared its control)",
      "Preset", group = gP,
      options = ["Incumbent 30m (the only pre-declared cell that cleared its control)",
-                "High activity 15m (2.4x the trades, descriptive p-values)",
-                "Custom"],
+                 "High activity 15m (2.4x the trades, descriptive p-values)",
+                 "Custom"],
      tooltip = "A preset sets the geometry and the order-flow windows and NOTHING ELSE. The ADX, absorbed-selling, EMA-cross and session switches stay exactly where you left them.")
 
 entNi    = input.int(20, "Entry channel (bars)", minval = 2, group = gG)
@@ -263,7 +263,7 @@ if barstate.islast
          text_color = color.white, bgcolor = color.new(color.teal, 30))
     table.cell(hud, 0, 3, ltfBad ? "CVD TIMEFRAME " + cvLTF + " IS NOT BELOW THE CHART -- NO DELTA"
          : (useAbs or useCross or useChop or usePsh or adxMode != "off"
-            ? "OVERRIDES ON -- every one of them was measured as a cost"
-            : "exhausted sellers only"),
+             ? "OVERRIDES ON -- every one of them was measured as a cost"
+             : "exhausted sellers only"),
          text_color = color.white,
          bgcolor = ltfBad ? color.red : color.new(color.gray, 40))

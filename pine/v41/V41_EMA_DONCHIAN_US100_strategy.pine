@@ -104,7 +104,7 @@ strategy("V41 EMA cross + Donchian (US100 60m)", overlay = true,
 gP = "Preset"
 preset = input.string("BRIEF  EMA 13/48", "Configuration", group = gP,
      options = ["TOP  EMA 21/48 win 5", "CONSENSUS  EMA 21/48 win 10", "BRIEF  EMA 13/48",
-                "Custom"],
+                 "Custom"],
      tooltip = "BRIEF is the 13/48 pair as briefed and has the most trades (322) and the smallest selection premium. TOP and CONSENSUS were chosen by the search and carry more of it.")
 
 gC = "Custom only"

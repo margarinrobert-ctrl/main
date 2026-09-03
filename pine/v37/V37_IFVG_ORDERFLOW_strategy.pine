@@ -70,7 +70,7 @@ maxAge     = input.int(500, "Bars an un-inverted FVG stays live", minval = 20, m
 
 gE = "Entry / exit"
 entMode  = input.string("Market (next open)", "Entry mechanic",
-                        options = ["Market (next open)", "Limit at IFVG edge"], group = gE)
+     options = ["Market (next open)", "Limit at IFVG edge"], group = gE)
 restBars = input.int(30, "Bars a resting limit stays live (ONE order at a time)", minval = 1,
                      group = gE)
 atrLen   = input.int(14, "ATR length", minval = 2, group = gE)

@@ -1834,6 +1834,17 @@ twice. Varying ONLY that lookback over 1.05M bars: 120 -> 342 trades PF 1.351 +0
 never earning its constraint. Every fail-closed gate is now COUNTED and the panel names the binding
 one, because a blocked date and a date with no signal look identical from outside.
 
+**THE CONTINUATION RULE APPLIES INSIDE AN UNCLOSED BRACKET, AND `pine_lint` WAS NOT CHECKING
+THERE.** V61 shipped lint-clean and would not compile: `options = [...]` wrapped at 16 spaces, which
+Pine reads as a block body -- CE10013, "expecting end of line without line continuation". The linter
+tracked bracket depth and then SKIPPED the indent check entirely while depth > 0, so only a
+statement's first continuation line was ever examined. Exactly the defect `STUDY_PINE_PARITY`
+recorded on `TURTLE_4_FINALISTS` and it recurred because the linter was never fixed, only the file.
+Now checked at every depth -- and the same scan found **three other shipped scripts that could not
+have compiled**: `V37_IFVG_ORDERFLOW` (24 spaces), `V38_DONCHIAN_LINREG` (24) and
+`V41_EMA_DONCHIAN_US100` (16). All 101 scripts in `pine/` are clean. A lint pass is only worth what
+the linter checks; when a script fails to compile, fix the LINTER first and the file second.
+
 **PINE FUNCTIONS CANNOT ASSIGN TO GLOBALS, AND LINT WILL NOT TELL YOU.** `pine_lint` checks
 indentation, not scope. A helper that does `dayBlocked := true` is a compile error TradingView
 raises and nothing here catches, so the audit is mechanical: parse every `name(args) =>` body and

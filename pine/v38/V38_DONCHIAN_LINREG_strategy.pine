@@ -65,7 +65,7 @@ gF = "Moving-average filters  (0 of 8 cells beat a random filter of the same sel
 useLR    = input.bool(true, "LinReg MA filter on", group = gF)
 lrLenIn  = input.int(50, "LinReg MA length", minval = 5, group = gF)
 lrReadIn = input.string("both", "LinReg reading",
-                        options = ["close>value", "slope>0", "both"], group = gF)
+     options = ["close>value", "slope>0", "both"], group = gF)
 useMA    = input.bool(true, "MA filter on", group = gF)
 maLenIn  = input.int(250, "MA length", minval = 5, group = gF)
 maReadIn = input.string("lrma>ma", "MA reading", options = ["close>ma", "lrma>ma"], group = gF)
