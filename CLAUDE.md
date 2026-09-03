@@ -2389,7 +2389,15 @@ subtract. Population transfer again: **top 100 research +0.3410 -> locked -0.030
 against the whole population's +0.0461**. Removing ADX and CHOP cost nothing. No target won for the
 FOURTEENTH time -- the best cell's own no-target neighbour reads +0.2620 on locked against its
 +0.1203. Ships `pine/v62/V62_CVD_MFI_EMA_strategy.pine` with both readings present and DEFAULT OFF,
-each tooltip carrying its own locked matched-pairs share.
+each tooltip carrying its own locked matched-pairs share. **AND IT IS NOT A SCALP AND CANNOT BE
+MADE ONE**: the incumbent's median hold is **660 minutes** with **0.0% of trades under 15 minutes**
+and 11.1% under an hour, the 15m preset's is 315, and the tightest cell the grid allows (1.5N stop,
+3 ATR target, 10-bar exit, 15m) still holds a median 90 minutes and earns **+0.0229 %/trade at PF
+1.23** against the incumbent's +0.1263 at 1.66. Both scalping axes are MONOTONE THE WRONG WAY over
+a million cells -- stop 1.5N +0.0506 -> 3.0N +0.0704, target 3 ATR +0.0439 -> none +0.0845 -- and
+winners hold **5.4x longer than losers** (1290 against 240 minutes), so the edge is in exactly the
+tail a scalp cuts off. Not a cost problem: at a 1-3 ATR stop on NQ 30m the round turn is 2-6% of
+risk. Eleventh confirmation of the intraday-constraint finding.
 See `docs/ib/STUDY_V62_MFI_EMA.md`.
 
 ## Tooling

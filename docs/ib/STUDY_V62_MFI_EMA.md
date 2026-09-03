@@ -158,3 +158,34 @@ defect that shipped in V61 and in three older scripts.
    the V61 grid.
 4. **The CVD gate is the whole strategy.** Drop it at the best cell and profit factor goes 1.68 to
    1.15 and the entry null stops rejecting.
+
+
+## 9. Is any of it a scalp?
+
+`research/v62/run_v62e.py`, `results/v62/stage_e.txt`. Asked directly, and answerable from the grid
+without a new sweep.
+
+**How long it holds:**
+
+| configuration | n | median hold | under 60 min | under 15 min | winners vs losers | %/trade | PF |
+|---|---|---|---|---|---|---|---|
+| incumbent 30m | 244 | **660 min** (22 bars) | 11.1% | **0.0%** | 1290 vs 240 min | +0.1263 | 1.66 |
+| high activity 15m | 623 | 315 min | 11.6% | 1.3% | 585 vs 225 min | +0.0698 | 1.44 |
+| the tightest cell the grid allows | 609 | 90 min | 37.3% | 9.2% | 165 vs 75 min | **+0.0229** | **1.23** |
+
+**The grid is monotone against scalping on both axes that define one**, over a million cells:
+
+```
+stop    1.5N +0.0506   2.0N +0.0589   2.5N +0.0649   3.0N +0.0704   %/trade
+target  3 ATR +0.0439  4 ATR +0.0550  6 ATR +0.0622  none +0.0845
+```
+
+**And it is not a cost problem.** On NQ 30m the median ATR(14) is 33.1 points against a modelled
+round turn of 1.94, so at a 1–3 ATR stop the cost is 2–6% of risk and break-even at 1:1 is
+51.0–52.9%. Push the stop to 0.25 ATR and it becomes 23.5% of risk and 61.7% — but the grid never
+gets there, because it is already losing money to the tightening long before the cost floor bites.
+
+The mechanism is in the last column of the first table: **winners hold 5.4× longer than losers**
+(1290 against 240 minutes on the incumbent). The edge lives in the tail, and a scalp is the exit
+that cuts the tail off. Eleventh independent confirmation of the intraday-constraint finding on
+this branch.
