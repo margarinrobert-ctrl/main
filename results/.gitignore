@@ -25,3 +25,7 @@
 *.npy
 *.npz
 *.pkl
+
+# the two trend-day sweeps are 512 MB of intermediate cells; the analyses are committed instead
+trendday/sweep_*.csv
+trendday/dc_*.csv
