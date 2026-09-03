@@ -2332,6 +2332,34 @@ together. Permutation says the realised drawdown was LUCKY on IBS US100 (percent
 size for the p99, not the backtest. What would move it is MORE RESERVED BLOCKS, not more
 strategies. See `docs/ib/STUDY_TOP5.md`.
 
+**OPTIMISING THE ONE RULE THAT WORKS FOUND NOTHING, AND THE POPULATION SAYS WHY: THE TOP 1% OF
+RESEARCH CELLS IS WORSE OUT OF SAMPLE THAN THE AVERAGE CELL.** 2,177,280 nominal / **725,760
+EFFECTIVE** cells on the V56 CVD base (the maximum-hold axis is INERT -- with a channel exit and an
+ATR stop one always fires first), sweeping timeframe, both channels, stop, target, pivot k, window
+w, the gate ON at each (k,w) or OFF, plus four filters that survived elsewhere here (V40's MA200
+FLOOR, V21/V39's CHOP, V17's prior-RTH-session-high level, V22's adaptive stop). Tensor verified
+against `v56core.walk`: **0 exit-bar mismatches, max |dR| 9e-7**. **97.8% of the scorable grid is
+profitable on research**, so the top row is the max of ~1.2M positive draws, and
+**corr(research, locked) = -0.026 Pearson / -0.020 Spearman** over 1,223,943 cells: top 100
++0.4005 -> +0.0425, **top 1% +0.2315 -> -0.0017 against the WHOLE POPULATION's +0.0508**. Nine
+declared finalists, **not one beats the incumbent's locked per-trade result** (+0.1428%), and the
+incumbent is the only one clearing its control there (p 0.012) -- F3 and F5 "clear" against control
+medians of -0.057 and -0.038, i.e. they beat a null that loses money. **SCORE IN PERCENT OF PRICE,
+NOT R, AND THE STOP AXIS INVERTS**: mean R runs 1.5N +0.347 -> 3.0N +0.175 while total percent runs
++7.5 -> +9.1, because R divides by the stop -- the first R ranking put a +2.33 R cell on top whose
+actual return was +0.32%. **THE TWO NULLS SPLIT THE ANSWER**: the incumbent clears a same-selectivity
+random FILTER on locked (p 0.012) and FAILS a random ENTRY (0.204); the unfiltered 15m geometry does
+the reverse (1.000 / **0.002**). No cell clears both. **AND THE ABLATION IS THE BEST EVIDENCE THE
+GATE HAS ANYWHERE**: one geometry, gate swept, both blocks -- it raises per-trade edge in **12 of 14
+cells across two geometries**, and is negative in TOTAL return everywhere because it removes 70-90%
+of the signals (off +14.0% total / +0.061 a trade against the best rung's +8.7% / +0.098). The one
+real improvement is not a parameter: the same idea on **15-minute bars** (Donchian 15/30, 3.0N,
+6 ATR target, k3/w30) takes 2.4x the trades for **+17.91% locked total against +12.14%**, Sharpe
++1.89 against +1.12, and clears the ENTRY null at p 0.020 -- picked from a 16-cell ablation read
+AFTER the locked block, so descriptive. No target won for the THIRTEENTH time. Both presets diffed
+under the script's own order model and both are CONSERVATIVE (-1.5% / -5.8% locked).
+`pine/v61/V61_CVD_OPTIMISED_strategy.pine`, `docs/ib/STUDY_V61_CVD_OPTIMISED.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2366,6 +2394,7 @@ strategies. See `docs/ib/STUDY_TOP5.md`.
 | `research/strat/` | The Strat combo engine: bar types, four location filters, one-bar stop order, trade-matched control |
 | `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
 | `research/mrl/` | the two library-built designs: strict 1-minute limit walk, 15m bar walk, ladders with a random-filter gate, the trend grid |
+| `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
 | `docs/ib/EDGE_LIBRARY.md` | **the mechanism library** -- what survived, what it is, how to take a new strategy apart |

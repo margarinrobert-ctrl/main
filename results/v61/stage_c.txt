@@ -1,0 +1,47 @@
+V61 stage C -- the second null, the neighbourhood on the locked block, and the live tests.
+
+B measured each cell against a random FILTER of the same selectivity. That is the right null for a
+filter and the WRONG null for a cell that filters nothing: F2 keeps 100% of its entry channel, so
+its "control" is itself and its p-value is 1.000 by construction. The null a trigger has to beat
+is a RANDOM ENTRY with the same geometry (`STUDY_V11`), and it is run here for every candidate.
+
+================================================================================================================
+C1. THE RANDOM-ENTRY CONTROL -- same geometry, same block, same trade count, same lock
+================================================================================================================
+  cell                         block     n      rule    random       p
+  S  shipped (the incumbent)   res     157   +0.1203   +0.0137   0.000
+  S  shipped (the incumbent)   lock     85   +0.1428   +0.0567   0.204
+  F2 top research total        res     967   +0.0386   +0.0146   0.000
+  F2 top research total        lock    481   +0.0590   +0.0189   0.002
+  F1 marginal consensus        res     212   +0.0915   +0.0065   0.000
+  F1 marginal consensus        lock    117   +0.0828   +0.0685   0.432
+  G2 CVD kept: top total       res     269   +0.1083   +0.0065   0.000
+  G2 CVD kept: top total       lock    148   +0.0384   +0.0552   0.615
+  F3 best neighbourhood mean   res     114   +0.2994   +0.0812   0.000
+  F3 best neighbourhood mean   lock     60   +0.0406   -0.0067   0.340
+
+================================================================================================================
+C2. THE ONE-RUNG NEIGHBOURHOOD, READ ON BOTH BLOCKS
+================================================================================================================
+  S  shipped (the incumbent)    9 neighbours   research 100% profitable (mean +0.1088)   locked 100% (mean +0.1330)
+  F2 top research total         6 neighbours   research 100% profitable (mean +0.0260)   locked 100% (mean +0.0558)
+  F1 marginal consensus         7 neighbours   research 100% profitable (mean +0.0808)   locked 100% (mean +0.0789)
+  G2 CVD kept: top total        7 neighbours   research 100% profitable (mean +0.0923)   locked 100% (mean +0.0538)
+  F3 best neighbourhood mean    9 neighbours   research 100% profitable (mean +0.2393)   locked  78% (mean +0.0361)
+
+================================================================================================================
+C3. COST STRESS AND C4. SIX CHRONOLOGICAL FOLDS
+================================================================================================================
+  S  shipped (the incumbent)   cost  x0 +0.1478  x1 +0.1428  x2 +0.1378  x4 +0.1197   folds +0.068 +0.022 +0.122 +0.289 +0.062 +0.210
+  F2 top research total        cost  x0 +0.0637  x1 +0.0590  x2 +0.0541  x4 +0.0438   folds +0.070 +0.014 +0.038 +0.033 +0.064 +0.053
+  F1 marginal consensus        cost  x0 +0.0878  x1 +0.0828  x2 +0.0779  x4 +0.0679   folds +0.031 +0.142 +0.127 +0.084 +0.059 +0.087
+  G2 CVD kept: top total       cost  x0 +0.0495  x1 +0.0384  x2 +0.0334  x4 +0.0235   folds +0.163 +0.050 +0.144 +0.084 -0.014 +0.071
+
+================================================================================================================
+C5. FUNDED EVALUATION on the LOCKED block -- 60 trading days, +8% / -6% static, a 3%
+    daily loss limit, sampled over EVERY session zero-filled, notional leverage swept
+================================================================================================================
+  S  shipped (the incumbent)    x2: pass 34.0 bust  8.8 nei 57.3  x4: pass 56.5 bust 21.1 nei 22.4  x6: pass 64.9 bust 26.2 nei  8.8  x8: pass 66.9 bust 29.2 nei  3.9
+  F2 top research total         x2: pass 65.1 bust 25.4 nei  9.5  x4: pass 70.5 bust 29.2 nei  0.3  x6: pass 73.5 bust 26.6 nei  0.0  x8: pass 76.2 bust 23.9 nei  0.0
+  F1 marginal consensus         x2: pass 27.9 bust  6.9 nei 65.2  x4: pass 57.1 bust 21.6 nei 21.2  x6: pass 63.4 bust 29.2 nei  7.4  x8: pass 67.2 bust 29.8 nei  2.9
+  G2 CVD kept: top total        x2: pass 25.1 bust 15.1 nei 59.8  x4: pass 51.2 bust 31.3 nei 17.5  x6: pass 59.8 bust 34.8 nei  5.4  x8: pass 64.0 bust 34.3 nei  1.6
