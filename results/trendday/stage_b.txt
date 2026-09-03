@@ -1,0 +1,29 @@
+========================================================================================================
+B. MATCHED CONTROLS
+========================================================================================================
+  DAY control: the same fade, the same EMA target and flatten, on a RANDOM full session instead of a qualified one
+  (2,000 draws at the rule's trade count).  SIDE control: the rule's own days, coin-flip direction, target
+  mirrored across the session open so the distance and the flatten are identical (20 independent draws).
+
+NQ 1m
+  research   | day: rule   +36.3 ctl   +0.3 excess   +36.0 p 0.013 (n 26/459) | side: ctl  +16.3 excess   +20.0 p 0.050
+  locked     | day: rule   +47.9 ctl   +4.8 excess   +43.0 p 0.097 (n 17/251) | side: ctl  -18.1 excess   +66.0 p 0.050
+
+NQ 15m
+  research   | day: rule   +35.1 ctl   +1.9 excess   +33.2 p 0.036 (n 26/476) | side: ctl  +15.7 excess   +19.4 p 0.050
+  locked     | day: rule   +45.0 ctl   +5.8 excess   +39.2 p 0.122 (n 17/258) | side: ctl  -16.5 excess   +61.5 p 0.050
+
+US100 15m
+  research   | day: rule    +5.0 ctl   -0.5 excess    +5.5 p 0.224 (n 63/1143) | side: ctl   +1.9 excess    +3.1 p 0.250
+  validation | day: rule   +31.2 ctl   -4.1 excess   +35.3 p 0.010 (n 38/498) | side: ctl  +14.4 excess   +16.8 p 0.350
+  test       | day: rule   +45.6 ctl   +7.7 excess   +37.9 p 0.056 (n 24/417) | side: ctl   +2.2 excess   +43.4 p 0.000
+
+US30 15m
+  research   | day: rule    +1.4 ctl   -4.7 excess    +6.1 p 0.361 (n 64/1196) | side: ctl   +3.4 excess    -2.0 p 0.600
+  validation | day: rule   +28.3 ctl   +6.7 excess   +21.7 p 0.245 (n 21/479) | side: ctl  +14.1 excess   +14.2 p 0.200
+  test       | day: rule   +10.8 ctl  +10.3 excess    +0.6 p 0.494 (n 21/380) | side: ctl  +40.3 excess   -29.5 p 0.550
+
+US30_ISO 15m
+  research   | day: rule   +39.6 ctl   +5.6 excess   +34.0 p 0.221 (n 20/338) | side: ctl   -3.2 excess   +42.8 p 0.300
+  locked     | day: n<5 | side: n<5
+

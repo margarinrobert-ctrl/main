@@ -1,0 +1,65 @@
+========================================================================================================
+A. THE EA AS SPECIFIED, EVERY MARKET
+========================================================================================================
+  NQ 1m is the EXACT model (fill one minute after the open). Every 15-minute feed fills at the session-open bar's
+  open instead, which is the only approximation; the parity block below prices it on the one feed that has both.
+
+NQ 1m  2022-12-26 -> 2025-12-11  sessions 736 (complete 729)
+  untouched 96 (13.2%)  trend days 142 (19.5%)  BOTH 43 (5.9%)  signals 43  skips: open-bar 0 side 0 no-bar 0  EMA resets 7
+  ALL       n   43  win  86.0%  PF  4.65  mean  +40.88  net   +1758.1  Sharpe +1.69  DD   188.3  ret/DD  9.33  $+3,516
+  research  n   26  win  88.5%  PF  5.86  mean  +36.31  net    +944.0  Sharpe +2.01  DD   151.3  ret/DD  6.24  $+1,888
+  locked    n   17  win  82.4%  PF  3.83  mean  +47.88  net    +814.0  Sharpe +1.59  DD   188.3  ret/DD  4.32  $+1,628
+  exits {'target': 42, 'flatten': 1}  top-5% share of net 45%  longest losing run 2  median hold 58 bars
+  by side: {'short': (28.0, 32.3, 903.3), 'long': (15.0, 57.0, 854.8)}
+  by year: 2023:12/+266 2024:18/+990 2025:13/+502
+  three worst trades: [(20231026, 1, 'target', -151.3), (20250820, 1, 'target', -143.9), (20251028, -1, 'flatten', -124.2)]
+
+NQ 15m  2022-12-26 -> 2025-12-11  sessions 736 (complete 735)
+  untouched 94 (12.8%)  trend days 142 (19.3%)  BOTH 43 (5.9%)  signals 43  skips: open-bar 0 side 0 no-bar 0  EMA resets 1
+  ALL       n   43  win  81.4%  PF  4.42  mean  +39.04  net   +1678.6  Sharpe +1.64  DD   201.1  ret/DD  8.35  $+3,357
+  research  n   26  win  84.6%  PF  5.62  mean  +35.11  net    +912.8  Sharpe +1.96  DD   149.0  ret/DD  6.12  $+1,826
+  locked    n   17  win  76.5%  PF  3.62  mean  +45.04  net    +765.8  Sharpe +1.53  DD   201.1  ret/DD  3.81  $+1,532
+  exits {'target': 42, 'flatten': 1}  top-5% share of net 46%  longest losing run 2  median hold 3 bars
+  by side: {'short': (28.0, 30.2, 846.3), 'long': (15.0, 55.5, 832.3)}
+  by year: 2023:12/+278 2024:18/+948 2025:13/+452
+  three worst trades: [(20231026, 1, 'target', -149.0), (20250820, 1, 'target', -142.9), (20251028, -1, 'flatten', -122.2)]
+
+US100 15m  2016-11-14 -> 2025-10-01  sessions 2199 (complete 2065)
+  untouched 280 (13.6%)  trend days 392 (19.0%)  BOTH 125 (6.1%)  signals 125  skips: open-bar 0 side 0 no-bar 0  EMA resets 140
+  ALL       n  125  win  73.6%  PF  2.11  mean  +20.79  net   +2598.3  Sharpe +0.92  DD   398.5  ret/DD  6.52
+  research  n   63  win  66.7%  PF  1.29  mean   +5.04  net    +317.4  Sharpe +0.29  DD   398.5  ret/DD  0.80
+  validation n   38  win  78.9%  PF  2.08  mean  +31.20  net   +1185.6  Sharpe +1.18  DD   316.8  ret/DD  3.74
+  test      n   24  win  83.3%  PF  7.53  mean  +45.63  net   +1095.2  Sharpe +2.05  DD   157.1  ret/DD  6.97
+  exits {'target': 114, 'flatten': 11}  top-5% share of net 52%  longest losing run 5  median hold 5 bars
+  by side: {'short': (80.0, 15.1, 1207.1), 'long': (45.0, 30.9, 1391.2)}
+  by year: 2016:3/-62 2017:16/+133 2018:12/+171 2019:13/-288 2020:6/-34 2021:13/+397 2022:21/+684 2023:17/+501 2024:18/+1012 2025:6/+83
+  three worst trades: [(20220727, -1, 'flatten', -316.8), (20221110, -1, 'flatten', -273.0), (20190104, -1, 'flatten', -178.7)]
+
+US30 15m  2016-10-26 -> 2025-07-15  sessions 2170 (complete 2055)
+  untouched 255 (12.4%)  trend days 338 (16.4%)  BOTH 106 (5.2%)  signals 106  skips: open-bar 0 side 0 no-bar 0  EMA resets 115
+  ALL       n  106  win  63.2%  PF  1.17  mean   +8.59  net    +910.8  Sharpe +0.13  DD  1380.1  ret/DD  0.66
+  research  n   64  win  59.4%  PF  1.03  mean   +1.39  net     +89.3  Sharpe +0.03  DD  1380.1  ret/DD  0.06
+  validation n   21  win  76.2%  PF  1.79  mean  +28.32  net    +594.6  Sharpe +0.74  DD   355.9  ret/DD  1.67
+  test      n   21  win  61.9%  PF  1.11  mean  +10.81  net    +226.9  Sharpe +0.09  DD  1206.9  ret/DD  0.19
+  exits {'target': 92, 'flatten': 14}  top-5% share of net 308%  longest losing run 4  median hold 10 bars
+  by side: {'short': (72.0, 4.9, 355.0), 'long': (34.0, 16.3, 555.8)}
+  by year: 2016:3/+5 2017:12/+61 2018:16/-1138 2019:10/+74 2020:10/+1091 2021:13/-3 2022:10/+666 2023:11/-71 2024:13/-212 2025:8/+438
+  three worst trades: [(20250404, 1, 'flatten', -1178.9), (20180205, 1, 'flatten', -791.0), (20181011, 1, 'flatten', -405.0)]
+
+US30_ISO 15m  2024-08-19 -> 2026-08-26  sessions 502 (complete 502)
+  untouched 56 (11.2%)  trend days 65 (12.9%)  BOTH 24 (4.8%)  signals 24  skips: open-bar 0 side 0 no-bar 0  EMA resets 0
+  ALL       n   24  win  79.2%  PF  1.66  mean  +53.42  net   +1282.0  Sharpe +0.46  DD  1157.5  ret/DD  1.11
+  research  n   20  win  75.0%  PF  1.41  mean  +39.56  net    +791.1  Sharpe +0.35  DD  1157.5  ret/DD  0.68
+  locked    n    4  win 100.0%  PF 490902708628.96  mean +122.73  net    +490.9  Sharpe +2.10  DD     0.0  ret/DD   nan
+  exits {'target': 23, 'flatten': 1}  top-5% share of net 140%  longest losing run 2  median hold 2 bars
+  by side: {'short': (14.0, 20.6, 288.6), 'long': (10.0, 99.3, 993.5)}
+  by year: 2024:2/-99 2025:18/+890 2026:4/+491
+  three worst trades: [(20250404, 1, 'flatten', -1157.5), (20251021, -1, 'target', -246.3), (20250627, -1, 'target', -208.6)]
+
+--------------------------------------------------------------------------------------------------------
+PARITY -- the same rule on NQ at 1-minute and at 15-minute resolution
+--------------------------------------------------------------------------------------------------------
+  15m, fill at the session-open bar open     n  43 (1m has 43)  shared days 43  corr 0.9975  mean 1m +40.9 vs 15m +39.0  gap -1.8 pts/trade
+  15m, and the open-bar skip applied         n  43 (1m has 43)  shared days 43  corr 0.9975  mean 1m +40.9 vs 15m +39.0  gap -1.8 pts/trade
+  15m, no open-bar skip                      n  43 (1m has 43)  shared days 43  corr 0.9975  mean 1m +40.9 vs 15m +39.0  gap -1.8 pts/trade
+  Read the gap as the cost of the missing minute, not as an edge.

@@ -2217,6 +2217,28 @@ two-feed pick (VWAP distance below its median) reads NQ locked p 0.377 and US100
 the kept half at -15.6 against a base of +15.3, and it is the rule's own admission variable
 restated. `research/apm/apm_edge.py`.
 
+**A NO-STOP TARGET SYSTEM PUTS ALL OF ITS RISK IN 9% OF ITS TRADES, and the natural R unit for it is
+a denominator trap.** The Raschke trend-day EA (fade the open back to a 20-EMA of RTH 15m closes,
+after a session that was BOTH a trend day and never touched that EMA; target = the live EMA, flatten
+at the close, no stop) selects 4.8-6.1% of sessions and wins 72-86% of them. Pooled over NQ, US100,
+US30 and US30_ISO -- 298 trades -- it earns **+0.104% of entry price at P(mean<=0) 0.0054**, and
+**271 target exits average +0.222% while 27 clock exits average -1.077%, carrying -93% of net**.
+Measured in the obvious "R" (the entry-to-target distance) the same 298 trades score **-0.213 with a
+worst of -114.3 R**, from ONE trade whose gap was 0.0001% of price: the same collapsing denominator
+as `STUDY_SWEEP_110K`'s channel stop. Use percent of price. The conjunction is the whole rule --
+both filters off leaves 453 research trades at -1.3 -- but **US30 is null on every block over nine
+years (control p 0.245-0.494) and US100 FAILS research (p 0.224) while passing validation and test**,
+the wrong shape, and re-selecting the 168-cell grid walk-forward gives -0.4 and -1.2 pts/trade
+against the shipped constants' +30.1 and +26.6. Not live-ready; no library entry.
+`docs/ib/STUDY_TRENDDAY_EMA.md`.
+
+**A 15-MINUTE FEED CAN PRICE ITS OWN MISSING MINUTE.** The EA fills one minute after the session
+open, which no 15-minute file can do. Running both resolutions of NQ through the same engine: the
+trade sets are IDENTICAL (43/43, correlation 0.9975) and the 15-minute fill is **1.8 points per trade
+WORSE**, so every CFD figure is a floor rather than a flattery. A target-only exit needs no intrabar
+ordering -- there is no stop competing with it -- which is why the approximation is confined to the
+entry. Measure the gap; never assume its sign.
+
 ## Tooling
 
 | module | what it does |
@@ -2340,6 +2362,7 @@ restated. `research/apm/apm_edge.py`.
 | `research/apm/apm_sim.py` | that Pine's order model on exact UTC 10-minute buckets from NQ 1m; prints the source's terminal counts |
 | `research/apm/apm_core.py`, `apm_run.py` | **the APM battery** -- one numba walk per configuration, three matched controls, anatomy, 12,960-cell grid, walk-forward, both Monte Carlos, clusters, funded evaluation |
 | `research/apm/apm_edge.py` | the mechanism without the indicator (drive ladder, published momentum, the two-half decomposition) and 17 causal features on the rule's trades |
+| `research/trendday/td_core.py`, `td_run.py` | the Raschke trend-day / untouched-EMA EA: the exact order model, its 1m-vs-15m parity, day and mirrored-side controls, grid, walk-forward, MC, regimes |
 | `research/v59/v59core.py` | the EMA 16/64 exit tensor: 243,000 configs, dual lock kernels, duration-based hold |
 | `research/v59/v59judge.py`, `v59lock.py`, `v59_nq.py` | the sorted matched control, the one locked read, the NQ read |
 | `research/v58/v58ib.py` | the Initial Balance tensor: 777,600 configs in one walk, both exit models |

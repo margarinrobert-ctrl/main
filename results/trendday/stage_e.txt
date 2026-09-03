@@ -1,0 +1,27 @@
+========================================================================================================
+E. WALK-FORWARD -- re-select the whole grid on a trailing window, read the next
+========================================================================================================
+
+NQ 1m  train 18m / test 6m, 2 folds (a fold with no cell reaching 8 train trades is skipped)
+  fold                chosen cell                         IS mean  OOS mean OOS n    WFE |  shipped OOS   n
+  20230101-20250101   ema=30 trend_pct=50.0 untouched=1 trend=1    +25.6     +17.6    24   0.69 |        +68.7  11
+  20230701-20250701   ema=30 trend_pct=50.0 untouched=1 trend=1    +20.3     +45.2    22   2.23 |        +62.2   3
+  stitched OOS: chosen +30.8 pts/trade on 46 | shipped +67.3 on 14
+
+US100 15m  train 36m / test 12m, 5 folds (a fold with no cell reaching 8 train trades is skipped)
+  fold                chosen cell                         IS mean  OOS mean OOS n    WFE |  shipped OOS   n
+  20161201-20201201   ema=30 trend_pct=85.0 untouched=0 trend=1     +5.1     -23.1    17  -4.50 |        -16.4   7
+  20171201-20211201   ema=15 trend_pct=50.0 untouched=0 trend=1     +6.4      -2.5   121  -0.38 |        +27.3  12
+  20181201-20221201   ema=40 trend_pct=50.0 untouched=1 trend=1    +13.4     +14.7    63   1.10 |        +32.6  21
+  20191201-20231201   ema=15 trend_pct=50.0 untouched=0 trend=1     +8.9      +4.6   133   0.52 |        +31.8  17
+  20201201-20241201   ema=40 trend_pct=50.0 untouched=1 trend=1    +18.9     -17.9    56  -0.95 |        +47.4  16
+  stitched OOS: chosen -0.4 pts/trade on 390 | shipped +30.1 on 73
+
+US30 15m  train 36m / test 12m, 5 folds (a fold with no cell reaching 8 train trades is skipped)
+  fold                chosen cell                         IS mean  OOS mean OOS n    WFE |  shipped OOS   n
+  20161101-20201101   ema=40 trend_pct=50.0 untouched=1 trend=0     +5.7     +19.7    68   3.45 |        +81.4  13
+  20171101-20211101   ema=40 trend_pct=50.0 untouched=1 trend=0    +17.1     +20.6    65   1.21 |        +19.6   9
+  20181101-20221101   ema=40 trend_pct=50.0 untouched=0 trend=0     +7.2      -8.4   228  -1.16 |        +34.8  14
+  20191101-20231101   ema=40 trend_pct=80.0 untouched=0 trend=1    +48.2     -13.1    25  -0.27 |         -8.8   9
+  20201101-20241101   ema=40 trend_pct=85.0 untouched=0 trend=1    +68.6     -44.4    21  -0.65 |         -5.1  14
+  stitched OOS: chosen -1.2 pts/trade on 407 | shipped +26.6 on 59
