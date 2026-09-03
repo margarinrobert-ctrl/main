@@ -2371,6 +2371,27 @@ AFTER the locked block, so descriptive. No target won for the THIRTEENTH time. B
 under the script's own order model and both are CONSERVATIVE (-1.5% / -5.8% locked).
 `pine/v61/V61_CVD_OPTIMISED_strategy.pine`, `docs/ib/STUDY_V61_CVD_OPTIMISED.md`.
 
+**THE MONEY FLOW INDEX AND EMA-CROSS MOMENTUM ARE BOTH NULL ON A BREAKOUT, AND THE BASE-RATE TABLE
+SAID SO BEFORE THE BACKTEST.** `MFI(9)>=50` passes **91.7%** of NQ 30m Donchian-20 breakout bars
+against 52.4% of bars in general, `MFI(14)>=60` 77.2%, `EMA 21/55 spread rising` **91.1%** -- a
+breakout IS a money-flow event and IS an EMA-spread event. Only two readings in the pool bind: the
+overbought CEILING `MFI<=80` (58.6%, and the only lift BELOW 1 at 0.67) and the RECENCY form of the
+cross (14.9%). Fourth measurement of this mechanism after RSI 94.7%, Aroon 100.0% and MACD
+99.8-100.0%. 3,096,576 cells built so **every filtered cell has an exact `off` twin**, which makes
+the ablation free: matched pairs improved, chance 50% -- **MFI 57.8% research -> 49.3% LOCKED**
+(Spearman -0.257), **EMA 59.0% -> 58.0% with the ORDERING INVERTED at Spearman -0.618** (`cross<=5`
+13/48 helps 30.3% on research and **85.3%** on locked; `spread>0 and rising` 21/55 goes 82.5% ->
+55.8%). **THE DROP-ONE AT THE BEST CELL IS DECISIVE**: as found n84 +0.1203 PF 1.68 entry-null
+p 0.070; drop the MFI +0.1025 p 0.065; drop the EMA +0.1080 p 0.100; **drop BOTH n128 +0.0978,
+p 0.061 -- more TOTAL return (12.5% against 10.1%) and the best p in the table**; drop the CVD gate
+as well and it dies (PF 1.15, p 0.179). The gate carries the strategy and the confirmations
+subtract. Population transfer again: **top 100 research +0.3410 -> locked -0.0300, 27% profitable,
+against the whole population's +0.0461**. Removing ADX and CHOP cost nothing. No target won for the
+FOURTEENTH time -- the best cell's own no-target neighbour reads +0.2620 on locked against its
++0.1203. Ships `pine/v62/V62_CVD_MFI_EMA_strategy.pine` with both readings present and DEFAULT OFF,
+each tooltip carrying its own locked matched-pairs share.
+See `docs/ib/STUDY_V62_MFI_EMA.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2405,6 +2426,7 @@ under the script's own order model and both are CONSERVATIVE (-1.5% / -5.8% lock
 | `research/strat/` | The Strat combo engine: bar types, four location filters, one-bar stop order, trade-matched control |
 | `research/ddc/` | the Double Donchian Pine's order model, literal vs intended TP, trade-matched controls |
 | `research/mrl/` | the two library-built designs: strict 1-minute limit walk, 15m bar walk, ladders with a random-filter gate, the trend grid |
+| `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
 | `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |

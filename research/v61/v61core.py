@@ -108,6 +108,7 @@ def build(tf, path="data/NQ_1m.csv"):
     cvd1 = C.cvd_1m(f1)
     g = A.resample(f1, tf)
     o, h, l, c = (g[k].to_numpy(float) for k in ("open", "high", "low", "close"))
+    vol = g["volume"].to_numpy(float)          # V62 needs it for the Money Flow Index
     n = len(c)
     ix = g.index
     mod = (ix.hour * 60 + ix.minute).to_numpy()
@@ -124,7 +125,7 @@ def build(tf, path="data/NQ_1m.csv"):
     ent_hi = {e: pd.Series(h).rolling(e).max().shift(1).to_numpy() for e in ENTS}
     ex_lo = {e: pd.Series(l).rolling(e).min().shift(1).to_numpy() for e in EXITS}
     pats = {k: C.patterns(h, l, cv, k, n) for k in KS}
-    return dict(tf=tf, n=n, o=o, h=h, l=l, c=c, atr=atr, ix=ix, mod=mod, cv=cv,
+    return dict(tf=tf, n=n, o=o, h=h, l=l, c=c, v=vol, atr=atr, ix=ix, mod=mod, cv=cv,
                 d_ma=d_ma, chop=ch, psh=psh, vpct=vpct, ent_hi=ent_hi, ex_lo=ex_lo,
                 pats=pats, cut=int(SPLIT * n))
 

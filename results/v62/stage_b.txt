@@ -1,0 +1,72 @@
+V62 stage B -- ONE read of the locked block.
+
+The decisive number is the matched-pairs share on LOCKED. Chance is 50%. `STUDY_V16` measured 28%
+for momentum on a breakout, `STUDY_V41` 50.0% for an EMA cross, `STUDY_V23` 44% for twelve momentum
+readings on a different base. Research shares of 70-80% are what all three of those looked like
+before the holdout was read.
+
+================================================================================================================
+B1. MATCHED PAIRS ON THE LOCKED BLOCK -- chance is 50%
+================================================================================================================
+  --- MFI   (15 conditions)
+    mfi>=60 21                     keeps  76.5%   research helps  79.5% (+0.0174)   LOCKED helps  50.2% (+0.0050)
+    mfi>=55 14                     keeps  89.9%   research helps  74.4% (+0.0133)   LOCKED helps  40.5% (-0.0049)
+    mfi>=55 21                     keeps  85.5%   research helps  74.4% (+0.0100)   LOCKED helps  32.2% (-0.0107)
+    mfi>=55 9                      keeps  92.7%   research helps  74.3% (+0.0076)   LOCKED helps  50.7% (-0.0007)
+    mfi>=60 9                      keeps  89.3%   research helps  71.1% (+0.0071)   LOCKED helps  62.8% (+0.0082)
+    mfi>=60 14                     keeps  83.7%   research helps  70.4% (+0.0150)   LOCKED helps  53.4% (+0.0074)
+    mfi>=50 9                      keeps  95.4%   research helps  69.5% (+0.0036)   LOCKED helps  47.2% (+0.0007)
+    mfi>=50 14                     keeps  94.4%   research helps  62.1% (+0.0023)   LOCKED helps  39.8% (-0.0029)
+    mfi rising 21                  keeps  93.9%   research helps  59.4% (+0.0015)   LOCKED helps  59.7% (+0.0045)
+    mfi>=50 21                     keeps  91.4%   research helps  52.9% (-0.0000)   LOCKED helps  32.3% (-0.0080)
+    mfi rising 9                   keeps  93.2%   research helps  51.8% (+0.0007)   LOCKED helps  57.1% (+0.0059)
+    mfi rising 14                  keeps  94.7%   research helps  48.2% (-0.0000)   LOCKED helps  61.1% (+0.0067)
+    mfi<=80 21                     keeps  92.0%   research helps  30.1% (-0.0080)   LOCKED helps  55.8% (+0.0010)
+    mfi<=80 14                     keeps  87.5%   research helps  25.2% (-0.0123)   LOCKED helps  53.3% (+0.0035)
+    mfi<=80 9                      keeps  79.4%   research helps  24.0% (-0.0153)   LOCKED helps  41.6% (-0.0017)
+    weighted average on locked: 49.3%   conditions above 50%: 9 of 15
+
+  --- EMA   (15 conditions)
+    spread>0 and rising 21 55      keeps  76.9%   research helps  82.5% (+0.0113)   LOCKED helps  55.8% (+0.0008)
+    state 21 55                    keeps  80.6%   research helps  78.6% (+0.0094)   LOCKED helps  43.2% (-0.0044)
+    spread>0 and rising 13 48      keeps  82.4%   research helps  72.5% (+0.0062)   LOCKED helps  59.1% (+0.0004)
+    state 13 48                    keeps  85.2%   research helps  69.1% (+0.0047)   LOCKED helps  47.6% (-0.0033)
+    spread momentum>=0.02 ATR 21 55 keeps  92.8%   research helps  67.0% (+0.0034)   LOCKED helps  63.9% (+0.0039)
+    spread>0 and rising 9 21       keeps  91.7%   research helps  60.9% (+0.0032)   LOCKED helps  52.4% (+0.0008)
+    spread rising 9 21             keeps  96.4%   research helps  60.1% (+0.0013)   LOCKED helps  49.8% (-0.0002)
+    spread rising 21 55            keeps  95.7%   research helps  56.9% (+0.0005)   LOCKED helps  73.3% (+0.0052)
+    spread momentum>=0.02 ATR 9 21 keeps  94.9%   research helps  55.7% (+0.0009)   LOCKED helps  57.0% (+0.0022)
+    state 9 21                     keeps  94.5%   research helps  55.1% (+0.0018)   LOCKED helps  45.8% (+0.0012)
+    spread rising 13 48            keeps  96.6%   research helps  51.1% (+0.0007)   LOCKED helps  62.1% (+0.0039)
+    cross<=5 21 55                 keeps  19.7%   research helps  49.9% (+0.0017)   LOCKED helps  63.8% (+0.0295)
+    cross<=5 9 21                  keeps  47.3%   research helps  49.5% (-0.0009)   LOCKED helps  71.9% (+0.0329)
+    spread momentum>=0.02 ATR 13 48 keeps  95.5%   research helps  46.6% (-0.0001)   LOCKED helps  65.2% (+0.0058)
+    cross<=5 13 48                 keeps  27.7%   research helps  30.3% (-0.0235)   LOCKED helps  85.3% (+0.0669)
+    weighted average on locked: 58.0%   conditions above 50%: 11 of 15
+
+================================================================================================================
+B2. THE FINALISTS ON THE LOCKED BLOCK -- one read
+================================================================================================================
+  cell                                   blk      n   pct/tr    total    PF   boot |   filter      p |    entry      p
+  F1 marginal consensus                  res    278  +0.0523   +14.55  1.27  0.098 |  +0.0407  0.124 |  +0.0081  0.020
+  F1 marginal consensus                  lock   150  +0.0338    +5.06  1.18  0.252 |  +0.0958  0.984 |  +0.0608  0.680
+  F2 top research total                  res    916  +0.0411   +37.64  1.25  0.004 |  +0.0363  0.051 |  +0.0164  0.001
+  F2 top research total                  lock   468  +0.0618   +28.92  1.30  0.017 |  +0.0589  0.297 |  +0.0189  0.005
+  F3 top research Sharpe                 res    159  +0.1371   +21.80  2.28  0.000 |  +0.0175  0.000 |  +0.0085  0.000
+  F3 top research Sharpe                 lock    84  +0.1203   +10.10  1.68  0.040 |  +0.0320  0.001 |  -0.0001  0.070
+  F4 CVD + a confirmation, top total     res     87  +0.3348   +29.13  1.99  0.015 |  +0.1999  0.003 |  +0.1709  0.009
+  F4 CVD + a confirmation, top total     lock    45  +0.1482    +6.67  1.23  0.319 |  +0.0605  0.164 |  -0.0451  0.149
+  F5 CVD + a confirmation, top Sharpe    res    159  +0.1371   +21.80  2.28  0.000 |  +0.0175  0.000 |  +0.0085  0.000
+  F5 CVD + a confirmation, top Sharpe    lock    84  +0.1203   +10.10  1.68  0.040 |  +0.0320  0.001 |  -0.0001  0.070
+  S  V61 incumbent (no confirmation)     res    157  +0.1203   +18.88  1.73  0.011 |  +0.0480  0.000 |  +0.0157  0.000
+  S  V61 incumbent (no confirmation)     lock    87  +0.1371   +11.93  1.58  0.113 |  +0.0438  0.010 |  +0.0553  0.205
+
+================================================================================================================
+B3. THE POPULATION'S TRANSFER
+================================================================================================================
+  2,055,874 cells scorable on both blocks
+  corr(research, locked) per trade  Pearson +0.0079   Spearman +0.0232
+    top 100    research +0.3410 -> locked -0.0300   (27% profitable)
+    top 1%     research +0.2145 -> locked +0.0037   (45% profitable)
+    top decile research +0.1560 -> locked +0.0321   (63% profitable)
+    all        research +0.0609 -> locked +0.0461   (81% profitable)
