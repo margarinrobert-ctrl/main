@@ -193,3 +193,39 @@ replaced with one that carries information, this is the order model to put it in
 - The short-side fixed-horizon reading on NQ 5m research is the one number in the study that
   could be read as promising; it was tested on four other blocks before being called noise, and
   those reads were pre-declared (same horizons, same statistic).
+
+---
+
+## Addendum: why TradingView shows +$60,868 / PF 3.08 / 84% wins on the same script
+
+`research/scalp89/run_tv.py`, `results/scalp89/tv_reconcile.txt`. The screenshot: Last 365 days,
+Deep Backtesting, $5M capital, **"Script execution ①"** — one intrabar execution option ticked —
+287 trades, 84.0% profitable, PF 3.081, max drawdown 0.05%.
+
+Three candidate explanations; two can be measured here, one cannot.
+
+**1. Bar magnifier (finer exit resolution) — measured, and it is not the reason.** Walking the
+same 5m signals' stop, target and trail on the *true 1-minute path* instead of the 5m bar's OHLC
+moves research PF **0.393 → 0.428** and −$92,951 → −$75,084 (win 49.9% → 57.1%). A real but small
+improvement; nothing near 3.08.
+
+**2. The window — partly unmeasurable.** "Last 365 days" is 2025-09 → 2026-09 and this data
+ends 2025-12-11, so nine of the twelve months on the screen are unseen here. The three months of
+overlap read **PF 0.347, −$20,622** on 5m and 0.652 / −$5,886 on 15m in a bar-close model. 287
+trades a year is the 15m cadence (~240/yr here), not 5m (~650).
+
+**3. The ticked execution option on an unguarded script — the explanation, and only the user can
+confirm it.** `strategy.entry` fires on `flat and longCond` with no `barstate.isconfirmed`; with
+"On every tick" / "After order is filled" enabled, the entry fires on the first intrabar tick that
+satisfies the rule — `low <= fastEma` at the exact touch, a `%K/%D` crossover that flickers true
+mid-bar — and buys the dip at its bottom tick, after which a 15/8 trail locks about +7 on the
+bounce. That is what an 84% win rate on this geometry requires: the arithmetic in section 3 of the
+reconcile output shows the same average win (+9.3) and average loss (−23.4) give PF 0.40 at the
+bar-close win rate of 50% and PF 2.08 at 84% — the *entries* must be at prices the bar close does
+not offer. `STUDY_TICK_RECALC` measured exactly this on the Turtle: 5.1× the signals, 80% on bars
+that never satisfied the rule at the close, −913 → +62,278. **If a checkbox changes the report,
+the report is about the checkbox.** The decisive test is to untick it and re-run; v2 is guarded
+so the boxes cannot change its result.
+
+Two cosmetic items: $5M capital makes a $2,500 drawdown read as 0.05%, and the Deep Backtesting
+banner notes the trades are not drawn on the chart.
