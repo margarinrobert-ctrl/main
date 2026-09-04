@@ -1,0 +1,30 @@
+{
+  "barclose": {
+    "n": 1228,
+    "exp_usd": -13.088423877062933,
+    "total_usd": -16072.58452103328,
+    "perm_dd_p95": -0.2976262904313304,
+    "boot_sharpe_p5": -1.6017625530720585,
+    "boot_sharpe_p50": -0.7734694556955801,
+    "boot_sharpe_p95": 0.05563947561029624,
+    "prob_sharpe_below_zero": 0.9375,
+    "fwd_prob_loss": 0.7811,
+    "fwd_prob_ruin": 0.0,
+    "random_null_p": 0.251,
+    "random_null_obs_sharpe": 0.06358158931305072
+  },
+  "intrabar": {
+    "n": 1232,
+    "exp_usd": 27.49629640406161,
+    "total_usd": 33875.4371698039,
+    "perm_dd_p95": -0.06994454639183383,
+    "boot_sharpe_p5": 0.5304202635834567,
+    "boot_sharpe_p50": 1.4797792931224165,
+    "boot_sharpe_p95": 2.4432166757723963,
+    "prob_sharpe_below_zero": 0.0035,
+    "fwd_prob_loss": 0.1139,
+    "fwd_prob_ruin": 0.0,
+    "random_null_p": 0.386,
+    "random_null_obs_sharpe": 0.026866228113820313
+  }
+}

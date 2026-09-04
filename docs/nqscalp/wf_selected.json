@@ -1,0 +1,12 @@
+{
+  "label": "trend50/pull25/stop2.0/targ3.5/arm15/off12",
+  "trail_mode": "barclose",
+  "kw": {
+    "trend_ema": 50,
+    "min_pullback": 25.0,
+    "atr_stop": 2.0,
+    "atr_target": 3.5,
+    "trail_arm": 15.0,
+    "trail_offset": 12.0
+  }
+}
