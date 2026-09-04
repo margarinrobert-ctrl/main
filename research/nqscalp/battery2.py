@@ -192,6 +192,7 @@ for tm in ("barclose", "intrabar"):
                     ann_vol=float(st["ann_volatility"]), sortino=float(st["sortino"]),
                     calmar=float(st["calmar"]), profit_factor=float(st["profit_factor"]),
                     underwater=float(st["underwater_fraction"]),
+                    top1=float(st["top_1pct_days_share_of_pnl"]),
                     max_dd=float(st["max_drawdown"]), dsr=float(dsr["deflated_sharpe"]),
                     dsr_verdict=dsr["verdict"], mtrl_days=float(mtrl), n_obs=int(len(daily)))
 print("\n  PBO / CSCV over the parameter grid (session-P&L matrix):")

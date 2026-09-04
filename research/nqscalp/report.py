@@ -36,6 +36,11 @@ if hold:
     prim_h = [r for r in hold["rows"] if "barclose/adverse" in r["test"]][0]
 
 A("## Verdict\n")
+_ia = [r for r in hold["rows"] if r["test"] == "as-written intrabar/adverse"][0] if hold else None
+_hv = dict(nfail=len(hold["rows"]) if hold else 0,
+           hctrl=_ia["h_ctrl"] if _ia else 0.0, hexp=_ia["h_exp"] if _ia else 0.0,
+           rexc=_ia["r_excess"] if _ia else 0.0, hexc=_ia["h_excess"] if _ia else 0.0)
+nfail, hctrl, hexp, rexc, hexc = _hv["nfail"], _hv["hctrl"], _hv["hexp"], _hv["rexc"], _hv["hexc"]
 A(f"""**The strategy is not profitable on this data. Its entire backtested profit comes from
 assuming a price path inside the 15-minute bar that the data does not contain.**
 
@@ -51,6 +56,12 @@ The signal itself is not worthless: entries beat random entries with identical g
 and side mix by about +0.5 to +1.6 points per trade, consistently, under every convention. But the
 gross edge under the honest model is +0.45 points per trade against a 1.74-point round turn on the
 configured micro contract. **Costs are roughly four times the edge.**
+
+On the holdout, **0 of {nfail} pre-registered comparisons pass**, and the decisive number is this: out of
+sample, random entries pushed through the same trailing stop earn {hctrl:+.2f} points per trade while the
+strategy earns {hexp:+.2f}. The signal's advantage over random, {rexc:+.2f} points on the research block,
+becomes {hexc:+.2f} on the holdout. The exit mechanic is doing the work, and the mechanic is a modelling
+assumption.
 
 What would change my mind: 1-minute or tick data for this instrument, so the trailing stop can be
 resolved on a real path instead of bracketed. That single input decides the whole question, and it
@@ -128,9 +139,8 @@ bar-level backtester — TradingView's included — makes silently.\n""")
 A("## 4. Where the money comes from\n")
 A("""Split by exit reason on the research block, adverse ordering:
 
-| exit reason | intrabar | | barclose | |
+| exit reason | intrabar share | intrabar total | barclose share | barclose total |
 | --- | ---: | ---: | ---: | ---: |
-| | share | total | share | total |
 | initial stop | 41.3% | $-126,415 | 41.3% | $-125,817 |
 | fixed target | 12.3% | $+39,560 | 12.3% | $+39,560 |
 | trailing stop | 46.4% | $+120,730 | 46.4% | $+70,184 |
@@ -228,7 +238,20 @@ if mc:
     A(f"| P(account halved in 250 trades) | {mc['barclose']['fwd_prob_ruin']:.2%} | {mc['intrabar']['fwd_prob_ruin']:.2%} |")
     A(f"| permutation max drawdown, p95 | {mc['barclose']['perm_dd_p95']:.1%} | {mc['intrabar']['perm_dd_p95']:.1%} |")
     A(f"| random-strategy null p-value | {mc['barclose']['random_null_p']:.4f} | {mc['intrabar']['random_null_p']:.4f} |")
-    A("")
+    A(f"""
+Permuting trade order leaves total return unchanged by construction — only the path moves — so that
+row is a drawdown test, not a significance test: reshuffling the honest model's own trades produces
+a 29.8% drawdown at the 95th percentile.
+
+The block bootstrap is the significance test, and it says the honest model has a **93.8%** chance of a
+non-positive Sharpe. Forward-simulating the next 250 trades from its own distribution gives a
+**78.1%** chance of losing money.
+
+The random-strategy null in the last row is the skill's coarse version — it compares bar-level
+Sharpes over a series the strategy is flat in 96% of, so it has very little power and returns
+p 0.25 and 0.39 for models that differ by $50,000. The matched control in §2, which shares the side
+mix, minute-of-day histogram and exit geometry, is the sharper instrument and is what the verdict
+rests on.\n""")
 
 if defl:
     A("## 10. Deflation and probability of backtest overfitting\n")
@@ -238,9 +261,19 @@ if defl:
     A(f"| annualised return on $50k | {defl['barclose']['ann_return']:+.2%} | {defl['intrabar']['ann_return']:+.2%} |")
     A(f"| max drawdown | {defl['barclose']['max_dd']:.1%} | {defl['intrabar']['max_dd']:.1%} |")
     A(f"| deflated Sharpe (729 trials) | {defl['barclose']['dsr']:.3f} | {defl['intrabar']['dsr']:.3f} |")
-    A(f"| min track record for SR>0 | {defl['barclose']['mtrl_days']:,.0f} days | {defl['intrabar']['mtrl_days']:,.0f} days |")
+    _m = lambda v: ("n/a — Sharpe is negative" if not np.isfinite(v) else f"{v:,.0f} days ({v/252:.1f} yrs)")
+    A(f"| min track record for SR>0 | {_m(defl['barclose']['mtrl_days'])} | {_m(defl['intrabar']['mtrl_days'])} |")
     A(f"| PBO (CSCV, 16 splits) | {defl['barclose'].get('pbo',float('nan')):.1%} | {defl['intrabar'].get('pbo',float('nan')):.1%} |")
-    A("")
+    A(f"""
+**The deflated Sharpe kills the optimistic version too.** Selecting the best of 729 configurations,
+the highest annualised Sharpe you should expect from pure noise is +{1.16:.2f}. The intrabar model's
+observed Sharpe is +{defl['intrabar']['sharpe']:.2f}, so its deflated Sharpe is {defl['intrabar']['dsr']:.3f} — it does not clear the bar its own
+search sets. Note also that {defl['intrabar']['top1']:.0%} of its P&L comes from the top 1% of days, and it is underwater
+{defl['intrabar']['underwater']:.0%} of the time.
+
+PBO points the same way in reverse: 21.5% for the honest model against 0.0% for the intrabar one.
+A PBO of zero does not mean the strategy is sound; it means every configuration in the grid is
+carried by the same artifact, so selecting among them cannot go wrong.\n""")
 
 if cc is not None:
     A("## 11. The contract-size question — the one finding that is actionable\n")
@@ -279,6 +312,114 @@ Costs paid over the research block, ${live['barclose']['cost']:,.0f}, are **{liv
 model's entire loss**. This strategy's problem is not that it is wrong about direction; it is that
 it trades a small edge too often through an expensive contract.\n""")
 
+
+sw = pd.read_csv(D + "session_windows.csv") if os.path.exists(D + "session_windows.csv") else None
+rth = J("rth_window.json")
+if sw is not None:
+    A("## 13. The session window in the screenshots is not 07:00-11:00 New York\n")
+    A("""The inputs are set to 06:00-11:30 **Chicago** with a 1-minute warmup. Chicago is New York
+minus one hour, so the strategy trades **07:01-12:30 New York**. Five windows were searched on the
+research block; treat what follows as best-of-five, not as a result.\n""")
+    A("| window | trades | gross (barclose) | net (barclose) | net $ | net (intrabar) |")
+    A("| --- | ---: | ---: | ---: | ---: | ---: |")
+    for _, r in sw.iterrows():
+        A(f"| {r.window} | {r.n:,} | {r.bc_gross:+.2f} | **{r.bc_exp:+.2f}** | ${r.bc_usd:+,.0f} | {r.ib_exp:+.2f} |")
+    A(f"""
+**Cutting the pre-open out is the only change in this study that flips the honest model positive.**
+Restricted to 09:30-11:00 New York the gross edge rises from +0.45 to +3.20 points per trade, which
+clears the 1.74-point round turn, and the excess over the matched control is +{rth['barclose_adverse']['excess']:.2f} points
+(p {rth['barclose_adverse']['p']:.4f} on research, but ~0.14 once the five-window search is priced in).
+
+That is the same effect this repository has recorded before on unrelated strategies: the 07:00-09:30
+New York pre-open contributes the losses, and the cost model does not even widen the spread there, so
+the real gap is larger than measured. It was carried into the holdout as a pre-registered test.\n""")
+
+if hold:
+    A("## 14. Holdout — the single look, six pre-registered comparisons\n")
+    A(f"""Every rule below was frozen in code, and the pass criterion written into the ledger, before
+any holdout number existed (entries N0001 and N0002). Bonferroni threshold for NPRE=6 is
+p < {hold['threshold']:.4f}. Holdout: 2022-08-30 → 2025-10-01, 962 sessions.\n""")
+    A("| test | research exp | research excess | research p | holdout exp | holdout ctrl | holdout excess | holdout p | verdict |")
+    A("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |")
+    for r in hold["rows"]:
+        A(f"| {r['test']} | {r['r_exp']:+.2f} | {r['r_excess']:+.2f} | {r['r_p']:.4f} | "
+          f"**{r['h_exp']:+.2f}** | {r['h_ctrl']:+.2f} | {r['h_excess']:+.2f} | {r['h_p']:.4f} | "
+          f"{'PASS' if r['passes'] else 'FAIL'} |")
+    ia = [r for r in hold["rows"] if r["test"] == "as-written intrabar/adverse"][0]
+    ifa = [r for r in hold["rows"] if r["test"] == "as-written intrabar/favorable"][0]
+    A(f"""
+**0 of {len(hold['rows'])} comparisons pass.**
+
+The most informative row is the intrabar one, and it is worth reading twice. On the holdout the
+strategy earns {ia['h_exp']:+.2f} points per trade — *better* than its research number. But the matched control,
+random entries through the same trailing stop, earns {ia['h_ctrl']:+.2f}. The excess collapses from
+{ia['r_excess']:+.2f} on research to {ia['h_excess']:+.2f} on the holdout (p {ia['h_p']:.4f}); at the favourable ordering it is
+{ifa['r_excess']:+.2f} → {ifa['h_excess']:+.2f}. **Out of sample the signal contributes essentially nothing and the exit
+mechanic contributes everything.** A backtest that only reported the strategy's own P&L would have
+called the holdout a success.
+
+The RTH sub-window did not collapse — research excess +3.19 → holdout +2.29 — but its holdout
+expectancy is +0.24 points per trade on 177 trades, which is zero with a wide error bar, and
+p 0.2225 is nowhere near the threshold. It is the one thread worth pulling, and it is not evidence
+of an edge today.
+
+Two of the `barclose` rows are flagged wrong-shape (better on holdout than research). Both are
+negative or ~zero on both blocks, so this is small-sample noise rather than the leakage signature
+that flag exists to catch.\n""")
+
+A("## 15. Weaknesses of this evaluation\n")
+A("""**The intrabar question is unresolved, not settled.** The honest model is a lower bound on the
+trailing stop's value and the intrabar model an upper bound; the truth is between. Resolving it needs
+1-minute or tick data for this instrument, which is not in this container. Everything else in the
+report is downstream of that one missing input.
+
+**The parameters were not chosen by me.** If they were tuned on a TradingView chart covering this
+sample, then the research block is not clean for them either and the whole study is optimistic.
+
+**One long bull regime.** 2016-2025 on the Nasdaq is one macro environment. The honest model loses in
+every year except 2022, which is the one bear year — consistent with the short side carrying what
+little edge there is (shorts +0.06 vs longs -2.43 points per trade), and that is a small sample.
+
+**The holdout is not pristine.** This NAS holdout was read twice for an unrelated Donchian study in
+this repository. It was not read for this strategy family, and these six comparisons were
+pre-registered, but a holdout is a depleting resource and this one is not new.
+
+**The matched control is one design.** It matches side, minute-of-day and geometry. It does not match
+volatility regime at entry, so a strategy that systematically enters in unusual volatility could beat
+it for reasons that are not edge.\n""")
+
+A("## 16. What I would do next, in order\n")
+A("""1. **Get 1-minute data for NQ and re-run the trailing stop on real paths.** This is the only test
+   that matters. Everything else is bracketing around a missing input. If the true fill sits near the
+   `barclose` end, the strategy is dead as configured; near the `intrabar` end, it is worth developing.
+2. **Trade the full-size contract, not the micro.** A $1.24 commission is 0.62 points on MNQ and 0.062
+   on NQ, and the honest gross edge is +0.45 points. The contract choice is worth more than any
+   parameter in the strategy.
+3. **Cut the pre-open.** 09:30-11:00 New York is the only window where the honest model is positive
+   after costs. It is best-of-five and it did not clear the holdout bar, but it costs nothing and it
+   points the same way this repository's earlier work did.
+4. **Add the session flatten.** Not for P&L — it is worth about 1% — but because the code does not
+   currently do what its description says.
+5. **Do not add filters to fix this.** The signal beats random entries by about a point per trade and
+   loses that to costs. Filters cut trade count, which raises the variance faster than the edge.""")
+
+A("## Files\n")
+A("""| file | role |
+| --- | --- |
+| `research/nqscalp/nqs.py` | the Pine replication: Pine TA definitions, next-open fills, three exit conventions |
+| `research/nqscalp/verify.py` | truncation, execution alignment, Wilder cross-checks, future-bar probe |
+| `research/nqscalp/nqcontrol.py` | the matched control |
+| `research/nqscalp/cache.py` | memoised indicators for the sweeps |
+| `research/nqscalp/battery1.py` | conventions, control, exit split, regimes, costs, sensitivity, correlations |
+| `research/nqscalp/battery2.py` | walk-forward, Monte Carlo, deflation, PBO, live account |
+| `research/nqscalp/cpcv.py` | combinatorial purged CV with per-split re-selection |
+| `research/nqscalp/audit.py` | the skill's leakage audit, purged k-fold, contract-cost comparison |
+| `research/nqscalp/session_test.py`, `rth_check.py` | the session-window search and its control |
+| `research/nqscalp/holdout.py` | the single door to the holdout |
+| `docs/nqscalp/ledger.jsonl` | pre-registration, amendment, and result |
+| `docs/nqscalp/*.json`, `*.csv` | every number in this document |
+""")
+
 A("## 13. A defect in the Pine, independent of everything above\n")
 A("""`inSession` gates entries only. There is no session exit anywhere in the script, so a position
 opened at 11:29 Chicago holds until a barrier is hit. On this data the longest hold ran 85 bars —
@@ -293,5 +434,13 @@ if mustFlat and barstate.isconfirmed
 ```
 \n""")
 txt = "\n".join(L)
+# the Pine-defect block is appended last for code-locality; put it in reading order
+i = txt.index("## 13. A defect in the Pine")
+blk = txt[i:].replace("## 13. A defect in the Pine", "## 15. A defect in the Pine", 1)
+txt = txt[:i].rstrip("\n")
+txt = txt.replace("## 15. Weaknesses of this evaluation", "## 16. Weaknesses of this evaluation")
+txt = txt.replace("## 16. What I would do next, in order", "## 17. What I would do next, in order")
+j = txt.index("## 16. Weaknesses of this evaluation")
+txt = txt[:j] + blk.rstrip("\n") + "\n\n" + txt[j:]
 open(D + "STUDY_NQSCALP.md", "w").write(txt)
 print(f"wrote STUDY_NQSCALP.md, {len(txt):,} chars")

@@ -1,0 +1,36 @@
+{
+  "barclose": {
+    "sharpe": -0.5936343310378223,
+    "ann_return": -0.04716090257045513,
+    "ann_vol": 0.07644674970006111,
+    "sortino": -0.38522903285271076,
+    "calmar": -0.10494980846577757,
+    "profit_factor": 0.8617072481228756,
+    "underwater": 0.9983193277310924,
+    "max_dd": -0.44936625668862973,
+    "dsr": 1.04020650648782e-06,
+    "dsr_verdict": "not distinguishable from the best of 729 random tries",
+    "mtrl_days": Infinity,
+    "n_obs": 1785,
+    "pbo": 0.2146,
+    "pbo_verdict": "meaningful overfitting risk",
+    "top1": NaN
+  },
+  "intrabar": {
+    "sharpe": 1.1915336963186705,
+    "ann_return": 0.09682837971484637,
+    "ann_vol": 0.0802732591456213,
+    "sortino": 0.883087194717512,
+    "calmar": 0.9827686846992606,
+    "profit_factor": 1.3471056442943623,
+    "underwater": 0.9030812324929972,
+    "max_dd": -0.09852611425492974,
+    "dsr": 0.5390050422761063,
+    "dsr_verdict": "not distinguishable from the best of 729 random tries",
+    "mtrl_days": 454.59315148856746,
+    "n_obs": 1785,
+    "pbo": 0.0,
+    "pbo_verdict": "selection procedure looks sound",
+    "top1": 0.67
+  }
+}
