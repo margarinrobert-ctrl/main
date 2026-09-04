@@ -2675,6 +2675,34 @@ median +0.0438; 15m preset +0.0745 against +0.0174) -- the strongest evidence th
 span where nothing was selected. Note entry 15 is the grid MINIMUM, so that axis sits on the box
 edge as it did in the Optuna study. See `docs/ib/STUDY_V64_WFO.md`.
 
+**A PRICE-JITTER PERTURBATION IS THE ONLY ONE THAT MOVES THE SIGNAL, AND V61 SURVIVES 750 OF 750
+DRAWS.** Jitter every bar's OHLC independently, repair the bar (high = max of the four, low = min)
+and RECOMPUTE ATR(14), both Donchian channels and the CVD pivot structure FROM the jittered bars:
+at 0.5/1/2 ticks of noise, 250 draws each, all three V61 presets keep their sign **1.000** of the
+time, trade counts move 85->87 / 209->211 / 166->166, and the zero-noise case reproduces the
+reference to the cent. An execution perturbation (slip U(0,2x), cost U(0.5x,2x) applied INSIDE the
+walk) gives a p5-p95 band **half a percentage point wide** and P(total<=0) 0.000, because a 2-3 ATR
+stop on NQ is 60-90 points against a 1.72-point round turn -- run it first so the demanding tests
+are not mistaken for it. Dropping 40% of fills leaves all three positive. **THE PARAMETER
+PERTURBATION INVERTS THE USUAL RANKING**: under a joint jitter on six axes the INCUMBENT -- the
+only pre-declared cell that cleared its control -- reads p5 **+0.71**, P(<=0) **0.036**, worst
+one-rung neighbour **+4.24** (a 1 ATR target costs two-thirds of the result) and only **41% of its
+neighbours beat it**, so it sits near the top of a narrow ridge; the 15m preset and the Pareto cell
+read p5 +13.59 / +10.41, P(<=0) 0.000, and **75% / 70% of jittered neighbours BEAT them** -- the
+lower quartile of their own neighbourhood is what a cell that was NOT cherry-picked from a spike
+looks like. `hold` is exactly inert again (swing 0.00), the third confirmation. **AND THE BOOTSTRAP
+IS THE WEAK LINK, NOT THE ROBUSTNESS**: on the locked block NO preset's 95% CI cleanly excludes
+zero and the incumbent's P(mean<=0) is **0.110 on 85 trades**, while the 15m preset and Pareto reach
+0.027 / 0.026 on 208 and 166 trades with a SMALLER per-trade edge -- i.e. through sample size.
+`STUDY_V15_BOOK`'s split reproduces exactly: the same rule reads **p 0.000 against a matched
+random entry** on the walk-forward span and **0.110 against zero** here. **The permutation says the
+incumbent's realised path was UNLUCKY** -- its drawdown sits at the **95th percentile** of
+reshuffles of its own trades (the other two at 0.65 / 0.60), the opposite of this branch's usual
+finding -- and MC p99 drawdown is **1.19x / 1.73x / 1.84x** the realised, which is the sizing
+number. Caveat that stays attached (`STUDY_ATME_LIVE`): a perturbation prices execution and data
+noise ON THE TRADES YOU SELECTED and can never price the SELECTION.
+See `docs/ib/STUDY_V64_MONTECARLO.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2714,7 +2742,7 @@ edge as it did in the Optuna study. See `docs/ib/STUDY_V64_WFO.md`.
 | `research/scalpreq/` | the scalp-requirements experiment: 31 conditions x 2 triggers x 2 geometries x 6 feed-timeframes, with base rates, the cost-as-a-fraction-of-risk table and the zero-cost variant |
 | `research/v63/` | the VWAP / triple-EMA / ATR trend design: three feeds with real volume, a chandelier-trail tensor, search on one market and a frozen read on three, drop-one and the binding hold axis |
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
-| `research/v64/` | Optuna on V61 AND its walk-forward: a continuous-space numba evaluator verified to the cent against the published grid, three Optuna studies, fANOVA importance, the box-edge re-run, the V30 hold-out-an-axis surrogate test, one locked read of seven finalists -- plus `run_wfo*.py`, in-fold re-selection over 19,200 declared cells with a random-cell arm, span-normalised WFE, the parameter-stability table and a geometry-matched random-entry control |
+| `research/v64/` | Optuna on V61, its walk-forward and its Monte Carlo: a continuous-space numba evaluator verified to the cent against the published grid, three Optuna studies, fANOVA importance, the box-edge re-run, the V30 hold-out-an-axis surrogate; `run_wfo*.py` in-fold re-selection with a random-cell arm, span-normalised WFE and a geometry-matched control; `run_mc.py` perturbation (price jitter with the indicators RECOMPUTED, execution, missed fills, parameters) beside the permutation and the bootstrap |
 | `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |

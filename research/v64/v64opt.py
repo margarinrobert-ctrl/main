@@ -149,7 +149,7 @@ def _walk(o, h, l, c, atr, calm, ent_hi, ex_lo, gate, ma_d, chop, psh_ok, cut,
     return R[:cnt], pct[:cnt], blk[:cnt], sig[:cnt]
 
 
-def evaluate(D, p):
+def evaluate(D, p, cost=None, slip=None):
     """One parameter dict -> per-trade arrays. `p` uses continuous / integer axes."""
     ei = int(np.clip(p["ent"], CH_MIN, CH_MAX)) - CH_MIN
     xi = int(np.clip(p["exN"], CH_MIN, CH_MAX)) - CH_MIN
@@ -165,7 +165,9 @@ def evaluate(D, p):
                  stop, stop - 1.0 if p["adapt"] else stop, float(p["tp"]), int(p["hold"]),
                  1 if p["use_ma"] else 0, float(p["ma_thr"]),
                  1 if p["use_chop"] else 0, float(p["chop_thr"]),
-                 1 if p["psh"] else 0, V.COST, V.SLIP, int(D["last_bar"]))
+                 1 if p["psh"] else 0,
+                 V.COST if cost is None else float(cost),
+                 V.SLIP if slip is None else float(slip), int(D["last_bar"]))
 
 
 @njit(cache=True)
@@ -230,3 +232,51 @@ def evaluate_at(D, p, bars):
     return _walk_at(D["o"], D["h"], D["l"], D["c"], D["atr"], D["calm"], D["exl_all"][xi],
                     np.asarray(bars, np.int64), stop, stop - 1.0 if p["adapt"] else stop,
                     float(p["tp"]), int(p["hold"]), V.COST, V.SLIP, int(D["last_bar"]))
+
+
+# ------------------------------------------------------------------ perturbation support
+def _wilder_tr(o, h, l, c, nn=14):
+    pc = np.roll(c, 1); pc[0] = c[0]
+    tr = np.maximum(h - l, np.maximum(np.abs(h - pc), np.abs(l - pc)))
+    return pd.Series(tr).ewm(alpha=1.0 / nn, adjust=False).mean().to_numpy()
+
+
+def perturb_bars(D, sigma_ticks, rng, tick=0.25):
+    """Jitter every bar's OHLC and repair it so a jittered bar is still a bar.
+
+    The noise is independent on o/h/l/c, then high is set to the maximum of the four and low to
+    the minimum. This is a DATA-INTEGRITY perturbation: because the indicators are recomputed FROM
+    the jittered bars it moves the SIGNAL as well as the fill, which a P&L-only jitter cannot do.
+    """
+    n = D["n"]
+    o = D["o"] + rng.normal(0.0, sigma_ticks * tick, n)
+    h = D["h"] + rng.normal(0.0, sigma_ticks * tick, n)
+    l = D["l"] + rng.normal(0.0, sigma_ticks * tick, n)
+    c = D["c"] + rng.normal(0.0, sigma_ticks * tick, n)
+    hi = np.maximum(np.maximum(o, c), np.maximum(h, l))
+    lo = np.minimum(np.minimum(o, c), np.minimum(h, l))
+    return o, hi, lo, c
+
+
+def evaluate_perturbed(D, p, o, h, l, c, C_mod, cost=None, slip=None):
+    """The same rule on jittered bars, recomputing only the series this configuration reads."""
+    import v53abs as A
+    n = len(c)
+    atr = _wilder_tr(o, h, l, c)
+    ent = pd.Series(h).rolling(int(p["ent"])).max().shift(1).to_numpy()
+    exl = pd.Series(l).rolling(int(p["exN"])).min().shift(1).to_numpy()
+    if p["k"] > 0:
+        es = C_mod.patterns(h, l, D["cv"], int(p["k"]), n)[0]
+        gate = A.recent(es, int(p["w"]))
+    else:
+        gate = np.ones(n, np.bool_)
+    v = D["vpct"]
+    calm = np.zeros(n, np.bool_)
+    calm[np.isfinite(v)] = v[np.isfinite(v)] <= 0.5
+    stop = float(p["stop"])
+    return _walk(o, h, l, c, atr, calm, ent, exl, gate,
+                 D["d_ma"], D["chop"], D["psh_ok"], int(D["cut"]),
+                 stop, stop - 1.0 if p["adapt"] else stop, float(p["tp"]), int(p["hold"]),
+                 0, 0.0, 0, 99.0, 0,
+                 V.COST if cost is None else float(cost),
+                 V.SLIP if slip is None else float(slip), int(D["last_bar"]))
