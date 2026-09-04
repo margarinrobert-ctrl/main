@@ -2741,6 +2741,41 @@ sign backwards halves the charge, both backwards pays it out. Sixth control/sign
 branch. Single market -- US100/US30 are 15-minute here and cannot resolve a 10:20 close or a
 1-minute limit fill. See `docs/ib/STUDY_IB25_RETRACEMENT.md`.
 
+**A FIXED-POINT TRAILING STOP ON AN ATR STOP INVERTS THE REWARD:RISK BY ARITHMETIC, AND THE
+SUBMITTED "NQ SCALPING SYSTEM" LOSES ON ANY ENTRY.** EMA89 trend, EMA8/21 pullback >= 15 pts,
+StochRSI reset-then-cross, 06:00-11:30 Chicago, ATR stop 1.5x / target 2.5x, 5 MNQ -- with the
+screenshot's "Always use Fixed Points for Trail" ON at 15 / 8. Transcribed with its ORDER MODEL
+(indicator parity 3e-8) and run on NQ 1m/5m/15m and 9 years of US100: **negative on 8 of 8 blocks**
+(PF 0.37-0.67). NQ 5m: research **PF 0.393, -$92,951**; locked 0.445, -$67,843; exits 62% trail,
+37% stop, **1% target**, median hold 1-2 bars. **Median ATR(14) on 5m NQ is 10.4 points, so a
+15-point arm sits at the stop distance and 60% of the way to the target**, and 62% of trades exit
+at ~+7 against -16 stops. Trail OFF: PF 0.393 -> **0.863** research, 0.445 -> 0.972 locked -- and
+the code's own ATR-scaled trail (1.0 / 0.5) is just as bad at this ATR (0.397); 60/30 points is
+0.750. Nothing with a trail beat no trail. **THE EXIT MACHINE'S RANDOM-ENTRY CONTROL BAND IS
+ENTIRELY NEGATIVE**: [-0.0447, -0.0376] %/trade at the configured geometry, so it loses on any entry
+and the rule sits inside it (p 0.177); trail off, a random bar BEATS the rule (p 0.730). **THE NAKED
+FILL BAR HID A THIRD OF THE LOSS**: protecting it takes research PF 0.393 -> **0.151** and -$92,951
+-> -$118,465, because a 16-point stop on a 10-point-ATR bar is hit inside the fill bar; Pine's
+intrabar path vs stop-first is worth 0.004 PF. **THE ENTRY HAS NO REPRODUCIBLE INFORMATION**: at a
+fixed 15-30 minute horizon with no exits the SHORT signal reads +0.13 / +0.21 ATR over a random bar
+on NQ 5m research (p 0.007 / 0.000) and **-0.03 / -0.00 on NQ 5m locked (p 0.64 / 0.48)**, negative
+on NQ 15m both blocks, absent on US100 -- one block noticed it and none reproduces it; the long side
+is null everywhere. Ablation: the EMA89 gate is the only condition that helps (0.863 -> 0.785
+without it); pullback depth, EMA touch and StochRSI reset are inert to +-0.03; shorts do the damage
+(0.789 vs longs 0.942) in a market that rose 89%. **160-cell geometry sweep on the short entry:
+0 of 80 net-profitable, 10 of 80 gross**; the long side's net-positive cells are all no-target /
+no-hold -- 60-151 trades at 1-5% win rates, multi-month longs in a rising market. **729-cell
+walk-forward with in-fold re-selection: a RANDOM cell beats both the re-chosen and the fixed
+constants in both schemes** (rolling -4.85 vs -5.76 / -7.76; expanding -5.19 vs -16.42 / -7.76),
+the eighth re-optimiser here to lose and the first to lose to a random cell; it picks the widest
+target offered in 8/9 folds. Monte Carlo on the trail-off variant: **P(total > 0) = 0.000 on
+research under execution noise and under price jitter with the indicators recomputed**; research
+bootstrap CI [-0.0273, **-0.0014**] excludes zero on the NEGATIVE side, P(mean<=0) 0.984. Session
+is inert (+-0.02) and 09:30 is WORSE here -- third time a session preference has not transferred.
+Shipped as `pine/scalp89/NQ_SCALPING_SYSTEM_v2_strategy.pine` with the trail default OFF, a
+fill-relative bracket placed WITH the entry, and an isconfirmed guard: mechanics corrected, no edge
+claimed, the header carries the numbers. `research/scalp89/`, `docs/ib/STUDY_SCALP89.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2785,6 +2820,7 @@ branch. Single market -- US100/US30 are 15-minute here and cannot resolve a 10:2
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
 | `docs/ib/EDGE_LIBRARY.md` | **the mechanism library** -- what survived, what it is, how to take a new strategy apart |
+| `research/scalp89/` | the submitted NQ Scalping System transcribed with its order model (naked fill bar, Pine intrabar path, no flatten -- each modelled both ways), exit-machine and entry ablations, fixed-horizon signal tests on four feed-blocks, matched controls, a 160-cell geometry sweep, a 729-cell in-fold walk-forward with a random-cell arm, and a perturbation Monte Carlo with the indicators recomputed; `research_log.md` carries the trial count |
 | `research/ib25/` | the posted IB-25 retracement: session VWAP, a running 09:30-10:30 range, one live limit order a session, the three prose conditions codified as explicit parameters, the retracement and stop ladders against their own driftless break-even, a random-entry-minute control, one locked read, and `run_ib25_mnq.py` -- the dollar view with the synthetic-level deflator |
 | `research/ibs/` | the IBS session EA: cached tensor, bar-by-bar parity, stability / MC / clusters / walk-forward / judge |
 | `research/cmma/` | the CMMA notebook, re-implemented honestly: accounting, costs, deflation, holdout |

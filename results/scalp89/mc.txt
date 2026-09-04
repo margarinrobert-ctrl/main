@@ -1,0 +1,23 @@
+  trail OFF, as configured otherwise: research n 1178 -0.0145 %/t PF 0.863 | locked n 689 -0.0032 PF 0.972
+
+============================================================================================================================
+RESEARCH BLOCK
+============================================================================================================================
+  A. execution (slip U(0,2x), cost U(0.5x,2x)) 1000 draws: total% p5 -28.42 p50 -19.75 p95 -11.12 realised -17.10  P(tot>0) 0.000
+  B. price jitter 0.5 tick, indicators recomputed, 150 draws: trades p50 1179  total% p5 -18.91 p50 -17.22 p95 -14.87  P(tot>0) 0.000
+  B. price jitter 1.0 tick, indicators recomputed, 150 draws: trades p50 1182  total% p5 -18.73 p50 -16.50 p95 -14.33  P(tot>0) 0.000
+  B. price jitter 2.0 tick, indicators recomputed, 150 draws: trades p50 1186  total% p5 -19.31 p50 -16.43 p95 -13.34  P(tot>0) 0.000
+  C. permutation: realised DD 22.89%  MC p50 19.59  p95 23.36  p99 25.44  realised percentile 0.93
+     bootstrap: mean -0.0145  95% CI [-0.0273, -0.0014]  P(mean<=0) 0.984
+  D. concentration: best 5% of trades supply -160% of a -17.10% total; best trade +0.798%, worst -1.111%
+
+============================================================================================================================
+LOCKED BLOCK
+============================================================================================================================
+  A. execution (slip U(0,2x), cost U(0.5x,2x)) 1000 draws: total% p5 -6.90 p50 -3.15 p95 +0.36 realised -2.21  P(tot>0) 0.078
+  B. price jitter 0.5 tick, indicators recomputed, 150 draws: trades p50 691  total% p5 -4.08 p50 -2.43 p95 -1.15  P(tot>0) 0.000
+  B. price jitter 1.0 tick, indicators recomputed, 150 draws: trades p50 691  total% p5 -4.49 p50 -2.65 p95 -1.09  P(tot>0) 0.007
+  B. price jitter 2.0 tick, indicators recomputed, 150 draws: trades p50 692  total% p5 -6.23 p50 -3.21 p95 -0.14  P(tot>0) 0.040
+  C. permutation: realised DD 6.97%  MC p50 9.36  p95 13.77  p99 15.80  realised percentile 0.11
+     bootstrap: mean -0.0032  95% CI [-0.0255, +0.0203]  P(mean<=0) 0.610
+  D. concentration: best 5% of trades supply -1176% of a -2.21% total; best trade +3.224%, worst -1.276%
