@@ -52,6 +52,30 @@
 // Neither preset clears BOTH nulls on the locked block -- the incumbent clears the filter null and
 // fails the entry null, the high-activity preset does the reverse.
 //
+// ============================ WHAT 6,000 OPTUNA TRIALS ADDED (V64) ============================
+// TPE and NSGA-II over a CONTINUOUS space the grid could not reach -- stop on [1,4] then [1,8],
+// both channels over every integer to 80 then 150, the MA200 floor and CHOP ceiling continuous.
+// Three objectives: research return, the median of 8 walk-forward folds, and a return/drawdown
+// Pareto front. The evaluator reproduces the published grid to the cent on BOTH blocks.
+//
+//   NOT ONE TRIAL BEAT THE SHIPPED 15m PRESET OUT OF SAMPLE. Research total went 18.88% ->
+//   40.93% -> 55.40% as the search got harder and wider; locked total went 12.14% -> 8.62% ->
+//   16.34%, against the 15m preset's +17.91%. The optimiser bought research score and nothing else.
+//   THE WALK-FORWARD OBJECTIVE TRANSFERRED WORST of the three: research +26.43% -> locked -0.07%.
+//   WIDEN THE BOX AND THE OPTIMUM RUNS TO THE NEW CEILING -- stop 7.61 of an 8.0 limit, target
+//   10.35 of 12.0 -- i.e. it rediscovers "very wide stop, target never reached", which is this
+//   branch's no-take-profit finding arriving through the back door.
+//   fANOVA IMPORTANCE, the one durable output: timeframe 0.48 and the CVD window w 0.21 carry the
+//   objective; k 0.006, psh 0.003, adapt 0.005 and max hold 0.012 are noise. Stop tuning those.
+//
+// A THIRD PRESET is offered from the Pareto front and is NOT the default. It matches the 15m
+// preset's locked Sharpe on half the trades with a quarter less drawdown -- and it was chosen
+// after 4,500 research trials and read once on locked, so its numbers are DESCRIPTIVE.
+//   PARETO 15m   research n 348  +0.0844 %/trade  total +29.35%  Sharpe 2.11
+//                locked   n 166  +0.0891 %/trade  total +14.80%  PF 1.513  Sharpe 1.70  maxDD -4.23%
+//                against the 15m preset's +17.91% / PF 1.479 / Sharpe 1.71 / maxDD -5.64%
+//                -> better return-over-drawdown (3.50 vs 3.18), less total return, same Sharpe.
+//
 // ==================================== EVERYTHING ELSE ====================================
 // Order-flow settings are in MINUTES and converted from the chart's own timeframe (V57), so k3/w20
 // on 30-minute bars is 90 / 600 minutes and means the same thing on any chart. A TOUCH counts as a
@@ -81,6 +105,7 @@ preset = input.string("Incumbent 30m (the only pre-declared cell that cleared it
      "Preset", group = gP,
      options = ["Incumbent 30m (the only pre-declared cell that cleared its control)",
                  "High activity 15m (2.4x the trades, descriptive p-values)",
+                 "Pareto 15m (V64 Optuna: same locked Sharpe, less drawdown, descriptive)",
                  "Custom"],
      tooltip = "A preset sets the geometry and the order-flow windows and NOTHING ELSE. The ADX, absorbed-selling, EMA-cross and session switches stay exactly where you left them.")
 
@@ -129,14 +154,17 @@ flatOn = input.bool(false, "Flatten at the stop time", group = gS,
 // ---------------------------------------------------------------------------------------------
 isInc = preset == "Incumbent 30m (the only pre-declared cell that cleared its control)"
 isHi  = preset == "High activity 15m (2.4x the trades, descriptive p-values)"
+isPar = preset == "Pareto 15m (V64 Optuna: same locked Sharpe, less drawdown, descriptive)"
 
-entN    = isInc ? 20   : isHi ? 15   : entNi
-exitN   = isInc ? 20   : isHi ? 30   : exitNi
-stopN   = isInc ? 2.0  : isHi ? 3.0  : stopNi
-tpATR   = isInc ? 0.0  : isHi ? 6.0  : tpATRi
-maxHold = isInc ? 480  : isHi ? 240  : maxHoldi
-pivMin  = isInc ? 90   : isHi ? 45   : pivMini
-winMin  = isInc ? 600  : isHi ? 450  : winMini
+// the Pareto cell is 15m ent 20 / exit 34 / 3.14 ATR / 5.38 ATR target / k 5 / w 58 bars,
+// so on a 15-minute chart its windows are 75 and 870 minutes.
+entN    = isInc ? 20   : isHi ? 15   : isPar ? 20    : entNi
+exitN   = isInc ? 20   : isHi ? 30   : isPar ? 34    : exitNi
+stopN   = isInc ? 2.0  : isHi ? 3.0  : isPar ? 3.14  : stopNi
+tpATR   = isInc ? 0.0  : isHi ? 6.0  : isPar ? 5.38  : tpATRi
+maxHold = isInc ? 480  : isHi ? 240  : isPar ? 255   : maxHoldi
+pivMin  = isInc ? 90   : isHi ? 45   : isPar ? 75    : pivMini
+winMin  = isInc ? 600  : isHi ? 450  : isPar ? 870   : winMini
 
 barMin  = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
 pivK    = useMinutes ? math.max(1, math.round(pivMin / barMin)) : pivBars
@@ -252,7 +280,8 @@ var table hud = table.new(position.top_right, 1, 4, border_width = 1)
 if barstate.islast
     ltfBad = timeframe.in_seconds(cvLTF) >= timeframe.in_seconds()
     table.cell(hud, 0, 0, isInc ? "PRESET: incumbent 30m" : isHi ? "PRESET: high activity 15m"
-         : "PRESET: custom", text_color = color.white, bgcolor = color.new(color.teal, 20))
+         : isPar ? "PRESET: Pareto 15m (descriptive)" : "PRESET: custom",
+         text_color = color.white, bgcolor = color.new(color.teal, 20))
     table.cell(hud, 0, 1, "channel " + str.tostring(entN) + "/" + str.tostring(exitN)
          + "   stop " + str.tostring(stopN) + "N   TP "
          + (tpATR > 0 ? str.tostring(tpATR) + "N" : "none"),

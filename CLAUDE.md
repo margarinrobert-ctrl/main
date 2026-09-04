@@ -2616,6 +2616,38 @@ the only axis with a gradient and it runs the OPPOSITE way on NQ (looser better)
 (tighter better). Ship nothing; keep the CHOP exclusion as a loss-avoidance finding, drop the ADX
 exit threshold as decoration.
 
+**6,000 OPTUNA TRIALS ON THE ONE RULE THAT WORKS BOUGHT RESEARCH SCORE AND NOTHING ELSE, AND THE
+WALK-FORWARD OBJECTIVE TRANSFERRED WORST OF THREE.** TPE and NSGA-II over a CONTINUOUS space the
+V61 grid could not reach (stop [1,4] then [1,8], both channels every integer to 80 then 150, MA200
+floor and CHOP ceiling continuous), evaluator verified to reproduce the published grid TO THE CENT
+on both blocks. **Research total climbed +18.88% -> +40.93% -> +55.40% as the search got harder and
+the box got wider; locked total went +12.14% -> +8.62% -> +16.34% against the shipped 15m preset's
++17.91%.** Research Sharpe rose monotonically with search effort (1.37 -> 1.71 -> 2.11 -> 2.54 ->
+2.81) and **locked Sharpe did not follow at all** (1.19, 1.71, 1.70, 1.03, 0.87). NOT ONE of six
+finalists beat the shipped presets out of sample. **THE MEDIAN-OF-8-FOLDS OBJECTIVE -- adopted on
+this branch precisely because raw return fails -- WAS THE WORST**: research +26.43% -> locked
+**-0.07%**, the only losing finalist, and it bought a 63-trade cell. **WIDEN THE BOX AND THE
+OPTIMUM RUNS TO THE NEW CEILING** -- stop 7.61 of an 8.0 limit, target 10.35 of 12.0 -- which is a
+stop that cannot bind and a target never reached, i.e. the optimiser rediscovering no-take-profit
+and a wide stop through the back door for the sixteenth time. **THE ONE DURABLE OUTPUT IS fANOVA
+IMPORTANCE**: timeframe 0.477 and the CVD recency window w 0.209 carry the objective while pivot
+k 0.006, prior-session-high 0.003, adaptive stop 0.005 and max hold 0.012 are noise -- the max-hold
+reading independently confirms V61's own inert-axis accounting, and interaction-aware importance is
+something a one-axis marginal cannot give. The V30 surrogate reproduces: random-row R^2 **+0.8956**
+against **-6.92** holding out a whole timeframe, worse than predicting the mean. **AND A POSITIVE
+TRANSFER CORRELATION CAN BE AN ARTEFACT OF THE SAMPLER**: over 2,496 distinct configs
+corr(research, locked) is **+0.32 Pearson**, against the exhaustive grid's -0.026, because TPE
+concentrates in a narrow good region so the correlation is measured over a restricted range with
+both ends positive -- 99.1% of the sampled population is profitable on research. It says the
+neighbourhood is uniformly decent, NOT that research ranking picks winners; the seven-row finalist
+table says the opposite. **A SAMPLER CANNOT BEAT AN EXHAUSTIVE SEARCH ON THE SAME SPACE** -- only
+reach the same maximum faster -- so a Bayesian study on an already-gridded rule is worth running
+only for the continuum, a different objective, or interaction-aware importance. Ships nothing as
+default; one Pareto cell is added to the V61 script as a third NON-DEFAULT preset (locked +14.80%,
+PF 1.513, Sharpe 1.70, maxDD **-4.23%** against the 15m preset's +17.91 / 1.479 / 1.71 / -5.64 --
+better return-over-drawdown 3.50 vs 3.18, less return, same Sharpe) with DESCRIPTIVE stamped on it.
+See `docs/ib/STUDY_V64_OPTUNA.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2655,6 +2687,7 @@ exit threshold as decoration.
 | `research/scalpreq/` | the scalp-requirements experiment: 31 conditions x 2 triggers x 2 geometries x 6 feed-timeframes, with base rates, the cost-as-a-fraction-of-risk table and the zero-cost variant |
 | `research/v63/` | the VWAP / triple-EMA / ATR trend design: three feeds with real volume, a chandelier-trail tensor, search on one market and a frozen read on three, drop-one and the binding hold axis |
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
+| `research/v64/` | Optuna on V61: a continuous-space numba evaluator verified to the cent against the published grid, three studies (TPE on return, TPE on the median of 8 folds, NSGA-II on return vs drawdown), fANOVA importance, the box-edge re-run on a 2-3x wider box, the V30 hold-out-an-axis surrogate test, and one locked read of seven declared finalists |
 | `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
