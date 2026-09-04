@@ -229,3 +229,20 @@ so the boxes cannot change its result.
 
 Two cosmetic items: $5M capital makes a $2,500 drawdown read as 0.05%, and the Deep Backtesting
 banner notes the trades are not drawn on the chart.
+
+### Correction to the addendum above
+
+The "buy the touch" mechanism I named was **tested and does not reproduce the screenshot**
+(`run_touch.py`, `results/scalp89/touch.txt`). Filling at the intrabar EMA8 touch on bars that
+confirm at the close gives research **PF 0.419 / 55.3% wins** against the bar-close model's 0.428 /
+57.1% — the touch sits a median +0.10 points better than the next open on a 5-minute bar, which is
+nothing. The implementable version, a resting limit at the EMA8 that fills on every eligible touch,
+is **PF 0.193** (0.461 with the trail off) on 2.6× the trades — the adverse-selection result
+`STUDY_V50_SELECTION` predicts for a limit that fills the touches that never confirm.
+
+So the screenshot's 84% / PF 3.08 is not "buying the touch". What remains is the platform
+recalculating the script on forming-bar or post-fill state — entries on bars that never confirm at
+the close, or same-bar re-entries after a fill — and which of the three execution options is
+ticked decides which. That has not been emulated here. The decisive test is unchanged and costs
+two minutes: untick the option and re-run. What is settled: **no bar-close or limit-order
+implementation of this entry reaches PF 2 on any block, any geometry, or any timeframe measured.**

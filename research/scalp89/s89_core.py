@@ -140,7 +140,7 @@ def signals(D, cfg=CFG):
 
 @njit(cache=True)
 def walk(o, h, l, c, atr, side, stop_mult, tgt_mult, trail_on, trail_arm, trail_off,
-         cost, slip, protect_fill, path, flat_mod, mod, use_flat, max_hold):
+         cost, slip, protect_fill, path, flat_mod, mod, use_flat, max_hold, fill_px):
     """The script's order model. Fill at the next open. Stop/target from the SIGNAL bar's ATR,
     anchored to the fill. Trail arms at `trail_arm` points in favour and trails the running
     extreme by `trail_off`. `protect_fill`=0 leaves the fill bar naked as the script does.
@@ -163,7 +163,8 @@ def walk(o, h, l, c, atr, side, stop_mult, tgt_mult, trail_on, trail_arm, trail_
             i += 1
             continue
         a = i + 1
-        px = o[a] + s * slip
+        # an intrabar / limit fill: price supplied at the signal bar, exits walked from the next bar
+        px = (fill_px[i] if np.isfinite(fill_px[i]) else o[a]) + s * slip
         A = atr[i]
         stp = px - s * stop_mult * A
         tgt = px + s * tgt_mult * A
@@ -249,7 +250,7 @@ def walk(o, h, l, c, atr, side, stop_mult, tgt_mult, trail_on, trail_arm, trail_
 
 
 def run(D, cfg=CFG, protect_fill=0, path=1, use_flat=0, flat_mod=15 * 60 + 55,
-        slip=None, cost=None, side_override=None, max_hold=0):
+        slip=None, cost=None, side_override=None, max_hold=0, fill_px=None):
     side = signals(D, cfg) if side_override is None else side_override
     slip = D["tick"] if slip is None else slip
     cost = D["cost"] if cost is None else cost
@@ -258,7 +259,8 @@ def run(D, cfg=CFG, protect_fill=0, path=1, use_flat=0, flat_mod=15 * 60 + 55,
                                      int(cfg["trail_on"]), float(cfg["trail_arm"]),
                                      float(cfg["trail_off"]), float(cost), float(slip),
                                      int(protect_fill), int(path), int(flat_mod), D["mod"],
-                                     int(use_flat), int(max_hold))
+                                     int(use_flat), int(max_hold),
+                                     np.full(D["n"], np.nan) if fill_px is None else fill_px)
     if len(eb) == 0:
         return pd.DataFrame()
     gross = s * (xp - ep)
