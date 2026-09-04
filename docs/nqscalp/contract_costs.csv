@@ -1,0 +1,13 @@
+model,contract,round_turn_pts,gross,net
+barclose/adverse,MNQ as configured ($2/pt),1.74,0.44710801781311127,-1.2928919821868887
+barclose/adverse,"NQ ($20/pt), same $ commission",0.624,0.44710801781311127,-0.17689198218688873
+barclose/adverse,"NQ ($20/pt), realistic $2.50/contract",0.75,0.44710801781311127,-0.30289198218688873
+barclose/favorable,MNQ as configured ($2/pt),1.74,1.2176500950749505,-0.5223499049250495
+barclose/favorable,"NQ ($20/pt), same $ commission",0.624,1.2176500950749505,0.5936500950749505
+barclose/favorable,"NQ ($20/pt), realistic $2.50/contract",0.75,1.2176500950749505,0.4676500950749505
+intrabar/adverse,MNQ as configured ($2/pt),1.74,4.525298047904548,2.785298047904548
+intrabar/adverse,"NQ ($20/pt), same $ commission",0.624,4.525298047904548,3.901298047904548
+intrabar/adverse,"NQ ($20/pt), realistic $2.50/contract",0.75,4.525298047904548,3.775298047904548
+intrabar/favorable,MNQ as configured ($2/pt),1.74,5.873597161479553,4.133597161479552
+intrabar/favorable,"NQ ($20/pt), same $ commission",0.624,5.873597161479553,5.249597161479553
+intrabar/favorable,"NQ ($20/pt), realistic $2.50/contract",0.75,5.873597161479553,5.123597161479553
