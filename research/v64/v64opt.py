@@ -166,3 +166,67 @@ def evaluate(D, p):
                  1 if p["use_ma"] else 0, float(p["ma_thr"]),
                  1 if p["use_chop"] else 0, float(p["chop_thr"]),
                  1 if p["psh"] else 0, V.COST, V.SLIP, int(D["last_bar"]))
+
+
+@njit(cache=True)
+def _walk_at(o, h, l, c, atr, calm, ex_lo, bars, stop_hi, stop_lo, tp, hold, cost, slip,
+             last_bar):
+    """The SAME exit machine, entered at a supplied list of bars with no entry condition.
+    This is the matched control: identical stop, target, channel exit, clock and position lock,
+    so the only thing that differs from the rule is WHICH bar the trade starts on."""
+    m = len(c)
+    n = len(bars)
+    pct = np.full(n, np.nan)
+    cnt = 0
+    busy = -1
+    for z in range(n):
+        i = bars[z]
+        if i <= busy or i < 1000 or i >= last_bar:
+            continue
+        a = i + 1
+        anchor = atr[i]
+        if not np.isfinite(anchor) or anchor <= 0.0:
+            continue
+        px = o[a] + slip
+        mult = stop_hi if calm[i] else stop_lo
+        risk = mult * anchor
+        if risk <= 0.0:
+            continue
+        fixed = px - risk
+        tgt = px + tp * anchor if tp > 0.0 else 1e18
+        end = a + hold
+        if end > m - 2:
+            end = m - 2
+        out = np.nan
+        j = a
+        while j <= end:
+            lvl = fixed
+            ch = ex_lo[j]
+            if np.isfinite(ch) and ch > lvl:
+                lvl = ch
+            cap = c[j - 1]
+            if np.isfinite(cap) and lvl > cap:
+                lvl = cap
+            if l[j] <= lvl:
+                out = (lvl if o[j] > lvl else o[j]) - slip
+                break
+            if h[j] >= tgt:
+                out = (tgt if o[j] < tgt else o[j]) - slip
+                break
+            j += 1
+        if not np.isfinite(out):
+            j = end
+            out = c[j] - slip
+        pct[cnt] = 100.0 * (out - px - cost) / px
+        cnt += 1
+        busy = j
+    return pct[:cnt]
+
+
+def evaluate_at(D, p, bars):
+    """Matched control: the rule's geometry, someone else's entry bars."""
+    xi = int(np.clip(p["exN"], CH_MIN, CH_MAX)) - CH_MIN
+    stop = float(p["stop"])
+    return _walk_at(D["o"], D["h"], D["l"], D["c"], D["atr"], D["calm"], D["exl_all"][xi],
+                    np.asarray(bars, np.int64), stop, stop - 1.0 if p["adapt"] else stop,
+                    float(p["tp"]), int(p["hold"]), V.COST, V.SLIP, int(D["last_bar"]))

@@ -2648,6 +2648,33 @@ PF 1.513, Sharpe 1.70, maxDD **-4.23%** against the 15m preset's +17.91 / 1.479 
 better return-over-drawdown 3.50 vs 3.18, less return, same Sharpe) with DESCRIPTIVE stamped on it.
 See `docs/ib/STUDY_V64_OPTUNA.md`.
 
+**THE SEVENTH RE-OPTIMISER LOSES OVER ALL NINE FOLDS AND WINS ON FOUR, AND BOTH READINGS ARE
+REPORTED.** Walk-forward on the V61 CVD rule with the selection RE-RUN INSIDE every training
+window (19,200 declared cells, 9 quarterly test folds, rolling 4Q and expanding, five arms
+including a RANDOM cell from the same grid). Over all nine folds the shipped 15m preset wins both
+schemes: **+34.27% against a re-chosen +28.20% rolling and +24.50% expanding**, with a random grid
+cell at +8.28% -- and the 15m preset is the only arm with **NO LOSING QUARTER** (9/9 positive,
+worst fold +1.70). **BUT THE FIXED ARMS HAD ALREADY SEEN FIVE OF THE NINE FOLDS** -- the research
+block ends 2024-11-27 -- so the head-to-head is re-read on the four post-cut quarters, where the
+schemes DISAGREE: rolling FIXED15 +17.07 against re-chosen +14.23, expanding **re-chosen +19.84
+against +17.07**. Four folds cannot separate them; that expanding win is the first time on this
+branch a re-optimiser has come out ahead on any honest slice. **WHAT BOTH SCHEMES AGREE ON is the
+distinction that matters: selecting from this family beats picking from it ARBITRARILY (3/4
+post-cut folds, 8/9 and 5/9 overall) while re-selecting EVERY FOLD does not beat NEVER selecting.**
+**NORMALISE WFE BY SPAN OR IT IS A SPAN RATIO**: raw sum-OOS/sum-IS reads 0.145 and 0.094 because
+training is 4-12 quarters and testing is 1; per-quarter it is **0.582 rolling and 0.751 expanding**,
+and the expanding scheme has the higher efficiency with the LOWER absolute return. **THE STABILITY
+TABLE IS THE BEST OUTPUT**: the optimiser picks entry channel **15 in 9/9 folds** and exit **30 in
+8/9** -- exactly the shipped 15m preset's channels, and NEVER the incumbent's 20/20 -- and NO TAKE
+PROFIT in **8/9**, chosen freshly inside every training window, the seventeenth confirmation. On
+timeframe, stop, k and w its modal share is 44-78% and it never settles, and freezing the agreed
+axes to re-choose only the wandering four helps expanding (+28.39) and hurts rolling (+23.36), so
+the wandering is not cleanly the problem either. **AND ON THE WALK-FORWARD OOS SPAN ALL THREE ARMS
+CLEAR A GEOMETRY-MATCHED RANDOM ENTRY AT p 0.000** (incumbent +0.1512 %/trade against a control
+median +0.0438; 15m preset +0.0745 against +0.0174) -- the strongest evidence the rule has, on a
+span where nothing was selected. Note entry 15 is the grid MINIMUM, so that axis sits on the box
+edge as it did in the Optuna study. See `docs/ib/STUDY_V64_WFO.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2687,7 +2714,7 @@ See `docs/ib/STUDY_V64_OPTUNA.md`.
 | `research/scalpreq/` | the scalp-requirements experiment: 31 conditions x 2 triggers x 2 geometries x 6 feed-timeframes, with base rates, the cost-as-a-fraction-of-risk table and the zero-cost variant |
 | `research/v63/` | the VWAP / triple-EMA / ATR trend design: three feeds with real volume, a chandelier-trail tensor, search on one market and a frozen read on three, drop-one and the binding hold axis |
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
-| `research/v64/` | Optuna on V61: a continuous-space numba evaluator verified to the cent against the published grid, three studies (TPE on return, TPE on the median of 8 folds, NSGA-II on return vs drawdown), fANOVA importance, the box-edge re-run on a 2-3x wider box, the V30 hold-out-an-axis surrogate test, and one locked read of seven declared finalists |
+| `research/v64/` | Optuna on V61 AND its walk-forward: a continuous-space numba evaluator verified to the cent against the published grid, three Optuna studies, fANOVA importance, the box-edge re-run, the V30 hold-out-an-axis surrogate test, one locked read of seven finalists -- plus `run_wfo*.py`, in-fold re-selection over 19,200 declared cells with a random-cell arm, span-normalised WFE, the parameter-stability table and a geometry-matched random-entry control |
 | `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
