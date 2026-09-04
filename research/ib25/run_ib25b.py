@@ -77,13 +77,13 @@ if __name__ == "__main__":
                     out = np.nan
                     for j in range(i + 1, bq + 1):
                         if (s < 0 and h[j] >= stp) or (s > 0 and l[j] <= stp):
-                            out = stp + s * D["tick"]; break
+                            out = stp - s * D["tick"]; break
                         if (s < 0 and l[j] <= tgt) or (s > 0 and h[j] >= tgt):
-                            out = tgt + s * D["tick"]; break
+                            out = tgt - s * D["tick"]; break
                         if mod[j] >= M.FLAT_M:
-                            out = c[j] + s * D["tick"]; break
+                            out = c[j] - s * D["tick"]; break
                     if not np.isfinite(out):
-                        out = c[bq] + s * D["tick"]
+                        out = c[bq] - s * D["tick"]
                     vals.append(100.0 * (s * (out - px) - 2 * D["cost"]) / px)
                 draws[d] = np.mean(vals) if vals else 0.0
             p = float((draws >= obs).mean())

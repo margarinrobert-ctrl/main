@@ -89,6 +89,12 @@ def walk(o, h, l, c, mod, sess, vwap, atr, starts, ends,
 
     `tgt_frac` is the target as a fraction of the range measured from the target-side extreme;
     0.0 is the post's "target low". Returns per-session arrays; sessions with no trade are -1.
+
+    SLIPPAGE SIGN. P&L is s x (exit - entry), so slippage hurts only if the ENTRY is worse by
+    `+ s * slip` (a long pays more, a short receives less) and the EXIT is worse by `- s * slip`
+    (a long receives less, a short pays more). The first build of this file had both backwards,
+    which paid the trader the slippage instead of charging it -- worth 2 x slip = 0.5 points =
+    $1.00 an MNQ trade, and it showed up as expectancy RISING with the assumed slippage.
     """
     ns = len(starts)
     e_bar = np.full(ns, -1, np.int64)
@@ -145,7 +151,7 @@ def walk(o, h, l, c, mod, sess, vwap, atr, starts, ends,
                 elif (s < 0 and h[i] >= lvl) or (s > 0 and l[i] <= lvl):
                     fill_bar = i
                     e_bar[si] = i
-                    e_px[si] = lvl - s * slip
+                    e_px[si] = lvl + s * slip
                     side[si] = s
                     risk[si] = rr
                     rng_sz[si] = rg
@@ -154,15 +160,15 @@ def walk(o, h, l, c, mod, sess, vwap, atr, starts, ends,
                 hit_stop = (h[i] >= stp) if s < 0 else (l[i] <= stp)
                 hit_tgt = (l[i] <= tgt) if s < 0 else (h[i] >= tgt)
                 if hit_stop:
-                    x_px[si] = stp + s * slip
+                    x_px[si] = stp - s * slip
                     code[si] = 0
                     break
                 if hit_tgt:
-                    x_px[si] = tgt + s * slip
+                    x_px[si] = tgt - s * slip
                     code[si] = 1
                     break
                 if m >= FLAT_M:
-                    x_px[si] = c[i] + s * slip
+                    x_px[si] = c[i] - s * slip
                     code[si] = 2
                     break
                 continue

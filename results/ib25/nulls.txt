@@ -12,8 +12,8 @@ G. THE MATCHED CONTROL -- same sessions, same side, same barriers, random entry 
   median (STUDY_V59 caught the same class of error from the other direction).
 
   variant                   block          n   observed  control med                   5-95%       p
-  as posted                 research     345    -0.0114      -0.0061   [   -0.0196,   +0.0068]   0.746
-  retr 0.50 / stop 0.75     research     214    -0.0012      -0.0198   [   -0.0406,   +0.0017]   0.081
+  as posted                 research     345    -0.0169      -0.0088   [   -0.0223,   +0.0040]   0.845
+  retr 0.50 / stop 0.75     research     214    -0.0067      -0.0225   [   -0.0433,   -0.0011]   0.122
 
 ============================================================================================================================
 H. THE ONE LOCKED READ -- two declared configurations, multiplicity stated
@@ -23,15 +23,15 @@ H. THE ONE LOCKED READ -- two declared configurations, multiplicity stated
   exactly as posted, and the best research cell (retr 0.50 / stop 0.75 / 60-min slope).
 
   variant                   block          n   % / trade   total %      PF   win %  break-even  max DD %
-  as posted                 research     345     -0.0114     -3.92   0.866    48.4        50.0     -5.71
-  as posted                 locked       182      0.0141      2.57   1.165    57.1        50.0     -1.53
-  retr 0.50 / stop 0.75     research     214     -0.0012     -0.26   0.988    36.0        33.3     -2.56
-  retr 0.50 / stop 0.75     locked       103      0.0143      1.47   1.118    37.9        33.3     -3.38
+  as posted                 research     345     -0.0169     -5.82   0.807    48.4        50.0     -7.21
+  as posted                 locked       182      0.0097      1.77   1.111    57.1        50.0     -1.65
+  retr 0.50 / stop 0.75     research     214     -0.0067     -1.43   0.938    36.0        33.3     -2.92
+  retr 0.50 / stop 0.75     locked       103      0.0099      1.02   1.080    37.9        33.3     -3.67
 
 ============================================================================================================================
 I. THE BOOTSTRAP
 ============================================================================================================================
-  as posted                 research   n  345  mean -0.0114  95% CI [-0.0300, +0.0070]  P(mean<=0) 0.887
-  as posted                 locked     n  182  mean +0.0141  95% CI [-0.0172, +0.0454]  P(mean<=0) 0.188
-  retr 0.50 / stop 0.75     research   n  214  mean -0.0012  95% CI [-0.0322, +0.0303]  P(mean<=0) 0.534
-  retr 0.50 / stop 0.75     locked     n  103  mean +0.0143  95% CI [-0.0424, +0.0749]  P(mean<=0) 0.326
+  as posted                 research   n  345  mean -0.0169  95% CI [-0.0355, +0.0015]  P(mean<=0) 0.965
+  as posted                 locked     n  182  mean +0.0097  95% CI [-0.0214, +0.0411]  P(mean<=0) 0.275
+  retr 0.50 / stop 0.75     research   n  214  mean -0.0067  95% CI [-0.0376, +0.0248]  P(mean<=0) 0.666
+  retr 0.50 / stop 0.75     locked     n  103  mean +0.0099  95% CI [-0.0468, +0.0705]  P(mean<=0) 0.378
