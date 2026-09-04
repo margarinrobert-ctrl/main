@@ -2703,6 +2703,34 @@ number. Caveat that stays attached (`STUDY_ATME_LIVE`): a perturbation prices ex
 noise ON THE TRADES YOU SELECTED and can never price the SELECTION.
 See `docs/ib/STUDY_V64_MONTECARLO.md`.
 
+**THE "IB 25 RETRACEMENT" IS NEGATIVE GROSS AND ITS WIN RATE IS ITS OWN BREAK-EVEN.** A posted
+discretionary rule -- VWAP anchored 09:30, nothing before the 10:20 close, fib on the 09:30-10:30
+range, resting limit at 25% from the target-side extreme, target that extreme, stop at 50%, no
+entries past 12:00 or after a sweep -- transcribed to NQ 1-minute with ONE live order and one trade
+a session. Research **-0.0114 % of entry price per trade, PF 0.866**; locked +0.0141 / PF 1.165 --
+losing on the block that would select it, the wrong shape for the TENTH time. **It is negative
+GROSS (-0.0047)**, so better fills cannot rescue it, and it **loses to a random entry MINUTE in the
+same window with the same side and barriers at p 0.746**. **THE POST'S OWN BEST OBSERVATION IS
+CORRECT AND WORTHLESS**: moving the stop to 75% raises the win rate 48.4% -> 66.4% exactly as
+claimed and expectancy stays negative, because the win rate tracks the driftless break-even at
+EVERY rung -- 32.5 vs 28.6, 48.4 vs 50.0, 56.5 vs 60.0, 66.4 vs 66.7, 74.2 vs 75.0. **THE TWO
+JUDGEMENT CALLS THE POST INSISTS ON EARN NOTHING**: over 16 cells of VWAP-slope threshold x
+VWAP-cross ceiling not one is positive, the chop ceiling removes **63% of the sample and changes
+the per-trade result by 0.0001**, and the slope threshold is monotonically HARMFUL. The two
+"don't trade after" rules are the two that hurt or do nothing -- the sweep veto COSTS money
+(-0.0114 -> -0.0082 without it) and the 12:00 cutoff is free and worthless. The long side loses
+(-0.0268, PF 0.711) and the short side is flat (-0.0007) in a market that rose 89%. **AND V58's
+MONOTONE RETRACEMENT LADDER DOES NOT REPRODUCE**: here it is non-monotone (0.10 -0.0160, 0.25
+-0.0114, 0.35 -0.0215, 0.50 +0.0004) because V58's family retraced a BREAKOUT while this one fades
+back toward the range extreme -- two families sharing a fib tool and nothing else. The only cell
+that approaches its control is retr 0.50 / stop 0.75 / 60-minute slope (p 0.081, gross +0.0071,
+net break-even), which is the deep-limit mechanic again: at 25% the limit is not deep enough to pay
+for the barriers. **A CONTROL-CONSTRUCTION ERROR WAS CAUGHT BY ITS SPREAD, NOT ITS MEDIAN**: the
+first build swapped the target and stop signs so every control trade exited instantly in profit --
+median **+0.1513 with a 5-95% band of ZERO WIDTH**. A null with no spread is broken; fifth
+control-construction error on this branch. Single market -- US100/US30 are 15-minute here and
+cannot resolve a 10:20 close or a 1-minute limit fill. See `docs/ib/STUDY_IB25_RETRACEMENT.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2747,6 +2775,7 @@ See `docs/ib/STUDY_V64_MONTECARLO.md`.
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
 | `docs/ib/EDGE_LIBRARY.md` | **the mechanism library** -- what survived, what it is, how to take a new strategy apart |
+| `research/ib25/` | the posted IB-25 retracement: session VWAP, a running 09:30-10:30 range, one live limit order a session, the three prose conditions codified as explicit parameters, the retracement and stop ladders against their own driftless break-even, a random-entry-minute control and one locked read |
 | `research/ibs/` | the IBS session EA: cached tensor, bar-by-bar parity, stability / MC / clusters / walk-forward / judge |
 | `research/cmma/` | the CMMA notebook, re-implemented honestly: accounting, costs, deflation, holdout |
 | `research/cmma/cmma_stats.py` | its profit factor, win rate and hold time, per DAY and per stance |
