@@ -1,0 +1,18 @@
+{
+  "worth_nas": {
+    "StochRSI %K/%D cross": 0.7779851692854733,
+    "StochRSI reset (20/80)": 0.520437033676436,
+    "pullback depth >= 1.15 ATR": -0.07931595745185133,
+    "session window": 0.2975906069324535,
+    "touch of fast/slow EMA": -0.2875611577315602,
+    "trend gate (close vs EMA89)": 0.4420629432802184
+  },
+  "worth_us30": {
+    "StochRSI %K/%D cross": -1.408031235414108,
+    "StochRSI reset (20/80)": -2.241111925128324,
+    "pullback depth >= 1.15 ATR": -0.09784826767327548,
+    "session window": -2.0298266590932044,
+    "touch of fast/slow EMA": -0.41316101859179266,
+    "trend gate (close vs EMA89)": -1.4609184663916377
+  }
+}

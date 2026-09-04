@@ -7,6 +7,13 @@ import nqs
 _E, _R, _RSI, _ST, _HH, _LL, _SMA, _PCT = {}, {}, {}, {}, {}, {}, {}, {}
 
 
+def reset():
+    """The caches are keyed by period only, so switching instrument in one process
+    would silently serve the wrong series. Call this between instruments."""
+    for d in (_E, _R, _RSI, _ST, _HH, _LL, _SMA, _PCT):
+        d.clear()
+
+
 def build(df):
     o, h, l, c = (df[x].values.astype(float) for x in ("open", "high", "low", "close"))
     v = df["tickvol"].values.astype(float)

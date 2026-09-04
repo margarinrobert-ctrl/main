@@ -117,7 +117,10 @@ DEFAULTS = dict(
     require_slope=0,          # trend EMA must have risen/fallen over this many bars
     require_close_back=False, # close back through the fast EMA: the pullback is over
     atr_pct_len=250, atr_pct_max=None, atr_pct_min=None,
-    qty=5, point_value=2.0, commission=1.24, slippage_ticks=1.0,
+    qty=5, point_value=2.0, commission=1.24, slippage_ticks=1.0, tick=0.25,
+    # built-in features that were switched OFF in the supplied settings and never measured
+    exit_stoch_fade=False, exit_ema_break=False, exit_trend_break=False,
+    quick_scalp=False, quick_target=8.0, quick_max_bars=6,
 )
 
 
@@ -225,10 +228,26 @@ def simulate(df, I, p, long_ok, short_ok, order="adverse", flat_at=None,
     n = len(c)
     chi = (df.tod.values - NY_MINUS_CHICAGO) % 1440
     sess = df.sess.values
-    slip = p["slippage_ticks"] * TICK * cost_mult
+    slip = p["slippage_ticks"] * p["tick"] * cost_mult
     comm_pts = (p["commission"] * cost_mult) / p["point_value"]
     adverse = order == "adverse"
     trail_on = p["use_trail"]
+    k_, d_ = I["k"], I["d"]
+    kp_ = np.concatenate([[np.nan], k_[:-1]]); dp_ = np.concatenate([[np.nan], d_[:-1]])
+    x_dn = (k_ < d_) & (kp_ >= dp_)          # %K crosses under %D
+    x_up = (k_ > d_) & (kp_ <= dp_)
+    cp_ = np.concatenate([[np.nan], c[:-1]])
+    br_slow_dn = (c < I["slow"]) & (cp_ >= np.concatenate([[np.nan], I["slow"][:-1]]))
+    br_slow_up = (c > I["slow"]) & (cp_ <= np.concatenate([[np.nan], I["slow"][:-1]]))
+    br_tr_dn = (c < I["trend"]) & (cp_ >= np.concatenate([[np.nan], I["trend"][:-1]]))
+    br_tr_up = (c > I["trend"]) & (cp_ <= np.concatenate([[np.nan], I["trend"][:-1]]))
+    any_early = p["exit_stoch_fade"] or p["exit_ema_break"] or p["exit_trend_break"] or p["quick_scalp"]
+
+    def early_fires(j, side_):
+        if p["exit_stoch_fade"] and (x_dn[j] if side_ > 0 else x_up[j]): return True
+        if p["exit_ema_break"] and (br_slow_dn[j] if side_ > 0 else br_slow_up[j]): return True
+        if p["exit_trend_break"] and (br_tr_dn[j] if side_ > 0 else br_tr_up[j]): return True
+        return False
     # trail_mode="barclose": the trail may only be armed or tightened from bars
     # that have CLOSED, and the level it sets is live from the next bar onward.
     # No claim is then made about the order of prices inside any bar, which is
@@ -243,7 +262,8 @@ def simulate(df, I, p, long_ok, short_ok, order="adverse", flat_at=None,
             i += 1
             continue
         sig, fb = i, i + 1
-        sd, td = p["atr_stop"] * atr[sig], p["atr_target"] * atr[sig]
+        sd = p["atr_stop"] * atr[sig]
+        td = p["quick_target"] if p["quick_scalp"] else p["atr_target"] * atr[sig]
         if not np.isfinite(sd) or sd <= 0:
             i += 1
             continue
@@ -312,11 +332,19 @@ def simulate(df, I, p, long_ok, short_ok, order="adverse", flat_at=None,
             if flat_at is not None and (chi[j] >= flat_at or sess[j] != sess[fb]):
                 exit_px, exit_bar, reason = cj, j, "flat"
                 break
+            if any_early and j + 1 < n:
+                # quick-scalp bail on bar count, evaluated like Pine's bar_index test
+                if p["quick_scalp"] and (j - fb) >= p["quick_max_bars"]:
+                    exit_px, exit_bar, reason = o[j + 1] - side * slip, j + 1, "quick"
+                    break
+                if early_fires(j, side):
+                    exit_px, exit_bar, reason = o[j + 1] - side * slip, j + 1, "early"
+                    break
         if exit_bar is None:
             exit_bar = min(fb + max_bars, n) - 1
             exit_px, reason = c[exit_bar], "maxbars"
 
-        gross = side * (exit_px - fill) - slip
+        gross = side * (exit_px - fill) - (0.0 if reason in ("early", "quick") else slip)
         net = gross - 2 * comm_pts
         rows.append(dict(sig_bar=sig, fill_bar=fb, exit_bar=exit_bar, side=side,
                          sess=sess[sig], tod_chi=chi[sig], fill=fill, exit=exit_px,

@@ -26,9 +26,15 @@ strategy earns +4.70. The signal's advantage over random, +1.60 points on the re
 becomes +0.20 on the holdout. The exit mechanic is doing the work, and the mechanic is a modelling
 assumption.
 
-What would change my mind: 1-minute or tick data for this instrument, so the trailing stop can be
-resolved on a real path instead of bracketed. That single input decides the whole question, and it
-is the only test that matters now.
+**And it does not replicate on a second instrument.** Run unchanged on US30, the strategy's excess
+over the matched control is negative in every configuration tested, at p 0.79 to 0.95. The one
+configuration that looked promising on NAS — the 09:31–11:00 window — is +0.323 ATR gross there and
+**−0.210 ATR** on the Dow. A real intraday effect should not be present on the Nasdaq and inverted on
+its near-twin. See §19.
+
+What would change my mind: 1-minute or tick data, so the trailing stop can be resolved on a real
+path instead of bracketed, *and* a version of the entry that survives on both instruments. Neither
+exists yet.
 
 ## Setup
 
@@ -550,6 +556,179 @@ The one prior finding that survives as a *lead* rather than a result is the same
 into the holdout in the previous round with the original parameters, and there it returned +0.24
 points per trade at p 0.2225. It did not replicate. The optimisation round explains why: 95% of its
 research-block edge is 2020 and 2022.
+
+
+
+## 19. Cross-instrument test, component correlations, and what to delete
+
+The NAS holdout has been read three times, so this round buys its out-of-sample evidence a
+different way: **a second instrument**. US30 costs nothing from the NAS budget, and if an
+EMA-pullback plus StochRSI entry carries real information about intraday index futures, it should
+carry it on the Dow as well as the Nasdaq. Two 0.85-correlated indices trading the same session
+with the same participants is about as favourable a replication test as exists.
+
+### 19a. The signal does not replicate on US30 — it inverts
+
+| configuration | instrument | trades | gross (ATR units) | net | control | excess | p |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| as written (full window) | NAS | 1,228 | +0.038 | -0.19 | -0.75 | +0.55 | 0.2500 |
+| ATR-relative distances | NAS | 1,507 | +0.036 | -0.12 | -0.84 | +0.72 | 0.1667 |
+| ATR-relative + RTH 09:31-11:00 | NAS | 329 | +0.323 | +3.18 | -0.85 | +4.03 | 0.0200 |
+| as written (full window) | US30 | 1,553 | -0.035 | -3.48 | -2.51 | -0.97 | 0.7900 |
+| ATR-relative distances | US30 | 1,511 | -0.092 | -4.67 | -2.27 | -2.41 | 0.9100 |
+| ATR-relative + RTH 09:31-11:00 | US30 | 364 | -0.210 | -7.66 | -1.73 | -5.94 | 0.9467 |
+
+Gross edge is quoted in ATR units because that is the only scale on which two instruments are
+comparable. **All three configurations disagree in sign**, and US30's excess over the matched
+control is negative in every one, at p 0.79 to 0.95 — the strategy is consistently *worse* than
+random entries there.
+
+The reversal is sharpest on the one configuration that looked promising. The 09:31–11:00 window
+is +0.323 ATR gross on NAS with excess +4.03 at p 0.020; on US30 it is **-0.210 ATR** with excess
+**-5.94** at p 0.947. The single best finding of the previous round does not weaken on a second
+instrument, it points the other way.
+
+That is the cleanest evidence in the whole study. A real intraday effect in the US cash open should
+not be present on the Nasdaq and inverted on the Dow.
+
+### 19b. Matrix correlations over the strategy's own conditions
+
+Each entry rule as a boolean series over research bars, long side (US30's matrix is the same to
+two decimals, which is itself worth knowing — the *structure* replicates even though the edge does
+not):
+
+| | trend gate (close vs E | pullback depth >= 1.15 | touch of fast/slow EMA | StochRSI reset (20/80) | StochRSI %K/%D cross | session window |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| trend gate (close vs EMA89) | 1.00 | -0.18 | -0.32 | -0.08 | 0.00 | -0.01 |
+| pullback depth >= 1.15 ATR | -0.18 | 1.00 | 0.53 | 0.26 | 0.03 | 0.16 |
+| touch of fast/slow EMA | -0.32 | 0.53 | 1.00 | 0.29 | 0.04 | 0.00 |
+| StochRSI reset (20/80) | -0.08 | 0.26 | 0.29 | 1.00 | 0.03 | 0.02 |
+| StochRSI %K/%D cross | 0.00 | 0.03 | 0.04 | 0.03 | 1.00 | 0.00 |
+| session window | -0.01 | 0.16 | 0.00 | 0.02 | 0.00 | 1.00 |
+
+Two things stand out.
+
+**The pullback depth and the EMA touch are 0.53 correlated and fire on 71% and 75% of bars.** They
+are close to the same rule, and neither is selective: a "filter" that passes three bars in four is
+not filtering. The trend gate is *negatively* correlated with the touch (−0.32), which is just the
+observation that price touches a fast MA more often when it is below the slow one.
+
+**The %K/%D cross is the only independent, selective condition in the strategy.** It correlates
+0.00–0.04 with everything else and fires on 12.2% of bars. Whatever selection this strategy does,
+that line does it.
+
+### 19c. Drop-one — what each condition is actually worth
+
+Each condition removed from the **triggers** and the book re-simulated, which is the only valid
+way to test a filter; splitting realised trades is not. A condition earns its place only if removing
+it *hurts* on both instruments.
+
+| condition | worth on NAS | worth on US30 | trades without it (NAS) | verdict |
+| --- | ---: | ---: | ---: | :---: |
+| StochRSI %K/%D cross | +0.78 | -1.41 | 4,523 | mixed |
+| StochRSI reset (20/80) | +0.52 | -2.24 | 2,404 | mixed |
+| pullback depth >= 1.15 ATR | -0.08 | -0.10 | 1,525 | **DELETE** |
+| session window | +0.30 | -2.03 | 5,616 | mixed |
+| touch of fast/slow EMA | -0.29 | -0.41 | 1,592 | **DELETE** |
+| trend gate (close vs EMA89) | +0.44 | -1.46 | 4,024 | mixed |
+
+**Nothing is worth keeping on both instruments.** Two conditions are actively harmful on both, and
+they are the two that define the pullback: the **depth requirement** (-0.08 on NAS,
+-0.10 on US30) and the **MA touch** (-0.29, -0.41). Removing either makes the
+strategy better on both instruments, and they are 0.53 correlated with each other anyway.
+
+So the answer to "what should be deleted" is uncomfortable but specific: **the moving-average
+pullback mechanism is the part that does not earn its place.** That is the part the strategy is
+named after. The conditions with positive worth on NAS — trend gate, StochRSI reset, the cross, the
+session — all have negative worth on US30, which is the same non-replication as §19a seen through a
+different instrument.
+
+### 19d. The features your script has but never switched on
+
+Four early exits, quick-scalp mode, and the volume and MACD filters were all `false` in the
+supplied settings and had never been measured. Round turn is 0.62 points on NAS (full-size NQ) and
+2.50 on US30 (YM).
+
+| feature | NAS net | NAS ex-crisis | US30 net | US30 ex-crisis |
+| --- | ---: | ---: | ---: | ---: |
+| baseline (all off, as tested) | -0.12 | -0.70 | -4.67 | -2.16 |
+| early exit: StochRSI fade | -0.39 | -1.28 | -4.18 | -1.92 |
+| early exit: slow-EMA break | -0.97 | -1.30 | -3.80 | -1.77 |
+| early exit: trend-EMA break | -0.55 | -0.77 | -3.21 | -1.67 |
+| early exit: fade + EMA break | -0.63 | -1.34 | -3.91 | -1.96 |
+| quick scalp 8 pts / 6 bars | -2.02 | -1.78 | -5.57 | -4.87 |
+| quick scalp 0.5 ATR / 6 bars | -2.30 | -1.86 | -5.15 | -4.44 |
+| quick scalp 1.0 ATR / 12 bars | -1.48 | -1.31 | -4.89 | -3.03 |
+| volume thrust filter 1.2x | -0.06 | -0.24 | -5.19 | +0.73 |
+| volume thrust filter 1.5x | +1.55 | +1.03 | -5.56 | -0.18 |
+| MACD momentum confirm | +1.13 | +0.82 | +1.70 | -0.61 |
+| volume + MACD | +0.25 | +1.64 | +1.93 | +2.07 |
+
+**Every early exit makes it worse on NAS**, and quick-scalp mode is the worst thing in the table
+(−1.48 to −2.30). Cutting a trade short at a fixed 8 points when the ATR-based target is 2.5 ATR is
+the same mistake as the fixed-point trail: a distance that does not scale.
+
+The volume and MACD filters are the only features that help, and only on NAS.
+
+### 19e. The StochRSI trigger parameters
+
+486 configurations per instrument — RSI length, stoch length, %K and %D smoothing,
+oversold/overbought levels, reset lookback. This is the actual trigger and it had never been swept.
+
+| | NAS | US30 |
+| --- | ---: | ---: |
+| cells with ≥60 trades | 243 | 243 |
+| median net | -0.70 | -2.20 |
+| best net | +1.17 | +1.27 |
+| cells above the round turn | 6 / 243 | 0 / 243 |
+| …and still above it without 2020+2022 | **0** | **0** |
+
+No parameterisation of the trigger clears its own cost floor durably on either instrument. Every
+marginal is negative on both. The default 14/14/3/3 with 20/80 is not a bad choice — there is no
+good one.
+
+### 19f. The finalists, through the whole gate
+
+Three cells survived the cheap screen. The gate, declared before running: **G1** net above the
+round turn; **G2** excess over the matched control at p&lt;0.05; **G3** still above the round turn with
+2020 and 2022 removed; **G4** stable across 250-session blocks; **G5** the same on both instruments.
+
+| candidate | instrument | trades | net | excess | p | ex-crisis | blocks positive | G1 | G2 | G3 | G4 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | :-: | :-: | :-: | :-: |
+| MACD momentum confirm | NAS | 249 | +1.13 | +1.83 | 0.1800 | +0.82 | 86% | ✓ | ✗ | ✓ | ✓ |
+| volume 1.5x thrust | NAS | 627 | +1.55 | +2.54 | 0.0280 | +1.03 | 86% | ✓ | ✓ | ✓ | ✓ |
+| volume 1.2x + MACD | NAS | 199 | +0.25 | +0.93 | 0.3360 | +1.64 | 57% | ✗ | ✗ | ✓ | ✗ |
+| MACD momentum confirm | US30 | 271 | +1.70 | +3.90 | 0.1680 | -0.61 | 57% | ✗ | ✗ | ✗ | ✗ |
+| volume 1.5x thrust | US30 | 462 | -5.56 | -3.08 | 0.8680 | -0.18 | 29% | ✗ | ✗ | ✗ | ✗ |
+| volume 1.2x + MACD | US30 | 202 | +1.93 | +4.54 | 0.1640 | +2.07 | 57% | ✗ | ✗ | ✗ | ✗ |
+
+**Zero candidates pass on both instruments.**
+
+The volume-thrust filter is the best single thing found anywhere in this study: on NAS it is
+**4 of 4**, at +1.55 points per trade against a 0.62 round turn, excess +2.54 over the matched control
+at p 0.0280, still +1.03 with the crisis years removed, and positive in 86% of 250-session blocks.
+On US30 it is **0 of 4**, at -5.56 points per trade with excess -3.08 at p 0.868.
+
+A filter that is the strongest result on one index and the weakest on its near-twin is a property
+of the sample, not of the market. The NAS holdout was not opened for it.
+
+### 19g. What to delete
+
+On the evidence above, in order of confidence:
+
+1. **Quick-scalp mode.** Worst feature measured, on both instruments. It re-introduces the
+   fixed-point scale bug that §18a is about.
+2. **All four early exits.** Every one is negative on NAS; the least-bad is the trend break.
+3. **The pullback depth and MA-touch conditions.** Negative worth on both instruments, 0.53
+   correlated with each other, and each passes ~3 bars in 4. This is the strategy's namesake
+   mechanism and it is the part that does not work.
+4. **The MA period and type inputs** — not deleted, but stop tuning them. 165 structures, all
+   within 0.2 points of each other (§18c).
+5. **The fixed-point distance inputs** — already replaced by ATR-relative ones in §18a.
+
+What survives as *worth keeping in the code*: the ATR-relative distances, the session flatten, the
+New York clock, and the volume-thrust filter as an option with its NAS-only caveat attached. That
+is a cleaner script. It is not a profitable one.
 
 
 ## Files
