@@ -57,6 +57,23 @@ def _seeded(x, alpha, n):
 
 
 def ema(x, n):   return _seeded(x, 2.0 / (n + 1.0), n)
+
+
+def wma(x, n):
+    w = np.arange(1, n + 1, dtype=float)
+    return (pd.Series(x).rolling(n)
+            .apply(lambda v: float(np.dot(v, w) / w.sum()), raw=True).values)
+
+
+def hma(x, n):
+    """Hull MA: WMA(2*WMA(n/2) - WMA(n), sqrt(n)). Faster and smoother than an EMA
+    of the same period, which is the usual reason to reach for it on a trend gate."""
+    h = wma(2 * wma(x, max(int(n / 2), 1)) - wma(x, n), max(int(np.sqrt(n)), 1))
+    return h
+
+
+def ma(x, n, kind):
+    return {"ema": ema, "sma": sma, "wma": wma, "hma": hma}[kind](x, n)
 def rma(x, n):   return _seeded(x, 1.0 / n, n)
 def sma(x, n):   return pd.Series(x).rolling(n).mean().values
 
@@ -91,6 +108,15 @@ DEFAULTS = dict(
     sess_start_h=6, sess_start_m=0, sess_end_h=11, sess_end_m=30, warmup=1,
     atr_len=14, atr_stop=1.5, atr_target=2.5,
     use_trail=True, trail_arm=15.0, trail_offset=8.0,
+    # --- additions for the optimisation round; defaults reproduce the original ---
+    trend_ma="ema", pull_ma="ema",   # ema | sma | wma | hma
+    dist_units="points",      # "points" (as written) or "atr" (scale-free)
+    pullback_atr=1.15, trail_arm_atr=1.15, trail_offset_atr=0.61,
+    max_pullback_atr=None,    # cap the retrace: too deep is a broken trend, not a pullback
+    require_ema_align=False,  # fast EMA on the right side of the slow EMA
+    require_slope=0,          # trend EMA must have risen/fallen over this many bars
+    require_close_back=False, # close back through the fast EMA: the pullback is over
+    atr_pct_len=250, atr_pct_max=None, atr_pct_min=None,
     qty=5, point_value=2.0, commission=1.24, slippage_ticks=1.0,
 )
 
@@ -100,9 +126,9 @@ def indicators(df, **kw):
     o, h, l, c = (df[x].values.astype(float) for x in ("open", "high", "low", "close"))
     v = df["tickvol"].values.astype(float)
     I = {}
-    I["trend"] = ema(c, p["trend_ema"])
-    I["fast"] = ema(c, p["fast_ema"])
-    I["slow"] = ema(c, p["slow_ema"])
+    I["trend"] = ma(c, p["trend_ema"], p["trend_ma"])
+    I["fast"] = ma(c, p["fast_ema"], p["pull_ma"])
+    I["slow"] = ma(c, p["slow_ema"], p["pull_ma"])
     I["atr"] = rma(true_range(h, l, c), p["atr_len"])
     r = rsi(c, p["rsi_len"])
     lo, hi = ll(r, p["stoch_len"]), hh(r, p["stoch_len"])
@@ -110,6 +136,9 @@ def indicators(df, **kw):
         raw = np.where(hi - lo == 0, 0.0, 100 * (r - lo) / (hi - lo))
     I["k"] = sma(raw, p["k_smooth"])
     I["d"] = sma(I["k"], p["d_smooth"])
+    with np.errstate(invalid="ignore"):
+        I["atr_pct"] = (pd.Series(I["atr"]).rolling(p["atr_pct_len"])
+                        .apply(lambda v: (v[:-1] < v[-1]).mean(), raw=True).values)
     I["swing_hi"] = hh(h, p["pullback_lookback"])
     I["swing_lo"] = ll(l, p["pullback_lookback"])
     I["vol_avg"] = sma(v, p["vol_len"])
@@ -124,10 +153,28 @@ def conditions(df, I, p):
     """Long/short trigger booleans, all read at the signal bar's close."""
     o, h, l, c = I["o"], I["h"], I["l"], I["c"]
     up, dn = c > I["trend"], c < I["trend"]
+    if p["require_slope"]:
+        k_ = int(p["require_slope"])
+        sl = I["trend"] - np.concatenate([np.full(k_, np.nan), I["trend"][:-k_]])
+        up = up & (sl > 0); dn = dn & (sl < 0)
+    if p["require_ema_align"]:
+        up = up & (I["fast"] > I["slow"]); dn = dn & (I["fast"] < I["slow"])
     touch_l = (l <= I["fast"]) | (p["use_fallback"] & (l <= I["slow"]))
     touch_s = (h >= I["fast"]) | (p["use_fallback"] & (h >= I["slow"]))
-    pull_l = up & ((I["swing_hi"] - l) >= p["min_pullback"]) & touch_l
-    pull_s = dn & ((h - I["swing_lo"]) >= p["min_pullback"]) & touch_s
+    if p["require_close_back"]:
+        touch_l = touch_l & (c > I["fast"]); touch_s = touch_s & (c < I["fast"])
+    # the retrace threshold: fixed points as written, or ATR-relative and scale-free
+    thr = (p["pullback_atr"] * I["atr"]) if p["dist_units"] == "atr" else p["min_pullback"]
+    dep_l, dep_s = I["swing_hi"] - l, h - I["swing_lo"]
+    pull_l = up & (dep_l >= thr) & touch_l
+    pull_s = dn & (dep_s >= thr) & touch_s
+    if p["max_pullback_atr"] is not None:
+        cap = p["max_pullback_atr"] * I["atr"]
+        pull_l = pull_l & (dep_l <= cap); pull_s = pull_s & (dep_s <= cap)
+    if p["atr_pct_max"] is not None:
+        pull_l = pull_l & (I["atr_pct"] <= p["atr_pct_max"]); pull_s = pull_s & (I["atr_pct"] <= p["atr_pct_max"])
+    if p["atr_pct_min"] is not None:
+        pull_l = pull_l & (I["atr_pct"] >= p["atr_pct_min"]); pull_s = pull_s & (I["atr_pct"] >= p["atr_pct_min"])
 
     k, d = I["k"], I["d"]
     kp, dp = np.roll(k, 1), np.roll(d, 1); kp[0] = dp[0] = np.nan
@@ -201,6 +248,10 @@ def simulate(df, I, p, long_ok, short_ok, order="adverse", flat_at=None,
             i += 1
             continue
         fill = o[fb] + side * slip
+        if p["dist_units"] == "atr":
+            arm_d = p["trail_arm_atr"] * atr[sig]; off_d = p["trail_offset_atr"] * atr[sig]
+        else:
+            arm_d, off_d = p["trail_arm"], p["trail_offset"]
         stop, targ = fill - side * sd, fill + side * td
         init_stop = stop
         peak, armed = fill, False
@@ -228,10 +279,10 @@ def simulate(df, I, p, long_ok, short_ok, order="adverse", flat_at=None,
                 nonlocal peak, armed, stop
                 peak = max(peak, ext) if side > 0 else min(peak, ext)
                 if trail_on:
-                    if not armed and side * (peak - fill) >= p["trail_arm"]:
+                    if not armed and side * (peak - fill) >= arm_d:
                         armed = True
                     if armed:
-                        ts = peak - side * p["trail_offset"]
+                        ts = peak - side * off_d
                         stop = max(stop, ts) if side > 0 else min(stop, ts)
 
             if adverse:

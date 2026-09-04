@@ -395,6 +395,163 @@ it for reasons that are not edge.
    currently do what its description says.
 5. **Do not add filters to fix this.** The signal beats random entries by about a point per trade and
    loses that to costs. Filters cut trade count, which raises the variance faster than the edge.
+
+## 18. Optimisation round — what was fixed, what could not be
+
+Asked to optimise the signal until it passes. Every number here is the path-free
+`barclose` model on the **research block only**; the holdout is not opened again, because
+nothing in this round earned the look. Search size: 5 session windows + 165 moving-average
+structures + 240 filter/geometry cells.
+
+### 18a. A real defect: every distance is in fixed points over a 5× price range
+
+`minPullbackPoints = 15`, `trailArmPoints = 15` and `trailOffsetPoints = 8` are absolute
+NQ points. NQ opens this sample near 4,800 and ends near 24,600, so those thresholds mean
+something different at each end and nothing in the strategy adapts.
+
+| year | median close | median ATR(14) | trail arm in ATR | trail offset in ATR | bars passing the 15-pt pullback |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 2016 | 4,873 | 4.6 | 3.27 | 1.75 | 34% |
+| 2017 | 5,796 | 4.5 | 3.31 | 1.76 | 31% |
+| 2018 | 6,965 | 10.4 | 1.44 | 0.77 | 68% |
+| 2019 | 7,671 | 9.9 | 1.51 | 0.81 | 65% |
+| 2020 | 10,498 | 21.6 | 0.69 | 0.37 | 89% |
+| 2021 | 14,551 | 21.3 | 0.71 | 0.38 | 90% |
+| 2022 | 13,316 | 37.5 | 0.40 | 0.21 | 99% |
+
+The trailing stop is a **3.27 ATR** rule in 2016 and a **0.40 ATR** rule in 2022. By the end
+of the sample it is tight enough to sit inside a single bar's noise, which is precisely the
+regime where the intrabar artifact from §1 is largest — the two defects compound. The pullback
+filter degrades the same way: it screens out 66% of in-session bars in 2016 and 1% in 2022.
+
+Making every distance ATR-relative is a fix worth making on its own terms, whatever the P&L
+does, because it is the difference between a rule and an accident.
+
+### 18b. The ladder — what each change is actually worth
+
+| step | trades | net pts/trade | control | excess | p | step |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| as written, MNQ, full window | 1,228 | -1.31 | -1.86 | +0.55 | 0.2500 |  |
+| + full-size NQ instead of MNQ | 1,228 | -0.19 | -0.75 | +0.55 | 0.2500 | +1.12 |
+| + ATR-relative distances | 1,507 | -0.12 | -0.84 | +0.72 | 0.1667 | +0.07 |
+| + RTH window 09:31–11:00 NY | 329 | +3.18 | -0.85 | +4.03 | 0.0200 | **+3.31** |
+| + best MA of 165 searched | 267 | +5.65 | -1.03 | +6.68 | 0.0000 | +2.46 |
+
+Two of these are legitimate and two are not. The contract change and the ATR normalisation are
+**mechanical**: they have a reason that is not "it backtested better", and together they take the
+strategy from −1.31 to −0.12 points per trade. That is still a loss, but it is no longer a
+scale-broken loss. The window and the MA are **selections**, and the rest of this section is about
+why they do not survive.
+
+### 18c. The moving average is not the lever
+
+165 MA structures — EMA, SMA and Hull, trend periods 34 to 200, every fast/slow pair — each
+front-gated by the matched control. **165 of 165 are net positive** and 145 clear p&lt;0.05
+against the control, where chance would give about 8.
+
+A search in which *everything* wins has not found a good configuration; it has found something
+common to all of them. The marginals say so directly:
+
+| MA type | mean net | mean excess | | trend period | mean net |
+| --- | ---: | ---: | --- | --- | ---: |
+| ema | +3.82 | +4.67 | | 34 | +4.87 |
+| hma | +3.94 | +4.81 | | 50 | +4.61 |
+| sma | +3.76 | +4.60 | | 89 | +4.40 |
+|  | |  | | 144 | +2.79 |
+|  | |  | | 200 | +2.52 |
+
+Every MA type lands within 0.18 points of every other. Swapping your EMA89 for a Hull 34 or an
+SMA 200 changes the result by less than the measurement error. **The entry MA is interchangeable
+here** — which means tuning it is not where the answer is, and the +2.46 points the search added on
+top of the window is selection over 165 cells, not information.
+
+The entry rule is not *worthless*, though. A placebo — random triggers at the same rate inside the
+same trend-plus-pullback context and the same window — earns a median +0.32 points against the
+real rule's +5.65 (p 0.0000), and taking *every* context bar earns -0.46. The StochRSI cross
+does discriminate on research. It just does not discriminate enough, or durably.
+
+### 18d. What the search actually found: two years
+
+| year | trades | net pts/trade |
+| --- | ---: | ---: |
+| 2016 | 5 | +1.03 |
+| 2017 | 45 | +0.07 |
+| 2018 | 44 | +1.22 |
+| 2019 | 41 | -0.78 |
+| 2020 | 52 | **+12.40** |
+| 2021 | 46 | +1.10 |
+| 2022 | 34 | **+23.01** |
+
+| drop this year | trades | net pts/trade |
+| --- | ---: | ---: |
+| 2016 | 262 | +5.74 |
+| 2017 | 222 | +6.78 |
+| 2018 | 223 | +6.52 |
+| 2019 | 226 | +6.81 |
+| 2020 | 215 | +4.01 |
+| 2021 | 221 | +6.59 |
+| 2022 | 233 | +3.11 |
+| **2020 and 2022 together** | 181 | **+0.45** |
+
+The round turn on full-size NQ is 0.62 points, so **+0.45 is a loss**. 2020 and 2022 are 95% of the
+P&L across 7 years, the top 5% of trades are 78% of it, and shorts earn +9.71 against longs' +1.91.
+The optimised strategy is a short-volatility-spike bet expressed through about thirteen trades.
+
+The filter sweep says the same thing across all 240 cells: 230 are positive on the full block,
+but only **69 of 240** stay above the round turn once 2020 and 2022 are removed, and the median
+share of P&L coming from the top 5% of trades is **106%** — for the median configuration the
+best 5% of trades produce more than the total, so the other 95% lose money together.
+
+| filter | mean net, full block | mean net, 2020 and 2022 removed |
+| --- | ---: | ---: |
+| cap retrace at 3 ATR | +5.10 | +1.41 |
+| close back through fast MA | +5.35 | +0.56 |
+| none | +4.73 | -0.07 |
+| ATR pct 0.2-0.8 | +1.73 | -0.34 |
+| ATR pct < 0.8 | +1.60 | -0.37 |
+| align + close back | +4.66 | -0.61 |
+| trend MA rising 4 bars | +3.21 | -1.09 |
+| EMA align | +4.15 | -1.64 |
+
+The two filters that look strongest on the full block — requiring EMA alignment, and requiring the
+trend MA to be rising — are the two that turn *most* negative without the crisis years. They are
+not making the signal more accurate; they are concentrating it into the trending crashes.
+
+### 18e. Walk-forward on the optimised family — still FAIL
+
+| train/test | folds | profitable | median IS | median OOS | stitched [95% CI] | worst | verdict |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
+| 400/150 | 9 | 56% | +3.41 | +1.09 | +3.27 [-1.72, +8.42] | -2.92 | FAIL |
+| 600/200 | 5 | 40% | +1.84 | -0.66 | +0.78 [-4.12, +5.88] | -1.84 | FAIL |
+
+Both bootstrap intervals include zero. The fold sequence at 400/150 is +1.09, +4.15, −2.92, −0.14,
+−2.26, **+16.92**, −0.75, +1.12, **+19.26** — seven of nine folds sit between −2.9 and +4.2 and two
+carry the entire result. That is the same concentration, seen through a different instrument.
+
+### 18f. Verdict on the optimisation
+
+**The optimisation did not produce a strategy that passes, so the holdout was not opened.**
+Spending the last look on a configuration already known to fail its research gate would waste it.
+
+Two changes are worth keeping regardless of the verdict, because both are corrections rather than
+selections:
+
+1. **Make every distance ATR-relative.** Worth +0.07 points per trade, and worth much more than
+   that as insurance: the current code silently becomes a different strategy as price levels change.
+2. **Trade the full-size contract.** Worth +1.12 points per trade, free, and not a backtest result —
+   it is arithmetic on the commission.
+
+Together they take the as-written strategy from −1.31 to −0.12 points per trade. That is still
+negative, and the remaining gap is not closable by tuning the moving average, because the moving
+average is demonstrably interchangeable here.
+
+The one prior finding that survives as a *lead* rather than a result is the same one as before: the
+09:31–11:00 New York window. It is worth +3.31 points per trade on research, it was already carried
+into the holdout in the previous round with the original parameters, and there it returned +0.24
+points per trade at p 0.2225. It did not replicate. The optimisation round explains why: 95% of its
+research-block edge is 2020 and 2022.
+
+
 ## Files
 
 | file | role |

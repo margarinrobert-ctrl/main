@@ -1,0 +1,219 @@
+//@version=6
+// =============================================================================================
+// NQ Scalping System — CORRECTED.  EMA trend + pullback to the fast MA + StochRSI reset/cross.
+//
+// This is the user's strategy with two corrections and one missing rule added. It is NOT a
+// validated edge. Full evaluation in docs/nqscalp/STUDY_NQSCALP.md.
+//
+// ┌───────────────────────────────────────────────────────────────────────────────────────────┐
+// │ WHAT WAS WRONG, AND WHAT THIS FILE FIXES                                                   │
+// │                                                                                            │
+// │ 1. FIXED-POINT DISTANCES OVER A 5x PRICE RANGE.  minPullbackPoints=15, trailArm=15 and     │
+// │    trailOffset=8 are absolute NQ points. NQ ran 4,800 -> 24,600 across the test sample,    │
+// │    so the trail was a 3.27 ATR rule in 2016 and a 0.40 ATR rule in 2022, and the pullback  │
+// │    filter went from screening out 66% of bars to 0.6%. FIXED: distUnits="ATR" makes every  │
+// │    distance a multiple of ATR at the signal bar. Worth +0.07 pts/trade, and much more as   │
+// │    insurance - the old code silently became a different strategy as price levels changed.  │
+// │                                                                                            │
+// │ 2. NO SESSION EXIT.  inSession gated entries only, so a position opened near the close of  │
+// │    the window ran until a barrier hit - 85 bars in the worst case measured. FIXED: a       │
+// │    flatten at the end of the window. Worth about 1% of P&L; it is a correctness fix.       │
+// │                                                                                            │
+// │ 3. THE SESSION WAS NOT 07:00-11:00 NEW YORK.  The supplied settings were 06:00-11:30       │
+// │    CHICAGO = 07:01-12:30 New York. Inputs below are now in NEW YORK time directly.         │
+// │                                                                                            │
+// │ WHAT IS STILL NOT FIXED, AND CANNOT BE BY TUNING                                           │
+// │   * Under a path-free exit model the strategy is -0.12 pts/trade after the two fixes       │
+// │     above, on the full window with full-size NQ costs. Still a loss.                       │
+// │   * 165 moving-average structures were searched. ALL 165 were positive and every MA type   │
+// │     landed within 0.2 pts of every other, which means the entry MA is interchangeable.     │
+// │     Tuning it is not where the answer is.                                                  │
+// │   * The 09:31-11:00 NY window is worth +3.3 pts/trade on research, but 95% of that is      │
+// │     2020 and 2022, and it returned +0.24 pts/trade on the holdout. Not validated.          │
+// │   * The original backtest's profit came from the trailing stop arming and firing inside    │
+// │     the entry bar. On 15m data that is an assumption, not a measurement. Resolving it      │
+// │     needs 1-minute data.                                                                   │
+// └───────────────────────────────────────────────────────────────────────────────────────────┘
+//
+// TRADINGVIEW SETUP
+//   * "Script execution": ONLY "On bar close". Every rule reads a CLOSED bar.
+//   * Chart timeframe 15m. Backtest results on this timeframe are OPTIMISTIC for the reason
+//     in the last bullet above; treat them as an upper bound, not an expectation.
+// =============================================================================================
+
+strategy("NQ Scalping System (corrected)", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 1.24,
+     slippage = 1, calc_on_every_tick = false, process_orders_on_close = false,
+     pyramiding = 0)
+
+// ------------------------------------------------------------------------------ position size
+riskType     = input.string("Fixed Contracts", "Position sizing", options = ["Fixed Contracts", "Fixed $ Risk"], group = "Position size")
+qtyContracts = input.int(1, "Contracts", minval = 1, group = "Position size")
+riskDollars  = input.float(500, "Risk $ per trade", minval = 0, group = "Position size")
+pointValue   = input.float(20, "$ per point (NQ = 20, MNQ = 2)", minval = 0.01, group = "Position size",
+     tooltip = "A $1.24 commission is 0.062 points on NQ and 0.62 on MNQ. The measured gross edge is under half a point, so the contract choice moves the cost floor more than any parameter here.")
+
+// ------------------------------------------------------------------------------------- trend
+trendMaLen  = input.int(89, "Trend MA length", group = "Trend")
+trendMaType = input.string("EMA", "Trend MA type", options = ["EMA", "SMA", "WMA"], group = "Trend",
+     tooltip = "165 structures were tested and every type landed within 0.2 pts/trade of every other. This input is not the lever.")
+
+// ---------------------------------------------------------------------------------- pullback
+fastMaLen  = input.int(8,  "Fast MA (pullback target)", group = "Pullback")
+slowMaLen  = input.int(21, "Slow MA (fallback target)", group = "Pullback")
+useFallback = input.bool(true, "Fall back to the slow MA if the fast one is not touched", group = "Pullback")
+pullbackLookback = input.int(10, "Swing lookback (bars)", minval = 1, group = "Pullback")
+requireCloseBack = input.bool(false, "Require the close back through the fast MA", group = "Pullback",
+     tooltip = "Confirms the pullback is over rather than still running. Best of the filters tested, but its gain is concentrated in 2020 and 2022.")
+
+// ------------------------------------------------------------------------------------ scale
+distUnits = input.string("ATR", "Distance units", options = ["ATR", "Points"], group = "Scale — the fix",
+     tooltip = "ATR makes the pullback threshold and the trailing stop scale-free. Points reproduces the original behaviour, which drifts out of calibration as price levels change.")
+pullbackAtr    = input.float(1.15, "Min pullback (x ATR)", minval = 0, step = 0.05, group = "Scale — the fix")
+trailArmAtr    = input.float(1.0,  "Trail arm (x ATR)",    minval = 0, step = 0.05, group = "Scale — the fix")
+trailOffsetAtr = input.float(0.5,  "Trail offset (x ATR)", minval = 0, step = 0.05, group = "Scale — the fix")
+minPullbackPts = input.float(15, "Min pullback (points, when units = Points)", minval = 0, group = "Scale — the fix")
+trailArmPts    = input.float(15, "Trail arm (points, when units = Points)",    minval = 0, group = "Scale — the fix")
+trailOffsetPts = input.float(8,  "Trail offset (points, when units = Points)", minval = 0, group = "Scale — the fix")
+
+// ---------------------------------------------------------------------------------- stochrsi
+rsiLen          = input.int(14, "RSI length", group = "StochRSI")
+stochLen        = input.int(14, "Stoch length", group = "StochRSI")
+kSmooth         = input.int(3, "%K smoothing", group = "StochRSI")
+dSmooth         = input.int(3, "%D smoothing", group = "StochRSI")
+oversoldLevel   = input.float(20, "Oversold", group = "StochRSI")
+overboughtLevel = input.float(80, "Overbought", group = "StochRSI")
+resetLookback   = input.int(8, "Reset lookback (bars)", minval = 1, group = "StochRSI")
+
+// ----------------------------------------------------------------------- session, NEW YORK
+sessStartHour = input.int(9,  "Session start hour (NEW YORK)", minval = 0, maxval = 23, group = "Session")
+sessStartMin  = input.int(30, "Session start minute", minval = 0, maxval = 59, group = "Session")
+sessEndHour   = input.int(11, "Session end hour (NEW YORK)", minval = 0, maxval = 23, group = "Session")
+sessEndMin    = input.int(0,  "Session end minute", minval = 0, maxval = 59, group = "Session")
+warmupMins    = input.int(0,  "Skip first N minutes", minval = 0, group = "Session")
+flattenAtEnd  = input.bool(true, "Flatten at the end of the session", group = "Session",
+     tooltip = "The original script gated entries by session but never exited, so a late trade could run for days.")
+
+// -------------------------------------------------------------------------------------- risk
+atrLen        = input.int(14, "ATR length", group = "Risk")
+atrStopMult   = input.float(1.5, "Stop (x ATR)",   minval = 0.1, step = 0.05, group = "Risk")
+atrTargetMult = input.float(2.5, "Target (x ATR)", minval = 0.1, step = 0.05, group = "Risk")
+useTrailing   = input.bool(true, "Enable the trailing stop", group = "Risk")
+
+// ============================================================================== indicators
+f_ma(src, len, kind) =>
+    switch kind
+        "SMA" => ta.sma(src, len)
+        "WMA" => ta.wma(src, len)
+        => ta.ema(src, len)
+
+// ta.atr is Wilder's RMA of true range, which is what the original used.
+atrV    = ta.atr(atrLen)
+trendMa = f_ma(close, trendMaLen, trendMaType)
+fastMa  = ta.ema(close, fastMaLen)
+slowMa  = ta.ema(close, slowMaLen)
+
+rsiVal   = ta.rsi(close, rsiLen)
+stochRaw = ta.stoch(rsiVal, rsiVal, rsiVal, stochLen)
+kLine    = ta.sma(stochRaw, kSmooth)
+dLine    = ta.sma(kLine, dSmooth)
+
+swingHigh = ta.highest(high, pullbackLookback)
+swingLow  = ta.lowest(low, pullbackLookback)
+
+useAtrUnits  = distUnits == "ATR"
+pullbackNeed = useAtrUnits ? pullbackAtr * atrV : minPullbackPts
+armDist      = useAtrUnits ? trailArmAtr * atrV : trailArmPts
+offsetDist   = useAtrUnits ? trailOffsetAtr * atrV : trailOffsetPts
+
+// ================================================================================ conditions
+uptrend   = close > trendMa
+downtrend = close < trendMa
+
+touchLong  = low <= fastMa or (useFallback and low <= slowMa)
+touchShort = high >= fastMa or (useFallback and high >= slowMa)
+confLong   = not requireCloseBack or close > fastMa
+confShort  = not requireCloseBack or close < fastMa
+
+longPullbackOk  = uptrend   and (swingHigh - low) >= pullbackNeed and touchLong  and confLong
+shortPullbackOk = downtrend and (high - swingLow) >= pullbackNeed and touchShort and confShort
+
+hadOversoldReset   = ta.lowest(kLine, resetLookback) <= oversoldLevel
+hadOverboughtReset = ta.highest(kLine, resetLookback) >= overboughtLevel
+longStochSignal    = hadOversoldReset   and ta.crossover(kLine, dLine)
+shortStochSignal   = hadOverboughtReset and ta.crossunder(kLine, dLine)
+
+// bare hour/minute are EXCHANGE time (Chicago for CME), which is the bug that made the
+// supplied settings trade 07:01-12:30 New York instead of the intended window.
+nyMinutes  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+startMin   = sessStartHour * 60 + sessStartMin + warmupMins
+endMin     = sessEndHour * 60 + sessEndMin
+inSession  = nyMinutes >= startMin and nyMinutes < endMin
+
+longCond  = longPullbackOk  and longStochSignal  and inSession and barstate.isconfirmed
+shortCond = shortPullbackOk and shortStochSignal and inSession and barstate.isconfirmed
+
+// ==================================================================================== sizing
+flat = strategy.position_size == 0
+thisStopDist   = atrStopMult * atrV
+thisTargetDist = atrTargetMult * atrV
+riskQty = (thisStopDist > 0 and pointValue > 0) ? math.floor(riskDollars / (thisStopDist * pointValue)) : qtyContracts
+positionSize = riskType == "Fixed $ Risk" ? math.max(riskQty, 1) : qtyContracts
+
+var float pendStop   = na
+var float pendTarget = na
+var float pendArm    = na
+var float pendOffset = na
+var float slPrice    = na
+var float tpPrice    = na
+
+if flat
+    pendStop   := na
+    pendTarget := na
+    pendArm    := na
+    pendOffset := na
+    slPrice    := na
+    tpPrice    := na
+
+if flat and longCond
+    pendStop   := thisStopDist
+    pendTarget := thisTargetDist
+    pendArm    := armDist
+    pendOffset := offsetDist
+    strategy.entry("Long", strategy.long, qty = positionSize)
+
+if flat and shortCond
+    pendStop   := thisStopDist
+    pendTarget := thisTargetDist
+    pendArm    := armDist
+    pendOffset := offsetDist
+    strategy.entry("Short", strategy.short, qty = positionSize)
+
+justLong  = strategy.position_size > 0 and strategy.position_size[1] <= 0
+justShort = strategy.position_size < 0 and strategy.position_size[1] >= 0
+
+if justLong or justShort
+    entryPrice = strategy.position_avg_price
+    slPrice := justLong ? entryPrice - pendStop   : entryPrice + pendStop
+    tpPrice := justLong ? entryPrice + pendTarget : entryPrice - pendTarget
+
+// trail_points / trail_offset are TICK-denominated, so points must be converted.
+trailArmTicks    = useTrailing and not na(pendArm)    ? pendArm / syminfo.mintick    : na
+trailOffsetTicks = useTrailing and not na(pendOffset) ? pendOffset / syminfo.mintick : na
+
+strategy.exit("XL", "Long",  stop = slPrice, limit = tpPrice, trail_points = trailArmTicks, trail_offset = trailOffsetTicks)
+strategy.exit("XS", "Short", stop = slPrice, limit = tpPrice, trail_points = trailArmTicks, trail_offset = trailOffsetTicks)
+
+// ------------------------------------------------ the missing rule: flatten at session end
+mustFlat = flattenAtEnd and not inSession and strategy.position_size != 0
+if mustFlat and barstate.isconfirmed
+    strategy.close_all(comment = "Session Flat")
+
+plot(trendMa, "Trend MA", color = color.gray, linewidth = 2)
+plot(fastMa, "Fast MA", color = color.lime)
+plot(slowMa, "Slow MA", color = color.orange)
+plotchar(longCond, "Long", char = "▲", location = location.belowbar, color = color.lime)
+plotchar(shortCond, "Short", char = "▼", location = location.abovebar, color = color.red)
+plotchar(inSession, "In session", char = "•", location = location.bottom)
