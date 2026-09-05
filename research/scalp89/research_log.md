@@ -49,3 +49,28 @@ configurations; 0 configurations selected on the locked block.**
   cell beats the re-chosen one).
 - **Verdict**: no edge. The deflated Sharpe is not computed because the observed Sharpe is negative
   on research under every perturbation — there is nothing to deflate.
+
+## Second correction (2026-09-05)
+
+The user confirmed MNQ, 15-minute chart, no execution option ticked -- ruling out tick
+recalculation as the explanation for the TradingView screenshot. Re-read `strategy.exit`'s
+behaviour on the fill bar itself and found the first transliteration (`protect_fill=0`, fully
+naked) was wrong: the script's own `strategy.exit` call, running on the signal bar with
+`slPrice`/`tpPrice` still `na`, arms only the TRAIL there. `s89_pine.py` implements this
+(`fill_mode=1`) and is verified 100.0% trade-for-trade (exit bar, price, code) against an
+independent plain-Python reference in `test_pine.py`, 400 trades x 2 timeframes x 3 fill-bar
+policies x 2 path conventions = 4,800 checks.
+
+| # | What | Cells | Where |
+| --- | --- | ---: | --- |
+| 13 | corrected order model vs old, 4 windows x 2 timeframes x 7 model variants | 56 | `run_tv2.py` |
+| 14 | matched random-entry control under the corrected model, 2 timeframes x 2 blocks | 4 | `run_tv3.py` |
+
+**Running total: ~1,160 research-block configurations; 36 locked-block reads.**
+
+Result: corrected NQ 15m research PF 0.669 -> 1.739 (win 46.1% -> 70.3%), closing most of the gap
+to the screenshot's 3.08/84% but not reaching it (best read: PF 1.86 / 71% at zero cost). Still
+fails a matched random-entry control on 15m both blocks (p 0.180 / 0.213); 5m passes only on the
+block that would select it (p 0.023 locked / 0.813 research -- the wrong shape). No change to the
+shipped v2 Pine, which was never exposed to this defect (its bracket is fill-relative, placed with
+the entry). Decision unchanged: no edge, ship the corrected order model as documentation only.

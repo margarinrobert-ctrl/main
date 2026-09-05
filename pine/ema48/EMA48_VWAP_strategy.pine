@@ -1,0 +1,159 @@
+// EMA 13/48 crossover x session VWAP (support/resistance) x ATR stop x optional ATR trail
+// =====================================================================================
+// MEASURED HERE (docs/ib/STUDY_EMA48_VWAP_DL.md, research/ema48/):
+//
+// 1. THE TRAILING STOP IS THE WRONG WAY UP. A 24-cell grid (fresh-cross/state cross x
+//    VWAP off/state/touch x trail on/off x flatten on/off), NQ 5m, real MNQ costs:
+//    trail ON averages PF 0.20 across every cell; trail OFF averages PF 1.31. A matched
+//    random-entry control at the trail-ON geometry is ENTIRELY NEGATIVE and the rule sits
+//    below its median (p 0.937). Ship default is TRAIL OFF.
+//
+// 2. THE 1.31 GRID AVERAGE IS MOSTLY OVERNIGHT DRIFT, NOT AN INTRADAY EDGE. Split by the
+//    session flatten: with the 15:55 flatten ON (stays intraday), the same trail-off
+//    ablation reads PF 1.02 on 759 trades (%/trade +0.003) -- break-even, and it FAILS a
+//    matched random-entry control (p 0.163). Turn the flatten OFF (hold overnight) and the
+//    best cell in the whole grid reads PF 2.43 -- but on 99 trades at a 3.0% win rate,
+//    i.e. multi-day long positions in a market that rose 89% over the sample. That is
+//    drift, not a rule, and it has not been tested against a control here. FLATTEN
+//    defaults ON; the input exists to reproduce the higher (unvalidated) number, clearly
+//    labelled below.
+//
+// 3. THE VWAP GATE READ AS STATE (price on the correct side) is the one component with a
+//    positive marginal (+0.03 %/trade); read as a TOUCH-and-bounce it is the worst
+//    reading in the grid. Default is STATE.
+//
+// 4. NEITHER READING CLEARS ITS CONTROL WITH THE FLATTEN ON. This script is shipped as a
+//    mechanically correct, cost-honest implementation of what was tested -- not as a
+//    strategy with a demonstrated edge. No parameter here was chosen by performance;
+//    every one is the value the study measured.
+//
+// Order model: fill at next bar's open (a live market order); ATR and both EMAs taken at
+// the SIGNAL bar's close, matching `research/ema48/e48_core.py`. barstate.isconfirmed
+// guards every decision so a live chart cannot recalculate mid-bar (STUDY_TICK_RECALC).
+strategy("EMA 13/48 x VWAP x ATR (measured, trail default OFF)", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.62,
+     slippage = 1)
+
+fastLen  = input.int(13, "Fast EMA", group = "Trend")
+slowLen  = input.int(48, "Slow EMA", group = "Trend")
+crossMode = input.string("Fresh cross", "Cross reading", options = ["Fresh cross", "State (EMA13 > EMA48)"], group = "Trend",
+     tooltip = "MEASURED: fresh cross (within 5 bars) mean PF 0.71 across the grid; state mean 0.80. Neither clears its control alone.")
+crossWinBars = input.int(5, "Fresh-cross window (bars)", minval = 1, group = "Trend")
+
+vwapMode = input.string("State", "VWAP reading", options = ["Off", "State (price on the correct side)", "Touch (bounce off VWAP)"], group = "VWAP",
+     tooltip = "MEASURED: State is the only positive marginal in the grid (+0.03 %/trade). Touch is the WORST reading (-0.02). Off is neutral (-0.00).")
+
+atrLen   = input.int(14, "ATR Length", group = "Risk")
+stopMult = input.float(1.5, "ATR Stop Multiple", minval = 0.1, group = "Risk",
+     tooltip = "MEASURED: the stop axis is flat-to-negative from 1.0 to 3.0 ATR (V18's finding stands). 1.5 is the value tested, not a chosen optimum.")
+
+useTrail  = input.bool(false, "Enable ATR Trailing Stop?", group = "Trailing",
+     tooltip = "MEASURED: ON takes the 24-cell grid mean from PF 1.31 to PF 0.20. A matched random-entry control at this geometry is ENTIRELY NEGATIVE and the rule is worse than its median (p 0.937). Left OFF here on the evidence; turning it on is not recommended.")
+trailArmAtr = input.float(1.0, "Trail Arm (x ATR)", minval = 0, group = "Trailing")
+trailOffAtr = input.float(1.0, "Trail Offset (x ATR)", minval = 0, group = "Trailing")
+
+useFlatten = input.bool(true, "Flatten at session end?", group = "Session",
+     tooltip = "MEASURED: with this ON (intraday) the trail-off configuration reads PF 1.02 -- break-even, fails a random-entry control (p 0.163). Turning it OFF reaches the grid's best cell (PF 2.43) but on 99 trades at a 3.0% win rate in a market that rose 89% -- overnight drift, UNTESTED against any control. Default ON.")
+flattenHour = input.int(15, "Flatten Hour (exchange time)", minval = 0, maxval = 23, group = "Session")
+flattenMin  = input.int(55, "Flatten Minute", minval = 0, maxval = 59, group = "Session")
+sessStartHour = input.int(9, "RTH Start Hour (exchange time)", minval = 0, maxval = 23, group = "Session")
+sessStartMin  = input.int(30, "RTH Start Minute", minval = 0, maxval = 59, group = "Session")
+
+longOnly  = input.bool(false, "Long only?", group = "Direction")
+shortOnly = input.bool(false, "Short only?", group = "Direction")
+
+// === indicators ===
+atrVal = ta.atr(atrLen)
+emaF   = ta.ema(close, fastLen)
+emaS   = ta.ema(close, slowLen)
+
+var float vwapCum = na
+var float volCum  = na
+newDay = ta.change(dayofmonth(time, "America/New_York")) != 0 or na(vwapCum)
+rthNow = (hour(time, "America/New_York") > sessStartHour or (hour(time, "America/New_York") == sessStartHour and minute(time, "America/New_York") >= sessStartMin)) and hour(time, "America/New_York") < 16
+if newDay
+    vwapCum := na
+    volCum  := na
+tp = hlc3
+if rthNow
+    vwapCum := nz(vwapCum, 0) + tp * volume
+    volCum  := nz(volCum, 0) + volume
+vwapVal = volCum > 0 ? vwapCum / volCum : na
+
+up = emaF > emaS
+xUp = up and not up[1]
+xDn = (not up) and up[1]
+recentUp = ta.barssince(xUp) < crossWinBars
+recentDn = ta.barssince(xDn) < crossWinBars
+crossLongTrig  = crossMode == "Fresh cross" ? (recentUp and up) : up
+crossShortTrig = crossMode == "Fresh cross" ? (recentDn and not up) : (not up)
+
+vwapLong  = vwapMode == "Off" ? true : vwapMode == "State (price on the correct side)" ? (close > vwapVal) : (low <= vwapVal and close > vwapVal)
+vwapShort = vwapMode == "Off" ? true : vwapMode == "State (price on the correct side)" ? (close < vwapVal) : (high >= vwapVal and close < vwapVal)
+
+inSession = rthNow and not na(vwapVal) and not na(atrVal) and atrVal > 0
+longCondRaw  = crossLongTrig  and vwapLong  and inSession and not longOnly[1] and not shortOnly and not (shortOnly)
+shortCondRaw = crossShortTrig and vwapShort and inSession and not shortOnly[1]
+
+longCond  = crossLongTrig  and vwapLong  and inSession and not shortOnly
+shortCond = crossShortTrig and vwapShort and inSession and not longOnly
+// fire once per fresh-cross window, matching e48_core.signals()
+firedLong  = false
+firedShort = false
+var bool wasLongSig  = false
+var bool wasShortSig = false
+fireLong  = crossMode == "Fresh cross" ? (longCond  and not wasLongSig)  : longCond
+fireShort = crossMode == "Fresh cross" ? (shortCond and not wasShortSig) : shortCond
+wasLongSig  := longCond
+wasShortSig := shortCond
+
+flat = strategy.position_size == 0
+
+var float pendingStop = na
+var float pendingArm  = na
+var float pendingOff  = na
+
+if barstate.isconfirmed
+    if flat
+        pendingStop := na
+        pendingArm  := na
+        pendingOff  := na
+    if flat and fireLong
+        pendingStop := stopMult * atrVal
+        pendingArm  := trailArmAtr * atrVal
+        pendingOff  := trailOffAtr * atrVal
+        strategy.entry("Long", strategy.long)
+    if flat and fireShort
+        pendingStop := stopMult * atrVal
+        pendingArm  := trailArmAtr * atrVal
+        pendingOff  := trailOffAtr * atrVal
+        strategy.entry("Short", strategy.short)
+
+justEnteredLong  = strategy.position_size > 0 and strategy.position_size[1] <= 0
+justEnteredShort = strategy.position_size < 0 and strategy.position_size[1] >= 0
+var float slPrice = na
+if justEnteredLong or justEnteredShort
+    ep = strategy.position_avg_price
+    slPrice := justEnteredLong ? ep - pendingStop : ep + pendingStop
+
+trailArmTk = useTrail and not na(pendingArm) ? pendingArm / syminfo.mintick : na
+trailOffTk = useTrail and not na(pendingOff) ? pendingOff / syminfo.mintick : na
+
+strategy.exit("XL", "Long",  stop = slPrice, trail_points = trailArmTk, trail_offset = trailOffTk)
+strategy.exit("XS", "Short", stop = slPrice, trail_points = trailArmTk, trail_offset = trailOffTk)
+
+flattenNow = hour(time, "America/New_York") > flattenHour or (hour(time, "America/New_York") == flattenHour and minute(time, "America/New_York") >= flattenMin)
+if useFlatten and flattenNow and barstate.isconfirmed
+    strategy.close_all(comment = "session flatten")
+
+plot(emaF, "EMA 13", color = color.new(color.teal, 0))
+plot(emaS, "EMA 48", color = color.new(color.orange, 0))
+plot(vwapVal, "Session VWAP", color = color.new(color.gray, 0), style = plot.style_circles)
+
+var table hud = table.new(position.top_right, 1, 3, bgcolor = color.new(color.black, 20))
+if barstate.islast
+    table.cell(hud, 0, 0, "MEASURED: trail-off + flatten-on = PF 1.02 (breakeven, fails control p 0.163)", text_color = color.white, bgcolor = color.new(color.gray, 30))
+    table.cell(hud, 0, 1, "trail ON averages PF 0.20 across the grid -- left OFF here on the evidence", text_color = color.white, bgcolor = color.new(color.red, 40))
+    table.cell(hud, 0, 2, "flatten OFF reaches PF 2.43 on 99 trades / 3.0% win -- UNVALIDATED overnight drift, not recommended", text_color = color.white, bgcolor = color.new(color.orange, 40))

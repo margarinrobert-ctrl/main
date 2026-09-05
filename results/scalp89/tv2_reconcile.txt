@@ -1,0 +1,96 @@
+
+==========================================================================================================================
+NQ 15m, MNQ economics ($2/pt, 1.24 $/contract/side, 1 tick slippage), as configured: 15/8 fixed trail, 1.5/2.5 ATR
+==========================================================================================================================
+
+  -- research --
+                                                                 n     PF  win%   avgW   avgL   $ 5 MNQ fillbar%  exits
+  OLD model: naked fill bar, trail cannot arm there (s89_core.walk)   487  0.605  49.3   17.5  -28.1   -27,283      nan  trail70% stop30% target0%
+  PINE model: TRAIL LIVE on the fill bar, no stop/target there (the script)   492  2.015  75.4   24.7  -37.9    45,714     32.3  trail66% stop25% target10%
+  PINE model, fill bar naked (fill_mode 0)                     484  1.635  68.2   30.4  -40.0    38,850      0.0  trail53% stop32% target15%
+  PINE model, everything live on the fill bar (fill_mode 2 = v2)   494  1.909  73.1   23.7  -34.1    40,231     42.3  trail63% stop27% target11%
+  PINE model, trail OFF                                        457  1.047  42.0   61.4  -41.9     6,887      0.0  stop58% target42%
+  PINE model, stop-first tie-break instead of the path         492  1.786  73.8   23.6  -37.7    37,250     30.7  trail66% stop26% target8%
+  PINE model, zero commission and slippage                     492  2.285  75.8   26.2  -36.4    54,566     32.7  trail66% stop24% target9%
+
+  -- locked --
+                                                                 n     PF  win%   avgW   avgL   $ 5 MNQ fillbar%  exits
+  OLD model: naked fill bar, trail cannot arm there (s89_core.walk)   282  0.669  46.1   32.9  -44.3   -24,521      nan  trail65% stop35%
+  PINE model: TRAIL LIVE on the fill bar, no stop/target there (the script)   283  1.739  70.3   38.5  -54.6    30,677     35.3  trail65% stop30% target5%
+  PINE model, fill bar naked (fill_mode 0)                     282  1.370  62.1   46.3  -57.1    19,923      0.0  trail50% stop38% target12%
+  PINE model, everything live on the fill bar (fill_mode 2 = v2)   284  1.591  67.6   35.1  -47.6    23,504     46.8  trail60% stop32% target8%
+  PINE model, trail OFF                                        260  1.062  37.3   99.2  -57.0     3,319      0.0  stop63% target37%
+  PINE model, stop-first tie-break instead of the path         283  1.645  69.3   37.9  -54.1    27,197     34.3  trail65% stop31% target5%
+  PINE model, zero commission and slippage                     284  1.859  70.8   39.0  -52.6    34,747     35.9  trail66% stop29% target5%
+
+  -- last 365d of data (2024-12-11 ->) --
+                                                                 n     PF  win%   avgW   avgL   $ 5 MNQ fillbar%  exits
+  OLD model: naked fill bar, trail cannot arm there (s89_core.walk)   274  0.666  46.4   32.9  -44.9   -24,231      nan  trail65% stop35%
+  PINE model: TRAIL LIVE on the fill bar, no stop/target there (the script)   275  1.747  70.5   38.6  -55.2    30,161     36.0  trail66% stop29% target4%
+  PINE model, fill bar naked (fill_mode 0)                     274  1.380  62.4   46.5  -57.9    19,950      0.0  trail51% stop38% target12%
+  PINE model, everything live on the fill bar (fill_mode 2 = v2)   276  1.606  68.1   35.2  -48.5    23,452     46.7  trail61% stop32% target8%
+  PINE model, trail OFF                                        252  1.058  36.9  101.4  -57.5     2,861      0.0  stop63% target37%
+  PINE model, stop-first tie-break instead of the path         275  1.653  69.5   38.0  -54.6    26,794     34.9  trail65% stop31% target4%
+  PINE model, zero commission and slippage                     276  1.866  71.0   39.1  -53.2    34,105     36.6  trail67% stop29% target4%
+
+  -- overlap with the screen (2025-09-04 ->) --
+                                                                 n     PF  win%   avgW   avgL   $ 5 MNQ fillbar%  exits
+  OLD model: naked fill bar, trail cannot arm there (s89_core.walk)    71  0.651  52.1   30.2  -50.3    -5,900      nan  trail66% stop34%
+  PINE model: TRAIL LIVE on the fill bar, no stop/target there (the script)    71  1.536  69.0   38.9  -56.3     6,677     38.0  trail63% stop31% target6%
+  PINE model, fill bar naked (fill_mode 0)                      71  1.307  64.8   45.5  -63.5     5,071      0.0  trail51% stop35% target14%
+  PINE model, everything live on the fill bar (fill_mode 2 = v2)    71  1.384  66.2   36.0  -51.0     4,692     50.7  trail58% stop34% target8%
+  PINE model, trail OFF                                         67  1.072  40.3   95.7  -60.1     1,825      0.0  stop60% target40%
+  PINE model, stop-first tie-break instead of the path          71  1.508  69.0   38.2  -56.3     6,334     35.2  trail63% stop31% target6%
+  PINE model, zero commission and slippage                      71  1.779  70.4   39.7  -53.1     8,711     38.0  trail65% stop30% target6%
+
+==========================================================================================================================
+NQ 5m, MNQ economics ($2/pt, 1.24 $/contract/side, 1 tick slippage), as configured: 15/8 fixed trail, 1.5/2.5 ATR
+==========================================================================================================================
+
+  -- research --
+                                                                 n     PF  win%   avgW   avgL   $ 5 MNQ fillbar%  exits
+  OLD model: naked fill bar, trail cannot arm there (s89_core.walk)  1309  0.392  49.9    9.3  -23.4   -93,213      nan  trail62% stop37% target1%
+  PINE model: TRAIL LIVE on the fill bar, no stop/target there (the script)  1320  1.134  65.2   17.1  -27.9    19,312     13.0  trail56% stop35% target9%
+  PINE model, fill bar naked (fill_mode 0)                    1308  1.093  62.2   19.2  -28.6    14,382      0.0  trail51% stop38% target11%
+  PINE model, everything live on the fill bar (fill_mode 2 = v2)  1323  1.166  64.5   17.0  -26.2    22,407     19.4  trail54% stop36% target10%
+  PINE model, trail OFF                                       1178  0.899  38.8   44.7  -31.0   -19,007      0.0  stop61% target39%
+  PINE model, stop-first tie-break instead of the path        1320  1.087  64.6   16.8  -27.7    13,500     13.0  trail56% stop35% target9%
+  PINE model, zero commission and slippage                    1319  1.348  65.8   18.5  -26.1    42,902     13.4  trail57% stop34% target9%
+
+  -- locked --
+                                                                 n     PF  win%   avgW   avgL   $ 5 MNQ fillbar%  exits
+  OLD model: naked fill bar, trail cannot arm there (s89_core.walk)   796  0.444  46.5   14.2  -28.3   -68,002      nan  trail66% stop33% target0%
+  PINE model: TRAIL LIVE on the fill bar, no stop/target there (the script)   803  1.410  70.2   22.0  -37.5    34,761     22.0  trail64% stop30% target7%
+  PINE model, fill bar naked (fill_mode 0)                     795  1.328  66.0   26.4  -39.2    32,472      0.0  trail57% stop34% target9%
+  PINE model, everything live on the fill bar (fill_mode 2 = v2)   804  1.446  69.9   21.8  -35.6    36,531     27.7  trail62% stop30% target8%
+  PINE model, trail OFF                                        689  1.008  37.7   67.9  -41.5    -1,239      0.0  stop62% target38%
+  PINE model, stop-first tie-break instead of the path         803  1.349  69.6   21.8  -37.5    30,138     21.4  trail63% stop30% target7%
+  PINE model, zero commission and slippage                     803  1.573  70.5   23.4  -35.9    47,301     22.3  trail64% stop30% target7%
+
+  -- last 365d of data (2024-12-11 ->) --
+                                                                 n     PF  win%   avgW   avgL   $ 5 MNQ fillbar%  exits
+  OLD model: naked fill bar, trail cannot arm there (s89_core.walk)   769  0.443  46.3   14.4  -28.6   -66,888      nan  trail66% stop33% target0%
+  PINE model: TRAIL LIVE on the fill bar, no stop/target there (the script)   776  1.407  70.2   22.3  -38.0    33,881     22.4  trail64% stop30% target7%
+  PINE model, fill bar naked (fill_mode 0)                     768  1.329  66.0   26.8  -39.8    31,917      0.0  trail57% stop34% target9%
+  PINE model, everything live on the fill bar (fill_mode 2 = v2)   777  1.445  69.9   22.1  -36.1    35,708     28.2  trail62% stop30% target8%
+  PINE model, trail OFF                                        664  1.009  37.8   68.9  -42.1    -1,010      0.0  stop62% target38%
+  PINE model, stop-first tie-break instead of the path         776  1.347  69.6   22.1  -38.0    29,411     21.8  trail63% stop30% target7%
+  PINE model, zero commission and slippage                     776  1.567  70.5   23.7  -36.5    45,979     22.7  trail64% stop30% target7%
+
+  -- overlap with the screen (2025-09-04 ->) --
+                                                                 n     PF  win%   avgW   avgL   $ 5 MNQ fillbar%  exits
+  OLD model: naked fill bar, trail cannot arm there (s89_core.walk)   192  0.346  39.6   14.5  -27.3   -20,660      nan  trail62% stop37% target1%
+  PINE model: TRAIL LIVE on the fill bar, no stop/target there (the script)   193  1.176  66.8   21.0  -35.9     4,080     19.2  trail58% stop33% target9%
+  PINE model, fill bar naked (fill_mode 0)                     192  1.133  62.0   26.5  -37.9     3,849      0.0  trail51% stop38% target11%
+  PINE model, everything live on the fill bar (fill_mode 2 = v2)   193  1.260  66.3   20.7  -32.4     5,466     25.9  trail57% stop34% target9%
+  PINE model, trail OFF                                        173  0.890  35.3   64.9  -39.5    -4,717      0.0  stop65% target35%
+  PINE model, stop-first tie-break instead of the path         193  1.120  65.8   20.7  -35.5     2,864     18.1  trail58% stop34% target8%
+  PINE model, zero commission and slippage                     193  1.344  67.4   22.5  -34.5     7,519     19.2  trail59% stop33% target9%
+
+==========================================================================================================================
+WHAT THE FILL BAR DOES on 15m: trades that exit on the fill bar itself, under the script's model
+==========================================================================================================================
+  exits on the fill bar: 259 of 775 (33.4%), win 100.0%, mean +31.8 pts, all '['trail']'
+  the rest:              516, win 60.3%, mean -1.1 pts, exits trail48% stop40% target12%
+  median 15m bar range: 19.0 pts; median ATR(14): 22.8; so a 15-pt arm is reached inside the fill bar on 62% of bars
+  screenshot arithmetic: PF 3.08 at 84% wins needs avgW/avgL = 0.59

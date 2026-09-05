@@ -246,3 +246,73 @@ the close, or same-bar re-entries after a fill — and which of the three execut
 ticked decides which. That has not been emulated here. The decisive test is unchanged and costs
 two minutes: untick the option and re-run. What is settled: **no bar-close or limit-order
 implementation of this entry reaches PF 2 on any block, any geometry, or any timeframe measured.**
+
+### Second correction: MNQ, 15-minute chart, no execution option ticked — the mechanism was different
+
+The user confirmed the screenshot's chart is 15-minute, MNQ, with **no intrabar execution option
+ticked** — ruling out the tick-recalculation explanation the addendum above named as the only
+remaining candidate. That forced a re-read of what `strategy.exit` actually does on the FILL bar,
+and the first transliteration (`s89_core.walk`) turns out to have gotten it wrong.
+
+**What the submitted script's source does, read line by line (`orig_scalp.pine` 195–231):**
+`strategy.exit("XL", "Long", stop = slPrice, limit = tpPrice, trail_points = ..., trail_offset = ...)`
+runs on *every* bar, including the bar the entry fills on. On that bar, `slPrice` and `tpPrice` are
+still `na` — they are assigned only once `strategy.position_size` has moved, which Pine sees one
+bar after the fill — while the trail distances come from `pending*` variables that were captured
+**before** `strategy.entry` was even called, on the signal bar. So on the fill bar the position
+carries a **live trailing stop and no hard stop, no target**. The original transliteration
+(`protect_fill=0`) left the fill bar completely naked — no trail either — which is wrong in the
+other direction and understated the result.
+
+`s89_pine.py` implements this correctly (`fill_mode=1`) and is verified against an independent
+plain-Python reference, trade for trade: **100.0% identical exit bar, exit price and exit code**
+across both timeframes, both path conventions, and all three fill-bar policies, 400 trades each.
+
+**The corrected number, NQ 15m, MNQ economics ($2/pt, $1.24/contract/side, 1-tick slippage), as
+configured (15/8-point fixed trail, 1.5/2.5 ATR):**
+
+|  | n | PF | win% | avg win | avg loss | $ 5 MNQ |
+|---|---|---|---|---|---|---|
+| old model (fill bar naked, no trail there) | 282 | 0.669 | 46.1% | +32.9 | −44.3 | −24,521 |
+| **corrected model (trail live on the fill bar)** | 283 | **1.739** | **70.3%** | +38.5 | −54.6 | +30,677 |
+| corrected, last 365 days of data | 275 | 1.747 | 70.5% | +38.6 | −55.2 | +30,161 |
+| corrected, overlap with the screenshot's window | 71 | 1.536 | 69.0% | +38.9 | −56.3 | +6,677 |
+| corrected, zero commission/slippage | 284 | 1.859 | 70.8% | +39.0 | −52.6 | +34,747 |
+| corrected, trail OFF | 260 | 1.062 | 37.3% | +99.2 | −57.0 | +3,319 |
+
+**The trail arms almost every fill bar on a 15-minute chart.** Median 15m bar range is 19.0 points
+against a 15-point arm distance, so the trail activates *inside the fill bar itself* on ~62% of
+entries. A third of all trades (33.4%, 259 of 775) exit on the fill bar, every one of them via the
+trail, at a mean of **+31.8 points**, 100% winners by construction (the trail only exits in
+profit). The rest of the trades — the ones that survive past the fill bar — win only 60.3% at a
+mean of −1.1 points, close to the coin flip the original addendum measured. **The 84%/PF-3.08
+screenshot is not fully reproduced** (best read here is PF 1.86 at zero cost, 71% win, on 15m
+research) but the corrected order model closes most of the gap the naked-fill-bar model left open:
+PF 0.67 → 1.74 on the same window, win rate 46% → 70%, purely from correcting which orders are
+live on the entry bar — no change to any rule, cost, or window.
+
+**It still does not clear a matched control.** Re-running the random-entry control (same session,
+side mix and geometry, sorted draws) under the corrected model:
+
+| | n | observed %/trade | control median | 5–95% | p |
+|---|---|---|---|---|---|
+| NQ 15m research | 492 | +0.052 | +0.043 | [+0.029, +0.057] | 0.180 |
+| NQ 15m locked | 283 | +0.052 | +0.043 | [+0.024, +0.065] | 0.213 |
+| NQ 5m research | 1,320 | +0.007 | +0.010 | [+0.004, +0.016] | 0.813 |
+| NQ 5m locked | 803 | +0.020 | +0.011 | [+0.002, +0.018] | 0.023 |
+
+15-minute fails on both blocks; 5-minute passes only on the block that would select it (the wrong
+shape, again) and fails on research at p 0.813 — worse than the median of its own control. **The
+trail on the fill bar earns most of its money the same way a random entry does in this window and
+geometry**: both are long, both are in a 15-minute uptrend, and both get to exit at the first
+favourable extreme the fill bar happens to offer.
+
+**Correction to the correction:** the earlier addendum's explanation — an unguarded script buying
+an intrabar touch under a ticked execution option — is not what is happening here, because the
+user has now ruled that setting out. The real mechanism is a **Pine order-model trap that fires on
+any chart, with every execution box unticked**: `strategy.exit` called on the signal/fill bar with
+`stop=`/`limit=` still `na` silently arms only the trail component, leaving the entry bar's hard
+stop and target absent for exactly one bar. `pine/scalp89/NQ_SCALPING_SYSTEM_v2_strategy.pine`
+already avoids this (its fill-relative bracket is placed with the entry, both known at order time),
+so the shipped v2 does not carry this defect — it was never present in the corrected script, only
+in this study's account of what the *original* submission does.
