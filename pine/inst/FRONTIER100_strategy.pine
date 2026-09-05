@@ -1,0 +1,143 @@
+// FRONTIER-100 -- the >=100-trades-a-year envelope cell from the intraday frontier study
+// =========================================================================================
+// NQ 15m, long only, RTH entries. Donchian 55 breakout on the HIGH, exit at the 20-bar
+// channel low, an ADAPTIVE ATR stop (1.5 ATR when volatility sits in the calm half of its own
+// trailing distribution, 0.5 ATR when it does not -- STUDY_V22's finding), NO target, a 6.5-hour
+// hold cap, and two filters: price at least 2 ATR ABOVE the SMA200 (STUDY_V40/V51: a FLOOR, not
+// support) and CHOP(14) <= 40 (STUDY_V21/V39). Selected on the RESEARCH block only, as the best
+// profit factor among 434,346 cells with >= 100 research trades a year, then read ONCE on locked.
+// docs/ib/STUDY_INSTITUTIONAL_FRONTIER.md, research/inst/cell100.py.
+//
+// ============================== WHAT IT MEASURES ==============================
+//   research  200 trades / 104 a year   PF 2.17 (R) / 2.16 (%)   win 23.5%   +0.079 %/trade
+//             +15.8% total on one unit, max DD 2.1%, +$28.7 a trade per MNQ
+//   locked    108 trades / 104 a year   PF 1.51 (R) / 1.80 (%)   win 23.1%   +0.067 %/trade
+//             +7.2% total, max DD 4.1%, +$28.8 a trade per MNQ
+//   MNQ costs: $0.72 a side commission and one tick of slippage on every fill.
+//
+// READ THESE BEFORE TRADING IT:
+//   1. IT IS THE MAXIMUM OF 434,346 DRAWS. 89.5% of the intraday frontier is profitable on
+//      research; the top 1% of cells by research PF read 3.48 there and 1.22 on locked, the same
+//      as the whole population. This cell was the ONLY envelope cell that held its PF across the
+//      split (2.17 -> 1.51); the >=150 and >=200 cells read 0.75 and 0.88 locked.
+//   2. THE NEIGHBOURHOOD HOLDS ON BOTH BLOCKS, which is rarer here than a research pass:
+//      ent 40: 2.16 -> 1.50 | exit 10: 2.02 -> 1.45 | exit 30: 2.17 -> 1.48 | stop 2.0: 1.89 -> 1.37
+//      MA floor 1 ATR: 1.93 -> 1.68 | CHOP 45: 1.83 -> 1.35.  (stop 1.0 collapses to 8 trades/yr.)
+//   3. IT WINS 23% OF THE TIME AND LIVES IN THE TAIL: 82% of research net comes from the top 5%
+//      of trades, the median hold is ONE bar (most trades stop out inside 15 minutes at a 0.5-1.5
+//      ATR stop) and 21-23% of trades run to the 6.5-hour cap. p90 of R is 6.6 / 5.1. A run of
+//      fifteen consecutive stops is ordinary for this profile; size for the p99 drawdown.
+//   4. IT IS ONE MARKET, ONE TIMEFRAME, and it has NOT been read on US100 or US30 -- nothing in
+//      this family has ever transferred to the market it was fitted on, and the locked read here
+//      is DESCRIPTIVE (it followed the selection). It has not cleared a matched random-entry
+//      control; that test is owed before any money is put on it.
+//
+// Order model: entry at the next open; the stop is FILL-RELATIVE and submitted WITH the entry
+// (STUDY_V56_PARITY), then raised each bar to the higher of the ATR stop and the 20-bar channel
+// low, capped at the current close (STUDY_V10: a working stop can never sit above the close of
+// the bar that places it). The hold cap closes at the NEXT open, one bar later than the research
+// engine's close-of-bar exit -- a small known gap in the conservative direction.
+//@version=6
+strategy("FRONTIER-100 (NQ 15m, measured)", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.72,
+     slippage = 1)
+
+gG = "Geometry (the measured cell)"
+entN    = input.int(55, "Donchian entry length (bars)", minval = 5, group = gG)
+exitN   = input.int(20, "Channel exit length (bars)", minval = 3, group = gG)
+stopCalm = input.float(1.5, "ATR stop when volatility is CALM (x ATR)", minval = 0.1, step = 0.1, group = gG,
+     tooltip = "Applies when ATR/price sits in the lower half of its own trailing 250-bar distribution.")
+stopHot  = input.float(0.5, "ATR stop when volatility is HIGH (x ATR)", minval = 0.1, step = 0.1, group = gG,
+     tooltip = "STUDY_V22: an ATR stop is backward-looking and volatility mean-reverts. The measured cell tightens by 1.0 ATR in the high state.")
+volLook = input.int(250, "Volatility percentile lookback (bars)", minval = 20, group = gG)
+holdMin = input.int(390, "Maximum hold (MINUTES)", minval = 15, group = gG,
+     tooltip = "390 minutes = 26 bars on 15m = 6.5 hours, the measured cap. Declared in minutes so a different chart timeframe does not silently rescale it (STUDY_V57).")
+useTP   = input.bool(false, "Use a take profit", group = gG,
+     tooltip = "MEASURED: no target won this axis for the nineteenth time on this branch. Off is the measured cell.")
+tpATR   = input.float(6.0, "Take profit (x ATR)", minval = 0.5, step = 0.5, group = gG)
+
+gF = "Filters (the measured cell)"
+useMA   = input.bool(true, "Require price >= N ATR ABOVE the SMA200", group = gF,
+     tooltip = "A FLOOR, not support: STUDY_V51 found the 'within 3 ATR' support reading fails held-back. One rung looser (1 ATR) reads 1.93 -> 1.68.")
+maFloor = input.float(2.0, "  distance above SMA200 (x ATR)", minval = 0.0, step = 0.5, group = gF)
+useChop = input.bool(true, "Require CHOP(14) <= ceiling", group = gF,
+     tooltip = "One rung looser (45) reads 1.83 -> 1.35 on 147 trades/yr.")
+chopMax = input.float(40.0, "  CHOP ceiling", minval = 10, maxval = 90, group = gF)
+
+gS = "Session (New York time)"
+startH = input.int(9,  "Entries from hour",   minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Entries from minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(15, "Entries until hour",  minval = 0, maxval = 23, group = gS)
+stopM  = input.int(30, "Entries until minute", minval = 0, maxval = 59, group = gS)
+
+// ---------------- series ----------------
+atrN  = ta.ema(ta.tr(true), 14)                    // NOT ta.atr (Wilder): this is what was measured
+entHi = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)                     // at placement = the channel the next bar is judged against
+sma200 = ta.sma(close, 200)
+chopV = 100 * math.log10(math.sum(ta.tr(true), 14) / (ta.highest(high, 14) - ta.lowest(low, 14))) / math.log10(14)
+volRatio = atrN / close
+volPct = ta.percentrank(volRatio, volLook) / 100.0
+calm = volPct <= 0.5
+stopMult = calm ? stopCalm : stopHot
+
+nyMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+inWin = nyMin >= startH * 60 + startM and nyMin < stopH * 60 + stopM
+barMin = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+holdBars = math.max(1, math.round(holdMin / barMin))
+
+maOk   = not useMA or (not na(sma200) and (close - sma200) / atrN >= maFloor)
+chopOk = not useChop or (not na(chopV) and chopV <= chopMax)
+ready  = not na(atrN) and atrN > 0 and not na(entHi) and not na(volPct) and bar_index > 300
+broke  = high > entHi
+gateOk = ready and inWin and maOk and chopOk
+
+// ---------------- orders ----------------
+var float pendRisk = na
+var int   heldBars = 0
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk and broke
+    pendRisk := stopMult * atrN                    // the risk is fixed at the SIGNAL bar
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+    lossTk = pendRisk / syminfo.mintick
+    if useTP
+        strategy.exit("x", from_entry = "L", loss = lossTk, profit = tpATR * atrN / syminfo.mintick)
+    else
+        strategy.exit("x", from_entry = "L", loss = lossTk)
+
+if barstate.isconfirmed and strategy.position_size > 0 and not na(pendRisk)
+    if heldBars >= holdBars
+        strategy.close("L", comment = "hold cap")
+    else
+        fillStop = strategy.position_avg_price - pendRisk
+        lvl = math.max(fillStop, nz(exitLo, fillStop))
+        lvl := math.min(lvl, close)                // never above the close of the bar that places it
+        if useTP
+            strategy.exit("x", from_entry = "L", stop = lvl, limit = strategy.position_avg_price + tpATR * atrN)
+        else
+            strategy.exit("x", from_entry = "L", stop = lvl)
+
+// ---------------- display ----------------
+plot(entHi, "Donchian 55 high", color = color.new(color.teal, 40))
+plot(exitLo, "20-bar channel low", color = color.new(color.red, 60))
+plot(sma200, "SMA200", color = color.new(color.gray, 30))
+plot(useMA ? sma200 + maFloor * atrN : na, "MA floor", color = color.new(color.orange, 50), style = plot.style_circles)
+bgcolor(inWin ? color.new(color.teal, 94) : na, title = "Entry window")
+bgcolor(strategy.position_size > 0 ? color.new(color.lime, 90) : na, title = "In trade")
+
+var table hud = table.new(position.top_right, 1, 4, bgcolor = color.new(color.black, 20))
+if barstate.islast
+    tfOk = timeframe.period == "15"
+    table.cell(hud, 0, 0, tfOk ? "15m: the measured timeframe" : "WRONG TIMEFRAME -- measured on 15m only",
+         text_color = color.white, bgcolor = tfOk ? color.new(color.teal, 40) : color.red)
+    table.cell(hud, 0, 1, "MEASURED: research PF 2.17 (104/yr) -> locked 1.51 (104/yr); win 23%; 82% of net in top 5% of trades",
+         text_color = color.white, bgcolor = color.new(color.gray, 30))
+    table.cell(hud, 0, 2, "the max of 434,346 cells; locked read is DESCRIPTIVE; one market; no control cleared yet",
+         text_color = color.white, bgcolor = color.new(color.orange, 40))
+    table.cell(hud, 0, 3, "vol state now: " + (calm ? "CALM -> stop " + str.tostring(stopCalm) : "HIGH -> stop " + str.tostring(stopHot)) + " ATR   hold cap " + str.tostring(holdBars) + " bars",
+         text_color = color.white, bgcolor = color.new(color.gray, 30))

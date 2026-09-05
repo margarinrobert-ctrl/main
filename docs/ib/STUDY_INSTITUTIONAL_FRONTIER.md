@@ -117,3 +117,22 @@ up-move; the book's better-out-of-sample shape says so), and **an order-flow fee
 proxy, and the only real one — BTC's taker flow — sits on a 0.2% round turn). Within what is here,
 the honest offer is the research-selected book at ~130–190 trades a year and PF 1.4–1.6, sized
 for a p99 drawdown, not a single rule at PF 2.
+
+## Addendum: the ≥100-trades/yr envelope cell, shipped
+
+`research/inst/cell100.py`, `pine/inst/FRONTIER100_strategy.pine`. The only envelope cell whose
+profit factor held across the split, pinned exactly: **NQ 15m, Donchian 55 entry on the high,
+20-bar channel exit, adaptive stop 1.5 ATR calm / 0.5 ATR high-vol, no target, 26-bar (6.5h)
+hold cap, (close − SMA200)/ATR ≥ 2, CHOP(14) ≤ 40, RTH entries, CVD off.**
+
+| | n | trades/yr | PF (R) | PF (%) | win | %/trade | total | max DD | p90 R |
+|---|---|---|---|---|---|---|---|---|---|
+| research | 200 | 104 | 2.173 | 2.158 | 23.5% | +0.0791 | +15.8% | 2.1% | 6.6 |
+| locked | 108 | 104 | 1.514 | 1.798 | 23.1% | +0.0666 | +7.2% | 4.1% | 5.1 |
+
+Median hold is one bar; 21–23% of trades run to the cap; 82% of research net comes from the top
+5% of trades. **The one-rung neighbourhood holds on both blocks** — ent 40: 2.16 → 1.50; exit 10 /
+30: 2.02 / 2.17 → 1.45 / 1.48; stop 2.0: 1.89 → 1.37; MA floor 1: 1.93 → 1.68; CHOP 45: 1.83 →
+1.35 (stop 1.0 collapses to 8 trades/yr). That is rarer on this branch than a research pass, and
+it is still the maximum of 434,346 draws read once; it has not been run on US100/US30 and has not
+cleared a matched random-entry control. Ships with every number in the header.
