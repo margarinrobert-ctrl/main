@@ -1,0 +1,521 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © superrobfps
+// Combines: "50% level" (kijunkun / milly) + "IFVG Sniper Entry Engine" (trade_w_samet)
+//
+// STRATEGY IDEA
+//   1. Track the daily range and its 50% midline. Source is selectable: the real
+//      daily timeframe (works on NQ/MNQ futures, indices, crypto) or the original
+//      "50% level" custom session (1600-1500).
+//   2. Detect IFVG (Inverted Fair Value Gap) formations with the IFVG Sniper engine.
+//   3. When an IFVG forms, enter a trade. The stop is 50% of the daily candle range.
+//      Exit modes:
+//        - Fixed RR     : take profit at the Reward:Risk target (1:1 by default).
+//        - Opposite IFVG: no take-profit, so winners can run past 1:1 - the trade is
+//          held until the stop (invalidation) is hit or an opposite IFVG closes it.
+//      Optional scale-out: take 50% off at 1:1, move the stop on the remaining 50%
+//      to breakeven, and let that runner go to the selected exit mode.
+//   4. By default the trade follows the IFVG (continuation): a bullish IFVG+ => LONG,
+//      a bearish IFVG- => SHORT. Can be flipped to "fade" (opposite) mode.
+//   5. Confluence filters (trend-aware) to keep quality high and cut over-trading:
+//        - 50% midline: follow longs in the upper half / shorts in the lower half.
+//        - HTF liquidity sweep: longs after a 1H/4H swing-low sweep, shorts after a
+//          1H/4H swing-high sweep (stop-hunt confluence).
+//@version=6
+strategy("IFVG 50% Daily-Range Fade [1:1 RR]", shorttitle="IFVG-50%-1R",
+     overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=100,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     pyramiding=0, calc_on_order_fills=false, process_orders_on_close=true,
+     initial_capital=100000, commission_type=strategy.commission.percent, commission_value=0.0)
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 📐 00. 50% DAILY-RANGE LEVEL  (from "50% level" by kijunkun / milly)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+group50 = "📐 00. 50% Daily Range"
+
+rangeSource = input.string("Daily timeframe (auto)", "Daily Range Source",
+     options=["Daily timeframe (auto)", "Custom session"], group=group50,
+     tooltip="Daily timeframe = the instrument's real daily high/low - works on futures (NQ/MNQ), indices, crypto. Custom session = the 1600-1500 window from the original 50% level indicator.")
+daily_range = input.session("1600-1500", "Custom Session (when selected)", group=group50)
+showMidline = input.bool(true, "Show 50% Midline", group=group50)
+
+t = time(timeframe.period, daily_range + ":1234567")
+in_session = not na(t)
+is_first = in_session and not in_session[1]
+
+var float sess_high = na
+var float sess_low = na
+
+if is_first
+    sess_high := high
+    sess_low := low
+else
+    sess_high := sess_high[1]
+    sess_low := sess_low[1]
+
+if high > sess_high and in_session
+    sess_high := high
+if low < sess_low and in_session
+    sess_low := low
+
+// True daily-timeframe range (developing day high/low, no lookahead). Robust on
+// futures (NQ/MNQ), indices and crypto regardless of session hours / timezone.
+day_high = request.security(syminfo.tickerid, "D", high, lookahead=barmerge.lookahead_off)
+day_low = request.security(syminfo.tickerid, "D", low, lookahead=barmerge.lookahead_off)
+
+bool useDailyTf = rangeSource == "Daily timeframe (auto)"
+float daily_high = useDailyTf ? day_high : sess_high
+float daily_low = useDailyTf ? day_low : sess_low
+
+// Daily range and 50% midline. Computed on every timeframe so the strategy can
+// always size a stop / apply the midline filter (plotted on intraday <= 60m only).
+bool intradayOk = timeframe.isintraday and timeframe.multiplier <= 60
+float dailyRange = na(daily_high) or na(daily_low) ? na : daily_high - daily_low
+float midline = na(dailyRange) ? na : daily_low + dailyRange / 2.0
+
+plot(showMidline and intradayOk ? midline : na, title="50% midline", style=plot.style_line,
+     linestyle=plot.linestyle_dotted, color=color.new(color.black, 25), linewidth=1)
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🎯 01. STRATEGY MODEL
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+groupTrade = "🎯 01. Strategy Model"
+
+orderQty = input.int(1, "Contracts / Position", minval=1, group=groupTrade,
+     tooltip="Number of contracts (or units) per trade. Sized in fixed contracts so it works on futures (NQ/MNQ). Use >=2 if you enable the 50% scale-out so half a position is still a whole contract.")
+
+tradeBias = input.string("Follow IFVG (same)", "Trade Direction",
+     options=["Fade IFVG (opposite)", "Follow IFVG (same)"], group=groupTrade,
+     tooltip="Follow = bullish IFVG+ goes LONG, bearish IFVG- goes SHORT (continuation, default).\nFade = the opposite direction.")
+
+riskPct = input.float(0.5, "Risk = % of Daily Range", minval=0.05, maxval=2.0, step=0.05,
+     group=groupTrade, tooltip="Stop distance = this fraction of the current daily candle range. 0.5 = 50%.")
+
+rrInput = input.float(1.0, "Reward : Risk", minval=0.25, maxval=10.0, step=0.25, group=groupTrade,
+     tooltip="Only used in 'Fixed RR' exit mode. 1.0 = the 1:1 you asked for.")
+
+exitMode = input.string("Fixed RR", "Exit Mode",
+     options=["Fixed RR", "Opposite IFVG (let run)"], group=groupTrade,
+     tooltip="Fixed RR: take profit at the Reward:Risk target.\nOpposite IFVG: no take-profit, so a trade can run past 1:1 - it is held until the stop (invalidation) is hit OR an opposite IFVG forms and closes it.")
+
+usePartialTP = input.bool(false, "Scale Out 50% at 1:1 + Breakeven", group=groupTrade,
+     tooltip="Take 50% off at 1:1, move the stop on the remaining 50% to breakeven, and let the runner go to the selected Exit Mode target (RR target or opposite IFVG).")
+
+useMidlineFilter = input.bool(true, "Require 50% Midline Confluence", group=groupTrade,
+     tooltip="Trend-aware. Follow: longs only in the upper half (above midline), shorts only below. Fade: the opposite. Keeps trades on the right side of the daily range.")
+
+minRangeTicks = input.int(4, "Min Daily Range / Ticks", minval=0, group=groupTrade,
+     tooltip="Skip signals when the developing daily range is too small to size a meaningful stop.")
+
+allowReverse = input.bool(true, "Reverse on Opposite Signal", group=groupTrade,
+     tooltip="If a new opposite IFVG fires while in a trade, close and flip.")
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 💧 02. HTF LIQUIDITY SWEEP
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+groupSweep = "💧 02. HTF Liquidity Sweep"
+
+useSweepFilter = input.bool(true, "Require HTF Liquidity Sweep", group=groupSweep,
+     tooltip="Only allow longs after a swing-LOW sweep and shorts after a swing-HIGH sweep on the higher timeframes.")
+
+sweepMode = input.string("Either 1H or 4H", "Sweep Source",
+     options=["Either 1H or 4H", "Both 1H and 4H", "1H only", "4H only"], group=groupSweep)
+
+htf1 = input.timeframe("60", "Swing Timeframe 1", group=groupSweep)
+htf2 = input.timeframe("240", "Swing Timeframe 2", group=groupSweep)
+
+pivotLeft = input.int(5, "Swing Pivot Left Bars", minval=1, group=groupSweep)
+pivotRight = input.int(5, "Swing Pivot Right Bars", minval=1, group=groupSweep)
+
+sweepValidBars = input.int(10, "Sweep Valid For N Bars", minval=1, group=groupSweep,
+     tooltip="A sweep stays valid as confluence for this many chart bars after it prints.")
+
+showSweeps = input.bool(true, "Mark Sweeps & HTF Levels", group=groupSweep)
+sweepHighColor = input.color(color.new(color.orange, 30), "Swing High Color", group=groupSweep)
+sweepLowColor = input.color(color.new(color.aqua, 30), "Swing Low Color", group=groupSweep)
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ⚙️ 03. IFVG ENGINE  (from "IFVG Sniper Entry Engine" by trade_w_samet)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+groupIFVG = "⚙️ 03. IFVG Engine"
+
+maxHiddenFVG = input.int(120, "Hidden FVG Memory", minval=10, maxval=500, group=groupIFVG)
+maxFvgAge = input.int(60, "Max Hidden FVG Age", minval=5, maxval=500, group=groupIFVG)
+minGapTicks = input.int(0, "Minimum FVG Size / Ticks", minval=0, group=groupIFVG)
+
+filterMode = input.string("Balanced", "IFVG Filter Mode",
+     options=["Off", "Loose", "Balanced", "Strict"], group=groupIFVG)
+
+showIFVG = input.bool(true, "Plot IFVG Markers", group=groupIFVG)
+bullIFVGColor = input.color(color.rgb(0, 120, 255), "Bullish IFVG+", group=groupIFVG)
+bearIFVGColor = input.color(color.rgb(255, 60, 70), "Bearish IFVG-", group=groupIFVG)
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CORE VALUES + FILTER HELPERS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+atrValue = ta.atr(14)
+safeAtr = na(atrValue) or atrValue <= 0.0 ? syminfo.mintick : atrValue
+
+f_minGapAtr() =>
+    filterMode == "Off" ? 0.0 : filterMode == "Loose" ? 0.15 : filterMode == "Strict" ? 0.40 : 0.25
+
+f_minBodyRatio() =>
+    filterMode == "Off" ? 0.0 : filterMode == "Loose" ? 0.40 : filterMode == "Strict" ? 0.60 : 0.50
+
+f_minRangeAtr() =>
+    filterMode == "Off" ? 0.0 : filterMode == "Loose" ? 0.40 : filterMode == "Strict" ? 0.85 : 0.60
+
+f_breakBufferAtr() =>
+    filterMode == "Off" ? 0.0 : filterMode == "Loose" ? 0.00 : filterMode == "Strict" ? 0.10 : 0.05
+
+f_qualityPass(float _gapAtr, float _bodyRatio, float _rangeAtr) =>
+    filterMode == "Off" or (_gapAtr >= f_minGapAtr() and _bodyRatio >= f_minBodyRatio() and _rangeAtr >= f_minRangeAtr())
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// HIDDEN FVG MEMORY
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+var array<float> rawTops = array.new_float()
+var array<float> rawBots = array.new_float()
+var array<int>   rawDirs = array.new_int()
+var array<int>   rawAges = array.new_int()
+var array<float> rawGapAtr = array.new_float()
+var array<float> rawBodyRatio = array.new_float()
+var array<float> rawRangeAtr = array.new_float()
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// IFVG DETECTION
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+bool newBullIFVG = false
+bool newBearIFVG = false
+float newConfirmClose = na
+int newDir = 0
+
+if barstate.isconfirmed
+    // Age all stored FVGs and drop the expired ones.
+    if array.size(rawAges) > 0
+        for i = 0 to array.size(rawAges) - 1
+            array.set(rawAges, i, array.get(rawAges, i) + 1)
+
+        for j = array.size(rawAges) - 1 to 0
+            if array.get(rawAges, j) > maxFvgAge
+                array.remove(rawTops, j)
+                array.remove(rawBots, j)
+                array.remove(rawDirs, j)
+                array.remove(rawAges, j)
+                array.remove(rawGapAtr, j)
+                array.remove(rawBodyRatio, j)
+                array.remove(rawRangeAtr, j)
+
+    float minGap = minGapTicks * syminfo.mintick
+    float candleRange = math.max(high - low, syminfo.mintick)
+    float bodyRatio = math.abs(close - open) / candleRange
+    float rangeAtrRatio = candleRange / safeAtr
+
+    bool rawBullFVG = not na(high[2]) and low > high[2] and (low - high[2]) >= minGap
+    bool rawBearFVG = not na(low[2]) and high < low[2] and (low[2] - high) >= minGap
+
+    if rawBullFVG
+        array.push(rawTops, low)
+        array.push(rawBots, high[2])
+        array.push(rawDirs, 1)
+        array.push(rawAges, 0)
+        array.push(rawGapAtr, (low - high[2]) / safeAtr)
+        array.push(rawBodyRatio, bodyRatio)
+        array.push(rawRangeAtr, rangeAtrRatio)
+
+    if rawBearFVG
+        array.push(rawTops, low[2])
+        array.push(rawBots, high)
+        array.push(rawDirs, -1)
+        array.push(rawAges, 0)
+        array.push(rawGapAtr, (low[2] - high) / safeAtr)
+        array.push(rawBodyRatio, bodyRatio)
+        array.push(rawRangeAtr, rangeAtrRatio)
+
+    while array.size(rawTops) > maxHiddenFVG
+        array.shift(rawTops)
+        array.shift(rawBots)
+        array.shift(rawDirs)
+        array.shift(rawAges)
+        array.shift(rawGapAtr)
+        array.shift(rawBodyRatio)
+        array.shift(rawRangeAtr)
+
+    // Detect the first valid inversion, newest first.
+    if array.size(rawTops) > 0
+        for j = array.size(rawTops) - 1 to 0
+            float top = array.get(rawTops, j)
+            float bot = array.get(rawBots, j)
+            int dir = array.get(rawDirs, j)
+            float cleanBreakBuffer = safeAtr * f_breakBufferAtr()
+
+            bool bullishInversion = dir == -1 and close > top + cleanBreakBuffer
+            bool bearishInversion = dir == 1 and close < bot - cleanBreakBuffer
+
+            if bullishInversion or bearishInversion
+                if f_qualityPass(array.get(rawGapAtr, j), array.get(rawBodyRatio, j), array.get(rawRangeAtr, j))
+                    newBullIFVG := bullishInversion
+                    newBearIFVG := bearishInversion
+                    newConfirmClose := close
+                    newDir := bullishInversion ? 1 : -1
+
+                array.remove(rawTops, j)
+                array.remove(rawBots, j)
+                array.remove(rawDirs, j)
+                array.remove(rawAges, j)
+                array.remove(rawGapAtr, j)
+                array.remove(rawBodyRatio, j)
+                array.remove(rawRangeAtr, j)
+                break
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 💧 HTF LIQUIDITY SWEEP DETECTION
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Most recent confirmed swing high/low on each higher timeframe (no lookahead).
+ph1 = request.security(syminfo.tickerid, htf1, ta.pivothigh(pivotLeft, pivotRight), lookahead=barmerge.lookahead_off)
+pl1 = request.security(syminfo.tickerid, htf1, ta.pivotlow(pivotLeft, pivotRight), lookahead=barmerge.lookahead_off)
+ph2 = request.security(syminfo.tickerid, htf2, ta.pivothigh(pivotLeft, pivotRight), lookahead=barmerge.lookahead_off)
+pl2 = request.security(syminfo.tickerid, htf2, ta.pivotlow(pivotLeft, pivotRight), lookahead=barmerge.lookahead_off)
+
+var float h1High = na
+var float h1Low = na
+var float h4High = na
+var float h4Low = na
+
+h1High := not na(ph1) ? ph1 : h1High
+h1Low := not na(pl1) ? pl1 : h1Low
+h4High := not na(ph2) ? ph2 : h4High
+h4Low := not na(pl2) ? pl2 : h4Low
+
+// A sweep = price wicks beyond the swing level and closes back on the other side.
+f_bullSweep(float _lvl) => not na(_lvl) and low < _lvl and close > _lvl   // swept a swing LOW
+f_bearSweep(float _lvl) => not na(_lvl) and high > _lvl and close < _lvl  // swept a swing HIGH
+
+bool bull1 = f_bullSweep(h1Low)
+bool bear1 = f_bearSweep(h1High)
+bool bull4 = f_bullSweep(h4Low)
+bool bear4 = f_bearSweep(h4High)
+
+// A sweep stays valid as confluence for sweepValidBars chart bars.
+f_active(bool _ev) =>
+    int bs = ta.barssince(_ev)
+    not na(bs) and bs <= sweepValidBars
+
+bool bull1A = f_active(bull1)
+bool bear1A = f_active(bear1)
+bool bull4A = f_active(bull4)
+bool bear4A = f_active(bear4)
+
+bool bullSwept =
+     sweepMode == "1H only" ? bull1A :
+     sweepMode == "4H only" ? bull4A :
+     sweepMode == "Both 1H and 4H" ? (bull1A and bull4A) :
+     (bull1A or bull4A)
+
+bool bearSwept =
+     sweepMode == "1H only" ? bear1A :
+     sweepMode == "4H only" ? bear4A :
+     sweepMode == "Both 1H and 4H" ? (bear1A and bear4A) :
+     (bear1A or bear4A)
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🚀 04. SIGNAL -> ORDER LOGIC
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+bool fade = tradeBias == "Fade IFVG (opposite)"
+bool ifvgFired = newBullIFVG or newBearIFVG
+
+// Trade direction: +1 long, -1 short. Fade inverts the IFVG direction.
+int tradeDir = ifvgFired ? (fade ? -newDir : newDir) : 0
+
+float entryPrice = newConfirmClose
+
+// Stop distance: 50% of the daily candle range. Requires a valid developing daily
+// range (intraday); no trade is taken until the range is established.
+float rangeRisk = na(dailyRange) ? na : riskPct * dailyRange
+bool rangeValid = not na(rangeRisk) and dailyRange > minRangeTicks * syminfo.mintick
+float risk = rangeValid ? rangeRisk : na
+
+// Validity guards.
+bool rangeOk = not na(risk) and risk > 0
+
+// Midline confluence (trend-aware). Follow: long in the upper half / short in the
+// lower half. Fade: the opposite. Strict - a missing midline blocks the trade.
+bool midlineSideOk = tradeDir == 1 ? (fade ? entryPrice < midline : entryPrice > midline) :
+     (fade ? entryPrice > midline : entryPrice < midline)
+bool midlineOk = not useMidlineFilter ? true : (not na(midline) and midlineSideOk)
+
+// Sweep confluence: longs need a swing-low sweep, shorts need a swing-high sweep.
+bool sweepOk = not useSweepFilter ? true : (tradeDir == 1 ? bullSwept : bearSwept)
+
+bool takeLong = ifvgFired and tradeDir == 1 and rangeOk and midlineOk and sweepOk
+bool takeShort = ifvgFired and tradeDir == -1 and rangeOk and midlineOk and sweepOk
+
+float longSL = entryPrice - risk
+float longTP = entryPrice + risk * rrInput
+float shortSL = entryPrice + risk
+float shortTP = entryPrice - risk * rrInput
+
+bool fixedExit = exitMode == "Fixed RR"
+
+bool isLong = strategy.position_size > 0
+bool isShort = strategy.position_size < 0
+bool flat = strategy.position_size == 0
+
+// A new entry is allowed when flat, or when reversing an opposite position.
+bool canLong = flat or (isShort and allowReverse)
+bool canShort = flat or (isLong and allowReverse)
+
+bool enterLong = takeLong and canLong
+bool enterShort = takeShort and canShort
+
+// Per-trade state (used to manage scale-out / breakeven and the runner exit).
+var int tDir = 0          // 1 long, -1 short
+var float tEntry = na
+var float tStop = na      // current stop for the runner (initial -> breakeven)
+var float tTP1 = na       // 50% partial target (1:1)
+var float tRunTP = na     // runner target (Fixed RR) or na (Opposite IFVG)
+var bool tTP1Done = false
+
+// Entries. Record the trade state so exits can be managed each bar below.
+if enterLong
+    strategy.entry("Long", strategy.long, qty=orderQty)
+    tDir := 1
+    tEntry := entryPrice
+    tStop := longSL
+    tTP1 := entryPrice + risk
+    tRunTP := fixedExit ? longTP : na
+    tTP1Done := false
+
+if enterShort
+    strategy.entry("Short", strategy.short, qty=orderQty)
+    tDir := -1
+    tEntry := entryPrice
+    tStop := shortSL
+    tTP1 := entryPrice - risk
+    tRunTP := fixedExit ? shortTP : na
+    tTP1Done := false
+
+// Exit management, re-issued every bar so the stop can move to breakeven.
+string eid = tDir == 1 ? "Long" : tDir == -1 ? "Short" : na
+
+if strategy.position_size != 0 and not na(eid)
+    if usePartialTP
+        // When 1:1 is reached, the 50% scale fills and the runner's stop -> breakeven.
+        if not tTP1Done
+            bool hit1 = tDir == 1 ? high >= tTP1 : low <= tTP1
+            if hit1
+                tTP1Done := true
+                tStop := tEntry
+            strategy.exit("Scale", from_entry=eid, qty_percent=50, limit=tTP1, stop=tStop)
+        // Runner (remaining 50%): stop (initial -> BE) and the selected exit target.
+        strategy.exit("Run", from_entry=eid, stop=tStop, limit=tRunTP)
+    else
+        strategy.exit("Exit", from_entry=eid, stop=tStop, limit=tRunTP)
+
+// Opposite-IFVG exit: close an open trade when an IFVG of the opposite trade
+// direction forms (independent of the entry filters - this is an invalidation).
+// Skipped when a reverse entry above already handles the flip.
+if not fixedExit and ifvgFired
+    if isLong and tradeDir == -1 and not enterShort
+        strategy.close("Long", comment="Opp IFVG")
+    if isShort and tradeDir == 1 and not enterLong
+        strategy.close("Short", comment="Opp IFVG")
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🔧 DIAGNOSTICS  (shows where signals are lost - turn off once tuned)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+showDiag = input.bool(true, "Show Diagnostics Panel", group="🔧 Diagnostics")
+
+var int dgIFVG = 0
+var int dgRange = 0
+var int dgMid = 0
+var int dgSweep = 0
+var int dgEntry = 0
+
+if barstate.isconfirmed
+    if ifvgFired
+        dgIFVG += 1
+        if rangeOk
+            dgRange += 1
+            if midlineOk
+                dgMid += 1
+                if sweepOk
+                    dgSweep += 1
+    if enterLong or enterShort
+        dgEntry += 1
+
+var table diag = table.new(position.top_right, 2, 9, border_width=1)
+
+f_dgRow(int _r, string _k, string _v) =>
+    table.cell(diag, 0, _r, _k, bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny)
+    table.cell(diag, 1, _r, _v, bgcolor=color.new(color.black, 25), text_color=color.white, text_size=size.tiny)
+
+if showDiag and barstate.islast
+    f_dgRow(0, "DIAGNOSTICS", "")
+    f_dgRow(1, "IFVGs", str.tostring(dgIFVG))
+    f_dgRow(2, "+ Range OK", str.tostring(dgRange))
+    f_dgRow(3, "+ Midline OK", str.tostring(dgMid))
+    f_dgRow(4, "+ Sweep OK", str.tostring(dgSweep))
+    f_dgRow(5, "Entries fired", str.tostring(dgEntry))
+    f_dgRow(6, "Closed trades", str.tostring(strategy.closedtrades))
+    f_dgRow(7, "Daily range", na(dailyRange) ? "na" : str.tostring(dailyRange, format.mintick))
+    f_dgRow(8, "Pos size", str.tostring(strategy.position_size))
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🎨 05. VISUALS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// HTF swing levels (drawn only where defined).
+plot(showSweeps ? h1High : na, "1H Swing High", color=sweepHighColor, style=plot.style_linebr, linewidth=1)
+plot(showSweeps ? h1Low : na, "1H Swing Low", color=sweepLowColor, style=plot.style_linebr, linewidth=1)
+plot(showSweeps ? h4High : na, "4H Swing High", color=sweepHighColor, style=plot.style_linebr, linewidth=2)
+plot(showSweeps ? h4Low : na, "4H Swing Low", color=sweepLowColor, style=plot.style_linebr, linewidth=2)
+
+// Sweep events.
+plotshape(showSweeps and (bull1 or bull4), title="Bullish Sweep", style=shape.xcross,
+     location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny)
+plotshape(showSweeps and (bear1 or bear4), title="Bearish Sweep", style=shape.xcross,
+     location=location.abovebar, color=color.new(color.fuchsia, 0), size=size.tiny)
+
+plotshape(showIFVG and newBullIFVG, title="IFVG+", style=shape.triangleup,
+     location=location.belowbar, color=bullIFVGColor, size=size.tiny, text="IFVG+")
+plotshape(showIFVG and newBearIFVG, title="IFVG-", style=shape.triangledown,
+     location=location.abovebar, color=bearIFVGColor, size=size.tiny, text="IFVG-")
+
+plotshape(takeLong, title="Long Entry", style=shape.labelup, location=location.belowbar,
+     color=color.new(color.green, 0), textcolor=color.white, text="L", size=size.small)
+plotshape(takeShort, title="Short Entry", style=shape.labeldown, location=location.abovebar,
+     color=color.new(color.red, 0), textcolor=color.white, text="S", size=size.small)
+
+// Partial take-profit (50% out + stop to breakeven).
+plotshape(usePartialTP and tTP1Done and not tTP1Done[1], title="50% TP / BE", style=shape.diamond,
+     location=location.belowbar, color=color.new(color.teal, 0), textcolor=color.white,
+     text="½TP", size=size.tiny)
+
+
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 🔔 06. ALERTS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+alertcondition(takeLong, "Long Entry", "IFVG 50% Strategy | LONG on {{ticker}} {{interval}}")
+alertcondition(takeShort, "Short Entry", "IFVG 50% Strategy | SHORT on {{ticker}} {{interval}}")
