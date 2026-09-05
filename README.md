@@ -248,6 +248,45 @@ the Pine export recompute for the chosen expiration; axis views (heatmap / term 
 
 ---
 
+## Pine indicators in this repo
+
+Standalone TradingView scripts (Pine v6) — paste into Pine Editor, save, add to chart.
+
+| File | What it does |
+| --- | --- |
+| `GEXLevels.pine` | Gamma/dealer levels; the per-ticker "Pine" tab fills this template in |
+| `VIXExpectedMove.pine` | VIX → standard-deviation bands on ES, cross-checked against daily ATR |
+| `MeanReversionMulti.pine` | VWAP + profile + RSI/ADX/ATR + CVD mean-reversion signals |
+| `DivergencePlusCVDAbsorption.pine` | Divergence and CVD absorption |
+
+### `VIXExpectedMove.pine` — VIX σ expected move + ATR
+
+Converts VIX into the expected one-session move in ES points and draws the ±0.5/1/2/3σ envelope:
+
+```
+σ_session = P × (VIX / 100) ÷ √252        annualized implied vol → one session, in points
+σ_horizon = σ_session × √N                √time scaling out to N sessions
+σ_ATR     = ATR(14, daily) ÷ 1.5958       E[range] = σ√(8/π) under GBM, so range → σ
+```
+
+Bands can be driven by the implied σ, the ATR-derived σ, or a blend of the two — they disagree in
+a way that is itself the signal. σ_VIX ≫ σ_ATR means the market is paying for protection it has not
+needed (fades at 2σ); σ_ATR > σ_VIX means realized is outrunning the hedge bid (breaks extend).
+
+The table reports VIX and its 1-year percentile, both σ estimates, the band levels, **σ travelled**
+(distance from the anchor in standard deviations), **range used** (session high-low as a share of the
+full 2σ range), realized vol three ways (close-to-close, Parkinson, Garman-Klass), and the IV/RV
+ratio with the variance risk premium. Optional VIX9D/VIX and VIX/VIX3M term-structure read flags
+front-end stress. Alerts fire on ±1σ/±2σ tags and rejections, on the expected range being spent,
+and on IV/RV crossing below 1.
+
+Defaults are ES on RTH (`0930-1600` New York), anchored to the prior session close, with every
+higher-timeframe read locked to settled values so the bands do not move intrabar. Point value is an
+input (ES 50, MES 5) for the dollar-per-σ readout. On non-S&P markets either switch the source to
+ATR or point the VIX symbol at that market's vol index (VXN, OVX).
+
+---
+
 ## Project layout
 
 ```
