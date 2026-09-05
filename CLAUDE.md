@@ -2808,6 +2808,37 @@ pipeline modules push `research/` to the front of sys.path, so a skill directory
 AFTER them or its `metrics` / `splits` are shadowed -- the fourth name-shadowing bug this session.
 `docs/ib/STUDY_TREND_ENSEMBLE.md`.
 
+**AN ATR TRAIL ON AN ATR STOP INVERTS THE GEOMETRY JUST AS A FIXED-POINT ONE DID, AND DEEP LEARNING
+ON THE RESULT REPRODUCES V28 LINE FOR LINE.** Asked for EMA 13/48 x VWAP-as-support/resistance x
+1.5 ATR stop x trailing stop, then feature engineering and deep learning for a profitable intraday
+strategy. A declared 24-cell grid (cross fresh/state x VWAP off/state/touch x trail on/off x
+flatten on/off) on NQ 5m: **trail ON averages PF 0.201, trail OFF 1.309**, every trail-on cell PF
+0.15-0.23, and the random-entry control band with the trail is **entirely negative
+[-0.0664, -0.0563]** with the rule slightly WORSE than random inside it (p 0.937). The trail
+ladder improves monotonically as it WIDENS (arm 0.5 / off 0.5 PF **0.03**; 2.0 / 2.0 0.77) and
+never reaches no-trail; the stop ladder 1.0 -> 3.0 ATR is flat and negative (V18 stands). Without
+the trail the intraday base is break-even (PF 1.02, random entry p 0.163); the only cells above PF
+1.3 are no-trail NO-FLATTEN -- 99-224 trades at **1-3% win rates**, multi-day longs in a market that
+rose 89%. The VWAP STATE gate is the one component with a positive marginal (+0.03 %/trade); the
+TOUCH reading is the worst of three. **37 causal features in 8 families, truncation audit 0 leaks.**
+ML ladder (ridge/logistic -> LightGBM -> XGBoost -> MLP 2x64 -> MLP 4x128, purged + embargoed,
+every model beside a shuffled twin): on the as-asked PF-0.19 base, **capacity is monotonically
+harmful on the R objective (MLP 4x128 IC -0.038, AUC 0.47) and LOGISTIC REGRESSION WINS THE WHOLE
+LADDER** (IC 0.141, AUC 0.625; locked IC 0.148, AUC 0.660) -- and the best subset it can find is
+**-0.30 R at PF 0.32**: a filter cannot make a PF-0.2 base profitable, only less bad. On the
+no-trail PF-1.05 base, **5 of 20 research cells clear a same-selectivity random filter at p<=0.05
+against 1 expected** (LightGBM win p 0.034, MLP 4x128 win 0.010/0.050, XGBoost) -- and the
+PRE-DECLARED locked read (logistic, best research IC) **INVERTS**: locked base +0.113 R / PF 1.164,
+filtered 30% **-0.078 / PF 0.870** (p 0.844 vs random) while the classifier still ranks (IC 0.141),
+because a win/lose model keeps the high-probability trades and a trend system earns in the
+low-probability tail -- p90 falls 2.40 -> 1.85. **Read p90 of R, not AUC.** The research cells that
+passed were NOT read on locked because the rule was fixed before any block opened; one read is one
+read. Ridge's largest coefficient on the no-trail base is RSI14 at **-0.78** -- momentum NEGATIVE at
+the signal bar, the tenth route to mean reversion here. Locked base 1.164 against research 1.052 is
+the wrong shape for the base itself. **Operational**: two torch processes on four cores oversubscribe
+threads and ran 31 minutes without producing a row that one process produces in twelve -- run torch
+ladders sequentially or pin `torch.set_num_threads`. See `docs/ib/STUDY_EMA48_VWAP_DL.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2852,6 +2883,7 @@ AFTER them or its `metrics` / `splits` are shadowed -- the fourth name-shadowing
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
 | `docs/ib/EDGE_LIBRARY.md` | **the mechanism library** -- what survived, what it is, how to take a new strategy apart |
+| `research/ema48/` | EMA 13/48 x VWAP S/R x ATR stop x ATR trail on the scalp89 order model: the declared 24-cell grid, ablations, stop and trail ladders, random-entry control, cross-feed reads; `e48_features.py` (37 causal features, 8 families, truncation audit); `run_ml.py` the purged-embargoed ladder ridge -> logistic -> LightGBM -> XGBoost -> MLP with shuffled twins, same-selectivity random filter, one locked read per base |
 | `research/trend/` | the diversified trend ensemble to its spec's own layout: `config.yaml` (constants, split date, calibration c), `data.py` daily panel with t+1-open execution, `volatility.py`, `forecast.py` (sleeves, scalars, FDM), `portfolio.py` (rolling IDM, sizing, buffered trade-to-the-edge), `trend_costs.py` (drag rule), `backtest.py`, `validate.py` (the full section 8 battery on the skill's scripts), `tests/` (alignment, scalars, vol target), `research_log.md` |
 | `research/scalp89/` | the submitted NQ Scalping System transcribed with its order model (naked fill bar, Pine intrabar path, no flatten -- each modelled both ways), exit-machine and entry ablations, fixed-horizon signal tests on four feed-blocks, matched controls, a 160-cell geometry sweep, a 729-cell in-fold walk-forward with a random-cell arm, and a perturbation Monte Carlo with the indicators recomputed; `research_log.md` carries the trial count |
 | `research/ib25/` | the posted IB-25 retracement: session VWAP, a running 09:30-10:30 range, one live limit order a session, the three prose conditions codified as explicit parameters, the retracement and stop ladders against their own driftless break-even, a random-entry-minute control, one locked read, and `run_ib25_mnq.py` -- the dollar view with the synthetic-level deflator |

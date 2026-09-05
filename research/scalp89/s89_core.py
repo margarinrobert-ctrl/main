@@ -140,7 +140,7 @@ def signals(D, cfg=CFG):
 
 @njit(cache=True)
 def walk(o, h, l, c, atr, side, stop_mult, tgt_mult, trail_on, trail_arm, trail_off,
-         cost, slip, protect_fill, path, flat_mod, mod, use_flat, max_hold, fill_px):
+         cost, slip, protect_fill, path, flat_mod, mod, use_flat, max_hold, fill_px, trail_atr):
     """The script's order model. Fill at the next open. Stop/target from the SIGNAL bar's ATR,
     anchored to the fill. Trail arms at `trail_arm` points in favour and trails the running
     extreme by `trail_off`. `protect_fill`=0 leaves the fill bar naked as the script does.
@@ -169,6 +169,8 @@ def walk(o, h, l, c, atr, side, stop_mult, tgt_mult, trail_on, trail_arm, trail_
         stp = px - s * stop_mult * A
         tgt = px + s * tgt_mult * A
         rk = stop_mult * A
+        t_arm = trail_arm * A if trail_atr == 1 else trail_arm
+        t_off = trail_off * A if trail_atr == 1 else trail_off
         armed = 0
         tstop = 0.0
         best = px
@@ -196,10 +198,10 @@ def walk(o, h, l, c, atr, side, stop_mult, tgt_mult, trail_on, trail_arm, trail_
             fav = h[j] if s > 0 else l[j]
             adv = l[j] if s > 0 else h[j]
             if trail_on == 1:
-                if armed == 0 and s * (fav - px) >= trail_arm:
+                if armed == 0 and s * (fav - px) >= t_arm:
                     armed = 1
                 if armed == 1:
-                    cand = fav - s * trail_off
+                    cand = fav - s * t_off
                     if s > 0:
                         if cand > tstop or tstop == 0.0:
                             tstop = cand
@@ -250,7 +252,7 @@ def walk(o, h, l, c, atr, side, stop_mult, tgt_mult, trail_on, trail_arm, trail_
 
 
 def run(D, cfg=CFG, protect_fill=0, path=1, use_flat=0, flat_mod=15 * 60 + 55,
-        slip=None, cost=None, side_override=None, max_hold=0, fill_px=None):
+        slip=None, cost=None, side_override=None, max_hold=0, fill_px=None, trail_atr=0):
     side = signals(D, cfg) if side_override is None else side_override
     slip = D["tick"] if slip is None else slip
     cost = D["cost"] if cost is None else cost
@@ -260,7 +262,8 @@ def run(D, cfg=CFG, protect_fill=0, path=1, use_flat=0, flat_mod=15 * 60 + 55,
                                      float(cfg["trail_off"]), float(cost), float(slip),
                                      int(protect_fill), int(path), int(flat_mod), D["mod"],
                                      int(use_flat), int(max_hold),
-                                     np.full(D["n"], np.nan) if fill_px is None else fill_px)
+                                     np.full(D["n"], np.nan) if fill_px is None else fill_px,
+                                     int(trail_atr))
     if len(eb) == 0:
         return pd.DataFrame()
     gross = s * (xp - ep)
