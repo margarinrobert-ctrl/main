@@ -1,0 +1,249 @@
+//@version=6
+// FVG Contract Sizer — position sizing from a Fair Value Gap stop (NQ/ES/MNQ/MES & more)
+//
+// WHAT IT DOES
+//   1) Detects 3-candle Fair Value Gaps (FVGs / imbalances) and draws them as boxes.
+//   2) Measures each gap in points and ticks.
+//   3) Treats the gap as your stop-loss distance and tells you HOW MANY CONTRACTS to
+//      trade so that "loss if stopped" equals a fixed % of account (or a fixed $).
+//
+// RISK MODEL
+//   stop distance (pts) = FVG gap  +  buffer (ticks)
+//   risk / contract ($) = stop distance  ×  point value
+//   contracts           = floor( risk budget $ / risk per contract )
+//   risk budget         = account × risk%      OR      a fixed $      (your choice)
+//
+// CONTRACT SPECS  (point value = $ per 1.00 point move, per contract)
+//   ES 50 · MES 5 · NQ 20 · MNQ 2 · YM 5 · MYM 0.5 · RTY 50 · M2K 5 · GC 100 · MGC 10 · CL 1000 · MCL 100
+//   Default reads the chart symbol's real point value (syminfo.pointvalue). Preset / Manual override available,
+//   each with a "micro" toggle so MNQ/MES (and the other micros) size correctly.
+//
+//   Bullish FVG  -> long idea: stop sits below the gap  -> green box, contract count labelled.
+//   Bearish FVG  -> short idea: stop sits above the gap -> red box,   contract count labelled.
+//
+// Educational tool, not financial advice. Sizing assumes you actually place your stop at the gap.
+
+indicator("FVG Contract Sizer (NQ/ES/MNQ/MES)", shorttitle="FVG Sizer", overlay=true,
+     max_boxes_count=500, max_labels_count=500)
+
+// ============================================================
+// Inputs
+// ============================================================
+gF = "Fair Value Gaps"
+showBull   = input.bool(true,  "Detect bullish FVGs", group=gF)
+showBear   = input.bool(true,  "Detect bearish FVGs", group=gF)
+minGapTk   = input.float(0.0,  "Min gap size (ticks · 0 = any)", minval=0, step=1, group=gF)
+extendBars = input.int(30,     "Extend boxes (bars)", minval=0, maxval=500, group=gF)
+hideFilled = input.bool(true,  "Hide filled (mitigated) FVGs", group=gF)
+maxKeep    = input.int(12,     "Max FVGs to keep on chart", minval=1, maxval=100, group=gF)
+showCount  = input.bool(true,  "Label each FVG with its contract count", group=gF)
+bullCol    = input.color(color.new(color.teal, 80), "Bullish fill", group=gF)
+bearCol    = input.color(color.new(color.red,  80), "Bearish fill", group=gF)
+
+gR = "Risk / Position Sizing"
+riskMode  = input.string("Percent of account", "Risk mode", options=["Percent of account","Fixed dollar"], group=gR)
+acctSize  = input.float(50000, "Account size ($)", minval=0, step=1000, group=gR)
+riskPct   = input.float(1.0,   "Risk per trade (%)", minval=0, step=0.25, group=gR)
+fixedRisk = input.float(500,   "Fixed risk per trade ($)", minval=0, step=50, group=gR)
+bufferTk  = input.float(0.0,   "Stop buffer beyond gap (ticks)", minval=0, step=1, group=gR)
+
+gS = "Contract Specs"
+pvMode   = input.string("Auto (chart symbol)", "Point value source", options=["Auto (chart symbol)","Preset","Manual"], group=gS)
+preset   = input.string("ES / MES", "Preset instrument", options=["ES / MES","NQ / MNQ","YM / MYM","RTY / M2K","GC / MGC","CL / MCL"], group=gS)
+useMicro = input.bool(false,   "Use micro (MES / MNQ / MYM / M2K / MGC / MCL)", group=gS)
+manPV    = input.float(50.0,   "Manual point value ($/pt)", minval=0, step=1, group=gS)
+manTick  = input.float(0.25,   "Manual tick size", minval=0, step=0.01, group=gS)
+
+gT = "Info Table"
+showTbl = input.bool(true,  "Show info table", group=gT)
+tblPos  = input.string("Top right", "Position", options=["Top right","Top left","Bottom right","Bottom left","Middle right"], group=gT)
+tblSize = input.string("Normal", "Text size", options=["Tiny","Small","Normal","Large"], group=gT)
+txtCol  = input.color(color.white, "Text color", group=gT)
+bgCol   = input.color(color.new(#1b1f2a, 10), "Background", group=gT)
+
+// ============================================================
+// Resolve contract specs (point value + tick size)
+// ============================================================
+presetPV(p, micro) =>
+    switch p
+        "ES / MES"  => micro ? 5.0   : 50.0
+        "NQ / MNQ"  => micro ? 2.0   : 20.0
+        "YM / MYM"  => micro ? 0.5   : 5.0
+        "RTY / M2K" => micro ? 5.0   : 50.0
+        "GC / MGC"  => micro ? 10.0  : 100.0
+        "CL / MCL"  => micro ? 100.0 : 1000.0
+        => 50.0
+
+presetTick(p) =>
+    switch p
+        "ES / MES"  => 0.25
+        "NQ / MNQ"  => 0.25
+        "YM / MYM"  => 1.0
+        "RTY / M2K" => 0.10
+        "GC / MGC"  => 0.10
+        "CL / MCL"  => 0.01
+        => 0.25
+
+pointValue = pvMode == "Auto (chart symbol)" ? syminfo.pointvalue : pvMode == "Preset" ? presetPV(preset, useMicro) : manPV
+tickSize0  = pvMode == "Manual" ? manTick : pvMode == "Preset" ? presetTick(preset) : syminfo.mintick
+tickSize   = tickSize0 <= 0 ? syminfo.mintick : tickSize0
+tickValue  = pointValue * tickSize
+
+// ============================================================
+// Sizing math
+// ============================================================
+riskBudget = riskMode == "Percent of account" ? acctSize * riskPct / 100.0 : fixedRisk
+
+// Returns [stop distance in points, risk per contract $, contract count]
+calcContracts(gapPts) =>
+    stopDist = gapPts + bufferTk * tickSize
+    rpc      = stopDist * pointValue
+    n        = rpc > 0 ? int(math.floor(riskBudget / rpc)) : 0
+    [stopDist, rpc, n]
+
+// ============================================================
+// FVG state (active gaps)
+// ============================================================
+var array<box>   bArr = array.new<box>()
+var array<label> lArr = array.new<label>()
+var array<float> topA = array.new<float>()
+var array<float> botA = array.new<float>()
+var array<int>   dirA = array.new<int>()   // 1 = bullish, -1 = bearish
+var array<bool>  filA = array.new<bool>()   // already mitigated?
+
+// Create + register a new FVG, with a contract-count label and rich tooltip.
+addFVG(dir, top, bot) =>
+    fill = dir == 1 ? bullCol : bearCol
+    bord = dir == 1 ? color.new(color.teal, 35) : color.new(color.red, 35)
+    bx   = box.new(bar_index - 2, top, bar_index + extendBars, bot, border_color=bord, border_width=1, bgcolor=fill)
+    gp   = top - bot
+    [sd, rpc, n] = calcContracts(gp)
+    tip = (dir == 1 ? "Bullish" : "Bearish") + " FVG" +
+         "\nGap: "           + str.tostring(gp, format.mintick) + " pts  (" + str.tostring(gp / tickSize, "#.#") + " ticks)" +
+         "\nStop distance: " + str.tostring(sd, format.mintick) + " pts" +
+         "\nRisk/contract: $" + str.tostring(rpc, "#.##") +
+         "\nContracts: "      + str.tostring(n) +
+         "\nEst. risk: $"     + str.tostring(n * rpc, "#.##")
+    label lb = na
+    if showCount
+        lcol = dir == 1 ? color.new(color.teal, 15) : color.new(color.red, 15)
+        lb := label.new(bar_index, (top + bot) / 2, str.tostring(n) + "x", style=label.style_label_left, color=lcol, textcolor=color.white, size=size.small, tooltip=tip)
+    array.push(bArr, bx)
+    array.push(lArr, lb)
+    array.push(topA, top)
+    array.push(botA, bot)
+    array.push(dirA, dir)
+    array.push(filA, false)
+    // Cap how many we keep — drop the oldest.
+    if array.size(bArr) > maxKeep
+        box.delete(array.shift(bArr))
+        label old = array.shift(lArr)
+        if not na(old)
+            label.delete(old)
+        array.shift(topA)
+        array.shift(botA)
+        array.shift(dirA)
+        array.shift(filA)
+
+// ============================================================
+// Detect + maintain on confirmed bars only (non-repainting)
+// ============================================================
+bool newBull = false
+bool newBear = false
+
+if barstate.isconfirmed and bar_index > 5
+    // 1) Extend live gaps to the right and check for mitigation (back-to-front for safe removal).
+    i = array.size(bArr) - 1
+    while i >= 0
+        if not array.get(filA, i)
+            bx  = array.get(bArr, i)
+            top = array.get(topA, i)
+            bot = array.get(botA, i)
+            dir = array.get(dirA, i)
+            box.set_right(bx, bar_index + extendBars)
+            filled = (dir == 1 and low <= bot) or (dir == -1 and high >= top)
+            if filled
+                if hideFilled
+                    box.delete(bx)
+                    lb = array.get(lArr, i)
+                    if not na(lb)
+                        label.delete(lb)
+                    array.remove(bArr, i)
+                    array.remove(lArr, i)
+                    array.remove(topA, i)
+                    array.remove(botA, i)
+                    array.remove(dirA, i)
+                    array.remove(filA, i)
+                else
+                    box.set_bgcolor(bx, color.new(color.gray, 90))
+                    box.set_border_style(bx, line.style_dashed)
+                    array.set(filA, i, true)
+        i -= 1
+
+    // 2) Detect a fresh FVG on the just-closed 3-candle window.
+    minGapPx = minGapTk * tickSize
+    if showBull and low > high[2] and (low - high[2]) >= minGapPx
+        newBull := true
+        addFVG(1, low, high[2])           // top = current low, bottom = high two bars back
+    if showBear and high < low[2] and (low[2] - high) >= minGapPx
+        newBear := true
+        addFVG(-1, low[2], high)          // top = low two bars back, bottom = current high
+
+alertcondition(newBull, "New Bullish FVG", "Bullish FVG formed — see FVG Sizer for contract count")
+alertcondition(newBear, "New Bearish FVG", "Bearish FVG formed — see FVG Sizer for contract count")
+
+// ============================================================
+// Info table (most recent active gap)
+// ============================================================
+posSel = tblPos == "Top right" ? position.top_right : tblPos == "Top left" ? position.top_left : tblPos == "Bottom right" ? position.bottom_right : tblPos == "Bottom left" ? position.bottom_left : position.middle_right
+szSel  = tblSize == "Tiny" ? size.tiny : tblSize == "Small" ? size.small : tblSize == "Large" ? size.large : size.normal
+
+f_num(x, fmt) => na(x) ? "—" : str.tostring(x, fmt)
+
+var table t = na
+if showTbl and barstate.islast
+    // ---- dynamic values (recomputed every tick) ----
+    hasF = array.size(bArr) > 0
+    idx  = array.size(bArr) - 1
+    dir  = hasF ? array.get(dirA, idx) : 0
+    top  = hasF ? array.get(topA, idx) : na
+    bot  = hasF ? array.get(botA, idx) : na
+    gp   = hasF ? top - bot : na
+    [sd, rpc, n] = calcContracts(hasF ? gp : 0.0)
+    estRisk = hasF ? n * rpc : na
+    estPct  = (acctSize > 0 and hasF) ? estRisk / acctSize * 100.0 : na
+    dirTxt  = hasF ? (dir == 1 ? "Bullish ▲" : "Bearish ▼") : "— none —"
+    dirCol  = hasF ? (dir == 1 ? color.new(color.teal, 0) : color.new(color.red, 0)) : color.gray
+
+    // ---- static structure, built once (any input change resets the script + table) ----
+    if na(t)
+        t := table.new(posSel, 2, 13, border_width=1, frame_width=1, frame_color=color.new(color.gray, 40))
+        budgetTxt = "$" + str.tostring(riskBudget, "#.##") + (riskMode == "Percent of account" ? " (" + str.tostring(riskPct, "#.##") + "%)" : "")
+        table.cell(t, 0, 0, "FVG CONTRACT SIZER", text_color=color.white, bgcolor=color.new(color.blue, 25), text_size=szSel, text_halign=text.align_center)
+        table.merge_cells(t, 0, 0, 1, 0)
+        table.cell(t, 0, 1, "Symbol",       text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_left)
+        table.cell(t, 1, 1, syminfo.ticker, text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_right)
+        table.cell(t, 0, 2, "Point value",  text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_left)
+        table.cell(t, 1, 2, "$" + str.tostring(pointValue, "#.##") + " /pt", text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_right)
+        table.cell(t, 0, 3, "Tick / value", text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_left)
+        table.cell(t, 1, 3, str.tostring(tickSize) + " / $" + str.tostring(tickValue, "#.##"), text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_right)
+        table.cell(t, 0, 4, "Risk budget",  text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_left)
+        table.cell(t, 1, 4, budgetTxt,      text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_right)
+        table.cell(t, 0, 5, "──── nearest FVG ────", text_color=color.new(color.gray, 0), bgcolor=bgCol, text_size=szSel, text_halign=text.align_center)
+        table.merge_cells(t, 0, 5, 1, 5)
+        table.cell(t, 0, 6,  "Direction",       text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_left)
+        table.cell(t, 0, 7,  "Gap size",        text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_left)
+        table.cell(t, 0, 8,  "Stop + buffer",   text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_left)
+        table.cell(t, 0, 9,  "Risk / contract", text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_left)
+        table.cell(t, 0, 10, "CONTRACTS",       text_color=color.white, bgcolor=color.new(color.green, 25), text_size=szSel, text_halign=text.align_left)
+        table.cell(t, 0, 11, "Est. risk if stopped", text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_left)
+        table.cell(t, 0, 12, "  as % of account",    text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_left)
+
+    // ---- dynamic value cells (updated every tick; no merge calls here) ----
+    table.cell(t, 1, 6,  dirTxt, text_color=dirCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_right)
+    table.cell(t, 1, 7,  hasF ? str.tostring(gp, format.mintick) + " pts / " + str.tostring(gp / tickSize, "#.#") + " tk" : "—", text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_right)
+    table.cell(t, 1, 8,  hasF ? str.tostring(sd, format.mintick) + " pts" : "—", text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_right)
+    table.cell(t, 1, 9,  hasF ? "$" + str.tostring(rpc, "#.##") : "—", text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_right)
+    table.cell(t, 1, 10, hasF ? str.tostring(n) : "—", text_color=color.white, bgcolor=color.new(color.green, 25), text_size=szSel, text_halign=text.align_right)
+    table.cell(t, 1, 11, hasF ? "$" + str.tostring(estRisk, "#.##") : "—", text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_right)
+    table.cell(t, 1, 12, f_num(estPct, "#.##") + (na(estPct) ? "" : " %"), text_color=txtCol, bgcolor=bgCol, text_size=szSel, text_halign=text.align_right)
