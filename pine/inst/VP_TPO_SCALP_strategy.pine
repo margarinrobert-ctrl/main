@@ -1,0 +1,218 @@
+//@version=6
+// DONCHIAN 07:00-11:00 SCALP + VOLUME-PROFILE / TPO / EMA200 / EMA 13-48 / ATR-VARIABLE FEATURES
+// (docs/ib/STUDY_VP_TPO_SCALP.md). Base = the Optuna finalist of STUDY_BAYESOPT_SCALP: NQ 15m,
+// Donchian 10/10, 3.19 ATR stop, 2.3 ATR target, 230-minute hold, entries 07:00-11:00 New York.
+//
+// WHAT WAS MEASURED (45 causal features, truncation-audited; 43 entry conditions, 37 target rules,
+// 27 stop rules, every one scored on RESEARCH against its own matched null, ONE locked read):
+//   base                       research 765 trades PF 1.164 win 51.5% +15.0%  |  locked 389 PF 1.110 win 48.8% +6.0%
+//   + prior-session TPO SINGLE PRINT within 3 ATR above the close (the ONE survivor of 43, BH q 0.10;
+//     research PF 1.446 p 0.000 vs a random filter of the same selectivity)
+//                              research 350 trades PF 1.446 win 52%  +16.4%  |  locked 187 PF 1.382 win 50.8% +9.9%  p 0.016
+//     Mechanism: the breakout is heading INTO a zone yesterday's auction traversed in one 30-minute
+//     letter (no acceptance overhead); MAE 3.69 vs 4.44 ATR outside, target hit 50% vs 47%. It is
+//     the single print, not "below yesterday's high": below-the-high WITHOUT a near single print
+//     reads PF 1.04 research / 0.81 locked. Locked bootstrap P(mean<=0) 0.056 on 187 trades, MC p99
+//     drawdown 2.8x the realised -- one market, one survivor, size for the p99.
+//   EMA200 as support/resistance: every reading fails its control (p 0.16-0.75); "above and within
+//     1 ATR" (support) is the WORST cell, PF 0.93. EMA 13/48 as momentum: the state passes 74% of the
+//     breakout bars (the trigger restated) and every bullish reading LOWERS PF (p 0.77-0.90); the
+//     COUNTER-state (13 < 48) is the only one that clears (PF 1.31, p 0.020) and fails BH.
+//   Take profit: NO profile level beats the fixed 2.3 ATR target on research (37 rules); the IB high
+//     clears its random-distance null (p 0.03) at PF 1.14 < 1.16. Stop: the fixed ladder peaks at
+//     3.0 ATR in every unit; structural stops (below VAL / POC / IB low / HVN / EMA) are all <= fixed.
+// Everything not the survivor ships as an input, DEFAULT OFF, with its number in the tooltip.
+strategy("Donchian 07-11 scalp + VP/TPO/EMA/ATR (measured)", overlay = true, default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000, commission_type = strategy.commission.cash_per_contract, commission_value = 0.72, slippage = 1)
+// ---------------- base ----------------
+entN     = input.int(10, "Donchian entry length", group = "Base")
+exitN    = input.int(10, "Channel exit length", group = "Base")
+stopMode = input.string("Fixed", "Stop", options = ["Fixed", "Adaptive vol (wide if calm)", "Below EMA200", "Below prior TPO VAL"], group = "Base",
+     tooltip = "Research, 27 stop rules: fixed ladder peaks at 3.0 ATR in %/trade, R and return/DD; adaptive 4.0/2.5 (V22 direction) 1.163 vs 1.164; below EMA200 1.175 research -> 1.082 locked; every structural stop <= fixed.")
+stopFix  = input.float(3.19, "  fixed / calm stop (x ATR)", step = 0.1, group = "Base")
+stopHot  = input.float(2.5, "  high-volatility stop (x ATR, adaptive mode)", step = 0.1, group = "Base")
+tpMode   = input.string("Fixed ATR", "Take profit", options = ["Fixed ATR", "None", "IB high (else fixed)", "Prior TPO VAH (else fixed)", "Prior TPO single print (else fixed)"], group = "Base",
+     tooltip = "Research: fixed 2.3 ATR PF 1.164; IB high 1.139 (clears a random target at the same distance, p 0.03, and still loses to fixed); prior TPO VAH 1.118; prior single print 1.099; no target 1.069.")
+tpATR    = input.float(2.3, "  target (x ATR)", step = 0.1, group = "Base")
+holdMin  = input.int(230, "Maximum hold (minutes)", group = "Base")
+startH   = input.int(7,  "Entries from hour (New York)", minval = 0, maxval = 23, group = "Base")
+startM   = input.int(0,  "Entries from minute", minval = 0, maxval = 59, group = "Base")
+endH     = input.int(11, "Entries until hour (New York)", minval = 0, maxval = 23, group = "Base")
+endM     = input.int(0,  "Entries until minute", minval = 0, maxval = 59, group = "Base")
+// ---------------- TPO ----------------
+useSP    = input.bool(true, "Require a prior-session TPO single print within N ATR above", group = "TPO",
+     tooltip = "THE SURVIVOR. Research PF 1.446 (p 0.000 vs a same-selectivity random filter), locked PF 1.382 (p 0.016), +24.5% locked PF on 187 trades. Ladder: within 2 ATR 1.30, 3 ATR 1.45, 4 ATR 1.32, 5 ATR 1.24 -- a hump, not a gradient; 3 is the best rung and was chosen on research.")
+spMax    = input.float(3.0, "  N (ATR)", step = 0.5, group = "TPO")
+tpoBin   = input.float(2.5, "  TPO bin size (points)", step = 0.5, group = "TPO", tooltip = "The research profile used 2.5-point bins with 30-minute letters over 09:30-16:00 New York. The letters are built from the chart's bars, so run this on 15 minutes or finer.")
+// ---------------- EMA ----------------
+ema200Mode = input.string("Off", "EMA200 as support / resistance", options = ["Off", "Above", "Above by >= 1 ATR", "Touched within 5 bars (support)", "Below (resistance side)"], group = "EMA",
+     tooltip = "All fail their control on research. Above: PF 1.161 p 0.36; >= 1 ATR above 1.197 p 0.16; touched within 5 bars 1.107 p 0.58; above-and-within-1-ATR (support) 0.931 p 0.75 (worst cell); below 1.167 p 0.24.")
+emaXMode   = input.string("Off", "EMA 13/48 as momentum", options = ["Off", "13 > 48 (state)", "Fresh cross <= 5 bars", "13 < 48 (counter-state)"], group = "EMA",
+     tooltip = "State passes 74% of breakout bars: PF 1.105 p 0.82. Fresh cross 0.988 p 0.82. Counter-state (13 < 48) PF 1.308 p 0.020 on research, fails BH, NOT read on locked -- a curiosity, not a rule.")
+// ---------------- series ----------------
+atrN   = ta.ema(ta.tr(true), 14)
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)
+e13 = ta.ema(close, 13)
+e48 = ta.ema(close, 48)
+e200 = ta.ema(close, 200)
+volPct = ta.percentrank(atrN / close, 250) / 100.0
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+nyDay  = dayofmonth(time, "America/New_York") + 100 * month(time, "America/New_York") + 10000 * year(time, "America/New_York")
+inWin  = nyMin >= startH * 60 + startM and nyMin < endH * 60 + endM
+inRTH  = nyMin >= 570 and nyMin < 960
+barMin = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+holdBars = math.max(1, math.round(holdMin / barMin))
+// ---------------- the TPO profile: 30-minute letters, bins on an absolute grid of tpoBin points ----------------
+// current session: cnt[k] = letters that touched bin (binMin + k); lastL[k] = the last letter that did
+var int binMin = na
+var array<int> cnt = array.new<int>()
+var array<int> lastL = array.new<int>()
+var bool built = false
+var float ibHi = na
+var float ibLo = na
+// last COMPLETED session, frozen at 16:00 (or at the next day's first RTH bar if the 16:00 bar is missing)
+var array<float> prevSP = array.new<float>()      // single-print bin CENTRES, ascending
+var float prevPOC = na
+var float prevVAH = na
+var float prevVAL = na
+freezeProfile() =>
+    // POC = first maximal bin; 70% value area expanded from it toward the larger neighbour; single prints = count 1
+    int nb = array.size(cnt)
+    float poc = na
+    float vah = na
+    float val = na
+    array<float> sp = array.new<float>()
+    if nb > 0
+        int p = 0
+        int tot = 0
+        for k = 0 to nb - 1
+            int ck = array.get(cnt, k)
+            tot += ck
+            if ck > array.get(cnt, p)
+                p := k
+            if ck == 1
+                array.push(sp, (binMin + k + 0.5) * tpoBin)
+        int lo = p
+        int hi = p
+        int acc = array.get(cnt, p)
+        while acc < 0.7 * tot and (lo > 0 or hi < nb - 1)
+            int up = hi + 1 < nb ? array.get(cnt, hi + 1) : -1
+            int dn = lo - 1 >= 0 ? array.get(cnt, lo - 1) : -1
+            if up >= dn
+                hi += 1
+                acc += math.max(up, 0)
+            else
+                lo -= 1
+                acc += math.max(dn, 0)
+        poc := (binMin + p + 0.5) * tpoBin
+        vah := (binMin + hi + 1) * tpoBin
+        val := (binMin + lo) * tpoBin
+    [poc, vah, val, sp]
+newDay = ta.change(nyDay) != 0
+if barstate.isconfirmed
+    // freeze the previous session at the first bar after its RTH (16:00) or, failing that, at the next RTH open
+    if built and ((not inRTH and inRTH[1]) or (newDay and inRTH))
+        [p_, a_, v_, s_] = freezeProfile()
+        prevPOC := p_
+        prevVAH := a_
+        prevVAL := v_
+        prevSP := s_
+        built := false
+    if inRTH
+        if not built
+            array.clear(cnt)
+            array.clear(lastL)
+            binMin := math.floor(low / tpoBin)
+            built := true
+            ibHi := na
+            ibLo := na
+        int L = math.floor((nyMin - 570) / 30)
+        int a = math.floor(low / tpoBin)
+        int b = math.floor(high / tpoBin)
+        // grow the arrays to cover [a, b]
+        while a < binMin
+            array.unshift(cnt, 0)
+            array.unshift(lastL, -1)
+            binMin -= 1
+        while b - binMin >= array.size(cnt)
+            array.push(cnt, 0)
+            array.push(lastL, -1)
+        for k = a - binMin to b - binMin
+            if array.get(lastL, k) != L
+                array.set(cnt, k, array.get(cnt, k) + 1)
+                array.set(lastL, k, L)
+        if L < 2
+            ibHi := na(ibHi) ? high : math.max(ibHi, high)
+            ibLo := na(ibLo) ? low : math.min(ibLo, low)
+// nearest prior-session single print strictly above the close's bin, in ATR
+float spAbove = na
+if array.size(prevSP) > 0
+    int cb = math.floor(close / tpoBin)
+    for k = 0 to array.size(prevSP) - 1
+        float ctr = array.get(prevSP, k)
+        if math.floor(ctr / tpoBin) > cb
+            spAbove := ctr
+            break
+spDist = na(spAbove) ? na : (spAbove - close) / atrN
+// ---------------- gates ----------------
+spOk   = not useSP or (not na(spDist) and spDist >= 0 and spDist <= spMax)
+d200   = (close - e200) / atrN
+touch200 = ta.highest(low <= e200 ? 1 : 0, 5) > 0
+emaOk  = ema200Mode == "Off" ? true : ema200Mode == "Above" ? close > e200 : ema200Mode == "Above by >= 1 ATR" ? d200 >= 1.0 : ema200Mode == "Touched within 5 bars (support)" ? touch200 : close < e200
+xUp    = e13 > e48
+barsSinceX = ta.barssince(xUp and not xUp[1])
+xOk    = emaXMode == "Off" ? true : emaXMode == "13 > 48 (state)" ? xUp : emaXMode == "Fresh cross <= 5 bars" ? (xUp and not na(barsSinceX) and barsSinceX <= 5) : not xUp
+ready  = not na(atrN) and atrN > 0 and not na(entHi) and not na(volPct) and not na(e200) and bar_index > 300
+gateOk = ready and inWin and spOk and emaOk and xOk and high > entHi
+// ---------------- stop and target, sized at the SIGNAL bar ----------------
+float stopMult = stopFix
+if stopMode == "Adaptive vol (wide if calm)"
+    stopMult := volPct <= 0.5 ? stopFix : stopHot
+else if stopMode == "Below EMA200"
+    float dm = (close - e200) / atrN + 0.25
+    stopMult := dm >= 1.0 and dm <= 6.0 ? dm : stopFix
+else if stopMode == "Below prior TPO VAL"
+    float dv = na(prevVAL) ? na : (close - prevVAL) / atrN + 0.25
+    stopMult := not na(dv) and dv >= 1.0 and dv <= 6.0 ? dv : stopFix
+// target: a fixed ATR distance from the fill, or an absolute profile LEVEL (falls back to the fixed distance when the level is missing or under 0.5 ATR away)
+float tgtDist = tpMode == "None" ? na : tpATR * atrN
+float tgtPx = na
+if tpMode != "Fixed ATR" and tpMode != "None"
+    float lvl = tpMode == "IB high (else fixed)" ? ibHi : tpMode == "Prior TPO VAH (else fixed)" ? prevVAH : spAbove
+    float d = na(lvl) ? na : (lvl - close) / atrN
+    if not na(d) and d >= 0.5
+        tgtPx := lvl
+        tgtDist := lvl - close
+var float pendRisk = na
+var float pendTgt = na
+var float pendTgtPx = na
+var int heldBars = 0
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk
+    pendRisk := stopMult * atrN
+    pendTgt := tgtDist
+    pendTgtPx := tgtPx
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+    // the bracket goes out WITH the entry so the fill bar is never naked (STUDY_V56); the level target is re-issued as an absolute price once the fill exists
+    if not na(pendTgt)
+        strategy.exit("x", from_entry = "L", loss = pendRisk / syminfo.mintick, profit = pendTgt / syminfo.mintick)
+    else
+        strategy.exit("x", from_entry = "L", loss = pendRisk / syminfo.mintick)
+if barstate.isconfirmed and strategy.position_size > 0 and not na(pendRisk)
+    if heldBars >= holdBars
+        strategy.close("L", comment = "hold cap")
+    else
+        lvl = math.min(math.max(strategy.position_avg_price - pendRisk, nz(exitLo, strategy.position_avg_price - pendRisk)), close)
+        if not na(pendTgt)
+            strategy.exit("x", from_entry = "L", stop = lvl, limit = na(pendTgtPx) ? strategy.position_avg_price + pendTgt : pendTgtPx)
+        else
+            strategy.exit("x", from_entry = "L", stop = lvl)
+plot(entHi, "entry channel", color = color.new(color.teal, 40))
+plot(exitLo, "exit channel", color = color.new(color.red, 60))
+plot(e200, "EMA200", color = color.new(color.orange, 50))
+plot(spAbove, "nearest prior-session single print above", color = color.new(color.purple, 30), style = plot.style_circles)
+plot(prevVAH, "prior TPO VAH", color = color.new(color.gray, 60), style = plot.style_linebr)
+plot(prevVAL, "prior TPO VAL", color = color.new(color.gray, 60), style = plot.style_linebr)
