@@ -2776,6 +2776,38 @@ Shipped as `pine/scalp89/NQ_SCALPING_SYSTEM_v2_strategy.pine` with the trail def
 fill-relative bracket placed WITH the entry, and an isconfirmed guard: mechanics corrected, no edge
 claimed, the header carries the numbers. `research/scalp89/`, `docs/ib/STUDY_SCALP89.md`.
 
+**A DIVERSIFIED TREND ENSEMBLE BUILT TO SPEC PASSES EVERY IMPLEMENTATION TEST AND HAS NO EDGE ON
+TWO EQUITY INDICES -- WHICH THE SPEC PREDICTED.** The uploaded design (five EWMAC sleeves 4/16 to
+64/256 with hard-coded scalars, FDM from a given sleeve-correlation matrix, vol blend 0.70/0.30 over
+span 32 / 2560, rolling-5-year IDM capped 2.5, tau 0.20, a 0.10 no-trade buffer, t+1-OPEN execution,
+no optimisation) built as `research/trend/` per its own layout. Its engine is BREADTH -- 15-30
+instruments across four asset classes -- and what is on disk is US100 + US30: **N = 2, one asset
+class**, which the spec calls a coin flip. **The three mandated tests pass on first run with no
+refit**: alignment corr 0.023 / 0.015 (and the skill's diagnostic shows same-bar execution would
+have manufactured Sharpe **1.13 / 0.82** against 0.19 / -0.22 next-bar); E|F| lands at 9.8-12.2 with
+the scalars AS GIVEN, confirming they are properties of the filter; the one-time calibration hits
+tau exactly at c = **0.7885** -- and note the sign: two correlated indices run the book HOTTER than
+target (0.254), not cooler as the spec's 20-instrument simulation did (0.133). Buffering cuts
+turnover to **7.9 / 9.4 turns a year**. Then the battery: training net Sharpe **-0.037**, deflated
+Sharpe **0.039** at N = 12 (expected best-of-12 from noise +0.65), breakeven cost **NEGATIVE**,
+random-strategy null percentile **47**, block-bootstrap P(Sharpe<0) **0.54**, and a +-25%
+perturbation surface that is a **flat plateau at zero** -- the implementation is not fitted to noise
+and there is nothing under it. **THE SPEC's 1260/252 WALK-FORWARD YIELDS ONE FOLD on 6.5 years**
+(Sharpe -0.80); a labelled 756/252 supplement gives +0.88 / +0.52 / -0.80, sd 0.88, and the spread is
+the finding. **CPCV IS DEGENERATE ON A PARAMETER-FREE STRATEGY**: all five paths read -0.056 with
+sd 0.000 because every path reassembles the same fixed series; it measures selection variance and
+there is none. **2022 -- trend following's best year on a diversified book -- was -20.1% at Sharpe
+-1.15 here while the system was SHORT US100 on 83% of days and US100 fell 33.8%**: whipsawed by the
+bear rallies a single asset class cannot escape, and the vol terciles say the same (low +0.96, high
+**-1.06**, the opposite of crisis convexity). Holdout, read once: **+0.54**, better than training,
+the WRONG SHAPE, failing the spec's own within-0.3 criterion; 2023H2 caught the rally at +1.79.
+Ships the machinery, claims no edge. What would test the DESIGN is the registry's absent feeds --
+XAUUSD 5m, EURUSD 30m, BTC 15m -- which take N to 5 across three asset classes. Two repository
+notes: `research/metrics.py` has an IndentationError at line 178 and cannot be imported; and the
+pipeline modules push `research/` to the front of sys.path, so a skill directory must be inserted
+AFTER them or its `metrics` / `splits` are shadowed -- the fourth name-shadowing bug this session.
+`docs/ib/STUDY_TREND_ENSEMBLE.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2820,6 +2852,7 @@ claimed, the header carries the numbers. `research/scalp89/`, `docs/ib/STUDY_SCA
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
 | `docs/ib/EDGE_LIBRARY.md` | **the mechanism library** -- what survived, what it is, how to take a new strategy apart |
+| `research/trend/` | the diversified trend ensemble to its spec's own layout: `config.yaml` (constants, split date, calibration c), `data.py` daily panel with t+1-open execution, `volatility.py`, `forecast.py` (sleeves, scalars, FDM), `portfolio.py` (rolling IDM, sizing, buffered trade-to-the-edge), `trend_costs.py` (drag rule), `backtest.py`, `validate.py` (the full section 8 battery on the skill's scripts), `tests/` (alignment, scalars, vol target), `research_log.md` |
 | `research/scalp89/` | the submitted NQ Scalping System transcribed with its order model (naked fill bar, Pine intrabar path, no flatten -- each modelled both ways), exit-machine and entry ablations, fixed-horizon signal tests on four feed-blocks, matched controls, a 160-cell geometry sweep, a 729-cell in-fold walk-forward with a random-cell arm, and a perturbation Monte Carlo with the indicators recomputed; `research_log.md` carries the trial count |
 | `research/ib25/` | the posted IB-25 retracement: session VWAP, a running 09:30-10:30 range, one live limit order a session, the three prose conditions codified as explicit parameters, the retracement and stop ladders against their own driftless break-even, a random-entry-minute control, one locked read, and `run_ib25_mnq.py` -- the dollar view with the synthetic-level deflator |
 | `research/ibs/` | the IBS session EA: cached tensor, bar-by-bar parity, stability / MC / clusters / walk-forward / judge |
