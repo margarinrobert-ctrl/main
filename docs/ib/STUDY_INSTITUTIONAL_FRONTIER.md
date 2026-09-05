@@ -136,3 +136,33 @@ Median hold is one bar; 21–23% of trades run to the cap; 82% of research net c
 1.35 (stop 1.0 collapses to 8 trades/yr). That is rarer on this branch than a research pass, and
 it is still the maximum of 434,346 draws read once; it has not been run on US100/US30 and has not
 cleared a matched random-entry control. Ships with every number in the header.
+
+## Addendum 2: EMA200 support, the 20/50 cross and a pullback to EMA20, measured on this cell
+
+`research/inst/cell100_ema.py`, `results/inst/cell100_ema.txt`. Asked why these three were not in
+the script's menu. They were not in the frontier's declared axes, and they had last been measured
+on a different base (`STUDY_TURTLE_SCALP_EMA`). A filter is a property of its geometry
+(`STUDY_V52`), so they are measured here on the cell itself and now sit in the menu, default OFF.
+
+| gate | on signal bars | lift | research n / PF | locked n / PF | random filter p |
+|---|---|---|---|---|---|
+| cell as shipped | — | — | 200 / 2.158 | 108 / 1.798 | — |
+| EMA200 support, within 3 ATR | 5.2% | **0.18×** | 23 / 1.493 | 17 / 0.740 | 0.650 |
+| EMA200 support, within 2 ATR | 1.6% | 0.08× | 7 / 0.687 | 5 / 0.000 | — |
+| EMA200 touched within 5 bars | 10.0% | 0.68× | 39 / 1.614 | 23 / 2.682 | — |
+| 20 > 50 > 200 state | 84.9% | 2.04× | 168 / **2.422** | 90 / **1.489** | **0.003** |
+| fresh 20/50 cross within 5 | 7.3% | 2.18× | 27 / 2.915 | 12 / 1.672 | — |
+| pullback to EMA20 within 3 | 10.0% | 0.14× | 41 / 4.708 | 24 / 3.738 | — |
+| pullback to EMA20 within 5 | 20.6% | 0.26× | 79 / 2.559 | 44 / 2.216 | 0.090 |
+| pullback to EMA20 within 10 | 50.8% | 0.58× | 140 / 2.216 | 70 / 1.827 | — |
+| **the full ask** (support 3 + state + pullback 5) | — | — | **3** | 1 | — |
+
+Three things the table settles. **The full ask leaves three trades in two years**, because
+"within 3 ATR of the EMA200" and the cell's own "at least 2 ATR above the SMA200" are close to
+mutually exclusive — the support reading keeps 5% of the cell's signals and the floor is what made
+the cell. **The 20>50>200 state is the one gate that clears its control** (p 0.003), and it reads
+better on research and worse on locked (2.16 → 2.42 in, 1.80 → 1.49 out): the shape this branch
+does not ship on. **The pullback's lift is 0.14–0.58×** — it removes the clean breakouts — and
+while its surviving trades read well on both blocks (within 5: 2.56 → 2.22), it cuts the count to
+41 a year, below the 100 the cell was chosen for, and fails its control at p 0.090. All three are
+in the menu with these numbers; none is on by default.

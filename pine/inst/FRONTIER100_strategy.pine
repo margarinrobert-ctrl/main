@@ -66,6 +66,23 @@ useChop = input.bool(true, "Require CHOP(14) <= ceiling", group = gF,
      tooltip = "One rung looser (45) reads 1.83 -> 1.35 on 147 trades/yr.")
 chopMax = input.float(40.0, "  CHOP ceiling", minval = 10, maxval = 90, group = gF)
 
+gE = "EMA gates (measured ON THIS CELL, all default OFF -- see tooltips)"
+ema200Mode = input.string("Off", "EMA200 reading", group = gE,
+     options = ["Off", "Floor: at least N ATR above", "Support: above and within N ATR", "Touched: low hit EMA200 within N bars, close above"],
+     tooltip = "MEASURED on this cell (research -> locked): SUPPORT within 3 ATR keeps 5.2% of signals (lift 0.18x) -> 23 trades, PF 1.49 -> 0.74, random filter p 0.650; within 2 ATR, 7 trades. It CONTRADICTS the cell's own SMA200 floor (>= 2 ATR above). TOUCHED within 5 bars: 39 trades, PF 1.61 -> 2.68 on 20/yr. A FLOOR is what the cell already uses.")
+ema200N    = input.float(3.0, "  EMA200: N (ATR, or bars for 'Touched')", minval = 0.5, step = 0.5, group = gE)
+crossMode  = input.string("Off", "EMA20/50 cross as momentum", group = gE,
+     options = ["Off", "State: 20 > 50 > 200", "Fresh: crossed within N bars, 20 > 200"],
+     tooltip = "MEASURED: STATE passes 84.9% of this cell's signals (lift 2.04x), research PF 2.16 -> 2.42 clearing a random filter at p 0.003, and LOCKED PF 1.80 -> 1.49 -- better in sample, worse out. The wrong shape to ship on. FRESH within 5: 27 trades, 2.92 -> 1.67 on 12/yr.")
+crossN     = input.int(5, "  Fresh cross: within N bars", minval = 1, group = gE)
+pullMode   = input.string("Off", "Wait for a pullback to EMA20", group = gE,
+     options = ["Off", "Low touched EMA20 within N bars"],
+     tooltip = "MEASURED: lift 0.14-0.58x -- a Donchian-55 breakout bar is away from its EMA20 by construction, so this keeps the STALLED ones. Within 5: 79 trades (41/yr), PF 2.56 -> 2.22, random filter p 0.090; within 10: 140 trades (73/yr), 2.22 -> 1.83; within 3: 41 trades, 4.71 -> 3.74. It cuts the count below the 100/yr this cell was chosen for.")
+pullN      = input.int(5, "  Pullback: within N bars", minval = 1, group = gE)
+// THE FULL ASK -- EMA200 support AND 20>50>200 AND pullback -- leaves THREE research trades on
+// this cell, because 'within 3 ATR of the EMA200' and 'at least 2 ATR above the SMA200' are
+// nearly mutually exclusive. It is offered here so that can be seen, not because it trades.
+
 gS = "Session (New York time)"
 startH = input.int(9,  "Entries from hour",   minval = 0, maxval = 23, group = gS)
 startM = input.int(30, "Entries from minute", minval = 0, maxval = 59, group = gS)
@@ -88,11 +105,22 @@ inWin = nyMin >= startH * 60 + startM and nyMin < stopH * 60 + stopM
 barMin = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
 holdBars = math.max(1, math.round(holdMin / barMin))
 
+ema20  = ta.ema(close, 20)
+ema50  = ta.ema(close, 50)
+ema200 = ta.ema(close, 200)
+e200Ok = ema200Mode == "Off" ? true :
+     ema200Mode == "Floor: at least N ATR above" ? (close - ema200) / atrN >= ema200N :
+     ema200Mode == "Support: above and within N ATR" ? (close > ema200 and (close - ema200) / atrN <= ema200N) :
+     (ta.barssince(low <= ema200) < math.round(ema200N) and close > ema200)
+crossOk = crossMode == "Off" ? true :
+     crossMode == "State: 20 > 50 > 200" ? (ema20 > ema50 and ema50 > ema200) :
+     (ta.barssince(ta.crossover(ema20, ema50)) < crossN and ema20 > ema200)
+pullOk  = pullMode == "Off" ? true : ta.barssince(low <= ema20) < pullN
 maOk   = not useMA or (not na(sma200) and (close - sma200) / atrN >= maFloor)
 chopOk = not useChop or (not na(chopV) and chopV <= chopMax)
 ready  = not na(atrN) and atrN > 0 and not na(entHi) and not na(volPct) and bar_index > 300
 broke  = high > entHi
-gateOk = ready and inWin and maOk and chopOk
+gateOk = ready and inWin and maOk and chopOk and e200Ok and crossOk and pullOk
 
 // ---------------- orders ----------------
 var float pendRisk = na
@@ -127,10 +155,13 @@ plot(entHi, "Donchian 55 high", color = color.new(color.teal, 40))
 plot(exitLo, "20-bar channel low", color = color.new(color.red, 60))
 plot(sma200, "SMA200", color = color.new(color.gray, 30))
 plot(useMA ? sma200 + maFloor * atrN : na, "MA floor", color = color.new(color.orange, 50), style = plot.style_circles)
+plot(ema200Mode != "Off" ? ema200 : na, "EMA200", color = color.new(color.purple, 30))
+plot(crossMode != "Off" or pullMode != "Off" ? ema20 : na, "EMA20", color = color.new(color.teal, 40))
+plot(crossMode != "Off" ? ema50 : na, "EMA50", color = color.new(color.navy, 40))
 bgcolor(inWin ? color.new(color.teal, 94) : na, title = "Entry window")
 bgcolor(strategy.position_size > 0 ? color.new(color.lime, 90) : na, title = "In trade")
 
-var table hud = table.new(position.top_right, 1, 4, bgcolor = color.new(color.black, 20))
+var table hud = table.new(position.top_right, 1, 5, bgcolor = color.new(color.black, 20))
 if barstate.islast
     tfOk = timeframe.period == "15"
     table.cell(hud, 0, 0, tfOk ? "15m: the measured timeframe" : "WRONG TIMEFRAME -- measured on 15m only",
@@ -139,5 +170,8 @@ if barstate.islast
          text_color = color.white, bgcolor = color.new(color.gray, 30))
     table.cell(hud, 0, 2, "the max of 434,346 cells; locked read is DESCRIPTIVE; one market; no control cleared yet",
          text_color = color.white, bgcolor = color.new(color.orange, 40))
+    gatesOn = (ema200Mode != "Off" ? "EMA200 " : "") + (crossMode != "Off" ? "cross " : "") + (pullMode != "Off" ? "pullback " : "")
+    table.cell(hud, 0, 4, gatesOn == "" ? "EMA gates OFF = the measured cell" : "EMA gates ON: " + gatesOn + "-- NOT the measured cell, see tooltips",
+         text_color = color.white, bgcolor = gatesOn == "" ? color.new(color.gray, 30) : color.new(color.red, 20))
     table.cell(hud, 0, 3, "vol state now: " + (calm ? "CALM -> stop " + str.tostring(stopCalm) : "HIGH -> stop " + str.tostring(stopHot)) + " ATR   hold cap " + str.tostring(holdBars) + " bars",
          text_color = color.white, bgcolor = color.new(color.gray, 30))
