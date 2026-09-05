@@ -105,6 +105,57 @@ Cross-market, same rule unchanged, tight trail: US100 PF 0.987 / 1.132, US30 PF 
 the same mild positive the tight trail produces everywhere, on feeds whose volume is a tick proxy
 so their absorption is a proxy of a proxy.
 
+## Addendum: CVD divergence and the session controls
+
+`research/absorb/run_ab4.py`, `results/absorb/ab4.txt`. Cumulative volume delta added as an
+alternative confirmation at the level, using V54's construction unchanged -- TradingView's own
+proxy (each 1-minute bar's whole volume signed by its own direction) with pivots stamped at their
+CONFIRMATION bar, never at the pivot. The four patterns are kept as four separate switches because
+`STUDY_V55_AUTOMATED_CVD` measured that unioning them halves the edge of the one that works.
+
+**The bullish pair is positive on both blocks; the bearish pair is negative on both.** Each pattern
+alone as the confirmation, at the asked geometry:
+
+| pattern | research | locked | random entry, locked | p |
+|---|---|---|---|---|
+| sellers exhaustion (price LL + CVD HL) | +0.0085 PF 1.102 | +0.0051 PF 1.044 | +0.0061 | 0.535 |
+| sellers absorption (price HL + CVD LL) | +0.0089 PF 1.119 | +0.0034 PF 1.036 | +0.0081 | 0.685 |
+| buyers exhaustion (price HH + CVD LH) | −0.0127 PF 0.864 | −0.0142 PF 0.858 | −0.0010 | 0.955 |
+| buyers absorption (price LH + CVD HH) | −0.0066 PF 0.922 | −0.0007 PF 0.994 | +0.0001 | 0.540 |
+
+This reproduces `STUDY_V54_CVD_KAMA` on a **different base** (level reversal, not a Donchian
+breakout) and a **different timeframe** (15m, not 30m): the same two patterns work, the same two
+do not, and absorbed buying is again the weakest. The bullish pair also decays across the split,
+which is the right shape.
+
+**CVD is the first thing in this study to take the rule above break-even** — levels alone −0.0042
+(PF 0.952), levels + bubble −0.0070 (0.920), levels + CVD **+0.0085 (1.102)**, levels + bubble +
+CVD **+0.0179 (1.198)** on 270 trades. **And none of it clears a random-entry control** (research
+p 0.220 / 0.240, locked 0.535 / 0.685). The patterns lift the rule off the floor; they do not beat
+a coin flip running the same stop and trail.
+
+Neighbourhood over pivot half-width × recency window (research, sellers exhaustion): the surface
+falls monotonically as the window widens at every k (k3: w5 +0.0099, w10 **+0.0230**, w20 +0.0085,
+w40 +0.0036) and rises as k widens (k5/w5 +0.0360 PF 1.54 on 196 trades). Tighter is better and
+buys it with sample size — the same trade-off V55 resolved in favour of the larger sample.
+
+**The session window and the flatten.** Seven windows, each with and without a flatten at the
+window end:
+
+| window | no flatten | with flatten |
+|---|---|---|
+| all hours | −0.0070 (PF 0.920) | −0.0091 (0.863) |
+| 09:30–11:00 | **+0.0160 (1.161)** | +0.0083 (1.093) |
+| 09:30–12:00 | +0.0092 (1.088) | +0.0071 (1.076) |
+| 08:00–12:00 | +0.0072 (1.079) | +0.0056 (1.067) |
+| 09:30–16:00 | +0.0027 (1.025) | −0.0017 (0.984) |
+| 07:00–11:00 | +0.0046 (1.056) | +0.0005 (1.007) |
+| 13:00–16:00 | −0.0097 (0.916) | −0.0199 (0.804) |
+
+**The flatten costs money in 7 of 7 windows** — the thirteenth confirmation of that finding here.
+09:30–11:00 is the best window and is the best of seven on one market, so it ships as an option
+rather than a default. Both controls default OFF.
+
 ## What this adds
 
 Fifth strategy on this branch whose apparent result is its exit geometry rather than its entry,

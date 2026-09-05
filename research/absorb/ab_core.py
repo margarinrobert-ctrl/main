@@ -40,6 +40,8 @@ for p in ("research", "research/v63", "research/scalp89"):
 import v63feeds as FD
 import s89_core as M
 import s89_pine as P
+sys.path.insert(0, os.path.join(ROOT, "research/v54"))
+import v54cvd as C
 
 # per side, in POINTS, split the way the walker charges them: `slip` moves the fill price
 # (spread + slippage) and `fee` is subtracted as cash (exchange + broker). The two sum to this
@@ -90,7 +92,7 @@ def _htf(ix, o, h, l, c, v, rule):
     return g, pos
 
 
-def build(market="NQ", tf=15, atr_n=14, vol_look=100, swing_tfs=("1h", "4h")):
+def build(market="NQ", tf=15, atr_n=14, vol_look=100, swing_tfs=("1h", "4h"), pivot_k=3):
     f = FD.bars(market, tf); ix = pd.DatetimeIndex(f.index)
     o, h, l, c, v = (f[k].to_numpy(float) for k in ("open", "high", "low", "close", "volume"))
     n = len(c); mod = (ix.hour * 60 + ix.minute).to_numpy()
@@ -136,18 +138,41 @@ def build(market="NQ", tf=15, atr_n=14, vol_look=100, swing_tfs=("1h", "4h")):
     upper_zone = (midp >= body_hi) & (midp <= h)   # long UPPER wick  -> SELLING absorption
     lower_zone = (midp <= body_lo) & (midp >= l)   # long LOWER wick  -> BUYING absorption
 
+    # --- 4. cumulative volume delta and the four divergence patterns (V54's construction,
+    # reused unchanged: TradingView's proxy -- each 1-minute bar's whole volume signed by its own
+    # direction -- with pivots stamped at their CONFIRMATION bar, never at the pivot itself) ---
+    cvd = np.full(n, np.nan); pat = np.zeros((4, n), bool)
+    if market == "NQ":
+        f1 = FD.bars("NQ", 1)
+        c1 = C.cvd_1m(f1)
+        ser = pd.Series(c1, index=f1.index).resample(f"{tf}min").last()
+        cvd = ser.reindex(ix).ffill().to_numpy()
+        ok = np.isfinite(cvd)
+        if ok.sum() > 100:
+            pat = C.patterns(h, l, np.nan_to_num(cvd, nan=0.0), pivot_k, n)
+
     us = np.unique(fd); cut = us[int(0.65 * len(us))]
     cost, pv, tick = COST[market]
     return dict(market=market, tf=tf, ts=ix.to_numpy(), o=o, h=h, l=l, c=c, v=v, n=n, mod=mod,
                 sess=fd, atr=atr, mid=mid, mid_prev=mid_prev, lv_h=lv_h, lv_l=lv_l,
                 scaled=scaled, upper_zone=upper_zone, lower_zone=lower_zone,
+                cvd=cvd, pat=pat, pivot_k=pivot_k, pat_names=C.PATTERNS,
                 cut=int(cut), cost=cost, pv=pv, tick=tick,
                 blocks={"research": fd < cut, "locked": fd >= cut},
                 vol_kind="true contract volume" if market == "NQ" else "TICK volume (a proxy)")
 
 
 def signals(D, levels=("mid", "1h", "4h"), vol_min=0.1, touch_atr=0.10, need_absorb=True,
-            side="both", sess0=None, sess1=None):
+            side="both", sess0=None, sess1=None, cvd_pats=(), cvd_win=20, cvd_mode="require"):
+    """`cvd_pats` names which of V54's four patterns must (or may) confirm, by index:
+         0 EXHAUSTED_SELLERS  price LL + CVD HL   bullish -- sellers pushed, delta did not follow
+         1 ABSORBED_SELLING   price HL + CVD LL   bullish -- selling absorbed
+         2 EXHAUSTED_BUYERS   price HH + CVD LH   bearish
+         3 ABSORBED_BUYING    price LH + CVD HH   bearish
+    A pattern counts if it CONFIRMED within the last `cvd_win` bars. They are kept separate and
+    never collapsed into one flag -- `STUDY_V55_AUTOMATED_CVD` measured that a union is diluted by
+    its weaker member. `cvd_mode` "require" ANDs it with the rest, "only" uses CVD in place of the
+    absorption bubble."""
     """A reversal at a level with absorption against the move into it.
 
     `touch_atr` is how close the bar must come to the level, in ATR -- 0 means the bar's range must
@@ -176,6 +201,22 @@ def signals(D, levels=("mid", "1h", "4h"), vol_min=0.1, touch_atr=0.10, need_abs
     ab_b = (D["scaled"] >= vol_min) & D["lower_zone"]    # buying  absorption
     lo_sig = sup & (ab_b if need_absorb else True)
     sh_sig = res & (ab_s if need_absorb else True)
+    if cvd_pats:
+        rec = {}
+        for pi in cvd_pats:
+            rec[pi] = pd.Series(D["pat"][pi]).rolling(cvd_win, min_periods=1).max().to_numpy().astype(bool)
+        bull = np.zeros(n, bool); bear = np.zeros(n, bool)
+        for pi in cvd_pats:
+            if pi in (0, 1): bull |= rec[pi]
+            else:            bear |= rec[pi]
+        any_bull = any(pi in (0, 1) for pi in cvd_pats)
+        any_bear = any(pi in (2, 3) for pi in cvd_pats)
+        if cvd_mode == "only":
+            lo_sig = sup & bull if any_bull else np.zeros(n, bool)
+            sh_sig = res & bear if any_bear else np.zeros(n, bool)
+        else:
+            lo_sig = lo_sig & bull if any_bull else np.zeros(n, bool)
+            sh_sig = sh_sig & bear if any_bear else np.zeros(n, bool)
     if side == "long":
         sh_sig = np.zeros(n, bool)
     elif side == "short":
