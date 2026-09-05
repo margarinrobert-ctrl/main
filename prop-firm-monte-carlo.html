@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Prop Firm Monte Carlo Simulator (Futures)</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#121a2e; --panel2:#0f1729; --line:#1f2c47;
+    --txt:#e6ecff; --muted:#90a0c4; --accent:#4f7cff; --good:#22c55e;
+    --bad:#ef4444; --warn:#f59e0b; --purple:#8b5cf6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       background:radial-gradient(1200px 600px at 80% -10%,#16203a 0%,var(--bg) 55%);color:var(--txt);}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 18px 80px;}
+  header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:24px;margin:0;letter-spacing:.2px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 22px}
+  .card{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+        border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
+  .card h2{font-size:14px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:0 0 14px}
+  .grid{display:grid;gap:12px 16px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:760px){.g3,.g4{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:480px){.g2,.g3,.g4{grid-template-columns:1fr}}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:600}
+  input,select{width:100%;background:#0a1124;border:1px solid var(--line);color:var(--txt);
+        border-radius:9px;padding:9px 11px;font-size:14px;outline:none}
+  input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,124,255,.15)}
+  .row{display:flex;align-items:center;gap:8px}
+  .checkrow{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--txt);margin-top:6px}
+  .checkrow input{width:auto}
+  .btn{background:linear-gradient(180deg,#5a86ff,#3b62e6);border:none;color:#fff;font-weight:700;
+        padding:13px 22px;border-radius:11px;font-size:15px;cursor:pointer;transition:.15s}
+  .btn:hover{filter:brightness(1.08)} .btn:active{transform:translateY(1px)}
+  .btn.sec{background:#1a2540;border:1px solid var(--line)}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px}
+  .stat{border-radius:14px;padding:16px 18px;color:#fff;position:relative;overflow:hidden}
+  .stat .k{font-size:12px;opacity:.92;font-weight:600;letter-spacing:.3px}
+  .stat .v{font-size:30px;font-weight:800;margin:6px 0 2px;line-height:1}
+  .stat .s{font-size:12px;opacity:.85}
+  .stat .ic{position:absolute;right:14px;top:14px;font-size:20px;opacity:.5}
+  .blue{background:linear-gradient(135deg,#3b62e6,#5a86ff)}
+  .green{background:linear-gradient(135deg,#16a34a,#22c55e)}
+  .red{background:linear-gradient(135deg,#dc2626,#ef4444)}
+  .purpleg{background:linear-gradient(135deg,#7c3aed,#a78bfa)}
+  .amber{background:linear-gradient(135deg,#d97706,#f59e0b)}
+  .slate{background:linear-gradient(135deg,#334155,#64748b)}
+  canvas{width:100%;display:block}
+  .mlist .m{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-radius:10px;
+        border-left:4px solid var(--line);background:#0c1426;margin-bottom:10px}
+  .mlist .m .ml{font-size:12px;color:var(--muted)}
+  .mlist .m .mv{font-size:18px;font-weight:800}
+  .mlist .m .mh{font-size:11px;color:var(--muted)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:10px}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+  .hint{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.4}
+  .pill{display:inline-block;background:#16203a;border:1px solid var(--line);border-radius:999px;
+        padding:3px 10px;font-size:11px;color:var(--muted);margin-left:8px}
+  .summary{background:linear-gradient(135deg,#3b3fe6,#8b5cf6);border-radius:14px;padding:20px}
+  .summary .k{font-size:12px;opacity:.85} .summary .v{font-size:22px;font-weight:800;margin-top:3px}
+  details{margin-top:8px} summary{cursor:pointer;color:var(--muted);font-size:12px}
+  .warnbox{background:#1c1407;border:1px solid #3d2c08;color:#f5c563;font-size:12px;border-radius:10px;padding:10px 12px;margin-top:12px;line-height:1.5}
+  a{color:#7aa2ff}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>⚡ Prop Firm Monte Carlo Simulator</h1>
+    <span class="pill">Futures · trailing drawdown engine</span>
+  </header>
+  <p class="sub">Models the rules that actually blow eval accounts — trailing drawdown, daily loss limits, consistency &amp; profit targets — then tells you your real pass rate, expected cost to get funded, and funded EV after the split.</p>
+
+  <!-- ============ FIRM RULES ============ -->
+  <div class="card">
+    <h2>1 · Prop Firm Rules</h2>
+    <div class="grid g4">
+      <div>
+        <label>Preset</label>
+        <select id="preset">
+          <optgroup label="Apex (intraday trailing, locks at +$100)">
+            <option value="apex50">Apex 50K</option>
+            <option value="apex100">Apex 100K</option>
+            <option value="apex150">Apex 150K</option>
+          </optgroup>
+          <optgroup label="Topstep (EOD trailing + daily limit)">
+            <option value="ts50">Topstep 50K</option>
+            <option value="ts100">Topstep 100K</option>
+            <option value="ts150">Topstep 150K</option>
+          </optgroup>
+          <option value="custom">Custom…</option>
+        </select>
+      </div>
+      <div>
+        <label>Account Size ($)</label>
+        <input id="acct" type="number" value="50000">
+      </div>
+      <div>
+        <label>Profit Target ($)</label>
+        <input id="target" type="number" value="3000">
+      </div>
+      <div>
+        <label>Trailing Drawdown ($)</label>
+        <input id="dd" type="number" value="2500">
+      </div>
+      <div>
+        <label>Trailing Type</label>
+        <select id="trailType">
+          <option value="intraday">Intraday (tracks peak in trade)</option>
+          <option value="eod">End-of-Day</option>
+          <option value="static">Static (no trail)</option>
+        </select>
+      </div>
+      <div>
+        <label>Lock Drawdown At Profit ($)</label>
+        <input id="lock" type="number" value="100">
+        <div class="hint">Apex-style: once you're up this much, the trail freezes at breakeven+buffer. Set blank/large to always trail.</div>
+      </div>
+      <div>
+        <label>Daily Loss Limit ($)</label>
+        <input id="daily" type="number" value="0">
+        <div class="hint">0 = none (Apex). Topstep enforces one.</div>
+      </div>
+      <div>
+        <label>Consistency Rule (% max day)</label>
+        <input id="consist" type="number" value="0">
+        <div class="hint">0 = off. e.g. 30 = no single day &gt; 30% of total profit.</div>
+      </div>
+      <div>
+        <label>Min Trading Days</label>
+        <input id="minDays" type="number" value="1">
+      </div>
+      <div>
+        <label>Eval / Reset Cost ($)</label>
+        <input id="evalCost" type="number" value="35">
+        <div class="hint">What one attempt costs you (sale price).</div>
+      </div>
+      <div>
+        <label>Profit Split (% to you)</label>
+        <input id="split" type="number" value="90">
+      </div>
+      <div>
+        <label>Max Attempt Days (cap)</label>
+        <input id="maxDays" type="number" value="250">
+        <div class="hint">Trading-day budget to reach target. Small size needs more days — raise this if accounts "time out".</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ STRATEGY ============ -->
+  <div class="card">
+    <h2>2 · Your Strategy (per trade)</h2>
+    <div class="grid g4">
+      <div><label>Win Rate (%)</label><input id="wr" type="number" value="78"></div>
+      <div><label>Avg Win (points)</label><input id="aw" type="number" value="35"></div>
+      <div><label>Avg Loss (points)</label><input id="al" type="number" value="35"></div>
+      <div><label>Setups / Day</label><input id="spd" type="number" value="3"></div>
+      <div><label>Contracts</label><input id="ct" type="number" value="5"></div>
+      <div>
+        <label>$ / Point / Contract</label>
+        <input id="pv" type="number" step="0.5" value="2">
+        <div class="hint">MNQ=2, NQ=20, MES=5, ES=50, MGC=10, M2K=5</div>
+      </div>
+      <div><label>Commission / Contract ($)</label><input id="comm" type="number" step="0.1" value="0.5"></div>
+      <div>
+        <label>Loser MFE (points)</label>
+        <input id="mfe" type="number" value="0">
+        <div class="hint">How far losers run green before reversing. Hurts intraday trailing. 0 = ignore.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SIM SETTINGS ============ -->
+  <div class="card">
+    <h2>3 · Simulation</h2>
+    <div class="grid g4">
+      <div><label>Simulations</label><input id="sims" type="number" value="2000"></div>
+      <div class="checkrow" style="align-self:end">
+        <input id="varySetups" type="checkbox" checked>
+        <label style="margin:0">Randomize setups/day (±1)</label>
+      </div>
+      <div class="checkrow" style="align-self:end">
+        <input id="simFunded" type="checkbox" checked>
+        <label style="margin:0">Also simulate funded payout</label>
+      </div>
+      <div>
+        <label>Payout: profit needed ($)</label>
+        <input id="payoutTarget" type="number" value="2600">
+        <div class="hint">Profit buffer to request first withdrawal.</div>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="run">▶ Run Simulation</button>
+      <button class="btn sec" id="copyLink">🔗 Copy shareable link</button>
+      <span id="status" class="hint" style="margin:0"></span>
+    </div>
+  </div>
+
+  <div id="results" style="display:none">
+    <div id="timeoutWarn" style="display:none" class="warnbox"></div>
+    <!-- STAT CARDS -->
+    <div class="grid g4" style="margin-bottom:18px">
+      <div class="stat green"><span class="ic">✅</span><div class="k">Pass Rate</div><div class="v" id="s_pass">–</div><div class="s" id="s_pass_s"></div></div>
+      <div class="stat red"><span class="ic">💀</span><div class="k">Blow Rate</div><div class="v" id="s_blow">–</div><div class="s" id="s_blow_s"></div></div>
+      <div class="stat blue"><span class="ic">📅</span><div class="k">Median Days to Pass</div><div class="v" id="s_days">–</div><div class="s" id="s_days_s"></div></div>
+      <div class="stat amber"><span class="ic">⚠️</span><div class="k">Avg Max Drawdown</div><div class="v" id="s_dd">–</div><div class="s" id="s_dd_s"></div></div>
+    </div>
+    <div class="grid g4" style="margin-bottom:18px">
+      <div class="stat purpleg"><span class="ic">🔁</span><div class="k">Expected Attempts to Pass</div><div class="v" id="s_att">–</div><div class="s" id="s_att_s"></div></div>
+      <div class="stat slate"><span class="ic">💵</span><div class="k">Expected Cost to Funded</div><div class="v" id="s_cost">–</div><div class="s" id="s_cost_s"></div></div>
+      <div class="stat blue"><span class="ic">📈</span><div class="k">Expectancy / Trade</div><div class="v" id="s_exp">–</div><div class="s" id="s_exp_s"></div></div>
+      <div class="stat green"><span class="ic">🏦</span><div class="k">Funded EV / Account</div><div class="v" id="s_ev">–</div><div class="s" id="s_ev_s"></div></div>
+    </div>
+
+    <!-- EQUITY CURVES -->
+    <div class="card">
+      <h2>Equity Curves — Eval Attempts <span class="pill" id="curveCount"></span></h2>
+      <canvas id="equity" height="420"></canvas>
+      <div class="legend">
+        <span><i style="background:#22c55e"></i>Passed</span>
+        <span><i style="background:#ef4444"></i>Blown (trailing DD)</span>
+        <span><i style="background:#f59e0b"></i>Blown (daily limit)</span>
+        <span><i style="background:#64748b"></i>Timed out</span>
+        <span><i style="background:#4f7cff"></i>Profit target</span>
+        <span><i style="background:#e879f9"></i>Starting liquidation line</span>
+      </div>
+    </div>
+
+    <!-- DISTRIBUTION -->
+    <div class="card">
+      <h2>Outcome Distribution — Days to Resolve</h2>
+      <canvas id="hist" height="260"></canvas>
+    </div>
+
+    <!-- RISK METRICS -->
+    <div class="grid g2">
+      <div class="card">
+        <h2>Eval Risk Metrics</h2>
+        <div class="mlist" id="riskList"></div>
+      </div>
+      <div class="card">
+        <h2>Funded Account Projection</h2>
+        <div class="mlist" id="fundList"></div>
+      </div>
+    </div>
+
+    <!-- SUMMARY -->
+    <div class="summary">
+      <div class="grid g4">
+        <div><div class="k">Total Trades Simulated</div><div class="v" id="sum_trades">–</div></div>
+        <div><div class="k">Avg Win $</div><div class="v" id="sum_aw">–</div></div>
+        <div><div class="k">Avg Loss $</div><div class="v" id="sum_al">–</div></div>
+        <div><div class="k">Net Expectancy / Attempt</div><div class="v" id="sum_net">–</div></div>
+      </div>
+    </div>
+
+    <div class="warnbox">
+      ⚠️ Preset firm numbers are approximate and change often — always confirm trailing type, drawdown, daily limit, consistency and payout rules against your firm's current contract. This is a planning/what-if tool, not financial advice. Past or simulated results don't guarantee anything live (slippage, missed fills, and emotions aren't modeled).
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- helpers ----------
+const $=id=>document.getElementById(id);
+const fmt=n=>'$'+Math.round(n).toLocaleString();
+const fmt1=n=>'$'+n.toLocaleString(undefined,{maximumFractionDigits:0});
+const pct=n=>(n*100).toFixed(n*100>=10?1:2)+'%';
+function num(id){return parseFloat($(id).value)||0;}
+
+// ---------- presets (approximate; edit to match current firm rules) ----------
+const PRESETS={
+  apex50 :{acct:50000, target:3000, dd:2500, trailType:'intraday', lock:100, daily:0, consist:30, minDays:1, evalCost:35, split:90, payoutTarget:2600},
+  apex100:{acct:100000,target:6000, dd:3000, trailType:'intraday', lock:100, daily:0, consist:30, minDays:1, evalCost:85, split:90, payoutTarget:2600},
+  apex150:{acct:150000,target:9000, dd:5000, trailType:'intraday', lock:100, daily:0, consist:30, minDays:1, evalCost:95, split:90, payoutTarget:2600},
+  ts50   :{acct:50000, target:3000, dd:2000, trailType:'eod', lock:999999, daily:1000, consist:0, minDays:2, evalCost:49, split:90, payoutTarget:2500},
+  ts100  :{acct:100000,target:6000, dd:3000, trailType:'eod', lock:999999, daily:2000, consist:0, minDays:2, evalCost:99, split:90, payoutTarget:5000},
+  ts150  :{acct:150000,target:9000, dd:4500, trailType:'eod', lock:999999, daily:3000, consist:0, minDays:2, evalCost:149,split:90, payoutTarget:7500},
+};
+function applyPreset(k){
+  if(k==='custom')return;
+  const p=PRESETS[k]; if(!p)return;
+  for(const f in p){ if($(f)) $(f).value=p[f]; }
+}
+$('preset').addEventListener('change',e=>applyPreset(e.target.value));
+
+// ---------- core single-account engine ----------
+// Returns {result, day, balance, maxDD, peakProfit, equity, dailyProfits, trades}
+function runAccount(p, target, minDays, maxDays, rng){
+  let bal=p.acct, peak=p.acct, maxDD=0, day=0, trades=0;
+  const startLiq=p.acct - p.dd;
+  let liq=startLiq;
+  const lockLine = (p.lock>0) ? p.acct + p.lock : Infinity; // cap the trail
+  const equity=[bal], dailyProfits=[];
+
+  function trail(toBal){
+    if(toBal>peak){ peak=toBal; let nl=peak-p.dd; if(nl>lockLine)nl=lockLine; if(nl>liq)liq=nl; }
+  }
+
+  while(day<maxDays){
+    day++;
+    let n=p.spd;
+    if(p.varySetups) n=Math.max(1,p.spd + (rng()<.5?-1:1)*(rng()<.5?1:0));
+    let dayPnL=0;
+    for(let t=0;t<n;t++){
+      trades++;
+      const win = rng()<p.wr;
+      const gross = win ? p.awD : -p.alD;
+      const net = gross - p.commD;
+      // intraday trailing watches the in-trade peak (winner reaches +win; loser may run +MFE first)
+      if(p.trailType==='intraday'){
+        const intraHigh = bal + (win ? p.awD : p.mfeD) - p.commD;
+        trail(intraHigh);
+      }
+      bal += net; dayPnL += net;
+      const dd=peak-bal; if(dd>maxDD)maxDD=dd;
+      equity.push(bal);
+      if(bal<=liq) return {result:'blown',day,balance:bal,maxDD,peakProfit:peak-p.acct,equity,dailyProfits,trades};
+    }
+    // daily loss limit
+    if(p.daily>0 && dayPnL<=-p.daily)
+      return {result:'blown_daily',day,balance:bal,maxDD,peakProfit:peak-p.acct,equity,dailyProfits,trades};
+    dailyProfits.push(dayPnL);
+    if(p.trailType==='eod') trail(bal);
+    // pass check
+    if(bal-p.acct>=target && day>=minDays){
+      let ok=true;
+      if(p.consist>0){
+        const tot=bal-p.acct, maxDay=Math.max(...dailyProfits.filter(x=>x>0),0);
+        if(tot>0 && maxDay > (p.consist/100)*tot) ok=false; // need more days to dilute
+      }
+      if(ok) return {result:'passed',day,balance:bal,maxDD,peakProfit:peak-p.acct,equity,dailyProfits,trades};
+    }
+  }
+  return {result:'timeout',day,balance:bal,maxDD,peakProfit:peak-p.acct,equity,dailyProfits,trades};
+}
+
+// ---------- gather params ----------
+function getParams(){
+  const p={
+    acct:num('acct'), target:num('target'), dd:num('dd'),
+    trailType:$('trailType').value, lock:num('lock'), daily:num('daily'),
+    consist:num('consist'), minDays:num('minDays'), evalCost:num('evalCost'),
+    split:num('split')/100, maxDays:num('maxDays'),
+    wr:num('wr')/100, aw:num('aw'), al:num('al'), spd:num('spd'),
+    ct:num('ct'), pv:num('pv'), comm:num('comm'), mfe:num('mfe'),
+    sims:num('sims'), varySetups:$('varySetups').checked,
+    simFunded:$('simFunded').checked, payoutTarget:num('payoutTarget'),
+  };
+  p.awD = p.aw*p.pv*p.ct;
+  p.alD = p.al*p.pv*p.ct;
+  p.mfeD= p.mfe*p.pv*p.ct;
+  p.commD = p.comm*p.ct;
+  p.expTrade = p.wr*p.awD - (1-p.wr)*p.alD - p.commD;
+  return p;
+}
+
+// ---------- mulberry32 seeded RNG ----------
+function rngFactory(seed){let a=seed>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+
+// ---------- run ----------
+let LAST=null;
+function run(){
+  const p=getParams();
+  $('status').textContent='Simulating '+p.sims.toLocaleString()+' accounts…';
+  setTimeout(()=>{
+    const rng=rngFactory(123456789);
+    const N=p.sims;
+    let passes=0,blown=0,blownDaily=0,timeout=0,totalTrades=0,sumMaxDD=0;
+    const daysToPass=[], resolveDays=[], samples=[];
+    let fundedTried=0,fundedPaid=0,fundedBlown=0,sumPayout=0,sumPayoutDays=0;
+
+    for(let i=0;i<N;i++){
+      const r=runAccount(p,p.target,p.minDays,p.maxDays,rng);
+      totalTrades+=r.trades; sumMaxDD+=r.maxDD;
+      resolveDays.push(r.day);
+      if(r.result==='passed'){passes++;daysToPass.push(r.day);}
+      else if(r.result==='blown')blown++;
+      else if(r.result==='blown_daily')blownDaily++;
+      else timeout++;
+      if(i<60) samples.push(r);
+
+      // funded phase: only for accounts that passed
+      if(p.simFunded && r.result==='passed'){
+        fundedTried++;
+        const f=runAccount(p,p.payoutTarget,p.minDays,p.maxDays,rng);
+        if(f.result==='passed'){fundedPaid++;sumPayout+=(f.balance-p.acct)*p.split;sumPayoutDays+=f.day;}
+        else if(f.result==='blown'||f.result==='blown_daily')fundedBlown++;
+      }
+    }
+
+    const passRate=passes/N, blowRate=(blown+blownDaily)/N;
+    const medDays = daysToPass.length? median(daysToPass):0;
+    const avgMaxDD=sumMaxDD/N;
+    const expAtt = passRate>0 ? 1/passRate : Infinity;
+    const expCost = passRate>0 ? p.evalCost/passRate : Infinity;
+    const fundPayRate = fundedTried? fundedPaid/fundedTried : 0;
+    const avgPayout = fundedPaid? sumPayout/fundedPaid : 0;
+    // EV per eval attempt: -cost + (passRate * prob-of-payout * avgPayout)
+    const evPerAttempt = -p.evalCost + passRate*fundPayRate*avgPayout;
+    // EV to actually get funded (amortized cost) + first payout value
+    const fundedEV = -expCost + fundPayRate*avgPayout;
+
+    LAST={p,passRate,blowRate,medDays,avgMaxDD,expAtt,expCost,passes,blown,blownDaily,timeout,N,
+          samples,resolveDays,daysToPass,totalTrades,fundedTried,fundedPaid,fundedBlown,
+          fundPayRate,avgPayout,sumPayoutDays,evPerAttempt,fundedEV};
+    render();
+    $('status').textContent='Done · '+N.toLocaleString()+' accounts in last run.';
+  },20);
+}
+
+function median(arr){const a=[...arr].sort((x,y)=>x-y);const m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2;}
+
+// ---------- render ----------
+function render(){
+  const L=LAST,p=L.p; $('results').style.display='block';
+  // "resolved" pass rate ignores accounts that neither passed nor blew within the day cap,
+  // so it isn't distorted by contract size / day-cap interaction.
+  const resolved=L.passes+L.blown+L.blownDaily;
+  const resolvedRate=resolved? L.passes/resolved : 0;
+  const toRate=L.timeout/L.N;
+  $('s_pass').textContent=pct(L.passRate);
+  $('s_pass_s').textContent=L.passes.toLocaleString()+' of '+L.N.toLocaleString()
+      + (L.timeout? ' · '+pct(resolvedRate)+' of finished' : '');
+  $('s_blow').textContent=pct(L.blowRate);
+  $('s_blow_s').textContent=(L.blown+L.blownDaily).toLocaleString()+' blown ('+L.timeout.toLocaleString()+' timed out)';
+  // warn when the day cap is silently capping results
+  const tw=$('timeoutWarn');
+  if(toRate>0.02){
+    tw.style.display='block';
+    tw.innerHTML='⏳ <b>'+pct(toRate)+' of accounts hit the '+p.maxDays+'-day cap without passing or blowing.</b> '
+      +'This usually means your size is small relative to the '+fmt(p.target)+' target, so it just needs more time — '
+      +'it is <b>not</b> the same as failing. Raise <b>Max Attempt Days</b> for a true read. '
+      +'Of accounts that actually finished, <b>'+pct(resolvedRate)+'</b> passed.';
+  } else { tw.style.display='none'; }
+  $('s_days').textContent=L.medDays? L.medDays.toFixed(0):'—';
+  $('s_days_s').textContent='among passers';
+  $('s_dd').textContent=fmt(L.avgMaxDD);
+  $('s_dd_s').textContent='peak-to-valley';
+  $('s_att').textContent=isFinite(L.expAtt)?L.expAtt.toFixed(1):'∞';
+  $('s_att_s').textContent='evals per funded';
+  $('s_cost').textContent=isFinite(L.expCost)?fmt(L.expCost):'∞';
+  $('s_cost_s').textContent='@ '+fmt(p.evalCost)+'/attempt';
+  $('s_exp').textContent=fmt1(p.expTrade);
+  $('s_exp_s').textContent=(p.expTrade>=0?'+':'')+pct(p.expTrade/((p.awD+p.alD)/2||1))+' edge';
+  $('s_ev').textContent=isFinite(L.fundedEV)?fmt(L.fundedEV):'—';
+  $('s_ev_s').textContent=L.fundedEV>=0?'profitable program':'negative — adjust';
+
+  // risk list
+  const ror = L.blowRate; // empirical risk of ruin in eval
+  $('riskList').innerHTML=[
+    rm('Trailing DD Blow Rate', pct(L.blown/L.N), L.blown+' of '+L.N+' hit the trailing line', L.blown/L.N>0.3?'--bad':'--warn'),
+    rm('Daily Limit Blow Rate', p.daily>0?pct(L.blownDaily/L.N):'N/A', p.daily>0?(L.blownDaily+' breached daily loss'):'no daily limit set','--warn'),
+    rm('Timed Out (no result)', pct(L.timeout/L.N), 'no pass within '+p.maxDays+' days','--line'),
+    rm('Empirical Risk of Ruin', pct(ror), 'P(lose the account in eval)', ror>0.25?'--bad':'--good'),
+  ].join('');
+
+  // funded list
+  if(p.simFunded){
+    $('fundList').innerHTML=[
+      rm('Reached First Payout', pct(L.fundPayRate), L.fundedPaid+' of '+L.fundedTried+' funded accts','--good'),
+      rm('Blew Funded Account', L.fundedTried?pct(L.fundedBlown/L.fundedTried):'—', 'before any payout','--bad'),
+      rm('Avg First Payout (your split)', fmt(L.avgPayout), 'after '+(p.split*100).toFixed(0)+'% split','--good'),
+      rm('Funded EV / Account', isFinite(L.fundedEV)?fmt(L.fundedEV):'—', 'first payout minus expected eval cost', L.fundedEV>=0?'--good':'--bad'),
+    ].join('');
+  } else {
+    $('fundList').innerHTML='<div class="hint" style="padding:10px">Enable “Also simulate funded payout” to project payouts and EV.</div>';
+  }
+
+  // summary
+  $('sum_trades').textContent=L.totalTrades.toLocaleString();
+  $('sum_aw').textContent=fmt(p.awD)+' net '+fmt(p.awD-p.commD);
+  $('sum_al').textContent='-'+fmt(p.alD+p.commD);
+  $('sum_net').textContent=fmt(p.expTrade)+' /trade';
+
+  $('curveCount').textContent=L.samples.length+' sample paths';
+  drawEquity(); drawHist();
+}
+function rm(label,val,hint,color){
+  return `<div class="m" style="border-left-color:var(${color})">
+    <div><div class="ml">${label}</div><div class="mh">${hint}</div></div>
+    <div class="mv">${val}</div></div>`;
+}
+
+// ---------- charts (canvas) ----------
+function setupCanvas(c){
+  const dpr=window.devicePixelRatio||1, w=c.clientWidth, h=parseInt(c.getAttribute('height'));
+  c.width=w*dpr; c.height=h*dpr; const x=c.getContext('2d'); x.scale(dpr,dpr);
+  return {x,w,h};
+}
+function drawEquity(){
+  const c=$('equity'),{x,w,h}=setupCanvas(c),p=LAST.p;
+  const padL=64,padR=14,padT=14,padB=28;
+  const W=w-padL-padR,H=h-padT-padB;
+  // bounds
+  let maxX=1,maxY=p.acct+p.target*1.15,minY=p.acct-p.dd*1.1;
+  LAST.samples.forEach(s=>{ maxX=Math.max(maxX,s.equity.length); s.equity.forEach(v=>{if(v>maxY)maxY=v;if(v<minY)minY=v;});});
+  const sx=i=>padL+(i/(maxX-1||1))*W, sy=v=>padT+H-((v-minY)/(maxY-minY||1))*H;
+  x.clearRect(0,0,w,h);
+  // grid + y labels
+  x.font='11px sans-serif'; x.textBaseline='middle';
+  for(let g=0;g<=5;g++){
+    const v=minY+(maxY-minY)*g/5, yy=sy(v);
+    x.strokeStyle='#1b2640'; x.beginPath(); x.moveTo(padL,yy); x.lineTo(w-padR,yy); x.stroke();
+    x.fillStyle='#6f80a6'; x.textAlign='right'; x.fillText('$'+Math.round(v/1000)+'k',padL-8,yy);
+  }
+  // start balance line
+  line(x,sx(0),sy(p.acct),sx(maxX-1),sy(p.acct),'#2b3a5e',1,[4,4]);
+  // target line
+  line(x,padL,sy(p.acct+p.target),w-padR,sy(p.acct+p.target),'#4f7cff',1.5,[6,4]);
+  x.fillStyle='#4f7cff';x.textAlign='left';x.fillText('Target '+fmt(p.acct+p.target),padL+6,sy(p.acct+p.target)-9);
+  // starting liq line
+  line(x,padL,sy(p.acct-p.dd),w-padR,sy(p.acct-p.dd),'#e879f9',1.5,[6,4]);
+  x.fillStyle='#e879f9';x.fillText('Liq '+fmt(p.acct-p.dd),padL+6,sy(p.acct-p.dd)+12);
+  // paths
+  const col={passed:'rgba(34,197,94,.7)',blown:'rgba(239,68,68,.7)',blown_daily:'rgba(245,158,11,.8)',timeout:'rgba(100,116,139,.6)'};
+  LAST.samples.forEach(s=>{
+    x.strokeStyle=col[s.result]||'#888'; x.lineWidth=1.1; x.beginPath();
+    s.equity.forEach((v,i)=>{ const X=sx(i),Y=sy(v); i?x.lineTo(X,Y):x.moveTo(X,Y);});
+    x.stroke();
+  });
+  x.fillStyle='#6f80a6';x.textAlign='center';x.fillText('Trades →',padL+W/2,h-8);
+}
+function drawHist(){
+  const c=$('hist'),{x,w,h}=setupCanvas(c),p=LAST.p;
+  const padL=44,padR=14,padT=14,padB=30,W=w-padL-padR,H=h-padT-padB;
+  const data=LAST.resolveDays, maxD=Math.max(...data,1), bins=Math.min(maxD,30);
+  const counts=new Array(bins).fill(0);
+  data.forEach(d=>{let b=Math.floor((d-1)/maxD*bins); if(b>=bins)b=bins-1; if(b<0)b=0; counts[b]++;});
+  const maxC=Math.max(...counts,1);
+  x.clearRect(0,0,w,h);
+  x.font='11px sans-serif';
+  for(let g=0;g<=4;g++){const yy=padT+H-(H*g/4);x.strokeStyle='#1b2640';x.beginPath();x.moveTo(padL,yy);x.lineTo(w-padR,yy);x.stroke();
+    x.fillStyle='#6f80a6';x.textAlign='right';x.textBaseline='middle';x.fillText(Math.round(maxC*g/4),padL-6,yy);}
+  const bw=W/bins;
+  counts.forEach((cnt,i)=>{
+    const bh=H*cnt/maxC, X=padL+i*bw, Y=padT+H-bh;
+    const grad=x.createLinearGradient(0,Y,0,padT+H); grad.addColorStop(0,'#5a86ff');grad.addColorStop(1,'#3b3fe6');
+    x.fillStyle=grad; x.fillRect(X+1,Y,bw-2,bh);
+  });
+  x.fillStyle='#6f80a6';x.textAlign='center';x.textBaseline='top';
+  x.fillText('1 day',padL+bw/2,padT+H+8);
+  x.fillText(maxD+' days  (time to pass OR blow)',w-padR-70,padT+H+8);
+}
+function line(x,x1,y1,x2,y2,col,lw,dash){x.save();x.strokeStyle=col;x.lineWidth=lw||1;x.setLineDash(dash||[]);x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.stroke();x.restore();}
+
+// ---------- share via URL ----------
+const FIELDS=['acct','target','dd','trailType','lock','daily','consist','minDays','evalCost','split','maxDays',
+  'wr','aw','al','spd','ct','pv','comm','mfe','sims','payoutTarget'];
+function encodeState(){
+  const o={}; FIELDS.forEach(f=>o[f]=$(f).value);
+  o.varySetups=$('varySetups').checked?1:0; o.simFunded=$('simFunded').checked?1:0;
+  return btoa(JSON.stringify(o));
+}
+function decodeState(){
+  try{
+    const h=location.hash.slice(1); if(!h)return;
+    const o=JSON.parse(atob(h));
+    FIELDS.forEach(f=>{if(o[f]!==undefined&&$(f))$(f).value=o[f];});
+    if(o.varySetups!==undefined)$('varySetups').checked=!!o.varySetups;
+    if(o.simFunded!==undefined)$('simFunded').checked=!!o.simFunded;
+    $('preset').value='custom';
+  }catch(e){}
+}
+$('copyLink').addEventListener('click',()=>{
+  location.hash=encodeState();
+  navigator.clipboard?.writeText(location.href);
+  $('status').textContent='Link copied — paste it anywhere to reopen these exact settings.';
+});
+
+// ---------- init ----------
+$('run').addEventListener('click',run);
+decodeState();
+run();
+</script>
+</body>
+</html>
