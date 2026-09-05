@@ -7,3 +7,47 @@ THE CELL, unfiltered (position-locked): research / locked
 ==============================================================================================================================
 ARM A -- AutoBNN FORECASTER as an entry gate (window 200 bars, horizon 26 bars, period 26)
 ==============================================================================================================================
+  fold 0: structure linear*periodic+rbf      (160 signals, 88s)
+  fold 1: structure rbf                      (160 signals, 130s)
+  fold 2: structure sum-of-products          (160 signals, 230s)
+  fold 3: structure changepoint(linear,rbf)  (160 signals, 294s)
+  fold 4: structure changepoint(linear,rbf)  (160 signals, 358s)
+  fold 5: structure rbf                      (160 signals, 401s)
+  forecast quality on the research signal bars: IC -0.070 (Spearman -0.095) against the realised 26-bar move; mean P(up) 0.242
+  gate                                                             research |    random filter, same selectivity
+  P(up) >= 0.50  keeps   19%  n   57 PF  1.296 +0.0215%/tr total  +1.22% | median PF 1.946  p 0.935   shuffled-gate PF 2.431
+  P(up) >= 0.55  keeps   18%  n   53 PF  1.484 +0.0329%/tr total  +1.75% | median PF 1.876  p 0.770   shuffled-gate PF 1.180
+  P(up) >= 0.60  keeps   15%  n   46 PF  1.034 +0.0025%/tr total  +0.11% | median PF 1.931  p 0.970   shuffled-gate PF 0.946
+  P(up) >= 0.70  keeps   12%  n   38 PF  0.912 -0.0066%/tr total  -0.25% | median PF 1.816  p 0.950   shuffled-gate PF 2.868
+
+==============================================================================================================================
+ARM A -- the ONE locked read, pre-declared: P(up) >= 0.60
+==============================================================================================================================
+  base   locked: n  105 PF  1.916 +0.0764%/tr total  +8.02%
+  gated  locked: n   19 PF  1.416 +0.0351%/tr total  +0.67%
+
+==============================================================================================================================
+ARM B -- AutoBNN META-LABEL: eight causal features at the signal bar -> trade R, with uncertainty
+==============================================================================================================================
+  fold 1: train 32 test 32 structure rbf (420s)
+  fold 2: train 64 test 32 structure matern (432s)
+  fold 3: train 96 test 32 structure rbf (444s)
+  fold 4: train 128 test 32 structure matern (457s)
+  fold 5: train 160 test 32 structure linear (470s)
+  OOF IC (posterior mean vs realised R): +0.071   shuffled twin IC +0.068
+  research trades scored: n  160 PF  2.700 +0.1097%/tr total +17.55%
+  rule                                                                     research |   random subset, same size | shuffled twin
+  keep top 70% by posterior mean       n  112 PF  3.583 +0.1540%/tr total +17.25% | median PF 2.750  p 0.023 | PF 2.798 n 112
+  keep top 50% by posterior mean       n   80 PF  3.557 +0.1523%/tr total +12.19% | median PF 2.650  p 0.137 | PF 1.559 n 80
+  keep top 30% by posterior mean       n   48 PF  2.979 +0.1134%/tr total  +5.44% | median PF 2.641  p 0.393 | PF 1.692 n 48
+  keep 'confident': mean - sd > 0      n    2 PF  0.000 -0.0906%/tr total  -0.18% | median PF nan  p 0.000 | PF 2.946 n 25
+  keep posterior mean > 0              n   58 PF  2.932 +0.1122%/tr total  +6.51% | median PF 2.599  p 0.377 | PF 2.236 n 89
+
+==============================================================================================================================
+ARM B -- the ONE locked read, pre-declared: fit on ALL research trades, keep top 50% by posterior mean
+==============================================================================================================================
+  structure rbf; locked IC +0.088
+  base   locked: n  105 PF  1.916 +0.0764%/tr total  +8.02%
+  kept   locked: n  105 PF  1.916 +0.0764%/tr total  +8.02%
+
+  total runtime 478s
