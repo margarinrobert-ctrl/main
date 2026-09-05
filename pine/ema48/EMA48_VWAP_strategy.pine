@@ -43,7 +43,7 @@ crossMode = input.string("Fresh cross", "Cross reading", options = ["Fresh cross
      tooltip = "MEASURED: fresh cross (within 5 bars) mean PF 0.71 across the grid; state mean 0.80. Neither clears its control alone.")
 crossWinBars = input.int(5, "Fresh-cross window (bars)", minval = 1, group = "Trend")
 
-vwapMode = input.string("State", "VWAP reading", options = ["Off", "State (price on the correct side)", "Touch (bounce off VWAP)"], group = "VWAP",
+vwapMode = input.string("State (price on the correct side)", "VWAP reading", options = ["Off", "State (price on the correct side)", "Touch (bounce off VWAP)"], group = "VWAP",
      tooltip = "MEASURED: State is the only positive marginal in the grid (+0.03 %/trade). Touch is the WORST reading (-0.02). Off is neutral (-0.00).")
 
 atrLen   = input.int(14, "ATR Length", group = "Risk")
