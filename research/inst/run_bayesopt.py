@@ -62,7 +62,7 @@ STUDIES = {}
 for kind, sampler, ntr in (("total", optuna.samplers.TPESampler(seed=7, multivariate=True), 1200),
                            ("pf100", optuna.samplers.TPESampler(seed=8, multivariate=True), 1200),
                            ("sharpe", optuna.samplers.TPESampler(seed=9, multivariate=True), 1200),
-                           ("gp_total", optuna.samplers.GPSampler(seed=10), 300)):
+                           ("gp_total", optuna.samplers.GPSampler(seed=10), 100)):
     st = optuna.create_study(direction="maximize", sampler=sampler); st.optimize(make_obj(kind), n_trials=ntr, show_progress_bar=False)
     STUDIES[kind] = st; print(f"  study {kind:9s} {ntr:>5} trials  best research objective {st.best_value:+.3f}   ({time.time()-t0:.0f}s)", flush=True)
 L = pd.DataFrame(LOG); L.to_parquet("results/inst/bayesopt_trials.parquet")
@@ -72,7 +72,7 @@ for kind, g in L.groupby("study"):
     print(f"  {kind:9s}: {len(g):>5} scorable trials; profitable on research {100*(g.tot_res>0).mean():.1f}%, on locked {100*(g.tot_lock>0).mean():.1f}%; "
           f"corr(research total, locked total) {g[['tot_res','tot_lock']].corr().iloc[0,1]:+.3f}, corr(PF) {g[['pf_res','pf_lock']].corr().iloc[0,1]:+.3f}; "
           f"top decile by research total: locked total mean {g.nlargest(len(g)//10, 'tot_res').tot_lock.mean():+.2f}% vs all {g.tot_lock.mean():+.2f}%")
-line("B. THE FINALISTS -- best trial per study, ONE locked read each (multiplicity: 3,900 trials over 4 studies)")
+line("B. THE FINALISTS -- best trial per study, ONE locked read each (multiplicity: 3,700 trials over 4 studies)")
 hdr = f"  {'study':9s} {'sess':>4} {'ent':>4} {'exN':>4} {'stop':>5} {'tp':>5} {'hold':>5} {'ad':>2} {'ma':>6} {'chop':>6} {'psh':>3} | {'res n':>5} {'PF':>6} {'total':>8} {'Sh':>5} | {'lock n':>6} {'PF':>6} {'total':>8} {'Sh':>5}"
 print(hdr)
 def row(kind, p, s):
