@@ -1,0 +1,597 @@
+//@version=6
+// =====================================================================================
+//  IFVG + Liquidity Sweep Model (Dodgy DD / ICT) — STRATEGY (backtest)   v2
+//  Nasdaq-100 futures (NQ/MNQ) oriented, 1-minute execution timeframe.
+//
+//  Pure ICT / Smart-Money workflow distilled from the four source documents
+//  ("Dodgy's Ultimate Trading Course", the "IFVG Model Trading Guide", the
+//  "Dodgy DD IFVG Strategy Explained" report and "Nix's A+ Inversion Checklist"):
+//
+//    1. Liquidity sweep  : purge external liquidity (ERL) — Equal Highs/Lows (EQH/EQL),
+//                          PDH/PDL or a swing high/low — and reject back through it
+//                          (the "manipulation leg").   "No Sweep = No Trade."
+//    2. Displacement     : aggressive *directional* reversal candle (body >= ATR x mult).
+//    3. FVG inversion    : an opposing FVG is closed through by a candle BODY -> IFVG
+//                          (bullish FVG -> bearish IFVG, and vice-versa).
+//    4. Entry            : market on close, limit at the inverted gap edge (retrace),
+//                          or AUTO (market when the close is near the edge, else retrace).
+//
+//  ICT context filters (replacing any moving-average):
+//    - Market-Structure Bias (BOS / MSS, body close)          -> directional context.
+//    - Premium / Discount equilibrium (50% of the ICT day from -> only long in discount,
+//      the 18:00 New York open).                                  only short in premium.
+//    - SMT Divergence (NQ vs ES/YM, or inverse vs DXY)        -> swing-anchored crack in
+//      correlation: a real liquidity raid on one side that the correlate refuses to confirm.
+//    - Killzones (NY AM / Lunch / PM, London) + ICT Macros    -> delivery windows.
+//    - Singular-FVG (reject consecutive "double" FVGs).
+//    - FVG size band (NQ ideal 7-15 pts) to reject noise + news spikes.
+//
+//  Risk / trade management (per the course):
+//    - Stop: preferred "close back through the IFVG" invalidation, OR swing high/low.
+//    - Scale: take a partial at the nearest Internal Trading High/Low (ITH/ITL), then
+//             move the runner's stop to break-even and target the opposing draw.
+//    - Take-profit: fixed R:R, or the opposing liquidity pool (with an R:R floor).
+//    - Daily discipline: max trades/day and "two losses = done" (prop-firm survival).
+//
+//  Backtest results depend on the symbol, date range, session and fills you load. The
+//  author notes inversions are best FORWARD-tested live; treat this as an educational
+//  mechanical approximation. Not financial advice.
+// =====================================================================================
+
+strategy("IFVG + Liquidity Sweep Strategy | ICT", shorttitle="IFVG-ICT-Strat",
+     overlay=true, max_boxes_count=500, max_labels_count=500, max_lines_count=500,
+     max_bars_back=5000, pyramiding=0, calc_on_every_tick=false,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     initial_capital=100000, margin_long=5, margin_short=5,
+     commission_type=strategy.commission.cash_per_order,
+     commission_value=2.04, slippage=2)
+// NOTE on futures: a strategy will NOT enter a position it cannot afford. Futures have a
+// Point Value / contract multiplier (NQ = $20/pt, so 1 NQ at ~20000 ≈ $400k notional).
+// With full margin that would need ~$400k of capital, so the tester would place ZERO
+// trades ("This report requires trade data"). margin_long/short = 5 simulates ~5% futures
+// leverage, giving 100000 / 0.05 = $2,000,000 of buying power so 1 NQ/MNQ contract is
+// always affordable. Raise initial_capital or lower margin further if you size up.
+
+// -------------------------------------------------------------------------------------
+// Inputs — Model: Fair Value Gap
+// -------------------------------------------------------------------------------------
+gFVG = "Fair Value Gap"
+minGapTicks  = input.float(20.0, "Min FVG size (ticks)", minval=0.0, step=1.0, group=gFVG,
+     tooltip="NQ: 4 ticks = 1 point. The course calls 7-15 pts (28-60 ticks) the ideal NQ gap; the default 20 ticks = 5 pts trims noise while keeping trade count.")
+maxGapTicks  = input.float(100.0,"Max FVG size (ticks, 0 = off)", minval=0.0, step=1.0, group=gFVG,
+     tooltip="Reject oversized gaps (usually news spikes the course says to avoid). 100 ticks = 25 pts on NQ. Set 0 to disable.")
+fvgMaxAge    = input.int(60,     "Max FVG age (bars)", minval=5, group=gFVG)
+useDoubleFvg = input.bool(true,  "Reject consecutive (double) FVGs", group=gFVG,
+     tooltip="Course: a single (singular) gap in the leg is highest probability. Block a second same-direction FVG that forms within the window below.")
+doubleFvgBars= input.int(5,      "Double-FVG window (bars)", minval=1, group=gFVG)
+showFVG      = input.bool(true,  "Draw FVG / IFVG boxes", group=gFVG)
+
+gSweep = "Liquidity Sweep (ERL)"
+useSweep     = input.bool(true,  "Require liquidity sweep before inversion", group=gSweep)
+sweepLookback= input.int(15,     "Sweep look-back (bars)", minval=1, group=gSweep,
+     tooltip="Course favours FAST sweeps. Keep this tight so only a fresh sweep validates the inversion.")
+pivotLen     = input.int(8,      "Swing pivot strength", minval=1, group=gSweep)
+usePDLevels  = input.bool(true,  "Use Previous Day High/Low as sweep levels", group=gSweep)
+useEQ        = input.bool(true,  "Use Equal Highs/Lows (EQH/EQL) as sweep levels", group=gSweep)
+eqTicks      = input.float(8.0,  "Equal H/L tolerance (ticks)", minval=0.0, step=1.0, group=gSweep)
+allowNoSweepWithSMT = input.bool(false, "Allow no-sweep entry when SMT confirms", group=gSweep,
+     tooltip="Course exception to 'No Sweep = No Trade': a valid SMT divergence (or HTF bias) can substitute for the sweep.")
+
+gStruct = "Market Structure (ICT bias)"
+useMSS       = input.bool(true,  "Use market-structure bias (BOS / MSS)", group=gStruct,
+     tooltip="Only long while structure is bullish (close broke last swing high), only short while bearish. Replaces the moving-average filter.")
+
+gPD = "Premium / Discount (PD array)"
+usePD        = input.bool(true,  "Only long in discount / short in premium", group=gPD,
+     tooltip="50% equilibrium of the ICT day measured from the 18:00 New York open. Below = discount (longs), above = premium (shorts).")
+
+gSMT = "SMT Divergence (swing-anchored)"
+useSMT       = input.bool(false, "Require SMT divergence with correlated asset", group=gSMT,
+     tooltip="A genuine 'crack in correlation': THIS market sweeps a confirmed 3-bar swing extreme (a real liquidity raid) while the correlate FAILS to confirm. Anchored to swings + a sweep per the ICT Bible / SMT homework — not the old rolling-window high/low that fired on almost every bar and hurt performance.")
+smtSym       = input.symbol("CME_MINI:ES1!", "Correlated symbol", group=gSMT)
+smtInverse   = input.bool(false, "Correlated symbol is INVERSELY correlated (e.g. DXY)", group=gSMT,
+     tooltip="ES/YM move WITH NQ (leave off). DXY moves inversely to NQ (turn on) — the crack is then a failure to make the opposite-side extreme.")
+smtLookback  = input.int(20,     "SMT validity after the crack (bars)", minval=1, group=gSMT)
+showSMT      = input.bool(true,  "Mark SMT divergences on chart", group=gSMT)
+
+gDisp = "Displacement"
+useDisp      = input.bool(true,  "Require displacement on inversion candle", group=gDisp)
+atrLen       = input.int(14,     "ATR length", minval=1, group=gDisp)
+dispMult     = input.float(1.0,  "Min body size (x ATR)", minval=0.0, step=0.1, group=gDisp)
+
+gTime = "Time — Killzones & Macros"
+useTime      = input.bool(true,  "Restrict entries to killzones", group=gTime)
+useNYam      = input.bool(true,  "NY AM 08:30-11:00", group=gTime)
+useNYlunch   = input.bool(false, "NY Lunch 12:00-13:00", group=gTime)
+useNYpm      = input.bool(true,  "NY PM 13:30-16:00", group=gTime)
+useLondon    = input.bool(false, "London 02:00-05:00", group=gTime)
+useMacro     = input.bool(false, "Also require an ICT macro window", group=gTime)
+tzInfo       = input.string("America/New_York", "Killzone/Macro timezone", group=gTime,
+     options=["America/New_York","Europe/London","Exchange","UTC"])
+
+gDaily = "Daily Limits (prop discipline)"
+useDailyLimits  = input.bool(true, "Apply daily trade / loss limits", group=gDaily,
+     tooltip="Course: 'Max 3 trades per day' and 'Two losses = I'm done'. Counters reset at the 18:00 NY ICT day open.")
+maxTradesPerDay = input.int(3, "Max trades per day", minval=1, group=gDaily)
+maxLossesPerDay = input.int(2, "Max losing trades per day (then stop)", minval=1, group=gDaily)
+
+// -------------------------------------------------------------------------------------
+// Inputs — Execution & risk
+// -------------------------------------------------------------------------------------
+gExec = "Execution"
+entryMode    = input.string("Auto", "Entry mode", options=["Auto","Market on close","Limit Retest"], group=gExec,
+     tooltip="Auto = market the close when it is near the gap edge, otherwise wait for a retrace limit (the course's discretion: market unless the R:R is bad).")
+autoChaseTicks = input.float(40.0, "Auto: max chase from gap edge (ticks)", minval=0.0, step=1.0, group=gExec,
+     tooltip="If the close is more than this beyond the inverted gap edge, place a retrace limit instead of chasing. 40 ticks = 10 pts on NQ.")
+limitExpiry  = input.int(6,      "Cancel unfilled limit after (bars)", minval=1, group=gExec)
+
+gRisk = "Risk Management"
+stopMode     = input.string("IFVG close", "Stop method", options=["IFVG close","Swing high/low"], group=gRisk,
+     tooltip="IFVG close = preferred: invalidate if a candle closes back through the inverted gap. Swing = hard stop beyond the swept swing.")
+tpMode       = input.string("Fixed R:R", "Take-profit target", options=["Fixed R:R","Opposing liquidity"], group=gRisk,
+     tooltip="Fixed = reward = R:R x risk. Opposing liquidity = target the nearest opposing pool (swing/PDH-PDL/EQ) but never worse than the R:R floor.")
+rr           = input.float(2.0,  "Reward:Risk (TP)", minval=0.5, step=0.1, group=gRisk)
+slLookback   = input.int(10,     "Swing / internal look-back (bars)", minval=1, group=gRisk)
+slBufTicks   = input.float(4.0,  "Stop buffer (ticks)", minval=0.0, step=1.0, group=gRisk)
+useBE        = input.bool(true,  "Move stop to break-even on ITH/ITL", group=gRisk,
+     tooltip="Per the course: move stop to BE once price takes the nearest internal trading high/low.")
+useScale     = input.bool(true,  "Scale a partial at ITH/ITL", group=gRisk,
+     tooltip="Course: scale half at the internal high/low, then run the rest to the opposing draw with the stop at break-even.")
+scalePct     = input.float(50.0, "Partial size to scale (%)", minval=1.0, maxval=99.0, step=5.0, group=gRisk)
+flatEOD      = input.bool(true,  "Flatten at session end", group=gRisk)
+eodSession   = input.session("0830-1600", "NY trading window (flatten outside)", group=gRisk)
+
+// -------------------------------------------------------------------------------------
+// Core series + helpers
+// -------------------------------------------------------------------------------------
+minGap = minGapTicks * syminfo.mintick
+maxGap = maxGapTicks * syminfo.mintick
+atr    = ta.atr(atrLen)
+tz     = tzInfo == "Exchange" ? syminfo.timezone : tzInfo
+
+// Nearest opposing-liquidity pool helpers (used for the "Opposing liquidity" TP target).
+nearAbove(_ref, _a, _b, _c) =>
+    float m = na
+    if not na(_a) and _a > _ref
+        m := _a
+    if not na(_b) and _b > _ref
+        m := na(m) ? _b : math.min(m, _b)
+    if not na(_c) and _c > _ref
+        m := na(m) ? _c : math.min(m, _c)
+    m
+nearBelow(_ref, _a, _b, _c) =>
+    float m = na
+    if not na(_a) and _a < _ref
+        m := _a
+    if not na(_b) and _b < _ref
+        m := na(m) ? _b : math.max(m, _b)
+    if not na(_c) and _c < _ref
+        m := na(m) ? _c : math.max(m, _c)
+    m
+
+// -------------------------------------------------------------------------------------
+// Time — killzones, macros, ICT day boundary
+// -------------------------------------------------------------------------------------
+inNYam    = useNYam    and not na(time(timeframe.period, "0830-1100", tz))
+inNYlunch = useNYlunch and not na(time(timeframe.period, "1200-1300", tz))
+inNYpm    = useNYpm    and not na(time(timeframe.period, "1330-1600", tz))
+inLondon  = useLondon  and not na(time(timeframe.period, "0200-0500", tz))
+inKZ = inNYam or inNYlunch or inNYpm or inLondon
+
+mc1 = time(timeframe.period, "0830-0910", tz)
+mc2 = time(timeframe.period, "0950-1010", tz)
+mc3 = time(timeframe.period, "1050-1110", tz)
+mc4 = time(timeframe.period, "1150-1210", tz)
+mc5 = time(timeframe.period, "1310-1340", tz)
+mc6 = time(timeframe.period, "1515-1545", tz)
+inMacro = not na(mc1) or not na(mc2) or not na(mc3) or not na(mc4) or not na(mc5) or not na(mc6)
+inTime  = (not useTime or inKZ) and (not useMacro or inMacro)
+
+// ICT trading day opens at 18:00 New York. Detect the transition into the evening so the
+// PD equilibrium and the daily counters both reset on the same boundary (survives the
+// 17:00-18:00 CME maintenance gap because it compares the "after 18:00" state, not bars).
+isEve  = hour(time, tz) >= 18
+newICT = isEve and not isEve[1]
+
+// Flatten window: the NY session OR (when enabled) the London killzone, so London entries
+// are reachable instead of being blocked by an NY-only window (fixes the prior coupling).
+inEOD = (not na(time(timeframe.period, eodSession, tz))) or inLondon
+
+// -------------------------------------------------------------------------------------
+// Premium / Discount equilibrium (50% of the ICT day from the 18:00 NY open)
+// -------------------------------------------------------------------------------------
+var float ictHi = na
+var float ictLo = na
+if newICT
+    ictHi := high
+    ictLo := low
+else
+    ictHi := na(ictHi) ? high : math.max(ictHi, high)
+    ictLo := na(ictLo) ? low  : math.min(ictLo, low)
+eq = (na(ictHi) or na(ictLo)) ? na : (ictHi + ictLo) / 2.0
+pdLongOK  = not usePD or na(eq) or close <= eq
+pdShortOK = not usePD or na(eq) or close >= eq
+
+// -------------------------------------------------------------------------------------
+// Swing pivots, Equal Highs / Equal Lows
+// -------------------------------------------------------------------------------------
+ph = ta.pivothigh(high, pivotLen, pivotLen)
+pl = ta.pivotlow(low,  pivotLen, pivotLen)
+var float lastPH = na
+var float lastPL = na
+var float prevPH = na
+var float prevPL = na
+if not na(ph)
+    prevPH := lastPH
+    lastPH := ph
+if not na(pl)
+    prevPL := lastPL
+    lastPL := pl
+
+eqTol = eqTicks * syminfo.mintick
+eqhLevel = useEQ and not na(lastPH) and not na(prevPH) and math.abs(lastPH - prevPH) <= eqTol ? math.max(lastPH, prevPH) : na
+eqlLevel = useEQ and not na(lastPL) and not na(prevPL) and math.abs(lastPL - prevPL) <= eqTol ? math.min(lastPL, prevPL) : na
+
+// -------------------------------------------------------------------------------------
+// Market structure bias (BOS / MSS, body close)
+// -------------------------------------------------------------------------------------
+var int bias = 0
+if not na(lastPH) and close > lastPH
+    bias := 1
+if not na(lastPL) and close < lastPL
+    bias := -1
+biasLongOK  = not useMSS or bias >= 0
+biasShortOK = not useMSS or bias <= 0
+
+// Previous Day High / Low
+pdh = usePDLevels ? request.security(syminfo.tickerid, "1D", high[1], lookahead=barmerge.lookahead_off) : na
+pdl = usePDLevels ? request.security(syminfo.tickerid, "1D", low[1],  lookahead=barmerge.lookahead_off) : na
+
+// -------------------------------------------------------------------------------------
+// SMT divergence vs correlated asset — swing-anchored "crack in correlation".
+//   ICT Bible / SMT homework: correlated markets (NQ<->ES/YM, inversely NQ<->DXY) move in
+//   tandem; a genuine SMT prints only when THIS market sweeps a CONFIRMED 3-bar swing
+//   extreme (a real liquidity raid) while the correlate REFUSES to confirm. This replaces
+//   the old rolling-window high/low test, which fired on nearly every bar (noise -> the
+//   filter hurt rather than helped). The correlate level is captured at the SAME pivot bar
+//   so the two swings are time-aligned ("note when these swing points occurred").
+// -------------------------------------------------------------------------------------
+corrHigh = request.security(smtSym, timeframe.period, high, lookahead=barmerge.lookahead_off)
+corrLow  = request.security(smtSym, timeframe.period, low,  lookahead=barmerge.lookahead_off)
+
+// Latest confirmed swing extreme on THIS market + the correlate's level at that pivot bar.
+// pivots confirm pivotLen bars after the swing, so [pivotLen] reads the aligned correlate.
+var float nqSwLow  = na
+var float nqSwHigh = na
+var float coAtLow  = na
+var float coAtHigh = na
+if not na(pl)
+    nqSwLow := pl
+    coAtLow := corrLow[pivotLen]
+if not na(ph)
+    nqSwHigh := ph
+    coAtHigh := corrHigh[pivotLen]
+
+nqTookLow  = not na(nqSwLow)  and low  < nqSwLow     // this market raided its sell-side
+nqTookHigh = not na(nqSwHigh) and high > nqSwHigh    // this market raided its buy-side
+// Bullish crack: we raid sell-side; correlate holds its low (positive) or fails a new high (inverse).
+bullSMTraw = nqTookLow  and (smtInverse ? (not na(coAtHigh) and corrHigh <= coAtHigh) : (not na(coAtLow) and corrLow >= coAtLow))
+// Bearish crack: we raid buy-side; correlate holds its high (positive) or fails a new low (inverse).
+bearSMTraw = nqTookHigh and (smtInverse ? (not na(coAtLow) and corrLow >= coAtLow) : (not na(coAtHigh) and corrHigh <= coAtHigh))
+
+var int lastBearSMTBar = na
+var int lastBullSMTBar = na
+if bearSMTraw
+    lastBearSMTBar := bar_index
+if bullSMTraw
+    lastBullSMTBar := bar_index
+hasBullSMT = not na(lastBullSMTBar) and (bar_index - lastBullSMTBar) <= smtLookback
+hasBearSMT = not na(lastBearSMTBar) and (bar_index - lastBearSMTBar) <= smtLookback
+
+// -------------------------------------------------------------------------------------
+// Liquidity sweeps (wick beyond the level, body rejects back inside)
+// -------------------------------------------------------------------------------------
+sweptHigh = (not na(lastPH)   and high > lastPH   and close < lastPH) or
+             (not na(pdh)      and high > pdh      and close < pdh)    or
+             (not na(eqhLevel) and high > eqhLevel and close < eqhLevel)
+sweptLow  = (not na(lastPL)   and low  < lastPL   and close > lastPL) or
+             (not na(pdl)      and low  < pdl      and close > pdl)    or
+             (not na(eqlLevel) and low  < eqlLevel and close > eqlLevel)
+
+// Track only the MOST RECENT sweep and its direction. A bullish inversion (long) must be
+// preceded by a fresh, unconsumed sweep of a LOW; a bearish inversion (short) by a sweep
+// of a HIGH. Using a single most-recent event (not two independent flags) prevents an
+// unrelated opposite-side sweep from also validating the trade.
+var int  lastSweepDir = 0    // +1 = swept a high (short context), -1 = swept a low (long context)
+var int  lastSweepBar = na
+var bool sweepUsed    = false
+if sweptHigh
+    lastSweepDir := 1
+    lastSweepBar := bar_index
+    sweepUsed := false
+if sweptLow
+    lastSweepDir := -1
+    lastSweepBar := bar_index
+    sweepUsed := false
+
+sweepFresh   = not na(lastSweepBar) and (bar_index - lastSweepBar) <= sweepLookback and not sweepUsed
+recentSweepHigh = sweepFresh and lastSweepDir == 1
+recentSweepLow  = sweepFresh and lastSweepDir == -1
+
+// -------------------------------------------------------------------------------------
+// FVG detection (3-candle imbalance) + singular-gap (double-FVG) filter
+// -------------------------------------------------------------------------------------
+bullGap  = low - high[2]
+bearGap  = low[2] - high
+gapOKbull = bullGap >= minGap and (maxGapTicks <= 0 or bullGap <= maxGap)
+gapOKbear = bearGap >= minGap and (maxGapTicks <= 0 or bearGap <= maxGap)
+isBullFVG = low > high[2] and gapOKbull
+isBearFVG = high < low[2] and gapOKbear
+bullTop = low
+bullBot = high[2]
+bearTop = low[2]
+bearBot = high
+
+var int lastBullFvgBar = na
+var int lastBearFvgBar = na
+blockBull = useDoubleFvg and not na(lastBullFvgBar) and (bar_index - lastBullFvgBar) <= doubleFvgBars
+blockBear = useDoubleFvg and not na(lastBearFvgBar) and (bar_index - lastBearFvgBar) <= doubleFvgBars
+if isBullFVG
+    lastBullFvgBar := bar_index
+if isBearFVG
+    lastBearFvgBar := bar_index
+
+// -------------------------------------------------------------------------------------
+// FVG store
+// -------------------------------------------------------------------------------------
+var array<float> fTop  = array.new_float()
+var array<float> fBot  = array.new_float()
+var array<int>   fDir  = array.new_int()
+var array<int>   fBar  = array.new_int()
+var array<bool>  fInv  = array.new_bool()
+var array<box>   fBoxA = array.new_box()
+
+newFVG(float t, float b, int d) =>
+    array.push(fTop, t)
+    array.push(fBot, b)
+    array.push(fDir, d)
+    array.push(fBar, bar_index)
+    array.push(fInv, false)
+    box bx = na
+    if showFVG
+        bx := box.new(bar_index - 2, t, bar_index, b,
+             border_color=color.new(color.gray, 70),
+             bgcolor = d == 1 ? color.new(color.teal, 80) : color.new(color.red, 80))
+    array.push(fBoxA, bx)
+
+if isBullFVG and not blockBull
+    newFVG(bullTop, bullBot, 1)
+if isBearFVG and not blockBear
+    newFVG(bearTop, bearBot, -1)
+
+// -------------------------------------------------------------------------------------
+// Inversion check (one per bar — the newest gap price closes through) + capture of the
+// inverted gap edges for the IFVG-close stop and the retrace-limit entry.
+// -------------------------------------------------------------------------------------
+bool bullInversion = false
+bool bearInversion = false
+float longEdge    = na   // top of inverted bearish gap (long entry / retrace edge)
+float longGapBot  = na   // bottom of inverted bearish gap (invalidation edge)
+float shortEdge   = na   // bottom of inverted bullish gap (short entry / retrace edge)
+float shortGapTop = na   // top of inverted bullish gap (invalidation edge)
+
+if array.size(fTop) > 0
+    for i = array.size(fTop) - 1 to 0
+        if not array.get(fInv, i)
+            int   d = array.get(fDir, i)
+            float t = array.get(fTop, i)
+            float b = array.get(fBot, i)
+            box   bx = array.get(fBoxA, i)
+            if d == 1 and close < b
+                array.set(fInv, i, true)
+                bearInversion := true
+                shortEdge := b
+                shortGapTop := t
+                if not na(bx)
+                    box.set_bgcolor(bx, color.new(color.fuchsia, 60))
+                break
+            else if d == -1 and close > t
+                array.set(fInv, i, true)
+                bullInversion := true
+                longEdge := t
+                longGapBot := b
+                if not na(bx)
+                    box.set_bgcolor(bx, color.new(color.lime, 60))
+                break
+
+// Cleanup: drop un-inverted gaps once they age out.
+if array.size(fTop) > 0
+    for i = array.size(fTop) - 1 to 0
+        if (bar_index - array.get(fBar, i)) > fvgMaxAge and not array.get(fInv, i)
+            box bx = array.get(fBoxA, i)
+            if not na(bx)
+                box.delete(bx)
+            array.remove(fTop, i)
+            array.remove(fBot, i)
+            array.remove(fDir, i)
+            array.remove(fBar, i)
+            array.remove(fInv, i)
+            array.remove(fBoxA, i)
+
+// -------------------------------------------------------------------------------------
+// Daily discipline — count entries & real losses per ICT day, then gate
+// -------------------------------------------------------------------------------------
+var int   tradesToday = 0
+var int   lossesToday = 0
+var float netAtEntry  = na
+if newICT
+    tradesToday := 0
+    lossesToday := 0
+justEntered = strategy.position_size != 0 and strategy.position_size[1] == 0
+justClosed  = strategy.position_size == 0 and strategy.position_size[1] != 0
+if justEntered
+    netAtEntry := strategy.netprofit
+    tradesToday += 1
+// Only count a *real* loss (ignore break-even / commission scratches ~< 4 ticks of value).
+lossTol = 4.0 * syminfo.mintick * syminfo.pointvalue
+if justClosed and not na(netAtEntry) and (strategy.netprofit - netAtEntry) < -lossTol
+    lossesToday += 1
+dayBlock = useDailyLimits and (tradesToday >= maxTradesPerDay or lossesToday >= maxLossesPerDay)
+
+// -------------------------------------------------------------------------------------
+// Confluence gating -> signals
+// -------------------------------------------------------------------------------------
+bullDisp = (close - open) >= dispMult * atr     // strong green body
+bearDisp = (open - close) >= dispMult * atr     // strong red body
+dispLongOK  = not useDisp or bullDisp
+dispShortOK = not useDisp or bearDisp
+
+smtLongOK  = not useSMT or hasBullSMT
+smtShortOK = not useSMT or hasBearSMT
+
+sweepLongOK  = not useSweep or recentSweepLow  or (allowNoSweepWithSMT and hasBullSMT)
+sweepShortOK = not useSweep or recentSweepHigh or (allowNoSweepWithSMT and hasBearSMT)
+
+longSignal  = bullInversion and inTime and dispLongOK  and biasLongOK  and sweepLongOK  and smtLongOK  and pdLongOK  and inEOD and not dayBlock
+shortSignal = bearInversion and inTime and dispShortOK and biasShortOK and sweepShortOK and smtShortOK and pdShortOK and inEOD and not dayBlock
+
+// -------------------------------------------------------------------------------------
+// Order management
+// -------------------------------------------------------------------------------------
+buf      = slBufTicks * syminfo.mintick
+chaseTol = autoChaseTicks * syminfo.mintick
+
+var float pendStop  = na   // hard protective stop (always present as a safety net)
+var float pendTP    = na   // final take-profit (runner target)
+var float tp1Level  = na   // partial / break-even trigger = nearest ITH (long) or ITL (short)
+var float invEdge   = na   // IFVG edge used for the "close back through" invalidation
+var int   pendDir   = 0
+var int   pendBar   = na
+var bool  beDone    = false
+var bool  tp1Done   = false
+
+flat = strategy.position_size == 0
+
+// ---- Entries ----
+if flat and (longSignal or shortSignal)
+    if longSignal
+        chaseL   = close - longEdge
+        isMarket = entryMode == "Market on close" or (entryMode == "Auto" and chaseL <= chaseTol)
+        ref      = isMarket ? close : longEdge
+        swingSL  = math.min(ta.lowest(low, slLookback), longGapBot) - buf
+        hardSL   = stopMode == "Swing high/low" ? swingSL : longGapBot - buf
+        risk     = ref - hardSL
+        if risk > 0
+            fixedTP = ref + risk * rr
+            poolTP  = nearAbove(ref, lastPH, pdh, eqhLevel)
+            tp2     = (tpMode == "Opposing liquidity" and not na(poolTP) and (poolTP - ref) >= risk * rr) ? poolTP : fixedTP
+            ithRaw  = ta.highest(high, slLookback)[1]
+            midL    = ref + (tp2 - ref) * 0.5
+            ith     = (not na(ithRaw) and ithRaw > ref and ithRaw < tp2) ? ithRaw : midL
+            pendStop := hardSL
+            pendTP   := tp2
+            tp1Level := ith
+            invEdge  := longGapBot
+            pendDir  := 1
+            pendBar  := bar_index
+            beDone   := false
+            tp1Done  := false
+            sweepUsed := true
+            if isMarket
+                strategy.entry("Long", strategy.long)
+            else
+                strategy.entry("Long", strategy.long, limit=ref)
+    else if shortSignal
+        chaseS   = shortEdge - close
+        isMarket = entryMode == "Market on close" or (entryMode == "Auto" and chaseS <= chaseTol)
+        ref      = isMarket ? close : shortEdge
+        swingSL  = math.max(ta.highest(high, slLookback), shortGapTop) + buf
+        hardSL   = stopMode == "Swing high/low" ? swingSL : shortGapTop + buf
+        risk     = hardSL - ref
+        if risk > 0
+            fixedTP = ref - risk * rr
+            poolTP  = nearBelow(ref, lastPL, pdl, eqlLevel)
+            tp2     = (tpMode == "Opposing liquidity" and not na(poolTP) and (ref - poolTP) >= risk * rr) ? poolTP : fixedTP
+            itlRaw  = ta.lowest(low, slLookback)[1]
+            midS    = ref - (ref - tp2) * 0.5
+            itl     = (not na(itlRaw) and itlRaw < ref and itlRaw > tp2) ? itlRaw : midS
+            pendStop := hardSL
+            pendTP   := tp2
+            tp1Level := itl
+            invEdge  := shortGapTop
+            pendDir  := -1
+            pendBar  := bar_index
+            beDone   := false
+            tp1Done  := false
+            sweepUsed := true
+            if isMarket
+                strategy.entry("Short", strategy.short)
+            else
+                strategy.entry("Short", strategy.short, limit=ref)
+
+// ---- Cancel stale / pre-empted limit orders (premature liquidity take) ----
+if flat and not na(pendBar) and (bar_index - pendBar) >= 1
+    expired   = (bar_index - pendBar) >= limitExpiry
+    preTakenL = pendDir == 1  and high >= pendTP   // target hit before fill -> objective met
+    preTakenS = pendDir == -1 and low  <= pendTP
+    if expired or preTakenL or preTakenS
+        strategy.cancel("Long")
+        strategy.cancel("Short")
+        sweepUsed := false    // entry never filled -> re-arm the sweep for a later inversion
+        pendBar := na
+
+// ---- Manage open LONG ----
+if strategy.position_size > 0
+    entryP = strategy.position_avg_price
+    if high >= tp1Level
+        if useBE
+            beDone := true
+        if useScale
+            tp1Done := true
+    stopL = beDone ? math.max(pendStop, entryP) : pendStop
+    if useScale
+        if not tp1Done
+            strategy.exit("L-TP1", from_entry="Long", qty_percent=scalePct, stop=stopL, limit=tp1Level)
+        strategy.exit("L-TP2", from_entry="Long", qty_percent=100, stop=stopL, limit=pendTP)
+    else
+        strategy.exit("L-exit", from_entry="Long", stop=stopL, limit=pendTP)
+    // Preferred invalidation: a candle closes back below the inverted gap.
+    if stopMode == "IFVG close" and not na(invEdge) and close < invEdge
+        strategy.close("Long", comment="IFVG invalidated")
+
+// ---- Manage open SHORT ----
+if strategy.position_size < 0
+    entryP = strategy.position_avg_price
+    if low <= tp1Level
+        if useBE
+            beDone := true
+        if useScale
+            tp1Done := true
+    stopL = beDone ? math.min(pendStop, entryP) : pendStop
+    if useScale
+        if not tp1Done
+            strategy.exit("S-TP1", from_entry="Short", qty_percent=scalePct, stop=stopL, limit=tp1Level)
+        strategy.exit("S-TP2", from_entry="Short", qty_percent=100, stop=stopL, limit=pendTP)
+    else
+        strategy.exit("S-exit", from_entry="Short", stop=stopL, limit=pendTP)
+    if stopMode == "IFVG close" and not na(invEdge) and close > invEdge
+        strategy.close("Short", comment="IFVG invalidated")
+
+// ---- End-of-session flatten ----
+if flatEOD and not inEOD and strategy.position_size != 0
+    strategy.close_all(comment="EOD flat")
+    strategy.cancel_all()
+
+// -------------------------------------------------------------------------------------
+// Visuals
+// -------------------------------------------------------------------------------------
+plot(usePDLevels ? pdh : na, "PDH", color=color.new(color.gray, 40), style=plot.style_stepline)
+plot(usePDLevels ? pdl : na, "PDL", color=color.new(color.gray, 40), style=plot.style_stepline)
+plot(usePD ? eq : na, "Equilibrium (50%)", color=color.new(color.yellow, 30), style=plot.style_stepline)
+plot(eqhLevel, "EQH", color=color.new(color.orange, 20), style=plot.style_circles, linewidth=1)
+plot(eqlLevel, "EQL", color=color.new(color.aqua, 20),   style=plot.style_circles, linewidth=1)
+plotshape(longSignal,  title="Long sig",  style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0),    size=size.tiny)
+plotshape(shortSignal, title="Short sig", style=shape.triangledown, location=location.abovebar, color=color.new(color.fuchsia, 0), size=size.tiny)
+plotshape(showSMT and bullSMTraw, title="Bull SMT", style=shape.diamond, location=location.belowbar, color=color.new(color.aqua, 0),    size=size.tiny)
+plotshape(showSMT and bearSMTraw, title="Bear SMT", style=shape.diamond, location=location.abovebar, color=color.new(color.orange, 0), size=size.tiny)
+bgcolor(useMSS and bias == 1 ? color.new(color.green, 94) : useMSS and bias == -1 ? color.new(color.red, 94) : na, title="Structure bias tint")
