@@ -21,7 +21,12 @@
 //   Take profit: NO profile level beats the fixed 2.3 ATR target on research (37 rules); the IB high
 //     clears its random-distance null (p 0.03) at PF 1.14 < 1.16. Stop: the fixed ladder peaks at
 //     3.0 ATR in every unit; structural stops (below VAL / POC / IB low / HVN / EMA) are all <= fixed.
-// Everything not the survivor ships as an input, DEFAULT OFF, with its number in the tooltip.
+//   CROSS-MARKET (docs/ib/STUDY_VP_TPO_NEXT.md, pre-registered, read once): on US100 BEFORE 2022-12-26 -- seven
+//     years of the same index the NQ selection never saw -- the gate reads PF 0.907 on 1,092 trades against a base
+//     of 0.970 (worse than a random filter, p 0.90); on US30 2016-2025 PF 0.927 against 0.973 (p 0.83). It
+//     reproduces only on the SAME WEEKS of US100 (1.354, p 0.004). A 2023-2025 Nasdaq regime, not a mechanism.
+//     THE GATE THEREFORE SHIPS DEFAULT OFF. Deflated Sharpe on research 0.33-0.57, CSCV PBO 0.52.
+// Everything ships as an input, DEFAULT OFF, with its number in the tooltip.
 strategy("Donchian 07-11 scalp + VP/TPO/EMA/ATR (measured)", overlay = true, default_qty_type = strategy.fixed, default_qty_value = 1,
      initial_capital = 50000, commission_type = strategy.commission.cash_per_contract, commission_value = 0.72, slippage = 1)
 // ---------------- base ----------------
@@ -40,8 +45,8 @@ startM   = input.int(0,  "Entries from minute", minval = 0, maxval = 59, group =
 endH     = input.int(11, "Entries until hour (New York)", minval = 0, maxval = 23, group = "Base")
 endM     = input.int(0,  "Entries until minute", minval = 0, maxval = 59, group = "Base")
 // ---------------- TPO ----------------
-useSP    = input.bool(true, "Require a prior-session TPO single print within N ATR above", group = "TPO",
-     tooltip = "THE SURVIVOR. Research PF 1.446 (p 0.000 vs a same-selectivity random filter), locked PF 1.382 (p 0.016), +24.5% locked PF on 187 trades. Ladder: within 2 ATR 1.30, 3 ATR 1.45, 4 ATR 1.32, 5 ATR 1.24 -- a hump, not a gradient; 3 is the best rung and was chosen on research.")
+useSP    = input.bool(false, "Require a prior-session TPO single print within N ATR above", group = "TPO",
+     tooltip = "NQ-ONLY. Fails seven unseen years of US100 (PF 0.907) and nine of US30 (0.927) -- see the header. On NQ: research PF 1.446 (p 0.000 vs a same-selectivity random filter), locked PF 1.382 (p 0.016), +24.5% locked PF on 187 trades. Ladder: within 2 ATR 1.30, 3 ATR 1.45, 4 ATR 1.32, 5 ATR 1.24 -- a hump, not a gradient; 3 is the best rung and was chosen on research.")
 spMax    = input.float(3.0, "  N (ATR)", step = 0.5, group = "TPO")
 tpoBin   = input.float(2.5, "  TPO bin size (points)", step = 0.5, group = "TPO", tooltip = "The research profile used 2.5-point bins with 30-minute letters over 09:30-16:00 New York. The letters are built from the chart's bars, so run this on 15 minutes or finer.")
 // ---------------- EMA ----------------
