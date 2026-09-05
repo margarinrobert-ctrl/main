@@ -1,0 +1,99 @@
+built 15m / 30m / 60m; evaluator verified against the published V61 grid (research n157 +0.1203 %/trade +18.88%, locked n85 +0.1428 +12.14%)
+
+==========================================================================================================================
+A. POPULATION FIRST -- what the three studies actually sampled
+==========================================================================================================================
+  study                 trials  scorable  % profitable  median total %  median n  best objective
+  TPE / return           1,500     1,488         99.1%           27.83       178           40.89
+  TPE / fold median      1,500     1,458         99.4%           21.55        71            0.68
+  NSGA-II / 2 obj        1,500     1,444         96.1%           12.61       132           29.36
+
+  the shipped incumbent scores +18.88% total on the research block, so read the
+  'best objective' column against THAT, not against zero.
+
+==========================================================================================================================
+B. PARAMETER IMPORTANCE (fANOVA over the trial population)
+==========================================================================================================================
+
+  TPE / return
+    tf            0.477  #############################
+    w             0.209  #############
+    chop_thr      0.080  #####
+    exN           0.040  ##
+    tp            0.039  ##
+    stop          0.033  ##
+    ma_thr        0.026  ##
+    use_chop      0.024  #
+    use_ma        0.023  #
+    ent           0.022  #
+    hold          0.012  #
+    k             0.006  
+    adapt         0.005  
+    psh           0.003  
+
+  TPE / fold median
+    w             0.423  #########################
+    tf            0.149  #########
+    k             0.149  #########
+    chop_thr      0.078  #####
+    stop          0.050  ###
+    tp            0.041  ##
+    use_chop      0.032  ##
+    ent           0.027  ##
+    ma_thr        0.022  #
+    adapt         0.010  #
+    exN           0.009  #
+    hold          0.008  
+    use_ma        0.005  
+    psh           0.000  
+
+==========================================================================================================================
+C. THE CONTINUUM -- did a finer space find anything between the grid's rungs?
+==========================================================================================================================
+  TPE / return         top-50 mean distance of `stop` from the nearest grid rung 0.839 (a uniform draw on [1,4] averages ~0.19)
+                       top-50 `ent` values [np.int64(14), np.int64(67), np.int64(68), np.int64(69), np.int64(70), np.int64(71), np.int64(72), np.int64(73)]
+                       top-50 `exN` values [np.int64(62), np.int64(64), np.int64(66), np.int64(67), np.int64(68), np.int64(69), np.int64(73), np.int64(75), np.int64(76), np.int64(77), np.int64(78), np.int64(79)]
+  TPE / fold median    top-50 mean distance of `stop` from the nearest grid rung 0.805 (a uniform draw on [1,4] averages ~0.19)
+                       top-50 `ent` values [np.int64(59), np.int64(60), np.int64(64), np.int64(65), np.int64(66), np.int64(67), np.int64(68), np.int64(69), np.int64(70), np.int64(71), np.int64(73), np.int64(74)]
+                       top-50 `exN` values [np.int64(26), np.int64(27), np.int64(28), np.int64(29), np.int64(30), np.int64(31), np.int64(32), np.int64(33), np.int64(34), np.int64(35), np.int64(41), np.int64(42)]
+
+==========================================================================================================================
+D. THE V30 SURROGATE TEST -- hold out a WHOLE AXIS VALUE, not random rows
+==========================================================================================================================
+  random-row 80/20 R^2            +0.8956   (interpolation on a dense sample -- this is the number that misleads)
+  held out tf==60              -6.9229   (1,378 held-out trials)
+  held out adapt==1               +0.6735   (294 held-out trials)
+  held out psh==1               -0.2595   (197 held-out trials)
+  held out use_chop==1               +0.5675   (852 held-out trials)
+
+==========================================================================================================================
+E. THE FINALISTS, DECLARED BEFORE THE LOCKED BLOCK IS TOUCHED
+==========================================================================================================================
+  4,500 trials were scored on the research block. 7 configurations are read on the locked block.
+    shipped incumbent (V61 30m)                  tf  30  ent  20  ex  20  stop 2.00  tp 0.00  hold 480  k 3  w 20  ma 0/+0.00  chop 0/99  psh 0
+    shipped 15m preset                           tf  15  ent  15  ex  30  stop 3.00  tp 6.00  hold 480  k 3  w 30  ma 0/+0.00  chop 0/99  psh 0
+    TPE / return best                            tf  15  ent  68  ex  80  stop 3.84  tp 5.73  hold 336  k 5  w 60  ma 0/-0.33  chop 0/37  psh 0
+    TPE / fold-median best                       tf  60  ent  76  ex  68  stop 3.94  tp 5.06  hold 251  k 3  w 55  ma 0/+0.19  chop 1/45  psh 0
+    NSGA-II best return                          tf  15  ent  20  ex  34  stop 3.14  tp 5.38  hold 255  k 5  w 58  ma 0/+0.34  chop 0/55  psh 0
+    NSGA-II knee (return/DD)                     tf  15  ent  77  ex  20  stop 1.13  tp 6.72  hold 255  k 5  w 52  ma 0/-0.37  chop 0/58  psh 1
+    neighbourhood centre (top mean of 25 nearest) tf  15  ent  68  ex  77  stop 3.74  tp 5.87  hold 318  k 5  w 58  ma 0/+0.14  chop 0/39  psh 0
+
+==========================================================================================================================
+F. THE ONE LOCKED READ
+==========================================================================================================================
+  configuration                                   n res   res %/t   res tot  n lock   lock %/t  lock tot  lock PF  lock Sharpe
+  shipped incumbent (V61 30m)                       157    0.1203     18.88      85     0.1428     12.14    1.596         7.07
+  shipped 15m preset                                409    0.0628     25.70     208     0.0861     17.91    1.479        10.76
+  TPE / return best                                 180    0.2271     40.89      96     0.0885      8.49    1.310         7.88
+  TPE / fold-median best                             62    0.4084     25.32      31     0.0470      1.46    1.091         1.52
+  NSGA-II best return                               348    0.0844     29.36     166     0.0892     14.80    1.514        11.90
+  NSGA-II knee (return/DD)                          138    0.1305     18.01      86     0.0308      2.65    1.252         6.19
+  neighbourhood centre (top mean of 25 nearest)     178    0.1990     35.41      92     0.1104     10.15    1.410         9.86
+
+==========================================================================================================================
+G. TRANSFER -- the whole trial population, research against locked
+==========================================================================================================================
+  2,496 distinct scorable configurations re-read on the locked block
+  corr(research %/trade, locked %/trade)  Pearson +0.3206   Spearman +0.2751
+  whole population mean locked %/trade  +0.0584
+  TOP 1% by research total, mean locked  +0.0934   (100% of them profitable on locked)

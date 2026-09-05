@@ -1,0 +1,86 @@
+
+==========================================================================================================================
+A. THE DECLARED GRID -- cross {fresh, state} x VWAP {off, state, touch} x trail {on, off} x flatten {on, off}; NQ 5m research
+==========================================================================================================================
+  24 cells; share net-profitable 29.2%; median %/trade -0.0429
+  cross: cross: -0.0080 (PF 0.708, n~588)   state: +0.0121 (PF 0.801, n~1944)
+  vwap: off: -0.0003 (PF 0.756, n~857)   state: +0.0286 (PF 0.873, n~873)   touch: -0.0222 (PF 0.635, n~439)
+  trail: True: -0.0666 (PF 0.201, n~1454)   False: +0.0706 (PF 1.309, n~305)
+  flatten: True: -0.0376 (PF 0.567, n~1035)   False: +0.0416 (PF 0.942, n~332)
+
+  the full grid, sorted -- printed because the marginals are the answer, not the top row:
+cross  vwap  trail  flatten    n     pct     pf     win           usd
+state state  False    False   99  0.3344 2.4330  3.0303    9,128.0409
+cross   off  False    False  103  0.1832 1.8261  0.9709    3,330.6562
+cross state  False    False  110  0.1584 1.7181  0.9091    2,797.9062
+state touch  False    False  159  0.1518 1.7511  1.8868    5,186.4954
+state   off  False    False  224  0.0861 1.4343  1.7857    3,846.9988
+cross   off  False     True  738  0.0047 1.0351 29.4038    1,417.4657
+cross state  False     True  759  0.0027 1.0200 29.7760      887.5592
+state state  False     True 1631 -0.0069 0.9501 25.5671   -3,904.0161
+cross touch  False    False  199 -0.0101 0.9498  1.5075      317.9093
+state   off  False     True 1853 -0.0156 0.8888 22.7199  -10,386.7204
+state touch  False     True 1197 -0.0181 0.8692 23.4754   -7,573.5537
+cross touch  False     True  386 -0.0235 0.8268 25.1295   -3,188.3699
+state state   True     True 5803 -0.0623 0.2296 32.0179 -132,670.2732
+state   off   True     True 6683 -0.0636 0.2251 30.7796 -155,790.2877
+state state   True    False 5802 -0.0639 0.2289 32.1786 -136,083.3067
+state   off   True    False 6682 -0.0648 0.2245 30.9189 -159,009.8757
+cross   off   True     True  857 -0.0654 0.2084 28.4714  -20,359.6598
+state touch   True     True 2035 -0.0658 0.1902 25.7985  -48,849.0518
+cross state   True     True  873 -0.0659 0.2078 28.9805  -20,920.2971
+state touch   True    False 2035 -0.0664 0.1904 25.8477  -49,358.8147
+cross   off   True    False  857 -0.0672 0.2019 28.4714  -20,942.0474
+cross state   True    False  873 -0.0682 0.1994 28.7514  -21,643.8910
+cross touch   True     True  439 -0.0716 0.1543 23.2346  -11,497.7323
+cross touch   True    False  439 -0.0738 0.1494 23.0068  -11,840.4836
+
+==========================================================================================================================
+B. THE ASK AS STATED -- fresh cross, VWAP state, 1.5 ATR stop, ATR trail 1.0/1.0, flatten -- and its ablations
+==========================================================================================================================
+                                                           n   %/trade      PF   win%       R   $ 1 MNQ  hold   exits
+  as asked                                               873   -0.0659   0.208   29.0  -0.366   -20,920     2   trail59% stop38% flat3%
+    - no trail                                           759    0.0027   1.020   29.8   0.034       888     9   stop65% flat35%
+    - no VWAP gate                                       857   -0.0654   0.208   28.5  -0.364   -20,360     2   trail59% stop38% flat3%
+    - no flatten (hold overnight)                        873   -0.0682   0.199   28.8  -0.378   -21,644     2   trail60% stop40%
+    - no trail, no flatten                               110    0.1584   1.718    0.9  -0.446     2,798    13   stop99% target1%
+    longs only                                           482   -0.0574   0.293   33.8  -0.332   -10,031     2   trail58% stop39% flat3%
+    shorts only                                          470   -0.0748   0.126   24.5  -0.396   -12,906     1   trail60% stop37% flat3%
+    VWAP touch instead of state                          439   -0.0716   0.154   23.2  -0.415   -11,498     1   trail57% stop40% flat3%
+    zero cost                                            871   -0.0538   0.277   33.2  -0.290   -17,048     2   trail60% stop37% flat3%
+
+==========================================================================================================================
+C. THE STOP LADDER (as asked otherwise) -- V18 found this axis monotone toward WIDER on every market
+==========================================================================================================================
+                                                           n   %/trade      PF   win%       R   $ 1 MNQ  hold   exits
+  stop 1.0 ATR                                           930   -0.0570   0.190   25.1  -0.464   -19,235     1   trail50% stop48% flat2%
+  stop 1.5 ATR                                           873   -0.0659   0.208   29.0  -0.366   -20,920     2   trail59% stop38% flat3%
+  stop 2.0 ATR                                           819   -0.0695   0.214   32.4  -0.299   -20,833     2   trail65% stop31% flat4%
+  stop 2.5 ATR                                           770   -0.0690   0.231   34.7  -0.236   -19,368     3   trail70% stop23% flat7%
+  stop 3.0 ATR                                           731   -0.0674   0.238   36.1  -0.192   -17,824     3   trail74% stop18% flat8%
+  and the trail arm/offset ladder, stop 1.5:
+  trail arm 0.5 / off 0.5 ATR                            888   -0.0616   0.029   10.4  -0.341   -19,855     0   trail73% stop26% flat1%
+  trail arm 1.0 / off 0.5 ATR                            873   -0.0660   0.205   30.9  -0.367   -21,053     2   trail59% stop38% flat2%
+  trail arm 1.0 / off 1.0 ATR                            873   -0.0659   0.208   29.0  -0.366   -20,920     2   trail59% stop38% flat3%
+  trail arm 2.0 / off 1.0 ATR                            847   -0.0464   0.565   40.0  -0.282   -14,137     4   stop52% trail39% flat9%
+  trail arm 2.0 / off 2.0 ATR                            847   -0.0247   0.769   37.8  -0.178    -7,497     6   stop52% trail34% flat14%
+
+==========================================================================================================================
+D. RANDOM-ENTRY CONTROL -- same session, same side mix, same geometry and exits, random RTH bar; 300 draws
+==========================================================================================================================
+  as asked               n   873  observed -0.0659  control median -0.0610  5-95% [-0.0664, -0.0563]  p 0.937
+  as asked, no trail     n   759  observed +0.0027  control median -0.0080  5-95% [-0.0248, +0.0106]  p 0.163
+
+==========================================================================================================================
+E. THE SAME RULE ON NQ 15m AND US100 15m (both blocks -- these are reads, not selections)
+==========================================================================================================================
+                                                           n   %/trade      PF   win%       R   $ 1 MNQ  hold   exits
+  NQ 15m as asked [research]                             457   -0.0948   0.162   22.8  -0.374   -15,923     1   trail55% stop36% flat9%
+  NQ 15m no trail [research]                             451   -0.0059   0.965   32.2  -0.040      -623     5   stop57% flat43%
+  NQ 15m as asked [locked]                               230   -0.0896   0.218   23.5  -0.310    -9,357     1   trail60% stop31% flat9%
+  NQ 15m no trail [locked]                               225    0.0397   1.222   35.1   0.037     3,548     6   stop53% flat47%
+  US100 15m as asked [research]                         1264   -0.1167   0.180   18.8  -0.411   -14,049     1   trail55% stop37% flat9%
+  US100 15m no trail [research]                         1234   -0.0054   0.974   31.7  -0.050      -451     5   stop58% flat42%
+  US100 15m as asked [locked]                            703   -0.1185   0.182   23.6  -0.378   -13,690     1   trail54% stop37% flat9%
+  US100 15m no trail [locked]                            690   -0.0163   0.921   32.2  -0.085    -1,140     5   stop58% flat42%
+  US100 volume is TICK volume (a proxy) -- its VWAP is a proxy.

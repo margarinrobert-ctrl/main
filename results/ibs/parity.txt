@@ -1,0 +1,9 @@
+US100  {'entry': 20.0, 'exit': 80.0, 'hold': 5, 'mult': 1.0}  tensor  319  naive  319  matched  319  identical pnl  319  stop-flag agree  319  corr 1.000000
+US100  {'entry': 30.0, 'exit': 70.0, 'hold': 2, 'mult': 0.5}  tensor  518  naive  518  matched  518  identical pnl  518  stop-flag agree  518  corr 1.000000
+US100  {'entry': 15.0, 'exit': 90.0, 'hold': 10, 'mult': 3.0}  tensor  183  naive  183  matched  183  identical pnl  183  stop-flag agree  183  corr 1.000000
+US30   {'entry': 20.0, 'exit': 80.0, 'hold': 5, 'mult': 1.0}  tensor  298  naive  298  matched  298  identical pnl  298  stop-flag agree  298  corr 1.000000
+US30   {'entry': 30.0, 'exit': 70.0, 'hold': 2, 'mult': 0.5}  tensor  487  naive  487  matched  487  identical pnl  487  stop-flag agree  487  corr 1.000000
+US30   {'entry': 15.0, 'exit': 90.0, 'hold': 10, 'mult': 3.0}  tensor  191  naive  191  matched  191  identical pnl  191  stop-flag agree  191  corr 1.000000
+NQ     {'entry': 20.0, 'exit': 80.0, 'hold': 5, 'mult': 1.0}  tensor  114  naive  114  matched  114  identical pnl  114  stop-flag agree  114  corr 1.000000
+NQ     {'entry': 30.0, 'exit': 70.0, 'hold': 2, 'mult': 0.5}  tensor  166  naive  166  matched  166  identical pnl  166  stop-flag agree  166  corr 1.000000
+NQ     {'entry': 15.0, 'exit': 90.0, 'hold': 10, 'mult': 3.0}  tensor   69  naive   69  matched   69  identical pnl   69  stop-flag agree   69  corr 1.000000

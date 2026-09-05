@@ -1,0 +1,81 @@
+
+==========================================================================================================================
+A. THE CONTRACT, AND WHAT A ROUND TURN COSTS
+==========================================================================================================================
+  Micro E-mini Nasdaq-100 (MNQ): $2.00 a point, tick 0.25 points = $0.50, so one tick is $0.50 a contract
+  assumed price impact  1 tick spread + 1 tick slippage a side = $2.00 a round turn
+  fees                  $1.44 a round turn (CME + NFA + clearing + broker)
+  TOTAL ROUND TURN      $3.44 per MNQ contract = 1.720 points
+  (the full-size NQ is $20 a point, so the same rule on NQ is 10x every dollar
+   figure below with a round turn near $24 -- proportionally cheaper)
+
+==========================================================================================================================
+B. THE RULE AS POSTED, IN DOLLARS PER MNQ CONTRACT
+==========================================================================================================================
+  variant               block          n   $/trade    total $      PF   win %   max DD $     best    worst
+  as posted             research     345     -6.55      -2259   0.797    48.4      -2773      297     -192
+  as posted             locked       182      4.42        804   1.111    57.1       -727      238     -212
+  retr 0.50 / stop 0.75 research     214     -2.20       -471   0.945    36.0      -1195      203     -176
+  retr 0.50 / stop 0.75 locked       103      4.20        432   1.075    37.9      -1681      480     -212
+
+==========================================================================================================================
+C. THE SAME TABLE DEFLATED -- stored NQ levels run 1.2563 -> 1.0182 above the real index
+==========================================================================================================================
+  variant               block          n   $/trade    stored    total $     stored  inflation
+  as posted             research     345     -5.86     -6.55      -2021      -2259      11.7%
+  as posted             locked       182      4.31      4.42        784        804       2.6%
+  retr 0.50 / stop 0.75 research     214     -1.96     -2.20       -419       -471      12.4%
+  retr 0.50 / stop 0.75 locked       103      3.91      4.20        403        432       7.2%
+
+  Percent of price, R and win rate are unaffected by the synthetic levels. Dollars are
+  inflated most on the RESEARCH block, which is the early part of the sample -- so the
+  deflated column is the one to read for an MNQ account.
+
+==========================================================================================================================
+D. THE ARITHMETIC THAT DECIDES IT, IN MNQ TERMS
+==========================================================================================================================
+
+  as posted
+    median risk           26.6 points = $53.12 a contract
+    round turn            1.720 points = $3.44  (6.5% of risk)
+    reward:risk           1.00   driftless break-even win rate 50.0%   ACTUAL 48.4%
+    gross points / trade  -1.053 = $-2.11   net $-6.55
+    break-even needs the win rate to rise +1.6 points
+
+  retr 0.50 / stop 0.75
+    median risk           26.8 points = $53.62 a contract
+    round turn            1.720 points = $3.44  (6.4% of risk)
+    reward:risk           2.00   driftless break-even win rate 33.3%   ACTUAL 36.0%
+    gross points / trade  +1.119 = $+2.24   net $-2.20
+    break-even needs the win rate to rise -2.6 points
+
+==========================================================================================================================
+E. AN MNQ ACCOUNT TRADING ONE CONTRACT
+==========================================================================================================================
+  variant               block       trades/yr     $/yr  max DD $  DD in contracts  account for 3x DD
+  as posted             research          180    -1053     -2480             62.0              7440
+  as posted             locked            175      755      -705             17.6              2115
+  retr 0.50 / stop 0.75 research          112     -218     -1102             27.6              3307
+  retr 0.50 / stop 0.75 locked             99      388     -1618             40.5              4854
+
+  'DD in contracts' is the drawdown divided by 2% of a $2,000 micro account, i.e. how
+  many 2%-risk units the drawdown consumes. MNQ day-trade margin is typically $50-100
+  and intraday buying power is not the binding constraint here -- the drawdown is.
+
+==========================================================================================================================
+F. COST SENSITIVITY IN TICKS -- how wrong can the fill assumption be?
+==========================================================================================================================
+  variant                 ticks/side  round turn $  research $/trade  locked $/trade
+  as posted                        0          1.44             -3.21            7.19
+  as posted                        1          2.44             -4.09            6.23
+  as posted                        2          3.44             -4.98            5.27
+  as posted                        3          4.44             -5.86            4.31
+  as posted                        4          5.44             -6.74            3.35
+  retr 0.50 / stop 0.75            0          1.44              0.70            6.80
+  retr 0.50 / stop 0.75            1          2.44             -0.19            5.84
+  retr 0.50 / stop 0.75            2          3.44             -1.07            4.88
+  retr 0.50 / stop 0.75            3          4.44             -1.96            3.91
+  retr 0.50 / stop 0.75            4          5.44             -2.84            2.95
+
+  Zero ticks a side is fees only and is not achievable; it is printed to show what the
+  rule earns with the fill assumption removed entirely.

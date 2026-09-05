@@ -1,0 +1,56 @@
+====================================================================================================
+CMMA -- PROFIT FACTOR, WIN RATE, TIMEFRAME AND HOLDING TIME
+====================================================================================================
+  TIMEFRAME: signal computed on DAILY bars; executed on the intraday series inside
+  08:00-15:45 New York (7.75 hours), flat overnight.
+  All figures NET of $1.44/round turn + 1 tick slippage a side.
+
+====================================================================================================
+  NQ  --  execution bars 1-minute, 748 traded days, 2023-01-23 .. 2025-12-11
+====================================================================================================
+
+  FULL SAMPLE
+    PER DAY      n   748   PF 1.251   win  49.3%   mean +1.205 pts   median -0.031
+    PER STANCE   n   114   PF 2.023   win  76.3%   mean +7.908 pts   median +3.671
+    HOLD         6.56 trading days a stance (median 5, max 38)  =  50.9 exposure-hours
+    EXPOSURE     7.75 h a day, flat overnight; mean |target| 0.076 contracts, max 0.477
+    BY SIDE      long  n   247  PF 1.297  win  53.8%   |   short n   501  PF 1.223  win  47.1%
+
+  in-sample (first 70%)
+    PER DAY      n   523   PF 1.230   win  48.9%   mean +0.942 pts   median -0.060
+    PER STANCE   n    81   PF 2.098   win  75.3%   mean +6.081 pts   median +3.967
+    HOLD         6.46 trading days a stance (median 5, max 38)  =  50.0 exposure-hours
+    EXPOSURE     7.75 h a day, flat overnight; mean |target| 0.075 contracts, max 0.368
+    BY SIDE      long  n   174  PF 1.357  win  53.4%   |   short n   349  PF 1.185  win  46.7%
+
+  HOLDOUT (last 30%)
+    PER DAY      n   225   PF 1.282   win  50.2%   mean +1.817 pts   median +0.042
+    PER STANCE   n    34   PF 1.942   win  79.4%   mean +12.027 pts   median +3.402
+    HOLD         6.62 trading days a stance (median 4, max 25)  =  51.3 exposure-hours
+    EXPOSURE     7.75 h a day, flat overnight; mean |target| 0.079 contracts, max 0.477
+    BY SIDE      long  n    73  PF 1.253  win  54.8%   |   short n   152  PF 1.315  win  48.0%
+
+====================================================================================================
+  US100L  --  execution bars 15-minute, 2,262 traded days, 2016-12-09 .. 2025-09-30
+====================================================================================================
+
+  FULL SAMPLE
+    PER DAY      n  2262   PF 1.127   win  47.7%   mean +0.486 pts   median -0.076
+    PER STANCE   n   325   PF 1.534   win  71.7%   mean +3.382 pts   median +2.253
+    HOLD         6.96 trading days a stance (median 5, max 65)  =  53.9 exposure-hours
+    EXPOSURE     7.75 h a day, flat overnight; mean |target| 0.085 contracts, max 0.496
+    BY SIDE      long  n   796  PF 1.161  win  52.5%   |   short n  1466  PF 1.103  win  45.2%
+
+  in-sample (first 70%)
+    PER DAY      n  1583   PF 1.060   win  47.2%   mean +0.199 pts   median -0.090
+    PER STANCE   n   224   PF 1.257   win  69.2%   mean +1.409 pts   median +1.718
+    HOLD         7.07 trading days a stance (median 5, max 65)  =  54.8 exposure-hours
+    EXPOSURE     7.75 h a day, flat overnight; mean |target| 0.087 contracts, max 0.496
+    BY SIDE      long  n   580  PF 1.060  win  52.2%   |   short n  1003  PF 1.060  win  44.3%
+
+  HOLDOUT (last 30%)
+    PER DAY      n   679   PF 1.229   win  49.0%   mean +1.154 pts   median -0.042
+    PER STANCE   n   101   PF 1.945   win  77.2%   mean +7.757 pts   median +3.775
+    HOLD         6.72 trading days a stance (median 5, max 38)  =  52.1 exposure-hours
+    EXPOSURE     7.75 h a day, flat overnight; mean |target| 0.081 contracts, max 0.489
+    BY SIDE      long  n   216  PF 1.360  win  53.2%   |   short n   463  PF 1.160  win  47.1%

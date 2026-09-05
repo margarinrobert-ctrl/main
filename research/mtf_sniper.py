@@ -217,7 +217,7 @@ if __name__ == "__main__":
                      p[~m].sum(), sharpe(p[~m],e[~m],sess,u[u>=cut[ltf]]),
                      len(p), htf, ltf, trig, wmin, klo, pb, sp, ap, tom,
                      100*(p>0).mean(), np.median(dl)))
-    R=np.array(rows); np.save("/tmp/mtf_rows.npy", R)
+    R=np.array(rows); np.save("results/mtf/mtf_rows.npy", R)
     print(f"{len(R):,} configurations, {time.time()-t0:.0f}s\n")
 
     cols=dict(rn=0,rs=1,ln=2,ls=3,n=4,htf=5,ltf=6,trig=7,wmin=8,klo=9,pb=10,sp=11,ap=12,tom=13,win=14,dl=15)

@@ -1,0 +1,357 @@
+// ================================================================================================
+// TREND-DAY / UNTOUCHED-EMA FADE -- a Pine port of ZetaFX_Raschke_TrendDay_EMA_EA.mq5.
+//
+//     THE DAY FILTER  Over the 390-minute RTH session an EMA(20) is built from COMPLETE,
+//                     clock-aligned 15-minute RTH closes only, seeded with the SMA of the first 20
+//                     and carried ACROSS sessions. Each 15-minute bucket is tested against the EMA
+//                     value known BEFORE that bucket closed; a session none of whose buckets
+//                     contained the EMA is UNTOUCHED. A session with |close - open| / range >= 75%
+//                     is a TREND DAY. A session qualifies when it is both, is complete (390 minutes
+//                     and 26 buckets) and had an observable EMA throughout.
+//     THE TRADE       After a qualified session the NEXT FULL NYSE SESSION is faded: open above the
+//                     EMA is a SHORT, open below is a LONG, filled one minute after the open.
+//     THE EXIT        A resting target at the most recently completed RTH 15-minute EMA, replaced
+//                     after every bucket, plus a hard flatten at the end of the session.
+//                     NO STOP. One contract.
+//     RESETS          The EMA is discarded on an incomplete session and whenever a full NYSE
+//                     session was skipped between two observed ones, exactly as the EA does; the
+//                     EA's own 2010-2027 XNYS non-full-session calendar is embedded below.
+//
+// PUT THIS ON A 1-MINUTE CHART. That is not a preference, it is the only timeframe on which the
+// port is exact. The direction is decided from the session-open bar's OPEN, which is known at that
+// bar's close, and a market order placed there fills at the next bar's open -- 09:31, the EA's fill.
+// On a 5-minute chart the same order fills at 09:35 and on a 15-minute chart at 09:45, both LATER
+// than the EA. Measured on NQ, moving the fill from 09:31 to the 09:30 bar's open costs 1.8 points
+// a trade; a 15-minute delay was never measured and is a different strategy. Use "Deep Backtest" or
+// a shortened date range if 1-minute history is capped on your plan.
+//
+// MEASURED (docs/ib/STUDY_TRENDDAY_EMA.md, research/trendday/): NQ 1m 2022-12 -> 2025-12, 43 trades,
+// 86.0% win, PF 4.65, +40.9 pts a trade; research 26 trades PF 5.86 and locked 17 trades PF 3.83,
+// beating a random-full-session control with identical fade, target and flatten at p 0.013 research
+// and 0.097 locked. US100 15m over nine years: 125 trades, but the research block FAILS its control
+// (p 0.224) while validation and test pass -- the wrong shape. US30 over nine years is NULL on every
+// block (p 0.245-0.494). Pooled over four feeds in percent of price: +0.104% a trade, P(mean<=0)
+// 0.0054, and 9% of trades -- the ones the clock closes -- carry -93% of net. NOT VALIDATED FOR
+// LIVE TRADING; the study says why in section 10.
+//
+// EXTENDED HOURS ON so the flatten has a bar to fill on. Every var write sits under
+// barstate.isconfirmed. Research tooling for education and analysis -- not financial advice.
+// ================================================================================================
+//@version=6
+strategy("Trend-day untouched-EMA fade (ZetaFX port)", shorttitle = "TD-EMA", overlay = true,
+     pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false,
+     initial_capital = 50000, currency = currency.USD, default_qty_type = strategy.fixed,
+     default_qty_value = 1, commission_type = strategy.commission.cash_per_contract,
+     commission_value = 0.72, slippage = 1)
+
+// ---------------------------------------------------------------- inputs
+grpR = "Rule"
+emaLen = input.int(20, "RTH 15-minute EMA period", minval = 2, group = grpR)
+reqUntouched = input.bool(true, "Require the prior session to leave the EMA untouched", group = grpR)
+reqTrend = input.bool(true, "Require the prior session to be a trend day", group = grpR)
+trendPct = input.float(75.0, "Trend day: min |close - open| / range (%)", minval = 0.0,
+     maxval = 100.0, step = 5.0, group = grpR)
+entryDelay = input.int(1, "Fill this many minutes after the session open", minval = 0, maxval = 60,
+     group = grpR, tooltip = "The EA uses 1. On a chart coarser than one minute the fill cannot "
+     + "land on that minute; the panel reports the delay actually achieved.")
+
+grpS = "Session (New York)"
+startH = input.int(9, "Session start hour", minval = 0, maxval = 23, group = grpS)
+startM = input.int(30, "Session start minute", minval = 0, maxval = 59, group = grpS)
+sessMin = input.int(390, "Session length (minutes)", minval = 60, maxval = 1440, group = grpS)
+
+grpF = "Fidelity"
+useCal = input.bool(true, "Apply the EA's XNYS non-full-session calendar (2010-2027)", group = grpF)
+strictTf = input.bool(true, "Require a 1-minute chart (the only exact fill)", group = grpF)
+showHud = input.bool(true, "Show panel", group = "Display")
+
+// ---------------------------------------------------------------- chart and clocks
+tfMin = timeframe.isminutes ? timeframe.multiplier : 0
+if tfMin == 0
+    runtime.error("TD-EMA needs an intraday minute chart. Use 1 minute for the exact fill.")
+if 15 % tfMin != 0
+    runtime.error("The timeframe must divide 15 minutes so the EA's buckets tile it exactly: "
+         + "1, 3, 5 or 15.")
+if strictTf and tfMin != 1
+    runtime.error("Only a 1-minute chart reproduces the EA's one-minute fill. Turn off 'Require a "
+         + "1-minute chart' to run it late on purpose.")
+if sessMin % 15 != 0
+    runtime.error("The session length must be a whole number of 15-minute buckets.")
+
+tz = "America/New_York"
+nyMod = hour(time, tz) * 60 + minute(time, tz)
+nyKey = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+sStart = startH * 60 + startM
+sEnd = sStart + sessMin
+nBar = sessMin / tfMin
+nBkt = sessMin / 15
+perBkt = 15 / tfMin
+// An order placed at this offset fills at the NEXT bar's open. On a 1-minute chart that lands on
+// the EA's minute exactly; on a coarser chart the earliest reachable fill is the bar after the
+// session-open bar, so the offset is floored at 0 and the panel reports the fill actually achieved.
+placeOff = math.max(0, entryDelay - tfMin)
+flatOff = sessMin - 2 * tfMin           // fills at the open of the session's last bar
+
+// ---------------------------------------------------------------- the EA's XNYS calendar
+var int[] cal = array.new<int>()
+if barstate.isfirst
+    array.concat(cal, array.from(20100101, 20100118, 20100215, 20100402, 20100531, 20100705,
+         20100906, 20101125, 20101126, 20101224))
+    array.concat(cal, array.from(20110117, 20110221, 20110422, 20110530, 20110704, 20110905,
+         20111124, 20111125, 20111226, 20120102))
+    array.concat(cal, array.from(20120116, 20120220, 20120406, 20120528, 20120703, 20120704,
+         20120903, 20121029, 20121030, 20121122))
+    array.concat(cal, array.from(20121123, 20121224, 20121225, 20130101, 20130121, 20130218,
+         20130329, 20130527, 20130703, 20130704))
+    array.concat(cal, array.from(20130902, 20131128, 20131129, 20131224, 20131225, 20140101,
+         20140120, 20140217, 20140418, 20140526))
+    array.concat(cal, array.from(20140703, 20140704, 20140901, 20141127, 20141128, 20141224,
+         20141225, 20150101, 20150119, 20150216))
+    array.concat(cal, array.from(20150403, 20150525, 20150703, 20150907, 20151126, 20151127,
+         20151224, 20151225, 20160101, 20160118))
+    array.concat(cal, array.from(20160215, 20160325, 20160530, 20160704, 20160905, 20161124,
+         20161125, 20161226, 20170102, 20170116))
+    array.concat(cal, array.from(20170220, 20170414, 20170529, 20170703, 20170704, 20170904,
+         20171123, 20171124, 20171225, 20180101))
+    array.concat(cal, array.from(20180115, 20180219, 20180330, 20180528, 20180703, 20180704,
+         20180903, 20181122, 20181123, 20181205))
+    array.concat(cal, array.from(20181224, 20181225, 20190101, 20190121, 20190218, 20190419,
+         20190527, 20190703, 20190704, 20190902))
+    array.concat(cal, array.from(20191128, 20191129, 20191224, 20191225, 20200101, 20200120,
+         20200217, 20200410, 20200525, 20200703))
+    array.concat(cal, array.from(20200907, 20201126, 20201127, 20201224, 20201225, 20210101,
+         20210118, 20210215, 20210402, 20210531))
+    array.concat(cal, array.from(20210705, 20210906, 20211125, 20211126, 20211224, 20220117,
+         20220221, 20220415, 20220530, 20220620))
+    array.concat(cal, array.from(20220704, 20220905, 20221124, 20221125, 20221226, 20230102,
+         20230116, 20230220, 20230407, 20230529))
+    array.concat(cal, array.from(20230619, 20230703, 20230704, 20230904, 20231123, 20231124,
+         20231225, 20240101, 20240115, 20240219))
+    array.concat(cal, array.from(20240329, 20240527, 20240619, 20240703, 20240704, 20240902,
+         20241128, 20241129, 20241224, 20241225))
+    array.concat(cal, array.from(20250101, 20250109, 20250120, 20250217, 20250418, 20250526,
+         20250619, 20250703, 20250704, 20250901))
+    array.concat(cal, array.from(20251127, 20251128, 20251224, 20251225, 20260101, 20260119,
+         20260216, 20260403, 20260525, 20260619))
+    array.concat(cal, array.from(20260703, 20260907, 20261126, 20261127, 20261224, 20261225,
+         20270101, 20270118, 20270215, 20270326))
+    array.concat(cal, array.from(20270531, 20270618, 20270705))
+calLo = 20100101
+calHi = 20270902
+
+// the EA's zfxIsFullNyseSession, on a timestamp at local noon so a DST shift cannot change the date
+isFullAt(int t) =>
+    dw = dayofweek(t, tz)
+    k = year(t, tz) * 10000 + month(t, tz) * 100 + dayofmonth(t, tz)
+    weekday = dw != dayofweek.saturday and dw != dayofweek.sunday
+    listed = useCal and k >= calLo and k <= calHi and array.includes(cal, k)
+    weekday and not listed
+
+// the EA's zfxNextFullSession: the first full session strictly after this key, or 0
+nextFull(int k) =>
+    t0 = timestamp(tz, int(k / 10000), int(k / 100) % 100, k % 100, 12, 0)
+    out = 0
+    for d = 1 to 20
+        t = t0 + d * 86400000
+        if isFullAt(t) and out == 0
+            out := year(t, tz) * 10000 + month(t, tz) * 100 + dayofmonth(t, tz)
+    out
+
+fullToday = isFullAt(timestamp(tz, year(time, tz), month(time, tz), dayofmonth(time, tz), 12, 0))
+inSess = nyMod >= sStart and nyMod < sEnd and fullToday
+
+// ---------------------------------------------------------------- state
+var float ema = na
+var float seedSum = 0.0
+var int seedN = 0
+var bool emaReady = false
+var int curSess = na
+var int prevSess = na
+var bool prevQual = false
+var int sessBars = 0
+var bool sessValid = true
+var float sOpen = na
+var float sHi = na
+var float sLo = na
+var float sCl = na
+var bool touchFree = true
+var bool observable = true
+var int bktBars = 0
+var float bktHi = na
+var float bktLo = na
+var float bktCl = na
+var int bktDone = 0
+var int pendDir = 0
+var float pendTgt = na
+var bool entered = false
+var float target = na
+var float lastRatio = na
+var int nQual = 0
+var int nSess = 0
+var int nUntouched = 0
+var int nTrend = 0
+var int nSkipTouch = 0
+var int nReset = 0
+var int fillDelay = na
+bool markSig = false
+
+if barstate.isconfirmed and inSess
+    off = nyMod - sStart
+    // ---- a new observed session
+    if na(curSess) or nyKey != curSess
+        // the EA drops the pending signal and the EMA when a full session was skipped
+        if not na(prevSess) and nextFull(prevSess) != nyKey
+            ema := na
+            seedSum := 0.0
+            seedN := 0
+            emaReady := false
+            prevQual := false
+            nReset += 1
+        // the decision uses THIS bar's open against the EMA carried in from before the session
+        pendDir := 0
+        pendTgt := na
+        if prevQual and emaReady
+            pendDir := open > ema ? -1 : open < ema ? 1 : 0
+            pendTgt := ema
+            if pendDir != 0
+                markSig := true
+        curSess := nyKey
+        nSess += 1
+        sessBars := 0
+        sessValid := true
+        sOpen := open
+        sHi := high
+        sLo := low
+        sCl := close
+        touchFree := true
+        observable := true
+        bktBars := 0
+        bktDone := 0
+        entered := false
+    // ---- minute continuity, then the session aggregate
+    if off != sessBars * tfMin
+        sessValid := false
+    sessBars += 1
+    sHi := math.max(sHi, high)
+    sLo := math.min(sLo, low)
+    sCl := close
+    // ---- the EA skips the signal when the bars before the fill already reached the target
+    if pendDir != 0 and not entered and off < entryDelay
+        if (pendDir == 1 and high >= pendTgt) or (pendDir == -1 and low <= pendTgt)
+            pendDir := 0
+            nSkipTouch += 1
+    // ---- the entry, placed so that it fills on the intended minute
+    if pendDir != 0 and not entered and off == placeOff
+        entered := true
+        target := pendTgt
+        fillDelay := entryDelay
+        if pendDir == 1
+            strategy.entry("L", strategy.long, comment = "fade up")
+            strategy.exit("Lx", from_entry = "L", limit = target, comment = "EMA")
+        else
+            strategy.entry("S", strategy.short, comment = "fade down")
+            strategy.exit("Sx", from_entry = "S", limit = target, comment = "EMA")
+    // ---- the 15-minute bucket: causal touch test, then the EMA update, then the new target
+    bktHi := bktBars == 0 ? high : math.max(bktHi, high)
+    bktLo := bktBars == 0 ? low : math.min(bktLo, low)
+    bktCl := close
+    bktBars += 1
+    if (off % 15) == (15 - tfMin)
+        if bktBars == perBkt
+            if not emaReady
+                observable := false
+            else if bktLo <= ema and ema <= bktHi
+                touchFree := false
+            if not emaReady
+                if seedN < emaLen
+                    seedSum := seedSum + bktCl
+                    seedN := seedN + 1
+                if seedN == emaLen
+                    ema := seedSum / emaLen
+                    emaReady := true
+            else
+                alpha = 2.0 / (emaLen + 1.0)
+                ema := alpha * bktCl + (1.0 - alpha) * ema
+            bktDone += 1
+            if strategy.position_size != 0
+                target := ema
+                if strategy.position_size > 0
+                    strategy.exit("Lx", from_entry = "L", limit = target, comment = "EMA")
+                else
+                    strategy.exit("Sx", from_entry = "S", limit = target, comment = "EMA")
+        else
+            sessValid := false
+        bktBars := 0
+    // ---- the flatten, placed so that it fills at the open of the session's last bar
+    if off >= flatOff and strategy.position_size != 0
+        strategy.close_all(comment = "flat")
+    // ---- qualify this session for tomorrow, on its last bar
+    if off == sessMin - tfMin
+        complete = sessValid and sessBars == nBar and bktDone == nBkt
+        rng = sHi - sLo
+        lastRatio := rng > 0 ? 100.0 * math.abs(sCl - sOpen) / rng : 0.0
+        if complete and touchFree
+            nUntouched += 1
+        if complete and lastRatio >= trendPct
+            nTrend += 1
+        prevQual := complete and observable and rng > 0
+             and (not reqUntouched or touchFree)
+             and (not reqTrend or lastRatio >= trendPct)
+        if prevQual
+            nQual += 1
+        if not complete
+            ema := na
+            seedSum := 0.0
+            seedN := 0
+            emaReady := false
+            nReset += 1
+        prevSess := nyKey
+
+// ---------------------------------------------------------------- display
+plot(emaReady ? ema : na, "RTH 15m EMA", color = color.new(color.orange, 0), linewidth = 2,
+     style = plot.style_linebr)
+plot(strategy.position_size != 0 ? target : na, "Live target", color = color.new(color.teal, 0),
+     linewidth = 2, style = plot.style_linebr)
+plotshape(markSig and pendDir == 1, "Long signal", style = shape.triangleup,
+     location = location.belowbar, color = color.new(color.green, 0), size = size.tiny)
+plotshape(markSig and pendDir == -1, "Short signal", style = shape.triangledown,
+     location = location.abovebar, color = color.new(color.red, 0), size = size.tiny)
+bgcolor(inSess and prevQual and strategy.position_size == 0 ? color.new(color.blue, 96) : na)
+
+var table hud = table.new(position.top_right, 2, 12, border_width = 1)
+if showHud and barstate.islast
+    sz = size.small
+    table.cell(hud, 0, 0, "Chart", text_size = sz)
+    table.cell(hud, 1, 0, timeframe.period + "m" + (tfMin == 1 ? " (exact)" : " -- FILL IS LATE"),
+         text_size = sz, text_color = tfMin == 1 ? color.gray : color.orange)
+    table.cell(hud, 0, 1, "Fill minute after the open", text_size = sz)
+    table.cell(hud, 1, 1, na(fillDelay) ? "-" : str.tostring(placeOff + tfMin), text_size = sz)
+    table.cell(hud, 0, 2, "RTH 15m EMA", text_size = sz)
+    table.cell(hud, 1, 2, emaReady ? str.tostring(ema, "#.##") : "seeding "
+         + str.tostring(seedN) + "/" + str.tostring(emaLen), text_size = sz,
+         text_color = emaReady ? color.gray : color.orange)
+    table.cell(hud, 0, 3, "Sessions seen", text_size = sz)
+    table.cell(hud, 1, 3, str.tostring(nSess), text_size = sz)
+    table.cell(hud, 0, 4, "Untouched", text_size = sz)
+    table.cell(hud, 1, 4, str.tostring(nUntouched) + " (" + str.tostring(nSess > 0
+         ? 100.0 * nUntouched / nSess : 0, "#.#") + "%)", text_size = sz)
+    table.cell(hud, 0, 5, "Trend days", text_size = sz)
+    table.cell(hud, 1, 5, str.tostring(nTrend) + " (" + str.tostring(nSess > 0
+         ? 100.0 * nTrend / nSess : 0, "#.#") + "%)", text_size = sz)
+    table.cell(hud, 0, 6, "QUALIFIED (both)", text_size = sz)
+    table.cell(hud, 1, 6, str.tostring(nQual) + " (" + str.tostring(nSess > 0
+         ? 100.0 * nQual / nSess : 0, "#.#") + "%)", text_size = sz,
+         text_color = nQual > 0 ? color.green : color.orange)
+    table.cell(hud, 0, 7, "Prior session ratio", text_size = sz)
+    table.cell(hud, 1, 7, na(lastRatio) ? "-" : str.tostring(lastRatio, "#.#") + "%",
+         text_size = sz, text_color = not na(lastRatio) and lastRatio >= trendPct ? color.green
+         : color.gray)
+    table.cell(hud, 0, 8, "Prior session qualified", text_size = sz)
+    table.cell(hud, 1, 8, prevQual ? "YES" : "no", text_size = sz,
+         text_color = prevQual ? color.green : color.gray)
+    table.cell(hud, 0, 9, "EMA resets", text_size = sz)
+    table.cell(hud, 1, 9, str.tostring(nReset), text_size = sz)
+    table.cell(hud, 0, 10, "Signals skipped on touch", text_size = sz)
+    table.cell(hud, 1, 10, str.tostring(nSkipTouch), text_size = sz)
+    table.cell(hud, 0, 11, "Closed trades", text_size = sz)
+    table.cell(hud, 1, 11, str.tostring(strategy.closedtrades), text_size = sz)

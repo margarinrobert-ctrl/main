@@ -49,9 +49,13 @@ def check(tf=30, sides=(1, -1), verbose=True):
                 n = len(trig)
                 pnl = np.zeros(n); eb = np.zeros(n, np.int64)
                 xb = np.zeros(n, np.int64); wo = np.zeros(n, np.int64)
-                k = U._walk_one(trig, T.xb[g], T.why[g], T.raw[g], U.SE * U.PV,
-                                U.COMM + 2.0 * U.EC * U.PV, d["si"], np.int64(d["cut"]),
-                                pnl, eb, xb, wo)
+                # LEGACY costs: `test_suite.sim_core` is the pre-change model, so the equality
+                # check has to be made against the pre-change cost stack. `research/costs.py`
+                # reconstructs it exactly rather than leaving it to be remembered.
+                ft, fs = U.LEGACY_COSTS.friction(d)
+                k = U._walk_one(trig, T.xb[g], T.why[g], T.raw[g], ft, fs,
+                                U.LEGACY_COSTS.fee_rt(), U.LEGACY_COSTS.maker_target(),
+                                d["si"], np.int64(d["cut"]), pnl, eb, xb, wo)
                 pnl, eb, xb = pnl[:k], eb[:k], xb[:k]
                 nchk += 1; ntr += k
                 if hd > 0:
@@ -87,9 +91,10 @@ def check_costs(tf=30):
         n = len(trig)
         pnl = np.zeros(n); eb = np.zeros(n, np.int64)
         xb = np.zeros(n, np.int64); wo = np.zeros(n, np.int64)
-        cs = U.Costs(mult=mult)
-        k = U._walk_one(trig, T.xb[0], T.why[0], T.raw[0], cs.se_pv(), cs.fixed(),
-                        d["si"], np.int64(d["cut"]), pnl, eb, xb, wo)
+        cs = U.Costs(broker="legacy", legacy=True, mult=mult)
+        ft, fs = cs.friction(d)
+        k = U._walk_one(trig, T.xb[0], T.why[0], T.raw[0], ft, fs, cs.fee_rt(),
+                        cs.maker_target(), d["si"], np.int64(d["cut"]), pnl, eb, xb, wo)
         s = build([], side=1, atr_mult=2.0, tp_r=1.0, tf=tf, trig=trig, pool=False,
                   cost_mult=mult)
         if not (len(s.pnl) == k and np.allclose(s.pnl, pnl[:k], atol=1e-9)):

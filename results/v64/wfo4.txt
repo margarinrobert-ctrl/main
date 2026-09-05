@@ -1,0 +1,52 @@
+
+==========================================================================================================================
+A. EVERY FOLD, FLAGGED BY WHETHER THE FIXED ARMS HAD ALREADY SEEN IT
+==========================================================================================================================
+
+  rolling
+  fold     fixed arms     RE-CHOSEN    FIXED   FIXED15   RANDOM
+  2023Q4   in-sample           2.13     0.52      4.92     1.14
+  2024Q1   in-sample           2.53     3.19      3.19     0.84
+  2024Q2   in-sample           3.63     6.85      3.70     2.16
+  2024Q3   in-sample           1.22     1.31      3.68    -0.41
+  2024Q4   in-sample           4.47     5.70      1.70     1.63
+  2025Q1   OUT of sample      -3.74    -0.76      3.48    -0.82
+  2025Q2   OUT of sample      10.06     4.14      6.02     0.94
+  2025Q3   OUT of sample       1.11     3.07      2.15     1.01
+  2025Q4   OUT of sample       6.80     4.41      5.42     1.79
+
+  expanding
+  fold     fixed arms     RE-CHOSEN    FIXED   FIXED15   RANDOM
+  2023Q4   in-sample           2.13     0.52      4.92     1.22
+  2024Q1   in-sample           2.53     3.19      3.19     0.55
+  2024Q2   in-sample           0.19     6.85      3.70     2.44
+  2024Q3   in-sample          -1.38     1.31      3.68    -0.48
+  2024Q4   in-sample           1.20     5.70      1.70     1.85
+  2025Q1   OUT of sample       1.95    -0.76      3.48    -0.55
+  2025Q2   OUT of sample      10.06     4.14      6.02     0.32
+  2025Q3   OUT of sample       1.11     3.07      2.15     1.20
+  2025Q4   OUT of sample       6.72     4.41      5.42     1.64
+
+==========================================================================================================================
+B. THE HONEST HEAD-TO-HEAD -- only the folds that POSTDATE the block cut (2024-11-27)
+==========================================================================================================================
+  scheme        folds   RE-CHOSEN     FIXED   FIXED15   RANDOM        winner
+  rolling           4       14.23     10.87     17.07     2.92       FIXED15
+  expanding         4       19.84     10.87     17.07     2.60     RE-CHOSEN
+
+  All nine folds, for comparison:
+  rolling           9       28.20     28.43     34.27     8.28       FIXED15
+  expanding         9       24.50     28.43     34.27     8.18       FIXED15
+
+  THE TWO SCHEMES DISAGREE on the post-cut folds and agree over all nine. Four folds
+  cannot separate them; report both rather than the one that reads better.
+
+==========================================================================================================================
+C. THE ONE THING BOTH SCHEMES AGREE ON
+==========================================================================================================================
+  rolling      RE-CHOSEN beats RANDOM in 3/4 post-cut folds and 8/9 overall
+  expanding    RE-CHOSEN beats RANDOM in 3/4 post-cut folds and 5/9 overall
+
+  Selecting from this family beats picking from it arbitrarily. Re-selecting EVERY
+  FOLD does not beat never selecting at all. Those are different claims and only the
+  first one holds in both schemes.

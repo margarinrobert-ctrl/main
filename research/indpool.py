@@ -52,6 +52,10 @@ def _ema(d, n): return I.ema(d["c"], int(n))
 def _sma(d, n): return I.sma(d["c"], int(n))
 
 
+@ind("wma", "linearly weighted moving average of close (LMA)")
+def _wma(d, n): return I.wma(d["c"], int(n))
+
+
 @ind("atr", "average true range, ema(tr, n)")
 def _atr_r(d, n): return _atr(d, n)
 
@@ -62,6 +66,12 @@ def _natr(d, n): return 100.0 * _atr(d, n) / _safe(d["c"])
 
 @ind("rsi", "relative strength index")
 def _rsi(d, n): return I.rsi(d["c"], int(n))
+
+
+@ind("rsichg", "one-bar change in RSI(n); >0 is RSI rising")
+def _rsichg(d, n):
+    r = I.rsi(d["c"], int(n))
+    return r - I.shift(r)
 
 
 @ind("stoch", "stochastic %K")
@@ -265,6 +275,8 @@ ZERO = {
     "vwapd": lambda d: (d["c"] - _vwap(d)) / _safe(_atr(d, 14)),
     "body": lambda d: 100.0 * np.abs(d["c"] - d["o"]) / _safe(d["h"] - d["l"]),
     "pos": lambda d: 100.0 * (d["c"] - d["l"]) / _safe(d["h"] - d["l"]),
+    "lowick": lambda d: 100.0 * (np.minimum(d["c"], d["o"]) - d["l"]) / _safe(d["h"] - d["l"]),
+    "upwick": lambda d: 100.0 * (d["h"] - np.maximum(d["c"], d["o"])) / _safe(d["h"] - d["l"]),
     "green": lambda d: (d["c"] > d["o"]).astype(float),
     "range": lambda d: d["h"] - d["l"],
     "pdh": lambda d: I.prior_day(d["h"], d["l"], d["c"], d["sess"])[0],
@@ -275,6 +287,8 @@ ZERO_DOC = {
     "vwapd": "distance from session VWAP in ATR(14) units",
     "body": "body as a percent of the bar's range",
     "pos": "close position within the bar's range, 0-100",
+    "lowick": "lower wick as a percent of the bar's range, 0-100",
+    "upwick": "upper wick as a percent of the bar's range, 0-100",
     "mod": "minutes since New York midnight",
     "pdh": "prior day high", "pdl": "prior day low", "pdc": "prior day close",
 }

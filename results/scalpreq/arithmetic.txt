@@ -1,0 +1,26 @@
+The arithmetic that closes the argument: what the scalp geometry costs before any indicator.
+====================================================================================================================
+6. THE COST FLOOR THE GEOMETRY IMPLIES -- cost as a FRACTION OF RISK, which is the only
+   way to compare it across instruments, and the win rate it forces
+====================================================================================================================
+  feed          median ATR  round turn |  0.75N stop  cost/risk  BE at 2R |  2.5N stop  cost/risk  BE at 2R
+  NQ 5m              12.15       2.220 |        9.11      24.4%     41.5% |       30.38       7.3%     35.8% |
+  NQ 30m             33.05       2.220 |       24.79       9.0%     36.3% |       82.64       2.7%     34.2% |
+  US100 15m          15.79       1.700 |       11.84      14.4%     38.1% |       39.48       4.3%     34.8% |
+  US100 60m          36.77       1.700 |       27.58       6.2%     35.4% |       91.94       1.8%     33.9% |
+  US30 15m           30.40       3.200 |       22.80      14.0%     38.0% |       75.99       4.2%     34.7% |
+  US30 60m           66.90       3.200 |       50.17       6.4%     35.5% |      167.25       1.9%     34.0% |
+
+  `BE at 2R` is the win rate a 2:1 payoff needs once the round turn is charged. The
+  driftless bound with no cost is 33.3%; every point above that is the cost.
+
+====================================================================================================================
+7. IS THE SCALP'S LOSS A COST PROBLEM? -- the same trades with the cost set to zero
+====================================================================================================================
+  trigger                          geom     cost x1   cost x0  the cost    win  needs
+  Donchian 20 breakout             scalp    -0.0033   +0.0039   +0.0073  34.3%  33.3%
+  Donchian 20 breakout             swing    +0.0948   +0.1025   +0.0077  16.5%    n/a
+  EMA 13/34/89 stack, <=30 bars old scalp    -0.0052   +0.0023   +0.0075  33.6%  33.3%
+  EMA 13/34/89 stack, <=30 bars old swing    +0.1191   +0.1276   +0.0085  17.0%    n/a
+
+  If the zero-cost column is also negative the geometry is wrong, not the execution.

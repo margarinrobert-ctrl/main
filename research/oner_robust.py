@@ -155,7 +155,7 @@ if __name__ == "__main__":
               f"{'long' if x['side']==1 else 'short':>6}{x['am']:>5.1f}{x['n']:>5}{x['wr']:>6.1f}"
               f"{x['base']:>6.1f}{x['robust']:>+8.1f}{x['exc_r']:>+7.1f}{x['exc_l']:>+7.1f}"
               f"{x['res']:>9,.0f}{x['lok']:>9,.0f}")
-    np.save("/tmp/oner_robust.npy", np.array(k, dtype=object), allow_pickle=True)
+    np.save("results/oner/oner_robust.npy", np.array(k, dtype=object), allow_pickle=True)
     held = sum(1 for x in k if x["exc_l"] > 0)
     print(f"\n  {len(k)} de-duplicated survivors. {held} ({100*held/max(len(k),1):.0f}%) also beat "
           f"their base rate on the locked block, which was read once, after selection.")

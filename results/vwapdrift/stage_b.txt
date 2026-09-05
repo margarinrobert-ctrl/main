@@ -1,0 +1,28 @@
+==============================================================================================================
+B. MATCHED CONTROLS
+==============================================================================================================
+  SIDE: the same bars and the same geometry, direction by coin flip (20 draws).
+  DIRECTION-INVERTED is shown beside it as the deterministic version.
+
+NQ 1m
+  research    rule -0.346R on   69 | coin flip median -0.281 p 0.700 | inverted -0.177 on 69
+  locked      rule +0.053R on   43 | coin flip median +0.030 p 0.450 | inverted -0.127 on 44
+
+NQ 15m
+  research    rule -0.040R on  425 | coin flip median -0.124 p 0.000 | inverted -0.238 on 448
+  locked      rule -0.029R on  226 | coin flip median -0.072 p 0.250 | inverted -0.156 on 248
+
+US100 15m
+  research    rule -0.012R on 1178 | coin flip median -0.227 p 0.000 | inverted -0.427 on 1235
+  validation  rule -0.021R on  538 | coin flip median -0.129 p 0.000 | inverted -0.218 on 587
+  test        rule +0.022R on  438 | coin flip median -0.140 p 0.000 | inverted -0.297 on 464
+
+US30 15m
+  research    rule -0.073R on  973 | coin flip median -0.211 p 0.000 | inverted -0.328 on 1003
+  validation  rule -0.082R on  445 | coin flip median -0.156 p 0.000 | inverted -0.253 on 451
+  test        rule +0.142R on  324 | coin flip median -0.102 p 0.000 | inverted -0.317 on 339
+
+US30_ISO 15m
+  research    rule +0.164R on  323 | coin flip median -0.072 p 0.000 | inverted -0.381 on 328
+  locked      rule +0.021R on  146 | coin flip median -0.155 p 0.000 | inverted -0.381 on 151
+

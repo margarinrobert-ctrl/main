@@ -1,0 +1,113 @@
+FTM_OPENING_RANGE_BREAKOUT_MNQ_v1_8_0_ALPHA2 against the RC1 already measured here.
+
+The alpha.2 file keeps the whole 1.4.1-rc.1 parent (admission, direction model, warm-up,
+sizing, managed stop, 15:30 rule, 16:00 flatten) and changes the ordered entry policy in two
+places: the prior-session-disagreement branch ("H5") observes ONE completed minute instead
+of two before flipping, and the intraday-continuation flip ("H2") is capped at one contract.
+The direct near-VWAP action and the control action are RC1's. So the test is: the same
+one-minute bars, the same simulator, two knobs -- and every difference between the two trade
+lists has to come from those knobs.
+
+Same caveats as STUDY_FTM_ORB_BACKTEST: the path is NQ not MNQ, the levels are synthetic
+(basis-point features are distorted), the first ~120 eligible sessions cannot trade, and the
+15-minute CFD feeds (US30, US100) cannot run a strategy whose opening range, admission test
+and refinement observations are all defined on exact one-minute bars.
+
+====================================================================================================
+FOUR VARIANTS, FixedDollar ($535 risk, cap 2, $50,000), same bars, same parent
+====================================================================================================
+variant                               n     net $     PF    win        R   maxDD $  ret/DD  Sharpe  P(R<=0) streak
+RC1 (prior 2 bars, no H2 cap)       342    11,661  1.351  47.4%  +0.1620    -3,032    3.85    1.46    0.005      9
+H5 only (prior 1 bar)               342    11,462  1.348  47.1%  +0.1551    -2,870    3.99    1.44    0.006      9
+H2 cap only (cap 1)                 342    11,220  1.339  47.4%  +0.1620    -3,032    3.70    1.42    0.005      9
+ALPHA2 (prior 1 bar + H2 cap 1)     342    11,020  1.335  47.1%  +0.1551    -2,870    3.84    1.40    0.006      9
+
+====================================================================================================
+WHAT CHANGED, trade by trade (matched on the session date)
+====================================================================================================
+  RC1 342 trades, ALPHA2 342; sessions traded by both 342, identical trades 321, RC1 only 0, ALPHA2 only 0
+  21 sessions traded differently:
+          date              path_rc1 time_rc1  side_rc1  qty_rc1  usd_rc1               path_a2 time_a2  side_a2  qty_a2  usd_a2
+    2023-09-13      intraday_reverse    10:16         1        2      315      intraday_reverse   10:16        1       1     158
+    2023-09-21 prior_session_reverse    10:02         1        1        9 prior_session_reverse   10:01        1       1       9
+    2023-09-27 prior_session_reverse    10:17         1        1        8 prior_session_reverse   10:16        1       1       8
+    2023-10-16 prior_session_reverse    10:32         1        1     -202 prior_session_reverse   10:31        1       1      21
+    2023-10-26 prior_session_reverse    10:02         1        1     -202 prior_session_reverse   10:01        1       1    -202
+    2024-05-09      intraday_reverse    11:01        -1        2      -12      intraday_reverse   11:01       -1       1      -6
+    2024-06-24      intraday_reverse    10:46         1        2     -129      intraday_reverse   10:46        1       1     -64
+    2024-08-02 prior_session_reverse    10:17         1        1      248 prior_session_reverse   10:16        1       1     248
+    2024-10-09 prior_session_reverse    10:17        -1        1     -144 prior_session_reverse   10:16       -1       1    -144
+    2025-03-11 prior_session_reverse    10:32         1        1      248 prior_session_reverse   10:31        1       1     248
+    2025-03-25 prior_session_reverse    10:32        -1        2     -123 prior_session_reverse   10:31       -1       2    -123
+    2025-04-08 prior_session_reverse    10:02        -1        1      248 prior_session_reverse   10:01       -1       1    -202
+    2025-04-11 prior_session_reverse    10:32         1        1      248 prior_session_reverse   10:31        1       1     248
+    2025-04-14 prior_session_reverse    11:34        -1        1      248 prior_session_reverse   11:33       -1       1     248
+    2025-04-25 prior_session_reverse    10:17        -1        2     -405 prior_session_reverse   10:16       -1       2      -5
+    2025-05-06      intraday_reverse    10:01         1        2      773      intraday_reverse   10:01        1       1     386
+    2025-06-09 prior_session_reverse    10:17        -1        1      -24 prior_session_reverse   10:16       -1       1     -12
+    2025-06-17 prior_session_reverse    10:17        -1        1      280 prior_session_reverse   10:16       -1       1     274
+    2025-07-15      intraday_reverse    11:01         1        2      -64      intraday_reverse   11:01        1       1     -32
+    2025-08-25 prior_session_reverse    10:17        -1        1       88 prior_session_reverse   10:16       -1       1      78
+    2025-09-03 prior_session_reverse    10:32        -1        1      202 prior_session_reverse   10:31       -1       1    -168
+  net effect of the changed sessions: RC1 $1,604 -> ALPHA2 $964
+
+====================================================================================================
+ALPHA2 BY ACTION, PATH, YEAR, EXIT, SIDE
+====================================================================================================
+  by action:
+               n      net   win    R  qty
+    action                               
+    control  242 9,530.00 47.93 0.18 1.35
+    direct    62   797.00 43.55 0.10 1.56
+    h5        16   522.50 56.25 0.18 1.12
+    h2cap     22   171.00 40.91 0.05 1.00
+  by path:
+                             n      net   win     R  qty
+    path                                                
+    parent_no_condition    211 9,675.00 48.82  0.20 1.38
+    rc1_direct              62   797.00 43.55  0.10 1.56
+    prior_session_reverse   16   522.50 56.25  0.18 1.12
+    intraday_keep           19   256.50 47.37  0.13 1.05
+    intraday_reverse        22   171.00 40.91  0.05 1.00
+    delay_weak               7   -32.00 42.86  0.13 1.43
+    delay_hv                 5  -369.50 20.00 -0.36 1.00
+  by reason:
+                 n        net    win     R  qty
+    reason                                     
+    target      57  21,140.50 100.00  1.83 1.16
+    cond1530    66  14,207.50  62.12  0.89 1.55
+    close1600   50   5,640.50  80.00  0.51 1.44
+    stop       169 -29,968.00  13.61 -0.80 1.33
+  by side:
+            n      net   win    R  qty
+    side                              
+     1    172 8,431.50 49.42 0.24 1.53
+    -1    170 2,589.00 44.71 0.07 1.18
+  by year:
+            n      net   win    R
+    time                         
+    2023   39  -148.50 53.85 0.04
+    2024  156 7,363.00 44.87 0.24
+    2025  147 3,806.00 47.62 0.10
+  concentration: top 1% (3) = 31% of net, top 5% (17) = 121%
+  halves: first 171 $6,370 (R +0.2018), second $4,650 (R +0.1084)
+  the conditional 15:30 exit: 66 trades, $14,208 of the $11,020 net
+
+====================================================================================================
+MATCHED CONTROL for ALPHA2 -- same sessions, side, stop/target/managed/15:30/flatten,
+RANDOM quarter-hour entry, 1,000 draws
+====================================================================================================
+  rule +0.1551 R over 342; control median +0.0612 [-0.0076, +0.1212]; excess +0.0938; p(control >= rule) 0.006
+
+====================================================================================================
+ALPHA2 SIZING MODES
+====================================================================================================
+  FixedDollar                n  342  net $   11,020  PF 1.335  win 47.1%  maxDD $  -2,870  ret/DD 3.84  Sharpe 1.40
+  ClosedEquityPercent        n  342  net $   16,360  PF 1.386  win 47.1%  maxDD $  -3,820  ret/DD 4.28  Sharpe 1.42
+  ConfidenceScaledPercent    n  342  net $   21,404  PF 1.250  win 47.1%  maxDD $  -7,432  ret/DD 2.88  Sharpe 1.03
+
+====================================================================================================
+ALPHA2 control-flow census
+====================================================================================================
+   elig=473  adm=458  geom=82  touch=31  prior=3  knn=7  rc1=79  parent=379  weak=9  hv=6  hvflip=5  prev=20  ikeep=24  irev=26  labels=374  fail=13  warm=116  entries=342  longs=172  shorts=170
+   actions: control 242, direct 62, h2cap 22, h5 16

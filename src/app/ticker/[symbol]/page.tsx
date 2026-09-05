@@ -1,3 +1,4 @@
+import { DataStatus } from "@/components/DataStatus";
 import { TickerTabs } from "@/components/TickerTabs";
 import { withBase } from "@/lib/paths";
 
@@ -23,6 +24,10 @@ export default function TickerPage({ params }: { params: { symbol: string } }) {
           <div className="lbl mt-1.5">Options analytics · dealer positioning</div>
         </div>
       </div>
+      {/* Every number below is arithmetic on this chain. If it is canned sample data because the
+          live feed did not answer, that has to be said HERE, above the analytics, not buried in a
+          server log. This component was written for exactly that and was imported by nothing. */}
+      <DataStatus symbol={symbol} />
       <TickerTabs symbol={symbol} />
     </div>
   );

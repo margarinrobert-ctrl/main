@@ -1,0 +1,421 @@
+The five most profitable strategies on this branch, put through the same four tests.
+
+  A. IN SAMPLE / OUT OF SAMPLE   every block of every feed, in percent of entry price, with the
+                                 SHAPE flagged: a rule chosen on research should look better
+                                 there, and a block that reads better out of sample is a regime,
+                                 not a result.
+  B. MONTE CARLO                 two of them, because they answer different questions. A day-block
+                                 BOOTSTRAP resamples whole sessions with their trades attached and
+                                 prices the EDGE; a PERMUTATION reorders the realised trades and
+                                 prices the PATH. Permuting cannot change the endpoint, so it says
+                                 nothing about the edge, and the bootstrap says nothing about the
+                                 drawdown a different ordering would have produced.
+  C. ROBUSTNESS                  every declared parameter moved one rung at a time and read on
+                                 BOTH blocks; the cost model scaled 0x to 4x; and the whole history
+                                 cut into six folds.
+  D. LIVE-TRADING READINESS      nine pre-declared gates, each one a thing that has caught a
+                                 strategy on this branch before. The scorecard is the deliverable;
+                                 the count of gates passed is not a p-value.
+
+Nothing here selects anything. Every strategy runs with the settings its own study shipped.
+
+
+================================================================================================================
+IBS_SESSION  --  IBS session EA
+================================================================================================================
+
+A. IN SAMPLE / OUT OF SAMPLE   (percent of entry price, one unit, the feed's own costs)
+   feed       block                 n  pct/trade     %/yr     PF     win  Sharpe  maxDD%  ret/DD
+   NQ         research      IS     79    +0.3227   +13.47   1.66   62.0%   +1.36    8.87    2.87
+   NQ         locked        OOS    35    +0.3171   +10.84   1.41   54.3%   +0.70    8.01    1.38
+   US100      research      IS    167    +0.3708   +12.11   1.58   62.3%   +1.05    8.42    7.35
+   US100      validation    OOS    96    +0.5204   +25.27   1.69   61.5%   +1.52    9.97    5.01
+   US100      test          OOS    56    +0.2255    +7.35   1.29   58.9%   +0.52   11.49    1.10
+   US30       research      IS    174    +0.1213    +4.15   1.20   49.4%   +0.38   19.43    1.09
+   US30       validation    OOS    78    +0.2415    +9.64   1.40   55.1%   +0.87   10.52    1.79
+   US30       test          OOS    46    -0.0129    -0.39   0.98   54.3%   -0.06    8.04   -0.07
+   US30_ISO   iso_pre2026   OOS    47    +0.0470    +1.58   1.10   57.4%   +0.23    8.29    0.27
+   US30_ISO   iso_2026      OOS    27    +0.2662   +10.78   1.68   55.6%   +1.38    3.77    1.91
+
+   SHAPE -- a rule chosen on research should look BETTER there; growing out of sample is
+   a regime, and this branch has been caught by that six times.
+     NQ         IS +0.3227 -> OOS +0.3171   decayed (right shape)
+     US100      IS +0.3708 -> OOS +0.4118   GREW out of sample
+     US30       IS +0.1213 -> OOS +0.1471   GREW out of sample
+
+B. MONTE CARLO   day-block bootstrap for the EDGE, permutation for the PATH
+   feed       block             n  days      mean  P(mean<=0)               95% CI |  realDD  MC med  MC p99  pctile
+   NQ         research         79    79   +0.3227       0.029 [-0.0124,+0.6553] |    8.87    7.74   15.15    0.68
+   NQ         locked           35    35   +0.3171       0.247 [-0.4647,+1.2385] |    8.01    9.22   17.33    0.31
+   US100      research        167   167   +0.3708       0.011 [+0.0568,+0.6813] |    8.42   14.14   27.16    0.01
+   US100      validation       96    96   +0.5204       0.016 [+0.0490,+0.9818] |    9.97   12.13   24.08    0.23
+   US100      test             56    56   +0.2255       0.254 [-0.3834,+0.8885] |   11.49   12.69   23.53    0.36
+   US30       research        174   174   +0.1213       0.194 [-0.1634,+0.4016] |   19.43   19.29   35.31    0.51
+   US30       validation       78    78   +0.2415       0.105 [-0.1363,+0.6427] |   10.52    9.85   19.18    0.59
+   US30       test             46    46   -0.0129       0.528 [-0.3956,+0.3517] |    8.04    8.66   15.07    0.40
+   US30_ISO   iso_pre2026      47    47   +0.0470       0.388 [-0.3029,+0.3935] |    8.29    7.23   13.10    0.68
+   US30_ISO   iso_2026         27    27   +0.2662       0.121 [-0.1830,+0.7174] |    3.77    3.72    7.33    0.51
+   pctile is where the REALISED drawdown sits in its own permutation distribution: high
+   means the realised path was unlucky, low means it was lucky and sizing must exceed it.
+
+C. ROBUSTNESS
+   C1. one parameter at a time, every other one at its shipped value
+     entry           15.0: +0.350/+0.272 *20.0: +0.258/+0.263  25.0: +0.167/+0.218     (IS/OOS pct per trade; * is the shipped value)
+     exit            70.0: +0.216/+0.248 *80.0: +0.258/+0.263  90.0: +0.455/+0.171     (IS/OOS pct per trade; * is the shipped value)
+     hold            3: +0.226/+0.254 *5: +0.258/+0.263  7: +0.253/+0.294     (IS/OOS pct per trade; * is the shipped value)
+     mult            0.75: +0.176/+0.181 *1.0: +0.258/+0.263  1.5: +0.266/+0.350     (IS/OOS pct per trade; * is the shipped value)
+     neighbourhood: 90% of 84 perturbed out-of-sample cells are profitable
+
+   C2. cost stress -- the assumed spread is an assumption in every feed here
+     feed            x0.0      x1.0      x1.5      x2.0      x4.0   (out-of-sample pct per trade)
+     NQ           +0.3279   +0.3171   +0.3117   +0.3063   +0.2846 
+     US100        +0.4294   +0.4118   +0.4029   +0.3941   +0.3588 
+     US30         +0.1657   +0.1471   +0.1378   +0.1286   +0.0914 
+     US30_ISO     +0.1385   +0.1270   +0.1212   +0.1155   +0.0926 
+     a strategy whose out-of-sample edge is gone at 2x is not distinguishable from zero on
+     execution grounds -- bid/ask is unavailable in every feed on this branch.
+
+   C3. six chronological folds of the whole history (pct per trade)
+     NQ         2022-12 n19  +0.715  2023-05 n19  +0.565  2023-10 n19  +0.106  2024-04 n19  -0.017  2024-10 n19  +0.168  2025-04 n19  +0.388
+     US100      2016-11 n54  +0.434  2018-12 n53  +0.325  2020-05 n53  +0.461  2021-11 n53  +0.054  2022-10 n53  +0.832  2024-01 n53  +0.236
+     US30       2016-11 n50  -0.035  2018-09 n50  +0.004  2020-03 n50  +0.323  2021-06 n50  +0.193  2022-08 n49  +0.277  2023-11 n49  +0.031
+     US30_ISO   2024-09 n13  -0.012  2025-01 n13  -0.253  2025-05 n12  +0.016  2025-10 n12  +0.791  2026-02 n12  -0.141  2026-05 n12  +0.404
+
+D. LIVE-TRADING READINESS
+   the matched control on every RESERVED block (each strategy's own null):
+     NQ         locked        rule   +0.0696  control   +0.0474  p 0.418
+     US100      validation    rule   +0.2866  control   +0.0774  p 0.001
+     US100      test          rule   +0.1148  control   +0.1231  p 0.535
+     US30       validation    rule   +0.1793  control   +0.0176  p 0.031
+     US30       test          rule   +0.0423  control   +0.0462  p 0.509
+     US30_ISO   iso_pre2026   rule   +0.0763  control   +0.0019  p 0.233
+     US30_ISO   iso_2026      rule   +0.1422  control   -0.1498  p 0.028
+
+     [FAIL]  matched control p<=0.05 on at least half the reserved blocks    3/7 blocks
+     [FAIL]  bootstrap P(mean<=0)<=0.05 on at least half the reserved blocks  1/7 blocks
+     [PASS]  power: >= 100 out-of-sample trades                              385 trades
+     [FAIL]  right shape: does not grow out of sample on a majority of feeds  2/3 feeds grew
+     [PASS]  survives 2x the assumed cost out of sample on every feed        NQ +0.3063, US100 +0.3941, US30 +0.1286, US30_ISO +0.1155
+     [PASS]  profitable out of sample on >= 2 independent feeds              4/4 feeds
+     [PASS]  parameter neighbourhood >= 70% profitable out of sample         90%
+     [PASS]  the realised drawdown is not at the top of its own permutation  worst pctile 0.68
+     [FAIL]  majority of the six folds positive on every feed                83%, 100%, 83%, 50%
+
+   5 of 9 gates passed.
+
+E. FUNDED EVALUATION -- 60 trading days, +8% target, -6% static maximum drawdown, a 3%
+   daily loss limit, sampled from the RESERVED block's own daily returns. Notional
+   leverage is swept because there is no risk unit common to all five strategies.
+   feed       block                             x2                     x4                     x6                     x8
+   NQ         locked         pass 47.2 bust 22.7 nei 30.1 pass 73.5 bust 16.0 nei 10.5 pass 82.6 bust 12.6 nei  4.8 pass 86.0 bust 11.1 nei  2.9
+   US100      validation     pass 78.5 bust 13.4 nei  8.1 pass 90.2 bust  8.6 nei  1.2 pass 92.5 bust  7.2 nei  0.2 pass 93.1 bust  6.8 nei  0.1
+   US100      test           pass 46.2 bust 17.0 nei 36.8 pass 74.2 bust 13.4 nei 12.4 pass 83.8 bust 10.4 nei  5.8 pass 87.9 bust  8.8 nei  3.2
+   US30       validation     pass 48.9 bust 24.3 nei 26.8 pass 73.2 bust 19.1 nei  7.7 pass 82.0 bust 14.9 nei  3.0 pass 85.5 bust 12.8 nei  1.7
+   US30       test           pass 18.1 bust 19.4 nei 62.5 pass 50.2 bust 21.6 nei 28.2 pass 66.3 bust 18.2 nei 15.4 pass 74.2 bust 16.0 nei  9.8
+   US30_ISO   iso_pre2026    pass 21.3 bust 16.9 nei 61.7 pass 54.9 bust 18.9 nei 26.1 pass 72.0 bust 15.5 nei 12.5 pass 79.8 bust 13.0 nei  7.2
+   US30_ISO   iso_2026       pass 42.8 bust 13.4 nei 43.9 pass 71.7 bust 16.8 nei 11.6 pass 81.8 bust 13.6 nei  4.5 pass 85.7 bust 12.3 nei  1.9
+
+================================================================================================================
+V56_CVD  --  CVD exhausted sellers on a Donchian breakout, NQ 30m
+================================================================================================================
+
+A. IN SAMPLE / OUT OF SAMPLE   (percent of entry price, one unit, the feed's own costs)
+   feed       block                 n  pct/trade     %/yr     PF     win  Sharpe  maxDD%  ret/DD
+   NQ         research      IS    157    +0.1203    +7.94   1.73   35.7%   +1.38    2.05    9.21
+   NQ         locked        OOS    87    +0.1371    +9.25   1.58   40.2%   +1.17    7.83    1.52
+
+   SHAPE -- a rule chosen on research should look BETTER there; growing out of sample is
+   a regime, and this branch has been caught by that six times.
+     NQ         IS +0.1203 -> OOS +0.1371   GREW out of sample
+
+B. MONTE CARLO   day-block bootstrap for the EDGE, permutation for the PATH
+   feed       block             n  days      mean  P(mean<=0)               95% CI |  realDD  MC med  MC p99  pctile
+   NQ         research        157   136   +0.1203       0.010 [+0.0175,+0.2372] |    2.05    3.62    7.16    0.00
+   NQ         locked           87    80   +0.1371       0.081 [-0.0448,+0.3435] |    7.83    4.98    9.36    0.94
+   pctile is where the REALISED drawdown sits in its own permutation distribution: high
+   means the realised path was unlucky, low means it was lucky and sizing must exceed it.
+
+C. ROBUSTNESS
+   C1. one parameter at a time, every other one at its shipped value
+     stop            1.5: +0.099/+0.126 *2.0: +0.120/+0.137  2.5: +0.111/+0.174     (IS/OOS pct per trade; * is the shipped value)
+     ent             15: +0.103/+0.187 *20: +0.120/+0.137  25: +0.134/+0.167     (IS/OOS pct per trade; * is the shipped value)
+     k               2: +0.092/+0.110 *3: +0.120/+0.137  4: +0.111/+0.136     (IS/OOS pct per trade; * is the shipped value)
+     w               10: +0.136/+0.082 *20: +0.120/+0.137  30: +0.093/+0.139     (IS/OOS pct per trade; * is the shipped value)
+     neighbourhood: 100% of 12 perturbed out-of-sample cells are profitable
+
+   C2. cost stress -- the assumed spread is an assumption in every feed here
+     feed            x0.0      x1.0      x1.5      x2.0      x4.0   (out-of-sample pct per trade)
+     NQ           +0.1421   +0.1371   +0.1346   +0.1321   +0.1144 
+     a strategy whose out-of-sample edge is gone at 2x is not distinguishable from zero on
+     execution grounds -- bid/ask is unavailable in every feed on this branch.
+
+   C3. six chronological folds of the whole history (pct per trade)
+     NQ         2023-02 n41  +0.068  2023-08 n41  +0.022  2023-12 n41  +0.118  2024-05 n41  +0.335  2025-01 n40  +0.007  2025-06 n40  +0.206
+
+D. LIVE-TRADING READINESS
+   the matched control on every RESERVED block (each strategy's own null):
+     NQ         locked        rule   +0.3176  control   +0.1247  p 0.005
+
+     [PASS]  matched control p<=0.05 on at least half the reserved blocks    1/1 blocks
+     [FAIL]  bootstrap P(mean<=0)<=0.05 on at least half the reserved blocks  0/1 blocks
+     [FAIL]  power: >= 100 out-of-sample trades                              87 trades
+     [FAIL]  right shape: does not grow out of sample on a majority of feeds  1/1 feeds grew
+     [PASS]  survives 2x the assumed cost out of sample on every feed        NQ +0.1321
+     [FAIL]  profitable out of sample on >= 2 independent feeds              1/1 feeds
+     [PASS]  parameter neighbourhood >= 70% profitable out of sample         100%
+     [PASS]  the realised drawdown is not at the top of its own permutation  worst pctile 0.94
+     [PASS]  majority of the six folds positive on every feed                100%
+
+   5 of 9 gates passed.
+
+E. FUNDED EVALUATION -- 60 trading days, +8% target, -6% static maximum drawdown, a 3%
+   daily loss limit, sampled from the RESERVED block's own daily returns. Notional
+   leverage is swept because there is no risk unit common to all five strategies.
+   feed       block                             x2                     x4                     x6                     x8
+   NQ         locked         pass 33.8 bust  9.2 nei 57.0 pass 56.0 bust 21.7 nei 22.3 pass 64.0 bust 27.1 nei  8.9 pass 66.2 bust 30.2 nei  3.6
+
+================================================================================================================
+FTM_ORB  --  FTM opening-range breakout, NQ 1m
+================================================================================================================
+
+A. IN SAMPLE / OUT OF SAMPLE   (percent of entry price, one unit, the feed's own costs)
+   feed       block                 n  pct/trade     %/yr     PF     win  Sharpe  maxDD%  ret/DD
+   NQ         research      IS    195    +0.0647    +6.38   1.37   46.2%   +1.31    5.73    2.20
+   NQ         locked        OOS   147    +0.0456    +6.28   1.27   49.0%   +1.17    4.28    1.57
+
+   SHAPE -- a rule chosen on research should look BETTER there; growing out of sample is
+   a regime, and this branch has been caught by that six times.
+     NQ         IS +0.0647 -> OOS +0.0456   decayed (right shape)
+
+B. MONTE CARLO   day-block bootstrap for the EDGE, permutation for the PATH
+   feed       block             n  days      mean  P(mean<=0)               95% CI |  realDD  MC med  MC p99  pctile
+   NQ         research        195   195   +0.0647       0.029 [-0.0013,+0.1340] |    5.73    3.98    7.81    0.90
+   NQ         locked          147   147   +0.0456       0.112 [-0.0288,+0.1185] |    4.28    3.77    7.24    0.67
+   pctile is where the REALISED drawdown sits in its own permutation distribution: high
+   means the realised path was unlucky, low means it was lucky and sizing must exceed it.
+
+C. ROBUSTNESS
+   C1. one parameter at a time, every other one at its shipped value
+     orb_lookback    60: +0.049/+0.055  90: +0.074/+0.052 *120: +0.065/+0.046  150: +0.062/+0.041     (IS/OOS pct per trade; * is the shipped value)
+     trend_closes    11: +0.072/+0.054  16: +0.074/+0.039 *21: +0.065/+0.046  26: +0.068/+0.046     (IS/OOS pct per trade; * is the shipped value)
+     neighbourhood: 100% of 8 perturbed out-of-sample cells are profitable
+
+   C2. cost stress -- the assumed spread is an assumption in every feed here
+     feed            x0.0      x1.0      x1.5      x2.0      x4.0   (out-of-sample pct per trade)
+     NQ           +0.0533   +0.0456   +0.0418   +0.0379   +0.0225 
+     a strategy whose out-of-sample edge is gone at 2x is not distinguishable from zero on
+     execution grounds -- bid/ask is unavailable in every feed on this branch.
+
+   C3. six chronological folds of the whole history (pct per trade)
+     NQ         2023-09 n57  -0.050  2024-04 n57  +0.126  2024-07 n57  +0.132  2024-10 n57  +0.130  2025-04 n57  -0.037  2025-08 n57  +0.038
+
+D. LIVE-TRADING READINESS
+   the matched control on every RESERVED block (each strategy's own null):
+     NQ         locked        rule   +0.1194  control   +0.0531  p 0.152
+
+     [FAIL]  matched control p<=0.05 on at least half the reserved blocks    0/1 blocks
+     [FAIL]  bootstrap P(mean<=0)<=0.05 on at least half the reserved blocks  0/1 blocks
+     [PASS]  power: >= 100 out-of-sample trades                              147 trades
+     [PASS]  right shape: does not grow out of sample on a majority of feeds  0/1 feeds grew
+     [PASS]  survives 2x the assumed cost out of sample on every feed        NQ +0.0379
+     [FAIL]  profitable out of sample on >= 2 independent feeds              1/1 feeds
+     [PASS]  parameter neighbourhood >= 70% profitable out of sample         100%
+     [PASS]  the realised drawdown is not at the top of its own permutation  worst pctile 0.90
+     [PASS]  majority of the six folds positive on every feed                67%
+
+   6 of 9 gates passed.
+
+E. FUNDED EVALUATION -- 60 trading days, +8% target, -6% static maximum drawdown, a 3%
+   daily loss limit, sampled from the RESERVED block's own daily returns. Notional
+   leverage is swept because there is no risk unit common to all five strategies.
+   feed       block                             x2                     x4                     x6                     x8
+   NQ         locked         pass 23.8 bust  7.8 nei 68.4 pass 53.1 bust 30.9 nei 15.9 pass 56.5 bust 41.3 nei  2.2 pass 62.1 bust 37.5 nei  0.5
+
+================================================================================================================
+APM_VWAP  --  ATR phase momentum + session VWAP
+================================================================================================================
+
+A. IN SAMPLE / OUT OF SAMPLE   (percent of entry price, one unit, the feed's own costs)
+   feed       block                 n  pct/trade     %/yr     PF     win  Sharpe  maxDD%  ret/DD
+   NQ         research      IS     70    +0.1207    +4.28   1.54   58.6%   +1.01    3.50    2.42
+   NQ         locked        OOS    34    +0.2731    +8.76   4.17   67.6%   +2.78    1.09    8.54
+   US100      research      IS    176    +0.1182    +4.00   1.54   57.4%   +0.91    4.28    4.86
+   US100      validation    OOS    70    +0.2741    +9.39   1.95   64.3%   +1.45    4.04    4.75
+   US100      test          OOS    62    +0.0714    +2.47   1.28   58.1%   +0.39    7.26    0.61
+   US30       research      IS    148    -0.0343    -0.96   0.86   48.6%   -0.25    9.38   -0.54
+   US30       validation    OOS    68    +0.0621    +2.07   1.25   45.6%   +0.47    5.80    0.73
+   US30       test          OOS    51    +0.0125    +0.41   1.07   51.0%   +0.14    2.77    0.23
+
+   SHAPE -- a rule chosen on research should look BETTER there; growing out of sample is
+   a regime, and this branch has been caught by that six times.
+     NQ         IS +0.1207 -> OOS +0.2731   GREW out of sample
+     US100      IS +0.1182 -> OOS +0.1789   GREW out of sample
+     US30       IS -0.0343 -> OOS +0.0409   GREW out of sample
+
+B. MONTE CARLO   day-block bootstrap for the EDGE, permutation for the PATH
+   feed       block             n  days      mean  P(mean<=0)               95% CI |  realDD  MC med  MC p99  pctile
+   NQ         research         70    70   +0.1207       0.070 [-0.0465,+0.2838] |    3.50    3.69    7.16    0.43
+   NQ         locked           34    34   +0.2731       0.000 [+0.1097,+0.4445] |    1.09    0.90    1.82    0.73
+   US100      research        176   176   +0.1182       0.018 [+0.0077,+0.2315] |    4.28    5.46   10.84    0.17
+   US100      validation       70    70   +0.2741       0.017 [+0.0244,+0.5210] |    4.04    4.72    9.27    0.28
+   US100      test             62    62   +0.0714       0.266 [-0.2385,+0.3069] |    7.26    7.73   10.26    0.27
+   US30       research        148   148   -0.0343       0.724 [-0.1567,+0.0774] |    9.38   10.93   17.27    0.25
+   US30       validation       68    68   +0.0621       0.257 [-0.1154,+0.2492] |    5.80    4.55    8.51    0.80
+   US30       test             51    51   +0.0125       0.417 [-0.1258,+0.1500] |    2.77    3.21    5.74    0.30
+   pctile is where the REALISED drawdown sits in its own permutation distribution: high
+   means the realised path was unlucky, low means it was lucky and sizing must exceed it.
+
+C. ROBUSTNESS
+   C1. one parameter at a time, every other one at its shipped value
+     ema             16: +0.135/+0.166 *21: +0.061/+0.133  26: +0.037/+0.100     (IS/OOS pct per trade; * is the shipped value)
+     dist            2.5: +0.037/+0.103 *3.0: +0.061/+0.133  3.5: +0.121/+0.169     (IS/OOS pct per trade; * is the shipped value)
+     vwap            2.0: +0.041/+0.111 *2.5: +0.061/+0.133  3.0: +0.057/+0.111     (IS/OOS pct per trade; * is the shipped value)
+     osc             2: +0.037/+0.105 *3: +0.061/+0.133  4: +0.140/+0.185     (IS/OOS pct per trade; * is the shipped value)
+     neighbourhood: 93% of 60 perturbed out-of-sample cells are profitable
+
+   C2. cost stress -- the assumed spread is an assumption in every feed here
+     feed            x0.0      x1.0      x1.5      x2.0      x4.0   (out-of-sample pct per trade)
+     NQ           +0.2816   +0.2731   +0.2689   +0.2646   +0.2476 
+     US100        +0.1916   +0.1789   +0.1726   +0.1662   +0.1409 
+     US30         +0.0542   +0.0409   +0.0342   +0.0276   +0.0010 
+     a strategy whose out-of-sample edge is gone at 2x is not distinguishable from zero on
+     execution grounds -- bid/ask is unavailable in every feed on this branch.
+
+   C3. six chronological folds of the whole history (pct per trade)
+     NQ         2022-12 n18  +0.027  2023-06 n18  +0.150  2023-11 n17  +0.056  2024-07 n17  +0.252  2024-12 n17  +0.292  2025-06 n17  +0.255
+     US100      2016-11 n52  +0.155  2018-02 n52  +0.079  2019-09 n51  +0.155  2021-06 n51  +0.249  2022-10 n51  +0.180  2024-07 n51  +0.048
+     US30       2016-11 n45  -0.097  2018-05 n45  +0.103  2019-12 n45  -0.109  2021-08 n44  +0.189  2023-01 n44  -0.137  2024-02 n44  +0.048
+
+D. LIVE-TRADING READINESS
+   the matched control on every RESERVED block (each strategy's own null):
+     NQ         locked        rule  +62.8094  control   -0.4579  p 0.060
+     US100      validation    rule  +34.5500  control   +0.5876  p 0.030
+     US100      test          rule  +15.3113  control   -1.4425  p 0.239
+     US30       validation    rule  +16.4118  control   -3.5838  p 0.281
+     US30       test          rule   +4.5824  control   -3.4464  p 0.406
+
+     [FAIL]  matched control p<=0.05 on at least half the reserved blocks    1/5 blocks
+     [FAIL]  bootstrap P(mean<=0)<=0.05 on at least half the reserved blocks  2/5 blocks
+     [PASS]  power: >= 100 out-of-sample trades                              285 trades
+     [FAIL]  right shape: does not grow out of sample on a majority of feeds  3/3 feeds grew
+     [PASS]  survives 2x the assumed cost out of sample on every feed        NQ +0.2646, US100 +0.1662, US30 +0.0276
+     [PASS]  profitable out of sample on >= 2 independent feeds              3/3 feeds
+     [PASS]  parameter neighbourhood >= 70% profitable out of sample         93%
+     [PASS]  the realised drawdown is not at the top of its own permutation  worst pctile 0.80
+     [FAIL]  majority of the six folds positive on every feed                100%, 100%, 50%
+
+   5 of 9 gates passed.
+
+E. FUNDED EVALUATION -- 60 trading days, +8% target, -6% static maximum drawdown, a 3%
+   daily loss limit, sampled from the RESERVED block's own daily returns. Notional
+   leverage is swept because there is no risk unit common to all five strategies.
+   feed       block                             x2                     x4                     x6                     x8
+   NQ         locked         pass 12.8 bust  0.0 nei 87.1 pass 54.0 bust  0.6 nei 45.4 pass 72.5 bust  1.9 nei 25.5 pass 81.6 bust  2.6 nei 15.8
+   US100      validation     pass 35.5 bust  4.3 nei 60.2 pass 70.2 bust  6.0 nei 23.7 pass 80.9 bust  7.0 nei 12.2 pass 85.8 bust  6.4 nei  7.8
+   US100      test           pass  9.8 bust  1.0 nei 89.2 pass 41.6 bust  6.2 nei 52.2 pass 60.6 bust  9.3 nei 30.1 pass 70.2 bust  9.8 nei 20.0
+   US30       validation     pass  8.0 bust  5.5 nei 86.5 pass 31.5 bust 18.6 nei 49.9 pass 46.5 bust 21.6 nei 32.0 pass 54.9 bust 23.0 nei 22.1
+   US30       test           pass  0.5 bust  2.2 nei 97.3 pass 12.3 bust 12.5 nei 75.2 pass 27.4 bust 20.0 nei 52.6 pass 40.8 bust 22.1 nei 37.2
+
+================================================================================================================
+TFI  --  Donchian 55 + ADX + prior-session-high gate
+================================================================================================================
+
+A. IN SAMPLE / OUT OF SAMPLE   (percent of entry price, one unit, the feed's own costs)
+   feed       block                 n  pct/trade     %/yr     PF     win  Sharpe  maxDD%  ret/DD
+   NQ         research      IS    145    +0.0745    +4.54   1.40   50.3%   +1.07    3.35    3.22
+   NQ         locked        OOS    81    +0.0545    +3.45   1.30   55.6%   +0.66    2.55    1.73
+   US100      research      IS    362    +0.0469    +2.71   1.28   53.9%   +0.73   10.30    1.65
+   US100      validation    OOS   125    +0.1503    +7.64   1.64   57.6%   +1.40    5.12    3.67
+   US100      test          OOS   126    +0.0390    +2.27   1.22   51.6%   +0.61    2.84    1.73
+   US30       research      IS    335    +0.0007    +0.04   1.00   46.3%   +0.01    8.30    0.03
+   US30       validation    OOS   134    +0.0046    +0.25   1.02   49.3%   +0.07    4.38    0.14
+   US30       test          OOS   108    -0.0116    -0.66   0.93   42.6%   -0.19    5.79   -0.22
+   US30_ISO   iso_pre2026   OOS    90    +0.0124    +0.66   1.08   48.9%   +0.21    3.72    0.30
+   US30_ISO   iso_2026      OOS    38    -0.1059    -4.97   0.51   36.8%   -1.93    5.18   -0.78
+
+   SHAPE -- a rule chosen on research should look BETTER there; growing out of sample is
+   a regime, and this branch has been caught by that six times.
+     NQ         IS +0.0745 -> OOS +0.0545   decayed (right shape)
+     US100      IS +0.0469 -> OOS +0.0945   GREW out of sample
+     US30       IS +0.0007 -> OOS -0.0026   decayed (right shape)
+
+B. MONTE CARLO   day-block bootstrap for the EDGE, permutation for the PATH
+   feed       block             n  days      mean  P(mean<=0)               95% CI |  realDD  MC med  MC p99  pctile
+   NQ         research        145   142   +0.0745       0.046 [-0.0113,+0.1613] |    3.35    3.87    7.47    0.30
+   NQ         locked           81    79   +0.0545       0.232 [-0.0761,+0.2102] |    2.55    3.66    6.70    0.09
+   US100      research        362   355   +0.0469       0.030 [-0.0022,+0.0960] |   10.30    5.75   11.20    0.98
+   US100      validation      125   121   +0.1503       0.013 [+0.0140,+0.2871] |    5.12    4.32    8.43    0.73
+   US100      test            126   123   +0.0390       0.180 [-0.0456,+0.1233] |    2.84    4.06    7.85    0.08
+   US30       research        335   333   +0.0007       0.492 [-0.0490,+0.0507] |    8.30    8.62   15.04    0.43
+   US30       validation      134   134   +0.0046       0.456 [-0.0785,+0.0860] |    4.38    5.56   10.13    0.18
+   US30       test            108   102   -0.0116       0.613 [-0.0939,+0.0756] |    5.79    5.17    8.72    0.67
+   US30_ISO   iso_pre2026      90    87   +0.0124       0.420 [-0.0730,+0.1080] |    3.72    3.54    6.26    0.58
+   US30_ISO   iso_2026         38    38   -0.1059       0.956 [-0.2211,+0.0153] |    5.18    4.61    6.34    0.80
+   pctile is where the REALISED drawdown sits in its own permutation distribution: high
+   means the realised path was unlucky, low means it was lucky and sizing must exceed it.
+
+C. ROBUSTNESS
+   C1. one parameter at a time, every other one at its shipped value
+     N               30: +0.030/+0.037 *55: +0.033/+0.035     (IS/OOS pct per trade; * is the shipped value)
+     adx             15: +0.030/+0.032 *20: +0.033/+0.035  25: +0.037/+0.044     (IS/OOS pct per trade; * is the shipped value)
+     stop            2.0: +0.025/+0.050 *2.5: +0.033/+0.035  3.0: +0.033/+0.027     (IS/OOS pct per trade; * is the shipped value)
+     exN             10: +0.032/+0.030 *20: +0.033/+0.035  30: +0.032/+0.035     (IS/OOS pct per trade; * is the shipped value)
+     neighbourhood: 73% of 77 perturbed out-of-sample cells are profitable
+
+   C2. cost stress -- the assumed spread is an assumption in every feed here
+     feed            x0.0      x1.0      x1.5      x2.0      x4.0   (out-of-sample pct per trade)
+     NQ           +0.0620   +0.0545   +0.0508   +0.0471   +0.0322 
+     US100        +0.1042   +0.0945   +0.0879   +0.0836   +0.0661 
+     US30         +0.0051   -0.0026   -0.0064   -0.0103   -0.0256 
+     US30_ISO     -0.0126   -0.0227   -0.0258   -0.0289   -0.0412 
+     a strategy whose out-of-sample edge is gone at 2x is not distinguishable from zero on
+     execution grounds -- bid/ask is unavailable in every feed on this branch.
+
+   C3. six chronological folds of the whole history (pct per trade)
+     NQ         2022-12 n38  +0.105  2023-06 n38  +0.005  2023-12 n38  +0.075  2024-06 n38  +0.137  2024-12 n37  +0.106  2025-06 n37  -0.024
+     US100      2016-11 n103 +0.067  2018-03 n102 +0.056  2019-10 n102 -0.026  2021-04 n102 +0.186  2022-12 n102 +0.069  2024-05 n102 +0.047
+     US30       2016-11 n97  +0.039  2018-04 n96  -0.015  2019-08 n96  -0.014  2021-04 n96  -0.021  2022-10 n96  +0.021  2024-03 n96  -0.015
+     US30_ISO   2024-08 n22  -0.100  2024-12 n22  +0.007  2025-05 n21  +0.009  2025-08 n21  +0.112  2025-12 n21  +0.023  2026-05 n21  -0.186
+
+D. LIVE-TRADING READINESS
+   the matched control on every RESERVED block (each strategy's own null):
+     NQ         locked        rule   +0.0472  control   +0.0160  p 0.327
+     US100      validation    rule   +0.1876  control   +0.0452  p 0.000
+     US100      test          rule   +0.0767  control   -0.0061  p 0.093
+     US30       validation    rule   +0.0127  control   -0.0061  p 0.400
+     US30       test          rule   -0.0336  control   +0.0187  p 0.780
+     US30_ISO   iso_pre2026   rule   -0.0128  control   -0.0446  p 0.323
+     US30_ISO   iso_2026      rule   -0.2384  control   -0.0754  p 0.987
+
+     [FAIL]  matched control p<=0.05 on at least half the reserved blocks    1/7 blocks
+     [FAIL]  bootstrap P(mean<=0)<=0.05 on at least half the reserved blocks  1/7 blocks
+     [PASS]  power: >= 100 out-of-sample trades                              702 trades
+     [PASS]  right shape: does not grow out of sample on a majority of feeds  1/3 feeds grew
+     [FAIL]  survives 2x the assumed cost out of sample on every feed        NQ +0.0471, US100 +0.0836, US30 -0.0103, US30_ISO -0.0289
+     [PASS]  profitable out of sample on >= 2 independent feeds              2/4 feeds
+     [PASS]  parameter neighbourhood >= 70% profitable out of sample         73%
+     [PASS]  the realised drawdown is not at the top of its own permutation  worst pctile 0.98
+     [FAIL]  majority of the six folds positive on every feed                83%, 83%, 33%, 67%
+
+   5 of 9 gates passed.
+
+E. FUNDED EVALUATION -- 60 trading days, +8% target, -6% static maximum drawdown, a 3%
+   daily loss limit, sampled from the RESERVED block's own daily returns. Notional
+   leverage is swept because there is no risk unit common to all five strategies.
+   feed       block                             x2                     x4                     x6                     x8
+   NQ         locked         pass 14.8 bust  4.5 nei 80.7 pass 29.6 bust 25.8 nei 44.5 pass 43.9 bust 31.8 nei 24.3 pass 55.7 bust 30.2 nei 14.1
+   US100      validation     pass 25.2 bust  5.1 nei 69.7 pass 57.9 bust 18.0 nei 24.2 pass 71.9 bust 18.3 nei  9.8 pass 79.1 bust 16.3 nei  4.5
+   US100      test           pass  5.0 bust  3.8 nei 91.3 pass 29.6 bust 21.8 nei 48.6 pass 47.8 bust 28.5 nei 23.7 pass 59.4 bust 28.1 nei 12.5
+   US30       validation     pass  2.8 bust  5.2 nei 92.0 pass 21.7 bust 29.1 nei 49.2 pass 37.3 bust 37.0 nei 25.7 pass 48.0 bust 37.8 nei 14.3
+   US30       test           pass  2.6 bust  3.1 nei 94.2 pass 15.1 bust 26.7 nei 58.2 pass 25.4 bust 40.9 nei 33.6 pass 33.3 bust 45.4 nei 21.4
+   US30_ISO   iso_pre2026    pass  2.6 bust  0.9 nei 96.5 pass 14.9 bust 18.1 nei 67.0 pass 25.4 bust 31.2 nei 43.4 pass 34.9 bust 36.5 nei 28.6
+   US30_ISO   iso_2026       pass  0.0 bust  8.3 nei 91.7 pass  1.5 bust 47.6 nei 50.9 pass  6.0 bust 64.4 nei 29.5 pass 12.1 bust 67.0 nei 20.9
+
+================================================================================================================
+SUMMARY -- gates passed out of nine
+================================================================================================================
+   FTM_ORB        6/9
+   IBS_SESSION    5/9
+   V56_CVD        5/9
+   APM_VWAP       5/9
+   TFI            5/9

@@ -1,0 +1,56 @@
+====================================================================================================
+CMMA PINE PARITY -- the script's own logic against the research engine
+  configuration: tanh OFF, EMA com 0.0
+====================================================================================================
+  NQ: engine 901 signal days, script 901, shared 901
+  signal agreement: max |diff| 4.441e-16, mean 3.587e-17, correlation 1.0000000000
+  within 1e-9 on 100.00% of shared days
+
+  daily P&L, fractional target: engine +2368.9 pts, script +2368.9 pts over 748 shared days
+  script AS SHIPPED (rounded to 50 contracts at full signal, per contract-equivalent): +3.176 pts/day, Sharpe +1.27, 669 days with a position
+  engine, fractional:                                              +3.167 pts/day, Sharpe +1.27, 748 days
+
+  The signal series must agree to floating point; the P&L may differ only by the
+  integer-contract rounding, which is the one difference the port is allowed.
+====================================================================================================
+CMMA PINE PARITY -- the script's own logic against the research engine
+  configuration: tanh on, EMA com 2.0
+====================================================================================================
+  NQ: engine 901 signal days, script 901, shared 901
+  signal agreement: max |diff| 6.939e-17, mean 1.235e-17, correlation 1.0000000000
+  within 1e-9 on 100.00% of shared days
+
+  daily P&L, fractional target: engine +901.5 pts, script +901.5 pts over 748 shared days
+  script AS SHIPPED (rounded to 50 contracts at full signal, per contract-equivalent): +1.225 pts/day, Sharpe +0.71, 640 days with a position
+  engine, fractional:                                              +1.205 pts/day, Sharpe +0.70, 748 days
+
+  The signal series must agree to floating point; the P&L may differ only by the
+  integer-contract rounding, which is the one difference the port is allowed.
+====================================================================================================
+CMMA PINE PARITY -- the script's own logic against the research engine
+  configuration: tanh OFF, EMA com 0.0
+====================================================================================================
+  US100L: engine 2724 signal days, script 2724, shared 2724
+  signal agreement: max |diff| 4.774e-14, mean 1.114e-15, correlation 1.0000000000
+  within 1e-9 on 100.00% of shared days
+
+  daily P&L, fractional target: engine +2929.5 pts, script +2929.5 pts over 2262 shared days
+  script AS SHIPPED (rounded to 50 contracts at full signal, per contract-equivalent): +1.310 pts/day, Sharpe +0.66, 2045 days with a position
+  engine, fractional:                                              +1.295 pts/day, Sharpe +0.65, 2262 days
+
+  The signal series must agree to floating point; the P&L may differ only by the
+  integer-contract rounding, which is the one difference the port is allowed.
+====================================================================================================
+CMMA PINE PARITY -- the script's own logic against the research engine
+  configuration: tanh on, EMA com 2.0
+====================================================================================================
+  US100L: engine 2724 signal days, script 2724, shared 2724
+  signal agreement: max |diff| 1.277e-14, mean 5.235e-16, correlation 1.0000000000
+  within 1e-9 on 100.00% of shared days
+
+  daily P&L, fractional target: engine +1099.0 pts, script +1099.0 pts over 2262 shared days
+  script AS SHIPPED (rounded to 50 contracts at full signal, per contract-equivalent): +0.467 pts/day, Sharpe +0.38, 1985 days with a position
+  engine, fractional:                                              +0.486 pts/day, Sharpe +0.39, 2262 days
+
+  The signal series must agree to floating point; the P&L may differ only by the
+  integer-contract rounding, which is the one difference the port is allowed.

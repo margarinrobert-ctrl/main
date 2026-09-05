@@ -16,7 +16,7 @@ BOUND = 50.0          # a driftless path wins 1/(1+R) = 50% at a 1R target
 
 
 def load(tf):
-    Z = np.load(f"/tmp/oner_{tf}m.npz", allow_pickle=True)
+    Z = np.load(f"results/oner/oner_{tf}m.npz", allow_pickle=True)
     return {k: Z[k] for k in Z.files}
 
 
@@ -77,5 +77,5 @@ if __name__ == "__main__":
                       f"{'long' if x['side']==1 else 'short':>5}{x['am']:>6.1f}{x['n']:>6}"
                       f"{x['wr']:>7.1f}{x['wr_r']:>10.1f}{x['wr_l']:>10.1f}"
                       f"{x['res']:>12,.0f}{x['lok']:>11,.0f}")
-    np.save("/tmp/oner_survivors.npy", np.array(allrows, dtype=object), allow_pickle=True)
+    np.save("results/oner/oner_survivors.npy", np.array(allrows, dtype=object), allow_pickle=True)
     print(f"\n{len(allrows)} survivors saved")

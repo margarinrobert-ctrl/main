@@ -154,7 +154,7 @@ if __name__ == "__main__":
             S = sweep_side(tf, side)
             allo += gate(S)
     allo.sort(key=lambda x: -x["exc"])
-    np.save("/tmp/pullback_gated.npy", np.array(allo, dtype=object), allow_pickle=True)
+    np.save("results/pullback/pullback_gated.npy", np.array(allo, dtype=object), allow_pickle=True)
     print(f"\n{len(allo):,} rule/geometry pairs survive every research-block gate")
     print(f"\n  {'rule':<64}{'tf':>4}{'dir':>6}{'stop':>5}{'flat':>6}{'n':>5}{'win%':>7}"
           f"{'base':>6}{'exc':>7}{'res $':>8}")

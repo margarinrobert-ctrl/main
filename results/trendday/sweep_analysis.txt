@@ -1,0 +1,153 @@
+========================================================================================================
+A 127,008-CELL SWEEP OF THE TREND-DAY FAMILY -- can it be loosened 5x and still pay?
+========================================================================================================
+  Axes: EMA period (7) x bucket length (2) x trend ratio (7) x MAX TOUCHED BUCKETS (6)
+        x minimum entry gap (4) x target fraction (3) x stop (3) x max hold (3) x flatten (2).
+  'max touched buckets' generalises the EA's untouched flag: 0 is the rule, 99 is off.
+
+--------------------------------------------------------------------------------------------------------
+1. THE SHIPPED CELL IN THIS GRID, and what 5x means
+--------------------------------------------------------------------------------------------------------
+  NQ        research    n   26  PF  5.62  mean   +35.1   ->  5x needs n >= 130
+  US100     research    n   63  PF  1.29  mean    +5.0   ->  5x needs n >= 315
+  US30      research    n   64  PF  1.03  mean    +1.4   ->  5x needs n >= 320
+  US30_ISO  research    n   20  PF  1.41  mean   +39.6   ->  5x needs n >= 100
+
+--------------------------------------------------------------------------------------------------------
+2. THE SHARE OF THE GRID, before any single row
+--------------------------------------------------------------------------------------------------------
+  NQ        121,122 cells with >= 20 research trades | profitable 56% | median PF 1.04 | PF >= 2.0 3.1% | n >= 5x 31.2% | BOTH 0.00%
+  US100     124,632 cells with >= 20 research trades | profitable 61% | median PF 1.07 | PF >= 2.0 2.9% | n >= 5x 27.1% | BOTH 0.00%
+  US30      124,578 cells with >= 20 research trades | profitable 42% | median PF 0.97 | PF >= 2.0 2.7% | n >= 5x 23.8% | BOTH 0.00%
+  US30_ISO  108,216 cells with >= 20 research trades | profitable 91% | median PF 1.46 | PF >= 2.0 12.8% | n >= 5x 22.8% | BOTH 0.32%
+
+--------------------------------------------------------------------------------------------------------
+3. THE ASK, ON RESEARCH ONLY, ON ALL THREE LONG FEEDS AT ONCE
+--------------------------------------------------------------------------------------------------------
+  cells scored on all three long feeds:            127,008
+  ... reaching 5x entries on all three:            29,538
+  ... reaching PF 2.0 on all three:                194
+  ... reaching BOTH on all three:                  0
+      5x entries and PF >= 1.9  on all three:      0
+      5x entries and PF >= 1.75 on all three:      0
+      5x entries and PF >= 1.5  on all three:      0
+      5x entries and PF >= 1.3  on all three:      0
+      5x entries and PF >= 1.2  on all three:      40
+      5x entries and PF >= 1.1  on all three:      442
+      5x entries and PF >= 1.0  on all three:      2,783
+      4x entries and PF >= 2.0 on all three:      0
+      3x entries and PF >= 2.0 on all three:      0
+      2x entries and PF >= 2.0 on all three:      0
+
+--------------------------------------------------------------------------------------------------------
+4. THE FRONTIER -- the best PF available at each entry multiple
+--------------------------------------------------------------------------------------------------------
+  Scored by the WORST of the three long feeds, so a cell must work everywhere.
+   entries >=    cells  best min PF                     the cell that achieves it
+         1.0x  111,834         1.92   ema=15  trend_pct=70  max_touch=2  min_gap=0.2  target_frac=0.75  stop_gap=1  max_hold=0
+         1.5x   95,148         1.85   ema=15  trend_pct=60  max_touch=2  min_gap=0.1  target_frac=0.75  stop_gap=0  max_hold=0
+         2.0x   78,786         1.70   ema=15  trend_pct=50  max_touch=2  min_gap=0  target_frac=1  stop_gap=0  max_hold=0
+         2.5x   66,096         1.58   ema=15  trend_pct=40  max_touch=2  min_gap=0  target_frac=0.75  stop_gap=0  max_hold=0
+         3.0x   55,512         1.41   ema=10  trend_pct=50  max_touch=6  min_gap=0  target_frac=0.5  stop_gap=0  max_hold=0
+         4.0x   40,230         1.36   ema=50  trend_pct=40  max_touch=0  min_gap=0  target_frac=0.5  stop_gap=0  max_hold=0
+         5.0x   29,538         1.28   ema=20  trend_pct=40  max_touch=1  min_gap=0  target_frac=0.5  stop_gap=0  max_hold=0
+         6.0x   21,438         1.27   ema=15  trend_pct=40  max_touch=3  min_gap=0  target_frac=1  stop_gap=0  max_hold=0
+         8.0x   11,772         1.20   ema=15  trend_pct=40  max_touch=6  min_gap=0  target_frac=1  stop_gap=0  max_hold=0
+
+  The same frontier as PER-FEED profit factors, so a single feed cannot hide behind the minimum:
+   entries >=           NQ     US100      US30         n (NQ/US100/US30)
+         1.0x         2.36      2.04      1.92   38/72/65
+         2.0x         1.70      2.12      1.72   82/140/145
+         3.0x         1.42      1.41      1.73   111/207/225
+         5.0x         1.30      1.34      1.28   151/348/343
+
+--------------------------------------------------------------------------------------------------------
+5. WHAT THE TOP OF THE RANKING AGREES ON (top 1,000 by the worst feed)
+--------------------------------------------------------------------------------------------------------
+  ema          10:66%  15:34%  20:0%  25:0%  30:0%  40:0%  50:0%
+  bucket       15:98%  30:2%
+  trend_pct    0:4%  40:4%  50:7%  60:10%  70:10%  75:40%  80:25%
+  max_touch    0:30%  1:30%  2:27%  3:11%  6:2%  99:0%
+  min_gap      0:15%  0.1:19%  0.2:32%  0.35:33%
+  target_frac  0.5:17%  0.75:52%  1:31%
+  stop_gap     0:37%  1:38%  2:25%
+  max_hold     0:53%  8:6%  16:41%
+  flat_frac    0.75:51%  1:49%
+  the top 1,000's median entry multiple is 0.42x and its median worst-feed PF is 1.81
+
+--------------------------------------------------------------------------------------------------------
+6. ONE READ OF THE RESERVED BLOCKS
+--------------------------------------------------------------------------------------------------------
+  MULTIPLICITY: 127,008 cells were scored on research and the reserved blocks are read ONCE, below.
+  A Bonferroni threshold over 127,008 tests is 0.05/127,008 = 3.94e-07. Nothing here approaches that;
+  the only defensible reading is whether the RANKING transfers at all.
+
+  best worst-feed PF at 5x entries
+    ema=20  bucket=30  trend_pct=40  max_touch=1  min_gap=0  target_frac=0.5  stop_gap=0  max_hold=0  flat_frac=1
+    NQ        rese n  151 PF  1.30 mean    +7.5 | lock n   86 PF  1.42 mean   +15.8
+    US100     rese n  348 PF  1.34 mean    +5.2 | vali n  177 PF  1.48 mean   +12.8 | test n  136 PF  0.99 mean    -0.4
+    US30      rese n  343 PF  1.28 mean    +8.4 | vali n  139 PF  1.08 mean    +3.9 | test n   95 PF  1.12 mean    +7.5
+    US30_ISO  rese n   88 PF  1.28 mean   +15.2 | lock n   37 PF  1.15 mean    +9.6
+
+  best worst-feed PF at 3x entries
+    ema=10  bucket=15  trend_pct=50  max_touch=6  min_gap=0  target_frac=0.5  stop_gap=0  max_hold=0  flat_frac=1
+    NQ        rese n  111 PF  1.42 mean    +6.1 | lock n   56 PF  0.69 mean   -12.3
+    US100     rese n  207 PF  1.41 mean    +4.2 | vali n  141 PF  1.84 mean   +13.1 | test n   86 PF  0.80 mean    -5.9
+    US30      rese n  225 PF  1.73 mean   +12.1 | vali n  111 PF  0.98 mean    -0.8 | test n   68 PF  1.20 mean    +7.2
+    US30_ISO  rese n   69 PF  1.11 mean    +4.4 | lock n   31 PF  1.28 mean   +10.0
+
+  best worst-feed PF at 2x entries
+    ema=15  bucket=15  trend_pct=50  max_touch=2  min_gap=0  target_frac=1  stop_gap=0  max_hold=0  flat_frac=0.75
+    NQ        rese n   82 PF  1.70 mean   +13.5 | lock n   38 PF  1.67 mean   +25.8
+    US100     rese n  140 PF  2.12 mean   +13.3 | vali n   98 PF  1.44 mean   +12.9 | test n   60 PF  1.85 mean   +24.7
+    US30      rese n  145 PF  1.72 mean   +16.3 | vali n   66 PF  1.34 mean   +17.9 | test n   50 PF  2.04 mean   +45.9
+    US30_ISO  rese n   50 PF  1.23 mean   +17.0 | lock n   19 PF  1.01 mean    +0.5
+
+  the shipped cell
+    ema=20  bucket=15  trend_pct=75  max_touch=0  min_gap=0  target_frac=1  stop_gap=0  max_hold=0  flat_frac=1
+    NQ        rese n   26 PF  5.62 mean   +35.1 | lock n   17 PF  3.62 mean   +45.0
+    US100     rese n   63 PF  1.29 mean    +5.0 | vali n   38 PF  2.08 mean   +31.2 | test n   24 PF  7.53 mean   +45.6
+    US30      rese n   64 PF  1.03 mean    +1.4 | vali n   21 PF  1.79 mean   +28.3 | test n   21 PF  1.11 mean   +10.8
+    US30_ISO  rese n   20 PF  1.41 mean   +39.6 | lock n    4 PF 490902708628.96 mean  +122.7
+
+--------------------------------------------------------------------------------------------------------
+7. DOES THE RANKING TRANSFER AT ALL?
+--------------------------------------------------------------------------------------------------------
+  NQ        research -> locked      Spearman -0.074  Pearson -0.055   (n 121,122 cells)
+  US100     research -> validation  Spearman +0.109  Pearson +0.094   (n 124,632 cells)
+  US100     research -> test        Spearman +0.219  Pearson +0.222   (n 124,632 cells)
+  US30      research -> validation  Spearman +0.124  Pearson +0.115   (n 124,578 cells)
+  US30      research -> test        Spearman -0.204  Pearson -0.175   (n 124,578 cells)
+  US30_ISO  research -> locked      Spearman +0.385  Pearson +0.337   (n 108,216 cells)
+
+  top-decile transfer, by the first block's mean:
+  NQ        | rese top-decile mean   +21.0 vs population    +2.3 | lock top-decile mean   +44.5 vs population   +34.4
+  US100     | rese top-decile mean   +12.0 vs population    +1.2 | vali top-decile mean   +13.6 vs population    +8.3 | test top-decile mean   +22.5 vs population   +13.5
+  US30      | rese top-decile mean   +21.8 vs population    -0.6 | vali top-decile mean    +4.9 vs population    -3.7 | test top-decile mean   +26.8 vs population   +31.5
+  US30_ISO  | rese top-decile mean   +86.6 vs population   +35.9 | lock top-decile mean   +44.8 vs population   +28.1
+
+========================================================================================================
+8. COHERENCE -- cells whose IMMEDIATE NEIGHBOURS on EVERY axis also hold
+========================================================================================================
+  For each cell, every axis is moved one rung up and one rung down (where a rung exists)
+  and the WORST-FEED research profit factor of every neighbour must also clear the floor.
+
+  >= 2x entries, every neighbour's worst-feed PF >= 1.30: 0 cells
+  >= 2x entries, every neighbour's worst-feed PF >= 1.40: 0 cells
+  >= 2x entries, every neighbour's worst-feed PF >= 1.50: 0 cells
+  >= 3x entries, every neighbour's worst-feed PF >= 1.20: 0 cells
+  >= 3x entries, every neighbour's worst-feed PF >= 1.30: 0 cells
+  >= 5x entries, every neighbour's worst-feed PF >= 1.10: 0 cells
+  >= 5x entries, every neighbour's worst-feed PF >= 1.20: 0 cells
+
+  The highest coherence floor actually reachable, by entry multiple:
+   entries >=    cells   best WORST-neighbour PF   the cell
+         1.0x  111,834                      1.23   ema=15  trend_pct=60  max_touch=0  min_gap=0.35  target_frac=0.5  stop_gap=0  max_hold=16
+         1.5x   95,148                      1.23   ema=15  trend_pct=40  max_touch=2  min_gap=0  target_frac=0.75  stop_gap=0  max_hold=0
+         2.0x   78,786                      1.23   ema=15  trend_pct=40  max_touch=2  min_gap=0  target_frac=0.75  stop_gap=0  max_hold=0
+         3.0x   55,512                      1.18   ema=20  trend_pct=40  max_touch=0  min_gap=0  target_frac=0.75  stop_gap=0  max_hold=0
+         5.0x   29,538                      1.07   ema=15  trend_pct=0  max_touch=1  min_gap=0.1  target_frac=0.5  stop_gap=0  max_hold=0
+
+  For comparison, the SHIPPED cell's own coherence:
+    own worst-feed PF 1.03, worst neighbour 0.75, 1.0x entries
+    the 2x candidate: own 1.70, worst neighbour 0.96

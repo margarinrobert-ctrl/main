@@ -1,0 +1,215 @@
+//@version=6
+// =============================================================================================
+// S1 + S2 — two long-only engines on one chart, with an adaptive-MA precision layer
+//
+//   S1  15-minute, 72/89 EMA cloud. Long only.
+//       Trend is the cloud: EMA72 above EMA89. Entry is a pullback INTO the cloud that is
+//       reclaimed — price trades down to the cloud, then closes back above its upper edge.
+//
+//   S2  Daily EMA pullback. Long only.
+//       Trend is close above the slow daily EMA. Entry is a pullback to the fast daily EMA
+//       that is reclaimed. Read through request.security on CONFIRMED daily bars only.
+//
+//   Precision layer: KAMA, FRAMA or a JMA approximation gates both engines. The adaptive
+//   average must be RISING for an entry to fire. See the note on JMA below — it matters.
+//
+// WHAT THIS SCRIPT CANNOT DO, AND YOU SHOULD KNOW BEFORE WIRING IT TO ANYTHING:
+//   Pine has no visibility of your broker account. `strategy.position_size` is this script's own
+//   simulated position, not what you are actually holding. If you open, add to, trim or close a
+//   position manually, this script does not know, and its stops and targets will be sized against
+//   a position that does not exist. The two are independent systems sharing one account.
+//   What the script gives you instead: every order is tagged S1 or S2, each engine has its own
+//   kill switch, and every alert carries its engine and intent as JSON so an execution layer can
+//   route or ignore it. Reconciling algo and manual exposure is the execution layer's job. It is
+//   not something a Pine strategy can do, and a script that pretended otherwise would be lying.
+//
+// ON JMA. Jurik Moving Average is proprietary to Jurik Research. The "JMA" here is the public
+// three-stage approximation that circulates under that name. It is NOT Jurik's algorithm and will
+// not match a licensed JMA. It is labelled Jurik-style in the input for that reason.
+//
+// THREE THINGS THAT ARE EASY TO GET WRONG, AND HAVE BEEN, HERE:
+//   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14.
+//   * Clock conditions go through an explicit timezone. Pine's bare hour/minute are EXCHANGE
+//     time — Chicago for CME — which is not New York.
+//   * Entries require barstate.isconfirmed, so the Strategy Tester's "On order fill" /
+//     "On history bar tick" / "On realtime bar tick" boxes cannot change the result.
+//
+// MEASURED, AND IT DID NOT WORK. S1's logic was run on MNQ 15-minute bars, 2022-12 to 2025-12,
+// long only, at real fees ($1.44 round turn: $0.35 broker + $0.35 exchange + $0.02 NFA per side)
+// plus spread and slippage. The rule tested was the faithful single-bar form of the cloud
+// reclaim — cloud bullish, the bar traded INTO the cloud, and closed back above it:
+//
+//     27 geometries swept (stop x target x max hold). Best on the research block:
+//       2.5xATR stop, 1.5R target, 24-bar hold
+//       research   563 trades, +$3.07/trade, p 0.318 vs a matched random control
+//       LOCKED     310 trades, -$10.70/trade, -$3,316
+//       exits      365 stop / 195 target / 313 time  — a third never reached a barrier
+//     0 of the 3 best configurations beat a matched control on the locked block.
+//
+// The precision layer does not rescue it. Gating on a rising cloud changes nothing (the cloud
+// being bullish already implies it); a steeper slope, an 800-EMA trend filter and ADX>20 each
+// make the research figure WORSE, not better:
+//       no gate +$3.07  ·  cloud rising +$3.07  ·  steep +$0.61  ·  EMA800 +$1.44  ·  ADX>20 -$0.04
+//
+// That is consistent with everything else here: two independent searches over the trend-pullback
+// family on this instrument (161,280 and 5,723,136 configurations) returned nothing that survived
+// a holdout — docs/ib/STUDY_TREND_PULLBACK_2.md. The script is correct; the edge is the problem.
+// One instrument and one three-year regime is not a verdict on your setup, and S2's daily engine
+// was NOT tested. But nothing here supports risking money on S1 as specified.
+//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+strategy("S1+S2 adaptive | 72/89 cloud + daily EMA pullback | long only", overlay = true,
+     initial_capital = 25000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72,
+     slippage = 2, pyramiding = 2, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// ---- setup ---------------------------------------------------------------------------------
+tzIn = input.string("America/New_York", "Timezone for clock conditions",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"],
+     group = "Setup", tooltip = "Pine's bare hour/minute are in the EXCHANGE timezone, which is " +
+     "Chicago for CME. Getting this wrong runs the session filter an hour off.")
+barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
+
+useSession = input.bool(false, "Restrict entries to a session window", group = "Setup")
+sessFrom   = input.int(570, "Session opens (minutes past midnight)", minval = 0, maxval = 1439,
+     group = "Setup", tooltip = "570 = 09:30 in the timezone above.")
+sessTo     = input.int(960, "Session closes", minval = 0, maxval = 1440, group = "Setup")
+inWindow   = not useSession or (barMin >= sessFrom and barMin < sessTo)
+
+atrLen = input.int(14, "ATR length", minval = 1, group = "Setup")
+atrV   = ta.ema(ta.tr(true), atrLen)          // NOT ta.atr — see the header
+
+// ---- the adaptive precision layer ----------------------------------------------------------
+maKind = input.string("KAMA", "Adaptive average",
+     options = ["KAMA", "FRAMA", "JMA (Jurik-style approximation)", "off"],
+     group = "Precision layer", tooltip = "Gates both engines: the adaptive average must be " +
+     "rising for a long. 'off' removes the gate entirely, which is the right setting for " +
+     "measuring what the gate is worth.")
+maLen  = input.int(20, "Adaptive length", minval = 2, group = "Precision layer")
+jmaPhase = input.float(0, "JMA phase", minval = -100, maxval = 100, group = "Precision layer")
+jmaPower = input.float(2, "JMA power", minval = 1, maxval = 4, group = "Precision layer")
+
+// Kaufman's Adaptive Moving Average. Efficiency ratio scales the smoothing between a fast and a
+// slow EMA constant, so it tracks a trend closely and flattens in chop.
+kamaFast = 2.0 / (2.0 + 1.0)
+kamaSlow = 2.0 / (30.0 + 1.0)
+erChange = math.abs(close - close[maLen])
+erVol    = math.sum(math.abs(close - close[1]), maLen)
+er       = erVol != 0 ? erChange / erVol : 0.0
+sc       = math.pow(er * (kamaFast - kamaSlow) + kamaSlow, 2)
+var float kama = na
+kama := na(kama[1]) ? close : kama[1] + sc * (close - kama[1])
+
+// Ehlers' Fractal Adaptive MA. The fractal dimension of the last N bars sets the EMA alpha, so
+// the average speeds up when price is directional and slows when it is noisy.
+frLen = maLen % 2 == 0 ? maLen : maLen + 1
+half  = math.max(1, int(frLen / 2))
+n1 = (ta.highest(high, half) - ta.lowest(low, half)) / half
+n2 = (ta.highest(high, half)[half] - ta.lowest(low, half)[half]) / half
+n3 = (ta.highest(high, frLen) - ta.lowest(low, frLen)) / frLen
+dim = (n1 > 0 and n2 > 0 and n3 > 0) ? (math.log(n1 + n2) - math.log(n3)) / math.log(2) : 1.0
+alphaRaw = math.exp(-4.6 * (dim - 1.0))
+alphaF   = math.max(0.01, math.min(1.0, alphaRaw))
+var float frama = na
+frama := na(frama[1]) ? close : alphaF * close + (1.0 - alphaF) * frama[1]
+
+// Public three-stage approximation of a Jurik-style average. NOT Jurik's proprietary algorithm.
+beta  = 0.45 * (maLen - 1) / (0.45 * (maLen - 1) + 2)
+alphaJ = math.pow(beta, jmaPower)
+phaseRatio = math.max(0.5, math.min(2.5, jmaPhase / 100.0 + 1.5))
+var float e0 = na
+var float e1 = na
+var float e2 = na
+var float jma = na
+e0 := na(e0[1]) ? close : (1 - alphaJ) * close + alphaJ * e0[1]
+e1 := na(e1[1]) ? 0.0 : (close - e0) * (1 - beta) + beta * e1[1]
+e2 := na(e2[1]) ? 0.0 : (e0 + phaseRatio * e1 - nz(jma[1], close)) * math.pow(1 - alphaJ, 2) + math.pow(alphaJ, 2) * e2[1]
+jma := na(jma[1]) ? close : e2 + jma[1]
+
+adaptive = maKind == "KAMA" ? kama : maKind == "FRAMA" ? frama : maKind == "JMA (Jurik-style approximation)" ? jma : close
+adaptiveOk = maKind == "off" or adaptive > adaptive[1]
+
+// ---- S1: the 72/89 cloud on the chart timeframe --------------------------------------------
+useS1   = input.bool(true, "S1 enabled", group = "S1 · 72/89 cloud (15-minute chart)",
+     tooltip = "Kill switch. Turning it off stops new S1 entries; it does not close an open one.")
+s1Fast  = input.int(72, "Cloud fast EMA", minval = 1, group = "S1 · 72/89 cloud (15-minute chart)")
+s1Slow  = input.int(89, "Cloud slow EMA", minval = 1, group = "S1 · 72/89 cloud (15-minute chart)")
+s1Look  = input.int(6, "Pullback must have touched the cloud within N bars", minval = 1, maxval = 50,
+     group = "S1 · 72/89 cloud (15-minute chart)")
+s1Stop  = input.float(2.0, "S1 stop, x ATR", minval = 0.1, step = 0.1, group = "S1 · 72/89 cloud (15-minute chart)")
+s1Targ  = input.float(1.5, "S1 target, x risk (R)", minval = 0.1, step = 0.1, group = "S1 · 72/89 cloud (15-minute chart)")
+
+emaFast = ta.ema(close, s1Fast)
+emaSlow = ta.ema(close, s1Slow)
+cloudTop = math.max(emaFast, emaSlow)
+cloudUp  = emaFast > emaSlow
+touched  = ta.barssince(low <= cloudTop) <= s1Look
+s1Long   = useS1 and cloudUp and touched and close > cloudTop and close[1] <= cloudTop and adaptiveOk and inWindow
+
+// ---- S2: the daily EMA pullback ------------------------------------------------------------
+// Read on CONFIRMED daily bars: lookahead_off plus the [1] offset means the value used on an
+// intraday bar is the one that was actually published before it. Without both, this repaints and
+// the backtest becomes fiction.
+useS2  = input.bool(true, "S2 enabled", group = "S2 · daily EMA pullback",
+     tooltip = "Kill switch. Turning it off stops new S2 entries; it does not close an open one.")
+s2Fast = input.int(21, "Daily fast EMA", minval = 1, group = "S2 · daily EMA pullback")
+s2Slow = input.int(200, "Daily slow EMA", minval = 1, group = "S2 · daily EMA pullback")
+s2Stop = input.float(2.0, "S2 stop, x daily ATR", minval = 0.1, step = 0.1, group = "S2 · daily EMA pullback")
+s2Targ = input.float(2.0, "S2 target, x risk (R)", minval = 0.1, step = 0.1, group = "S2 · daily EMA pullback")
+
+dFastRaw  = request.security(syminfo.tickerid, "D", ta.ema(close, s2Fast)[1], lookahead = barmerge.lookahead_off)
+dSlowRaw  = request.security(syminfo.tickerid, "D", ta.ema(close, s2Slow)[1], lookahead = barmerge.lookahead_off)
+dCloseRaw = request.security(syminfo.tickerid, "D", close[1], lookahead = barmerge.lookahead_off)
+dLowRaw   = request.security(syminfo.tickerid, "D", low[1], lookahead = barmerge.lookahead_off)
+dPrevLow  = request.security(syminfo.tickerid, "D", low[2], lookahead = barmerge.lookahead_off)
+dPrevCl   = request.security(syminfo.tickerid, "D", close[2], lookahead = barmerge.lookahead_off)
+dAtr      = request.security(syminfo.tickerid, "D", ta.ema(ta.tr(true), atrLen)[1], lookahead = barmerge.lookahead_off)
+
+dTrendUp = dCloseRaw > dSlowRaw and dFastRaw > dSlowRaw
+dPulled  = dPrevLow <= dFastRaw or dLowRaw <= dFastRaw
+dReclaim = dCloseRaw > dFastRaw and dPrevCl <= dFastRaw
+newDay   = ta.change(time("D")) != 0
+s2Long   = useS2 and newDay and dTrendUp and dPulled and dReclaim and adaptiveOk and inWindow
+
+// ---- orders --------------------------------------------------------------------------------
+// Tagged per engine so an execution layer can tell them apart, and so they can hold at once.
+alertJson(engine, side, why) =>
+    '{"engine":"' + engine + '","side":"' + side + '","why":"' + why + '","symbol":"' +
+     syminfo.ticker + '","tf":"' + timeframe.period + '"}'
+
+if s1Long and barstate.isconfirmed
+    strategy.entry("S1", strategy.long, alert_message = alertJson("S1", "long", "cloud reclaim"))
+
+if s2Long and barstate.isconfirmed
+    strategy.entry("S2", strategy.long, alert_message = alertJson("S2", "long", "daily pullback reclaim"))
+
+// Stops and targets are sized from the ATR of the SIGNAL bar and attached to their own entry, so
+// the two engines never manage each other's risk.
+var float s1Risk = na
+var float s2Risk = na
+if s1Long and barstate.isconfirmed
+    s1Risk := s1Stop * atrV
+if s2Long and barstate.isconfirmed
+    s2Risk := s2Stop * dAtr
+
+if strategy.position_size > 0
+    strategy.exit("S1 x", from_entry = "S1", loss = na(s1Risk) ? na : s1Risk / syminfo.mintick,
+         profit = na(s1Risk) ? na : s1Targ * s1Risk / syminfo.mintick,
+         alert_message = alertJson("S1", "flat", "stop or target"))
+    strategy.exit("S2 x", from_entry = "S2", loss = na(s2Risk) ? na : s2Risk / syminfo.mintick,
+         profit = na(s2Risk) ? na : s2Targ * s2Risk / syminfo.mintick,
+         alert_message = alertJson("S2", "flat", "stop or target"))
+
+// ---- plots ---------------------------------------------------------------------------------
+pf = plot(emaFast, "EMA fast", color = color.new(color.teal, 40), linewidth = 1)
+ps = plot(emaSlow, "EMA slow", color = color.new(color.orange, 40), linewidth = 1)
+fill(pf, ps, color = cloudUp ? color.new(color.teal, 88) : color.new(color.red, 90), title = "Cloud")
+plot(maKind == "off" ? na : adaptive, "Adaptive", color = color.new(color.fuchsia, 20), linewidth = 2)
+plot(dFastRaw, "Daily fast EMA", color = color.new(color.blue, 55), style = plot.style_stepline)
+plot(dSlowRaw, "Daily slow EMA", color = color.new(color.gray, 55), style = plot.style_stepline)
+plotshape(s1Long, "S1 long", shape.triangleup, location.belowbar, color.new(color.teal, 0), size = size.tiny)
+plotshape(s2Long, "S2 long", shape.triangleup, location.belowbar, color.new(color.blue, 0), size = size.small)

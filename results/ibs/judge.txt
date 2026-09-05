@@ -1,0 +1,62 @@
+====================================================================================================
+5. JUDGE -- reserved blocks read ONCE for three pre-declared cells: the EA default, the
+   two-feed top-100 consensus, and the best two-feed PLATEAU cell. Matched control =
+   random sessions with the identical stop, exit rule and hold (1,000 draws).
+====================================================================================================
+cells: {'EA default': {'entry': 20.0, 'exit': 80.0, 'hold': 5, 'mult': 1.0}, 'consensus': {'entry': 15.0, 'exit': 90.0, 'hold': 10, 'mult': 1.0}, 'plateau': {'entry': 15.0, 'exit': 90.0, 'hold': 10, 'mult': 1.5}}
+Multiplicity: 3 cells read on each reserved block; the consensus and plateau cells were
+chosen from 2,352 on the research blocks, the default was chosen by the author.
+
+EA default: {'entry': 20.0, 'exit': 80.0, 'hold': 5, 'mult': 1.0}
+    market       block  sessions   n      R      pts     pf    win  sharpe      dd  stop_share  ctrl_mean      p  index_move_in_ranges
+     US100    research      1263 167 0.2449  30.1838 1.6710 0.6228  1.1383  5.9347      0.3413     0.1302 0.0310              120.9310
+     US100  validation       498  96 0.2866  63.6875 1.8655 0.6146  1.7791  4.2549      0.3125     0.0761 0.0010                1.5489
+     US100        test       433  56 0.1148  38.9804 1.2696 0.5893  0.5528  5.2025      0.4107     0.1195 0.5100               34.7991
+      US30    research      1266 174 0.0493  37.8621 1.0959 0.4943  0.2255 12.3914      0.4713     0.0949 0.7560               86.4265
+      US30  validation       480  78 0.1793  72.5000 1.4307 0.5513  0.9780  7.9233      0.3718     0.0155 0.0340                3.0367
+      US30        test       379  46 0.0423  -7.7304 1.0966 0.5435  0.2278  5.7887      0.4130     0.0496 0.5170               17.8854
+        NQ    research       477  79 0.2161  49.6977 1.5925 0.6203  1.2618  7.2456      0.3544     0.1442 0.1900               42.7057
+        NQ      locked       258  35 0.0696  57.4800 1.1510 0.5429  0.3628  5.5295      0.4571     0.0556 0.4630               14.6187
+  US30_ISO iso_pre2026       352  47 0.0763  25.1830 1.1934 0.5745  0.4620  5.7452      0.3830    -0.0036 0.2170               17.9285
+  US30_ISO    iso_2026       168  27 0.1422 132.5296 1.3690 0.5556  0.8646  4.1365      0.3704    -0.1476 0.0350               10.8123
+
+consensus: {'entry': 15.0, 'exit': 90.0, 'hold': 10, 'mult': 1.0}
+    market       block  sessions   n      R      pts     pf    win  sharpe     dd  stop_share  ctrl_mean      p  index_move_in_ranges
+     US100    research      1263 110 0.3134  57.3673 1.8036 0.5909  1.1431 3.6707      0.3636     0.2173 0.1370              120.9310
+     US100  validation       498  67 0.1955  50.5627 1.4402 0.5224  0.9020 7.3017      0.4179     0.0828 0.1560                1.5489
+     US100        test       433  41 0.0484  17.2000 1.0908 0.4878  0.1791 4.9823      0.5122     0.0688 0.5550               34.7991
+      US30    research      1266 129 0.3216 125.5891 1.6206 0.5039  0.9283 7.3170      0.4961     0.2069 0.1360               86.4265
+      US30  validation       480  60 0.1350  43.7167 1.2995 0.5000  0.6345 7.2049      0.4333     0.0062 0.1190                3.0367
+      US30        test       379  39 0.1440   8.6462 1.3040 0.5385  0.5706 8.3591      0.4615     0.0284 0.2040               17.8854
+        NQ    research       477  56 0.2212  82.6550 1.4834 0.5357  0.8878 5.0657      0.4464     0.1591 0.3080               42.7057
+        NQ      locked       258  23 0.0243  23.0083 1.0426 0.4348  0.0805 5.9299      0.5652    -0.0287 0.3760               14.6187
+  US30_ISO iso_pre2026       352  33 0.2639 116.9636 1.5729 0.5455  0.8974 6.9341      0.4545     0.0749 0.1320               17.9285
+  US30_ISO    iso_2026       168  17 0.3643 260.0706 1.8740 0.5882  1.3480 3.0271      0.4118    -0.1183 0.0490               10.8123
+
+plateau: {'entry': 15.0, 'exit': 90.0, 'hold': 10, 'mult': 1.5}
+    market       block  sessions   n      R      pts     pf    win  sharpe     dd  stop_share  ctrl_mean      p  index_move_in_ranges
+     US100    research      1263 101 0.3199  78.9856 2.3080 0.6733  1.4721 4.0496      0.2178     0.1793 0.0280              120.9310
+     US100  validation       498  61 0.2226  90.1459 1.8034 0.6393  1.3580 2.7889      0.2459     0.0732 0.0440                1.5489
+     US100        test       433  39 0.0851  32.5756 1.2390 0.6410  0.4230 3.4898      0.3333     0.0587 0.4130               34.7991
+      US30    research      1266 118 0.2182 134.4407 1.5584 0.5847  0.8392 6.7403      0.3729     0.1607 0.2390               86.4265
+      US30  validation       480  56 0.1419  73.6161 1.4405 0.6071  0.8553 5.1783      0.3036     0.0542 0.1770                3.0367
+      US30        test       379  35 0.2286 180.7257 1.8448 0.6571  1.1886 4.4222      0.2286     0.0494 0.0670               17.8854
+        NQ    research       477  54 0.2218 102.4166 1.7037 0.6481  1.1900 4.3440      0.2963     0.1443 0.1970               42.7057
+        NQ      locked       258  22 0.0867  43.8709 1.2336 0.5909  0.3881 2.8693      0.3636    -0.0418 0.1630               14.6187
+  US30_ISO iso_pre2026       352  32 0.3249 311.9750 2.2874 0.7500  1.5346 4.0448      0.2500     0.1285 0.0600               17.9285
+  US30_ISO    iso_2026       168  15 0.1097 185.9700 1.2704 0.6000  0.5057 2.9461      0.4000    -0.1012 0.1670               10.8123
+
+COST STRESS on the test-type blocks (R per trade at 0x / 1x / 1.5x / 2x the assumed
+spread+slippage; bid/ask is in none of these feeds so the 1x is itself an assumption):
+  US100     test         | EA default: +0.125 +0.115 +0.110 +0.105 | consensus: +0.059 +0.048 +0.043 +0.037 | plateau: +0.092 +0.085 +0.082 +0.078
+  US30      test         | EA default: +0.057 +0.042 +0.035 +0.027 | consensus: +0.158 +0.144 +0.137 +0.130 | plateau: +0.238 +0.229 +0.224 +0.219
+  NQ        locked       | EA default: +0.077 +0.070 +0.066 +0.062 | consensus: +0.032 +0.024 +0.020 +0.017 | plateau: +0.092 +0.087 +0.084 +0.082
+  US30_ISO  iso_2026     | EA default: +0.152 +0.142 +0.137 +0.133 | consensus: +0.374 +0.364 +0.359 +0.354 | plateau: +0.117 +0.110 +0.106 +0.102
+
+EXIT SPLIT on US100 test and US30 test for the EA default (net R by exit reason):
+  US100 stop       n   23  sum R -23.84  mean R -1.036
+  US100 rule/clock n   33  sum R +30.26  mean R +0.917
+  US30 stop       n   19  sum R -19.52  mean R -1.028
+  US30 rule/clock n   27  sum R +21.47  mean R +0.795
+
+[17s]

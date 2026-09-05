@@ -1,5 +1,7 @@
 import { clockFor, inWindow } from "./clock";
-import { commissionPoints, pointsToUsd, roundTurnCostPoints, snap, takerSideCostPoints } from "./instruments";
+import { fillCostPoints, type FillContext, type OrderRole } from "./costs";
+import { trueRange } from "./series";
+import { pointsToUsd, roundTurnCostPoints, snap } from "./instruments";
 import type { Bar, EntryIntent, ExitReason, Instrument, Strategy, Params, Trade } from "./types";
 
 // Bar-by-bar backtester built around three anti-self-deception rules:
@@ -107,16 +109,32 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
   // When a cost override is supplied (the sensitivity sweep), scale every component by the same
   // factor so the sweep stays meaningful under any fill model.
   const costScale = referenceCost / Math.max(roundTurnCostPoints(inst), 1e-12);
-  const takerSide = takerSideCostPoints(inst) * costScale;
-  const commission = commissionPoints(inst) * costScale;
 
-  /** Cost actually charged to a trade, given how it entered and how it left. */
-  const costFor = (reason: ExitReason): number => {
-    if (fillModel === "taker") return referenceCost;
-    const entry = fillModel === "passive" ? 0 : takerSide;
-    const exit = reason === "target" ? 0 : takerSide; // a target rests; a stop must take liquidity
-    return entry + exit + commission;
+  // Slippage is modelled against how fast the bar was, so each fill needs its own context. The
+  // scale is the instrument's own MEDIAN true range, not its mean: bar ranges are heavy-tailed
+  // and a mean would be dragged up by the same fast bars the model is trying to charge extra for,
+  // flattening the very effect being measured.
+  const tr = trueRange(bars);
+  const finiteTr = tr.filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b);
+  const medianTr = finiteTr.length ? finiteTr[Math.floor(finiteTr.length / 2)] : 0;
+  const ctxAt = (i: number): FillContext => ({
+    volRatio: medianTr > 0 && Number.isFinite(tr[i]) ? tr[i] / medianTr : 1,
+    inSession: inWindow(clock.minuteOfDay[i], inst.session[0], inst.session[1]),
+  });
+
+  /** The role each fill played, which is what decides whether spread and slippage are paid. */
+  const entryRole: OrderRole = fillModel === "passive" ? "maker" : "taker";
+  const exitRole = (reason: ExitReason): OrderRole => {
+    if (reason === "stop") return "stop";
+    // Under `taker` everything is assumed to cross, including the target. Under the other models a
+    // target is a resting limit and pays nothing to get hit.
+    if (reason === "target" && fillModel !== "taker") return "maker";
+    return "taker";
   };
+
+  /** Cost charged to a trade, given how it entered, how it left, and what those bars looked like. */
+  const costFor = (reason: ExitReason, entryIndex: number, exitIndex: number): number =>
+    (fillCostPoints(inst, entryRole, ctxAt(entryIndex)) + fillCostPoints(inst, exitRole(reason), ctxAt(exitIndex))) * costScale;
 
   // Sessions and day boundaries are exchange-local: an ET trading day, not a UTC day.
   const clock = clockFor(bars, inst.tz);
@@ -139,7 +157,7 @@ export function runBacktest(bars: Bar[], signal: (i: number) => EntryIntent | nu
   const close = (exitIndex: number, exitPx: number, reason: ExitReason) => {
     if (!pos) return;
     const gross = pos.side * (exitPx - pos.entryPx);
-    const costPoints = costFor(reason);
+    const costPoints = costFor(reason, pos.entryIndex, exitIndex);
     const net = gross - costPoints;
     const pnl = pointsToUsd(inst, net) * pos.units;
     const riskUsd = pointsToUsd(inst, pos.stopDist) * pos.units;

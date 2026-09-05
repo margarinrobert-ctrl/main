@@ -13,7 +13,7 @@ sys.path.insert(0, "research")
 from ib_sim import COMMISSION_PTS, POINT_VALUE, TAKER_SIDE, TICK, simulate
 from nqdata import load_bars, minute_of_day, minutes_since_open, session_index, session_slice
 
-TS_CSV = sys.argv[1] if len(sys.argv) > 1 else "/tmp/ts_trades.csv"
+TS_CSV = sys.argv[1] if len(sys.argv) > 1 else "results/crosscheck/ts_trades.csv"
 RETR = float(sys.argv[2]) if len(sys.argv) > 2 else 50.0
 STOP = float(sys.argv[3]) if len(sys.argv) > 3 else 80.0
 RR = float(sys.argv[4]) if len(sys.argv) > 4 else 2.0

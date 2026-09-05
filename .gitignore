@@ -32,6 +32,12 @@ next-env.d.ts
 # recorded in each study's header. Never commit raw or canonical bar files.
 /data/*.csv
 /data/*.json
+# uploaded bar files arrive in several formats; the registry in research/datasets.py is
+# the durable memory of the data, so no raw feed is ever committed.
+/data/*.rtf
+/data/*.txt
+/data/*.7z
+/data/*.parquet
 
 # Python research layer
 __pycache__/
@@ -46,3 +52,16 @@ research/**/__pycache__/
 catboost_info/
 research/trend_search_results.parquet
 research/portfolio_daily.parquet
+research/edgelab/_*.parquet
+research/atme/_*.parquet
+research/hypo/_*.parquet
+
+# sweep artefacts are large and regenerable
+research/vbt/_*.npz
+
+data/CAPITALCOM_US30_1m_export.csv
+results/apm/*.pkl
+results/apm/.done
+results/trendday/sweep_*.csv
+results/trendday/dc_*.csv
+results/inst/frontier_grid.parquet

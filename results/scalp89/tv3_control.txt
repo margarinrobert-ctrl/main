@@ -1,0 +1,4 @@
+NQ 15m research: n= 492  observed %/trade +0.0516  control median +0.0429  5-95% [+0.0286, +0.0573]  p 0.180
+NQ 15m locked  : n= 283  observed %/trade +0.0521  control median +0.0432  5-95% [+0.0240, +0.0650]  p 0.213
+NQ  5m research: n=1320  observed %/trade +0.0072  control median +0.0104  5-95% [+0.0042, +0.0163]  p 0.813
+NQ  5m locked  : n= 803  observed %/trade +0.0202  control median +0.0107  5-95% [+0.0023, +0.0183]  p 0.023

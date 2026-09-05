@@ -1,0 +1,315 @@
+// 50% LEVEL + MTF SWINGS + ABSORPTION BUBBLES + CVD DIVERGENCE -- reversal strategy
+// =========================================================================================
+// Take a reversal when price reaches a level (the 50% of the session range, or a 1H/4H swing)
+// and shows flow against the move into it -- an absorption bubble, a cumulative-delta
+// divergence, or both. Stop 1.5 ATR, ATR trailing stop, optional session window and flatten.
+// Built and measured in `research/absorb/`; `docs/ib/STUDY_ABSORPTION_LEVELS.md`.
+// NQ 15m, real MNQ costs (1.72 pt round turn). Research = first 65% of sessions.
+//
+// ================================ WHAT IT MEASURES ================================
+//
+// 1. THE LEVEL + BUBBLE RULE AS ORIGINALLY ASKED LOSES ON BOTH BLOCKS AND LOSES TO A COIN
+//    FLIP: research PF 0.920 / locked PF 0.778, random entry with the same exits beats it
+//    on both (p 0.865 / 0.990). Both filters subtracted: removing the bubble took it from
+//    +0.0034 to +0.0096 and removing the levels to +0.0088.
+//
+// 2. CVD DIVERGENCE IS THE FIRST THING THAT TAKES IT ABOVE BREAK-EVEN, and only on the
+//    BULLISH side. Each pattern alone at a level, as the confirmation (research / locked):
+//      sellers exhaustion  price LL + CVD HL   +0.0085 PF 1.102  /  +0.0051 PF 1.044
+//      sellers absorption  price HL + CVD LL   +0.0089 PF 1.119  /  +0.0034 PF 1.036
+//      buyers  exhaustion  price HH + CVD LH   -0.0127 PF 0.864  /  -0.0142 PF 0.858
+//      buyers  absorption  price LH + CVD HH   -0.0066 PF 0.922  /  -0.0007 PF 0.994
+//    Both bullish patterns are positive on both blocks and DECAY across the split, which is
+//    the right shape; both bearish patterns are negative on both. This reproduces
+//    STUDY_V54_CVD_KAMA on a different base and a different timeframe.
+//
+// 3. AND NONE OF THEM CLEARS A RANDOM-ENTRY CONTROL. Sellers exhaustion research p 0.220,
+//    locked p 0.535; sellers absorption 0.240 / 0.685. The patterns lift the rule above
+//    zero; they do not beat a coin flip running the same stop and trail. Treat the bullish
+//    pair as the least-bad configuration, not as a demonstrated edge.
+//
+// 4. THE FOUR ARE KEPT AS FOUR SEPARATE SWITCHES ON PURPOSE. STUDY_V55_AUTOMATED_CVD
+//    measured that unioning them halves the edge of the one that works -- a union is diluted
+//    by its weakest member. Turning on a bearish pattern to "trade both sides" is the
+//    documented way to make this worse.
+//
+// 5. THE FLATTEN COSTS MONEY IN ALL SEVEN WINDOWS TESTED (e.g. 09:30-11:00 +0.0160 PF 1.161
+//    without it, +0.0083 PF 1.093 with it; all hours -0.0070 -> -0.0091). Thirteenth
+//    confirmation on this branch. Best window is 09:30-11:00 NY (+0.0160); worst is
+//    13:00-16:00 (-0.0097). Window OFF and flatten OFF are the defaults.
+//
+// 6. THE TRAIL IS STILL THE DOMINANT TERM. Tightening it lifts everything monotonically
+//    (0.25/0.25 ATR reads PF 1.751 at 75.2% win on a 1-bar hold) and a RANDOM entry with
+//    that trail reads 1.617/73.7% and WINS on the locked block. ~46% of that cell is the
+//    intrabar tie-break. Do not read a tight trail as an edge.
+//
+// Order model: fill-relative bracket placed WITH the entry so the fill bar is protected
+// (STUDY_V56_PARITY); barstate.isconfirmed guards every decision (STUDY_TICK_RECALC).
+// Order-flow settings are declared in MINUTES and converted by the chart's own bar size, so
+// the same numbers mean the same thing on any timeframe (STUDY_V57_REVERSE_ENGINEER).
+//@version=6
+strategy("50% Level + Swings + Absorption + CVD reversal (measured)", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.72,
+     slippage = 2)
+
+// ---------------- levels ----------------
+gL = "Levels"
+useMid   = input.bool(true,  "Use the 50% session level", group = gL,
+     tooltip = "MEASURED: on its own the best of the level families (+0.0064, PF 1.116).")
+midSess  = input.session("1600-1500", "Session for the 50% level (exchange time)", group = gL,
+     tooltip = "The source's default. For CME this is 16:00-15:00 Chicago = the full futures trading day.")
+use1h    = input.bool(true,  "Use 1H swing highs/lows", group = gL)
+use4h    = input.bool(true,  "Use 4H swing highs/lows", group = gL)
+usePrevD = input.bool(false, "Use previous day high/low", group = gL)
+touchAtr = input.float(0.10, "Touch tolerance (x ATR)", minval = 0.0, step = 0.05, group = gL)
+
+// ---------------- confirmation ----------------
+gC = "Confirmation at the level"
+confMode = input.string("CVD divergence", "What must confirm", group = gC,
+     options = ["Absorption bubble", "CVD divergence", "Both required", "Either one", "None"],
+     tooltip = "MEASURED at the asked geometry: none -0.0042 (PF 0.952), bubble only -0.0070 (0.920), CVD only +0.0085 (1.102), both required +0.0179 (1.198) on 270 trades. CVD is the only one that crosses zero.")
+
+gA = "Absorption bubble"
+volLook = input.int(100, "Volume stdev lookback", minval = 10, group = gA)
+volMin  = input.float(0.1, "Absorption threshold (scaledVol)", minval = 0.0, step = 0.1, group = gA,
+     tooltip = "MEASURED: the source's 0.1 passes 78.7% of all bars -- nearly unconditional. The A-E buckets in the original only change the DOT SIZE. Its lift on level-touch bars is a real 1.15-1.55x, so it is not merely the touch restated; it just is not profitable.")
+
+gO = "CVD divergence (four patterns, kept separate on purpose)"
+cvLTF   = input.timeframe("1", "Lower timeframe for the delta", group = gO,
+     tooltip = "Must be STRICTLY below the chart timeframe or request.security_lower_tf returns nothing and the CVD is flat. This is a PROXY -- each lower-timeframe bar's whole volume signed by its own direction, which is TradingView's own rule, not true aggressor delta.")
+useSellExh = input.bool(true,  "LONG on SELLERS EXHAUSTION (price LL + CVD HL)", group = gO,
+     tooltip = "MEASURED: research +0.0085 PF 1.102, locked +0.0051 PF 1.044. Positive on both blocks and decays across the split -- the right shape. Fails a random-entry control (p 0.220 / 0.535).")
+useSellAbs = input.bool(false, "LONG on SELLERS ABSORPTION (price HL + CVD LL)", group = gO,
+     tooltip = "MEASURED: research +0.0089 PF 1.119, locked +0.0034 PF 1.036. Also positive on both. Note STUDY_V55: turning on a SECOND pattern dilutes the first rather than adding to it.")
+useBuyExh  = input.bool(false, "SHORT on BUYERS EXHAUSTION (price HH + CVD LH)", group = gO,
+     tooltip = "MEASURED: research -0.0127 PF 0.864, locked -0.0142 PF 0.858. NEGATIVE on both blocks. Off by default on the evidence.")
+useBuyAbs  = input.bool(false, "SHORT on BUYERS ABSORPTION (price LH + CVD HH)", group = gO,
+     tooltip = "MEASURED: research -0.0066 PF 0.922, locked -0.0007 PF 0.994. NEGATIVE on both blocks, and the weakest of the four in STUDY_V54 too. Off by default on the evidence.")
+pivMin  = input.int(45,  "Pivot half-width (MINUTES)", minval = 1, group = gO,
+     tooltip = "In minutes, not bars, so moving the script between charts does not silently rescale it (STUDY_V57). 45 minutes = 3 bars on a 15m chart, which is the researched setting.")
+winMin  = input.int(300, "Divergence still valid for (MINUTES)", minval = 1, group = gO,
+     tooltip = "300 minutes = 20 bars on 15m. MEASURED: the edge falls as this widens (k3: w5 +0.0099, w10 +0.0230, w20 +0.0085, w40 +0.0036) but the tighter rungs buy it with sample size.")
+
+// ---------------- risk ----------------
+gR = "Risk"
+atrLen   = input.int(14, "ATR length", group = gR)
+stopMult = input.float(1.5, "ATR stop multiple", minval = 0.1, step = 0.1, group = gR,
+     tooltip = "MEASURED: the stop axis is FLAT across 1.0 / 1.5 / 2.5. 1.5 is the value asked for, not an optimum.")
+useTrail = input.bool(true, "Use the ATR trailing stop", group = gR)
+trailArm = input.float(1.0, "Trail arm (x ATR)", minval = 0.05, step = 0.05, group = gR,
+     tooltip = "MEASURED: tightening this is what makes the backtest look good, and it does so on a RANDOM entry too. 0.25 reads PF 1.751 / 75.2% win; a coin flip with the same trail reads 1.617 / 73.7% and beats the rule out of sample.")
+trailOff = input.float(1.0, "Trail offset (x ATR)", minval = 0.05, step = 0.05, group = gR)
+
+// ---------------- session ----------------
+gS = "Session (New York time)"
+useWindow  = input.bool(false, "Only take entries inside a time window", group = gS,
+     tooltip = "MEASURED (research, %/trade): all hours -0.0070; 09:30-11:00 +0.0160; 09:30-12:00 +0.0092; 08:00-12:00 +0.0072; 09:30-16:00 +0.0027; 07:00-11:00 +0.0046; 13:00-16:00 -0.0097. Best is 09:30-11:00 -- but it is the best of seven, on one market.")
+startHour  = input.int(9,  "Entry window start hour",   minval = 0, maxval = 23, group = gS)
+startMin   = input.int(30, "Entry window start minute", minval = 0, maxval = 59, group = gS)
+endHour    = input.int(11, "Entry window end hour",     minval = 0, maxval = 23, group = gS)
+endMin     = input.int(0,  "Entry window end minute",   minval = 0, maxval = 59, group = gS)
+useFlatten = input.bool(false, "Flatten all positions at a set time", group = gS,
+     tooltip = "MEASURED: the flatten costs money in ALL SEVEN windows tested -- 09:30-11:00 goes +0.0160 to +0.0083, all hours -0.0070 to -0.0091. Thirteenth confirmation of this on the branch. Default OFF on the evidence.")
+flatHour   = input.int(15, "Flatten hour",   minval = 0, maxval = 23, group = gS)
+flatMin    = input.int(55, "Flatten minute", minval = 0, maxval = 59, group = gS)
+
+allowLong  = input.bool(true, "Allow longs",  group = "Direction")
+allowShort = input.bool(true, "Allow shorts", group = "Direction",
+     tooltip = "MEASURED: the long marginal is +0.3130 and the short -0.1065 over a sample in which NQ rose 89%. That gap is drift, not skill.")
+showLevels = input.bool(true, "Plot the levels", group = "Display")
+
+// ---------------- ATR ----------------
+atrVal = ta.ema(ta.tr(true), atrLen)          // NOT ta.atr, which is Wilder's RMA
+
+// ---------------- 1. the 50% session level ----------------
+tSess = time(timeframe.period, midSess + ":1234567")
+inSess = not na(tSess)
+firstOfSess = inSess and not inSess[1]
+var float sessHi = na
+var float sessLo = na
+if firstOfSess
+    sessHi := high
+    sessLo := low
+else if inSess
+    sessHi := math.max(nz(sessHi, high), high)
+    sessLo := math.min(nz(sessLo, low), low)
+midNow = inSess ? sessLo + (sessHi - sessLo) / 2.0 : na
+midLvl = firstOfSess ? na : midNow[1]
+
+// ---------------- 2. MTF swing levels, confirmed only ----------------
+// A swing at HTF bar j needs j+1 to exist. With lookahead_off, `high` inside the call is the
+// last CLOSED HTF bar, so testing high[1] against high[2] and high gives the swing at j
+// confirmed by j+1 -- matching research/absorb/ab_core.py::_swing_levels exactly.
+f_swings() =>
+    sh = high[1] > high[2] and high[1] > high ? high[1] : na
+    sl = low[1]  < low[2]  and low[1]  < low  ? low[1]  : na
+    [sh, sl]
+[raw1hH, raw1hL] = request.security(syminfo.tickerid, "60",  f_swings(), lookahead = barmerge.lookahead_off)
+[raw4hH, raw4hL] = request.security(syminfo.tickerid, "240", f_swings(), lookahead = barmerge.lookahead_off)
+prevDH = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_off)
+prevDL = request.security(syminfo.tickerid, "D", low[1],  lookahead = barmerge.lookahead_off)
+var float sw1hH = na
+var float sw1hL = na
+var float sw4hH = na
+var float sw4hL = na
+if not na(raw1hH)
+    sw1hH := raw1hH
+if not na(raw1hL)
+    sw1hL := raw1hL
+if not na(raw4hH)
+    sw4hH := raw4hH
+if not na(raw4hL)
+    sw4hL := raw4hL
+
+// ---------------- 3. absorption bubbles ----------------
+volSd     = ta.stdev(volume, volLook)
+scaledVol = volSd > 0 ? volume / volSd : na
+midPrice  = (high + low) / 2.0
+bodyHi    = math.max(open, close)
+bodyLo    = math.min(open, close)
+upperZone = midPrice >= bodyHi and midPrice <= high    // long UPPER wick -> SELLING absorption
+lowerZone = midPrice <= bodyLo and midPrice >= low     // long LOWER wick -> BUYING  absorption
+bubbleSell = scaledVol >= volMin and upperZone
+bubbleBuy  = scaledVol >= volMin and lowerZone
+
+// ---------------- 4. CVD and the four divergence patterns ----------------
+barMin = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+pivK   = math.max(1, math.round(pivMin / barMin))
+cvWin  = math.max(1, math.round(winMin / barMin))
+
+ltfDelta() =>
+    close > open ? volume : close < open ? -volume : 0.0
+dArr = request.security_lower_tf(syminfo.tickerid, cvLTF, ltfDelta())
+barDelta = array.size(dArr) > 0 ? array.sum(dArr) : 0.0
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := cvd + barDelta
+
+// A pivot at bar i needs pivK bars on each side, so it is knowable only at i+pivK. The CVD is
+// read AT the pivot (cvd[pivK]) while the flag is stamped at the confirmation bar -- the leak
+// STUDY_DIVERGENCE_CONFIRM caught once already.
+pvLow  = ta.pivotlow(low, pivK, pivK)
+pvHigh = ta.pivothigh(high, pivK, pivK)
+var float prevLowP  = na
+var float prevLowC  = na
+var float prevHighP = na
+var float prevHighC = na
+var bool sellExh = false
+var bool sellAbs = false
+var bool buyExh  = false
+var bool buyAbs  = false
+if barstate.isconfirmed
+    sellExh := false
+    sellAbs := false
+    buyExh  := false
+    buyAbs  := false
+    if not na(pvLow)
+        curP = pvLow
+        curC = cvd[pivK]
+        if not na(prevLowP)
+            sellExh := curP < prevLowP and curC > prevLowC      // price LL + CVD HL
+            sellAbs := curP > prevLowP and curC < prevLowC      // price HL + CVD LL
+        prevLowP := curP
+        prevLowC := curC
+    if not na(pvHigh)
+        curP2 = pvHigh
+        curC2 = cvd[pivK]
+        if not na(prevHighP)
+            buyExh := curP2 > prevHighP and curC2 < prevHighC   // price HH + CVD LH
+            buyAbs := curP2 < prevHighP and curC2 > prevHighC   // price LH + CVD HH
+        prevHighP := curP2
+        prevHighC := curC2
+
+sinceSE = nz(ta.barssince(sellExh), 1000000)
+sinceSA = nz(ta.barssince(sellAbs), 1000000)
+sinceBE = nz(ta.barssince(buyExh),  1000000)
+sinceBA = nz(ta.barssince(buyAbs),  1000000)
+cvdBull = (useSellExh and sinceSE <= cvWin - 1) or (useSellAbs and sinceSA <= cvWin - 1)
+cvdBear = (useBuyExh  and sinceBE <= cvWin - 1) or (useBuyAbs  and sinceBA <= cvWin - 1)
+
+// ---------------- the combined confirmation ----------------
+confBuy  = confMode == "None" ? true :
+           confMode == "Absorption bubble" ? bubbleBuy :
+           confMode == "CVD divergence" ? cvdBull :
+           confMode == "Both required" ? (bubbleBuy and cvdBull) : (bubbleBuy or cvdBull)
+confSell = confMode == "None" ? true :
+           confMode == "Absorption bubble" ? bubbleSell :
+           confMode == "CVD divergence" ? cvdBear :
+           confMode == "Both required" ? (bubbleSell and cvdBear) : (bubbleSell or cvdBear)
+
+// ---------------- the level touch ----------------
+tol = touchAtr * atrVal
+f_hitRes(float lv) => not na(lv) and high >= lv - tol and close <= lv + tol
+f_hitSup(float lv) => not na(lv) and low  <= lv + tol and close >= lv - tol
+hitRes = (useMid and f_hitRes(midLvl)) or (use1h and f_hitRes(sw1hH)) or
+         (use4h and f_hitRes(sw4hH)) or (usePrevD and f_hitRes(prevDH))
+hitSup = (useMid and f_hitSup(midLvl)) or (use1h and f_hitSup(sw1hL)) or
+         (use4h and f_hitSup(sw4hL)) or (usePrevD and f_hitSup(prevDL))
+
+// ---------------- session ----------------
+nyMin    = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+winStart = startHour * 60 + startMin
+winEnd   = endHour * 60 + endMin
+inWinNorm = nyMin >= winStart and nyMin < winEnd
+inWinWrap = nyMin >= winStart or nyMin < winEnd
+inWindow = not useWindow or (winStart <= winEnd ? inWinNorm : inWinWrap)
+flatAt   = flatHour * 60 + flatMin
+// "flat by 15:55" means flat AT the 15:55 open, so the order goes out on the bar before
+flatNow  = useFlatten and (nyMin + barMin >= flatAt)
+
+ready    = not na(atrVal) and atrVal > 0 and bar_index > 300
+longSig  = allowLong  and hitSup and confBuy  and ready and inWindow and not flatNow
+shortSig = allowShort and hitRes and confSell and ready and inWindow and not flatNow
+bothSig  = longSig and shortSig
+fireLong  = longSig  and not bothSig
+fireShort = shortSig and not bothSig
+
+// ---------------- orders ----------------
+flat = strategy.position_size == 0
+var float pendStop = na
+var float pendArm  = na
+var float pendOff  = na
+if barstate.isconfirmed and flat and (fireLong or fireShort)
+    pendStop := stopMult * atrVal
+    pendArm  := trailArm * atrVal
+    pendOff  := trailOff * atrVal
+    if fireLong
+        strategy.entry("L", strategy.long)
+    else
+        strategy.entry("S", strategy.short)
+
+// Fill-relative bracket, submitted on the SIGNAL bar with the entry, so the fill bar is already
+// protected. `loss` and the trail are in TICKS and known at order time -- unlike stop=/limit=
+// off strategy.position_avg_price, which does not exist until a bar after the fill.
+stopTk = na(pendStop) ? na : pendStop / syminfo.mintick
+armTk  = useTrail and not na(pendArm) ? pendArm / syminfo.mintick : na
+offTk  = useTrail and not na(pendOff) ? pendOff / syminfo.mintick : na
+strategy.exit("Lx", "L", loss = stopTk, trail_points = armTk, trail_offset = offTk)
+strategy.exit("Sx", "S", loss = stopTk, trail_points = armTk, trail_offset = offTk)
+if barstate.isconfirmed and useFlatten and flatNow and strategy.position_size != 0
+    strategy.close_all(comment = "session flatten")
+
+// ---------------- display ----------------
+plot(showLevels and useMid ? midLvl : na, "50% level", color = color.new(color.gray, 20), style = plot.style_circles)
+plot(showLevels and use1h ? sw1hH : na, "1H swing high", color = color.new(color.red, 40))
+plot(showLevels and use1h ? sw1hL : na, "1H swing low",  color = color.new(color.red, 40))
+plot(showLevels and use4h ? sw4hH : na, "4H swing high", color = color.new(color.blue, 40))
+plot(showLevels and use4h ? sw4hL : na, "4H swing low",  color = color.new(color.blue, 40))
+plotshape(bubbleBuy  ? midPrice : na, "buying absorption",  shape.circle, location.absolute, color.new(color.green, 40), size = size.tiny)
+plotshape(bubbleSell ? midPrice : na, "selling absorption", shape.circle, location.absolute, color.new(color.red, 40),   size = size.tiny)
+plotshape(sellExh ? low : na,  "sellers exhaustion", shape.triangleup,   location.belowbar, color.new(color.lime, 0),   size = size.tiny)
+plotshape(sellAbs ? low : na,  "sellers absorption", shape.triangleup,   location.belowbar, color.new(color.teal, 0),   size = size.tiny)
+plotshape(buyExh  ? high : na, "buyers exhaustion",  shape.triangledown, location.abovebar, color.new(color.orange, 0), size = size.tiny)
+plotshape(buyAbs  ? high : na, "buyers absorption",  shape.triangledown, location.abovebar, color.new(color.fuchsia, 0), size = size.tiny)
+
+var table hud = table.new(position.top_right, 1, 4, bgcolor = color.new(color.black, 20))
+if barstate.islast
+    ltfBad = timeframe.in_seconds(cvLTF) >= timeframe.in_seconds()
+    table.cell(hud, 0, 0, ltfBad ? "WARNING: delta timeframe is not BELOW the chart -- CVD is flat, no divergence can fire"
+         : "CVD delta from " + cvLTF + "   pivot " + str.tostring(pivK) + " bars   window " + str.tostring(cvWin) + " bars",
+         text_color = color.white, bgcolor = ltfBad ? color.new(color.red, 0) : color.new(color.gray, 30))
+    table.cell(hud, 0, 1, "MEASURED: bullish CVD +0.0085 / +0.0051 (PF 1.10 / 1.04) -- positive both blocks, right shape", text_color = color.white, bgcolor = color.new(color.gray, 30))
+    table.cell(hud, 0, 2, "bearish CVD is NEGATIVE both blocks (-0.0127 / -0.0142) -- off by default", text_color = color.white, bgcolor = color.new(color.red, 40))
+    table.cell(hud, 0, 3, "nothing here clears a random-entry control (p 0.220 / 0.535). Not a demonstrated edge.", text_color = color.white, bgcolor = color.new(color.orange, 40))

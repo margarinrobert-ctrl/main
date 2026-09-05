@@ -1,0 +1,76 @@
+V63 stage G -- ATR as a REGIME FILTER: 86 declared readings, both directions, on every block.
+
+WHAT THIS BRANCH ALREADY KNOWS, and why the test is built the way it is:
+
+  `STUDY_V28`  ATR as an entry regime filter is NULL on NQ -- 240 declared cells, only 4% clear a
+               same-selectivity control at p<=0.05 against a 5% chance rate. On US30 exactly TWO
+               cells survived both blocks and both were the same thing: ATR in the bottom fifth of
+               its own last 500 bars. Two survivors of 240 is what chance delivers.
+  `STUDY_V39`  volatility-state rules INVERT hardest of any family: calm +46.43 research ->
+               -9.11 locked, ATR contracting +31.56 -> -20.44.
+  `STUDY_V22`  where a STOP goes given heat is a different question from whether calm is a
+               profitable ENTRY filter -- do not let one answer the other.
+
+So EVERY reading is run in BOTH directions (a floor and a ceiling), because the conventional
+direction has been backwards several times here; every one is scored against a random filter of the
+SAME SELECTIVITY over the base's own signals, which is the only null that prices restrictiveness;
+and the headline is the SHARE of readings clearing on each block against the 5% chance rate, not
+the best row.
+
+THE FAMILY, declared before it ran:
+  expansion   atr / sma(atr, N) >= k  and <= k      N in 20/50/100/250, k in 0.9/1.0/1.1/1.2   32
+  level       percentile of atr in its own last N   N in 100/250/500, q in 0.2/0.4/0.6/0.8, both 24
+  normalised  the same on atr / close                                                          24
+  slope       atr > atr[k] and atr < atr[k]         k in 5/10/20                                6
+                                                                                       total = 86
+
+  .. US100 done
+  .. US30 done
+  .. NQ done
+
+================================================================================================================
+G1. THE SHARE THAT CLEARS -- against a random filter of the SAME selectivity.
+    Chance is 5%. Read this before any row of the table.
+================================================================================================================
+  NQ      locked       20 of  86 readings clear ( 23.3%, chance 5.0%)   beat the no-regime baseline:  69.8%
+  NQ      research      2 of  86 readings clear (  2.3%, chance 5.0%)   beat the no-regime baseline:  10.5%
+  US100   research      5 of  86 readings clear (  5.8%, chance 5.0%)   beat the no-regime baseline:   7.0%
+  US100   test         25 of  86 readings clear ( 29.1%, chance 5.0%)   beat the no-regime baseline:  57.0%
+  US100   validation   14 of  86 readings clear ( 16.3%, chance 5.0%)   beat the no-regime baseline:  72.1%
+  US30    research      5 of  86 readings clear (  5.8%, chance 5.0%)   beat the no-regime baseline:  17.4%
+  US30    test         18 of  86 readings clear ( 20.9%, chance 5.0%)   beat the no-regime baseline:  31.4%
+  US30    validation   48 of  86 readings clear ( 55.8%, chance 5.0%)   beat the no-regime baseline:  87.2%
+
+  ALL BLOCKS THAT CHOSE NOTHING: 132 of 602 (21.9%) clear at p<=0.05; 49.3% beat the no-regime baseline (chance 50%).
+
+================================================================================================================
+G2. BY FAMILY AND DIRECTION -- mean edge over the no-regime baseline, %/trade
+================================================================================================================
+  expansion   ceiling / falling  112 cells   mean edge -0.0431   beats baseline  35.7%   clears  14.3%   keeps  70.1%
+  expansion   floor / rising     112 cells   mean edge +0.0471   beats baseline  71.4%   clears  36.6%   keeps  29.9%
+  level       ceiling / falling   84 cells   mean edge -0.0542   beats baseline  34.5%   clears  15.5%   keeps  59.4%
+  level       floor / rising      84 cells   mean edge +0.0320   beats baseline  57.1%   clears  26.2%   keeps  41.0%
+  normalised  ceiling / falling   84 cells   mean edge -0.0539   beats baseline  35.7%   clears  16.7%   keeps  60.3%
+  normalised  floor / rising      84 cells   mean edge +0.0338   beats baseline  57.1%   clears  21.4%   keeps  40.1%
+  slope       ceiling / falling   21 cells   mean edge -0.0275   beats baseline  47.6%   clears  19.0%   keeps  65.0%
+  slope       floor / rising      21 cells   mean edge +0.0061   beats baseline  57.1%   clears  19.0%   keeps  35.0%
+
+================================================================================================================
+G3. CONSISTENCY -- readings positive on EVERY block that chose nothing, ranked by
+    their mean edge. A reading has to survive 7 blocks to appear here.
+================================================================================================================
+  atr/sma250 >= 1.2          7/7 blocks   edge +0.0981   keeps  15.4%   clears its control on 3   best p 0.000
+  atr pct100 >= 0.6          7/7 blocks   edge +0.0874   keeps  28.9%   clears its control on 4   best p 0.000
+  atr/sma100 >= 1.0          7/7 blocks   edge +0.0845   keeps  33.7%   clears its control on 4   best p 0.000
+
+================================================================================================================
+G4. THE SHIPPED GATE (atr >= its own 50-bar mean) IN THIS TABLE
+================================================================================================================
+  US100   research    IS  n  264 keeps  34.5%   +0.2200 against a no-regime baseline of +0.3117   edge -0.0917   control p 0.881
+  US100   validation  OOS n  116 keeps  34.5%   +0.1596 against a no-regime baseline of +0.0924   edge +0.0672   control p 0.422
+  US100   test        OOS n   91 keeps  34.5%   +0.3842 against a no-regime baseline of +0.1618   edge +0.2224   control p 0.000
+  US30    research    OOS n  261 keeps  31.9%   +0.1799 against a no-regime baseline of +0.2047   edge -0.0248   control p 0.698
+  US30    validation  OOS n  115 keeps  31.9%   +0.1352 against a no-regime baseline of +0.0123   edge +0.1229   control p 0.000
+  US30    test        OOS n   85 keeps  31.9%   +0.1797 against a no-regime baseline of +0.1268   edge +0.0530   control p 0.035
+  NQ      research    OOS n  113 keeps  38.3%   +0.3585 against a no-regime baseline of +0.3638   edge -0.0053   control p 0.229
+  NQ      locked      OOS n   69 keeps  38.3%   -0.0401 against a no-regime baseline of -0.0896   edge +0.0495   control p 0.199

@@ -45,7 +45,7 @@ def win_null(s, draws=400, seed=31):
 
 if __name__ == "__main__":
     import numpy as _np
-    rows = list(_np.load("/tmp/oner_final.npy", allow_pickle=True))[:10]
+    rows = list(_np.load("results/oner/oner_final.npy", allow_pickle=True))[:10]
     print(f"  {'rule':<44}{'tf':>4}{'dir':>6}{'n':>5}{'win%':>7}{'null mean':>11}"
           f"{'null p95':>10}{'excess':>8}{'p':>8}")
     out = []

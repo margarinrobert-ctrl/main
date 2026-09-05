@@ -157,7 +157,7 @@ if __name__ == "__main__":
         for side in (1, -1):
             allo += gate(sweep_side(tf, side))
     allo.sort(key=lambda x: -x["edge"])
-    np.save("/tmp/trendpool_gated.npy", np.array(allo, dtype=object), allow_pickle=True)
+    np.save("results/trendpool/trendpool_gated.npy", np.array(allo, dtype=object), allow_pickle=True)
     print(f"\n{len(allo):,} rule/geometry pairs beat the window baseline and hold subset coherence")
     print(f"\n  {'rule':<74}{'tf':>4}{'dir':>6}{'n':>5}{'win%':>7}{'base':>7}{'edge':>7}{'res $':>8}")
     for x in allo[:12]:

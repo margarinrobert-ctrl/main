@@ -69,8 +69,8 @@ def main(tf, out=None, chunk=None, nchunk=1):
     """
     t0 = time.time()
     import os
-    cache = f"/tmp/sambits_{tf}m.npy"
-    ncache = f"/tmp/sambits_{tf}m_names.npy"
+    cache = f"results/sam/sambits_{tf}m.npy"
+    ncache = f"results/sam/sambits_{tf}m_names.npy"
     if os.path.exists(cache) and os.path.exists(ncache):
         # the bitsets and the name list are all a later chunk needs; rebuilding the boolean
         # condition matrix from 1-minute semivariances is the expensive part and is skipped
@@ -137,8 +137,8 @@ def main(tf, out=None, chunk=None, nchunk=1):
     print(f"     {len(keep):,} of {total:,} ({100*len(keep)/total:.2f}%) have "
           f"{MIN_RES}+/{MIN_LOK}+ trades and are research-profitable", flush=True)
     nv = len(variants)
-    path = out or (f"/tmp/sam_{tf}m.npz" if chunk is None
-                   else f"/tmp/sampart_{tf}m_{chunk}.npz")
+    path = out or (f"results/sam/sam_{tf}m.npz" if chunk is None
+                   else f"results/sam/sampart_{tf}m_{chunk}.npz")
     np.savez(path, idx=(keep + lo * nv).astype(np.int64),      # index into the FULL rule list
              r_n=r_n[keep], r_sum=r_sum[keep], r_win=r_win[keep],
              l_n=l_n[keep], l_sum=l_sum[keep], l_win=l_win[keep],
@@ -155,10 +155,10 @@ def merge(tf, nchunk):
     """Stitch the part files back into the single npz the phases expect."""
     d, sam_names, lad_names, _M = build_pool(tf)
     combos = enumerate_rules(len(sam_names), len(lad_names))
-    parts = [np.load(f"/tmp/sampart_{tf}m_{k}.npz", allow_pickle=True) for k in range(nchunk)]
+    parts = [np.load(f"results/sam/sampart_{tf}m_{k}.npz", allow_pickle=True) for k in range(nchunk)]
     cat = lambda k: np.concatenate([p[k] for p in parts])
     nv = int(parts[0]["nvar"][0])
-    np.savez(f"/tmp/sam_{tf}m.npz",
+    np.savez(f"results/sam/sam_{tf}m.npz",
              idx=cat("idx"), r_n=cat("r_n"), r_sum=cat("r_sum"), r_win=cat("r_win"),
              l_n=cat("l_n"), l_sum=cat("l_sum"), l_win=cat("l_win"),
              base_rn=cat("base_rn"), base_rw=cat("base_rw"),

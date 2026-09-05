@@ -198,9 +198,9 @@ def main():
         meta[base:base + len(G)] = (m, k, e)
         print(f"   {m:>4}m  swing_k {k}  EMA {e:>3}   {time.time()-t0:6.1f}s", flush=True)
 
-    np.save("/tmp/tf_sweep_out.npy", out)
-    np.save("/tmp/tf_sweep_meta.npy", meta)
-    np.save("/tmp/tf_sweep_grid.npy", G)
+    np.save("results/tf/tf_sweep_out.npy", out)
+    np.save("results/tf/tf_sweep_meta.npy", meta)
+    np.save("results/tf/tf_sweep_grid.npy", G)
     print(f"\ndone in {time.time()-t0:.0f}s")
 
 

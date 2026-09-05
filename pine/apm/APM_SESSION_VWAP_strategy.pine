@@ -1,0 +1,499 @@
+// ================================================================================================
+// ATR-NORMALIZED PHASE MOMENTUM, MULTI-SESSION VWAP FILTER -- a Pine port of the NinjaScript
+// strategy ATR_NORMALIZED_PHASE_MOMENTUM_MULTI_SESSION_VWAP_v2 (10-minute decision bars).
+//
+//     OSCILLATOR  phase = EMA3( 100 * (close - EMA21) / (3 * ATR14) ), every recursion seeded and
+//                 smoothed exactly as the source: EMA21 seeded at the first close, ATR14 seeded as
+//                 the mean of the first 14 true ranges then Wilder-smoothed, EMA3 seeded at the
+//                 first raw value. NOT ta.ema / ta.atr, whose seeds differ.
+//     INTENT      phase crosses ABOVE +100 -> long intent; crosses BELOW -100 -> short intent.
+//     ADMISSION   a new side is taken only when the completed signal bar's close is strictly less
+//                 than 2.5 x ATR14 from the session HLC3-volume VWAP, which accumulates over the
+//                 decision bars that OPEN inside the VWAP window and includes the signal bar.
+//     WINDOW      the FILL (the next bar's open = this bar's close time) must land inside the entry
+//                 window. Outside it an opposite cross exits without reversing. Rejected intents
+//                 are neither delayed nor replayed. A rejected reversal still exits the held side.
+//     SHADOW      the unfiltered rule keeps its own position ("control shadow"); the filtered
+//                 position is that shadow gated by VWAP admission at entry time. A cross to the side
+//                 the shadow already holds is a no-op even when the real position is flat.
+//     CASH CLOSE  on the bar that closes at the cash close the position is flattened and the shadow
+//                 cleared; cash close outranks a simultaneous cross. No stop, target, trail or
+//                 pyramiding. One contract.
+//     PROFILES    USIndex: entries 09:30-11:00, VWAP 09:30-16:00, cash 16:00, ETH from 18:00.
+//                 ComexGold: entries 08:20-09:50, VWAP 08:20-13:30, cash 13:30, ETH from 18:00.
+//                 Custom: HHmm inputs, validated as the source validates them. All New York time.
+//
+// WHAT A PINE PORT CANNOT DO, AND WHAT THIS ONE DOES INSTEAD
+//  1. The source builds exact UTC-aligned 10-minute bars from ten contiguous 1-minute components
+//     and omits any bucket with a missing minute. A CME 10-minute chart bar on TradingView IS that
+//     bucket (sessions open on a ten-minute boundary in every whole-hour zone); TradingView omits
+//     minutes that print no trade, so the constituent count is not checked -- the FTM port measured
+//     that constraint at zero on 1.05M minutes.
+//  2. The source pre-scans loaded history and blocks any session whose 09:20-15:59 minute window is
+//     incomplete BEFORE its first bar. Pine cannot look ahead: a session is blocked from the bar a
+//     gap is detected (decision-bar level), and the source's frozen 68-date MNQ calendar is applied
+//     at session start exactly as the source applies it.
+//  3. Every fail-closed path in the source halts the strategy permanently. Here each one is COUNTED,
+//     shown on the panel, and by default converted to "flatten, block this session, continue" so a
+//     report cannot go silently empty. "Halt on anomaly" restores the source's behaviour.
+//  4. The 16:00 cash exit is an order placed at the 15:50 bar's close, filling at the 16:00 bar's
+//     open -- the same fill the source gets from a market order after the completed decision bar.
+//  5. IsExitOnSessionCloseStrategy (30 s before the session ends) becomes a close at the close of
+//     the session's last bar, via session.islastbar.
+//  6. The roll-like reset (a >400-tick gap between the 23:59 and 00:00 UTC minutes) is ported as
+//     written. On a TradingView continuous contract the roll gap sits at the session open, not at
+//     00:00 UTC, so it will rarely fire; use a back-adjusted series or a single contract.
+//  7. Costs: slippage 1 tick as the source; commission 0.72 per contract per side (real MNQ stack).
+//
+// MEASURED (docs/ib/STUDY_APM_VWAP.md; research/apm/). As specified, MNQ costs: NQ 10m research
+// n 70, 58.6% win, PF 1.62, +24.0 pts/trade; locked n 34, 67.6%, PF 4.12, +62.8 -- the wrong shape,
+// 2022-2024 flatters it on every feed. Beats a random entry with its own exits on NQ research
+// (p 0.054), NQ 15m research (0.013), US100 research and validation (0.019, 0.032); FAILS the US100
+// test block (p 0.230, 2025 at -27 a trade) and is NULL on US30 over nine years. The DIRECTION call
+// is the asset (coin-flip side on the rule's bars: p 0.05 / 0.001); the ENTRY TIMING is a cost -- a
+// random bar on the same day with the same side beats the rule everywhere, because the fill has
+// already chased 3.97 ATR of a 4.99 ATR day. The VWAP band is also the clock: 0% of crosses after
+// 11:00 sit inside it. Walk-forward re-selection loses to these defaults on NQ and US100, so do not
+// tune it. Research-block P(mean<=0) 0.052; p99 drawdown about $2,400 per MNQ. One MNQ on $50k
+// cannot pass a 6% evaluation; two pass 42-70% and bust 15-24%. VERDICT: not live-ready on this
+// evidence -- forward-test with one contract for 40+ trades before sizing.
+//
+// CHART: 10-MINUTE, EXTENDED HOURS ON (the session date rolls at 18:00 New York and the VWAP window
+// needs the 09:20 bar). Every var write sits under barstate.isconfirmed. Not financial advice.
+// ================================================================================================
+//@version=6
+strategy("ATR phase momentum + session VWAP (NT8 port)", shorttitle = "APM-VWAP", overlay = true,
+     pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false,
+     initial_capital = 50000, currency = currency.USD, default_qty_type = strategy.fixed,
+     default_qty_value = 1, commission_type = strategy.commission.cash_per_contract,
+     commission_value = 0.72, slippage = 1)
+
+// ---------------------------------------------------------------- inputs
+grpP = "Session profile (New York time)"
+profileIn = input.string("Automatic", "Profile", options = ["Automatic", "USIndex", "ComexGold",
+     "Custom"], group = grpP,
+     tooltip = "Automatic resolves ES/MES/NQ/MNQ to USIndex and GC/MGC to ComexGold; any other "
+     + "symbol falls back to the USIndex clocks with a panel warning (the source refuses).")
+cEntStart = input.int(930, "Custom: entry start (HHmm, inclusive)", minval = 0, maxval = 2359,
+     group = grpP)
+cEntEnd = input.int(1100, "Custom: entry end (HHmm, exclusive)", minval = 0, maxval = 2359,
+     group = grpP)
+cVwapStart = input.int(930, "Custom: VWAP start (HHmm, inclusive)", minval = 0, maxval = 2359,
+     group = grpP)
+cVwapEnd = input.int(1600, "Custom: VWAP end (HHmm, exclusive)", minval = 0, maxval = 2359,
+     group = grpP)
+cCash = input.int(1600, "Custom: cash close (HHmm)", minval = 0, maxval = 2359, group = grpP)
+cEth = input.int(1800, "Custom: electronic session start (HHmm)", minval = 0, maxval = 2359,
+     group = grpP)
+
+grpR = "Rule (source constants)"
+emaLen = input.int(21, "EMA length", minval = 1, group = grpR)
+atrLen = input.int(14, "ATR length (Wilder)", minval = 1, group = grpR)
+oscLen = input.int(3, "Oscillator EMA length", minval = 1, group = grpR)
+atrDen = input.float(3.0, "ATR denominator multiplier", minval = 0.1, step = 0.5, group = grpR)
+upperX = input.float(100.0, "Upper extreme (long intent on a cross above)", step = 10.0,
+     group = grpR)
+lowerX = input.float(-100.0, "Lower extreme (short intent on a cross below)", step = 10.0,
+     group = grpR)
+vwapMult = input.float(2.5, "Admit only within x ATR14 of session VWAP", minval = 0.0, step = 0.25,
+     group = grpR)
+
+grpT = "Trading"
+startDate = input.int(20200203, "Start trading date (yyyyMMdd)", minval = 19000101,
+     maxval = 29991231, group = grpT,
+     tooltip = "Earlier sessions update state but never submit orders.")
+strictTf = input.bool(true, "Require a 10-minute chart (the source's decision bar)", group = grpT)
+
+grpF = "Safety (each gate is counted on the panel)"
+resetTicks = input.int(400, "Reset gap threshold at 00:00 UTC (ticks, 0 = off)", minval = 0,
+     group = grpF)
+postResetBars = input.int(21, "Bars to requalify after a reset", minval = 0, group = grpF)
+frozenMode = input.string("Auto (MNQ only)", "Frozen 68-date MNQ incomplete-session calendar",
+     options = ["Auto (MNQ only)", "On", "Off"], group = grpF)
+haltOnAnomaly = input.bool(false, "Halt permanently on an anomaly (the source's behaviour)",
+     group = grpF, tooltip = "Off: flatten, block the rest of that session, count it, continue.")
+useBackstop = input.bool(true, "Flatten on the session's last bar (session-close backstop)",
+     group = grpF)
+showHud = input.bool(true, "Show panel", group = "Display")
+
+// ---------------------------------------------------------------- chart and profile resolution
+tfMin = timeframe.isminutes ? timeframe.multiplier : 0
+if tfMin == 0
+    runtime.error("APM-VWAP needs an intraday minute chart (the source specifies 10 minutes).")
+if strictTf and tfMin != 10
+    runtime.error("The source specifies a 10-minute chart. Turn off 'Require a 10-minute chart' "
+         + "to run the port on another minute timeframe.")
+
+hhmm(int v) =>
+    int(math.floor(v / 100)) * 60 + v % 100
+
+fmtMin(int m) =>
+    h = int(math.floor(m / 60))
+    mm = m % 60
+    (h < 10 ? "0" : "") + str.tostring(h) + ":" + (mm < 10 ? "0" : "") + str.tostring(mm)
+
+root = syminfo.root
+isIdx = root == "ES" or root == "MES" or root == "NQ" or root == "MNQ"
+isGold = root == "GC" or root == "MGC"
+autoFallback = profileIn == "Automatic" and not isIdx and not isGold
+resolved = profileIn == "Automatic" ? (isGold ? "ComexGold" : "USIndex") : profileIn
+
+entStart = resolved == "USIndex" ? 570 : resolved == "ComexGold" ? 500 : hhmm(cEntStart)
+entEnd = resolved == "USIndex" ? 660 : resolved == "ComexGold" ? 590 : hhmm(cEntEnd)
+vwapStart = resolved == "USIndex" ? 570 : resolved == "ComexGold" ? 500 : hhmm(cVwapStart)
+vwapEnd = resolved == "USIndex" ? 960 : resolved == "ComexGold" ? 810 : hhmm(cVwapEnd)
+cashClose = resolved == "USIndex" ? 960 : resolved == "ComexGold" ? 810 : hhmm(cCash)
+ethStart = resolved == "USIndex" ? 1080 : resolved == "ComexGold" ? 1080 : hhmm(cEth)
+
+// the source's fail-closed configuration checks, verbatim in intent
+if entStart < tfMin or entStart >= entEnd or entEnd > cashClose
+    runtime.error("Entry window must be ordered and end no later than the cash close.")
+if vwapStart >= vwapEnd or vwapEnd > cashClose
+    runtime.error("VWAP window must be ordered and end no later than the cash close.")
+if cashClose >= ethStart
+    runtime.error("Cash close must precede the electronic-session boundary.")
+if entStart % tfMin != 0 or entEnd % tfMin != 0 or vwapStart % tfMin != 0
+     or vwapEnd % tfMin != 0 or cashClose % tfMin != 0 or ethStart % tfMin != 0
+    runtime.error("All session boundaries must align to the decision bar (" + str.tostring(tfMin)
+         + " minutes).")
+firstQual = math.max(entStart, vwapStart + tfMin)
+if firstQual >= entEnd or firstQual > vwapEnd
+    runtime.error("Entry and VWAP windows must permit at least one VWAP-qualified fill.")
+
+relevantFirst = math.min(vwapStart, entStart - tfMin)   // first decision-bar OPEN that must exist
+required = (cashClose - relevantFirst) / tfMin           // decision bars the cash window must hold
+
+// ---------------------------------------------------------------- the frozen MNQ calendar
+// The source skips these 68 sessions on MNQ because at least one 09:20-15:59 New York minute is
+// absent from its frozen minute dataset; it applies only through 2026-08-17.
+var int[] frozenCal = array.new<int>()
+if barstate.isfirst
+    array.concat(frozenCal, array.from(20200120, 20200217, 20200309, 20200312, 20200313, 20200316,
+         20200318, 20200525, 20200611, 20200703))
+    array.concat(frozenCal, array.from(20200907, 20200910, 20201126, 20201127, 20201224, 20210118,
+         20210215, 20210402, 20210531, 20210705))
+    array.concat(frozenCal, array.from(20210906, 20211125, 20211126, 20220117, 20220221, 20220530,
+         20220620, 20220704, 20220905, 20221124))
+    array.concat(frozenCal, array.from(20221125, 20230116, 20230220, 20230407, 20230529, 20230619,
+         20230703, 20230704, 20230904, 20231123))
+    array.concat(frozenCal, array.from(20231124, 20240115, 20240219, 20240527, 20240619, 20240703,
+         20240704, 20240902, 20241128, 20241129))
+    array.concat(frozenCal, array.from(20241224, 20250109, 20250120, 20250217, 20250526, 20250619,
+         20250703, 20250704, 20250901, 20251127))
+    array.concat(frozenCal, array.from(20251128, 20251224, 20260119, 20260216, 20260403, 20260525,
+         20260619, 20260703))
+useFrozen = frozenMode == "On" or (frozenMode == "Auto (MNQ only)" and root == "MNQ")
+frozenEnd = 20260817
+
+// ---------------------------------------------------------------- clocks
+tz = "America/New_York"
+nyMod = hour(time, tz) * 60 + minute(time, tz)                      // this bar's OPEN minute
+nyKey = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+tNext = time + 86400000
+nextKey = year(tNext, tz) * 10000 + month(tNext, tz) * 100 + dayofmonth(tNext, tz)
+sessKey = nyMod >= ethStart ? nextKey : nyKey                       // the source's SessionDate
+closeMod = nyMod + tfMin                                             // fill minute of an order here
+inVwapWin = nyMod >= vwapStart and nyMod < vwapEnd
+inEntryFill = closeMod >= entStart and closeMod < entEnd
+aE = 2.0 / (emaLen + 1.0)
+aO = 2.0 / (oscLen + 1.0)
+
+// ---------------------------------------------------------------- state
+var int curSess = na
+var bool sessBlocked = false
+var bool cashDone = false
+var int expOpen = na
+var int reqCount = 0
+var bool halted = false
+var bool sawEth = false
+var float ema = na
+var float atr = na
+var float prevC = na
+var int trN = 0
+var float trSum = 0.0
+var float osc = na
+var bool oscInit = false
+var int segBar = 0
+var bool postReset = false
+var int shadow = 0                     // the unfiltered rule's own position: 1 long, -1 short, 0 flat
+var int vwapDay = na
+var float cumPV = 0.0
+var float cumV = 0.0
+var float lastVwap = na
+var float lastDist = na
+var bool lastAdmit = false
+// diagnostics, mirroring the source's terminal summary
+var int nDecision = 0
+var int nBlocked = 0
+var int nResets = 0
+var int nLong = 0
+var int nShort = 0
+var int nRev = 0
+var int nOppExit = 0
+var int nCashExit = 0
+var int nAdmit = 0
+var int nReject = 0
+var int nUnavail = 0
+var int nRejectRev = 0
+var int nAnom = 0
+var string lastAnom = "-"
+bool markLong = false
+bool markShort = false
+bool markReject = false
+
+pos = strategy.position_size > 0 ? 1 : strategy.position_size < 0 ? -1 : 0
+
+if barstate.isconfirmed and not halted
+    if nyMod >= ethStart or nyMod < relevantFirst
+        sawEth := true
+    // ---- session boundary (the source's BeginSession)
+    if na(curSess) or sessKey != curSess
+        carried = pos != 0 or shadow != 0
+        curSess := sessKey
+        sessBlocked := useFrozen and sessKey <= frozenEnd and array.includes(frozenCal, sessKey)
+        if sessBlocked
+            nBlocked += 1
+        cashDone := false
+        expOpen := relevantFirst
+        reqCount := 0
+        if carried
+            nAnom += 1
+            lastAnom := "session carry " + str.tostring(sessKey)
+            shadow := 0
+            if pos != 0
+                strategy.close_all(comment = "carry")
+            if haltOnAnomaly
+                halted := true
+    // ---- cash-window completeness at decision-bar level (the source's TrackRequiredWindow)
+    if not sessBlocked and not halted
+        if nyMod >= relevantFirst and nyMod < cashClose
+            if nyMod != expOpen
+                sessBlocked := true
+                nBlocked += 1
+                nAnom += 1
+                lastAnom := "gap " + str.tostring(sessKey) + " expected " + fmtMin(expOpen)
+            else
+                reqCount += 1
+                expOpen += tfMin
+        else if nyMod >= cashClose and nyMod < ethStart and reqCount != required
+            sessBlocked := true
+            nBlocked += 1
+            nAnom += 1
+            lastAnom := "short window " + str.tostring(sessKey) + " " + str.tostring(reqCount)
+                 + "/" + str.tostring(required)
+        if sessBlocked
+            shadow := 0
+            if pos != 0
+                strategy.close_all(comment = "data gap")
+            if haltOnAnomaly
+                halted := true
+    // ---- a non-blocked decision bar
+    if not sessBlocked and not halted
+        // roll-like reset: contiguous bars, the 00:00 UTC open, a gap above the threshold
+        contiguous = time - time[1] == tfMin * 60000
+        utcMidnight = hour(time, "UTC") == 0 and minute(time, "UTC") == 0
+        if resetTicks > 0 and contiguous and utcMidnight and not na(close[1])
+             and math.abs(open - close[1]) > resetTicks * syminfo.mintick
+            if pos != 0 or shadow != 0
+                nAnom += 1
+                lastAnom := "reset with exposure " + str.tostring(sessKey)
+                if pos != 0
+                    strategy.close_all(comment = "reset")
+                if haltOnAnomaly
+                    halted := true
+            ema := na
+            atr := na
+            prevC := na
+            trN := 0
+            trSum := 0.0
+            osc := na
+            oscInit := false
+            segBar := 0
+            postReset := true
+            shadow := 0
+            vwapDay := na
+            cumPV := 0.0
+            cumV := 0.0
+            nResets += 1
+        // the indicator, fed by EVERY decision bar of a non-blocked session, after the cash close too
+        oscPrev = osc
+        oscPrevAvail = oscInit
+        ema := na(ema) ? close : aE * close + (1.0 - aE) * ema
+        trng = na(prevC) ? high - low : math.max(high - low, math.abs(high - prevC),
+             math.abs(low - prevC))
+        prevC := close
+        if na(atr)
+            trN += 1
+            trSum += trng
+            if trN == atrLen
+                atr := trSum / atrLen
+        else
+            atr := ((atrLen - 1.0) * atr + trng) / atrLen
+        bool oscAvail = false
+        if not na(atr) and atr > 0
+            raw = 100.0 * (close - ema) / (atrDen * atr)
+            osc := oscInit ? aO * raw + (1.0 - aO) * osc : raw
+            oscInit := true
+            oscAvail := true
+        // the session HLC3-volume VWAP over decision bars OPENING inside the window, this bar included
+        bool vwapAvail = false
+        bool admitted = false
+        lastVwap := na
+        lastDist := na
+        if inVwapWin
+            if na(vwapDay) or vwapDay != nyKey
+                vwapDay := nyKey
+                cumPV := 0.0
+                cumV := 0.0
+            cumPV += hlc3 * nz(volume)
+            cumV += nz(volume)
+            if cumV > 0 and not na(atr) and atr > 0
+                vwapAvail := true
+                lastVwap := cumPV / cumV
+                lastDist := math.abs(close - lastVwap) / atr
+                admitted := math.abs(close - lastVwap) < vwapMult * atr
+        lastAdmit := admitted
+        segBar += 1
+        nDecision += 1
+        // cash close outranks a simultaneous cross; after it, no decision until the next session
+        if closeMod == cashClose
+            shadow := 0
+            if not cashDone
+                cashDone := true
+                if pos != 0
+                    nCashExit += 1
+                    strategy.close_all(comment = "cash close")
+        else if not cashDone and sessKey >= startDate and oscPrevAvail and oscAvail
+             and not (postReset and segBar < postResetBars)
+            longX = oscPrev <= upperX and osc > upperX
+            shortX = oscPrev >= lowerX and osc < lowerX
+            if longX or shortX
+                side = longX ? 1 : -1
+                prior = shadow
+                if prior != side
+                    if prior == 0
+                        // flat shadow: only a fill inside the entry window can open it
+                        if inEntryFill
+                            shadow := side
+                            if admitted
+                                nAdmit += 1
+                                if side == 1
+                                    nLong += 1
+                                    markLong := true
+                                    strategy.entry("L", strategy.long, comment = "L")
+                                else
+                                    nShort += 1
+                                    markShort := true
+                                    strategy.entry("S", strategy.short, comment = "S")
+                            else
+                                nReject += 1
+                                markReject := true
+                                if not vwapAvail
+                                    nUnavail += 1
+                    else if not inEntryFill
+                        // opposite cross outside the window: the shadow flattens, the held side exits
+                        shadow := 0
+                        if pos == prior
+                            nOppExit += 1
+                            strategy.close_all(comment = "opposite cross")
+                    else
+                        shadow := side
+                        if admitted
+                            nAdmit += 1
+                            if pos == prior
+                                nRev += 1
+                            if side == 1
+                                nLong += 1
+                                markLong := true
+                                strategy.entry("L", strategy.long, comment = "L")
+                            else
+                                nShort += 1
+                                markShort := true
+                                strategy.entry("S", strategy.short, comment = "S")
+                        else
+                            nReject += 1
+                            nRejectRev += 1
+                            markReject := true
+                            if not vwapAvail
+                                nUnavail += 1
+                            if pos == prior
+                                nOppExit += 1
+                                strategy.close_all(comment = "opposite cross")
+    // ---- the session-close backstop (the source's IsExitOnSessionCloseStrategy, 30 s early)
+    if useBackstop and session.islastbar and pos != 0
+        shadow := 0
+        strategy.close_all(comment = "session end", immediately = true)
+
+// ---------------------------------------------------------------- display
+plot(lastVwap, "Session VWAP", color = color.new(color.orange, 0), linewidth = 2,
+     style = plot.style_linebr)
+bandHi = plot(not na(lastVwap) and not na(atr) ? lastVwap + vwapMult * atr : na, "Admission +",
+     color = color.new(color.orange, 70), style = plot.style_linebr)
+bandLo = plot(not na(lastVwap) and not na(atr) ? lastVwap - vwapMult * atr : na, "Admission -",
+     color = color.new(color.orange, 70), style = plot.style_linebr)
+fill(bandHi, bandLo, color = color.new(color.orange, 92), title = "Admission band")
+plot(ema, "EMA", color = color.new(color.teal, 40))
+plot(osc, "Phase oscillator", display = display.data_window + display.status_line)
+plotshape(markLong, "Long intent admitted", style = shape.triangleup, location = location.belowbar,
+     color = color.new(color.green, 0), size = size.tiny)
+plotshape(markShort, "Short intent admitted", style = shape.triangledown,
+     location = location.abovebar, color = color.new(color.red, 0), size = size.tiny)
+plotshape(markReject, "Intent rejected by VWAP", style = shape.xcross, location = location.abovebar,
+     color = color.new(color.gray, 0), size = size.tiny)
+bgcolor(inEntryFill ? color.new(color.blue, 96) : na)
+bgcolor(sessBlocked ? color.new(color.red, 94) : na)
+
+var table hud = table.new(position.top_right, 2, 19, border_width = 1)
+if showHud and barstate.islast
+    sz = size.small
+    table.cell(hud, 0, 0, "Profile", text_size = sz)
+    table.cell(hud, 1, 0, resolved + (autoFallback ? " (fallback for " + root + ")" : ""),
+         text_size = sz, text_color = autoFallback ? color.orange : color.gray)
+    table.cell(hud, 0, 1, "Entry fills / VWAP / cash", text_size = sz)
+    table.cell(hud, 1, 1, fmtMin(entStart) + "-" + fmtMin(entEnd) + " / " + fmtMin(vwapStart) + "-"
+         + fmtMin(vwapEnd) + " / " + fmtMin(cashClose), text_size = sz)
+    table.cell(hud, 0, 2, "Chart", text_size = sz)
+    table.cell(hud, 1, 2, timeframe.period + "m" + (tfMin == 10 ? "" : " (source: 10m)")
+         + (sawEth ? "" : "  NO ETH BARS SEEN"), text_size = sz,
+         text_color = tfMin == 10 and sawEth ? color.gray : color.orange)
+    table.cell(hud, 0, 3, "Phase oscillator", text_size = sz)
+    table.cell(hud, 1, 3, na(osc) ? "-" : str.tostring(osc, "#.#"), text_size = sz,
+         text_color = na(osc) ? color.gray : osc > upperX ? color.green : osc < lowerX ? color.red
+         : color.gray)
+    table.cell(hud, 0, 4, "VWAP distance (ATR)", text_size = sz)
+    table.cell(hud, 1, 4, na(lastDist) ? "outside window" : str.tostring(lastDist, "#.##")
+         + (lastAdmit ? " admit" : " reject"), text_size = sz,
+         text_color = na(lastDist) ? color.gray : lastAdmit ? color.green : color.red)
+    table.cell(hud, 0, 5, "Shadow / position", text_size = sz)
+    table.cell(hud, 1, 5, (shadow > 0 ? "long" : shadow < 0 ? "short" : "flat") + " / "
+         + (pos > 0 ? "long" : pos < 0 ? "short" : "flat"), text_size = sz)
+    table.cell(hud, 0, 6, "Decision bars", text_size = sz)
+    table.cell(hud, 1, 6, str.tostring(nDecision), text_size = sz)
+    table.cell(hud, 0, 7, "Blocked sessions", text_size = sz)
+    table.cell(hud, 1, 7, str.tostring(nBlocked), text_size = sz,
+         text_color = nBlocked > 0 ? color.orange : color.gray)
+    table.cell(hud, 0, 8, "Resets", text_size = sz)
+    table.cell(hud, 1, 8, str.tostring(nResets), text_size = sz)
+    table.cell(hud, 0, 9, "VWAP admitted / rejected", text_size = sz)
+    table.cell(hud, 1, 9, str.tostring(nAdmit) + " / " + str.tostring(nReject) + " (unavailable "
+         + str.tostring(nUnavail) + ", reversals " + str.tostring(nRejectRev) + ")", text_size = sz)
+    table.cell(hud, 0, 10, "Long / short entries", text_size = sz)
+    table.cell(hud, 1, 10, str.tostring(nLong) + " / " + str.tostring(nShort), text_size = sz)
+    table.cell(hud, 0, 11, "Reversals", text_size = sz)
+    table.cell(hud, 1, 11, str.tostring(nRev), text_size = sz)
+    table.cell(hud, 0, 12, "Opposite-cross exits", text_size = sz)
+    table.cell(hud, 1, 12, str.tostring(nOppExit), text_size = sz)
+    table.cell(hud, 0, 13, "Cash-close exits", text_size = sz)
+    table.cell(hud, 1, 13, str.tostring(nCashExit), text_size = sz)
+    table.cell(hud, 0, 14, "Anomalies (last)", text_size = sz)
+    table.cell(hud, 1, 14, str.tostring(nAnom) + " (" + lastAnom + ")", text_size = sz,
+         text_color = nAnom > 0 ? color.orange : color.gray)
+    table.cell(hud, 0, 15, "Halted", text_size = sz)
+    table.cell(hud, 1, 15, halted ? "YES -- nothing trades from here" : "no", text_size = sz,
+         text_color = halted ? color.red : color.gray)
+    table.cell(hud, 0, 16, "Frozen MNQ calendar", text_size = sz)
+    table.cell(hud, 1, 16, useFrozen ? "applied" : "off", text_size = sz)
+    table.cell(hud, 0, 17, "First VWAP-qualified fill", text_size = sz)
+    table.cell(hud, 1, 17, fmtMin(firstQual), text_size = sz)
+    table.cell(hud, 0, 18, "Closed trades", text_size = sz)
+    table.cell(hud, 1, 18, str.tostring(strategy.closedtrades), text_size = sz)

@@ -1,0 +1,160 @@
+//@version=5
+// Donchian 30/20 breakout, 2.5xATR stop, 3 units, ADX floor, 2R target.
+// The one configuration of 143,820 that survived every block held back from the search.
+//
+// =============================== WHAT THIS IS AND IS NOT ==============================
+// FOUND BY SEARCH, JUDGED ON DATA THE SEARCH NEVER SAW. 143,820 configurations were scored on
+// US30 15-minute before 2026-01-01; the 2026 block was never searched. Ten finalists, ranked by
+// return-over-drawdown, were then read ONCE on three held-back blocks. One survived all three,
+// and it was RANK 8 -- the loosest-gated entry with the most trades. The finalists carrying
+// ADX>=25 plus a distance floor plus a volatility floor are precisely the ones that failed.
+//
+//   market  period        n     pts/tr    win     PF   maxDD   streak   p vs control
+//   US30    train       635     +36.65  31.3%   1.31    3374      13      0.0000
+//   US30    JUDGE 2026  309     +28.96  31.1%   1.19    4428      12      0.0013
+//   US100   train       597     +15.35  29.1%   1.17    3448      16      0.0312
+//   US100   JUDGE 2026  269     +10.06  30.1%   1.08    7825      14      0.5573
+//
+// Every calendar year positive on both markets: US30 +22.8 / +42.1 / +29.0 points a trade for
+// 2024 / 2025 / 2026; US100 +1.9 / +20.2 / +10.1. US30 2026 is significant at p 0.0013 against a
+// selectivity-matched control. US100 2026 is NOT (p 0.557) -- it is positive, not demonstrated.
+//
+// MONTE CARLO, 20,000 trade-order shuffles on the 2026 block: realised max drawdown 4,428 points
+// against an MC median of 5,237 and a p95 of 8,291. The realised sequence was LUCKY, not unlucky.
+// Bootstrap of the mean: [-17.5, +77.2] points a trade, P(mean <= 0) = 0.115.
+//
+// ===================== IT DOES NOT PASS A FUNDED EVALUATION ==========================
+// 6% target, 4% trailing drawdown, 2% daily loss, 120 days, day-block bootstrap on 2026:
+//
+//   risk/trade   0.25%    0.50%    1.00%    2.00%
+//   P(pass)       3.8%    13.1%    16.7%    19.8%
+//   P(bust)      86.4%    86.9%    83.4%    80.2%
+//
+// And that is not this configuration's fault. All 143,820 cells were re-ranked by what an
+// evaluation actually punishes -- LOSING STREAK, not profit factor -- and the best of those
+// reaches **34.6% P(pass) with 61.0% P(bust)**. That is the ceiling of the entire search.
+//
+// WHY MORE SEARCHING WILL NOT MOVE IT. The constraint is the trade DISTRIBUTION. This family wins
+// 31% of the time and runs 12 to 16 consecutive losers. A 4% trailing drawdown against a 6%
+// target is about 8 units of risk at 0.5% a trade; a 12-trade losing run spends more than that
+// before the target is in reach. Parameters do not control that -- the win rate does, and a
+// breakout system trades win rate away for its tail. What would change the answer is a higher win
+// rate (unreachable from 124 engineered features here, see STUDY_TURTLE_FEATURES.md), a STATIC
+// rather than trailing drawdown, or a target closer relative to the drawdown allowance.
+//
+// So: a tradeable edge on its own terms, on US30, out of sample. Not a prop-firm strategy.
+// Full working: docs/ib/STUDY_MEGA_144K.md
+// ======================================================================================
+
+strategy("US30 Donchian 30/20 (searched, 2026-judged)", overlay = true, pyramiding = 3,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, calc_on_every_tick = false,
+         process_orders_on_close = false,
+         commission_type = strategy.commission.cash_per_order,
+         commission_value = 0.90, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Bar detalization   High, with Deep Backtesting.    Order execution delay  One tick.
+//   Commission         CASH PER ORDER, per side, your own broker's number. A 3-unit ladder
+//                      pays it six times. The research charged 3.22 US30 points a round turn,
+//                      which is 3.7% of the 2N stop -- match that fraction, not the number.
+//   Slippage           2 ticks. A stop fills INTO the move that triggered it.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+// ======================================================================
+
+gT       = "Rules (as searched)"
+entry1   = input.int(30, "Donchian entry (bars)", minval = 2, group = gT)
+exit1    = input.int(20, "Donchian exit (bars)",  minval = 2, group = gT)
+atrLen   = input.int(20, "ATR length",            minval = 2, group = gT)
+atrMult  = input.float(2.5, "ATR stop multiple",  minval = 0.1, step = 0.1, group = gT)
+pyrStep  = input.float(0.5, "Pyramid step (N)",   minval = 0.0, step = 0.05, group = gT)
+maxUnits = input.int(3, "Max units",              minval = 1, maxval = 3, group = gT)
+adxMin   = input.float(15.0, "ADX floor", minval = 0, step = 1, group = gT,
+     tooltip = "A FLOOR, not a ceiling. The Turtle preset's ADX<22 points the wrong way on 15m. And note the loose value: finalists gated at ADX>=25 scored better on train and then failed out of sample.")
+tpR      = input.float(2.0, "Take profit (R)", minval = 0.0, step = 0.5, group = gT,
+     tooltip = "0 disables. 2R was searched; it is what makes the win rate 31% rather than ~20% and is the only reason the drawdown is survivable at all.")
+unitQty  = input.float(1.0, "Units per Turtle unit", minval = 0.01, step = 0.01, group = gT)
+
+gS       = "Entry session (measured: all hours won the search)"
+sessOn   = input.bool(false, "Restrict entries to a session", group = gS)
+startH   = input.int(7,  "Start hour (NY)",      minval = 0, maxval = 23, group = gS, inline = "a")
+endH     = input.int(11, "Last entry hour (NY)", minval = 0, maxval = 23, group = gS, inline = "a")
+
+// ----------------------------------------------------------------- series
+atrN    = ta.atr(atrLen)                    // Wilder's, as the Turtle definition requires
+chanHi  = ta.highest(high, entry1)[1]       // EXCLUDES this bar, or a break is impossible
+chanLo  = ta.lowest(low,  exit1)[1]
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER -- the first element is +DI, not ADX.
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)
+
+mod    = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+inSess = not sessOn or (mod >= startH * 60 and mod < endH * 60)
+ready  = not na(atrN) and atrN > 0 and not na(chanHi) and not na(adxVal)
+gateOk = ready and inSess and adxVal >= adxMin
+
+// ----------------------------------------------------------------- state
+var float stopLvl = na
+var float nextAdd = na
+var float pendAtr = na
+var float entAtr  = na
+var int   unitsOn = 0
+var int   lastCnt = 0
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL. Guarding only part of a coupled set
+// desynchronises it rather than partly fixing it -- see docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    unitsOn := 0
+    stopLvl := na
+    nextAdd := na
+    entAtr  := na
+    lastCnt := 0
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    fillPx = strategy.opentrades.entry_price(strategy.opentrades - 1)
+    anchor = na(pendAtr) ? atrN : pendAtr
+    if lastCnt == 0
+        entAtr := anchor
+    stopLvl := fillPx - atrMult * anchor
+    nextAdd := fillPx + pyrStep * anchor
+    unitsOn := strategy.opentrades
+    lastCnt := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ----------------------------------------------------------------- entry and ladder
+if barstate.isconfirmed and flat and gateOk and high > chanHi
+    strategy.entry("L", strategy.long, qty = unitQty)
+    pendAtr := atrN
+
+if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
+    if high >= nextAdd
+        strategy.entry("add" + str.tostring(unitsOn + 1), strategy.long, qty = unitQty)
+        pendAtr := atrN
+
+// ----------------------------------------------------------------- exit
+// Stop at the HIGHER of the ATR stop and the channel low -- falling price reaches that first.
+// The target is R measured on the FIRST unit's ATR, so adding does not move it.
+exitLevel = na(stopLvl) ? chanLo : (na(chanLo) ? stopLvl : math.max(stopLvl, chanLo))
+tpLevel   = tpR <= 0 or flat or na(entAtr) ? na :
+     strategy.position_avg_price + tpR * atrMult * entAtr
+
+if barstate.isconfirmed and not flat and lastCnt > 0 and not na(exitLevel)
+    strategy.exit("x", stop = exitLevel, limit = tpLevel)
+
+// ----------------------------------------------------------------- plots
+plot(chanHi, "Donchian entry (30-bar high)", color = color.new(color.aqua, 30))
+plot(chanLo, "Donchian exit (20-bar low)",   color = color.new(color.red, 50))
+plot(flat ? na : exitLevel, "Active stop",   color = color.fuchsia, style = plot.style_linebr)
+plot(tpLevel, "Take profit", color = color.new(color.lime, 0), style = plot.style_linebr)
+
+onTf = timeframe.period == "15"
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "ADX " + str.tostring(adxVal, "#.0") + (adxVal >= adxMin ? " ok" : " below floor"),
+         text_color = color.white,
+         bgcolor = adxVal >= adxMin ? color.new(color.teal, 30) : color.new(color.gray, 40))
+    table.cell(hud, 0, 1, onTf ? "15m chart" : "NOT 15m - searched on 15m only",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 40) : color.red)
+    table.cell(hud, 0, 2, "FUNDED EVAL: best P(pass) in the whole search was 34.6%, P(bust) 61%",
+         text_color = color.white, bgcolor = color.new(color.red, 15))

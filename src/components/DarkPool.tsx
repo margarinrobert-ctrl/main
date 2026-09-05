@@ -6,6 +6,7 @@ import { loadDarkPool } from "@/lib/client-data";
 import { fmtUsd } from "@/lib/flow/analytics";
 import type { DarkPoolBias, DarkPoolDay, DarkPoolProfile, DarkPoolStats } from "@/lib/flow/darkpool";
 import { DarkPoolLevelsChart } from "./DarkPoolLevelsChart";
+import { Provenance } from "./Provenance";
 import { EmptyState, ErrorState, Loading } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
@@ -76,10 +77,11 @@ export function DarkPool({ symbol }: { symbol: string }) {
 
   return (
     <div className="glass p-4">
+      <Provenance source={source} feed="FINRA off-exchange daily files" className="mb-3" />
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="font-semibold">Dark pool · off-exchange flow · {symbol}</h2>
-          <p className="text-xs text-neutral-500">FINRA off-exchange (ATS + wholesaler) volume{source ? ` · src: ${source}` : ""}</p>
+          <p className="text-xs text-neutral-500">FINRA off-exchange (ATS + wholesaler) volume</p>
         </div>
         {state === "ok" && stats && (
           <span className={`rounded-full border px-3 py-1 text-xs font-medium ${biasChip(stats.bias)}`}>

@@ -1,0 +1,267 @@
+// ================================================================================================
+// V41 -- EMA CROSS FIRST, DONCHIAN CONFIRMATION. The three US100 60-minute configurations.
+//
+// ============================ THIS SCRIPT IS VERIFIED, NOT ASSERTED ============================
+// `research/v41/pine_parity.py` re-implements THIS script's order model in Python and diffs it
+// against the research engine on the same US100 60-minute bars. Run twice, as
+// STUDY_PINE_PARITY prescribes:
+//
+//   TRANSCRIPTION CHECK -- both order-model gaps switched off, so only the RULES are compared:
+//       preset       script n / engine n     exit-bar match   per-trade corr   max |diff|
+//       TOP              142 / 142               100.0%          1.0000        $0.000000
+//       CONSENSUS        179 / 179               100.0%          1.0000        $0.000000
+//       BRIEF            322 / 322               100.0%          1.0000        $0.000000
+//   The rules in this file ARE the rules that produced the research. That is measured, not read.
+//
+//   AS CONFIGURED -- the two gaps a Pine script cannot avoid, switched on:
+//       preset      engine $/t   THIS SCRIPT $/t   gap        engine PF   script PF
+//       TOP           +39.59         +40.38      +0.80 (+2.0%)   1.526      1.537
+//       CONSENSUS     +50.59         +51.31      +0.73 (+1.4%)   1.666      1.677
+//       BRIEF         +44.15         +45.78      +1.63 (+3.7%)   1.532      1.547
+//
+// THE TWO GAPS, both structural and both modelled rather than hoped away:
+//   1. WHERE THE STOP IS ANCHORED. The engine sets it from the FILL -- the next bar's open --
+//      which does not exist when a script writes its orders. This script anchors to the SIGNAL
+//      BAR'S CLOSE and issues `strategy.exit` in the same block as `strategy.entry`, so the stop
+//      is live during the ENTRY BAR. The alternative -- re-anchoring to
+//      `strategy.opentrades.entry_price()` one bar later -- leaves the entry bar naked, which
+//      STUDY_PINE_PARITY measured at 4.4-13.0% of trades averaging -33 to -118 points.
+//      Cost of this choice, measured: exit-bar match 97.2-99.4%, +0.17 to +2.03 $/trade.
+//      On the BRIEF preset it also ends on 320 trades against the engine's 322: where the
+//      open gaps BELOW the close-anchored stop, the engine can skip the signal because it
+//      knows the fill, and this script cannot -- it takes the trade and stops out at the
+//      open. The harness originally skipped those too and was optimistic by two trades
+//      until it was asked what the script actually knows at order time.
+//   2. WHEN THE CHANNEL EXIT FILLS. The engine closes AT the close of the bar that breaks the
+//      channel. `strategy.close()` cannot sell the close of the bar that triggers it -- it fills
+//      at the NEXT bar's OPEN. That moves 41-87% of exit bars by one and is worth -0.39 to
+//      +0.59 $/trade here. It is not a defect and it is not an edge; it is the convention.
+//
+// ============================ THE SESSION INPUTS, AND WHAT THEY COST ============================
+// A session window was asked for and is below. It is OFF by default, because every number above
+// was measured with NO session constraint and turning it on makes a different strategy. Measured
+// on the same bars with this script's own order model (`research/v41/run_sessions.py`):
+//
+//   US100 60m        TOP                CONSENSUS              BRIEF
+//   window        n    PF    $/trade    n    PF   $/trade    n    PF   $/trade
+//   all hours   142  1.537   +40.38   179  1.677  +51.31   320  1.547  +45.78   <- as published
+//   08:00-16:00  91  1.565   +21.00   111  1.462  +18.06   269  1.425  +20.00
+//   09:00-16:00  83  2.094   +32.05    99  2.005  +29.62   253  1.402  +18.48
+//   09:00-17:00  89  2.185   +34.66   106  2.109  +32.37   271  1.506  +22.23
+//   10:00-16:00  78  2.152   +31.89    91  2.120  +29.23   210  1.682  +24.85
+//   08:00-20:00 106  1.472   +19.35   132  1.385  +16.05   308  1.477  +21.78
+//   13:00-21:00  81  1.126    +5.09   105  1.201   +7.56   189  1.661  +20.25
+//   09:00-12:00  34  1.252    +6.83    45  1.444  +11.55   173  0.995   -0.19
+//
+// READ THE TWO COLUMNS AGAINST EACH OTHER. Profit factor RISES on the morning windows -- TOP goes
+// 1.537 to 2.185 -- while $/trade FALLS on every single one. 0 OF 21 windowed cells beat all
+// hours on dollars per trade. The flatten cuts both tails: it removes the worst trades, which
+// flatters the ratio, and it removes the best ones, which is where the money was.
+//
+// AND THE EXIT STOPS BEING THE RULE. With a window on, a MEDIAN 88.5% of trades end on the CLOCK
+// rather than on the stop or the channel, peaking at 96.9%. At that point the 10- or 20-bar exit
+// channel is decoration and you are trading a fixed holding period. `CLAUDE.md` records the same
+// mechanism twice: a fixed-time flatten costs about half the per-trade edge, and it truncates
+// exactly the trades a channel exit exists to hold.
+//
+// ON US30 the windows are 4 of 21 better and mostly negative either way, so this is not a
+// US100-specific quirk being hidden.
+//
+// NOTE THE BAR GRID. These are 60-minute bars stamped on the hour, so 09:30 and 10:00 are the
+// same instruction. The inputs accept minutes; the chart cannot honour them.
+
+// ============================ AND NOW THE PART THAT MATTERS MORE ============================
+// THESE THREE CONFIGURATIONS FAILED THEIR OWN TESTS. They are shipped because they were asked
+// for, with the evidence attached:
+//   * On the NQ they were SELECTED on, all three collapse out of sample: research profit factor
+//     3.363 / 3.189 / 2.444 against LOCKED 0.647 / 0.957 / 0.691.
+//   * Across the whole 103,680-cell grid, research-to-locked profit-factor correlation is
+//     -0.391. The ranking that produced these anti-predicts the holdout.
+//   * The EMA condition beats its own no-EMA twin in 3 of 6 cross-market cells, where chance is
+//     exactly 3.0, with a mean contribution of -$4.15 a trade. It HELPS on US100 (these numbers)
+//     and HURTS on US30 (-$52.43, -$39.13, -$11.37). A filter whose sign is decided by which
+//     index you run it on is a market artifact.
+//   * EMA13 > EMA48 already holds on 82.6% of Donchian breakout bars, so the confirmation removes
+//     a sixth of the signals and cannot carry much.
+//   * Walk-forward reads 5/6, 4/6 and 5/6 folds positive -- and the ONE failing fold is the most
+//     recent, at profit factor 0.205 / 0.174 / 0.101.
+// Set `Require the EMA condition` to false to see the no-EMA twin on whatever you are looking at.
+// See docs/ib/STUDY_V41_EMA_DONCHIAN.md.
+//
+// Research tooling for education and analysis. NOT FINANCIAL ADVICE.
+// ================================================================================================
+//@version=6
+strategy("V41 EMA cross + Donchian (US100 60m)", overlay = true,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, currency = currency.USD,
+         commission_type = strategy.commission.cash_per_order, commission_value = 2.16,
+         slippage = 1, calc_on_every_tick = false, process_orders_on_close = false,
+         pyramiding = 0)
+
+// ------------------------------------------------------------------------------------------------
+// preset
+// ------------------------------------------------------------------------------------------------
+gP = "Preset"
+preset = input.string("BRIEF  EMA 13/48", "Configuration", group = gP,
+     options = ["TOP  EMA 21/48 win 5", "CONSENSUS  EMA 21/48 win 10", "BRIEF  EMA 13/48",
+                 "Custom"],
+     tooltip = "BRIEF is the 13/48 pair as briefed and has the most trades (322) and the smallest selection premium. TOP and CONSENSUS were chosen by the search and carry more of it.")
+
+gC = "Custom only"
+cFast = input.int(13, "EMA fast", minval = 2, group = gC)
+cSlow = input.int(48, "EMA slow", minval = 3, group = gC)
+cWin  = input.int(40, "Confirmation window, bars", minval = 0, group = gC,
+     tooltip = "The Donchian breakout must occur within this many bars AFTER the upward EMA cross. 0 means no recency requirement, which degenerates to Donchian alone.")
+cDonE = input.int(55, "Donchian entry length", minval = 2, group = gC)
+cDonX = input.int(20, "Donchian exit channel", minval = 2, group = gC)
+cStop = input.float(1.5, "ATR stop multiple", minval = 0.1, step = 0.1, group = gC)
+cGate = input.string("chop<=45", "Regime gate", options = ["off", "adx>=20", "chop<=45"], group = gC)
+
+gS = "Session -- OFF by default; the configurations were measured all hours"
+useSess = input.bool(false, "Restrict entries and flatten", group = gS,
+     tooltip = "0 of 21 windowed cells beat all hours on $/trade, and with a window on a median 88.5% of trades end on the CLOCK rather than on the stop or the channel. Profit factor rises because the flatten cuts both tails; expectancy falls because one of those tails was the profit.")
+sessTz  = input.string("America/New_York", "Timezone", group = gS,
+     options = ["America/New_York", "America/Chicago", "Europe/London", "UTC"],
+     tooltip = "Bare `hour`/`minute` in Pine are EXCHANGE time, which is an hour off New York on CME symbols. This script never reads them.")
+startH  = input.int(9,  "Entries from, hour", minval = 0, maxval = 23, group = gS)
+startM  = input.int(0,  "  minute", minval = 0, maxval = 59, group = gS)
+endH    = input.int(17, "Entries until, hour", minval = 0, maxval = 23, group = gS)
+endM    = input.int(0,  "  minute", minval = 0, maxval = 59, group = gS)
+flatH   = input.int(17, "Flatten at, hour", minval = 0, maxval = 23, group = gS)
+flatM   = input.int(0,  "  minute", minval = 0, maxval = 59, group = gS)
+
+gO = "Ablation"
+useEma = input.bool(true, "Require the EMA condition", group = gO,
+     tooltip = "Switch OFF to run the no-EMA twin -- the same geometry with the Donchian alone. Across six cross-market cells the EMA beat that twin 3 times out of 6, where chance is 3.0.")
+
+isC   = preset == "Custom"
+emaF  = isC ? cFast : preset == "BRIEF  EMA 13/48" ? 13 : 21
+emaS  = isC ? cSlow : 48
+win   = isC ? cWin  : preset == "TOP  EMA 21/48 win 5" ? 5
+     : preset == "CONSENSUS  EMA 21/48 win 10" ? 10 : 40
+donE  = isC ? cDonE : preset == "BRIEF  EMA 13/48" ? 55 : 30
+donX  = isC ? cDonX : preset == "BRIEF  EMA 13/48" ? 20 : 10
+stopN = isC ? cStop : preset == "BRIEF  EMA 13/48" ? 1.5 : 2.5
+gate  = isC ? cGate : preset == "BRIEF  EMA 13/48" ? "chop<=45" : "adx>=20"
+
+// ------------------------------------------------------------------------------------------------
+// series
+//
+// ATR IS ta.atr(20), WILDER'S RMA, AND THAT IS DELIBERATE HERE. Most of this branch uses
+// ema(TR, n) and would be wrong in this file: the research module computes rma(TR, 20), matching
+// the Turtle definition the brief started from. `ta.atr` and `I.rma(true_range, n)` are the same
+// series -- both are ewm(alpha = 1/n).
+//
+// ta.dmi RETURNS [+DI, -DI, ADX]. Destructuring the first element gives +DI, not ADX, silently.
+// ------------------------------------------------------------------------------------------------
+atrN  = ta.atr(20)
+emaFv = ta.ema(close, emaF)
+emaSv = ta.ema(close, emaS)
+donHi = ta.highest(high, donE)[1]          // the PRIOR N-bar high, so a break is possible
+donLo = ta.lowest(low, donX)[1]            // the exit channel, ending one bar back
+[plusDI, minusDI, adxV] = ta.dmi(14, 14)
+chopV = 100 * math.log10(math.sum(ta.tr(true), 14) /
+     math.max(ta.highest(high, 14) - ta.lowest(low, 14), syminfo.mintick)) / math.log10(14)
+
+// the EMA condition: an upward cross, then the breakout must confirm it within `win` bars
+crossUp  = ta.crossover(emaFv, emaSv)
+sinceX   = ta.barssince(crossUp)
+emaOk    = not useEma ? true
+     : win <= 0 ? not na(sinceX)
+     : not na(sinceX) and sinceX <= win
+gateOk   = gate == "off" ? true : gate == "adx>=20" ? adxV >= 20 : chopV <= 45
+brk      = close > donHi
+
+// SESSION. Evaluated in the chosen timezone, never in exchange time. `inWin` gates ENTRIES only;
+// `inHold` is the span a position may stay open, so the flatten is simply "outside inHold". Both
+// expressions handle a window that wraps past midnight. Nothing can be open before the window
+// starts, so "flatten when outside inHold" and "flatten at the flatten time" are the same rule
+// here -- which is what `run_sessions.py` modelled.
+modTz    = hour(time, sessTz) * 60 + minute(time, sessTz)
+startMod = startH * 60 + startM
+endMod   = endH * 60 + endM
+flatMod  = flatH * 60 + flatM
+inWin    = not useSess or (startMod <= endMod ? (modTz >= startMod and modTz < endMod)
+     : (modTz >= startMod or modTz < endMod))
+inHold   = not useSess or (startMod <= flatMod ? (modTz >= startMod and modTz < flatMod)
+     : (modTz >= startMod or modTz < flatMod))
+atFlat   = useSess and not inHold
+
+fire     = brk and emaOk and gateOk and inWin and not atFlat and not na(atrN) and atrN > 0
+
+// ------------------------------------------------------------------------------------------------
+// orders
+//
+// THE ENTRY AND ITS STOP GO OUT TOGETHER, in one block, on the SIGNAL bar. That is what makes the
+// stop live during the entry bar; splitting them costs a naked bar on every trade. The level is
+// anchored to THIS bar's close because the fill price does not exist yet -- measured at 97.2-99.4%
+// identical exit bars against the engine's fill-anchored version.
+//
+// The exit marker is recorded ABOVE the entry test and counts strategy.closedtrades rather than
+// watching position_size[1], which misses a trade that opens and stops out inside one bar.
+// Every var-state write is guarded by barstate.isconfirmed -- guarding SOME of a coupled set
+// desynchronises it, which on this branch made a report BETTER and more wrong.
+// ------------------------------------------------------------------------------------------------
+var float stopLvl    = na
+var int   nClosed    = 0
+var int   lastExitBar = -1
+
+if barstate.isconfirmed and strategy.closedtrades > nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+if barstate.isconfirmed and fire and strategy.position_size == 0 and lastExitBar != bar_index
+    stopLvl := close - stopN * atrN
+    strategy.entry("L", strategy.long)
+    strategy.exit("xL", from_entry = "L", stop = stopLvl)
+
+// keep the level current on later bars; a strategy order persists once placed, so this only
+// re-states it and never moves it
+if strategy.position_size > 0 and not na(stopLvl)
+    strategy.exit("xL", from_entry = "L", stop = stopLvl)
+
+// THE CHANNEL EXIT IS A CLOSE BELOW THE PRIOR N-BAR LOW, so it is an order at the close and NOT a
+// resting stop -- a resting stop would fire intrabar on the low and is a different rule. It fills
+// at the NEXT bar's open, which is the second modelled gap in the header.
+if barstate.isconfirmed and strategy.position_size > 0 and close < donLo and not atFlat
+    strategy.close("L", comment = "channel")
+
+// THE FLATTEN, and it takes precedence over the channel exit above so a bar cannot try both.
+// `strategy.close_all()` also fills at the NEXT bar's open -- it cannot sell the close of the bar
+// that triggers it -- which is why the research engine was written to match the script here
+// rather than the other way round.
+if barstate.isconfirmed and atFlat and strategy.position_size != 0
+    strategy.close_all(comment = "flat")
+
+// ------------------------------------------------------------------------------------------------
+// display
+// ------------------------------------------------------------------------------------------------
+plot(donHi, "Donchian entry", color.new(color.teal, 45), 1)
+plot(donLo, "Donchian exit", color.new(color.maroon, 45), 1)
+plot(emaFv, "EMA fast", color.new(color.orange, 0), 2)
+plot(emaSv, "EMA slow", color.new(color.blue, 25), 2)
+plot(strategy.position_size > 0 ? stopLvl : na, "stop", color.new(color.red, 0), 1,
+     plot.style_linebr)
+plotshape(useEma and crossUp, "EMA cross", shape.circle, location.belowbar,
+     color.new(color.orange, 30), size = size.tiny)
+plotshape(fire and strategy.position_size == 0, "entry", shape.triangleup, location.belowbar,
+     color.new(color.teal, 0), size = size.tiny)
+bgcolor(useEma and emaOk and win > 0 ? color.new(color.orange, 94) : na,
+     title = "inside the confirmation window")
+bgcolor(useSess and not inWin ? color.new(color.gray, 92) : na, title = "outside the session")
+
+// A configuration run on the wrong chart is not this configuration. The measurements above are
+// US100, 60-minute, and the HUD says so rather than letting a screenshot hide it.
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+onTF = timeframe.period == "60"
+if barstate.islast
+    table.cell(hud, 0, 0, preset + (useEma ? "" : "   [EMA OFF -- twin]"), text_color = color.white,
+         bgcolor = color.new(color.gray, 25))
+    table.cell(hud, 0, 1, onTF ? "60-minute: as measured" : "WRONG TIMEFRAME - measured on 60m",
+         text_color = color.white,
+         bgcolor = onTF ? color.new(color.teal, 35) : color.new(color.red, 10))
+    table.cell(hud, 0, 2, useSess ? "session " + str.tostring(startH) + ":" +
+         (startM < 10 ? "0" : "") + str.tostring(startM) + "-" + str.tostring(flatH) + ":" +
+         (flatM < 10 ? "0" : "") + str.tostring(flatM) + " " + sessTz + "  [NOT the measured config]"
+         : "all hours: as measured", text_color = color.white,
+         bgcolor = useSess ? color.new(color.orange, 25) : color.new(color.teal, 35))

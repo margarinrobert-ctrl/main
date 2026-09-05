@@ -5,13 +5,22 @@
 //   Stop and target are measured from the FILL -- the open of the bar after the signal --
 //   using the ATR of the signal bar.
 //
-// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, $1.00 commission per round turn, 1 tick
-// spread + 1 tick slip each side, 1 extra tick on stops:
+// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, under the LIVE cost model:
+//   itemised fees $1.44/round turn (broker $0.35 + CME exchange $0.35 + NFA $0.02, per side),
+//   bar-dependent slippage, plus overnight / open-close / high-volatility spread widening.
 //     trades                      158  (105 research / 53 locked)
-//     win rate                    65.8%   base rate for this geometry 46.1%
-//     net                         $10,981   profit factor 2.04
-//     locked block only           53 trades, 66.0% win, $7,387
-//     chosen on                   the research block only; the locked figures above were read once
+//     win rate                    65.8%
+//     net                         $10,626
+//     research block              $3,384   ($32.2/trade)
+//     locked block                $7,242   ($136.6/trade)
+//     chosen on                   the research block only; the locked figures were read once
+//
+//   READ THIS BEFORE THE NUMBERS ABOVE. The locked block earns MORE per trade than research. That is the WRONG SHAPE --
+//     an edge decays out of sample, it does not grow. Read the RESEARCH figure as the
+//     forward expectation; the later period was simply kinder to this strategy.
+//
+//   Earlier versions of this header quoted a $1.00 flat-cost model. Those figures were about
+//   4% optimistic and are superseded.
 //
 // THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
 //   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14.
@@ -38,12 +47,28 @@ tzIn   = input.string("America/New_York", "Timezone for clock conditions",
      "Chicago for CME. The research is New York time. Getting this wrong runs the strategy an " +
      "hour late -- it has happened here before.")
 barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
+
+// ---- session: when signals are allowed ------------------------------------------------------
+// Times are HHMM in the timezone selected above -- 930 is 09:30, 1230 is 12:30. The defaults are
+// the window the strategy was MEASURED on; every statistic in the header belongs to that window
+// and to no other. Widening it is a different strategy whose numbers are unknown, not a
+// better-tested version of this one.
+hhmmToMin(x) =>
+    math.floor(x / 100) * 60 + x % 100
+
+sigFromIn = input.int(930, "Signals start (HHMM)", minval = 0, maxval = 2359, group = "Session")
+sigToIn   = input.int(1230, "Signals stop (HHMM)", minval = 0, maxval = 2400, group = "Session",
+     tooltip = "Half-open: a bar exactly at this time does NOT signal. Set it BEFORE the start to " +
+     "wrap past midnight, e.g. 2000 to 0400.")
+sigFrom   = hhmmToMin(sigFromIn)
+sigTo     = hhmmToMin(sigToIn)
+inSession = sigFrom <= sigTo ? (barMin >= sigFrom and barMin < sigTo) : (barMin >= sigFrom or barMin < sigTo)
 atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
 
 // ---- the rule -------------------------------------------------------------------
 c0 = close > ta.highest(high, 5)[1]    // close>5-bar high
 c1 = high > high[1] and low < low[1]    // outside bar
-c2 = barMin >= 570 and barMin < 750    // 09:30-12:30 New York
+c2 = inSession    // signal window, set in the Session group
 trig = c0 and c1 and c2
 ready = not na(atrV) and atrV > 0 and bar_index > 300
 

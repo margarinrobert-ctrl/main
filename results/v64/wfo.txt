@@ -1,0 +1,80 @@
+evaluating 19,200 declared cells once each over the whole series ...
+  done. median trades per cell 191
+
+============================================================================================================================
+WALK-FORWARD -- rolling 4Q train / 1Q test
+============================================================================================================================
+  test fold chosen (tf/ent/ex/stop/tp/k/w)      IS tot%  IS n  OOS n  OOS tot%    FIXED  FIXED15   RANDOM
+  2023Q4    15/15/30/2.5/0.0/5/20                 12.63    76     41      2.13     0.52     4.92     1.14
+  2024Q1    60/15/30/3.0/0.0/3/30                 18.85    47     17      2.53     3.19     3.19     0.84
+  2024Q2    60/15/30/3.0/0.0/3/30                 21.90    57     15      3.63     6.85     3.70     2.16
+  2024Q3    60/15/30/2.5/0.0/2/5                  21.88    40      5      1.22     1.31     3.68    -0.41
+  2024Q4    60/15/40/3.0/6.0/2/40                 21.90    95     13      4.47     5.70     1.70     1.63
+  2025Q1    15/15/30/2.0/0.0/2/20                 20.94   212     57     -3.74    -0.76     3.48    -0.82
+  2025Q2    15/15/30/3.0/0.0/5/40                 17.69   130     44     10.06     4.14     6.02     0.94
+  2025Q3    15/15/30/2.0/0.0/3/40                 28.74   217     63      1.11     3.07     2.15     1.01
+  2025Q4    15/15/30/2.0/0.0/3/40                 29.32   219     26      6.80     4.41     5.42     1.79
+
+  arm                     total OOS %  mean/fold  folds positive  median/fold
+  RE-CHOSEN per fold            28.20       3.13             8/9         2.53
+  FIXED incumbent               28.43       3.16             8/9         3.19
+  FIXED 15m preset              34.27       3.81             9/9         3.68
+  RANDOM from the grid           8.28       0.92             7/9         1.01
+
+  walk-forward efficiency (sum OOS / sum IS) 0.145   -- IS totals cover 1,093 trades against 281 OOS
+  RE-CHOSEN beats FIXED in 3/9 folds, FIXED-15m in 3/9, and a RANDOM grid cell in 8/9
+
+  PARAMETER STABILITY -- does the optimiser settle?
+    tf     chosen values {15: np.int64(5), 60: np.int64(4)}   modal share 56%   agrees with the shipped value in 0/9 folds
+    ent    chosen values {15: np.int64(9)}   modal share 100%   agrees with the shipped value in 0/9 folds
+    exN    chosen values {30: np.int64(8), 40: np.int64(1)}   modal share 89%   agrees with the shipped value in 0/9 folds
+    stop   chosen values {3.0: np.int64(4), 2.0: np.int64(3), 2.5: np.int64(2)}   modal share 44%   agrees with the shipped value in 3/9 folds
+    tp     chosen values {0.0: np.int64(8), 6.0: np.int64(1)}   modal share 89%   agrees with the shipped value in 8/9 folds
+    k      chosen values {3: np.int64(4), 2: np.int64(3), 5: np.int64(2)}   modal share 44%   agrees with the shipped value in 4/9 folds
+    w      chosen values {40: np.int64(4), 20: np.int64(2), 30: np.int64(2), 5: np.int64(1)}   modal share 44%   agrees with the shipped value in 2/9 folds
+
+============================================================================================================================
+WALK-FORWARD -- expanding train / 1Q test
+============================================================================================================================
+  test fold chosen (tf/ent/ex/stop/tp/k/w)      IS tot%  IS n  OOS n  OOS tot%    FIXED  FIXED15   RANDOM
+  2023Q4    15/15/30/2.5/0.0/5/20                 12.63    76     41      2.13     0.52     4.92     1.22
+  2024Q1    60/15/30/3.0/0.0/3/30                 18.85    47     17      2.53     3.19     3.19     0.55
+  2024Q2    60/15/30/3.0/0.0/2/40                 21.92    76     25      0.19     6.85     3.70     2.44
+  2024Q3    15/15/30/2.5/0.0/5/40                 25.54   212     34     -1.38     1.31     3.68    -0.48
+  2024Q4    15/15/30/2.5/6.0/3/30                 26.05   391     49      1.20     5.70     1.70     1.85
+  2025Q1    15/15/30/2.5/0.0/5/40                 30.68   281     33      1.95    -0.76     3.48    -0.55
+  2025Q2    15/15/30/3.0/0.0/5/40                 32.87   306     44     10.06     4.14     6.02     0.32
+  2025Q3    15/15/30/2.0/0.0/3/40                 47.93   546     63      1.11     3.07     2.15     1.20
+  2025Q4    15/15/30/2.5/0.0/3/40                 49.17   579     25      6.72     4.41     5.42     1.64
+
+  arm                     total OOS %  mean/fold  folds positive  median/fold
+  RE-CHOSEN per fold            24.50       2.72             8/9         1.95
+  FIXED incumbent               28.43       3.16             8/9         3.19
+  FIXED 15m preset              34.27       3.81             9/9         3.68
+  RANDOM from the grid           8.18       0.91             7/9         1.20
+
+  walk-forward efficiency (sum OOS / sum IS) 0.092   -- IS totals cover 2,514 trades against 331 OOS
+  RE-CHOSEN beats FIXED in 4/9 folds, FIXED-15m in 2/9, and a RANDOM grid cell in 5/9
+
+  PARAMETER STABILITY -- does the optimiser settle?
+    tf     chosen values {15: np.int64(7), 60: np.int64(2)}   modal share 78%   agrees with the shipped value in 0/9 folds
+    ent    chosen values {15: np.int64(9)}   modal share 100%   agrees with the shipped value in 0/9 folds
+    exN    chosen values {30: np.int64(9)}   modal share 100%   agrees with the shipped value in 0/9 folds
+    stop   chosen values {2.5: np.int64(5), 3.0: np.int64(3), 2.0: np.int64(1)}   modal share 56%   agrees with the shipped value in 1/9 folds
+    tp     chosen values {0.0: np.int64(8), 6.0: np.int64(1)}   modal share 89%   agrees with the shipped value in 8/9 folds
+    k      chosen values {5: np.int64(4), 3: np.int64(4), 2: np.int64(1)}   modal share 44%   agrees with the shipped value in 4/9 folds
+    w      chosen values {40: np.int64(6), 30: np.int64(2), 20: np.int64(1)}   modal share 67%   agrees with the shipped value in 1/9 folds
+
+============================================================================================================================
+THE AGGREGATE READ
+============================================================================================================================
+  scheme                        arm                     OOS total %  OOS trades   %/trade      PF
+  rolling 4Q train / 1Q test    RE-CHOSEN per fold            28.20         281    0.1004       -
+  rolling 4Q train / 1Q test    FIXED incumbent               28.43           -       nan       -
+  rolling 4Q train / 1Q test    FIXED 15m preset              34.27           -       nan       -
+  expanding train / 1Q test     RE-CHOSEN per fold            24.50         331    0.0740       -
+  expanding train / 1Q test     FIXED incumbent               28.43           -       nan       -
+  expanding train / 1Q test     FIXED 15m preset              34.27           -       nan       -
+
+  Six re-optimisers on this branch have lost to the author's fixed constants.
+  The table above is the seventh test of that, on the one rule that works.

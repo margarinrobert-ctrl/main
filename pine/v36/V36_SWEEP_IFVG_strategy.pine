@@ -1,0 +1,398 @@
+// =================================================================================================
+// V36  LIQUIDITY SWEEP -> REVERSAL -> IFVG
+//
+// THIS STRATEGY FAILED VALIDATION. It is published so the rules can be inspected on a chart and
+// replicated, NOT because it is tradeable. Measured on 1-minute NQ, 2022-12 to 2025-12, with real
+// MNQ costs, one live order and a true 1-minute execution path:
+//
+//   5,400 declared configurations. Scored in R, 1.4% clear a profit factor of 1; scored in dollars,
+//   16.1%. ALL TWENTY-FOUR MARGINAL AVERAGES ARE NEGATIVE IN BOTH UNITS -- there is no axis with a
+//   positive region. The best cell sits in the intersection of the two worst marginals, has no
+//   parameter neighbourhood (its family averages -0.0067 R, and changing the entry mode one step
+//   takes it from +0.292 to -0.554), and loses 84% of its edge on validation. Out-of-sample was
+//   never opened because nothing earned it.
+//
+//   See docs/ib/STUDY_V36_SWEEP_IFVG.md for the full report and the two measurement errors it
+//   corrects -- R is unsafe as a unit when the stop is structural, and a best-of-N subgroup search
+//   must be scored against a null that also takes its best of N.
+//
+// PINE CORRECTNESS NOTES, each of which has shipped broken on this branch once:
+//   * ATR is ta.ema(ta.tr(true), n), NOT ta.atr, which is Wilder's RMA.
+//   * Bare `hour` / `minute` are EXCHANGE time -- Chicago for CME, not New York. Every session
+//     boundary here reads hour(time, "America/New_York").
+//   * request.security on a daily bar returns the 24-HOUR futures high, not the session high, so
+//     Asia / London / previous-day levels are accumulated on this chart's own bars and frozen.
+//   * Every block that writes `var` state is guarded by barstate.isconfirmed, not just the entries.
+//     Mid-bar `close` is the current price; unguarded state makes the report about the "Script
+//     execution" checkboxes rather than about the rules.
+//   * Swings are ICT three-candle pivots read from COMPLETED higher-timeframe candles at offsets
+//     [1] to [3], so a swing never appears and then vanishes. They are fetched with lookahead_on,
+//     which is safe HERE and only here: nothing the expression reads comes from the forming HTF
+//     candle, so there is no leak, and it delivers each level the moment it becomes knowable rather
+//     than a full HTF period late -- late enough that price can sweep a level before the script has
+//     created it, which loses the sweep entirely.
+// =================================================================================================
+//@version=5
+strategy("V36 Sweep -> IFVG Reversal [FAILED VALIDATION]", overlay=true,
+     initial_capital=100000, default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.cash_per_order, commission_value=0.62,
+     slippage=2, calc_on_every_tick=false, process_orders_on_close=false,
+     margin_long=0, margin_short=0)
+
+// ---- inputs -------------------------------------------------------------------------------------
+grpS = "Sweep"
+sweepDef  = input.string("wick", "Sweep definition", options=["wick", "close", "pen_only"],
+     group=grpS, tooltip="wick: pierce then close back inside. close: close beyond then reclaim. pen_only: pierce only.")
+penATR    = input.float(0.10, "Minimum penetration (ATR)", minval=0.0, step=0.05, group=grpS)
+reclaimN  = input.int(15, "Reclaim window (bars)", minval=1, group=grpS)
+poolLife  = input.int(480, "Pool lifetime (bars)", minval=20, group=grpS,
+     tooltip="A swing low from two years ago is not live liquidity. Pools expire.")
+cooldown  = input.int(12, "Bars between setups", minval=1, group=grpS)
+
+grpL = "Liquidity pools"
+use1h     = input.bool(true,  "1H swing highs/lows", group=grpL)
+use4h     = input.bool(true,  "4H swing highs/lows", group=grpL)
+tfD       = input.timeframe("D", "Previous-period timeframe", group=grpL,
+     tooltip="Period for the previous high/low. Default is the previous day.")
+usePD     = input.bool(true,  "Previous period high/low", group=grpL)
+useW      = input.bool(true,  "Previous week high/low", group=grpL)
+useM      = input.bool(false, "Previous month high/low", group=grpL)
+useAsia   = input.bool(true,  "Asia high/low", group=grpL)
+useLondon = input.bool(true,  "London high/low", group=grpL)
+maxPools  = input.int(20, "Max live pools per side", minval=4, maxval=200, group=grpL,
+     tooltip="The oldest pool is dropped when the cap is reached, so the book stays a set of RECENT levels.")
+
+grpF = "IFVG"
+maxGap    = input.int(12, "Max bars, sweep to inversion", minval=1, group=grpF)
+retestN   = input.int(12, "Bars to fill the retest limit", minval=1, group=grpF)
+entryMode = input.string("edge", "Entry", options=["edge", "mid"], group=grpF)
+reqDisp   = input.bool(false, "Require a displacement candle", group=grpF)
+dispATR   = input.float(1.0, "Displacement size (ATR)", minval=0.0, step=0.1, group=grpF)
+
+grpX = "Risk"
+atrLen    = input.int(14, "ATR length", minval=2, group=grpX)
+stopMode  = input.string("max", "Stop", options=["atr", "sweep", "max"], group=grpX)
+stopK     = input.float(1.0, "ATR stop multiple", minval=0.1, step=0.25, group=grpX)
+stopBuf   = input.float(0.25, "Buffer beyond sweep extreme (ATR)", minval=0.0, step=0.05, group=grpX)
+tpR       = input.float(1.5, "Target (R)", minval=0.25, step=0.25, group=grpX)
+useBE     = input.bool(false, "Move to breakeven", group=grpX)
+beAt      = input.float(1.0, "Breakeven trigger (R)", minval=0.1, step=0.25, group=grpX)
+
+grpT = "Session"
+useWin    = input.bool(false, "Restrict entries to a window", group=grpT)
+winStart  = input.int(930, "Window start (min since 18:00 NY)", minval=0, maxval=1440, group=grpT)
+winEnd    = input.int(1320, "Window end", minval=0, maxval=1440, group=grpT)
+useFlat   = input.bool(false, "Flatten at a time", group=grpT)
+flatAt    = input.int(1315, "Flatten (min since 18:00 NY)", minval=0, maxval=1440, group=grpT)
+
+// ---- New York clock. Pine has no forward references, so this block precedes every use. ----------
+nyH   = hour(time, "America/New_York")
+nyM   = minute(time, "America/New_York")
+mod   = nyH * 60 + nyM
+tmin  = (mod - 1080 + 1440) % 1440          // minutes since the 18:00 roll; monotone in a session
+newTD = tmin < nz(tmin[1], 0)               // the trading day rolls when tmin wraps
+
+// ---- ATR: ema of true range, NOT ta.atr --------------------------------------------------------
+atr = ta.ema(ta.tr(true), atrLen)
+
+// ---- session levels, accumulated here and FROZEN at the window end ------------------------------
+var float asiaH = na, var float asiaL = na, var float asiaHF = na, var float asiaLF = na
+var float lonH  = na, var float lonL  = na, var float lonHF  = na, var float lonLF  = na
+var float rthH  = na, var float rthL  = na, var float pdH    = na, var float pdL    = na
+inAsia = tmin >= 0   and tmin < 540
+inLon  = tmin >= 540 and tmin < 930
+inRTH  = tmin >= 930 and tmin < 1320
+
+if barstate.isconfirmed
+    if newTD
+        pdH   := rthH
+        pdL   := rthL
+        rthH  := na
+        rthL  := na
+        asiaH := na
+        asiaL := na
+        lonH  := na
+        lonL  := na
+        asiaHF := na
+        asiaLF := na
+        lonHF  := na
+        lonLF  := na
+    if inAsia
+        asiaH := na(asiaH) ? high : math.max(asiaH, high)
+        asiaL := na(asiaL) ? low  : math.min(asiaL, low)
+    if inLon
+        lonH := na(lonH) ? high : math.max(lonH, high)
+        lonL := na(lonL) ? low  : math.min(lonL, low)
+        if na(asiaHF)
+            asiaHF := asiaH
+            asiaLF := asiaL
+    if inRTH
+        rthH := na(rthH) ? high : math.max(rthH, high)
+        rthL := na(rthL) ? low  : math.min(rthL, low)
+        if na(lonHF)
+            lonHF := lonH
+            lonLF := lonL
+
+// ---- higher-timeframe swings, with the confirmation lag respected -------------------------------
+// ---- ICT three-candle swings on completed higher-timeframe candles -------------------------------
+//
+// A swing high is a candle whose high exceeds BOTH neighbours; a swing low is the mirror. Only
+// offsets [1] to [3] are read, so the value never depends on the higher-timeframe candle that is
+// still forming and a swing cannot appear and then vanish.
+//
+// WHY lookahead_on IS CORRECT HERE, and why lookahead_off was WORSE. With lookahead_on, at the
+// first chart bar of HTF bar t the expression is evaluated on bar t -- but it only reads bars
+// t-1, t-2 and t-3, all of which have closed. Nothing from the forming bar reaches the result, so
+// there is no leak. What it buys is timeliness: the swing at t-2 is confirmed the moment t-1
+// closes, and lookahead_on delivers it then. With lookahead_off the same level arrives a full HTF
+// period late, by which time price may already have swept it -- the sweep is missed and the level
+// is never consumed. The general rule stands (lookahead_on leaks) and this is the specific case
+// where the [1]+ offsets make it safe.
+f_ictSwings() =>
+    sh = high[2] > high[3] and high[2] > high[1] ? high[2] : na
+    sl = low[2]  < low[3]  and low[2]  < low[1]  ? low[2]  : na
+    [sh, sl, time[2]]
+
+f_prevHL() =>
+    [high[1], low[1], time]
+
+[sh1h, sl1h, t1h] = request.security(syminfo.tickerid, "60",  f_ictSwings(), lookahead=barmerge.lookahead_on)
+[sh4h, sl4h, t4h] = request.security(syminfo.tickerid, "240", f_ictSwings(), lookahead=barmerge.lookahead_on)
+[hD, lD, tD]      = request.security(syminfo.tickerid, tfD,   f_prevHL(),    lookahead=barmerge.lookahead_on)
+[hW, lW, tW]      = request.security(syminfo.tickerid, "W",   f_prevHL(),    lookahead=barmerge.lookahead_on)
+[hM, lM, tM]      = request.security(syminfo.tickerid, "M",   f_prevHL(),    lookahead=barmerge.lookahead_on)
+
+new1h = t1h != t1h[1]
+new4h = t4h != t4h[1]
+newDp = tD  != tD[1]
+newWp = tW  != tW[1]
+newMp = tM  != tM[1]
+
+// Pools carry a RANK -- 1H 1, 4H 2, session 2, previous period 3, week 4, month 5 -- so a filter can
+// later ask whether higher-timeframe liquidity behaves differently. Ranks are recorded, not used to
+// gate anything, because nothing in the research justified gating on them.
+var float[] poolHi  = array.new_float()
+var int[]   poolHiB = array.new_int()
+var int[]   poolHiR = array.new_int()
+var float[] poolLo  = array.new_float()
+var int[]   poolLoB = array.new_int()
+var int[]   poolLoR = array.new_int()
+
+addPool(float lvl, bool isHigh, int rank) =>
+    if not na(lvl)
+        if isHigh
+            array.push(poolHi, lvl)
+            array.push(poolHiB, bar_index)
+            array.push(poolHiR, rank)
+            if array.size(poolHi) > maxPools
+                array.shift(poolHi)
+                array.shift(poolHiB)
+                array.shift(poolHiR)
+        else
+            array.push(poolLo, lvl)
+            array.push(poolLoB, bar_index)
+            array.push(poolLoR, rank)
+            if array.size(poolLo) > maxPools
+                array.shift(poolLo)
+                array.shift(poolLoB)
+                array.shift(poolLoR)
+
+if barstate.isconfirmed
+    if use1h and new1h
+        addPool(sh1h, true, 1)
+        addPool(sl1h, false, 1)
+    if use4h and new4h
+        addPool(sh4h, true, 2)
+        addPool(sl4h, false, 2)
+    if usePD and newDp
+        addPool(hD, true, 3)
+        addPool(lD, false, 3)
+    if useW and newWp
+        addPool(hW, true, 4)
+        addPool(lW, false, 4)
+    if useM and newMp
+        addPool(hM, true, 5)
+        addPool(lM, false, 5)
+    if useAsia and not na(asiaHF) and na(asiaHF[1])
+        addPool(asiaHF, true, 2)
+        addPool(asiaLF, false, 2)
+    if useLondon and not na(lonHF) and na(lonHF[1])
+        addPool(lonHF, true, 2)
+        addPool(lonLF, false, 2)
+
+// ---- the sweep. A pool is CONSUMED when swept, so a level is never traded twice. -----------------
+var int   lastSweep   = -10000
+var int   sweepBar    = na
+var int   sweepSide   = 0
+var float sweepExt    = na
+var float sweptLevel  = na
+var int   sweptRank   = 0
+
+sweepHit(float lvl, int side) =>
+    bool pierced = side > 0 ? low < lvl - penATR * atr : high > lvl + penATR * atr
+    bool backIn  = side > 0 ? close > lvl : close < lvl
+    bool beyond  = side > 0 ? close < lvl : close > lvl
+    bool res = false
+    if sweepDef == "pen_only"
+        res := pierced
+    else if sweepDef == "wick"
+        res := pierced and backIn
+    else
+        res := pierced and backIn and (side > 0 ? close[1] < lvl : close[1] > lvl)
+    res
+
+// Returns the swept LEVEL, or na. It deliberately does NOT return an index.
+//
+// The first version did, and it was wrong: it pruned expired pools in the same downward pass that
+// searched for a match, so every removal at a lower index shifted the recorded hit index down by
+// one, and the caller's array.remove() then addressed a slot past the end -- "Index 14 is out of
+// bounds, array size is 14". An index into a mutating array is not a durable reference.
+//
+// Two passes instead. Prune first, so the array is stable; then search, and remove the match at the
+// moment it is found, while the index is still valid. Nothing outside this function ever holds an
+// index into these arrays.
+// THREE parallel arrays now -- level, birth bar and rank -- so every removal must touch all three
+// or they desync and a pool reports another pool's rank. Adding the rank array without updating the
+// removals would have been the same class of defect as the index bug above, one step removed.
+scanPools(bool isHigh) =>
+    arr  = isHigh ? poolHi : poolLo
+    arrB = isHigh ? poolHiB : poolLoB
+    arrR = isHigh ? poolHiR : poolLoR
+    int  side = isHigh ? -1 : 1
+    float hitLvl = na
+    int   hitRank = 0
+
+    // pass 1 -- expire. Downward, so surviving lower indices are never disturbed.
+    if array.size(arrB) > 0
+        for i = array.size(arrB) - 1 to 0
+            if i < array.size(arrB) and bar_index - array.get(arrB, i) > poolLife
+                array.remove(arr, i)
+                array.remove(arrB, i)
+                array.remove(arrR, i)
+
+    // pass 2 -- match. The array is stable now, so the index is valid when it is used.
+    if array.size(arr) > 0
+        for i = array.size(arr) - 1 to 0
+            if i < array.size(arr)
+                float lvl = array.get(arr, i)
+                if sweepHit(lvl, side)
+                    hitLvl := lvl
+                    hitRank := array.get(arrR, i)
+                    array.remove(arr, i)
+                    array.remove(arrB, i)
+                    array.remove(arrR, i)
+                    break
+    [hitLvl, hitRank]
+
+if barstate.isconfirmed and bar_index - lastSweep >= cooldown and not na(atr) and atr > 0
+    [lvlL, rankL] = scanPools(false)
+    [lvlH, rankH] = scanPools(true)
+    if not na(lvlL)
+        sweepBar   := bar_index
+        sweepSide  := 1
+        sweepExt   := low
+        sweptLevel := lvlL
+        sweptRank  := rankL
+        lastSweep  := bar_index
+    else if not na(lvlH)
+        sweepBar   := bar_index
+        sweepSide  := -1
+        sweepExt   := high
+        sweptLevel := lvlH
+        sweptRank  := rankH
+        lastSweep  := bar_index
+
+// ---- FVG, invalidation, and the inversion --------------------------------------------------------
+bullFVG = low > high[2]
+bearFVG = high < low[2]
+dispOK  = not reqDisp or math.abs(close[1] - open[1]) >= dispATR * atr
+
+var float fvgLo = na, var float fvgHi = na, var int fvgPol = 0
+if barstate.isconfirmed and dispOK
+    if bullFVG
+        fvgLo := high[2]
+        fvgHi := low
+        fvgPol := 1
+    else if bearFVG
+        fvgLo := high
+        fvgHi := low[2]
+        fvgPol := -1
+
+// A BEARISH FVG closed through to the UPSIDE becomes a BULLISH IFVG -- support. That is the one a
+// long reversal needs after sweeping lows. The mirror applies to shorts.
+var float ifvgLo = na, var float ifvgHi = na, var int ifvgPol = 0, var int ifvgBar = na
+if barstate.isconfirmed and fvgPol != 0
+    if fvgPol == -1 and close > fvgHi
+        ifvgLo := fvgLo
+        ifvgHi := fvgHi
+        ifvgPol := 1
+        ifvgBar := bar_index
+        fvgPol := 0
+    else if fvgPol == 1 and close < fvgLo
+        ifvgLo := fvgLo
+        ifvgHi := fvgHi
+        ifvgPol := -1
+        ifvgBar := bar_index
+        fvgPol := 0
+
+// ---- the setup: an inversion of the matching polarity, after the sweep, within maxGap -------------
+inWin  = not useWin or (tmin >= winStart and tmin < winEnd)
+armed  = not na(sweepBar) and not na(ifvgBar) and ifvgPol == sweepSide and ifvgBar >= sweepBar
+     and (ifvgBar - sweepBar) <= maxGap and (bar_index - ifvgBar) <= retestN
+
+entryLvl = entryMode == "edge" ? (sweepSide > 0 ? ifvgHi : ifvgLo) : (ifvgLo + ifvgHi) / 2.0
+stopATR  = sweepSide > 0 ? entryLvl - stopK * atr : entryLvl + stopK * atr
+stopSW   = sweepSide > 0 ? sweepExt - stopBuf * atr : sweepExt + stopBuf * atr
+stopLvl  = stopMode == "atr" ? stopATR : stopMode == "sweep" ? stopSW :
+     (sweepSide > 0 ? math.min(stopATR, stopSW) : math.max(stopATR, stopSW))
+riskPts  = math.abs(entryLvl - stopLvl)
+tgtLvl   = sweepSide > 0 ? entryLvl + tpR * riskPts : entryLvl - tpR * riskPts
+
+canGo = barstate.isconfirmed and armed and inWin and strategy.position_size == 0
+     and not na(entryLvl) and not na(stopLvl) and riskPts > syminfo.mintick * 4
+
+// A resting limit that is never cancelled is the V34 defect in Pine form: the order outlives its
+// retest window and fills on a setup that has expired. It is cancelled the moment `armed` lapses.
+// Note the policy question this raises. Re-issuing strategy.entry on each new setup RE-PRICES the
+// live order, which STUDY_V15_BOOK measured as twice as bad as leaving it untouched -- "keep the
+// order current" chases the market. Entries are therefore gated on having no live order.
+var bool pending = false
+if canGo and not pending
+    if sweepSide > 0
+        strategy.entry("L", strategy.long, limit=entryLvl)
+    else
+        strategy.entry("S", strategy.short, limit=entryLvl)
+    pending := true
+
+if barstate.isconfirmed and pending and strategy.position_size == 0 and not armed
+    strategy.cancel("L")
+    strategy.cancel("S")
+    pending := false
+
+if barstate.isconfirmed and strategy.position_size != 0
+    pending := false
+
+if strategy.position_size != 0
+    float st = stopLvl
+    if useBE
+        float fav = strategy.position_size > 0 ? high - strategy.position_avg_price
+             : strategy.position_avg_price - low
+        if fav >= beAt * riskPts
+            st := strategy.position_avg_price
+    strategy.exit("X", stop=st, limit=tgtLvl)
+
+if useFlat and barstate.isconfirmed and tmin >= flatAt and strategy.position_size != 0
+    strategy.close_all(comment="flat")
+
+// ---- plots ---------------------------------------------------------------------------------------
+plot(useAsia   ? asiaHF : na, "Asia H",   color.new(color.orange, 40), style=plot.style_linebr)
+plot(useAsia   ? asiaLF : na, "Asia L",   color.new(color.orange, 40), style=plot.style_linebr)
+plot(useLondon ? lonHF  : na, "London H", color.new(color.blue, 40),   style=plot.style_linebr)
+plot(useLondon ? lonLF  : na, "London L", color.new(color.blue, 40),   style=plot.style_linebr)
+plot(usePD     ? pdH    : na, "PD H",     color.new(color.gray, 40),   style=plot.style_linebr)
+plot(usePD     ? pdL    : na, "PD L",     color.new(color.gray, 40),   style=plot.style_linebr)
+plotshape(barstate.isconfirmed and sweepBar == bar_index and sweepSide > 0, "Sweep low",
+     shape.triangleup, location.belowbar, color.new(color.teal, 0), size=size.tiny)
+plotshape(barstate.isconfirmed and sweepBar == bar_index and sweepSide < 0, "Sweep high",
+     shape.triangledown, location.abovebar, color.new(color.maroon, 0), size=size.tiny)
+bgcolor(armed ? color.new(sweepSide > 0 ? color.teal : color.maroon, 88) : na)

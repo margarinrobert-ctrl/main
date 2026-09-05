@@ -1,0 +1,349 @@
+//@version=5
+// YouTube Turtle -- 1-HOUR chart, Option 2 (scale out in thirds). Long and short.
+//
+// ============================ READ THIS BEFORE RUNNING IT ============================
+// STATUS: A LIVE TRADINGVIEW RUN OF THE FIRST VERSION OF THIS SCRIPT LOST MONEY
+// (PF 0.94, -10.2%, 1,594 fills). Two defects were found and are fixed here: the
+// nearest-major-level logic could return `na` when a level existed, which disabled the
+// avoid-resistance gate entirely and made the script take ~2.3x the research engine's
+// trades; and a missing level waved trades through instead of blocking them. The figures
+// below are from the RESEARCH engine and have NOT yet been reproduced on TradingView.
+// Treat this as unvalidated until they are.
+// WHAT IS MEASURED. Frozen rules, no parameter searched, per-market 65/35 split, the
+// out-of-sample block read once. Pooled across US30, US100, NQ, XAUUSD, EURUSD and BTC:
+//
+//     in-sample       n 2,571   win 57.3%   E[R] +0.166   PF 1.38
+//     OUT-OF-SAMPLE   n 1,417   win 55.8%   E[R] +0.097   PF 1.21
+//
+//     day-block bootstrap of the OOS mean, 5,000 resamples:  95% CI [+0.034, +0.164]
+//     P(mean <= 0) = 0.0020
+//     leave-one-market-out:  +0.079 to +0.107  -- no single market carries it
+//     five of six markets positive OOS: US30 +0.157, XAUUSD +0.161, EURUSD +0.102,
+//     BTC +0.063, US100 +0.039, NQ -0.090
+//
+// THREE THINGS THAT ARE NOT VERIFIED, and they are the reason this is a research script
+// rather than a recommendation:
+//
+//   1. THE BREAKOUT IS UNTESTED AGAINST A RANDOM ENTRY. The decisive control on this
+//      branch is the same trade management with a coin-flip entry -- and on the original
+//      Turtle it scored +0.601 against the breakout's +0.595, i.e. the channel added
+//      nothing. That control is BROKEN for this variant (a random bar's 10-bar channel
+//      stop is half as far as a breakout bar's, so the R denominator collapses) and has
+//      not yet been re-run. So it is NOT established that the Donchian trigger is what
+//      earns this, rather than the 4H EMA filter and the 1R/2R/3R geometry.
+//   2. THE SAME RULES FAIL ON A 15-MINUTE CHART -- pooled OOS -0.020 R, PF 0.96. The
+//      timeframe is doing a lot of work. Do not run this below 1 hour.
+//   3. FOUR CELLS WERE READ (2 charts x 2 take-profit options) and this is the best of
+//      them. Costs: OOS +0.170 at zero cost, +0.097 as modelled, +0.046 at 1.5x, +0.002
+//      at 3x. Bid/ask is ASSUMED on four of the six markets.
+//
+// THE RULES, exactly as specified, with two ambiguities resolved and marked:
+//   entry     20-bar Donchian breakout, as a stop order
+//   stop      the 10-bar opposite extreme, FIXED AT ENTRY. [RESOLVED] A trailing 10-bar
+//             channel would make R change during the trade and "1:1 / 2:1 / 3:1" would
+//             have no fixed meaning.
+//   filter 1  price above the 50 EMA on the 4H chart for longs, below it for shorts
+//   filter 2  AVOID major S/R -- the prior DAILY, WEEKLY and MONTHLY high (low for
+//             shorts). 1H and 4H extremes are deliberately NOT treated as "major".
+//   target    scale out in thirds at 1R, 2R and 3R; the balance goes to break-even after
+//             the first third fills. [RESOLVED] The source reads "Exit 1/3 ... Exit 2/3
+//             ... Exit final 1/3", which sums to 4/3 of the position; three equal thirds
+//             is the only reading that closes.
+//   skipped   a trade with less than 1R of clearance to the nearest major level is not
+//             taken -- which is the same constraint as the source's "minimum 1 to 1".
+//
+// NON-REPAINTING. Every higher-timeframe read uses lookahead_off AND the PREVIOUS
+// completed bar, so the 4H EMA and the daily/weekly/monthly levels never contain data
+// from the period the current bar sits inside. The research layer's truncation audit --
+// recompute each value on history ending at bar i and require an exact match -- passes at
+// 105 checks with 0 mismatches. Without the [1] this script would read up to 3h45m ahead
+// on the EMA and a full month ahead on the monthly level.
+//
+// ============ ADDED: MACD, AROON, ENTRY WINDOW, HARD FLATTEN, ADX FLOOR ============
+// ALL FIVE ARE ON BY DEFAULT, at values chosen from a 960-cell grid measured on NQ 1H.
+// `research/turtle2/yt_best.py`. The frozen `ytturtle.run` kernel is never parameterised:
+// `yt_gates.run_gated` is a copy that ASSERTS parity with it -- 158/158 in-sample and
+// 70/70 out-of-sample, identical R -- so the gates are the only thing that changed.
+//
+// HOW THE DEFAULTS WERE PICKED. On the IN-SAMPLE block only, by the MARGINAL AVERAGE PER
+// AXIS over all 685 scorable cells -- never by the top row, which is the maximum of 685
+// draws. That distinction decides the answer here:
+//
+//   in-sample marginal R/trade, by axis
+//     window   08:00-12:00 +0.312   09:30-16:00 +0.304   all hours +0.268   09:30-12:00 +0.218
+//     flatten  none +0.349   16:00 +0.247   12:00 +0.236
+//     ADX      off +0.314   >=20 +0.277   >=25 +0.274   >=30 +0.228
+//     MACD     hist>0 and rising +0.390   fresh cross +0.387   hist>0 +0.314   macd>0 +0.199   off +0.184
+//     Aroon    osc>=0 +0.304   osc>=50 +0.302   up>=70 +0.300   off +0.222
+//
+//   configuration                                     IN-SAMPLE            OUT-OF-SAMPLE
+//   frozen rules, no gates                    n 158  +0.193  PF 1.46    n  70  -0.090  PF 0.83
+//   TOP ROW by in-sample R                    n  40  +0.682  PF 4.00    n  18  -0.058  PF 0.87
+//   THESE DEFAULTS (marginal consensus)       n  64  +0.414  PF 2.84    n  34  +0.207  PF 1.75
+//
+// THE TOP ROW IS THE TRAP AND THE MARGINAL IS THE ANSWER. Ranking on in-sample expectancy
+// buys a 40-trade cell that reads -0.058 out of sample; the marginal consensus keeps 64
+// in-sample trades and is the only one of the three positive on BOTH blocks. This branch
+// has bought 30-trade configurations by ranking on expectancy before, which is why the
+// marginal is what this script ships.
+//
+// THE NEIGHBOURHOOD IS SMOOTH, which is the reassuring part. Moving one axis at a time from
+// the shipped cell, out-of-sample R/trade: all hours +0.239, flatten 12:00 +0.257, flatten
+// off -0.051, MACD hist>0 +0.124, ADX off +0.327. Positive nearly everywhere around it
+// rather than at one point.
+//
+// TWO THINGS STATED ONCE AND NOT REPEATED AT EVERY SWITCH.
+//   1. ADX OFF SCORES BETTER THAN ANY ADX FLOOR on both blocks (+0.438 / +0.327 against
+//      +0.414 / +0.207). It is ON at >=20, the best of the ON settings, because it was
+//      asked for. Turning it off is one checkbox and the numbers above are why you might.
+//   2. THIS IS ONE MARKET, and every gate here moves the in-sample block DOWN relative to
+//      the ungated rules on some cells while moving out-of-sample UP -- a shape this branch
+//      treats as a warning. NQ is also the one market of six where the frozen rules failed
+//      out of sample. `docs/ib/STUDY_V60_AROON.md` section 8e has the full account.
+//
+// THE AROON LENGTH IS 25 AGAINST A 20-BAR ENTRY CHANNEL, DELIBERATELY. When the Aroon
+// period is <= the Donchian entry length the breakout bar IS the N-bar high by construction,
+// so `osc >= 0` and `up >= 70` are true on 100% of breakout bars and cannot refuse a single
+// trade. At 25 against 20 the condition actually binds. Do not lower it below 21.
+//
+// The flatten fills at the CUTOFF BAR'S OPEN: the order is submitted on the previous bar
+// (`nyMin + tfMin >= flatMin`) because `strategy.close_all()` cannot sell the close that
+// triggers it. An entry whose fill would land at or after the cutoff is refused outright.
+// Bare `hour`/`minute` in Pine are EXCHANGE time, so New York is named explicitly.
+//
+// Research tooling for education and analysis. Not financial advice.
+// =====================================================================================
+
+strategy("YT Turtle 1H | 20/10 Donchian + 4H 50EMA + major S/R", overlay = true,
+     initial_capital = 100000, default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 100, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false, commission_type = strategy.commission.percent,
+     commission_value = 0.01, slippage = 1)
+
+// ---------------------------------------------------------------- inputs (free)
+entLen  = input.int(20, "Donchian entry length", minval = 2, group = "Rules")
+stpLen  = input.int(10, "Donchian stop length",  minval = 2, group = "Rules")
+emaLen  = input.int(50, "Higher-timeframe EMA",  minval = 2, group = "Rules")
+htf     = input.timeframe("240", "Higher timeframe", group = "Rules",
+     tooltip = "The source specifies 4H for 5m, 15m and 1H charts; Daily for a 4H chart; " +
+     "Weekly for a Daily chart. Only the 1-hour chart was validated.")
+tolR    = input.float(1.0, "Minimum clearance to major S/R, in R", minval = 0.0, step = 0.25,
+     group = "Rules", tooltip = "A trade needs room to reach at least 1:1 before the nearest " +
+     "major level, which is the source's own minimum target.")
+useSession = input.bool(true, "Restrict entries to a window", group = "Session",
+     tooltip = "OFF by default. NQ 1H, frozen rules, IS then OOS R/trade: all hours " +
+     "+0.193 / -0.090; 09:30-11:00 +0.117 / +0.094; 09:30-12:00 +0.169 / -0.006; " +
+     "08:00-12:00 +0.164 / -0.016; 09:30-16:00 +0.144 / -0.056. Every window makes the " +
+     "IN-SAMPLE block worse, which is the wrong shape for a rule you would choose there.")
+entrySession = input.session("0800-1200", "Entry window (New York)", group = "Session",
+     tooltip = "A bar is eligible when its OPEN falls inside the window. This gates ENTRIES " +
+     "only; a position already open runs on its stop and targets unless the flatten is on.")
+useFlatten = input.bool(true, "Hard flatten", group = "Session",
+     tooltip = "OFF by default. NQ 1H, IS then OOS R/trade: none +0.193 / -0.090; flat by " +
+     "16:00 +0.123 / +0.111 on 326 and 168 trades; flat by 12:00 +0.121 / +0.174 on 261 and " +
+     "138. It RAISES the trade count from 158 to 326, so it is not filtering -- it is cutting " +
+     "trades short and letting new ones start. On the V60 Donchian breakout the identical " +
+     "change cost 57% of the per-trade result, so the sign is not a property of flattening.")
+flatHour = input.int(16, "Flatten by -- hour (New York)", minval = 0, maxval = 23,
+     group = "Session")
+flatMinute = input.int(0, "Flatten by -- minute", minval = 0, maxval = 59, group = "Session")
+useAdx = input.bool(true, "ADX(14) floor", group = "Regime",
+     tooltip = "OFF by default. NQ 1H, IS then OOS R/trade: off +0.193 / -0.090; >=20 " +
+     "+0.147 / +0.140 on 138 and 62 trades; >=25 +0.170 / +0.156 on 114 and 57; >=30 " +
+     "+0.140 / +0.307 on 96 and 36. OOS RISES AS n FALLS, which is what restrictiveness " +
+     "alone looks like -- an ATR filter on this branch went PF 1.42 -> 1.77 and was " +
+     "indistinguishable from a random filter of the same selectivity. And in-sample gets " +
+     "worse at every setting.")
+adxLen = input.int(14, "ADX length", minval = 2, group = "Regime")
+adxMin = input.float(20.0, "ADX minimum", minval = 0.0, step = 1.0, group = "Regime")
+useMacd = input.bool(true, "MACD condition", group = "MACD",
+     tooltip = "The strongest axis in the grid: marginal in-sample R/trade is +0.390 for " +
+     "`hist > 0 and rising` against +0.184 for off. `fresh cross` scores the same (+0.387) and " +
+     "is NOT the default because it flips sign across its own parameter neighbourhood elsewhere " +
+     "on this branch; `macd > 0` is nearly inert on a long breakout (+0.199) because a channel " +
+     "high already implies the fast average is above the slow one.")
+macdMode = input.string("hist > 0 and rising", "MACD reading", group = "MACD",
+     options = ["hist > 0", "macd > 0", "hist > 0 and macd > 0", "hist rising",
+     "hist > 0 and rising", "fresh bullish cross"])
+macdFast = input.int(12, "Fast length",   minval = 1, group = "MACD")
+macdSlow = input.int(26, "Slow length",   minval = 1, group = "MACD")
+macdSig  = input.int(9,  "Signal length", minval = 1, group = "MACD")
+macdOscType = input.string("EMA", "Oscillator MA type", options = ["EMA", "SMA"], group = "MACD")
+macdSigType = input.string("EMA", "Signal MA type",     options = ["EMA", "SMA"], group = "MACD")
+macdCrossWin = input.int(10, "Fresh cross: bars since the bullish cross", minval = 1,
+     group = "MACD")
+useAroon = input.bool(true, "Aroon condition", group = "Aroon",
+     tooltip = "Marginal in-sample R/trade +0.304 for `osc >= 0` against +0.222 for off; all " +
+     "three ON settings score within 0.004 of each other because they are the same indicator " +
+     "read three ways. KEEP THE LENGTH ABOVE THE 20-BAR ENTRY CHANNEL: at 20 or below, a " +
+     "breakout bar IS the N-bar high by construction and the condition passes 100% of signals.")
+aroonMode = input.string("osc >= 0", "Aroon reading", group = "Aroon",
+     options = ["osc >= 0", "osc >= 50", "up >= 70"])
+aroonLen = input.int(25, "Aroon length", minval = 21, group = "Aroon")
+useLong  = input.bool(true, "Longs",  group = "Direction")
+useShort = input.bool(true, "Shorts", group = "Direction")
+drawIt   = input.bool(true, "Plot levels", group = "Display")
+
+// ------------------------------------------- higher-timeframe reads, non-repainting
+htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1],
+     lookahead = barmerge.lookahead_off)
+dHigh  = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_off)
+dLow   = request.security(syminfo.tickerid, "D", low[1],  lookahead = barmerge.lookahead_off)
+wHigh  = request.security(syminfo.tickerid, "W", high[1], lookahead = barmerge.lookahead_off)
+wLow   = request.security(syminfo.tickerid, "W", low[1],  lookahead = barmerge.lookahead_off)
+mHigh  = request.security(syminfo.tickerid, "M", high[1], lookahead = barmerge.lookahead_off)
+mLow   = request.security(syminfo.tickerid, "M", low[1],  lookahead = barmerge.lookahead_off)
+
+// nearest major level above and below the current close.
+// REWRITTEN: the first version chained conditional reassignments and could leave these `na`
+// when a valid level existed, which silently DISABLED the avoid-resistance gate (`room` fell
+// back to a huge sentinel and every trade passed). That is the defect that made this script
+// take ~2.3x the research engine's trades. A plain minimum-above / maximum-below is correct
+// and is obviously correct, which the chain was not.
+nearestAbove(a, b, d, px) =>
+    r = float(na)
+    if not na(a) and a > px
+        r := a
+    if not na(b) and b > px and (na(r) or b < r)
+        r := b
+    if not na(d) and d > px and (na(r) or d < r)
+        r := d
+    r
+
+nearestBelow(a, b, d, px) =>
+    r = float(na)
+    if not na(a) and a < px
+        r := a
+    if not na(b) and b < px and (na(r) or b > r)
+        r := b
+    if not na(d) and d < px and (na(r) or d > r)
+        r := d
+    r
+
+resAbove = nearestAbove(dHigh, wHigh, mHigh, close)
+supBelow = nearestBelow(dLow, wLow, mLow, close)
+
+// ------------------------------------------------------------------ the channels
+hi20 = ta.highest(high, entLen)[1]
+lo20 = ta.lowest(low,  entLen)[1]
+hi10 = ta.highest(high, stpLen)[1]
+lo10 = ta.lowest(low,  stpLen)[1]
+
+// ------------------------------------------------------- session and regime gates
+// Bare `hour`/`minute` are EXCHANGE time in Pine -- Chicago for a CME future -- so New York
+// is named explicitly. The clock was verified on the research side against mean bar RANGE by
+// New York hour: it peaks at 10:00 (60.6 bp) and collapses to 2.2 bp at the 17:00 CME break.
+// A bar COUNT proves nothing here, because the break leaves empty bars in the feed.
+nyMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+tfMin = timeframe.in_seconds(timeframe.period) / 60.0
+flatMin = flatHour * 60 + flatMinute
+inWindow = not useSession or not na(time(timeframe.period, entrySession, "America/New_York"))
+// FLAT BY `flatMin` MEANS FLAT AT THAT BAR'S OPEN, so the order goes in on the bar before.
+flattenDue = useFlatten and nyMin + tfMin >= flatMin
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER -- destructuring only the first element
+// substitutes +DI for ADX silently, which has shipped broken on this branch once.
+[diPlusV, diMinusV, adxV] = ta.dmi(adxLen, adxLen)
+adxOk = not useAdx or (not na(adxV) and adxV >= adxMin)
+
+// MACD, built exactly as the reference indicator builds it: the oscillator MA type and the
+// signal MA type switch independently, and the histogram is line minus signal.
+macdFastMa = macdOscType == "EMA" ? ta.ema(close, macdFast) : ta.sma(close, macdFast)
+macdSlowMa = macdOscType == "EMA" ? ta.ema(close, macdSlow) : ta.sma(close, macdSlow)
+macdLine   = macdFastMa - macdSlowMa
+macdSignal = macdSigType == "EMA" ? ta.ema(macdLine, macdSig) : ta.sma(macdLine, macdSig)
+macdHist   = macdLine - macdSignal
+macdRising = macdHist > macdHist[1]
+
+var int lastMacdCross = na
+if ta.crossover(macdHist, 0.0) and barstate.isconfirmed
+    lastMacdCross := bar_index
+macdSince = na(lastMacdCross) ? -1 : bar_index - lastMacdCross
+
+macdOk = not useMacd ? true :
+     macdMode == "hist > 0" ? macdHist > 0.0 :
+     macdMode == "macd > 0" ? macdLine > 0.0 :
+     macdMode == "hist > 0 and macd > 0" ? macdHist > 0.0 and macdLine > 0.0 :
+     macdMode == "hist rising" ? macdRising :
+     macdMode == "hist > 0 and rising" ? macdHist > 0.0 and macdRising :
+     macdSince >= 0 and macdSince <= macdCrossWin
+
+// AROON, written to match the research construction exactly: the window is the last N+1 bars
+// and Up is 100 * (offset of the highest from the oldest) / N, so the current bar being the
+// highest gives 100 and the oldest bar being the highest gives 0.
+aroonUp  = 100.0 * (ta.highestbars(high, aroonLen + 1) + aroonLen) / aroonLen
+aroonDn  = 100.0 * (ta.lowestbars(low,  aroonLen + 1) + aroonLen) / aroonLen
+aroonOsc = aroonUp - aroonDn
+aroonOk = not useAroon ? true :
+     aroonMode == "osc >= 0"  ? aroonOsc >= 0.0 :
+     aroonMode == "osc >= 50" ? aroonOsc >= 50.0 : aroonUp >= 70.0
+
+ready = not na(hi20) and not na(lo20) and not na(hi10) and not na(lo10) and not na(htfEma)
+flat  = strategy.position_size == 0
+
+// gate on the BREAKOUT LEVEL rather than on the eventual fill, so the decision is
+// deterministic before the order is sent
+longRisk  = hi20 - lo10
+shortRisk = hi10 - lo20
+longRoom  = na(resAbove) ? na : resAbove - hi20
+shortRoom = na(supBelow) ? na : lo20 - supBelow
+
+eligible = inWindow and adxOk and macdOk and aroonOk and not flattenDue
+longOK  = useLong  and ready and eligible and close[1] > htfEma and longRisk  > 0 and not na(longRoom)  and longRoom  >= tolR * longRisk
+shortOK = useShort and ready and eligible and close[1] < htfEma and shortRisk > 0 and not na(shortRoom) and shortRoom >= tolR * shortRisk
+
+var float riskPts = na
+var bool  movedBE = false
+
+// THE FLATTEN GOES FIRST, and it cancels the resting entry stops as well as closing the
+// position -- a resting stop left live outside the window is exactly the kind of order that
+// makes a Strategy Tester report disagree with the rules.
+if flattenDue and barstate.isconfirmed
+    strategy.cancel("L")
+    strategy.cancel("S")
+    if strategy.position_size != 0
+        strategy.close_all(comment = "flatten")
+
+if flat and barstate.isconfirmed
+    if longOK
+        strategy.entry("L", strategy.long, stop = hi20)
+    else
+        strategy.cancel("L")
+    if shortOK
+        strategy.entry("S", strategy.short, stop = lo20)
+    else
+        strategy.cancel("S")
+
+// on the bar the position opens, freeze R from the ACTUAL fill against the channel stop
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    ep = strategy.opentrades.entry_price(0)
+    riskPts := strategy.position_size > 0 ? ep - lo10 : hi10 - ep
+    movedBE := false
+    strategy.cancel(strategy.position_size > 0 ? "S" : "L")
+
+// ------------------------------------------------------------- scale out in thirds
+if strategy.position_size != 0 and not na(riskPts) and riskPts > 0
+    ep   = strategy.opentrades.entry_price(0)
+    isLong = strategy.position_size > 0
+    dir  = isLong ? 1 : -1
+    curStop = movedBE ? ep : ep - dir * riskPts
+    t1 = ep + dir * riskPts
+    t2 = ep + dir * 2 * riskPts
+    t3 = ep + dir * 3 * riskPts
+    id = isLong ? "L" : "S"
+    strategy.exit("X1", from_entry = id, qty_percent = 34, limit = t1, stop = curStop)
+    strategy.exit("X2", from_entry = id, qty_percent = 50, limit = t2, stop = curStop)
+    strategy.exit("X3", from_entry = id,                   limit = t3, stop = curStop)
+    // once the first third is gone, the balance runs at break-even
+    if not movedBE and math.abs(strategy.position_size) < math.abs(strategy.position_size[1])
+        movedBE := true
+
+if strategy.position_size == 0
+    riskPts := na
+    movedBE := false
+
+// ------------------------------------------------------------------------ display
+plot(drawIt ? htfEma : na, "HTF 50 EMA", color = color.new(color.blue, 0), linewidth = 2)
+plot(drawIt ? hi20 : na, "entry high", color = color.new(color.teal, 40), style = plot.style_stepline)
+plot(drawIt ? lo20 : na, "entry low",  color = color.new(color.maroon, 40), style = plot.style_stepline)
+plot(drawIt ? resAbove : na, "major resistance", color = color.new(color.red, 0), style = plot.style_linebr)
+plot(drawIt ? supBelow : na, "major support",    color = color.new(color.green, 0), style = plot.style_linebr)

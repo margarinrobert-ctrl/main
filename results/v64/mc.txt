@@ -1,0 +1,91 @@
+
+============================================================================================================================
+THE REALISED RESULT the perturbations are measured against
+============================================================================================================================
+  preset            res n  res tot%  res DD%  lock n  lock tot%  lock %/t  lock PF  lock DD%
+  incumbent 30m       157     18.88    -2.05      85      12.14    0.1428    1.596     -7.83
+  15m preset          409     25.70    -3.76     208      17.91    0.0861    1.479     -5.64
+  Pareto 15m          348     29.35    -2.17     166      14.80    0.0891    1.513     -4.23
+
+============================================================================================================================
+A. EXECUTION PERTURBATION -- slippage U(0, 2x assumed), cost U(0.5x, 2x), 2,000 draws
+============================================================================================================================
+  preset            lock tot% p5      p50      p95  realised  P(tot<=0)    worst
+  incumbent 30m            11.83    12.07    12.31     12.14      0.000    11.73
+  15m preset               17.03    17.68    18.30     17.91      0.000    16.75
+  Pareto 15m               13.53    14.32    15.14     14.80      0.000    13.32
+
+============================================================================================================================
+B. MISSED FILLS -- a share of signals never fill, and the position lock re-opens
+============================================================================================================================
+  preset             drop 5%  drop 10%  drop 20%  drop 40%  realised
+  incumbent 30m        12.09     11.71     10.64      7.44     12.14
+  15m preset           17.10     16.28     14.59     10.86     17.91
+  Pareto 15m           14.29     13.62     12.13      9.03     14.80
+
+  A dropped trade is only a lost trade here; it does NOT free the lock, because the
+  lock is applied inside the walk. Treat this as an upper bound on the damage, not a
+  simulation of a live miss.
+
+============================================================================================================================
+C. PRICE PERTURBATION -- OHLC jittered, indicators RECOMPUTED, 250 draws per level
+============================================================================================================================
+  preset             noise  trades p50  lock tot% p5      p50      p95  realised  P(tot<=0)  sign kept
+  incumbent 30m   0.5 tick          85         11.53    12.01    12.50     12.14      0.000      1.000
+  incumbent 30m   1.0 tick          86         11.20    12.00    12.99     12.14      0.000      1.000
+  incumbent 30m   2.0 tick          87         10.96    12.20    13.64     12.14      0.000      1.000
+  15m preset      0.5 tick         209         17.41    18.66    19.89     17.91      0.000      1.000
+  15m preset      1.0 tick         209         17.10    18.81    21.03     17.91      0.000      1.000
+  15m preset      2.0 tick         211         15.95    18.58    21.65     17.91      0.000      1.000
+  Pareto 15m      0.5 tick         166         13.83    15.26    16.71     14.80      0.000      1.000
+  Pareto 15m      1.0 tick         166         13.56    15.14    16.63     14.80      0.000      1.000
+  Pareto 15m      2.0 tick         166         13.35    15.17    16.83     14.80      0.000      1.000
+
+============================================================================================================================
+D. PARAMETER PERTURBATION -- one rung on each axis, then all axes jointly
+============================================================================================================================
+
+  incumbent 30m  (realised locked +12.14%)
+    ent        -5 ->   +18.33       +5 ->   +13.60   swing   4.74
+    exN        -5 ->   +15.25       +5 ->    +9.54   swing   5.71
+    stop     -0.5 ->   +12.13     +0.5 ->   +14.87   swing   2.73
+    tp       -1.0 ->   +12.14     +1.0 ->    +4.24   swing   7.90
+    hold     -120 ->   +12.14     +120 ->   +12.14   swing   0.00
+    k          -1 ->   +13.48       +1 ->    +8.50   swing   4.98
+    w         -10 ->    +5.05      +10 ->   +13.99   swing   8.94
+    joint jitter on all six axes, 500 draws: p5 +0.71  p50 +10.93  p95 +18.42  P(<=0) 0.036  share above realised 0.41
+    worst single-rung neighbour +4.24%
+
+  15m preset  (realised locked +17.91%)
+    ent        -5 ->   +16.15       +5 ->   +21.36   swing   5.21
+    exN        -5 ->   +20.43       +5 ->   +16.98   swing   3.45
+    stop     -0.5 ->   +16.97     +0.5 ->   +16.87   swing   0.11
+    tp       -1.0 ->   +17.04     +1.0 ->   +20.00   swing   2.96
+    hold     -120 ->   +17.91     +120 ->   +17.91   swing   0.00
+    k          -1 ->   +19.39       +1 ->   +21.78   swing   2.39
+    w         -10 ->   +13.48      +10 ->   +21.00   swing   7.52
+    joint jitter on all six axes, 500 draws: p5 +13.59  p50 +20.97  p95 +27.65  P(<=0) 0.000  share above realised 0.75
+    worst single-rung neighbour +13.48%
+
+  Pareto 15m  (realised locked +14.80%)
+    ent        -5 ->   +12.72       +5 ->   +16.30   swing   3.58
+    exN        -5 ->   +16.37       +5 ->   +12.49   swing   3.87
+    stop     -0.5 ->   +12.72     +0.5 ->   +18.13   swing   5.41
+    tp       -1.0 ->   +11.37     +1.0 ->   +17.61   swing   6.24
+    hold     -120 ->   +14.98     +120 ->   +14.80   swing   0.18
+    k          -1 ->   +17.14       +1 ->   +15.62   swing   1.53
+    w         -10 ->   +11.98      +10 ->   +16.95   swing   4.97
+    joint jitter on all six axes, 500 draws: p5 +10.41  p50 +17.76  p95 +25.26  P(<=0) 0.000  share above realised 0.70
+    worst single-rung neighbour +11.37%
+
+============================================================================================================================
+E. THE OTHER TWO MONTE CARLOS -- permutation for the PATH, bootstrap for the EDGE
+============================================================================================================================
+  preset            realised DD%  MC DD p50      p95      p99  percentile          boot mean 95% CI  P(mean<=0)
+  incumbent 30m            -7.83       4.93     7.76     9.31        0.95   [   -0.0699,   +0.4134]       0.110
+  15m preset               -5.64       5.10     8.13     9.77        0.65   [   -0.0026,   +0.1768]       0.027
+  Pareto 15m               -4.23       3.96     6.41     7.77        0.60   [   -0.0006,   +0.1861]       0.026
+
+  The permutation cannot change the endpoint -- it is a DRAWDOWN statement only. The
+  p99 is the sizing number. A realised drawdown BELOW the MC median means the path was
+  luckier than a reshuffle of its own trades.

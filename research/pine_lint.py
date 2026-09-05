@@ -6,6 +6,10 @@ indentation. Pine's rule is specific and easy to violate by accident --
     a line indented by a MULTIPLE OF FOUR is a block body, and a block must be open for it
     a line indented by anything else is a continuation of the line above
 
+and the rule holds INSIDE an unclosed bracket too, which is where it keeps being violated: a
+multi-line `options = [...]` or a wrapped ternary lines its arguments up at 12 or 16 spaces
+because that is what looks tidy, and Pine rejects the file.
+
 so an assignment emitted at global scope with a stray four-space indent is read as a block body
 with no block open, and the compiler rejects it with CE10013, "expecting end of line without
 line continuation". That is what shipped once. A ternary wrapped at column 22 is fine; the same
@@ -86,6 +90,14 @@ def lint(text, name="script"):
             opener = bool(OPENERS.search(code.strip()))
         elif depth == 0:
             pass                             # non-multiple of 4: a continuation, always legal
+        elif indent % 4 == 0:
+            # INSIDE an unclosed bracket. Pine's continuation rule does not care that a bracket
+            # is open: a line indented by a multiple of four is still read as a block body. This
+            # is the case the linter used to skip entirely, and it shipped twice -- an `options`
+            # array wrapped at 16 spaces in TURTLE_4_FINALISTS and again in V61.
+            problems.append((ln, f"indent {indent} is a multiple of 4 INSIDE an unclosed "
+                                 f"bracket, so Pine reads the continuation as a block body -- "
+                                 f"CE10013. Wrap at a non-multiple of 4", raw))
         depth += code.count("(") + code.count("[") - code.count(")") - code.count("]")
         if depth < 0:
             problems.append((ln, "closes a bracket that was never opened", raw))

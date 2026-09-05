@@ -1,0 +1,46 @@
+
+================================================================================================================
+A. THE BLOCK SPLIT -- the same comparison, read separately on each block
+================================================================================================================
+  block           n    base pts     ovl pts    Δ/trade    base tot     ovl tot    total Δ     Δ %
+  research      151      56.161      56.747     +0.586       8,480       8,569        +88   +1.04
+  locked         76      73.728      79.255     +5.526       5,603       6,023       +420   +7.50
+
+  RIGHT SHAPE = present on both, decaying on locked. WRONG SHAPE = absent on
+  research and appearing on locked, which this branch has recorded seven times.
+
+================================================================================================================
+B. THE PLACEBO, RUN SEPARATELY INSIDE EACH BLOCK
+================================================================================================================
+  research   observed     +88.5   placebo mean     -96.1   5-95% [  -377.2,   +178.7]   pctile  87.5   p 0.1250
+  locked     observed    +420.0   placebo mean      -7.6   5-95% [  -249.3,   +264.5]   pctile 100.0   p 0.0000
+
+================================================================================================================
+C. WHAT IS THE IMPROVEMENT, IN BASIS POINTS OF THE ENTRY PRICE?
+================================================================================================================
+  matched 227 trades
+  mean entry improvement  +2.240 points = +1.162 bps
+  median                  +0.250 points = +0.117 bps
+  share of trades improved 50.2%  unchanged 33.0%
+
+  half the Roll implied effective spread on this series is 0.1871 bps.
+  the overlay is claiming 6.2x that PER TRADE, which is far more
+  than any spread-capture story can supply. It is not a better FILL at the same level;
+  it is a better LEVEL, reached by waiting a median 3 minutes for a pullback.
+  That is the branch's entry-mechanic finding (STUDY_LIMIT_ENTRY, research/atme/,
+  STUDY_V58_ANATOMY), not implementation shortfall -- and it must be judged as a
+  SIGNAL change, with the trial count that implies, not as a cost saving.
+
+================================================================================================================
+D. COST STRESS -- does the improvement survive a wider round turn?
+================================================================================================================
+    cost x     base tot      ovl tot          Δ   base pts    ovl pts
+       1.0       14,084       14,592       +508     62.043     64.283
+       2.0       13,693       14,202       +508     60.323     62.563
+       4.0       12,912       13,421       +508     56.883     59.123
+       8.0       11,351       11,859       +508     50.003     52.243
+
+================================================================================================================
+E. DELAY DISTRIBUTION -- what the gate actually does
+================================================================================================================
+  mean 7.39 min   median 3   p90 21   max 30   share entering immediately 32.2%   share hitting the K=30 timeout 4.8%

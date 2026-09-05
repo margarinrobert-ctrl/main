@@ -1,0 +1,152 @@
+// ================================================================================================
+// V45 -- BARRIERS DERIVED FROM THE MEASURED MAE AND MFE DISTRIBUTIONS.
+//
+// ============================== READ THIS BEFORE RUNNING IT ==============================
+// THIS CONFIGURATION IS NOT PROFITABLE ON EITHER BLOCK. It is published because the construction
+// was asked for, is textbook, and is implemented faithfully -- and because what it does instead of
+// working is the informative part. Every one of the twelve tested cells loses money:
+//
+//   NQ 07:00-11:00 New York, long, flatten 11:00, true 1-minute path, MNQ costs (1.22 pt round turn)
+//
+//   tf   stop (winners' MAE)   target (winners' MFE)   research PF   locked PF   research  locked
+//   5m    2.20 ATR  p60         7.37 ATR = 3.35 R         0.943        0.910      -1.20    -2.71
+//   5m    3.53 ATR  p75         7.37 ATR = 2.09 R         0.934        0.927      -1.72    -2.70
+//   5m    6.13 ATR  p90         7.37 ATR = 1.20 R         0.949        0.901      -1.56    -4.34
+//   15m   1.44 ATR  p60         4.62 ATR = 3.21 R         0.921        0.932      -1.60    -1.98
+//   15m   2.21 ATR  p75         4.62 ATR = 2.09 R         0.914        0.897      -2.14    -3.74
+//   15m   3.71 ATR  p90         4.62 ATR = 1.25 R      *  0.939        0.950      -1.74    -2.17
+//
+//   * the default below -- the least-bad and the most consistent across blocks, not a winner.
+//   Against a random entry in the same window with the same barriers, p runs 0.19 to 0.71, so not
+//   one cell separates from a coin flip either.
+//
+// ============================ HOW THE BARRIERS WERE DERIVED ============================
+// On the RESEARCH block only (first 65% of sessions), every eligible bar was run to the 11:00 bell
+// with NO barriers at all, then split by whether it ended green:
+//
+//                  n        MAE (ATR)                      MFE (ATR)
+//   WINNERS     11,786   mean 2.53  p75 3.53  p90 6.13   mean 7.37  median 5.68
+//   LOSERS      12,046   mean 8.26  p75 11.34 p90 17.22  mean 2.78  median 1.65
+//
+// The separation is huge -- and it is EX POST. It says what winners did AFTER they turned out to be
+// winners, and at the moment of entry you do not know which one you have. That is the whole reason
+// the construction fails: a stop at the winners' MAE p75 (3.53 ATR) stops out 48.8% of trades, and
+// the survivors reach the winners' mean MFE only 18.0% of the time.
+//
+// THE ARITHMETIC SAYS SO BEFORE THE BACKTEST DOES. Break-even needs p* = (S+C)/(T+S). At the p75
+// rung that is 0.333 against a realised target-hit rate of 0.180. Across a wider 196-cell grid the
+// target-hit rate is below its own break-even in 196 OF 196 CELLS. The take profit is downstream of
+// the entry; no barrier pair rescues an entry with no edge.
+//
+// =============================== WHAT DOES REPLICATE ===============================
+// A STOP RESOLVES FAR FASTER THAN A TARGET, on both blocks and every rung -- at a 0.75 ATR stop it
+// is 6 minutes against 32 (5.3x), at 1.5 ATR roughly 2x. Losers declare themselves quickly and
+// winners take time, so a tight stop spends its clock on the trades that fail.
+//
+// ==================================== MECHANICS ====================================
+// ATR IS ta.atr(14) -- Wilder's RMA -- because the research layer used indicators.rma(TR, 14) here.
+// That is a departure from this repo's more common ema(TR, n) and is deliberate.
+// `hour`/`minute` take an EXPLICIT "America/New_York": the bare forms are EXCHANGE time (Chicago on
+// a CME symbol), a trap this repo has shipped broken before. DST is handled by the timezone.
+// Every `var` write is guarded by barstate.isconfirmed.
+//
+// ONE KNOWN DIFFERENCE FROM THE RESEARCH ENGINE, stated rather than implied: the engine anchors its
+// barriers to the FILL (the next bar's open) and this script anchors them to the SIGNAL BAR'S
+// CLOSE, which is the only price knowable when the order is written -- so entry and exit go out
+// together and the entry bar is never naked. STUDY_V22 measured that swap at 99.0-99.5% identical
+// exit bars elsewhere on this branch; it is NOT re-verified for this configuration.
+// `strategy.close_all()` fills at the NEXT bar's open -- Pine cannot sell the close of the bar that
+// triggers it -- so the 11:00 flatten is one bar late by construction.
+//
+// Research tooling for education and analysis. NOT FINANCIAL ADVICE, and on this data not even a
+// profitable backtest. See docs/ib/STUDY_V45_TP_ENGINEERING.md and STUDY_V44_SCALP_FEATURES.md.
+// ================================================================================================
+//@version=6
+strategy("V45 MAE/MFE-derived barriers", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false,
+     process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order,
+     commission_value = 0.72, slippage = 1)
+
+gB = "Barriers (derived on research only)"
+rung = input.string("15m  MAE p90  ->  3.71 / 4.62 ATR", "Derived rung", group = gB,
+     options = ["15m  MAE p90  ->  3.71 / 4.62 ATR",
+          "15m  MAE p75  ->  2.21 / 4.62 ATR",
+          "15m  MAE p60  ->  1.44 / 4.62 ATR",
+          "5m   MAE p90  ->  6.13 / 7.37 ATR",
+          "5m   MAE p75  ->  3.53 / 7.37 ATR",
+          "5m   MAE p60  ->  2.20 / 7.37 ATR",
+          "Custom"],
+     tooltip = "Stop = the winners' MAE at that percentile; target = the winners' mean MFE. Both measured on the research block only, on the timeframe named. Every rung loses money on both blocks -- see the header table.")
+cS = input.float(3.71, "Custom stop (ATR)", minval = 0.1, step = 0.01, group = gB)
+cT = input.float(4.62, "Custom target (ATR)", minval = 0.1, step = 0.01, group = gB)
+
+gS = "Session (New York)"
+useSess = input.bool(true, "Restrict entries to a window", group = gS)
+startH = input.int(7,  "Start hour",   minval = 0, maxval = 23, group = gS)
+startM = input.int(0,  "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(11, "Stop hour",    minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute",  minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(true, "Flatten at the stop time", group = gS,
+     tooltip = "Fills at the NEXT bar's open. Pine cannot sell the close of the bar that triggers it.")
+
+gF = "Entry filter"
+useMA = input.bool(false, "Require (close - EMA200) / ATR above a floor", group = gF,
+     tooltip = "The one candidate the search produced -- the same feature family STUDY_V40 found was the only one of 17 to earn a place. Frozen it scores PF 1.000 on research and 0.868 on locked: it beats a random entry in the same window on BOTH blocks and is still unprofitable. Default OFF because the header's table is measured without it.")
+maFloor = input.float(3.92, "Floor (ATR)", step = 0.01, group = gF,
+     tooltip = "The research-block 80th percentile. Chosen on research only.")
+
+atrN = ta.atr(14)
+
+stopATR = rung == "15m  MAE p90  ->  3.71 / 4.62 ATR" ? 3.71 :
+     rung == "15m  MAE p75  ->  2.21 / 4.62 ATR" ? 2.21 :
+     rung == "15m  MAE p60  ->  1.44 / 4.62 ATR" ? 1.44 :
+     rung == "5m   MAE p90  ->  6.13 / 7.37 ATR" ? 6.13 :
+     rung == "5m   MAE p75  ->  3.53 / 7.37 ATR" ? 3.53 :
+     rung == "5m   MAE p60  ->  2.20 / 7.37 ATR" ? 2.20 : cS
+tgtATR = str.startswith(rung, "15m") ? 4.62 : str.startswith(rung, "5m") ? 7.37 : cT
+
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin  = not useSess ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = useSess and flatOn and not inWin
+
+ema200 = ta.ema(close, 200)
+maOk = not useMA or (atrN > 0 and (close - ema200) / atrN >= maFloor)
+
+// Barriers anchor to THIS bar's close, which is the only price known when the order is written, so
+// the exit is live from the entry bar onward. The engine anchored to the next bar's open instead.
+var float stopLvl = na
+var float tgtLvl  = na
+
+flat = strategy.position_size == 0
+canEnter = barstate.isconfirmed and flat and inWin and not doFlat and maOk and atrN > 0
+
+if canEnter
+    stopLvl := close - stopATR * atrN
+    tgtLvl  := close + tgtATR * atrN
+    strategy.entry("L", strategy.long)
+
+if barstate.isconfirmed and not flat and not na(stopLvl)
+    strategy.exit("x", from_entry = "L", stop = stopLvl, limit = tgtLvl)
+
+// Issued AFTER the exit and it does NOT cancel it: close_all fills at the next bar's open, so the
+// resting stop is the only protection over that bar.
+if barstate.isconfirmed and doFlat and strategy.position_size != 0
+    strategy.close_all("flat")
+
+plot(flat ? na : stopLvl, "Stop", color.new(color.red, 0), style = plot.style_linebr)
+plot(flat ? na : tgtLvl, "Target", color.new(color.teal, 0), style = plot.style_linebr)
+plot(useMA ? ema200 : na, "EMA200", color.new(color.gray, 50))
+
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, rung, text_color = color.white, bgcolor = color.new(color.orange, 25))
+    table.cell(hud, 0, 1, str.format("stop {0,number,#.##} ATR   target {1,number,#.##} ATR   R:R {2,number,#.##}",
+         stopATR, tgtATR, tgtATR / stopATR),
+         text_color = color.white, bgcolor = color.new(color.gray, 40))
+    table.cell(hud, 0, 2, "NOT PROFITABLE on either block - see the header table",
+         text_color = color.white, bgcolor = color.new(color.red, 10))

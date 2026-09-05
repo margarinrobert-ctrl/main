@@ -1,0 +1,99 @@
+========================================================================================================
+D. PARAMETER GRID
+========================================================================================================
+
+NQ 1m: 168 cells, 152 with >= 15 research trades (4s)
+  profitable on research: 64%   median PF 1.23   median mean +8.2
+  profitable on locked: 94%   median PF 1.51   median mean +21.3
+  corr(mean research, locked): Pearson +0.645  Spearman +0.599
+  marginal average of mean pts/trade per axis:
+    ema: 10=-4/+8   15=+5/+2   20=+11/+26   25=+12/+34   30=+9/+38   40=+5/+33   (research/locked)
+    trend_pct: 50.0=+5/+18   60.0=+5/+26   65.0=+6/+28   70.0=+8/+27   75.0=+10/+24   80.0=+11/+25   85.0=+6/+26   (research/locked)
+    untouched: 0=-1/+17   1=+17/+35   (research/locked)
+    trend: 0=+2/+12   1=+12/+38   (research/locked)
+  the shipped cell: [{'research_n': 26, 'research_mean': 36.31, 'research_pf': 5.86, 'locked_n': 17, 'locked_mean': 47.88, 'locked_pf': 3.83}]
+  top 5 by research mean:
+ ema  trend_pct  untouched  trend  research_n  research_mean  research_pf  locked_n  locked_mean  locked_pf
+  25       80.0          1      1          23          43.09         5.77        15        73.70       3.12
+  25       75.0          1      1          31          42.75         7.38        20        72.70       3.21
+  30       80.0          1      1          26          36.75         3.11        16        70.27       2.65
+  20       75.0          1      1          26          36.31         5.86        17        47.88       3.83
+  25       85.0          1      1          15          35.80         4.32        11        59.19       2.25
+
+NQ 15m: 168 cells, 152 with >= 15 research trades (1s)
+  profitable on research: 70%   median PF 1.26   median mean +8.4
+  profitable on locked: 94%   median PF 1.55   median mean +23.0
+  corr(mean research, locked): Pearson +0.603  Spearman +0.593
+  marginal average of mean pts/trade per axis:
+    ema: 10=-3/+10   15=+5/+2   20=+12/+25   25=+14/+34   30=+10/+39   40=+6/+33   (research/locked)
+    trend_pct: 50.0=+6/+18   60.0=+6/+27   65.0=+7/+28   70.0=+9/+28   75.0=+11/+24   80.0=+12/+25   85.0=+7/+27   (research/locked)
+    untouched: 0=+0/+18   1=+18/+34   (research/locked)
+    trend: 0=+5/+12   1=+12/+38   (research/locked)
+  the shipped cell: [{'research_n': 26, 'research_mean': 35.11, 'research_pf': 5.62, 'locked_n': 17, 'locked_mean': 45.04, 'locked_pf': 3.62}]
+  top 5 by research mean:
+ ema  trend_pct  untouched  trend  research_n  research_mean  research_pf  locked_n  locked_mean  locked_pf
+  25       80.0          1      1          23          42.08         5.72        15        73.45       3.09
+  25       75.0          1      1          31          41.81         7.32        21        68.54       3.20
+  20       75.0          1      1          26          35.11         5.62        17        45.04       3.62
+  30       80.0          1      1          26          34.86         3.00        16        70.46       2.67
+  25       85.0          1      1          15          34.72         4.31        11        58.78       2.23
+
+US100 15m: 168 cells, 154 with >= 15 research trades (2s)
+  profitable on research: 51%   median PF 1.03   median mean +0.6
+  profitable on validation: 71%   median PF 1.13   median mean +5.1
+  profitable on test: 95%   median PF 1.35   median mean +13.1
+  corr(mean research, validation): Pearson +0.238  Spearman +0.272
+  corr(mean research, test): Pearson -0.007  Spearman +0.132
+  corr(mean validation, test): Pearson +0.597  Spearman +0.499
+  marginal average of mean pts/trade per axis:
+    ema: 10=-2/+6/+7   15=+5/+6/+11   20=+4/+11/+22   25=+1/+6/+29   30=+1/+4/+27   40=-0/+4/+14   (research/validation/test)
+    trend_pct: 50.0=+4/+7/+13   60.0=+4/+5/+16   65.0=+2/+5/+17   70.0=+1/+5/+14   75.0=-0/+8/+19   80.0=+0/+2/+22   85.0=+1/+12/+36   (research/validation/test)
+    untouched: 0=-2/+2/+12   1=+6/+12/+28   (research/validation/test)
+    trend: 0=+3/+1/+11   1=+1/+12/+28   (research/validation/test)
+  the shipped cell: [{'research_n': 63, 'research_mean': 5.04, 'research_pf': 1.29, 'validation_n': 38, 'validation_mean': 31.2, 'validation_pf': 2.08, 'test_n': 24, 'test_mean': 45.63, 'test_pf': 7.53}]
+  top 5 by research mean:
+ ema  trend_pct  untouched  trend  research_n  research_mean  research_pf  validation_n  validation_mean  validation_pf  test_n  test_mean  test_pf
+  15       75.0          1      1          40          14.54         2.98            24             9.59           1.37      13      28.27     2.78
+  20       85.0          1      1          32          12.52         2.25            18            17.68           1.83      16      58.42    66.72
+  15       50.0          1      1          64          12.46         2.18            40            11.28           1.44      25       8.09     1.23
+  15       65.0          1      0          72          12.13         2.15            43            13.94           1.58      27      -3.10     0.93
+  15       60.0          1      0          72          12.13         2.15            43            13.94           1.58      27      -3.10     0.93
+
+US30 15m: 168 cells, 154 with >= 15 research trades (2s)
+  profitable on research: 47%   median PF 0.97   median mean -1.3
+  profitable on validation: 64%   median PF 1.08   median mean +4.0
+  profitable on test: 96%   median PF 1.31   median mean +18.2
+  corr(mean research, validation): Pearson -0.319  Spearman -0.048
+  corr(mean research, test): Pearson +0.613  Spearman +0.410
+  corr(mean validation, test): Pearson -0.383  Spearman -0.080
+  marginal average of mean pts/trade per axis:
+    ema: 10=-10/+1/+14   15=+2/+11/+30   20=-2/+18/+17   25=-4/+9/+22   30=+2/+8/+15   40=+1/+3/+23   (research/validation/test)
+    trend_pct: 50.0=+2/+6/+18   60.0=+3/+4/+25   65.0=+2/+3/+25   70.0=+2/+6/+27   75.0=+0/+7/+28   80.0=-3/+11/+26   85.0=-13/+26/-2   (research/validation/test)
+    untouched: 0=-4/+3/+22   1=+3/+16/+20   (research/validation/test)
+    trend: 0=+0/+8/+14   1=-3/+10/+28   (research/validation/test)
+  the shipped cell: [{'research_n': 64, 'research_mean': 1.39, 'research_pf': 1.03, 'validation_n': 21, 'validation_mean': 28.32, 'validation_pf': 1.79, 'test_n': 21, 'test_mean': 10.81, 'test_pf': 1.11}]
+  top 5 by research mean:
+ ema  trend_pct  untouched  trend  research_n  research_mean  research_pf  validation_n  validation_mean  validation_pf  test_n  test_mean  test_pf
+  15       60.0          1      0          77          23.27          1.8            30            17.16           1.45      21      36.67     3.17
+  15       50.0          1      0          77          23.27          1.8            30            17.16           1.45      21      36.67     3.17
+  15       65.0          1      0          77          23.27          1.8            30            17.16           1.45      21      36.67     3.17
+  15       85.0          1      0          77          23.27          1.8            30            17.16           1.45      21      36.67     3.17
+  15       75.0          1      0          77          23.27          1.8            30            17.16           1.45      21      36.67     3.17
+
+US30_ISO 15m: 168 cells, 147 with >= 15 research trades (1s)
+  profitable on research: 86%   median PF 1.19   median mean +14.2
+  profitable on locked: 93%   median PF 1.42   median mean +24.8
+  corr(mean research, locked): Pearson +0.415  Spearman +0.349
+  marginal average of mean pts/trade per axis:
+    ema: 10=+1/+25   15=+6/+29   20=+19/+29   25=+30/+35   30=+37/+31   40=+41/+56   (research/locked)
+    trend_pct: 50.0=+14/+22   60.0=+20/+28   65.0=+22/+39   70.0=+22/+43   75.0=+33/+48   80.0=+36/+43   85.0=+29/+20   (research/locked)
+    untouched: 0=+22/+24   1=+28/+49   (research/locked)
+    trend: 0=+8/+23   1=+42/+48   (research/locked)
+  the shipped cell: [{'research_n': 20, 'research_mean': 39.56, 'research_pf': 1.41, 'locked_n': 4, 'locked_mean': 122.73, 'locked_pf': 490902708628.96}]
+  top 5 by research mean:
+ ema  trend_pct  untouched  trend  research_n  research_mean  research_pf  locked_n  locked_mean  locked_pf
+  40       85.0          0      1          19         107.60         2.75         5        41.41       2.44
+  40       75.0          1      1          21         107.28         2.13         7       123.42       7.01
+  40       80.0          1      1          17          99.23         1.84         6        89.77       4.75
+  30       75.0          1      1          22          95.45         2.16         4        82.75       3.30
+  40       80.0          0      1          35          92.46         2.08        14        99.78       4.10

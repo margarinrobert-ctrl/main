@@ -1,0 +1,437 @@
+//@version=5
+// Turtle Scalp 07:00-11:00 NY (measured presets) + EMA gates (measured, default OFF)
+//
+// The submitted script with three EMA conditions added as switchable entry gates:
+//   * EMA150 as the trend side (or as SUPPORT: above and within N ATR of it)
+//   * EMA20/50 cross aligned with EMA200 -- as a STATE (20>50>200) or a FRESH cross
+//   * a pullback to EMA20 within the last N bars, so the Donchian fires "there or after"
+//
+// ---------------------------------------------------------------------------------
+// READ THIS BEFORE TURNING ANY OF THEM ON  (docs/ib/STUDY_TURTLE_SCALP_EMA.md)
+//
+// Every gate is DEFAULT OFF because none survives. Measured on US30 15m with real costs
+// (the script itself sets NO commission and NO slippage, so its own report is at zero):
+//
+//   shipped script      research R +0.1047 PF 1.080 | locked R +0.0176 PF 1.056
+//   all three gates ON  research R +0.0307 PF 1.162 | locked R -0.0329 PF 0.949 (test 0.831)
+//                       -- fails a same-selectivity random filter (p 0.837) and is worse than
+//                          the ungated script out of sample, on US30, US100 and NQ.
+//
+//   THE PULLBACK IS THE DESTRUCTIVE PIECE. Its pass rate on breakout bars is BELOW its rate on
+//   all bars (lift 0.66-0.94x): a breakout bar is away from its EMA20 by construction, so
+//   requiring a recent touch keeps the stalled ones. Alone it turns the script negative
+//   (PF 0.981) and a random filter beats it in 100% of draws.
+//
+//   EMA150 + 20>50>200 WITHOUT the pullback clears its research control at p 0.000 with a
+//   perfect plateau (six neighbours PF 1.21-1.29) -- and reads PF 0.848 / Sharpe -1.12 on the
+//   locked block, test PF 0.717, random filter p 1.000. Fifth perfect plateau on this branch
+//   to fail out of sample. EMA150 is also REDUNDANT once 20>50>200 is on (identical trades).
+//
+//   What the script's own switches say on that candidate: NO take profit beats the 2R target
+//   (+0.339 vs +0.190 R); NO flatten is positive on every held-back block (but is a different,
+//   overnight strategy); ONE unit halves the drawdown; 2x cost takes it to PF 1.07.
+// ---------------------------------------------------------------------------------
+//
+// Presets:
+//   US30 15m  0700-1100  [locked +0.22]
+//   US30 60m  0700-1000  [locked -0.36 FAILED]
+//   US30 30m  0700-1100  [locked -0.63 FAILED]
+//   US30 5m  0700-1000  [locked -0.05 FAILED]
+//   Spec Turtle 20/55  --  the supplied script, unchanged, confined to the window
+//
+
+strategy("Turtle Scalp 07:00-11:00 NY + EMA gates (measured)", overlay = true, pyramiding = 4,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, calc_on_every_tick = false,
+         process_orders_on_close = false)
+
+// ----------------------------------------------------------------- preset
+presetName = input.string("US30 15m  0700-1100  [locked +0.22]", "Preset", options = [
+     "US30 15m  0700-1100  [locked +0.22]",
+     "US30 60m  0700-1000  [locked -0.36 FAILED]",
+     "US30 30m  0700-1100  [locked -0.63 FAILED]",
+     "US30 5m  0700-1000  [locked -0.05 FAILED]",
+     "Spec Turtle 20/55  0700-1100",
+     "Custom"],
+     tooltip = "Each preset is the configuration selected on that instrument's RESEARCH block and "
+             + "read once on its locked block.  Presets also fix the timeframe they were measured "
+             + "on -- the HUD turns red on any other.")
+
+// ----------------------------------------------------------------- EMA gates (all default OFF)
+gE = "EMA gates (measured, default OFF -- see header)"
+useEma150  = input.bool(false, "EMA150 trend gate", group = gE,
+     tooltip = "MEASURED alone: research R +0.1737 PF 1.224 (random filter p 0.000) -- but it is REDUNDANT with the 20>50>200 state (identical trade set), and the state itself fails locked. It passes 85.8% of breakout bars.")
+ema150Mode = input.string("Above (trend side)", "  EMA150 reading", group = gE,
+     options = ["Above (trend side)", "Support (above and within N ATR)"],
+     tooltip = "MEASURED: 'support' (within 3 ATR) alone reads R -0.0034 PF 1.145 on research -- V51 found the same reading fails held-back.")
+ema150Near = input.float(3.0, "  Support: max distance above EMA150 (ATR)", minval = 0.1, group = gE)
+useCross   = input.bool(false, "EMA20/50 cross aligned with EMA200", group = gE,
+     tooltip = "MEASURED alone (state): research R +0.1898 PF 1.241, random filter p 0.000, plateau across six neighbours -- then US30 LOCKED PF 0.848 / Sharpe -1.12, test PF 0.717, random filter p 1.000. Fresh cross: 109 trades, R -0.2592.")
+crossMode  = input.string("State (20 > 50 > 200)", "  Cross reading", group = gE,
+     options = ["State (20 > 50 > 200)", "Fresh cross (within N bars, 20 > 200)"])
+crossWin   = input.int(5, "  Fresh cross: within N bars", minval = 1, group = gE)
+usePullbk  = input.bool(false, "Wait for a pullback to EMA20 (Donchian fires there or after)", group = gE,
+     tooltip = "MEASURED: lift on breakout bars 0.66-0.94x -- it REMOVES the cleanest breakouts. Alone it turns the script NEGATIVE (R -0.0388, PF 0.981) and a random filter of the same selectivity beats it in 100% of draws. Do not turn on.")
+pbWin      = input.int(5, "  Pullback: low touched EMA20 within N bars", minval = 1, group = gE)
+emaFastLen = input.int(20,  "  Fast EMA",  minval = 2, group = gE)
+emaSlowLen = input.int(50,  "  Slow EMA",  minval = 2, group = gE)
+emaMidLen  = input.int(150, "  Trend EMA (support/resistance)", minval = 2, group = gE)
+emaLongLen = input.int(200, "  Alignment EMA", minval = 2, group = gE)
+
+// ----------------------------------------------------------------- session (free, never locked)
+sessTZ    = input.string("America/New_York", "Session timezone", group = "Session",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "UTC"])
+entrySess = input.string("", "Entry window (blank = preset)", group = "Session",
+     tooltip = "Entries are allowed only inside this window.  Blank uses the preset's own measured "
+             + "window, which is never wider than 07:00-11:00 New York.")
+flatAt    = input.string("1100-1105", "Flatten window", group = "Session",
+     tooltip = "The position is closed on the first bar inside this window.  MEASURED: removing "
+             + "the flatten is positive on every held-back block, but that is an overnight strategy, "
+             + "not this one.")
+
+// ----------------------------------------------------------------- custom (used only by Custom)
+cEntry1   = input.int(20,  "Custom entry 1 (bars)",  minval = 2, group = "Custom only")
+cEntry2   = input.int(55,  "Custom entry 2 (bars)",  minval = 2, group = "Custom only")
+cExit1    = input.int(10,  "Custom exit 1 (bars)",   minval = 2, group = "Custom only")
+cExit2    = input.int(20,  "Custom exit 2 (bars)",   minval = 2, group = "Custom only")
+cAtrLen   = input.int(20,  "Custom ATR length",      minval = 2, group = "Custom only")
+cAtrMult  = input.float(2.0, "Custom ATR stop multiple", minval = 0.1, group = "Custom only")
+cPyrStep  = input.float(0.5, "Custom pyramid step (N)",  minval = 0.0, group = "Custom only")
+cMaxUnits = input.int(4,   "Custom max units", minval = 1, maxval = 4, group = "Custom only")
+cTpR      = input.float(0, "Custom take profit (R, 0 = off)", minval = 0, group = "Custom only")
+cMaxHold  = input.int(0,   "Custom max hold (bars, 0 = off)", minval = 0, group = "Custom only")
+cAdxMax   = input.float(0, "Custom ADX ceiling (0 = off)", minval = 0, group = "Custom only")
+cExtMax   = input.float(0, "Custom max distance above EMA100 in ATR (0 = off)", minval = 0,
+     group = "Custom only")
+cSkipWin  = input.bool(true,  "Custom: skip System 1 after a win", group = "Custom only")
+cChanExit = input.bool(true,  "Custom: trailing channel exit",     group = "Custom only")
+cArmed    = input.bool(false, "Custom: stop live on the entry bar", group = "Custom only")
+cOneShot  = input.bool(false, "Custom: at most one trade per session", group = "Custom only")
+cChanShift = input.int(1, "Custom: trailing channel lag (bars)", minval = 0, maxval = 3,
+     group = "Custom only")
+
+// ----------------------------------------------------------------- resolved constants
+isCustom = presetName == "Custom"
+entry1P = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 20
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 28
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 10
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 28
+    "Spec Turtle 20/55  0700-1100" => 20
+    => cEntry1
+entry2P = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 60
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 40
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 60
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 40
+    "Spec Turtle 20/55  0700-1100" => 55
+    => cEntry2
+exit1P = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 12
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 2
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 2
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 12
+    "Spec Turtle 20/55  0700-1100" => 10
+    => cExit1
+exit2P = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 12
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 4
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 3
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 12
+    "Spec Turtle 20/55  0700-1100" => 20
+    => cExit2
+atrLenP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 20
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 20
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 20
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 20
+    "Spec Turtle 20/55  0700-1100" => 20
+    => cAtrLen
+atrMultP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 2.5
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 1
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 3
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 3
+    "Spec Turtle 20/55  0700-1100" => 2
+    => cAtrMult
+pyrStepP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 0.5
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 0
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 1
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 1
+    "Spec Turtle 20/55  0700-1100" => 0.5
+    => cPyrStep
+maxUnitsP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 4
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 1
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 4
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 4
+    "Spec Turtle 20/55  0700-1100" => 4
+    => cMaxUnits
+tpRP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 2
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 0
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 3
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 3
+    "Spec Turtle 20/55  0700-1100" => 0
+    => cTpR
+maxHoldP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 0
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 0
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 0
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 0
+    "Spec Turtle 20/55  0700-1100" => 0
+    => cMaxHold
+adxMaxP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 0
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 0
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 0
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 0
+    "Spec Turtle 20/55  0700-1100" => 0
+    => cAdxMax
+extMaxP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 0
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 0
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 0
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 0
+    "Spec Turtle 20/55  0700-1100" => 0
+    => cExtMax
+skipWinP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => true
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => true
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => true
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => false
+    "Spec Turtle 20/55  0700-1100" => true
+    => cSkipWin
+chanExitP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => false
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => true
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => true
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => false
+    "Spec Turtle 20/55  0700-1100" => true
+    => cChanExit
+armedStopP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => true
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => true
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => true
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => true
+    "Spec Turtle 20/55  0700-1100" => false
+    => cArmed
+oneShotP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => false
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => true
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => false
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => true
+    "Spec Turtle 20/55  0700-1100" => false
+    => cOneShot
+chanShiftP = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => 1
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => 0
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => 0
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => 0
+    "Spec Turtle 20/55  0700-1100" => 1
+    => cChanShift
+entrySessDef = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => "0700-1100"
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => "0700-1000"
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => "0700-1100"
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => "0700-1000"
+    "Spec Turtle 20/55  0700-1100" => "0700-1100"
+    => "0700-1100"
+designTF = switch presetName
+    "US30 15m  0700-1100  [locked +0.22]" => "15"
+    "US30 60m  0700-1000  [locked -0.36 FAILED]" => "60"
+    "US30 30m  0700-1100  [locked -0.63 FAILED]" => "30"
+    "US30 5m  0700-1000  [locked -0.05 FAILED]" => "5"
+    "Spec Turtle 20/55  0700-1100" => "60"
+    => timeframe.period
+
+entry1   = entry1P
+entry2   = entry2P
+exit1    = exit1P
+exit2    = exit2P
+atrLen   = atrLenP
+atrMult  = atrMultP
+pyrStep  = pyrStepP
+maxUnits = maxUnitsP
+tpR      = tpRP
+maxHold  = maxHoldP
+adxMax   = adxMaxP
+extMax   = extMaxP
+skipWin  = skipWinP
+chanExit = chanExitP
+armedStp = armedStopP
+oneShot  = oneShotP
+chanLag  = chanShiftP
+sessUsed = entrySess == "" ? entrySessDef : entrySess
+
+onDesignTF = isCustom or timeframe.period == designTF
+
+// ----------------------------------------------------------------- series
+// ta.atr is Wilder's RMA of true range.  The research engine uses the same recursion with the same
+// SMA seed, so the two agree bar for bar; ta.ema(ta.tr(true), n) is a DIFFERENT number and is what
+// other scripts in this repository use.  Do not swap one for the other here.
+atrN    = ta.atr(atrLen)
+chanHi1 = ta.highest(high, entry1)
+chanHi2 = ta.highest(high, entry2)
+chanLo1 = ta.lowest(low,  exit1)
+chanLo2 = ta.lowest(low,  exit2)
+ema100  = ta.ema(close, 100)
+[diPlus, diMinus, adxVal] = ta.dmi(14, 14)
+distEma = atrN > 0 ? (close - ema100) / atrN : 0.0
+
+// ----------------------------------------------------------------- EMA gates
+// All read at the SIGNAL bar's close, exactly as research/tscalp/ts_core.py::gate reads them.
+emaFast  = ta.ema(close, emaFastLen)
+emaSlow  = ta.ema(close, emaSlowLen)
+emaMid   = ta.ema(close, emaMidLen)
+emaLong  = ta.ema(close, emaLongLen)
+ema150Ok = not useEma150 or (ema150Mode == "Above (trend side)" ? close > emaMid
+     : (close > emaMid and (close - emaMid) <= ema150Near * atrN))
+crossState = emaFast > emaSlow and emaSlow > emaLong
+crossFresh = ta.barssince(ta.crossover(emaFast, emaSlow)) < crossWin and emaFast > emaLong
+crossOk  = not useCross or (crossMode == "State (20 > 50 > 200)" ? crossState : crossFresh)
+pullbkOk = not usePullbk or ta.barssince(low <= emaFast) < pbWin
+emaGate  = ema150Ok and crossOk and pullbkOk
+
+// ----------------------------------------------------------------- gates
+inEntry = not na(time(timeframe.period, sessUsed, sessTZ))
+inFlat  = not na(time(timeframe.period, flatAt,   sessTZ))
+adxOk   = adxMax <= 0 or adxVal < adxMax
+extOk   = extMax <= 0 or distEma < extMax
+gateOk  = adxOk and extOk and inEntry and onDesignTF and emaGate
+
+// ----------------------------------------------------------------- state
+// The stop, the ladder and the take-profit are anchored to the ACTUAL FILL, not to the signal
+// bar's close: with process_orders_on_close = false the fill happens at the NEXT bar's open, so
+// anchoring is done one bar later, from the price the broker emulator actually reports.
+var float stopLvl   = na
+var float nextAdd   = na
+var float tpLvl     = na
+var float firstFill = na
+var float pendAtr   = na
+var float initRisk  = na
+var int   unitsOn   = 0
+var int   sysOn     = 0
+var int   lastCount = 0
+var int   entryBar  = na
+var int   sessTrade = na
+var bool  lastWin   = false
+
+if strategy.position_size == 0 and lastCount > 0
+    lastWin   := close > firstFill
+    unitsOn   := 0
+    sysOn     := 0
+    stopLvl   := na
+    nextAdd   := na
+    tpLvl     := na
+    lastCount := 0
+
+if strategy.opentrades > lastCount
+    fillPx = strategy.opentrades.entry_price(strategy.opentrades - 1)
+    anchorAtr = na(pendAtr) ? atrN : pendAtr
+    if lastCount == 0
+        firstFill := fillPx
+        entryBar  := bar_index
+        initRisk  := atrMult * anchorAtr
+        tpLvl     := tpR > 0 ? fillPx + tpR * initRisk : na
+        sessTrade := dayofmonth(time, sessTZ) * 100 + month(time, sessTZ)
+    stopLvl   := fillPx - atrMult * anchorAtr
+    nextAdd   := fillPx + pyrStep * anchorAtr
+    unitsOn   := strategy.opentrades
+    lastCount := strategy.opentrades
+
+flat = strategy.position_size == 0
+// Bare `dayofmonth` / `month` are EXCHANGE time.  For a CFD feed that is neither New York
+// nor anything the session strings use, so a one-trade-per-session rule keyed on them would
+// roll over at the wrong hour.  Both are read in the session timezone instead.
+sameSess = not na(sessTrade)
+     and sessTrade == dayofmonth(time, sessTZ) * 100 + month(time, sessTZ)
+
+// ----------------------------------------------------------------- entries
+sig2 = high > chanHi2[1]
+sig1 = high > chanHi1[1]
+
+// ----------------------------------------------------------------- exit level
+chanRaw1    = chanLag == 1 ? chanLo1[1] : chanLo1
+chanRaw2    = chanLag == 1 ? chanLo2[1] : chanLo2
+chanExitLvl = sysOn == 1 ? chanRaw1 : chanRaw2
+stopOnly    = na(stopLvl) ? chanExitLvl : stopLvl
+exitLevel   = not chanExit ? stopOnly
+     : (na(chanExitLvl) ? stopOnly : (na(stopLvl) ? chanExitLvl : math.max(stopLvl, chanExitLvl)))
+
+heldTooLong = maxHold > 0 and not na(entryBar) and (bar_index - entryBar) >= maxHold
+
+// ----------------------------------------------------------------- entries
+if barstate.isconfirmed and flat and gateOk and atrN > 0 and not (oneShot and sameSess)
+    armLvl = close - atrMult * atrN
+    if sig2
+        strategy.entry("S2", strategy.long, qty = 1)
+        sysOn   := 2
+        pendAtr := atrN
+        if armedStp
+            strategy.exit("xS2", from_entry = "S2", stop = armLvl)
+    else if sig1
+        if skipWin and lastWin
+            lastWin := false
+        else
+            strategy.entry("S1", strategy.long, qty = 1)
+            sysOn   := 1
+            pendAtr := atrN
+            if armedStp
+                strategy.exit("xS1", from_entry = "S1", stop = armLvl)
+
+// ----------------------------------------------------------------- pyramid adds
+if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
+     and not inFlat and not heldTooLong
+    if high >= nextAdd
+        addId = "add" + str.tostring(unitsOn + 1)
+        strategy.entry(addId, strategy.long, qty = 1)
+        pendAtr := atrN
+        if not na(exitLevel)
+            strategy.exit("x" + addId, from_entry = addId, stop = exitLevel,
+                 limit = na(tpLvl) ? na : tpLvl)
+
+// ----------------------------------------------------------------- exit
+if not flat
+    if inFlat or heldTooLong or session.islastbar
+        strategy.close_all(comment = "flat")
+    else if not na(exitLevel)
+        for k = 0 to strategy.opentrades - 1
+            eid = strategy.opentrades.entry_id(k)
+            strategy.exit("x" + eid, from_entry = eid, stop = exitLevel,
+                 limit = na(tpLvl) ? na : tpLvl)
+
+// ----------------------------------------------------------------- plots
+plot(chanHi1, "Entry 1", color = color.new(color.aqua, 40))
+plot(chanHi2, "Entry 2", color = color.new(color.blue, 40))
+plot(chanExit ? chanLo1 : na, "Exit 1", color = color.new(color.red, 60))
+plot(chanExit ? chanLo2 : na, "Exit 2", color = color.new(color.purple, 60))
+plot(flat ? na : exitLevel, "Active stop", color = color.fuchsia, style = plot.style_linebr)
+plot(flat or na(tpLvl) ? na : tpLvl, "Take profit", color = color.lime,
+     style = plot.style_linebr)
+plot(useEma150 ? emaMid : na, "EMA150", color = color.new(color.orange, 30))
+plot(useCross ? emaFast : na, "EMA fast", color = color.new(color.teal, 40))
+plot(useCross ? emaSlow : na, "EMA slow", color = color.new(color.navy, 40))
+plot(useCross ? emaLong : na, "EMA200", color = color.new(color.gray, 40))
+bgcolor(inEntry ? color.new(color.teal, 92) : na, title = "Entry window")
+
+// A changed session, the wrong timeframe, or a gate that is ON must never be invisible.
+var table hud = table.new(position.top_right, 1, 5, border_width = 1)
+if barstate.islast
+    gatesOn = (useEma150 ? "EMA150 " : "") + (useCross ? "cross " : "") + (usePullbk ? "pullback " : "")
+    table.cell(hud, 0, 0, presetName, text_color = color.white,
+         bgcolor = onDesignTF ? color.new(color.teal, 20) : color.new(color.red, 10))
+    table.cell(hud, 0, 1, onDesignTF ? "timeframe OK" : "WRONG TIMEFRAME - needs " + designTF,
+         text_color = color.white, bgcolor = onDesignTF ? color.new(color.teal, 40) : color.red)
+    table.cell(hud, 0, 2, "entries " + sessUsed + "  flat " + flatAt + "  " + sessTZ,
+         text_color = color.white,
+         bgcolor = entrySess == "" ? color.new(color.gray, 40) : color.new(color.orange, 20))
+    table.cell(hud, 0, 3, "N=" + str.tostring(atrLen) + " x" + str.tostring(atrMult)
+         + "  ch " + str.tostring(entry1) + "/" + str.tostring(entry2)
+         + "  ex " + str.tostring(exit1) + "/" + str.tostring(exit2)
+         + (tpR > 0 ? "  TP " + str.tostring(tpR) + "R" : "  no TP"),
+         text_color = color.white, bgcolor = color.new(color.gray, 40))
+    table.cell(hud, 0, 4, gatesOn == "" ? "EMA gates OFF (measured: none survives)"
+         : "EMA gates ON: " + gatesOn + "-- FAILED locked, see header",
+         text_color = color.white, bgcolor = gatesOn == "" ? color.new(color.gray, 40) : color.new(color.red, 20))

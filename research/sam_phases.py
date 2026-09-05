@@ -43,7 +43,7 @@ _C = {}
 
 
 def load(tf):
-    Z = np.load(f"/tmp/sam_{tf}m.npz", allow_pickle=True)
+    Z = np.load(f"results/sam/sam_{tf}m.npz", allow_pickle=True)
     return {k: Z[k] for k in Z.files}
 
 
@@ -213,7 +213,7 @@ if __name__ == "__main__":
         print("PHASE 3 -- TUNE")
         allo += phase3(P)
     allo.sort(key=lambda x: -x["exc_r"])
-    np.save("/tmp/sam_phase3.npy", np.array(allo, dtype=object), allow_pickle=True)
+    np.save("results/sam/sam_phase3.npy", np.array(allo, dtype=object), allow_pickle=True)
     print(f"\nPHASE 3 DONE: {len(allo):,} tuned rule/direction pairs carried forward")
     print(f"  {'rule':<52}{'tf':>4}{'dir':>6}{'stop':>5}{'flat':>6}{'n':>6}{'win%':>7}"
           f"{'base':>6}{'exc':>7}")

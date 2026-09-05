@@ -3,6 +3,7 @@
 import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { loadFlow } from "@/lib/client-data";
 import { withBase } from "@/lib/paths";
+import { Provenance } from "./Provenance";
 import { Chip, EmptyState, ErrorState, Loading } from "./states";
 
 interface Row {
@@ -142,6 +143,7 @@ export function FlowTable() {
 
   return (
     <div>
+      <Provenance source={source} feed="options flow" count={rows.length} className="mb-3" />
       <div className="mb-3 rounded-xl border border-white/[0.06] bg-white/[0.015] p-3.5">
         <div className="lbl mb-2.5">Screener filters</div>
         <div className="flex flex-wrap items-end gap-3 text-sm">
