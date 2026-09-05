@@ -8,14 +8,15 @@
 //   locked    387 trades  PF 1.13  win 49%   +6.9%
 // READ THIS: it is a coin flip with a small, real edge, not a high-PF strategy. The research-to-
 // locked transfer of the whole search was NEGATIVE (-0.24): this is one draw that held, its own
-// top-10 neighbourhood is 20% locked-positive, and its 7-bar entry sits one rung off the box
-// minimum. The unconstrained cell (55/30, hold to the channel exit) reads locked PF 1.93 on 104
+// top-10 neighbourhood is 20% locked-positive, and its 10-bar entry sits AT the evaluator's channel floor (the search's 5-9 range was dead)
+// minimum. CORRECTION: the search reported this cell as 7/8; its evaluator clips channel lengths to
+// 10, so the cell actually measured -- and shipped here -- is 10/10. The unconstrained cell (55/30, hold to the channel exit) reads locked PF 1.93 on 104
 // trades for about the same money -- the window and the cap buy nothing but trade count.
 // The PF-optimised settings for this window INVERT out of sample (1.53 -> 0.84); do not chase PF here.
-strategy("Donchian 7/8 07:00-11:00 scalp (Optuna, measured)", overlay = true, default_qty_type = strategy.fixed, default_qty_value = 1,
+strategy("Donchian 10/10 07:00-11:00 scalp (Optuna, measured)", overlay = true, default_qty_type = strategy.fixed, default_qty_value = 1,
      initial_capital = 50000, commission_type = strategy.commission.cash_per_contract, commission_value = 0.72, slippage = 1)
-entN     = input.int(7, "Donchian entry length")
-exitN    = input.int(8, "Channel exit length")
+entN     = input.int(10, "Donchian entry length")
+exitN    = input.int(10, "Channel exit length")
 stopCalm = input.float(3.19, "ATR stop, calm volatility (x ATR)", step = 0.1)
 stopHot  = input.float(3.19, "ATR stop, high volatility (x ATR)", step = 0.1)
 useTP    = input.bool(true, "Use a take profit")

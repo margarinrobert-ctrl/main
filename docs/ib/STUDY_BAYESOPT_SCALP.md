@@ -40,7 +40,7 @@ up-move pays anything long.
 | study | settings | research | locked | random entry in the window, locked (p PF / p total) |
 |---|---|---|---|---|
 | cell (constrained) | 55/30, 1.5 adaptive, MA 2, CHOP 40 | 171, PF 1.42, +5.4% | 95, PF 1.33, +3.0% | 1.12, +1.1% (0.285 / 0.305) |
-| **total** | 15m, **Donchian 7/8**, 3.19 stop, TP 2.3, hold 230 min, no filters | 763, PF 1.18, +16.2% | **387, PF 1.13, +6.9%, win 49%** | 0.95, −2.5% (**0.040 / 0.015**) |
+| **total** | 15m, **Donchian 10/10**, 3.19 stop, TP 2.3, hold 230 min, no filters | 763, PF 1.18, +16.2% | **387, PF 1.13, +6.9%, win 49%** | 0.95, −2.5% (**0.040 / 0.015**) |
 | PF ≥100/yr | 15m, 88/48, 1.38 adaptive, MA **3.99**, PSH, hold 153 | 232, PF 1.53, +8.0% | **128, PF 0.84, −1.7%** | 1.01, +0.1% (0.760 / 0.740) |
 | Sharpe | 15m, 52/45, 2.38, TP 3.8, CHOP **30.0**, hold 222 | 59, PF 2.21, Sh 6.49 | 37, PF 1.32, +1.8% | 1.10, +0.6% (0.320 / 0.345) |
 
@@ -53,11 +53,11 @@ the three objectives.
 ## Verdict
 
 **The best settings the optimiser can find for 07:00–11:00 with a four-hour cap are a fast
-7/8-bar Donchian on 15-minute bars with a wide 3.2 ATR stop, a 2.3 ATR target and no filters — and
+10/10-bar Donchian on 15-minute bars with a wide 3.2 ATR stop, a 2.3 ATR target and no filters — and
 what they deliver is a coin-flip strategy with a small, real edge**: locked PF 1.13 at a 49% win
 rate over 387 trades, +6.9%, clearing a random entry in the same window at p 0.040 / 0.015 on both
-blocks (the only finalist that does). Its own neighbourhood is 20% locked-positive, its entry length
-is one rung off the box minimum, and its research-to-locked transfer across the whole study is
+blocks (the only finalist that does). Its own neighbourhood is 20% locked-positive, its channel lengths
+sit at the evaluator's floor, and its research-to-locked transfer across the whole study is
 negative, so it is one draw that happened to hold, not a ridge. The PF-optimised settings invert
 out of sample (1.53 → 0.84); the Sharpe-optimised ones survive on 37 trades and fail their control.
 
