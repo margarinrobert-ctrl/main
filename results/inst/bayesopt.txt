@@ -1,0 +1,7 @@
+
+==============================================================================================================================
+THE USER'S CELL and the grid's envelope, for reference
+==============================================================================================================================
+  cell: research n 192 PF 2.495 total +19.54% Sharpe 3.48 | locked n 104 PF 1.932 total +8.10% Sharpe 2.72
+  study total      1200 trials  best research objective +44.751   (50s)
+  study pf100      1200 trials  best research objective +2.593   (93s)
