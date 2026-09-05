@@ -30,6 +30,7 @@
 // Order model: fill at next bar's open (a live market order); ATR and both EMAs taken at
 // the SIGNAL bar's close, matching `research/ema48/e48_core.py`. barstate.isconfirmed
 // guards every decision so a live chart cannot recalculate mid-bar (STUDY_TICK_RECALC).
+//@version=6
 strategy("EMA 13/48 x VWAP x ATR (measured, trail default OFF)", overlay = true,
      default_qty_type = strategy.fixed, default_qty_value = 1,
      initial_capital = 50000,
@@ -93,15 +94,12 @@ crossShortTrig = crossMode == "Fresh cross" ? (recentDn and not up) : (not up)
 vwapLong  = vwapMode == "Off" ? true : vwapMode == "State (price on the correct side)" ? (close > vwapVal) : (low <= vwapVal and close > vwapVal)
 vwapShort = vwapMode == "Off" ? true : vwapMode == "State (price on the correct side)" ? (close < vwapVal) : (high >= vwapVal and close < vwapVal)
 
-inSession = rthNow and not na(vwapVal) and not na(atrVal) and atrVal > 0
-longCondRaw  = crossLongTrig  and vwapLong  and inSession and not longOnly[1] and not shortOnly and not (shortOnly)
-shortCondRaw = crossShortTrig and vwapShort and inSession and not shortOnly[1]
+flattenNow = hour(time, "America/New_York") > flattenHour or (hour(time, "America/New_York") == flattenHour and minute(time, "America/New_York") >= flattenMin)
+inSession = rthNow and not flattenNow and not na(vwapVal) and not na(atrVal) and atrVal > 0
 
 longCond  = crossLongTrig  and vwapLong  and inSession and not shortOnly
 shortCond = crossShortTrig and vwapShort and inSession and not longOnly
 // fire once per fresh-cross window, matching e48_core.signals()
-firedLong  = false
-firedShort = false
 var bool wasLongSig  = false
 var bool wasShortSig = false
 fireLong  = crossMode == "Fresh cross" ? (longCond  and not wasLongSig)  : longCond
@@ -144,7 +142,6 @@ trailOffTk = useTrail and not na(pendingOff) ? pendingOff / syminfo.mintick : na
 strategy.exit("XL", "Long",  stop = slPrice, trail_points = trailArmTk, trail_offset = trailOffTk)
 strategy.exit("XS", "Short", stop = slPrice, trail_points = trailArmTk, trail_offset = trailOffTk)
 
-flattenNow = hour(time, "America/New_York") > flattenHour or (hour(time, "America/New_York") == flattenHour and minute(time, "America/New_York") >= flattenMin)
 if useFlatten and flattenNow and barstate.isconfirmed
     strategy.close_all(comment = "session flatten")
 
