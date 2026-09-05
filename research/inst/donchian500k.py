@@ -44,46 +44,51 @@ def signal_sets(D, mask):
                 idx = np.flatnonzero(m); vals.append(idx); offs.append(offs[-1] + len(idx))
                 keys.append(dict(ent=e, ma=ma, chop=cp, k=0, w=0, psh=0))
     return rows, np.asarray(offs, np.int64), np.concatenate(vals).astype(np.int64), pd.DataFrame(keys)
-frames = []; t0 = time.time()
-for tf in (5, 15, 30):
-    D = V.build(tf)
-    Gd = geometry(tf)
-    exlo = np.vstack([D["ex_lo"][e] for e in V.EXITS])
-    calm = np.zeros(D["n"], np.bool_); v = D["vpct"]; calm[np.isfinite(v)] = v[np.isfinite(v)] <= 0.5
-    for sname, mask in (("RTH", (D["mod"] >= 570) & (D["mod"] < 930)), ("all", np.ones(D["n"], bool))):
-        rows, offs, vals, K = signal_sets(D, mask)
-        xb, R, pts = V._tensor(D["o"], D["h"], D["l"], D["c"], D["atr"], rows.astype(np.int64), exlo, calm,
-                               Gd["ei"].to_numpy(np.int64), Gd["shi"].to_numpy(float), Gd["slo"].to_numpy(float),
-                               Gd["tp"].to_numpy(float), Gd["hold"].to_numpy(np.int64), V.COST, V.SLIP, D["n"])
-        epx = D["o"][np.minimum(rows + 1, D["n"] - 1)]
-        st = V._sweep(offs, vals, rows.astype(np.int64), xb, R, pts, epx, D["cut"], len(Gd))
-        ls = V._sweep_loss(offs, vals, rows.astype(np.int64), xb, R, D["cut"], len(Gd))
-        d = V.table(dict(G=Gd, K=K, stat=st, loss=ls), tf)
-        d["hold_name"] = Gd["hold_name"].to_numpy()[np.tile(np.arange(len(Gd)), len(K))]
-        d["session"] = sname
-        frames.append(d); print(f"  tf {tf} {sname}: {len(d):,} cells  ({time.time()-t0:.0f}s)")
-G = pd.concat(frames, ignore_index=True)
-G["tpy_res"] = G.n_res / V.YEARS["res"]; G["tpy_lock"] = G.n_lock / V.YEARS["lock"]
-G["tot_res"] = G.n_res * G.pct_res; G["tot_lock"] = G.n_lock * G.pct_lock
-G.to_parquet("results/inst/donchian500k.parquet")
-line(f"A. THE POPULATION -- {len(G):,} Donchian breakout configurations, long only, MNQ costs")
-ok = G[G.n_res >= 40].copy()
-print(f"  cells with >= 40 research trades: {len(ok):,} ({100*len(ok)/len(G):.1f}%)")
-print(f"  profitable on research: {100*(ok.pct_res > 0).mean():.1f}%   median PF {ok.pf_res.median():.3f}   median trades/yr {ok.tpy_res.median():.0f}")
-print(f"  profitable on locked:   {100*(ok.pct_lock > 0).mean():.1f}%   median PF {ok.pf_lock.median():.3f}")
-print(f"  corr(PF research, PF locked): {ok[['pf_res','pf_lock']].corr().iloc[0,1]:+.3f}  Spearman {ok[['pf_res','pf_lock']].corr('spearman').iloc[0,1]:+.3f}")
-top = ok.sort_values("tot_res", ascending=False)
-for q in (100, 1000, len(ok)//100):
-    s = top.head(q); print(f"  top {q:>6,} by research total: mean PF {s.pf_res.mean():.3f} -> locked {s.pf_lock.mean():.3f}   total {s.tot_res.mean():+.1f}% -> {s.tot_lock.mean():+.1f}%   share locked-profitable {100*(s.pct_lock>0).mean():.0f}%")
-line("B. MARGINAL AVERAGE PER AXIS (research PF | locked PF | trades/yr) -- read this, never the top row")
-for ax in ("tf", "session", "ent", "exN", "stop", "tp", "hold_name", "adapt", "ma", "chop"):
-    print(f"  {ax:>9}: " + "   ".join(f"{k}: {v.pf_res.mean():.3f}|{v.pf_lock.mean():.3f}|{v.tpy_res.mean():.0f}" for k, v in ok.groupby(ax)))
-line("C. THE ENVELOPE -- best research PF at each minimum trade count, then THAT cell on locked")
-for mn in (25, 50, 100, 150, 200, 300, 500):
-    s = ok[ok.tpy_res >= mn]
-    if len(s) == 0: continue
-    b = s.loc[s.pf_res.idxmax()]
-    print(f"  >= {mn:>3}/yr: {len(s):>7,} cells  best research PF {b.pf_res:.3f} ({b.tpy_res:.0f}/yr, tf{b.tf} {b.session} ent{b.ent} ex{b.exN} stop{b.stop} tp{b.tp} {b.hold_name} adapt{b.adapt} ma{b.ma} chop{b.chop}) -> locked {b.pf_lock:.3f} ({b.tpy_lock:.0f}/yr)")
-print(f"\n  cells at PF >= 2.0 and >= 200/yr on research: {int(((ok.pf_res >= 2) & (ok.tpy_res >= 200)).sum())}")
-line("D. TOP 15 BY RESEARCH TOTAL RETURN, with the locked column (the max of many draws; shape only)")
-print(top.head(15)[["tf","session","ent","exN","stop","tp","hold_name","adapt","ma","chop","n_res","pf_res","tot_res","n_lock","pf_lock","tot_lock"]].to_string(index=False))
+def main():
+    frames = []; t0 = time.time()
+    for tf in (5, 15, 30):
+        D = V.build(tf)
+        Gd = geometry(tf)
+        exlo = np.vstack([D["ex_lo"][e] for e in V.EXITS])
+        calm = np.zeros(D["n"], np.bool_); v = D["vpct"]; calm[np.isfinite(v)] = v[np.isfinite(v)] <= 0.5
+        for sname, mask in (("RTH", (D["mod"] >= 570) & (D["mod"] < 930)), ("all", np.ones(D["n"], bool))):
+            rows, offs, vals, K = signal_sets(D, mask)
+            xb, R, pts = V._tensor(D["o"], D["h"], D["l"], D["c"], D["atr"], rows.astype(np.int64), exlo, calm,
+                                   Gd["ei"].to_numpy(np.int64), Gd["shi"].to_numpy(float), Gd["slo"].to_numpy(float),
+                                   Gd["tp"].to_numpy(float), Gd["hold"].to_numpy(np.int64), V.COST, V.SLIP, D["n"])
+            epx = D["o"][np.minimum(rows + 1, D["n"] - 1)]
+            st = V._sweep(offs, vals, rows.astype(np.int64), xb, R, pts, epx, D["cut"], len(Gd))
+            ls = V._sweep_loss(offs, vals, rows.astype(np.int64), xb, R, D["cut"], len(Gd))
+            d = V.table(dict(G=Gd, K=K, stat=st, loss=ls), tf)
+            d["hold_name"] = Gd["hold_name"].to_numpy()[np.tile(np.arange(len(Gd)), len(K))]
+            d["session"] = sname
+            frames.append(d); print(f"  tf {tf} {sname}: {len(d):,} cells  ({time.time()-t0:.0f}s)")
+    G = pd.concat(frames, ignore_index=True)
+    G["tpy_res"] = G.n_res / V.YEARS["res"]; G["tpy_lock"] = G.n_lock / V.YEARS["lock"]
+    G["tot_res"] = G.n_res * G.pct_res; G["tot_lock"] = G.n_lock * G.pct_lock
+    G.to_parquet("results/inst/donchian500k.parquet")
+    line(f"A. THE POPULATION -- {len(G):,} Donchian breakout configurations, long only, MNQ costs")
+    ok = G[G.n_res >= 40].copy()
+    print(f"  cells with >= 40 research trades: {len(ok):,} ({100*len(ok)/len(G):.1f}%)")
+    print(f"  profitable on research: {100*(ok.pct_res > 0).mean():.1f}%   median PF {ok.pf_res.median():.3f}   median trades/yr {ok.tpy_res.median():.0f}")
+    print(f"  profitable on locked:   {100*(ok.pct_lock > 0).mean():.1f}%   median PF {ok.pf_lock.median():.3f}")
+    print(f"  corr(PF research, PF locked): {ok[['pf_res','pf_lock']].corr().iloc[0,1]:+.3f}  Spearman {ok[['pf_res','pf_lock']].corr('spearman').iloc[0,1]:+.3f}")
+    top = ok.sort_values("tot_res", ascending=False)
+    for q in (100, 1000, len(ok)//100):
+        s = top.head(q); print(f"  top {q:>6,} by research total: mean PF {s.pf_res.mean():.3f} -> locked {s.pf_lock.mean():.3f}   total {s.tot_res.mean():+.1f}% -> {s.tot_lock.mean():+.1f}%   share locked-profitable {100*(s.pct_lock>0).mean():.0f}%")
+    line("B. MARGINAL AVERAGE PER AXIS (research PF | locked PF | trades/yr) -- read this, never the top row")
+    for ax in ("tf", "session", "ent", "exN", "stop", "tp", "hold_name", "adapt", "ma", "chop"):
+        print(f"  {ax:>9}: " + "   ".join(f"{k}: {v.pf_res.mean():.3f}|{v.pf_lock.mean():.3f}|{v.tpy_res.mean():.0f}" for k, v in ok.groupby(ax)))
+    line("C. THE ENVELOPE -- best research PF at each minimum trade count, then THAT cell on locked")
+    for mn in (25, 50, 100, 150, 200, 300, 500):
+        s = ok[ok.tpy_res >= mn]
+        if len(s) == 0: continue
+        b = s.loc[s.pf_res.idxmax()]
+        print(f"  >= {mn:>3}/yr: {len(s):>7,} cells  best research PF {b.pf_res:.3f} ({b.tpy_res:.0f}/yr, tf{b.tf} {b.session} ent{b.ent} ex{b.exN} stop{b.stop} tp{b.tp} {b.hold_name} adapt{b.adapt} ma{b.ma} chop{b.chop}) -> locked {b.pf_lock:.3f} ({b.tpy_lock:.0f}/yr)")
+    print(f"\n  cells at PF >= 2.0 and >= 200/yr on research: {int(((ok.pf_res >= 2) & (ok.tpy_res >= 200)).sum())}")
+    line("D. TOP 15 BY RESEARCH TOTAL RETURN, with the locked column (the max of many draws; shape only)")
+    print(top.head(15)[["tf","session","ent","exN","stop","tp","hold_name","adapt","ma","chop","n_res","pf_res","tot_res","n_lock","pf_lock","tot_lock"]].to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()
