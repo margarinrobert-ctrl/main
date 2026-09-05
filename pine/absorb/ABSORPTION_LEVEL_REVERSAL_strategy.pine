@@ -1,0 +1,196 @@
+// 50% LEVEL + MTF SWING HIGH/LOW + ABSORPTION BUBBLES -- reversal strategy
+// =========================================================================================
+// The three posted indicators combined: take a reversal when price reaches a level (the 50%
+// of the session range, or a 1H/4H swing) AND shows absorption against the move into it.
+// Stop 1.5 ATR, ATR trailing stop. Built and measured in `research/absorb/`, written up in
+// `docs/ib/STUDY_ABSORPTION_LEVELS.md`. NQ 15m, real MNQ costs (1.72 pt round turn).
+//
+// WHAT IT MEASURES -- read this before trading it:
+//
+// 1. AS SPECIFIED IT LOSES ON BOTH BLOCKS AND LOSES TO A COIN FLIP.
+//      research  1,888 trades  -0.0070 %/trade  PF 0.920  win 53.4%   -$4,771 per MNQ
+//      locked    1,032 trades  -0.0251 %/trade  PF 0.778  win 55.5%  -$10,415 per MNQ
+//    A random entry running the identical stop and trail beats it on both (p 0.865 / 0.990).
+//
+// 2. THE TRAILING STOP IS THE WHOLE RESULT, AND IT WORKS ON ANY ENTRY. Tightening it lifts
+//    every statistic monotonically -- 0.25/0.25 ATR reads PF 1.751 at a 75.2% win rate on a
+//    1-bar median hold. That is the geometry, not the signal: a RANDOM entry with the same
+//    trail reads PF 1.617 / 73.7%. On the locked block the random entry WINS (rule PF 1.684,
+//    random PF 1.787, p 0.610). And ~46% of that cell is the intrabar tie-break -- a 0.25 ATR
+//    trail is 5.7 points on NQ 15m, so stop and trail fall inside one bar and which one fires
+//    is an assumption, worth +0.0108 of the +0.0237.
+//
+// 3. BOTH FILTERS SUBTRACT. Drop-one at the 0.5/0.5 geometry: full rule +0.0034 (PF 1.061);
+//    remove ABSORPTION +0.0096 (PF 1.181); remove the LEVELS +0.0088 (PF 1.159) -- each on
+//    more than twice the trades. The conjunction is worse than either half alone.
+//
+// 4. THE PUBLISHED ABSORPTION THRESHOLD IS NEARLY UNCONDITIONAL. scaledVol >= 0.1 passes
+//    78.7% of all bars; the source's A-E buckets only change the dot size. The selective part
+//    is the wick geometry (15.0% upper / 17.5% lower). Absorption's lift on level-touch bars
+//    is 1.15x-1.55x, so it is NOT merely the touch restated -- it carries real independent
+//    selection, just not profitable selection.
+//
+// 5. LONG-ONLY LOOKS FAR BETTER AND IS DRIFT. The grid's side marginal is long +0.3130 against
+//    short -0.1065 over a sample in which NQ rose 89%, and the grid's best cells are long-only
+//    at 3-8% win rates -- positions held to the stop in a rising market.
+//
+// Defaults are the configuration as asked. Nothing here was chosen for performance.
+// Order model: the bracket is FILL-RELATIVE and placed WITH the entry, so the fill bar is
+// protected (STUDY_V56_PARITY); barstate.isconfirmed guards every decision (STUDY_TICK_RECALC).
+//@version=6
+strategy("50% Level + Swings + Absorption reversal (measured)", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.72,
+     slippage = 2)
+
+// ---------------- inputs ----------------
+gL = "Levels"
+useMid   = input.bool(true,  "Use the 50% session level", group = gL,
+     tooltip = "MEASURED: on its own the best of the level families (+0.0064, PF 1.116). Still fails its control.")
+midSess  = input.session("1600-1500", "Session for the 50% level (exchange time)", group = gL,
+     tooltip = "The source's default. For CME this is 16:00-15:00 Chicago = the full futures trading day.")
+use1h    = input.bool(true,  "Use 1H swing highs/lows", group = gL)
+use4h    = input.bool(true,  "Use 4H swing highs/lows", group = gL)
+usePrevD = input.bool(false, "Use previous day high/low", group = gL)
+touchAtr = input.float(0.10, "Touch tolerance (x ATR)", minval = 0.0, step = 0.05, group = gL,
+     tooltip = "How close the bar must come to the level to count as reaching it.")
+
+gA = "Absorption"
+needAbsorb = input.bool(true, "Require an absorption bubble", group = gA,
+     tooltip = "MEASURED: requiring it makes the result WORSE -- removing it takes +0.0034 to +0.0096 (PF 1.061 to 1.181) on more than twice the trades. Left ON because it is what was asked for.")
+volLook    = input.int(100, "Volume stdev lookback", minval = 10, group = gA)
+volMin     = input.float(0.1, "Absorption threshold (scaledVol)", minval = 0.0, step = 0.1, group = gA,
+     tooltip = "MEASURED: the source's 0.1 passes 78.7% of all bars. Raising it to 2.0-4.0 lifts PF to 1.32-1.37 on 445/88 trades, which is restrictiveness alone -- it never clears a same-selectivity control (p 0.970).")
+
+gR = "Risk"
+atrLen   = input.int(14, "ATR length", group = gR)
+stopMult = input.float(1.5, "ATR stop multiple", minval = 0.1, step = 0.1, group = gR,
+     tooltip = "MEASURED: the stop axis is FLAT across 1.0 / 1.5 / 2.5 (all about +0.09 marginal). 1.5 is the value asked for, not an optimum.")
+useTrail = input.bool(true, "Use the ATR trailing stop", group = gR)
+trailArm = input.float(1.0, "Trail arm (x ATR)", minval = 0.05, step = 0.05, group = gR,
+     tooltip = "MEASURED: tightening this is what makes the backtest look good, and it works on a random entry too. 0.25 reads PF 1.751 / 75.2% win; a coin flip with the same trail reads 1.617 / 73.7%, and beats the rule on the locked block.")
+trailOff = input.float(1.0, "Trail offset (x ATR)", minval = 0.05, step = 0.05, group = gR)
+
+gS = "Direction"
+allowLong  = input.bool(true, "Allow longs", group = gS)
+allowShort = input.bool(true, "Allow shorts", group = gS,
+     tooltip = "MEASURED: the long side reads +0.3130 marginal and the short -0.1065, over a sample in which NQ rose 89%. That gap is drift, not skill -- do not read it as a reason to trade long only.")
+
+showLevels = input.bool(true, "Plot the levels", group = "Display")
+
+// ---------------- ATR ----------------
+atrVal = ta.ema(ta.tr(true), atrLen)          // NOT ta.atr: that is Wilder's RMA
+
+// ---------------- 1. the 50% session level ----------------
+tSess = time(timeframe.period, midSess + ":1234567")
+inSess = not na(tSess)
+firstOfSess = inSess and not inSess[1]
+var float sessHi = na
+var float sessLo = na
+if firstOfSess
+    sessHi := high
+    sessLo := low
+else if inSess
+    sessHi := math.max(nz(sessHi, high), high)
+    sessLo := math.min(nz(sessLo, low), low)
+midNow = inSess ? sessLo + (sessHi - sessLo) / 2.0 : na
+// react to the level as it stood BEFORE this bar, so the bar's own extremes cannot define the
+// level it is then judged against
+midLvl = firstOfSess ? na : midNow[1]
+
+// ---------------- 2. MTF swing levels, confirmed only ----------------
+// A swing high at HTF bar j needs bar j+1 to exist, so it is knowable only once j+1 has closed.
+// With lookahead_off, `high` inside the call is the last CLOSED HTF bar, so testing high[1]
+// against high[2] and high gives the swing at j confirmed by j+1 -- matching the research
+// construction exactly (research/absorb/ab_core.py::_swing_levels).
+f_swings() =>
+    sh = high[1] > high[2] and high[1] > high ? high[1] : na
+    sl = low[1]  < low[2]  and low[1]  < low  ? low[1]  : na
+    [sh, sl]
+
+[raw1hH, raw1hL] = request.security(syminfo.tickerid, "60",  f_swings(), lookahead = barmerge.lookahead_off)
+[raw4hH, raw4hL] = request.security(syminfo.tickerid, "240", f_swings(), lookahead = barmerge.lookahead_off)
+prevDH = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_off)
+prevDL = request.security(syminfo.tickerid, "D", low[1],  lookahead = barmerge.lookahead_off)
+
+var float sw1hH = na
+var float sw1hL = na
+var float sw4hH = na
+var float sw4hL = na
+if not na(raw1hH)
+    sw1hH := raw1hH
+if not na(raw1hL)
+    sw1hL := raw1hL
+if not na(raw4hH)
+    sw4hH := raw4hH
+if not na(raw4hL)
+    sw4hL := raw4hL
+
+// ---------------- 3. absorption ----------------
+volSd     = ta.stdev(volume, volLook)
+scaledVol = volSd > 0 ? volume / volSd : na
+midPrice  = (high + low) / 2.0
+bodyHi    = math.max(open, close)
+bodyLo    = math.min(open, close)
+upperZone = midPrice >= bodyHi and midPrice <= high    // long UPPER wick -> SELLING absorption
+lowerZone = midPrice <= bodyLo and midPrice >= low     // long LOWER wick -> BUYING  absorption
+absSell   = (not needAbsorb) or (scaledVol >= volMin and upperZone)
+absBuy    = (not needAbsorb) or (scaledVol >= volMin and lowerZone)
+
+// ---------------- the level touch ----------------
+tol = touchAtr * atrVal
+f_hitRes(float lv) => not na(lv) and high >= lv - tol and close <= lv + tol
+f_hitSup(float lv) => not na(lv) and low  <= lv + tol and close >= lv - tol
+
+hitRes = (useMid and f_hitRes(midLvl)) or (use1h and f_hitRes(sw1hH)) or
+         (use4h and f_hitRes(sw4hH)) or (usePrevD and f_hitRes(prevDH))
+hitSup = (useMid and f_hitSup(midLvl)) or (use1h and f_hitSup(sw1hL)) or
+         (use4h and f_hitSup(sw4hL)) or (usePrevD and f_hitSup(prevDL))
+
+ready    = not na(atrVal) and atrVal > 0 and bar_index > 300
+longSig  = allowLong  and hitSup and absBuy  and ready
+shortSig = allowShort and hitRes and absSell and ready
+// a bar cannot be both
+bothSig  = longSig and shortSig
+fireLong  = longSig  and not bothSig
+fireShort = shortSig and not bothSig
+
+// ---------------- orders ----------------
+flat = strategy.position_size == 0
+var float pendStop = na
+var float pendArm  = na
+var float pendOff  = na
+
+if barstate.isconfirmed and flat and (fireLong or fireShort)
+    pendStop := stopMult * atrVal
+    pendArm  := trailArm * atrVal
+    pendOff  := trailOff * atrVal
+    if fireLong
+        strategy.entry("L", strategy.long)
+    else
+        strategy.entry("S", strategy.short)
+
+// Fill-relative bracket, submitted on the SIGNAL bar with the entry, so the fill bar is already
+// protected. `loss` and the trail are in TICKS and are known at order time -- unlike stop=/limit=
+// off strategy.position_avg_price, which do not exist until a bar after the fill.
+stopTk = na(pendStop) ? na : pendStop / syminfo.mintick
+armTk  = useTrail and not na(pendArm) ? pendArm / syminfo.mintick : na
+offTk  = useTrail and not na(pendOff) ? pendOff / syminfo.mintick : na
+strategy.exit("Lx", "L", loss = stopTk, trail_points = armTk, trail_offset = offTk)
+strategy.exit("Sx", "S", loss = stopTk, trail_points = armTk, trail_offset = offTk)
+
+// ---------------- display ----------------
+plot(showLevels and useMid ? midLvl : na, "50% level", color = color.new(color.gray, 20), style = plot.style_circles)
+plot(showLevels and use1h ? sw1hH : na, "1H swing high", color = color.new(color.red, 40))
+plot(showLevels and use1h ? sw1hL : na, "1H swing low",  color = color.new(color.red, 40))
+plot(showLevels and use4h ? sw4hH : na, "4H swing high", color = color.new(color.blue, 40))
+plot(showLevels and use4h ? sw4hL : na, "4H swing low",  color = color.new(color.blue, 40))
+plotshape(absBuy and needAbsorb and lowerZone  ? midPrice : na, "buying absorption",  shape.circle, location.absolute, color.new(color.green, 40), size = size.tiny)
+plotshape(absSell and needAbsorb and upperZone ? midPrice : na, "selling absorption", shape.circle, location.absolute, color.new(color.red, 40),   size = size.tiny)
+
+var table hud = table.new(position.top_right, 1, 3, bgcolor = color.new(color.black, 20))
+if barstate.islast
+    table.cell(hud, 0, 0, "MEASURED as configured: PF 0.920 research / 0.778 locked -- loses on both blocks", text_color = color.white, bgcolor = color.new(color.red, 40))
+    table.cell(hud, 0, 1, "a RANDOM entry with the same stop and trail beats it (p 0.865 / 0.990)", text_color = color.white, bgcolor = color.new(color.red, 40))
+    table.cell(hud, 0, 2, "tightening the trail is what looks profitable -- and it works on a coin flip too", text_color = color.white, bgcolor = color.new(color.orange, 40))
