@@ -395,3 +395,107 @@ What *would* change the answer is not more search. It is a second gold feed to t
 volume-dependent signal set is real, and a longer stretch of non-rallying gold — the locked block
 contains one of the largest bull runs in the metal's history, and every positive number here leans
 on it.
+
+---
+
+# Part 3 — walk-forward and the formal overfitting test
+
+**Verdict — the published rule is not overfitted, and the search around it is, severely.** Those
+are two different findings and they need two different tests. CSCV over 1,199 sampled
+configurations x 193 months gives **PBO = 0.561**: the in-sample winner lands *below* the
+out-of-sample median in 56% of 12,870 symmetric splits, so selecting the in-sample best is worse
+than picking at random. The slope of out-of-sample on in-sample performance is **−1.27**. And in a
+13-fold walk-forward with the selection re-run each fold, the optimiser is the **worst of three
+arms**: +5.6 R against a random cell's +27.0 R and the published constants' +15.6 R.
+
+## 21. Three questions that all get called "overfitting"
+
+| question | test | answer |
+| --- | --- | --- |
+| Is the published rule fitted to gold? | rolling walk-forward, **nothing re-selected** | No — it was never fitted; its median in-sample rank across 12,870 splits is **0.444**, a below-median cell in its own grid |
+| Is the search overfit? | walk-forward with the selection **re-run each fold** | Yes — re-optimising is the worst of three arms |
+| What is P(backtest overfitting)? | **CSCV / PBO** (Bailey, Borwein, López de Prado & Zhu) | **0.561 — severe** |
+
+## 22. The published rule rolled forward, nothing re-selected
+
+36 months train, 12 months test, 13 folds. No parameter is chosen — only the market changes.
+
+| out-of-sample year | n IS | IS R | n OOS | **OOS R** |
+| --- | ---: | ---: | ---: | ---: |
+| 2013 | 141 | −0.0567 | 36 | **+0.1503** |
+| 2014 | 151 | +0.0050 | 35 | +0.0933 |
+| 2015 | 127 | +0.0575 | 16 | **−0.6222** |
+| 2016 | 87 | −0.0147 | 32 | +0.3077 |
+| 2017 | 83 | +0.0380 | 45 | −0.0811 |
+| 2018 | 93 | −0.0404 | 22 | −0.1126 |
+| 2019 | 99 | +0.0376 | 30 | −0.1794 |
+| 2020 | 97 | −0.1186 | 45 | +0.0909 |
+| 2021 | 97 | −0.0388 | 31 | +0.0564 |
+| 2022 | 106 | +0.0043 | 39 | +0.1969 |
+| 2023 | 115 | +0.1176 | 38 | −0.1976 |
+| 2024 | 108 | +0.0178 | 46 | +0.2440 |
+| 2025 | 123 | +0.0927 | 34 | +0.0373 |
+
+Mean IS **+0.0078**, mean OOS **−0.0012**, and **corr(IS, OOS) across folds = −0.434**. Eight of
+thirteen folds are positive on each side. The in-sample result of a three-year window
+*anti-predicts* the next year even when nothing is being fitted — that is regime, not overfitting,
+and it is the reason a single good window means nothing here.
+
+## 23. PBO — the formal test
+
+Per-month return matrix, 1,199 sampled configurations plus the published rule, 193 months, 16
+contiguous blocks, all **C(16,8) = 12,870** symmetric splits. For each split: take the in-sample
+best configuration, find its rank among all configurations out of sample, and take the logit.
+
+```
+PBO = 0.561            the IS winner is below the OOS median in 56.1% of splits
+median OOS rank        0.455
+mean logit             -0.373
+```
+
+Bailey et al.'s reading: PBO above 0.5 means the selection procedure is **actively harmful** —
+you would do better choosing a configuration at random than choosing the one that backtested best.
+
+The degradation is severe and the *direction* is the finding:
+
+```
+IS-best mean statistic   +0.2454   ->   its out-of-sample   +0.0139     (94% evaporates)
+share of IS winners that are OOS-positive                    60.7%
+slope of OOS on IS                                           -1.2671
+```
+
+A negative slope means the *better* a configuration looked in sample, the *worse* it did out of
+sample. This is the same thing the Optuna study's fANOVA said from another angle: the search is
+tuning the volume multiple, whose gradient inverts across the split, so the harder it optimises the
+further it walks in the wrong direction.
+
+## 24. Walk-forward with the selection re-run each fold
+
+Three arms over the same 13 out-of-sample years: re-optimise on the training window, take the
+published constants, or take a random cell from the same 1,199-configuration menu.
+
+| arm | total R | mean per fold | folds positive |
+| --- | ---: | ---: | ---: |
+| re-optimised each fold | **+5.57** | +0.428 | 5 / 13 |
+| a RANDOM cell | **+27.02** | +2.079 | 9 / 13 |
+| the published constants | **+15.56** | +1.197 | 8 / 13 |
+
+**A random cell beats the optimiser 4.9x, and the author's untuned constants beat it 2.8x.** This
+is the eleventh re-optimiser on this branch to lose to the constants it was trying to improve, and
+the first to also lose to a coin flip.
+
+Note the shape of the optimiser's failure in the fold table: its *in-sample* totals climb steadily
+(13.5 → 47.2 R) across the folds while its out-of-sample results do not follow at all. It is
+finding better and better fits to windows that do not repeat.
+
+## 25. What this does and does not say
+
+It does **not** say the published rule is overfit. It was never fitted to gold; it sits at median
+rank in its own parameter grid; its ten numbers rank 2nd to 4th of 3–5 on every one of eight
+ladders (Part 1 §7). Whatever is wrong with it is not curve-fitting.
+
+It says that **any attempt to improve it by search on this data will make it worse out of sample**,
+and that its own year-to-year variation is large enough (−0.62 to +0.31 R) that a three-year window
+carries no information about the next one. Combined with Part 2 — no candidate separates from zero,
+deflated Sharpe 0.000, 62–94% of the good locked results coming from the 2025 rally — the family
+has neither a demonstrable edge nor a route to one through optimisation.
