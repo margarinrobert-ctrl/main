@@ -469,3 +469,58 @@ conditions select days that moved and then enter later and worse than simply bei
 
 **Ships nothing.** The Pine script's header carries these numbers beside the gold ones; no preset
 is recommended for either index.
+
+## 14. The two-sided book — the best long and the best short on one chart
+
+`research/vwapema/two_sided.py`, `run_m8.py`, `two_sided_parity.py`;
+`pine/vwapema/VWAP_EMA_TWO_SIDED_strategy.pine`.
+
+The search supplies one of each without being asked: **all three US30 finalists came back LONG and
+all three US100 finalists came back SHORT.** The best of each, picked by the locked read and broken
+toward the larger sample (`STUDY_V55`), is the US30 total-R cell long and the US100 total-R cell
+short.
+
+**This needs its own walker.** A single script on a single chart holds one position; adding two
+separate runs describes *two charts*. The merged walker is verified trade-for-trade against
+`vecore.run` on 9 one-sided cells (identical counts, max |ΔR| < 1e-9) — the only row that ever
+differed was an off-by-one at the file boundary, now matched.
+
+| feed | arm | block | n | R | PF | ret/DD |
+|---|---|---|---|---|---|---|
+| US100 | long alone | research → LOCKED | 939 → 603 | +0.114 → **−0.002** | 1.194 → 0.996 | 3.69 → −0.04 |
+| US100 | short alone | research → LOCKED | 431 → 244 | +0.339 → **+0.078** | 1.561 → 1.131 | 5.08 → 0.89 |
+| US100 | **both, one chart** | research → LOCKED | 1334 → 828 | +0.178 → **+0.006** | 1.295 → 1.010 | 5.87 → 0.09 |
+| US30 | long alone | research → LOCKED | 722 → 430 | +0.330 → **+0.044** | 1.560 → 1.081 | 5.89 → 0.77 |
+| US30 | short alone | research → LOCKED | 348 → 198 | −0.036 → **−0.201** | 0.938 → 0.658 | −0.35 → −0.96 |
+| US30 | **both, one chart** | research → LOCKED | 1058 → 610 | +0.219 → **−0.050** | 1.370 → 0.913 | 3.95 → −0.58 |
+| US30_ISO | **both, one chart** | forward | 500 | **+0.049** | 1.091 | 0.62 |
+
+**The pair clears a matched random entry on both research blocks at p 0.000 and on neither locked
+block** (0.392 / 0.388); the day-block bootstrap goes 0.006 → 0.520 and 0.058 → 0.853. On the
+reserved forward block p 0.176, bootstrap 0.446.
+
+**Each side only works on the market that chose it** — the clearest single warning in the study:
+the long cell reads locked **+0.044 on US30 and −0.002 on US100**; the short cell reads **+0.078 on
+US100 and −0.201 on US30**.
+
+**Three mechanics worth keeping:**
+
+- **The two sides never fire on the same bar** — 0 bars in 449,303 across three feeds — so the
+  tie-break is provably immaterial and the position lock costs only 2–3% of the trades
+  (n_kept 0.965–0.989 against running the sides on two charts).
+- **A `max(denominator, 1e-9)` guard is wrong when the denominator is negative.** It returned 1e-9
+  and printed a lock ratio of −3×10¹⁰ on the one block where the two-chart total was negative.
+  Guard on the absolute value.
+- **The profile is tail-dependent.** Median hold 4–5 bars; exits 39% stop, 51% trail, 10%
+  flatten/end; 63–70% of trades long; and **the top 5% of trades supply 370–657% of net R**, so the
+  other 95% lose in aggregate. 2025 is negative on both feeds (−0.206, −0.282) and is the most
+  recent full year.
+
+**Parity.** The script's own order model written out and diffed against the engine: count ratio
+0.982–0.989, R correlation 0.996–0.9996, per-trade gap **conservative on four of five blocks**
+(−3.4% and −9.3% on the two research blocks). Only 38–40% of exits land on the same bar, because
+`strategy.close()` fills at the next bar's open where the research exits at the breaching close —
+the irreducible difference, and the same 60%-of-trades effect the gold study measured.
+
+It ships because it was asked for, with every number above in its header. It is the best
+combination this study produced and it does not clear a control out of sample.
