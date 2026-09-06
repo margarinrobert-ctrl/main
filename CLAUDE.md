@@ -3053,6 +3053,35 @@ causal by construction and the script uses an EXPANDING minimum instead.
 Ships `pine/v65/V65_CVD_META_FEATURES_strategy.pine`, meta layer DEFAULT OFF.
 See `docs/ib/STUDY_V61_FEATURES_15M.md`.
 
+**A STOCHASTIC OSCILLATOR AND A SESSION VWAP ARE 83% THE SAME COLUMN, AND A PLAIN ATR TRAILING MEAN
+IS A CLOCK.** VWAP + Stochastic + ATR built to spec on NQ 15m, 31,752 declared cells. **corr(%K,
+(close - VWAP)/ATR) = +0.831**: the oversold cross sits BELOW the session VWAP on **92.6%** of its
+own bars against 44.3% in general (lift 2.09x) and the short mirror sits above it on **94.4%**
+(1.69x), so the VWAP cannot be an independent confirmation of the stochastic. Sixth confirmation-is-
+the-trigger finding here after RSI 94.7%, Aroon 100.0%, MACD 99.8-100.0%, MFI 91.7% and EMA13>48
+90.9% -- and the FIRST measured as a correlation rather than a pass rate, which is the sharper
+instrument: use it whenever both readings are continuous. **THE TRIGGER DOES NOT BEAT A COIN FLIP**:
+against a random entry with the same side, stop, target, hold cap, costs and position lock, **0 of 8
+declared geometry cells clear p<=0.05** (best 0.43), and the two long cells that make money make
+EXACTLY what a random bar makes (+0.0553 against +0.0581; +0.1518 against +0.1492). Long is
+gross-positive 4/4 and short gross-NEGATIVE 4/4 in a market that rose 89% -- drift. **THE WIN RATE IS
+ITS OWN BREAK-EVEN** (51.38% against a driftless 51.44%, 50.82 against 51.08) and **cost is only
+1.4-2.9% of the stop**, so for once cost is not the objection: the barriers are hit by noise. The
+marginal-consensus cell fails both nulls on research (0.482 / 0.530) AND locked (0.292 / 0.184),
+GROWS on locked (wrong shape, twelfth time), reads n=42 / n=9, and is NEGATIVE on both research
+blocks of US100 and US30 which chose nothing (PF 0.787 / 0.741) while positive on both their locked
+blocks. Grid 37.1% profitable -- hostile by this branch's standards. No take profit won for the
+NINETEENTH time; the hold cap is an inert axis; stochastic length and level span 0.008 %/trade.
+**AND `atr / sma(atr, n)` IS NOT A VOLATILITY READING ON A 24-HOUR TAPE**: NQ's RTH ATR is 34.8
+against 13.1 overnight (2.7x), so an RTH bar clears its own 50-bar trailing mean **98.9%** of the
+time against 25.1% of overnight bars -- every rung of it is inert on any session-restricted trigger.
+A CAUSAL TIME-OF-DAY BASELINE (mean ATR at this minute-of-day over prior sessions, min 20 obs) lands
+at 51.4% within RTH. Same repair `STUDY_V32_FLOW_ML` made for volume; it is required for ATR too.
+On that fixed baseline the ATR sign INVERTED AGAIN -- ceilings positive (`ceil<=1.0` +0.0062),
+floors negative (`floor>=1.2` -0.0228) -- agreeing with STUDY_V28 and reversing STUDY_V63, the fifth
+move. Parity 51/51 trades, correlation 1.0000, 98.04% identical exit bars, gap +1.7% / -0.2%.
+See `docs/ib/STUDY_VWAP_STOCH_ATR.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -3094,6 +3123,7 @@ See `docs/ib/STUDY_V61_FEATURES_15M.md`.
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
 | `research/v64/` | Optuna on V61, its walk-forward and its Monte Carlo: a continuous-space numba evaluator verified to the cent against the published grid, three Optuna studies, fANOVA importance, the box-edge re-run, the V30 hold-out-an-axis surrogate; `run_wfo*.py` in-fold re-selection with a random-cell arm, span-normalised WFE and a geometry-matched control; `run_mc.py` perturbation (price jitter with the indicators RECOMPUTED, execution, missed fills, parameters) beside the permutation and the bootstrap |
 | `research/v61feat/` | feature engineering on the V61 15m rule under the two-gate architecture: `v61feat.py` (51 causal features in 7 declared families, FFD fracdiff with d by ADF on research only, a Baum-Welch HMM read FILTERED with the smoothed version kept only as a leakage diagnostic, truncation audit), `run_feat1.py` (Gate 1 on two candidate primaries, base rates on the trigger's own bars, IC against shuffled twins, redundancy measured ON THE SIGNAL BARS with family-first selection, stability across research halves and volatility regimes), `run_feat2.py` (purged embargoed CV with a RETURN objective, Gate 2 against a bootstrap and a same-selectivity random filter, drop-one incremental value, one locked read with the kept fraction reported, deflation and White's reality check), `run_feat3.py` (the two PORTABLE forms measured before any Pine is written -- the sign-aligned count ladder and a ridge whose every constant is exported, plus the frozen HMM parameters and fracdiff weights), `feat_parity.py` (the shipped script's fracdiff recursion and HMM forward pass reproduced in Python and diffed against the research), `plot_feat.py` |
+| `research/vstoch/` | VWAP x Stochastic x ATR: the design declared in the module docstring before any search, a causal TIME-OF-DAY ATR baseline beside the broken trailing-mean one, base rates on the trigger's own bars, the trigger against a random entry at four geometries, a 31,752-cell declared grid read by marginal average, both nulls, one locked read, a frozen cross-market read, the zero-cost variant, the win rate against its own driftless bound, and `vstoch_parity.py` -- the shipped Pine's order model diffed against the engine |
 | `research/v61sess/` | the V61 rule as a user configures it: `sess_core.py` (the SCRIPT's order model with the session window, the flatten filling at the next open, and touch-as-break), `run_iss_oss.py` (IS/OOS on both timeframes, the window-vs-flatten ablation, the channel-time-reach control, and the zero-cost comparison), `run_optuna.py` (2,400 trials over two objectives with the session axis open, research only, population shape before any top row, box-edge check), `run_mc_portfolio.py` (the four Monte Carlos per leg, daily-return leg correlation, and combinations scored against the BEST single leg), `us30_core.py` + `run_us30.py` + `run_us30_mc.py` (the same rule FROZEN on US30 with the CVD built from 15m sub-bars, three nulls, the gate ablation, and the cross-market book), `plot_sess.py`, `plot_us30.py` |
 | `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |

@@ -1,0 +1,9 @@
+{
+ "side": "LONG",
+ "stoch": "14/3/3",
+ "lvl": 30.0,
+ "vwap": "with_trend",
+ "atr": "ceil<=1.0",
+ "stop": 1.5,
+ "tp": 1.5,
+ "hold": 

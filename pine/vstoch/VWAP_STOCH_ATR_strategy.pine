@@ -1,0 +1,183 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+
+// VWAP + STOCHASTIC + ATR -- built as asked, measured, and shipping NO EDGE CLAIM.
+//
+// WHAT IT IS
+//   Trigger : stochastic %K crosses %D while %K is below an oversold floor (long) / above an
+//             overbought ceiling (short).
+//   Location: session VWAP anchored at the 09:30 New York open. Both the volume-weighted anchor and
+//             its UNWEIGHTED twin are computed, because over 69,003 matched pairs the volume was
+//             worth +0.0096 Sharpe -- a session average price does the same job.
+//   Regime  : ATR against a CAUSAL TIME-OF-DAY baseline (the mean ATR at this minute-of-day over
+//             prior sessions), not a plain trailing mean. See the measurement below.
+//   Exit    : ATR stop anchored at the SIGNAL bar, optional ATR target, hard hold cap. The bracket
+//             is fill-relative and goes out WITH the entry, so the fill bar is protected.
+//
+// WHAT WAS MEASURED, ON NQ 15m, RESEARCH BLOCK (2022-12-26 .. 2024-11-28), MNQ COSTS
+//   * THE STOCHASTIC AND THE VWAP ARE THE SAME READING. corr(%K, (close-VWAP)/ATR) = +0.831. An
+//     oversold cross sits below the VWAP on 92.6% of its own bars against 44.3% of bars in general
+//     (lift 2.09x); the short mirror sits above it on 94.4% (lift 1.69x). The VWAP state therefore
+//     removes almost nothing and cannot be a second, independent confirmation.
+//   * THE TRIGGER DOES NOT BEAT A RANDOM ENTRY. Same side, stop, target, hold cap, costs and
+//     position lock, entry bar randomised: 0 of 8 declared geometry cells clear p<=0.05, best
+//     p 0.43. Long 2.0N/no-target earns +0.0553 %/trade against the control's +0.0581.
+//   * THE LONG SIDE IS DRIFT. Gross-positive on 4 of 4 geometries and the SHORT mirror is
+//     gross-NEGATIVE on 4 of 4, over a sample in which the index rose 89%.
+//   * THE WIN RATE IS ITS OWN BREAK-EVEN. 51.38% against a driftless bound of 51.44%, 50.82 against
+//     51.08, 54.31 against 50.72 -- the barriers are hit by noise.
+//   * COST IS NOT THE OBJECTION, which is rare here: the round turn is 1.4-2.9% of the stop.
+//   * 31,752 declared cells, 19,579 scorable, and only 37.1% profitable on research. The
+//     marginal-consensus cell fails BOTH nulls on research (random entry p 0.482, random filter
+//     p 0.530) and on locked (0.292 / 0.184), on n=42 and n=9 trades.
+//   * THE ATR SIGN MOVED AGAIN. Ceilings are the positive family here (ceil<=1.0 +0.0062 marginal)
+//     and floors are negative (>=1.2 -0.0228) -- the reverse of one prior study on this branch and
+//     the same direction as another. Both directions are exposed as inputs for that reason.
+//   * A PLAIN ATR TRAILING MEAN IS A CLOCK. NQ's RTH ATR is 34.8 against 13.1 overnight, so an RTH
+//     bar clears its own 50-bar trailing mean 98.9% of the time. The time-of-day baseline used here
+//     lands at 51.4%. Do not use `atr / sma(atr, n)` as a regime reading on a 24-hour tape.
+//
+// No commission or slippage is set by this script. Set them in Properties before reading anything.
+
+strategy("VWAP + Stoch + ATR", overlay = true, initial_capital = 50000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false)
+
+// ------------------------------------------------------------------ inputs
+grpT = "Trigger -- stochastic"
+kLen     = input.int(14, "%K length", minval = 2, group = grpT)
+dLen     = input.int(3,  "%D length", minval = 1, group = grpT)
+kSmooth  = input.int(3,  "%K smoothing", minval = 1, group = grpT)
+osLvl    = input.float(30.0, "Oversold floor (long)", minval = 1, maxval = 50, group = grpT)
+obLvl    = input.float(70.0, "Overbought ceiling (short)", minval = 50, maxval = 99, group = grpT)
+doLong   = input.bool(true,  "Long side", group = grpT)
+doShort  = input.bool(false, "Short side  (gross-NEGATIVE on 4 of 4 geometries)", group = grpT)
+
+grpV = "Location -- session VWAP"
+vwapMode = input.string("with trend", "VWAP reading", group = grpV, options = ["off", "with trend", "with reversion", "anchor slope", "far >= 1.0 ATR", "near <= 0.5 ATR"])
+useVol   = input.bool(true, "Volume-weight the anchor  (worth +0.0096 Sharpe over 69,003 pairs)", group = grpV)
+slopeLen = input.int(8, "Anchor slope lookback (bars)", minval = 2, group = grpV)
+
+grpA = "Regime -- ATR vs a causal time-of-day baseline"
+atrMode  = input.string("ceiling <= 1.0", "ATR reading", group = grpA, options = ["off", "floor >= 1.0", "floor >= 1.2", "ceiling <= 1.0", "ceiling <= 0.8"])
+atrLen   = input.int(14, "ATR length", minval = 2, group = grpA)
+todMin   = input.int(20, "Minimum prior same-minute observations", minval = 5, group = grpA)
+
+grpE = "Exit"
+stopN    = input.float(1.5, "Stop (x ATR at the signal bar)", minval = 0.1, step = 0.25, group = grpE)
+tpN      = input.float(1.5, "Target (x ATR, 0 = none)", minval = 0.0, step = 0.25, group = grpE)
+holdBars = input.int(48, "Hard hold cap (bars)", minval = 1, group = grpE)
+
+grpS = "Session -- New York"
+sessOn   = input.bool(true, "Entries only inside the window", group = grpS)
+sStart   = input.int(570, "Start (minutes past NY midnight, 570 = 09:30)", group = grpS)
+sEnd     = input.int(960, "End   (minutes past NY midnight, 960 = 16:00)", group = grpS)
+
+// ------------------------------------------------------------------ clock
+// Bare `hour`/`minute` are EXCHANGE time (Chicago for CME). New York is asked for explicitly.
+nyH   = hour(time, "America/New_York")
+nyMin = nyH * 60 + minute(time, "America/New_York")
+newDay = ta.change(time("D")) != 0
+inRth  = nyMin >= sStart and nyMin < sEnd
+
+// ------------------------------------------------------------------ ATR (the branch definition)
+// `ta.atr` is Wilder's; the research layer uses ema(tr, n). They differ, so this matches the research.
+atr = ta.ema(ta.tr(true), atrLen)
+
+// ------------------------------------------------------------------ session VWAP, both anchors
+var float cumPV = 0.0
+var float cumV  = 0.0
+var float cumTP = 0.0
+var float cumN  = 0.0
+if barstate.isconfirmed
+    if newDay
+        cumPV := 0.0
+        cumV  := 0.0
+        cumTP := 0.0
+        cumN  := 0.0
+    if inRth
+        tp = (high + low + close) / 3.0
+        cumPV := cumPV + tp * volume
+        cumV  := cumV + volume
+        cumTP := cumTP + tp
+        cumN  := cumN + 1.0
+vwapW = cumV > 0 ? cumPV / cumV : na
+vwapU = cumN > 0 ? cumTP / cumN : na
+vwap  = useVol ? vwapW : vwapU
+vwapSlope = na(vwap) or na(vwap[slopeLen]) ? na : (vwap - vwap[slopeLen]) / math.max(atr, 1e-12)
+vwapDist  = na(vwap) ? na : (close - vwap) / math.max(atr, 1e-12)
+
+// ------------------------------------------------------------------ ATR time-of-day baseline
+// The mean ATR at THIS minute-of-day over PRIOR sessions only. A plain trailing mean is a clock:
+// NQ's RTH ATR is 2.7x its overnight ATR, so an RTH bar clears sma(atr,50) 98.9% of the time.
+var float[] todSum = array.new_float(1440, 0.0)
+var int[]   todCnt = array.new_int(1440, 0)
+slot = nyMin
+priorSum = array.get(todSum, slot)
+priorCnt = array.get(todCnt, slot)
+todMean = priorCnt >= todMin ? priorSum / priorCnt : na
+if barstate.isconfirmed and not na(atr)
+    array.set(todSum, slot, priorSum + atr)
+    array.set(todCnt, slot, priorCnt + 1)
+atrRatio = na(todMean) ? na : atr / math.max(todMean, 1e-12)
+
+// ------------------------------------------------------------------ stochastic
+rawK = ta.stoch(close, high, low, kLen)
+K = ta.sma(rawK, kSmooth)
+Dv = ta.sma(K, dLen)
+crossUp = K > Dv and K[1] <= Dv[1]
+crossDn = K < Dv and K[1] >= Dv[1]
+
+// ------------------------------------------------------------------ gates
+vwapOkL = vwapMode == "off" ? true : vwapMode == "with trend" ? (not na(vwap) and close > vwap) : vwapMode == "with reversion" ? (not na(vwap) and close < vwap) : vwapMode == "anchor slope" ? (not na(vwapSlope) and vwapSlope > 0) : vwapMode == "far >= 1.0 ATR" ? (not na(vwapDist) and math.abs(vwapDist) >= 1.0) : (not na(vwapDist) and math.abs(vwapDist) <= 0.5)
+vwapOkS = vwapMode == "off" ? true : vwapMode == "with trend" ? (not na(vwap) and close < vwap) : vwapMode == "with reversion" ? (not na(vwap) and close > vwap) : vwapMode == "anchor slope" ? (not na(vwapSlope) and vwapSlope < 0) : vwapMode == "far >= 1.0 ATR" ? (not na(vwapDist) and math.abs(vwapDist) >= 1.0) : (not na(vwapDist) and math.abs(vwapDist) <= 0.5)
+atrOk = atrMode == "off" ? true : na(atrRatio) ? false : atrMode == "floor >= 1.0" ? atrRatio >= 1.0 : atrMode == "floor >= 1.2" ? atrRatio >= 1.2 : atrMode == "ceiling <= 1.0" ? atrRatio <= 1.0 : atrRatio <= 0.8
+
+sessOk = not sessOn or inRth
+longSig  = doLong  and crossUp and K < osLvl and vwapOkL and atrOk and sessOk
+shortSig = doShort and crossDn and K > obLvl and vwapOkS and atrOk and sessOk
+
+// ------------------------------------------------------------------ orders
+// The exit-bar marker is updated BEFORE the entry test, so a trade cannot re-enter on the bar it
+// closed on (`STUDY_V22`: a stale marker was worth 95 extra trades on 15m).
+var int lastExitBar = -1
+var int nClosed = 0
+var int entryBar = -1
+var float pendAtr = na
+if strategy.closedtrades != nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and bar_index != lastExitBar and not na(atr) and atr > 0
+
+if canEnter and longSig
+    pendAtr := atr
+    entryBar := bar_index
+    strategy.entry("L", strategy.long)
+    // fill-relative bracket, placed WITH the entry so the fill bar is protected
+    strategy.exit("Lx", from_entry = "L", loss = math.round(stopN * pendAtr / syminfo.mintick), profit = tpN > 0 ? math.round(tpN * pendAtr / syminfo.mintick) : na)
+
+if canEnter and shortSig
+    pendAtr := atr
+    entryBar := bar_index
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", from_entry = "S", loss = math.round(stopN * pendAtr / syminfo.mintick), profit = tpN > 0 ? math.round(tpN * pendAtr / syminfo.mintick) : na)
+
+if strategy.position_size != 0 and entryBar >= 0 and bar_index - entryBar >= holdBars
+    strategy.close_all(comment = "hold cap")
+
+// ------------------------------------------------------------------ plots
+plot(vwapMode == "off" ? na : vwap, "Session VWAP", color = color.new(#2a78d6, 0), linewidth = 2)
+
+var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "reading", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 0, "value", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 0, 1, "%K / %D", text_size = size.tiny)
+    table.cell(hud, 1, 1, str.tostring(K, "#.0") + " / " + str.tostring(Dv, "#.0"), text_size = size.tiny)
+    table.cell(hud, 0, 2, "close - VWAP (ATR)", text_size = size.tiny)
+    table.cell(hud, 1, 2, str.tostring(vwapDist, "#.00"), text_size = size.tiny)
+    table.cell(hud, 0, 3, "ATR / time-of-day mean", text_size = size.tiny)
+    table.cell(hud, 1, 3, na(atrRatio) ? "warming up" : str.tostring(atrRatio, "#.00"), text_size = size.tiny)
+    table.cell(hud, 0, 4, "corr(%K, VWAP dist)", text_size = size.tiny)
+    table.cell(hud, 1, 4, "+0.831 measured", text_color = color.new(#eb6834, 0), text_size = size.tiny)
