@@ -2865,6 +2865,35 @@ the wrong shape for the base itself. **Operational**: two torch processes on fou
 threads and ran 31 minutes without producing a row that one process produces in twelve -- run torch
 ladders sequentially or pin `torch.set_num_threads`. See `docs/ib/STUDY_EMA48_VWAP_DL.md`.
 
+**THE DONCHIAN BREAKOUT ON GOLD IS A BULL-MARKET DRIFT EXPOSURE, AND A TWO-LAYER BUILD KILLED IT AT
+BOTH GATES.** Full mechanism-first build on `XAU_ISO_15m` (clock re-derived NY+7, pre-2010 excluded,
+three blocks: primary-fit 2010-2017, meta 2018-2022, locked 2023-2026 where gold rose **167.8%**).
+600 Optuna trials on the primary block ALONE picked **SHORT-only** -- a fit to gold's 2010-2017 bear
+-- and inverted: block B -0.00404 p 1.000, block C -0.06174 p 1.000. Five geometries FROZEN from
+other markets x three sides: **0 of 15 cells clear p<=0.10 on block A and 0 of 15 on block B**; 4 of
+15 clear on block C and **all four are LONG**. **GROSS-POSITIVE 14/15 ON BLOCK A AGAINST NET-POSITIVE
+4/15 -- gold's cost floor is the binding constraint, not the signal**, and the 0.30 USD/oz round turn
+is an assumption no feed here can check. The random-entry drift control prices the block-C passes
+exactly as `STUDY_TURTLE` predicts: the breakout beats a coin flip with the same exits at p 0.000 on
+C and on **0 of 4 cells on A and 1 of 4 on B** -- present only in the block opened last, the wrong
+shape for the eleventh time. **THE META LAYER WAS AT THE NOISE FLOOR BEFORE GATE 2 RAN**: 28 causal
+features (FFD fracdiff with **d = 0.7** chosen by ADF on block A only, 97-bar fixed window; a
+Baum-Welch HMM fitted on block A and read **FILTERED** only -- filtered and smoothed labels agree on
+96.4% of bars, which is why STUDY_V27's leak is easy to miss), truncation audit **0 mismatches**, and
+OOF AUC **0.487 / 0.510 / 0.478** with **every IC negative** and the shuffled twins indistinguishable.
+Gate 2 on UNSIZED returns: **0 of 18 declared cells clear**; best rf@70% p 0.122 and **p 0.198 against
+a random filter of the same selectivity**; the logistic model's uplift falls MONOTONICALLY as it
+filters harder. One read of block C: the filter adds **+0.00423 %/event at random-filter p 0.443**.
+Corrected DSR curve **0.17-0.38** against E[max SR|null] 0.16-0.19 over 690 counted trials; White's
+reality check **p 0.276 FAIL**. **AND `var_trials` DECIDES THE DSR, SO STATE WHAT IT IS MEASURED
+OVER**: the first run printed **0.9919** because it was fed the variance of the 18 Gate-2 UPLIFTS
+instead of the 639 trial SHARPES -- the same error class as the VP/TPO study with the opposite sign
+(there it was estimated from annualised figures and came out too HARSH, 0.571 against 0.912). One
+thing did work: block C kept **72.3%** against a 70% target, so purged embargoed CV on a properly
+frozen transform DOES produce a score whose distribution transfers -- the opposite of
+`STUDY_AUTOBNN`, where a research threshold kept 105 of 105 locked events. Second consecutive primary
+killed at Gate 1. See `docs/ib/STUDY_XAU_TWO_LAYER.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2914,6 +2943,7 @@ ladders sequentially or pin `torch.set_num_threads`. See `docs/ib/STUDY_EMA48_VW
 | `research/scalp89/` | the submitted NQ Scalping System transcribed with its order model (naked fill bar, Pine intrabar path, no flatten -- each modelled both ways), exit-machine and entry ablations, fixed-horizon signal tests on four feed-blocks, matched controls, a 160-cell geometry sweep, a 729-cell in-fold walk-forward with a random-cell arm, and a perturbation Monte Carlo with the indicators recomputed; `research_log.md` carries the trial count |
 | `research/inst/vp_tpo.py` | 45 causal features -- volume profile (1-minute source mapped to the closed 15m bar), TPO letters / value area / single prints / IB, EMA200 and EMA 13/48 readings, ATR variables -- with `truncation_audit` and `walk_tp`, a per-bar-stop / per-bar-target walker exact against the engine |
 | `research/inst/run_vp_scalp.py` | the VP/TPO/EMA/ATR battery on the 07:00-11:00 scalp: base rates, feature IC with a shuffled null, 43 entry conditions vs a same-selectivity control with BH, 37 target rules vs a same-distance random target, 27 stop rules in three units, one locked read; `run_vp_scalp2.py` ladder / co-selection / mechanism / years / bootstrap, `run_vp_scalp3.py` the drop-one, `vp_tpo_parity.py` the shipped Pine's profile diffed bar by bar |
+| `research/xau/` | the XAUUSD two-layer build: `xau_core.py` (data admission with the clock re-derived, three blocks, gold's cost model, the Donchian primary as an event stream), `run_phase0_gate1.py` (Phase 0 written before any code, Optuna on the primary block alone, Gate 1 with a side-flip and zero-cost arm and a cost stress), `run_frozen.py` (five geometries frozen from other markets x three sides x three blocks), `run_drift_control.py` (the same side, exits and trade count entered at RANDOM bars), `xau_meta.py` (FFD fracdiff with d chosen by ADF on the primary block, a causal HMM read FILTERED with the smoothed version kept only as a leakage diagnostic, 28 features, truncation audit), `run_meta_gate2.py` (purged embargoed CV, shuffled twins, Gate 2 on unsized returns with sizing reported not credited, one locked read, deflation), `run_deflate_fix.py` (the DSR recomputed over the right trial population) |
 | `research/lev/lev_core.py`, `run_gate1.py` | the mechanism-first primary: Phase 0 spec in the module docstring, the `L(L-1)` arithmetic that forces the side, the event stream with one declared parameter, a causality audit that rebuilds every trigger from bars ending at entry, then Gate 1 strict and relaxed with the side-flip and always-long arms and the observation-time trial count |
 | `research/inst/vp_next0.py` … `vp_next2.py` | the VP/TPO handoff executed: R-space read, veto-vs-subset, day-clustered null, PSR/DSR/MinBTL/power (`vp_next0`); `vp_tpo2.py` the profile parameterised by bin mode / letter / side; bin x letter x ceiling sweep and CSCV PBO over the construction x stop grid (`vp_next1`); stop inside the gate on p99 drawdown, extension-factor IC, extended drop-one, day effect and random entry inside the gate's days (`vp_next1b`); the pre-registered US100-pre-2022 / US30 / short-mirror reads with bar-matched, day-clustered and random-entry nulls (`vp_next2`) |
 | `research/inst/run_scalp_filters.py` | 38 declared conditions in eight families on the 07:00-11:00 scalp base: base rates on the signal bars, each against a same-selectivity random filter on research, BH across the pool, pair stacks, one locked read of the survivors against a locked random filter |
