@@ -1,0 +1,15 @@
+GATE 1 -- the V61 PRIMARY alone (Donchian breakout, CVD gate OFF), equal-weighted, costs in
+
+                                         n  mean %/trade                     95% CI       p     hit  verdict
+  incumbent 30m research               494        0.0387 [  -0.0128,   +0.0928]   0.072   27.9%  PASS
+  incumbent 30m locked                 249        0.0571 [  -0.0422,   +0.1611]   0.136   31.3%  MARGINAL
+  15m preset research                  967        0.0386 [  +0.0105,   +0.0667]   0.002   37.4%  PASS
+  15m preset locked                    481        0.0590 [  +0.0080,   +0.1150]   0.017   39.9%  PASS
+
+GATE 2 -- the CVD gate as the meta layer, judged UNSIZED on the primary's own events
+
+                                       kept  unfiltered   filtered    uplift                   95% CI       p  verdict
+  incumbent 30m research                23%      0.0387     0.0684   +0.0298 [  -0.0751,   +0.1602]   0.295  MARGINAL
+  incumbent 30m locked                  24%      0.0571     0.1627   +0.1056 [  -0.1035,   +0.3477]   0.168  MARGINAL
+  15m preset research                   29%      0.0386     0.0594   +0.0209 [  -0.0259,   +0.0669]   0.196  MARGINAL
+  15m preset locked                     30%      0.0590     0.1136   +0.0546 [  -0.0284,   +0.1394]   0.115  MARGINAL
