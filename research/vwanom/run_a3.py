@@ -20,7 +20,7 @@ SK = "/root/.claude/skills/synced/a952e675-7aaf-4d14-bf01-c1a3db21eb3a_641d119d-
 sys.path.insert(0, SK + "/mechanism-first-alpha/scripts")
 sys.path.insert(0, SK + "/quant-strategy-lab/scripts")
 import gates, splits
-import run_a2 as A2  # noqa: F401  -- reuses prep/models/MLP/oof
+import a2lib as A2  # prep/models/MLP/oof, WITHOUT re-running the ladder
 
 RNG = np.random.default_rng(99)
 pd.set_option("display.width", 235)
