@@ -150,11 +150,19 @@ def build(f, fit_mask=None, models=None, seed=0):
     if models is not None and "ae" in models:
         ae, iso_m, mu_c, P_c = models["ae"], models["iso"], models["mu"], models["P"]
     else:
-        ae = AutoEncoder(hidden=(16, 6), epochs=60, seed=seed).fit(bar[fitb])
+        # The AE, the forest and the covariance are fitted on a CAPPED RANDOM SUBSAMPLE of the
+        # research bars. Learning what an ordinary bar looks like does not need 240,000 of them,
+        # and the cap is what makes the study rerunnable in minutes. The draw comes from the fit
+        # mask only, so it cannot reach outside the research block.
+        idx = np.flatnonzero(fitb)
+        rs = np.random.default_rng(seed)
+        sub = idx if len(idx) <= 60000 else rs.choice(idx, 60000, replace=False)
+        ae = AutoEncoder(hidden=(16, 6), epochs=40, seed=seed).fit(bar[sub])
         from sklearn.ensemble import IsolationForest
-        iso_m = IsolationForest(n_estimators=200, random_state=seed).fit(bar[fitb])
-        mu_c = np.nanmean(bar[fitb], 0)
-        C = np.cov(np.nan_to_num(bar[fitb] - mu_c), rowvar=False)
+        iso_m = IsolationForest(n_estimators=200, random_state=seed,
+                                max_samples=min(50000, len(sub))).fit(bar[sub])
+        mu_c = np.nanmean(bar[sub], 0)
+        C = np.cov(np.nan_to_num(bar[sub] - mu_c), rowvar=False)
         P_c = np.linalg.pinv(C + 1e-9 * np.eye(C.shape[0]))
     err = np.full(n, np.nan); err[ok] = ae.error(bar[ok])
     F["anm.ae_err"] = err
