@@ -380,3 +380,31 @@ ATR stop and an EMA trail earns **+0.15 to +0.32 R on both sides** in markets th
   research and reversed on locked; here it is monotone toward higher on **both feeds and both
   blocks**, and it carries 0.40–0.46 of the US30 objective. That is the one thing in this family
   worth a dedicated test, and it gets one in §11.
+
+## 12. vectorbt as a second engine
+
+Run as a **transcription check first** — the trade count must match before any P&L difference is
+read. vectorbt has failed transcription three times on this branch (`STUDY_V46`, `V51`, `V53`);
+the two avoidable defects are handled as in the gold study (`sl_stop`/`tp_stop` as per-bar arrays
+so an ATR stop anchored at the signal bar is expressible; the close-only EMA trail supplied as an
+explicit boolean exit). Both arms run with tightening off, which M1 measured inert.
+
+| feed | variant | engine n | vbt n | ratio | engine pts | vbt pts | gap |
+|---|---|---|---|---|---|---|---|
+| US100 | trail live on the fill bar (wrong) | 771 | 641 | 0.831 FAIL | +3.14 | +6.60 | — |
+| US100 | trail cannot fire on the fill bar | 771 | 761 | **0.987 PASS** | +3.14 | +5.86 | **+86.8%** |
+| US30 | trail live on the fill bar (wrong) | 510 | 434 | 0.851 FAIL | +5.78 | +5.19 | — |
+| US30 | trail cannot fire on the fill bar | 510 | 510 | **1.000 PASS** | +5.78 | +6.32 | **+9.2%** |
+| US30_ISO | trail live on the fill bar (wrong) | 168 | 144 | 0.857 FAIL | +9.04 | +1.50 | — |
+| US30_ISO | trail cannot fire on the fill bar | 168 | 165 | **0.982 PASS** | +9.04 | +2.97 | **−67.1%** |
+
+**The fill-bar defect reproduces on all three feeds** — letting the close-only trail fire on the
+bar the position filled costs 14–17% of the trade count, exactly as it did on gold (0.841 there).
+
+**And the intrabar convention is worth more than any edge measured here, with no consistent sign.**
+Once transcription passes, the same signals priced by the two engines differ by **+86.8% on US100,
++9.2% on US30 and −67.1% on US30_ISO**. When the ATR stop and the close-only trail fall inside one
+bar this branch takes the stop and vectorbt resolves it by its own order; `STUDY_V38` measured 2.1×
+and `STUDY_V41` 22.9× for the same class of disagreement. A second engine is a second opinion about
+*execution*, never a correction to the research — and on this rule it is the largest number on the
+page.

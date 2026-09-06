@@ -1,0 +1,7 @@
+feed,variant,engine_n,vbt_n,ratio,pass_,engine_pts,vbt_pts,gap_pct
+US100,trail live on the fill bar (wrong),771,641,0.8314,False,3.138,6.596,110.2
+US100,trail CANNOT fire on the fill bar,771,761,0.987,True,3.138,5.862,86.8
+US30,trail live on the fill bar (wrong),510,434,0.851,False,5.784,5.186,-10.3
+US30,trail CANNOT fire on the fill bar,510,510,1.0,True,5.784,6.317,9.2
+US30_ISO,trail live on the fill bar (wrong),168,144,0.8571,False,9.044,1.5,-83.4
+US30_ISO,trail CANNOT fire on the fill bar,168,165,0.9821,True,9.044,2.973,-67.1
