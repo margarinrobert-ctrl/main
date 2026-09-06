@@ -39,7 +39,7 @@ def sig_of(mk, side, vol_mult, drop_c6=False):
     return s, p
 
 
-def rnd_filter(mk, base_sig, keep_n, side, p, blk, draws=250):
+def rnd_filter(mk, base_sig, keep_n, side, p, blk, draws=150):
     """A random filter of the SAME selectivity, applied to the un-gated rule's own signal bars and
     RE-SIMULATED, so the position lock behaves as it does for the real gate."""
     D = DS[mk]
