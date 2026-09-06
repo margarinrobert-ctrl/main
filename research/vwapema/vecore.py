@@ -200,7 +200,12 @@ def triggers(D, side=1, use_vwap_vol=True, p=None):
         C3 = (np.maximum(h, prev_h) >= e50) & (e50 >= c)
         C4a = (uw >= p["wick_body"] * body) & (lw <= 0.5 * uw)
         C4b = (c < prev_o) & (o > prev_c)
-    C5 = D["v"] > p["vol_mult"] * D["vsma"]
+    # `vol_mult <= 0` means C5 OFF, explicitly. Setting the multiplier to zero is NOT the same
+    # thing on a feed with no volume: `np.nan > 0` is False, so C5 then blocks EVERY bar and the
+    # rule silently takes no trades -- which is how the first forward read came back with 0 trades
+    # on all five cells instead of an answer.
+    C5 = (np.ones(D["n"], bool) if p["vol_mult"] <= 0
+          else np.asarray(D["v"] > p["vol_mult"] * D["vsma"]))
     C6 = (h - l) >= p["range_mult"] * atr
     parts = dict(C1=C1, C2=C2, C3=C3, C4=(C4a | C4b), C4a=C4a, C4b=C4b, C5=C5, C6=C6,
                  ambig=~ambiguous, rth=D["rth"])
@@ -211,7 +216,7 @@ def triggers(D, side=1, use_vwap_vol=True, p=None):
 
 @njit(cache=True)
 def _walk(o, h, l, c, atr, e50, e20, vwap, sess_end, sig, side, atr_stop, tgt_R, tighten_R,
-          use_tighten, flatten, cost_rt, slip, first, last_bar,
+          use_tighten, flatten, cost_rt, slip, first, last_bar, use_trail,
           out_sig, out_x, out_R, out_pct, out_why, out_risk, out_touch):
     """Signal at bar i's close, fill at bar i+1's OPEN. Initial stop intrabar; EMA trail
     close-only; optional final-leg tightening to EMA20 above `tighten_R`; optional flatten at the
@@ -279,8 +284,12 @@ def _walk(o, h, l, c, atr, e50, e20, vwap, sess_end, sig, side, atr_stop, tgt_R,
                     out = tgt if o[j] > tgt else o[j]
                     why = 1
                     break
-            # 2. the trail -- CLOSE-ONLY, and only from the bar after the fill
-            if j > a:
+            # 2. the trail -- CLOSE-ONLY, and only from the bar after the fill.
+            # `use_trail=0` removes it entirely, which is a different question from `use_tighten`
+            # (that only switches the EMA20 final leg). Pushing the trail EMA to a long window is
+            # NOT a substitute: it leaves the trail live, rarely binding, and the position lock
+            # then starves the sample instead of answering the question.
+            if use_trail == 1 and j > a:
                 fl = (c[j] - px) * side / risk
                 trail = e50[j]
                 if use_tighten == 1 and fl >= tighten_R:
@@ -315,7 +324,7 @@ def _walk(o, h, l, c, atr, e50, e20, vwap, sess_end, sig, side, atr_stop, tgt_R,
 
 
 def run(D, sig, side=1, tgt_R=3.0, atr_stop=None, tighten=True, flatten=False,
-        cost_rt=COST_RT, slip=SLIP, p=None):
+        cost_rt=COST_RT, slip=SLIP, p=None, trail=True):
     p = {**PARAMS, **(p or {})}
     atr_stop = p["atr_stop"] if atr_stop is None else atr_stop
     _e200, e50p, e20p, atrp = periods(D, p)
@@ -328,7 +337,7 @@ def run(D, sig, side=1, tgt_R=3.0, atr_stop=None, tighten=True, flatten=False,
               np.nan_to_num(D["vwap"], nan=np.nan), D["sess_end"],
               np.asarray(sig, np.bool_), int(side), float(atr_stop), float(tgt_R),
               float(p["tighten_R"]), 1 if tighten else 0, 1 if flatten else 0,
-              float(cost_rt), float(slip), 250, n - 2,
+              float(cost_rt), float(slip), 250, n - 2, 1 if trail else 0,
               os_, ox, oR, opct, owhy, orisk, otouch)
     t = pd.DataFrame(dict(sig=os_[:k], exit_bar=ox[:k], R=oR[:k], pct=opct[:k], why=owhy[:k],
                           risk=orisk[:k], vwap_touch=otouch[:k]))
