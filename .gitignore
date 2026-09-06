@@ -65,3 +65,6 @@ results/apm/.done
 results/trendday/sweep_*.csv
 results/trendday/dc_*.csv
 results/inst/frontier_grid.parquet
+
+# feature/model caches — regenerable by research/vwanom/run_a1.py, large binaries
+results/vwanom/*.pkl
