@@ -42,9 +42,7 @@
 //
 // COMMISSION AND SLIPPAGE ARE NOT SET HERE. Set them in Properties before reading a report.
 
-strategy("US30 Initial Balance", shorttitle = "IB US30", overlay = true, pyramiding = 0,
-     initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1,
-     calc_on_every_tick = false, process_orders_on_close = false)
+strategy("US30 Initial Balance", shorttitle = "IB US30", overlay = true, pyramiding = 0, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, calc_on_every_tick = false, process_orders_on_close = false)
 
 TZ = "America/New_York"
 gS = "Session (New York wall-clock)"
