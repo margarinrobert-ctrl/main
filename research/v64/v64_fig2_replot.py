@@ -1,3 +1,4 @@
+"""Re-render figure 2 from the saved Monte Carlo arrays -- seconds instead of the 400 s full run."""
 import os, sys, warnings, numpy as np, pandas as pd
 import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
@@ -5,8 +6,16 @@ ROOT="/home/user/main"
 for p in ("research","research/v61","research/v53","research/v54","research/v56","research/v64"): sys.path.insert(0,os.path.join(ROOT,p))
 import v64opt as O, v61core as V
 warnings.filterwarnings("ignore"); OUT=os.path.join(ROOT,"results/v64"); rng=np.random.default_rng(11)
-sys.path.insert(0, os.path.join(ROOT,"research/v64"))
-from v64_figs import PRESETS, RUNGS, C, BG, FG, GRID, C3, C4
+# constants duplicated rather than imported: v64_figs runs its 400-second Monte Carlo at module level
+PRESETS = {
+    "incumbent 30m": dict(tf=30, ent=20, exN=20, stop=2.0, tp=0.0, hold=480, adapt=0, k=3, w=20, use_ma=0, ma_thr=0.0, use_chop=0, chop_thr=99.0, psh=0),
+    "15m preset": dict(tf=15, ent=15, exN=30, stop=3.0, tp=6.0, hold=480, adapt=0, k=3, w=30, use_ma=0, ma_thr=0.0, use_chop=0, chop_thr=99.0, psh=0),
+    "Pareto 15m": dict(tf=15, ent=20, exN=34, stop=3.14, tp=5.38, hold=255, adapt=0, k=5, w=58, use_ma=0, ma_thr=0.0, use_chop=0, chop_thr=99.0, psh=0),
+}
+RUNGS = dict(ent=[-5, 5], exN=[-5, 5], stop=[-0.5, 0.5], tp=[-1.0, 1.0], hold=[-120, 120], k=[-1, 1], w=[-10, 10])
+BG, FG, GRID = "#0f1115", "#e6e6e6", "#2a2e36"
+C = {"incumbent 30m": "#8a8f99", "15m preset": "#3ec9a7", "Pareto 15m": "#f2b134"}
+C3, C4 = "#e0605e", "#f2b134"
 Z=np.load(os.path.join(OUT,"v64_mc_arrays.npz"))
 Ds={tf:O.build(tf) for tf in (15,30)}; base={}
 for nm,p in PRESETS.items():
