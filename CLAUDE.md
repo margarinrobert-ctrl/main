@@ -3010,6 +3010,34 @@ from ret/DD 13.34 / Sharpe 1.78 to **9.37 / 1.60** -- `STUDY_SEMIVARIANCE`'s fin
 real leg rather than a simulated coin flip. What would settle whether this refutes CVD or only its
 resolution here is **1-minute US30 bars**. See `docs/ib/STUDY_V61_US30.md`.
 
+**THE STRONGEST META LAYER ON THIS BRANCH, AND IT STILL DOES NOT CLEAR OUT OF SAMPLE.** Full
+feature-engineering pass on the V61 CVD rule at NQ 15m under the mechanism-first architecture: 51
+causal features in 7 declared families from raw OHLCV, fracdiff and a causal HMM as META FEATURES
+ONLY. **GATE 1 DECIDED WHICH PRIMARY WAS ELIGIBLE**: 15m all-hours clears both blocks (p 0.006 /
+0.005) while 15m 07:00-11:00 + flatten FAILS research (p 0.330), so the meta layer was built on the
+former -- building it on the latter is the move the two gates exist to prevent. Fracdiff d = **0.8**
+by ADF on research only; HMM fitted on research and read FILTERED, with filtered and smoothed labels
+agreeing on **96.8%** of bars, which is why STUDY_V27's leak is easy to miss. Truncation audit
+**0 mismatches / 1,020**. Screen: **2 of 51 features pass >95% of signal bars** so the pool binds;
+**9 of 51 clear p<=0.05 against 2.6 expected**, every family contributing at least one; **0 exact
+duplicates** with correlation measured ON THE SIGNAL BARS -- and `vol.rv96` vs `regime.hmm_side`
+reads **0.945**, so the HMM's sideways state is very nearly realised volatility, worth knowing before
+crediting the Markov apparatus. Stability: **18 of 51 hold their sign across both research halves AND
+all three volatility regimes** against ~6.4 expected; 8 of 10 family-first picks survive. Gate 2 with
+a RETURN objective (not win/lose): rf OOF IC **+0.1637 against a shuffled twin's -0.0460**, and
+**4 of 20 declared cells clear BOTH nulls**, best rf@40% uplift **+0.1101 at bootstrap p 0.006 and
+random-filter p 0.007**. **DROP-ONE: ALL 8 FEATURES CONTRIBUTE** -- removing any one lowers the
+uplift, `mom.roc240` by -0.150. **ONE LOCKED READ: PF 1.862 -> 2.707 on 56 of 125 events, uplift
++0.0538, and a random filter of the same size gives p 0.145** -- directionally right, not
+significant. It kept **45% against the 40% it was set for**, so the score IS calibrated across the
+split (the opposite of STUDY_AUTOBNN); total return falls **12.78% -> 8.74%** because it removes 55%
+of the trades; and p90 of R in the kept set is BELOW baseline for all four models, so even a return
+objective trims the tail slightly. Deflated Sharpe **0.750** against an expected best-of-null 0.218
+over 136 counted looks, White's reality check **p 0.011 PASS**. Ships nothing: 125 locked events
+cannot separate a +0.05 %/event uplift from noise, and the fix is MORE EVENTS, not more searching.
+**Both fracdiff z-scores are NEGATIVE**, the twelfth route to mean reversion here.
+See `docs/ib/STUDY_V61_FEATURES_15M.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -3050,6 +3078,7 @@ resolution here is **1-minute US30 bars**. See `docs/ib/STUDY_V61_US30.md`.
 | `research/v63/` | the VWAP / triple-EMA / ATR trend design: three feeds with real volume, a chandelier-trail tensor, search on one market and a frozen read on three, drop-one and the binding hold axis |
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
 | `research/v64/` | Optuna on V61, its walk-forward and its Monte Carlo: a continuous-space numba evaluator verified to the cent against the published grid, three Optuna studies, fANOVA importance, the box-edge re-run, the V30 hold-out-an-axis surrogate; `run_wfo*.py` in-fold re-selection with a random-cell arm, span-normalised WFE and a geometry-matched control; `run_mc.py` perturbation (price jitter with the indicators RECOMPUTED, execution, missed fills, parameters) beside the permutation and the bootstrap |
+| `research/v61feat/` | feature engineering on the V61 15m rule under the two-gate architecture: `v61feat.py` (51 causal features in 7 declared families, FFD fracdiff with d by ADF on research only, a Baum-Welch HMM read FILTERED with the smoothed version kept only as a leakage diagnostic, truncation audit), `run_feat1.py` (Gate 1 on two candidate primaries, base rates on the trigger's own bars, IC against shuffled twins, redundancy measured ON THE SIGNAL BARS with family-first selection, stability across research halves and volatility regimes), `run_feat2.py` (purged embargoed CV with a RETURN objective, Gate 2 against a bootstrap and a same-selectivity random filter, drop-one incremental value, one locked read with the kept fraction reported, deflation and White's reality check), `plot_feat.py` |
 | `research/v61sess/` | the V61 rule as a user configures it: `sess_core.py` (the SCRIPT's order model with the session window, the flatten filling at the next open, and touch-as-break), `run_iss_oss.py` (IS/OOS on both timeframes, the window-vs-flatten ablation, the channel-time-reach control, and the zero-cost comparison), `run_optuna.py` (2,400 trials over two objectives with the session axis open, research only, population shape before any top row, box-edge check), `run_mc_portfolio.py` (the four Monte Carlos per leg, daily-return leg correlation, and combinations scored against the BEST single leg), `us30_core.py` + `run_us30.py` + `run_us30_mc.py` (the same rule FROZEN on US30 with the CVD built from 15m sub-bars, three nulls, the gate ablation, and the cross-market book), `plot_sess.py`, `plot_us30.py` |
 | `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
