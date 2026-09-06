@@ -572,3 +572,108 @@ locked block (bootstrap P(mean ≤ 0) 0.054 to 0.184), deflated Sharpe is 0.000 
 62–94% of the good locked results come from the 2025–26 gold rally. A preset can be perfectly
 un-overfitted and still have nothing under it — which is the position the published rule has been
 in since Part 1.
+
+---
+
+# Part 5 — why the two Optuna presets "hold", and what that turns out to mean
+
+**Verdict — they hold because they trade more, and every one of them is a degraded way of being
+long gold.** On the same days, entering at the session open with **the same ATR stop** earns more
+per trade than the rule in **11 of 12 preset-blocks**, and more per unit of drawdown in 11 of 12.
+The generalization gap correlates **−0.95 with the number of walk-forward folds a preset supports**,
+which is arithmetic, not mechanism.
+
+## 29. Four explanations, tested
+
+| explanation | test | result |
+| --- | --- | --- |
+| A. It is gold beta | regress monthly R on gold's monthly return | every preset positive-beta; the beta term is 24–113% of total R |
+| B. It is sample size | corr(folds, gap) across the six | **−0.951** |
+| C. It is low selectivity | signals as a share of session bars | 0.15–0.69%, and the *most* selective are the ones that fail |
+| D. It is an edge | beat always-long on its own days with the same stop | **1 of 12** |
+
+## 30. The correlation matrix
+
+Monthly R, 193 months:
+
+| | published | Opt totR | Opt PF | Opt retDD | Swp top | Swp nbhd | **GOLD** |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| published | 1.00 | 0.47 | 0.37 | 0.56 | 0.59 | 0.53 | **0.22** |
+| Optuna totR | 0.47 | 1.00 | 0.24 | 0.39 | 0.38 | 0.43 | **0.28** |
+| Optuna PF | 0.37 | 0.24 | 1.00 | 0.65 | 0.61 | 0.55 | **0.26** |
+| Optuna retDD | 0.56 | 0.39 | 0.65 | 1.00 | 0.71 | 0.65 | **0.30** |
+| Sweep top row | 0.59 | 0.38 | 0.61 | 0.71 | 1.00 | **0.91** | **0.24** |
+| Sweep nbhd | 0.53 | 0.43 | 0.55 | 0.65 | 0.91 | 1.00 | **0.22** |
+
+Two things. The **two sweep cells correlate 0.91** with each other — they are one configuration
+with two names, which is why they fail together. And every preset correlates **0.22–0.30 with gold
+itself**, modest in variance terms (R² 0.05–0.09) but enough that the beta term accounts for
+**24% to 113%** of each one's total R. For the published rule it is **112.7%** — the entire result
+is the gold exposure and then some.
+
+## 31. Why *these two* hold: it is the fold count
+
+| preset | trades | folds | gap |
+| --- | ---: | ---: | ---: |
+| Optuna totR | 456 | 13 | **−0.023** |
+| Optuna PF | 214 | 11 | **−0.008** |
+| As published | 592 | 13 | +0.009 |
+| Optuna ret/DD | 270 | 12 | +0.062 |
+| Sweep top row | 164 | 7 | +0.266 |
+| Sweep nbhd | 145 | 5 | +0.285 |
+
+**corr(folds, gap) = −0.951; corr(trades, gap) = −0.690.** A generalization gap shrinks toward zero
+as the fold estimate gets less noisy. The two presets that "hold" are the two with the most trades
+and the most folds. That is a statistical property of the measurement, not a property of the
+strategy — and it is why "it held out of sample" is a much weaker statement than it sounds.
+
+## 32. The decisive test — and it is not close
+
+On the same days, buy the first bar of the session, carry **the same ATR stop the rule uses**, and
+exit on the same bar the rule exited. This control cannot be accused of taking more risk: its worst
+trades match the rules' to two decimals (rule −1.05 to −1.49 R, control −1.06 to −1.58).
+
+| preset | block | rule R | session-open + same stop | rule ret/DD | control ret/DD |
+| --- | --- | ---: | ---: | ---: | ---: |
+| As published | locked | +0.142 | **+0.235** | 1.70 | **5.39** |
+| Optuna totR | locked | **+0.200** | +0.114 | **1.80** | 1.37 |
+| Optuna PF | locked | +0.182 | **+0.497** | 2.15 | **13.06** |
+| Optuna ret/DD | locked | +0.110 | **+0.506** | 0.85 | **8.50** |
+| Sweep top row | locked | +0.224 | **+0.818** | 0.76 | **11.43** |
+| Sweep nbhd | locked | +0.262 | **+0.884** | 0.69 | **9.22** |
+
+**11 of 12 preset-blocks lose, on both per-trade R and return-over-drawdown.** The single exception
+is Optuna total-R on the locked block (+0.200 against +0.114) — one cell, one block, and its
+research block loses.
+
+The six conditions are not selecting good days and then trading them well. They are selecting days
+on which gold rose, and then **entering late and worse** than simply being there.
+
+## 33. And the one that "holds" best is the most gold-dependent
+
+Fold-level, 13 folds: mean total R in folds where gold rose vs folds where it fell.
+
+| preset | gold rose | gold fell | ratio |
+| --- | ---: | ---: | ---: |
+| **Optuna totR** | **+9.17** | **+0.28** | **32×** |
+| Optuna PF | +3.42 | +2.00 | 1.7× |
+| Optuna ret/DD | +3.43 | +3.21 | 1.1× |
+| As published | +2.07 | +0.97 | 2.1× |
+| Sweep top row | +2.21 | +6.33 | 0.35× |
+| Sweep nbhd | +0.42 | +3.94 | 0.11× |
+
+The preset with the smallest generalization gap — Optuna total R, the one that looked most robust —
+earns **32× more in folds where gold rose** and essentially nothing when it did not. Its
+correlation with the fold's gold return is +0.485, the highest of the six. It "holds out of sample"
+because gold rose in 9 of the 13 out-of-sample folds.
+
+The only preset whose result is roughly *independent* of the fold's gold direction is **Optuna
+ret/DD** (+3.43 vs +3.21, corr +0.119) — and that one has a positive gap (+0.062), loses to the
+session-open control by 0.40 R, and has the worst locked bootstrap of the three (P(mean ≤ 0) 0.176).
+
+## 34. The answer
+
+"Holds out of sample" here decomposes into: **trades enough to have a stable estimate** (the fold
+count), **is long in a market that rose** (the beta and the fold split), and **is not a better way
+of being long than the naive alternative** (the session-open control). None of the three is an
+edge, and the third rules one out.
