@@ -3250,6 +3250,50 @@ PROFIT (21st time); the three US30 finalists correlate **0.60-0.91** in daily R,
 three names. See `docs/ib/STUDY_VWAP_EMA_INDICES.md`, `research/vwapema/ve_markets.py`,
 `run_m1.py`..`run_m7`.
 
+**A META LAYER CANNOT RESCUE A PRIMARY THAT FAILS GATE 1, AND THE SHUFFLED TWIN IS WHAT SHOWS IT.**
+The mechanism-first architecture run on the VWAP-EMA event stream. PHASE 0 FIRST: the rule names no
+counterparty -- no constrained flow, no risk transfer, ten tuned numbers -- so it is a fitted
+pattern carrying the full deflation burden. GATE 1, scored on percent of entry price before any
+feature exists: **the primary passes on every block it was CHOSEN on and on none of the others**
+(US100 short research p 0.013 -> locked 1.000; US100 long 0.025 -> 0.379; US30 long 0.083 -> 0.269;
+forward 0.117). 51 causal features in nine declared prefixes, truncation audit **0/40**, and every
+family's IC above its own shuffled twin -- unusual here. Then the ladder (ridge -> RF -> LightGBM ->
+XGBoost d3/d6 -> MLP 2x64 -> MLP 4x128, purged and embargoed, objective = the RETURN): **13 of 14
+real ICs are NEGATIVE and the SHUFFLED TWIN BEATS THE REAL MODEL IN 71% OF CELLS ON IC** (64% at
+keep-30%, 50% at keep-50%). Above 50% the noise floor is higher than the signal; at 71% the models
+rank events worse than random labels do. Capacity is inert again -- mlp 4x128 is no better than
+ridge, the fourth family to show it. Gate 2 passes 8 of 42 cells and ALL EIGHT are the one primary
+whose locked block reads **p 1.000 at -0.0029% of price**, so it is `STUDY_EMA48_VWAP_DL`
+reproduced: a filter makes a dead base less bad, never alive. Deflation over M=42 kept candidates
+(avg pairwise corr +0.007, effective N 41.7): best Sharpe/event +0.1936 against an
+**E[max|noise] of 0.1021**, DSR **0.895**, and **White's reality check p 0.103 FAIL** -- the two
+disagree because the DSR deflates ONE Sharpe and the reality check bootstraps the MAXIMUM over
+candidates, which is the right statistic for a 42-candidate search.
+**AND THE ONE THING THAT REPLICATES IS THE ANOMALY DIRECTION: AN EVENT ON AN UNUSUAL BAR IS A WORSE
+EVENT.** Autoencoder reconstruction error (fitted on research only, never sees a label) has a
+NEGATIVE rank correlation with the event's return in **9 of 10 feed x cell x block cells, mean rho
+-0.093, including BOTH reads on the reserved forward block**; Mahalanobis 9/10 (-0.074), joint
+outlier z 9/10 (-0.064), isolation forest 8/10 (-0.079). The supervised screen agrees from the
+other side -- the two strongest single features are the CAUSAL TIME-OF-DAY constructions and both
+are negative, `vlm.tod_ratio` **-0.219** and `vol.atr_tod` **-0.214**. That is a statement about the
+rule's own C5 volume-spike condition, not a new filter, and it agrees with
+`STUDY_DIVERGENCE_CONFIRM` (volume spikes hurt longs monotonically). CAVEATS THAT STAY ATTACHED:
+the quintile means are NOT monotone, so the consistency is in the rank correlation only; and the
+ten cells are NOT independent (six configurations, three feeds, two of them the same US30 data at
+different splits, indices correlated 0.758 over one calendar), so nine of ten is nearer three
+confirmations. The pre-declared locked read splits on CALIBRATION: US30's score keeps 50.7% against
+the 50% it was set for and its p90 RISES, while US100's keeps **73.8%** and its p90 FALLS -- a
+research threshold that does not mean the same thing out of sample, `STUDY_AUTOBNN`'s failure in a
+milder form. **TWO CONSTRUCTION RULES EARNED HERE**: measure volatility and participation against a
+CAUSAL TIME-OF-DAY baseline, never a trailing mean, because on a 24-hour tape an RTH bar clears its
+own trailing ATR mean ~99% of the time; and a recursive filter that returns ALL-NaN reads as "no
+signal" rather than as an error -- the first HMM did exactly that because 15-minute log returns are
+~1e-4, the Gaussian emission reached ~400 and the scaled backward recursion divided by a scale that
+had underflowed to 1e-300, fixed by standardising inside the fit. Also: `trn.above_slow` has a
+coefficient of variation of EXACTLY 0.0000 on the event bars because `close > EMA200` IS condition
+C1 -- the base-rate check catching the trigger restated for the eighth time.
+See `docs/ib/STUDY_VWANOM.md`, `research/vwanom/`.
+
 **THE THREE OVERFITTING QUESTIONS GAVE DIFFERENT ANSWERS ON TWO INDICES CORRELATED 0.758.**
 Rolling walk-forward with NOTHING re-selected: `corr(IS, OOS)` negative in 6 of 8 rows -- regime,
 not curve-fitting -- with the published rule's gap +0.003 on US100 and the two US30 grid winners at
