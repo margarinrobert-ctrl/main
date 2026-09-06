@@ -1,0 +1,103 @@
+THE IB-25 RETRACEMENT FOR ES -- what can be answered without an ES feed, and what cannot.
+
+NO ES SERIES EXISTS ON THIS BRANCH. `research/datasets.py` lists sixteen feeds and none is the
+S&P; CLAUDE.md has carried the line "ES has never been supplied" since STUDY_TURTLE_15M. So an ES
+backtest cannot be produced here and none is claimed below.
+
+WHAT CAN BE ANSWERED IS THE HALF THAT IS ARITHMETIC. This branch's standing rule is that A COST IS
+A FRACTION OF RISK, NOT A NUMBER OF POINTS -- the failure recorded in STUDY_TURTLE_15M was charging
+NQ's 1.72-point round turn in GOLD's points and reporting PF 0.35 as a decisive failure, when the
+same cost was 54.2% of gold's stop against 3.7% of NQ's. The IB-25 rule sizes its stop as a
+FRACTION OF THE MORNING RANGE, and a morning range is roughly a constant PERCENTAGE of the index
+whatever the index is. So the ES question that does not need ES bars is: at ES's tick and point
+value, what fraction of that risk does a round turn consume, and does the NQ verdict move when the
+NQ series is charged that fraction instead of its own?
+
+That is run below. It isolates ES's COST STRUCTURE from ES's PRICE PATH and answers the first
+exactly, while leaving the second untestable and saying so.
+
+
+==========================================================================================================================
+STEP 1 -- WHAT THE RULE'S RISK ACTUALLY IS, measured on the one market that can run it
+==========================================================================================================================
+  527 trades. Risk = (stop_frac - retr) x morning range = 0.25 x range.
+  risk in POINTS   median   29.19   p25  22.50   p75  39.69
+  risk as % of ENTRY PRICE   median 0.1509%   p25 0.1129%   p75 0.2013%
+  morning range as % of price  median 0.6086%
+
+  A morning range is a percentage of the index, not a number of points, so this % risk is
+  the quantity that carries across markets. ES's own IB range runs a comparable fraction of
+  price -- both are US equity indices trading the same 09:30 auction -- while its TICK is a
+  much larger fraction of its price. That is the whole of the ES cost question.
+
+==========================================================================================================================
+STEP 2 -- THE ROUND TURN AS A FRACTION OF THAT RISK, per contract
+==========================================================================================================================
+  Assuming the same 0.1509% risk on both indices (1 tick a side of slippage,
+  entry on a limit charged conservatively as if it paid the spread too).
+
+  contract                  pt val   tick  fee RT $  slip RT   RT pts  RT % of px  risk pts  RT as % of RISK
+  MNQ  Micro Nasdaq-100          2   0.25      1.44     0.50    1.220     0.0049%     37.72             3.2%
+  MES  Micro S&P 500             5   0.25      1.44     0.50    0.788     0.0116%     10.26             7.7%
+  NQ   E-mini Nasdaq-100        20   0.25      4.28     0.50    0.714     0.0029%     37.72             1.9%
+  ES   E-mini S&P 500           50   0.25      4.28     0.50    0.586     0.0086%     10.26             5.7%
+
+  MES pays 2.37x the fraction of risk that MNQ pays.
+  The dollar cost is lower and the RELATIVE cost is higher, because ES's 0.25 tick is
+  0.0037% of its price against 0.0010% for NQ -- 3.7x -- and the
+  fee is spread over a 2.5x smaller point count. Cheaper in dollars is not cheaper in R.
+
+==========================================================================================================================
+STEP 3 -- THE NQ SERIES RE-CHARGED AT EACH CONTRACT'S RELATIVE COST
+==========================================================================================================================
+  Same bars, same rule, same trades. Only the cost changes, set so that the round turn is
+  the same FRACTION OF RISK it would be on that contract. This is the ES cost structure
+  applied to a real intraday equity-index path; it is NOT an ES backtest.
+
+  charged as                cost/side pts     block     n  net %/trade      PF     win  $ / trade
+  MNQ  Micro Nasdaq-100             0.472  research   345     -0.00985   0.871   48.4%      -3.99
+                                    0.472    locked   182      0.01530   1.181   57.1%       6.97
+  MES  Micro S&P 500                1.121  research   345     -0.01698   0.796   48.4%      -4.48
+                                    1.121    locked   182      0.00965   1.110   57.1%       2.98
+  NQ   E-mini Nasdaq-100            0.276  research   345     -0.00770   0.895   48.4%     -32.11
+                                    0.276    locked   182      0.01701   1.203   57.1%      77.54
+  ES   E-mini S&P 500               0.833  research   345     -0.01381   0.828   48.4%     -36.98
+                                    0.833    locked   182      0.01216   1.141   57.1%      37.58
+
+==========================================================================================================================
+STEP 4 -- THE ZERO-COST VARIANT. Is ES's cost the objection, or is the rule the objection?
+==========================================================================================================================
+  GROSS, no fee and no slippage at all   research  n  345   -0.00466 %/trade   PF 0.930   win 48.4%
+  GROSS, no fee and no slippage at all   locked    n  182   +0.01942 %/trade   PF 1.235   win 57.1%
+
+  This is the number that decides it. A cost problem is a rule that makes money gross and
+  loses it net -- better fills, a cheaper broker or a bigger contract would then rescue it.
+
+==========================================================================================================================
+STEP 5 -- THE WIN RATE AGAINST ITS OWN DRIFTLESS BREAK-EVEN, which is a property of the
+==========================================================================================================================
+  GEOMETRY and not of the market. Target = the range extreme, stop = stop_frac of the range.
+  reward:risk = (retr - 0) : (stop_frac - retr), so the driftless bound is 1/(1+RR).
+
+    retr   stop      RR  break-even  actual win  net %/trade  gross %/tr
+    0.25   0.50   1.000       50.0%       51.4%     -0.00767    +0.00366
+    0.25   0.75   0.500       66.7%       68.1%     -0.00447    +0.00686
+    0.35   0.50   2.333       30.0%       26.7%     -0.02115    -0.00988
+    0.50   0.75   2.000       33.3%       34.9%     -0.00685    +0.00447
+    0.50   1.00   1.000       50.0%       51.1%     +0.00893    +0.02025
+
+  The win rate tracks the break-even the geometry implies at every rung. Moving the stop to
+  75% does raise the win rate exactly as the post claims -- and it raises the break-even by
+  the same amount, which is why expectancy does not follow.
+
+==========================================================================================================================
+WHAT THIS DOES AND DOES NOT ESTABLISH
+==========================================================================================================================
+  ESTABLISHED, and it is arithmetic rather than a backtest: at equal percentage risk an MES
+  round turn is 2.37x the fraction of risk an MNQ round turn is. ES is the cheaper
+  contract in dollars and the more expensive one in R, so the cost objection to this rule is
+  LARGER on ES than on the market it was measured on, not smaller.
+
+  NOT ESTABLISHED, and not testable here: whether the S&P's 09:30-10:30 auction retraces
+  differently from the Nasdaq's. That needs ES 1-minute bars. The strategy below is shipped
+  so it can be measured on them.

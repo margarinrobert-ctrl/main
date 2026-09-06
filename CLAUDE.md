@@ -2894,6 +2894,26 @@ frozen transform DOES produce a score whose distribution transfers -- the opposi
 `STUDY_AUTOBNN`, where a research threshold kept 105 of 105 locked events. Second consecutive primary
 killed at Gate 1. See `docs/ib/STUDY_XAU_TWO_LAYER.md`.
 
+**A COST IS A FRACTION OF RISK AND ES IS THE CHEAPER CONTRACT IN DOLLARS AND THE DEARER ONE IN R.**
+Asked for the IB-25 retracement on ES: **no ES series exists on this branch** (sixteen feeds, none
+the S&P; US100/US30 are 15m and cannot resolve a 10:20 close or a 1-minute limit fill), so the ES
+question was split into the half that is arithmetic and the half that needs bars. The rule sizes its
+stop as a FRACTION OF THE MORNING RANGE, and a morning range is a percentage of the index -- median
+risk **0.151% of price** over 527 NQ trades. At equal percentage risk an **MES round turn is 7.7% of
+risk against MNQ's 3.2%, a factor of 2.37**, because ES's 0.25 tick is 0.0037% of a 6,800 index
+against 0.0010% of a 25,000 one (3.7x) and the fee is spread over 2.5x fewer points. Re-charging the
+NQ series at each contract's RELATIVE cost -- same bars, same trades, only the cost moving -- takes
+research from -0.0099 %/trade PF 0.871 (MNQ) to **-0.0170 PF 0.796 (MES)**. Same trap as
+`STUDY_TURTLE_15M` charging NQ's points in gold's. **But cost is not the binding objection**: the
+rule is **negative GROSS at zero fee and zero slippage (-0.0047 %/trade research)**, so no broker or
+contract size rescues it, and it still loses on the block that would select it while winning on
+locked -- the wrong shape for the tenth time. Ships as `pine/ib25/IB25_RETRACEMENT_ES_strategy.pine`
+with the post's defaults, no edge claimed, the numbers in the header, and the panel printing the
+**driftless break-even beside the win rate** -- because the post's own best observation (stop to 75%
+lifts the win rate 48.4% -> 66.4%) moves the break-even to 66.7% at the same time, and the win rate
+tracks its own bound within 1.5 points at every rung of the ladder.
+See `docs/ib/STUDY_IB25_ES.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -2956,6 +2976,7 @@ killed at Gate 1. See `docs/ib/STUDY_XAU_TWO_LAYER.md`.
 | `research/absorb/` | the 50% session level + MTF ICT swings + absorption bubbles as one reversal system: causal construction with a truncation audit, base rates and lift BEFORE any P&L, a 211-cell grid read by marginal average, the exit tested fairly (no-trail arms given a real exit), drop-one, random-entry and same-selectivity controls at every trail width, the intrabar tie-break split, and one locked read |
 | `research/scalp89/s89_pine.py` | the CORRECTED order model -- what `strategy.exit` actually does on the fill bar when its stop/limit args are still `na`; verified trade-for-trade against `research/scalp89/test_pine.py`'s independent reference |
 | `research/ib25/` | the posted IB-25 retracement: session VWAP, a running 09:30-10:30 range, one live limit order a session, the three prose conditions codified as explicit parameters, the retracement and stop ladders against their own driftless break-even, a random-entry-minute control, one locked read, and `run_ib25_mnq.py` -- the dollar view with the synthetic-level deflator |
+| `research/ib25/run_ib25_es.py` | the ES question without an ES feed: the rule's risk as a percentage of price, each contract's round turn as a fraction of THAT risk, the NQ series re-charged at every contract's relative cost, the zero-cost variant, and the win rate against its own driftless break-even at five geometries |
 | `research/ibs/` | the IBS session EA: cached tensor, bar-by-bar parity, stability / MC / clusters / walk-forward / judge |
 | `research/cmma/` | the CMMA notebook, re-implemented honestly: accounting, costs, deflation, holdout |
 | `research/cmma/cmma_stats.py` | its profit factor, win rate and hold time, per DAY and per stance |
