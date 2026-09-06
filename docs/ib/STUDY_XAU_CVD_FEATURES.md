@@ -182,6 +182,65 @@ scoring best on a long-only base; block C is a **second** read of gold's locked 
 `STUDY_XAU_TWO_LAYER`, 690 counted trials), so its p 0.065 is descriptive; and it sits on a base
 that is itself null on A and B and drift on C.
 
+## CORRECTION — the screen was a subset, the script is a veto, and the shapes differ
+
+The parity harness caught an error in my own screen. `run_xcvd.py` scored every feature as a
+**subset**: run the base ungated, then split its realised trades by the feature. A script cannot do
+that. It is a **veto** — the gate decides which bars may *open* a trade, so refusing one breakout
+releases the one-position lock and lets a *later* one be taken that the ungated run never saw.
+CLAUDE.md carries this rule from `STUDY_AUCTION`: *a conditional split of realised trades is not a
+filter test — filter the triggers and re-simulate.*
+
+| block | base n | base %/ev | subset n | subset %/ev | **veto n** | **veto %/ev** | lock-freed | their %/ev |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| A | 844 | +0.0292 | 318 | +0.1092 | **400** | **+0.0563** | 82 | **−0.1485** |
+| B | 566 | +0.0213 | 211 | +0.1078 | **265** | **+0.1018** | 56 | +0.0621 |
+| C | 319 | +0.1786 | 116 | +0.3407 | **150** | **+0.2233** | 34 | **−0.1772** |
+
+The lock-freed trades are bad on two blocks of three, which is what pulls the veto edge (+0.056 on
+block A) well below the post-hoc split (+0.109). Same split the VP/TPO handoff measured from the
+other side (32 lock-freed trades reading PF 0.92).
+
+**Scored properly — against a random gate passing the same fraction of bars (32.3%), re-simulated
+end to end, 400 draws — the veto is a better-shaped result than the subset was:**
+
+| block | gated n | %/event | control p50 | excess | p | PF (vs ungated) |
+| --- | --- | --- | --- | --- | --- | --- |
+| A_primary | 400 | +0.0563 | +0.0053 | +0.0510 | **0.003** | 1.193 (1.101) |
+| B_meta | 265 | +0.1018 | +0.0398 | +0.0620 | **0.003** | 1.411 (1.076) |
+| C_locked | 150 | +0.2233 | +0.1765 | +0.0468 | 0.110 | 1.776 (1.642) |
+
+It clears **both** research blocks at p 0.003 and **decays** on the locked one — the right shape,
+where the subset framing had it *growing* across the split. That is a materially better result than
+the one reported above, and it arrived from fixing a methodological error, not from a new search.
+
+**But it loses total return on two blocks of three**, because it raises profit factor by removing
+53% of the trades: ungated → gated total, A 24.67% → 22.54%, B 12.03% → **26.97%**, C 56.96% →
+33.50%. `STUDY_V61` recorded exactly this on NQ — the gate is negative in total return everywhere
+because it removes 70–90% of the signals. Whether that is a cost depends on whether you size to a
+ratio or to a return target.
+
+None of this rescues the **sign-structure** finding above: the bearish patterns still beat the
+bullish ones 11× on a long-only base, and that remains the strongest argument against the family.
+
+## Parity — the shipped script diffed against the engine
+
+`research/xaucvd/xcvd_parity.py` writes the script's own order model out and diffs it trade for
+trade, run twice: once with the research's pivot definition (the transcription check) and once with
+Pine's `ta.pivotlow`, which requires a *strict* extreme where the research allows a tie.
+
+| | research pivots | Pine pivots | shared | Jaccard |
+| --- | --- | --- | --- | --- |
+| block A confirmed lows | 13,036 | 12,934 | 12,934 | **0.9922** |
+
+Under both definitions: **100.00% identical exit bars, per-trade correlation 1.0000**, trade-count
+ratio 1.000–1.020, and the script reads **conservative** on all three blocks (−18.4% / −0.0% /
+−0.0%). A script that reads *better* than the research is reporting the order-model gap rather than
+an edge — `STUDY_V56` measured the first V55 draft at +15.2% better, and that was a naked fill bar.
+
+The script ships with `touch` **off**, because the gold table was measured with a strict
+`high > channel` and the defaults must reproduce the header.
+
 ## Resolution — the one internal check available without 1-minute gold
 
 If CVD carried information the **finer** delta should score better. It does, weakly: 240m (16
