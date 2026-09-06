@@ -2987,6 +2987,29 @@ drawdown. Also: **the shipped script sets NO commission and NO slippage**, so a 
 report is gross unless Properties is changed; measured cost is 4.6-21.9% of gross and worst where
 the flatten is on. MC p99 drawdown 1.2-3.5x realised. See `docs/ib/STUDY_V61_SESSION.md`.
 
+**THE V61 CVD RULE DOES NOT TRANSFER TO US30, AND ITS OWN GATE IS SUBTRACTIVE THERE.** Frozen --
+geometry and 90/600-minute order-flow windows carried from NQ, nothing fitted -- and run on
+`US30_LONG_15m` (193,942 bars, 2016-2025, sha256 24dcf2e1c7ba398f, byte-identical to the disk copy),
+which chose none of it, so BOTH blocks are out of sample. **CVD needs sub-bars and this feed's
+finest is 15m**, so the incumbent's 30m chart would get TWO sub-bars a bar; it runs on 60m with
+FOUR, against the THIRTY the NQ result used, and on TICK VOLUME rather than contracts -- the same
+pair of degradations `STUDY_XAU_CVD_FEATURES` accepted on gold. Result: PF **1.146 / 1.101**,
+ret/DD 0.75 / 0.49 against NQ's 1.784 / 1.611 at 10.02 / 8.23; at MATCHED TIME REACH (10/10 on 60m =
+NQ's 600 minutes) it is **0.943 on block B**. **ALL THREE NULLS BEAT IT**: a random ENTRY with the
+same geometry earns 20.95 against the rule's 10.94 on block A (p 0.870 / 0.507), a random FILTER
+keeping the same number of the ungated base's trades earns 22.81 (p 0.760 / 0.595), and ALWAYS-LONG
+beats it on both blocks (15.12 / 29.55). Cost is 2.2% of the stop, so it is not cost.
+**THE GATE CUTS BOTH TRADES AND EDGE**: gate OFF reads PF 1.265 / 1.143 at 21.96 / 14.42 pts a trade
+on 568 / 353 trades against gate ON's 1.146 / 1.101 at 10.94 / 10.16 on 208 / 142 -- on NQ the gate
+RAISED per-trade edge in 12 of 14 cells and only cut total return; on US30 it cuts both. **The NQ
+FLATTEN finding does not replicate** (+0.081 block A, -0.091 block B, no consistent sign) but the
+07:00-11:00 + flatten configuration is **below PF 1.0 on both US30 blocks** (0.965 / 0.883) with
+bootstrap P(mean<=0) 0.568 / 0.651. **AND A DECORRELATED LEG STILL HAS TO HAVE AN EDGE**: US30
+correlates only **0.226 / 0.105** with the two NQ legs in daily dollars and adding it takes the book
+from ret/DD 13.34 / Sharpe 1.78 to **9.37 / 1.60** -- `STUDY_SEMIVARIANCE`'s finding reproduced on a
+real leg rather than a simulated coin flip. What would settle whether this refutes CVD or only its
+resolution here is **1-minute US30 bars**. See `docs/ib/STUDY_V61_US30.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -3027,7 +3050,7 @@ the flatten is on. MC p99 drawdown 1.2-3.5x realised. See `docs/ib/STUDY_V61_SES
 | `research/v63/` | the VWAP / triple-EMA / ATR trend design: three feeds with real volume, a chandelier-trail tensor, search on one market and a frozen read on three, drop-one and the binding hold axis |
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
 | `research/v64/` | Optuna on V61, its walk-forward and its Monte Carlo: a continuous-space numba evaluator verified to the cent against the published grid, three Optuna studies, fANOVA importance, the box-edge re-run, the V30 hold-out-an-axis surrogate; `run_wfo*.py` in-fold re-selection with a random-cell arm, span-normalised WFE and a geometry-matched control; `run_mc.py` perturbation (price jitter with the indicators RECOMPUTED, execution, missed fills, parameters) beside the permutation and the bootstrap |
-| `research/v61sess/` | the V61 rule as a user configures it: `sess_core.py` (the SCRIPT's order model with the session window, the flatten filling at the next open, and touch-as-break), `run_iss_oss.py` (IS/OOS on both timeframes, the window-vs-flatten ablation, the channel-time-reach control, and the zero-cost comparison), `run_optuna.py` (2,400 trials over two objectives with the session axis open, research only, population shape before any top row, box-edge check), `run_mc_portfolio.py` (the four Monte Carlos per leg, daily-return leg correlation, and combinations scored against the BEST single leg), `plot_sess.py` |
+| `research/v61sess/` | the V61 rule as a user configures it: `sess_core.py` (the SCRIPT's order model with the session window, the flatten filling at the next open, and touch-as-break), `run_iss_oss.py` (IS/OOS on both timeframes, the window-vs-flatten ablation, the channel-time-reach control, and the zero-cost comparison), `run_optuna.py` (2,400 trials over two objectives with the session axis open, research only, population shape before any top row, box-edge check), `run_mc_portfolio.py` (the four Monte Carlos per leg, daily-return leg correlation, and combinations scored against the BEST single leg), `us30_core.py` + `run_us30.py` + `run_us30_mc.py` (the same rule FROZEN on US30 with the CVD built from 15m sub-bars, three nulls, the gate ablation, and the cross-market book), `plot_sess.py`, `plot_us30.py` |
 | `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
