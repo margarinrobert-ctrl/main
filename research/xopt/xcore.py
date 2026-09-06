@@ -42,9 +42,18 @@ def data(sess="ny"):
     return _D[sess]
 
 
+# The control's geometry is BUCKETED, and the rule's is not. The control's dependence on the stop
+# and the target is smooth -- a random entry at 1.62N behaves like one at 1.50N -- so rounding the
+# CONTROL's key to a 0.25N / 0.5R lattice makes the cache hit constantly at negligible cost, while
+# the rule itself is always evaluated at its exact parameters. Without this the key is effectively
+# unique per trial (both axes are continuous), every trial pays 160 control walks, and the study
+# takes 105 minutes instead of 20 -- which is what the first run was doing.
+STOP_BUCKET, TGT_BUCKET = 0.25, 0.5
+
+
 def geom_key(side, stop, tgt, trail, tighten, flatten, sess):
-    return (int(side), round(float(stop), 4), round(float(tgt), 4), bool(trail),
-            bool(tighten), bool(flatten), sess)
+    return (int(side), round(float(stop) / STOP_BUCKET), round(float(tgt) / TGT_BUCKET),
+            bool(trail), bool(tighten), bool(flatten), sess)
 
 
 def control(side, stop, tgt, trail, tighten, flatten, sess, blk, n_target, draws=160):
@@ -57,15 +66,18 @@ def control(side, stop, tgt, trail, tighten, flatten, sess, blk, n_target, draws
     sel = D["rth"] if blk is None else (D["rth"] & (D["blk"] == blk))
     idx = np.flatnonzero(sel)
     rate = min(1.0, n_target / max(len(idx), 1))
-    bucket = round(rate, 4)
+    bucket = round(rate, 2)
     key = geom_key(side, stop, tgt, trail, tighten, flatten, sess) + (blk, bucket)
     if key in _CTL:
         return _CTL[key]
+    # evaluate the control AT THE BUCKET CENTRE, so every config in the bucket shares one control
+    s_b = max(round(float(stop) / STOP_BUCKET) * STOP_BUCKET, 0.05)
+    t_b = round(float(tgt) / TGT_BUCKET) * TGT_BUCKET
     out = []
     for _ in range(draws):
         g = np.zeros(D["n"], bool)
         g[idx[RNG.random(len(idx)) < bucket]] = True
-        c = V.run(D, g, side=side, tgt_R=tgt, atr_stop=stop, tighten=tighten, flatten=flatten,
+        c = V.run(D, g, side=side, tgt_R=t_b, atr_stop=s_b, tighten=tighten, flatten=flatten,
                   trail=trail)
         if blk is not None:
             c = c[c.blk == blk]
