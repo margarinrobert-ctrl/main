@@ -499,3 +499,76 @@ and that its own year-to-year variation is large enough (−0.62 to +0.31 R) tha
 carries no information about the next one. Combined with Part 2 — no candidate separates from zero,
 deflated Sharpe 0.000, 62–94% of the good locked results coming from the 2025 rally — the family
 has neither a demonstrable edge nor a route to one through optimisation.
+
+---
+
+# Part 4 — the same battery, per preset
+
+**Verdict — the two SWEEP presets are overfitted, the three Optuna presets are not, and the
+published one was never fitted at all.** The test that separates them is the walk-forward
+generalization gap, because five of the six were fitted on this data by my own search and one was
+not.
+
+| preset | fitted? | folds | IS | OOS | **gap** | OOS positive | verdict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Sweep neighbourhood | yes | 5 | +0.227 | **−0.058** | **+0.285** | 2/5 | **OVERFIT** |
+| Sweep top row | yes | 7 | +0.347 | +0.081 | **+0.266** | 4/7 | **OVERFIT** |
+| Optuna ret/DD | yes | 12 | +0.213 | +0.150 | +0.062 | 9/12 | holds |
+| As published | **no** | 13 | +0.008 | −0.001 | +0.009 | 8/13 | never fitted |
+| Optuna PF | yes | 11 | +0.195 | +0.203 | −0.008 | 10/11 | holds |
+| Optuna total R | yes | 13 | +0.203 | +0.226 | −0.023 | 10/13 | holds |
+
+The split is clean and it is not the one you would guess. **The exhaustive-grid winners are the
+overfitted ones**; the Optuna cells, chosen from a continuous space by a sampler that concentrates
+rather than maximising over 108,000 discrete draws, keep their out-of-sample result. The two sweep
+cells are also the two that trade least (61 and 53 locked trades), which is why they support only
+5 and 7 folds — the maximum of a large grid buys a low-count cell, as it did in `STUDY_V42` and
+`STUDY_V64_OPTUNA`.
+
+## 26. Where each preset sits in its own parameter pool
+
+Median in-sample rank across the 12,870 CSCV splits, among 1,199 sampled grid cells:
+
+| preset | median IS rank | p90 rank swing |
+| --- | ---: | ---: |
+| Optuna PF | 0.984 | 0.10 |
+| Optuna ret/DD | 0.984 | 0.13 |
+| Optuna total R | 0.931 | 0.32 |
+| Sweep top row | 0.913 | 0.31 |
+| Sweep neighbourhood | 0.707 | 0.53 |
+| **As published** | **0.443** | 0.48 |
+
+The five fitted presets sit in the top decile of their own pool by construction. **The published
+rule sits below the median** — which is exactly what a configuration chosen by convention rather
+than by search should look like, and is the cleanest single piece of evidence that it is not
+curve-fitted.
+
+## 27. A method note: symmetric CSCV cannot measure a fixed cell's rank drop
+
+My first pass reported a `rank_drop` of **exactly 0.000 for all six presets**, which is not a
+result — it is a property of the design. In combinatorially symmetric CSCV, for every split the
+**complement is also a split**, so a fixed column's in-sample rank distribution is *identical* to
+its out-of-sample rank distribution, and both the difference of medians and the median of the
+pairwise differences are identically zero.
+
+PBO escapes this because its subject — the argmax — **changes with the split**; a fixed column's
+subject does not. For a fixed cell the informative quantities are the **dispersion** of the
+per-split rank swing (`p90_drop` above) and the walk-forward gap.
+
+One more thing the exercise showed: **adding fitted cells to the CSCV pool lowers PBO**, from
+**0.561** over the grid alone to **0.465** with the five fitted presets included, because it hands
+the in-sample argmax a pre-selected winner. Report PBO over a pool that contains nothing chosen on
+the data being tested.
+
+## 28. What this changes, and what it does not
+
+It changes which presets are trustworthy as *configurations*: prefer the Optuna cells or the
+published defaults over the two sweep cells, and treat "sweep neighbourhood-best" as the worst of
+the six despite its being the best-looking locked number in Part 2 (+0.2624 R). The neighbourhood
+criterion that `STUDY_V38` found valuable did not protect it here.
+
+It changes nothing about the family. Part 2 stands: **not one preset separates from zero** on the
+locked block (bootstrap P(mean ≤ 0) 0.054 to 0.184), deflated Sharpe is 0.000 for all of them, and
+62–94% of the good locked results come from the 2025–26 gold rally. A preset can be perfectly
+un-overfitted and still have nothing under it — which is the position the published rule has been
+in since Part 1.
