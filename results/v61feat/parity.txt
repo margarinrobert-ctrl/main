@@ -1,0 +1,57 @@
+THE SHIPPED PINE'S FEATURE MATH, IN PYTHON, DIFFED AGAINST THE RESEARCH.
+
+Two of the eight features are not ordinary indicators and could silently differ:
+
+  FRACDIFF  the research builds the weights with numpy and convolves; the Pine builds them with a
+            recursion at bar 0 and dots them against `logCvd[k]`. The ORDERING is the risk: get it
+            backwards and the feature is a different series that still looks plausible.
+  HMM       the research runs `posterior_filtered`; the Pine runs the forward recursion by hand in
+            probability space with per-bar normalisation. Same object only if pi, A, mu, var and the
+            state ORDER all line up.
+
+Two smaller things are checked because they are known to differ by convention:
+  * `ta.stdev` in Pine is POPULATION (ddof 0); pandas `.std()` is SAMPLE (ddof 1). At n = 96 and 500
+    that is a factor of 1.0052 and 1.0010 on the standard deviation, which flows into `f_cvdZ` and
+    into the HMM's second observation channel.
+  * the Pine uses an EXPANDING minimum to shift the CVD before the log; the research used the
+    GLOBAL minimum. That min sits at bar 177, before any event, so the two agree on 100% of the bars
+    that matter -- but only the expanding one is causal by construction, which is why it ships.
+
+
+========================================================================================================================
+1  FRACDIFF -- the Pine's recursion and dot product, reproduced
+========================================================================================================================
+  research weights 64, Pine weights 64   max |diff| after reversing: 0.000e+00
+  expanding-min vs global-min log series: identical on 99.75% of bars, first divergence at bar 0
+  FFD over ALL bars incl. warm-up: max |diff| 8.504e+00, correlation 0.5148
+  FFD from bar 300 on (the first event is ~bar 1000, and f_cvdZ needs 500 more): max |diff| 8.882e-15, correlation 1.000000000000
+  -> the two are EXACT once the fracdiff window has filled and the expanding minimum has
+     settled at bar 177. Every difference is warm-up, and no event lives there.
+
+========================================================================================================================
+2  HMM -- the Pine's forward recursion in probability space, reproduced
+========================================================================================================================
+  Pine recursion (ddof 0, as ta.stdev) vs research: max |diff| 3.616e-01, correlation 0.99855725
+  same recursion with ddof 1 (matching pandas)  : max |diff| 1.002e-06, correlation 1.0000000000
+  -> the residual is the standard-deviation convention alone, and it is small; the recursion
+     itself is exact. Both are FILTERED -- alpha_t depends on alpha_{t-1} and bar t only.
+
+========================================================================================================================
+3  THE SIX ORDINARY FEATURES
+========================================================================================================================
+  feature              max |diff|    correlation
+  mom.roc240            0.000e+00   1.0000000000
+  vol.atr_pct           0.000e+00   1.0000000000
+  trend.er20            0.000e+00   1.0000000000
+  trend.er60            0.000e+00   1.0000000000
+  regime.chop48         0.000e+00   1.0000000000
+  struct.excess         0.000e+00   1.0000000000
+
+========================================================================================================================
+4  DOES THE CONVENTION GAP MOVE THE DECISION? the ridge score on the primary's events
+========================================================================================================================
+  ridge score on 350 events: max |diff| 2.819e-02, correlation 0.9999003723
+  keep 70%: the two versions agree on the TAKE/SKIP decision for 99.43% of events
+  keep 60%: the two versions agree on the TAKE/SKIP decision for 99.71% of events
+  keep 50%: the two versions agree on the TAKE/SKIP decision for 99.71% of events
+  keep 40%: the two versions agree on the TAKE/SKIP decision for 99.71% of events

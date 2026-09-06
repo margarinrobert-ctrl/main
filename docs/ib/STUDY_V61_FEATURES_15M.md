@@ -154,6 +154,62 @@ p 0.011 — PASS.** `var_trials` is the variance of the 51 feature ICs, which is
 screen actually searched; the same input estimated two other ways on earlier studies gave 0.571 and
 0.9919, both wrong, so stating what it is measured over is the point.
 
+## What ships, and in what form
+
+A random forest cannot go into Pine. Two forms can, and **both were measured before the script was
+written**, so the header numbers are the script's and not the forest's.
+
+**RIDGE SCORE — the only portable form positive on both blocks.** Standardise each feature with its
+research mean and sd, multiply by a fixed coefficient, add:
+
+| keep | research %/ev | PF | locked n | locked %/ev | PF | vs a random filter |
+| --- | --- | --- | --- | --- | --- | --- |
+| 70% | 0.1140 | 1.967 | 91 | 0.1267 | 2.057 | p 0.187 |
+| 60% | 0.1391 | 2.216 | 82 | 0.1266 | 2.008 | p 0.257 |
+| 50% | 0.1096 | 1.924 | 70 | 0.1281 | 1.977 | p 0.285 |
+| 40% | 0.1480 | 2.332 | 61 | 0.1233 | 1.886 | p 0.334 |
+
+against a base of research 0.0697 / PF 1.546 and locked 0.1022 / PF 1.862. Positive everywhere,
+significant nowhere.
+
+**COUNT 0–8 — monotone on research and it INVERTS on locked.** Spearman +0.667 across the rungs on
+research; every locked rung falls *below* the unfiltered base:
+
+| T | research %/ev | PF | p | locked %/ev | PF | p |
+| --- | --- | --- | --- | --- | --- | --- |
+| ≥3 | 0.0914 | 1.836 | 0.075 | 0.0889 | 1.785 | 0.746 |
+| ≥5 | 0.1078 | 2.450 | 0.190 | 0.0547 | 1.591 | 0.836 |
+| ≥6 | 0.1228 | 2.867 | 0.216 | 0.0263 | 1.323 | 0.806 |
+
+It ships **visible but not recommended**, so the inversion can be seen rather than described.
+
+**Three of the eight ridge coefficients have the opposite sign to their univariate IC** —
+`vol.atr_pct` (IC −0.167, coef +0.035), `regime.hmm_side` (+0.141, −0.038), `trend.er60` (+0.119,
+−0.012). That is multicollinearity exploited conditionally and it is the least stable part of the
+model; the script therefore also exposes each feature as a standalone univariate switch.
+
+## Parity — the script's feature math diffed against the research
+
+`research/v61feat/feat_parity.py`. Two features are not ordinary indicators and could silently
+differ:
+
+| check | result |
+| --- | --- |
+| fracdiff weights (Pine recursion vs numpy) | max diff **0.000e+00** on all 64 |
+| FFD series, bar 300 onward | max diff **8.9e-15**, correlation **1.000000000000** |
+| HMM filtered posterior, matched ddof | max diff **1.0e-06**, correlation **1.0000000000** |
+| HMM as `ta.stdev` actually computes it | correlation 0.9986 — the residual is the ddof convention alone |
+| the six ordinary features | max diff **0.000e+00**, correlation 1.0 on all six |
+| ridge score on the 350 events | correlation **0.99990**; take/skip agrees on **99.4–99.7%** |
+
+Two conventions are recorded rather than hidden. Pine's `ta.stdev` is population (ddof 0) where
+pandas is sample (ddof 1) — a factor of 1.0052 at n=96 that flows into the HMM's second observation
+channel and into `f_cvdZ`, and changes no decision. And the **research shifted the CVD by a
+full-sample minimum before the log**; that minimum sits at bar 177, before any event, so it never
+binds — but it is not causal by construction, so **the script uses an expanding minimum instead**.
+The FFD warm-up correlation of 0.51 over all bars is entirely those first 240 bars and no event
+lives there.
+
 ## Verdict
 
 **Research: the meta layer works.** Gate 1 clean, base rates clean, 9 hits against 2.6 expected,
