@@ -92,7 +92,14 @@ def build(path="data/XAU_ISO_15m.csv", start=START, sess="ny"):
     readings are NOT the same thing: 13:30 UTC is 09:30 New York only under daylight saving, and
     08:30 New York in winter. `sess="ny"` uses the New York wall clock 09:30-16:00 (what "the New
     York session" means); `sess="utc"` uses the literal fixed 13:30-20:00 UTC. Both are run."""
-    f = load(path, start)
+    return assemble(load(path, start), sess=sess)
+
+
+def assemble(f, sess="ny", split=SPLIT):
+    """Everything `build` does once the bars are in hand, so a DIFFERENT feed can be run through
+    the identical construction. `f` is an OHLCV frame indexed on NEW YORK wall-clock time with a
+    `volume` column that is the feed's real activity column (tick volume on the CFD feeds -- the
+    `Volume` column there is identically zero, registry `US30_LONG_15m`)."""
     o, h, l, c, v = (f[k].to_numpy(float) for k in ("open", "high", "low", "close", "volume"))
     ix = f.index
     mod = (ix.hour * 60 + ix.minute).to_numpy(np.int64)
@@ -132,7 +139,7 @@ def build(path="data/XAU_ISO_15m.csv", start=START, sess="ny"):
              e200=e200, e50=e50, e20=e20, vwap=vwap, vwap_uw=vwap_uw, vsma=vsma,
              body=body, lw=lw, uw=uw, n=len(c))
     us = np.unique(day[rth])
-    D["cut_day"] = int(us[int(SPLIT * len(us))])
+    D["cut_day"] = int(us[int(split * len(us))])
     D["blk"] = (day >= D["cut_day"]).astype(np.int64)
     D["cut_date"] = str(ix[np.argmax(day >= D["cut_day"])].date())
     # last bar of each RTH session, for the optional flatten

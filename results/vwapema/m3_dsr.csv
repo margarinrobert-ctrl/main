@@ -1,0 +1,11 @@
+feed,cell,n,sharpe_per_trade,dsr,E_max_null
+US100,Optuna totR,675,0.0695,0.0,0.2892
+US100,Optuna pf,164,0.1438,0.0237,0.2892
+US100,Optuna retdd,435,0.0961,0.0,0.2892
+US30,Optuna totR,1152,0.0432,0.0,0.2892
+US30,Optuna pf,204,0.1185,0.0024,0.2892
+US30,Optuna retdd,248,0.1446,0.0036,0.2892
+US100,As published L,771,0.0103,0.0,0.2892
+US100,As published S,582,-0.0363,0.0,0.2892
+US30,As published L,510,0.0123,0.0,0.2892
+US30,As published S,480,-0.03,0.0,0.2892
