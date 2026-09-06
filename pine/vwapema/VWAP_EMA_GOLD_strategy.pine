@@ -62,6 +62,31 @@
 //   * THE SESSION FLATTEN IS DESTRUCTIVE (-0.045 -> -0.101). Default OFF.
 //   * SHORT IS NEGATIVE ON BOTH BLOCKS (-0.1421 research / -0.2147 locked). Default OFF.
 //
+// ============================ THE SAME RULES ON US100 AND US30 ============================
+// The rule was written for gold, so two equity indices that had no part in writing it are the
+// cleanest test it can be given. US100_LONG_15m (206,703 bars 2016-11..2025-10) and US30_LONG_15m
+// (193,663 bars 2016-11..2025-07), plus US30_ISO_15m (48,937 bars 2024-08..2026-08, a DIFFERENT
+// provider) held back as a reserved forward block that no search touched.
+//
+//   AS PUBLISHED LONG   US100  research -0.0121 R PF 0.978 (n 502)  ->  locked -0.0184 PF 0.966 (n 269)
+//                       US30   research +0.1975 R PF 1.402 (n 333)  ->  locked -0.0762 PF 0.859 (n 177)
+//   AS PUBLISHED SHORT  US100  research +0.0174 R PF 1.032 (n 357)  ->  locked -0.1509 PF 0.714 (n 225)
+//                       US30   research -0.1767 R PF 0.705 (n 293)  ->  locked -0.0428 PF 0.916 (n 187)
+//   forward block       US30_ISO  long +0.0407 PF 1.082 (n 168) | short -0.0366 PF 0.928 (n 175)
+//
+// TWO CELLS CLEAR A MATCHED CONTROL ON RESEARCH AND BOTH INVERT: US30 long p 0.003 -> 0.663, US100
+// short p 0.010 -> 0.793. Win rates run 22.9-31.5% against a 26.1% break-even at the 3R geometry.
+// AND IT IS NOT COST HERE: the round turn is 2.5-4.3% of risk on these feeds against 17% on gold,
+// so the gold verdict (positive gross, negative net) cannot be the explanation -- removing cost
+// entirely still leaves the rule within noise of zero.
+// A further 4,800 Optuna trials on the two research blocks produced six finalists; all six clear
+// their control on research at p <= 0.010, NONE clears on locked (best 0.100), none excludes zero
+// (best bootstrap 0.270), and every deflated Sharpe is BELOW E[max Sharpe | pure noise] = 0.289 at
+// the counted 4,840 looks. One of the six survives the reserved forward block.
+// All six independently chose NO TAKE PROFIT.
+// On the SAME days, same side, an entry at the session open carrying THE RULE'S OWN ATR STOP beats
+// the rule in 120 of 158 side x regime x cell x block cells.
+//
 // ============================ TWO THINGS TO CHECK ON YOUR OWN CHART ============================
 //   * THE SIGNAL SET IS BROKER-DEPENDENT. C5 reads YOUR feed's tick volume: switching it off takes
 //     the long side from 592 to 904 trades, so that one condition selects a third of the
