@@ -70,13 +70,18 @@ def _pine(o, h, l, c, atr, e50, e20, sess_end, sig, side, atr_stop, tgt_R, tight
     return n
 
 
-def run_pine(D, sig, side, trail_next_open=1, **kw):
+def run_pine(D, sig, side, trail_next_open=1, p=None, **kw):
+    """kw: tgt_R. `p` carries the preset's own periods -- WITHOUT it this harness diffs the script
+    against `build()`'s CACHED default EMA/ATR series, which is the same caching defect that made
+    an EMA ladder return five identical rungs earlier in this study. It read as a -105% parity gap."""
+    pp = {**V.PARAMS, **(p or {})}
+    _e200, e50p, e20p, atrp = V.periods(D, pp)
     cap = int(sig.sum()) + 8
     a1, a2 = np.zeros(cap, np.int64), np.zeros(cap, np.int64)
     a3 = np.full(cap, np.nan); a4 = np.zeros(cap, np.int64)
-    k = _pine(D["o"], D["h"], D["l"], D["c"], D["atr"], D["e50"], D["e20"], D["sess_end"],
-              np.asarray(sig, np.bool_), int(side), float(V.PARAMS["atr_stop"]), float(kw.get("tgt_R", 3.0)),
-              float(V.PARAMS["tighten_R"]), int(trail_next_open), float(V.COST_RT), float(V.SLIP),
+    k = _pine(D["o"], D["h"], D["l"], D["c"], atrp, e50p, e20p, D["sess_end"],
+              np.asarray(sig, np.bool_), int(side), float(pp["atr_stop"]), float(kw.get("tgt_R", 3.0)),
+              float(pp["tighten_R"]), int(trail_next_open), float(V.COST_RT), float(V.SLIP),
               250, D["n"] - 2, a1, a2, a3, a4)
     t = pd.DataFrame(dict(sig=a1[:k], exit_bar=a2[:k], R=a3[:k], why=a4[:k]))
     t["blk"] = D["blk"][t.sig.to_numpy()]
