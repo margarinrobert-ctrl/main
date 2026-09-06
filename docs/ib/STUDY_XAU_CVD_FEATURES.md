@@ -249,6 +249,62 @@ sub-bars) has mean edge +0.0142 and a div-family mean of +0.0688, against 60m (4
 produces 8 against 6, and the survivor is a 60m cell. The two readings disagree, and 240m has a
 third of the events, so this is suggestive at best.
 
+## Monte Carlo — five simulations, five different questions
+
+`research/xaucvd/run_xcvd_mc.py`, on the shipped veto configuration. Panel:
+`results/xaucvd/montecarlo.png`.
+
+**1. Day-block bootstrap (edge).** 2,000 draws, whole days resampled with their trades attached.
+
+| block | n | days | mean | 5–95% | **P(mean ≤ 0)** |
+| --- | --- | --- | --- | --- | --- |
+| A | 400 | 384 | +0.0565 | −0.018 to +0.135 | **0.108** |
+| B | 265 | 254 | +0.1015 | +0.005 to +0.206 | 0.043 |
+| C | 150 | 141 | +0.2220 | +0.024 to +0.475 | 0.034 |
+
+**Block A does not exclude zero.** B and C do, barely. The gate clears its *control* on A at p 0.003
+and does not clear *zero* there — `STUDY_V15_BOOK`'s split, and both are true.
+
+**2. Permutation (path only).** The sum is invariant, so only drawdown is read.
+
+| block | realised DD | MC median | MC p99 | realised percentile | p99 / realised |
+| --- | --- | --- | --- | --- | --- |
+| A | 21.80% | 12.53% | 23.72% | **98th — unlucky** | 1.09× |
+| B | 9.34% | 8.56% | 16.82% | 63rd | 1.80× |
+| C | 4.61% | 6.81% | 13.24% | **5th — lucky** | **2.87×** |
+
+**Block C's comfortable 4.6% drawdown is mostly luck.** Size against 13.2%, not 4.6%. The two
+research blocks disagree about which way the path broke, which is itself the argument for sizing to
+the p99 rather than the backtest.
+
+**3. Execution.** 300 draws, cost ~ U(0.5×, 2×), slippage ~ U(0, 2×). **P(total ≤ 0) = 0.000 on all
+three blocks**; the 5–95% band is 13.5–27.4% on A. Gold's cost assumption is the input most likely
+to be wrong, and it is not what threatens this rule.
+
+**4. Price jitter, indicators recomputed.** 150 draws at each of 0.5, 1 and 2 ticks, with ATR, both
+channels, the CVD and the whole pivot structure rebuilt from the jittered bars. **Sign kept 1.000 at
+every level on every block**, trade counts stable (400 → 400/400/401 on A). The signal set is not
+fragile to tick noise.
+
+**5. Parameter jitter.** Five axes at once, 400 draws.
+
+| block | shipped | 5–95% | % positive | % beating the shipped cell |
+| --- | --- | --- | --- | --- |
+| A | +0.0563 | −0.010 to +0.082 | 87% | 21% |
+| B | +0.1018 | +0.019 to +0.096 | **99%** | **3%** |
+| C | +0.2233 | +0.125 to +0.301 | **100%** | 40% |
+
+The neighbourhood is broadly positive, so the cell is not a spike. But on block B only **3%** of
+jittered neighbours beat it — the shipped cell sits at the *top* of its own neighbourhood there,
+which is what a cell selected on that block looks like. `STUDY_V64_MONTECARLO` recorded the
+contrast: the presets that were *not* cherry-picked had 70–75% of their jittered neighbours beating
+them.
+
+**What the battery prices, and what it cannot.** Execution, data and parameter noise **on the trades
+selected**. It cannot price **the selection** — one cell of 229, 13 of which cleared p ≤ 0.05 against
+11.5 expected. `STUDY_ATME_LIVE` made this point first and it is unchanged: a perturbation Monte
+Carlo answers a question about noise, never about search.
+
 ## What would move it
 
 **1-minute gold bars.** Everything above is built on a 4-to-16 sub-bar delta signing *tick counts*;
