@@ -86,14 +86,27 @@ def load(path="data/XAU_ISO_15m.csv", start=START):
     return f[f.index >= start]
 
 
-def build(path="data/XAU_ISO_15m.csv", start=START):
+def build(path="data/XAU_ISO_15m.csv", start=START, sess="ny"):
+    """`sess` resolves an ambiguity in the paper's own words. Its 3.1 says the VWAP is "anchored to
+    the New York session open (13:30 UTC)" and reset at "session close (20:00 UTC)". Those two
+    readings are NOT the same thing: 13:30 UTC is 09:30 New York only under daylight saving, and
+    08:30 New York in winter. `sess="ny"` uses the New York wall clock 09:30-16:00 (what "the New
+    York session" means); `sess="utc"` uses the literal fixed 13:30-20:00 UTC. Both are run."""
     f = load(path, start)
     o, h, l, c, v = (f[k].to_numpy(float) for k in ("open", "high", "low", "close", "volume"))
     ix = f.index
     mod = (ix.hour * 60 + ix.minute).to_numpy(np.int64)
     day = ix.normalize().values.astype("datetime64[D]").astype(np.int64)
     wd = ix.dayofweek.to_numpy()
-    rth = (mod >= SESS_OPEN) & (mod < SESS_CLOSE) & (wd < 5)
+    if sess == "utc":
+        # ix is New York wall clock. A real tz conversion, not a fixed shift: UTC is NY+4 under
+        # EDT and NY+5 under EST, which is exactly the ambiguity being tested.
+        uix = ix.tz_localize("America/New_York", ambiguous="NaT",
+                            nonexistent="NaT").tz_convert("UTC")
+        umod = (uix.hour * 60 + uix.minute).to_numpy()
+        rth = (umod >= 13 * 60 + 30) & (umod < 20 * 60) & (wd < 5) & ~uix.isna()
+    else:
+        rth = (mod >= SESS_OPEN) & (mod < SESS_CLOSE) & (wd < 5)
 
     p = PARAMS
     atr = _atr(h, l, c, p["atr_len"])

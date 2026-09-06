@@ -209,3 +209,189 @@ it, so the honest change is a different exit — and the grid already says which
 stop, no target, no session flatten, which is a swing system and not the intraday framework the
 paper describes. The volume filter is the only component worth revisiting and it would need a
 market that did not choose it.
+
+---
+
+# Part 2 — the paper itself, 3,600 Optuna trials, IS/OOS, Monte Carlo and correlation matrices
+
+**Verdict — no configuration of this strategy is a proven edge on gold.** Three Optuna finalists
+plus the published rule were read once on the locked block. All four beat a matched random entry
+(p 0.000–0.033) and **not one separates from zero**: the day-block bootstrap gives P(mean ≤ 0) of
+**0.054, 0.075, 0.096 and 0.176**. The deflated Sharpe is **0.000** for all four at 3,660 counted
+trials. fANOVA puts **0.85–0.90 of every objective on the volume multiple** — the one component
+already shown to invert across the split. And **94% of the best finalist's locked result comes from
+2025–26**, a stretch in which gold rose about 60%.
+
+## 12. The PDF confirms the restatement, and one reading was ambiguous
+
+Read directly, the paper's §3.2–§4.4 match the spec document condition for condition, and §6.1 is
+explicit in its own words: *"The backtest **simulates** 247 trades… Trade outcome distributions are
+**parameterised** from the strategy's structural logic: … **modelled** to produce full wins (3R)
+with probability 0.30, partial wins with probability 0.20, breakevens 0.08, and full losses 0.42."*
+Nothing was fitted to gold.
+
+One ambiguity is the paper's own. §3.1 says the VWAP is *"anchored to the New York session open
+(13:30 UTC)"* and reset at *"session close (20:00 UTC)"*. **Those are not the same thing** — 13:30
+UTC is 09:30 New York only under daylight saving and 08:30 New York in winter. Both readings are
+now implemented and searched:
+
+| session reading | research | locked |
+| --- | ---: | ---: |
+| New York wall clock 09:30–16:00 | 378 trades, −0.0447 R, PF 0.916 | 214, +0.1423, PF 1.318 |
+| literal fixed 13:30–20:00 UTC | 448 trades, −0.0229 R, PF 0.957 | 257, +0.1664, PF 1.360 |
+
+The literal UTC reading is the slightly better one, so Part 1 used the *less* flattering of the two.
+
+## 13. The search: 3,600 trials over all fourteen axes, research only
+
+Every free number the paper leaves unjustified, plus the target, side, session reading and session
+flatten. Three TPE studies of 1,200 (total R, profit factor, return-over-drawdown), a floor of 120
+research trades, and every trial's locked result logged and never used to select.
+
+**Population:** 2,257 scorable, **62% profitable on research**. corr(research, locked) = **+0.43**
+Pearson — high for this branch, and `STUDY_V64_OPTUNA` explains why: TPE concentrates in its own
+good region, so the correlation is measured over a restricted range. Top 1% by research: +49.9 →
+locked +19.7, against the population's locked mean +6.2.
+
+**The marginals say what the objective actually is:**
+
+| axis | direction | Spearman with research R |
+| --- | --- | ---: |
+| **volume multiple** | monotone up: 0.8–1.17 → −0.029, 1.62–2.05 → **+0.065** | **+0.379** |
+| **target R** | monotone up: ≤2.6 → −0.052, 5.9–8.0 → **+0.054** | **+0.369** |
+| ATR length | mild | +0.117 |
+| everything else | flat | ≤ 0.09 |
+| session flatten | **on 33.7% positive, off 65.3%** | destructive |
+
+**fANOVA: `vol_mult` carries 0.850 / 0.896 / 0.878 of the three objectives.** Everything else is
+under 0.08. The optimiser is tuning the volume filter and nothing else — and Part 1 §8 already
+established that the volume filter's research gradient (Spearman **+1.000**) becomes **−0.900** on
+the locked block. `vol_mult` also correlates **−0.618 with the trade count**, so much of what it
+buys is selectivity.
+
+The three finalists are all long-only, all no-flatten:
+
+| study | configuration | research |
+| --- | --- | --- |
+| total R | NY session, EMA 150/82/55, ATR 26, stop 0.40, vol 0.88, range 0.97, wick 3.69, 7.01R target | 296 trades, +0.1948 R, PF 1.343 |
+| PF | UTC session, EMA 370/50/45, ATR 25, **stop 2.47 (box edge)**, vol 1.72, 4.65R target | 135, +0.2035, PF 1.879 |
+| ret/DD | UTC session, EMA 200/52/30, ATR 27, stop 0.92, vol 1.63, 2.35R target | 175, +0.2489, PF 1.669, ret/DD 10.06 |
+
+## 14. The one locked read
+
+Multiplicity first: 3,600 Optuna trials + 60 research looks from Part 1 = **3,660**.
+
+| finalist | block | n | R/trade | PF | ret/DD | random entry | p vs control | **bootstrap P(mean ≤ 0)** |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| as published | research | 378 | −0.0447 | 0.916 | −0.72 | −0.2480 | 0.003 | 1.000 |
+| as published | **locked** | 214 | +0.1423 | 1.318 | 1.70 | −0.1482 | 0.000 | **0.054** |
+| total R | research | 296 | +0.1948 | 1.343 | 3.05 | | | |
+| total R | **locked** | 160 | +0.2000 | — | — | | | **0.096** |
+| PF | research | 135 | +0.2035 | 1.879 | 6.83 | −0.0613 | 0.005 | 0.008 |
+| PF | **locked** | 79 | +0.1819 | 1.670 | 2.15 | −0.0146 | 0.013 | **0.075** |
+| ret/DD | research | 175 | +0.2489 | 1.669 | 10.06 | −0.1672 | 0.000 | 0.004 |
+| ret/DD | **locked** | 95 | +0.1097 | 1.252 | **0.85** | −0.0880 | 0.033 | **0.176** |
+
+Two of the four decay (the right shape); the total-R finalist and the published rule grow. **Every
+one clears its matched control and none clears zero** — `STUDY_V15_BOOK`'s split, reproduced
+exactly: a control asks "is this better than a random entry with the same geometry", a bootstrap
+asks "is this better than nothing", and here the answer is yes to the first and no to the second,
+because the random entry loses money.
+
+The ret/DD finalist's headline metric collapses **10.06 → 0.85** out of sample.
+
+## 15. Monte Carlo
+
+Day-block bootstrap for the edge (resample days with their trades attached), permutation for the
+path (reorder the realised sequence — it cannot move the endpoint, only the drawdown).
+
+| finalist | n | mean R | 95% CI | P(mean≤0) | realised DD | MC median DD | **MC p99 DD** | DD percentile |
+| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| total R | 160 | +0.2000 | [−0.107, +0.539] | 0.096 | 17.8 R | 15.0 | **29.7** | 0.72 |
+| PF | 79 | +0.1819 | [−0.054, +0.455] | 0.075 | 6.7 | 4.9 | **9.4** | 0.85 |
+| ret/DD | 95 | +0.1097 | [−0.127, +0.356] | 0.176 | 12.2 | 8.6 | **16.5** | 0.89 |
+| as published | 214 | +0.1423 | [−0.031, +0.328] | 0.054 | 17.9 | 12.2 | **23.0** | 0.93 |
+
+**Every confidence interval contains zero.** The drawdown percentiles run 0.72–0.93, so the
+realised paths were on the *unlucky* side of their own reshuffles — but the p99 is still **1.4–1.7×
+the realised drawdown**, and that is the sizing number.
+
+Parameter perturbation at ±10% leaves all four positive in 100% of draws — but the total-R
+finalist is beaten by **only 6.7% of its own neighbours**, which is the signature of a cell picked
+off a spike. The PF finalist sits below its neighbourhood (63.3% beat it), which is the healthy
+shape.
+
+## 16. Correlation matrices
+
+**(a) Parameter → performance**, Spearman over 2,257 scorable trials: `vol_mult` **+0.379** and
+`tgt_R` **+0.369**; every other axis is under +0.12 and `range_mult` is negative. Two axes carry
+the whole search, and one of them inverts out of sample.
+
+**(b) Finalists' daily R on the locked block** (267 overlapping days):
+
+| | total R | PF | ret/DD | published |
+| --- | ---: | ---: | ---: | ---: |
+| total R | 1.000 | 0.391 | 0.282 | 0.461 |
+| PF | 0.391 | 1.000 | **0.678** | 0.330 |
+| ret/DD | 0.282 | 0.678 | 1.000 | 0.467 |
+| published | 0.461 | 0.330 | 0.467 | 1.000 |
+
+**(c) Year-to-year R across the sixteen years** puts total-R against the published rule at
+**+0.965** and PF against ret/DD at **+0.936**. Three "different" optimised configurations are two
+strategies, and one of them is the published rule with a different volume threshold.
+
+## 17. Where the locked result comes from
+
+| finalist | locked total R | **share from 2025–26** | R/trade **before** 2025 | n before 2025 | top 5% of trades |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| total R | +32.0 | **94.4%** | **+0.015** | 123 | 174% of net |
+| PF | +14.4 | 43.4% | +0.110 | 74 | 96% |
+| ret/DD | +10.4 | 69.6% | +0.036 | 89 | 89% |
+| as published | +30.5 | 23.8% | +0.130 | 178 | 97% |
+
+Gold rose roughly 60% in 2025. **The optimiser's best cell is 94% that rally** and earns +0.015 R
+a trade without it. This is the spec's own checklist item 8 — "a long-only-biased system in a gold
+bull run is a beta bet" — and the search made it worse, not better: the published rule is the
+*least* concentrated of the four.
+
+## 18. Walk-forward, with the selection re-run inside each fold
+
+Expanding folds, twelve out-of-fold years, a fixed 300-cell menu re-ranked in every training
+window, beside a random cell from the same menu and the paper's constants:
+
+| arm | all 12 folds | **excluding 2025** | folds positive |
+| --- | ---: | ---: | ---: |
+| re-optimised each fold | +0.1490 | **+0.0593** | 9 / 12 |
+| a RANDOM cell | +0.0943 | **+0.1047** | 7 / 12 |
+| the paper's constants | −0.0139 | −0.0185 | 7 / 12 |
+
+The re-optimiser appears to win — on one fold, 2025, where it took **four trades** at +1.136 R.
+**Remove that fold and a random cell from the same menu beats it.** Median trades per fold are 14
+for the chosen arm against 34 for the constants: the optimiser buys low-count cells, as it has in
+every previous study here.
+
+## 19. Why your Strategy Tester shows 204 trades and this shows 592
+
+Same rule, same span, same timeframe. The difference is **C5**, and C5 reads your broker's tick
+volume. Switching C5 off takes the long side from 592 trades to 904, so that single condition is
+selecting a third of the population — and one XAUUSD feed's tick count is not another's. **This
+strategy's signal set is broker-dependent**, which is a portability problem the paper does not
+discuss and which no amount of parameter tuning fixes. It also means a Strategy Tester result on
+one data provider does not transfer to another.
+
+## 20. The answer to "find the mean performance that is a proven edge"
+
+There is not one in this family on this data, and the chain is:
+
+1. **No finalist's locked bootstrap excludes zero** (P(mean≤0) 0.054 to 0.176).
+2. **Deflated Sharpe 0.000** for all four at 3,660 counted trials.
+3. Every finalist beats **only a control that loses money**.
+4. **fANOVA 0.85–0.90 on the volume multiple**, whose gradient inverts +1.00 → −0.90 across the split.
+5. The best research cell is a **spike** — 6.7% of its own neighbours beat it.
+6. **94% of its locked result is the 2025 gold rally**; +0.015 R a trade without it.
+7. The walk-forward advantage is **one fold of four trades**; strip it and a random cell wins.
+
+What *would* change the answer is not more search. It is a second gold feed to test whether the
+volume-dependent signal set is real, and a longer stretch of non-rallying gold — the locked block
+contains one of the largest bull runs in the metal's history, and every positive number here leans
+on it.
