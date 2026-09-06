@@ -226,7 +226,15 @@ def _walk(o, h, l, c, atr, e50, e20, vwap, sess_end, sig, side, atr_stop, tgt_R,
         risk = (px - stp) if side > 0 else (stp - px)
         if risk <= 0.0:
             continue
-        tgt = px + side * tgt_R * risk
+        # tgt_R <= 0 OR >= 90 means NO TARGET. 0 is the natural way to express it (and is what the
+        # shipped Pine's `tgtR = 0` input means), but a literal 0 puts the target AT the entry
+        # price: 90.4% of trades then exit instantly for minus the round turn, PF 0.0000, median
+        # hold ONE bar. Caught in the 108k sweep by a whole axis rung reading 0% profitable across
+        # 21,600 cells -- an entire slice at exactly zero is a sentinel bug, not a result.
+        if tgt_R <= 0.0 or tgt_R >= 90.0:
+            tgt = 1e18 if side > 0 else -1e18
+        else:
+            tgt = px + side * tgt_R * risk
         end = sess_end[a] if flatten == 1 else last_bar - 1
         if end < a:
             end = a
