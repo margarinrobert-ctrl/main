@@ -677,3 +677,117 @@ session-open control by 0.40 R, and has the worst locked bootstrap of the three 
 count), **is long in a market that rose** (the beta and the fold split), and **is not a better way
 of being long than the naive alternative** (the session-open control). None of the three is an
 edge, and the third rules one out.
+
+---
+
+# Part 6 — Long vs short in bull vs bear
+
+`research/vwapema/run_regime.py`, `plot_regime.py`, figure
+`results/vwapema/vwapema_regime.png`, tables `results/vwapema/regime_filter.csv` and
+`regime_descriptive.csv`.
+
+## 35. The regime label
+
+Gold's **daily close against its own 200-day EMA, lagged one session**, forward-filled onto the
+15-minute bars. The lag is what makes it causal: a bar at 10:00 on session D reads the state as of
+the close of D−1 and nothing after. One parameter (200), taken as the conventional value and not
+swept — a swept regime length would put the multiplicity back.
+
+63.4% of session bars are labelled bull and 36.6% bear. The **locked block is 76.2% bull**, so the
+two blocks are not the same regime mixture and any research→locked comparison here carries that.
+
+Two readings are produced for every cell, and they are different questions:
+
+- **descriptive** — split the realised trades of the unrestricted rule by the regime at their signal
+  bar. Cheap, and it tells you where the money came from.
+- **filter** — restrict the signal to one regime and **re-simulate**. This is the only one that
+  answers "should I trade this regime", because refusing a signal frees the position lock and admits
+  a later one the unrestricted run never saw (`STUDY_AUCTION`'s rule; the same correction
+  `STUDY_XAU_CVD_FEATURES` had to make). Every table below is the filter reading.
+
+## 36. Long: a bull filter helps all six presets on the locked block
+
+R per trade, locked block, six presets × three regime settings:
+
+| preset | bear only | both | bull only |
+|---|---|---|---|
+| As published | −0.011 (n 45) | +0.142 (214) | **+0.183** (169) |
+| Optuna PF | +0.117 (15) | +0.182 (79) | **+0.197** (64) |
+| Optuna ret/DD | −0.127 (20) | +0.110 (95) | **+0.173** (75) |
+| Optuna total R | −0.354 (30) | +0.200 (160) | **+0.328** (130) |
+| Sweep top row | +0.141 (18) | +0.224 (61) | **+0.259** (43) |
+| Sweep nbhd | +0.103 (15) | +0.262 (53) | **+0.325** (38) |
+
+**Bull-only beats both-regimes in 6 of 6, and bear-only is worse than both-regimes in 6 of 6.** Best
+cell in the whole table is Optuna total R long-in-bull at +0.328 R on 130 trades.
+
+**That preference was chosen on the locked block, so it is descriptive.** On research the same
+comparison is 4 of 6, and the two presets that disagree are the two the branch has most reason to
+trust as un-fitted: *as published* prefers bear-only there (+0.039 vs −0.045) and Optuna total R
+prefers bear-only (+0.254 vs +0.195). A filter that is 4/6 where it could be chosen and 6/6 where it
+could not is the wrong way round; the honest statement is that the locked block is 76% bull and a
+long rule restricted to bull days is being scored on the block where those days are most of the
+sample.
+
+## 37. Short: negative in 18 of 18 locked cells
+
+| preset | bear only | both | bull only |
+|---|---|---|---|
+| As published | −0.258 | −0.215 | −0.197 |
+| Optuna PF | −0.108 | −0.088 | −0.070 |
+| Optuna ret/DD | −0.098 | −0.139 | −0.169 |
+| Optuna total R | −0.073 | −0.346 | −0.429 |
+| Sweep top row | −0.341 | −0.266 | −0.204 |
+| Sweep nbhd | −0.612 | −0.426 | −0.322 |
+
+Every cell negative. And the research block said the opposite of what you would expect: **short-in-
+bull was the best short setting on research, positive in 5 of 6 presets** (+0.049 to +0.154), while
+short-in-bear was negative in 6 of 6. On locked, short-in-bull is the *worst* of the three settings
+for 4 of 6. The one short configuration that looked workable is the one that inverted — the wrong
+shape, again.
+
+Share of preset × regime cells that are positive:
+
+| | research | locked |
+|---|---|---|
+| LONG | 89% (16/18) | 83% (15/18) |
+| SHORT | 33% (6/18) | **0% (0/18)** |
+
+## 38. Inside every regime, the entry conditions still subtract
+
+The `always_in` control from §32 re-run **inside each regime cell**: on the same qualifying days,
+same side, entry at the session open, carrying the **rule's own ATR stop** so it cannot be accused
+of taking more risk.
+
+| cell | rule R | always-in R | edge | cells the rule wins |
+|---|---|---|---|---|
+| LONG bull | +0.234 | +0.563 | **−0.329** | 1 of 12 |
+| LONG bear | +0.073 | +0.378 | −0.305 | 0 of 12 |
+| SHORT bull | −0.089 | +0.394 | −0.483 | 0 of 12 |
+| SHORT bear | −0.229 | +0.210 | −0.439 | 0 of 12 |
+
+**1 of 48.** The single exception is Optuna total R, long, bull, locked (+0.328 against +0.187) —
+one cell of forty-eight, on the block that was read last. Conditioning on the regime does not
+rescue the finding of §32: the six conditions select days on which gold rose and then enter later
+and worse than simply being there, and that is true separately in bull days and in bear days.
+
+Note the control column: **a session-open long earns +0.563 R in bull and +0.378 in bear**, and a
+session-open *short* earns +0.394 in bull and +0.210 in bear. A short with an ATR stop and an
+EMA trail is positive on average in a market that rose 148.9% — because the trail's asymmetry, not
+the direction, is doing the work. That is a warning about the control, not a recommendation.
+
+## 39. The answer
+
+- **Best combination: long in bull.** Best on the locked block for all six presets, best single cell
+  in the study (+0.328 R/trade, n 130), 6 of 6 presets positive.
+- **Long in bear is second** and only half-workable: best +0.141 R, 3 of 6 presets positive.
+- **Short is not tradeable in either regime.** 0 of 18 locked cells positive in either. Short-in-bear
+  is the worse of the two on average per trade (−0.229 vs −0.089) but short-in-bull is where the
+  research→locked inversion lives, so neither is a candidate.
+- **And the ranking does not make a strategy.** In every one of the four combinations the rule loses
+  to entering at the session open with its own stop. Long-in-bull is the best way to run *this* rule
+  and it is still a worse way to be long gold on those days than not filtering at all.
+
+`gold rose 148.9% over the sample and 133.8% of that came on bull-labelled days` — a long-only rule
+on this market is a bull-regime exposure by construction, and restricting it to bull days makes the
+exposure explicit rather than adding anything to it.

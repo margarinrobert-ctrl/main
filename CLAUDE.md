@@ -3222,6 +3222,23 @@ SWEEP cells correlate **0.91** with each other -- one configuration with two nam
 they fail together. Before crediting any "holds out of sample", check the fold count, the beta, and
 whether a naive always-in version of the same exposure beats it.
 See `docs/ib/STUDY_VWAP_EMA_GOLD.md`.
+**AND SPLIT BY REGIME, LONG-IN-BULL WINS EVERY PRESET AND SHORT IS NEGATIVE IN 18 OF 18.** A causal
+regime label (gold's daily close against its own 200-day EMA, LAGGED one session; 63.4% of session
+bars bull, but the locked block is 76.2% bull) applied as a FILTER and RE-SIMULATED, not as a split
+of realised trades -- refusing a signal frees the position lock and admits a later one, so the two
+readings are different questions. **Bull-only beats both-regimes on locked in 6 of 6 presets and
+bear-only is worse in 6 of 6** (best cell Optuna totR long-in-bull +0.328 R on n=130); short is
+negative in **18 of 18** locked cells. **But the bull preference is 4/6 on RESEARCH and 6/6 on
+LOCKED**, and the two presets that disagree there are the published rule and the best Optuna cell --
+a filter that is chosen where it may not be chosen is the wrong way round, and the locked block
+being 76% bull is most of it. **The short side inverted**: short-in-BULL is the best short setting
+on research (positive in 5 of 6) and the WORST of three on locked for 4 of 6. **AND CONDITIONING ON
+THE REGIME RESCUES NOTHING** -- the session-open control with the rule's OWN ATR stop beats the rule
+in **47 of 48 cells** (mean edge -0.305 to -0.483 in every side x regime cell), so the six
+conditions enter later and worse than simply being there, separately in bull days and in bear days.
+Note the control column itself: a session-open SHORT earns +0.394 R in bull and +0.210 in bear on a
+market that rose 148.9%, which is the EMA trail's asymmetry and not a direction call -- read a
+control's own level before crediting an excess over it.
 
 ## Tooling
 
