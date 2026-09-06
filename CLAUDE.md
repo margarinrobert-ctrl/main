@@ -3082,6 +3082,33 @@ floors negative (`floor>=1.2` -0.0228) -- agreeing with STUDY_V28 and reversing 
 move. Parity 51/51 trades, correlation 1.0000, 98.04% identical exit bars, gap +1.7% / -0.2%.
 See `docs/ib/STUDY_VWAP_STOCH_ATR.md`.
 
+**THE INITIAL BALANCE MECHANISM IS ABSENT ON US30 AT EVERY RETRACEMENT DEPTH, AND 3,600 OPTUNA
+TRIALS FOUND A LONG DRIFT EXPOSURE THAT DIES ON THE ONE BLOCK NOTHING TOUCHED.** Two-layer build on
+`US30_LONG_15m` with the walker verified against the V58 tensor (945/945 and 989/989 trade counts,
+838/847 days to the cent). As published: **-0.0167 %/trade, bootstrap p 1.000, GROSS NEGATIVE at
+zero cost** (Gate 1 FAIL), and the mechanism's own prediction fails -- the retracement ladder that
+was monotone on NQ (`STUDY_V58_ANATOMY`) is FLAT here at every rung (-0.008 .. -0.018), its control
+p falling only because the CONTROL worsens. **A RULE THAT BEATS A LOSING NULL IS STILL A LOSING
+RULE.** Optuna, research only: 62.6% of trials profitable, fANOVA 0.94 on the IB-range CEILING in
+all three studies; the total optimum set the retracement to **0.007 -- it discarded the mechanism
+and buys the break** -- and ALWAYS-LONG on its own days earns more (+0.0675 vs +0.0450, and +0.1222
+vs +0.0426 on locked). One locked read: the PF optimum (90-min IB, retracement 0.455, both sides)
+is the only finalist clearing a random entry (+0.0662, PF 1.57, p 0.002 on 91 trades), then
+**US30_ISO's 288 post-2025-07 sessions, a different provider no search saw, read EVERY finalist
+NEGATIVE** (-0.057 p 0.996 / -0.093 / -0.041 at a 2.2% win rate) with always-long negative too.
+30 causal meta features (audit 0/1,200 after two construction artefacts of mine failed 80/1,200;
+HMM filtered vs smoothed 96.0%; FFD d 0.3): 4/15 Gate-2 cells clear both nulls on research **with
+the best model's OOF IC at -0.145** -- it ranks backwards and its top 40% is positive, V28's shape
+-- and on locked the score is NOT CALIBRATED (keep 40% kept 15%) and that cell INVERTS. DSR 0.000
+at 3,698 looks. **ON A CFD FEED THE FIRST BAR AFTER 15:55 IS THE 18:30 RE-OPEN on 1,247 of 2,246
+sessions** (16:00 exists on 153): a flatten filled at 'the next bar's open' holds through the cash
+close and showed as +0.087 R on BOTH sides -- exit at the last pre-cutoff close, submit the script's
+flatten on the bar before, and run it on a 1-5m chart. Also: Pine's fill-bar path (green O-L-H-C)
+PAYS A TARGET ON THE FILL BAR for a limit filled on the way down -- STUDY_V10's artifact on the
+script side, worth +3% on the published cell -- so the parity harness models it rather than the
+research adopting it. Ships `pine/ibus30/IB_US30_strategy.pine`, no edge claimed.
+See `docs/ib/STUDY_IB_US30_OPTUNA.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -3123,6 +3150,7 @@ See `docs/ib/STUDY_VWAP_STOCH_ATR.md`.
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
 | `research/v64/` | Optuna on V61, its walk-forward and its Monte Carlo: a continuous-space numba evaluator verified to the cent against the published grid, three Optuna studies, fANOVA importance, the box-edge re-run, the V30 hold-out-an-axis surrogate; `run_wfo*.py` in-fold re-selection with a random-cell arm, span-normalised WFE and a geometry-matched control; `run_mc.py` perturbation (price jitter with the indicators RECOMPUTED, execution, missed fills, parameters) beside the permutation and the bootstrap |
 | `research/v61feat/` | feature engineering on the V61 15m rule under the two-gate architecture: `v61feat.py` (51 causal features in 7 declared families, FFD fracdiff with d by ADF on research only, a Baum-Welch HMM read FILTERED with the smoothed version kept only as a leakage diagnostic, truncation audit), `run_feat1.py` (Gate 1 on two candidate primaries, base rates on the trigger's own bars, IC against shuffled twins, redundancy measured ON THE SIGNAL BARS with family-first selection, stability across research halves and volatility regimes), `run_feat2.py` (purged embargoed CV with a RETURN objective, Gate 2 against a bootstrap and a same-selectivity random filter, drop-one incremental value, one locked read with the kept fraction reported, deflation and White's reality check), `run_feat3.py` (the two PORTABLE forms measured before any Pine is written -- the sign-aligned count ladder and a ridge whose every constant is exported, plus the frozen HMM parameters and fracdiff weights), `feat_parity.py` (the shipped script's fracdiff recursion and HMM forward pass reproduced in Python and diffed against the research), `plot_feat.py` |
+| `research/ibopt/` | the Initial Balance retracement on US30 under the two-gate architecture: `ibcore.py` (Phase 0 in the docstring, a continuously parameterised per-day walker verified against the V58 tensor, the 18:30-re-open flatten trap fixed, gap-through fills, a risk-matched random-entry control), `run_gate1.py` (the published primary, arms, the retracement ladder the mechanism predicts), `run_optuna.py` (three TPE studies on research only, locked logged and never used, marginals, box edges, fANOVA), `run_gate1_finalists.py` (both nulls plus ALWAYS-SIDE on the same days), `ibfeat.py` (30 causal side-oriented features in six families, FFD d by ADF on research, HMM read filtered, truncation audit), `run_gate2.py` (screen, purged CV with a return objective, shuffled twins, Gate 2 vs bootstrap and random filter, drop-one, the portable ridge), `run_locked.py` (ONE read: finalists, meta layer, deflation, the US30_ISO post-2025-07 block), `ib_parity.py` (the Pine's order model incl. the fill-bar target the broker emulator pays), `plot_ibopt.py` |
 | `research/vstoch/` | VWAP x Stochastic x ATR: the design declared in the module docstring before any search, a causal TIME-OF-DAY ATR baseline beside the broken trailing-mean one, base rates on the trigger's own bars, the trigger against a random entry at four geometries, a 31,752-cell declared grid read by marginal average, both nulls, one locked read, a frozen cross-market read, the zero-cost variant, the win rate against its own driftless bound, and `vstoch_parity.py` -- the shipped Pine's order model diffed against the engine |
 | `research/v61sess/` | the V61 rule as a user configures it: `sess_core.py` (the SCRIPT's order model with the session window, the flatten filling at the next open, and touch-as-break), `run_iss_oss.py` (IS/OOS on both timeframes, the window-vs-flatten ablation, the channel-time-reach control, and the zero-cost comparison), `run_optuna.py` (2,400 trials over two objectives with the session axis open, research only, population shape before any top row, box-edge check), `run_mc_portfolio.py` (the four Monte Carlos per leg, daily-return leg correlation, and combinations scored against the BEST single leg), `us30_core.py` + `run_us30.py` + `run_us30_mc.py` (the same rule FROZEN on US30 with the CVD built from 15m sub-bars, three nulls, the gate ablation, and the cross-market book), `plot_sess.py`, `plot_us30.py` |
 | `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |
