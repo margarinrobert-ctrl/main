@@ -99,6 +99,30 @@ if len(agree):
           f"{int(same.sum())} of {len(agree)}")
     print(agree[same].round(2).to_string() if same.any() else "  (none)")
 
+L("G2.0  A CAVEAT ON THE FORWARD-RANGE LABEL, before its 152 BH passes are read")
+print("""  `y.rng{h}` is the forward high-low divided by ATR(14) AT THE BAR. A bar whose ATR is already
+  high therefore has a SMALLER normalised forward range almost by construction, which is why every
+  volatility feature scores a large NEGATIVE IC against it (atr_pct500 at h=96: IC -0.533, t -42.9)
+  and why 152 of 172 range tests clear BH while only 16 of 172 return tests do. Most of that is the
+  DENOMINATOR, the same class as the collapsing-R traps this branch has recorded four times. The
+  unnormalised version is printed beside it so the mechanical part can be separated from the real
+  volatility clustering.""")
+iso0 = X.load_iso()
+atr0 = XF._atr(iso0.high.to_numpy(), iso0.low.to_numpy(), iso0.close.to_numpy(), 14)
+rows = []
+for col in ("vol.atr_pct500", "vol.rv24", "anm.ae_err"):
+    x = Xi[col].to_numpy(float)[res]
+    for hz in (16, 96):
+        yn = Yi[f"y.rng{hz}"].to_numpy(float)[res]                       # normalised by ATR now
+        yr = yn * atr0[res]                                              # back to USD
+        for lab, y in (("normalised by ATR", yn), ("RAW USD range", yr)):
+            m = np.isfinite(x) & np.isfinite(y)
+            rows.append(dict(score=col, h=hz, label=lab,
+                             ic=round(float(pd.Series(x[m]).corr(pd.Series(y[m]), method="spearman")), 4)))
+print()
+print(pd.DataFrame(rows).pivot_table(index=["score", "h"], columns="label", values="ic").round(4).to_string())
+print("\n  If the sign FLIPS between the two columns, the normalised result was the denominator.")
+
 L("G2.4  THE COST FLOOR -- what any of this has to beat on gold")
 c = np.exp(np.log(Xi.index.size))  # placeholder to keep the import honest
 iso = X.load_iso()
@@ -109,6 +133,17 @@ print(f"  round turn {rt:.2f} USD/oz;  median ATR(14) {np.nanmedian(atr):.3f} US
       f"median price {np.nanmedian(px):.1f}")
 print(f"  cost as a fraction of a 1xATR stop: {rt/np.nanmedian(atr):.3f}")
 print(f"  cost in BASIS POINTS of price: {1e4*rt/np.nanmedian(px):.2f} bp")
+ret1 = np.diff(np.log(px))
+sd_bp = 1e4 * np.nanstd(ret1)
+print(f"\n  sd of a 15-minute log return: {sd_bp:.2f} bp")
+print("  what an information coefficient is WORTH, against a "
+      f"{1e4*rt/np.nanmedian(px):.2f} bp round turn:")
+for ic in (0.01, 0.02, 0.046, 0.10, 0.20):
+    val = ic * sd_bp
+    print(f"    IC {ic:.3f} -> {val:5.2f} bp expected per trade   "
+          f"= {val/(1e4*rt/np.nanmedian(px)):.2f}x the round turn"
+          f"{'   <-- the best RETURN IC measured here' if abs(ic-0.046)<1e-9 else ''}")
+print("  (`STUDY_V13` ran the identical arithmetic on US100 and found you need IC >= 0.10 at h=1.)")
 print("\n  Any Q5-Q1 spread below that many basis points is not tradeable no matter how significant")
 print("  it is. `STUDY_XAU_TWO_LAYER` measured the same floor: gold is gross-positive and net-")
 print("  negative on 14 of 15 frozen cells, and the round turn is the whole difference.")
