@@ -37,7 +37,7 @@ if os.path.exists(CACHE):
     print(f"  loaded cache")
 else:
     iso = B["iso"]
-    fit_mask = (iso.index < B["cut"]).to_numpy()
+    fit_mask = np.asarray(iso.index < B["cut"])
     Xi, Yi, fitted = XF.build(iso, fit_mask=fit_mask)
     print(f"  ISO built: {Xi.shape[1]} features, ffd d={fitted['ffd_d']}, "
           f"hmm means {[f'{m:.2e}' for m in fitted['hmm'].means()]}  ({time.time()-t0:.0f}s)")
@@ -51,9 +51,9 @@ CORE = [c for c in Xi.columns if not c.startswith("vd.")]
 VD = [c for c in Xi.columns if c.startswith("vd.")]
 print(f"  {len(CORE)} core features (run on BOTH feeds) + {len(VD)} volume-dependent (ISO only)")
 
-res = (Xi.index < Z["cut"]).to_numpy()
+res = np.asarray(Xi.index < Z["cut"])
 loc = ~res
-fwd = (Xm.index > Z["iso_end"]).to_numpy()
+fwd = np.asarray(Xm.index > Z["iso_end"])
 print(f"  research {res.sum():,}  locked {loc.sum():,}  forward {fwd.sum():,}")
 
 L("G1.2  CAUSALITY -- the labels are FORWARD and the features are not")
