@@ -2961,6 +2961,32 @@ better (240m div-family +0.069 vs 60m +0.014) while producing exactly chance hit
 suggestive at best. **DO NOT RE-RUN the continuous CVD readings.** What would move it is 1-MINUTE
 GOLD BARS. See `docs/ib/STUDY_XAU_CVD_FEATURES.md`.
 
+**THE FLATTEN IS THE COST, NOT THE WINDOW -- AND AN OPTUNA RANKING WITH THE SESSION AXIS OPEN IS
+NEGATIVELY CORRELATED WITH THE HOLDOUT.** The V61 CVD rule run as a user actually configured it
+(07:00-11:00 New York + flatten, touch on, 15m and 30m). **Adding the flatten to an all-hours run
+costs 0.4-0.5 PROFIT FACTOR on every timeframe and both blocks** (30m 1.784/1.611 -> 1.348/1.170 all
+hours; 15m 1.570/1.869 -> 1.359/1.323) while adding the WINDOW alone costs little and on 30m locked
+HELPS (1.683 / **2.853**, ret/DD 5.80). Fourteenth confirmation. **ON A 15-MINUTE CHART THE PRESET IS
+A DIFFERENT STRATEGY**: the order-flow settings are in MINUTES so k3/w20 becomes k6/w40 with the same
+time reach, but the CHANNELS are in BARS so 20/20 is HALF the time reach -- and the CVD is coarser
+(15 sub-bars a bar against 30). 15m as shipped is the best-behaved leg measured (locked PF 1.869,
+ret/DD 8.23, Sharpe 2.07, bootstrap P(mean<=0) **0.008 research / 0.003 locked**, the only leg
+excluding zero on both), while the user's 15m + flatten reads **1.151 research / 1.859 locked** --
+the wrong shape -- with research P(mean<=0) **0.314** and 67% of its jittered neighbours BEATING it.
+**OPTUNA, 2,400 trials over two objectives with session start/end/flatten searchable, research block
+only: corr(research PF, locked PF) = -0.458 and -0.417 Pearson**, top 1% by research PF 2.44 ->
+**0.749** against the whole population's 1.099, and BOTH optima invert (PF optimum 2.472 -> **0.604**,
+total -6.25%; ret/DD optimum 21.09 ret/DD -> PF **0.910**, total -2.12%). Ninth optimiser here to lose
+to the author's constants, and a bigger box than STUDY_V64_OPTUNA's gave a worse result.
+**THE PORTFOLIO IS THE ONE REAL IMPROVEMENT AND ITS CASE IS REGRET, NOT RETURN**: the two all-hours
+legs correlate **0.36** in daily returns (against STUDY_HYPO's 0.87-0.96 and STUDY_TOP5's 0.90), the
+best research leg (30m, ret/DD 10.02) COLLAPSES to 2.26 on locked while the best locked leg (15m,
+9.58) was second on research, and the 50/50 is first on research (12.06, lowest drawdown of any arm)
+and second on locked (6.06) -- it loses a strict ret/DD test out of sample and wins on Sharpe and
+drawdown. Also: **the shipped script sets NO commission and NO slippage**, so a Strategy Tester
+report is gross unless Properties is changed; measured cost is 4.6-21.9% of gross and worst where
+the flatten is on. MC p99 drawdown 1.2-3.5x realised. See `docs/ib/STUDY_V61_SESSION.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -3001,6 +3027,7 @@ GOLD BARS. See `docs/ib/STUDY_XAU_CVD_FEATURES.md`.
 | `research/v63/` | the VWAP / triple-EMA / ATR trend design: three feeds with real volume, a chandelier-trail tensor, search on one market and a frozen read on three, drop-one and the binding hold axis |
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
 | `research/v64/` | Optuna on V61, its walk-forward and its Monte Carlo: a continuous-space numba evaluator verified to the cent against the published grid, three Optuna studies, fANOVA importance, the box-edge re-run, the V30 hold-out-an-axis surrogate; `run_wfo*.py` in-fold re-selection with a random-cell arm, span-normalised WFE and a geometry-matched control; `run_mc.py` perturbation (price jitter with the indicators RECOMPUTED, execution, missed fills, parameters) beside the permutation and the bootstrap |
+| `research/v61sess/` | the V61 rule as a user configures it: `sess_core.py` (the SCRIPT's order model with the session window, the flatten filling at the next open, and touch-as-break), `run_iss_oss.py` (IS/OOS on both timeframes, the window-vs-flatten ablation, the channel-time-reach control, and the zero-cost comparison), `run_optuna.py` (2,400 trials over two objectives with the session axis open, research only, population shape before any top row, box-edge check), `run_mc_portfolio.py` (the four Monte Carlos per leg, daily-return leg correlation, and combinations scored against the BEST single leg), `plot_sess.py` |
 | `research/v61/` | the CVD optimisation: a verified exit tensor (725,760 configs in ~4s a timeframe), research-only marginals, one locked read, the second null, the gate ablation and both presets' parity |
 | `research/top5/` | **the cross-strategy battery** -- one trade table for eight engines, the ranking in percent of price, each strategy's own control, IS/OOS + two Monte Carlos + robustness + a nine-gate live-readiness scorecard |
 | `research/ftm/ftm_anatomy.py` | FTM reverse-engineering: drop-one anatomy, 200-cell grid, walk-forward, clusters, robustness, MC |
