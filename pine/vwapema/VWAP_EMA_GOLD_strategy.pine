@@ -1,0 +1,186 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+
+// VWAP-EMA REGIME-FILTERED INTRADAY XAU/USD -- Bhatti (SSRN 6650958), built literally.
+// NO EDGE IS CLAIMED. The header is the measurement.
+//
+// THE PAPER CONTAINS NO BACKTEST. Its section 6.1 states the outcome distribution was ASSUMED
+// (full win 0.30 / partial 0.20 / breakeven 0.08 / loss 0.42) and Monte Carlo sampled, so the
+// published 45.3% win rate, +0.414R expectancy, 1.76 profit factor, 3.99 Sharpe and +102.2%
+// return are arithmetic from that assumption and say nothing about gold.
+//
+// MEASURED ON XAU_ISO_15m -- 371,586 bars, 2010-01 to 2026-01, New York session, one unit, gold's
+// cost floor (0.30 USD/oz round turn + 0.05 a side). Research block to 2020-05; ONE locked read.
+//   * AS SPECIFIED, LONG:  research -0.0447 R/trade, PF 0.916, win 26.7% on 378 trades.
+//                          locked   +0.1423 R/trade, PF 1.318, win 34.6% on 214 trades.
+//     It GROWS out of sample, which is the wrong shape -- a rule chosen on research should look
+//     better there. SHORT is negative on both blocks (-0.1421 / -0.2147).
+//   * IT BEATS ITS MATCHED CONTROL AND STILL LOSES. A random New York entry running the identical
+//     stop, target, trail, costs and position lock earns -0.2573 R on research (p 0.0025) and
+//     -0.1280 on locked. The exit machine loses money on ANY entry; the rule loses less.
+//   * THE ASSUMED DISTRIBUTION IS WRONG. Measured: the 3R target is hit on 12.4% of trades against
+//     the assumed 30% (identical on both sides), the initial stop on 26.5% against 42%, and 61.1%
+//     die on the trail at a mean of -0.190 R. The trail is the dominant exit and it is a loser.
+//   * THE VWAP CONDITION REMOVES ALMOST NOTHING. C2 passes 87.8% of the bars that already satisfy
+//     the other five; C6 (range) passes 92.7%. The binding condition is C3, the EMA50 pullback, at
+//     29.9%. C4b (engulfing) supplies 84% of signals and C4a (pin bar) only 22%.
+//   * SECTION 7.4 IS DEAD CODE. Switching the EMA20 final-leg tightening off changes the result to
+//     the cent -- floating profit almost never reaches 2.5R before the trail fires.
+//   * THE VOLUME WEIGHTING DOES NOTHING. Replacing the volume-weighted anchor with the unweighted
+//     session mean of the same typical price gives -0.0436 against -0.0447.
+//   * THE SPEC'S OWN ATR FIGURES ARE 5-8x TOO LARGE. It assumes a $12 15-minute ATR (its 5.1) and
+//     its cost table implies $20; the measured median is $2.35. So its 0.24R cost assumption is
+//     2.3x the real 0.1032R -- and the rule is still negative at the real one, while being
+//     POSITIVE GROSS (+0.0762 R long). Cost is what takes it under.
+//   * THE VOLUME FILTER WAS THE ONE COMPONENT CARRYING INFORMATION, AND IT INVERTS. Raising C5
+//     from 1.0x to 2.0x is monotone on research (-0.0678 to +0.3745 R) and beats a random filter
+//     of the same selectivity at every rung (p 0.030 to 0.000). On the locked block the same
+//     ladder runs the other way -- Spearman +1.00 research against -0.90 locked -- and every rung
+//     fails its control (p 0.24 to 0.69).
+//   * THE SPEC'S OWN VALUE IS NEVER THE BEST RUNG ON ANY OF EIGHT AXES (ranks 2 to 4 of 3 to 5).
+//     The stop is monotone toward WIDER (0.25N -0.0826 to 1.5N -0.0095) and the session flatten is
+//     destructive (-0.045 to -0.101).
+//   * 9 of 16 full years are positive on the long side. 2024 -- the paper's own sample -- is the
+//     second best year in sixteen at +0.2440 R, PF 1.55, win 41.3%, against its claimed +0.414 R,
+//     PF 1.76, 45.3%.
+//
+// A NOTE ON DATA. An MT4-style XAUUSD 15m export was supplied whose sixth field is the bar's
+// LENGTH IN MINUTES, not volume: 99.62% of rows read exactly 15 and its correlation with the bar
+// range is +0.005 where a real tick-volume series scores +0.64. On such a file C5 fires on 0.033%
+// of bars and the VWAP is not volume-weighted at all. CHECK corr(volume, high-low) BEFORE RUNNING
+// THIS ANYWHERE -- if it is near zero the volume column is not volume.
+//
+// Commission and slippage are NOT set here. Set them in Properties before reading a report.
+
+strategy("VWAP-EMA Gold", shorttitle = "VE XAU", overlay = true, pyramiding = 0, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+TZ = "America/New_York"
+gS = "Session (New York wall-clock)"
+sOpen  = input.int(570, "Session open  (min past NY midnight, 570 = 09:30)", group = gS)
+sClose = input.int(960, "Session close (min past NY midnight, 960 = 16:00)", group = gS)
+flatEOD = input.bool(false, "Flatten at the session close", group = gS, tooltip = "Measured cost: -0.045 -> -0.101 R per trade. Off by default because it is destructive here and the spec does not require it.")
+
+gI = "Indicators (the spec's ten free parameters)"
+emaSlow  = input.int(200, "EMA regime", minval = 5, group = gI, tooltip = "Rank 3 of 5 on its own ladder; 100 was best at +0.0027 R.")
+emaPull  = input.int(50, "EMA pullback / trail", minval = 5, group = gI, tooltip = "Rank 3 of 5; 70 was best.")
+emaTight = input.int(20, "EMA final-leg trail", minval = 2, group = gI)
+atrLen   = input.int(14, "ATR", minval = 2, group = gI)
+useVol   = input.bool(true, "Volume-weight the VWAP anchor", group = gI, tooltip = "Worth -0.0011 R here: the unweighted session mean does the same job.")
+
+gR = "Rules"
+atrStop   = input.float(0.5, "Initial stop (x ATR beyond the signal bar)", minval = 0.05, step = 0.05, group = gR, tooltip = "Rank 4 of 5; the ladder is monotone toward WIDER (1.5N best).")
+tgtR      = input.float(3.0, "Target (R, 0 = none)", minval = 0.0, step = 0.5, group = gR)
+volMult   = input.float(1.1, "C5 volume multiple", minval = 0.0, step = 0.1, group = gR, tooltip = "Monotone on research and INVERTED on locked -- Spearman +1.00 against -0.90. Do not raise it on the research evidence alone.")
+rangeMult = input.float(0.8, "C6 range floor (x ATR)", minval = 0.0, step = 0.1, group = gR, tooltip = "Passes 92.7% of bars that satisfy the other five.")
+wickBody  = input.float(2.0, "C4a pin-bar wick/body ratio", minval = 0.5, step = 0.25, group = gR)
+ambig     = input.float(0.001, "Regime ambiguity band (fraction of EMA200)", minval = 0.0, step = 0.0005, group = gR)
+tightenR  = input.float(2.5, "Switch to the fast EMA above this floating R", minval = 0.0, step = 0.25, group = gR, tooltip = "Inert: switching it off changes the result to the cent.")
+doLong    = input.bool(true,  "Long side", group = gR)
+doShort   = input.bool(false, "Short side  (negative on BOTH blocks: -0.1421 / -0.2147 R)", group = gR)
+
+// ------------------------------------------------------------------ clock, ATR, EMAs
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow = dayofweek(time, TZ)
+wkday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+inRth = wkday and nyMin >= sOpen and nyMin < sClose
+newSess = inRth and not inRth[1]
+tfMin = timeframe.in_seconds() / 60
+lastBar = wkday and nyMin < sClose and nyMin + tfMin >= sClose
+
+// ta.atr is Wilder's; the research uses ema(tr, n). This matches the research.
+atr = ta.ema(ta.tr(true), atrLen)
+e200 = ta.ema(close, emaSlow)
+e50  = ta.ema(close, emaPull)
+e20  = ta.ema(close, emaTight)
+
+// ------------------------------------------------------------------ session VWAP
+var float cumPV = 0.0
+var float cumV  = 0.0
+var float cumTP = 0.0
+var float cumN  = 0.0
+if barstate.isconfirmed
+    if newSess
+        cumPV := 0.0
+        cumV  := 0.0
+        cumTP := 0.0
+        cumN  := 0.0
+    if inRth
+        tp = (high + low + close) / 3.0
+        cumPV := cumPV + tp * volume
+        cumV  := cumV + volume
+        cumTP := cumTP + tp
+        cumN  := cumN + 1.0
+vwapW = cumV > 0 ? cumPV / cumV : na
+vwapU = cumN > 0 ? cumTP / cumN : na
+vwap  = useVol ? vwapW : vwapU
+
+// ------------------------------------------------------------------ the six conditions
+body = math.abs(close - open)
+lw   = math.min(open, close) - low
+uw   = high - math.max(open, close)
+vsma = ta.sma(volume, 20)
+ambiguous = math.abs(close - e200) / math.max(e200, 1e-9) < ambig
+
+// C1 regime, C2 VWAP side, C3 pullback into the EMA50, C4 candle, C5 volume, C6 range
+lC1 = close > e200
+lC2 = not na(vwap) and close > vwap
+lC3 = math.min(low, low[1]) <= e50 and e50 <= close
+lC4 = (lw >= wickBody * body and uw <= 0.5 * lw) or (close > open[1] and open < close[1])
+sC1 = close < e200
+sC2 = not na(vwap) and close < vwap
+sC3 = math.max(high, high[1]) >= e50 and e50 >= close
+sC4 = (uw >= wickBody * body and lw <= 0.5 * uw) or (close < open[1] and open > close[1])
+C5 = volume > volMult * vsma
+C6 = (high - low) >= rangeMult * atr
+
+longSig  = doLong  and inRth and lC1 and lC2 and lC3 and lC4 and C5 and C6 and not ambiguous
+shortSig = doShort and inRth and sC1 and sC2 and sC3 and sC4 and C5 and C6 and not ambiguous
+
+// ------------------------------------------------------------------ orders
+// The exit-bar marker is updated BEFORE the entry test so a trade cannot re-enter on the bar it
+// closed on. The bracket is fill-relative and goes out WITH the entry, so the fill bar carries the
+// initial stop -- which is the phase the spec's own gap 2 says most losses happen in.
+var int lastExitBar = -1
+var int nClosed = 0
+var float pendAtr = na
+var float sigLow = na
+var float sigHigh = na
+var float riskPts = na
+if strategy.closedtrades != nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and bar_index != lastExitBar and not na(atr) and atr > 0
+
+if canEnter and longSig
+    pendAtr := atr
+    sigLow  := low
+    riskPts := (close - (low - atrStop * atr))
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick), profit = tgtR > 0 ? math.round(tgtR * math.max(riskPts, syminfo.mintick) / syminfo.mintick) : na)
+
+if canEnter and shortSig
+    pendAtr := atr
+    sigHigh := high
+    riskPts := ((high + atrStop * atr) - close)
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", from_entry = "S", loss = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick), profit = tgtR > 0 ? math.round(tgtR * math.max(riskPts, syminfo.mintick) / syminfo.mintick) : na)
+
+// The trail: CLOSE-ONLY, and it cannot act on the bar the position filled. A script exits at the
+// NEXT bar's open, where the research exits at the breaching close -- the one gap parity measures.
+floatR = strategy.position_size != 0 and riskPts > 0 ? (close - strategy.position_avg_price) * (strategy.position_size > 0 ? 1 : -1) / riskPts : 0.0
+trail = floatR >= tightenR ? e20 : e50
+if barstate.isconfirmed and strategy.position_size > 0 and bar_index > lastExitBar and close < trail
+    strategy.close("L", comment = "trail")
+if barstate.isconfirmed and strategy.position_size < 0 and bar_index > lastExitBar and close > trail
+    strategy.close("S", comment = "trail")
+
+if barstate.isconfirmed and flatEOD and lastBar and strategy.position_size != 0
+    strategy.close_all(comment = "session flat")
+
+// ------------------------------------------------------------------ plots
+plot(inRth ? vwap : na, "session VWAP", color = color.new(#2a78d6, 0), linewidth = 2, style = plot.style_linebr)
+plot(e200, "EMA regime", color = color.new(#8b929c, 30))
+plot(e50, "EMA trail", color = color.new(#eb6834, 0), linewidth = 2)
+plot(e20, "EMA fast trail", color = color.new(#1baf7a, 40))
+bgcolor(inRth ? color.new(#2a78d6, 94) : na)

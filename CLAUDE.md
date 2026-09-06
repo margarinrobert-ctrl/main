@@ -3109,6 +3109,48 @@ script side, worth +3% on the published cell -- so the parity harness models it 
 research adopting it. Ships `pine/ibus30/IB_US30_strategy.pine`, no edge claimed.
 See `docs/ib/STUDY_IB_US30_OPTUNA.md`.
 
+**A "VOLUME" COLUMN THAT DOES NOT CORRELATE WITH THE BAR RANGE IS NOT VOLUME, AND IT MAKES A SPEC
+UNRUNNABLE BEFORE ANY BACKTEST.** The uploaded `XAUUSD15.csv` (= `XAUUSD15_MT`) has a sixth field
+reading **exactly 15 on 99.62% of rows**, sd 0.185, correlation with the bar's own range **+0.0048**
+against **+0.641** for `XAU_ISO_15m`'s real tick volume -- it is the bar's LENGTH IN MINUTES. Two
+consequences are arithmetic: `V > 1.1 x SMA20(V)` fires on **33 of 100,000 bars (0.033%)**, and a
+VWAP over a constant V **IS** the unweighted mean of the typical price. Check `corr(volume, high-low)`
+before running any volume rule anywhere; the registry now carries the defect.
+
+**THE BHATTI VWAP-EMA GOLD PAPER (SSRN 6650958) REPORTS NO BACKTEST, AND MEASURED ON GOLD IT LOSES
+WHERE IT WOULD BE CHOSEN AND BEATS ONLY A CONTROL THAT LOSES MORE.** Its section 6.1 ASSUMES the
+outcome distribution (full win 0.30 / partial 0.20 / breakeven 0.08 / loss 0.42) and Monte Carlos
+it, so 45.3% win, +0.414R, PF 1.76 and Sharpe 3.99 are arithmetic from the assumption. Built
+literally on `XAU_ISO_15m` (371,586 bars 2010-2026, research to 2020-05, gold's cost floor): LONG
+research **-0.0447 R PF 0.916** on 378 trades -> locked **+0.1423 PF 1.318** on 214, GROWING out of
+sample (wrong shape, 13th time); SHORT negative on both. **A random New York entry with the identical
+stop, target, trail, costs and lock earns -0.2573 R on research**, so it clears its control at
+p 0.0025 while losing money -- STUDY_IB_US30_OPTUNA's sentence from the other side. **THE ASSUMED
+DISTRIBUTION IS WRONG**: the 3R target is hit on **12.4%** of trades against an assumed 30%,
+INDEPENDENTLY ON BOTH SIDES, and **61.1% die on the trail at -0.190 R** -- the paper's four-outcome
+table calls that a breakeven. **C2, THE VWAP CONDITION, PASSES 87.8% of the bars already satisfying
+the other five** and C6 (range) 92.7% -- 7th confirmation-is-the-trigger finding -- while C3 (the
+EMA50 pullback) at 29.9% is the only binding one; C4b engulfing supplies 84% of signals and the pin
+bar 22%. **SECTION 7.4 IS DEAD CODE**: switching the EMA20 final-leg tightening off reproduces the
+result TO THE CENT, because floating profit rarely reaches 2.5R before the trail fires. **THE VOLUME
+WEIGHTING DOES NOTHING** (-0.0436 unweighted against -0.0447), STUDY_V63 on a third market. **THE
+SPEC'S OWN ATR IS 5-8x TOO LARGE** -- it assumes $12-20 where the measured 15m median is **$2.35** --
+so its 0.24R cost assumption is 2.3x the real 0.1032R, and the rule is POSITIVE GROSS (+0.0762 R)
+and negative net: the round turn is the whole difference. **THE ONE COMPONENT CARRYING INFORMATION
+INVERTS**: raising C5 from 1.0x to 2.0x is monotone on research (-0.0678 -> +0.3745) and beats a
+same-selectivity random filter at every rung (p 0.030 -> 0.000), then reads **Spearman +1.000
+research against -0.900 locked** with every locked rung failing its control (p 0.24-0.69). The
+spec's own value is rank 2-4 of its own ladder on ALL EIGHT axes; the stop is monotone toward wider
+(8th family), no target ties best (20th), the session flatten is destructive (15th). 9 of 16 years
+positive, and **2024 -- the paper's own sample -- is the 2nd best year in sixteen** at +0.2440 R
+PF 1.55 against its claimed +0.414 PF 1.76. **MY OWN BUG, caught by a plateau being too perfect**:
+the first neighbourhood swept EMA and ATR periods against series CACHED in `build()`, so five rungs
+returned identical numbers to four decimals. Parity: counts 0.998-1.000, R corr 0.978, same exit bar
+96.6% -- and the close-only trail's structural gap (research exits AT the breaching close, a script
+at the NEXT bar's open) moves the exit bar on **63% of trades** and the result by **~1% of R**,
+because the trail fires on a close that already breached.
+See `docs/ib/STUDY_VWAP_EMA_GOLD.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -3150,6 +3192,7 @@ See `docs/ib/STUDY_IB_US30_OPTUNA.md`.
 | `research/v62/` | the confirmation study: base rates on the trigger's own bars, a 3.1M-cell grid in exact on/off twins, matched pairs on both blocks, and the drop-one |
 | `research/v64/` | Optuna on V61, its walk-forward and its Monte Carlo: a continuous-space numba evaluator verified to the cent against the published grid, three Optuna studies, fANOVA importance, the box-edge re-run, the V30 hold-out-an-axis surrogate; `run_wfo*.py` in-fold re-selection with a random-cell arm, span-normalised WFE and a geometry-matched control; `run_mc.py` perturbation (price jitter with the indicators RECOMPUTED, execution, missed fills, parameters) beside the permutation and the bootstrap |
 | `research/v61feat/` | feature engineering on the V61 15m rule under the two-gate architecture: `v61feat.py` (51 causal features in 7 declared families, FFD fracdiff with d by ADF on research only, a Baum-Welch HMM read FILTERED with the smoothed version kept only as a leakage diagnostic, truncation audit), `run_feat1.py` (Gate 1 on two candidate primaries, base rates on the trigger's own bars, IC against shuffled twins, redundancy measured ON THE SIGNAL BARS with family-first selection, stability across research halves and volatility regimes), `run_feat2.py` (purged embargoed CV with a RETURN objective, Gate 2 against a bootstrap and a same-selectivity random filter, drop-one incremental value, one locked read with the kept fraction reported, deflation and White's reality check), `run_feat3.py` (the two PORTABLE forms measured before any Pine is written -- the sign-aligned count ladder and a ridge whose every constant is exported, plus the frozen HMM parameters and fracdiff weights), `feat_parity.py` (the shipped script's fracdiff recursion and HMM forward pass reproduced in Python and diffed against the research), `plot_feat.py` |
+| `research/vwapema/` | the Bhatti VWAP-EMA gold spec built literally and tested: `vecore.py` (the six conditions, the close-only EMA trail, the intrabar initial stop, a volume-free VWAP twin, and `periods()` so a period ladder recomputes its series instead of reading a cached one), `run_ve1.py` (condition base rates BEFORE any P&L, cost as a fraction of risk, the break-even the geometry implies, the paper's assumed distribution against the measured one, the matched control as a gate, and the zero-cost / spec-cost / no-target / no-tighten / flatten / volume-free arms), `run_ve2.py` (drop-one, the neighbourhood, ONE locked read with the trial count stated, the paper's own 2024 slice, by-year), `run_ve3.py` (the corrected neighbourhood, the long drop-one, the volume gradient against a same-selectivity random filter, the exit ablation), `run_ve4.py` (that gradient read once on locked, labelled descriptive), `ve_parity.py` (the script's order model, with the close-only trail modelled both ways), `plot_ve.py` |
 | `research/ibopt/` | the Initial Balance retracement on US30 under the two-gate architecture: `ibcore.py` (Phase 0 in the docstring, a continuously parameterised per-day walker verified against the V58 tensor, the 18:30-re-open flatten trap fixed, gap-through fills, a risk-matched random-entry control), `run_gate1.py` (the published primary, arms, the retracement ladder the mechanism predicts), `run_optuna.py` (three TPE studies on research only, locked logged and never used, marginals, box edges, fANOVA), `run_gate1_finalists.py` (both nulls plus ALWAYS-SIDE on the same days), `ibfeat.py` (30 causal side-oriented features in six families, FFD d by ADF on research, HMM read filtered, truncation audit), `run_gate2.py` (screen, purged CV with a return objective, shuffled twins, Gate 2 vs bootstrap and random filter, drop-one, the portable ridge), `run_locked.py` (ONE read: finalists, meta layer, deflation, the US30_ISO post-2025-07 block), `ib_parity.py` (the Pine's order model incl. the fill-bar target the broker emulator pays), `plot_ibopt.py` |
 | `research/vstoch/` | VWAP x Stochastic x ATR: the design declared in the module docstring before any search, a causal TIME-OF-DAY ATR baseline beside the broken trailing-mean one, base rates on the trigger's own bars, the trigger against a random entry at four geometries, a 31,752-cell declared grid read by marginal average, both nulls, one locked read, a frozen cross-market read, the zero-cost variant, the win rate against its own driftless bound, and `vstoch_parity.py` -- the shipped Pine's order model diffed against the engine |
 | `research/v61sess/` | the V61 rule as a user configures it: `sess_core.py` (the SCRIPT's order model with the session window, the flatten filling at the next open, and touch-as-break), `run_iss_oss.py` (IS/OOS on both timeframes, the window-vs-flatten ablation, the channel-time-reach control, and the zero-cost comparison), `run_optuna.py` (2,400 trials over two objectives with the session axis open, research only, population shape before any top row, box-edge check), `run_mc_portfolio.py` (the four Monte Carlos per leg, daily-return leg correlation, and combinations scored against the BEST single leg), `us30_core.py` + `run_us30.py` + `run_us30_mc.py` (the same rule FROZEN on US30 with the CVD built from 15m sub-bars, three nulls, the gate ablation, and the cross-market book), `plot_sess.py`, `plot_us30.py` |

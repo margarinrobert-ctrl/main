@@ -319,8 +319,15 @@ REGISTRY = {
               "this is the SECOND feed here (after BTC) that is not a fixed New York offset: "
               "convert with a true UTC -> America/New_York conversion. Sunday bars (1,448) at "
               "the 22:00 UTC weekly open agree.",
-        volume="tick volume",
-        defects="none measured: 0 zero-range bars, no duplicate stamps. NOT re-verified against "
+        volume="ABSENT -- the sixth field is the bar duration in minutes, not volume. See defects.",
+        defects="THE SIXTH FIELD IS NOT VOLUME -- it is the bar's length in MINUTES. 99.62% of rows "
+                "read exactly 15, the rest are smaller integers, sd 0.185, and its correlation with "
+                "the bar's own range is +0.0048 where a real tick-volume series scores +0.641 "
+                "(XAU_ISO_15m). Any volume rule is unrunnable here: `V > 1.1 x SMA20(V)` fires on 33 "
+                "of 100,000 bars (0.033%), and a VWAP over a constant V IS the unweighted mean of "
+                "the typical price. Use XAU_ISO_15m for anything needing volume. Found by "
+                "STUDY_VWAP_EMA_GOLD; check corr(volume, high-low) before trusting any volume column. "
+                "Otherwise clean: 0 zero-range bars, no duplicate stamps. NOT re-verified against "
                 "XAU_ISO_15m over their overlap.",
         loader="research/mrl/ (bar-level shape check only; no 1-minute path exists for gold)",
         provenance="user upload, 2026-09-02, as XAUUSD15.csv",
