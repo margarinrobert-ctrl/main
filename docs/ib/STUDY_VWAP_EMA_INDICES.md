@@ -381,6 +381,44 @@ ATR stop and an EMA trail earns **+0.15 to +0.32 R on both sides** in markets th
   blocks**, and it carries 0.40–0.46 of the US30 objective. That is the one thing in this family
   worth a dedicated test, and it gets one in §11.
 
+## 11. The volume multiple — the one axis with a gradient, tested properly
+
+M2 found `vol_mult` monotone toward higher on both feeds and, unusually, on both blocks, carrying
+0.22–0.46 of every objective. On gold the same axis was monotone on research and **inverted** on
+locked. So it gets the branch's test rather than another marginal: seven rungs (0.8 → 2.4) on every
+feed and both sides, each against a **random filter keeping the same number of the un-gated rule's
+signal bars, re-simulated end to end**, with the selectivity reported and the range condition (C6)
+removed in a second arm because a volume spike is not independent of a bar's range.
+
+**The gradient is real.** Spearman(vol_mult, R), 10 feed × side × block cells:
+
+| cell | with C6 | C6 removed |
+|---|---|---|
+| US100 long research / locked | +0.750 / +0.750 | +0.643 / +0.429 |
+| US100 short research / locked | +0.429 / +0.964 | +0.464 / +0.857 |
+| US30 long research / locked | +0.964 / +0.929 | **+1.000** / +0.857 |
+| US30 short research / locked | −0.321 / +0.964 | −0.214 / +0.714 |
+| **US30_ISO long / short (forward)** | **+0.000 / −0.429** | **−0.214 / −0.393** |
+
+Eight of ten are positive, and removing C6 barely moves them — so it is **not** the range confound.
+US30 long on the locked block runs −0.114 R at 0.8 to **+0.143** at 2.4, monotone, on a block that
+chose nothing.
+
+**And it is worth nothing.** Against a same-selectivity random filter, **0 of 70 rungs clear
+p ≤ 0.05, where 3.5 are expected by chance** — fewer than chance. Best p anywhere is **0.060**
+(US30 long research at the published 1.1) and the best on any locked block is 0.180. The C6-removed
+arm gives the same answer: 0 of 70. The rule beats its own control in only 46 of 70 rungs.
+
+The mechanism is the one this branch keeps re-finding: **the ladder is a selectivity ladder**. It
+takes the kept share from 92% down to 33%, and restrictiveness alone raises a profit factor
+(`STUDY_V12`: an ATR-expansion filter looked like PF 1.42 → 1.77 and was indistinguishable from a
+random filter of the same selectivity). The control climbs with the rule.
+
+**The two cells that are genuinely unseen are the two that do not have the gradient.** On the
+reserved forward block the long ladder is flat (ρ +0.000) and the short ladder is negative
+(−0.429). The axis that carries the search's whole objective disappears on the only data no search
+has touched.
+
 ## 12. vectorbt as a second engine
 
 Run as a **transcription check first** — the trade count must match before any P&L difference is
@@ -408,3 +446,26 @@ bar this branch takes the stop and vectorbt resolves it by its own order; `STUDY
 and `STUDY_V41` 22.9× for the same class of disagreement. A second engine is a second opinion about
 *execution*, never a correction to the research — and on this rule it is the largest number on the
 page.
+
+## 13. Verdict
+
+The rule as published does not have an edge on US100 or US30. Two cells clear a matched control on
+research and both invert; the win rate is its own break-even at the specified geometry; **cost is
+2.5–4.3% of risk here, so unlike gold this is not an execution question**; and the paper's own
+conditions are mostly the trigger restated, with only the EMA50 pullback binding.
+
+4,800 trials of search bought research score and nothing else — six finalists, none clearing a
+control or excluding zero out of sample, every deflated Sharpe below the noise floor of 0.289 at
+the counted trial count, and the re-optimiser losing to both the author's constants and a random
+cell on the folds that post-date the cut. One finalist survives the reserved forward block
+(+0.157 R, PF 1.311 on 325 trades) without clearing anything.
+
+The one axis with a persistent gradient — the volume multiple — is a selectivity ladder that
+clears its control in **0 of 70** rungs and has no gradient at all on the forward block.
+
+And the framing test settles it on three more markets: on the same days, same side, an entry at the
+session open carrying **the rule's own ATR stop** beats the rule in **120 of 158 cells**. The six
+conditions select days that moved and then enter later and worse than simply being there.
+
+**Ships nothing.** The Pine script's header carries these numbers beside the gold ones; no preset
+is recommended for either index.

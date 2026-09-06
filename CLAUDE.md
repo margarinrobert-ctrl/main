@@ -3222,6 +3222,81 @@ SWEEP cells correlate **0.91** with each other -- one configuration with two nam
 they fail together. Before crediting any "holds out of sample", check the fold count, the beta, and
 whether a naive always-in version of the same exposure beats it.
 See `docs/ib/STUDY_VWAP_EMA_GOLD.md`.
+
+**THE SAME RULE ON TWO EQUITY INDICES THAT HAD NO PART IN WRITING IT: NOTHING, AND THIS TIME IT IS
+NOT COST.** Bhatti's VWAP-EMA spec frozen and run on `US100_LONG_15m` (206,703 bars) and
+`US30_LONG_15m` (193,663), with `US30_ISO_15m` (48,937 bars, a DIFFERENT PROVIDER, 2024-08..2026-08)
+held as a RESERVED FORWARD BLOCK no search touched. All three clocks RE-DERIVED (mean bar range
+peaks at minute-of-day 570 = 09:30 New York on every one) and all three volume columns checked
+(corr with bar range +0.71..+0.77 against the `XAUUSD15_MT` fake column's +0.005). **THE ROUND TURN
+IS 2.5-4.3% OF RISK HERE AGAINST GOLD'S 17%**, so the gold verdict -- positive gross, negative net,
+the cost is the whole difference -- CANNOT be the explanation; removing cost entirely still leaves
+the rule within noise of zero. **TWO CELLS CLEAR A MATCHED CONTROL ON RESEARCH AND BOTH INVERT**:
+US30 long +0.1975 R p 0.003 -> locked -0.0762 p 0.663, US100 short +0.0174 p 0.010 -> **-0.1509**
+p 0.793; win rates run 22.9-31.5% against a 26.1% break-even at the 3R geometry, so the barriers
+are hit by noise. Base rates: **C6 (range >= 0.8 ATR) passes 95-98% of the bars the other five
+already admit** on every feed and both sides and C2 (the VWAP condition in the paper's title)
+78-90%, while only C3, the EMA50 pullback, binds at 29-33% -- the rule is a pullback filter with
+five decorations, the same reading gold gave. 4,800 Optuna trials on the two research blocks:
+85-93% of every population profitable on research and **30-69% on locked**, and the top 1% of the
+research ranking is AT OR BELOW the whole population's locked mean in three of six studies. One
+locked read at a stated multiplicity of 4,840: all six finalists clear their control on research at
+p <= 0.010, **NONE clears on locked (best 0.100) and none excludes zero (best 0.270)**; research
+PFs of 2.48/3.54/4.02 land at 1.24/1.13/0.96. **THE DEFLATED SHARPE IS DECISIVE WHEN `var_trials`
+IS MEASURED OVER THE TRIAL SHARPES**: 0.006178 over 4,116 scorable trials gives
+**E[max Sharpe | pure noise] = 0.2892 at 4,840 looks against a best achieved 0.1446** -- the best
+thing the search found is BELOW the noise floor. All six finalists independently chose NO TAKE
+PROFIT (21st time); the three US30 finalists correlate **0.60-0.91** in daily R, one strategy with
+three names. See `docs/ib/STUDY_VWAP_EMA_INDICES.md`, `research/vwapema/ve_markets.py`,
+`run_m1.py`..`run_m7`.
+
+**THE THREE OVERFITTING QUESTIONS GAVE DIFFERENT ANSWERS ON TWO INDICES CORRELATED 0.758.**
+Rolling walk-forward with NOTHING re-selected: `corr(IS, OOS)` negative in 6 of 8 rows -- regime,
+not curve-fitting -- with the published rule's gap +0.003 on US100 and the two US30 grid winners at
+**+0.63 and +0.70**. Walk-forward with the selection RE-RUN each fold looks like the first
+optimiser win on this branch (US100 +0.858 against the constants' +0.099) and **IT IS ENTIRELY
+PRE-CUT**: on the folds whose TEST window post-dates the research cut the re-chosen arm is the
+WORST arm on both feeds (-0.174, -0.358), losing to the constants AND to a random cell -- twelfth
+re-optimiser to lose here, second to also lose to a coin flip. **PBO IS 0.126 ON US100 AND 0.517 ON
+US30** (above the half that means the selection is actively harmful) with the US30 in-sample winner
+going +1.630 -> **-0.118**; the slope of OOS on IS is POSITIVE on both, where gold's was -1.27. The
+published rule's median in-sample rank in its own 400-cell pool is **0.165 / 0.485, below median on
+both** -- the cleanest single sign a configuration was chosen by convention, reproducing gold's
+0.443.
+
+**THE VOLUME MULTIPLE'S GRADIENT IS REAL, SURVIVES BOTH BLOCKS, AND CLEARS NOTHING.** fANOVA gives
+it 0.22-0.46 of every objective and Spearman(vol_mult, R) is positive in 8 of 10 feed x side x
+block cells (US30 long research **+0.964**, locked +0.929) -- the opposite of gold, where the same
+axis inverted. Against a same-selectivity RANDOM FILTER re-simulated end to end, **0 of 70 rungs
+clear p <= 0.05 where 3.5 are expected by chance**, best p anywhere 0.060 and best on any locked
+block 0.180; removing the range condition C6 gives the same answer, so it is not that confound.
+The mechanism is selectivity -- the ladder takes the kept share from 92% to 33% and the control
+climbs with the rule (`STUDY_V12`'s ATR-expansion finding again). **AND THE TWO CELLS THAT ARE
+GENUINELY UNSEEN ARE THE TWO WITHOUT THE GRADIENT**: on the reserved forward block the long ladder
+is flat (rho +0.000) and the short ladder negative (-0.429).
+
+**AND THE FRAMING TEST REPRODUCES ON THREE MORE MARKETS.** On the same days, same side, an entry at
+the session open carrying THE RULE'S OWN ATR STOP beats the rule in **120 of 158** side x regime x
+cell x block cells, mean edge negative in every one of the four side x regime cells (-0.103 to
+-0.362) and on every feed. Note the control's own level before crediting an excess over it: a
+session-open entry earns **+0.15 to +0.32 R on BOTH sides** in markets that rose 144% and 420%.
+**The gold REGIME finding does NOT transfer**: a bull filter helped long in 6 of 6 gold presets and
+helps only **2 of 7** US30-long locked cells, where bear-only is better in 5 of 7 -- and these
+indices are 80.6-83.7% bull against gold's 63.4%, so there is barely a bear sample. Cross-market,
+all three US30 finalists are LONG and all three transfer positively to US100 (one at p 0.047) while
+all three US100 finalists are SHORT and two of three fail on US30 -- which is what drift predicts,
+not an edge. One of six finalists survives the forward block (US30 total R, +0.157 R PF 1.311 on
+325 trades, control p 0.103).
+
+**AND THE INTRABAR CONVENTION IS THE LARGEST NUMBER IN THE STUDY, WITH NO CONSISTENT SIGN.**
+vectorbt run as a TRANSCRIPTION CHECK first: letting the close-only EMA trail fire on the bar the
+position filled costs 14-17% of the trade count on all three feeds (ratio 0.831/0.851/0.857 FAIL),
+exactly as it did on gold (0.841) -- and the P&L then reads BETTER, so the COUNT is what catches
+it. Blocked from the fill bar the counts match (0.987/1.000/0.982 PASS) and the same signals then
+price **+86.8% on US100, +9.2% on US30 and -67.1% on US30_ISO** apart, because this branch takes the
+STOP when an ATR stop and a close-only trail fall inside one bar and vectorbt resolves it by its own
+order. `STUDY_V38` measured 2.1x and `STUDY_V41` 22.9x for the same class. A second engine is a
+second opinion about EXECUTION, never a correction to the research.
 **AND SPLIT BY REGIME, LONG-IN-BULL WINS EVERY PRESET AND SHORT IS NEGATIVE IN 18 OF 18.** A causal
 regime label (gold's daily close against its own 200-day EMA, LAGGED one session; 63.4% of session
 bars bull, but the locked block is 76.2% bull) applied as a FILTER and RE-SIMULATED, not as a split
