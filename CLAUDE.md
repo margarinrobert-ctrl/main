@@ -3651,3 +3651,29 @@ profitability across it hard to dismiss. Also here: `s5sig._pivots` is a Python 
 which made a jitter MC that recomputes the signal cost hours; `t10core.pivots_fast` is a
 `sliding_window_view` twin **asserted identical at k=1..5 and on three declared cells before use**,
 200x faster. See `docs/ib/STUDY_S3_10M.md`, `research/s310/`.
+
+**FTM ALPHA.2 OUT OF SAMPLE: PROFITABLE, AND NOTHING ABOUT IT SEPARATES FROM A NULL.** Split at
+2025-01-01 with every control computed INSIDE its own block, the published +0.1013 R excess at
+p 0.004 reproduces STUDY_TOP5's correction on both versions -- RC1 p **0.005 in sample -> 0.151
+out**, alpha.2 **0.005 -> 0.257** -- and the control itself EARNS +0.056 R, so the null is
+profitable and the rule adds +0.040 R to it out of sample. **THE ALPHA.2 POLICY CHANGE HELPS IN
+SAMPLE AND HURTS OUT OF SAMPLE** (+0.1999 vs RC1's +0.1942, then +0.0956 vs +0.1194). **`h2_cap`
+HAS NO EFFECT ON R AT ALL** -- identical +0.1551 at every value, cap 0/2/3 producing the IDENTICAL
+net so two of four settings are inert; it only cuts SIZE on a handful of flips, worth -$441 and
+nothing else. `prior_bars` has NO GRADIENT (OOS R 0.0956/0.1194/0.1041/0.1307/0.1208 at 1-5) and
+alpha.2 picked the WORST rung while the best is 4, which nobody chose; in-sample R is IDENTICAL at
+2,3,4,5. **DROP-ONE: 8 OF 12 COMPONENTS IMPROVE THE OOS RESULT WHEN REMOVED, AND ALWAYS-LONG WITH
+THE IDENTICAL EXIT MACHINE EARNS 2.7x THE RULE** (+0.2564 vs +0.0956, PF 1.663 vs 1.252) while
+being WORSE in sample -- the whole direction apparatus helps where it was developed and hurts where
+it was not. The direction call is worth **+0.025 R over a coin flip out of sample against +0.216 in
+sample**. Only the entry refinement is load-bearing OOS (-0.0105 without it). No take profit won
+for the 24th time. The four TradingView compatibility gates IMPROVE the result (454 trades at
++0.1222 OOS against the source's 342 at +0.0956), and the lookback axis is flat across 20-120,
+confirming the 120-session warm-up never earned its constraint. **MC: the OOS block does not clear
+zero** (P(mean<=0) 0.138, CI [-21.33, +74.74]) and p99 drawdown is 2.0x realised. **COST IS NOT THE
+OBJECTION AND R IS BLIND TO IT** -- profitable at 4x, with R/trade IDENTICAL at every multiplier,
+so quote DOLLARS whenever cost is the question. **FORWARD TEST: 500 trades = 3.1 YEARS to show the
+OOS mean differs from zero**, and the S3 win-rate shortcut does NOT transfer because FTM's payoff
+ratio is 1.38:1 (break-even 42.1%, actual 47.6%) -- the edge is the PAYOFF, which converges slowly.
+Monitor the EXIT MIX instead: stop 50%, cond1530 20%, close1600 16%, target 14%, with the 15:30
+rule alone +206% of OOS net and stops -368%. See `docs/ib/STUDY_FTM_OOS.md`, `research/ftm/run_o1.py`.
