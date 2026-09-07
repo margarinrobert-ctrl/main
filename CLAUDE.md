@@ -3676,4 +3676,18 @@ so quote DOLLARS whenever cost is the question. **FORWARD TEST: 500 trades = 3.1
 OOS mean differs from zero**, and the S3 win-rate shortcut does NOT transfer because FTM's payoff
 ratio is 1.38:1 (break-even 42.1%, actual 47.6%) -- the edge is the PAYOFF, which converges slowly.
 Monitor the EXIT MIX instead: stop 50%, cond1530 20%, close1600 16%, target 14%, with the 15:30
-rule alone +206% of OOS net and stops -368%. See `docs/ib/STUDY_FTM_OOS.md`, `research/ftm/run_o1.py`.
+rule alone +206% of OOS net and stops -368%. **AND EVERY PUBLISHED FTM FIGURE IS ON A SAMPLE MISSING NOVEMBER TO FEBRUARY.** Six months of the
+26 contain ZERO trades and the feed is complete in all of them (27-30k bars each) -- the strategy
+refuses, under every configuration of the four compatibility gates. The cause is the mandatory
+**23:00 UTC reference open**: in summer that minute is 19:00 New York, mid-session, and in winter it
+is 18:00 New York, the CME session-open minute, for which this feed carries NO BAR. Measured, 23:00
+UTC bars per month run **20-23 from March to October and ZERO in Dec/Jan/Feb**, November 0-2. A date
+without it blocks entirely, so `STUDY_FTM_ORB_BACKTEST`, `STUDY_FTM_ANATOMY`, `STUDY_FTM_ALPHA2` and
+everything above describe a MARCH-TO-OCTOBER strategy. **And the shipped Pine does not do this** --
+its `refOpenFallback` defaults ON and substitutes the session's first bar, giving **578 trades /
++$15,017 / +0.1119 R / ret-DD 7.16 against the research's 342 / +$10,319 / +0.1551 / 4.02**: 69% more
+trades for 46% more dollars at a 28% LOWER per-trade R, with the 179 winter trades earning -0.0136 R.
+The script and every number in its header are different strategies. Deflated for the synthetic NQ
+levels the studied version earns **$4,814/yr on $50,000 = 9.6%/yr at a 5.1% worst drawdown**.
+`ftm_sim.run(ref_fallback=)` reproduces either. See `docs/ib/STUDY_FTM_OOS.md`,
+`research/ftm/run_o1.py`..`run_o4.py`.

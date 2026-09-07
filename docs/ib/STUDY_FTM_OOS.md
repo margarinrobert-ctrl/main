@@ -130,6 +130,59 @@ the conditional 15:30 exit alone is **+206% of out-of-sample net**, targets +188
 different failure from the edge being absent, and it is the one a short forward test can actually
 catch.
 
+## 7. IS IT PROFITABLE? — deflated account dollars
+
+Dollars deflated for the synthetic NQ levels (mean deflator 0.9103 in sample, 0.9684 out of it, so
+raw dollars overstate by 9.9% and 3.3%). These are ACCOUNT dollars — FTM sizes itself, FixedDollar
+$535 risk, max 2 contracts on $50,000 — not per-contract dollars.
+
+| year | trades | real $ | PF | win | $/trade |
+|---|---|---|---|---|---|
+| 2023 (from Sep) | 39 | **-133** | 0.953 | 53.8% | -3.42 |
+| 2024 | 156 | **+6,803** | 1.510 | 44.9% | +43.61 |
+| 2025 (to Oct) | 147 | **+3,650** | 1.249 | 47.6% | +24.83 |
+| **total** | **342** | **+10,319** | 1.335 | 47.4% | +30.17 |
+
+**$4,814 a year on a $50,000 account = 9.6% a year**, 160 trades a year, worst drawdown **$2,566 =
+5.1% of the account**, return/drawdown **4.02**. In-sample $5,814/yr; out-of-sample $5,697/yr — the
+annual rate is stable across the split even though the per-trade edge is not (+$34.20 → +$24.83).
+
+Month by month: 26 months, 13 positive — but see §8, because six of those months contain **zero
+trades**.
+
+## 8. EVERY PUBLISHED FTM FIGURE IS ON A SAMPLE MISSING NOVEMBER TO FEBRUARY
+
+The month-by-month table shows six months at exactly $0. The underlying feed is complete in those
+months (27–30k bars each, the same as any other), so it is the strategy refusing — and it refuses
+under **every** configuration of the four compatibility gates.
+
+**The cause is the mandatory 23:00 UTC reference open.** In summer that minute is 19:00 New York,
+mid-session. In winter it is 18:00 New York, the CME session-open minute, and this feed carries no
+bar for it. Measured directly: **23:00 UTC bars per month run 20–23 from March to October and ZERO
+in December, January and February**, with November at 0–2. A date without the reference open blocks
+entirely, so the strategy trades **eight months a year on this data**.
+
+That means 342 trades, $11,020, +0.1620 R and every statistic in `STUDY_FTM_ORB_BACKTEST`,
+`STUDY_FTM_ANATOMY`, `STUDY_FTM_ALPHA2` and sections 1–7 above describe a March-to-October
+strategy. Nothing in them is wrong; the sample is narrower than any of them said.
+
+**AND THE SHIPPED PINE DOES NOT DO THIS.** Its `refOpenFallback` input defaults to ON and
+substitutes the session's first bar, so the script trades the winter and the research does not:
+
+| | trades | real $ | $/trade | R | $/yr | max DD | ret/DD | OOS R |
+|---|---|---|---|---|---|---|---|---|
+| source, no fallback (all published figures) | 342 | +10,319 | +30.17 | +0.1551 | 4,814 | 2,566 | 4.02 | +0.096 |
+| **shipped Pine, fallback ON** | **578** | **+15,017** | +25.98 | **+0.1119** | **6,074** | **2,097** | **7.16** | +0.092 |
+
+The script takes **69% more trades for 46% more dollars at a 28% lower per-trade R**, and the 179
+winter trades it adds earn **-0.0136 R** — roughly break-even per trade, positive in dollars because
+they are numerous. Its return-over-drawdown is better (7.16 against 4.02) and its per-trade edge is
+worse. Neither figure is wrong; **they are different strategies and only one of them has been
+studied.** Untick the fallback to run what the numbers describe, or accept that the winter block is
+untested and read the header as a March-to-October result.
+
+`research/ftm/run_o4.py`; `ftm_sim.run(ref_fallback=)` reproduces either.
+
 ## Verdict
 
 Out of sample the strategy is profitable ($3,806 on one MNQ over 147 trades) and **nothing about it

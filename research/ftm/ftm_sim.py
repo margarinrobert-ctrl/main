@@ -120,7 +120,8 @@ def load_nq():
 def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
         min_pct=0.5, max_pct=2.0, port_max=10, lev=4.0,
         orb_lookback=ORB_LOOKBACK, trend_closes=REQ_TREND_CLOSES,
-        strict_contig=True, require_warm=True, prior_bars=PRIOR_BARS, h2_cap=0, knobs=None):
+        strict_contig=True, require_warm=True, prior_bars=PRIOR_BARS, h2_cap=0,
+        ref_fallback=False, knobs=None):
     """`prior_bars` and `h2_cap` are the two places 1.8.0-alpha.2 departs from RC1: the
     prior-session-disagreement branch observes `prior_bars` completed minutes before flipping
     (RC1 2, alpha.2 1 = "H5 delay1 flip"), and the intraday-continuation flip is capped at
@@ -286,7 +287,21 @@ def run(verbose=True, sizing="FixedDollar", base_pct=1.0,
             else:
                 st["lastClose"] = close_min[i]
                 if open_min[i] == ORB_START and not st["refOk"]:
-                    st.update(integrity=False, blocked=True, consumed=True)
+                    # THE SHIPPED PINE DEFAULTS TO A FALLBACK HERE AND THE SOURCE DOES NOT.
+                    # On this feed the 23:00 UTC reference bar DOES NOT EXIST from November to
+                    # early March -- in winter that minute is the CME session open and the feed
+                    # carries no bar for it -- so the source's mandatory reference open blocks
+                    # every winter date and the strategy trades only eight months a year. The
+                    # Pine port's `refOpenFallback` (default ON) substitutes the session's first
+                    # bar, so the script and the research diverge for a third of the year.
+                    # ref_fallback reproduces the script; the default False reproduces the source.
+                    if ref_fallback and o[i] > 0:
+                        st["refOpen"], st["refOk"] = o[i], True
+                        rth_closes.append(c[i])
+                        tvs += (h[i] + l[i] + c[i]) / 3.0 * vol[i]
+                        vs += vol[i]
+                    else:
+                        st.update(integrity=False, blocked=True, consumed=True)
                 elif not st["blocked"]:
                     rth_closes.append(c[i])
                     tvs += (h[i] + l[i] + c[i]) / 3.0 * vol[i]
