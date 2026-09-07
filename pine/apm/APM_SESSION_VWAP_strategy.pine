@@ -58,6 +58,48 @@
 // cannot pass a 6% evaluation; two pass 42-70% and bust 15-24%. VERDICT: not live-ready on this
 // evidence -- forward-test with one contract for 40+ trades before sizing.
 //
+// PROTECTIVE EXITS -- ADDED, NOT IN THE SOURCE, AND MEASURED BEFORE BEING ADDED
+// The source has no stop, target, trail or flatten: it exits at the cash close or an opposite
+// cross. Three optional exits are added here. The entry set is UNCHANGED by any of them -- entries
+// depend on the SHADOW (the unfiltered rule's own position) and never on the real position, and
+// reversals never fire on this data -- so they can only change where a trade ends.
+// Measured on 8 market-blocks across NQ, US100 and US30 (research/apm/run_p2.py):
+//
+//   STOP, ships ON at 3.0 x ATR14.  The stop axis is MONOTONE TOWARD WIDER, so every stop costs
+//     per-trade edge: $/trade runs 13.99 / 18.31 / 22.61 / 24.27 / 26.35 / 27.84 at 1.0 / 1.5 /
+//     2.0 / 2.5 / 3.0 / 6.0 N against $30.93 with NO STOP. Ninth family on this branch with that
+//     shape. It ships ON anyway because WITHOUT IT the worst single trade is -$1,271 on US100 and
+//     -$1,087 on US30 on a rule earning $11-$35 a trade; at 3.0N those become -$277 and -$536 and
+//     the worst FIVE trades fall from -$2,512 to -$904 on US100. At 3.0N Sharpe peaks (0.923 vs
+//     0.849), return/drawdown peaks (3.21 vs 2.59), mean drawdown falls $1,166 -> $942, and US30's
+//     research block crosses from -$7.87 to +$0.29 a trade. IT IS A RISK TRANSFORMATION, NOT AN
+//     IMPROVEMENT -- it buys a bounded tail with about 15% of the per-trade result.
+//     AND IT DOES NOT HELP EVERYWHERE. Per block, source -> with the 3.0N stop, $/trade and
+//     return-over-drawdown:
+//        NQ    research   n  70   $48.03 -> $44.46    r/DD 2.98 -> 3.01
+//        NQ    LOCKED     n  34  $125.62 -> $70.73    r/DD 8.78 -> 3.87    <- hurts badly
+//        US100 research   n 176   $10.77 -> $13.67    r/DD 2.97 -> 6.01
+//        US100 validation n  70   $34.55 -> $42.21    r/DD 5.06 -> 9.04
+//        US100 test       n  62   $15.31 -> $28.56    r/DD 0.72 -> 3.10    <- helps most
+//        US30  research   n 148   -$7.87 ->  $0.29    r/DD -0.54 -> 0.03
+//        US30  validation n  68   $16.41 -> $18.97    r/DD 0.57 -> 0.90
+//        US30  test       n  51    $4.58 -> -$8.13    r/DD 0.20 -> -0.25   <- hurts
+//     Five of eight blocks improve on $/trade and six of eight on return/drawdown; the two it
+//     hurts are NQ's locked block (34 trades) and US30's test block (51 trades). Drawdown falls on
+//     seven of eight. If you trade NQ specifically, note that its out-of-sample block is the one
+//     the stop damages most -- and that it is 34 trades.
+//   TARGET, ships OFF.  No target $26.35 a trade, 6 ATR $23.88, 3 ATR $11.49. The 25th independent
+//     time no-take-profit has beaten every target tested here.
+//   FLATTEN, ships OFF.  Destructive at every time and monotonically less so the later it is:
+//     11:00 $8.24, 12:00 $18.19, 13:00 $17.99, 14:00 $23.81, 15:00 $27.81, 15:30 $29.69 against
+//     $30.93 for the cash close. Sixteenth confirmation. If you want one, use 15:30, where it costs
+//     ~$1.20 a trade and lifts profit factor 1.70 -> 1.92 and return/drawdown 2.59 -> 3.51.
+//
+// The bracket is written WITH the entry, in ticks, so it is FILL-RELATIVE and live on the fill bar
+// -- `strategy.position_avg_price` is `na` there, so any level derived from it would silently do
+// nothing. Its distance uses ATR at the SIGNAL bar, which is knowable when the order is written.
+// Set the stop off, the target off and the flatten off to run the source exactly.
+//
 // CHART: 10-MINUTE, EXTENDED HOURS ON (the session date rolls at 18:00 New York and the VWAP window
 // needs the 09:20 bar). Every var write sits under barstate.isconfirmed. Not financial advice.
 // ================================================================================================
@@ -103,6 +145,43 @@ startDate = input.int(20200203, "Start trading date (yyyyMMdd)", minval = 190001
      maxval = 29991231, group = grpT,
      tooltip = "Earlier sessions update state but never submit orders.")
 strictTf = input.bool(true, "Require a 10-minute chart (the source's decision bar)", group = grpT)
+
+grpX = "Protective exits -- NOT IN THE SOURCE. Measured before being added; see the tooltips."
+useStop = input.bool(true, "ATR stop loss", group = grpX,
+     tooltip = "THE SOURCE HAS NO STOP AT ALL, so this is a change to the strategy and it was "
+     + "measured before it was added (research/apm/run_p2.py, 8 market-blocks across NQ/US100/US30)."
+     + "\n\nWHY IT DEFAULTS ON: without a stop the worst single trade is -$1,271 on US100 and "
+     + "-$1,087 on US30, on a rule that earns $11-$35 a trade. At 3.0 ATR those become -$277 and "
+     + "-$536, and the worst five trades together fall from -$2,512 to -$904 on US100."
+     + "\n\nWHAT IT COSTS: the stop axis is MONOTONE TOWARD WIDER -- averaged over all eight "
+     + "blocks, $/trade runs 13.99 at 1.0N, 18.31 at 1.5N, 22.61 at 2.0N, 24.27 at 2.5N, 26.35 at "
+     + "3.0N, 27.84 at 6.0N and 30.93 with NO STOP. So any stop costs per-trade edge; 3.0N costs "
+     + "about 15% of it."
+     + "\n\nWHY 3.0 ANYWAY: Sharpe PEAKS there (0.923 against 0.849 with no stop), "
+     + "return/drawdown peaks there (3.21 against 2.59), mean drawdown falls $1,166 -> $942, and "
+     + "US30's research block goes from -$7.87 a trade to +$0.29. It is a risk transformation, "
+     + "not an improvement. Turn it off to run the source exactly.")
+stopAtr = input.float(3.0, "Stop distance, x ATR14 at the signal bar", minval = 0.25, step = 0.25,
+     group = grpX,
+     tooltip = "Anchored to ATR at the SIGNAL bar, which is knowable when the order is written -- "
+     + "the fill price does not exist yet. The bracket goes out WITH the entry so the fill bar is "
+     + "protected; a bracket placed one bar later leaves it naked, which is the parity defect "
+     + "measured at 4.4-13.0% of trades on this branch.")
+useTgt = input.bool(false, "ATR take profit", group = grpX,
+     tooltip = "DEFAULT OFF AND IT SHOULD STAY OFF. Averaged over the same eight blocks: no target "
+     + "$26.35 a trade, a 6 ATR target $23.88, a 3 ATR target $11.49. That is the 25th independent "
+     + "time on this branch that NO TAKE PROFIT has beaten every target tested.")
+tgtAtr = input.float(6.0, "Target distance, x ATR14 at the signal bar", minval = 0.5, step = 0.5,
+     group = grpX)
+useFlat = input.bool(false, "Hard flatten before the cash close", group = grpX,
+     tooltip = "DEFAULT OFF. A hard flatten is DESTRUCTIVE at every time tested, and monotonically "
+     + "less so the later it is: against the cash-close baseline of $30.93 a trade, 11:00 gives "
+     + "$8.24, 12:00 $18.19, 13:00 $17.99, 14:00 $23.81, 15:00 $27.81 and 15:30 $29.69. Sixteenth "
+     + "confirmation of that finding here."
+     + "\n\nThe one thing it buys: at 15:30 the cost is about $1.20 a trade and profit factor "
+     + "rises 1.70 -> 1.92 with return/drawdown 2.59 -> 3.51, because it only moves the exit "
+     + "forward by half an hour. If you want one, use a LATE one.")
+flatHHmm = input.int(1530, "Flatten at (HHmm, New York)", minval = 0, maxval = 2359, group = grpX)
 
 grpF = "Safety (each gate is counted on the panel)"
 resetTicks = input.int(400, "Reset gap threshold at 00:00 UTC (ticks, 0 = off)", minval = 0,
@@ -159,6 +238,11 @@ if entStart % tfMin != 0 or entEnd % tfMin != 0 or vwapStart % tfMin != 0
 firstQual = math.max(entStart, vwapStart + tfMin)
 if firstQual >= entEnd or firstQual > vwapEnd
     runtime.error("Entry and VWAP windows must permit at least one VWAP-qualified fill.")
+
+flatMin = hhmm(flatHHmm)
+if useFlat and (flatMin <= entStart or flatMin > cashClose or flatMin % tfMin != 0)
+    runtime.error("The hard flatten must sit after the entry window opens, no later than the cash "
+         + "close, and align to the decision bar.")
 
 relevantFirst = math.min(vwapStart, entStart - tfMin)   // first decision-bar OPEN that must exist
 required = (cashClose - relevantFirst) / tfMin           // decision bars the cash window must hold
@@ -222,6 +306,12 @@ var float cumV = 0.0
 var float lastVwap = na
 var float lastDist = na
 var bool lastAdmit = false
+var bool flatDone = false
+var float pendAtr = na              // ATR at the signal bar, for the bracket written with the entry
+var string pendId = ""
+var int nStopExit = 0
+var int nTgtExit = 0
+var int nFlatExit = 0
 // diagnostics, mirroring the source's terminal summary
 var int nDecision = 0
 var int nBlocked = 0
@@ -243,6 +333,20 @@ bool markReject = false
 
 pos = strategy.position_size > 0 ? 1 : strategy.position_size < 0 ? -1 : 0
 
+// Which protective order closed the last trade, for the panel. A trade that closed since the
+// previous bar is inspected by its exit comment; strategy.closedtrades is the reliable trigger
+// because a position that opens and stops out inside ONE bar never shows in position_size[1].
+var int lastClosed = 0
+if barstate.isconfirmed and strategy.closedtrades > lastClosed
+    for ci = lastClosed to strategy.closedtrades - 1
+        cid = strategy.closedtrades.exit_id(ci)
+        if cid == "Lx" or cid == "Sx"
+            if strategy.closedtrades.profit(ci) > 0 and useTgt
+                nTgtExit += 1
+            else
+                nStopExit += 1
+    lastClosed := strategy.closedtrades
+
 if barstate.isconfirmed and not halted
     if nyMod >= ethStart or nyMod < relevantFirst
         sawEth := true
@@ -254,6 +358,7 @@ if barstate.isconfirmed and not halted
         if sessBlocked
             nBlocked += 1
         cashDone := false
+        flatDone := false
         expOpen := relevantFirst
         reqCount := 0
         if carried
@@ -377,13 +482,16 @@ if barstate.isconfirmed and not halted
                             shadow := side
                             if admitted
                                 nAdmit += 1
+                                pendAtr := atr
                                 if side == 1
                                     nLong += 1
                                     markLong := true
+                                    pendId := "L"
                                     strategy.entry("L", strategy.long, comment = "L")
                                 else
                                     nShort += 1
                                     markShort := true
+                                    pendId := "S"
                                     strategy.entry("S", strategy.short, comment = "S")
                             else
                                 nReject += 1
@@ -402,13 +510,16 @@ if barstate.isconfirmed and not halted
                             nAdmit += 1
                             if pos == prior
                                 nRev += 1
+                            pendAtr := atr
                             if side == 1
                                 nLong += 1
                                 markLong := true
+                                pendId := "L"
                                 strategy.entry("L", strategy.long, comment = "L")
                             else
                                 nShort += 1
                                 markShort := true
+                                pendId := "S"
                                 strategy.entry("S", strategy.short, comment = "S")
                         else
                             nReject += 1
@@ -419,6 +530,26 @@ if barstate.isconfirmed and not halted
                             if pos == prior
                                 nOppExit += 1
                                 strategy.close_all(comment = "opposite cross")
+    // ---- the protective bracket, written WITH the entry so the fill bar is covered
+    // `loss` and `profit` are in TICKS and are FILL-RELATIVE, which is what lets them be placed on
+    // the signal bar: strategy.position_avg_price does not exist until one bar after the fill, so
+    // any level derived from it is `na` here and silently does nothing (STUDY_SCALP89). The
+    // distance uses ATR at the SIGNAL bar, which is knowable when the order is written.
+    if (useStop or useTgt) and pendId != "" and not na(pendAtr) and pendAtr > 0
+        sTicks = math.max(1, int(math.round(stopAtr * pendAtr / syminfo.mintick)))
+        tTicks = math.max(1, int(math.round(tgtAtr * pendAtr / syminfo.mintick)))
+        strategy.exit(pendId + "x", from_entry = pendId,
+             loss = useStop ? sTicks : na, profit = useTgt ? tTicks : na)
+    pendId := ""
+
+    // ---- the hard flatten: an order at this bar's close fills at the next bar's open, so it is
+    // submitted on the bar BEFORE the cutoff -- the same convention the cash close already uses.
+    if useFlat and not flatDone and not sessBlocked and closeMod >= flatMin and closeMod < cashClose
+        flatDone := true
+        if pos != 0
+            nFlatExit += 1
+            strategy.close_all(comment = "flatten " + fmtMin(flatMin))
+
     // ---- the session-close backstop (the source's IsExitOnSessionCloseStrategy, 30 s early)
     if useBackstop and session.islastbar and pos != 0
         shadow := 0
@@ -443,7 +574,7 @@ plotshape(markReject, "Intent rejected by VWAP", style = shape.xcross, location 
 bgcolor(inEntryFill ? color.new(color.blue, 96) : na)
 bgcolor(sessBlocked ? color.new(color.red, 94) : na)
 
-var table hud = table.new(position.top_right, 2, 19, border_width = 1)
+var table hud = table.new(position.top_right, 2, 22, border_width = 1)
 if showHud and barstate.islast
     sz = size.small
     table.cell(hud, 0, 0, "Profile", text_size = sz)
@@ -497,3 +628,14 @@ if showHud and barstate.islast
     table.cell(hud, 1, 17, fmtMin(firstQual), text_size = sz)
     table.cell(hud, 0, 18, "Closed trades", text_size = sz)
     table.cell(hud, 1, 18, str.tostring(strategy.closedtrades), text_size = sz)
+    table.cell(hud, 0, 19, "Protective exits", text_size = sz)
+    table.cell(hud, 1, 19, (useStop ? "stop " + str.tostring(stopAtr, "#.##") + "N" : "no stop")
+         + (useTgt ? " / target " + str.tostring(tgtAtr, "#.##") + "N" : " / no target")
+         + (useFlat ? " / flat " + fmtMin(flatMin) : " / no flatten"), text_size = sz,
+         text_color = useStop ? color.gray : color.orange)
+    table.cell(hud, 0, 20, "Stop / target / flatten hits", text_size = sz)
+    table.cell(hud, 1, 20, str.tostring(nStopExit) + " / " + str.tostring(nTgtExit) + " / "
+         + str.tostring(nFlatExit), text_size = sz)
+    table.cell(hud, 0, 21, "Current stop distance", text_size = sz)
+    table.cell(hud, 1, 21, not useStop ? "off" : na(atr) ? "-"
+         : str.tostring(stopAtr * atr, "#.##") + " pts", text_size = sz)
