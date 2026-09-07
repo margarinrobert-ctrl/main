@@ -3543,6 +3543,57 @@ loop iterations over a three-year 15m chart. Measure the cheap built-in against 
 definition before writing a loop to reproduce a pandas convention; here the built-in also landed
 CLOSER to the target kept fractions (70.1/60.0/50.1/40.3/30.4 against 70/60/50/40/30).
 
+**MOVEMENT DECOMPOSES AND ONLY HALF OF IT IS FORECASTABLE -- AND AN OUT-OF-SAMPLE IC OF 0.71 BOUGHT
+NOTHING.** Eight declared targets x four horizons on NQ 15m, each scored against ITS OWN TRAILING
+REALISATION (STUDY_V28: nothing ever beat reading CHOP today) with every t through Newey-West at lag
+h (STUDY_V47: the naive t is 1.9-3.2x too generous), audit 0/852, direction included deliberately as
+the control that must fail. Best of 71 causal volatility features, mean over horizons: **range
+expansion 0.602, realised vol 0.529, TIME-TO-TOUCH 0.437, MFE 0.343, MAE 0.343, magnitude 0.294**
+against **straightness 0.041 and DIRECTION 0.060** -- a tenfold gap in IC and up to thirtyfold in t
+(NW t 62/49/-91 against 4.4/3.1). How far and how fast is forecastable; which way and how straight
+is not. `STUDY_V22`'s split reproduced on a different instrument and construction. NOTE what is not
+claimed: "beats baseline" is worthless for dir and er because their baselines are ~0.00.
+**AND MY FIRST NULL WAS TOO EASY BY A FACTOR OF 5.6.** Each |IC| is the MAXIMUM OF 71 FEATURES, which
+one shuffled twin cannot price, so the whole sweep was re-run on permuted targets. FREELY permuting
+destroys the target's autocorrelation, and an IC on 46,000 OVERLAPPING observations of a persistent
+target has a far larger standard error than that implies: the free null's p95 sat at **~0.014 for
+EVERY target regardless of its persistence** and **32 of 32 cells cleared it, including direction**.
+A test everything passes is not a test. Fixed with a CIRCULAR BLOCK PERMUTATION at 20x the horizon --
+local structure kept, only the alignment destroyed -- whose p95 correctly SCALES WITH PERSISTENCE
+(0.107 rng, 0.102 rv, 0.049 er) and averages **0.0774 against the free null's 0.0139**. Then **26 of
+32 clear: the six real targets 4/4 each by 2.4-5.7x, straightness 2/4 by 1.1x, DIRECTION 0/4.**
+STUDY_V47's naive-t error reached from the opposite direction. **A PERMUTATION NULL ON OVERLAPPING
+DATA MUST PERMUTE BLOCKS.**
+**AN HMM'S STATES ARE VOLATILITY STATES, AND ITS OWN DURATION FEATURE IS 5x WORSE THAN PARKINSON AT
+THE DURATION TARGET.** Causal HMM (research-only parameters, FILTERED posterior, smoothed kept only
+as the diagnostic): bear mu -0.0024 at the HIGHEST vol (rv 0.137), sideways +0.0011 at the LOWEST
+(0.065), bull +0.0028 between; self-transitions 0.964/0.990/0.985 giving expected sojourns of **28,
+100 and 65 bars** -- selloffs are the shortest-lived state and chop the most persistent. **0 of 32
+cells where any HMM column beats the best of 71 volatility features** (largest HMM |IC| 0.478 against
+0.688). The mechanism is in the columns: `p_bear` peaks against realised vol at +0.428, `p_side` at
+**-0.478** and the sojourn feature at -0.467, because the long-sojourn sideways state IS the
+low-volatility state. Sharpest instance: on time-to-touch the SOJOURN feature -- the natural duration
+reading -- manages **0.087** where a Parkinson estimator manages **0.442**. **AND THE COLLAPSE TEST
+SHARPENS STUDY_V27 RATHER THAN REPEATING IT**: V27 found Jaccard 1.0000 on a signal with THREE
+distinct values, dismissible as a coarse-signal artefact; this signal takes **25,044** distinct values
+and still overlaps the bare state label at **0.9757**. Filtered vs smoothed agreement **96.1%**,
+reproducing V27's 96-97% -- which is why the leak is easy to miss.
+**FORECAST QUALITY AND DECISION VALUE ARE NEARLY UNRELATED, MEASURED.** A ridge on the seven-feature
+set forecasting forward realised vol scores **in-sample IC 0.729 and LOCKED IC 0.7065** -- among the
+highest out-of-sample ICs on this branch -- with a stop multiplier spanning 0.54-1.84, so it moves
+the stop materially. Substituted for the trailing ATR on the Gate-1-passing P3 primary, four arms
+re-simulated end to end: **fixed 3.8N PF 1.358 / 1.344, V22's percentile rule 1.309 / 1.320,
+forecast-scaled 1.310 / 1.299, forecast SHUFFLED 1.211 / 1.342.** THE FIXED STOP WINS ON BOTH BLOCKS,
+and against its own shuffled twin the forecast reads **+0.099 research and -0.044 LOCKED** -- it
+beats its noise twin where it was fitted and loses to it where it was not. **An IC of 0.71 out of
+sample bought zero**, because the ATR stop ALREADY CONTAINS the volatility information and a better
+estimate of the same quantity has nothing left to add. Always run the shuffled twin of the FORECAST,
+not just of the model. (V22's rule also losing to fixed is not a refutation of V22 -- that was a flat
+1.5/2.5N base with no target against this 3.8N stop with a 3.2 ATR target; STUDY_V52's geometry
+lesson.) What is worth keeping is `ttb`: the most predictable target in the grid, and the cheapest
+honest statement about a trade -- how long before +/-1 ATR resolves. It prices PATIENCE, not
+direction. See `docs/ib/STUDY_V67_MOVEMENT.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -3553,6 +3604,8 @@ CLOSER to the target kept fractions (70.1/60.0/50.1/40.3/30.4 against 70/60/50/4
 | `research/vol_sizing.py` | the eight named volatility-sizing methods |
 | `research/intrabar.py` | true 1-minute path execution modelling |
 | `research/pine_export.py` | Pine strategy + indicator emitters |
+| `research/v67/` | movement vs price: `v67core.py` (eight declared targets incl. a duration target and direction as the control, each with its own trailing baseline, plus a Newey-West t and a BH helper), `run_v1` (audit then the whole grid), `run_v2` (the max-of-71 null, cached, and the causal HMM with V27's collapse and filtered-vs-smoothed diagnostics and an expected-sojourn feature), `run_v3` (the CIRCULAR BLOCK permutation that replaces it), `run_v4` (the decision test: a vol forecast against the fixed stop, V22's rule and its own SHUFFLED twin) |
+| `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
 | `research/pin/` | the EKOP/Yan PIN mixture: causal four-step fit, the three-hypothesis posterior, the volume-weighted B/S construction, the matched control, and `pin_parity.py` — the shipped Pine's own order model run on bars |
 | `research/pin/pin_bayes.py` | the Griffin-Oberoi-Oduro Gibbs sampler for the same mixture — data augmentation, the corrected (5b), a simulate-and-recover positive control, and the dispersion placebo that reads the estimator's floor on information-free data |
