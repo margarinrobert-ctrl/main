@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import pickle
 import sys
 import time
 
@@ -20,6 +21,8 @@ import apm_stats as S
 from apm_sim import SPECS, load, round_turn, simulate
 
 OUT = "docs/ib/STUDY_APM_VALIDATION.md"
+CACHE = os.environ.get(
+    "APM_CACHE", "/tmp/apm_results.pkl")
 
 
 def ship_index(grid):
@@ -57,7 +60,16 @@ def main():
     ap.add_argument("--only", default=None)
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--render-only", action="store_true",
+                    help="re-render the study from the cached results of the last full run")
     a = ap.parse_args()
+    import apm_report
+    if a.render_only:
+        with open(CACHE, "rb") as fh:
+            res = pickle.load(fh)
+        apm_report.write(res, OUT)
+        print(f"re-rendered {OUT} from {CACHE}")
+        return res
     names = [a.only] if a.only else ["NASDAQ_15m", "US30_15m"]
     reps = 400 if a.quick else 3000
     nsyn = 16 if a.quick else 120
@@ -65,7 +77,8 @@ def main():
     for n in names:
         print(f"[{n}] starting")
         res[n] = analyse(n, reps=reps, n_synth=nsyn, workers=a.workers)
-    import apm_report
+    with open(CACHE, "wb") as fh:
+        pickle.dump(res, fh)
     apm_report.write(res, OUT)
     print(f"\nwrote {OUT}")
     return res

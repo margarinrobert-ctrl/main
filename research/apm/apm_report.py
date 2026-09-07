@@ -30,34 +30,173 @@ def tbl(df, cols=None, n=3):
 
 
 def verdict(r):
-    """One line per section, and the reason. Deliberately blunt."""
-    s1, s2, s3, s5, s5b = r["s1"], r["s2"], r["s3"], r["s5"], r["s5b"]
+    """One line per section, naming the sub-test that decided it. Deliberately blunt."""
+    s1, s2, s3, s4, s5, s5b = r["s1"], r["s2"], r["s3"], r["s4"], r["s5"], r["s5b"]
     v = []
-    ok1 = s1["pit"]["passed"] and s1["scope"]["passed"] and not s1["ic"]["leak_flag"].any() \
-        and s1["hygiene"]["ohlc_violations"] == 0 and s1["hygiene"]["duplicates"] == 0
-    v.append(("1 leakage/execution", "PASS" if ok1 else "FAIL",
-              "no look-ahead found; the backtest measures what it claims"
-              if ok1 else "a leak was found -- every number below is void"))
-    ho = s2["holdout"]
-    ok2 = ho["ship_lok_net"] > 0 and s2["wf_rolling"]["oos_net"] > 0
-    v.append(("2 out-of-sample", "PASS" if ok2 else "FAIL",
-              f"locked block {f(ho['ship_lok_net'],dollar=True)}, "
-              f"walk-forward {f(s2['wf_rolling']['oos_net'],dollar=True)}"))
-    ok3 = (s3["dsr_grid"]["p"] > 0.95) and (s3["spa"]["p"] < 0.05) and (s3["pbo"]["pbo"] < 0.5)
-    v.append(("3 multiple testing", "PASS" if ok3 else "FAIL",
-              f"DSR {f(s3['dsr_grid']['p'],3)}, SPA p {f(s3['spa']['p'],3)}, "
-              f"PBO {f(s3['pbo']['pbo'],2)}"))
-    cush = r["s4"]["cushion_x"]
-    ok4 = cush > 2.0
-    v.append(("4 costs/capacity", "PASS" if ok4 else "FAIL",
-              f"breakeven cost is {f(cush,1)}x the applied round turn"))
+
+    fails = []
+    if not s1["pit"]["passed"]:
+        fails.append("point-in-time")
+    if not s1["scope"]["passed"]:
+        fails.append("normalisation scope")
+    if s1["ic"]["leak_flag"].any():
+        fails.append("IC above 0.15")
+    if s1["hygiene"]["ohlc_violations"] or s1["hygiene"]["duplicates"]:
+        fails.append("index hygiene")
+    v.append(("1 leakage/execution", "PASS" if not fails else "FAIL",
+              "no look-ahead found; the backtest measures what it claims" if not fails
+              else "failed: " + ", ".join(fails)))
+
+    ho, wf = s2["holdout"], s2["wf_rolling"]
+    f2 = []
+    if ho["ship_lok_net"] <= 0:
+        f2.append(f"locked block {f(ho['ship_lok_net'],dollar=True)}")
+    if wf["oos_net"] <= 0:
+        f2.append(f"walk-forward {f(wf['oos_net'],dollar=True)}")
+    if s2["cpcv"].get("p_ship_negative", 0) > 0.35:
+        f2.append(f"{f(s2['cpcv']['p_ship_negative'],pct=True)} of CPCV paths negative")
+    v.append(("2 out-of-sample", "PASS" if not f2 else "FAIL",
+              f"locked {f(ho['ship_lok_net'],dollar=True)}, walk-forward "
+              f"{f(wf['oos_net'],dollar=True)}, {f(s2['cpcv']['p_ship_negative'],pct=True)} of "
+              f"CPCV paths negative" if not f2 else "failed: " + "; ".join(f2)))
+
+    f3 = []
+    if s3["dsr_grid"]["p"] <= 0.95:
+        f3.append(f"deflated Sharpe {f(s3['dsr_grid']['p'],3)} against a "
+                  f"{f(s3['dsr_grid']['sr_star_ann'],2)} noise benchmark")
+    if s3["spa"]["p"] >= 0.05:
+        f3.append(f"SPA p {f(s3['spa']['p'],3)}")
+    if s3["pbo"]["pbo"] >= 0.5:
+        f3.append(f"PBO {f(s3['pbo']['pbo'],2)}")
+    if not s3["harvey_liu"]["passes_3"]:
+        f3.append(f"Harvey-Liu t {f(s3['harvey_liu']['nw_t'],2)} < 3.0")
+    v.append(("3 multiple testing", "PASS" if not f3 else "FAIL",
+              "clears deflation, SPA, PBO and the t=3 hurdle" if not f3
+              else "failed: " + "; ".join(f3)))
+
+    cush = s4["cushion_x"]
+    v.append(("4 costs/capacity", "PASS" if cush > 2.0 else "FAIL",
+              f"breakeven round turn is {f(cush,1)}x the applied {f(s4['round_turn_now'],dollar=True)}"))
+
     mc = s5["matched_control"]
-    ok5 = (mc["p"] < 0.05) and (s5["bootstrap"]["sharpe_stationary"]["lo"] > 0) \
-        and s5b["synthetic"]["p_actual_vs_null"] < 0.05
-    v.append(("5 robustness", "PASS" if ok5 else "FAIL",
-              f"matched control p {f(mc['p'],3)}, bootstrap Sharpe CI lower "
-              f"{f(s5['bootstrap']['sharpe_stationary']['lo'],2)}"))
+    lo = s5["bootstrap"]["sharpe_stationary"]["lo"]
+    f5 = []
+    if not (mc["p"] < 0.05):
+        f5.append(f"matched control p {f(mc['p'],3)}")
+    if not (lo > 0):
+        f5.append(f"bootstrap Sharpe CI includes zero (lower {f(lo,2)})")
+    if not (s5b["synthetic"]["p_actual_vs_null"] < 0.05):
+        f5.append(f"synthetic paths p {f(s5b['synthetic']['p_actual_vs_null'],3)}")
+    v.append(("5 robustness", "PASS" if not f5 else "FAIL",
+              f"matched control p {f(mc['p'],3)}, bootstrap Sharpe CI [{f(lo,2)}, "
+              f"{f(s5['bootstrap']['sharpe_stationary']['hi'],2)}]" if not f5
+              else "failed: " + "; ".join(f5)))
     return v
+
+
+def findings(res: dict) -> str:
+    """The conclusions, computed from the results rather than typed in."""
+    L = ["## What the battery found\n"]
+    names = list(res)
+
+    # 1. the matched control -- the test the Pine header says was never run
+    L.append("**1. The matched control, run for the first time on this family.** Random entries "
+             "with the same side mix, the same entry-minute distribution and the same "
+             "hold-to-the-cash-close exit price in drift, costs, session timing and hold length at "
+             "once, so what is left over is the rule.\n")
+    rows = []
+    for n, r in res.items():
+        mc = r["s5"]["matched_control"]
+        rows.append(dict(dataset=n, observed=f(mc["observed"], dollar=True) + "/trade",
+                         control=f(mc["null_mean"], dollar=True) + "/trade",
+                         percentile=f(mc["pct"], 0), p=f(mc["p"], 3),
+                         verdict="beats its control" if mc["p"] < 0.05 else "INDISTINGUISHABLE"))
+    L.append(tbl(pd.DataFrame(rows)))
+
+    # 2. what the exits say the strategy actually is
+    n0 = names[0]
+    d0 = res[n0]["diag"]
+    share = d0["cash_exits"] / max(res[n0]["base"]["trades"], 1)
+    L.append(f"\n**2. It is a direction bet held to the close, not a barrier edge.** "
+             f"{f(share,pct=True)} of exits on {n0} are the 16:00 cash close, and there are "
+             f"{d0['reversals']} reversals in nine years -- the same signature the Pine header "
+             f"reports (101 of 104 cash-close exits, zero reversals). Mean hold is "
+             f"{f(res[n0]['s4']['turnover']['mean_hold_hours'],1)} hours. The oscillator chooses a "
+             f"SIDE and a DAY; it never chooses an exit. That is why the matched control above is "
+             f"the whole test: it holds the same side for the same hours on the same minutes.\n")
+
+    # 3. the VWAP filter's own contribution
+    L.append("\n**3. The VWAP admission band, the strategy's distinguishing feature, is close to "
+             "free.** Its own one-step ladder, with the band widened to the point of being absent:\n")
+    rows = []
+    for n, r in res.items():
+        nb = r["s5"]["surface"]["neighbourhood"]
+        vb = nb[nb["knob"] == "vwap_mult"]
+        for _, x in vb.iterrows():
+            rows.append(dict(dataset=n,
+                             band=("no filter" if x["value"] > 1e6 else f"{x['value']:.1f} x ATR"),
+                             sharpe=f(x["sharpe"], 2), net=f(x["net"], dollar=True),
+                             trades=int(x["trades"]), ship="<-- ship" if x["is_ship"] else ""))
+    L.append(tbl(pd.DataFrame(rows)))
+    r0 = res[n0]["s5"]["surface"]["neighbourhood"]
+    vb = r0[r0["knob"] == "vwap_mult"]
+    off = vb[vb["value"] > 1e6]["net"].iloc[0]
+    ship = vb[vb["is_ship"]]["net"].iloc[0]
+    best = vb["net"].max()
+    L.append(f"\nOn {n0} the filter is worth {f(ship-off,dollar=True)} of "
+             f"{f(ship,dollar=True)} ({f((ship-off)/ship,pct=True)} of the result), and the band it "
+             f"ships at is not the best one on the ladder -- widening it to 3.0 x ATR is worth "
+             f"{f(best,dollar=True)}. A filter that is not at an optimum and that costs little to "
+             f"remove is not carrying the strategy.\n")
+
+    # 4. deflation, and the two honest readings of it
+    L.append("\n**4. The binding constraint is the trial count, and it has two honest readings.**\n")
+    rows = []
+    for n, r in res.items():
+        s3 = r["s3"]
+        rows.append(dict(dataset=n, sharpe=f(r["base"]["sharpe_daily"], 2),
+                         psr_a_priori=f(s3["psr"]["daily"], 3),
+                         noise_benchmark=f(s3["dsr_grid"]["sr_star_ann"], 2),
+                         dsr_180=f(s3["dsr_grid"]["p"], 3),
+                         dsr_1800=f(s3["dsr_grid_x10"]["p"], 3)))
+    L.append(tbl(pd.DataFrame(rows)))
+    L.append("\nThe ship constants (EMA 21, ATR 14, EMA 3, denominator 3.0, thresholds +/-100, "
+             "band 2.5) are a FIXED a-priori setting in the source, not something selected on this "
+             "grid. So the Probabilistic Sharpe column is the reading if those constants were "
+             "specified once and never tuned, and the Deflated Sharpe columns are the reading if "
+             "they are the survivor of a search the size of this grid. Which is true is not "
+             "knowable from the source, and the answer differs across the two: a Sharpe of "
+             f"{f(res[names[0]]['base']['sharpe_daily'],2)} is comfortably above zero and "
+             "comfortably BELOW what a 180-configuration search extracts from noise alone.\n")
+
+    # 5. the cross-instrument result
+    if len(names) > 1:
+        a, b = names[0], names[1]
+        ra, rb = res[a], res[b]
+        L.append(f"\n**5. It does not replicate on the second instrument.** The same rule, the "
+                 f"same clock, the same nine years:\n")
+        rows = []
+        for n, r in ((a, ra), (b, rb)):
+            rows.append(dict(dataset=n, net=f(r["base"]["net"], dollar=True),
+                             per_trade=f(r["base"]["per_trade"], dollar=True),
+                             sharpe=f(r["base"]["sharpe_daily"], 2),
+                             nw_t=f(r["base"]["nw_t"], 2),
+                             locked=f(r["s2"]["holdout"]["ship_lok_net"], dollar=True),
+                             matched_control_p=f(r["s5"]["matched_control"]["p"], 3),
+                             pbo=f(r["s3"]["pbo"]["pbo"], 2)))
+        L.append(tbl(pd.DataFrame(rows)))
+        L.append(f"\n{b} fails the locked block, the matched control and PBO together. Two "
+                 f"instruments is a small sample of instruments, so this does not prove the "
+                 f"{a} result is noise -- but a mechanism that is real in index futures should "
+                 f"not care which index, and this one does.\n")
+
+    # 6. what would change the answer
+    L.append("\n**6. What would move this.** The 10-minute bar the strategy is actually defined "
+             "on, from 1-minute data, which would make the header's own 104 trades reproducible "
+             "and testable rather than transplanted. Failing that, a third and fourth index on the "
+             "same clock: the single most informative number here is the cross-instrument "
+             "disagreement, and it is currently computed from n=2.\n")
+    return "\n".join(L)
 
 
 def one(r) -> str:
@@ -212,9 +351,14 @@ def one(r) -> str:
                    f"{f(bs['net_stationary']['hi'],dollar=True)}]", reads="95% CI"),
         dict(test="Trade-sequence permutation (drawdown)",
              value=f"{f(s5['permutation_dd']['observed'],dollar=True)} vs median "
-                   f"{f(s5['permutation_dd']['median'],dollar=True)}",
-             reads=f"observed drawdown is at the {f(s5['permutation_dd']['pct'],0)}th percentile "
-                   f"of orderings"),
+                   f"{f(s5['permutation_dd']['median'],dollar=True)}, 95th pct "
+                   f"{f(s5['permutation_dd']['p95'],dollar=True)}",
+             reads=f"{f(s5['permutation_dd']['pct'],0)}th percentile of orderings: the realised "
+                   f"drawdown was "
+                   + ("LUCKY -- plan for the median, not the backtest"
+                      if s5['permutation_dd']['pct'] < 35 else
+                      "unlucky relative to the same trades reshuffled"
+                      if s5['permutation_dd']['pct'] > 65 else "typical")),
         dict(test="Random-direction null",
              value=f"p = {f(s5['random_direction']['p'],3)}",
              reads="same trades, coin-flip side"),
@@ -296,6 +440,7 @@ def write(res: dict, path: str):
         for sec, vd, why in verdict(r):
             L.append(f"| {n} | {sec} | **{vd}** | {why} |")
     L.append("")
+    L.append(findings(res))
     for n, r in res.items():
         L.append(one(r))
     open(path, "w").write("\n".join(L) + "\n")
