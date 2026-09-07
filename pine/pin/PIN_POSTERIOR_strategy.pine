@@ -1,0 +1,374 @@
+// ================================================================================================
+// PIN POSTERIOR -- the Easley-Kiefer-O'Hara-Paperman (1996) informed-trading mixture, estimated by
+// Yan (2009, SSRN 1361921), traded as an intraday probability.
+//
+// READ THIS BEFORE THE INPUTS. THIS RULE DOES NOT CLEAR ITS OWN CONTROL AND IT DOES NOT REACH THE
+// PROFIT FACTOR IT WAS ASKED FOR. It is shipped because it was asked for, with every measured
+// number attached, so the evidence travels with the code. No edge is claimed.
+//
+// ---------------------------------------------------------------------------------------------
+// WHAT THE MODEL SAYS, AND WHAT IS ACTUALLY TRADEABLE
+// ---------------------------------------------------------------------------------------------
+// EKOP model each day as a mixture. An information event occurs with probability a and is bad with
+// probability d. Informed traders then arrive at rate mu on ONE side; uninformed traders arrive at
+// rates eps_b and eps_s whether or not there is news -- liquidity, rebalancing, market-making
+// obligation. PIN = a*mu / (a*mu + eps_b + eps_s) is the fraction of trades that are informed.
+//
+// PIN ITSELF IS NOT A SIGNAL. It is unconditional and non-directional -- a cross-sectional
+// asset-pricing quantity used to explain expected returns over months. It says nothing about which
+// way to trade today. What IS directional is the POSTERIOR from the same mixture given the flow
+// observed SO FAR TODAY, which is the market maker's own belief update:
+//
+//   P(good | B,S)  prop  a(1-d) * Pois(B; eps_b+mu) * Pois(S; eps_s)
+//   P(bad  | B,S)  prop  a*d    * Pois(B; eps_b)    * Pois(S; eps_s+mu)
+//   P(none | B,S)  prop  (1-a)  * Pois(B; eps_b)    * Pois(S; eps_s)
+//
+// PINE HAS NO lgamma AND DOES NOT NEED ONE. The -lgamma(B+1) - lgamma(S+1) terms are IDENTICAL in
+// all three hypotheses, so they cancel in the normalisation. Only k*log(lambda) - lambda survives.
+//
+// ---------------------------------------------------------------------------------------------
+// THE MEASURED RESULT (research/pin/, NQ 10m, 105,639 bars, 765 sessions, MNQ costs, one contract)
+// ---------------------------------------------------------------------------------------------
+// Gate 1, volume-weighted B and S, 2.5xATR stop, no target, 1R trail armed at 1R, flat at the close:
+//
+//   thresh   block      n   /yr    pts/trade    PF     win   Sharpe
+//    0.50  research    722   366      +2.63    1.078  48.8%   +0.57
+//    0.50  LOCKED      315   296      +4.06    1.076  51.4%   +0.46
+//    0.70  research    479   243      +1.29    1.037  51.4%   +0.23
+//    0.70  LOCKED      232   218     +15.23    1.287  53.5%   +1.25
+//    0.85  research    278   141      -2.82    0.928  46.0%   -0.39
+//    0.85  LOCKED      156   147     +23.18    1.427  54.5%   +1.49
+//    0.95  research    119    60      +4.17    1.116  51.3%   +0.35
+//    0.95  LOCKED       83    78     +32.53    1.606  62.7%   +1.43
+//
+// AGAINST A MATCHED RANDOM ENTRY -- same window, same rate, same side mix, same exits, 300 draws:
+//   research p 0.067 / 0.197 / 0.590 / 0.157 at the four thresholds -- 0 OF 4 CLEAR at p<=0.05.
+//   LOCKED   p 0.243 / 0.027 / 0.013 / 0.003 -- THREE OF FOUR CLEAR.
+// Every research cell fails and every locked cell passes, at every threshold, systematically. A
+// rule chosen on research should look better THERE. That is the wrong shape and it is the most
+// uniform instance of it on this branch.
+//
+// THE PROFIT FACTOR ASKED FOR WAS 2.0. The best research cell is 1.116. At its measured win
+// (+78.25 pts) and loss (-73.75) sizes, PF 1.5 needs a win rate of 0.586, PF 2.0 needs 0.653 and
+// PF 3.0 needs 0.739, against the 0.513 delivered -- a lift of +7.3, +14.1 and +22.6 points. The
+// best honest win-rate lift measured anywhere on this branch is +1 to +5 points. A 2.79M-cell
+// intraday sweep on the same data found ZERO configurations at PF >= 2.0 with >= 200 trades a year
+// on the research block, where 89.5% of cells are profitable. The ask is arithmetic, not modelling.
+//
+// ---------------------------------------------------------------------------------------------
+// WHY THE MECHANISM IS WEAK HERE, WHICH WAS KNOWN BEFORE THE BACKTEST
+// ---------------------------------------------------------------------------------------------
+// PIN in the equity literature runs 0.10-0.20 (EKOP's own 90 stocks average ~0.19). Measured on NQ
+// it is 0.004 with bar counts and 0.014 volume-weighted -- an order of magnitude smaller.
+//   1. PIN IS A SINGLE-NAME MEASURE. It prices FIRM-SPECIFIC private information. There is no
+//      insider on the Nasdaq-100, and the literature's own finding is that PIN FALLS with size and
+//      liquidity, so an index future is the weakest possible place to apply it.
+//   2. LEE-READY NEEDS QUOTE MIDPOINTS. B and S are supposed to be buyer- and seller-initiated
+//      TRADE COUNTS. No feed available here carries quotes or aggressor tags, so B and S are a
+//      PROXY: one-minute sub-bars signed by their own direction, optionally weighted by volume.
+// The informed-to-uninformed arrival ratio mu/(eps_b+eps_s) is the number to watch and the panel
+// prints it: 0.0148 with bar counts, 0.0519 volume-weighted. At the count version the posterior
+// CANNOT EXCEED 0.405 and no bar ever reaches 0.5 -- an informed arrival rate that is 1.5% of the
+// uninformed one cannot move a Bayesian update off its prior. VOLUME WEIGHTING IS WHAT MAKES THE
+// POSTERIOR USABLE AT ALL and it defaults ON for that reason.
+//
+// WHAT WOULD MAKE THIS WORK: trade-and-quote data with the aggressor side; SINGLE NAMES rather than
+// an index, around earnings, M&A or regulatory decisions; and PIN's documented use, which is
+// cross-sectional ranking, not intraday timing on one liquid future.
+//
+// CAUSALITY. Yan's step 1 identifies event days with an event study over the whole period, which is
+// two-sided and cannot be traded. Here an event day is one whose session return exceeds k trailing
+// standard deviations, and every parameter is fitted on a rolling window of prior sessions that
+// CLOSES BEFORE the session it is used in. Nothing reads its own day.
+//
+// CHART: 10-MINUTE. Sub-bar data is required, so the delta timeframe must be STRICTLY below the
+// chart's or request.security_lower_tf returns nothing and no signal can ever fire -- the panel
+// says so. Every var write is under barstate.isconfirmed. Research tooling, not financial advice.
+// ================================================================================================
+//@version=6
+strategy("PIN posterior (EKOP / Yan)", "PIN", overlay = false, pyramiding = 0,
+     calc_on_every_tick = false, process_orders_on_close = false, initial_capital = 50000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.62,
+     slippage = 1, max_bars_back = 3000)
+
+// ---------------------------------------------------------------- inputs
+gM = "The mixture model"
+winOpen  = input.int(570, "Session opens (min past NY midnight, 570 = 09:30)", group = gM)
+winClose = input.int(960, "Session closes (960 = 16:00)", group = gM)
+lookback = input.int(120, "Sessions in the fitting window", minval = 40, maxval = 400, group = gM,
+     tooltip = "Every parameter is fitted on this many PRIOR sessions and the window closes before "
+     + "the session it is used in. Yan fits on 1.25 years of daily data; 120 sessions is that.")
+evK = input.float(1.0, "Event day = |session return| beyond this many trailing sd", minval = 0.25,
+     step = 0.25, group = gM,
+     tooltip = "Yan's step 1 uses an event study over the WHOLE period, which is two-sided and "
+     + "untradeable. This is the causal replacement. Measured alpha at 0.75 / 1.0 / 1.5 / 2.0 sd: "
+     + "0.401 / 0.275 / 0.111 / 0.064.")
+useVol = input.bool(true, "Weight B and S by volume", group = gM,
+     tooltip = "ON BY DEFAULT AND IT IS WHAT MAKES THE POSTERIOR USABLE. EKOP count trades and "
+     + "assume size is irrelevant (their footnote 7), but an informed trader with private "
+     + "information trades SIZE. Counting sub-bars gives mu/(eps_b+eps_s) = 0.0148, and at that "
+     + "ratio the posterior CANNOT EXCEED 0.405 -- no bar ever reaches 0.5, so no threshold above "
+     + "that can ever fire. Volume weighting raises the ratio to 0.0519 and the posterior then "
+     + "spans the full [0,1].")
+ltf = input.timeframe("1", "Sub-bar timeframe for B and S", group = gM,
+     tooltip = "Must be STRICTLY below the chart timeframe or request.security_lower_tf returns "
+     + "nothing, the counts stay at zero and no signal can ever fire. The panel prints the live "
+     + "sub-bar count.")
+
+gE = "Entry"
+pThresh = input.float(0.70, "Enter when the posterior reaches", minval = 0.05, maxval = 0.999,
+     step = 0.05, group = gE,
+     tooltip = "Measured research profit factor by threshold: 0.50 -> 1.078, 0.70 -> 1.037, "
+     + "0.85 -> 0.928, 0.95 -> 1.116. NONE of them clears a matched random entry (research p 0.067 "
+     + "/ 0.197 / 0.590 / 0.157) and ALL of them look better on the locked block, which is the "
+     + "wrong shape. There is no good setting here; 0.70 is the middle of the range measured.")
+doLong  = input.bool(true, "Long on P(good news)", group = gE)
+doShort = input.bool(true, "Short on P(bad news)", group = gE)
+
+gX = "Exit geometry (as measured -- not optimised)"
+stopN = input.float(2.5, "Stop, x ATR14 at the signal bar", minval = 0.25, step = 0.25, group = gX)
+trArm = input.float(1.0, "Arm the trail at (R in front, 0 = off)", minval = 0.0, step = 0.25,
+     group = gX)
+trDist = input.float(1.0, "Trail this many R behind the running high", minval = 0.25, step = 0.25,
+     group = gX)
+tgtR = input.float(0.0, "Target in R (0 = none)", minval = 0.0, step = 0.5, group = gX,
+     tooltip = "No take profit, as measured. On this branch no-target has beaten every target "
+     + "tested 25 independent times.")
+showHud = input.bool(true, "Show panel", group = "Display")
+
+TZ = "America/New_York"
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+tfMin = timeframe.in_seconds() / 60
+inWin = nyMin >= winOpen and nyMin < winClose and dayofweek(time, TZ) != dayofweek.saturday
+     and dayofweek(time, TZ) != dayofweek.sunday
+lastWin = inWin and nyMin + tfMin >= winClose
+newWin = inWin and not inWin[1]
+// ta.atr is Wilder's; the research uses ema(tr, n). This matches the research.
+atr = ta.ema(ta.tr(true), 14)
+
+// ---------------------------------------------------------------- B and S from sub-bars
+lc = request.security_lower_tf(syminfo.tickerid, ltf, close)
+lo_ = request.security_lower_tf(syminfo.tickerid, ltf, open)
+lv = request.security_lower_tf(syminfo.tickerid, ltf, volume)
+nSub = array.size(lc)
+float barB = 0.0
+float barS = 0.0
+if nSub > 0
+    for i = 0 to nSub - 1
+        cc = array.get(lc, i)
+        oo = array.get(lo_, i)
+        w = useVol ? array.get(lv, i) : 1.0
+        if cc > oo
+            barB += w
+        else if cc < oo
+            barS += w
+
+// running totals inside the session, and the session's own open for the return
+var float cumB = 0.0
+var float cumS = 0.0
+var float sessOpen = na
+if barstate.isconfirmed
+    if newWin
+        cumB := 0.0
+        cumS := 0.0
+        sessOpen := open
+    if inWin
+        cumB += barB
+        cumS += barS
+
+// ---------------------------------------------------------------- the fitting window
+var histB = array.new<float>()
+var histS = array.new<float>()
+var histR = array.new<float>()
+var float meanVol = na              // volume normaliser, so B and S stay on a Poisson footing
+var float volSum = 0.0
+var int volN = 0
+var float pA = na
+var float pD = na
+var float pEb = na
+var float pEs = na
+var float pMu = na
+var float pPin = na
+var int nFit = 0
+
+// [Yan 2009, steps 1-4] alpha and delta from the event labels, eps from non-event days, mu from
+// the conditional means in his equations (5) and (6), PIN from equation (8).
+fitWindow() =>
+    n = array.size(histR)
+    float a = na, d = na, eb = na, es = na, mu = na
+    if n >= 30
+        float sm = 0.0
+        for i = 0 to n - 1
+            sm += array.get(histR, i)
+        mean = sm / n
+        float ss = 0.0
+        for i = 0 to n - 1
+            dv = array.get(histR, i) - mean
+            ss += dv * dv
+        sd = math.sqrt(ss / math.max(n - 1, 1))
+        if sd > 0
+            int nEv = 0, nBad = 0, nNon = 0, nGood = 0
+            float sBn = 0.0, sSn = 0.0, sBgn = 0.0, sSbn = 0.0
+            int cGn = 0, cBn2 = 0
+            for i = 0 to n - 1
+                r = array.get(histR, i)
+                bv = array.get(histB, i)
+                sv = array.get(histS, i)
+                ev = math.abs(r - mean) > evK * sd
+                if ev
+                    nEv += 1
+                    if r < 0
+                        nBad += 1
+                    else
+                        nGood += 1
+                else
+                    nNon += 1
+                    sBn += bv
+                    sSn += sv
+                if (ev and r > 0) or not ev            // good events plus non-events
+                    sBgn += bv
+                    cGn += 1
+                if (ev and r < 0) or not ev            // bad events plus non-events
+                    sSbn += sv
+                    cBn2 += 1
+            if nEv >= 6 and nGood >= 2 and nBad >= 2 and nNon >= 10
+                a := nEv / n
+                d := nBad / nEv
+                eb := sBn / nNon
+                es := sSn / nNon
+                muB = (sBgn / cGn - eb) / math.max(1.0 - d, 1e-6)
+                muS = (sSbn / cBn2 - es) / math.max(d, 1e-6)
+                mu := 0.5 * (muB + muS)
+    [a, d, eb, es, mu]
+
+if barstate.isconfirmed and newWin and not na(sessOpen[1])
+    // push the session that just ENDED, then refit -- so the window never contains today
+    if not na(cumB[1]) and cumB[1] > 0 and not na(sessOpen[1]) and sessOpen[1] > 0
+        array.push(histB, cumB[1])
+        array.push(histS, cumS[1])
+        array.push(histR, (close[1] / sessOpen[1] - 1.0) * 100.0)
+        if array.size(histR) > lookback
+            array.shift(histB)
+            array.shift(histS)
+            array.shift(histR)
+    [a, d, eb, es, mu] = fitWindow()
+    pA := a
+    pD := d
+    pEb := eb
+    pEs := es
+    pMu := mu
+    nFit := array.size(histR)
+    pPin := na(mu) or na(a) ? na : a * mu / (a * mu + eb + es)
+
+// ---------------------------------------------------------------- the posterior
+// log P(k | lambda) = k*log(lambda) - lambda - lgamma(k+1). The lgamma terms are IDENTICAL across
+// the three hypotheses because B and S are the same in all of them, so they cancel in the
+// normalisation and Pine never needs a gamma function.
+lpk(float k, float lam) =>
+    k * math.log(math.max(lam, 1e-9)) - math.max(lam, 1e-9)
+
+float pGood = na
+float pBad = na
+if inWin and not na(pMu) and pMu > 0 and pEb > 0 and pEs > 0
+    frac = math.min(math.max((nyMin + tfMin - winOpen) / math.max(winClose - winOpen, 1), 0.001), 1.0)
+    eb = pEb * frac
+    es = pEs * frac
+    mu = pMu * frac
+    lg = math.log(math.max(pA * (1 - pD), 1e-12)) + lpk(cumB, eb + mu) + lpk(cumS, es)
+    lb = math.log(math.max(pA * pD, 1e-12)) + lpk(cumB, eb) + lpk(cumS, es + mu)
+    ln_ = math.log(math.max(1 - pA, 1e-12)) + lpk(cumB, eb) + lpk(cumS, es)
+    m = math.max(lg, math.max(lb, ln_))
+    g = math.exp(lg - m)
+    b = math.exp(lb - m)
+    nn = math.exp(ln_ - m)
+    tot = g + b + nn
+    pGood := g / tot
+    pBad := b / tot
+
+// ---------------------------------------------------------------- orders
+var int lastExitBar = -1
+var int nClosed = 0
+var float riskPts = na
+var float peak = na
+if strategy.closedtrades != nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and bar_index != lastExitBar
+     and inWin and not lastWin and not na(atr) and atr > 0
+goLong  = canEnter and doLong  and not na(pGood) and pGood >= pThresh
+goShort = canEnter and doShort and not na(pBad)  and pBad  >= pThresh and not goLong
+
+if goLong or goShort
+    side = goLong ? 1 : -1
+    riskPts := stopN * atr
+    peak := na
+    ticks = math.max(1, int(math.round(riskPts / syminfo.mintick)))
+    if goLong
+        strategy.entry("L", strategy.long)
+        strategy.exit("Lx", from_entry = "L", loss = ticks,
+             profit = tgtR > 0 ? math.max(1, int(math.round(tgtR * ticks))) : na)
+    else
+        strategy.entry("S", strategy.short)
+        strategy.exit("Sx", from_entry = "S", loss = ticks,
+             profit = tgtR > 0 ? math.max(1, int(math.round(tgtR * ticks))) : na)
+
+// The trail acts on the CLOSE and cannot act on the fill bar: position_avg_price does not exist
+// until one bar after the fill, so a level written from it there is `na` and silently does
+// nothing. The fill-relative bracket above covers exactly that bar.
+sideN = strategy.position_size > 0 ? 1 : -1
+if barstate.isconfirmed and strategy.position_size != 0 and bar_index > lastExitBar
+     and not na(strategy.position_avg_price) and riskPts > 0 and trArm > 0
+    adv = sideN * (close - strategy.position_avg_price) / riskPts
+    peak := na(peak) ? adv : math.max(peak, adv)
+    if peak >= trArm
+        lvl = strategy.position_avg_price + sideN * (peak - trDist) * riskPts
+        if (sideN > 0 and close < lvl) or (sideN < 0 and close > lvl)
+            strategy.close_all(comment = "trail")
+
+if barstate.isconfirmed and lastWin and strategy.position_size != 0
+    strategy.close_all(comment = "session flat")
+
+// ---------------------------------------------------------------- display
+plot(pGood, "P(good news)", color = color.new(#1baf7a, 0), linewidth = 2)
+plot(pBad, "P(bad news)", color = color.new(#c0392b, 0), linewidth = 2)
+hline(pThresh, "threshold", color = color.new(color.gray, 30), linestyle = hline.style_dashed)
+hline(0.5, "even", color = color.new(color.gray, 70), linestyle = hline.style_dotted)
+bgcolor(inWin ? color.new(#7a5cd6, 95) : na, title = "session")
+
+var table hud = table.new(position.top_right, 2, 9, border_width = 1)
+if showHud and barstate.islast
+    sz = size.small
+    ratio = na(pMu) or na(pEb) ? na : pMu / (pEb + pEs)
+    table.cell(hud, 0, 0, "PIN posterior (EKOP / Yan)", text_color = color.white,
+         bgcolor = color.new(#7a5cd6, 20), text_size = sz)
+    table.cell(hud, 1, 0, timeframe.period, text_color = color.white,
+         bgcolor = color.new(#7a5cd6, 20), text_size = sz)
+    table.cell(hud, 0, 1, "sub-bar delta live?", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 1, nSub > 0 ? str.tostring(nSub) + " sub-bars per chart bar"
+         : "NO -- the rule can never fire on this chart", text_size = sz,
+         text_color = nSub > 0 ? color.gray : color.new(#c0392b, 0))
+    table.cell(hud, 0, 2, "sessions fitted", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 2, str.tostring(nFit) + " / " + str.tostring(lookback)
+         + (na(pMu) ? "  (warming up)" : ""), text_size = sz,
+         text_color = na(pMu) ? color.new(color.orange, 0) : color.gray)
+    table.cell(hud, 0, 3, "alpha / delta", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 3, na(pA) ? "-" : str.tostring(pA, "#.###") + " / "
+         + str.tostring(pD, "#.###"), text_size = sz)
+    table.cell(hud, 0, 4, "eps_b / eps_s / mu", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 4, na(pMu) ? "-" : str.tostring(pEb, "#.#") + " / "
+         + str.tostring(pEs, "#.#") + " / " + str.tostring(pMu, "#.##"), text_size = sz)
+    table.cell(hud, 0, 5, "mu / (eps_b+eps_s)", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 5, na(ratio) ? "-" : str.tostring(ratio, "#.####")
+         + (ratio < 0.02 ? "  <- too low, posterior pinned to the prior" : ""), text_size = sz,
+         text_color = na(ratio) or ratio < 0.02 ? color.new(color.orange, 0) : color.gray)
+    table.cell(hud, 0, 6, "PIN", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 6, na(pPin) ? "-" : str.tostring(pPin, "#.####")
+         + "   (literature 0.10-0.20 on single stocks)", text_size = sz)
+    table.cell(hud, 0, 7, "P(good) / P(bad) now", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 7, na(pGood) ? "outside the session"
+         : str.tostring(pGood, "#.###") + " / " + str.tostring(pBad, "#.###"), text_size = sz)
+    table.cell(hud, 0, 8, "MEASURED", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 8, "research PF 1.04-1.12, 0 of 4 clear a random entry", text_size = sz,
+         text_color = color.new(#eb6834, 0))
