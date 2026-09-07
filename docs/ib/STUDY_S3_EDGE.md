@@ -89,11 +89,31 @@ one. Non-parametric check, best-of-30 matched random entries: locked **p 0.346**
 - **One market, never confirmed elsewhere.** The CVD needs sub-bars and NQ is the only feed here
   with 1-minute data.
 
-## 6. The equity a trader would have lived through
+## 6. The dollar answer, with the synthetic-level deflator applied
 
-Fixed constants, day one to the end, one MNQ contract: 2023 **-372 pts**, 2024 **+1,622**,
-2025 **+1,671**; cumulative +2,920 pts = **$5,840**, worst drawdown 874 pts = **$1,748**,
-return/drawdown 3.34, longest losing run 12 sessions.
+`STUDY_US100.md` records that the stored NQ series carries levels above the real index and that the
+ratio decays across the sample, so DOLLAR magnitudes are inflated and inflated MOST EARLY -- which
+is the research block. Measured here against US100 over **862 overlapping sessions**, the ratio runs
+0.801 to 0.971; the mean deflator is **0.8804 on research and 0.9641 on locked**, i.e. raw points
+overstate by 13.6% and 3.7%. Applied per trade:
+
+| year | trades | raw pts | real pts | $ (1 MNQ) | PF | win |
+|---|---|---|---|---|---|---|
+| 2023 | 205 | -372.4 | -305.5 | **-611** | 0.908 | 52.7% |
+| 2024 | 192 | +1,621.5 | +1,500.1 | **+3,000** | 1.445 | 53.1% |
+| 2025 | 162 | +1,671.2 | +1,626.7 | **+3,253** | 1.404 | 59.9% |
+| **total** | **559** | +2,920.3 | +2,821.3 | **+5,643** | 1.263 | 55.1% |
+
+**$1,924 a year on one contract**, 191 trades a year, **$10.09 a trade**, worst drawdown **$1,670**,
+return/drawdown **3.38**. By block: research $4.44/trade, locked $22.10/trade.
+
+Cost sensitivity -- the one axis where this candidate is unusually comfortable, because a 3xATR stop
+on 5m NQ is ~45 points and the round turn is under 4% of it: zero cost $13.92/trade, as modelled
+$10.09, 2x $5.77, **4x -$2.63**. It survives double the assumed spread, which most candidates on
+this branch do not.
+
+Month by month: 37 months, **23 positive (62%)**, best +$1,966, worst -$724, longest losing run
+**3 months**. First 12 months **-$512**, next 12 +$2,262, rest +$3,893.
 
 ## 7. Verdict, updated
 
