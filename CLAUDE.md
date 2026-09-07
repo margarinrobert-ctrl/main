@@ -118,6 +118,24 @@ asserted trade-for-trade against `runBacktest`; note the app sizes stops in WILD
 `runBacktest` uses) while the research layer uses `ema(tr, n)`, so compare the two on shape, not to
 the dollar. See `docs/ib/STUDY_TUNER.md`.
 
+**A strategy that holds to a fixed clock exit is a direction bet, and the matched control is the
+whole test.** The APM-VWAP port (ATR-normalised phase momentum + session VWAP) exits 92-98% of its
+trades at the 16:00 cash close with zero reversals in nine years, so the oscillator picks a SIDE and
+a DAY and never picks an exit. Run on 15-minute bars over 2016-2025: on NASDAQ it beats a
+side/minute/hold-matched control at p 0.003 ($37.26/trade against -$1.71), passes the locked block
+and survives 16x its round-turn cost -- and still FAILS deflation, because a Sharpe of 0.86 is below
+the 0.94 a 180-configuration search extracts from noise. On US30, the same rule is indistinguishable
+from its control (p 0.154), PBO 0.67, locked block negative. The VWAP admission band, its
+distinguishing feature, is worth 6.8% of the result and does not ship at its own optimum. See
+`docs/ib/STUDY_APM_VALIDATION.md`; the port and the 31-test battery are in `research/apm/`.
+
+**Measure a data feed's timezone, never assume it.** Two MetaTrader exports arrived with a naive
+timestamp in an unstated broker clock; guessing it wrong moves every session boundary in a
+session-scoped strategy. Pinned to EET/EEST two independent ways -- 0.9955 return correlation
+against a separately supplied New York-stamped file of the same instrument (fixed UTC+2 and UTC+3
+each break at a DST transition, which is what identifies the clock as DST-aware), and the busiest
+15-minute slot of the day landing exactly on the 09:30 cash open. `research/apm/apm_data.py`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -156,6 +174,10 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/tuner.py` | its engine: cached exit tensor, rule language, `run` / `sweep` / `reveal` |
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
+| `research/apm/apm_sim.py` | the APM-VWAP order model, seeds and all; `apm_test.py` asserts the port |
+| `research/apm/apm_battery.py` | the 31-test validation battery, five sections, `run_all.py` drives it |
+| `research/apm/apm_stats.py` | PSR, deflated Sharpe, MinTRL, PBO, White's RC, Hansen SPA, block bootstraps |
+| `research/apm/apm_data.py` | broker 15m ingest; the timezone is measured, not assumed |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 
 ## Pine
