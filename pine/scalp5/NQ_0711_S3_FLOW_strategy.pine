@@ -24,9 +24,16 @@
 // Research block to 2024-11-27; the locked block was read ONCE, at a stated multiplicity of 800
 // geometry cells plus five design specifications.
 //
-//                        trades/yr   EV/trade   PF      win     Sharpe   median hold
-//   research (chose it)     193       +2.31 pts  1.061   52.4%   +0.55      63 min
-//   LOCKED (read once)      168      +11.41 pts  1.604   60.3%   +1.75      54 min
+//                        trades/yr   EV/trade   PF trade  PF day   win     Sharpe   median hold
+//   research (chose it)     193       +2.31 pts   1.118    1.061   52.4%   +0.55      63 min
+//   LOCKED (read once)      168      +11.41 pts   1.467    1.604   60.3%   +1.75      54 min
+//
+//   BOTH PROFIT FACTORS ARE PRINTED BECAUSE THEY DISAGREE AND ONLY ONE IS THE TESTER'S. Per TRADE
+//   is gross win / gross loss over trades and is what TradingView's Strategy Tester reports; per
+//   DAY sums each session first. They differ 1.118 vs 1.061 on research and 1.467 vs 1.604 on
+//   locked -- days aggregate several trades, so a day PF is higher wherever winning trades cluster
+//   in the same session. An earlier version of this header quoted only the DAY figure under the
+//   bare label "PF", which would not match the tester.
 //
 //   vs a matched random entry (same window, rate, side mix, geometry, lock):  p 0.107 / 0.095
 //   day-block bootstrap against ZERO:                                          p 0.213 / 0.035
@@ -62,6 +69,22 @@
 //    out of sample. And the two legs hold OPPOSITE sides during 10-12% of each other's trades, so
 //    a single Pine strategy would net them and trade something that was never measured. If you
 //    want the book, load the five-design script a second time set to S1.
+//
+// ============================ A NEURAL NETWORK WAS TRIED AND SHIPS NOTHING ============================
+// This rule's own events were then given a full meta layer: 45 causal features (truncation audit
+// 0 of 900), 1,672 labelled events / effective n 960, purged embargoed folds, uniqueness weights,
+// objective = the R the trade earned, and eight models from a ridge to a four-layer net -- each run
+// again on SHUFFLED labels.
+//   The shuffled twin beat the real model in 14 of 24 ladder cells (58%). Above 50% the noise floor
+//   is higher than the signal. Every tree model ranked the events BACKWARDS (negative IC; the random
+//   forest's top 30% loses 0.194 R at PF 0.614). 0 of 24 cells cleared a same-selectivity random
+//   filter or a day-block bootstrap -- best control p 0.348 -- and p90 of R fell below baseline in
+//   21 of 24 cells, on the objective chosen to preserve the tail.
+//   Capacity is inert: ridge -0.012, 2x32 +0.031, 2x64 -0.014, 4x128 +0.018 IC is one number with
+//   noise on it. Nothing portable came out of it, so this script has NO model in it and no
+//   default-off score to switch on. The unfiltered rule below IS the best validated cell measured.
+//   PF 2.0 would need +15.7 points of win rate at the measured win (+0.824 R) and loss (-0.859 R)
+//   sizes; the best of 99 model cells delivered +3.0. See docs/ib/STUDY_S3_NEURAL_NET.md.
 //
 // COMMISSION AND SLIPPAGE ARE NOT SET HERE. Set them in Properties before reading any report.
 
