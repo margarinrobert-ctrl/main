@@ -38,44 +38,54 @@ FEATS = list(X.columns)
 say(f"[{time.time()-t0:6.1f}s] {D['n']:,} bars, {len(FEATS)} volatility features")
 
 # ---------------------------------------------------------------- 1. max-of-N null
-say(f"\n[{time.time()-t0:6.1f}s] MAX-OF-71 NULL -- the whole sweep re-run on permuted targets")
-rng = np.random.default_rng(5)
-NPERM = 40
-say(f"{'h':>4} {'target':>7} {'real max|IC|':>12} {'null p50':>9} {'null p95':>9} {'null max':>9} "
-    f"{'verdict':>9}")
-rows = []
-Xa = X.to_numpy(float)
-for h in V.HORIZONS:
-    T = V.build_targets(D, h)
-    for tg in V.TARGETS:
-        y = T[tg]
-        m = mR & np.isfinite(y)
-        yy = y[m]
-        Z = Xa[m]
-        real = 0.0
-        for k in range(Z.shape[1]):
-            v = V.ic(Z[:, k], yy)
-            if np.isfinite(v) and abs(v) > real:
-                real = abs(v)
-        nulls = np.empty(NPERM)
-        for j in range(NPERM):
-            ys = yy.copy(); rng.shuffle(ys)
-            best = 0.0
+CACHE = "results/v67/v2_maxnull.csv"
+if os.path.exists(CACHE):
+    N = pd.read_csv(CACHE)
+    say(f"\n[{time.time()-t0:6.1f}s] MAX-OF-71 NULL -- reusing the cached sweep "
+        f"({len(N)} cells). A long stage that a LATER stage can crash after has to be "
+        f"cacheable, or every fix costs the whole run again.")
+    say(f"  cells clearing the LARGEST of 40 free-permutation sweeps: "
+        f"{int((N.clears=='CLEARS').sum())} of {len(N)} -- every one, which is why "
+        f"run_v3 replaces this null with a block permutation")
+else:
+    say(f"\n[{time.time()-t0:6.1f}s] MAX-OF-71 NULL -- the whole sweep re-run on permuted targets")
+    rng = np.random.default_rng(5)
+    NPERM = 40
+    say(f"{'h':>4} {'target':>7} {'real max|IC|':>12} {'null p50':>9} {'null p95':>9} {'null max':>9} "
+        f"{'verdict':>9}")
+    rows = []
+    Xa = X.to_numpy(float)
+    for h in V.HORIZONS:
+        T = V.build_targets(D, h)
+        for tg in V.TARGETS:
+            y = T[tg]
+            m = mR & np.isfinite(y)
+            yy = y[m]
+            Z = Xa[m]
+            real = 0.0
             for k in range(Z.shape[1]):
-                v = V.ic(Z[:, k], ys)
-                if np.isfinite(v) and abs(v) > best:
-                    best = abs(v)
-            nulls[j] = best
-        verdict = "CLEARS" if real > nulls.max() else "no"
-        rows.append(dict(h=h, target=tg, real=real, p50=np.median(nulls),
-                         p95=np.quantile(nulls, 0.95), mx=nulls.max(), clears=verdict))
-        say(f"{h:>4} {tg:>7} {real:>12.4f} {np.median(nulls):>9.4f} "
-            f"{np.quantile(nulls,0.95):>9.4f} {nulls.max():>9.4f} {verdict:>9}")
-    say(f"      ... h={h} null done  [{time.time()-t0:6.1f}s]")
-N = pd.DataFrame(rows)
-N.to_csv("results/v67/v2_maxnull.csv", index=False)
-say(f"\n  cells whose real max|IC| exceeds the LARGEST of {NPERM} null sweeps: "
-    f"{int((N.clears=='CLEARS').sum())} of {len(N)}")
+                v = V.ic(Z[:, k], yy)
+                if np.isfinite(v) and abs(v) > real:
+                    real = abs(v)
+            nulls = np.empty(NPERM)
+            for j in range(NPERM):
+                ys = yy.copy(); rng.shuffle(ys)
+                best = 0.0
+                for k in range(Z.shape[1]):
+                    v = V.ic(Z[:, k], ys)
+                    if np.isfinite(v) and abs(v) > best:
+                        best = abs(v)
+                nulls[j] = best
+            verdict = "CLEARS" if real > nulls.max() else "no"
+            rows.append(dict(h=h, target=tg, real=real, p50=np.median(nulls),
+                             p95=np.quantile(nulls, 0.95), mx=nulls.max(), clears=verdict))
+            say(f"{h:>4} {tg:>7} {real:>12.4f} {np.median(nulls):>9.4f} "
+                f"{np.quantile(nulls,0.95):>9.4f} {nulls.max():>9.4f} {verdict:>9}")
+        say(f"      ... h={h} null done  [{time.time()-t0:6.1f}s]")
+    N = pd.DataFrame(rows)
+    N.to_csv("results/v67/v2_maxnull.csv", index=False)
+    say(f"\n  cells whose real max|IC| exceeds the LARGEST of {NPERM} null sweeps: "
+        f"{int((N.clears=='CLEARS').sum())} of {len(N)}")
 
 # ---------------------------------------------------------------- 2. the HMM
 say(f"\n[{time.time()-t0:6.1f}s] HMM -- fitted on RESEARCH only, read FILTERED")
@@ -85,7 +95,8 @@ rv = pd.Series(r).rolling(96).std(ddof=1).to_numpy()
 obs = np.column_stack([r * 100.0, np.nan_to_num(rv * 100.0, nan=0.0)])
 fitmask = mR & np.isfinite(obs).all(axis=1)
 say(f"           fitting on {int(fitmask.sum()):,} research bars ...")
-pi, A, mu, var = H.fit(obs[fitmask], K=3, iters=40, seed=0)
+pi, A, mu, var, ll = H.fit(obs[fitmask], K=3, iters=40, seed=0)
+say(f"           converged, log-likelihood {ll:,.1f}")
 order = np.argsort(mu[:, 0])
 say(f"           states by drift: " + "  ".join(
     f"{nm} mu={mu[k,0]:+.5f} rv={mu[k,1]:.4f} self={A[k,k]:.4f}"
