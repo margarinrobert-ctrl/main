@@ -3423,6 +3423,7 @@ control's own level before crediting an excess over it.
 | `research/inst/run_conformal.py` | conformalized quantile regression + a regularised random forest on one cell, trained on the whole Donchian family with uniqueness weights, 37 audited features, purged/embargoed folds, shuffled twins, a same-size random-subset null, coverage checked per fold, one pre-declared locked read (CQR lower bound > 0) |
 | `research/inst/autobnn.py` | AutoBNN rebuilt in torch (compositional Bayesian leaves, ELBO structure search, mean-field VI, sampled posterior predictive) with a positive control; `run_autobnn.py` runs it as a forecaster gate and as a Bayesian meta-label on one cell, each beside a shuffled twin and a same-selectivity null, one pre-declared locked read per arm |
 | `research/inst/` | the PF-2-at-200/yr question answered as a frontier: `frontier.py` (the win-rate arithmetic for PF 2, the V61 tensor with intraday hold caps and RTH entries over 4.08M cells, the PF-vs-count envelope read once on locked, the DSR at the trial count), `book.py` / `book2.py` (every validated intraday leg pooled in percent of price with per-feed costs, leg correlations, the research-selected book), `meta.py` (meta-labeling with a regression-on-R objective, purged and embargoed, shuffled twins, same-selectivity null, one locked read) |
+| `research/s3nn/` | the neural-network meta layer on S3: `nn_data.py` (the event stream, 49 causal features in 9 declared families, an UNLOCKED labeller so the training rows are not the position lock's survivors, a truncation audit and Lopez de Prado uniqueness), `nn_model.py` (purged embargoed folds, the eight-model ladder, a torch MLP fitted on weighted squared error in R), `run_n1.py` (Gate 1, the training-set sizing and the audit), `run_n2.py` (the ladder beside its shuffled-label twin), `run_n3.py` (Gate 2 against a day-block bootstrap AND a same-selectivity random filter, plus the ensembles), `run_n4.py` (the win/lose contrast on the SAME folds, the win-rate arithmetic PF 1.5/2/3 requires, and Sharpe zero-filled over every research day), `plot_nn.py` |
 | `research/tscalp/` | the submitted Turtle Scalp Pine transliterated with its order model (armed stop, late re-anchor, pyramid bracket, 2R target, flatten at the next open), three EMA gates as entry masks, base rates on the breakout bars, a 36-cell grid by marginal, drop-one, same-selectivity control, cross-market, three Monte Carlos, neighbourhood, and one descriptive locked read |
 | `research/absorb/` | the 50% session level + MTF ICT swings + absorption bubbles as one reversal system: causal construction with a truncation audit, base rates and lift BEFORE any P&L, a 211-cell grid read by marginal average, the exit tested fairly (no-trail arms given a real exit), drop-one, random-entry and same-selectivity controls at every trail width, the intrabar tie-break split, and one locked read |
 | `research/scalp89/s89_pine.py` | the CORRECTED order model -- what `strategy.exit` actually does on the fill bar when its stop/limit args are still `na`; verified trade-for-trade against `research/scalp89/test_pine.py`'s independent reference |
@@ -3588,3 +3589,32 @@ unfundable orders silently, and the rejections cluster where price is high and t
 already large), and **fills that are free** (this script set no commission and no slippage —
 `Commission load 0.00%`). Read the TRADE COUNT and the COMMISSION LOAD before the P&L.
 See `docs/ib/STUDY_TICK_RECALC.md`.
+
+**A NEURAL NETWORK ON THE STRONGEST SCALP CANDIDATE HERE IS NULL, AND THE SHUFFLED TWIN SAYS SO
+BEFORE ANY P-VALUE.** Eight models (ridge -> regularised forest -> LightGBM -> XGBoost d3/d6 -> MLP
+2x32/2x64/4x128) on S3's order-flow-exhaustion events, NQ 5m 07:00-11:00 NY, purged embargoed folds,
+uniqueness weights, objective = the R EARNED, every model beside a shuffled-label twin. **The twin
+beats the real model in 14 of 24 cells (58%)** and **every tree model has a NEGATIVE IC** -- rf, lgbm
+and both boosters rank the events backwards and their top decile LOSES (rf@30% -0.194 R, PF 0.614).
+**Gate 2: 0 of 24 cells clear a same-selectivity random filter OR a day-block bootstrap**, best
+control p **0.348**, and **p90 of R falls below baseline in 21 of 24 cells** on the objective chosen
+to preserve the tail. **CAPACITY IS INERT, WHICH IS NOT V28's FINDING** -- ridge -0.012, 2x32 +0.031,
+2x64 -0.014, 4x128 +0.018 is one number with noise on it; neither "deeper is worse" nor "deeper is
+better", which is what a null looks like when the architecture axis is swept. Ensembling INVERTS the
+score (full ensemble p 0.984-0.990) because it averages in five backwards-ranking models. **THE
+ARITHMETIC IS THE DURABLE OUTPUT**: mean win +0.824 R against mean loss -0.859 R at a 0.519 win rate,
+so **PF 2.0 needs +15.7 points of win rate and the best of 99 model cells delivered +3.0** -- one
+fifth of the gap, holding the win/loss SIZES fixed, which is the generous reading. Sharpe rises
+0.293 -> 0.707 at keep-50% and is bought by trading less, not by choosing better.
+**TWO SETUP DEFECTS CAUGHT BY THE CHECKS BEFORE ANY MODEL RAN**: `ctx.atr_rank_day` ranked ATR against
+the WHOLE session so a mid-morning bar saw the rest of the morning (truncation audit 20 of 900, now
+0 of 900); and the training set was 380 rows against 45 features, which **widening the signal window
+does not fix** (w=60 gives 383, three more than w=20). The fix is to drop the POSITION LOCK FOR
+LABELLING ONLY -- the lock decides which events one account can ACT on, not which have a well-defined
+outcome -- taking it to 1,672 events / 1,140 research / effective n 960, and it is what makes the
+labels genuinely overlap (mean 1.62 concurrent, uniqueness min 0.340) so purged folds and uniqueness
+weights stop being decoration. The strategy still runs LOCKED at inference. Note purging then costs
+only 0.3% of training rows, because an 11:00 flatten makes labels short and overlap binds only at
+fold boundaries. 99 trials counted, **NO LOCKED READ TAKEN** -- nothing cleared Gate 2 on research, so
+the block is unspent. What would move it is more EVENTS (1,140 rows is six years of one market at
+~190/yr), not more capacity. See `docs/ib/STUDY_S3_NEURAL_NET.md`, `research/s3nn/`.
