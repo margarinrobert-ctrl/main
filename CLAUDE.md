@@ -3387,6 +3387,51 @@ stop rounded to a tick because `strategy.exit(loss=)` is priced in ticks, and a 
 a CLOSE and fills at the next open because a repriced stop cannot protect the fill bar. Found by
 `research/pin/pin_parity.py`, not by reading -- the fourth time on this branch.
 
+**A BETTER ESTIMATOR OF A MISSPECIFIED MODEL MEASURES THE MISSPECIFICATION MORE PRECISELY.** The
+Griffin-Oberoi-Oduro (2018) Bayesian PIN estimator -- Gibbs sampling with data augmentation on the
+informed part of each count -- replaces Yan's moment estimator on the same NQ event stream, same
+bars, same decision rule, so anything that moves IS the estimator. It is unambiguously the better
+estimator: four chains from hostile starts give **R-hat 0.9999-1.0024**, it recovers a known truth
+on simulated data at T=60/120/400 with the credible interval covering every time, it quantifies
+uncertainty, and it DROPS A FREE PARAMETER -- Yan needs event periods labelled before it can
+estimate anything (the causal replacement was a trailing-sd rule with a threshold `evK`), while the
+Gibbs sampler infers D_t as a LATENT VARIABLE. It moves **PIN from 0.0142 to 0.1554**, straight into
+the equity literature's 0.10-0.20 band, exactly as the paper predicts for a liquid asset, and lifts
+mu/(lb+ls) from 0.052 to 0.325 so the posterior can finally move off its prior. The two estimators
+agree on lambda_b (corr 0.976) and on NOTHING else across the same 735 windows -- delta **-0.009**,
+PIN **0.051** -- so never quote a PIN without naming the estimator.
+**AND IT IS ALL DISPERSION.** The fit returns **delta = 0.93**, i.e. 93% of news events are BAD, on
+a sample where the index rose 89%. A Poisson's variance EQUALS its mean, and mu is the only
+parameter that can add variance, so the model's sole way to explain a wider spread is to invent
+informed traders -- nothing in the estimator separates "informed traders arrived" from "this series
+is more variable than a Poisson". NQ's volume-weighted B and S run **var/mean 14.65 and 18.89**
+(bar counts 2.46/2.42), and S is the noisier series, which is exactly why delta puts the big mu on
+the sell side: **delta is reporting which series is noisier, not which way the news went.** The
+posterior predictive confirms it -- with mu maxed at 84.8 the fitted model produces sd(B) 15.0
+against an observed **48.5, a ratio of 3.24**: the informed component is a variance sponge and still
+falls three-fold short. **THE PLACEBO SETTLES IT**: fit the same estimator to negative-binomial data
+with B and S drawn INDEPENDENTLY -- no news process in it at all -- and PIN comes out 0.0162 /
+0.0368 / 0.0731 / **0.1066** / **0.1487** at var/mean 1/2/5/10/20. NQ's dispersion maps to
+0.11-0.15 and NQ measures 0.1554. **The PIN is what the estimator returns on data with no
+information in it whatsoever.** Duarte-Young (2009) and Gan-Wei-Johnstone (2017), both cited in the
+paper, make this argument; the placebo is the version needing no theory. **RUN THE ESTIMATOR ON
+INFORMATION-FREE DATA WITH THE SAME NUISANCE STRUCTURE BEFORE BELIEVING THE NUMBER IT RETURNS ON
+REAL DATA** -- eight seconds, and it was the only test here that produced a verdict on its own.
+**AND THE BETTER ESTIMATOR MAKES THE WORSE STRATEGY.** Gate 1, research only, both constructions:
+**0 of 8 cells clear a matched random entry (best p 0.595), the excess is negative in all 8, and
+every cell is unprofitable** -- session build PF 0.966-0.985, interval build 0.859-0.936, against
+the Yan version's 1.037-1.116. Locked was NOT opened. The threshold has stopped filtering (1,125
+trades at 0.50 against 950 at 0.95, where Yan went 722 -> 119) because at mu/(lb+ls) 0.33 the
+posterior saturates -- decisive on 17,834 of 28,164 bars at the 0.85 rung, which is an imbalance
+sign wearing a confident number. **The paper's OWN preferred construction is the worse of the two**:
+fixing the news type over 10-minute intervals, its explicit proposal, gives the lowest PF in the
+table on a mean period count of 5.0. A parameter estimate agreeing with the literature is not
+evidence when the literature's estimate is of the same misspecified model. What would reopen it is
+not a better estimator -- that has been tried -- but trade-and-quote data with the AGGRESSOR SIDE,
+or single names around scheduled events. Also: their equation **(5b) is a typo**, `Be(nu+T1+T2,
+T2+tau)` copied from the alpha line above it; the correct `Be(nu+T1, tau+T2)` recovers a true delta
+of 0.30 as 0.293 where the published form returns 0.589. See `docs/ib/STUDY_PIN_BAYES.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -3399,6 +3444,7 @@ a CLOSE and fills at the next open because a repriced stop cannot protect the fi
 | `research/pine_export.py` | Pine strategy + indicator emitters |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
 | `research/pin/` | the EKOP/Yan PIN mixture: causal four-step fit, the three-hypothesis posterior, the volume-weighted B/S construction, the matched control, and `pin_parity.py` — the shipped Pine's own order model run on bars |
+| `research/pin/pin_bayes.py` | the Griffin-Oberoi-Oduro Gibbs sampler for the same mixture — data augmentation, the corrected (5b), a simulate-and-recover positive control, and the dispersion placebo that reads the estimator's floor on information-free data |
 | `research/alpha_ladder.py` | the 198-condition pool (83 threshold rungs), Pine attached |
 | `research/oner_union.py` | threshold neighbourhoods and the trade-count / win-rate frontier |
 | `research/oner_anom.py` | exit split, matched control, corner table, FDR slices |
