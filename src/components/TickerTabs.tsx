@@ -10,7 +10,7 @@ import { buildSignals } from "@/lib/flow/signals";
 import { mmHedge } from "@/lib/flow/mmhedge";
 import { appendSample } from "@/lib/gex-history";
 import { collectAndResolve } from "@/lib/intel/journal";
-import { DataStatus } from "./DataStatus";
+import { DexProfile } from "./DexProfile";
 import { GammaProfile } from "./GammaProfile";
 import { AnomalyIntel } from "./AnomalyIntel";
 import { AnomalyLive } from "./AnomalyLive";
@@ -19,44 +19,58 @@ import { GexHistory } from "./GexHistory";
 import { GexTerm } from "./GexTerm";
 import { GreeksSurface } from "./GreeksSurface";
 import { HarvestPanel } from "./HarvestPanel";
-import { IntelLab } from "./IntelLab";
 import { KeyLevels } from "./KeyLevels";
+import { KpiRibbon } from "./KpiRibbon";
 import { LevelsChart } from "./LevelsChart";
 import { MMHedge } from "./MMHedge";
 import { OiProfile } from "./OiProfile";
 import { OptionsChain } from "./OptionsChain";
+import { OptionsFlow } from "./OptionsFlow";
 import { OptionsHeatmap } from "./OptionsHeatmap";
 import { PineExport } from "./PineExport";
 import { Playbook } from "./Playbook";
 import { PriceChart } from "./PriceChart";
 import { QuoteCard } from "./QuoteCard";
+import { Scenario } from "./Scenario";
 import { SignalBoard } from "./SignalBoard";
 import { SkewChart } from "./SkewChart";
 import { VannaCharmProfile } from "./VannaCharmProfile";
 import { VolEdge } from "./VolEdge";
+import { VolSmile } from "./VolSmile";
 
 const TABS = [
   "Overview",
   "Signals",
   "MM Hedge",
   "Playbook",
+  "Options Flow",
   "Chain",
   "Heatmap",
   "Gamma",
+  "DEX",
+  "Scenario",
   "Levels Chart",
   "Vanna/Charm",
   "3D",
   "Term",
   "OI",
   "Skew",
+  "Smile",
   "Vol Edge",
   "Harvest",
   "Anomaly",
-  "Intel",
   "History",
   "Pine",
 ] as const;
 type Tab = (typeof TABS)[number];
+
+// Sidebar navigation groups.
+const GROUPS: { label: string; tabs: Tab[] }[] = [
+  { label: "Overview", tabs: ["Overview", "Signals", "MM Hedge", "Playbook"] },
+  { label: "Gamma / GEX", tabs: ["Gamma", "DEX", "Scenario", "Levels Chart", "OI", "Term", "3D", "Heatmap"] },
+  { label: "Greeks / Vol", tabs: ["Vanna/Charm", "Skew", "Smile", "Vol Edge"] },
+  { label: "Flow", tabs: ["Options Flow", "Chain", "Anomaly", "Harvest", "History", "Pine"] },
+];
 
 interface ExpOption {
   value: string;
@@ -83,15 +97,39 @@ export function TickerTabs({ symbol }: { symbol: string }) {
   const [exp, setExp] = useState("ALL");
   const [expOptions, setExpOptions] = useState<ExpOption[]>([{ value: "ALL", label: "All expirations" }]);
 
+  // Deep-link: honor ?tab= on mount (validated against the tab list).
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("tab");
+    if (p && (TABS as readonly string[]).includes(p)) setTab(p as Tab);
+  }, []);
+
+  const selectTab = (t: Tab) => {
+    setTab(t);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", t);
+    window.history.replaceState(null, "", url.toString());
+  };
+
   // Reset the expiration filter when the ticker changes.
   useEffect(() => {
     setExp("ALL");
   }, [symbol]);
 
-  // On open, pull anything the server collected while the site was closed and merge it locally so the
-  // whole dashboard (history, anomaly, intel) reflects the full record, not just this browser session.
+  // Pull anything the 24/7 server collector recorded while the site was closed and merge it locally, so
+  // the whole dashboard (history, anomaly, intel) reflects the full round-the-clock record — not just
+  // this browser session. Re-pulled periodically so new server samples (collected every ~10 min by the
+  // scheduled job) keep flowing in even while you sit on the History or Anomaly tab.
   useEffect(() => {
-    pullServerData(symbol).catch(() => {});
+    let cancelled = false;
+    const pull = () => {
+      if (!cancelled) pullServerData(symbol).catch(() => {});
+    };
+    pull();
+    const id = setInterval(pull, 120_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [symbol]);
 
   // Background sampler: records spot + net GEX + gamma flip while the ticker page is open,
@@ -151,48 +189,36 @@ export function TickerTabs({ symbol }: { symbol: string }) {
   const validExp = expOptions.some((o) => o.value === exp) ? exp : "ALL";
   const scoped = validExp !== "ALL";
 
-  return (
-    <div className="space-y-4">
-      <DataStatus symbol={symbol} />
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex flex-1 flex-wrap gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1 backdrop-blur">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`rounded-lg px-3 py-1.5 text-sm transition ${
-                tab === t
-                  ? "bg-emerald-500/15 font-medium text-emerald-300 shadow-[0_0_14px_-3px_rgba(16,185,129,0.6)]"
-                  : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-        <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs backdrop-blur">
-          <span className="uppercase tracking-wide text-neutral-500">Expiration</span>
-          <select
-            value={validExp}
-            onChange={(e) => setExp(e.target.value)}
-            className="rounded border border-white/10 bg-neutral-900 px-2 py-1 text-neutral-100 outline-none"
-          >
-            {expOptions.map((o) => (
-              <option key={o.value} value={o.value} className="bg-neutral-900">
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+  const expSelect = (
+    <div className="relative">
+      <select
+        value={validExp}
+        onChange={(e) => setExp(e.target.value)}
+        aria-label="Expiration filter"
+        className="w-full appearance-none rounded-lg border border-white/10 bg-white/[0.03] py-2 pl-3 pr-8 text-xs text-neutral-100 outline-none transition hover:border-white/20 focus:border-accent/50"
+      >
+        {expOptions.map((o) => (
+          <option key={o.value} value={o.value} className="bg-neutral-900">
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <svg aria-hidden viewBox="0 0 12 12" className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-500">
+        <path fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" d="m2.5 4.5 3.5 3.5 3.5-3.5" />
+      </svg>
+    </div>
+  );
 
+  const content = (
+    <>
       {scoped && (
-        <p className="-mt-2 text-[11px] text-neutral-500">
-          Scoped to <span className="text-emerald-300">{expOptions.find((o) => o.value === validExp)?.label}</span> —{" "}
-          {AXIS_TABS.has(tab)
-            ? "this view spans expirations, so the selection is highlighted, not filtered."
-            : "levels, gamma & greeks are computed for this expiration only."}
-        </p>
+        <div className="flex items-center gap-2.5 rounded-lg border border-accent/25 bg-accent/[0.05] px-3 py-2 text-[11px] text-neutral-400">
+          <span className="lbl shrink-0 text-accent-bright">Scope</span>
+          <span className="font-medium text-neutral-200">{expOptions.find((o) => o.value === validExp)?.label}</span>
+          <span className="hidden text-neutral-500 sm:inline">
+            {AXIS_TABS.has(tab) ? "— this view spans expirations; the selection is highlighted, not filtered" : "— levels, gamma & greeks computed for this expiration only"}
+          </span>
+        </div>
       )}
 
       {tab === "Overview" && (
@@ -205,15 +231,19 @@ export function TickerTabs({ symbol }: { symbol: string }) {
       {tab === "Signals" && <SignalBoard symbol={symbol} exp={validExp} />}
       {tab === "MM Hedge" && <MMHedge symbol={symbol} exp={validExp} />}
       {tab === "Playbook" && <Playbook symbol={symbol} exp={validExp} />}
+      {tab === "Options Flow" && <OptionsFlow symbol={symbol} exp={validExp} />}
       {tab === "Chain" && <OptionsChain symbol={symbol} exp={validExp} />}
       {tab === "Heatmap" && <OptionsHeatmap symbol={symbol} exp={validExp} />}
       {tab === "Gamma" && <GammaProfile symbol={symbol} exp={validExp} />}
+      {tab === "DEX" && <DexProfile symbol={symbol} exp={validExp} />}
+      {tab === "Scenario" && <Scenario symbol={symbol} exp={validExp} />}
       {tab === "Levels Chart" && <LevelsChart symbol={symbol} />}
       {tab === "Vanna/Charm" && <VannaCharmProfile symbol={symbol} exp={validExp} />}
       {tab === "3D" && <GreeksSurface symbol={symbol} exp={validExp} />}
       {tab === "Term" && <GexTerm symbol={symbol} exp={validExp} />}
       {tab === "OI" && <OiProfile symbol={symbol} exp={validExp} />}
       {tab === "Skew" && <SkewChart symbol={symbol} exp={validExp} />}
+      {tab === "Smile" && <VolSmile symbol={symbol} exp={validExp} />}
       {tab === "Vol Edge" && <VolEdge symbol={symbol} />}
       {tab === "Harvest" && <HarvestPanel symbol={symbol} exp={validExp} />}
       {tab === "Anomaly" && (
@@ -223,9 +253,79 @@ export function TickerTabs({ symbol }: { symbol: string }) {
           <AnomalyScan symbol={symbol} />
         </div>
       )}
-      {tab === "Intel" && <IntelLab symbol={symbol} />}
       {tab === "History" && <GexHistory symbol={symbol} />}
       {tab === "Pine" && <PineExport symbol={symbol} exp={validExp} />}
+    </>
+  );
+
+  return (
+    <div className="space-y-3">
+      <KpiRibbon symbol={symbol} />
+
+      {/* Mobile: expiration + horizontal module scroller (sticky under the header). */}
+      <div className="sticky top-[53px] z-10 -mx-4 space-y-2 border-b border-white/[0.06] bg-[#05060a]/85 px-4 py-2 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:hidden">
+        {expSelect}
+        <div className="tabs-scroll -mx-1 px-1 pb-0.5">
+          {GROUPS.map((g, gi) => (
+            <div key={g.label} className="flex items-center gap-1">
+              {gi > 0 && <span aria-hidden className="mx-1.5 h-4 w-px shrink-0 bg-white/10" />}
+              {g.tabs.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => selectTab(t)}
+                  aria-current={tab === t ? "page" : undefined}
+                  className={`tab-pill rounded-lg px-3 py-2 text-xs font-medium transition ${
+                    tab === t ? "bg-accent/15 text-accent-bright shadow-glow-accent" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4 lg:flex-row">
+        {/* Desktop: section rail */}
+        <aside className="hidden lg:block lg:w-48 lg:shrink-0">
+          <div className="glass p-2.5 lg:sticky lg:top-16">
+            <label className="mb-3 block">
+              <span className="lbl px-1">Expiration</span>
+              <div className="mt-1.5">{expSelect}</div>
+            </label>
+            <nav className="space-y-3" aria-label="Analytics modules">
+              {GROUPS.map((g) => (
+                <div key={g.label}>
+                  <div className="lbl px-2 pb-1.5">{g.label}</div>
+                  <div className="flex flex-col gap-px">
+                    {g.tabs.map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => selectTab(t)}
+                        aria-current={tab === t ? "page" : undefined}
+                        className={`rounded-md border-l-2 px-2.5 py-1.5 text-left text-xs transition ${
+                          tab === t
+                            ? "border-l-accent-bright bg-accent/[0.08] font-medium text-accent-bright"
+                            : "border-l-transparent text-neutral-400 hover:bg-white/[0.04] hover:text-neutral-200"
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </div>
+        </aside>
+
+        <main className="min-w-0 flex-1">
+          <div key={tab} className="fade-up space-y-4">
+            {content}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

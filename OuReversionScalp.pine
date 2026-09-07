@@ -1,0 +1,166 @@
+//@version=6
+// =============================================================================================
+// OU Reversion Scalp — TradingView port of the `ou-reversion` strategy from src/lib/quant/
+// =============================================================================================
+//
+// WHAT THIS IS
+// A rolling-mean (Ornstein-Uhlenbeck style) reversion scalp, horizon-matched to a measured
+// statistic rather than to a pattern. The research stack in this repo measured Lo-MacKinlay
+// variance ratios on three years of 5-minute NQ and found VR(10) = 0.928 (z = -2.81) and
+// VR(20) = 0.918: price covers LESS ground over 10-20 bars than a random walk would, which is
+// mean reversion at roughly the 50-100 minute horizon. This strategy trades that displacement
+// back to the mean and nothing else.
+//
+// WHAT THE RESEARCH ACTUALLY FOUND — read this before sizing anything
+// Grid search on the first 70% of the sample (2022-12 -> 2025-01, 537 sessions), then a single
+// evaluation on the held-back final 30% (2025-01 -> 2025-12, 229 sessions), NQ, 09:30-16:00 ET:
+//
+//                        trades   net edge    PF     Sharpe   t (HAC)   P&L (1 contract)
+//   in-sample              956    +11.88 t   1.127    1.08     1.59        +$56,801
+//   holdout (untouched)    428     +5.99 t   1.045    0.36     0.40        +$13,653
+//
+//   * It stayed positive out of sample and the parameter surface is a genuine PLATEAU
+//     (100% of one-step neighbours also profitable), not a mined spike.
+//   * It is NOT statistically significant. t = 1.59 in sample and t = 0.40 out of sample:
+//     this is indistinguishable from zero at any conventional threshold.
+//   * The out-of-sample profit factor is 1.045. That is roughly 4 cents of edge per dollar
+//     risked, before any execution slippage beyond what is modelled here.
+//   * In the full protocol it cleared 6 of 10 gates, failing on significance, deflated Sharpe,
+//     sub-period consistency (33%) and P&L concentration (one year carried >100% of the total).
+//
+//   The honest reading: the variance-ratio effect is real, and it is too small and too
+//   concentrated to trade as a standalone system. This script is published so the finding can
+//   be reproduced and challenged, NOT as a signal service.
+//
+// AT DEFAULT (UNSEARCHED) PARAMETERS IT LOSES: entryZ=2.0 / stopAtr=1.5 gives -2.93 ticks per
+// trade over the same data. The defaults below are the SEARCHED values. That gap is itself the
+// point — the edge, such as it is, lives in a specific corner of the parameter space that was
+// found by looking, and looking is what deflates a result.
+//
+// PORT FIDELITY — where TradingView and the TypeScript engine differ
+//   1. Same-bar stop AND target. The TS engine always books the stop, because the intrabar path
+//      is unknown. TradingView's broker emulator resolves this with its own assumptions, which
+//      are not identical. Expect Pine to read slightly more optimistic. On the reference run
+//      this affected only 3 of 3,290 exits, so the gap should be small here.
+//   2. Standard deviation. Pine's `ta.stdev` defaults to the POPULATION form; the TS engine uses
+//      the SAMPLE form. `biased=false` below matches the engine. Leaving it default shifts every
+//      z-score slightly and will not reproduce these numbers.
+//   3. Costs. The engine models 1 tick spread + 1 tick slippage per side + $4.00 commission
+//      = 3.80 ticks per round turn. Below that is 2 ticks of slippage per side plus $2.00 per
+//      side of commission. Check the Properties tab against your own broker before believing
+//      any result.
+//
+// Educational research output. Not financial advice.
+// =============================================================================================
+
+strategy("OU Reversion Scalp (VR-matched)", shorttitle="OU-Rev",
+     overlay              = true,
+     pyramiding           = 0,
+     default_qty_type     = strategy.fixed,
+     default_qty_value    = 1,
+     initial_capital      = 100000,
+     commission_type      = strategy.commission.cash_per_contract,
+     commission_value     = 2.0,
+     slippage             = 2,
+     calc_on_every_tick   = false,
+     process_orders_on_close = false,
+     max_bars_back        = 5000)
+
+// ---------------------------------------------------------------------------------------------
+// Inputs
+// ---------------------------------------------------------------------------------------------
+gSig = "Signal"
+lookback   = input.int(20,   "Mean lookback (bars)",        minval=5,   maxval=200, group=gSig,
+     tooltip="Window for both the mean and the standard deviation. 20 bars on a 5-minute chart is ~100 minutes, matching the horizon where the variance ratio departed from 1.")
+entryZ     = input.float(2.5, "Entry z-score",              minval=0.5, step=0.1,   group=gSig,
+     tooltip="Standard deviations of displacement from the mean required to act. The searched value is 2.5; 2.0 loses money on the reference data.")
+
+gRisk = "Risk"
+stopAtr    = input.float(2.0, "Stop (x ATR14)",             minval=0.25, step=0.25, group=gRisk)
+targetFrac = input.float(1.0, "Target (fraction of displacement)", minval=0.1, maxval=2.0, step=0.05, group=gRisk,
+     tooltip="1.0 targets the mean itself. Lower values take profit before the mean is reached.")
+maxBars    = input.int(20,   "Time stop (bars held)",       minval=1,   group=gRisk,
+     tooltip="Exit regardless of price after this many bars. Matched to the horizon the reversion was measured over.")
+
+gRegime = "Regime filter"
+useVolFilter = input.bool(false, "Require elevated volatility", group=gRegime,
+     tooltip="Off by default: the search did not select it. Pine's percentile definition differs slightly from the research engine's, so enabling this will not reproduce the reference numbers exactly.")
+minVolPct    = input.float(30, "Minimum ATR percentile",    minval=0, maxval=100, group=gRegime)
+volLookback  = input.int(100,  "Volatility percentile window", minval=20, group=gRegime)
+
+gSes = "Session"
+useSession = input.bool(true, "Restrict to session", group=gSes)
+sessStr    = input.session("0930-1600", "Session (exchange time)", group=gSes,
+     tooltip="Entries only inside this window, and the position is flattened on its last bar. The research never carries a scalp through a session break, which is also what keeps futures contract rollovers out of the P&L.")
+
+gViz = "Display"
+showBands = input.bool(true, "Show mean and entry bands", group=gViz)
+
+// ---------------------------------------------------------------------------------------------
+// Indicators — every one causal, using only closed bars
+// ---------------------------------------------------------------------------------------------
+basis = ta.sma(close, lookback)
+// biased=false gives the SAMPLE standard deviation, matching the research engine. See note 2.
+dev   = ta.stdev(close, lookback, false)
+z     = dev > 0 ? (close - basis) / dev : na
+atr14 = ta.atr(14)
+
+volRank   = ta.percentrank(atr14, volLookback)
+regimeOk  = not useVolFilter or (not na(volRank) and volRank >= minVolPct)
+
+inSession = not useSession or not na(time(timeframe.period, sessStr))
+lastBar   = session.islastbar
+
+// ---------------------------------------------------------------------------------------------
+// Entries — decided on the close, filled at the next open
+// ---------------------------------------------------------------------------------------------
+ready = not na(z) and not na(atr14) and atr14 > 0 and not na(basis)
+
+// Displacement is measured on the SIGNAL bar and then applied from the fill price, which is how
+// the research engine sizes the target. Capturing it here keeps the two implementations aligned.
+displacement = math.abs(close - basis)
+stopDist     = stopAtr * atr14
+targetDist   = displacement * targetFrac
+
+goLong  = ready and regimeOk and inSession and z <= -entryZ and targetDist > 0
+goShort = ready and regimeOk and inSession and z >=  entryZ and targetDist > 0
+
+// The protective bracket is submitted on the SAME bar as the entry, expressed in ticks so
+// TradingView applies it from the actual fill price. This matters: attaching the bracket a bar
+// later would leave the entry bar unprotected, and the research engine can and does stop a trade
+// out on its own entry bar. A Pine port that brackets late reads more profitable than the engine
+// for reasons that have nothing to do with the strategy.
+stopTicks   = math.max(math.round(stopDist   / syminfo.mintick), 1)
+targetTicks = math.max(math.round(targetDist / syminfo.mintick), 1)
+
+if strategy.position_size == 0 and (goLong or goShort) and not lastBar
+    if goLong
+        strategy.entry("L", strategy.long)
+        strategy.exit("L-x", from_entry="L", loss=stopTicks, profit=targetTicks)
+    else
+        strategy.entry("S", strategy.short)
+        strategy.exit("S-x", from_entry="S", loss=stopTicks, profit=targetTicks)
+
+// ---------------------------------------------------------------------------------------------
+// Exits — the bracket above, plus a time stop and a flat-by-the-close rule
+// ---------------------------------------------------------------------------------------------
+barsHeld = strategy.position_size != 0 ? bar_index - strategy.opentrades.entry_bar_index(0) : 0
+
+if strategy.position_size != 0 and barsHeld >= maxBars
+    strategy.close_all(comment = "time")
+
+// Never carry a scalp out of its liquidity window. This is also what keeps futures roll gaps,
+// which land on session breaks, from ever entering a trade's P&L.
+if strategy.position_size != 0 and useSession and (lastBar or not inSession)
+    strategy.close_all(comment = "session")
+
+// ---------------------------------------------------------------------------------------------
+// Display
+// ---------------------------------------------------------------------------------------------
+plot(showBands ? basis : na, "Mean", color=color.new(color.gray, 20), linewidth=2)
+plot(showBands and dev > 0 ? basis + entryZ * dev : na, "Upper band", color=color.new(color.red, 45))
+plot(showBands and dev > 0 ? basis - entryZ * dev : na, "Lower band", color=color.new(color.teal, 45))
+
+bgcolor(inSession and useSession ? color.new(color.blue, 96) : na, title="Session")
+plotshape(goLong  and strategy.position_size == 0, "Long signal",  shape.triangleup,   location.belowbar, color.new(color.teal, 0), size=size.tiny)
+plotshape(goShort and strategy.position_size == 0, "Short signal", shape.triangledown, location.abovebar, color.new(color.red, 0),  size=size.tiny)

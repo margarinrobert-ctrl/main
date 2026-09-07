@@ -11,6 +11,7 @@ import {
   calibration,
   confidenceBand,
   edgeDecay,
+  equityCurve,
   featureDrift,
   featureImportance,
   healthState,
@@ -20,8 +21,10 @@ import {
   type Group,
   type HealthState,
 } from "@/lib/intel/performance";
+import { ensembleForecast } from "@/lib/intel/ensemble";
 import { recommend, type Severity } from "@/lib/intel/recommend";
 import { walkForwardThreshold, whatIfRules } from "@/lib/intel/experiment";
+import type { IntelDir } from "@/lib/intel/journal";
 import { EmptyState } from "./states";
 
 const healthTone: Record<HealthState, string> = {
@@ -38,6 +41,10 @@ const sevTone: Record<Severity, string> = {
 const hhmm = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 const sp = (x: number | null | undefined, d = 2) => (x == null ? "—" : `${x >= 0 ? "+" : ""}${x.toFixed(d)}%`);
 const f2 = (x: number | null | undefined) => (x == null ? "—" : x.toFixed(2));
+const dirChip = (d: IntelDir) =>
+  d === "bullish" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" : d === "bearish" ? "border-red-500/40 bg-red-500/10 text-red-300" : "border-sky-500/40 bg-sky-500/10 text-sky-300";
+const dirLabel = (d: IntelDir) => (d === "bullish" ? "▲ BULLISH" : d === "bearish" ? "▼ BEARISH" : "■ NEUTRAL");
+const dirDot = (d: IntelDir) => (d === "bullish" ? "bg-emerald-400" : d === "bearish" ? "bg-red-400" : "bg-neutral-400");
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
@@ -146,6 +153,8 @@ export function IntelLab({ symbol }: { symbol: string }) {
       recs: recommend(records),
       wf: walkForwardThreshold(records),
       whatif: whatIfRules(records),
+      ensemble: ensembleForecast(records),
+      equity: equityCurve(records).map((p) => ({ ...p, label: hhmm(p.t) })),
     };
   }, [records]);
 
@@ -194,14 +203,53 @@ export function IntelLab({ symbol }: { symbol: string }) {
         <EmptyState label="No predictions journaled yet. Open a ticker tab and leave it running — the collector records every anomaly / signal / MM-hedge call and scores it against the price that follows." />
       ) : (
         <>
+          {/* AI ensemble forecast — live blend of each engine's latest call, weighted by its realised track record */}
+          {a.ensemble.available && (
+            <div
+              className={`mb-4 rounded-lg border border-white/10 border-l-4 bg-white/[0.02] p-4 ${
+                a.ensemble.direction === "bullish" ? "border-l-emerald-500" : a.ensemble.direction === "bearish" ? "border-l-red-500" : "border-l-sky-500"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] uppercase tracking-wide text-neutral-400">AI ensemble forecast</span>
+                  <span className={`rounded-full border px-3 py-1 text-sm font-semibold ${dirChip(a.ensemble.direction)}`}>{dirLabel(a.ensemble.direction)}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+                  <span className="rounded border border-white/10 px-2 py-1 text-neutral-200">P(up) {Math.round(a.ensemble.pUp * 100)}%</span>
+                  <span className="rounded border border-white/10 px-2 py-1 text-neutral-200">conf {a.ensemble.confidence}%</span>
+                  <span className="rounded border border-white/10 px-2 py-1 text-neutral-200">agree {Math.round(a.ensemble.agreement * 100)}%</span>
+                  {a.ensemble.kelly != null && <span className="rounded border border-white/10 px-2 py-1 text-emerald-300">¼-Kelly {(a.ensemble.kelly * 100).toFixed(1)}%</span>}
+                </div>
+              </div>
+              <div className="mt-3 space-y-1.5">
+                {a.ensemble.votes.map((v) => (
+                  <div key={v.source} className="flex items-center gap-2 text-xs">
+                    <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${dirDot(v.direction)}`} />
+                    <span className="w-32 shrink-0 truncate text-neutral-300" title={v.source}>{v.source}</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+                      <div className="h-full rounded-full bg-neutral-200/70" style={{ width: `${Math.round(v.weight * 100)}%` }} />
+                    </div>
+                    <span className="w-10 shrink-0 text-right font-mono text-neutral-400">{Math.round(v.weight * 100)}%</span>
+                    <span className="hidden w-28 shrink-0 text-right font-mono text-neutral-500 sm:inline">{v.edge != null ? `${sp(v.edge)} edge` : "new"} · n{v.n}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-neutral-500">{a.ensemble.note} Weighted blend of each engine&apos;s latest call by its realised edge &amp; freshness — a directional probability, not a guarantee.</p>
+            </div>
+          )}
+
           {/* headline metrics */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <Stat label="Hit rate" value={a.perf.hitRate != null ? `${Math.round(a.perf.hitRate * 100)}%` : "—"} tone={(a.perf.hitRate ?? 0) >= 0.5 ? "text-emerald-300" : "text-red-300"} />
             <Stat label="Hit-rate 95% CI" value={a.perf.ci ? `${Math.round(a.perf.ci.lo * 100)}–${Math.round(a.perf.ci.hi * 100)}%` : "—"} />
             <Stat label="Expectancy / call" value={sp(a.perf.expectancy)} tone={(a.perf.expectancy ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"} />
             <Stat label="Sharpe (per call)" value={f2(a.perf.sharpe)} />
+            <Stat label="Sortino" value={f2(a.perf.sortino)} tone={(a.perf.sortino ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"} />
             <Stat label="Profit factor" value={a.perf.profitFactor === Infinity ? "∞" : f2(a.perf.profitFactor)} />
+            <Stat label="Max drawdown" value={a.perf.maxDrawdown != null ? `−${a.perf.maxDrawdown.toFixed(2)}%` : "—"} tone="text-red-300" />
             <Stat label="Brier (cal.)" value={a.perf.brier != null ? a.perf.brier.toFixed(3) : "—"} />
+            <Stat label="Kelly (full)" value={a.perf.kelly != null ? `${(a.perf.kelly * 100).toFixed(0)}%` : "—"} />
           </div>
 
           {/* recommendations first — the actionable layer */}
@@ -241,6 +289,31 @@ export function IntelLab({ symbol }: { symbol: string }) {
                     <Area type="monotone" dataKey="edge" stroke="#34d399" strokeWidth={1.6} fill="url(#edgePos)" isAnimationActive={false} />
                     <Line type="monotone" dataKey="hitRate" stroke="#38bdf8" strokeWidth={1.2} dot={false} yAxisId="hr" isAnimationActive={false} />
                     <YAxis yAxisId="hr" orientation="right" domain={[0, 1]} hide />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </Section>
+          )}
+
+          {/* cumulative edge / equity curve with running drawdown */}
+          {a.equity.length >= 3 && (
+            <Section title="Cumulative edge (equity curve)" hint="Σ directional return · resolved order">
+              <div className="h-[180px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={a.equity} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
+                    <defs>
+                      <linearGradient id="eqFill" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.5} />
+                        <stop offset="100%" stopColor="#a78bfa" stopOpacity={0.03} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid stroke="#1f1f1f" />
+                    <XAxis dataKey="label" tick={{ fill: "#a3a3a3", fontSize: 10 }} stroke="#404040" minTickGap={40} />
+                    <YAxis tick={{ fill: "#a3a3a3", fontSize: 10 }} stroke="#404040" width={48} tickFormatter={(v) => `${v}%`} />
+                    <Tooltip contentStyle={{ background: "#0a0a0a", border: "1px solid #404040", borderRadius: 6, fontSize: 12 }} formatter={(v: number | string, n) => [`${Number(v).toFixed(2)}%`, n === "equity" ? "cum. edge" : "drawdown"]} />
+                    <ReferenceLine y={0} stroke="#525252" strokeDasharray="3 3" />
+                    <Area type="monotone" dataKey="equity" stroke="#a78bfa" strokeWidth={1.6} fill="url(#eqFill)" isAnimationActive={false} />
+                    <Area type="monotone" dataKey="drawdown" stroke="#ef4444" strokeWidth={1} fill="#ef4444" fillOpacity={0.12} isAnimationActive={false} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>

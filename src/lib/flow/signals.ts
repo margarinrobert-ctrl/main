@@ -337,7 +337,7 @@ export function buildSignals(chain: OptionContract[], spot: number | null, bars:
 
   const notes = [
     `Composite bias ${biasScore > 0 ? "+" : ""}${biasScore} (spot vs γ-flip, put/call, momentum, Δ-exposure, skew, max-pain).`,
-    "Levels are ~15-min delayed (CBOE). Signals are model heuristics for education — not financial advice. Confirm with price action & risk limits.",
+    "Signals are model heuristics for education — not financial advice. Confirm with price action & risk limits.",
   ];
 
   return { spot, regime, bias, biasScore, expiration: nExp, dte, signals, notes };

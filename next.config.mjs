@@ -25,6 +25,7 @@ const nextConfig = {
             "/api/barchart/history": ["./fixtures/**"],
             "/api/barchart/options": ["./fixtures/**"],
             "/api/barchart/screener": ["./fixtures/**"],
+            "/api/darkpool": ["./fixtures/**"],
           },
         },
       }),

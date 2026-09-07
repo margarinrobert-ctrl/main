@@ -1,0 +1,423 @@
+//@version=6
+// =============================================================================================
+// NQ / MNQ — INITIAL VALUE BREAKOUT.  v1
+//
+// The opening range's high and low, a close beyond one of them, a stop at the OTHER one, and a
+// 1:1 target. That is the whole strategy. Everything else that was tried made it worse.
+//
+// ┌───────────────────────────────────────────────────────────────────────────────────────────┐
+// │ TradingView "Script execution" must have ONLY  "On bar close"  ticked. Every rule here     │
+// │ reads a bar's CLOSE; the intrabar options replace `close` with the running price and turn  │
+// │ this into a different, worse strategy.                                                     │
+// └───────────────────────────────────────────────────────────────────────────────────────────┘
+//
+// READ THIS FIRST — AN EARLIER VERSION OF THIS STRATEGY WAS RETRACTED.
+//
+// The first IVB study reported $10,013 at PF 1.95, carried by a 60-minute trend filter that
+// "beat 99.7% of 2,000 random shuffles at p = 0.0035". It was a look-ahead. The session index
+// used in the research runs 09:30 -> 09:30, so a 60-minute bar at 08:00 on day D carries the
+// session id of day D-1; keying the trend filter by that id handed every session a bar that
+// closed at 09:00 the FOLLOWING morning. It applied to 609 of 609 sessions. Corrected, that
+// version earns -$1,287 at PF 0.91 and the filter beats 18% of shuffles (p = 0.82).
+//
+// It was caught by writing this script's logic as a Python mirror and finding it could not
+// reproduce the engine. That is why there is no trend filter below, and why the numbers here
+// come from a re-run of the whole search on the corrected engine.
+//
+// WHAT THIS VERSION IS, AND WHAT IT MEASURED
+// 331,776 configurations on the corrected engine -- 5m/15m/30m bars, 15/30/60/90-minute initial
+// values, opening high/low or opening value area, four entry models, four stop models, R and
+// range targets, trend and range filters, two cutoffs, three directions. Chosen on the research
+// block (first 65% of sessions), read ONCE on the locked block. MNQ, 1 contract, $1.00
+// commission per round turn, 1 tick spread + 1 tick slip each side, 1 extra tick on stops.
+//
+//     752 trades   $13,244   PF 1.24   55.7% win   maxDD $1,978
+//     research $6,418   ->   LOCKED $6,826
+//
+// Return over drawdown 6.7. Of nineteen one-step perturbations, seventeen stay positive on the
+// locked block (median $3,973, worst -$2,064) -- a plateau, not a mined cell.
+//
+// WHAT WAS TRIED AND DROPPED, with the marginal median locked P&L over the whole sweep:
+//     entry model     break $615   retest $241   half-retest $202   fade a failed break -$194
+//     stop            opposite edge $310   ATR $232   midpoint $98   trigger bar $62
+//     trend filter    OFF $239     "must agree" -$386
+//     range filter    off $238     on $111
+//     levels          high/low $197   opening value area $142
+//     flatten         15:00 $285   16:00 $41
+// The retest step, which the strategy description treats as the conservative improvement, is
+// worth less than entering on the break. So is every stop other than the opposite edge.
+//
+// DIRECTION IS NOT AN INPUT YOU SHOULD TOUCH. Longs alone earn $12,992 at PF 1.40 and shorts
+// alone lose $507. Every search on this data that was handed direction as a free parameter
+// picked longs and was fitting an index that roughly doubled from 2022 to 2025. The side
+// selector exists to let you SEE that, not to trade it.
+//
+// VERIFICATION. This script's exact bar loop was mirrored in Python (research/ivb2_mirror.py)
+// and compared with the research engine: 752 trades and $13,244 on both, PF 1.24 and 55.7% on
+// both. One deliberate difference is measured rather than assumed -- the research flattens at
+// the 15:00 bar's CLOSE and Pine's strategy.close() fills at the next bar's OPEN, which is worth
+// $10 out of $13,244 (0.08%).
+//
+// v2 FIXED A REAL BUG, REPORTED FROM A CHART. Pine's bare `hour` and `minute` are in the
+// EXCHANGE timezone, and CME's is America/CHICAGO. So `hour * 60 + minute == 570` was 09:30 in
+// Chicago and 10:30 in New York, and the strategy ran a full hour late while the research it was
+// validated against is all New York time. Every session time now goes through an explicit
+// timezone input, defaulted to America/New_York. The same bug was present in NQ_SupplyDemand.pine
+// and NQ_BosChoch.pine and is fixed in both.
+//
+// NOT COMPILED BY TRADINGVIEW. The logic is verified; the syntax is not. A compiler error means
+// a typo, not a changed strategy -- send it and I will fix it.
+//
+// SCALE. $13,244 over three years on one MNQ contract is about $4,400 a year, at an average of
+// $17.60 per trade. That average is small enough that execution matters: at 4 extra ticks of
+// slippage per side it falls to $8,949, and at 6 to $7,435. Trade this on a Micro, in RTH, on a
+// liquid front month, or do not trade it.
+//
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+strategy("NQ Initial Value Breakout", overlay = true, initial_capital = 25000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order,
+     // A CONST is required here. MNQ/MES 0.50, NQ/ES 2.00. Defaulted to the Micro because the
+     // average trade is $17.60 and a full-size fee schedule would eat a large share of it.
+     commission_value = 0.50,
+     slippage = 2, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+grpT = "Timezone"
+// Pine's bare `hour` and `minute` are in the EXCHANGE timezone. For CME products that is
+// America/CHICAGO, so `hour * 60 + minute == 570` is 09:30 in Chicago and 10:30 in NEW YORK.
+// Every session time here, and every figure in the header, is New York time. Using the bare
+// built-ins ran the whole strategy an hour late -- that was a real bug, reported from a chart.
+tzIn = input.string("America/New_York", "Timezone for all session times", group = grpT,
+     options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"],
+     tooltip = "New York is correct for the research in this file. 'exchange' reproduces the old, " +
+               "wrong behaviour and exists only so the difference can be seen on a chart.")
+
+grpS = "Session times (in the timezone above)"
+ivStartH = input.int(9,  "Initial value starts — hour", minval = 0, maxval = 23, group = grpS, inline = "a")
+ivStartM = input.int(30, ":", minval = 0, maxval = 59, group = grpS, inline = "a")
+ivMin = input.int(15, "Initial value length (minutes)", minval = 5, maxval = 240, group = grpS,
+     tooltip = "TERMINOLOGY, because this is where the confusion is. The classic INITIAL BALANCE " +
+               "on ES and NQ is the first SIXTY minutes, 09:30-10:30. An OPENING RANGE BREAKOUT " +
+               "is the first 5-30 minutes, usually 15. This defaults to 15 because that tested " +
+               "best, not because the definitions say so -- so entries begin at 09:45, not 10:30. " +
+               "Set 60 for the textbook Initial Balance. Measured, same rules otherwise: " +
+               "15 min $13,244 PF 1.24 (research $6,418 / locked $6,826); 30 min $6,023 PF 1.10 " +
+               "with a NEGATIVE locked block; 60 min $4,258 PF 1.09; 90 min $2,332 PF 1.06.")
+useFlat = input.bool(true, "Flatten at a fixed time", group = grpS,
+     tooltip = "ON is what was tested. With this OFF a position is held until its stop or target " +
+               "and can run overnight, which was never measured.")
+flatH = input.int(15, "Flatten — hour", minval = 0, maxval = 23, group = grpS, inline = "c")
+flatM = input.int(0,  ":", minval = 0, maxval = 59, group = grpS, inline = "c",
+     tooltip = "15:00 is tested. Holding to 16:00 costs about a quarter of the edge: marginal " +
+               "median locked $285 at 15:00 against $41 at 16:00. Entries also stop at this time.")
+
+grpE = "Entry"
+bufAtr = input.float(0.15, "Close must clear the level by N x ATR", minval = 0.0, step = 0.05,
+     group = grpE, tooltip = "A small guard against a close that only just tags the level. 0.15 " +
+               "is tested and 0 is nearly as good.")
+maxTrades = input.int(1, "Trades allowed per session", minval = 1, maxval = 5, group = grpE,
+     tooltip = "Measured: 1/day $13,244 with research $6,418 and a $1,978 drawdown; 2/day " +
+               "$11,235 at PF 1.12; 3/day $13,754 but on research $4,818 and a $3,152 drawdown. " +
+               "More trades buys a slightly higher total for a much worse research block and " +
+               "half again the drawdown. One is the tested setting.")
+
+grpR = "Stop and target"
+stopMode = input.string("Opposite edge of the range", "Stop method",
+     options = ["Opposite edge of the range", "% of range back from the broken edge",
+                "ATR multiple from entry", "Midpoint of the range", "Fixed points from entry"],
+     group = grpR,
+     tooltip = "Five genuinely different trades. Measured on the shipped geometry: opposite edge " +
+               "$13,244 PF 1.24 (drawdown $1,978); 80% of range $8,070; 60% of range $7,329; " +
+               "ATR 1.5x $3,923 with a NEGATIVE research block; midpoint $3,349, also negative " +
+               "on research. FIXED POINTS LOSES: -$6,996 at 20 points, -$3,955 at 30, -$2,717 at " +
+               "40. It is offered only because the Initial Balance script offers it, and an " +
+               "absolute point distance stops meaning the same thing as volatility drifts. " +
+               "Note that '100% of range back from the edge' IS the opposite edge, and the two " +
+               "return identical results -- a useful check that this selector is wired correctly.")
+stopPct  = input.float(80, "  ...% of range back from the edge", minval = 1, maxval = 200,
+     step = 5, group = grpR)
+atrMult  = input.float(1.5, "  ...ATR multiple", minval = 0.1, maxval = 10, step = 0.1, group = grpR)
+stopPts  = input.float(30, "  ...fixed points", minval = 1, maxval = 500, step = 5, group = grpR)
+tgtMode = input.string("N x risk", "Target method",
+     options = ["N x risk", "N x the opening range", "% of range beyond the broken edge"],
+     group = grpR,
+     tooltip = "Measured: 1.0 x risk $13,244 PF 1.24; 1.0 x the opening range $10,518 at a 60.5% " +
+               "win rate; 100% of range beyond the edge $7,288 at 63.8%; 50% beyond the edge " +
+               "-$324. Note the pattern -- the higher win rates make LESS money. 2.0 x risk gives " +
+               "$10,422, so the edge is in the first R and not beyond it.")
+tpR     = input.float(1.0, "  ...N (risk or range multiple)", minval = 0.25, step = 0.25, group = grpR)
+tgtPct  = input.float(100, "  ...% of range beyond the edge", minval = 1, maxval = 500, step = 10,
+     group = grpR)
+useBE   = input.bool(false, "Move the stop to breakeven", group = grpR,
+     tooltip = "It hurts, at every trigger tested. At 50% of risk: -$12,154 at a 26.3% win rate " +
+               "and a $13,148 drawdown -- with a 1R target you are stopped at breakeven before " +
+               "the target can be reached. At 75%: $2,399. At 100%: $7,379. All below the " +
+               "$13,244 of leaving it off.")
+bePct   = input.float(100, "  ...trigger at N% of risk", minval = 10, maxval = 300, step = 5,
+     group = grpR)
+riskCap = input.float(8.0, "Reject a signal whose risk exceeds N x ATR", minval = 1.0, step = 0.5,
+     group = grpR, tooltip = "A sanity cap from the research engine. It rarely fires.")
+
+grpC = "Breakout confirmations (both tested, both OFF)"
+bodyMin = input.float(0.0, "Breakout candle body must be N of its range", minval = 0.0,
+     maxval = 0.95, step = 0.05, group = grpC,
+     tooltip = "The 'full-bodied candle with small wicks' of the usual description. It HURTS on " +
+               "the 15-minute window: $13,244 unfiltered against $9,434 at 50%, $10,145 at 60% " +
+               "and $4,261 at 70%. On a 60-minute window it helps slightly ($4,258 -> $4,786 at " +
+               "50%) but never reaches the unfiltered 15-minute figure. 0 = off.")
+volMult = input.float(0.0, "Breakout candle volume vs the opening range average", minval = 0.0,
+     step = 0.25, group = grpC,
+     tooltip = "The 'high trading volume' confirmation, quoted online at 1.5x and credited with " +
+               "8-12 points of win rate. It raises quality and destroys frequency. On a 15-minute " +
+               "window the opening range is ONE bar -- the highest-volume bar of the day -- so " +
+               "almost nothing clears it: 129 trades and $1,464 at 1.0x. On a 60-minute window " +
+               "1.5x gives 36 trades, $2,446, PF 1.74 and 58.3% win against 52.6% unfiltered, so " +
+               "the win-rate claim is directionally right (+5.7 points) on 36 trades in three " +
+               "years. With the body filter too: 26 trades, PF 2.84, 69.2% win. 0 = off.")
+
+grpF = "Filters"
+usePct = input.bool(false, "Only trade mid-sized opening ranges", group = grpF,
+     tooltip = "Compares today's opening range with the trailing distribution rather than a " +
+               "fixed number of points, so it keeps meaning as volatility drifts. Marginal " +
+               "median locked P&L across the whole search: off $238, on $111. Off is tested.")
+pctWin = input.int(60, "  ...lookback (sessions)", minval = 20, maxval = 250, group = grpF)
+pctLo  = input.float(20, "  ...minimum percentile", minval = 0, maxval = 100, step = 5, group = grpF)
+pctHi  = input.float(80, "  ...maximum percentile", minval = 0, maxval = 100, step = 5, group = grpF)
+allowLong  = input.bool(true, "Allow longs",  group = grpF)
+allowShort = input.bool(true, "Allow shorts", group = grpF,
+     tooltip = "LEAVE BOTH ON. Longs alone earn $12,992 at PF 1.40 and shorts alone lose $507 " +
+               "over a period in which NQ roughly doubled. Selecting the winning side after the " +
+               "fact is how every failed study on this branch began.")
+
+grpV = "Display"
+showLevels = input.bool(true, "Draw the initial value range", group = grpV)
+showTable  = input.bool(true, "Show the statistics table", group = grpV)
+
+// ── time ─────────────────────────────────────────────────────────────────────────────────────
+barMin  = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
+tfMin   = timeframe.in_seconds(timeframe.period) / 60
+ivStart = ivStartH * 60 + ivStartM
+flatMin = useFlat ? flatH * 60 + flatM : 1440
+
+// ── ATR, defined the way the research defined it ─────────────────────────────────────────────
+// EMA of true range, alpha = 2/15. NOT ta.atr, which is Wilder's RMA at alpha = 1/14 and would
+// move every stop and every buffer.
+atrV = ta.ema(ta.tr(true), 14)
+
+// ── the initial value range ──────────────────────────────────────────────────────────────────
+var float ivh = na
+var float ivl = na
+var float ivVol = 0.0
+var int ivBars = 0
+var int took = 0
+var float[] hist = array.new_float(0)
+var bool logged = false
+
+newSess = barMin == ivStart and barMin[1] != ivStart
+if newSess
+    if not na(ivh) and not na(ivl) and logged
+        array.push(hist, ivh - ivl)
+        if array.size(hist) > pctWin
+            array.shift(hist)
+    ivh := na
+    ivl := na
+    ivVol := 0.0
+    ivBars := 0
+    took := 0
+    logged := false
+
+inIV = barMin >= ivStart and barMin < ivStart + ivMin
+if inIV
+    ivh := na(ivh) ? high : math.max(ivh, high)
+    ivl := na(ivl) ? low  : math.min(ivl, low)
+    ivVol := ivVol + volume
+    ivBars := ivBars + 1
+if barMin >= ivStart + ivMin and not na(ivh)
+    logged := true
+
+rng = na(ivh) or na(ivl) ? na : ivh - ivl
+
+// the trailing percentile of today's range, from PREVIOUS sessions only
+pctOk = true
+if usePct
+    n = array.size(hist)
+    if n < 30 or na(rng)
+        pctOk := false
+    else
+        below = 0
+        for k = 0 to n - 1
+            if array.get(hist, k) < rng
+                below := below + 1
+        p = 100.0 * below / n
+        pctOk := p >= pctLo and p <= pctHi
+
+
+// ── backtest window ──────────────────────────────────────────────────────────────────────────
+// TradingView's own date selector only offers the whole loaded history. These inputs restrict
+// the strategy itself, which is the right way to look at a recent stretch: entries are simply
+// not taken outside the window, so the report covers only what you selected.
+grpB = "Backtest window"
+useWin = input.bool(false, "Limit the backtest window", group = grpB,
+     tooltip = "OFF trades everything the chart has loaded. Note that a short window is a SMALL " +
+               "SAMPLE, not a fresh test -- picking the window that looks best is the same " +
+               "mistake as picking the parameter that looks best.")
+winMode = input.string("Last N days", "Window type", options = ["Last N days", "Date range"],
+     group = grpB)
+lookDays = input.int(365, "  ...last N days", minval = 1, maxval = 5000, group = grpB)
+fromT = input.time(timestamp("01 Jan 2024 00:00 +0000"), "  ...from", group = grpB)
+toT   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "  ...to", group = grpB)
+
+inWindow = true
+if useWin
+    if winMode == "Last N days"
+        inWindow := time > timenow - lookDays * 86400000
+    else
+        inWindow := time >= fromT and time <= toT
+
+canEnter = barMin >= ivStart + ivMin and barMin < flatMin and inWindow
+ready = not na(atrV) and atrV > 0 and not na(rng) and rng > 0
+flat = strategy.position_size == 0
+
+// ── the break ────────────────────────────────────────────────────────────────────────────────
+sig = 0
+sigStop = 0.0
+sigTgt = 0.0
+if flat and ready and canEnter and took < maxTrades and pctOk
+    d = close > ivh + bufAtr * atrV ? 1 : close < ivl - bufAtr * atrV ? -1 : 0
+    if d == 1 and not allowLong
+        d := 0
+    if d == -1 and not allowShort
+        d := 0
+    bodyOk = bodyMin <= 0 or (high - low > 0 and math.abs(close - open) / (high - low) >= bodyMin)
+    volOk = volMult <= 0 or (ivBars > 0 and volume >= volMult * (ivVol / ivBars))
+    if d != 0 and bodyOk and volOk
+        lvl = d == 1 ? ivh : ivl
+        stopPx = close - d * stopPts
+        if stopMode == "Opposite edge of the range"
+            stopPx := d == 1 ? ivl : ivh
+        if stopMode == "% of range back from the broken edge"
+            stopPx := lvl - d * (stopPct / 100.0) * rng
+        if stopMode == "ATR multiple from entry"
+            stopPx := close - d * atrMult * atrV
+        if stopMode == "Midpoint of the range"
+            stopPx := (ivh + ivl) * 0.5
+        if (d == 1 and stopPx < close) or (d == -1 and stopPx > close)
+            risk = math.abs(close - stopPx)
+            if risk > 0 and risk <= riskCap * atrV
+                tgtPx = lvl + d * (tgtPct / 100.0) * rng
+                if tgtMode == "N x risk"
+                    tgtPx := close + d * tpR * risk
+                if tgtMode == "N x the opening range"
+                    tgtPx := close + d * tpR * rng
+                if (d == 1 and tgtPx > close) or (d == -1 and tgtPx < close)
+                    sig := d
+                    sigStop := stopPx
+                    sigTgt := tgtPx
+
+// Entry and its bracket go in on the SAME bar: the entry fills at the next bar's open and the
+// stop and target are live from that bar. Submitting the exit a bar later would leave the first
+// bar of every trade unprotected, which is not what was tested.
+if sig == 1
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", "L", stop = sigStop, limit = sigTgt)
+    took := took + 1
+if sig == -1
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", "S", stop = sigStop, limit = sigTgt)
+    took := took + 1
+
+// ── breakeven, off by default because it costs money ─────────────────────────────────────────
+// The trigger needs the risk the trade was OPENED with, so entry and stop are held in `var`
+// state rather than recomputed -- `sigStop` is only populated on the signal bar.
+var float liveEntry = na
+var float liveStop = na
+var float liveTgt = na
+var int liveDir = 0
+var bool beDone = false
+
+if sig != 0
+    liveDir := sig
+    liveStop := sigStop
+    liveTgt := sigTgt
+    liveEntry := na
+    beDone := false
+if strategy.position_size != 0 and na(liveEntry)
+    liveEntry := strategy.position_avg_price
+if strategy.position_size == 0
+    liveDir := 0
+
+if useBE and not beDone and liveDir != 0 and strategy.position_size != 0 and not na(liveEntry)
+    r0 = math.abs(liveEntry - liveStop)
+    trig = liveEntry + liveDir * (bePct / 100.0) * r0
+    hitTrig = liveDir == 1 ? high >= trig : low <= trig
+    if hitTrig and r0 > 0
+        beDone := true
+        if liveDir == 1
+            strategy.exit("Lx", "L", stop = liveEntry, limit = liveTgt)
+        else
+            strategy.exit("Sx", "S", stop = liveEntry, limit = liveTgt)
+
+// ── the session cutoff ───────────────────────────────────────────────────────────────────────
+// The research closes at this bar's CLOSE; strategy.close_all() fills at the next bar's OPEN. On
+// a continuous contract those are the same instant, measured at $10 of $13,244 over three years.
+if useFlat and barMin >= flatMin and strategy.position_size != 0
+    strategy.close_all(comment = "session cutoff")
+
+// ── display ──────────────────────────────────────────────────────────────────────────────────
+drawWin = ready and barMin >= ivStart and barMin < flatMin
+plot(showLevels and drawWin ? ivh : na, "IV high", color = color.new(color.teal, 0),
+     style = plot.style_linebr, linewidth = 2)
+plot(showLevels and drawWin ? ivl : na, "IV low", color = color.new(color.red, 0),
+     style = plot.style_linebr, linewidth = 2)
+plotshape(sig == 1, "long", shape.triangleup, location.belowbar, color.teal, size = size.tiny)
+plotshape(sig == -1, "short", shape.triangledown, location.abovebar, color.red, size = size.tiny)
+
+// Pine will not accept a function declared inside an `if`, which is what CE10156 was pointing
+// at. Declared at global scope instead.
+f_hhmm(int mins) =>
+    str.tostring(math.floor(mins / 60), "#") + ":" + (mins % 60 < 10 ? "0" : "") +
+         str.tostring(mins % 60, "#")
+
+// SCRIPT EXECUTION SELF-CHECK. Pine cannot read the "Script execution" dropdown, but it can
+// count how many times it ran. On "On bar close" only, that is once per bar. Ticking the
+// intrabar options makes the script re-run DURING each bar, which replaces `close` with the
+// running price and fires breakouts that reverse before the bar ends. The table turns this red
+// when it detects it, because it is the single most destructive setting on the page.
+var int nExec = 0
+nExec := nExec + 1
+
+var table diag = table.new(position.top_right, 2, 9, border_width = 1)
+if showTable and barstate.islast
+    entryMin = ivStart + ivMin
+    table.cell(diag, 0, 0, "timezone",      text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 0, tzIn,            text_size = size.small)
+    table.cell(diag, 0, 1, "initial value", text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 1, f_hhmm(ivStart) + " + " + str.tostring(ivMin) + "m",
+         text_size = size.small)
+    table.cell(diag, 0, 2, "entries from",  text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 2, f_hhmm(entryMin), text_size = size.small)
+    table.cell(diag, 0, 3, "flatten",       text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 3, useFlat ? f_hhmm(flatMin) : "off", text_size = size.small)
+    table.cell(diag, 0, 4, "trades",        text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 4, str.tostring(strategy.closedtrades), text_size = size.small)
+    table.cell(diag, 0, 5, "net",           text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 5, str.tostring(strategy.netprofit, "#,###"), text_size = size.small)
+    table.cell(diag, 0, 6, "profit factor", text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 6, str.tostring(strategy.grossloss > 0 ?
+         strategy.grossprofit / strategy.grossloss : 0, "#.00"), text_size = size.small)
+    perBar = bar_index > 0 ? nExec / bar_index : 1.0
+    bad = perBar > 1.1
+    table.cell(diag, 0, 7, "runs per bar", text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 7, str.tostring(perBar, "#.00"), text_size = size.small,
+         text_color = bad ? color.white : color.gray,
+         bgcolor = bad ? color.new(color.red, 20) : na)
+    table.cell(diag, 0, 8, "backtest window", text_color = color.gray, text_size = size.small)
+    table.cell(diag, 1, 8, not useWin ? "all data" :
+         winMode == "Last N days" ? "last " + str.tostring(lookDays) + "d" : "date range",
+         text_size = size.small)
+    if bad
+        table.cell(diag, 0, 7, "SCRIPT EXECUTION", text_color = color.white,
+             text_size = size.small, bgcolor = color.new(color.red, 20))

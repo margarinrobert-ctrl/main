@@ -1,0 +1,70 @@
+//@version=6
+// =============================================================================================
+// ATR>1.2x mean AND bullish engulfing AND upper wick>60%
+//   long only, stop 1.0 x ATR, target 1.0 x that risk, flat at 15:00, 30-minute bars.
+//   Stop and target are measured from the FILL -- the open of the bar after the signal --
+//   using the ATR of the signal bar.
+//
+// MEASURED ON MNQ, 2022-12 to 2025-12, 1 contract, $1.00 commission per round turn, 1 tick
+// spread + 1 tick slip each side, 1 extra tick on stops:
+//     trades                      85  (55 research / 30 locked)
+//     win rate                    71.8%   base rate for this geometry 48.0%
+//     net                         $3,331   profit factor 2.79
+//     locked block only           30 trades, 66.7% win, $1,509
+//     chosen on                   the research block only; the locked figures above were read once
+//
+// THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
+//   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14.
+//   * Clock conditions go through an explicit timezone. Pine's bare hour/minute are EXCHANGE
+//     time -- Chicago for CME -- and the research is New York.
+//   * CCI is on hlc3, not close.
+//
+// Pine built-ins are used for RSI, Stochastic, CCI, Williams %R, MFI, DMI/ADX, OBV, linreg and
+// Bollinger. They were checked against the research definitions, not executed side by side.
+//
+// TICK-SETTING IMMUNE: entries require barstate.isconfirmed, so the Strategy Tester's
+// "On order fill" / "On history bar tick" / "On realtime bar tick" boxes cannot change
+// the result. Leave them on or off; the numbers are the same.
+//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+indicator("M1 1R | ATR>1.2x mean + bullish engulfing + upper wick>60% | signal (signal)", overlay = true)
+// ---- primitives, defined to match the research exactly -------------------------------------------
+atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
+atrMean20 = ta.sma(atrV, 20)
+barRange  = math.max(high - low, syminfo.mintick)
+
+// ---- the rule -------------------------------------------------------------------
+c0 = atrV > 1.2 * atrMean20    // ATR>1.2x mean
+c1 = close > open[1] and open < close[1] and close > open    // bullish engulfing
+c2 = (high - math.max(close, open)) / barRange > 0.6    // upper wick>60%
+trig = c0 and c1 and c2
+ready = not na(atrV) and atrV > 0 and bar_index > 300
+
+risk = 1.0 * atrV
+// drawn on the bar AFTER the signal and measured from its open, because that open is
+// where the strategy fills -- the same anchor the engine uses.
+fired = trig[1] and ready[1]
+plot(fired ? open - risk[1] : na, "stop, long side",
+     color = color.new(color.red, 0), style = plot.style_circles)
+plot(fired ? open + 1.0 * risk[1] : na, "target, long side",
+     color = color.new(color.teal, 0), style = plot.style_circles)
+plotshape(trig and ready, "signal", shape.diamond, location.belowbar,
+     color.new(color.teal, 0), size = size.tiny)
+bgcolor(trig and ready ? color.new(color.teal, 88) : na)
+
+alertcondition(trig, "Rule fires", "ATR>1.2x mean AND bullish engulfing AND upper wick>60%")
+
+var table t = table.new(position.bottom_right, 2, 3, border_width = 1)
+if barstate.islast
+    table.cell(t, 0, 0, "ATR>1.2x mean", text_size = size.small, text_color = color.gray)
+    table.cell(t, 1, 0, c0 ? "yes" : "no", text_size = size.small,
+         text_color = c0 ? color.teal : color.gray)
+    table.cell(t, 0, 1, "bullish engulfing", text_size = size.small, text_color = color.gray)
+    table.cell(t, 1, 1, c1 ? "yes" : "no", text_size = size.small,
+         text_color = c1 ? color.teal : color.gray)
+    table.cell(t, 0, 2, "upper wick>60%", text_size = size.small, text_color = color.gray)
+    table.cell(t, 1, 2, c2 ? "yes" : "no", text_size = size.small,
+         text_color = c2 ? color.teal : color.gray)

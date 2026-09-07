@@ -1,0 +1,550 @@
+//@version=6
+// =============================================================================================
+// NQ / MNQ — BOS/CHoCH.  v7
+//
+// ┌───────────────────────────────────────────────────────────────────────────────────────────┐
+// │ BEFORE YOU READ THE RESULT — TradingView "Script execution" (the dropdown under the        │
+// │ backtest report) must have ONLY  "On bar close"  ticked.                                   │
+// │                                                                                            │
+// │ Measured on a live MNQ 30m chart, same script, same period:                                │
+// │      On bar close only ....  183 trades   +$9,380   PF 1.58   maxDD  2.59%                 │
+// │      All four ticked .......  248 trades  −$16,247   PF 0.56   maxDD 16.61%                │
+// │                                                                                            │
+// │ This is not fragility. The rule is `close > pivot` — a break CONFIRMED at the bar's close. │
+// │ "On order fill" / "history bar tick" / "realtime bar tick" re-run the script DURING the    │
+// │ bar, so `close` becomes the running price and every intrabar poke through a pivot that     │
+// │ reverses before the close fires a false BOS. Ticking those boxes does not make the test    │
+// │ more realistic; it silently replaces this strategy with a worse one.                       │
+// └───────────────────────────────────────────────────────────────────────────────────────────┘
+//
+// TIMEFRAME MATTERS MORE THAN ANY SETTING. Use 30m or 60m. On 5m this rule LOSES: my engine
+// gives PF 0.96-0.99 there and coin-flip entries with the same stop beat it 65% of the time. On
+// 1m and 2m it is significantly negative (t = −2.45, −2.68). A losing 5-minute backtest is not a
+// bug, it is the documented result.
+//
+// 248,832 CONFIGURATIONS ACROSS 15m / 30m / 60m / 120m say the same thing, and say something new.
+// Holding every other parameter identical and moving ONLY the interval, over the 10,032 parameter
+// sets tradeable on all four, out-of-sample P&L against 30m:
+//        15m  −$815/set, wins 45.4% of pairs, paired t = −16.05
+//        60m  −$1,425/set, wins 35.0% of pairs, paired t = −32.31
+//       120m  −$2,772/set, wins 27.2% of pairs, paired t = −53.78
+// In DOLLARS 30m wins, and it is not close. But the 1-hour chart is not worse per trade — it is
+// better per trade and rarer. At a 2R target a driftless path wins 33.3% by geometry alone; the
+// excess over that bound is the only part of a win rate the ENTRY earned:
+//        30m core   141 trades   44.0% win   +10.6 excess
+//        60m core    45 trades   55.6% win   +22.2 excess
+// The 60m edge is a PLATEAU, not a mined spike: all twelve one-step perturbations of it (nBos,
+// stop multiple, k, EMA length, range filter) keep a positive excess, +8.9 to +25.3.
+// So run BOTH — see the preset note. 45 trades in three years is not a strategy on its own.
+//
+// The search's own winner was 120m / k5 / EMA50 / nBos 1 / 3R / 24h, at $17,665 research and
+// $10,741 locked — nominally beating this spec. It is a spike: moving nBos to 2 turns it into
+// −$5,557, and 120m has the WORST distribution of any interval (median locked −$1,145) and no
+// measurable entry information (excess +0.06 at 2R). It was not adopted. See docs/ib/STUDY_TIMEFRAME.md.
+//
+// FIX HISTORY — every one of these was a real defect, found by diffing this script against the
+// Python engine the research was done on:
+//   v7  commission defaults to the MICRO fee. The sizing note below says to trade MNQ (a 2×ATR
+//       stop on NQ risks ~$2,000); the fee was set at $2.00/order, right for the E-mini and 10×
+//       too heavy on a Micro, where it ate ~5% of gross profit. Following both instructions as
+//       written was self-defeating. TradingView will not let this be derived or made an input
+//       (commission_value demands a const), so the label now checks it against the chart instead.
+//   v6  THE ENTRY GATE (see grpT). A session-string window admitted the session's FIRST bar,
+//       which the engine excludes. Worth 35 extra trades and −$8,318 on 30m. With it corrected
+//       this script reproduces the engine exactly.
+//   v6  volatility sizing defaulted ON while the reference figures are fixed-1-contract, so the
+//       P&L could not match regardless of anything else. Now off, and under the spec lock.
+//   v4  the run counter tested `bias` AFTER reassigning it, so it never reset on a structure
+//       flip — silently turning "enter on the second BOS" into "enter on every BOS".
+//   v2  the stop was measured from the SIGNAL bar's close but filled at the NEXT bar's open, so
+//       every stop sat at the wrong distance. Now anchored to strategy.position_avg_price.
+//
+// DIAGNOSING A MISMATCH. Each statistic below identifies ONE input and is flat in the others.
+// Net P&L is the worst diagnostic available — it moves with all of them at once.
+//   win rate   -> stop multiple   2.0×ATR = 39-40%,  1.0 = 27-29%,  0.5 = 16-17%
+//   trade count-> nBos            ~150-190 at 2,     ~290-400 at 1  (same window)
+//   comm % of gross profit -> contract size   NQ 0.3-0.5%,  MNQ at $2.00/order 2.9-5.2%
+// TradingView caches inputs PER CHART and a stale value survives a script update, which is what
+// "LOCK the tested spec" exists for. Read the diagnostic label before believing any number.
+// =============================================================================================
+
+strategy("NQ BOS/CHoCH book", overlay = true, initial_capital = 100000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order,
+     // TradingView requires a CONST here. It cannot be derived from syminfo.pointvalue and it
+     // cannot even be an input -- both are rejected as "simple float" where "const float" is
+     // expected. So it is set by hand, and the diagnostic label checks it against the chart:
+     //     MNQ / MES  (Micro,  $2 / $5  per point) ....  0.50
+     //     NQ  / ES   (E-mini, $20 / $50 per point) ...  2.00
+     // Defaulted to the Micro because the sizing note at the foot of this file tells you to trade
+     // it -- a 2xATR stop on full-size NQ risks ~$2,000 a contract.
+     commission_value = 0.50,
+     slippage = 2, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// KEEP IN SYNC with commission_value above. Pine has no runtime accessor for the configured
+// commission, so the label needs its own copy in order to check it against the contract.
+commPerOrder = 0.50
+
+// ── preset ───────────────────────────────────────────────────────────────────────────────────
+preset = input.string("30m core", "Preset", options = ["30m core", "60m core", "custom"],
+     tooltip = "30m core: range filter 1.0 ATR.  60m core: range filter off. " +
+               "RUN BOTH ON SEPARATE CHARTS — that is the tested book, and the combination is " +
+               "the better half of it. They share only 23 of 163 trading days and their daily " +
+               "P&L correlates +0.25, so the second leg adds return without adding drawdown. " +
+               "MNQ, 1 contract, full sample:  30m alone $11,679, maxDD $2,865, Sharpe 1.13.  " +
+               "60m alone $7,574, maxDD $1,196, Sharpe 1.21.  BOTH $19,253, maxDD $1,912, " +
+               "Sharpe 1.43 — more money and a SMALLER worst drawdown than 30m on its own. " +
+               "On the locked holdout, never used to choose anything: $8,932 -> $12,834, " +
+               "Sharpe 1.70 -> 2.00. Nothing was refitted for the 60m leg; it is this same " +
+               "spec with the range filter off, which is what this preset already was.")
+
+grpS = "Structure"
+swingK  = input.int(3, "Swing confirmation bars (k)", minval = 1, maxval = 20, group = grpS,
+     tooltip = "A pivot needs k bars either side, so it is invisible until k bars later. " +
+               "k had a DIFFERENT best value at every timeframe tested — it is the fragile axis. " +
+               "Left at the neutral 3 deliberately.")
+nBosIn  = input.int(2, "Enter on the Nth BOS", minval = 1, maxval = 5, group = grpS,
+     tooltip = "2 is the TESTED value and the lock forces it. But nBos was validated under the " +
+               "CHoCH exit, where a second break protected against whipsaw; with a fixed 2R target " +
+               "that protection is redundant and the two were never tested jointly. Re-tested, " +
+               "nBos=1 with the 2R target wins on nearly everything: research $6,319 vs $2,747, " +
+               "LOCKED $11,748 vs $8,932, walk-forward $16,313 vs $11,481 taking 5 of 6 folds, " +
+               "Monte Carlo median $18,236 vs $11,558, P(net<0) 0.2% vs 0.7%, paired t +1.55. It " +
+               "loses on ONE thing: max drawdown is ~26% deeper (MC median $2,888 vs $2,278, p95 " +
+               "$5,166 vs $4,093). Not made the default because t=1.55 is not significant, it came " +
+               "from a 9-cell sweep, and it would be the second spec change in a row -- each one " +
+               "erodes the claim this rule was not tuned, which is most of why the out-of-sample " +
+               "result is believable. Turn OFF the lock to run nBos=1 knowingly. See " +
+               "docs/ib/STUDY_CORRELATION_MATRIX.md.")
+lockSpec= input.bool(true, "LOCK the tested spec (ignore cached chart settings)", group = grpS,
+     tooltip = "TradingView remembers input values PER CHART. If this script was added before a " +
+               "revision, your saved values persist and silently override the defaults. With this " +
+               "on, nBos, the stop multiple and volatility sizing are forced to the tested values. " +
+               "It deliberately does NOT touch the trade-side dropdown or the take-profit: those " +
+               "are deliberate choices, and overriding a deliberate choice is the very bug this " +
+               "lock exists to catch.")
+nBos    = lockSpec ? 2 : nBosIn
+
+sideIn  = input.string("Both", "Trade side", options = ["Both", "Longs only", "Shorts only"],
+     group = grpS,
+     tooltip = "DEFAULTS TO BOTH, AND SHOULD STAY THERE. Long-only looks better on this data -- " +
+               "under the 2R target, longs are 79 trades / $7,990 / PF 1.95 / 48.1% win against " +
+               "shorts at 62 trades / $3,689 / PF 1.38 / 38.7%. Do not read that as skill. A " +
+               "777,600-cell search over 11 axes found that of every configuration beating the " +
+               "tested spec on BOTH the research and locked blocks, 76.5% were long-only and 0.3% " +
+               "short-only. What the search was finding is the direction of the 2022-2025 bull " +
+               "market. A chronological holdout CANNOT catch that, because both blocks sit inside " +
+               "the same regime. Restricting the same search to both-sides cells inverts its " +
+               "result completely: locked Sharpe -1.54, losing money out of sample 100% of the " +
+               "time. Pick a single side only if you have a reason outside this backtest, and " +
+               "size it as a directional bet, not as an edge. This setting is NOT overridden by " +
+               "the spec lock -- it takes effect immediately, and the diagnostic label reports it."
+)
+// NOT under lockSpec. The lock exists to defend against values you did not knowingly set --
+// TradingView's per-chart input cache. Picking a side from a dropdown is a deliberate act, and
+// silently ignoring it would be the same silent-override bug the lock was built to prevent.
+// The setting takes effect; the label calls it what it is.
+sideMode = sideIn == "Longs only" ? 1 : sideIn == "Shorts only" ? -1 : 0
+
+grpF = "Filters"
+useEma  = input.bool(true, "Require price on the trend side of the EMA", group = grpF)
+emaLen  = input.int(200, "EMA length", minval = 10, group = grpF)
+mdIn    = input.float(1.0, "Refuse entries within N x ATR of the EMA", minval = 0, step = 0.25, group = grpF)
+
+grpR = "Risk"
+atrLen  = input.int(14, "ATR length", minval = 2, group = grpR)
+atrMultIn = input.float(2.0, "Stop = N x ATR", minval = 0.25, step = 0.25, group = grpR)
+atrMult   = lockSpec ? 2.0 : atrMultIn
+tpR     = input.float(2.0, "Take-profit at N x risk  (0 = off)", minval = 0, step = 0.5, group = grpR,
+     tooltip = "THE ONE VALIDATED IMPROVEMENT found in this work, and the only change that beat " +
+               "the baseline on BOTH the research block and the locked holdout. MNQ 30m: net " +
+               "$7,060 -> $11,679, PF 1.53 -> 1.64, win 40.1% -> 44.0%, Sharpe 0.90 -> 1.14 " +
+               "(annualised over EVERY session, not just the ~15% that hold a trade -- earlier " +
+               "revisions of this file quoted 2.28 -> 2.93, which was inflated ~2.6x). " +
+               "Picked in ALL SIX walk-forward folds. It also has a mechanism " +
+               "rather than just a number: measured against the driftless barrier bound " +
+               "R_down/(R_up+R_down), this signal's excess win rate PEAKS at the 2:1 barrier " +
+               "(+10.7 points, vs +6.0 at 1:1 and +8.6 at 3:1). BUT: max drawdown RISES from " +
+               "$2,074 to $2,865, and the paired same-session difference against the baseline is " +
+               "only t = +1.22 — favourable on every summary statistic, not statistically " +
+               "established. Set 0 to reproduce the older reference figures.")
+useChoch= input.bool(false, "Exit on the opposite BOS (CHoCH)", group = grpR,
+     tooltip = "The original exit. It CONFLICTS with the take-profit above: running both gives " +
+               "$8,405 stitched out-of-sample against $11,481 for the target alone, because a " +
+               "CHoCH cuts winners before they reach the target. Use ONE of them. " +
+               "CHoCH-only (tpR = 0, this ON) is the older tested spec.")
+
+grpX = "ADX / Stochastic  (TESTED — none of these help)"
+// Both were tested against this exact book on MNQ 30m and both LOST. They are here so the result
+// can be reproduced on your own chart, not because they are recommended. Every default is OFF.
+//
+//                              research $   LOCKED $      (baseline: $2,747 / $8,932)
+//   ADX(14) > 20                    1,661      7,496
+//   ADX(14) > 25                    1,016      5,110
+//   ADX(14) > 30                     -877      5,014
+//   ADX(14) rising 3 bars           3,168      6,262   <- BEST on research, worse on locked
+//   Stoch veto K>80 / K<20            902       -711   <- destroys the sample, see below
+//   Stoch %K > %D                   3,345      5,370   <- BEST on research, worse on locked
+//   a 476-cell sweep of both        3,190      2,138   <- best-on-research; searching cost $6,794
+//
+// WHY THE STOCHASTIC CANNOT WORK HERE. Measured at the moment each signal fires: LONG signals
+// have a median %K of 95.7 with 91.8% above 80; SHORT signals a median of 5.4 with 95.6% below 20.
+// A break of structure IS a new extreme of the recent range, and %K measures exactly where the
+// close sits in that range, so a bullish BOS prints %K near 100 almost mechanically. Vetoing
+// "overbought" longs does not filter this strategy, it DELETES it: 92 research trades become 9,
+// and 49 locked trades become 2. The oscillator is measuring the same quantity the entry rule is
+// built on. No threshold fixes that.
+//
+// WHY ADX DOES NOT HELP. As the threshold rises the COUNT falls sharply (92 -> 77 -> 63 -> 43)
+// while profit factor and win rate barely move. A filter that changes n without changing the
+// profile of what survives is sampling, not selecting -- and randomly sampling a
+// positive-expectancy set can only reduce the total. A filter earns its place by making the
+// surviving trades BETTER, not fewer.
+useAdxMin   = input.bool(false, "Require ADX above a threshold", group = grpX)
+adxLen      = input.int(14, "ADX length", minval = 2, group = grpX)
+adxMin      = input.float(20.0, "ADX minimum", minval = 0, step = 1, group = grpX)
+useAdxRise  = input.bool(false, "Require ADX rising over 3 bars", group = grpX)
+useStochVeto= input.bool(false, "Veto overbought longs / oversold shorts", group = grpX,
+     tooltip = "This is the one that deletes the strategy. At 80 it cuts 92 trades to 9.")
+stochLen    = input.int(14, "Stochastic length", minval = 2, group = grpX)
+stochLim    = input.float(80.0, "Veto longs above this %K (mirrored for shorts)", minval = 50,
+     maxval = 100, step = 5, group = grpX)
+useStochAlign = input.bool(false, "Require %K above %D (mirrored for shorts)", group = grpX)
+showOsc     = input.bool(false, "Plot ADX and %K in a pane", group = grpX)
+
+grpV = "Volatility-targeted sizing"
+useVTIn = input.bool(false, "Size inversely to recent volatility", group = grpV,
+     tooltip = "OFF by default: the reference figures were measured at a FIXED 1 contract, so " +
+               "turning this on makes the P&L incomparable to them. It is a separately validated " +
+               "overlay — max drawdown 36.3% -> 10.5% while Sharpe ROSE 1.31 -> 1.60 — and it " +
+               "changes size only, never direction, so trade count and win rate are unaffected.")
+useVT   = lockSpec ? false : useVTIn
+vtLook  = input.int(60, "Volatility lookback (bars)", minval = 10, group = grpV)
+vtCap   = input.float(2.0, "Maximum size multiplier", minval = 1.0, step = 0.5, group = grpV)
+baseQty = input.float(1.0, "Base contracts", minval = 0.1, step = 0.1, group = grpV)
+
+grpT = "Session (exchange time)"
+// THE ENTRY GATE. The engine admits an entry only when ALL THREE hold:
+//     1. the signal bar is in session
+//     2. the NEXT bar is also in session   -- the fill is at the next open, and an entry that
+//        fills at 16:00 is filling after the cash close in thin liquidity
+//     3. the signal bar is NOT the session's first bar
+// Clock arithmetic on the bar's OPEN time in exchange timezone: exact, and no look-ahead, because
+// the calendar is known in advance and the prices are not. At 30m this admits 10:00 to 15:00.
+// Do NOT go back to an input.session() window — a session string cannot express condition 2,
+// which is why the old formulation had to be replaced rather than patched.
+sessStart = input.int(570, "Session start (minutes after midnight, exchange time)", group = grpT,
+     tooltip = "570 = 09:30. Change only to test a different session.")
+sessEnd   = input.int(960, "Session end (minutes after midnight, exchange time)", group = grpT,
+     tooltip = "960 = 16:00.")
+showSess  = input.bool(true, "Tint the entry window", group = grpT)
+flatEOD   = input.bool(false, "Flatten at the session close (intraday-only variant)", group = grpT,
+     tooltip = "OFF = the tested spec: a position is held until its stop or a CHoCH, which on 30m " +
+               "means a 12.5h median hold and 35% of trades crossing the close. ON = forced flat " +
+               "daily. On the full sample flattening looks cheap ($47,997 / PF 1.29 / 44.4% win " +
+               "vs $63,165 / PF 1.38 / 39.0%), but split on the research/locked boundary the " +
+               "ranking FLIPS: research favours flattening (Sharpe 1.96 vs 1.68), the LOCKED " +
+               "third favours holding decisively ($32,642 / Sharpe 1.87 vs $15,182 / 0.95). " +
+               "Turn it on for RISK reasons only — no overnight gap exposure, day-trade margin, " +
+               "a prop-firm flat-by-close rule — and expect it to cost about HALF the P&L and " +
+               "half the Sharpe. It is not an improvement.")
+
+showDiag = input.bool(true, "Show diagnostics (settings actually in force)", group = "Diagnostics",
+     tooltip = "On by default. The label on the last bar reports the values IN FORCE, which is " +
+               "the only way to catch a cached input silently overriding a default.")
+
+minDist = preset == "30m core" ? 1.0 : preset == "60m core" ? 0.0 : mdIn
+
+// ── indicators ───────────────────────────────────────────────────────────────────────────────
+emaV = ta.ema(close, emaLen)
+atrV = ta.atr(atrLen)
+
+// Confirmed fractal pivots. ta.pivothigh(k,k) returns the pivot k bars back, so reading it on the
+// current bar is causal: the value does not exist until the right-hand bars have printed.
+ph = ta.pivothigh(high, swingK, swingK)
+pl = ta.pivotlow(low,  swingK, swingK)
+var float lastPH = na
+var float lastPL = na
+if not na(ph)
+    lastPH := ph
+if not na(pl)
+    lastPL := pl
+
+// ── structure ────────────────────────────────────────────────────────────────────────────────
+var float brokeHi = na
+var float brokeLo = na
+var int   bias    = 0
+var int   runLen  = 0
+
+// `close` beyond the pivot, not `high`/`low` touching it. The confirmation is load-bearing: on my
+// engine, switching to an intrabar touch costs PF 1.49 -> 1.20. See the execution-mode box above.
+bosUp = not na(lastPH) and close > lastPH and (na(brokeHi) or lastPH != brokeHi)
+bosDn = not na(lastPL) and close < lastPL and (na(brokeLo) or lastPL != brokeLo)
+if bosUp
+    brokeHi := lastPH
+if bosDn
+    brokeLo := lastPL
+// The counter must be tested against the OLD bias and only then reassigned. Writing `bias := 1`
+// first makes the following test trivially true, so the counter never resets on a structure flip.
+if bosUp
+    if bias == 1
+        runLen := runLen + 1
+    else
+        bias   := 1
+        runLen := 1
+if bosDn
+    if bias == -1
+        runLen := runLen + 1
+    else
+        bias   := -1
+        runLen := 1
+
+// ── session gate ─────────────────────────────────────────────────────────────────────────────
+tfMin    = timeframe.in_seconds(timeframe.period) / 60
+
+// ── TIMEZONE ─────────────────────────────────────────────────────────────────────────────────
+// Pine's bare `hour` and `minute` are in the EXCHANGE timezone. For CME products that is
+// America/CHICAGO, so `hour * 60 + minute == 570` is 09:30 in Chicago and 10:30 in New York.
+// Every session time in this script, and every figure it was validated against, is NEW YORK
+// time. Using the bare built-ins ran the whole strategy an hour late. Do not change this input
+// unless you also re-derive the numbers in the header.
+tzIn = input.string("America/New_York", "Timezone for all session times",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"],
+     tooltip = "New York is correct for the research in this file. 'exchange' reproduces the " +
+               "old, wrong behaviour and is here only so the difference can be seen.")
+f_barMin() =>
+    tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
+
+barMin   = f_barMin()                                  // bar OPEN, in the timezone chosen above
+inSess   = barMin >= sessStart and barMin < sessEnd
+nextIn   = barMin + tfMin >= sessStart and barMin + tfMin < sessEnd
+newSess  = inSess and not inSess[1]
+
+// ── backtest window ──────────────────────────────────────────────────────────────────────────
+// TradingView's own date selector only offers the whole loaded history. These inputs restrict
+// the strategy itself, which is the right way to look at a recent stretch: entries are simply
+// not taken outside the window, so the report covers only what you selected.
+grpB = "Backtest window"
+useWin = input.bool(false, "Limit the backtest window", group = grpB,
+     tooltip = "OFF trades everything the chart has loaded. Note that a short window is a SMALL " +
+               "SAMPLE, not a fresh test -- picking the window that looks best is the same " +
+               "mistake as picking the parameter that looks best.")
+winMode = input.string("Last N days", "Window type", options = ["Last N days", "Date range"],
+     group = grpB)
+lookDays = input.int(365, "  ...last N days", minval = 1, maxval = 5000, group = grpB)
+fromT = input.time(timestamp("01 Jan 2024 00:00 +0000"), "  ...from", group = grpB)
+toT   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "  ...to", group = grpB)
+
+inWindow = true
+if useWin
+    if winMode == "Last N days"
+        inWindow := time > timenow - lookDays * 86400000
+    else
+        inWindow := time >= fromT and time <= toT
+
+canEnter = inSess and nextIn and not newSess and inWindow
+
+// ── ADX / Stochastic ─────────────────────────────────────────────────────────────────────────
+[diPlusV, diMinusV, adxV] = ta.dmi(adxLen, adxLen)
+kV = ta.stoch(close, high, low, stochLen)
+dV = ta.sma(kV, 3)
+
+// One line each. Pine treats a continuation line indented by a MULTIPLE OF 4 as a new block, so
+// `... and\n        (...)` is a syntax error (CE10156) while an odd indent happens to work. Not
+// worth relying on that distinction -- these stay on single lines.
+adxOk = (not useAdxMin or (not na(adxV) and adxV >= adxMin)) and (not useAdxRise or (not na(adxV) and not na(adxV[3]) and adxV > adxV[3]))
+stoLongOk = (not useStochVeto or (not na(kV) and kV <= stochLim)) and (not useStochAlign or (not na(kV) and not na(dV) and kV > dV))
+stoShortOk = (not useStochVeto or (not na(kV) and kV >= 100.0 - stochLim)) and (not useStochAlign or (not na(kV) and not na(dV) and kV < dV))
+
+// ── filters ──────────────────────────────────────────────────────────────────────────────────
+farEnough = minDist <= 0 or (not na(emaV) and not na(atrV) and math.abs(close - emaV) >= minDist * atrV)
+okLong  = (not useEma or close > emaV) and farEnough
+okShort = (not useEma or close < emaV) and farEnough
+ready   = not na(atrV) and atrV > 0 and not na(emaV)
+
+longSig = bosUp and runLen >= nBos and okLong and canEnter and ready and sideMode >= 0 and adxOk and stoLongOk
+shortSig = bosDn and runLen >= nBos and okShort and canEnter and ready and sideMode <= 0 and adxOk and stoShortOk
+
+// ── volatility-targeted size: bigger when quiet, smaller when wild. Causal. ──────────────────
+avgAtr = ta.sma(atrV, vtLook)
+vtMult = useVT and not na(avgAtr) and atrV > 0 ? math.min(avgAtr / atrV, vtCap) : 1.0
+qty    = math.max(math.round(baseQty * vtMult), 1)
+
+// ── orders ───────────────────────────────────────────────────────────────────────────────────
+// The stop is anchored to the ACTUAL fill (strategy.position_avg_price), not to the signal bar's
+// close. The ATR used is the one that was current when the signal fired.
+var float atrAtSignal = na
+var float stopLevel   = na
+
+if (longSig or shortSig) and strategy.position_size == 0
+    atrAtSignal := atrV
+
+if longSig and strategy.position_size == 0
+    strategy.entry("L", strategy.long, qty = qty)
+if shortSig and strategy.position_size == 0
+    strategy.entry("S", strategy.short, qty = qty)
+
+if strategy.position_size > 0 and na(stopLevel)
+    stopLevel := strategy.position_avg_price - atrMult * atrAtSignal
+if strategy.position_size < 0 and na(stopLevel)
+    stopLevel := strategy.position_avg_price + atrMult * atrAtSignal
+if strategy.position_size == 0
+    stopLevel := na
+
+// Target at tpR x the risk actually taken. Both barriers ride on one exit order, so whichever
+// price touches first wins -- and when a single bar spans both, TradingView resolves it the
+// conservative way (the stop).
+tpLevel = na(stopLevel) or tpR <= 0 ? na :
+     strategy.position_size > 0 ? strategy.position_avg_price + tpR * (strategy.position_avg_price - stopLevel) :
+     strategy.position_avg_price - tpR * (stopLevel - strategy.position_avg_price)
+
+if strategy.position_size > 0 and not na(stopLevel)
+    strategy.exit("Lx", "L", stop = stopLevel, limit = tpLevel)
+if strategy.position_size < 0 and not na(stopLevel)
+    strategy.exit("Sx", "S", stop = stopLevel, limit = tpLevel)
+
+// Track why positions close, so a win-rate mismatch can be attributed rather than guessed at.
+var int nCloses = 0
+var int nChoch  = 0
+wasIn = strategy.position_size[1] != 0
+if wasIn and strategy.position_size == 0
+    nCloses += 1
+
+if flatEOD and strategy.position_size != 0 and not inSess
+    strategy.close_all(comment = "EOD flat")
+
+if useChoch
+    if strategy.position_size > 0 and bosDn
+        strategy.close("L", comment = "CHoCH")
+        nChoch += 1
+    if strategy.position_size < 0 and bosUp
+        strategy.close("S", comment = "CHoCH")
+        nChoch += 1
+
+if showDiag and barstate.islast
+    var label lbl = na
+    label.delete(lbl)
+    lbl := label.new(bar_index, high,
+         "symbol " + syminfo.ticker + "   tf " + timeframe.period +
+         "\n$ per point " + str.tostring(syminfo.pointvalue) + "  (NQ 20 / MNQ 2)" +
+         "\ncommission $" + str.tostring(commPerOrder) + "/order" +
+         (syminfo.pointvalue >= 10 and commPerOrder < 1.5 ?
+             "  <<< TOO LOW for an E-mini: set commission_value AND commPerOrder to 2.00" :
+          syminfo.pointvalue < 10 and commPerOrder >= 1.5 ?
+             "  <<< TOO HIGH for a Micro: set commission_value AND commPerOrder to 0.50" : "  ok") +
+         "\n— gates in force —" +
+         "\nside " + (sideMode == 0 ? "both" : sideMode == 1 ? "LONGS ONLY (a regime bet)" :
+                       "SHORTS ONLY (a regime bet)") +
+         "\nnBos " + str.tostring(nBos) + "    stop " + str.tostring(atrMult) + " x ATR" +
+         "\ntake-profit " + (tpR > 0 ? str.tostring(tpR) + " R" : "off") +
+             "    CHoCH exit " + (useChoch ? "ON" : "off") +
+             (tpR > 0 and useChoch ? "   <<< BOTH ON: they conflict, use one" : "") +
+         "\nrange filter " + str.tostring(minDist) + " x ATR" +
+         "\nentry window " + str.tostring(math.round(sessStart + tfMin)) + "-" +
+             str.tostring(math.round(sessEnd - tfMin)) + " (exchange minutes)" +
+         "\nvol sizing " + (useVT ? "ON — P&L will not match reference" : "off") +
+         "\nADX filter " + (useAdxMin ? ">" + str.tostring(adxMin) : "off") +
+             (useAdxRise ? " + rising" : "") +
+             "    Stoch " + (useStochVeto ? "veto " + str.tostring(stochLim) : "off") +
+             (useStochAlign ? " + K>D" : "") +
+             ((useAdxMin or useAdxRise or useStochVeto or useStochAlign) ?
+                 "   <<< a tested LOSER is engaged" : "") +
+         "\n  ADX now " + (na(adxV) ? "--" : str.tostring(math.round(adxV))) +
+             "   %K now " + (na(kV) ? "--" : str.tostring(math.round(kV))) +
+         "\n— exits —" +
+         "\nposition closes " + str.tostring(nCloses) +
+         "\n  of which CHoCH " + str.tostring(nChoch) +
+         "\n  of which stops " + str.tostring(nCloses - nChoch) +
+         "\n\nIf win rate is near 27%, the stop is running 1xATR, not 2." +
+         "\nIf trades are near 290, nBos is running 1, not 2." +
+         "\nIf either looks wrong, Script execution must be ON BAR CLOSE ONLY.",
+         style = label.style_label_left, color = color.new(color.black, 15), textcolor = color.white)
+
+// ── LIVE ALERTS ──────────────────────────────────────────────────────────────────────────────
+// alert() inside a bar-close-only script fires ONCE, when the bar closes. Create the alert in
+// TradingView with "Once per bar close" -- any other frequency reintroduces the intrabar problem
+// the header warns about, because it would fire on an unconfirmed break.
+//
+// The alert tells you the level to work with; the FILL is the next bar's open, so you place a
+// market order when it arrives and take the open. Do not chase, and do not enter mid-bar: an
+// entry taken 20 minutes into the bar is not this strategy.
+if longSig
+    alert("BOS LONG  " + syminfo.ticker + " " + timeframe.period +
+          "  |  fill at next open  |  stop " + str.tostring(math.round_to_mintick(close - atrMult * atrV)) +
+          "  |  target " + str.tostring(math.round_to_mintick(close + tpR * atrMult * atrV)) +
+          "  |  risk " + str.tostring(math.round_to_mintick(atrMult * atrV)) + " pts",
+          alert.freq_once_per_bar_close)
+if shortSig
+    alert("BOS SHORT " + syminfo.ticker + " " + timeframe.period +
+          "  |  fill at next open  |  stop " + str.tostring(math.round_to_mintick(close + atrMult * atrV)) +
+          "  |  target " + str.tostring(math.round_to_mintick(close - tpR * atrMult * atrV)) +
+          "  |  risk " + str.tostring(math.round_to_mintick(atrMult * atrV)) + " pts",
+          alert.freq_once_per_bar_close)
+
+// ── plots ────────────────────────────────────────────────────────────────────────────────────
+plot(emaV, "EMA 200", color.new(color.orange, 0), 2)
+bU = plot(minDist > 0 ? emaV + minDist * atrV : na, "no-trade band", color.new(color.gray, 70))
+bL = plot(minDist > 0 ? emaV - minDist * atrV : na, "no-trade band", color.new(color.gray, 70))
+fill(bU, bL, color.new(color.gray, 92), title = "range — no entries here")
+plot(stopLevel, "stop", color.new(color.red, 0), 1, plot.style_linebr)
+plot(tpLevel, "target", color.new(color.green, 0), 1, plot.style_linebr)
+plotshape(bosUp and inSess, "BOS up",   shape.triangleup,   location.belowbar, color.new(color.teal, 0),   size = size.tiny)
+plotshape(bosDn and inSess, "BOS down", shape.triangledown, location.abovebar, color.new(color.maroon, 0), size = size.tiny)
+bgcolor(showSess and canEnter ? color.new(color.blue, 94) : na, title = "entry window")
+
+// Optional oscillator pane. Off by default -- these are diagnostics for reproducing the negative
+// result above, not inputs to the rule.
+plot(showOsc ? adxV : na, "ADX", color.new(color.yellow, 0), 1, display = display.pane)
+plot(showOsc ? kV : na, "Stoch %K", color.new(color.aqua, 0), 1, display = display.pane)
+plot(showOsc ? dV : na, "Stoch %D", color.new(color.fuchsia, 0), 1, display = display.pane)
+hline(showOsc ? 80 : na, "80", color.new(color.gray, 60))
+hline(showOsc ? 20 : na, "20", color.new(color.gray, 60))
+
+// =============================================================================================
+// WHAT THESE RULES PRODUCED — docs/ib/STUDY_BOS_CHOCH.md, STUDY_LOWER_DD.md, STUDY_MNQ_LIVE.md
+//
+// NQ, Dec 2022 – Dec 2025, 1 contract, no volatility sizing:
+//   30m leg (filter 1.0)   147 trades   +$71,483   PF 1.54   Sharpe 1.00   maxDD 15.6%   t 1.88
+//   60m leg (filter 0)      43 trades   +$63,233   PF 2.37   Sharpe 1.08   maxDD 13.1%
+//   LOCKED final third (268 sessions, never used to choose anything):
+//                            30m +$47,072 Sharpe 1.39   |   60m +$28,065 Sharpe 1.07
+//
+// MNQ at $0.50/order, same window — and note the LOCKED block beats the research block, which is
+// rare and is the strongest single thing that can be said for this rule:
+//   full sample   147 trades  +$7,060  PF 1.53  40.1% win  maxDD $2,074  Sharpe 0.90
+//   research 65%   91 trades  +$2,387  PF 1.34               maxDD $1,245  Sharpe 0.64
+//   LOCKED   35%   56 trades  +$4,674  PF 1.75               maxDD $2,074  Sharpe 1.26
+//   with the 2R target: 141 trades +$11,679 PF 1.64 44.0% win maxDD $2,865  Sharpe 1.14
+//
+// SHARPE CORRECTION. Earlier revisions of this file quoted 2.28 / 3.07 / 2.93. Those were
+// annualised over TRADING DAYS ONLY -- the 137-147 sessions that held a trade -- while the rule is
+// flat on ~85% of days. Annualising a sparse series over sqrt(252) as if every day looked like a
+// trading day inflates Sharpe by about 2.6x. The figures above now include every session in the
+// block, with zero on days that did not trade, which is the standard construction. Dollars,
+// profit factor, win rate and drawdown were never affected.
+//
+// Monte Carlo, 5,000 stationary-block-bootstrap paths on daily P&L:
+//   net $   p5 1,232   median 6,969   p95 13,214        P(net < 0) = 2.3%
+//   maxDD   p5 1,337   median 2,180   p95  3,922        P(DD > 2x realised) = 3.4%
+//
+// WHAT FAILS, so you do not rediscover it:
+//   • 1m and 2m are SIGNIFICANTLY NEGATIVE (t = −2.45, −2.68). This does not scalp.
+//   • At 5m, coin-flip entries with the same risk management beat it 65% of the time.
+//   • Adding a 15m leg RAISED book drawdown to 37% for a Calmar of 0.26. Two legs, not three.
+//   • An equity-curve brake (cut size after an 8% drawdown) made everything worse.
+//   • SIX pre-specified variants — confirmation buffers, breakeven stops, time-of-day windows —
+//     were tested with a locked holdout. NONE beat the baseline on both blocks. The rank
+//     correlation between research and locked Sharpe was −0.429: the variant that looked WORST
+//     in research was the BEST out of sample. Walk-forward re-selection cost −$3,857 against
+//     never changing anything. Do not tune this. Tuning it is the documented way to lose money.
+//   • PBO is 0.571 and t = 1.88 against a ~2.7 multiple-testing hurdle. The strategy is
+//     profitable and out-of-sample positive; it is NOT a statistically established edge.
+//   • There is NO ES DATA behind any of this. One instrument, one bull market, three years.
+//
+// SIZE: a 2×ATR stop on 30m NQ risks ~$2,000 per contract; on MNQ ~$200. If you switch to
+// full-size NQ or ES, change BOTH `commission_value` (line ~55) and `commPerOrder` to 2.00 —
+// the label will tell you if you forget.
+//
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================

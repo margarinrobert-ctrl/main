@@ -22,15 +22,16 @@ import {
   secondOrderExposure,
 } from "@/lib/flow/analytics";
 import { loadChain } from "@/lib/client-data";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { AXIS_PROPS, CHART, CHART_TICK, TOOLTIP_CURSOR, TOOLTIP_CURSOR_LINE, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
+import { EmptyState, ErrorState, Loading, SectionHeader, Stat } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 type ProfMetric = "gex" | "vanna" | "charm";
 
 const PROF_META: Record<ProfMetric, { label: string; color: string; unit: string }> = {
-  gex: { label: "Net GEX", color: "#10b981", unit: "$/1%" },
-  vanna: { label: "Vanna", color: "#a855f7", unit: "$/vol-pt" },
-  charm: { label: "Charm", color: "#f59e0b", unit: "$/day" },
+  gex: { label: "Net GEX", color: CHART.call, unit: "$/1%" },
+  vanna: { label: "Vanna", color: CHART.cyan, unit: "$/vol-pt" },
+  charm: { label: "Charm", color: CHART.amber, unit: "$/day" },
 };
 
 function windowAroundSpot<T extends { strike: number }>(rows: T[], spot: number | null, n = 31): T[] {
@@ -99,57 +100,58 @@ export function VannaCharmProfile({ symbol, exp = "ALL" }: { symbol: string; exp
 
   return (
     <div className="space-y-4">
-      <div className="glass p-4">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold">Vanna &amp; Charm by strike · {symbol}</h2>
-          <span className="text-xs text-neutral-500">dealer 2nd-order exposure (calls +, puts −)</span>
-        </div>
-        {state === "loading" && <Loading label="Modeling greeks…" />}
+      <div className="glass glass-hover fade-up p-4 sm:p-5">
+        <SectionHeader eyebrow="Vanna &amp; charm" title={symbol} right={<span className="lbl">Dealer 2nd-order exposure by strike</span>} />
+        {state === "loading" && <Loading label="Loading second-order greeks…" />}
         {state === "error" && <ErrorState message={error} />}
-        {state === "empty" && <EmptyState label="No options data (needs greeks)." />}
+        {state === "empty" && <EmptyState label="Greeks unavailable for this chain." />}
         {state === "ok" && (
           <>
             <div className="grid gap-4 lg:grid-cols-2">
               <ByStrikeChart
                 title="Vanna exposure"
-                sub="$Δ / 1 vol-pt · positive = falling-IV tailwind"
+                sub="$Δ per 1 vol-pt · positive: IV decline adds dealer buying"
                 data={byStrike.map((x) => ({ strike: x.strike, v: x.vanna }))}
                 nearestStrike={nearestStrike}
                 height={height}
-                pos="#a855f7"
-                neg="#6b7280"
+                pos={CHART.cyan}
+                neg="rgba(255,255,255,0.28)"
               />
               <ByStrikeChart
                 title="Charm exposure"
-                sub="$Δ / day · sign = decay drift direction"
+                sub="$Δ per day · positive: decay flow sells into the close"
                 data={byStrike.map((x) => ({ strike: x.strike, v: x.charm }))}
                 nearestStrike={nearestStrike}
                 height={height}
-                pos="#ef4444"
-                neg="#10b981"
+                pos={CHART.put}
+                neg={CHART.call}
               />
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-              <Mini label="Net vanna" value={so.vanna == null ? "—" : `${fmtUsd(so.vanna)}/vol-pt`} tone={so.vanna == null ? "" : so.vanna >= 0 ? "text-emerald-400" : "text-red-400"} />
-              <Mini label="Net charm" value={so.charm == null ? "—" : `${fmtUsd(so.charm)}/day`} tone={so.charm == null ? "" : so.charm >= 0 ? "text-red-400" : "text-emerald-400"} />
-              <Mini label="Spot" value={spot == null ? "—" : spot.toLocaleString()} />
-              <Mini label="Strikes shown" value={String(byStrike.length)} />
+            <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              <Stat label="Net vanna" value={so.vanna == null ? "—" : `${fmtUsd(so.vanna)}/vol-pt`} tone={so.vanna == null ? undefined : so.vanna >= 0 ? "call" : "put"} />
+              <Stat label="Net charm" value={so.charm == null ? "—" : `${fmtUsd(so.charm)}/day`} tone={so.charm == null ? undefined : so.charm >= 0 ? "put" : "call"} sub="inverted scale" />
+              <Stat label="Spot" value={spot == null ? "—" : spot.toLocaleString()} />
+              <Stat label="Strikes shown" value={String(byStrike.length)} />
             </div>
           </>
         )}
       </div>
 
       {state === "ok" && profData.length > 0 && (
-        <div className="glass p-4">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-semibold">Exposure across spot · {symbol}</h2>
-            <div className="flex items-center gap-1 text-xs">
+        <div className="glass glass-hover fade-up p-4 sm:p-5">
+          <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <div className="lbl mb-1">Exposure across spot</div>
+              <h2 className="display text-base text-neutral-50">{symbol}</h2>
+            </div>
+            <div className="flex items-center gap-1">
               {(Object.keys(PROF_META) as ProfMetric[]).map((m) => (
                 <button
                   key={m}
                   onClick={() => setProfMetric(m)}
-                  className={`rounded-md px-2 py-1 transition ${
-                    profMetric === m ? "bg-white/10 text-neutral-100" : "text-neutral-400 hover:bg-white/5"
+                  aria-pressed={profMetric === m}
+                  className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
+                    profMetric === m ? "bg-accent/15 text-accent-bright" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
                   }`}
                 >
                   {PROF_META[m].label}
@@ -163,20 +165,21 @@ export function VannaCharmProfile({ symbol, exp = "ALL" }: { symbol: string; exp
           </p>
           <div style={{ height: 300 }} className="w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={profData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-                <XAxis dataKey="spot" type="number" domain={["dataMin", "dataMax"]} tick={{ fill: "#a3a3a3", fontSize: 11 }} stroke="#404040" />
-                <YAxis tickFormatter={(v) => fmtUsd(Number(v))} tick={{ fill: "#a3a3a3", fontSize: 11 }} stroke="#404040" width={64} />
+              <LineChart data={profData} margin={{ top: 8, right: 16, left: 4, bottom: 8 }}>
+                <XAxis dataKey="spot" type="number" domain={["dataMin", "dataMax"]} {...AXIS_PROPS} />
+                <YAxis tickFormatter={(v) => fmtUsd(Number(v))} {...AXIS_PROPS} width={60} />
                 <Tooltip
-                  contentStyle={{ background: "#0a0a0a", border: "1px solid #404040", borderRadius: 6, fontSize: 12 }}
+                  {...TOOLTIP_PROPS}
+                  cursor={TOOLTIP_CURSOR_LINE}
                   formatter={(v: number | string) => [fmtUsd(Number(v)), `${meta.label} (${meta.unit})`]}
-                  labelFormatter={(l) => `spot ${l}`}
+                  labelFormatter={(l) => `Spot ${l}`}
                 />
-                <ReferenceLine y={0} stroke="#525252" />
+                <ReferenceLine y={0} stroke="rgba(255,255,255,0.16)" />
                 {spot != null && (
-                  <ReferenceLine x={spot} stroke="#e5e5e5" strokeDasharray="4 4" label={{ value: "spot", position: "top", fill: "#e5e5e5", fontSize: 11 }} />
+                  <ReferenceLine x={spot} stroke={CHART.spot} strokeDasharray="4 4" label={refLabel("Spot", CHART.spot, "insideTopRight")} />
                 )}
                 {profMetric === "gex" && profFlip != null && (
-                  <ReferenceLine x={Math.round(profFlip * 100) / 100} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "flip", position: "top", fill: "#f59e0b", fontSize: 11 }} />
+                  <ReferenceLine x={Math.round(profFlip * 100) / 100} stroke={CHART.violet} strokeDasharray="4 4" label={refLabel("Flip", CHART.violet, "insideTopLeft")} />
                 )}
                 <Line type="monotone" dataKey="val" stroke={meta.color} strokeWidth={2} dot={false} isAnimationActive={false} />
               </LineChart>
@@ -207,40 +210,53 @@ function ByStrikeChart({
 }) {
   return (
     <div>
-      <div className="mb-1 text-sm font-medium text-neutral-200">{title}</div>
+      <div className="mb-1 text-sm font-medium text-neutral-100">{title}</div>
       <div className="mb-2 text-[11px] text-neutral-500">{sub}</div>
-      <div style={{ height }} className="w-full">
+      <div style={{ height: Math.min(height, 460) }} className="w-full">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} layout="vertical" margin={{ top: 4, right: 28, left: 4, bottom: 4 }}>
-            <XAxis type="number" tickFormatter={(v) => fmtUsd(Number(v))} tick={{ fill: "#a3a3a3", fontSize: 10 }} stroke="#404040" />
-            <YAxis type="category" dataKey="strike" tick={{ fill: "#a3a3a3", fontSize: 10 }} stroke="#404040" width={52} interval={0} />
+            <XAxis type="number" tickFormatter={(v) => fmtUsd(Number(v))} {...AXIS_PROPS} />
+            <YAxis type="category" dataKey="strike" {...AXIS_PROPS} tick={CHART_TICK} width={48} interval={0} />
             <Tooltip
-              contentStyle={{ background: "#0a0a0a", border: "1px solid #404040", borderRadius: 6, fontSize: 12 }}
+              {...TOOLTIP_PROPS}
               formatter={(v: number | string) => [fmtUsd(Number(v)), title]}
-              labelFormatter={(l) => `strike ${l}`}
-              cursor={{ fill: "rgba(255,255,255,0.04)" }}
+              labelFormatter={(l) => `Strike ${l}`}
+              cursor={TOOLTIP_CURSOR}
             />
-            <ReferenceLine x={0} stroke="#525252" />
+            <ReferenceLine x={0} stroke="rgba(255,255,255,0.16)" />
             {nearestStrike != null && (
-              <ReferenceLine y={nearestStrike} stroke="#e5e5e5" strokeDasharray="4 4" label={{ value: "S", position: "right", fill: "#e5e5e5", fontSize: 11 }} />
+              <ReferenceLine y={nearestStrike} stroke={CHART.spot} strokeDasharray="4 4" label={refLabel("Spot", CHART.spot, "insideTopRight")} />
             )}
-            <Bar dataKey="v" radius={[0, 3, 3, 0]} isAnimationActive={false}>
-              {data.map((d) => (
-                <Cell key={d.strike} fill={d.v >= 0 ? pos : neg} />
-              ))}
-            </Bar>
+            <Bar dataKey="v" isAnimationActive={false} shape={(props: unknown) => <SignedBar {...(props as Record<string, unknown>)} pos={pos} neg={neg} />} />
           </BarChart>
         </ResponsiveContainer>
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
+        {[
+          { c: pos, l: "Positive" },
+          { c: neg, l: "Negative" },
+        ].map((it) => (
+          <span key={it.l} className="flex items-center gap-1.5 text-[10px] text-neutral-600">
+            <span className="h-2 w-2 rounded-sm" style={{ background: it.c }} />
+            {it.l}
+          </span>
+        ))}
       </div>
     </div>
   );
 }
 
-function Mini({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className="rounded border border-white/10 px-3 py-2">
-      <div className="text-[11px] uppercase tracking-wide text-neutral-500">{label}</div>
-      <div className={`font-mono text-base ${tone || "text-neutral-100"}`}>{value}</div>
-    </div>
-  );
+/** Horizontal signed bar: rounds the outward edge (right for positive, left for negative). */
+function SignedBar(props: Record<string, unknown> & { pos?: string; neg?: string }) {
+  const { x, y, width, height, pos, neg } = props as { x: number; y: number; width: number; height: number; pos: string; neg: string };
+  if (!Number.isFinite(width) || width === 0) return <g />;
+  const positive = width >= 0;
+  const rx = 3;
+  const w = Math.abs(width);
+  const rectX = positive ? x : x + width;
+  const r = Math.min(rx, w);
+  const path = positive
+    ? `M${rectX},${y} h${w - r} a${r},${r} 0 0 1 ${r},${r} v${height - 2 * r} a${r},${r} 0 0 1 -${r},${r} h-${w - r} z`
+    : `M${rectX + r},${y} h${w - r} v${height} h-${w - r} a${r},${r} 0 0 1 -${r},-${r} v-${height - 2 * r} a${r},${r} 0 0 1 ${r},-${r} z`;
+  return <path d={path} fill={positive ? pos : neg} />;
 }

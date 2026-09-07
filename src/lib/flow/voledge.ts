@@ -124,7 +124,7 @@ export function buildVolReport(chain: OptionContract[], spot: number | null, bar
     side: "info",
     title: "Reminder",
     detail:
-      "Short-vol wins often and loses big; long-vol bleeds theta until it pays. IV/greeks are ~15-min delayed (CBOE), RV is from EOD closes. Educational — not financial advice.",
+      "Short-vol wins often and loses big; long-vol bleeds theta until it pays. Educational — not financial advice.",
   });
 
   return { atmIv: iv, rv10, rv20, vrpAbs, vrpRatio, termFront, termBack, termShape, skew, reads };

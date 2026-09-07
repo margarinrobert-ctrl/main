@@ -38,7 +38,11 @@ export const config = {
   alphaVantageBaseUrl: process.env.ALPHAVANTAGE_BASE_URL ?? "https://www.alphavantage.co/query",
   // CBOE delayed quotes — public, keyless options feed (~15-min delayed).
   cboeBaseUrl: process.env.CBOE_BASE_URL ?? "https://cdn.cboe.com/api/global/delayed_quotes/options",
-  optionsWatchlist: (process.env.OPTIONS_WATCHLIST ?? "SPY,QQQ")
+  // FINRA off-exchange (dark-pool) daily short-sale volume files — public, keyless.
+  finraBaseUrl: (process.env.FINRA_BASE_URL ?? "https://cdn.finra.org").replace(/\/+$/, ""),
+  darkPoolLookbackDays: toInt(process.env.DARKPOOL_LOOKBACK_DAYS, 10),
+  darkPoolCacheTtlSeconds: toInt(process.env.DARKPOOL_CACHE_TTL_SECONDS, 21600), // 6h (EOD, T+1)
+  optionsWatchlist: (process.env.OPTIONS_WATCHLIST ?? "SPY,QQQ,NVDA,TSLA,AAPL,AMD,META")
     .split(",")
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean),

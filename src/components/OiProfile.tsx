@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import { filterByExpiration, oiByStrike } from "@/lib/flow/analytics";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
+import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -61,33 +62,54 @@ export function OiProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: strin
   }, [chain, spot, exp]);
 
   return (
-    <div className="glass p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="font-semibold">Open interest · {symbol}</h2>
-        <span className="text-xs text-neutral-500">contracts by strike</span>
-      </div>
-      {state === "loading" && <Loading label="Loading OI…" />}
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <SectionHeader eyebrow="Open interest" title={symbol} right={<span className="lbl">Contracts by strike</span>} />
+      {state === "loading" && <Loading label="Loading open interest…" />}
       {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No open-interest data." />}
+      {state === "empty" && <EmptyState label="No open-interest data for this chain." />}
       {state === "ok" && (
-        <div className="h-[340px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-              <CartesianGrid stroke="#262626" />
-              <XAxis dataKey="strike" tick={{ fill: "#a3a3a3", fontSize: 11 }} stroke="#404040" />
-              <YAxis tickFormatter={(v) => (Number(v) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : String(v))} tick={{ fill: "#a3a3a3", fontSize: 11 }} stroke="#404040" width={48} />
-              <Tooltip
-                contentStyle={{ background: "#0a0a0a", border: "1px solid #404040", borderRadius: 6, fontSize: 12 }}
-                formatter={(v: number | string, n) => [Number(v).toLocaleString(), n]}
-                labelFormatter={(l) => `strike ${l}`}
-              />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              {spotX != null && <ReferenceLine x={spotX} stroke="#e5e5e5" strokeDasharray="3 3" label={{ value: "spot", fill: "#e5e5e5", fontSize: 10, position: "top" }} />}
-              <Bar dataKey="callOi" name="Call OI" fill="#10b981" />
-              <Bar dataKey="putOi" name="Put OI" fill="#ef4444" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <>
+          <div className="h-[340px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
+                <defs>
+                  <linearGradient id="oi-call" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART.call} stopOpacity={0.9} />
+                    <stop offset="100%" stopColor={CHART.call} stopOpacity={0.4} />
+                  </linearGradient>
+                  <linearGradient id="oi-put" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART.put} stopOpacity={0.9} />
+                    <stop offset="100%" stopColor={CHART.put} stopOpacity={0.4} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid {...GRID_PROPS} />
+                <XAxis dataKey="strike" {...AXIS_PROPS} minTickGap={18} />
+                <YAxis tickFormatter={(v) => (Number(v) >= 1000 ? `${Math.round(Number(v) / 1000)}k` : String(v))} {...AXIS_PROPS} width={44} />
+                <Tooltip
+                  {...TOOLTIP_PROPS}
+                  formatter={(v: number | string, n) => [Number(v).toLocaleString(), n]}
+                  labelFormatter={(l) => `Strike ${l}`}
+                  cursor={TOOLTIP_CURSOR}
+                />
+                {spotX != null && <ReferenceLine x={spotX} stroke={CHART.spot} strokeDasharray="3 3" label={refLabel("Spot", CHART.spot, "insideTopRight")} />}
+                <Bar dataKey="callOi" name="Call OI" fill="url(#oi-call)" radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="putOi" name="Put OI" fill="url(#oi-put)" radius={[2, 2, 0, 0]} isAnimationActive={false} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-white/[0.05] pt-3">
+            {[
+              { c: CHART.call, l: "Call OI" },
+              { c: CHART.put, l: "Put OI" },
+              { c: CHART.spot, l: "Spot" },
+            ].map((it) => (
+              <span key={it.l} className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+                <span className="h-2 w-2 rounded-sm" style={{ background: it.c }} />
+                {it.l}
+              </span>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

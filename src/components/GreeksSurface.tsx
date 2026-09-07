@@ -10,9 +10,11 @@ type ViewState = "loading" | "error" | "empty" | "ok";
 
 const METRICS: { key: SurfaceMetric; label: string }[] = [
   { key: "gex", label: "GEX (γ$)" },
+  { key: "dex", label: "DEX (Δ$)" },
   { key: "vanna", label: "Vanna" },
   { key: "charm", label: "Charm" },
-  { key: "oi", label: "Open interest" },
+  { key: "oi", label: "Open int." },
+  { key: "volume", label: "Volume" },
   { key: "iv", label: "Implied vol" },
 ];
 
@@ -37,20 +39,28 @@ function mix(c1: string, c2: string, t: number): string {
   const b = hexToRgb(c2);
   return `rgb(${lerp(a[0], b[0], t)},${lerp(a[1], b[1], t)},${lerp(a[2], b[2], t)})`;
 }
-// signed: red (−) → slate (0) → emerald (+).  unsigned: blue → teal → yellow.
+// signed: put-red (−) → graphite (0) → call-emerald (+).  unsigned: graphite → emerald → cyan.
 function colorFor(h: number, signed: boolean): string {
   if (signed) {
     const t = Math.max(-1, Math.min(1, h));
-    return t >= 0 ? mix("#1f2937", "#10b981", t) : mix("#1f2937", "#ef4444", -t);
+    return t >= 0 ? mix("#1f2937", "#34d399", t) : mix("#1f2937", "#f87171", -t);
   }
   const t = Math.max(0, Math.min(1, h));
-  return t < 0.5 ? mix("#0b3d91", "#14b8a6", t / 0.5) : mix("#14b8a6", "#fde047", (t - 0.5) / 0.5);
+  return t < 0.5 ? mix("#151a24", "#10b981", t / 0.5) : mix("#10b981", "#22d3ee", (t - 0.5) / 0.5);
 }
 
 function fmtVal(v: number, metric: SurfaceMetric): string {
-  if (metric === "oi") return Math.round(v).toLocaleString();
+  if (metric === "oi" || metric === "volume") return Math.round(v).toLocaleString();
   if (metric === "iv") return `${(v * 100).toFixed(1)}%`;
   return fmtUsd(v);
+}
+
+/** Scale an "rgb(r,g,b)" string by a brightness factor (for pseudo-lighting on the surface). */
+function shade(rgb: string, f: number): string {
+  const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(rgb);
+  if (!m) return rgb;
+  const s = (x: number) => Math.max(0, Math.min(255, Math.round(x * f)));
+  return `rgb(${s(+m[1])},${s(+m[2])},${s(+m[3])})`;
 }
 
 export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: string }) {
@@ -151,10 +161,14 @@ export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: s
         const p11 = project(i + 1, j + 1, hOf(c11));
         const p01 = project(i, j + 1, hOf(c01));
         const avg = (c00 + c10 + c11 + c01) / 4;
+        const depthAvg = (p00.depth + p10.depth + p11.depth + p01.depth) / 4;
+        const hA = hOf(avg);
+        // pseudo-lighting: taller cells brighter, far (deeper) cells dimmer
+        const lightF = Math.max(0.6, Math.min(1.2, (0.84 + 0.3 * Math.abs(hA)) * (1 - 0.13 * ((depthAvg + 1.4) / 2.8))));
         quads.push({
           path: `M${p00.x},${p00.y} L${p10.x},${p10.y} L${p11.x},${p11.y} L${p01.x},${p01.y} Z`,
-          fill: colorFor(hOf(avg), surface.signed),
-          depth: (p00.depth + p10.depth + p11.depth + p01.depth) / 4,
+          fill: shade(colorFor(hA, surface.signed), lightF),
+          depth: depthAvg,
         });
       }
     }
@@ -227,16 +241,20 @@ export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: s
   };
 
   return (
-    <div className="glass p-4">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">3D greeks surface · {symbol}</h2>
-        <div className="flex flex-wrap items-center gap-1 text-xs">
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <div className="lbl mb-1">3D greeks surface</div>
+          <h2 className="display text-base text-neutral-50">{symbol}</h2>
+        </div>
+        <div className="flex flex-wrap items-center gap-1">
           {METRICS.map((m) => (
             <button
               key={m.key}
               onClick={() => setMetric(m.key)}
-              className={`rounded-md px-2 py-1 transition ${
-                metric === m.key ? "bg-emerald-500/15 text-emerald-300" : "text-neutral-400 hover:bg-white/5"
+              aria-pressed={metric === m.key}
+              className={`rounded-lg px-2.5 py-2 text-xs font-medium transition ${
+                metric === m.key ? "bg-accent/15 text-accent-bright" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
               }`}
             >
               {m.label}
@@ -244,16 +262,24 @@ export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: s
           ))}
           <button
             onClick={() => setSpin((s) => !s)}
-            className={`ml-1 rounded-md px-2 py-1 transition ${spin ? "bg-white/10 text-neutral-100" : "text-neutral-400 hover:bg-white/5"}`}
+            aria-pressed={spin}
+            className={`ml-1 flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-medium transition ${spin ? "bg-white/10 text-neutral-100" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"}`}
           >
-            {spin ? "⏸ spin" : "▶ spin"}
+            <svg aria-hidden viewBox="0 0 12 12" className="h-2.5 w-2.5">
+              {spin ? (
+                <path fill="currentColor" d="M2 2h3v8H2zM7 2h3v8H7z" />
+              ) : (
+                <path fill="currentColor" d="M3 2l7 4-7 4z" />
+              )}
+            </svg>
+            Spin
           </button>
         </div>
       </div>
 
-      {state === "loading" && <Loading label="Building surface…" />}
+      {state === "loading" && <Loading label="Loading greeks surface…" />}
       {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No options data (needs greeks)." />}
+      {state === "empty" && <EmptyState label="Greeks unavailable for this chain." />}
       {state === "ok" && render == null && (
         <EmptyState label="Need ≥2 expirations and ≥2 strikes to render a surface." />
       )}
@@ -271,12 +297,21 @@ export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: s
               onPointerUp={onUp}
               onPointerLeave={onUp}
             >
+              <defs>
+                <filter id="ridgeGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="3" result="b" />
+                  <feMerge>
+                    <feMergeNode in="b" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
               <path d={render.basePath} fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
               {render.quads.map((q, i) => (
-                <path key={i} d={q.path} fill={q.fill} stroke="rgba(255,255,255,0.06)" strokeWidth={0.5} />
+                <path key={i} d={q.path} fill={q.fill} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5} />
               ))}
-              {render.expRidge && <path d={render.expRidge} fill="none" stroke="#34d399" strokeWidth={2.4} />}
-              {render.ridge && <path d={render.ridge} fill="none" stroke="#e5e5e5" strokeWidth={1.6} strokeDasharray="3 3" />}
+              {render.expRidge && <path d={render.expRidge} fill="none" stroke="#34d399" strokeWidth={2.6} filter="url(#ridgeGlow)" />}
+              {render.ridge && <path d={render.ridge} fill="none" stroke="#f5f5f5" strokeWidth={1.6} strokeDasharray="3 3" />}
               {render.strikeLabels.map((l) => (
                 <text key={`s${l.s}`} x={l.x} y={l.y + 14} fontSize={9} fill="#9ca3af" textAnchor="middle">
                   {l.s}
@@ -290,15 +325,15 @@ export function GreeksSurface({ symbol, exp = "ALL" }: { symbol: string; exp?: s
             </svg>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-neutral-400">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.05] pt-3 text-[11px] text-neutral-500">
             <div className="flex items-center gap-2">
               <span>{surface.signed ? "−" : "low"}</span>
               <span
                 className="inline-block h-2 w-32 rounded"
                 style={{
                   background: surface.signed
-                    ? "linear-gradient(90deg,#ef4444,#1f2937,#10b981)"
-                    : "linear-gradient(90deg,#0b3d91,#14b8a6,#fde047)",
+                    ? "linear-gradient(90deg,#f87171,#1f2937,#34d399)"
+                    : "linear-gradient(90deg,#151a24,#10b981,#22d3ee)",
                 }}
               />
               <span>{surface.signed ? "+" : "high"}</span>

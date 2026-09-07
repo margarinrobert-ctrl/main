@@ -433,7 +433,7 @@ export function buildHarvestReport(
   if (skew != null && skew > 0.03) notes.push(`Steep put skew (+${(skew * 100).toFixed(1)} pts) → downside puts are richest. Put-spreads / jade-lizards finance well; avoid naked puts into the skew.`);
   if (dte != null && dte <= 1) notes.push("0DTE selected: pure theta but max gamma — tiny size, hard stops, no overnight risk. Manage actively; one gap can erase weeks of credit.");
   if (regime === "harvest") notes.push("Management: take profits at ~50% of max, roll/close tested sides near 21 DTE, and size for the worst gap day — short vol wins often and loses big.");
-  notes.push("Credits/POP/ROM are estimates from ~15-min delayed mid prices, delta-as-probability, and r=q=0. Educational — not financial advice.");
+  notes.push("Credits/POP/ROM are estimates from mid prices, delta-as-probability, and r=q=0. Educational — not financial advice.");
 
   return { regime, headline, expiration: chosen, dte, iv, rv, vrpRatio, termShape, skew, emExp, callWall: cw, putWall: pw, signals, notes };
 }

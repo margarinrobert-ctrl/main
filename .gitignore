@@ -28,9 +28,24 @@ next-env.d.ts
 .DS_Store
 /coverage
 
-# Python
+# Research data — large, often licensed, and reproducible from the ingest command
+# recorded in each study's header. Never commit raw or canonical bar files.
+/data/*.csv
+/data/*.json
+
+# Python research layer
 __pycache__/
 *.pyc
 
 # backtest intermediates derived from local market data
 backtests/**/grid.npz
+
+# ML layer artifacts: local experiment store, exported platform data, model caches
+research/mlruns.db
+research/mlruns/
+research/qlib_data/
+research/lean_data/
+research/**/__pycache__/
+catboost_info/
+research/trend_search_results.parquet
+research/portfolio_daily.parquet

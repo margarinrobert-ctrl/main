@@ -1,10 +1,11 @@
 "use client";
 
-import { ColorType, createChart, type IChartApi, type Time } from "lightweight-charts";
+import { createChart, type IChartApi, type Time } from "lightweight-charts";
 import { useEffect, useRef, useState } from "react";
 import { loadHistory } from "@/lib/client-data";
 import type { HistoryBar } from "@/lib/barchart/types";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { CHART, LW_THEME } from "@/lib/chartTheme";
+import { Chip, EmptyState, ErrorState, Loading, SectionHeader } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -40,20 +41,19 @@ export function PriceChart({ symbol }: { symbol: string }) {
 
   useEffect(() => {
     if (state !== "ok" || !containerRef.current) return;
-    const chart = createChart(containerRef.current, {
+    const el = containerRef.current;
+    const chart = createChart(el, {
       height: 300,
-      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#a3a3a3" },
-      grid: { vertLines: { color: "#262626" }, horzLines: { color: "#262626" } },
-      timeScale: { borderColor: "#404040" },
-      rightPriceScale: { borderColor: "#404040" },
+      ...LW_THEME,
+      handleScroll: { vertTouchDrag: false },
     });
     chartRef.current = chart;
     const series = chart.addCandlestickSeries({
-      upColor: "#34d399",
-      downColor: "#f87171",
+      upColor: CHART.call,
+      downColor: CHART.put,
       borderVisible: false,
-      wickUpColor: "#34d399",
-      wickDownColor: "#f87171",
+      wickUpColor: CHART.call,
+      wickDownColor: CHART.put,
     });
     series.setData(
       bars.map((b) => ({
@@ -66,26 +66,36 @@ export function PriceChart({ symbol }: { symbol: string }) {
     );
     chart.timeScale().fitContent();
 
-    const onResize = () => chart.applyOptions({ width: containerRef.current?.clientWidth });
-    onResize();
-    window.addEventListener("resize", onResize);
+    chart.applyOptions({ width: el.clientWidth });
+    const ro = new ResizeObserver(() => {
+      chart.applyOptions({ width: el.clientWidth });
+    });
+    ro.observe(el);
     return () => {
-      window.removeEventListener("resize", onResize);
+      ro.disconnect();
       chart.remove();
       chartRef.current = null;
     };
   }, [state, bars]);
 
   return (
-    <div className="glass p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="font-semibold">Price · {symbol}</h2>
-        {source && <span className="text-xs text-neutral-500">src: {source}</span>}
+    <div className="glass fade-up p-4">
+      <SectionHeader
+        eyebrow="Price history"
+        title={symbol}
+        right={
+          <div className="flex items-center gap-1.5">
+            <Chip>Daily</Chip>
+            <Chip>Candles</Chip>
+          </div>
+        }
+      />
+      <div className="min-h-[300px]">
+        {state === "loading" && <Loading label="Loading price history…" />}
+        {state === "error" && <ErrorState message={error} />}
+        {state === "empty" && <EmptyState label="No price history." />}
+        <div ref={containerRef} className={state === "ok" ? "" : "hidden"} />
       </div>
-      {state === "loading" && <Loading />}
-      {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No price history." />}
-      <div ref={containerRef} className={state === "ok" ? "" : "hidden"} />
     </div>
   );
 }

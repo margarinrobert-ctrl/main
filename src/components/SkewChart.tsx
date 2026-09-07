@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
-import { EmptyState, ErrorState, Loading } from "./states";
+import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR_LINE, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
+import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -72,43 +73,66 @@ export function SkewChart({ symbol, exp: globalExp = "ALL" }: { symbol: string; 
   );
 
   return (
-    <div className="glass p-4">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">IV skew · {symbol}</h2>
-        <select
-          value={exp}
-          onChange={(e) => setExp(e.target.value)}
-          className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs"
-        >
-          {expirations.map((e) => (
-            <option key={e} value={e}>
-              {e}
-            </option>
-          ))}
-        </select>
-      </div>
-      {state === "loading" && <Loading label="Loading skew…" />}
-      {state === "error" && <ErrorState message={error} />}
-      {state === "empty" && <EmptyState label="No IV data." />}
-      {state === "ok" && (
-        <div className="h-[320px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-              <CartesianGrid stroke="#262626" />
-              <XAxis dataKey="strike" tick={{ fill: "#a3a3a3", fontSize: 11 }} stroke="#404040" />
-              <YAxis tickFormatter={(v) => `${v}%`} tick={{ fill: "#a3a3a3", fontSize: 11 }} stroke="#404040" width={44} domain={["auto", "auto"]} />
-              <Tooltip
-                contentStyle={{ background: "#0a0a0a", border: "1px solid #404040", borderRadius: 6, fontSize: 12 }}
-                formatter={(v: number | string, n) => [`${Number(v).toFixed(1)}%`, n]}
-                labelFormatter={(l) => `strike ${l}`}
-              />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              {spotX != null && <ReferenceLine x={spotX} stroke="#e5e5e5" strokeDasharray="3 3" />}
-              <Line type="monotone" dataKey="call" name="Call IV" stroke="#34d399" dot={false} strokeWidth={2} connectNulls />
-              <Line type="monotone" dataKey="put" name="Put IV" stroke="#f87171" dot={false} strokeWidth={2} connectNulls />
-            </LineChart>
-          </ResponsiveContainer>
+    <div className="glass glass-hover fade-up p-4 sm:p-5">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <div className="lbl mb-1">IV skew</div>
+          <h2 className="display text-base text-neutral-50">{symbol}</h2>
         </div>
+        <div className="relative">
+          <select
+            value={exp}
+            onChange={(e) => setExp(e.target.value)}
+            aria-label="Expiration"
+            className="appearance-none rounded-lg border border-white/10 bg-white/[0.03] py-2 pl-3 pr-8 text-xs text-neutral-100 outline-none transition hover:border-white/20 focus:border-accent/50"
+          >
+            {expirations.map((e) => (
+              <option key={e} value={e} className="bg-neutral-900">
+                {e}
+              </option>
+            ))}
+          </select>
+          <svg aria-hidden viewBox="0 0 12 12" className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-500">
+            <path fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" d="m2.5 4.5 3.5 3.5 3.5-3.5" />
+          </svg>
+        </div>
+      </div>
+      {state === "loading" && <Loading label="Loading IV skew…" />}
+      {state === "error" && <ErrorState message={error} />}
+      {state === "empty" && <EmptyState label="No implied-volatility data for this chain." />}
+      {state === "ok" && (
+        <>
+          <div className="h-[320px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
+                <CartesianGrid {...GRID_PROPS} />
+                <XAxis dataKey="strike" {...AXIS_PROPS} minTickGap={18} />
+                <YAxis tickFormatter={(v) => `${v}%`} {...AXIS_PROPS} width={44} domain={["auto", "auto"]} />
+                <Tooltip
+                  {...TOOLTIP_PROPS}
+                  cursor={TOOLTIP_CURSOR_LINE}
+                  formatter={(v: number | string, n) => [`${Number(v).toFixed(1)}%`, n]}
+                  labelFormatter={(l) => `Strike ${l}`}
+                />
+                {spotX != null && <ReferenceLine x={spotX} stroke={CHART.spot} strokeDasharray="3 3" label={refLabel("Spot", CHART.spot, "insideTopRight")} />}
+                <Line type="monotone" dataKey="call" name="Call IV" stroke={CHART.call} dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />
+                <Line type="monotone" dataKey="put" name="Put IV" stroke={CHART.put} dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-white/[0.05] pt-3">
+            {[
+              { c: CHART.call, l: "Call IV" },
+              { c: CHART.put, l: "Put IV" },
+              { c: CHART.spot, l: "Spot" },
+            ].map((it) => (
+              <span key={it.l} className="flex items-center gap-1.5 text-[11px] text-neutral-500">
+                <span className="h-2 w-2 rounded-sm" style={{ background: it.c }} />
+                {it.l}
+              </span>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
