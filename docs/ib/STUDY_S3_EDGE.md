@@ -115,6 +115,33 @@ this branch do not.
 Month by month: 37 months, **23 positive (62%)**, best +$1,966, worst -$724, longest losing run
 **3 months**. First 12 months **-$512**, next 12 +$2,262, rest +$3,893.
 
+## 6b. The out-of-sample block on its own
+
+The locked block is the only stretch that had no say in choosing the rule. Read once, deflated,
+one MNQ contract, costs included:
+
+| | |
+|---|---|
+| period | 2024-11-27 to 2025-12-11 (269 sessions, 1.07 years) |
+| trades | 179 (168 a year) |
+| **net** | **+$3,956** |
+| per trade | **$22.10** (median $23.08) |
+| profit factor | 1.470 |
+| win rate | 60.3% (108W / 71L) |
+| Sharpe | **+1.76** (over every session, zero-filled) |
+| max drawdown | $1,670, return/drawdown 2.37 |
+| avg win / avg loss | $114 / -$118 |
+| best / worst trade | +$677 / -$576 |
+
+Month by month: **13 of 14 positive**, best +$1,161, worst -$724 (March 2025), longest losing run
+**one month**. Note the shape -- the average win and average loss are almost identical ($114 vs
+-$118), so the whole result is the 60.3% win rate, not asymmetric payoffs.
+
+That is a clean year. What it is not: it is ONE year, ONE market, and the rule's best calendar year
+in the sample. The research block earns $4.44 a trade against this block's $22.10, and a forward
+expectation is somewhere in that range -- nearer the low end, because the research block is three
+times longer and contains the only regime in which the rule lost.
+
 ## 7. Verdict, updated
 
 **There is a real and repeatedly measurable EFFECT.** The rule selects better bars and better sides
