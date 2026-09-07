@@ -251,6 +251,42 @@ def multi_decl_problems(text):
     return out
 
 
+_INT_DECL = re.compile(r"^\s*(?:var\s+|varip\s+)?int\s+[A-Za-z_]\w*\s*=\s*(.+)$")
+_FLOAT_FN = re.compile(r"\b(math\.(?:max|min|round|abs|floor|ceil|sqrt|pow|avg|sum|log|log10"
+                       r"|exp|sign|todegrees|toradians)|ta\.[a-z]\w*|nz|na)\s*\(")
+
+
+def int_assign_problems(text):
+    """Flag `int x = math.max(...)` -- Pine's math.* return FLOAT whatever they are handed.
+
+    `int slTicks = math.max(1, int(math.round(v)))` reads as though the cast makes it an int and
+    does not: math.max is float-typed, so the result is float and TradingView rejects the line with
+    "cannot assign a value of the series float type to a variable declared with the const int
+    type". The cast has to wrap the WHOLE expression. `math.round` returning a float is the same
+    trap and is already recorded on this branch from the CMMA port; this is the general form.
+
+    Only flags a declaration whose right-hand side STARTS with such a call, i.e. one that is not
+    already wrapped in int().
+    """
+    out = []
+    for ln, raw in enumerate(text.split("\n"), 1):
+        code = _strip(raw)
+        m = _INT_DECL.match(code)
+        if not m:
+            continue
+        rhs = m.group(1).strip()
+        if rhs.startswith("int(") or rhs in ("na", "0") or rhs.isdigit():
+            continue
+        f = _FLOAT_FN.match(rhs)
+        if f and f.group(1) != "na":
+            out.append((ln, f"`int` declaration assigned the result of {f.group(1)}(), which is "
+                            "FLOAT in Pine -- wrap the WHOLE expression in int() or TradingView "
+                            "rejects it with \"cannot assign a value of the series float type to "
+                            "a variable declared with the const int type\"",
+                        code.strip()[:90]))
+    return out
+
+
 def lint(text, name="script"):
     problems = []
     depth = 0                       # unclosed ( or [
@@ -300,6 +336,7 @@ def lint(text, name="script"):
         problems.append((0, f"{depth} bracket(s) never closed", ""))
     problems.extend(const_string_problems(text))
     problems.extend(multi_decl_problems(text))
+    problems.extend(int_assign_problems(text))
     return sorted(problems, key=lambda x: x[0])
 
 

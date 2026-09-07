@@ -3498,6 +3498,25 @@ than raising -- the all-NaN-reads-as-no-signal trap from `STUDY_V54` through a d
 a join's overlap count before using it. What would move this is EVENTS, not capacity and not
 features: both were swept and both are negative. See `docs/ib/STUDY_V66_DL_META.md`.
 
+**`math.max()` RETURNS A FLOAT WHATEVER IT IS HANDED, SO `int x = math.max(1, int(y))` DOES NOT
+COMPILE.** It reads as though the inner cast settles the type and it does not: TradingView rejects
+the line with "cannot assign a value of the series float type to a variable declared with the const
+int type" -- the same error the CMMA port hit on `math.round`, which is one instance of the general
+rule that EVERY `math.*` is float-typed. The cast has to wrap the WHOLE expression. Added to
+`pine_lint` as `int_assign_problems`, and the new check immediately found the SAME bug in TWO OTHER
+SHIPPED SCRIPTS (`VP_TPO_SCALP` on `math.floor`, `PIN_POSTERIOR` on `math.max`), one of which had
+already been sent out. All 126 files on disk are clean. **Fifth linter gap found by a script that
+would not compile** -- and again the fix went into the linter first.
+
+**A 249-ITERATION LOOP PER BAR IS A TIMEOUT RISK, AND THE BUILT-IN IS INDISTINGUISHABLE.** The
+research's `pandas rolling(250).rank(pct=True)` includes the current bar and averages ties, which
+`ta.percentrank` does not, so V66's first draft wrote the exact form out as a loop. Measured on
+70,436 bars the two agree at **correlation 1.000000, mean |diff| 0.00203**, and the take/skip
+decision matches on **99.3-99.7%** of events at every threshold -- while the built-in removes ~17M
+loop iterations over a three-year 15m chart. Measure the cheap built-in against the exact
+definition before writing a loop to reproduce a pandas convention; here the built-in also landed
+CLOSER to the target kept fractions (70.1/60.0/50.1/40.3/30.4 against 70/60/50/40/30).
+
 ## Tooling
 
 | module | what it does |

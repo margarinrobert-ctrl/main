@@ -132,9 +132,9 @@ if barstate.isconfirmed
             built := true
             ibHi := na
             ibLo := na
-        int L = math.floor((nyMin - 570) / 30)
-        int a = math.floor(low / tpoBin)
-        int b = math.floor(high / tpoBin)
+        int L = int(math.floor((nyMin - 570) / 30))
+        int a = int(math.floor(low / tpoBin))
+        int b = int(math.floor(high / tpoBin))
         // grow the arrays to cover [a, b]
         while a < binMin
             array.unshift(cnt, 0)
@@ -153,7 +153,7 @@ if barstate.isconfirmed
 // nearest prior-session single print strictly above the close's bin, in ATR
 float spAbove = na
 if array.size(prevSP) > 0
-    int cb = math.floor(close / tpoBin)
+    int cb = int(math.floor(close / tpoBin))
     for k = 0 to array.size(prevSP) - 1
         float ctr = array.get(prevSP, k)
         if math.floor(ctr / tpoBin) > cb

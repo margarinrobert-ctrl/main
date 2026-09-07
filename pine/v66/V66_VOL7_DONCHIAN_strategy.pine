@@ -91,7 +91,7 @@
 // fills at the next open where the engine takes the close.
 //
 // THRESHOLD CHECK, on the script's own feature computation: the hard-coded ridge cut-offs keep
-// 70.4 / 60.7 / 50.9 / 40.7 / 30.9 percent of research events against targets of 70/60/50/40/30, so
+// 70.1 / 60.0 / 50.1 / 40.3 / 30.4 percent of research events against targets of 70/60/50/40/30, so
 // the exported constants and the Pine arithmetic agree.
 //
 // RE-SIMULATED RATHER THAN SUBSET. A filter in a script is a VETO -- refusing a signal releases the
@@ -99,7 +99,7 @@
 // end to end rather than split out of the base run's trades:
 //     arm                research n / %-per-event / PF   |   locked n / %-per-event / PF
 //     off                     689   0.06356   1.358      |      337   0.07687   1.336
-//     ridge keep 0.60         479   0.07919   1.423      |      227   0.10039   1.385
+//     ridge keep 0.60         474   0.08466   1.458      |      226   0.09683   1.367
 //     count >= 5              300   0.10803   1.546      |      130   0.20107   1.722
 // Both arms look better here than in the subset table above, which is the STUDY_AUCTION rule
 // restated: filter the TRIGGERS and re-simulate. It does not change the verdict -- count >= 5 is
@@ -109,6 +109,20 @@
 // ewm(alpha=1/14, adjust=False) on true range, which is WILDER's average and therefore `ta.atr`.
 // Most scripts on this branch need ta.ema(ta.tr(true), 14) instead; this one does not. Getting it
 // backwards changes every barrier by a few percent.
+//
+// ---------------------------------------------------------------------------------------------
+// HOW TO RUN IT
+// ---------------------------------------------------------------------------------------------
+//   1. NQ1! or MNQ1!, 15-MINUTE chart. The channel lengths, the hold cap and the session window
+//      are all in BARS or in minutes-past-NY-midnight, so another timeframe is a different rule.
+//   2. Leave "Filter" on `off` for the base result. Both filter forms are measured in the tables
+//      above and neither beats the base on the held-back block.
+//   3. Properties: this script SETS its own commission (0.62 per contract per side) and slippage
+//      (1 tick). If the Strategy Tester shows a Commission load of 0.00% the settings have been
+//      overridden and the report is GROSS.
+//   4. It needs roughly 600 bars of history before the first signal -- rv_ratio uses a 480-bar
+//      window -- so a short chart will show no trades for reasons that have nothing to do with
+//      the rule.
 //
 // CHART: 15-MINUTE, NQ/MNQ. Research tooling, not financial advice.
 // ================================================================================================
@@ -152,7 +166,6 @@ cntMin = input.int(5, "Count: require at least this many of 7", minval = 1, maxv
 
 gS = "Individual features (diagnostic -- all seven are ON inside the score)"
 showPanel = input.bool(true, "Show panel", group = gS)
-plotScore = input.bool(false, "Plot the ridge score instead of the channels", group = gS)
 
 TZ = "America/New_York"
 nyMin = hour(time, TZ) * 60 + minute(time, TZ)
@@ -169,14 +182,13 @@ exLo  = ta.lowest(low, exLen)[1]
 // which is the whole reason this set is the one that can ship.
 f_atr_pct = atr / math.max(close, 1e-12)
 
-// pandas rolling(250).rank(pct=True) INCLUDES the current value and averages ties, so it is
-// (count strictly below + 1) / 250, not ta.percentrank (which excludes the current bar and uses a
-// different denominator). Written out so the two agree.
-int rkCnt = 0
-for i = 1 to 249
-    if f_atr_pct[i] < f_atr_pct
-        rkCnt += 1
-f_rank250 = (rkCnt + 1) / 250.0
+// The research uses pandas rolling(250).rank(pct=True), which INCLUDES the current bar and
+// averages ties -- (count below + 1) / 250 -- while ta.percentrank excludes the current bar and
+// divides by the lookback. Both were computed on 70,436 bars: correlation 1.000000, mean absolute
+// difference 0.00203, and the take/skip decision agrees on 99.3-99.7% of events at every
+// threshold. The explicit form is a 249-iteration loop on every bar, which risks TradingView's
+// execution-time limit on a long history, so the built-in is used and the 0.3-0.7% is accepted.
+f_rank250 = ta.percentrank(f_atr_pct, 249) / 100.0
 
 f_atr_ratio50 = atr / math.max(ta.sma(atr, 50), 1e-12)
 
@@ -236,10 +248,13 @@ if canEnter
     // strategy.position_avg_price does not exist until one bar after the fill, so a level computed
     // from it there is `na` and silently does nothing -- which has cost this branch 4.4-13.0% of
     // trades in a prior port.
-    int slTicks = math.max(1, int(math.round(stopN * atr / syminfo.mintick)))
+    // math.max() returns a FLOAT whatever it is handed, so the cast has to wrap the whole
+    // expression -- `int x = math.max(1, int(...))` is the "cannot assign a value of the series
+    // float type to a variable declared with the const int type" compile error.
+    int slTicks = int(math.max(1, math.round(stopN * atr / syminfo.mintick)))
     int tpTicks = na
     if tpN > 0
-        tpTicks := math.max(1, int(math.round(tpN * atr / syminfo.mintick)))
+        tpTicks := int(math.max(1, math.round(tpN * atr / syminfo.mintick)))
     strategy.entry("L", strategy.long)
     strategy.exit("Lx", from_entry = "L", loss = slTicks, profit = tpTicks)
 
@@ -259,10 +274,8 @@ if barstate.isconfirmed and strategy.position_size > 0 and not na(strategy.posit
         strategy.exit("Lx", from_entry = "L", stop = lvl, limit = tgt)
 
 // ---------------------------------------------------------------- display
-plot(plotScore ? na : entHi, "entry channel", color = color.new(#1baf7a, 0))
-plot(plotScore ? na : exLo, "exit channel", color = color.new(#c0392b, 0))
-plot(plotScore ? score : na, "ridge score", color = color.new(#7a5cd6, 0), linewidth = 2)
-hline(0.0, "score 0", color = color.new(color.gray, 70), linestyle = hline.style_dotted)
+plot(entHi, "entry channel", color = color.new(#1baf7a, 0))
+plot(exLo, "exit channel", color = color.new(#c0392b, 0))
 bgcolor(inWin and not filtOk ? color.new(#c0392b, 92) : na, title = "blocked by the filter")
 
 var table hud = table.new(position.top_right, 2, 8, border_width = 1)

@@ -364,7 +364,7 @@ if goLong or goShort
     side = goLong ? 1 : -1
     riskPts := stopN * atr
     peak := na
-    int ticks = math.max(1, int(math.round(riskPts / syminfo.mintick)))
+    int ticks = int(math.max(1, math.round(riskPts / syminfo.mintick)))
     int tgtTicks = na            // `na` means no take profit; the type keyword is REQUIRED
     if tgtR > 0
         tgtTicks := math.max(1, int(math.round(tgtR * ticks)))
