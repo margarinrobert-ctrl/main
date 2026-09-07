@@ -168,6 +168,47 @@ value came back NaN, and the pipeline printed *"events with a complete feature r
 raising — the same failure class as the all-NaN recursive indicator in `STUDY_V54`, reached through
 a different door. Always print the join's overlap count before using it.
 
+## The shippable form, and what it costs
+
+A random forest cannot be written in Pine. Measured on the same seven features, **the ridge beats
+the forest** — OOF IC **0.1527 against 0.1407** over 8 seeds — so for once the portable form is the
+better one.
+
+All seven univariate ICs point the same way: **higher volatility, higher R** (atr_pct +0.243,
+parkinson +0.236, rv96 +0.161, atr_rank250 +0.121, atr_ratio50 +0.101, rv_ratio +0.057, vol_of_vol
++0.010). That agrees with `STUDY_V63`'s floors-positive/ceilings-negative reading and inverts
+`STUDY_V28`, whose only survivor of 240 cells was the bottom fifth of ATR — the sixth time a
+volatility-state rule's sign has moved on this branch. But **three of the seven ridge coefficients
+have the opposite sign to their own univariate IC** (atr_pct, rv_ratio, vol_of_vol) —
+multicollinearity exploited conditionally, and the least stable part of the model, so each feature
+also ships as a standalone switch.
+
+Two portable gates, both re-simulated as vetoes rather than split out of the base run's trades
+(`STUDY_AUCTION`: filter the triggers and re-simulate):
+
+| arm | research n / %-per-event / PF | locked n / %-per-event / PF |
+|---|---|---|
+| off | 689 / 0.06356 / 1.358 | 337 / 0.07687 / 1.336 |
+| ridge keep 0.60 | 479 / 0.07919 / 1.423 | 227 / 0.10039 / 1.385 |
+| count ≥ 5 of 7 | 300 / 0.10803 / **1.546** | 130 / 0.20107 / **1.722** |
+
+Both look better under the veto framing than as a subset of realised trades, which is that rule
+restated. Neither changes the verdict: on the subset framing the ridge gate beats the base on
+**none** of the five locked rungs, and the count gate is **better on locked than on research** at
+T ≥ 5 and T ≥ 6 — the wrong shape, which this branch treats as a defect. Both ship **default off**
+with their own numbers in the tooltips.
+
+Parity against the engine (`research/v66/v66_parity.py`): research 689 script trades against 680
+engine, **96.44% identical exit bars**, correlation 0.9951, script +3.2%; locked **337/337**,
+**97.61%**, 0.9974, script −2.8% — conservative. The residual is three irreducible things: the
+bracket is priced in ticks because `strategy.exit(loss=)` is, the ratcheting stop starts one bar
+after the fill because `strategy.position_avg_price` is `na` there, and the max-hold exit is a
+market order filling at the next open. The hard-coded thresholds keep 70.4 / 60.7 / 50.9 / 40.7 /
+30.9 percent against targets of 70/60/50/40/30, so the exported constants and the Pine arithmetic
+agree.
+
+Ships as `pine/v66/V66_VOL7_DONCHIAN_strategy.pine`.
+
 ## What would move it
 
 Not capacity, and not more features — both were swept and both are negative. Events: 659 research

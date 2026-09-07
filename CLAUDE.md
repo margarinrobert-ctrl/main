@@ -3470,6 +3470,24 @@ usually reached for. The mechanism is in the target-hit rate: **42.9% -> 43.9% w
 win-rate mechanism, and it does not transfer. **Deflated Sharpe 0.163 over 134 counted looks**:
 per-event Sharpe 0.1023 against an expected best-of-noise of **0.1410**, i.e. BELOW the noise floor
 of its own search.
+**AND THE PORTABLE FORM BEAT THE UNPORTABLE ONE.** A random forest cannot be written in Pine, so
+the seven volatility features were re-fitted as a RIDGE with exported constants: OOF IC **0.1527
+against the forest's 0.1407**. All seven univariate ICs point the SAME way -- higher volatility,
+higher R (atr_pct +0.243, parkinson +0.236, rv96 +0.161, atr_rank250 +0.121, atr_ratio50 +0.101,
+rv_ratio +0.057, vol_of_vol +0.010) -- agreeing with STUDY_V63 and inverting STUDY_V28, the SIXTH
+move of a volatility-state rule's sign here. **THREE OF SEVEN RIDGE COEFFICIENTS HAVE THE OPPOSITE
+SIGN TO THEIR OWN UNIVARIATE IC**, so each feature also ships as a standalone switch. Re-simulated
+as VETOES rather than split out of realised trades (`STUDY_AUCTION`), off reads research PF 1.358 /
+locked 1.336, ridge keep-0.60 1.423 / 1.385 and count>=5 **1.546 / 1.722** -- both better than the
+subset framing, neither changing the verdict, since the ridge gate beats the base on NONE of five
+locked rungs as a subset and the count gate is better on LOCKED than on research, the wrong shape.
+Both ship DEFAULT OFF. Parity: research 689 script against 680 engine, **96.44% identical exit
+bars**, corr 0.9951, +3.2%; locked **337/337, 97.61%**, 0.9974, **-2.8% conservative**; the
+hard-coded thresholds keep 70.4/60.7/50.9/40.7/30.9% against 70/60/50/40/30 targets.
+**AND THIS RULE'S ATR IS WILDER'S, NOT THE BRANCH'S USUAL `ema(tr,14)`** -- `sess_core._atr` is
+`ewm(alpha=1/14, adjust=False)`, so the Pine needs `ta.atr(14)` and the standing instruction is
+backwards for this one file. Ships `pine/v66/V66_VOL7_DONCHIAN_strategy.pine`.
+
 **p90 OF R IS DEGENERATE ON A TARGET-CAPPED PRIMARY.** P3 runs a 3.2 ATR target behind a 3.8 ATR
 stop, so a winner's R is capped at 0.842 and p90 reads **0.835 for every subset in the study** -- the
 branch's standing instruction to read p90 of R rather than AUC silently measures NOTHING there. On a

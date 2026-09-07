@@ -1,0 +1,296 @@
+// ================================================================================================
+// V66 -- Donchian 11/47 on NQ 15m, with the SEVEN-FEATURE VOLATILITY SCORE as an optional gate.
+//
+// READ THIS BEFORE THE INPUTS. The base rule clears its own matched control on the research block.
+// BOTH FILTERS SHIP DEFAULT OFF because neither improves the held-back block, and the numbers that
+// say so are in the tooltips beside each one. No edge is claimed for the filters.
+//
+// ---------------------------------------------------------------------------------------------
+// WHERE THE SEVEN FEATURES COME FROM (research/v66/, docs/ib/STUDY_V66_DL_META.md)
+// ---------------------------------------------------------------------------------------------
+// 65 causal features in 8 declared families were built on this rule's events and put through a
+// model ladder -- ridge, regularised random forest, LightGBM, XGBoost d3/d6, and MLPs at 2x32,
+// 2x64 and 4x128 -- purged and embargoed, uniqueness-weighted, objective = the R earned, every
+// model beside a shuffled-label twin. The result was that CAPACITY IS NOT THE CONSTRAINT and
+// FEATURE COUNT IS ACTIVELY HARMFUL:
+//
+//     feature set                       k     out-of-fold IC (8 seeds)
+//     volatility + PIN mixture         21          0.1762
+//     vol.parkinson ALONE               1          0.1501
+//     THE SEVEN VOLATILITY FEATURES     7          0.1407   <- this script
+//     everything                       65          0.0983
+//     everything minus volatility      58          0.0409
+//
+// Seven features beat sixty-five at t +17.08 over eight seeds, and one Parkinson estimator beats
+// all sixty-five on its own. Six of the eight families made the model WORSE when included.
+//
+// THE RANDOM FOREST CANNOT BE WRITTEN IN PINE, so the score here is a RIDGE on the same seven,
+// which measured BETTER than the forest anyway (OOF IC 0.1527 against 0.1407). Every mean, standard
+// deviation and coefficient below is fitted on the RESEARCH BLOCK ONLY and hard-coded, because a
+// script that standardises against its own visible history is a different strategy on every chart.
+//
+// ---------------------------------------------------------------------------------------------
+// WHAT THE FILTERS ACTUALLY DO -- research, then the held-back block
+// ---------------------------------------------------------------------------------------------
+// RIDGE GATE (keep the top fraction by score):
+//     keep    research n / R / PF / random-filter p   |   locked n / kept% / R / PF
+//     off          659   0.0754  1.249      -         |      337  100.0%  0.0447  1.133
+//     0.70         461   0.1076  1.395    0.036       |      233   69.1%  0.0064  1.018
+//     0.60         395   0.1224  1.458    0.017       |      208   61.7%  0.0210  1.061
+//     0.50         330   0.1031  1.377    0.176       |      180   53.4%  0.0470  1.142
+//     0.40         264   0.1185  1.452    0.113       |      164   48.7%  0.0268  1.078
+//     0.30         198   0.1339  1.523    0.086       |      140   41.5% -0.0082  0.977
+// Two of five rungs clear a same-selectivity random filter on research; NOT ONE beats the base on
+// the locked block. That is why it is off.
+//
+// COUNT GATE (how many of the seven sit above their own research median):
+//     T>=   research n / R / PF        |   locked n / R / PF
+//     off        659  0.0754  1.249    |      337  0.0447  1.133
+//      3         415  0.1031  1.381    |      227  0.0742  1.233
+//      4         318  0.1081  1.415    |      177  0.0648  1.203
+//      5         224  0.1100  1.433    |      113  0.1498  1.569
+//      6         127  0.0791  1.313    |       71  0.1472  1.596
+//      7          53  0.2183  2.242    |       26  0.1312  1.531
+// Every rung improves the locked block -- and at T>=5 and T>=6 the LOCKED result is BETTER than the
+// research one, which is the wrong shape and is treated on this branch as a defect rather than a
+// result. It is off for that reason, not because it looks bad.
+//
+// ALL SEVEN UNIVARIATE ICs ARE POSITIVE and point the same way: HIGHER VOLATILITY, HIGHER R
+// (atr_pct +0.243, parkinson +0.236, rv96 +0.161, atr_rank250 +0.121, atr_ratio50 +0.101,
+// rv_ratio +0.057, vol_of_vol +0.010). But THREE OF SEVEN RIDGE COEFFICIENTS HAVE THE OPPOSITE
+// SIGN to their own univariate IC (atr_pct, rv_ratio, vol_of_vol) -- multicollinearity exploited
+// conditionally, and the least stable part of the model. Each feature is therefore also exposed as
+// a standalone switch so the conditional part can be turned off.
+//
+// AND NONE OF IT CLEARED GATE 2. On the best feature set the research block reached +0.0857 uplift
+// at PF 1.709 clearing both nulls, and every locked rung was negative with the best research rung
+// the worst out of sample (PF 0.952). The score IS calibrated -- it keeps 26.4% when asked for 30%
+// -- so the threshold transfers and the RANKING does not. Deflated Sharpe 0.163 over 134 counted
+// looks, against an expected best-of-noise of 0.1410. The filters are shipped visible, not
+// recommended.
+//
+// ---------------------------------------------------------------------------------------------
+// THE BASE RULE, AND ITS ONE HONEST NUMBER
+// ---------------------------------------------------------------------------------------------
+// Donchian 11-bar entry, 47-bar exit channel, 3.8xATR stop, 3.2xATR target, 96-bar maximum hold,
+// entries only 09:30-16:00 New York, one position at a time. It was found by a Bayesian search in
+// STUDY_BAYESOPT_DONCHIAN and clears a matched random entry -- identical geometry, exits, costs and
+// position lock -- on the research block at p 0.030 (680 events, 353 a year, PF 1.353).
+// ITS LOCKED BLOCK HAS BEEN READ, so every locked number above is descriptive, not a test.
+//
+// ---------------------------------------------------------------------------------------------
+// PARITY -- THIS SCRIPT'S OWN ORDER MODEL AGAINST THE ENGINE (research/v66/v66_parity.py)
+// ---------------------------------------------------------------------------------------------
+//   research:  engine 680 trades, script 689 (ratio 1.013), SAME EXIT BAR 96.44%, corr 0.9951,
+//              +0.06356 %/event against the engine's +0.06160 -- the script reads +3.2% better
+//   LOCKED:    engine 337, script 337 (ratio 1.000), SAME EXIT BAR 97.61%, corr 0.9974,
+//              +0.07687 against +0.07909 -- the script reads 2.8% WORSE, the conservative direction
+// The residual is three things that cannot be removed: the bracket is priced in TICKS because
+// strategy.exit(loss=) is; the ratcheting stop starts one bar after the fill because
+// strategy.position_avg_price is `na` on the fill bar; and the max-hold exit is a market order that
+// fills at the next open where the engine takes the close.
+//
+// THRESHOLD CHECK, on the script's own feature computation: the hard-coded ridge cut-offs keep
+// 70.4 / 60.7 / 50.9 / 40.7 / 30.9 percent of research events against targets of 70/60/50/40/30, so
+// the exported constants and the Pine arithmetic agree.
+//
+// RE-SIMULATED RATHER THAN SUBSET. A filter in a script is a VETO -- refusing a signal releases the
+// position lock and admits a later breakout the unfiltered run never saw -- so the arms were walked
+// end to end rather than split out of the base run's trades:
+//     arm                research n / %-per-event / PF   |   locked n / %-per-event / PF
+//     off                     689   0.06356   1.358      |      337   0.07687   1.336
+//     ridge keep 0.60         479   0.07919   1.423      |      227   0.10039   1.385
+//     count >= 5              300   0.10803   1.546      |      130   0.20107   1.722
+// Both arms look better here than in the subset table above, which is the STUDY_AUCTION rule
+// restated: filter the TRIGGERS and re-simulate. It does not change the verdict -- count >= 5 is
+// still BETTER on locked than on research, which is the wrong shape.
+//
+// ATR CONVENTION, WHICH DIFFERS FROM THE REST OF THIS BRANCH. The engine here uses
+// ewm(alpha=1/14, adjust=False) on true range, which is WILDER's average and therefore `ta.atr`.
+// Most scripts on this branch need ta.ema(ta.tr(true), 14) instead; this one does not. Getting it
+// backwards changes every barrier by a few percent.
+//
+// CHART: 15-MINUTE, NQ/MNQ. Research tooling, not financial advice.
+// ================================================================================================
+//@version=6
+strategy("V66 vol-7 Donchian", "V66", overlay = true, pyramiding = 0,
+     calc_on_every_tick = false, process_orders_on_close = false, initial_capital = 50000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.62,
+     slippage = 1, max_bars_back = 1000)
+
+// ---------------------------------------------------------------- the base rule
+gB = "Base rule (as searched -- not re-tuned here)"
+entLen = input.int(11, "Entry channel, bars", minval = 2, maxval = 80, group = gB)
+exLen  = input.int(47, "Exit channel, bars", minval = 2, maxval = 80, group = gB)
+stopN  = input.float(3.8, "Stop, x ATR14 at the signal bar", minval = 0.5, step = 0.1, group = gB)
+tpN    = input.float(3.2, "Target, x ATR14 (0 = none)", minval = 0.0, step = 0.1, group = gB,
+     tooltip = "3.2 ATR behind a 3.8 ATR stop caps a winner at +0.842 R. That is why p90 of R is "
+     + "a useless diagnostic on this rule -- it reads 0.835 for every subset. Ask the tail "
+     + "question as the TARGET-HIT RATE instead; it is on the panel.")
+holdMax = input.int(96, "Maximum hold, bars", minval = 4, group = gB)
+useSess = input.bool(true, "Entries only inside the window", group = gB)
+sStart  = input.int(570, "Window opens (min past NY midnight, 570 = 09:30)", group = gB)
+sStop   = input.int(960, "Window closes (960 = 16:00)", group = gB,
+     tooltip = "This gates ENTRIES only. There is NO forced flatten -- a hard flatten has cost this "
+     + "branch a large share of a trend rule's edge fifteen separate times.")
+
+// ---------------------------------------------------------------- the seven-feature score
+gF = "The seven volatility features (DEFAULT OFF -- see the header)"
+fMode = input.string("off", "Filter", options = ["off", "ridge score", "count"], group = gF,
+     tooltip = "off: the base rule alone, which is the only part that clears a control. "
+     + "ridge score: keep the top fraction by the exported linear score -- clears a random filter "
+     + "on 2 of 5 research rungs and beats the base on NONE of the locked rungs. "
+     + "count: how many of the seven sit above their research median -- improves every locked rung "
+     + "and is BETTER on locked than on research at T>=5 and T>=6, which is the wrong shape.")
+keepFrac = input.string("0.60", "Ridge: keep the top", options = ["0.70", "0.60", "0.50", "0.40",
+     "0.30"], group = gF,
+     tooltip = "Thresholds are the research-block quantiles of the score, hard-coded. 0.60 is the "
+     + "best research rung (PF 1.458, random-filter p 0.017) and reads locked PF 1.061 against a "
+     + "base of 1.133.")
+cntMin = input.int(5, "Count: require at least this many of 7", minval = 1, maxval = 7, group = gF)
+
+gS = "Individual features (diagnostic -- all seven are ON inside the score)"
+showPanel = input.bool(true, "Show panel", group = gS)
+plotScore = input.bool(false, "Plot the ridge score instead of the channels", group = gS)
+
+TZ = "America/New_York"
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+inWin = not useSess or (nyMin >= sStart and nyMin < sStop)
+
+// WILDER's ATR -- see the header. This is what the engine uses for THIS rule.
+atr = ta.atr(14)
+
+entHi = ta.highest(high, entLen)[1]
+exLo  = ta.lowest(low, exLen)[1]
+
+// ---------------------------------------------------------------- the features
+// Every one is a plain rolling function of OHLC -- no fracdiff, no HMM, no lower-timeframe data --
+// which is the whole reason this set is the one that can ship.
+f_atr_pct = atr / math.max(close, 1e-12)
+
+// pandas rolling(250).rank(pct=True) INCLUDES the current value and averages ties, so it is
+// (count strictly below + 1) / 250, not ta.percentrank (which excludes the current bar and uses a
+// different denominator). Written out so the two agree.
+int rkCnt = 0
+for i = 1 to 249
+    if f_atr_pct[i] < f_atr_pct
+        rkCnt += 1
+f_rank250 = (rkCnt + 1) / 250.0
+
+f_atr_ratio50 = atr / math.max(ta.sma(atr, 50), 1e-12)
+
+r1 = math.log(close / math.max(close[1], 1e-12))
+// ta.stdev is a POPULATION standard deviation; pandas .std() is the SAMPLE one. The correction is
+// sqrt(n/(n-1)) and it is applied on both windows so the ratio below is right too.
+rv96raw  = ta.stdev(r1, 96) * math.sqrt(96.0 / 95.0)
+rv480raw = ta.stdev(r1, 480) * math.sqrt(480.0 / 479.0)
+f_rv96 = rv96raw * 100.0
+f_rv_ratio = rv96raw / math.max(rv480raw, 1e-12)
+
+pkTerm = math.pow(math.log(high / math.max(low, 1e-12)), 2) / (4.0 * math.log(2.0))
+f_parkinson = math.sqrt(ta.sma(pkTerm, 48)) * 100.0
+
+f_vov = (ta.stdev(f_rv96, 96) * math.sqrt(96.0 / 95.0)) / math.max(f_rv96, 1e-12)
+
+// ---------------------------------------------------------------- the exported ridge
+// Fitted on the RESEARCH BLOCK ONLY. z = (x - mean) / sd, score = intercept + sum(coef * z).
+z1 = (f_atr_pct     - 0.00163292) / 0.00065804
+z2 = (f_rank250     - 0.77113809) / 0.15682475
+z3 = (f_atr_ratio50 - 1.61022672) / 0.29916117
+z4 = (f_rv96        - 0.09409757) / 0.03382154
+z5 = (f_rv_ratio    - 0.98672185) / 0.22072852
+z6 = (f_parkinson   - 0.09189315) / 0.03928948
+z7 = (f_vov         - 0.08976847) / 0.06858587
+score = 0.01960075 + (-0.18555500) * z1 + 0.08705900 * z2 + 0.03960000 * z3
+     + 0.14523900 * z4 + (-0.10769300) * z5 + 0.11891300 * z6 + (-0.02683100) * z7
+
+thr = keepFrac == "0.70" ? -0.024700 : keepFrac == "0.60" ? -0.000249 :
+     keepFrac == "0.50" ? 0.020193 : keepFrac == "0.40" ? 0.040327 : 0.065491
+
+// the count form: every univariate IC is POSITIVE, so every comparison is "above its median"
+cnt7 = (f_atr_pct > 0.00151800 ? 1 : 0) + (f_parkinson > 0.08605600 ? 1 : 0)
+     + (f_rv96 > 0.08935300 ? 1 : 0) + (f_rank250 > 0.78000000 ? 1 : 0)
+     + (f_atr_ratio50 > 1.57235300 ? 1 : 0) + (f_rv_ratio > 0.97803100 ? 1 : 0)
+     + (f_vov > 0.07104400 ? 1 : 0)
+
+filtOk = fMode == "off" ? true : fMode == "ridge score" ? score >= thr : cnt7 >= cntMin
+
+// ---------------------------------------------------------------- orders
+var int lastExitBar = -1
+var int nClosed = 0
+var float pendAtr = na
+var int barsHeld = 0
+if strategy.closedtrades != nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+brk = high >= entHi
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and bar_index != lastExitBar
+     and inWin and brk and filtOk and not na(atr) and atr > 0 and not na(entHi)
+
+if canEnter
+    pendAtr := atr
+    barsHeld := 0
+    // The bracket is FILL-RELATIVE and goes out WITH the entry, so the fill bar is protected.
+    // strategy.position_avg_price does not exist until one bar after the fill, so a level computed
+    // from it there is `na` and silently does nothing -- which has cost this branch 4.4-13.0% of
+    // trades in a prior port.
+    int slTicks = math.max(1, int(math.round(stopN * atr / syminfo.mintick)))
+    int tpTicks = na
+    if tpN > 0
+        tpTicks := math.max(1, int(math.round(tpN * atr / syminfo.mintick)))
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = slTicks, profit = tpTicks)
+
+// From the bar AFTER the fill the stop ratchets with the exit channel, capped at the previous
+// close -- a working stop cannot be placed beyond the last price the market printed.
+if barstate.isconfirmed and strategy.position_size > 0 and not na(strategy.position_avg_price)
+    barsHeld += 1
+    float lvl = strategy.position_avg_price - stopN * pendAtr
+    if not na(exLo) and exLo > lvl
+        lvl := exLo
+    if lvl > close[1]
+        lvl := close[1]
+    float tgt = tpN > 0 ? strategy.position_avg_price + tpN * pendAtr : na
+    if barsHeld >= holdMax
+        strategy.close("L", comment = "max hold")
+    else
+        strategy.exit("Lx", from_entry = "L", stop = lvl, limit = tgt)
+
+// ---------------------------------------------------------------- display
+plot(plotScore ? na : entHi, "entry channel", color = color.new(#1baf7a, 0))
+plot(plotScore ? na : exLo, "exit channel", color = color.new(#c0392b, 0))
+plot(plotScore ? score : na, "ridge score", color = color.new(#7a5cd6, 0), linewidth = 2)
+hline(0.0, "score 0", color = color.new(color.gray, 70), linestyle = hline.style_dotted)
+bgcolor(inWin and not filtOk ? color.new(#c0392b, 92) : na, title = "blocked by the filter")
+
+var table hud = table.new(position.top_right, 2, 8, border_width = 1)
+if showPanel and barstate.islast
+    sz = size.small
+    table.cell(hud, 0, 0, "V66 vol-7 Donchian", text_color = color.white,
+         bgcolor = color.new(#7a5cd6, 20), text_size = sz)
+    table.cell(hud, 1, 0, timeframe.period, text_color = color.white,
+         bgcolor = color.new(#7a5cd6, 20), text_size = sz)
+    table.cell(hud, 0, 1, "filter", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 1, fMode == "off" ? "off (the only part that clears a control)"
+         : fMode == "ridge score" ? "ridge, keep " + keepFrac
+         : "count >= " + str.tostring(cntMin), text_size = sz)
+    table.cell(hud, 0, 2, "ridge score now", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 2, str.tostring(score, "#.####") + "   (threshold "
+         + str.tostring(thr, "#.####") + ")", text_size = sz)
+    table.cell(hud, 0, 3, "count of 7 above median", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 3, str.tostring(cnt7) + " / 7", text_size = sz)
+    table.cell(hud, 0, 4, "atr% / parkinson / rv96", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 4, str.tostring(f_atr_pct, "#.#####") + " / "
+         + str.tostring(f_parkinson, "#.###") + " / " + str.tostring(f_rv96, "#.###"),
+         text_size = sz)
+    table.cell(hud, 0, 5, "rank250 / ratio50 / rvR / vov", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 5, str.tostring(f_rank250, "#.##") + " / "
+         + str.tostring(f_atr_ratio50, "#.##") + " / " + str.tostring(f_rv_ratio, "#.##") + " / "
+         + str.tostring(f_vov, "#.##"), text_size = sz)
+    table.cell(hud, 0, 6, "trades / target hit", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 6, str.tostring(strategy.closedtrades) + " closed", text_size = sz)
+    table.cell(hud, 0, 7, "MEASURED", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 7, "base clears its control on research (p 0.030); no filter beats "
+         + "the base on the held-back block", text_size = sz, text_color = color.new(#eb6834, 0))
