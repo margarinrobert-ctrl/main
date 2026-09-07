@@ -55,6 +55,23 @@
 // research one, which is the wrong shape and is treated on this branch as a defect rather than a
 // result. It is off for that reason, not because it looks bad.
 //
+// AND AGAINST THE RIGHT NULL IT CLEARS BOTH BLOCKS. The table above scores the gate as a SUBSET of
+// the base run's trades, which is not what a script does -- a filter is a VETO, and refusing a
+// signal releases the position lock and admits a later breakout. Re-scored against a RANDOM GATE of
+// the same selectivity, re-simulated end to end, 400 draws a rung:
+//     T>=   rate   research n / PF / excess / p     |   locked n / PF / excess / p
+//      3   0.519    498  1.371  +0.0138  0.110      |    242  1.425  +0.0681  0.003
+//      4   0.345    400  1.430  +0.0301  0.022      |    195  1.420  +0.0900  0.000
+//      5   0.198    296  1.543  +0.0555  0.005      |    130  1.722  +0.1872  0.000
+//      6   0.103    186  1.543  +0.0671  0.003      |     90  1.494  +0.1477  0.003
+//      7   0.030     75  2.253  +0.1645  0.000      |     34  1.240  +0.0970  0.185
+// THREE OF FIVE RUNGS CLEAR ON BOTH BLOCKS (4, 5, 6) and the research p-value is MONOTONE in T
+// across all five -- 0.110, 0.022, 0.005, 0.003, 0.000. The two that fail do so at opposite ends:
+// T>=3 keeps 52% of bars and is barely a filter, T>=7 leaves 34 locked trades. It still ships OFF,
+// because the locked excess exceeds the research excess at EVERY rung (the wrong shape), because
+// the locked block had already been read once before this was scored, and because the other two
+// nulls -- a day-block bootstrap against zero, and a random filter over TRADES -- both failed.
+//
 // ALL SEVEN UNIVARIATE ICs ARE POSITIVE and point the same way: HIGHER VOLATILITY, HIGHER R
 // (atr_pct +0.243, parkinson +0.236, rv96 +0.161, atr_rank250 +0.121, atr_ratio50 +0.101,
 // rv_ratio +0.057, vol_of_vol +0.010). But THREE OF SEVEN RIDGE COEFFICIENTS HAVE THE OPPOSITE

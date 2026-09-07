@@ -209,6 +209,49 @@ agree.
 
 Ships as `pine/v66/V66_VOL7_DONCHIAN_strategy.pine`.
 
+## The count gate against the right null — and it changes the verdict for that form
+
+Everything above scored the filters as a **subset** of the base run's realised trades. That is the
+wrong framing for something a script would actually run: a filter in a script is a **veto**, and
+refusing a signal releases the position lock and admits a later breakout the unfiltered run never
+saw. `STUDY_AUCTION` states the rule — filter the triggers and re-simulate — and
+`STUDY_XAU_CVD_FEATURES` measured that the two framings give different answers.
+
+So the count gate was re-scored against a **random gate of the same selectivity**, re-simulated end
+to end through the same walker, 400 draws a rung, on both blocks:
+
+| T ≥ | rate | research n / R / PF / excess / p | locked n / R / PF / excess / p |
+|---|---|---|---|
+| 3 | 0.519 | 498 / 0.0711 / 1.371 / +0.0138 / **0.110** | 242 / 0.1105 / 1.425 / +0.0681 / 0.003 |
+| 4 | 0.345 | 400 / 0.0845 / 1.430 / +0.0301 / **0.022** | 195 / 0.1195 / 1.420 / +0.0900 / 0.000 |
+| 5 | 0.198 | 296 / 0.1071 / 1.543 / +0.0555 / **0.005** | 130 / 0.2011 / 1.722 / +0.1872 / 0.000 |
+| 6 | 0.103 | 186 / 0.1106 / 1.543 / +0.0671 / **0.003** | 90 / 0.1612 / 1.494 / +0.1477 / 0.003 |
+| 7 | 0.030 | 75 / 0.2107 / 2.253 / +0.1645 / **0.000** | 34 / 0.0974 / 1.240 / +0.0970 / **0.185** |
+
+**Three of five rungs clear on both blocks (T ≥ 4, 5, 6), and the research p-value is monotone in T
+across every rung** — 0.110, 0.022, 0.005, 0.003, 0.000. A gradient that holds in both directions is
+the kind of evidence `STUDY_V17` called the real one, as against a single cell that happens to score.
+The two rungs that fail, fail at opposite ends for understandable reasons: T ≥ 3 keeps 52% of bars
+and is barely a filter, and T ≥ 7 leaves **34 locked trades**.
+
+This is a better result than the subset framing gave, and it does not overturn the study. Four
+things stay attached:
+
+* **The shape is still wrong.** The locked excess exceeds the research excess at every single rung
+  (+0.068 vs +0.014, +0.090 vs +0.030, +0.187 vs +0.055, +0.148 vs +0.067). A gate chosen on
+  research should look better there.
+* **This is a second read of the locked block**, which was opened in `STUDY_BAYESOPT_DONCHIAN`, so
+  the locked column is descriptive.
+* **It is a different null from the one that failed.** Gate 2 asked whether the meta layer beats
+  zero (day-block bootstrap) and whether it beats a random *filter over trades*; this asks whether
+  it beats a random *gate over bars*, re-simulated. `STUDY_V15_BOOK` recorded that those are
+  different questions and can disagree — and here they do.
+* **Ten more looks.** The counted search is now 144.
+
+The gate therefore ships **visible and default off**, with this table in the script header rather
+than a claim: it clears its own control on both blocks, it has the wrong shape, and it was scored
+after the locked block had already been read once.
+
 ## What would move it
 
 Not capacity, and not more features — both were swept and both are negative. Events: 659 research

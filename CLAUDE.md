@@ -3488,6 +3488,22 @@ hard-coded thresholds keep 70.4/60.7/50.9/40.7/30.9% against 70/60/50/40/30 targ
 `ewm(alpha=1/14, adjust=False)`, so the Pine needs `ta.atr(14)` and the standing instruction is
 backwards for this one file. Ships `pine/v66/V66_VOL7_DONCHIAN_strategy.pine`.
 
+**AND THE FRAMING DECIDED THE VERDICT: SCORED AS A VETO AGAINST A RANDOM GATE, THE COUNT FORM
+CLEARS BOTH BLOCKS.** Everything in the study first scored the filters as a SUBSET of the base run's
+realised trades, which is not what a script does -- a filter is a VETO, and refusing a signal
+releases the position lock and admits a later breakout the unfiltered run never saw
+(`STUDY_AUCTION`; `STUDY_XAU_CVD_FEATURES` measured that the two framings disagree). Re-scored
+against a RANDOM GATE OF THE SAME SELECTIVITY, re-simulated end to end, 400 draws a rung: research p
+**0.110 / 0.022 / 0.005 / 0.003 / 0.000** at T>=3/4/5/6/7 against locked **0.003 / 0.000 / 0.000 /
+0.003 / 0.185** -- **three of five rungs clear on BOTH blocks and the research p-value is MONOTONE
+in T across all five**, which is the gradient-in-both-directions evidence `STUDY_V17` called the
+real kind. The two failures are at opposite ends for readable reasons: T>=3 keeps 52% of bars and is
+barely a filter, T>=7 leaves **34 locked trades**. It still ships OFF: the locked excess exceeds the
+research excess at EVERY rung (+0.068 vs +0.014, +0.090 vs +0.030, **+0.187 vs +0.055**, +0.148 vs
++0.067), the locked block had already been read once before this was scored, and the OTHER TWO NULLS
+-- a day-block bootstrap against zero and a random filter over TRADES -- both failed. Three nulls,
+two answers; report which one a p-value came from. Counted looks now 144.
+
 **p90 OF R IS DEGENERATE ON A TARGET-CAPPED PRIMARY.** P3 runs a 3.2 ATR target behind a 3.8 ATR
 stop, so a winner's R is capped at 0.842 and p90 reads **0.835 for every subset in the study** -- the
 branch's standing instruction to read p90 of R rather than AUC silently measures NOTHING there. On a
@@ -3507,6 +3523,16 @@ rule that EVERY `math.*` is float-typed. The cast has to wrap the WHOLE expressi
 SHIPPED SCRIPTS (`VP_TPO_SCALP` on `math.floor`, `PIN_POSTERIOR` on `math.max`), one of which had
 already been sent out. All 126 files on disk are clean. **Fifth linter gap found by a script that
 would not compile** -- and again the fix went into the linter first.
+
+**AND A BACKGROUND RUN THAT SHOWS NO OUTPUT IS USUALLY THE HARNESS, NOT THE JOB.** Three separate
+mistakes hid every long run in this session: `python x.py > file.log 2>&1` sends stdout to the FILE,
+so the task's own output is empty and every read of it truthfully reports nothing; Python
+BLOCK-buffers when stdout is not a TTY (`isatty` is False here), so even the log stays empty for
+minutes; and `... | tail -N` CANNOT STREAM, because tail holds the whole stream until the writer
+exits. A fourth: an `until ... pgrep -f run_x.py` waiter MATCHES ITS OWN COMMAND LINE and can wait
+forever. `research/runlog.sh` fixes all of it -- tee instead of a redirect, PYTHONUNBUFFERED plus
+`stdbuf -oL`, never a tail -- and a `Monitor` on the log then streams progress and result rows as
+they happen.
 
 **A 249-ITERATION LOOP PER BAR IS A TIMEOUT RISK, AND THE BUILT-IN IS INDISTINGUISHABLE.** The
 research's `pandas rolling(250).rank(pct=True)` includes the current bar and averages ties, which
