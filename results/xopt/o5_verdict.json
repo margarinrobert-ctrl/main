@@ -1,0 +1,18 @@
+{
+  "is_rank_in_own_pool": 0.4426910299003322,
+  "pbo": 0.5605283605283605,
+  "slope_oos_on_is": -1.2670511451992343,
+  "wf_folds": 13,
+  "wf_mean_is": 0.007788145187428478,
+  "wf_mean_oos": -0.0012298860361652903,
+  "wf_gap": 0.009018031223593768,
+  "wf_corr_is_oos": -0.43406195974677053,
+  "locked_boot_p": 0.0545,
+  "locked_dd_pctile": 0.925,
+  "locked_dd_ratio": 1.2824508724619121,
+  "jitter1_sign_kept_locked": 1.0,
+  "param_share_pos_locked": 0.9633333333333334,
+  "param_share_beating": 0.25,
+  "exec_P_R_le_0_locked": 0.0,
+  "cost_positive_at_1x_research": false
+}
