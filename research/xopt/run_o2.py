@@ -62,12 +62,12 @@ rows = []
 for nm, cfg in CELLS.items():
     D = C.data(cfg.get("sess", "ny"))
     p = {**V.PARAMS, **{k: v for k, v in cfg.items() if k in V.PARAMS}}
+    # BOTH SIDES. The first draft was long-only, which would have skipped exactly the two cells
+    # the excess objective chose -- a transcription check that silently drops the candidates is
+    # worse than none.
     side = int(cfg.get("side", 1))
-    if side < 0:
-        rows.append(dict(cell=nm, note="short side -- vectorbt arm is long-only here", ratio=np.nan))
-        continue
-    sig, _ = V.triggers(D, side=1, p=p, use_vwap_vol=cfg.get("use_vol", True))
-    eng = V.run(D, sig, side=1, tgt_R=float(cfg.get("tgt_R", 3.0)), atr_stop=p["atr_stop"],
+    sig, _ = V.triggers(D, side=side, p=p, use_vwap_vol=cfg.get("use_vol", True))
+    eng = V.run(D, sig, side=side, tgt_R=float(cfg.get("tgt_R", 3.0)), atr_stop=p["atr_stop"],
                 tighten=False, flatten=bool(cfg.get("flatten", False)),
                 trail=bool(cfg.get("trail", True)), p=p, cost_rt=0.0, slip=0.0)
     close = pd.Series(D["c"], index=D["ix"])
@@ -77,14 +77,17 @@ for nm, cfg in CELLS.items():
     si = np.flatnonzero(sig); si = si[si + 1 < D["n"]]
     lvl = np.full(D["n"], np.nan)
     _e2, e50p, _e20, atrp = V.periods(D, p)
-    lvl[si + 1] = D["l"][si] - p["atr_stop"] * atrp[si]
-    frac = np.where(np.isfinite(lvl), (D["c"] - lvl) / np.maximum(D["c"], 1e-9), np.nan)
+    lvl[si + 1] = (D["l"][si] - p["atr_stop"] * atrp[si]) if side > 0 else \
+                  (D["h"][si] + p["atr_stop"] * atrp[si])
+    frac = np.where(np.isfinite(lvl), side * (D["c"] - lvl) / np.maximum(D["c"], 1e-9), np.nan)
     sl = pd.Series(frac, index=D["ix"]).ffill().bfill().clip(1e-6, 0.95).to_numpy()
     tp = np.clip(sl * max(float(cfg.get("tgt_R", 3.0)), 1e-6), 1e-6, 8.0) if cfg.get("tgt_R", 3.0) > 0 else None
-    trail_exit = pd.Series(D["c"] < e50p, index=D["ix"]) if cfg.get("trail", True) \
+    tr_raw = (D["c"] < e50p) if side > 0 else (D["c"] > e50p)
+    trail_exit = pd.Series(tr_raw, index=D["ix"]) if cfg.get("trail", True) \
         else pd.Series(False, index=D["ix"])
     ex = trail_exit & ~entries          # the trail CANNOT fire on the fill bar
-    kw = dict(close=close, entries=entries, exits=ex, sl_stop=sl, direction="longonly",
+    kw = dict(close=close, entries=entries, exits=ex, sl_stop=sl,
+              direction="longonly" if side > 0 else "shortonly",
               accumulate=False, freq="15min", fees=0.0, slippage=0.0, init_cash=1_000_000,
               size=1, size_type="amount")
     if tp is not None:
