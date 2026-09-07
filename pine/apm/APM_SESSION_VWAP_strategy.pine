@@ -95,6 +95,30 @@
 //     $30.93 for the cash close. Sixteenth confirmation. If you want one, use 15:30, where it costs
 //     ~$1.20 a trade and lifts profit factor 1.70 -> 1.92 and return/drawdown 2.59 -> 3.51.
 //
+// PORTFOLIO: THERE IS NO PORTFOLIO HERE, AND THAT IS THE FINDING (research/apm/run_p4.py)
+// Three legs exist -- NQ, US100, US30 -- and they are not three. Daily P&L correlation, zero-filled
+// over the 764 shared sessions: NQ/US100 +0.715, and ON THE 70 DAYS BOTH TRADED it is +0.950 with
+// the same sign 94.3% of the time. They are the same index, which is what STUDY_US100 recorded at
+// a 0.9995 daily RETURN correlation. US30 is the only genuine diversifier (+0.106 / +0.152) AND IT
+// LOSES ON BOTH BLOCKS (Sharpe -0.434 research, -0.535 locked). One principal component explains
+// 58.6% of the variance of the three and two explain 90.6%.
+// Sharpe by book, research -> locked:  NQ only 1.115 -> 1.570 | US100 only 1.857 -> 0.421 |
+//   US30 only -0.434 -> -0.535 | NQ+US100 1.582 -> 1.125 | NQ+US30 0.636 -> 1.029 |
+//   US100+US30 1.219 -> 0.103 | all three 1.286 -> 0.872 | inverse-vol (fitted on research)
+//   1.121 -> 0.764.
+// EVERY COMBINATION CONTAINING US30 IS WORSE THAN THE BEST SINGLE LEG, and the two legs that are
+// not US30 are one bet wearing two names. STUDY_SEMIVARIANCE measured the same trap directly: a
+// decorrelated leg still has to have an edge, and adding one without an edge raised net profit
+// while cutting Sharpe 3.73 -> 3.23 and more than doubling drawdown. RUN ONE INSTRUMENT.
+//
+// SIZING, AND WHY 0.5%. Contracts = floor( account x risk% / (stop distance x point value) ). The
+// risk% is set by the DRAWDOWN, not the per-trade edge: a stop is the loss on one trade and the
+// account has to survive a RUN. Measured: longest losing run 7 trades on NQ, 8 on US100, 10 on
+// US30; worst 20-trade run in units of one stop -4.29 / -2.32 / -13.59. At 0.5% risk that worst
+// run costs 1.3% of the account on NQ, 0.9% on US100 and 6.5% on US30; at 1% roughly double. The
+// panel shows the live stop PRICE and the contract count, and the sizing is DISPLAY ONLY unless
+// you switch it on -- every measured number in this header is one contract.
+//
 // The bracket is written WITH the entry, in ticks, so it is FILL-RELATIVE and live on the fill bar
 // -- `strategy.position_avg_price` is `na` there, so any level derived from it would silently do
 // nothing. Its distance uses ATR at the SIGNAL bar, which is knowable when the order is written.
@@ -182,6 +206,28 @@ useFlat = input.bool(false, "Hard flatten before the cash close", group = grpX,
      + "rises 1.70 -> 1.92 with return/drawdown 2.59 -> 3.51, because it only moves the exit "
      + "forward by half an hour. If you want one, use a LATE one.")
 flatHHmm = input.int(1530, "Flatten at (HHmm, New York)", minval = 0, maxval = 2359, group = grpX)
+
+grpZ = "Position sizing (DISPLAY ONLY unless you switch it on)"
+acctSize = input.float(50000, "Account size ($)", minval = 100, step = 1000, group = grpZ)
+riskPct = input.float(0.5, "Risk per trade (% of account)", minval = 0.01, maxval = 10.0,
+     step = 0.05, group = grpZ,
+     tooltip = "Contracts = floor( account x risk% / (stop distance x point value) ). The only "
+     + "open question is risk%, and it is set by the DRAWDOWN, not the per-trade edge: a stop is "
+     + "the loss on ONE trade and the account has to survive a RUN."
+     + "\n\nMEASURED (research/apm/run_p4.py). Longest losing run: 7 trades on NQ, 8 on US100, 10 "
+     + "on US30. Worst 20-trade run, in units of one stop: NQ -4.29, US100 -2.32, US30 -13.59. At "
+     + "0.5% risk that worst run costs 1.3% of the account on NQ, 0.9% on US100 and 6.5% on US30. "
+     + "At 1% it is roughly double. 0.5% IS THE DEFENSIBLE DEFAULT and 1% is already aggressive "
+     + "for this rule; the p99 Monte Carlo drawdown is about $2,400 per MNQ."
+     + "\n\nUS30 is the outlier on every risk measure here and it also LOSES on both blocks -- "
+     + "see the portfolio note in the header.")
+applySize = input.bool(false, "Actually size the orders with it (otherwise display only)",
+     group = grpZ,
+     tooltip = "DEFAULT OFF. Every measured number in this header is ONE CONTRACT. Switch this on "
+     + "and the Strategy Tester report is no longer comparable to any of them -- position size "
+     + "starts varying with ATR, which changes the equity path, the drawdown and the compounding. "
+     + "Turn it on deliberately, not by accident.")
+maxContracts = input.int(10, "Cap contracts at", minval = 1, group = grpZ)
 
 grpF = "Safety (each gate is counted on the panel)"
 resetTicks = input.int(400, "Reset gap threshold at 00:00 UTC (ticks, 0 = off)", minval = 0,
@@ -282,6 +328,16 @@ inEntryFill = closeMod >= entStart and closeMod < entEnd
 aE = 2.0 / (emaLen + 1.0)
 aO = 2.0 / (oscLen + 1.0)
 
+// ---------------------------------------------------------------- sizing
+// contracts = floor( account x risk% / (stop distance x point value) ), the standard form.
+// syminfo.pointvalue is the currency value of one point of THIS symbol, so the same expression
+// sizes MNQ, NQ, a CFD or gold without a per-market table.
+sizeFor(float atrAtSignal) =>
+    float dist = stopAtr * atrAtSignal
+    float perCt = dist * syminfo.pointvalue
+    int ct = perCt > 0 ? int(math.floor(acctSize * riskPct / 100.0 / perCt)) : 0
+    [math.min(math.max(ct, 0), maxContracts), dist, perCt]
+
 // ---------------------------------------------------------------- state
 var int curSess = na
 var bool sessBlocked = false
@@ -309,6 +365,9 @@ var bool lastAdmit = false
 var bool flatDone = false
 var float pendAtr = na              // ATR at the signal bar, for the bracket written with the entry
 var string pendId = ""
+var float liveAtr = na              // the ATR the OPEN position's stop was written against
+var float plannedStop = na          // the level the pending order will get, before it fills
+var int lastQty = 0
 var int nStopExit = 0
 var int nTgtExit = 0
 var int nFlatExit = 0
@@ -483,16 +542,19 @@ if barstate.isconfirmed and not halted
                             if admitted
                                 nAdmit += 1
                                 pendAtr := atr
+                                [qc, qd, _pc] = sizeFor(atr)
+                                lastQty := applySize ? math.max(qc, 1) : 1
+                                plannedStop := close - side * qd
                                 if side == 1
                                     nLong += 1
                                     markLong := true
                                     pendId := "L"
-                                    strategy.entry("L", strategy.long, comment = "L")
+                                    strategy.entry("L", strategy.long, qty = lastQty, comment = "L")
                                 else
                                     nShort += 1
                                     markShort := true
                                     pendId := "S"
-                                    strategy.entry("S", strategy.short, comment = "S")
+                                    strategy.entry("S", strategy.short, qty = lastQty, comment = "S")
                             else
                                 nReject += 1
                                 markReject := true
@@ -511,16 +573,19 @@ if barstate.isconfirmed and not halted
                             if pos == prior
                                 nRev += 1
                             pendAtr := atr
+                            [qc2, qd2, _pc2] = sizeFor(atr)
+                            lastQty := applySize ? math.max(qc2, 1) : 1
+                            plannedStop := close - side * qd2
                             if side == 1
                                 nLong += 1
                                 markLong := true
                                 pendId := "L"
-                                strategy.entry("L", strategy.long, comment = "L")
+                                strategy.entry("L", strategy.long, qty = lastQty, comment = "L")
                             else
                                 nShort += 1
                                 markShort := true
                                 pendId := "S"
-                                strategy.entry("S", strategy.short, comment = "S")
+                                strategy.entry("S", strategy.short, qty = lastQty, comment = "S")
                         else
                             nReject += 1
                             nRejectRev += 1
@@ -540,7 +605,10 @@ if barstate.isconfirmed and not halted
         tTicks = math.max(1, int(math.round(tgtAtr * pendAtr / syminfo.mintick)))
         strategy.exit(pendId + "x", from_entry = pendId,
              loss = useStop ? sTicks : na, profit = useTgt ? tTicks : na)
+        liveAtr := pendAtr
     pendId := ""
+    if pos == 0
+        plannedStop := na
 
     // ---- the hard flatten: an order at this bar's close fills at the next bar's open, so it is
     // submitted on the bar BEFORE the cutoff -- the same convention the cash close already uses.
@@ -563,6 +631,16 @@ bandHi = plot(not na(lastVwap) and not na(atr) ? lastVwap + vwapMult * atr : na,
 bandLo = plot(not na(lastVwap) and not na(atr) ? lastVwap - vwapMult * atr : na, "Admission -",
      color = color.new(color.orange, 70), style = plot.style_linebr)
 fill(bandHi, bandLo, color = color.new(color.orange, 92), title = "Admission band")
+// THE LIVE STOP. Once a position exists the level is position_avg_price -/+ stopAtr x the ATR the
+// bracket was written against, which is exactly where the broker emulator has it. On the FILL BAR
+// position_avg_price is still `na`, so the PLANNED level from the signal close is drawn instead --
+// otherwise the one bar where a reader most wants to see the stop is the one bar it is missing.
+liveStop = not useStop ? na
+     : strategy.position_size != 0 and not na(strategy.position_avg_price) and not na(liveAtr)
+         ? strategy.position_avg_price - (strategy.position_size > 0 ? 1 : -1) * stopAtr * liveAtr
+     : plannedStop
+plot(liveStop, "STOP LOSS (live)", color = color.new(color.red, 0), linewidth = 2,
+     style = plot.style_linebr)
 plot(ema, "EMA", color = color.new(color.teal, 40))
 plot(osc, "Phase oscillator", display = display.data_window + display.status_line)
 plotshape(markLong, "Long intent admitted", style = shape.triangleup, location = location.belowbar,
@@ -574,7 +652,7 @@ plotshape(markReject, "Intent rejected by VWAP", style = shape.xcross, location 
 bgcolor(inEntryFill ? color.new(color.blue, 96) : na)
 bgcolor(sessBlocked ? color.new(color.red, 94) : na)
 
-var table hud = table.new(position.top_right, 2, 22, border_width = 1)
+var table hud = table.new(position.top_right, 2, 26, border_width = 1)
 if showHud and barstate.islast
     sz = size.small
     table.cell(hud, 0, 0, "Profile", text_size = sz)
@@ -638,4 +716,27 @@ if showHud and barstate.islast
          + str.tostring(nFlatExit), text_size = sz)
     table.cell(hud, 0, 21, "Current stop distance", text_size = sz)
     table.cell(hud, 1, 21, not useStop ? "off" : na(atr) ? "-"
-         : str.tostring(stopAtr * atr, "#.##") + " pts", text_size = sz)
+         : str.tostring(stopAtr * atr, "#.##") + " pts  ($"
+           + str.tostring(stopAtr * atr * syminfo.pointvalue, "#") + " / contract)", text_size = sz)
+    [qNow, dNow, pcNow] = sizeFor(atr)
+    table.cell(hud, 0, 22, "LIVE STOP PRICE", text_size = sz)
+    table.cell(hud, 1, 22, na(liveStop) ? "flat -- no order live"
+         : str.tostring(liveStop, format.mintick)
+           + (strategy.position_size != 0 ? "  (working)" : "  (planned)"), text_size = sz,
+         text_color = na(liveStop) ? color.gray : color.new(color.red, 0))
+    table.cell(hud, 0, 23, "SIZE at " + str.tostring(riskPct, "#.##") + "% of $"
+         + str.tostring(acctSize, "#"), text_size = sz)
+    table.cell(hud, 1, 23, na(atr) or pcNow <= 0 ? "-"
+         : str.tostring(qNow) + " contract" + (qNow == 1 ? "" : "s") + "  = $"
+           + str.tostring(qNow * pcNow, "#") + " at risk  ($" + str.tostring(pcNow, "#") + " each)"
+           + (qNow < 1 ? "  <- ACCOUNT TOO SMALL FOR ONE" : ""), text_size = sz,
+         text_color = qNow < 1 ? color.new(color.red, 0) : color.gray)
+    table.cell(hud, 0, 24, "Sizing applied?", text_size = sz)
+    table.cell(hud, 1, 24, applySize ? "YES -- the report is no longer 1 contract"
+         : "no -- display only, orders are 1 contract", text_size = sz,
+         text_color = applySize ? color.orange : color.gray)
+    table.cell(hud, 0, 25, "Worst measured 20-trade run", text_size = sz)
+    table.cell(hud, 1, 25, na(atr) or qNow < 1 ? "-"
+         : "NQ -4.3 stops = $" + str.tostring(4.29 * qNow * pcNow, "#") + " at this size ("
+           + str.tostring(100 * 4.29 * qNow * pcNow / acctSize, "#.#") + "% of the account)",
+         text_size = sz)
