@@ -190,6 +190,67 @@ def const_string_problems(text):
     return out
 
 
+_MULTI_DECL = re.compile(
+    r"^\s*(?:var\s+|varip\s+)?(float|int|bool|string|color|line|label|box|table)\s+"
+    r"[A-Za-z_]\w*\s*=(?!=)")
+
+
+def multi_decl_problems(text):
+    """Flag `float a = na, b = na` -- Pine applies the type keyword to the FIRST name only.
+
+    Pine parses a comma-separated declaration list, but the type keyword governs only the first
+    binding; every later name is declared by INFERENCE. When the initialiser is `na` that is a
+    compile error TradingView reports as "Value with NA type cannot be assigned to a variable
+    that was defined without type keyword", pointing at a line that reads as though it declares
+    the type explicitly. When the initialiser is a literal it compiles and the later names simply
+    lose the declared type, which is worse because nothing complains.
+
+    One declaration per line. This shipped once, in PIN_POSTERIOR, and the file lint-passed.
+    """
+    out = []
+    for ln, raw in enumerate(text.split("\n"), 1):
+        code = _strip(raw)
+        if not code.strip() or not _MULTI_DECL.match(code):
+            continue
+        # split on commas at bracket depth 0; more than one part means a declaration list
+        parts, depth, instr, buf = [], 0, None, []
+        for ch in code:
+            if instr:
+                buf.append(ch)
+                if ch == instr:
+                    instr = None
+                continue
+            if ch in "\"'":
+                instr = ch
+            elif ch in "([":
+                depth += 1
+            elif ch in ")]":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                parts.append("".join(buf))
+                buf = []
+                continue
+            buf.append(ch)
+        parts.append("".join(buf))
+        extra = [q for q in parts[1:]
+                 if re.match(r"\s*[A-Za-z_]\w*\s*=(?!=)", q)]
+        if not extra:
+            continue
+        names = [re.match(r"\s*([A-Za-z_]\w*)", q).group(1) for q in extra]
+        na_named = [n for n, q in zip(names, extra) if q.split("=", 1)[1].strip() == "na"]
+        if na_named:
+            out.append((ln, "comma-separated declaration: the type keyword governs only the "
+                            f"FIRST name, so {', '.join(na_named)} is declared by inference and "
+                            "assigned `na` -- \"Value with NA type cannot be assigned to a "
+                            "variable that was defined without type keyword\". One per line",
+                        code.strip()[:90]))
+        else:
+            out.append((ln, "comma-separated declaration: the type keyword governs only the "
+                            f"FIRST name, so {', '.join(names)} silently lose the declared type. "
+                            "One per line", code.strip()[:90]))
+    return out
+
+
 def lint(text, name="script"):
     problems = []
     depth = 0                       # unclosed ( or [
@@ -238,6 +299,7 @@ def lint(text, name="script"):
     if depth != 0:
         problems.append((0, f"{depth} bracket(s) never closed", ""))
     problems.extend(const_string_problems(text))
+    problems.extend(multi_decl_problems(text))
     return sorted(problems, key=lambda x: x[0])
 
 
@@ -251,8 +313,30 @@ def check(text, name="script", verbose=True):
 
 if __name__ == "__main__":
     import sys
+    import pathlib
     sys.path.insert(0, "research")
-    import itertools
+
+    def _lint_paths(paths):
+        """Lint files on disk. The CLI used to IGNORE its arguments and lint only the emitted
+        scripts, so `pine_lint.py some_file.pine` printed a clean bill of health for a file it
+        never opened -- which is how PIN_POSTERIOR shipped with a comma-separated declaration."""
+        files = []
+        for a in paths:
+            q = pathlib.Path(a)
+            files.extend(sorted(q.rglob("*.pine")) if q.is_dir() else [q])
+        bad = 0
+        for f in files:
+            probs = check(f.read_text(), str(f), verbose=True)
+            if probs:
+                bad += 1
+        print(f"\n{len(files)} file(s) on disk linted, {bad} with structural problems")
+        return bad
+
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    if args:
+        raise SystemExit(1 if _lint_paths(args) else 0)
+
+    # no arguments: lint everything -- the emitted scripts AND every shipped file
     import numpy as np
     import pine_export as PX
 
@@ -274,4 +358,5 @@ if __name__ == "__main__":
             if probs:
                 bad += 1
     print(f"\n{n} emitted scripts linted, {bad} with structural problems")
-    raise SystemExit(1 if bad else 0)
+    diskbad = _lint_paths(["pine"]) if pathlib.Path("pine").exists() else 0
+    raise SystemExit(1 if (bad or diskbad) else 0)

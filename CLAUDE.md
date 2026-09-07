@@ -3359,6 +3359,34 @@ Note the control column itself: a session-open SHORT earns +0.394 R in bull and 
 market that rose 148.9%, which is the EMA trail's asymmetry and not a direction call -- read a
 control's own level before crediting an excess over it.
 
+**A COMMA-SEPARATED PINE DECLARATION TYPES ONLY ITS FIRST NAME, AND THE LINTER SAID THE FILE WAS
+FINE BECAUSE IT NEVER OPENED IT.** `float a = na, d = na, eb = na` compiles the first binding and
+declares the rest BY INFERENCE, so TradingView rejects the line with "Value with NA type cannot be
+assigned to a variable that was defined without type keyword" -- pointing at a line that reads as
+though it declares the type explicitly. PIN_POSTERIOR shipped that way and produced **0 trades**
+("This report requires trade data"). The deeper defect is the linter: `pine_lint.py`'s CLI
+**ignored its arguments entirely** and linted only the 800 machine-EMITTED scripts, so
+`pine_lint.py some_file.pine` printed a clean bill of health for a file it never read. Both fixed
+-- `multi_decl_problems` flags the declaration list (and the silent case too, where a literal
+initialiser compiles and the later names merely lose their declared type), and the CLI now lints
+paths given to it and, with no arguments, every file under `pine/` as well as the emitted set:
+**125 files on disk, 0 problems**. Fourth linter gap found this way, after the continuation-indent
+rule that shipped four scripts that could not compile. **A LINT PASS IS ONLY WORTH WHAT THE LINTER
+CHECKS, AND ONLY IF IT READ THE FILE.**
+
+**AND A POISSON LIKELIHOOD IS NOT SCALE INVARIANT, SO A "NORMALISER" IS NOT COSMETIC.** The same
+script weighted B and S by RAW contract volume where the research divides by the mean volume per
+in-window minute. `k*log(lam) - lam` with k in the tens of thousands makes the three hypotheses'
+log-likelihoods differ by hundreds, so the posterior saturates at 0 or 1 on the first bar of every
+session -- a different strategy, not a rescaled one. Fixed with an EXPANDING mean of the in-window
+sub-bar volume (the research's constant is full-sample and unreadable by a script). The
+transliteration then reproduces the research at **86-88% of the trade count and PF 1.031-1.085
+against 1.037-1.078**, reading WORSE at the two thresholds where it differs most, which is the
+conservative direction. Three irreducible gaps recorded in the header: the causal normaliser, the
+stop rounded to a tick because `strategy.exit(loss=)` is priced in ticks, and a trail that acts on
+a CLOSE and fills at the next open because a repriced stop cannot protect the fill bar. Found by
+`research/pin/pin_parity.py`, not by reading -- the fourth time on this branch.
+
 ## Tooling
 
 | module | what it does |
@@ -3369,7 +3397,8 @@ control's own level before crediting an excess over it.
 | `research/vol_sizing.py` | the eight named volatility-sizing methods |
 | `research/intrabar.py` | true 1-minute path execution modelling |
 | `research/pine_export.py` | Pine strategy + indicator emitters |
-| `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here |
+| `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
+| `research/pin/` | the EKOP/Yan PIN mixture: causal four-step fit, the three-hypothesis posterior, the volume-weighted B/S construction, the matched control, and `pin_parity.py` — the shipped Pine's own order model run on bars |
 | `research/alpha_ladder.py` | the 198-condition pool (83 threshold rungs), Pine attached |
 | `research/oner_union.py` | threshold neighbourhoods and the trade-count / win-rate frontier |
 | `research/oner_anom.py` | exit split, matched control, corner table, FDR slices |

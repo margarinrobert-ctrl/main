@@ -44,6 +44,32 @@
 // AGAINST A MATCHED RANDOM ENTRY -- same window, same rate, same side mix, same exits, 300 draws:
 //   research p 0.067 / 0.197 / 0.590 / 0.157 at the four thresholds -- 0 OF 4 CLEAR at p<=0.05.
 //   LOCKED   p 0.243 / 0.027 / 0.013 / 0.003 -- THREE OF FOUR CLEAR.
+//
+// ---------------------------------------------------------------------------------------------
+// PARITY -- THIS SCRIPT'S OWN ORDER MODEL, NOT THE RESEARCH ENGINE'S (research/pin/pin_parity.py)
+// ---------------------------------------------------------------------------------------------
+// The table above is the research engine. This script cannot do three things it does, so its own
+// model was written out in Python and run on the same 105,639 bars:
+//
+//              research engine          this script's model        gap
+//   thresh   n    pts     PF        n    pts     PF          n      pts
+//    0.50   722  +2.63  1.078      636  +2.97  1.085       0.88   +0.34
+//    0.70   479  +1.29  1.037      413  +1.17  1.031       0.86   -0.12
+//    0.85   278  -2.82  0.928      243  -2.51  0.938       0.87   +0.31
+//    0.95   119  +4.17  1.116      103  +2.00  1.052       0.87   -2.17
+//
+// The three differences, none of which can be removed:
+//   1. THE VOLUME NORMALISER IS CAUSAL HERE. The research divides B and S by the mean volume per
+//      in-window minute over the WHOLE sample; a script cannot read that, so this one uses an
+//      expanding mean of the volume seen so far and waits 500 sub-bars before trading.
+//   2. THE STOP IS ROUNDED TO A TICK, because strategy.exit(loss=) is priced in ticks.
+//   3. THE TRAIL ACTS ON A CLOSE AND FILLS AT THE NEXT OPEN. The research walks an intrabar stop
+//      level; a script that reprices a stop cannot protect the FILL bar, where
+//      strategy.position_avg_price is still `na` -- so the bracket goes out fill-relative with
+//      the entry and the trail starts one bar later.
+// The script reads WORSE at the two thresholds where it differs most, which is the conservative
+// direction. The control p-values above are the research engine's; the per-trade results agree
+// within the gap shown, so the verdict is unchanged.
 // Every research cell fails and every locked cell passes, at every threshold, systematically. A
 // rule chosen on research should look better THERE. That is the wrong shape and it is the most
 // uniform instance of it on this branch.
@@ -152,17 +178,39 @@ lc = request.security_lower_tf(syminfo.tickerid, ltf, close)
 lo_ = request.security_lower_tf(syminfo.tickerid, ltf, open)
 lv = request.security_lower_tf(syminfo.tickerid, ltf, volume)
 nSub = array.size(lc)
+
+// THE NORMALISER IS NOT COSMETIC. A Poisson log-likelihood is k*log(lam) - lam, which is NOT
+// scale invariant: divide k and lam both by 1,000 and the posterior changes completely. Raw
+// contract volume puts B and S in the tens of thousands, where the three hypotheses' log
+// likelihoods differ by hundreds and the posterior saturates at 0 or 1 on the first bar of every
+// session -- a different strategy, not a rescaled one. The research divides by the mean volume
+// per in-window minute, so B and S land on the same footing as the bar COUNTS they replace.
+// The research computes that mean over the whole sample; this is the causal form -- an expanding
+// mean of the in-window sub-bar volume seen SO FAR -- which converges to it and reads no future.
+var float vSum = 0.0
+var float vN = 0.0
+float vBar = vN >= 500 ? vSum / vN : na
+
 float barB = 0.0
 float barS = 0.0
 if nSub > 0
     for i = 0 to nSub - 1
         cc = array.get(lc, i)
         oo = array.get(lo_, i)
-        w = useVol ? array.get(lv, i) : 1.0
-        if cc > oo
-            barB += w
-        else if cc < oo
-            barS += w
+        vv = array.get(lv, i)
+        w = 1.0
+        if useVol
+            w := na(vBar) or vBar <= 0 ? na : vv / vBar
+        if not na(w)
+            if cc > oo
+                barB += w
+            else if cc < oo
+                barS += w
+    // accumulate AFTER the bar is used, so this bar's own volume never enters its own normaliser
+    if barstate.isconfirmed and inWin
+        for i = 0 to nSub - 1
+            vSum += array.get(lv, i)
+            vN += 1.0
 
 // running totals inside the session, and the session's own open for the return
 var float cumB = 0.0
@@ -181,9 +229,6 @@ if barstate.isconfirmed
 var histB = array.new<float>()
 var histS = array.new<float>()
 var histR = array.new<float>()
-var float meanVol = na              // volume normaliser, so B and S stay on a Poisson footing
-var float volSum = 0.0
-var int volN = 0
 var float pA = na
 var float pD = na
 var float pEb = na
@@ -194,9 +239,13 @@ var int nFit = 0
 
 // [Yan 2009, steps 1-4] alpha and delta from the event labels, eps from non-event days, mu from
 // the conditional means in his equations (5) and (6), PIN from equation (8).
-fitWindow() =>
-    n = array.size(histR)
-    float a = na, d = na, eb = na, es = na, mu = na
+fitWindow(bool doFit) =>
+    n = doFit ? array.size(histR) : 0
+    float a  = na
+    float d  = na
+    float eb = na
+    float es = na
+    float mu = na
     if n >= 30
         float sm = 0.0
         for i = 0 to n - 1
@@ -208,9 +257,16 @@ fitWindow() =>
             ss += dv * dv
         sd = math.sqrt(ss / math.max(n - 1, 1))
         if sd > 0
-            int nEv = 0, nBad = 0, nNon = 0, nGood = 0
-            float sBn = 0.0, sSn = 0.0, sBgn = 0.0, sSbn = 0.0
-            int cGn = 0, cBn2 = 0
+            int nEv   = 0
+            int nBad  = 0
+            int nNon  = 0
+            int nGood = 0
+            float sBn  = 0.0
+            float sSn  = 0.0
+            float sBgn = 0.0
+            float sSbn = 0.0
+            int cGn  = 0
+            int cBn2 = 0
             for i = 0 to n - 1
                 r = array.get(histR, i)
                 bv = array.get(histB, i)
@@ -242,9 +298,10 @@ fitWindow() =>
                 mu := 0.5 * (muB + muS)
     [a, d, eb, es, mu]
 
-if barstate.isconfirmed and newWin and not na(sessOpen[1])
+doFit = barstate.isconfirmed and newWin and not na(sessOpen[1])
+if doFit
     // push the session that just ENDED, then refit -- so the window never contains today
-    if not na(cumB[1]) and cumB[1] > 0 and not na(sessOpen[1]) and sessOpen[1] > 0
+    if not na(cumB[1]) and cumB[1] > 0 and sessOpen[1] > 0
         array.push(histB, cumB[1])
         array.push(histS, cumS[1])
         array.push(histR, (close[1] / sessOpen[1] - 1.0) * 100.0)
@@ -252,14 +309,17 @@ if barstate.isconfirmed and newWin and not na(sessOpen[1])
             array.shift(histB)
             array.shift(histS)
             array.shift(histR)
-    [a, d, eb, es, mu] = fitWindow()
-    pA := a
-    pD := d
-    pEb := eb
-    pEs := es
-    pMu := mu
+
+// The push above is a global-scope statement and runs before this call, so the window is current.
+[fA, fD, fEb, fEs, fMu] = fitWindow(doFit)
+if doFit
+    pA := fA
+    pD := fD
+    pEb := fEb
+    pEs := fEs
+    pMu := fMu
     nFit := array.size(histR)
-    pPin := na(mu) or na(a) ? na : a * mu / (a * mu + eb + es)
+    pPin := na(fMu) or na(fA) ? na : fA * fMu / (fA * fMu + fEb + fEs)
 
 // ---------------------------------------------------------------- the posterior
 // log P(k | lambda) = k*log(lambda) - lambda - lgamma(k+1). The lgamma terms are IDENTICAL across
@@ -304,15 +364,16 @@ if goLong or goShort
     side = goLong ? 1 : -1
     riskPts := stopN * atr
     peak := na
-    ticks = math.max(1, int(math.round(riskPts / syminfo.mintick)))
+    int ticks = math.max(1, int(math.round(riskPts / syminfo.mintick)))
+    int tgtTicks = na            // `na` means no take profit; the type keyword is REQUIRED
+    if tgtR > 0
+        tgtTicks := math.max(1, int(math.round(tgtR * ticks)))
     if goLong
         strategy.entry("L", strategy.long)
-        strategy.exit("Lx", from_entry = "L", loss = ticks,
-             profit = tgtR > 0 ? math.max(1, int(math.round(tgtR * ticks))) : na)
+        strategy.exit("Lx", from_entry = "L", loss = ticks, profit = tgtTicks)
     else
         strategy.entry("S", strategy.short)
-        strategy.exit("Sx", from_entry = "S", loss = ticks,
-             profit = tgtR > 0 ? math.max(1, int(math.round(tgtR * ticks))) : na)
+        strategy.exit("Sx", from_entry = "S", loss = ticks, profit = tgtTicks)
 
 // The trail acts on the CLOSE and cannot act on the fill bar: position_avg_price does not exist
 // until one bar after the fill, so a level written from it there is `na` and silently does
@@ -337,10 +398,10 @@ hline(pThresh, "threshold", color = color.new(color.gray, 30), linestyle = hline
 hline(0.5, "even", color = color.new(color.gray, 70), linestyle = hline.style_dotted)
 bgcolor(inWin ? color.new(#7a5cd6, 95) : na, title = "session")
 
-var table hud = table.new(position.top_right, 2, 9, border_width = 1)
+var table hud = table.new(position.top_right, 2, 10, border_width = 1)
 if showHud and barstate.islast
     sz = size.small
-    ratio = na(pMu) or na(pEb) ? na : pMu / (pEb + pEs)
+    float ratio = na(pMu) or na(pEb) ? na : pMu / (pEb + pEs)
     table.cell(hud, 0, 0, "PIN posterior (EKOP / Yan)", text_color = color.white,
          bgcolor = color.new(#7a5cd6, 20), text_size = sz)
     table.cell(hud, 1, 0, timeframe.period, text_color = color.white,
@@ -349,26 +410,31 @@ if showHud and barstate.islast
     table.cell(hud, 1, 1, nSub > 0 ? str.tostring(nSub) + " sub-bars per chart bar"
          : "NO -- the rule can never fire on this chart", text_size = sz,
          text_color = nSub > 0 ? color.gray : color.new(#c0392b, 0))
-    table.cell(hud, 0, 2, "sessions fitted", text_color = color.gray, text_size = sz)
-    table.cell(hud, 1, 2, str.tostring(nFit) + " / " + str.tostring(lookback)
+    table.cell(hud, 0, 2, "volume normaliser", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 2, not useVol ? "off (bar counts)"
+         : na(vBar) ? "warming up -- " + str.tostring(vN, "#") + " / 500 sub-bars"
+         : str.tostring(vBar, "#") + " contracts / sub-bar", text_size = sz,
+         text_color = useVol and na(vBar) ? color.new(color.orange, 0) : color.gray)
+    table.cell(hud, 0, 3, "sessions fitted", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 3, str.tostring(nFit) + " / " + str.tostring(lookback)
          + (na(pMu) ? "  (warming up)" : ""), text_size = sz,
          text_color = na(pMu) ? color.new(color.orange, 0) : color.gray)
-    table.cell(hud, 0, 3, "alpha / delta", text_color = color.gray, text_size = sz)
-    table.cell(hud, 1, 3, na(pA) ? "-" : str.tostring(pA, "#.###") + " / "
+    table.cell(hud, 0, 4, "alpha / delta", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 4, na(pA) ? "-" : str.tostring(pA, "#.###") + " / "
          + str.tostring(pD, "#.###"), text_size = sz)
-    table.cell(hud, 0, 4, "eps_b / eps_s / mu", text_color = color.gray, text_size = sz)
-    table.cell(hud, 1, 4, na(pMu) ? "-" : str.tostring(pEb, "#.#") + " / "
+    table.cell(hud, 0, 5, "eps_b / eps_s / mu", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 5, na(pMu) ? "-" : str.tostring(pEb, "#.#") + " / "
          + str.tostring(pEs, "#.#") + " / " + str.tostring(pMu, "#.##"), text_size = sz)
-    table.cell(hud, 0, 5, "mu / (eps_b+eps_s)", text_color = color.gray, text_size = sz)
-    table.cell(hud, 1, 5, na(ratio) ? "-" : str.tostring(ratio, "#.####")
+    table.cell(hud, 0, 6, "mu / (eps_b+eps_s)", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 6, na(ratio) ? "-" : str.tostring(ratio, "#.####")
          + (ratio < 0.02 ? "  <- too low, posterior pinned to the prior" : ""), text_size = sz,
          text_color = na(ratio) or ratio < 0.02 ? color.new(color.orange, 0) : color.gray)
-    table.cell(hud, 0, 6, "PIN", text_color = color.gray, text_size = sz)
-    table.cell(hud, 1, 6, na(pPin) ? "-" : str.tostring(pPin, "#.####")
+    table.cell(hud, 0, 7, "PIN", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 7, na(pPin) ? "-" : str.tostring(pPin, "#.####")
          + "   (literature 0.10-0.20 on single stocks)", text_size = sz)
-    table.cell(hud, 0, 7, "P(good) / P(bad) now", text_color = color.gray, text_size = sz)
-    table.cell(hud, 1, 7, na(pGood) ? "outside the session"
+    table.cell(hud, 0, 8, "P(good) / P(bad) now", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 8, na(pGood) ? "outside the session"
          : str.tostring(pGood, "#.###") + " / " + str.tostring(pBad, "#.###"), text_size = sz)
-    table.cell(hud, 0, 8, "MEASURED", text_color = color.gray, text_size = sz)
-    table.cell(hud, 1, 8, "research PF 1.04-1.12, 0 of 4 clear a random entry", text_size = sz,
+    table.cell(hud, 0, 9, "MEASURED", text_color = color.gray, text_size = sz)
+    table.cell(hud, 1, 9, "research PF 1.04-1.12, 0 of 4 clear a random entry", text_size = sz,
          text_color = color.new(#eb6834, 0))
