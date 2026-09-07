@@ -3423,6 +3423,7 @@ control's own level before crediting an excess over it.
 | `research/inst/run_conformal.py` | conformalized quantile regression + a regularised random forest on one cell, trained on the whole Donchian family with uniqueness weights, 37 audited features, purged/embargoed folds, shuffled twins, a same-size random-subset null, coverage checked per fold, one pre-declared locked read (CQR lower bound > 0) |
 | `research/inst/autobnn.py` | AutoBNN rebuilt in torch (compositional Bayesian leaves, ELBO structure search, mean-field VI, sampled posterior predictive) with a positive control; `run_autobnn.py` runs it as a forecaster gate and as a Bayesian meta-label on one cell, each beside a shuffled twin and a same-selectivity null, one pre-declared locked read per arm |
 | `research/inst/` | the PF-2-at-200/yr question answered as a frontier: `frontier.py` (the win-rate arithmetic for PF 2, the V61 tensor with intraday hold caps and RTH entries over 4.08M cells, the PF-vs-count envelope read once on locked, the DSR at the trial count), `book.py` / `book2.py` (every validated intraday leg pooled in percent of price with per-feed costs, leg correlations, the research-selected book), `meta.py` (meta-labeling with a regression-on-R objective, purged and embargoed, shuffled twins, same-selectivity null, one locked read) |
+| `research/s310/` | the same rule at TEN MINUTES with the whole battery: `t10core.py` (the 10m build, a cell runner with overridable price arrays so the jitter MC reuses it untouched, a SORTED matched random entry, a coin-flip-side null, four Monte Carlos, and a vectorised pivot kernel asserted identical to the reference), `run_t1.py` (cost as a fraction of risk first, then the carry-vs-matched-minutes reading of k and w and their neighbourhood, and the 5m comparison), `run_t2.py` (630 geometry cells read by MARGINAL AVERAGE with the inert axis collapsed, plus the one-rung box), `run_t3.py` (bootstrap for the edge, permutation for the path, execution perturbation, and price jitter with the pivots/CVD/ATR all recomputed), `run_t4.py` (correlation matrices across cells, across timeframes and against always-long, on zero-filled daily P&L), `run_t5.py` (both nulls, the year-by-year regime split, the deflated Sharpe at the counted trial count and White's reality check), `plot_s310.py` |
 | `research/s3nn/` | the neural-network meta layer on S3: `nn_data.py` (the event stream, 49 causal features in 9 declared families, an UNLOCKED labeller so the training rows are not the position lock's survivors, a truncation audit and Lopez de Prado uniqueness), `nn_model.py` (purged embargoed folds, the eight-model ladder, a torch MLP fitted on weighted squared error in R), `run_n1.py` (Gate 1, the training-set sizing and the audit), `run_n2.py` (the ladder beside its shuffled-label twin), `run_n3.py` (Gate 2 against a day-block bootstrap AND a same-selectivity random filter, plus the ensembles), `run_n4.py` (the win/lose contrast on the SAME folds, the win-rate arithmetic PF 1.5/2/3 requires, and Sharpe zero-filled over every research day), `plot_nn.py` |
 | `research/tscalp/` | the submitted Turtle Scalp Pine transliterated with its order model (armed stop, late re-anchor, pyramid bracket, 2R target, flatten at the next open), three EMA gates as entry masks, base rates on the breakout bars, a 36-cell grid by marginal, drop-one, same-selectivity control, cross-market, three Monte Carlos, neighbourhood, and one descriptive locked read |
 | `research/absorb/` | the 50% session level + MTF ICT swings + absorption bubbles as one reversal system: causal construction with a truncation audit, base rates and lift BEFORE any P&L, a 211-cell grid read by marginal average, the exit tested fairly (no-trail arms given a real exit), drop-one, random-entry and same-selectivity controls at every trail width, the intrabar tie-break split, and one locked read |
@@ -3618,3 +3619,38 @@ only 0.3% of training rows, because an 11:00 flatten makes labels short and over
 fold boundaries. 99 trials counted, **NO LOCKED READ TAKEN** -- nothing cleared Gate 2 on research, so
 the block is unspent. What would move it is more EVENTS (1,140 rows is six years of one market at
 ~190/yr), not more capacity. See `docs/ib/STUDY_S3_NEURAL_NET.md`, `research/s3nn/`.
+
+**THE SAME RULE ON A 10-MINUTE CHART LOSES AT EVERY ONE OF 630 GEOMETRY CELLS ON THE BLOCK THAT MAY
+CHOOSE IT, AND THE DEFLATION THEN KILLS THE 5-MINUTE VERSION TOO.** S3 flow exhaustion (confirmed
+price pivot against a CVD pivot of the opposite sign) resampled from NQ_1m to 10m, 07:00-11:00 NY,
+flat at 11:00. **k and w are BAR COUNTS, so carrying them doubles their reach in minutes** -- both
+readings were declared: CARRY k3/w20 (30/200 min) reads research **-7.49 pts PF 0.696 Sharpe -1.34**
+and locked +5.97/1.217, MATCHED k2/w10 (20/100 min) reads -3.28/0.876 and +10.63/1.352. Matching the
+MINUTES beats carrying the numbers and both are negative on research. **COST IS RULED OUT IN
+ADVANCE**: the 1.72-pt round turn is **2.93% of a 3xATR stop at 10m against 3.78% at 5m**, so the
+wider bar is CHEAPER -- and the execution MC gives **P(total<=0) = 1.00** on both 10m research arms.
+630-cell geometry grid: **0.0% profitable on research and 99.2% on locked, corr(research, locked)
+-0.823 Pearson**; every marginal negative on research at every setting of every axis; the 96-cell
+one-rung box **0% / 100%**. Nulls: a random entry with the same geometry BEATS the rule on research
+(p 0.922 / 0.678) and so does a **coin flip on its own bars** (p 0.958 / 0.735), so at 10m the
+direction call is worth less than nothing. The 10m carry research bootstrap CI is
+**[-15.46, -0.05] -- it excludes zero on the NEGATIVE side**, a significant LOSS, while neither 10m
+locked arm separates from zero (0.239 / 0.103). Price jitter with the pivots, CVD and ATR ALL
+RECOMPUTED keeps the sign in **100%** of draws -- robust, and robustly negative.
+**THE DEFLATION IS THE FINDING AND IT APPLIES BACKWARDS**: at N = 1,295 counted looks
+E[max Sharpe | pure noise] is **0.2159 per trade**, and **NO cell clears it -- including the shipped
+5-minute version, whose locked Sharpe/trade is 0.137** (DSR 0.141). White's reality check over 28
+candidates reads **p 0.660 FAIL**. So the 5m cell clears its matched control (p 0.018) and does NOT
+clear its own multiplicity; both statements are true and the second is the binding one.
+**AND THE TIMEFRAMES DISAGREE ONLY ABOUT WHEN THE REGIME TURNED**: by year the 5m rule goes
+-1.82 / +8.45 / +10.32 across 2023/24/25 while 10m goes -10.08 / -5.53 / +6.02 -- the sign flips
+during 2024 at 5m (inside research) and not until 2025 at 10m (inside locked), which is the entire
+difference between the two verdicts. Daily P&L correlation between the two timeframes is only
+**+0.107 research / +0.034 locked**, so the 10m run is an INDEPENDENT read on the same idea rather
+than a coarser view of it, and correlation with always-long is -0.04..+0.08 on every arm so neither
+is drift. Across 15 (k,w) cells median pairwise corr is +0.349 with 5 of 15 components carrying 90%
+of variance -- a real family, not one rule in fifteen hats, which is what makes 0% research
+profitability across it hard to dismiss. Also here: `s5sig._pivots` is a Python loop over every bar,
+which made a jitter MC that recomputes the signal cost hours; `t10core.pivots_fast` is a
+`sliding_window_view` twin **asserted identical at k=1..5 and on three declared cells before use**,
+200x faster. See `docs/ib/STUDY_S3_10M.md`, `research/s310/`.
