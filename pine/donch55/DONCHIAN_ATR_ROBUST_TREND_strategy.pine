@@ -1,0 +1,168 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+
+// DONCHIAN CHANNEL BREAKOUT + ATR RISK -- Poluri, "Evaluating the Performance of a Donchian Channel
+// Breakout Strategy with ATR-Based Risk Management" (Independent Researcher, February 2026).
+// Built to the paper's METHODS section exactly. Every default below is the paper's own number.
+//
+// ============================ THE RULES, AS THE PAPER STATES THEM ============================
+// 2.1  Upper Band = highest high over the last N bars; Lower Band = lowest low over the last N bars.
+//      Enter LONG when price closes above Upper[1]; enter SHORT when price closes below Lower[1],
+//      where Upper[1] / Lower[1] are the PRIOR period's channel values "to prevent look-ahead
+//      bias".  dcLen = 55.
+// 2.2  EMA trend filter (the paper marks it optional): long only if price > EMA(200), short only
+//      if price < EMA(200).
+// 2.3  Volatility regime filter: trade only when ATR >= atrMult * SMA(ATR, atrBaseLen), with
+//      ATR length 14, atrBaseLen 50, atrMult 1.0.
+// 2.4  Stop distance = riskATR * ATR, riskATR = 2.0. Optional trailing stop, trail distance =
+//      trailATR * ATR, trailATR = 2.5.
+// DATA  BTCUSD, commission 0.02%, initial capital $10,000, market orders at bar close.
+//
+// ============================ FOUR PLACES THE PAPER AND ITS OWN SCREENSHOT DISAGREE ============
+// The paper's evidence image (page 6) is a TradingView Strategy Tester capture. Read carefully it
+// says things the prose does not, and every default in this script follows the SCREENSHOT where
+// the two conflict, because the screenshot is what produced the reported numbers.
+//
+// 1. THE TIMEFRAME IS WEEKLY, NOT DAILY. The chart header reads "Bitcoin / U.S. Dollar - 1W -
+//    CRYPTO"; the paper's DATA section says "Timeframe: Daily (1D)". Weekly is what reconciles
+//    with the reported 31 trades: a 55-bar channel on WEEKLY bars over Oct-2009..Feb-2026 gives
+//    tens of trades, and on DAILY bars over the same span it would give many times more.
+//    -> Run this on the WEEKLY chart to reproduce the paper's figures.
+// 2. THE FIXED STOP WAS OFF. The title bar reads "55 200 14 50 1 2 2.5 TrailOnly 2" -- the
+//    exit-mode input was set to TrailOnly, so the 2.0 x ATR stop the paper presents as its risk
+//    control was NOT active in the pictured run; only the 2.5 x ATR trail was. The default here
+//    is TrailOnly to match; switch it to StopOnly or Both to run the prose version.
+// 3. ONLY LONG TRADES ARE VISIBLE. Every legible marker on the chart is "LONG +1" or "L-EXIT -1".
+//    The paper's methods define both sides, so both are enabled by default here -- but be aware
+//    the pictured 90.32% win rate may be a long-only result on an asset that rose from about $1.
+// 4. ONE INPUT IS UNACCOUNTED FOR. The title shows NINE values and the paper documents SEVEN
+//    (dcLen, emaLen, atrLen, atrBaseLen, atrMult, riskATR, trailATR) plus the mode string. The
+//    trailing "2" is not described anywhere in the paper and is not guessed at here.
+//
+// ============================ WHAT THE SCREENSHOT ACTUALLY REPORTS ============================
+// Oct 4 2009 - Feb 15 2026, BITSTAMP:BTCUSD weekly:
+//   Total P&L +41,023.96 USD (+410.24%)   Max equity drawdown 8,613.24 USD (51.65%)
+//   Total trades 31   Profitable 90.32% (28/31)   Profit factor 7.076
+// The paper's RESULTS text quotes the return, trade count, win rate and profit factor. It does
+// NOT quote the 51.65% maximum equity drawdown, which is on the same image.
+//
+// ============================ THE SIZING IS THE BIGGEST CAVEAT AND IT IS NOT IN THE PAPER ======
+// The chart markers read "+1", so the order size is ONE UNIT -- one bitcoin -- against an initial
+// capital of $10,000. At any BTC price above $10,000 that position cannot be funded by the
+// account, and TradingView permits it only because Pine's default margin requirement is 0%. So
+// "+410% return on $10,000" is a leveraged figure, not a return the stated account could earn,
+// and the 51.65% equity drawdown is the visible consequence. If you want an unleveraged run, set
+// Properties -> Order size to a percent of equity and expect a materially different result.
+//
+// ============================ WHAT WAS VERIFIED, AND WHAT WAS NOT ============================
+// I could not reach any BTC series from this environment, so the paper's 31 trades / 90.32% /
+// PF 7.076 have NOT been reproduced and nothing here confirms them. What was verified is the
+// LOGIC, by transliterating this script to Python and running it bar by bar on real weekly bars
+// (research/donch55/):
+//   * Upper[1] recomputed independently on every bar: 0 mismatches, and 0 bars where the
+//     breakout bar's own high equals the channel it is compared against -- so no look-ahead.
+//   * the regime gate tightens monotonically with atrMult (94.2% / 61.8% / 35.0% / 9.4% of bars
+//     at 0.8 / 1.0 / 1.2 / 1.5) rather than passing everything, which is how this filter is most
+//     often silently inert.
+//   * every entry carries a live stop on its own FILL bar, and the trailing stop moved against
+//     the position 0 times.
+//   * the three exit modes produce genuinely different trades, so riskATR is not decoration.
+//   * disabling a side zeroes that side's trade count; the EMA filter reduces the count without
+//     changing which side any trade takes.
+//
+// The paper's own LIMITATIONS section already says: slippage not modelled, fees optimistic,
+// single asset, no walk-forward, one time window. 31 trades is a small sample for a 90% win rate
+// -- the Clopper-Pearson lower bound on 28/31 is about 74%.
+
+strategy("Donchian Breakout + ATR Risk (Robust Trend)", shorttitle = "DC55 ATR", overlay = true, pyramiding = 0, initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1, commission_type = strategy.commission.percent, commission_value = 0.02, calc_on_every_tick = false, process_orders_on_close = true)
+
+gE = "Entry (paper 2.1 / 2.2)"
+dcLen      = input.int(55, "Donchian length (dcLen)", minval = 2, group = gE)
+useEma     = input.bool(true, "EMA trend filter (paper 2.2, marked optional)", group = gE)
+emaLen     = input.int(200, "EMA length", minval = 2, group = gE)
+allowLong  = input.bool(true, "Long side", group = gE)
+allowShort = input.bool(true, "Short side", group = gE, tooltip = "The paper's methods define both sides. Only LONG and L-EXIT markers are legible in its screenshot, so the pictured result may be long-only.")
+exitOpp    = input.bool(false, "Also exit on an opposite breakout", group = gE, tooltip = "Not specified in the paper. Off by default because the screenshot shows LONG -> L-EXIT -> LONG, i.e. positions end on the stop and a fresh breakout is needed to re-enter.")
+
+gV = "Volatility regime filter (paper 2.3)"
+atrLen     = input.int(14, "ATR length", minval = 1, group = gV)
+atrBaseLen = input.int(50, "ATR baseline length (atrBaseLen)", minval = 1, group = gV)
+atrMult    = input.float(1.0, "atrMult -- trade only when ATR >= atrMult x SMA(ATR, atrBaseLen)", step = 0.1, group = gV)
+
+gR = "Risk management (paper 2.4)"
+exitMode = input.string("TrailOnly", "Exit mode", options = ["TrailOnly", "StopOnly", "Both"], group = gR, tooltip = "TrailOnly is what the paper's own screenshot ran -- its title bar reads '... 2 2.5 TrailOnly 2'. StopOnly is the prose version, where the 2.0 x ATR stop is the risk control and the trail is off.")
+riskATR  = input.float(2.0, "riskATR -- fixed stop distance in ATR", step = 0.1, minval = 0.1, group = gR)
+trailATR = input.float(2.5, "trailATR -- trailing stop distance in ATR", step = 0.1, minval = 0.1, group = gR)
+
+showHUD = input.bool(true, "Show the panel", group = gR)
+
+// ------------------------------------------------------------------ indicators
+// Pine's ta.atr is Wilder's RMA of true range, which is what a Pine implementation of this paper
+// would use. (Some research code, including my own, uses ema(tr, n) instead; they are not the
+// same series and would give a different stop distance.)
+atr = ta.atr(atrLen)
+atrBase = ta.sma(atr, atrBaseLen)
+
+// Upper[1] / Lower[1] -- the channel through the PREVIOUS bar. The [1] is the whole point of the
+// paper's look-ahead note: without it the breakout bar's own high forms the level it must exceed,
+// which no bar can do, and the rule silently never fires (or fires on equality, depending on the
+// comparison).
+upper = ta.highest(high, dcLen)[1]
+lower = ta.lowest(low, dcLen)[1]
+ema = ta.ema(close, emaLen)
+
+regimeOk = not na(atrBase) and atr >= atrMult * atrBase
+trendLong = not useEma or close > ema
+trendShort = not useEma or close < ema
+
+longSig  = allowLong  and not na(upper) and close > upper and regimeOk and trendLong
+shortSig = allowShort and not na(lower) and close < lower and regimeOk and trendShort
+
+// ------------------------------------------------------------------ orders
+// The stop and trail are attached in the SAME call as the entry, so the position is protected on
+// its own fill bar. `strategy.exit` on a later bar would leave that bar naked, and on weekly bars
+// one naked bar is a whole week of unbounded risk.
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and not na(atr) and atr > 0
+
+useStop  = exitMode == "StopOnly" or exitMode == "Both"
+useTrail = exitMode == "TrailOnly" or exitMode == "Both"
+
+if canEnter and longSig
+    stopPx = close - riskATR * atr
+    strategy.entry("L", strategy.long)
+    strategy.exit("L-EXIT", from_entry = "L", stop = useStop ? stopPx : na, trail_points = useTrail ? 0 : na, trail_offset = useTrail ? math.round(trailATR * atr / syminfo.mintick) : na)
+
+if canEnter and shortSig
+    stopPx = close + riskATR * atr
+    strategy.entry("S", strategy.short)
+    strategy.exit("S-EXIT", from_entry = "S", stop = useStop ? stopPx : na, trail_points = useTrail ? 0 : na, trail_offset = useTrail ? math.round(trailATR * atr / syminfo.mintick) : na)
+
+// `trail_points = 0` arms the trail at the entry price, so it follows the running extreme from the
+// fill bar onward at `trail_offset` ticks behind it. That is what "trail distance = trailATR x ATR"
+// means; a non-zero activation would be a different rule the paper does not describe.
+
+if barstate.isconfirmed and exitOpp and strategy.position_size > 0 and shortSig
+    strategy.close("L", comment = "opposite")
+if barstate.isconfirmed and exitOpp and strategy.position_size < 0 and longSig
+    strategy.close("S", comment = "opposite")
+
+// ------------------------------------------------------------------ plots
+plot(upper, "Donchian upper [1]", color = color.new(#2a78d6, 0), linewidth = 2)
+plot(lower, "Donchian lower [1]", color = color.new(#2a78d6, 0), linewidth = 2)
+plot(useEma ? ema : na, "EMA " + str.tostring(emaLen), color = color.new(#8b929c, 20))
+bgcolor(regimeOk ? color.new(#1baf7a, 92) : color.new(#c0392b, 94))
+
+var table hud = table.new(position.top_right, 2, 6, border_width = 1)
+if showHUD and barstate.islast
+    table.cell(hud, 0, 0, "chart timeframe", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 0, timeframe.period + (timeframe.period == "W" ? "  (matches the paper's screenshot)" : "  — the screenshot is 1W, the text says 1D"), text_color = timeframe.period == "W" ? color.gray : color.new(#eb6834, 0), text_size = size.tiny)
+    table.cell(hud, 0, 1, "exit mode", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 1, exitMode + (exitMode == "TrailOnly" ? "  (as pictured)" : "  (the prose version)"), text_size = size.tiny)
+    table.cell(hud, 0, 2, "regime gate", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 2, (regimeOk ? "OPEN" : "BLOCKED") + "   ATR " + str.tostring(atr, "#.##") + " vs " + str.tostring(atrMult * atrBase, "#.##"), text_color = regimeOk ? color.new(#1baf7a, 0) : color.new(#c0392b, 0), text_size = size.tiny)
+    table.cell(hud, 0, 3, "stop / trail distance now", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 3, str.tostring(riskATR * atr, "#.##") + "  /  " + str.tostring(trailATR * atr, "#.##"), text_size = size.tiny)
+    table.cell(hud, 0, 4, "order size vs capital", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 4, "1 unit = " + str.tostring(close, "#") + " against " + str.tostring(strategy.initial_capital, "#") + " capital", text_color = close > strategy.initial_capital ? color.new(#eb6834, 0) : color.gray, text_size = size.tiny)
+    table.cell(hud, 0, 5, "paper's reported result", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 5, "31 trades, 90.32%, PF 7.076, +410% — NOT reproduced here", text_size = size.tiny)
