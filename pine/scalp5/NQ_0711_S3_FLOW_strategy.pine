@@ -1,0 +1,204 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+
+// NQ 07:00-11:00 NEW YORK -- THE BEST OF THE FIVE BY EV AND SHARPE. One leg, no menu.
+//
+// Of five designs measured on 766 sessions of NQ 5-minute bars, this is the one that reads best on
+// both statistics the ask named, and the only one whose matched control comes anywhere near
+// rejecting. It is shipped alone because a menu invites picking the biggest research number, and
+// on this family that is the wrong instinct.
+//
+// ============================ THE MECHANISM ============================
+// SELLERS OUT OF SIZE. Price makes a LOWER LOW while cumulative volume delta makes a HIGHER low:
+// the second push down is being made by fewer contracts than the first, so the flow driving it is
+// finishing. Long. The bearish mirror -- higher high on falling delta -- is the short.
+// Both pivots are CONFIRMED: a pivot at bar i needs bars i-k..i+k, so it is knowable at i+k and
+// never at i. Nearly every published divergence indicator marks it at the pivot, which back-tests
+// beautifully and cannot be traded.
+// THE DELTA IS A PROXY and the panel says so: no feed here carries aggressor tags, so each
+// 1-minute sub-bar's whole volume is signed by its own direction, which is TradingView's own rule.
+//
+// ============================ MEASURED ============================
+// NQ, 5-minute bars built from NQ_1m, 766 window sessions 2022-12 to 2025-12, one position at a
+// time, MNQ all-in round turn 1.72 points (commission + exchange + NFA + slippage).
+// Research block to 2024-11-27; the locked block was read ONCE, at a stated multiplicity of 800
+// geometry cells plus five design specifications.
+//
+//                        trades/yr   EV/trade   PF      win     Sharpe   median hold
+//   research (chose it)     193       +2.31 pts  1.061   52.4%   +0.55      63 min
+//   LOCKED (read once)      168      +11.41 pts  1.604   60.3%   +1.75      54 min
+//
+//   vs a matched random entry (same window, rate, side mix, geometry, lock):  p 0.107 / 0.095
+//   day-block bootstrap against ZERO:                                          p 0.213 / 0.035
+//
+// It DECAYS in the right direction? No -- it GROWS out of sample, which is the wrong shape and is
+// the single biggest reason not to size this yet. Read the caveats.
+//
+// ============================ WHY THIS GEOMETRY AND NOT A SCALP'S ============================
+// The geometry is the MARGINAL CONSENSUS of an 800-cell declared grid, never any cell's top row.
+// Across the whole grid Sharpe rises monotonically as the stop WIDENS (1.0N -1.89 to 3.0N -0.70)
+// and NO TAKE PROFIT is the best target rung -- the 23rd time on this branch.
+// The arithmetic behind that: the 1.72-point round turn is 22.8% of a 1xATR stop on 1-minute bars
+// and 3.8% of a 3xATR stop on 5-minute bars. At 3N the 1:1 break-even is 51.9%; at 0.5N on
+// 1-minute bars it is 72.8%. A tighter stop does not make this a better scalp, it makes it a
+// worse trade. Median hold here is 54-63 minutes -- intraday, not a scalp.
+//
+// ============================ THE FIVE CAVEATS THAT MATTER ============================
+// 1. IT DOES NOT CLEAR ITS CONTROL. A random entry in the same window at the same rate with the
+//    same side mix and geometry beats it 10.7% of the time on research. That control LOSES 1.9
+//    points a trade, so clearing it would not have proved profit either -- but it did not clear.
+// 2. IT GROWS OUT OF SAMPLE (+0.55 -> +1.75 Sharpe). A rule chosen on research should look BETTER
+//    there. This branch has recorded that defect fourteen times and it has never once been the
+//    good kind of surprise.
+// 3. PF 1.5 IS NOT AVAILABLE AT THIS COUNT. It would need 61.8% at this geometry, a lift of +11.8
+//    points over a coin flip; this delivers +2.4 on research. Do not expect the locked block's
+//    60.3% to persist -- that is 179 trades.
+// 4. IT NEEDS SUB-BAR DATA. `request.security_lower_tf` returns nothing when the requested
+//    timeframe is not STRICTLY below the chart's, so on a 1-minute chart the delta is flat and
+//    this rule can never fire. The panel prints the live sub-bar count; if it says NO, change the
+//    chart, not the settings.
+// 5. THE BOOK NEEDS TWO INSTANCES, NOT ONE SCRIPT. Pairing this with S1 (the opening drive) reads
+//    +0.59 research Sharpe and +1.60 locked -- better than this leg on research by 0.04 and WORSE
+//    out of sample. And the two legs hold OPPOSITE sides during 10-12% of each other's trades, so
+//    a single Pine strategy would net them and trade something that was never measured. If you
+//    want the book, load the five-design script a second time set to S1.
+//
+// COMMISSION AND SLIPPAGE ARE NOT SET HERE. Set them in Properties before reading any report.
+
+strategy("NQ 07:00-11:00 Flow Exhaustion", shorttitle = "NQ S3", overlay = true, pyramiding = 0, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+gS = "Session (New York wall clock)"
+winOpen  = input.int(420, "Window opens (min past NY midnight, 420 = 07:00)", group = gS)
+winClose = input.int(660, "Flatten at (min past NY midnight, 660 = 11:00)", group = gS, tooltip = "The flatten order is submitted on the bar BEFORE the cutoff so it fills at the 11:00 open -- a script cannot sell the close of the bar that triggers it.")
+
+gR = "The rule"
+pivK    = input.int(3, "Pivot half-width, bars", minval = 1, group = gR, tooltip = "A pivot at bar i needs bars i-k..i+k, so it is stamped at i+k. This is what makes the divergence tradeable rather than merely back-testable.")
+pivW    = input.int(20, "Look back this many bars for the prior pivot", minval = 2, group = gR)
+ltfIn   = input.timeframe("1", "Sub-bar timeframe for the delta", group = gR, tooltip = "Must be STRICTLY below the chart timeframe or request.security_lower_tf returns nothing and the delta is flat. The panel prints the live sub-bar count.")
+doLong  = input.bool(true, "Long: price lower low + delta higher low", group = gR)
+doShort = input.bool(true, "Short: price higher high + delta lower high", group = gR)
+
+gX = "Exit geometry (the marginal consensus of an 800-cell grid)"
+stopN  = input.float(3.0, "Stop, x ATR at the signal bar", minval = 0.25, step = 0.25, group = gX, tooltip = "Sharpe rises monotonically toward wider across the whole grid. At 3xATR the round turn is 3.8% of risk on 5-minute NQ and the 1:1 break-even is 51.9%.")
+tgtR   = input.float(0.0, "Target in R (0 = none)", minval = 0.0, step = 0.5, group = gX, tooltip = "No take profit is the best target rung on the grid -- the 23rd independent time on this branch.")
+beAt   = input.float(1.0, "Breakeven once this many R are in front (0 = off)", minval = 0.0, step = 0.25, group = gX)
+beOff  = input.float(0.25, "...placed this many R the right side of entry", minval = 0.0, step = 0.05, group = gX)
+trArm  = input.float(1.0, "Arm the trail at (R in front, 0 = off)", minval = 0.0, step = 0.25, group = gX)
+trDist = input.float(1.0, "Trail distance behind the running high (R)", minval = 0.25, step = 0.25, group = gX)
+showHUD = input.bool(true, "Show the panel", group = gX)
+
+// ------------------------------------------------------------------ clock
+TZ = "America/New_York"
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow = dayofweek(time, TZ)
+wkday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+inWin = wkday and nyMin >= winOpen and nyMin < winClose
+newWin = inWin and not inWin[1]
+tfMin = timeframe.in_seconds() / 60
+lastWin = inWin and nyMin + tfMin >= winClose
+
+// ta.atr is Wilder's; the research uses ema(tr, n). This matches the research.
+atr = ta.ema(ta.tr(true), 14)
+
+// ------------------------------------------------------------------ cumulative delta, reset at the open
+lo_c = request.security_lower_tf(syminfo.tickerid, ltfIn, close)
+lo_o = request.security_lower_tf(syminfo.tickerid, ltfIn, open)
+lo_v = request.security_lower_tf(syminfo.tickerid, ltfIn, volume)
+nSub = array.size(lo_c)
+barDelta = 0.0
+if nSub > 0
+    for i = 0 to nSub - 1
+        barDelta += math.sign(array.get(lo_c, i) - array.get(lo_o, i)) * array.get(lo_v, i)
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := newWin ? barDelta : (inWin ? cvd + barDelta : cvd)
+
+// ------------------------------------------------------------------ confirmed-pivot divergence
+pl = ta.pivotlow(low, pivK, pivK)
+ph = ta.pivothigh(high, pivK, pivK)
+var float lastPL = na
+var float lastPLcvd = na
+var int lastPLbar = na
+var float lastPH = na
+var float lastPHcvd = na
+var int lastPHbar = na
+sigL = false
+sigS = false
+if barstate.isconfirmed
+    if not na(pl)
+        if not na(lastPL) and bar_index - lastPLbar <= pivW and pl < lastPL and cvd[pivK] > lastPLcvd
+            sigL := true
+        lastPL := pl
+        lastPLcvd := cvd[pivK]
+        lastPLbar := bar_index
+    if not na(ph)
+        if not na(lastPH) and bar_index - lastPHbar <= pivW and ph > lastPH and cvd[pivK] < lastPHcvd
+            sigS := true
+        lastPH := ph
+        lastPHcvd := cvd[pivK]
+        lastPHbar := bar_index
+sigL := sigL and inWin and doLong
+sigS := sigS and inWin and doShort
+
+// ------------------------------------------------------------------ orders
+// The exit-bar marker updates BEFORE the entry test so a trade cannot re-enter on the bar it
+// closed on. The bracket is fill-relative and goes out WITH the entry, so the initial stop is live
+// on the fill bar -- leaving it naked is 4.4-13.0% of trades on this branch's parity measurements.
+var int lastExitBar = -1
+var int nClosed = 0
+var float riskPts = na
+var float peak = na
+if strategy.closedtrades != nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and bar_index != lastExitBar and not na(atr) and atr > 0 and not lastWin
+
+if canEnter and sigL
+    riskPts := stopN * atr
+    peak := na
+    ticks = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick)
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = ticks, profit = tgtR > 0 ? math.round(tgtR * ticks) : na)
+
+if canEnter and sigS
+    riskPts := stopN * atr
+    peak := na
+    ticks = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick)
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", from_entry = "S", loss = ticks, profit = tgtR > 0 ? math.round(tgtR * ticks) : na)
+
+// Breakeven and trail act on the CLOSE and cannot act on the fill bar: `position_avg_price` does
+// not exist until one bar after the fill, so a level written from it there is `na` and silently
+// does nothing. The fill-relative bracket above covers exactly that bar.
+sideN = strategy.position_size > 0 ? 1 : -1
+if barstate.isconfirmed and strategy.position_size != 0 and bar_index > lastExitBar and not na(strategy.position_avg_price) and riskPts > 0
+    adv = sideN * (close - strategy.position_avg_price) / riskPts
+    peak := na(peak) ? adv : math.max(peak, adv)
+    beLvl = beAt > 0 and peak >= beAt ? strategy.position_avg_price + sideN * beOff * riskPts : na
+    trLvl = trArm > 0 and peak >= trArm ? strategy.position_avg_price + sideN * (peak - trDist) * riskPts : na
+    lvl = na(beLvl) ? trLvl : (na(trLvl) ? beLvl : (sideN > 0 ? math.max(beLvl, trLvl) : math.min(beLvl, trLvl)))
+    if not na(lvl) and (sideN > 0 ? close < lvl : close > lvl)
+        strategy.close_all(comment = "secured")
+
+if barstate.isconfirmed and lastWin and strategy.position_size != 0
+    strategy.close_all(comment = "11:00 flat")
+
+// ------------------------------------------------------------------ plots
+bgcolor(inWin ? color.new(#1baf7a, 94) : na)
+plot(inWin ? cvd : na, "cumulative delta (proxy)", color = color.new(#7a5cd6, 0), display = display.data_window)
+plotshape(sigL, "bullish divergence", shape.triangleup, location.belowbar, color.new(#1baf7a, 0), size = size.tiny)
+plotshape(sigS, "bearish divergence", shape.triangledown, location.abovebar, color.new(#c0392b, 0), size = size.tiny)
+
+var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+if showHUD and barstate.islast
+    table.cell(hud, 0, 0, "research  Sharpe / EV / PF", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 0, "+0.55  /  +2.31 pts  /  1.061", text_size = size.tiny)
+    table.cell(hud, 0, 1, "LOCKED  Sharpe / EV / PF", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 1, "+1.75  /  +11.41 pts  /  1.604", text_size = size.tiny)
+    table.cell(hud, 0, 2, "vs a matched random entry", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 2, "p 0.107 research  /  0.095 locked — does NOT clear", text_color = color.new(#eb6834, 0), text_size = size.tiny)
+    table.cell(hud, 0, 3, "break-even at this geometry", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 3, "51.9% at 1:1;  PF 1.5 would need 61.8%", text_size = size.tiny)
+    table.cell(hud, 0, 4, "sub-bar delta live?", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 4, nSub > 0 ? str.tostring(nSub) + " sub-bars per chart bar" : "NO — the rule cannot fire on this chart", text_color = nSub > 0 ? color.gray : color.new(#c0392b, 0), text_size = size.tiny)
