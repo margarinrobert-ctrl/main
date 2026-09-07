@@ -165,11 +165,17 @@ for nm, cfg in CELLS.items():
         r = C.evaluate(c2, blk=0, draws=60)
         if r["ok"]:
             vals.append(r["excess"])
-    v = np.array(vals)
-    rows.append(dict(cell=nm, base_excess=round(base["excess"], 4), draws=len(v),
-                     p5=round(float(np.percentile(v, 5)), 4), med=round(float(np.median(v)), 4),
-                     share_positive=round(float((v > 0).mean()), 3),
-                     share_beating_base=round(float((v > base["excess"]).mean()), 3)))
+    v = np.array(vals, float)
+    ok = np.isfinite(v)
+    # NaN-safe: a draw whose CONTROL could not be estimated (too few control trades at that
+    # geometry) is dropped, not counted as a failure. np.percentile propagates NaN and the first
+    # run printed NaN for every p5/median because of it.
+    rows.append(dict(cell=nm, base_excess=round(base["excess"], 4), draws=int(ok.sum()),
+                     dropped=int((~ok).sum()),
+                     p5=round(float(np.percentile(v[ok], 5)), 4) if ok.any() else np.nan,
+                     med=round(float(np.median(v[ok])), 4) if ok.any() else np.nan,
+                     share_positive=round(float((v[ok] > 0).mean()), 3) if ok.any() else np.nan,
+                     share_beating_base=round(float((v[ok] > base["excess"]).mean()), 3) if ok.any() else np.nan))
 Pj = pd.DataFrame(rows)
 print(Pj.to_string(index=False))
 Pj.to_csv("results/xopt/o2_paramjitter.csv", index=False)

@@ -1,0 +1,5 @@
+cell,base_excess,base_R,draws,dropped,ex_p5,ex_med,R_med,share_R_positive,share_beating_base
+as published,0.2081,-0.0447,43,17,0.154,0.1891,-0.0568,0.033,0.233
+Optuna excess,0.5454,0.1375,36,24,0.4442,0.5152,0.1052,0.983,0.139
+Optuna excess_pf,0.6137,0.317,45,15,0.2601,0.4738,0.0824,0.933,0.0
+Optuna return,,1.0787,0,60,,,0.7689,1.0,

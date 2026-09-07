@@ -1,0 +1,5 @@
+cell,n,R,pf,ctl,excess,p_ctl
+as published,28,-0.1324,0.672,-0.1017,-0.0307,0.545
+Optuna excess,27,0.1384,1.182,0.0726,0.0658,0.425
+Optuna excess_pf,28,-0.3997,0.37,-0.1357,-0.264,0.78
+Optuna return,12,0.5056,1.602,,,
