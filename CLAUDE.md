@@ -3432,6 +3432,54 @@ or single names around scheduled events. Also: their equation **(5b) is a typo**
 T2+tau)` copied from the alpha line above it; the correct `Be(nu+T1, tau+T2)` recovers a true delta
 of 0.30 as 0.293 where the published form returns 0.589. See `docs/ib/STUDY_PIN_BAYES.md`.
 
+**SIXTY-FIVE FEATURES LOSE TO SEVEN, AND ONE PARKINSON ESTIMATOR BEATS ALL SIXTY-FIVE.** Deep
+learning on the meta layer of a Gate-1-passing primary (NQ 15m; four primaries declared and scored
+against a matched random entry FIRST, two eligible, and the one with the MOST EVENTS chosen because
+`STUDY_V61_FEATURES_15M`'s own conclusion was that 125 locked events cannot separate a +0.05 uplift
+-- P3 at 680 research events / 353 a year against P1's 225). 65 causal features in 8 declared
+families, truncation audit **0 mismatches / 1,020**, 996 events. Ladder ridge -> rf -> lgbm ->
+xgb d3/d6 -> MLP 2x32/2x64/4x128, purged and embargoed, uniqueness weights, objective = the R
+earned, every model beside a SHUFFLED TWIN. **THE REGULARISED RANDOM FOREST WINS FOR THE FIFTH TIME**
+(IC +0.1021) while ridge is NEGATIVE (-0.0494) and the deepest net reaches +0.0196 with no gradient
+in depth -- capacity is not the constraint, again. The twin wins **2 of 8 = 25%**, the best noise
+floor measured here (S3 58%, VWANOM 71%), so there IS signal. **THEN THE 8-SEED FAMILY ABLATION
+(seed sd 0.004) SAYS SIX OF EIGHT FAMILIES MAKE THE MODEL WORSE**: dropping regime +0.0188 (t +6.8),
+mom +0.0167 (+10.1), struct +0.0164 (+6.5), ffd +0.0145 (+7.5), trend +0.0068 (+2.6), volu +0.0027
+(+0.9); only vol (-0.0574, **t -17.8**) and pin (-0.0061, t -2.6) are load-bearing. Pushed to its
+conclusion: **vol+pin 21 features IC 0.1762, vol alone 7 features 0.1407, `vol.parkinson` ALONE
+0.1501, everything 0.0983** -- seven beat sixty-five at **t +17.08** and one beats sixty-five. With
+659 events and 65 columns the model fits noise; FEATURE ENGINEERING IS SUBTRACTIVE HERE and the
+answer to "maximise it" is to delete most of the inputs.
+**AND PIN EARNS A META PLACE AFTER FAILING AS A PRIMARY.** Adding the 14-column `pin.*` family to
+volatility alone is **+0.0355 at t +16.68**; to everything else +0.0061 at t +2.60; and PIN ALONE is
+**negatively informed (IC -0.0087, t -84)**. It is not a volatility duplicate -- mean |rho| of a
+pin.* feature to its nearest volatility feature is **0.161** (max 0.307) -- so the demotion was right
+in both directions: as a PRIMARY it is a dispersion statistic dressed as a probability, as a
+CONDITIONING variable on top of volatility it adds something volatility does not carry. Its base
+rate is also the tell: mean |lift-1| on the trigger's own bars is **0.087, the lowest of eight
+families** (volu 0.730, ffd 0.458).
+**AND THE SCORE IS CALIBRATED WHILE THE RANKING INVERTS, WHICH IS A CLEANER FAILURE THAN THE USUAL
+ONE.** Gate 2 on the best set: research keep-30% gives **+0.0857 uplift, PF 1.249 -> 1.709, boot
+p 0.050, random-filter p 0.027** -- 1 of 5 cells clearing both nulls. Locked (a SECOND read, so
+descriptive -- P3's block was opened in `STUDY_BAYESOPT_DONCHIAN`): **every rung is negative and the
+best research rung is the worst out of sample**, -0.0621 uplift at **PF 0.952**, monotone in how hard
+it filters. But the threshold keeps **26.4% when asked for 30%** (largest gap 0.036), so it IS
+calibrated -- the opposite of `STUDY_AUTOBNN`'s 105-of-105 -- which rules out the explanation
+usually reached for. The mechanism is in the target-hit rate: **42.9% -> 43.9% while PF goes 1.249
+-> 1.709**, so the model avoids losers rather than selecting trades that go further -- STUDY_V32's
+win-rate mechanism, and it does not transfer. **Deflated Sharpe 0.163 over 134 counted looks**:
+per-event Sharpe 0.1023 against an expected best-of-noise of **0.1410**, i.e. BELOW the noise floor
+of its own search.
+**p90 OF R IS DEGENERATE ON A TARGET-CAPPED PRIMARY.** P3 runs a 3.2 ATR target behind a 3.8 ATR
+stop, so a winner's R is capped at 0.842 and p90 reads **0.835 for every subset in the study** -- the
+branch's standing instruction to read p90 of R rather than AUC silently measures NOTHING there. On a
+capped primary ask the tail question as the TARGET-HIT RATE instead. And: `sess_core` labels a
+session `YYYYMMDD` as an int while the first PIN build used epoch-days, so zero days joined, every
+`pin.*` value came back NaN, and the pipeline printed "events with a complete feature row: 0" rather
+than raising -- the all-NaN-reads-as-no-signal trap from `STUDY_V54` through a different door. Print
+a join's overlap count before using it. What would move this is EVENTS, not capacity and not
+features: both were swept and both are negative. See `docs/ib/STUDY_V66_DL_META.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -3445,6 +3493,7 @@ of 0.30 as 0.293 where the published form returns 0.589. See `docs/ib/STUDY_PIN_
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
 | `research/pin/` | the EKOP/Yan PIN mixture: causal four-step fit, the three-hypothesis posterior, the volume-weighted B/S construction, the matched control, and `pin_parity.py` — the shipped Pine's own order model run on bars |
 | `research/pin/pin_bayes.py` | the Griffin-Oberoi-Oduro Gibbs sampler for the same mixture — data augmentation, the corrected (5b), a simulate-and-recover positive control, and the dispersion placebo that reads the estimator's floor on information-free data |
+| `research/v66/` | deep learning on the meta layer: `v66core.py` (four declared primaries, Gate 1 on each, and a matched random entry forced through `ent_hi` so geometry/exits/lock are identical), `v66pin.py` (the PIN mixture as a causal 14-column feature family), `run_d1..d6` (Gate 1 -> features + audit + base rates -> the eight-model ladder beside shuffled twins -> 8-seed family ablation -> Gate 2 on the best set with a locked read and the deflation), `_mlmod.py` (shared model plumbing so the runners cannot drift apart) |
 | `research/alpha_ladder.py` | the 198-condition pool (83 threshold rungs), Pine attached |
 | `research/oner_union.py` | threshold neighbourhoods and the trade-count / win-rate frontier |
 | `research/oner_anom.py` | exit split, matched control, corner table, FDR slices |
