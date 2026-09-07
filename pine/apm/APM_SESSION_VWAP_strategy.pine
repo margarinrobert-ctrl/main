@@ -389,6 +389,7 @@ var string lastAnom = "-"
 bool markLong = false
 bool markShort = false
 bool markReject = false
+bool justArmed = false      // an entry was submitted on THIS bar; it fills at the next open
 
 pos = strategy.position_size > 0 ? 1 : strategy.position_size < 0 ? -1 : 0
 
@@ -545,6 +546,7 @@ if barstate.isconfirmed and not halted
                                 [qc, qd, _pc] = sizeFor(atr)
                                 lastQty := applySize ? math.max(qc, 1) : 1
                                 plannedStop := close - side * qd
+                                justArmed := true
                                 if side == 1
                                     nLong += 1
                                     markLong := true
@@ -576,6 +578,7 @@ if barstate.isconfirmed and not halted
                             [qc2, qd2, _pc2] = sizeFor(atr)
                             lastQty := applySize ? math.max(qc2, 1) : 1
                             plannedStop := close - side * qd2
+                            justArmed := true
                             if side == 1
                                 nLong += 1
                                 markLong := true
@@ -607,7 +610,12 @@ if barstate.isconfirmed and not halted
              loss = useStop ? sTicks : na, profit = useTgt ? tTicks : na)
         liveAtr := pendAtr
     pendId := ""
-    if pos == 0
+    // Clear the planned level only when we are genuinely flat with nothing pending. `pos` is read
+    // at the TOP of the bar, so on the signal bar it is still 0 even though an entry has just been
+    // submitted -- clearing on `pos == 0` alone wiped the level on the one bar it was written for,
+    // and the stop could not appear until the FILL bar. That is the defect this guard exists to
+    // avoid, and the first version of it caused exactly that.
+    if pos == 0 and not justArmed and strategy.opentrades == 0
         plannedStop := na
 
     // ---- the hard flatten: an order at this bar's close fills at the next bar's open, so it is
@@ -641,6 +649,9 @@ liveStop = not useStop ? na
      : plannedStop
 plot(liveStop, "STOP LOSS (live)", color = color.new(color.red, 0), linewidth = 2,
      style = plot.style_linebr)
+// The PLANNED level is measured from the signal bar's CLOSE; the working order is fill-relative,
+// so once the entry fills the line steps by (fill open - signal close). It is an estimate for
+// exactly one bar and exact from the fill bar onward.
 plot(ema, "EMA", color = color.new(color.teal, 40))
 plot(osc, "Phase oscillator", display = display.data_window + display.status_line)
 plotshape(markLong, "Long intent admitted", style = shape.triangleup, location = location.belowbar,

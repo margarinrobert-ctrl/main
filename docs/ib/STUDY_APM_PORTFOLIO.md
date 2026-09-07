@@ -81,6 +81,14 @@ it is also the leg that loses on both blocks.** Those two facts belong together.
   `position_avg_price -/+ stopAtr x liveAtr`, exactly where the broker emulator has it. On the FILL
   BAR `position_avg_price` is still `na`, so the PLANNED level computed from the signal close is
   drawn instead — otherwise the one bar a reader most wants the stop is the one bar it is missing.
+  **A defect worth recording, because it is a class and not a typo.** The first build cleared the
+  planned level with `if pos == 0: plannedStop := na`, and `pos` is read at the TOP of the bar. On
+  the signal bar the entry has been submitted but has not filled, so `pos` is still 0 — the guard
+  wiped the level a few lines after the decision block wrote it, and the stop line could not appear
+  until the FILL bar, one bar late. **A "flat" test that runs before the fill is not a flat test.**
+  Fixed with a bar-scoped `justArmed` flag plus `strategy.opentrades == 0`, so the level clears only
+  when genuinely flat with nothing pending. Same family as the `strategy.position_avg_price` trap:
+  both are questions asked one bar before the answer exists.
 - **A sizing panel** showing the stop price, the stop distance in points and dollars per contract,
   the contract count at the configured account and risk%, the dollars at risk, and what the worst
   measured 20-trade run would cost at that size as a percentage of the account. It warns when the
