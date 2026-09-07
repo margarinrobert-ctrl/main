@@ -3637,11 +3637,8 @@ direction call is worth less than nothing. The 10m carry research bootstrap CI i
 **[-15.46, -0.05] -- it excludes zero on the NEGATIVE side**, a significant LOSS, while neither 10m
 locked arm separates from zero (0.239 / 0.103). Price jitter with the pivots, CVD and ATR ALL
 RECOMPUTED keeps the sign in **100%** of draws -- robust, and robustly negative.
-**THE DEFLATION IS THE FINDING AND IT APPLIES BACKWARDS**: at N = 1,295 counted looks
-E[max Sharpe | pure noise] is **0.2159 per trade**, and **NO cell clears it -- including the shipped
-5-minute version, whose locked Sharpe/trade is 0.137** (DSR 0.141). White's reality check over 28
-candidates reads **p 0.660 FAIL**. So the 5m cell clears its matched control (p 0.018) and does NOT
-clear its own multiplicity; both statements are true and the second is the binding one.
+**THE 10m DEFLATION STANDS AND MY EXTENSION OF IT TO 5m WAS WRONG -- CORRECTED BELOW.** White's
+reality check over the 28 10-minute candidates reads **p 0.660 FAIL**.
 **AND THE TIMEFRAMES DISAGREE ONLY ABOUT WHEN THE REGIME TURNED**: by year the 5m rule goes
 -1.82 / +8.45 / +10.32 across 2023/24/25 while 10m goes -10.08 / -5.53 / +6.02 -- the sign flips
 during 2024 at 5m (inside research) and not until 2025 at 10m (inside locked), which is the entire

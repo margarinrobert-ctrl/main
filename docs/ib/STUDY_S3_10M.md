@@ -108,11 +108,42 @@ annualised) is 0.004208, giving **E[max Sharpe | pure noise] = 0.2159**.
 | 10m MATCHED | LOCKED | +0.111 | 0.110 | no |
 | **5m reference** | **LOCKED** | **+0.137** | **0.141** | **no** |
 
-**NOT ONE CELL CLEARS THE NOISE FLOOR, INCLUDING THE 5-MINUTE VERSION SHIPPED IN
-`pine/scalp5/NQ_0711_S3_FLOW_strategy.pine`.** Its locked per-trade Sharpe of 0.137 is below the
-0.216 that the best of 1,295 looks is expected to produce from pure noise. That is a harder
-statement than the p 0.018 control pass and it corrects the framing of `STUDY_SCALP_FIVE`: the 5m
-cell clears its matched control and does not clear its own multiplicity.
+**CORRECTED 2026-09-07 -- THIS DEFLATION WAS WRONG IN TWO WAYS AND BOTH MADE IT TOO HARSH.**
+The figure above said no cell clears the noise floor, including the 5-minute version. Two errors
+produced that:
+
+1. **It counted VALIDATION looks as SEARCH looks.** 1,260 of the 1,295 cells were the 10-minute
+   geometry grid, which was run to falsify the 5-minute result and could never have produced it. A
+   test you run on a finished result is not a trial that found it. The honest search count for the
+   5m cell is **N = 805** (5 designs x ~800 declared geometry cells, plus 30 (k,w) reads).
+2. **`var_trials` was measured on the wrong population** -- the 10-minute (k,w) family, which is
+   worse and more dispersed than the family the cell came from. The 5-minute family's trial
+   variance is **0.001607 against the 0.004208 used**, a factor of 2.6, and a larger variance makes
+   E[max | noise] larger. Same error class as `STUDY_XAU_TWO_LAYER` (too generous) and
+   `STUDY_VP_TPO_NEXT` (too harsh); the rule is to state what the variance is over and use the
+   population that produced the candidate.
+
+Redone with the 5m variance, as a CURVE over assumed N because the assumption does the work:
+
+| N | E[max \| noise] | research DSR | LOCKED DSR |
+|---|---|---|---|
+| 30 | 0.0831 | 0.188 | 0.770 |
+| 100 | 0.1014 | 0.105 | 0.688 |
+| 400 | 0.1196 | 0.052 | 0.595 |
+| **805** | **0.1280** | **0.037** | **0.550** |
+| 1,295 | 0.1334 | 0.029 | 0.521 |
+| 5,000 | 0.1478 | 0.014 | 0.442 |
+
+The cell's per-trade Sharpe is +0.0393 research and **+0.1372 locked**. At the honest N of 805 the
+**LOCKED CELL DOES CLEAR THE NOISE FLOOR (0.137 > 0.128)** -- it stays above it out to about
+N = 2,000. It is not significant (DSR 0.55), but "clears the noise floor" and "fails it" are
+different claims and the first one is the true one. The RESEARCH block does not clear at any N
+above 5, which is the real remaining objection.
+
+Non-parametric version, no distributional assumption -- over 600 matched random entries, how often
+does the BEST OF 30 draws beat what the rule earned: **locked p 0.346, research p 0.958**. Same
+verdict from a different direction: the locked result is not distinguishable from the best of a
+30-cell search over noise, but neither is it below the floor.
 
 **White's reality check** over 28 candidates and 497 research sessions, stationary block bootstrap:
 **p 0.660 FAIL**. The best of the set does not beat zero once the search is priced.
@@ -133,9 +164,12 @@ size. Both timeframes agree the rule loses in 2023 and wins in 2025.
 
 ## What this changes
 
-Do not run this rule on a 10-minute chart. And do not read the 5-minute version's locked block as
-validation: it passes its matched control, fails its own multiplicity, and its edge is concentrated
-in the same 2024-2025 stretch the 10-minute run shows to be the only profitable part of the sample.
-The honest reading of both together is one regime, read twice.
+Do not run this rule on a 10-minute chart -- that part stands unchanged and is not close.
+
+The 5-minute verdict is softer than this study first stated, and `STUDY_S3_EDGE.md` records what
+changed: the concentration objection raised here fails its own control, and the deflation above was
+too harsh. What survives against the 5m version is that its RESEARCH block does not separate from
+zero (bootstrap P(mean<=0) 0.256, DSR 0.037, best-of-30 p 0.958), that the magnitude is strongly
+regime-dependent, and that it has never been read on a second market.
 
 `research/s310/`, `results/s310/s310_battery.png`.
