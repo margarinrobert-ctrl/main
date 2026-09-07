@@ -37,6 +37,9 @@ next-env.d.ts
 __pycache__/
 *.pyc
 
+# backtest intermediates derived from local market data
+backtests/**/grid.npz
+
 # ML layer artifacts: local experiment store, exported platform data, model caches
 research/mlruns.db
 research/mlruns/

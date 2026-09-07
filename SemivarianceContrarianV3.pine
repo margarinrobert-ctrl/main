@@ -1,0 +1,232 @@
+//@version=6
+strategy("Semivariance Contrarian v3 — SAM-Best INTRADAY (flat by session end)",
+     shorttitle="SAM-Best v3 ID",
+     overlay=true,
+     initial_capital=100000,
+     commission_type=strategy.commission.percent,
+     commission_value=0.02,
+     margin_long=10,
+     margin_short=10,
+     process_orders_on_close=true,
+     calc_on_every_tick=false,
+     max_bars_back=500)
+
+// ============================================================
+// v3 — the day-trading variant, and what the search actually found
+// ============================================================
+// Same signal core as v1/v2 (daily realized-semivariance asymmetry, plateau
+// ensemble W 2..30). Trading changes: enter once per day at the entry time,
+// exit the SAME day at the exit time. Never holds overnight => zero swap
+// financing, zero weekend/maintenance gap risk, prop-firm-rule compatible.
+//
+// EXECUTED SEARCH (backtests/intraday/, owner's 30m NAS100 feed, 2,253
+// decision days 2016-2025, 2 bps/side = 4 bps per daily round trip):
+//
+//  - ALL combinations were tested: 46 entry x 46 exit half-hour slots x
+//    {graded, binary >=0.25/0.50/0.75, always-in control, momentum} =
+//    6,210 configs. Best full-sample net Sharpe found: 0.54 - far BELOW
+//    the ~1.24 that pure noise is expected to produce as the best of
+//    6,210 correlated trials on 8.9 years. No intraday config clears the
+//    multiple-testing bar on its own.
+//  - Walk-forward of time-window selection FAILS: refitting the best
+//    config every 126 days scores stitched OOS Sharpe -0.20 (WFE -0.21),
+//    with picks flipping between unrelated corners of the grid. DO NOT
+//    RE-TUNE THE ENTRY/EXIT TIMES. Ever.
+//  - The only defensible shape is the pre-specified plateau: enter at the
+//    session's first bars, exit near session end, graded size. That
+//    candidate: full-sample net Sharpe ~0.50, walk-forward-OOS-days 0.34,
+//    maxDD ~-31%. The exit plateau 21:30-23:30 is flat (within 0.04
+//    Sharpe); 22:00 is chosen for bar coverage (96% of days), not fit.
+//  - Payoff decomposition: on high-conviction days (vote > 2/3) the
+//    intraday leg earns +9.8 bps/day (NW t = 2.3) vs +0.4 bps overnight -
+//    the signal's intraday component is real, but small against a 4 bps
+//    daily toll. At 2x costs the candidate drops to Sharpe 0.16.
+//  - Signal vs pure time-of-day control (always-in, same window,
+//    exposure-matched): +3.1%/yr, NW t = 1.45 - suggestive, not proof.
+//  - US-cash-hours-only variants tested WORSE (always-in control -0.24,
+//    graded -0.04): this feed's intraday drift lives in the early/European
+//    hours, not the US cash session.
+//
+// VERDICT: the swing version (v2: Sharpe 0.86 full / 0.73 walk-forward
+// OOS) DOMINATES this intraday variant (~0.50 / 0.34) on every measure.
+// Overnight exposure is where most of the compensation is. Use v3 only if
+// a hard constraint forces daily flatness (prop-firm rules, no-overnight
+// mandate) and accept roughly HALF the risk-adjusted return. If you can
+// hold overnight, use SemivarianceContrarianV2.pine.
+//
+// USE ON A 30-MINUTE NAS100 CHART. Long only. Times are in the chart
+// symbol's exchange timezone. Read VALIDATION.md Appendix D.
+
+// ============================================================
+// Inputs
+// ============================================================
+gSig = "Signal"
+wMin = input.int(2,  "Ensemble smallest window", minval=1,  maxval=10, group=gSig)
+wMax = input.int(30, "Ensemble largest window",  minval=10, maxval=60, group=gSig,
+     tooltip="The researched ensemble is W 2..30. Nothing in it is fitted;"
+       + " resist tuning.")
+minBars = input.int(20, "Min 30m bars for a valid day", minval=1, group=gSig,
+     tooltip="Holiday/stub sessions with fewer bars are skipped, matching the backtest")
+sizingMode = input.string("Graded (vote share)", "Position sizing", group=gSig,
+     options=["Graded (vote share)", "Binary at threshold"],
+     tooltip="Graded: position = fraction of SAM windows voting negative"
+       + " (the researched default). Binary: full size when the vote share"
+       + " reaches the threshold below, else flat. The binary 0.25 variant"
+       + " scored marginally higher in-sample (0.54 vs 0.50) - a difference"
+       + " well inside selection noise; graded remains the validated choice.")
+binThr = input.float(0.25, "Binary threshold (vote share)", minval=0.05, maxval=1.0,
+     step=0.05, group=gSig)
+
+gWin = "Session window (exchange timezone)"
+entryH = input.int(1,  "Entry hour",   minval=0, maxval=23, group=gWin)
+entryM = input.int(0,  "Entry minute", minval=0, maxval=59, group=gWin,
+     tooltip="Position opens at the close of the first bar at/after this time."
+       + " Default = session start. The grid shows every later entry loses"
+       + " Sharpe monotonically - the drift you skip never comes back.")
+exitH = input.int(22, "Exit hour",   minval=0, maxval=23, group=gWin)
+exitM = input.int(0,  "Exit minute", minval=0, maxval=59, group=gWin,
+     tooltip="Flat at the close of the first bar at/after this time, and"
+       + " force-flat on day change as a safety net if that bar is missing."
+       + " 22:00 sits on the flat 21:30-23:30 exit plateau and exists on 96%"
+       + " of days; it is NOT a fitted optimum. Walk-forward proves re-tuning"
+       + " these times destroys the edge (OOS Sharpe -0.20).")
+
+gSize = "Sizing & risk"
+fullPct = input.float(100, "Full position size (% of equity)", minval=1,
+     maxval=100, step=5, group=gSize,
+     tooltip="Hard-capped at 100 (1x). See VALIDATION.md Appendix A.6.")
+ddHalt = input.float(0, "Drawdown halt (%, 0 = off)", minval=0, maxval=90, step=5,
+     group=gSize,
+     tooltip="Pre-committed kill switch (VALIDATION.md §18.16): close and stop"
+       + " trading once equity drawdown crosses this level. Set from Monte"
+       + " Carlo, write it down, never widen it mid-drawdown.")
+
+gViz = "Display"
+showTint  = input.bool(true, "Tint background by signal strength", group=gViz)
+showTable = input.bool(true, "Show status table", group=gViz)
+
+// ============================================================
+// Daily semivariance accumulation on 30m bars (identical core)
+// ============================================================
+var float rsPosDay = 0.0
+var float rsNegDay = 0.0
+var int   dayBars  = 0
+
+histCap = wMax
+var array<float> rsPosHist = array.new_float()
+var array<float> rsNegHist = array.new_float()
+
+newDay = ta.change(time("D")) != 0
+r = newDay ? math.log(close / open) : math.log(close / close[1])
+
+var float strength = na          // ensemble vote share 0..1
+var bool  decidedToday = false   // one entry decision per day
+var bool  exitedToday  = false
+
+if newDay
+    if dayBars >= minBars
+        array.push(rsPosHist, rsPosDay)
+        array.push(rsNegHist, rsNegDay)
+        if array.size(rsPosHist) > histCap
+            array.shift(rsPosHist)
+            array.shift(rsNegHist)
+    if array.size(rsPosHist) == histCap
+        votes  = 0
+        sumPos = 0.0
+        sumNeg = 0.0
+        last   = array.size(rsPosHist) - 1
+        for w = 1 to histCap
+            sumPos += array.get(rsPosHist, last - w + 1)
+            sumNeg += array.get(rsNegHist, last - w + 1)
+            if w >= wMin and w <= wMax and sumPos - sumNeg < 0
+                votes += 1
+        strength := votes / float(wMax - wMin + 1)
+    rsPosDay := 0.0
+    rsNegDay := 0.0
+    dayBars  := 0
+    decidedToday := false
+    exitedToday  := false
+
+if not na(r)
+    rsPosDay += r > 0 ? r * r : 0.0
+    rsNegDay += r < 0 ? r * r : 0.0
+    dayBars  += 1
+
+// ============================================================
+// Pre-committed drawdown halt
+// ============================================================
+var float eqPeak = 0.0
+eqPeak := math.max(eqPeak, strategy.equity)
+ddNow = eqPeak > 0 ? 1.0 - strategy.equity / eqPeak : 0.0
+var bool killed = false
+if ddHalt > 0 and not killed and ddNow * 100.0 >= ddHalt
+    killed := true
+    strategy.close_all(comment="DD halt",
+         alert_message="SAM-Best v3 HALT: drawdown limit hit — flat, trading suspended.")
+
+// ============================================================
+// Intraday trade window: one entry, one same-day exit, never overnight
+// ============================================================
+todMin   = hour * 60 + minute
+entryTod = entryH * 60 + entryM
+exitTod  = exitH * 60 + exitM
+
+// safety net: if the exit bar was missing (early close), flatten on day change
+if newDay and strategy.position_size > 0
+    strategy.close_all(comment="safety flat (missed exit)",
+         alert_message="SAM-Best v3: safety flat at day change — exit bar was missing yesterday")
+
+// exit at the first bar at/after the exit time
+if not exitedToday and todMin >= exitTod and strategy.position_size > 0
+    exitedToday := true
+    strategy.close_all(comment="session exit",
+         alert_message=str.format("SAM-Best v3 {0}: session exit — flat", syminfo.ticker))
+
+// enter once per day at the first bar at/after the entry time (and before exit)
+graded = sizingMode == "Graded (vote share)"
+if not killed and not decidedToday and not na(strength) and todMin >= entryTod and todMin < exitTod
+    decidedToday := true
+    float frac = graded ? strength : (strength >= binThr ? 1.0 : 0.0)
+    if frac > 0.001 and strategy.position_size == 0
+        qty = strategy.equity * (fullPct / 100) / close * frac
+        strategy.order("Enter", strategy.long, qty=qty,
+             alert_message=str.format("SAM-Best v3 {0}: enter {1,number,#.###}x equity (qty {2,number,#.##})",
+                 syminfo.ticker, frac, qty))
+
+// ============================================================
+// Display
+// ============================================================
+tintAlpha = showTint and not na(strength) ? int(97 - 27 * strength) : na
+bgcolor(na(tintAlpha) or strength <= 0 ? na : color.new(color.teal, tintAlpha),
+     title="Signal strength (darker teal = more bad-vol dominance)")
+
+plotchar(newDay and strength > 0.99, "Full-size day", "▲",
+     location.belowbar, color.new(color.teal, 0), size=size.tiny)
+plotchar(killed and not killed[1], "DD halt", "✕",
+     location.abovebar, color.new(color.red, 0), size=size.small)
+
+plot(strength, "Vote share", display=display.data_window)
+plot(strategy.equity, "Equity", display=display.data_window)
+
+var table tbl = table.new(position.top_right, 2, 7, bgcolor=color.new(color.black, 80),
+     border_width=1, border_color=color.new(color.gray, 70))
+if showTable and barstate.islast
+    lbl = color.new(color.gray, 0)
+    val = color.new(color.white, 10)
+    expX = strategy.equity > 0 ? strategy.position_size * close / strategy.equity : 0.0
+    table.cell(tbl, 0, 0, "SAM-Best v3 INTRADAY", text_color=color.new(color.teal, 0), text_size=size.small)
+    table.cell(tbl, 1, 0, killed ? "HALTED" : na(strength) ? "WARM-UP" : "ACTIVE",
+         text_color=killed ? color.new(color.red, 0) : color.new(color.teal, 0), text_size=size.small)
+    table.cell(tbl, 0, 1, "Vote strength", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 1, na(strength) ? "—" : str.tostring(strength, "#.##"), text_color=val, text_size=size.tiny)
+    table.cell(tbl, 0, 2, "Open exposure", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 2, str.tostring(expX, "#.##") + "x", text_color=val, text_size=size.tiny)
+    table.cell(tbl, 0, 3, "Trade window", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 3, str.format("{0,number,00}:{1,number,00} → {2,number,00}:{3,number,00}",
+         entryH, entryM, exitH, exitM), text_color=val, text_size=size.tiny)
+    table.cell(tbl, 0, 4, "Overnight risk", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 4, "none (flat daily)", text_color=val, text_size=size.tiny)
+    table.cell(tbl, 0, 5, "Drawdown", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 5, str.tostring(ddNow * 100.0, "#.#") + " %", text_color=val, text_size=size.tiny)
+    table.cell(tbl, 0, 6, "Vs swing (v2)", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 6, "≈ half the Sharpe", text_color=color.new(color.orange, 0), text_size=size.tiny)

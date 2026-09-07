@@ -1,0 +1,353 @@
+//@version=6
+strategy("Semivariance Contrarian v2 — SAM-Best (validated core + risk/exec upgrades)",
+     shorttitle="SAM-Best v2",
+     overlay=true,
+     initial_capital=100000,
+     commission_type=strategy.commission.percent,
+     commission_value=0.02,
+     margin_long=10,
+     margin_short=10,
+     process_orders_on_close=true,
+     calc_on_every_tick=false,
+     max_bars_back=500)
+
+// ============================================================
+// v2 — what changed vs SemivarianceContrarian.pine (v1)
+// ============================================================
+// The trading core (signal, ensemble, daily rebalance) is IDENTICAL to v1
+// and default settings reproduce v1's decisions. v1 stays in the repo as
+// the frozen artifact matching the study in backtests/nas100_semivariance/.
+// The upgrades implement the code-level findings of VALIDATION.md:
+//
+//  1. Overnight-financing model (VALIDATION.md Gap 4, §7.2). CFDs charge
+//     roughly (benchmark + 2.5-3%) p.a. on held notional — ~3.8%/yr of
+//     unmodeled drag at this strategy's 0.58x average exposure. TradingView
+//     cannot debit swap from backtest fills, so v2 models it OUTSIDE the
+//     order flow: the status table and data-window plots show cumulative
+//     financing and net-of-financing equity. Judge the strategy on NET.
+//     Set the rate to 0 if you trade futures (financing sits in the basis).
+//  2. Hard 1x cap (Appendix A.6): fullPct is now capped at 100. The study's
+//     own Monte Carlo put P(50% drawdown) at up to 21.6% for 2x sizing and
+//     24-47% for the martingale — there is no legitimate reason to exceed 1x.
+//  3. Execution delay input (§7.3.3): shift the daily rebalance N 30m bars
+//     past the day's first bar. Use it to (a) verify the edge survives
+//     delayed fills — a daily edge that dies 30 minutes late was never a
+//     daily edge — and (b) bound live alert/webhook latency. Default 0 = v1.
+//  4. Pre-committed drawdown halt (§18.16 kill criteria): optional. Freezes
+//     the strategy flat once equity drawdown crosses the limit, so the
+//     shutdown decision is made BEFORE the drawdown exists. Pick the level
+//     from block-bootstrap Monte Carlo (95th pct maxDD ≈ 35-45% at 1x), not
+//     from hope. Default 0 = off (v1 behavior).
+//  5. Rebalance trigger mode (Appendix A.3): v1 compares order size against
+//     a % of full size, so pure equity drift triggers trades even when the
+//     ensemble vote is unchanged. "Vote change" mode rebalances only when
+//     the vote moves by the step (or position drift exceeds 2x the step as
+//     a re-sync guard) — less churn, lower costs. Default = v1 drift mode;
+//     A/B the two under your real cost assumptions before switching.
+//  6. Optional winsorization of 30m returns (§9.3): RS± is quadratic in
+//     returns, so a single bad print can flip SAM for weeks. Clamping
+//     returns at N sigma hardens the signal against bad ticks. DEFAULT OFF:
+//     it changes the signal, so per VALIDATION.md it is a NEW strategy that
+//     must re-run the validation pipeline before live use.
+//  7. Warmup fix (Appendix A.4): ensemble mode no longer waits for wSingle
+//     days of history. Order alert_message on every rebalance for webhook
+//     automation. Live status table + data-window diagnostic plots.
+//
+// ============================================================
+// EXECUTED VALIDATION (backtests/walkforward/, run 2026-07-05)
+// ============================================================
+// An independent Python replication of this script's exact logic, run on
+// the owner's 30m NAS100 feed (103,693 bars, Nov 2016 - Oct 2025):
+//
+//  - Replication PASSED: ensemble Sharpe 0.86 (study claimed 0.83), maxDD
+//    -24.6% (claimed -24.9%), avg exposure 0.58x (exact), W=8 0.97 (1.02).
+//  - Rolling walk-forward (IS 756d / OOS 126d, 11 folds): refitting the
+//    best single W collapses (OOS Sharpe 0.34, WFE 0.29, picks bounce
+//    W8/W13/W29/W6/W4/W27...); THIS fixed ensemble holds (OOS Sharpe 0.73,
+//    WFE 0.83, 91% of folds positive, maxDD -25% vs buy & hold -36% on the
+//    same days). Anchored variant agrees.
+//  - +1-bar delayed fills leave results unchanged (0.87) - latency-robust.
+//  - Paired alpha vs 0.58x-exposure buy & hold (Newey-West t): +2.5%/yr
+//    gross, t = 0.95 - NOT statistically distinguishable from luck; net of
+//    6.5% CFD financing it is -1.2%/yr, t = -0.47.
+//
+// OPERATING RULES the executed tests imply:
+//  1) Trade futures or cash index products only. On a financed CFD the
+//     overnight swap consumes the entire timing edge (set the financing
+//     input to your broker's real rate and watch the net-equity row).
+//  2) Size this as a BETA SUBSTITUTE - index-like risk-adjusted return at
+//     0.58x average exposure with roughly one-third less drawdown - not as
+//     an alpha engine. Its timing alpha is unproven at this sample length.
+//
+// USE ON A 30-MINUTE NAS100 CHART. Long only. Signals evaluate once per
+// day and fill at the close of the (first + delay) bar of the session.
+// Read VALIDATION.md before trusting any number this prints.
+
+// ============================================================
+// Inputs
+// ============================================================
+gSig = "Signal"
+sigMode = input.string("Plateau ensemble W 2-30 (recommended)", "Signal mode", group=gSig,
+     options=["Plateau ensemble W 2-30 (recommended)", "Single window"],
+     tooltip="Ensemble: graded long position = fraction of SAM windows W 2..30"
+       + " that are negative. Nothing in it is fitted, and it is the only"
+       + " selection process that passed walk-forward (efficiency 0.94 vs 0.16"
+       + " for picking the best single W). Single window: the classic version;"
+       + " in-sample optimum, use only if you must have binary positions.")
+wSingle = input.int(8, "Single-mode SAM window (days)", minval=1, maxval=60, group=gSig,
+     tooltip="Only used in Single window mode. Sharpe is positive for every"
+       + " W 1..30 and plateaus at W 4-13; 8 is the plateau centre. Do NOT"
+       + " re-tune this to recent performance - the walk-forward test shows"
+       + " that collapses the edge to almost nothing.")
+wMin = input.int(2,  "Ensemble smallest window", minval=1,  maxval=10, group=gSig)
+wMax = input.int(30, "Ensemble largest window",  minval=10, maxval=60, group=gSig,
+     tooltip="The researched ensemble is W 2..30. Resist tuning; the whole"
+       + " point of the ensemble is that nothing in it is fitted.")
+minBars = input.int(20, "Min 30m bars for a valid day", minval=1, group=gSig,
+     tooltip="Holiday/stub sessions with fewer bars are skipped, matching the backtest")
+winsorSig = input.float(0, "Winsorize 30m returns at N sigma (0 = off)", minval=0, maxval=8,
+     step=0.5, group=gSig,
+     tooltip="Clamps each 30m return to ±N times its trailing stdev (480 bars)"
+       + " before squaring into RS±, hardening the signal against bad ticks"
+       + " (VALIDATION.md §9.3; 4 is a sane value). OFF by default because it"
+       + " CHANGES THE SIGNAL: re-validate before trading it.")
+
+gSize = "Position sizing"
+sizing = input.string("Fixed", "Single-mode sizing", group=gSize,
+     options=["Fixed", "Split entry 1/3 avg-down"],
+     tooltip="Only used in Single window mode (the ensemble grades its own"
+       + " size). Split entry: open 1/3 of full size, add 1/3 at the start of"
+       + " each day the trade is underwater (max 3 tranches). The martingale"
+       + " variant remains removed: Monte Carlo put its ruin probability at 24-47%.")
+fullPct = input.float(100, "Full position size (% of equity)", minval=1,
+     maxval=100, step=5, group=gSize,
+     tooltip="v2 hard-caps this at 100 (= at most 1x equity). The study's"
+       + " sizing sweep measured P(50% drawdown) up to 21.6% at 2x and the"
+       + " martingale at 24-47% — leverage cannot add expectancy; it only"
+       + " fattens the ruin tail (VALIDATION.md Appendix A.6).")
+rebalMode = input.string("Position drift (v1 behavior)", "Rebalance trigger", group=gSize,
+     options=["Position drift (v1 behavior)", "Vote change (less churn)"],
+     tooltip="Drift: trade when the order would exceed the step % of full size"
+       + " — equity growth alone can trigger trades. Vote change: trade only"
+       + " when the ensemble vote moves by the step (with a 2x-step drift"
+       + " re-sync guard) — fewer trades, lower costs. A/B test under your"
+       + " real costs before switching (VALIDATION.md Appendix A.3, §7.5).")
+rebalPct = input.float(10, "Min rebalance step (% of full size)",
+     minval=1, maxval=50, step=1, group=gSize,
+     tooltip="Daily position changes smaller than this are skipped to avoid"
+       + " churning commissions on small ensemble vote changes.")
+
+gExec = "Execution & risk (v2)"
+execDelay = input.int(0, "Execution delay (30m bars after day start)", minval=0, maxval=13,
+     group=gExec,
+     tooltip="Rebalance fills at the close of the Nth bar after the session"
+       + " opens instead of the first. 0 = v1 behavior. Sweep 1-3 to verify"
+       + " delay robustness and to bound live alert latency (VALIDATION.md"
+       + " §7.3.3): if the edge dies one bar late, do not trade it.")
+ddHalt = input.float(0, "Drawdown halt (%, 0 = off)", minval=0, maxval=90, step=5,
+     group=gExec,
+     tooltip="Pre-committed kill switch (VALIDATION.md §18.16): once strategy"
+       + " equity falls this % below its peak, the position is closed and no"
+       + " new trades are taken. Set it from block-bootstrap Monte Carlo"
+       + " (e.g. the 95th-percentile simulated maxDD, ≈ 35-45% at 1x), write"
+       + " it down, and never widen it mid-drawdown.")
+finRate = input.float(6.5, "Overnight financing rate (% p.a., net-equity model)",
+     minval=0, maxval=15, step=0.25, group=gExec,
+     tooltip="Annual financing charged on held notional per night (3x over"
+       + " weekends via calendar-day counting). CFDs: benchmark + 2.5-3%"
+       + " markup (≈ 6-7% in recent regimes). Futures: ≈ 0 (financing sits in"
+       + " the basis). Display-only — orders and backtest fills are unchanged;"
+       + " the table and data-window show NET-of-financing equity. Judge the"
+       + " strategy on net (VALIDATION.md Gap 4, §7.2).")
+
+gViz = "Display"
+showTint  = input.bool(true, "Tint background by signal strength", group=gViz)
+showTable = input.bool(true, "Show status / net-of-financing table", group=gViz)
+
+// ============================================================
+// Daily semivariance accumulation on 30m bars
+// ============================================================
+var float rsPosDay = 0.0   // running RS+ for the current day
+var float rsNegDay = 0.0   // running RS- for the current day
+var int   dayBars  = 0
+
+ensembleMode = sigMode == "Plateau ensemble W 2-30 (recommended)"
+splitMode    = not ensembleMode and sizing == "Split entry 1/3 avg-down"
+
+// completed-day history, newest last. v2: ensemble mode no longer pays a
+// warmup penalty for an unused wSingle (Appendix A.4)
+histCap = ensembleMode ? wMax : math.max(wMax, wSingle)
+var array<float> rsPosHist = array.new_float()
+var array<float> rsNegHist = array.new_float()
+
+newDay = ta.change(time("D")) != 0
+
+// first bar of a day is open->close so the overnight gap never enters RS
+rRaw  = newDay ? math.log(close / open) : math.log(close / close[1])
+// optional bad-tick hardening: clamp at ±N sigma of trailing 30m returns
+sig30 = ta.stdev(rRaw, 480)
+r = winsorSig > 0 and not na(sig30) and sig30 > 0 ?
+     math.max(math.min(rRaw, winsorSig * sig30), -winsorSig * sig30) : rRaw
+
+var float strength = na    // ensemble vote share 0..1 (ensemble mode)
+var int   sig      = 0     // binary signal (single-window mode)
+var int   tranches = 0     // split-entry tranches currently scaled in (0..3)
+
+if newDay
+    // finalize YESTERDAY: only complete sessions count
+    if dayBars >= minBars
+        array.push(rsPosHist, rsPosDay)
+        array.push(rsNegHist, rsNegDay)
+        if array.size(rsPosHist) > histCap
+            array.shift(rsPosHist)
+            array.shift(rsNegHist)
+    // one backward pass accumulates every rolling SAM window at once
+    if array.size(rsPosHist) == histCap
+        votes  = 0
+        sumPos = 0.0
+        sumNeg = 0.0
+        last   = array.size(rsPosHist) - 1
+        for w = 1 to histCap
+            sumPos += array.get(rsPosHist, last - w + 1)
+            sumNeg += array.get(rsNegHist, last - w + 1)
+            if w >= wMin and w <= wMax and sumPos - sumNeg < 0
+                votes += 1
+            if w == wSingle
+                sig := sumPos - sumNeg < 0 ? 1 : 0
+        strength := votes / float(wMax - wMin + 1)
+    // reset accumulators for the new day
+    rsPosDay := 0.0
+    rsNegDay := 0.0
+    dayBars  := 0
+
+// accumulate this bar into the current day
+if not na(r)
+    rsPosDay += r > 0 ? r * r : 0.0
+    rsNegDay += r < 0 ? r * r : 0.0
+    dayBars  += 1
+
+// ============================================================
+// Overnight financing model (display-only; VALIDATION.md Gap 4)
+// ============================================================
+var float finCum   = 0.0
+var int   prevDayT = na
+if newDay
+    if not na(prevDayT)
+        // calendar days since the previous session start: Fri->Mon = 3 nights
+        nights = math.max(1.0, math.round((time - prevDayT) / 86400000.0))
+        finCum += math.abs(strategy.position_size) * close * (finRate / 100.0) * nights / 360.0
+    prevDayT := time
+
+// ============================================================
+// Pre-committed drawdown halt (VALIDATION.md §18.16)
+// ============================================================
+var float eqPeak = 0.0
+eqPeak := math.max(eqPeak, strategy.equity)
+ddNow = eqPeak > 0 ? 1.0 - strategy.equity / eqPeak : 0.0
+var bool killed = false
+if ddHalt > 0 and not killed and ddNow * 100.0 >= ddHalt
+    killed := true
+    strategy.close_all(comment="DD halt",
+         alert_message="SAM-Best v2 HALT: drawdown limit hit — flat, trading suspended. Post-mortem before restart.")
+
+// ============================================================
+// Daily rebalance to the graded target (at day start + optional delay)
+// ============================================================
+underwater = strategy.position_size > 0 and close < strategy.position_avg_price
+bsNew      = ta.barssince(newDay)
+trigger    = not na(strength) and (execDelay == 0 ? newDay : bsNew == execDelay)
+
+var float lastExecFrac = 0.0
+
+if trigger and not killed
+    // target fraction of full size for today
+    float frac = 0.0
+    if ensembleMode
+        frac := strength
+    else if sig == 0
+        tranches := 0
+    else
+        if tranches == 0
+            tranches := splitMode ? 1 : 3
+        else if splitMode and underwater and tranches < 3
+            tranches += 1
+        frac := tranches / 3.0
+
+    fullQty   = strategy.equity * (fullPct / 100) / close
+    targetQty = fullQty * frac
+    deltaQty  = targetQty - strategy.position_size
+    voteStep  = math.abs(frac - lastExecFrac) >= rebalPct / 100.0
+    driftStep = math.abs(deltaQty) >= fullQty * rebalPct / 100.0
+    bigDrift  = math.abs(deltaQty) >= fullQty * 2.0 * rebalPct / 100.0
+    doStep    = rebalMode == "Vote change (less churn)" ? (voteStep or bigDrift) : driftStep
+    rebalMsg  = str.format("SAM-Best v2 {0}: rebalance to {1,number,#.###}x equity (target qty {2,number,#.##})",
+         syminfo.ticker, frac, targetQty)
+
+    if frac < 0.001 and strategy.position_size > 0
+        strategy.close_all(comment="flat day",
+             alert_message=str.format("SAM-Best v2 {0}: go flat", syminfo.ticker))
+        lastExecFrac := 0.0
+    else if doStep and math.abs(deltaQty) > 0
+        if deltaQty > 0
+            strategy.order("Add", strategy.long, qty=deltaQty, alert_message=rebalMsg)
+        else
+            strategy.order("Trim", strategy.short, qty=-deltaQty, alert_message=rebalMsg)
+        lastExecFrac := frac
+
+// ============================================================
+// Display
+// ============================================================
+dispStrength = ensembleMode ? strength : (sig == 1 ? 1.0 : 0.0)
+tintAlpha = showTint and not na(dispStrength) ?
+     int(97 - 27 * dispStrength) : na   // 97 (faint) .. 70 (full conviction)
+bgcolor(na(tintAlpha) or dispStrength <= 0 ? na : color.new(color.teal, tintAlpha),
+     title="Signal strength (darker teal = more bad-vol dominance)")
+
+plotchar(newDay and dispStrength > 0.99, "Full long signal", "▲",
+     location.belowbar, color.new(color.teal, 0), size=size.tiny)
+plotchar(newDay and dispStrength < 0.001 and nz(dispStrength[1]) >= 0.001,
+     "Gone flat", "•", location.abovebar, color.new(color.orange, 0), size=size.tiny)
+plotchar(killed and not killed[1], "DD halt", "✕",
+     location.abovebar, color.new(color.red, 0), size=size.small)
+
+// diagnostics (data window only; chart scale untouched)
+plot(dispStrength, "Vote share", display=display.data_window)
+plot(strategy.equity, "Gross equity", display=display.data_window)
+plot(finCum, "Cum. financing cost", display=display.data_window)
+plot(strategy.equity - finCum, "Net-of-financing equity", display=display.data_window)
+
+// live status table
+var int t0 = na
+if na(t0)
+    t0 := time
+var table tbl = table.new(position.top_right, 2, 9, bgcolor=color.new(color.black, 80),
+     border_width=1, border_color=color.new(color.gray, 70))
+if showTable and barstate.islast
+    lbl   = color.new(color.gray, 0)
+    val   = color.new(color.white, 10)
+    yrs   = math.max((time - t0) / 31536000000.0, 0.02)
+    netEq = strategy.equity - finCum
+    expX  = strategy.equity > 0 ? strategy.position_size * close / strategy.equity : 0.0
+    table.cell(tbl, 0, 0, "SAM-Best v2", text_color=color.new(color.teal, 0), text_size=size.small)
+    table.cell(tbl, 1, 0, killed ? "HALTED" : na(strength) ? "WARM-UP" : "ACTIVE",
+         text_color=killed ? color.new(color.red, 0) : color.new(color.teal, 0), text_size=size.small)
+    table.cell(tbl, 0, 1, "Vote strength", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 1, na(dispStrength) ? "—" : str.tostring(dispStrength, "#.##"),
+         text_color=val, text_size=size.tiny)
+    table.cell(tbl, 0, 2, "Open exposure", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 2, str.tostring(expX, "#.##") + "x", text_color=val, text_size=size.tiny)
+    table.cell(tbl, 0, 3, "Gross equity", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 3, str.tostring(strategy.equity, "#,###"), text_color=val, text_size=size.tiny)
+    table.cell(tbl, 0, 4, "Financing @ " + str.tostring(finRate, "#.##") + "%", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 4, "-" + str.tostring(finCum, "#,###"), text_color=val, text_size=size.tiny)
+    table.cell(tbl, 0, 5, "Net equity", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 5, str.tostring(netEq, "#,###"),
+         text_color=netEq < strategy.initial_capital ? color.new(color.orange, 0) : val, text_size=size.tiny)
+    table.cell(tbl, 0, 6, "Fin. drag", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 6, str.tostring(finCum / strategy.initial_capital / yrs * 100.0, "#.##") + " %/yr",
+         text_color=val, text_size=size.tiny)
+    table.cell(tbl, 0, 7, "Drawdown (gross)", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 7, str.tostring(ddNow * 100.0, "#.#") + " %", text_color=val, text_size=size.tiny)
+    table.cell(tbl, 0, 8, "Exec delay", text_color=lbl, text_size=size.tiny)
+    table.cell(tbl, 1, 8, execDelay == 0 ? "0 (v1)" : str.tostring(execDelay) + " bars",
+         text_color=execDelay == 0 ? val : color.new(color.orange, 0), text_size=size.tiny)

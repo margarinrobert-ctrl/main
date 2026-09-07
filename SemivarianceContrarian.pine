@@ -1,0 +1,198 @@
+//@version=6
+strategy("Semivariance Contrarian — Best (SSRN 2815151)", shorttitle="SAM-Best",
+     overlay=true,
+     initial_capital=100000,
+     commission_type=strategy.commission.percent,
+     commission_value=0.02,
+     margin_long=10,
+     margin_short=10,
+     process_orders_on_close=true,
+     calc_on_every_tick=false,
+     max_bars_back=500)
+
+// ============================================================
+// The configuration that survived the full robustness program
+// ============================================================
+// Signal (Barunik, Kocenda & Vacha, SSRN 2815151): daily realized variance
+// from 30m returns splits into bad volatility RS- (down moves) and good
+// volatility RS+ (up moves); SAM_W = rolling W-day sum of (RS+ - RS-).
+// Trade LONG when bad volatility dominates (SAM < 0), flat otherwise.
+//
+// Everything below is fixed by the study in backtests/nas100_semivariance/
+// (2,278 NAS100 trading days, Nov 2016 - Sep 2025, net of 2 bps/side):
+//
+//  1. Parameter stability: long-only contrarian is profitable for EVERY
+//     W 1..30 (median Sharpe 0.76, plateau W 4-13 all >= 0.83). Both
+//     long/short readings are dominated; momentum is negative for all 30 W.
+//  2. Monte Carlo on every set (2,000-10,000 paths each): every long-only
+//     set has P(edge < 0) < 1%; every momentum set has P(ruin) > 90%.
+//     Sizing sweep across all W: fixed 1x and split-entry 1/3 @1x keep
+//     P(50% drawdown) <= 1% at every W; split @2x reaches 21.6% at the
+//     worst W and the martingale reaches 24-47% — both rejected.
+//  3. Cluster analysis (90x90 return-correlation, hierarchical): all
+//     contrarian W >= 2 form one robust family; this ensemble is its
+//     centre (corr 1.00). W=1 clusters apart; momentum clusters are toxic.
+//  4. Walk-forward (refit every 126d on trailing 756d): re-picking the
+//     best single W collapses (OOS Sharpe 0.19, efficiency 0.16). The
+//     plateau ensemble - equal-weight vote of ALL windows W 2..30, nothing
+//     fitted per fold - scores OOS Sharpe 0.79, efficiency 0.94, and beats
+//     buy & hold (0.73) with 11 pts less drawdown.
+//
+// DEFAULT = that walk-forward-certified ensemble: hold a graded long
+// position equal to the share of windows W 2..30 whose SAM is negative.
+// Full record 2016-2025 at 1x: Sharpe 0.83, CAGR 15.1%, maxDD -24.9%,
+// t-stat 2.51, avg exposure 0.58x, MC P(edge<0) 0.13%, P(50% DD) 0.1%.
+// The single-window mode (W=8: Sharpe 1.02, CAGR 20.5%) is kept as an
+// option, but its headline is a full-sample pick - trust the ensemble.
+//
+// USE ON A 30-MINUTE NAS100 CHART. Signals evaluate once per day on the
+// first bar of the new session and fill at that bar's close. Long only:
+// the short side has negative expectancy in every variant tested.
+
+// ============================================================
+// Inputs
+// ============================================================
+gSig = "Signal"
+sigMode = input.string("Plateau ensemble W 2-30 (recommended)", "Signal mode", group=gSig,
+     options=["Plateau ensemble W 2-30 (recommended)", "Single window"],
+     tooltip="Ensemble: graded long position = fraction of SAM windows W 2..30"
+       + " that are negative. Nothing in it is fitted, and it is the only"
+       + " selection process that passed walk-forward (efficiency 0.94 vs 0.16"
+       + " for picking the best single W). Single window: the classic version;"
+       + " in-sample optimum, use only if you must have binary positions.")
+wSingle = input.int(8, "Single-mode SAM window (days)", minval=1, maxval=60, group=gSig,
+     tooltip="Only used in Single window mode. Sharpe is positive for every"
+       + " W 1..30 and plateaus at W 4-13; 8 is the plateau centre. Do NOT"
+       + " re-tune this to recent performance - the walk-forward test shows"
+       + " that collapses the edge to almost nothing.")
+wMin = input.int(2,  "Ensemble smallest window", minval=1,  maxval=10, group=gSig)
+wMax = input.int(30, "Ensemble largest window",  minval=10, maxval=60, group=gSig,
+     tooltip="The researched ensemble is W 2..30. Resist tuning; the whole"
+       + " point of the ensemble is that nothing in it is fitted.")
+minBars = input.int(20, "Min 30m bars for a valid day", minval=1, group=gSig,
+     tooltip="Holiday/stub sessions with fewer bars are skipped, matching the backtest")
+
+gSize = "Position sizing"
+sizing = input.string("Fixed", "Single-mode sizing", group=gSize,
+     options=["Fixed", "Split entry 1/3 avg-down"],
+     tooltip="Only used in Single window mode (the ensemble grades its own"
+       + " size). Split entry: open 1/3 of full size, add 1/3 at the start of"
+       + " each day the trade is underwater (max 3 tranches) - halves the max"
+       + " drawdown for proportionally lower return, P(50% DD) ~0 at every W."
+       + " The martingale variant of the old script is removed: Monte Carlo"
+       + " puts its ruin probability at 24-47%.")
+fullPct = input.float(100, "Full position size (% of equity)", minval=1,
+     maxval=200, step=5, group=gSize,
+     tooltip="100 = at most 1x equity, the researched default: P(50% account"
+       + " drawdown) stays under 1% for every window. Sizing above ~150%"
+       + " pushes ruin risk into double digits at the weaker windows (the"
+       + " sizing sweep in final_selection.py measured up to 21.6% at 2x)."
+       + " Leverage cannot add expectancy; it only fattens the ruin tail.")
+rebalPct = input.float(10, "Min rebalance step (% of full size)",
+     minval=1, maxval=50, step=1, group=gSize,
+     tooltip="Daily position changes smaller than this are skipped to avoid"
+       + " churning commissions on small ensemble vote changes.")
+
+gViz = "Display"
+showTint = input.bool(true, "Tint background by signal strength", group=gViz)
+
+// ============================================================
+// Daily semivariance accumulation on 30m bars
+// ============================================================
+var float rsPosDay = 0.0   // running RS+ for the current day
+var float rsNegDay = 0.0   // running RS- for the current day
+var int   dayBars  = 0
+
+// completed-day history, newest last, capped at the largest window needed
+histCap = math.max(wMax, wSingle)
+var array<float> rsPosHist = array.new_float()
+var array<float> rsNegHist = array.new_float()
+
+newDay = ta.change(time("D")) != 0
+
+// first bar of a day is open->close so the overnight gap never enters RS
+r = newDay ? math.log(close / open) : math.log(close / close[1])
+
+ensembleMode = sigMode == "Plateau ensemble W 2-30 (recommended)"
+splitMode    = not ensembleMode and sizing == "Split entry 1/3 avg-down"
+
+var float strength = na    // ensemble vote share 0..1 (ensemble mode)
+var int   sig      = 0     // binary signal (single-window mode)
+var int   tranches = 0     // split-entry tranches currently scaled in (0..3)
+
+if newDay
+    // finalize YESTERDAY: only complete sessions count
+    if dayBars >= minBars
+        array.push(rsPosHist, rsPosDay)
+        array.push(rsNegHist, rsNegDay)
+        if array.size(rsPosHist) > histCap
+            array.shift(rsPosHist)
+            array.shift(rsNegHist)
+    // one backward pass accumulates every rolling SAM window at once
+    if array.size(rsPosHist) == histCap
+        votes  = 0
+        sumPos = 0.0
+        sumNeg = 0.0
+        last   = array.size(rsPosHist) - 1
+        for w = 1 to histCap
+            sumPos += array.get(rsPosHist, last - w + 1)
+            sumNeg += array.get(rsNegHist, last - w + 1)
+            if w >= wMin and w <= wMax and sumPos - sumNeg < 0
+                votes += 1
+            if w == wSingle
+                sig := sumPos - sumNeg < 0 ? 1 : 0
+        strength := votes / float(wMax - wMin + 1)
+    // reset accumulators for the new day
+    rsPosDay := 0.0
+    rsNegDay := 0.0
+    dayBars  := 0
+
+// accumulate this bar into the current day
+if not na(r)
+    rsPosDay += r > 0 ? r * r : 0.0
+    rsNegDay += r < 0 ? r * r : 0.0
+    dayBars  += 1
+
+// ============================================================
+// Daily rebalance to the graded target
+// ============================================================
+underwater = strategy.position_size > 0 and close < strategy.position_avg_price
+
+if newDay and not na(strength)
+    // target fraction of full size for today
+    float frac = 0.0
+    if ensembleMode
+        frac := strength
+    else if sig == 0
+        tranches := 0
+    else
+        if tranches == 0
+            tranches := splitMode ? 1 : 3
+        else if splitMode and underwater and tranches < 3
+            tranches += 1
+        frac := tranches / 3.0
+
+    fullQty   = strategy.equity * (fullPct / 100) / close
+    targetQty = fullQty * frac
+    deltaQty  = targetQty - strategy.position_size
+    if frac < 0.001 and strategy.position_size > 0
+        strategy.close_all("flat day")
+    else if math.abs(deltaQty) >= fullQty * rebalPct / 100
+        if deltaQty > 0
+            strategy.order("Add", strategy.long, qty=deltaQty)
+        else
+            strategy.order("Trim", strategy.short, qty=-deltaQty)
+
+// ============================================================
+// Display
+// ============================================================
+dispStrength = ensembleMode ? strength : (sig == 1 ? 1.0 : 0.0)
+tintAlpha = showTint and not na(dispStrength) ?
+     int(97 - 27 * dispStrength) : na   // 97 (faint) .. 70 (full conviction)
+bgcolor(na(tintAlpha) or dispStrength <= 0 ? na : color.new(color.teal, tintAlpha),
+     title="Signal strength (darker teal = more bad-vol dominance)")
+
+plotchar(newDay and dispStrength > 0.99, "Full long signal", "▲",
+     location.belowbar, color.new(color.teal, 0), size=size.tiny)
+plotchar(newDay and dispStrength < 0.001 and nz(dispStrength[1]) >= 0.001,
+     "Gone flat", "•", location.abovebar, color.new(color.orange, 0), size=size.tiny)
