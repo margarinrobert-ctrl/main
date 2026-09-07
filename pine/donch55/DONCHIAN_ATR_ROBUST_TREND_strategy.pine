@@ -130,16 +130,20 @@ useTrail = exitMode == "TrailOnly" or exitMode == "Both"
 if canEnter and longSig
     stopPx = close - riskATR * atr
     strategy.entry("L", strategy.long)
-    strategy.exit("L-EXIT", from_entry = "L", stop = useStop ? stopPx : na, trail_points = useTrail ? 0 : na, trail_offset = useTrail ? math.round(trailATR * atr / syminfo.mintick) : na)
+    strategy.exit("L-EXIT", from_entry = "L", stop = useStop ? stopPx : na, trail_price = useTrail ? close : na, trail_offset = useTrail ? math.round(trailATR * atr / syminfo.mintick) : na)
 
 if canEnter and shortSig
     stopPx = close + riskATR * atr
     strategy.entry("S", strategy.short)
-    strategy.exit("S-EXIT", from_entry = "S", stop = useStop ? stopPx : na, trail_points = useTrail ? 0 : na, trail_offset = useTrail ? math.round(trailATR * atr / syminfo.mintick) : na)
+    strategy.exit("S-EXIT", from_entry = "S", stop = useStop ? stopPx : na, trail_price = useTrail ? close : na, trail_offset = useTrail ? math.round(trailATR * atr / syminfo.mintick) : na)
 
-// `trail_points = 0` arms the trail at the entry price, so it follows the running extreme from the
-// fill bar onward at `trail_offset` ticks behind it. That is what "trail distance = trailATR x ATR"
-// means; a non-zero activation would be a different rule the paper does not describe.
+// The trail is armed with `trail_price = close`, NOT `trail_points = 0`. Because
+// `process_orders_on_close` is on, this bar's close IS the fill price, so an activation level of
+// `close` arms the trail at the entry -- it then follows the running extreme at `trail_offset`
+// ticks behind it, which is what "trail distance = trailATR x ATR" means. `trail_points = 0` would
+// express the same intent but relies on Pine treating a zero activation as "arm immediately"
+// rather than as unset, and an exit order with nothing set is a runtime error. Naming the price
+// removes the ambiguity.
 
 if barstate.isconfirmed and exitOpp and strategy.position_size > 0 and shortSig
     strategy.close("L", comment = "opposite")
@@ -149,7 +153,7 @@ if barstate.isconfirmed and exitOpp and strategy.position_size < 0 and longSig
 // ------------------------------------------------------------------ plots
 plot(upper, "Donchian upper [1]", color = color.new(#2a78d6, 0), linewidth = 2)
 plot(lower, "Donchian lower [1]", color = color.new(#2a78d6, 0), linewidth = 2)
-plot(useEma ? ema : na, "EMA " + str.tostring(emaLen), color = color.new(#8b929c, 20))
+plot(useEma ? ema : na, "EMA trend filter", color = color.new(#8b929c, 20))
 bgcolor(regimeOk ? color.new(#1baf7a, 92) : color.new(#c0392b, 94))
 
 var table hud = table.new(position.top_right, 2, 6, border_width = 1)

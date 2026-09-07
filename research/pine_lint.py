@@ -16,6 +16,19 @@ line continuation". That is what shipped once. A ternary wrapped at column 22 is
 expression wrapped at column 24 is not.
 
 This walks the text with that rule, tracking unclosed brackets and a stack of open block indents.
+
+IT ALSO CHECKS CONST-STRING ARGUMENTS, added after a shipped script failed to compile on
+
+    plot(useEma ? ema : na, "EMA " + str.tostring(emaLen), ...)
+
+    Cannot call 'plot' with argument 'title'='call 'operator +' (simple string)'. An argument of
+    'simple string' type was used but a 'const string' is expected.
+
+A title built from an input is a SIMPLE string -- known only once the inputs are read -- and Pine
+requires a CONST string, known at compile time, for every title and for `input.string`'s options.
+The rule is easy to violate precisely because the concatenation looks harmless and reads better
+than a literal. Same lesson as the indentation rule: when a script fails to compile, fix the
+LINTER first and the file second, or the next script repeats it.
 """
 from __future__ import annotations
 
@@ -55,6 +68,126 @@ def _strip(line):
         out.append(ch)
         i += 1
     return "".join(out)
+
+
+# Functions whose title argument must be a CONST string, with the title's positional slot.
+# `None` means the title can only be passed by name.
+CONST_TITLE = {
+    "plot": 1, "plotshape": 1, "plotchar": 1, "plotarrow": 1,
+    "plotcandle": 4, "plotbar": 4, "hline": 1,
+    "indicator": 0, "strategy": 0,
+    "bgcolor": None, "fill": None, "barcolor": None,
+}
+for _f in ("int", "float", "bool", "string", "timeframe", "color", "source",
+           "session", "symbol", "price", "text_area", "enum"):
+    CONST_TITLE[f"input.{_f}"] = 1
+CONST_TITLE["input"] = 1
+
+_LITERAL = re.compile(r"""^\s*(?:"[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*')\s*$""")
+_CALL = re.compile(r"(?<![\w.])((?:input\.)?[a-z_]+(?:\.[a-z_]+)?)\s*\(")
+
+
+def _split_args(src):
+    """Top-level comma split, respecting brackets and string literals."""
+    args, buf, depth, instr = [], [], 0, None
+    i = 0
+    while i < len(src):
+        ch = src[i]
+        if instr:
+            buf.append(ch)
+            if ch == "\\":
+                if i + 1 < len(src):
+                    buf.append(src[i + 1])
+                i += 2
+                continue
+            if ch == instr:
+                instr = None
+            i += 1
+            continue
+        if ch in "\"'":
+            instr = ch
+            buf.append(ch)
+        elif ch in "([":
+            depth += 1
+            buf.append(ch)
+        elif ch in ")]":
+            depth -= 1
+            buf.append(ch)
+        elif ch == "," and depth == 0:
+            args.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    if buf:
+        args.append("".join(buf))
+    return args
+
+
+def const_string_problems(text):
+    """Flag title / shorttitle / options arguments that are not compile-time constants."""
+    out = []
+    # blank out comments so a `//` mention of plot(...) is not parsed as a call
+    lines = []
+    for raw in text.split("\n"):
+        st = raw.lstrip()
+        lines.append("" if st.startswith("//") else raw)
+    flat = "\n".join(lines)
+    for m in _CALL.finditer(flat):
+        fn = m.group(1)
+        if fn not in CONST_TITLE:
+            continue
+        i = m.end()
+        depth, instr, j = 1, None, i
+        while j < len(flat) and depth:
+            c = flat[j]
+            if instr:
+                if c == "\\":
+                    j += 2
+                    continue
+                if c == instr:
+                    instr = None
+            elif c in "\"'":
+                instr = c
+            elif c in "([":
+                depth += 1
+            elif c in ")]":
+                depth -= 1
+            j += 1
+        inner = flat[i:j - 1]
+        ln = flat[:m.start()].count("\n") + 1
+        args = _split_args(inner)
+        named = {}
+        pos = []
+        for a in args:
+            k = re.match(r"\s*([A-Za-z_]\w*)\s*=(?!=)(.*)$", a, re.S)
+            if k and not k.group(2).lstrip().startswith("="):
+                named[k.group(1)] = k.group(2)
+            else:
+                pos.append(a)
+        slot = CONST_TITLE[fn]
+        checks = []
+        if "title" in named:
+            checks.append(("title", named["title"]))
+        elif slot is not None and len(pos) > slot:
+            checks.append(("title", pos[slot]))
+        for extra in ("shorttitle", "textcolor_title"):
+            if extra in named:
+                checks.append((extra, named[extra]))
+        for label, expr in checks:
+            if expr.strip() in ("", "na"):
+                continue
+            if not _LITERAL.match(expr):
+                out.append((ln, f"{fn}(): `{label}` must be a CONST string but is an expression "
+                                f"-- Pine rejects a title built with `+` or str.tostring() "
+                                f"(\"a 'simple string' was used but a 'const string' is "
+                                f"expected\")", expr.strip()[:90]))
+        if fn == "input.string" and "options" in named:
+            for o in _split_args(named["options"].strip().lstrip("[").rstrip("]")):
+                if o.strip() and not _LITERAL.match(o):
+                    out.append((ln, "input.string(): every entry of `options` must be a const "
+                                    "string literal", o.strip()[:90]))
+    return out
 
 
 def lint(text, name="script"):
@@ -104,7 +237,8 @@ def lint(text, name="script"):
             depth = 0
     if depth != 0:
         problems.append((0, f"{depth} bracket(s) never closed", ""))
-    return problems
+    problems.extend(const_string_problems(text))
+    return sorted(problems, key=lambda x: x[0])
 
 
 def check(text, name="script", verbose=True):
