@@ -42,11 +42,20 @@ def load(tf=15):
     return SC.build(tf)
 
 
-def run(D, ent=11, exN=47, stop=3.8, tp=3.2, hold=96, s_start=570, s_stop=960, block=None):
-    """The cell, through sess_core's own walker with the CVD gate off."""
+def run(D, ent=11, exN=47, stop=3.8, tp=3.2, hold=96, s_start=570, s_stop=960, block=None,
+        cost=None, slip=None):
+    """The cell, through sess_core's own walker with the CVD gate off.
+
+    COST AND SLIPPAGE ARE FORWARDED EXPLICITLY. `sess_core.run` declares `cost=COST, slip=SLIP`,
+    and a Python default argument is evaluated ONCE at definition time -- so reassigning
+    `sess_core.COST` afterwards silently does nothing. The first execution Monte Carlo here returned
+    p5 = p50 = p95 to the cent, which is what a perturbation that never happened looks like.
+    """
     g = np.ones(len(D["c"]), bool)
     t = SC.run(D, g=g, ent=int(ent), exN=int(exN), stop=float(stop), tp=float(tp),
-               hold=int(hold), sess=True, s_start=int(s_start), s_stop=int(s_stop), flat=False)
+               hold=int(hold), sess=True, s_start=int(s_start), s_stop=int(s_stop), flat=False,
+               cost=SC.COST if cost is None else float(cost),
+               slip=SC.SLIP if slip is None else float(slip))
     return t if block is None else t[t.blk == block]
 
 
