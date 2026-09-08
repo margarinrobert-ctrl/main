@@ -1,0 +1,15 @@
+Trading Backtester
+
+This application analyses historical market data on your own computer.
+
+  * It performs no network requests of any kind.
+  * It collects no telemetry and sends no data anywhere.
+  * Your data files, strategies and backtest results are stored only in your
+    workspace folder (by default Documents\TradingBacktester) and are left in
+    place if you uninstall.
+
+Backtested results are a description of what a set of rules would have done on
+past data. They are not a prediction and not a guarantee of future performance.
+Historical simulation systematically flatters strategies: it cannot reproduce
+the queue position, partial fills, latency, liquidity or emotional pressure of
+live trading. Treat every number this application shows you as an upper bound.
