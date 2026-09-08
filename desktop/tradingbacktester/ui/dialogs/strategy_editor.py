@@ -26,7 +26,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialog,
                                QScrollArea, QSpinBox, QSplitter, QTabWidget,
                                QTableWidget, QTableWidgetItem, QToolButton,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-                               QWidget)
+                               QWidget,
+                               QCheckBox)
 
 from ...core.errors import BacktesterError, StrategyError
 from ...indicators.base import ParamSpec
@@ -36,7 +37,7 @@ from ...strategy.spec import (Always, Compare, Condition, ConditionGroup,
                               ConstOperand, Cross, ExprOperand,
                               IndicatorOperand, IndicatorSlot, ParamOperand,
                               PriceOperand, SessionWindow, State,
-                              StrategySpec, Vote)
+                              StrategySpec, Vote, Within)
 from ..theme import PALETTE, Fonts
 from ..widgets.common import (Card, ask_text, clear_layout, confirm, hline,
                               show_error, show_info, show_warning)
@@ -703,7 +704,7 @@ class StrategyEditor(QDialog):
         item.setData(0, Qt.ItemDataRole.UserRole, node)
         if parent is not None:
             parent.addChild(item)
-        if isinstance(node, (ConditionGroup, Vote)):
+        if isinstance(node, (ConditionGroup, Vote, Within)):
             for child in node.children:
                 self._add_tree_item(item, child)
         return item
@@ -749,7 +750,12 @@ class StrategyEditor(QDialog):
         node = item.data(0, Qt.ItemDataRole.UserRole)
         if isinstance(node, (ConditionGroup, Vote)):
             return node, item
+        # A Within holds exactly one condition, so a new one is added beside
+        # it -- to the nearest enclosing group -- never inside it.
         parent = item.parent()
+        while parent is not None and isinstance(
+                parent.data(0, Qt.ItemDataRole.UserRole), Within):
+            parent = parent.parent()
         if parent is not None:
             return parent.data(0, Qt.ItemDataRole.UserRole), parent
         return self._current_root(), self.tree.topLevelItem(0)
@@ -871,6 +877,15 @@ class StrategyEditor(QDialog):
         parent_item = item.parent()
         parent_node = parent_item.data(0, Qt.ItemDataRole.UserRole)
         node = item.data(0, Qt.ItemDataRole.UserRole)
+        if isinstance(parent_node, Within):
+            # The only thing inside a "within" is what it is about; taking it
+            # away leaves a window over nothing, so the window goes too.
+            if parent_item.parent() is None:
+                show_info(self, "Remove", "Remove the 'within' node itself "
+                                          "rather than its condition.")
+                return
+            item, parent_item = parent_item, parent_item.parent()
+            node, parent_node = parent_node, parent_item.data(0, Qt.ItemDataRole.UserRole)
         if isinstance(parent_node, (ConditionGroup, Vote)) and \
                 node in parent_node.children:
             parent_node.children.remove(node)
@@ -1345,6 +1360,9 @@ def _node_title(node: Any) -> str:
         label = "NOT " if node.negate else ""
         return (f"{label}VOTE  (at least {int(node.threshold)} of "
                 f"{len(node.children)})")
+    if isinstance(node, Within):
+        label = "NOT " if node.negate else ""
+        return f"{label}WITHIN the last {int(node.bars)} bars"
     try:
         return node.describe()
     except Exception:                       # pragma: no cover - defensive
@@ -1361,7 +1379,7 @@ def _walk_operands(condition: Any):
 
 
 def _rename_in_condition(condition: Any, old: str, new: str) -> None:
-    if isinstance(condition, (ConditionGroup, Vote)):
+    if isinstance(condition, (ConditionGroup, Vote, Within)):
         for child in condition.children:
             _rename_in_condition(child, old, new)
         return
@@ -1371,7 +1389,7 @@ def _rename_in_condition(condition: Any, old: str, new: str) -> None:
 
 
 def _rename_param_in_condition(condition: Any, old: str, new: str) -> None:
-    if isinstance(condition, (ConditionGroup, Vote)):
+    if isinstance(condition, (ConditionGroup, Vote, Within)):
         for child in condition.children:
             _rename_param_in_condition(child, old, new)
         return
@@ -1482,6 +1500,7 @@ class _ConditionPicker(QDialog):
         for label, key in (("Compare two things", "compare"),
                            ("One crosses another", "cross"),
                            ("A series is rising or falling", "state"),
+                           ("Something happened within the last N bars", "within"),
                            ("Inside a session window", "session"),
                            ("Always true", "always")):
             self.kind_box.addItem(label, key)
@@ -1521,6 +1540,11 @@ class _ConditionPicker(QDialog):
             self.condition = Cross(left, "above", right)
         elif kind == "state":
             self.condition = State(left, "rising", 1)
+        elif kind == "within":
+            # A comparison to edit, wrapped in a window to edit: the reset half
+            # of a reset-then-trigger rule, which is what nearly every
+            # oscillator system needs and could not be written before.
+            self.condition = Within(Compare(left, "<", ConstOperand(20.0)), 8)
         elif kind == "session":
             self.condition = SessionWindow("09:30", "16:00", "America/New_York",
                                            (0, 1, 2, 3, 4))
@@ -1538,6 +1562,8 @@ def _node_editor(editor: StrategyEditor, node: Any) -> QWidget | None:
         return _GroupEditor(editor, node)
     if isinstance(node, Vote):
         return _VoteEditor(editor, node)
+    if isinstance(node, Within):
+        return _WithinEditor(editor, node)
     if isinstance(node, Compare):
         return _CompareEditor(editor, node)
     if isinstance(node, Cross):
@@ -1579,6 +1605,38 @@ class _GroupEditor(QWidget):
         note.setWordWrap(True)
         note.setObjectName("Hint")
         lay.addWidget(note)
+
+
+class _WithinEditor(QWidget):
+    """The window of a Within: how many bars back its condition may have held."""
+
+    def __init__(self, editor: StrategyEditor, node: Within) -> None:
+        super().__init__()
+        self._editor = editor
+        self._node = node
+        lay = QFormLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+        head = QLabel("True if the condition inside held on this bar or any of "
+                      "the previous ones in the window.")
+        head.setWordWrap(True)
+        head.setObjectName("Hint")
+        lay.addRow(head)
+        self.bars = QSpinBox()
+        self.bars.setRange(1, 10_000)
+        self.bars.setValue(max(1, int(node.bars)))
+        self.bars.setToolTip("Counts the current bar, so 1 is the condition itself.")
+        self.bars.valueChanged.connect(self._changed)
+        lay.addRow("Window (bars)", self.bars)
+        self.negate = QCheckBox("Negate (true only if it did NOT happen)")
+        self.negate.setChecked(bool(node.negate))
+        self.negate.toggled.connect(self._changed)
+        lay.addRow(self.negate)
+
+    def _changed(self, *_args) -> None:
+        self._node.bars = int(self.bars.value())
+        self._node.negate = bool(self.negate.isChecked())
+        self._editor.node_changed()
 
 
 class _VoteEditor(QWidget):

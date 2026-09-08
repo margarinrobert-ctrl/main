@@ -434,7 +434,17 @@ class ExitSettings:
     trailing_mode: str = "atr"
     trailing_value: float = 2.0
     trailing_activate_at_r: float = 0.0
-    """Only start trailing once the trade is this many R in profit; ``0`` = immediately."""
+    """Only start trailing once the trade is this far in profit; ``0`` = immediately.
+
+    Read in the units of :attr:`trailing_activate_mode`.  The name keeps its
+    historical ``_at_r`` because every saved strategy and every UI field is
+    keyed on it; the mode field below is what changed."""
+    trailing_activate_mode: str = "r"
+    """Units of :attr:`trailing_activate_at_r`: ``r`` (multiples of the initial
+    stop distance), ``points``, ``atr`` or ``percent``.  A strategy converted
+    from a platform that arms its trail after a fixed number of points cannot
+    be reproduced in R when the stop is ATR-based, because R then varies from
+    trade to trade; ``points`` says exactly what was meant."""
     breakeven_at_r: float = 0.0
     """Move the stop to entry once the trade reaches this many R; ``0`` disables."""
     atr_period: int = 14

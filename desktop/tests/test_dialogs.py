@@ -1482,3 +1482,111 @@ def test_a_survivor_names_the_sweep_it_came_out_of(qapp, tmp_path, registry,
         dialog._save_selected()
         assert store.list(), "the saved strategy did not reach the workspace"
     dialog.close()
+
+
+# --------------------------------------------------------------------------
+# Optimiser: the Search card
+# --------------------------------------------------------------------------
+
+def test_optimizer_dialog_search_card_defaults_to_a_grid(qapp):
+    from tradingbacktester.core.types import BacktestConfig
+    from tradingbacktester.data.sample import generate_sample_data
+    from tradingbacktester.strategy.builtin import BUILTIN_STRATEGIES
+    from tradingbacktester.ui.dialogs.optimizer_dialog import OptimizerDialog
+
+    bars = generate_sample_data("NQ", "1h", n_bars=600, seed=2)
+    dialog = OptimizerDialog(bars, BUILTIN_STRATEGIES["EMA Cross + RSI"](),
+                             BacktestConfig())
+    qapp.processEvents()
+    assert dialog._search_settings() == ("grid", 60)
+    assert not dialog.trials.isEnabled()
+    assert "trials of" not in dialog.count_label.text()
+
+    dialog.method_box.setCurrentIndex(dialog.method_box.findData("tpe"))
+    qapp.processEvents()
+    assert dialog._search_settings()[0] == "tpe"
+    assert dialog.trials.isEnabled()
+    for row in dialog._rows[:2]:
+        row["enabled"].setChecked(True)
+    qapp.processEvents()
+    assert "trials of" in dialog.count_label.text()
+    dialog.close()
+
+
+def test_optimizer_dialog_passes_the_search_settings_to_its_tabs(qapp):
+    from tradingbacktester.core.types import BacktestConfig
+    from tradingbacktester.data.sample import generate_sample_data
+    from tradingbacktester.strategy.builtin import BUILTIN_STRATEGIES
+    from tradingbacktester.ui.dialogs.optimizer_dialog import OptimizerDialog
+
+    bars = generate_sample_data("NQ", "1h", n_bars=600, seed=2)
+    dialog = OptimizerDialog(bars, BUILTIN_STRATEGIES["EMA Cross + RSI"](),
+                             BacktestConfig())
+    dialog.method_box.setCurrentIndex(dialog.method_box.findData("random"))
+    dialog.trials.setValue(17)
+    assert dialog.holdout._search_fn() == ("random", 17)
+    assert dialog.walkforward._search_fn() == ("random", 17)
+    dialog.close()
+
+
+# --------------------------------------------------------------------------
+# Risk panel: the trailing activation mode
+# --------------------------------------------------------------------------
+
+def test_risk_panel_round_trips_the_trailing_activate_mode(qapp):
+    from tradingbacktester.core.types import BacktestConfig, ExitSettings
+    from tradingbacktester.ui.widgets.risk_panel import RiskPanel
+
+    panel = RiskPanel()
+    config = BacktestConfig()
+    config.exits = ExitSettings(trailing_enabled=True, trailing_mode="points",
+                                trailing_value=8.0, trailing_activate_at_r=15.0,
+                                trailing_activate_mode="points")
+    panel.apply_config(config)
+    qapp.processEvents()
+    back = panel.build_config()
+    assert back.exits.trailing_activate_mode == "points"
+    assert back.exits.trailing_activate_at_r == 15.0
+
+
+# --------------------------------------------------------------------------
+# Strategy editor: the Within node
+# --------------------------------------------------------------------------
+
+def test_editor_shows_a_within_node_with_its_child_and_removes_it_whole(qapp):
+    from PySide6.QtCore import Qt
+
+    from tradingbacktester.data.sample import generate_sample_data
+    from tradingbacktester.strategy.spec import (Compare, Const, Cross, Group,
+                                                 Ind, IndicatorSlot,
+                                                 StrategySpec, Within)
+    from tradingbacktester.ui.dialogs.strategy_editor import StrategyEditor
+
+    bars = generate_sample_data("NQ", "1h", n_bars=400, seed=4)
+    reset = Within(Compare(Ind("rsi"), "<", Const(30.0)), 8)
+    trigger = Cross(Ind("rsi"), "above", Const(30.0))
+    spec = StrategySpec(name="W",
+                        indicators=[IndicatorSlot("rsi", "RSI", {"period": 14})],
+                        entry_long=Group("and", [reset, trigger]))
+    editor = StrategyEditor(spec, bars=bars)
+    qapp.processEvents()
+
+    root = editor.tree.topLevelItem(0)
+    assert root.childCount() == 2
+    within_item = root.child(0)
+    assert "WITHIN the last 8 bars" in within_item.text(0)
+    assert within_item.childCount() == 1, "the child condition is shown under it"
+    child_item = within_item.child(0)
+    assert child_item.data(0, Qt.ItemDataRole.UserRole) is reset.child
+
+    # Adding beside the child goes to the enclosing group, not into the Within.
+    editor.tree.setCurrentItem(child_item)
+    group, _item = editor._selected_group()
+    assert group is spec.entry_long
+
+    # Removing the child removes the whole window: a Within over nothing is not a rule.
+    editor._remove_node()
+    qapp.processEvents()
+    assert reset not in spec.entry_long.children
+    assert spec.entry_long.children == [trigger]
+    editor.close()

@@ -1287,3 +1287,76 @@ def test_a_short_candidate_is_described_as_a_short_one():
     spec = build_spec(short, style("intraday"), "15m", 1.5, 2.0, CostModel())
     text = spec.description.lower()
     assert "overbought" in text and "oversold" not in text
+
+
+# --------------------------------------------------------------------------
+# Wider search: new families and conjunctions
+# --------------------------------------------------------------------------
+
+def test_the_finder_now_has_fourteen_plain_families():
+    from tradingbacktester.finder.candidates import TEMPLATES, all_candidates
+
+    keys = {t.key for t in TEMPLATES}
+    assert {"keltner_reversion", "cci_reversion", "willr_reversion",
+            "supertrend_flip"} <= keys
+    assert len(TEMPLATES) == 14
+    assert len(all_candidates()) == 150
+
+
+def test_conjunctions_widen_the_space_and_register_their_families():
+    from tradingbacktester.finder.candidates import (FILTERS, TEMPLATES_BY_KEY,
+                                                     all_candidates)
+
+    plain = all_candidates()
+    wide = all_candidates(conjunctions=True)
+    assert len(wide) > 5 * len(plain)
+    joined = {c.template for c in wide if "+" in c.template}
+    assert joined
+    for key in joined:
+        assert key in TEMPLATES_BY_KEY, key
+    # The trend filter is not stacked on families that already carry a trend.
+    for redundant in ("trend_pullback", "stoch_trend", "structure_break"):
+        assert f"{redundant}+trend" not in joined
+        assert f"{redundant}+adx" in joined
+    assert {f.key for f in FILTERS} == {"trend", "adx", "chop"}
+
+
+def test_a_conjunction_builds_a_runnable_strategy_that_matches_its_fast_signal():
+    """The search's cached mask and the engine's compiled rule must agree.
+
+    Slot names are prefixed on the filter side, so an entry rule's EMA and a
+    filter's EMA cannot silently become one slot.
+    """
+    from tradingbacktester.core.types import BacktestConfig, CostModel
+    from tradingbacktester.engine.backtester import Backtester
+    from tradingbacktester.finder.candidates import (all_candidates, build_spec,
+                                                     signals_for, warmup_for)
+    from tradingbacktester.strategy.compiler import compile_strategy
+
+    bars = generate_sample_data("NQ", "15m", n_bars=6000, seed=3)
+    st = style("intraday")
+    wide = all_candidates(conjunctions=True)
+    for key in ("rsi_reversion+trend", "breakout+adx", "macd_cross+chop",
+                "keltner_reversion", "cci_reversion", "willr_reversion",
+                "supertrend_flip"):
+        for side in (1, -1):
+            cand = next(c for c in wide if c.template == key and c.side == side)
+            spec = build_spec(cand, st, "15m", 1.5, 2.0, CostModel())
+            refs = [s.ref for s in spec.indicators]
+            assert len(set(refs)) == len(refs), (key, refs)
+            compiled = compile_strategy(spec, bars)
+            fast = signals_for(bars, cand, warmup_for(cand, st.atr_period))
+            got = compiled.entry_long if side > 0 else compiled.entry_short
+            assert np.array_equal(got[compiled.warmup:], fast[compiled.warmup:]), (key, side)
+    spec = build_spec(next(c for c in wide if c.template == "rsi_reversion+trend"
+                           and c.side > 0), st, "15m", 1.5, 2.0, CostModel())
+    assert "Only when" in spec.description
+    Backtester(bars, spec, BacktestConfig()).run()
+
+
+def test_an_unknown_family_is_still_refused_with_conjunctions_on():
+    from tradingbacktester.core.errors import StrategyError
+    from tradingbacktester.finder.candidates import all_candidates
+
+    with pytest.raises(StrategyError):
+        all_candidates(templates=("banana",), conjunctions=True)

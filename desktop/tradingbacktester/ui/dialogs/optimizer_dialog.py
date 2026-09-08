@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
 from ...core.errors import BacktesterError
 from ...logging_setup import get_logger
 from ...optimize.grid import ParameterRange, combination_count
+from ...optimize.sampler import METHODS, describe_method
 from ...optimize.ranking import (RANKING_METRICS, heatmap,
                                  metric_label, neighbourhood_mean,
                                  overfitting_note, rank)
@@ -167,6 +168,39 @@ class OptimizerDialog(QDialog):
         grid_card.add(self._count_widgets())
         ll.addWidget(grid_card)
 
+        search_card = Card("Search")
+        search_grid = QGridLayout()
+        search_grid.setHorizontalSpacing(7)
+        search_grid.setVerticalSpacing(5)
+        search_grid.addWidget(self._label("Method"), 0, 0)
+        self.method_box = QComboBox()
+        for key in METHODS:
+            self.method_box.addItem(describe_method(key), key)
+        self.method_box.setToolTip(
+            "Grid runs every combination. Bayesian (TPE) and random search "
+            "spend a fixed number of trials instead; TPE puts later trials "
+            "where earlier ones scored well.")
+        search_grid.addWidget(self.method_box, 0, 1)
+        search_grid.addWidget(self._label("Trials"), 1, 0)
+        self.trials = QSpinBox()
+        self.trials.setRange(1, 1_000_000)
+        self.trials.setValue(60)
+        self.trials.setToolTip(
+            "Backtests a sampled search may spend. Ignored by a grid, which "
+            "runs everything.")
+        search_grid.addWidget(self.trials, 1, 1)
+        search_grid.setColumnStretch(1, 1)
+        search_card.add_layout(search_grid)
+        search_hint = QLabel(
+            "A sampler reaches the grid's best combination in fewer runs. It "
+            "does not make that combination any more likely to be real; the "
+            "multiplicity is the number of trials.")
+        search_hint.setWordWrap(True)
+        search_hint.setObjectName("Hint")
+        search_hint.setFont(Fonts.body(8))
+        search_card.add(search_hint)
+        ll.addWidget(search_card)
+
         rank_card = Card("Ranking")
         rank_grid = QGridLayout()
         rank_grid.setHorizontalSpacing(7)
@@ -241,7 +275,8 @@ class OptimizerDialog(QDialog):
         self.walkforward = WalkForwardPanel(
             self._bars, self._spec, self._config, self._ranges,
             lambda: (self.metric_box.currentData() or "net_profit",
-                     self.min_trades.value()))
+                     self.min_trades.value()),
+            search_fn=self._search_settings)
         self.tabs.addTab(self.walkforward, icon("shield", 15), "Walk-Forward")
 
         # Same grid again, for the question the Results tab implies but cannot
@@ -249,7 +284,8 @@ class OptimizerDialog(QDialog):
         self.holdout = HoldoutPanel(
             self._bars, self._spec, self._config, self._ranges,
             lambda: (self.metric_box.currentData() or "net_profit",
-                     self.min_trades.value()))
+                     self.min_trades.value()),
+            search_fn=self._search_settings)
         self.tabs.addTab(self.holdout, icon("target", 15), "Out of Sample")
         rl.addWidget(self.tabs, 1)
 
@@ -308,6 +344,8 @@ class OptimizerDialog(QDialog):
                 row[key].valueChanged.connect(self._update_count)
         self.metric_box.currentIndexChanged.connect(self._rerank)
         self.min_trades.valueChanged.connect(self._rerank)
+        self.method_box.currentIndexChanged.connect(self._update_count)
+        self.trials.valueChanged.connect(self._update_count)
         self.run_button.clicked.connect(self._run)
         self.cancel_button.clicked.connect(self._runner.cancel)
         self.table.itemSelectionChanged.connect(
@@ -346,20 +384,33 @@ class OptimizerDialog(QDialog):
             self.run_button.setEnabled(False)
             return
 
-        colour = (PALETTE.danger if total > RED_COMBINATIONS
-                  else PALETTE.warning if total > AMBER_COMBINATIONS
+        method, trials = self._search_settings()
+        self.trials.setEnabled(method != "grid")
+        runs = min(int(trials), total) if method != "grid" else total
+        colour = (PALETTE.danger if runs > RED_COMBINATIONS
+                  else PALETTE.warning if runs > AMBER_COMBINATIONS
                   else PALETTE.text)
-        self.count_label.setText(f"{total:,} combinations")
+        if method != "grid":
+            self.count_label.setText(f"{runs:,} trials of {total:,} combinations")
+        else:
+            self.count_label.setText(f"{total:,} combinations")
         self.count_label.setStyleSheet(f"color:{colour};")
         self.run_button.setEnabled(total > 0)
 
         per_run = _rough_seconds_per_run(len(self._bars))
-        seconds = total * per_run / max(1, _worker_guess())
-        self.estimate_label.setText(
-            f"roughly {_humanise(seconds)}"
-            + ("  ·  a search this wide will find something that looks good "
-               "whether or not there is anything there" if total > AMBER_COMBINATIONS
-               else ""))
+        seconds = runs * per_run / max(1, _worker_guess())
+        extra = ""
+        if method != "grid" and int(trials) >= total:
+            extra = "  ·  the budget covers the whole space, so this runs as a grid"
+        elif runs > AMBER_COMBINATIONS:
+            extra = ("  ·  a search this wide will find something that looks good "
+                     "whether or not there is anything there")
+        self.estimate_label.setText(f"roughly {_humanise(seconds)}{extra}")
+
+    def _search_settings(self) -> tuple[str, int]:
+        """``(method, trials)`` as the Search card currently has them."""
+        method = str(self.method_box.currentData() or "grid")
+        return method, int(self.trials.value())
 
     # -- running ----------------------------------------------------------
 
@@ -370,10 +421,13 @@ class OptimizerDialog(QDialog):
         if not ranges:
             show_info(self, "Optimise", "Tick at least one parameter to sweep.")
             return
+        method, trials = self._search_settings()
         self.status.setText("Running…")
         self.note.setText("")
         self._runner.start(optimize_task, self._bars, self._spec, self._config,
-                           ranges, 0)
+                           ranges, 0, method=method, trials=trials,
+                           metric=str(self.metric_box.currentData() or "net_profit"),
+                           minimum_trades=int(self.min_trades.value()))
 
     def _on_state(self, busy: bool) -> None:
         self.progress.setVisible(busy)
@@ -397,8 +451,14 @@ class OptimizerDialog(QDialog):
 
     def _on_finished(self, results: Any) -> None:
         self._results = results
-        parts = [f"{results.completed} of {results.total_combinations} combinations",
-                 f"{results.elapsed_seconds:.1f}s"]
+        if getattr(results, "sampled", False):
+            parts = [f"{results.completed} of {results.total_combinations} trials, "
+                     f"{describe_method(results.method)} over "
+                     f"{results.space:,} combinations",
+                     f"{results.elapsed_seconds:.1f}s"]
+        else:
+            parts = [f"{results.completed} of {results.total_combinations} combinations",
+                     f"{results.elapsed_seconds:.1f}s"]
         if results.failed:
             parts.append(f"{results.failed} failed")
         if not getattr(results, "used_processes", True):

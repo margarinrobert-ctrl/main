@@ -234,9 +234,13 @@ def auto_search(bars: BarSeries, *, styles: Sequence[str] = (),
                 alpha: float = DEFAULT_ALPHA,
                 control_draws: int = 500,
                 validate: str = "standard",
-                top_n: int = 5, seed: int = 0,
+                top_n: int = 5, seed: int = 0, conjunctions: bool = False,
                 progress: ProgressFn | None = None) -> AutoSearchReport:
-    """Run the whole grid, correct once over all of it, and report honestly."""
+    """Run the whole grid, correct once over all of it, and report honestly.
+
+    ``conjunctions`` widens every sweep to filtered entry rules as well; see
+    :func:`~.search.find_strategies`.
+    """
     started = time.time()
     pairs = plan(bars, styles, timeframes)
     if not pairs:
@@ -275,7 +279,8 @@ def auto_search(bars: BarSeries, *, styles: Sequence[str] = (),
                 bars, style, timeframe=timeframe, costs=costs, sides=sides,
                 templates=templates, research_fraction=research_fraction,
                 top_n=top_n, control_draws=control_draws, alpha=alpha,
-                seed=seed, validate="quick", progress=inner)
+                seed=seed, validate="quick", conjunctions=conjunctions,
+                progress=inner)
             sweep.combinations = int(sweep.report.combinations)
             sweep.scored = int(sweep.report.tested)
         except BacktesterError as exc:
@@ -407,7 +412,15 @@ def _validate_survivors(out: AutoSearchReport, bars: BarSeries,
             f"itself worth a second look: it usually means the data has one "
             f"large effect in it that almost any rule picks up.")
 
-    replaced: dict[str, Finding] = {}
+    # Keyed on the timeframe AS WELL as the label: a label names the rule, its
+    # parameters and its geometry but not the bars it ran on, so the same rule
+    # surviving on 15m and on 30m is one label and two findings. Keyed on the
+    # label alone, the 30m re-run's confirmed finding would stand in for the
+    # 15m survivor -- another timeframe's numbers under this one's row.
+    def key(f: Finding) -> tuple[str, str]:
+        return (str(f.timeframe), f.label)
+
+    replaced: dict[tuple[str, str], Finding] = {}
     for index, ((style_key, timeframe), hits) in enumerate(by_sweep.items()):
         if progress is not None:
             progress(planned * _TICKS, (planned + 1) * _TICKS,
@@ -418,7 +431,7 @@ def _validate_survivors(out: AutoSearchReport, bars: BarSeries,
                 bars, get_style(style_key), timeframe=timeframe, costs=costs,
                 sides=sides, templates=templates,
                 research_fraction=research_fraction,
-                top_n=max(top_n, len(hits)), control_draws=control_draws,
+                top_n=len(hits), control_draws=control_draws,
                 alpha=alpha, seed=seed, validate=validate)
         except BacktesterError as exc:
             out.notes.append(
@@ -427,11 +440,11 @@ def _validate_survivors(out: AutoSearchReport, bars: BarSeries,
                 f"cheap gate's numbers only.")
             continue
         for finding in full.shortlist:
-            replaced[finding.label] = finding
+            replaced[key(finding)] = finding
 
     if not replaced:
         return
-    out.survivors = [replaced.get(f.label, f) for f in out.survivors]
+    out.survivors = [replaced.get(key(f), f) for f in out.survivors]
     # Verified first, then by excess. A survivor with the engine's numbers on
     # both blocks and a robustness score is a stronger claim than one carrying
     # only the cheap gate's, whatever their excesses say, and leading a table
@@ -439,7 +452,7 @@ def _validate_survivors(out: AutoSearchReport, bars: BarSeries,
     out.survivors.sort(key=lambda f: (getattr(f, "confirmation", None) is None,
                                       -float(f.control.excess_per_trade)))
     unchecked = sum(1 for f in focus
-                    if getattr(replaced.get(f.label, f), "confirmation",
+                    if getattr(replaced.get(key(f), f), "confirmation",
                                None) is None)
     if unchecked:
         out.notes.append(
@@ -583,8 +596,12 @@ def _notes(out: AutoSearchReport, pairs: Sequence[tuple]) -> None:
 
 
 def format_auto_search(report: AutoSearchReport, currency: str = "USD",
-                       width: int = 78, top: int = 8) -> str:
-    """The whole grid as plain text, with what it cost stated first."""
+                       width: int = 78, top: int | None = 8) -> str:
+    """The whole grid as plain text, with what it cost stated first.
+
+    ``top`` limits how many survivors are detailed; ``None`` details them all.
+    The count of survivors is always printed in full, whatever is detailed.
+    """
     import textwrap
 
     from ..core.textfmt import row as _fit
@@ -633,12 +650,14 @@ def format_auto_search(report: AutoSearchReport, currency: str = "USD",
         out.append("")
 
     if report.survivors:
+        shown = (len(report.survivors) if top is None
+                 else min(int(top), len(report.survivors)))
         out.extend(_fit("", f"{len(report.survivors):,} combination(s) "
                         f"survived the correction over the whole grid"
-                        + (f" (the best {top} shown):" if
-                           len(report.survivors) > top else ":"), width))
+                        + (f" (the best {shown} shown):" if
+                           shown < len(report.survivors) else ":"), width))
         out.append("")
-        for index, finding in enumerate(report.survivors[:top], start=1):
+        for index, finding in enumerate(report.survivors[:shown], start=1):
             out.extend(_fit(f"   {index}. ", finding.label, width))
             style_key, timeframe = report.sweep_of(finding)
             out.extend(_fit("      ",

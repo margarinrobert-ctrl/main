@@ -230,6 +230,15 @@ turns amber above 500 and red above 5,000, with an estimated runtime derived fro
 one timed trial run. A metric combo to rank by (net profit, profit factor,
 Sharpe, Sortino, return/drawdown, expectancy, win rate, trades) and a minimum
 trade-count filter.
+A **Search** card: method — *Grid (every combination)*, *Bayesian (TPE)* or
+*Random search* — and a trial budget, disabled for a grid. With a sampler chosen
+the counter reads "N trials of M combinations" and the estimate follows the
+budget; a budget at or above the space is labelled as the grid it is. Samplers
+work on the grid's own rungs (`optimize/sampler.py`), so a sampled result is one
+the grid could have produced and the table, heat map, robustness column and the
+two analysis tabs read it unchanged, with gaps where nothing was tried. The
+card's hint states that a sampler finds the best combination in fewer runs and
+does not make it more likely to be real.
 Right: results table, sortable, with the rank metric plus net profit, trades,
 profit factor, Sharpe, max DD and the parameter values; a heat map for the
 two-parameter case; and a **robustness** column (mean of the metric over the
@@ -242,10 +251,12 @@ noise best; expect it to be worse out of sample. Prefer a broad plateau of decen
 results over an isolated peak."* This is a requirement, not a decoration.
 
 Third tab: **Walk-Forward**, `ui/widgets/walkforward_panel.py` —
-`WalkForwardPanel(bars, spec, config, ranges_fn, settings_fn, parent=None)`.
-It reads the sweep's own ranges and ranking settings through those two callables
-rather than offering its own, so the two halves of the dialog can never disagree
-about which strategy is being tested. Controls: fold count, training share,
+`WalkForwardPanel(bars, spec, config, ranges_fn, settings_fn, search_fn=None, parent=None)`.
+It reads the sweep's own ranges and ranking settings through the first two
+callables rather than offering its own, so the two halves of the dialog can never
+disagree about which strategy is being tested; `search_fn` returns the Search
+card's `(method, trials)` so each training window is searched the way the Results
+tab was (`None` means a grid). Controls: fold count, training share,
 rolling/anchored. One row per window — the dates it trained on, the dates it
 traded, the in-sample and out-of-sample metric, the trade count, and the
 parameters it chose — with the headline stating the out-of-sample total, how
@@ -255,16 +266,18 @@ dropped. Its own `TaskRunner`, with a working Cancel; `shutdown()` is called
 from the dialog's `closeEvent`.
 
 Fourth tab: **Out of Sample**, `ui/widgets/holdout_panel.py` —
-`HoldoutPanel(bars, spec, config, ranges_fn, settings_fn, parent=None)`.
-Same two callables, same reason. Controls: the research-block share and how many
+`HoldoutPanel(bars, spec, config, ranges_fn, settings_fn, search_fn=None, parent=None)`.
+Same callables, same reason. Controls: the research-block share and how many
 ranked combinations are revealed. One row per revealed combination — its rank,
 its parameters, the research and locked values with their trade counts, and the
 retention — with the two blocks in their own columns and never blended into one
 figure. Retention shows `n/a` rather than a number wherever the ratio would
 mislead (a losing research block, a metric where smaller is better), the
 headline says which of those it is, and a winner that did *better* out of sample
-is coloured as a warning rather than a success. The notes state the grid size
-and that the split does not correct for that multiplicity, every run. Cancelling
+is coloured as a warning rather than a success. The notes state how many
+combinations were ranked — and, for a sampled search, how many the space held
+and which sampler chose them — and that the split does not correct for that
+multiplicity, every run. Cancelling
 leaves the locked block unread and the headline says so. Its own `TaskRunner`;
 `shutdown()` is called from the dialog's `closeEvent`.
 
@@ -285,6 +298,16 @@ change *from* the style. The overrides go through `finder.styles.customise`,
 which copies rather than mutating: the shipped styles are module constants and
 the next search in the same process must see them unchanged. Nothing here is
 searched over, and the note says so.
+
+Beneath that, a **Search width** card that stays live for every tab including
+*Everything* (it sits outside the constraints card the grid search greys out).
+*Combine rule families with market filters* widens the search to every entry
+rule gated by a market state — trend side of a long average, ADX above a level,
+choppiness below one — via `finder.candidates.conjunction_templates`; about six
+times the candidates, every one counted by the correction, and the tooltip says
+so. *Shortlist* is how many survivors are confirmed in the engine and shown
+(default 10); the report always states the full survivor count regardless, and
+the *Everything* tab details every survivor rather than the best eight.
 
 ### `ui/dialogs/montecarlo_dialog.py` — `MonteCarloDialog(result, parent=None)`
 Resamples the loaded run's trade sequence. Controls: method (shuffle /

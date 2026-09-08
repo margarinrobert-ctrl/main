@@ -129,6 +129,11 @@ class HoldoutResult:
     research: OptimizationResults | None = None
     elapsed: float = 0.0
     notes: list[str] = field(default_factory=list)
+    method: str = "grid"
+    """How the research block was searched: ``grid``, ``tpe`` or ``random``."""
+    space: int = 0
+    """Distinct combinations the ranges span.  Equals ``combinations`` for a
+    grid; larger for a sampled search, which tried ``combinations`` of them."""
 
     @property
     def best(self) -> Revealed | None:
@@ -155,6 +160,7 @@ class HoldoutResult:
                 "holdout_bars": self.holdout_bars,
                 "split_index": self.split_index,
                 "warmup_pad": self.warmup_pad,
+                "method": self.method, "space": self.space,
                 "revealed": [r.to_dict() for r in self.revealed],
                 "elapsed_seconds": round(self.elapsed, 2),
                 "wrong_shape": self.wrong_shape,
@@ -190,9 +196,15 @@ def optimise_with_holdout(
         ranges: Sequence[ParameterRange], *, metric: str = "net_profit",
         research_fraction: float = RESEARCH_FRACTION,
         reveal: int = DEFAULT_REVEAL, max_workers: int = 0,
+        method: str = "grid", trials: int = 0, seed: int = 0,
         progress: ProgressFn | None = None,
         cancel: CancelFn | None = None) -> HoldoutResult:
-    """Sweep the grid on the research block, then reveal the locked one once."""
+    """Sweep the grid on the research block, then reveal the locked one once.
+
+    ``method`` other than ``grid`` samples ``trials`` combinations instead of
+    running them all (see :mod:`.sampler`).  The locked block is still touched
+    exactly once, for the top ``reveal`` of whatever was ranked.
+    """
     started = time.perf_counter()
     total = len(bars)
     if total < MIN_BARS:
@@ -215,10 +227,20 @@ def optimise_with_holdout(
     runner = OptimizationRunner(bars.slice(0, split), spec, config,
                                 max_workers=max_workers)
     grid = runner.build(ranges)
-    out.combinations = len(grid)
+    out.space = len(grid)
 
-    research = runner.run(ranges, progress=progress, cancel=cancel)
+    key = str(method or "grid").strip().lower()
+    if key == "grid" or int(trials) <= 0:
+        research = runner.run(ranges, progress=progress, cancel=cancel)
+    else:
+        research = runner.run_sampled(
+            ranges, trials=int(trials), method=key, metric=metric,
+            maximise=maximise, seed=int(seed), progress=progress, cancel=cancel)
     out.research = research
+    out.method = research.method
+    # What was RANKED, which is the multiplicity: a sampled search that tried
+    # 60 of 1,600 combinations had 60 chances to be lucky, not 1,600.
+    out.combinations = len(research.rows) if research.sampled else len(grid)
     if research.cancelled:
         out.notes.append(
             "The sweep was stopped, so the locked block was not looked at. "
@@ -272,11 +294,23 @@ def optimise_with_holdout(
 
 def _notes(out: HoldoutResult) -> None:
     """Everything the reader needs to not over-read the number."""
-    out.notes.append(
-        f"{out.combinations:,} combinations were ranked on the first "
-        f"{out.research_bars:,} bars. The last {out.holdout_bars:,} were not "
-        f"looked at until the ranking was fixed, and only for the top "
-        f"{len(out.revealed)}.")
+    if out.method != "grid" and out.space > out.combinations:
+        from .sampler import describe_method
+
+        out.notes.append(
+            f"{out.combinations:,} of the {out.space:,} possible combinations "
+            f"were tried by {describe_method(out.method)} and ranked on the "
+            f"first {out.research_bars:,} bars. The last {out.holdout_bars:,} "
+            f"were not looked at until the ranking was fixed, and only for the "
+            f"top {len(out.revealed)}. A sampler finds the best of a space in "
+            f"fewer tries; it does not make what it finds any more likely to "
+            f"be real.")
+    else:
+        out.notes.append(
+            f"{out.combinations:,} combinations were ranked on the first "
+            f"{out.research_bars:,} bars. The last {out.holdout_bars:,} were not "
+            f"looked at until the ranking was fixed, and only for the top "
+            f"{len(out.revealed)}.")
     out.notes.append(
         f"That split does not correct for the multiplicity. {out.combinations:,} "
         f"combinations had {out.combinations:,} chances to fit the research "

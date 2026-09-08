@@ -619,6 +619,29 @@ default): the concentration gate, a block-bootstrap Monte Carlo, and the mirror
 market. `--validate full` adds walk-forward, which is much slower. `--validate
 quick` runs the engine confirmation only.
 
+### Searching wider
+
+**Search width → Combine rule families with market filters** adds, to every
+entry rule, the same rule gated by a market state: price on the trend side of
+a long moving average, ADX above a level, choppiness below one. A filtered
+rule is how a person actually writes one — *"RSI reversion, but only above the
+200"* — and it multiplies the candidates by about six (150 plain rules become
+966). Fourteen plain families ship now: the original ten plus Keltner
+reversion, CCI reversion, Williams %R reversion and the Supertrend flip.
+
+This is a wider search, not an easier one. The multiplicity correction counts
+every filtered rule as another chance to be lucky, because it is, so the bar
+for any individual result rises as the search grows. If a wider search finds
+*more*, it is because the space had more in it; if it finds *nothing*, that is
+the correction doing its job across six times the candidates.
+
+**Shortlist** is how many survivors are confirmed in the engine and shown.
+Every survivor is counted in the report whatever the shortlist is set to; the
+default used to be five, which read as "it only ever finds a few" when the
+finder had in fact found more and stopped describing them. The command line
+takes `--conjunctions` and `--top`; `autosearch --top 0` details every
+survivor.
+
 ### It will usually find nothing
 
 That is the point. Run it on the shipped US30 data and it reports, honestly,
@@ -1178,6 +1201,38 @@ that sample's noise best. Expect it to be worse out of sample.
 
 The **Out of Sample** and **Walk-Forward** tabs in the same dialog are how you
 find out how much worse.
+
+### Search method: grid, Bayesian or random
+
+The **Search** card chooses how the combinations are visited.
+
+- **Grid** runs every combination. Two parameters is a table; five is a number
+  with a lot of zeros, most of them spent in corners nothing sensible lives in.
+- **Bayesian (TPE)** spends a fixed number of **trials**. After a few random
+  ones it splits what it has seen into the better fraction and the rest, fits a
+  density to each, and puts the next trial where the ratio is highest. This is
+  the Tree-structured Parzen Estimator — the algorithm Optuna runs by default —
+  implemented here in NumPy so the frozen build does not have to carry
+  SQLAlchemy, Alembic and YAML for a page of maths. On a smooth two-parameter
+  surface of 1,681 combinations it reaches within 2 units of the optimum in 60
+  trials where random search is still 9 away, averaged over twenty seeds.
+- **Random** draws unevaluated combinations uniformly. It is the baseline the
+  Bayesian method has to beat, and what it falls back to before it has learned
+  anything.
+
+Both samplers work on the grid's own rungs, so a sampled result is always one
+the grid could have produced and every tab reads it the same way — the heat
+map simply has gaps where nothing was tried. A budget at or above the size of
+the space runs as the grid it is, and says so.
+
+**What a sampler does not do.** It finds the grid's best combination in fewer
+runs. It does not make that combination any more likely to be real. The
+multiplicity is now the number of trials rather than the size of the grid, and
+the Out of Sample note prices it that way — *"60 of the 1,656 possible
+combinations were tried"* — because sixty chances to be lucky is the honest
+count, not sixteen hundred. The same **Method** and **Trials** apply to the
+Out of Sample and Walk-Forward tabs, so every tab searches the way the Results
+tab did. On the command line: `--method tpe --trials 60`.
 
 ---
 

@@ -44,6 +44,7 @@ class WalkForwardPanel(QWidget):
     def __init__(self, bars: Any, spec: Any, config: Any,
                  ranges_fn: Callable[[], list[Any]],
                  settings_fn: Callable[[], tuple[str, int]],
+                 search_fn: Callable[[], tuple[str, int]] | None = None,
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._bars = bars
@@ -51,6 +52,9 @@ class WalkForwardPanel(QWidget):
         self._config = config
         self._ranges_fn = ranges_fn
         self._settings_fn = settings_fn
+        #: ``(method, trials)`` from the dialog's Search card, so this tab
+        #: searches the same way the Results tab does.  ``None`` means a grid.
+        self._search_fn = search_fn
         self._result: Any = None
         self._runner = TaskRunner(self)
         self._build()
@@ -186,11 +190,13 @@ class WalkForwardPanel(QWidget):
         self.headline.setStyleSheet(f"color:{PALETTE.text_muted};")
         self.notes.setText("")
         self.table.setRowCount(0)
+        method, trials = (self._search_fn() if self._search_fn is not None
+                          else ("grid", 0))
         self._runner.start(
             walk_forward_task, self._bars, self._spec, self._config, ranges,
             folds=self.folds.value(), train_fraction=self.train.value() / 100.0,
             anchored=self.anchored.isChecked(), metric=metric,
-            minimum_trades=minimum_trades)
+            minimum_trades=minimum_trades, method=method, trials=trials)
 
     def _on_state(self, busy: bool) -> None:
         self.progress.setVisible(busy)

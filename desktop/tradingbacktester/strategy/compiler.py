@@ -211,11 +211,70 @@ def compile_strategy(spec: StrategySpec, bars: BarSeries,
     return compiled
 
 
+#: Indicator arrays shared ACROSS compiles, keyed on the indicator, its
+#: resolved parameters, its source and a fingerprint of the bars.
+#:
+#: Within one compile ``_compute_indicators`` already shares a computation
+#: between two slots with identical definitions.  Across a sweep it did not: a
+#: strategy with six indicators where the optimiser moves two of them
+#: recomputed the other four -- and the ATR the exits read -- on every one of
+#: several hundred combinations, over the same bars, to the same answer.
+#:
+#: The arrays are marked read-only.  Downstream code already treats them as
+#: shared within a compile ("read-only by convention"); the flag turns that
+#: convention into an error at the write site rather than a wrong number three
+#: sweeps later.  Bounded and keyed on a fingerprint rather than the object, so
+#: a resampled or sliced series is a different entry, not a stale one.
+_INDICATOR_CACHE_LIMIT = 512
+_INDICATOR_CACHE: dict[tuple, dict[str, np.ndarray]] = {}
+
+
+def clear_indicator_cache() -> None:
+    """Forget every cached indicator array.  Tests use this."""
+    _INDICATOR_CACHE.clear()
+
+
+def _bars_fingerprint(bars: BarSeries) -> tuple:
+    """Cheap identity for a bar series: length plus sampled stamps AND closes.
+
+    Timestamps alone are not enough here -- two datasets of the same instrument
+    over the same period from two vendors share every stamp and differ in
+    price, and an indicator cached from one must not answer for the other.
+    """
+    n = len(bars)
+    if n == 0:
+        return (0,)
+    picks = np.linspace(0, n - 1, num=min(n, 9), dtype=np.int64)
+    ts = np.asarray(bars.ts)[picks]
+    cl = np.asarray(bars.close)[picks]
+    return (n,) + tuple(int(v) for v in ts) + tuple(float(v) for v in cl)
+
+
+def _cached_compute(indicator: str, bars: BarSeries, params: dict[str, Any],
+                    source: str, fingerprint: tuple) -> dict[str, np.ndarray]:
+    """``REGISTRY.compute`` through the cross-compile cache."""
+    key = (str(indicator).upper(),
+           tuple(sorted((k, _hashable(v)) for k, v in params.items())),
+           source, fingerprint)
+    hit = _INDICATOR_CACHE.get(key)
+    if hit is not None:
+        return hit
+    arrays = REGISTRY.compute(indicator, bars, params, source)
+    for arr in arrays.values():
+        if isinstance(arr, np.ndarray):
+            arr.setflags(write=False)
+    if len(_INDICATOR_CACHE) >= _INDICATOR_CACHE_LIMIT:
+        _INDICATOR_CACHE.pop(next(iter(_INDICATOR_CACHE)))
+    _INDICATOR_CACHE[key] = arrays
+    return arrays
+
+
 def _compute_indicators(spec: StrategySpec, bars: BarSeries,
                         params: dict[str, Any]) -> dict[str, dict[str, np.ndarray]]:
     """Run every slot exactly once, memoised across identical definitions."""
     out: dict[str, dict[str, np.ndarray]] = {}
     memo: dict[tuple[Any, ...], dict[str, np.ndarray]] = {}
+    fingerprint = _bars_fingerprint(bars)
     for slot in spec.indicators:
         if not slot.ref:
             raise StrategyError("Every indicator on a strategy needs a reference name.")
@@ -235,7 +294,8 @@ def _compute_indicators(spec: StrategySpec, bars: BarSeries,
             out[slot.ref] = cached
             continue
         try:
-            arrays = REGISTRY.compute(slot.indicator, bars, resolved, source)
+            arrays = _cached_compute(slot.indicator, bars, resolved, source,
+                                     fingerprint)
         except BacktesterError as exc:
             raise StrategyError(
                 f"The indicator '{slot.ref}' ({slot.indicator}) could not be "
@@ -284,7 +344,8 @@ def _compute_atr(spec: StrategySpec, bars: BarSeries) -> tuple[np.ndarray, np.nd
 def _atr_array(bars: BarSeries, period: int) -> np.ndarray:
     """Wilder's ATR through the registry, so there is one definition of it."""
     try:
-        return REGISTRY.compute("ATR", bars, {"period": period, "method": "wilder"})["value"]
+        return _cached_compute("ATR", bars, {"period": period, "method": "wilder"},
+                               "close", _bars_fingerprint(bars))["value"]
     except BacktesterError as exc:
         raise StrategyError(
             f"The average true range over {period} bars could not be calculated, "

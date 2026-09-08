@@ -30,6 +30,14 @@ trailing stop are **resting** orders: they are live from the moment the position
 they are checked against every subsequent bar's high and low, including the bar of entry
 when the entry filled at that bar's open. They do not wait for a bar to close.
 
+A trailing stop can be told to start only once the trade is some distance in profit. That
+distance is read in **R** (multiples of the initial stop) by default, or in points, ATR
+multiples or percent when `ExitSettings.trailing_activate_mode` says so. The distinction
+matters for a strategy converted from a platform that arms its trail after a fixed number of
+points: with an ATR-based stop, R is a different number on every trade, so no R threshold
+reproduces "after 15 points" — `points` does, exactly. In R mode a trade with no stop to
+measure R against never arms, which is what that setting always meant.
+
 Bars reserved for indicator warm-up are never traded. An exponential moving average has a
 value on the second bar of the file, but it is not the value it would have had with a year
 of history behind it, so the engine holds back until the longest indicator in the strategy

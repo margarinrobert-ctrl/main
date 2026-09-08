@@ -530,3 +530,65 @@ def test_warmup_prevents_trading_before_indicators_are_ready(random_bars):
     result = run(random_bars, spec, config)
     assert result.trades
     assert min(t.entry_bar for t in result.trades) >= 50
+
+
+# --------------------------------------------------------------------------
+# Trailing stop: arming in points, not only in R
+# --------------------------------------------------------------------------
+
+def _arm_path():
+    """Up 13 points over 13 bars, then straight down."""
+    n = 400
+    close = np.full(n, 100.0)
+    close[200:213] = 100 + np.arange(1, 14) * 1.0
+    close[213:260] = 113 - np.arange(1, 48) * 0.8
+    open_ = np.concatenate([[close[0]], close[:-1]])
+    return make_bars(close, highs=np.maximum(open_, close) + 0.5,
+                     lows=np.minimum(open_, close) - 0.5, opens=open_,
+                     timeframe="1m")
+
+
+def _trail_spec(mode: str, threshold: float) -> StrategySpec:
+    spec = StrategySpec(name="trail", indicators=[],
+                        entry_long=Compare(Price("close"), ">", Const(100.5)))
+    spec.exits = ExitSettings(
+        stop_loss_enabled=True, stop_loss_mode="points", stop_loss_value=6.0,
+        take_profit_enabled=False, trailing_enabled=True, trailing_mode="points",
+        trailing_value=4.0, trailing_activate_at_r=threshold,
+        trailing_activate_mode=mode)
+    spec.execution.allow_reversal = False
+    spec.execution.close_on_opposite_signal = False
+    return spec
+
+
+def test_a_trail_armed_in_r_starts_once_the_trade_is_one_r_up():
+    result = Backtester(_arm_path(), _trail_spec("r", 1.0), BacktestConfig()).run()
+    assert result.trades
+    assert result.trades[0].exit_reason is ExitReason.TRAILING_STOP
+
+
+def test_a_trail_armed_in_points_never_starts_if_the_distance_is_not_reached():
+    """The same path never moves 15 points in favour, so the stop takes it."""
+    result = Backtester(_arm_path(), _trail_spec("points", 15.0),
+                        BacktestConfig()).run()
+    assert result.trades
+    assert result.trades[0].exit_reason is ExitReason.STOP_LOSS
+
+
+def test_a_trail_armed_in_points_starts_when_the_distance_is_reached():
+    result = Backtester(_arm_path(), _trail_spec("points", 8.0),
+                        BacktestConfig()).run()
+    assert result.trades
+    assert result.trades[0].exit_reason is ExitReason.TRAILING_STOP
+
+
+def test_trailing_activate_mode_round_trips_through_the_spec():
+    spec = _trail_spec("points", 15.0)
+    back = StrategySpec.from_dict(spec.to_dict())
+    assert back.exits.trailing_activate_mode == "points"
+    assert back.exits.trailing_activate_at_r == 15.0
+    # A strategy file written before the field existed reads as R, which is
+    # what every such file meant.
+    old = spec.to_dict()
+    del old["exits"]["trailing_activate_mode"]
+    assert StrategySpec.from_dict(old).exits.trailing_activate_mode == "r"

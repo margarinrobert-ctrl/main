@@ -234,6 +234,9 @@ class Condition:
                         [c for c in (Condition.from_dict(x)
                                      for x in d.get("children", [])) if c],
                         bool(d.get("negate", False)))
+        if kind == "within":
+            return Within(Condition.from_dict(d.get("child")),
+                          int(d.get("bars", 5)), bool(d.get("negate", False)))
         raise StrategyError(f"'{kind}' is not a condition kind this application knows.")
 
 
@@ -373,6 +376,46 @@ class ConditionGroup(Condition):
 
 
 @dataclass
+class Within(Condition):
+    """True on a bar if ``child`` was true on it or any of the previous ``bars - 1``.
+
+    The rule "the StochRSI dipped below 20 at some point in the last eight bars,
+    and now %K crosses %D" is a reset-then-trigger, and nearly every oscillator
+    system has one.  Without this it has to be written as an OR over eight
+    copies of the same comparison at eight offsets -- which evaluates eight
+    times, describes itself in a paragraph, and cannot have its window swept by
+    the optimiser because the window is the NUMBER of children.  Here it is one
+    node, one pass, and ``bars`` is a plain integer.
+
+    ``bars`` counts the current bar, so ``bars=1`` is the child itself.
+    """
+
+    child: Condition | None = None
+    bars: int = 5
+    negate: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"kind": "within", "bars": int(self.bars),
+                "child": self.child.to_dict() if self.child is not None else None,
+                "negate": self.negate}
+
+    def describe(self) -> str:
+        inner = self.child.describe() if self.child is not None else "nothing"
+        text = f"({inner}) within the last {int(self.bars)} bars"
+        return f"NOT {text}" if self.negate else text
+
+    def referenced_indicators(self) -> set[str]:
+        return self.child.referenced_indicators() if self.child is not None else set()
+
+    @property
+    def children(self) -> list["Condition"]:
+        """The one child as a list, so :func:`walk_conditions` and every other
+        generic walker sees inside it.  Read-only: appending to this list does
+        nothing, which is deliberate -- a Within has exactly one child."""
+        return [self.child] if self.child is not None else []
+
+
+@dataclass
 class Vote(Condition):
     """True on a bar where at least ``threshold`` of the children are true.
 
@@ -402,7 +445,7 @@ class Vote(Condition):
 
     def describe(self) -> str:
         inner = ", ".join(
-            f"({c.describe()})" if isinstance(c, (ConditionGroup, Vote))
+            f"({c.describe()})" if isinstance(c, (ConditionGroup, Vote, Within))
             else c.describe()
             for c in self.children)
         head = f"at least {int(self.threshold)} of {len(self.children)}: {inner}"

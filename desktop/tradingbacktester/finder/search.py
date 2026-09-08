@@ -345,9 +345,16 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
                     research_fraction: float = 0.65,
                     top_n: int = 5, control_draws: int = 2000,
                     alpha: float = 0.10, seed: int = 0,
-                    validate: str = "standard",
+                    validate: str = "standard", conjunctions: bool = False,
                     progress: ProgressFn | None = None) -> FinderReport:
-    """Search for entry rules that beat a matched control, and report honestly."""
+    """Search for entry rules that beat a matched control, and report honestly.
+
+    ``conjunctions`` widens the search to every entry family gated by every
+    market-state filter (see :data:`~.candidates.FILTERS`) -- about six times
+    as many candidates.  The correction sees each one as another chance to be
+    lucky, so a wider search is priced as one; it is not a way to find more by
+    looking harder at the same evidence.
+    """
     started = time.time()
     requested = timeframe
     timeframe = timeframe or choose_timeframe(bars, style)
@@ -386,7 +393,7 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
     hold_limit = (boundary if hold_limit is None
                   else np.minimum(hold_limit, boundary))
 
-    candidates = all_candidates(sides, templates)
+    candidates = all_candidates(sides, templates, conjunctions=conjunctions)
     geometries = style.geometries()
     combinations = len(candidates) * len(geometries)
 
@@ -396,6 +403,11 @@ def find_strategies(bars: BarSeries, style: TradingStyle, *,
             f"This style prefers {style.timeframes[0]} bars, but the dataset is "
             f"{bars.timeframe.label} and bars can only be combined into longer "
             f"ones, so the search ran on {timeframe}.")
+    if conjunctions:
+        notes.append(
+            "The search was widened to include every entry rule gated by a "
+            "market-state filter (trend side, ADX, choppiness). A filtered rule "
+            "is a different rule, and each one counts in the multiplicity below.")
     notes.append(
         f"{combinations:,} combinations were tried: {len(candidates)} entry "
         f"rules x {len(geometries)} geometries. That is how many chances the "

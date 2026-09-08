@@ -351,3 +351,169 @@ def test_the_worked_example_is_a_builtin():
     assert "crosses above" in described
     assert "rsi" in described
     assert spec.exits.stop_loss_enabled and spec.exits.take_profit_enabled
+
+
+# --------------------------------------------------------------------------
+# Caches across compiles
+# --------------------------------------------------------------------------
+
+def _trend_spec() -> StrategySpec:
+    spec = StrategySpec(
+        name="cache",
+        indicators=[IndicatorSlot("fast", "EMA", {"period": 5}),
+                    IndicatorSlot("slow", "EMA", {"period": 20})],
+        entry_long=Cross(Ind("fast"), "above", Ind("slow")))
+    spec.session.enabled = True
+    spec.session.start, spec.session.end = "09:30", "16:00"
+    spec.session.timezone = "America/New_York"
+    return spec
+
+
+def test_a_cached_compile_is_identical_to_a_fresh_one():
+    from tradingbacktester.strategy import compiler, rules
+
+    bars = make_bars(np.cumsum(np.random.default_rng(1).normal(0, 1, 600)) + 100,
+                     timeframe="1h")
+    spec = _trend_spec()
+    compiler.clear_indicator_cache()
+    rules.clear_session_cache()
+    first = compile_strategy(spec, bars)
+    assert len(compiler._INDICATOR_CACHE) > 0
+    assert len(rules._LOCAL_PARTS_CACHE) == 1
+    second = compile_strategy(spec, bars)
+    assert np.array_equal(first.entry_long, second.entry_long)
+    assert np.array_equal(first.tradeable, second.tradeable)
+    for ref in ("fast", "slow"):
+        assert np.array_equal(first.indicators[ref]["value"],
+                              second.indicators[ref]["value"], equal_nan=True)
+
+
+def test_cached_indicator_arrays_are_read_only():
+    from tradingbacktester.strategy import compiler
+
+    bars = make_bars(np.cumsum(np.random.default_rng(2).normal(0, 1, 300)) + 100,
+                     timeframe="1h")
+    compiler.clear_indicator_cache()
+    compiled = compile_strategy(_trend_spec(), bars)
+    values = compiled.indicators["fast"]["value"]
+    with pytest.raises(ValueError):
+        values[0] = 1.0
+
+
+def test_the_indicator_cache_tells_two_datasets_apart_by_price_not_just_time():
+    """Same stamps, different closes: the second must not read the first."""
+    from tradingbacktester.strategy import compiler
+
+    rng = np.random.default_rng(3)
+    a = make_bars(np.cumsum(rng.normal(0, 1, 400)) + 100, timeframe="1h")
+    b = make_bars(np.cumsum(rng.normal(0, 1, 400)) + 100, timeframe="1h")
+    assert np.array_equal(a.ts, b.ts)
+    compiler.clear_indicator_cache()
+    ca = compile_strategy(_trend_spec(), a)
+    cb = compile_strategy(_trend_spec(), b)
+    assert not np.array_equal(ca.indicators["fast"]["value"],
+                              cb.indicators["fast"]["value"])
+
+
+def test_the_session_cache_is_bounded():
+    from tradingbacktester.strategy import rules
+
+    rules.clear_session_cache()
+    for i in range(rules._LOCAL_PARTS_LIMIT + 5):
+        ts = np.arange(50, dtype="int64") * 3_600_000_000_000 + i * 7
+        rules.session_mask(ts, "09:30", "16:00", "UTC")
+    assert len(rules._LOCAL_PARTS_CACHE) == rules._LOCAL_PARTS_LIMIT
+
+
+# --------------------------------------------------------------------------
+# Within: "it happened in the last N bars"
+# --------------------------------------------------------------------------
+
+def _within_bars():
+    close = np.array([10, 10, 30, 10, 10, 10, 10, 10, 10, 10, 30, 10.0])
+    return make_bars(close, timeframe="1h")
+
+
+def test_within_is_the_rolling_or_of_its_child():
+    from tradingbacktester.strategy.spec import Within
+
+    bars = _within_bars()
+    spike = Compare(Price("close"), ">", Const(20.0))
+    spec = StrategySpec(name="w", indicators=[], entry_long=Within(spike, 3))
+    compiled = compile_strategy(spec, bars)
+    # Spikes at bars 2 and 10; a 3-bar window covers the spike bar and the two after.
+    expected = np.zeros(12, dtype=bool)
+    expected[[2, 3, 4, 10, 11]] = True
+    assert np.array_equal(compiled.entry_long,
+                          expect_after_warmup(compiled, expected))
+
+
+def test_within_equals_the_expanded_or_it_replaces():
+    from tradingbacktester.strategy.spec import Within
+
+    bars = make_bars(np.cumsum(np.random.default_rng(5).normal(0, 1, 500)) + 100,
+                     timeframe="1h")
+    slots = [IndicatorSlot("rsi", "RSI", {"period": 14})]
+    child = Compare(Ind("rsi"), "<", Const(35.0))
+    expanded = Group("or", [Compare(Ind("rsi", offset=k), "<", Const(35.0))
+                            for k in range(8)])
+    a = compile_strategy(StrategySpec(name="a", indicators=slots,
+                                      entry_long=expanded), bars)
+    b = compile_strategy(StrategySpec(name="b", indicators=slots,
+                                      entry_long=Within(child, 8)), bars)
+    assert np.array_equal(a.entry_long, b.entry_long)
+    assert a.entry_long.any()
+
+
+def test_within_can_be_negated_and_describes_itself():
+    from tradingbacktester.strategy.spec import Within
+
+    bars = _within_bars()
+    spike = Compare(Price("close"), ">", Const(20.0))
+    spec = StrategySpec(name="w", indicators=[],
+                        entry_long=Within(spike, 3, negate=True))
+    compiled = compile_strategy(spec, bars)
+    expected = np.ones(12, dtype=bool)
+    expected[[2, 3, 4, 10, 11]] = False
+    assert np.array_equal(compiled.entry_long,
+                          expect_after_warmup(compiled, expected))
+    assert Within(spike, 3).describe() == "(Close > 20) within the last 3 bars"
+    assert Within(spike, 3, negate=True).describe().startswith("NOT ")
+
+
+def test_within_refuses_an_empty_window():
+    from tradingbacktester.strategy.spec import Within
+
+    spec = StrategySpec(name="w", indicators=[],
+                        entry_long=Within(Compare(Price("close"), ">", Const(1.0)), 0))
+    with pytest.raises(StrategyError):
+        compile_strategy(spec, _within_bars())
+
+
+def test_within_survives_a_json_round_trip_and_is_walked():
+    import json
+
+    from tradingbacktester.strategy.spec import Within, walk_conditions
+
+    child = Compare(Ind("rsi"), "<", Const(30.0))
+    spec = StrategySpec(name="w", indicators=[IndicatorSlot("rsi", "RSI", {"period": 14})],
+                        entry_long=Group("and", [Within(child, 8),
+                                                 Cross(Ind("rsi"), "above", Const(30.0))]))
+    back = StrategySpec.from_dict(json.loads(json.dumps(spec.to_dict())))
+    assert back.entry_long.to_dict() == spec.entry_long.to_dict()
+    kinds = [type(n).__name__ for n in walk_conditions(back.entry_long)]
+    assert kinds.count("Within") == 1 and "Compare" in kinds
+    assert back.entry_long.referenced_indicators() == {"rsi"}
+
+
+def test_parameter_extraction_reaches_inside_a_within():
+    from tradingbacktester.strategy.parameterise import extract_parameters
+    from tradingbacktester.strategy.spec import Within
+
+    spec = StrategySpec(name="w", indicators=[IndicatorSlot("rsi", "RSI", {"period": 14})],
+                        entry_long=Within(Compare(Ind("rsi"), "<", Const(30.0)), 8))
+    extraction = extract_parameters(spec)
+    names = {p.name for p in extraction.spec.params}
+    assert names, "the literal inside the Within should have become a parameter"
+    inner = extraction.spec.entry_long.child
+    assert inner.right.to_dict()["kind"] == "param"

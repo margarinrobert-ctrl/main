@@ -300,7 +300,7 @@ def cmd_find(args: argparse.Namespace) -> int:
                else (1, -1)),
         templates=tuple(t.strip() for t in str(args.template).split(",")
                         if t.strip()),
-        validate=args.validate,
+        validate=args.validate, conjunctions=bool(args.conjunctions),
         progress=progress)
     _clear_progress()
 
@@ -350,7 +350,9 @@ def cmd_autosearch(args: argparse.Namespace) -> int:
         sides=((1,) if args.side == "long" else (-1,) if args.side == "short"
                else (1, -1)),
         research_fraction=args.research, alpha=args.alpha,
-        control_draws=args.draws, validate=args.validate, top_n=args.top,
+        control_draws=args.draws, validate=args.validate,
+        top_n=max(5, args.top) if args.top > 0 else 25,
+        conjunctions=bool(args.conjunctions),
         progress=_stderr_progress("searching"))
     _clear_progress()
 
@@ -360,7 +362,7 @@ def cmd_autosearch(args: argparse.Namespace) -> int:
         print()
         print(format_auto_search(
             report, currency=getattr(bars.instrument, "currency", "USD"),
-            top=args.top))
+            top=None if args.top <= 0 else args.top))
 
     if args.save and report.survivors:
         from .strategy.storage import StrategyStore
@@ -657,9 +659,15 @@ def cmd_optimise(args: argparse.Namespace) -> int:
     for r in ranges:
         print(f"  sweeping {r.describe()}", file=stream)
 
+    method = getattr(args, "method", "grid")
+    trials = int(getattr(args, "trials", 0) or 0)
+    if method != "grid" and trials <= 0:
+        raise SystemExit(f"--method {method} needs --trials N (how many "
+                         f"combinations it may try).")
     result = optimise_with_holdout(
         bars, spec, config, ranges, metric=args.metric,
         research_fraction=args.research, reveal=args.reveal,
+        method=method, trials=trials,
         progress=_stderr_progress("sweeping the research block"))
     _clear_progress()
     if args.json:
@@ -689,9 +697,15 @@ def cmd_walkforward(args: argparse.Namespace) -> int:
         print(f"  sweeping {r.describe()}", file=stream)
 
     progress = _stderr_progress()
+    method = getattr(args, "method", "grid")
+    trials = int(getattr(args, "trials", 0) or 0)
+    if method != "grid" and trials <= 0:
+        raise SystemExit(f"--method {method} needs --trials N (how many "
+                         f"combinations each window may try).")
     result = walk_forward(bars, spec, config, ranges, folds=args.folds,
                           train_fraction=args.train, anchored=args.anchored,
                           metric=args.metric, minimum_trades=args.min_trades,
+                          method=method, trials=trials,
                           progress=progress)
     _clear_progress()
     if args.json:
@@ -1192,7 +1206,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--min-trades", type=int, default=None, dest="min_trades",
                    help="Below this a result is treated as noise whatever it "
                         "says")
-    p.add_argument("--top", type=int, default=5, help="How many to shortlist")
+    p.add_argument("--top", type=int, default=10, help="How many to shortlist")
+    p.add_argument("--conjunctions", action="store_true",
+                   help="Widen the search to every entry rule gated by a "
+                        "market-state filter (trend side, ADX, choppiness). "
+                        "About six times as many candidates, and the "
+                        "correction counts every one of them.")
     p.add_argument("--draws", type=int, default=2000,
                    help="Draws for the sampled control")
     p.add_argument("--research", type=float, default=0.65,
@@ -1239,8 +1258,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="How hard to check whatever survives the correction. "
                         "The grid itself is always gated cheaply; this is what "
                         "the survivors then go through.")
-    p.add_argument("--top", type=int, default=8,
-                   help="How many survivors to detail")
+    p.add_argument("--top", type=int, default=0,
+                   help="How many survivors to detail; 0 details all of them")
+    p.add_argument("--conjunctions", action="store_true",
+                   help="Widen every sweep to filtered entry rules as well "
+                        "(trend side, ADX, choppiness); the pooled correction "
+                        "counts every one of them")
     p.add_argument("--plan", action="store_true",
                    help="List the searches that would run, then stop")
     p.add_argument("--save", action="store_true",
@@ -1348,6 +1371,12 @@ def build_parser() -> argparse.ArgumentParser:
                         "locked block. Raising this spends the holdout: "
                         "revealing all of them and picking the best is "
                         "selecting on it with extra steps.")
+    p.add_argument("--method", default="grid", choices=("grid", "tpe", "random"),
+                   help="grid runs every combination; tpe (Bayesian) and "
+                        "random spend --trials backtests choosing where to look")
+    p.add_argument("--trials", type=int, default=0,
+                   help="Budget for --method tpe or random. 0 with grid "
+                        "means the whole grid.")
     p.add_argument("--capital", type=float, default=100_000.0)
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")
@@ -1376,6 +1405,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="What to optimise in each training window")
     p.add_argument("--min-trades", type=int, default=5, dest="min_trades",
                    help="Combinations with fewer training trades are ignored")
+    p.add_argument("--method", default="grid", choices=("grid", "tpe", "random"),
+                   help="How each training window is searched: every "
+                        "combination, or --trials of them chosen by tpe "
+                        "(Bayesian) or at random")
+    p.add_argument("--trials", type=int, default=0,
+                   help="Budget per training window for --method tpe or random")
     p.add_argument("--capital", type=float, default=100_000.0)
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")

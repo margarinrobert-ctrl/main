@@ -55,6 +55,7 @@ class HoldoutPanel(QWidget):
     def __init__(self, bars: Any, spec: Any, config: Any,
                  ranges_fn: Callable[[], list[Any]],
                  settings_fn: Callable[[], tuple[str, int]],
+                 search_fn: Callable[[], tuple[str, int]] | None = None,
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._bars = bars
@@ -62,6 +63,9 @@ class HoldoutPanel(QWidget):
         self._config = config
         self._ranges_fn = ranges_fn
         self._settings_fn = settings_fn
+        #: ``(method, trials)`` from the dialog's Search card, so this tab
+        #: searches the same way the Results tab does.  ``None`` means a grid.
+        self._search_fn = search_fn
         self._result: Any = None
         self._runner = TaskRunner(self)
         self._build()
@@ -192,10 +196,12 @@ class HoldoutPanel(QWidget):
         self.headline.setStyleSheet(f"color:{PALETTE.text_muted};")
         self.notes.setText("")
         self.table.setRowCount(0)
+        method, trials = (self._search_fn() if self._search_fn is not None
+                          else ("grid", 0))
         self._runner.start(
             holdout_task, self._bars, self._spec, self._config, ranges,
             metric=metric, research_fraction=self.research.value() / 100.0,
-            reveal=self.reveal.value())
+            reveal=self.reveal.value(), method=method, trials=trials)
 
     def _on_state(self, busy: bool) -> None:
         self.progress.setVisible(busy)

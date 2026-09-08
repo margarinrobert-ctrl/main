@@ -42,7 +42,8 @@ from typing import Any, Iterable
 from ..indicators.base import REGISTRY, ParamSpec
 from .spec import (Compare, Condition, ConditionGroup, ConstOperand, Cross,
                    IndicatorOperand, IndicatorSlot, Operand, ParamOperand,
-                   PriceOperand, ExprOperand, State, StrategySpec, Vote)
+                   PriceOperand, ExprOperand, State, StrategySpec, Vote,
+                   Within)
 
 __all__ = ["ExtractedParam", "Extraction", "extract_parameters",
            "describe_extraction"]
@@ -365,6 +366,9 @@ def _promote_condition(cond: Condition | None, spec: StrategySpec,
             [c for c in (_promote_condition(child, spec, col)
                          for child in cond.children) if c is not None],
             cond.negate)
+    if isinstance(cond, Within):
+        return Within(_promote_condition(cond.child, spec, col), cond.bars,
+                      cond.negate)
     # State, SessionWindow and Always carry structure rather than knobs.
     return cond
 

@@ -253,6 +253,32 @@ class FinderDialog(QDialog):
         self._constraints = self._constraints_card()
         outer.addWidget(self._constraints)
 
+        # Applies to every study including "everything", so it lives outside
+        # the constraints card that the grid search greys out.
+        width_card = Card("Search width")
+        width_row = QHBoxLayout()
+        width_row.setSpacing(10)
+        self.conjunctions = QCheckBox("Combine rule families with market filters")
+        self.conjunctions.setToolTip(
+            "Also try every entry rule gated by a market state -- trend side, "
+            "ADX above a level, choppiness below one. About six times as many "
+            "candidates. The multiplicity correction counts every one, so "
+            "this is a wider search, not an easier one.")
+        width_row.addWidget(self.conjunctions)
+        width_row.addSpacing(12)
+        width_row.addWidget(QLabel("Shortlist"))
+        self.shortlist = QSpinBox()
+        self.shortlist.setRange(1, 200)
+        self.shortlist.setValue(10)
+        self.shortlist.setToolTip(
+            "How many survivors are confirmed in the engine and shown. Every "
+            "survivor is counted in the report; this is how many get the full "
+            "treatment.")
+        width_row.addWidget(self.shortlist)
+        width_row.addStretch(1)
+        width_card.add_layout(width_row)
+        outer.addWidget(width_card)
+
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
         self._tables: dict[str, QTableWidget] = {}
@@ -620,6 +646,8 @@ class FinderDialog(QDialog):
         self._worker.failed.connect(self._on_failed)
         self._worker.cancelled.connect(self._on_cancelled)
         self._running = study
+        wider = bool(self.conjunctions.isChecked())
+        top_n = int(self.shortlist.value())
 
         def job(progress=None, cancel=None):
             def forward(done: int, total: int, message: str) -> None:
@@ -633,8 +661,10 @@ class FinderDialog(QDialog):
             if study == "anomalies":
                 return scan(bars, style, progress=forward)
             if study == "everything":
-                return auto_search(bars, progress=forward)
-            return find_strategies(bars, style, progress=forward)
+                return auto_search(bars, top_n=top_n, conjunctions=wider,
+                                   progress=forward)
+            return find_strategies(bars, style, top_n=top_n,
+                                   conjunctions=wider, progress=forward)
 
         # start(fn, *args, **kwargs) forwards everything after `fn` to the job.
         # A label passed here became job's first POSITIONAL argument, which is
@@ -741,7 +771,8 @@ class FinderDialog(QDialog):
                 cells[0], where[0], where[1], cells[1], cells[3], cells[4],
                 cells[7], cells[8], cells[9],
             ], finding.verdict.startswith("worth"))
-        self._finish_table(table, "everything", format_auto_search(report))
+        self._finish_table(table, "everything",
+                           format_auto_search(report, top=None))
 
         cost = (f"{report.combinations:,} combinations across "
                 f"{len(report.sweeps)} searches in {report.elapsed:.0f}s; "

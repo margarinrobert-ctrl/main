@@ -146,9 +146,17 @@ class RiskPanel(QWidget):
             FieldSpec("trailing_value", "Trail value", "float", 2.0, 0.0001, 1e6,
                       0.1, 4, enabled_by="trailing_enabled"),
             FieldSpec("trailing_activate_at_r", "Trail starts at", "float", 0.0,
-                      0.0, 100.0, 0.25, 2, " R", enabled_by="trailing_enabled",
-                      tooltip="Only start trailing once the trade is this many R "
-                              "in profit; 0 trails from the entry bar"),
+                      0.0, 1e6, 0.25, 2, enabled_by="trailing_enabled",
+                      tooltip="Only start trailing once the trade is this far in "
+                              "profit, in the units chosen below; 0 trails from "
+                              "the entry bar"),
+            FieldSpec("trailing_activate_mode", "Trail starts in", "choice", "r",
+                      choices=[("R multiples", "r"), ("Price points", "points"),
+                               ("ATR multiples", "atr"), ("Percent of price", "percent")],
+                      enabled_by="trailing_enabled",
+                      tooltip="Units of the value above. Points is what a strategy "
+                              "converted from a platform that arms its trail after "
+                              "a fixed distance means; R varies with an ATR stop"),
             FieldSpec("breakeven_at_r", "Break even at", "float", 0.0, 0.0, 100.0,
                       0.25, 2, " R",
                       tooltip="Move the stop to the entry price once the trade "
@@ -299,6 +307,7 @@ class RiskPanel(QWidget):
             trailing_mode=str(e["trailing_mode"]),
             trailing_value=float(e["trailing_value"]),
             trailing_activate_at_r=float(e["trailing_activate_at_r"]),
+            trailing_activate_mode=str(e.get("trailing_activate_mode", "r") or "r"),
             breakeven_at_r=float(e["breakeven_at_r"]),
             atr_period=int(e["atr_period"]),
             max_bars_in_trade=int(e["max_bars_in_trade"]),
@@ -361,6 +370,7 @@ class RiskPanel(QWidget):
             "trailing_enabled": e.trailing_enabled, "trailing_mode": e.trailing_mode,
             "trailing_value": e.trailing_value,
             "trailing_activate_at_r": e.trailing_activate_at_r,
+            "trailing_activate_mode": getattr(e, "trailing_activate_mode", "r") or "r",
             "breakeven_at_r": e.breakeven_at_r, "atr_period": e.atr_period,
             "max_bars_in_trade": e.max_bars_in_trade,
         })

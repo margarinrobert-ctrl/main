@@ -439,6 +439,11 @@ def test_validation_is_capped_and_the_cap_is_stated():
     checked = [f for f in report.survivors
                if getattr(f, "confirmation", None) is not None]
     assert 0 < len(checked) <= VALIDATION_CAP
+    # The same rule surviving on two timeframes shares a label; validation
+    # must not hand one timeframe's confirmed finding to the other's row.
+    assert len({id(f) for f in report.survivors}) == len(report.survivors)
+    assert all(f.timeframe == report.survivors[i].timeframe
+               for i, f in enumerate(report.survivors))
 
     notes = " ".join(report.notes)
     assert f"best {VALIDATION_CAP} of {len(report.survivors):,}" in notes
@@ -538,3 +543,39 @@ def test_the_grid_falls_back_to_the_widest_sample_when_all_are_thin():
     assert not solid
     pool = solid or [max(measured, key=lambda p: p[1].candidates)]
     assert pool[0][1].candidates == 80
+
+
+# --------------------------------------------------------------------------
+# Every survivor can be shown
+# --------------------------------------------------------------------------
+
+def test_the_report_can_detail_every_survivor_instead_of_the_best_eight():
+    """``top=None`` details all of them; the count is printed either way."""
+    bars = _planted(n=30_000, strength=9.0, seed=5)
+    report = auto_search(bars, styles=("intraday",), control_draws=100,
+                         validate="quick", top_n=25)
+    if len(report.survivors) < 2:
+        pytest.skip("this sample did not produce enough survivors to cap")
+    # Wide, so a label is one line and a substring check means what it says.
+    everything = format_auto_search(report, top=None, width=400)
+    assert "shown):" not in everything
+    for finding in report.survivors:
+        assert finding.label in everything
+    capped = format_auto_search(report, top=1, width=400)
+    assert "(the best 1 shown):" in capped
+    assert f"{len(report.survivors):,} combination(s)" in capped
+
+
+def test_auto_search_accepts_conjunctions(small):
+    """The switch reaches every sweep and the report says the search was widened."""
+    report = auto_search(small, styles=("intraday",), timeframes=("5m",),
+                         control_draws=50, validate="quick", conjunctions=True)
+    assert report.sweeps
+    ran = [s for s in report.sweeps if s.ran]
+    if not ran:
+        pytest.skip("no sweep ran on this sample")
+    notes = " ".join(ran[0].report.notes)
+    assert "widened" in notes
+    plain = auto_search(small, styles=("intraday",), timeframes=("5m",),
+                        control_draws=50, validate="quick")
+    assert report.combinations > 4 * plain.combinations

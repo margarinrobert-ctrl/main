@@ -26,7 +26,7 @@ Two properties every template here must have:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Sequence
 
 import numpy as np
 
@@ -34,7 +34,8 @@ from ..core.types import ExitSettings, SessionSettings
 from ..data.models import BarSeries
 from ..indicators.base import REGISTRY
 from ..strategy.spec import (Compare, Const, Cross, ExprOperand, Group, Ind,
-                             IndicatorSlot, Price, State, StrategySpec)
+                             IndicatorSlot, Price, State, StrategySpec,
+                              IndicatorOperand)
 
 
 @dataclass
@@ -428,6 +429,72 @@ def _range_build(p: dict, side: int):
     return slots, Group("and", [big, direction])
 
 
+def _keltner_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+    """Close crosses back inside a Keltner channel.
+
+    The Bollinger family measures "far" in standard deviations of price; this
+    one measures it in ATR, which does not collapse in a quiet trend the way a
+    standard deviation does. Same shape of rule, different notion of far.
+    """
+    out = _compute(bars, "KELTNER", {"period": p["period"], "atr_period": 10,
+                                     "multiplier": p["multiplier"]})
+    band = out["lower"] if side > 0 else out["upper"]
+    return (_crossed_up(bars.close, band) if side > 0
+            else _crossed_down(bars.close, band))
+
+
+def _keltner_build(p: dict, side: int):
+    slots = [IndicatorSlot("kc", "KELTNER", {"period": p["period"], "atr_period": 10,
+                                             "multiplier": p["multiplier"]})]
+    return slots, Cross(Price("close"), "above" if side > 0 else "below",
+                        Ind("kc", "lower" if side > 0 else "upper"))
+
+
+def _cci_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+    """CCI turns back through an extreme.  Reads hlc3, not the close."""
+    cci = _ind(bars, "CCI", period=p["period"])
+    level = float(p["level"])
+    return (_crossed_up(cci, -level) if side > 0 else _crossed_down(cci, level))
+
+
+def _cci_build(p: dict, side: int):
+    slots = [IndicatorSlot("cci", "CCI", {"period": p["period"]})]
+    level = -float(p["level"]) if side > 0 else float(p["level"])
+    return slots, Cross(Ind("cci"), "above" if side > 0 else "below", Const(level))
+
+
+def _willr_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+    """Williams %R leaves an extreme.  It lives on -100..0, so the long side
+    crosses up through -level and the short side down through -(100-level)."""
+    wr = _ind(bars, "WILLR", period=p["period"])
+    level = float(p["level"])
+    return (_crossed_up(wr, -level) if side > 0
+            else _crossed_down(wr, -(100.0 - level)))
+
+
+def _willr_build(p: dict, side: int):
+    slots = [IndicatorSlot("willr", "WILLR", {"period": p["period"]})]
+    level = -float(p["level"]) if side > 0 else -(100.0 - float(p["level"]))
+    return slots, Cross(Ind("willr"), "above" if side > 0 else "below", Const(level))
+
+
+def _supertrend_signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+    """The Supertrend flips direction.  Its direction output is +1/-1, so a flip
+    to long is the direction crossing up through zero."""
+    out = _compute(bars, "SUPERTREND", {"period": p["period"],
+                                        "multiplier": p["multiplier"]})
+    direction = out["direction"]
+    return (_crossed_up(direction, 0.0) if side > 0
+            else _crossed_down(direction, 0.0))
+
+
+def _supertrend_build(p: dict, side: int):
+    slots = [IndicatorSlot("st", "SUPERTREND", {"period": p["period"],
+                                                "multiplier": p["multiplier"]})]
+    return slots, Cross(Ind("st", "direction"), "above" if side > 0 else "below",
+                        Const(0.0))
+
+
 TEMPLATES: tuple[Template, ...] = (
     Template(
         key="trend_pullback", label="Trend pullback",
@@ -509,14 +576,233 @@ TEMPLATES: tuple[Template, ...] = (
         grid={"period": (14, 20), "multiple": (1.5, 2.0, 3.0)},
         signal=_range_signal, build=_range_build,
         warmup=lambda p: int(p["period"]) + 5),
+    Template(
+        key="keltner_reversion", label="Keltner reversion",
+        description="Close crosses back inside the lower Keltner band.",
+        short_description="Close crosses back inside the upper Keltner band.",
+        grid={"period": (20,), "multiplier": (1.5, 2.0)},
+        signal=_keltner_signal, build=_keltner_build,
+        warmup=lambda p: int(p["period"]) + 10),
+    Template(
+        key="cci_reversion", label="CCI reversion",
+        description="CCI turns back up through a negative extreme.",
+        short_description="CCI turns back down through a positive extreme.",
+        grid={"period": (14, 20), "level": (100.0, 150.0)},
+        signal=_cci_signal, build=_cci_build,
+        warmup=lambda p: int(p["period"]) * 2),
+    Template(
+        key="willr_reversion", label="Williams %R reversion",
+        description="Williams %R climbs back out of oversold.",
+        short_description="Williams %R falls back out of overbought.",
+        grid={"period": (14,), "level": (80.0, 90.0)},
+        signal=_willr_signal, build=_willr_build,
+        warmup=lambda p: int(p["period"]) + 5),
+    Template(
+        key="supertrend_flip", label="Supertrend flip",
+        description="The Supertrend flips to bullish.",
+        short_description="The Supertrend flips to bearish.",
+        grid={"period": (10,), "multiplier": (2.0, 3.0)},
+        signal=_supertrend_signal, build=_supertrend_build,
+        warmup=lambda p: int(p["period"]) * 3),
 )
 
 TEMPLATES_BY_KEY = {t.key: t for t in TEMPLATES}
 
 
+# ---------------------------------------------------------------------------
+# Filters, and conjunctions of an entry rule with one
+# ---------------------------------------------------------------------------
+#
+# An entry family says WHEN.  A filter says WHETHER -- a state the market has to
+# be in for the entry to count, evaluated on the same bar.  Joining the two is
+# how a person actually writes a rule ("RSI reversion, but only above the 200"),
+# and it multiplies the space the search covers by the number of filter
+# settings.  That is the point and also the cost: the multiplicity correction
+# sees every conjunction as one more chance to be lucky, which is exactly what
+# it is.
+
+
+@dataclass
+class Filter:
+    """A market state that gates an entry family."""
+
+    key: str
+    label: str
+    description: str
+    """Reads after "only when": ``"price is above a long moving average"``."""
+    grid: dict[str, tuple]
+    state: Callable[[BarSeries, dict, int], np.ndarray]
+    """``(bars, params, side) -> bool per bar``."""
+    build: Callable[[dict, int], tuple[list[IndicatorSlot], Any]]
+    warmup: Callable[[dict], int]
+    redundant_with: frozenset = frozenset()
+    """Entry families that already contain this state; the conjunction would
+    test the same rule twice and count it twice in the multiplicity."""
+
+
+def _trend_state(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+    ema = _ind(bars, "EMA", period=p["period"])
+    return np.isfinite(ema) & ((bars.close > ema) if side > 0 else (bars.close < ema))
+
+
+def _trend_filter_build(p: dict, side: int):
+    slots = [IndicatorSlot("emaLong", "EMA", {"period": p["period"]})]
+    return slots, Compare(Price("close"), ">" if side > 0 else "<", Ind("emaLong"))
+
+
+def _adx_state(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+    adx = _compute(bars, "ADX", {"period": 14, "adx_period": 14})["adx"]
+    return np.isfinite(adx) & (adx > float(p["level"]))
+
+
+def _adx_filter_build(p: dict, side: int):
+    slots = [IndicatorSlot("adx", "ADX", {"period": 14, "adx_period": 14})]
+    return slots, Compare(Ind("adx", "adx"), ">", Const(float(p["level"])))
+
+
+def _chop_state(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+    chop = _ind(bars, "CHOP", period=14)
+    return np.isfinite(chop) & (chop < float(p["level"]))
+
+
+def _chop_filter_build(p: dict, side: int):
+    slots = [IndicatorSlot("chop", "CHOP", {"period": 14})]
+    return slots, Compare(Ind("chop"), "<", Const(float(p["level"])))
+
+
+FILTERS: tuple[Filter, ...] = (
+    Filter(key="trend", label="with the trend",
+           description="price is on the trend side of a long moving average",
+           grid={"period": (100, 200)},
+           state=_trend_state, build=_trend_filter_build,
+           warmup=lambda p: int(p["period"]) + 5,
+           redundant_with=frozenset({"trend_pullback", "stoch_trend",
+                                     "structure_break"})),
+    Filter(key="adx", label="in a trending market",
+           description="ADX(14) is above a level",
+           grid={"level": (20.0, 25.0)},
+           state=_adx_state, build=_adx_filter_build,
+           warmup=lambda p: 14 * 3),
+    Filter(key="chop", label="out of chop",
+           description="the Choppiness Index is below a level",
+           grid={"level": (45.0, 55.0)},
+           state=_chop_state, build=_chop_filter_build,
+           warmup=lambda p: 14 * 2),
+)
+
+FILTERS_BY_KEY = {f.key: f for f in FILTERS}
+
+
+def _rename_refs(condition: Any, mapping: dict[str, str]) -> None:
+    """Point every indicator operand under ``condition`` at its renamed slot."""
+    children = getattr(condition, "children", None)
+    if children is not None:
+        for child in children:
+            _rename_refs(child, mapping)
+        return
+    child = getattr(condition, "child", None)
+    if child is not None:
+        _rename_refs(child, mapping)
+        return
+    for attribute in ("left", "right"):
+        operand = getattr(condition, attribute, None)
+        while operand is not None:
+            if isinstance(operand, IndicatorOperand) and operand.ref in mapping:
+                operand.ref = mapping[operand.ref]
+            if isinstance(operand, ExprOperand):
+                _rename_refs_operand(operand, mapping)
+            break
+
+
+def _rename_refs_operand(expr: ExprOperand, mapping: dict[str, str]) -> None:
+    for operand in (expr.left, expr.right):
+        if isinstance(operand, IndicatorOperand) and operand.ref in mapping:
+            operand.ref = mapping[operand.ref]
+        elif isinstance(operand, ExprOperand):
+            _rename_refs_operand(operand, mapping)
+
+
+def conjoin(template: Template, flt: Filter) -> Template:
+    """The entry family ``template`` gated by ``flt``, as one new family.
+
+    The filter's parameters are prefixed with its key so the two grids cannot
+    collide, and its indicator slots are prefixed so a filter's ``emaTrend``
+    cannot silently share a slot with the entry rule's.
+    """
+    prefix = f"{flt.key}_"
+    grid = dict(template.grid)
+    grid.update({prefix + k: v for k, v in flt.grid.items()})
+
+    def split(p: dict) -> tuple[dict, dict]:
+        base = {k: v for k, v in p.items() if not k.startswith(prefix)}
+        extra = {k[len(prefix):]: v for k, v in p.items() if k.startswith(prefix)}
+        return base, extra
+
+    def signal(bars: BarSeries, p: dict, side: int) -> np.ndarray:
+        base, extra = split(p)
+        return (np.asarray(template.signal(bars, base, side), dtype=bool)
+                & np.asarray(flt.state(bars, extra, side), dtype=bool))
+
+    def build(p: dict, side: int):
+        base, extra = split(p)
+        slots, condition = template.build(base, side)
+        fslots, fcondition = flt.build(extra, side)
+        taken = {slot.ref for slot in slots}
+        mapping: dict[str, str] = {}
+        for slot in fslots:
+            new = f"filter_{slot.ref}"
+            while new in taken:
+                new += "_"
+            mapping[slot.ref] = new
+            slot.ref = new
+            taken.add(new)
+        _rename_refs(fcondition, mapping)
+        return list(slots) + list(fslots), Group("and", [condition, fcondition])
+
+    def warmup(p: dict) -> int:
+        base, extra = split(p)
+        return max(int(template.warmup(base)), int(flt.warmup(extra)))
+
+    return Template(
+        key=f"{template.key}+{flt.key}",
+        label=f"{template.label}, {flt.label}",
+        description=f"{template.description} Only when {flt.description}.",
+        short_description=(f"{template.short_description} Only when "
+                           f"{flt.description}." if template.short_description
+                           else ""),
+        grid=grid, signal=signal, build=build, warmup=warmup)
+
+
+def conjunction_templates(base: Sequence[Template] | None = None,
+                          filters: Sequence[Filter] | None = None
+                          ) -> list[Template]:
+    """Every (entry family x filter) pair worth testing, registered by key.
+
+    Registration into :data:`TEMPLATES_BY_KEY` is what lets a conjunction be
+    looked up later -- by the report, by ``build_spec``, by the neighbourhood
+    check -- exactly like a family that was born in the tuple above.
+    """
+    out: list[Template] = []
+    for template in (base if base is not None else TEMPLATES):
+        for flt in (filters if filters is not None else FILTERS):
+            if template.key in flt.redundant_with or "+" in template.key:
+                continue
+            joined = TEMPLATES_BY_KEY.get(f"{template.key}+{flt.key}")
+            if joined is None:
+                joined = conjoin(template, flt)
+                TEMPLATES_BY_KEY[joined.key] = joined
+            out.append(joined)
+    return out
+
+
 def all_candidates(sides: tuple[int, ...] = (1, -1),
-                   templates: tuple[str, ...] = ()) -> list[Candidate]:
+                   templates: tuple[str, ...] = (),
+                   conjunctions: bool = False) -> list[Candidate]:
     """Every candidate in the space, which is also the multiplicity of a search.
+
+    ``conjunctions`` adds every (entry family x filter) pair from
+    :data:`FILTERS` on top of the plain families -- a much wider search, and
+    one the correction prices accordingly.
 
     An unknown family name is refused by name rather than raising a KeyError
     three frames down: a typo in a filter that silently searched everything
@@ -533,6 +819,9 @@ def all_candidates(sides: tuple[int, ...] = (1, -1),
             f"{', '.join(t.key for t in TEMPLATES)}.")
     chosen = ([TEMPLATES_BY_KEY[k] for k in templates] if templates
               else list(TEMPLATES))
+    if conjunctions:
+        chosen = list(chosen) + conjunction_templates(
+            [t for t in chosen if "+" not in t.key])
     out: list[Candidate] = []
     for template in chosen:
         out.extend(template.candidates(sides))

@@ -35,6 +35,7 @@ from typing import Any, Callable, Sequence
 from ..core.errors import InsufficientDataError, ParameterError
 from ..data.models import BarSeries
 from .grid import ParameterRange, build_grid
+from .sampler import make_sampler
 from .ranking import default_maximise
 from .runner import evaluate_combination
 
@@ -83,7 +84,11 @@ class WalkForwardResult:
     anchored: bool
     windows: list[Window] = field(default_factory=list)
     combinations: int = 0
-    """Size of the grid searched in each window."""
+    """Combinations tried in each window: the grid, or a sampled budget."""
+    method: str = "grid"
+    """How each window was searched: ``grid``, ``tpe`` or ``random``."""
+    space: int = 0
+    """Distinct combinations the ranges span; equals ``combinations`` for a grid."""
     warmup: int = 0
     """Bars of history prepended to each block so indicators start settled."""
     out_of_sample_trades: int = 0
@@ -222,9 +227,16 @@ def walk_forward(bars: BarSeries, spec: Any, config: Any,
                  ranges: Sequence[ParameterRange], *, folds: int = 5,
                  train_fraction: float = 0.5, anchored: bool = False,
                  metric: str = "net_profit", minimum_trades: int = 5,
+                 method: str = "grid", trials: int = 0, seed: int = 0,
                  progress: ProgressFn | None = None,
                  cancel: Any = None) -> WalkForwardResult:
-    """Optimise on each training block and trade the block that follows it."""
+    """Optimise on each training block and trade the block that follows it.
+
+    ``method`` other than ``grid`` lets each training window spend ``trials``
+    backtests choosing where to look (see :mod:`.sampler`) instead of running
+    every combination.  Each window gets its own sampler, seeded from ``seed``
+    and the window index, so a re-run reproduces the same choices.
+    """
     started = time.time()
     total = len(bars)
     if total < MIN_BARS:
@@ -241,10 +253,14 @@ def walk_forward(bars: BarSeries, spec: Any, config: Any,
     maximise = default_maximise(metric)
     plan = plan_windows(total, folds, train_fraction, anchored)
     warmup = _grid_warmup(spec, grid, config)
+    key = str(method or "grid").strip().lower()
+    sampled = key != "grid" and int(trials) > 0 and int(trials) < len(grid)
+    per_window = int(trials) if sampled else len(grid)
     result = WalkForwardResult(metric=metric, anchored=anchored,
-                               combinations=len(grid), warmup=warmup)
+                               combinations=per_window, warmup=warmup,
+                               method=key if sampled else "grid", space=len(grid))
 
-    steps = len(plan) * (len(grid) + 1)
+    steps = len(plan) * (per_window + 1)
     done = 0
     running = 0.0
     for index, (train_start, train_end, test_start, test_end) in enumerate(plan):
@@ -269,7 +285,24 @@ def walk_forward(bars: BarSeries, spec: Any, config: Any,
         best: dict[str, Any] | None = None
         best_trades = 0
         best_net = 0.0
-        for params in grid:
+        sampler = (make_sampler(key, ranges, maximise=maximise,
+                                seed=int(seed) * 7919 + index, budget=per_window)
+                   if sampled else None)
+
+        def choices():
+            """The combinations this window tries, in order."""
+            if sampler is None:
+                yield from grid
+                return
+            tried = 0
+            while tried < per_window and not sampler.exhausted:
+                batch = sampler.ask(1)
+                if not batch:
+                    return
+                tried += 1
+                yield batch[0]
+
+        for params in choices():
             if cancel is not None and getattr(cancel, "cancelled", False):
                 from ..core.errors import CancelledError
 
@@ -278,12 +311,13 @@ def walk_forward(bars: BarSeries, spec: Any, config: Any,
             if progress is not None and done % 5 == 0:
                 progress(done, steps,
                          f"Window {index + 1} of {len(plan)}: choosing from "
-                         f"{len(grid)} combinations")
+                         f"{per_window} combinations")
             row = _run(train_bars, spec, config, train_pad, done, params)
-            if row["error"] or row["trade_count"] < minimum_trades:
-                continue
-            value = _metric_value(row["metrics"], metric)
-            if not math.isfinite(value):
+            usable = not row["error"] and row["trade_count"] >= minimum_trades
+            value = _metric_value(row["metrics"], metric) if usable else float("nan")
+            if sampler is not None:
+                sampler.tell(params, value)
+            if not usable or not math.isfinite(value):
                 continue
             signed = value if maximise else -value
             if signed > best_value:

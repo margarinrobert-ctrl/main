@@ -209,6 +209,8 @@ class SimulatedBroker:
         self._max_bars = int(config.exits.max_bars_in_trade)
         self._trailing = bool(config.exits.trailing_enabled)
         self._trail_at_r = float(config.exits.trailing_activate_at_r)
+        self._trail_arm_mode = str(getattr(config.exits, "trailing_activate_mode",
+                                           "r") or "r").strip().lower()
         self._breakeven_r = float(config.exits.breakeven_at_r)
         self._partial_ladder = tuple(config.exits.partial_exits)
         self._use_margin = bool(config.risk.use_margin)
@@ -708,9 +710,9 @@ class SimulatedBroker:
         if not self._trailing:
             return
         if not slot.trail_started:
-            if self._trail_at_r > 0.0:
-                if risk <= 0.0 or favourable < self._trail_at_r * risk:
-                    return
+            arm = self._trail_arm_distance(c, risk)
+            if arm is not None and favourable < arm:
+                return
             slot.trail_started = True
 
         anchor = p.trail_anchor
@@ -733,6 +735,23 @@ class SimulatedBroker:
         if cur is None or (new_stop > cur if long else new_stop < cur):
             p.stop_loss = new_stop
             slot.stop_reason = ExitReason.TRAILING_STOP
+
+    def _trail_arm_distance(self, price: float, risk: float) -> float | None:
+        """How far in profit a trade must be before its trail starts.
+
+        ``None`` means "immediately".  ``inf`` means "never on this trade", which
+        is what an R-denominated threshold means when the trade has no stop to
+        measure R against -- the behaviour the R-only code always had.
+        """
+        value = self._trail_at_r
+        if value <= 0.0:
+            return None
+        mode = self._trail_arm_mode
+        if mode in ("", "r", "r_multiple"):
+            return math.inf if risk <= 0.0 else value * risk
+        dist = self._distance(mode, value, price, self._atr_at_close,
+                              risk if risk > 0.0 else None, "trailing activation")
+        return math.inf if dist is None else float(dist)
 
     def set_bar_atr(self, value: float) -> None:
         """Tell the broker the ATR of the bar being processed.

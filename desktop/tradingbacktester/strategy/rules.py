@@ -31,12 +31,12 @@ import numpy as np
 from ..core.errors import StrategyError
 from .expression import EvalContext, evaluate_operand
 from .spec import (Always, Compare, Condition, ConditionGroup, Cross,
-                   SessionWindow, State, Vote)
+                   SessionWindow, State, Vote, Within)
 
 log = logging.getLogger(__name__)
 
 __all__ = ["evaluate_condition", "session_mask", "parse_time_of_day",
-           "SECONDS_PER_DAY"]
+           "SECONDS_PER_DAY", "clear_session_cache"]
 
 SECONDS_PER_DAY = 24 * 60 * 60
 
@@ -71,6 +71,8 @@ def evaluate_condition(cond: Condition | None, ctx: EvalContext) -> np.ndarray:
         return np.full(n, bool(cond.value), dtype=bool)
     if isinstance(cond, Vote):
         return _vote(cond, ctx)
+    if isinstance(cond, Within):
+        return _within(cond, ctx)
     raise StrategyError(
         f"'{type(cond).__name__}' is not a condition this application can evaluate.")
 
@@ -173,6 +175,28 @@ def _state(cond: State, ctx: EvalContext) -> np.ndarray:
         f"'{cond.op}' is not a state this application knows. Use one of: "
         f"rising, falling, positive, negative, increasing_for, decreasing_for, "
         f"true, false.")
+
+
+def _within(cond: Within, ctx: EvalContext) -> np.ndarray:
+    """Rolling OR: the child was true on this bar or any of the ``bars-1`` before.
+
+    One cumulative sum, however long the window -- the same trick
+    :func:`_run_of` uses for a run of rising bars, pointed the other way.
+    """
+    bars = int(cond.bars)
+    if bars < 1:
+        raise StrategyError(
+            f"'{cond.describe()}' asks about the last {bars} bars; the window "
+            f"must be at least 1 bar.")
+    inner = evaluate_condition(cond.child, ctx)
+    n = len(inner)
+    if n == 0:
+        return inner
+    cumulative = np.concatenate(([0], np.cumsum(inner.astype(np.int64))))
+    idx = np.arange(n)
+    start = np.maximum(idx + 1 - bars, 0)
+    out = (cumulative[idx + 1] - cumulative[start]) > 0
+    return ~out if cond.negate else out
 
 
 def _step_direction(values: np.ndarray, defined: np.ndarray, up: bool) -> np.ndarray:
@@ -320,13 +344,64 @@ def parse_time_of_day(text: Any) -> int:
     return total
 
 
+#: ``_local_parts`` results, keyed on a fingerprint of the timestamps and the
+#: timezone.  The timezone conversion is one pass of pandas over every stamp --
+#: 38 ms of a 290 ms backtest on 100k bars -- and across an optimisation sweep
+#: the timestamps never change, so every combination after the first was paying
+#: for a conversion whose answer it already had.  Bounded, because a session
+#: resamples and slices and mirrors, and each of those is a new fingerprint.
+_LOCAL_PARTS_LIMIT = 64
+_LOCAL_PARTS_CACHE: dict[tuple, tuple[np.ndarray, np.ndarray]] = {}
+
+
+def _stamp_fingerprint(stamps: np.ndarray) -> tuple:
+    """Cheap identity for a timestamp array: length plus a few sampled values.
+
+    Two bar series with the same length, first, last and evenly-spaced interior
+    stamps are the same series for every purpose this cache serves; a series
+    that differs anywhere else is a different dataset and will differ in these
+    too with overwhelming probability, and the cost of being wrong is a session
+    mask off by a bar -- so the sample is wide (nine points) rather than three.
+    """
+    n = int(stamps.size)
+    if n == 0:
+        return (0,)
+    picks = np.linspace(0, n - 1, num=min(n, 9), dtype=np.int64)
+    return (n,) + tuple(int(v) for v in stamps[picks])
+
+
+def clear_session_cache() -> None:
+    """Forget every cached timezone conversion.  Tests use this."""
+    _LOCAL_PARTS_CACHE.clear()
+
+
 def _local_parts(ts: np.ndarray, timezone: str) -> tuple[np.ndarray, np.ndarray]:
-    """Seconds-of-day and weekday for every timestamp, in ``timezone``."""
+    """Seconds-of-day and weekday for every timestamp, in ``timezone``.
+
+    Cached per (timestamps, timezone); see :data:`_LOCAL_PARTS_CACHE`.  The
+    arrays handed back are shared, so callers must not write into them --
+    :func:`session_mask` only reads them.
+    """
+    stamps = np.ascontiguousarray(ts, dtype="int64")
+    name = str(timezone or "UTC").strip() or "UTC"
+    key = _stamp_fingerprint(stamps) + (name,)
+    hit = _LOCAL_PARTS_CACHE.get(key)
+    if hit is not None:
+        return hit
+    parts = _local_parts_uncached(stamps, name)
+    if len(_LOCAL_PARTS_CACHE) >= _LOCAL_PARTS_LIMIT:
+        # Oldest first: dicts iterate in insertion order.
+        _LOCAL_PARTS_CACHE.pop(next(iter(_LOCAL_PARTS_CACHE)))
+    _LOCAL_PARTS_CACHE[key] = parts
+    return parts
+
+
+def _local_parts_uncached(stamps: np.ndarray, timezone: str
+                          ) -> tuple[np.ndarray, np.ndarray]:
     import pandas as pd
 
-    stamps = np.ascontiguousarray(ts, dtype="int64")
     index = pd.DatetimeIndex(pd.to_datetime(stamps, utc=True))
-    name = str(timezone or "UTC").strip() or "UTC"
+    name = timezone
     try:
         local = index.tz_convert(name)
     except Exception as exc:
@@ -342,6 +417,9 @@ def _local_parts(ts: np.ndarray, timezone: str) -> tuple[np.ndarray, np.ndarray]
                + local.minute.to_numpy(dtype="int64") * 60
                + local.second.to_numpy(dtype="int64"))
     weekday = local.weekday.to_numpy(dtype="int64")
+    # Shared between every caller that asks for this series in this timezone.
+    seconds.setflags(write=False)
+    weekday.setflags(write=False)
     return seconds, weekday
 
 

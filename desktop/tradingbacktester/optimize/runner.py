@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import math
+from contextlib import contextmanager
 import os
 import sys
 import threading
@@ -35,9 +36,10 @@ from typing import Any, Callable, Iterable, Sequence
 
 import numpy as np
 
-from ..core.errors import BacktesterError
+from ..core.errors import BacktesterError, ParameterError
 from ..logging_setup import get_logger
 from .grid import DEFAULT_MAX_COMBINATIONS, ParameterRange, build_grid
+from .sampler import describe_method, grid_size, make_sampler
 
 log = get_logger(__name__)
 
@@ -186,6 +188,18 @@ class OptimizationResults:
     used_processes: bool = False
     worker_count: int = 1
     warnings: list[str] = field(default_factory=list)
+    method: str = "grid"
+    """``grid``, ``tpe`` or ``random`` -- how the combinations were chosen."""
+    trials: int = 0
+    """Combinations a sampled search was allowed; ``0`` for a grid."""
+    space: int = 0
+    """Distinct combinations the ranges span, whether or not all were run."""
+    metric: str = ""
+    """What a sampled search optimised; empty for a grid, which ranks later."""
+
+    @property
+    def sampled(self) -> bool:
+        return self.method != "grid"
 
     @property
     def param_names(self) -> list[str]:
@@ -214,6 +228,9 @@ class OptimizationResults:
 
     def summary_line(self) -> str:
         parts = [f"{self.completed:,} of {self.total_combinations:,} combinations"]
+        if self.sampled:
+            parts.append(f"{describe_method(self.method)} over a space of "
+                         f"{self.space:,}")
         if self.failed:
             parts.append(f"{self.failed:,} failed")
         if self.cancelled:
@@ -534,6 +551,193 @@ class OptimizationRunner:
                 f"No combination produced a result. The first failure said: {first}")
         log.info("Optimisation finished: %s", results.summary_line())
         return results
+
+    def run_sampled(self, ranges: Sequence[ParameterRange], *, trials: int,
+                    method: str = "tpe", metric: str = "net_profit",
+                    maximise: bool | None = None, minimum_trades: int = 0,
+                    seed: int = 0, progress: ProgressFn | None = None,
+                    cancel: CancelFn | None = None) -> OptimizationResults:
+        """Spend ``trials`` backtests choosing where to look, instead of everywhere.
+
+        ``method`` is ``tpe`` (Bayesian) or ``random``; see
+        :mod:`tradingbacktester.optimize.sampler`.  ``metric`` is what the
+        sampler steers by -- a combination that fails or produces fewer than
+        ``minimum_trades`` trades is told to the sampler as the worst possible
+        result, so it learns to leave that region alone.  The rows come back in
+        the same shape a grid produces, so ranking, the neighbourhood column,
+        the heat map and the holdout all work unchanged; where a grid has a
+        value the sampled surface simply has a gap.
+
+        A budget at or above the size of the space is the whole space, and is
+        run as the grid it is -- with a note, because "Bayesian search" on the
+        summary of an exhaustive sweep would be a misdescription.
+        """
+        from .ranking import default_maximise
+
+        started = time.perf_counter()
+        space = grid_size(ranges)
+        budget = int(trials)
+        if budget <= 0:
+            raise ParameterError(
+                "A sampled search needs a budget of at least one trial.")
+        if budget >= space:
+            results = self.run(ranges, progress=progress, cancel=cancel)
+            results.space = space
+            results.warnings.append(
+                f"The budget of {budget:,} trials covers the whole space of "
+                f"{space:,} combinations, so every one of them was run and this "
+                f"is an ordinary grid sweep.")
+            return results
+
+        if maximise is None:
+            maximise = default_maximise(metric)
+        sampler = make_sampler(method, ranges, maximise=bool(maximise),
+                               seed=int(seed), budget=budget)
+        workers = self._planned_workers(budget)
+        results = OptimizationResults(
+            ranges=list(ranges), total_combinations=budget,
+            worker_count=workers, method=sampler.method, trials=budget,
+            space=space, metric=str(metric))
+        if progress is not None:
+            progress(0, budget)
+
+        rows: dict[int, OptimizationRow] = {}
+        next_index = 0
+
+        def absorb(payload: dict[str, Any]) -> None:
+            row = OptimizationRow(
+                params=payload["params"], metrics=payload["metrics"],
+                trade_count=int(payload["trade_count"]), error=payload["error"],
+                index=int(payload["index"]),
+                elapsed_seconds=float(payload["elapsed"]))
+            rows[row.index] = row
+            value = row.value(metric)
+            if not row.ok or row.trade_count < int(minimum_trades):
+                value = float("nan")
+            sampler.tell(row.params, value)
+            if progress is not None:
+                progress(len(rows), budget)
+
+        # Ask in batches the size of the pool's appetite, so the workers stay
+        # busy while the model is only ever a batch behind what has finished.
+        # A larger batch would be faster on the clock and blinder in the search.
+        batch_size = max(1, workers) * (_QUEUE_DEPTH if workers > 1 else 1)
+        cancelled = False
+        used_processes = False
+        pool_dead = False
+        with self._executor(workers) as (executor, work, used_processes, note):
+            if note:
+                results.warnings.append(note)
+            while len(rows) < budget and not sampler.exhausted:
+                if cancel is not None and cancel():
+                    cancelled = True
+                    break
+                wanted = min(batch_size, budget - next_index)
+                if wanted <= 0:
+                    break
+                batch = sampler.ask(wanted)
+                if not batch:
+                    break
+                jobs = [(next_index + i, params) for i, params in enumerate(batch)]
+                next_index += len(jobs)
+                if pool_dead:
+                    # The process pool broke on an earlier batch; do not offer
+                    # it another one.
+                    if self._run_with_threads(jobs, workers, absorb, cancel):
+                        cancelled = True
+                        break
+                elif executor is None:
+                    if self._run_sequentially(jobs, absorb, cancel):
+                        cancelled = True
+                        break
+                else:
+                    try:
+                        if self._pump(executor, jobs, work, absorb, cancel):
+                            cancelled = True
+                            break
+                    except _PoolFailure as exc:
+                        pool_dead = True
+                        log.warning("The worker pool stopped responding (%s); "
+                                    "the rest of the search runs on threads.",
+                                    exc.reason)
+                        results.warnings.append(
+                            "The worker processes stopped part-way through, so "
+                            "the rest of the search ran on threads. Slower, but "
+                            "the results are the same.")
+                        if self._run_with_threads(exc.remaining, workers, absorb, cancel):
+                            cancelled = True
+                            break
+
+        results.used_processes = used_processes
+        results.rows = [rows[i] for i in sorted(rows)]
+        results.completed = sum(1 for r in results.rows if r.ok)
+        results.failed = sum(1 for r in results.rows if not r.ok)
+        results.cancelled = cancelled
+        results.metric_names = _collect_metric_names(results.rows)
+        results.elapsed_seconds = time.perf_counter() - started
+        if sampler.exhausted and len(results.rows) < budget:
+            results.warnings.append(
+                f"The space has only {space:,} combinations and all of them "
+                f"were tried before the budget of {budget:,} was spent.")
+        if results.rows and results.completed == 0:
+            first = next(r.error for r in results.rows if r.error)
+            results.warnings.append(
+                f"No combination produced a result. The first failure said: {first}")
+        log.info("Sampled optimisation finished: %s", results.summary_line())
+        return results
+
+    @contextmanager
+    def _executor(self, workers: int):
+        """Whatever this machine can run the sweep on, as a context manager.
+
+        Yields ``(executor, work, used_processes, note)``.  ``executor`` is
+        ``None`` when the work should run in this process, and ``note`` is a
+        user-facing sentence when the pool the user would expect could not be
+        started.  Mirrors the fallbacks in :meth:`run`, for a caller that needs
+        to keep one pool alive across many small batches.
+        """
+        if workers <= 1:
+            yield None, None, False, ""
+            return
+        pool: ProcessPoolExecutor | None = None
+        if PROCESSES_AVAILABLE and spawn_can_reimport_main():
+            # Start and probe the pool here, and only here, inside the guard.
+            # The yield must sit OUTSIDE this try: an exception raised by the
+            # caller's own body would otherwise be caught as a start-up failure
+            # and answered with a second yield, which a context manager may not do.
+            candidate: ProcessPoolExecutor | None = None
+            try:
+                candidate = ProcessPoolExecutor(
+                    max_workers=workers, mp_context=_start_context(),
+                    initializer=_init_worker,
+                    initargs=(self.bars, self.spec, self.config))
+                if _probe_pool(candidate, POOL_STARTUP_TIMEOUT):
+                    pool = candidate
+                else:
+                    candidate.shutdown(wait=False, cancel_futures=True)
+            except (OSError, ValueError, ImportError, RuntimeError,
+                    NotImplementedError) as exc:
+                log.warning("Could not start worker processes (%r); using threads.", exc)
+                if candidate is not None:
+                    try:
+                        candidate.shutdown(wait=False, cancel_futures=True)
+                    except Exception:  # pragma: no cover - best effort
+                        pass
+        if pool is not None:
+            with pool:
+                yield pool, _evaluate_pooled, True, ""
+            return
+        bars, spec, config = self.bars, self.spec, self.config
+
+        def work(job: tuple[int, dict[str, Any]]) -> dict[str, Any]:
+            return evaluate_combination(bars, spec, config, job[0], job[1])
+
+        with ThreadPoolExecutor(max_workers=workers,
+                                thread_name_prefix="optimise") as executor:
+            yield executor, work, False, (
+                "Worker processes could not be used for this search, so it ran "
+                "on threads. It will have taken longer than usual, but the "
+                "results are the same.")
 
     # -- execution strategies --------------------------------------------
 

@@ -231,24 +231,33 @@ def import_csv_task(path: str, mapping: Any, instrument: Any, timeframe: Any = N
 
 
 def optimize_task(bars: Any, spec: Any, config: Any, ranges: Any,
-                  max_workers: int = 0,
+                  max_workers: int = 0, method: str = "grid", trials: int = 0,
+                  metric: str = "net_profit", minimum_trades: int = 0,
                   progress: Callable[[int, int, str], None] | None = None,
                   cancel: Callable[[], bool] | None = None) -> Any:
-    """Sweep a parameter grid.  Returns the optimisation result set."""
+    """Sweep a parameter grid, or sample it.  Returns the optimisation result set."""
     from ..optimize.runner import OptimizationRunner
+
+    sampled = str(method or "grid").lower() != "grid" and int(trials) > 0
+    word = "Trial" if sampled else "Combination"
 
     def report(done: int, total: int) -> None:
         if progress is not None:
-            progress(done, total, f"Combination {done:,} of {total:,}")
+            progress(done, total, f"{word} {done:,} of {total:,}")
 
     runner = OptimizationRunner(bars, spec, config, max_workers=max_workers)
+    if sampled:
+        return runner.run_sampled(ranges, trials=int(trials), method=method,
+                                  metric=metric, minimum_trades=int(minimum_trades),
+                                  progress=report, cancel=cancel)
     return runner.run(ranges, progress=report, cancel=cancel)
 
 
 def walk_forward_task(bars: Any, spec: Any, config: Any, ranges: Any,
                       folds: int = 5, train_fraction: float = 0.5,
                       anchored: bool = False, metric: str = "net_profit",
-                      minimum_trades: int = 5,
+                      minimum_trades: int = 5, method: str = "grid",
+                      trials: int = 0,
                       progress: Callable[[int, int, str], None] | None = None,
                       cancel: Callable[[], bool] | None = None) -> Any:
     """Optimise on each training block and trade the block that follows it."""
@@ -256,13 +265,14 @@ def walk_forward_task(bars: Any, spec: Any, config: Any, ranges: Any,
 
     return walk_forward(bars, spec, config, ranges, folds=folds,
                         train_fraction=train_fraction, anchored=anchored,
+                        method=method, trials=trials,
                         metric=metric, minimum_trades=minimum_trades,
                         progress=progress, cancel=cancel)
 
 
 def holdout_task(bars: Any, spec: Any, config: Any, ranges: Any,
                  metric: str = "net_profit", research_fraction: float = 0.65,
-                 reveal: int = 3,
+                 reveal: int = 3, method: str = "grid", trials: int = 0,
                  progress: Callable[[int, int, str], None] | None = None,
                  cancel: Callable[[], bool] | None = None) -> Any:
     """Rank a grid on the first block, then reveal the second one once."""
@@ -279,6 +289,7 @@ def holdout_task(bars: Any, spec: Any, config: Any, ranges: Any,
     return optimise_with_holdout(
         bars, spec, config, ranges, metric=metric,
         research_fraction=research_fraction, reveal=reveal,
+        method=method, trials=trials,
         progress=relay, cancel=cancel)
 
 
