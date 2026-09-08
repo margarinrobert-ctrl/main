@@ -3931,3 +3931,35 @@ The script and every number in its header are different strategies. Deflated for
 levels the studied version earns **$4,814/yr on $50,000 = 9.6%/yr at a 5.1% worst drawdown**.
 `ftm_sim.run(ref_fallback=)` reproduces either. See `docs/ib/STUDY_FTM_OOS.md`,
 `research/ftm/run_o1.py`..`run_o4.py`.
+
+**A SCALE-FREE MINIMUM RANGE IS THE RIGHT FIX FOR A COST PROBLEM AND IT RESCUES NOTHING, BECAUSE THE
+GROSS EDGE IS THE DRIFTLESS BOUND.** The Loadish Starboard multi-session ORB's Asia and London
+sessions lose where New York does not, and `STUDY_V69_ORB` attributed it to arithmetic. Tested
+rather than asserted, with the prediction written down first -- **if the attribution is right, GROSS
+profit factor must stay FLAT across range buckets while NET rises**, since a range filter cannot
+change what a market does, only the denominator a fixed cost is divided by. It is right and it is
+quantitative: cost/risk runs **0.098 / 0.071 / 0.026** across Asia / London / NY against break-even
+gaps of **-0.082 / -0.061 / -0.010**, near-proportional, and along every ladder cost/risk falls
+monotonically (Asia 0.115 -> 0.048) while net PF converges upward on a gross PF that does not move
+(Asia 1.000 -> 1.010 -> 0.999 -> 0.904). **WHICH IS WHY IT RESCUES NOTHING: a range gate moves net
+toward gross and can never pass it, so GROSS IS THE CEILING -- and gross win rate lands within HALF A
+POINT of the driftless bound in all three sessions** (0.5507 / 0.5587 / 0.5514 against 0.5556 at
+RR 0.8). The barriers are hit by noise; there is nothing under the cost to uncover. Fourth family
+after `STUDY_THE_STRAT`, `STUDY_IB25_RETRACEMENT` and `STUDY_VWAP_STOCH_ATR`. **0 of 9 gate cells
+clear a same-selectivity random filter** over session instances re-simulated (best p 0.087; Asia is
+beaten by the random filter in all three of its cells), so no locked read was taken. **AND THE
+POINTS GATE IS ONLY WRONG ACROSS SESSIONS** -- inside one session price level moves slowly so points
+and percent are nearly the same cut, and ladder C is not measurably worse than percent-of-price or
+x-ATR there; the defect is ONE GLOBAL INPUT applied to three sessions whose ranges differ four-fold,
+so a value that gates Asia passes essentially every New York instance. **BEFORE BUILDING A FILTER TO
+FIX A COST PROBLEM, READ THE GROSS RESULT** -- it is the ceiling the filter is climbing toward, and
+if it sits at the geometry's own break-even the filter cannot help however well it is designed.
+See `docs/ib/STUDY_V69_ORB.md` section R5, `research/v69/run_r5.py`.
+
+**NO MARKET-DATA HOST IS REACHABLE FROM THIS ENVIRONMENT.** CBOE (`cdn.cboe.com`), Stooq and Yahoo
+Finance all answered **403 at the CONNECT** -- an organization egress-policy denial, not a transient
+failure, and the agent proxy's README says to report such denials rather than retry them. So the
+V69 script's shipped `useVixFilter` (default ON, 17.00 ceiling) cannot be evaluated, and CLAUDE.md's
+standing finding that **the VIX cannot be joined to any futures feed here** stands for a second
+reason: not only does `data/VIX_daily.csv` end 2021-12-31, but no replacement can be fetched. A VIX
+series covering 2022-2026 has to arrive by upload, like every other feed on this branch.

@@ -78,6 +78,20 @@ def load():
     return d
 
 
+def atr(d, n=14):
+    """ema(TR, n) -- this branch's convention, NOT Wilder's `ta.atr`.
+
+    Causal by construction and read AT THE RANGE CANDLE'S CLOSE, where that bar's own true range
+    is already known. No shift is applied: the gate fires at that close, so including the bar is
+    legitimate. (`STUDY_AUCTION`'s `ent_bar` lesson is about reading a bar that closes AFTER the
+    order is sent; this one closes before it.)
+    """
+    h, lo, c = d["High"].to_numpy(), d["Low"].to_numpy(), d["Close"].to_numpy()
+    pc = np.concatenate([[c[0]], c[:-1]])
+    tr = np.maximum(h - lo, np.maximum(np.abs(h - pc), np.abs(lo - pc)))
+    return pd.Series(tr).ewm(span=n, adjust=False).mean().to_numpy()
+
+
 def sessionize(d):
     """Per bar: which session it belongs to, that session's instance key, and its local weekday.
 
@@ -107,7 +121,8 @@ def sessionize(d):
 
 def walk(d, rr=0.8, sessions=("asia", "london", "ny"), day=None, rng_min=0.0, rng_max=0.0,
          pen_pct=0.0, close_loc=0.0, pct_max=0.0, pct_min=0.0, pct_look=20,
-         cost_pts=0.0, side_override=None):
+         cost_pts=0.0, side_override=None, rng_min_pct=0.0, rng_min_atr=0.0,
+         atr_arr=None, skey_mask=None):
     """The Pine's order model, statement for statement.
 
     `process_orders_on_close = true`, so the ENTRY FILLS AT THE CLOSE OF THE BREAKING BAR -- not at
@@ -126,6 +141,7 @@ def walk(d, rr=0.8, sessions=("asia", "london", "ny"), day=None, rng_min=0.0, rn
     lo = d["Low"].to_numpy(); c = d["Close"].to_numpy()
     sid = d["sid"].to_numpy(); skey = d["skey"].to_numpy()
     sdow = d["sdow"].to_numpy(); isopen = d["is_open"].to_numpy()
+    av = atr_arr if atr_arr is not None else None
     n = len(d)
 
     hist = {0: [], 1: [], 2: []}
@@ -155,6 +171,16 @@ def walk(d, rr=0.8, sessions=("asia", "london", "ny"), day=None, rng_min=0.0, rn
         if len(H) > pct_look:
             H.pop(0)
         ok_rng = (rng_min <= 0 or rng >= rng_min) and (rng_max <= 0 or rng <= rng_max)
+        # SCALE-FREE minimum range. The script's own `rng_min` is in POINTS, which cannot
+        # mean the same thing on a 12-point Asia range and a 51-point New York one --
+        # that is the whole Asia/London problem. These two say it in units that scale.
+        if rng_min_pct > 0 and 100.0 * rng / c[i] < rng_min_pct:
+            ok_rng = False
+        if rng_min_atr > 0 and (av is None or not (rng >= rng_min_atr * av[i])):
+            ok_rng = False
+        # an externally supplied veto over SESSION INSTANCES (the same-selectivity null)
+        if skey_mask is not None and k not in skey_mask:
+            ok_rng = False
         j = i + 1
         if dm == "Off" or not ok_rng or not ok_pct or rng <= 0:
             while j < n and skey[j] == k:
@@ -211,6 +237,8 @@ def walk(d, rr=0.8, sessions=("asia", "london", "ny"), day=None, rng_min=0.0, rn
             out, why = c[e], "session flat"
         g = side * (out - ent) - cost_pts
         rows.append(dict(sig=j, ex=e, side=side, ent=ent, stop=stop, tgt=tgt,
+                         rng_pct=100.0 * rng / c[i], cost_frac=cost_pts / risk,
+                         gross_pct=100.0 * (side * (out - ent)) / ent,
                          risk_pct=100.0 * risk / ent, pct=100.0 * g / ent,
                          R=g / risk, why=why, sid=int(sid[i]), skey=k,
                          dow=int(sdow[i]), rng=rng, ts=d["ny"].iloc[j]))
@@ -218,8 +246,8 @@ def walk(d, rr=0.8, sessions=("asia", "london", "ny"), day=None, rng_min=0.0, rn
     # A configuration that never trades must still return the right COLUMNS -- an empty frame with
     # no columns raises on the first `.skey` downstream, which is a crash where the honest answer is
     # "this cell has no trades".
-    cols = ["sig", "ex", "side", "ent", "stop", "tgt", "risk_pct", "pct", "R", "why", "sid",
-            "skey", "dow", "rng", "ts"]
+    cols = ["sig", "ex", "side", "ent", "stop", "tgt", "rng_pct", "cost_frac", "gross_pct",
+            "risk_pct", "pct", "R", "why", "sid", "skey", "dow", "rng", "ts"]
     return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame({c: [] for c in cols})
 
 

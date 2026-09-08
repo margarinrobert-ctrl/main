@@ -133,6 +133,62 @@ the bar close, and it has no session concept, so the "flat at session end" exit 
 has no expression at all. An engine that cannot represent a third of the exit logic is not an
 independent check of it. **No P&L gap was read.**
 
+## R5 — a scale-free minimum range does exactly what the arithmetic says, and it is worthless
+
+The cost attribution above is a claim, so it was tested rather than asserted. Three minimum-range
+gates, on the research block, each scored **gross beside net**:
+
+* **C** `rng_min` in **points** — the script's own input
+* **B** range as a **percent of price** — what "cost is a fraction of risk" literally asks for
+* **A** range as a **multiple of ATR(14)** — the same idea keyed on realised volatility
+
+The prediction was written down first: if the attribution is right, **gross profit factor must stay
+flat across the buckets while net rises**, because a range filter cannot change what a market does —
+only the denominator the fixed cost is divided by.
+
+**It is right, quantitatively.** Cost as a fraction of risk and the break-even gap track each other
+almost proportionally:
+
+| session | n | median range | median risk % | cost/risk | BE win | actual | gap |
+|---|---|---|---|---|---|---|---|
+| Asia | 2,044 | 12.8 pts | 0.142% | **0.098** | 0.610 | 0.528 | **−0.082** |
+| London | 2,047 | 17.7 pts | 0.193% | **0.071** | 0.595 | 0.533 | **−0.061** |
+| New York | 2,072 | 50.7 pts | 0.530% | **0.026** | 0.570 | 0.560 | **−0.010** |
+
+And the gates behave exactly as predicted — cost/risk falls monotonically along every ladder (Asia
+0.115 → 0.048, London 0.096 → 0.045, NY 0.037 → 0.032) and net PF converges upward toward a gross PF
+that does not move (Asia 1.000 → 1.010 → 0.999 → 0.904; NY 1.029 → 1.055 → 1.047 → 1.032).
+
+**Which is why it rescues nothing.** A range gate moves net toward gross and can never pass it, so
+gross is the ceiling — and gross sits **at the driftless bound in all three sessions**:
+
+| session | block | n | gross win | needs | gap | gross PF | ceiling |
+|---|---|---|---|---|---|---|---|
+| Asia | research | 1,331 | 0.5507 | 0.5556 | −0.0048 | **1.000** | none |
+| London | research | 1,321 | 0.5587 | 0.5556 | +0.0031 | 1.065 | marginal |
+| New York | research | 1,342 | 0.5514 | 0.5556 | −0.0041 | 1.029 | marginal |
+
+**All three land within half a point of the win rate their own geometry demands with no drift at
+all.** The barriers are being hit by noise; there is nothing underneath the cost for a better filter
+to uncover. Same reading as `STUDY_THE_STRAT`, `STUDY_IB25_RETRACEMENT` and `STUDY_VWAP_STOCH_ATR`,
+now on a fourth family.
+
+**0 of 9 gate cells clear a same-selectivity random filter** over session instances, re-simulated
+(best p **0.087**, NY at ATR ≥ 1.5; Asia is beaten by the random filter in all three of its cells).
+No locked read was taken — nothing earned one.
+
+One correction to the earlier write-up. **The points gate is only wrong *across* sessions.** Inside
+a single session price level moves slowly, so points and percent are nearly the same cut, and ladder
+C is not measurably worse than B or A there. The defect is that `rng_min` is **one global input
+applied to three sessions whose ranges differ four-fold** — a value that gates Asia sensibly passes
+essentially every New York instance. Stated that way it is a real specification bug in the script,
+and also a small one, because the cost fix it enables tops out at break-even.
+
+The locked block sharpens the verdict rather than softening it: Asia and London gross win rates
+*fall* to 0.5288 and 0.5207, well below the bound, while New York rises to 0.5932. New York's
+strength is a locked-block-only phenomenon — the wrong shape — on a block this branch has read many
+times.
+
 ## Verdict
 
 The strategy as shipped is **net-negative over nine years** on the index it targets, and its
@@ -146,3 +202,15 @@ research bootstrap sits at P(mean≤0) 0.59, and it clears only on a block that 
 times before. So the honest recommendation is not "trade NY only". It is: **the session split is
 real, the edge is not demonstrated**, and the two changes that are defensible on arithmetic alone
 are to drop Asia and London, and to stop reading a zero-cost backtest.
+
+**R5 addendum to the verdict.** The scale-free minimum range was the one defensible repair left, and
+it confirms the diagnosis while closing the family: the cost mechanism is real and measured, and the
+gross edge it hides is *zero* — every session's gross win rate sits within half a point of its own
+driftless bound. Drop Asia and London for the arithmetic reason already given; do not expect a range
+filter to bring them back.
+
+**The VIX gate remains untestable here.** `useVixFilter` ships **on** with a 17.00 ceiling, and this
+environment's egress policy denies every market-data host (CBOE, Stooq, Yahoo all answered 403 at
+the CONNECT), so no VIX series covering 2016–2025 can be fetched. Every number in this study
+describes the rule **minus its shipped volatility gate**. That gap can only be closed by supplying
+`VIX_History.csv` directly.
