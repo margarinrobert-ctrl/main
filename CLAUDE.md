@@ -3963,3 +3963,60 @@ V69 script's shipped `useVixFilter` (default ON, 17.00 ceiling) cannot be evalua
 standing finding that **the VIX cannot be joined to any futures feed here** stands for a second
 reason: not only does `data/VIX_daily.csv` end 2021-12-31, but no replacement can be fetched. A VIX
 series covering 2022-2026 has to arrive by upload, like every other feed on this branch.
+
+**AN INTRABAR CONVENTION WAS WORTH TWICE THE ENTIRE EDGE, AND IT HAD TO BE SETTLED ON FINER DATA
+RATHER THAN CHOSEN.** The CrackingMarkets intraday volatility breakout (daily ATR(5); long at
+`open + 0.4xATR`, short at `open - 0.4xATR`; stop AT the session open so risk is exactly 0.4xATR;
+one attempt a side a day; no target; exit at the stop or the close) puts the stop and the entry
+inside one 15-minute bar. Resolving that as a stop -- this branch's standing convention -- gave
+PF 0.69-0.76 and a losing strategy at an "ambiguous" share of 18-19%. **THE CONVENTION IS FLATLY
+WRONG ON THE SESSION'S FIRST BAR: it OPENS at the stop, so its low is at or below it with
+probability 1 and the flag carries no information at all.** 100.0% of first-bar entries are flagged
+and they are 12.4-12.9% of ALL trades; excluding them the genuine share is 6.3%. Settled on NQ
+1-minute data -- same rule, same sessions, resampled to 15m so only the resolution differs -- **the
+1-minute ambiguous share is EXACTLY 0.000**, because the stop is 0.4 of a DAILY ATR away and no
+single minute spans it. The 15m convention that reproduces the truth is the optimistic one, at
+**correlation 1.0000 and 100% identical exit reasons**; blanket pessimism was worth **-0.1029
+%/trade, more than twice the whole edge, and flipped the sign**. For this geometry 15-minute bars
+are adequate and the article's 1-minute data buys nothing. Before applying an intrabar tie-break,
+ask whether the flag can fire STRUCTURALLY -- an entry bar that opens at the stop always trips it.
+
+**THE BREAKOUT LEVEL IS THE WORST PART OF THE BREAKOUT, MEASURED A THIRD WAY.** Against a
+RISK-MATCHED random entry on the SAME days and SAME sides (stop 0.4xATR from that entry, same close
+exit), the rule loses at **p 1.000 on all four blocks of two feeds**: random earns +0.1058 to
++0.1557 where the rule earns +0.0045 to +0.0473. Read with the all-days control (which the rule
+beats at p 0.000-0.020), **day selection is worth +0.11 to +0.17 %/trade and the timing is worth
+-0.09 to -0.15** -- days that travel 0.4xATR from the open trend, and entering anywhere on them
+beats entering at the level. `research/atme/` and `STUDY_V43` from a third direction. **BUT THAT
+CONTROL IS NOT TRADEABLE** -- the day is in the sample BECAUSE the level broke, so a random bar can
+precede the break and knows what the trader does not. The FEASIBLE version (enter at a random bar
+at or after the break) SPLITS AND THE SPLITS DISAGREE: US100 fails research (p 0.850) and passes
+locked (0.000), US30 the reverse (0.010 / 0.212), forward block 0.470. Noise, not a mechanism.
+
+**AND ALWAYS-IN BEATS IT ON EVERY BLOCK.** Buy the open, sell the close, no stop, no ATR, no
+shorting: it wins on TOTAL RETURN on all five blocks and on Sharpe on three of five. Gate 1 reads
+US100 PF 1.020 research / 1.190 locked, US30 1.023 / 1.084, NQ 1-minute 1.226, and **US30_ISO --
+the reserved forward block from a DIFFERENT provider -- 0.963, negative, where always-in made
++12.5%**. No block's day-block bootstrap excludes zero (best P(mean<=0) 0.061). At the article's own
+0.33% sizing: 3.1-6.0%/yr on US100, 1.1-2.8% on US30, 5.6% for the two-market book at Sharpe 0.63,
+against a claimed 27%/yr at 1.04 -- though six markets across two asset classes from 2018 is a
+different test and the legs here correlate +0.375, so the diversification the article has is real
+work nothing on this branch can represent. **COST IS NOT THE OBJECTION, WHICH IS RARE HERE**: the
+round turn is 1.5-3.2% of the stop because the stop is 0.4 of a DAILY ATR, and it survives 2x costs
+on three of four blocks. The 0.4 multiple INVERTS between feeds (US100's marginal rises monotonically
+to 0.8 where 0.4 is the WORST rung; US30 falls off a cliff at 0.8 where 0.4 is among the best), the
+ATR PERIOD is close to inert as the author claims, and the author's own named enhancement -- filter
+out low-volatility days -- clears **0 of 8 rungs** against a same-selectivity random filter. Two
+trades occur on 11.3% of sessions and both are live at once on **0.1%**, structurally: `dn < open <
+up` with the stop AT the open, so the short trigger is unreachable while a long is open. Parity:
+trade count 1.000 / 0.999, same exit bar 0.9971 / 0.9990, correlation 0.9977 / 0.9970 -- and **the
+END-OF-DAY CONVENTION IS 25-84% OF THE RESULT** (`strategy.close_all()` fills at the next bar's open,
+worth -0.0051 %/trade on US100 and +0.0070 on US30, no consistent sign).
+Ships `pine/volbo/VOLBO_ATR_BREAKOUT_strategy.pine` with the numbers in its header and no edge
+claimed. See `docs/ib/STUDY_VOLBO_BREAKOUT.md`, `research/volbo/`.
+
+**`research/ivb.py` ALREADY EXISTED (Initial Value Breakout) AND A NEW `research/ivb/` PACKAGE
+SHADOWED IT SILENTLY** -- `from ivb import ivbcore` resolved to the MODULE and raised ImportError,
+which is the lucky failure; a name that had resolved would have imported the wrong code. Sixth
+name-collision on this branch after `.first`, `.align`, `agg`, `metrics` and the `vol.`/`vlm.`
+feature prefixes. Check `ls research/<name>.py` before creating `research/<name>/`.
