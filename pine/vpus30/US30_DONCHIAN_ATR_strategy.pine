@@ -1,0 +1,163 @@
+// ================================================================================================
+// US30 DONCHIAN + ATR -- the primary from docs/ib/STUDY_VP_DONCHIAN_US30.md
+//
+// NO EDGE IS CLAIMED. Read this header before the inputs.
+//
+// This is the exact rule Gate 1 was run on, written out so it can be looked at on a chart. It is
+// PROFITABLE on both blocks and INDISTINGUISHABLE FROM A COIN FLIP: against a risk-matched random
+// entry -- same count, same side mix, same channel exit, same ATR stop, re-simulated end to end so
+// only the entry bar moves -- 0 of 8 declared cells clear p<=0.05, best p 0.150 against 0.4
+// expected by chance. Eighth Donchian breakout on this branch to fail its own control.
+//
+//   cell                 blk        n   net %  gross %     PF  cost/risk  control      p
+//   don20 2.0N long      research 1089  0.0121  0.0205  1.061     0.026   0.0138  0.537
+//   don20 3.0N long      research 1006  0.0190  0.0275  1.085     0.017   0.0102  0.333
+//   don55 2.0N both      research 1587  0.0176  0.0260  1.084     0.025   0.0012  0.188
+//   don55 3.0N long      research  788  0.0279  0.0363  1.130     0.017   0.0089  0.177
+//   don55 3.0N both      research 1477  0.0209  0.0293  1.087     0.017  -0.0020  0.150   <- default
+//   don55 3.0N both      HOLDOUT   529  0.0243  0.0302  1.124     0.014   0.0116  0.307
+//
+// Percent of ENTRY PRICE, not R: the stop scales with ATR, so R divides by a moving denominator.
+// Cost is 1.4-2.7% of the stop, so cost is not the objection -- every cell is gross-positive and
+// stays positive net. What is missing is any evidence the CHANNEL BREAK picks the bar; the exit
+// geometry is doing the work, which is what a random entry with the same exits reproducing the
+// result means.
+//
+// THE META LAYER IS NOT IN THIS SCRIPT AND THAT IS DELIBERATE. 66 causal features (22 volume
+// profile, 30 quant, 14 channel/ATR) were built on these events. A ridge on the 40-feature
+// load-bearing subset cleared a same-selectivity random veto on research (keep-70% p 0.012,
+// keep-50% p 0.040) and then read uplift +0.0016 with IC -0.0032 on the holdout, where a random
+// gate of the same size EARNED MORE (p 0.525). Deflated Sharpe 0.427 at 157 counted looks -- the
+// per-trade Sharpe of 0.0350 is BELOW the 0.0452 expected best-of-noise for a search that size.
+// Nothing there is worth writing into a chart.
+//
+// PARITY, measured rather than asserted (research/vpus30/don_parity.py -- the script's own order
+// model written out in Python and diffed against the engine on the same bars):
+//     trade count 1992 against 1992/2006 = 0.993      side agreement 1.0000
+//     per-trade correlation 0.9997                    same exit bar 0.3078
+//     research +32.745% against the engine's +30.851%  (gap +6.1%)
+//     holdout  +12.955% against         +12.867%       (gap +0.7%)
+// The exit bar differs on two trades in three BY CONSTRUCTION -- every channel exit is one bar
+// later here -- and the script reads slightly BETTER, which is the non-conservative direction and
+// is why the gap is printed rather than buried.
+//
+// TWO STRUCTURAL GAPS between this script and the research engine, neither fixable:
+//   1. The engine exits a channel break AT THE CLOSE of the breaking bar. No script can place that
+//      order, so this one fills at the NEXT bar's open. Measured elsewhere on this branch that gap
+//      runs -0.2 to +0.6 points a trade with no consistent sign.
+//   2. The engine anchors the stop to the ENTRY BAR'S OPEN, which does not exist when the order is
+//      written. This script places a FILL-RELATIVE bracket at the SIGNAL bar so the fill bar is
+//      protected -- STUDY_PINE_PARITY measured a naked fill bar at 4.4-13.0% of trades averaging
+//      -33 to -118 points.
+//
+// `hour` and `minute` in Pine are EXCHANGE time, not New York -- on a CME or CFD symbol those
+// differ, so check the entry window against the chart before trusting the shading.
+//
+// ATR here is ta.ema(ta.tr(true), n), NOT ta.atr (which is Wilder's). That is what the research
+// uses. Exits run on every bar including the overnight session, so load the chart with EXTENDED
+// HOURS ON or the stop cannot fire where the research says it fires.
+// ================================================================================================
+//@version=5
+strategy("US30 Donchian + ATR (Gate 1 primary)", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000, currency = currency.USD,
+     commission_type = strategy.commission.cash_per_order, commission_value = 1.145,
+     slippage = 0, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// ---------------------------------------------------------------------------------------------
+// inputs
+// ---------------------------------------------------------------------------------------------
+grpR = "Rule"
+entN = input.int(55, "Entry channel (bars)", minval = 2, group = grpR,
+     tooltip = "Close beyond the highest high / lowest low of the previous N bars. 55 and 20 are " +
+               "the two declared settings; neither clears the control.")
+exN  = input.int(20, "Exit channel (bars)", minval = 2, group = grpR)
+atrN = input.int(14, "ATR length", minval = 2, group = grpR)
+slN  = input.float(3.0, "Stop (x ATR)", minval = 0.25, step = 0.25, group = grpR,
+     tooltip = "Declared at 2.0 and 3.0. The stop axis is monotone toward wider across this whole " +
+               "branch; 3.0 is the wider of the two declared rungs, not a swept optimum.")
+sideI = input.string("both", "Side", options = ["both", "long only", "short only"], group = grpR)
+
+grpS = "Session"
+useSess  = input.bool(true, "Entries in RTH only", group = grpS,
+     tooltip = "The research restricts ENTRIES to 09:30-16:00 New York because the feature layer " +
+               "is built on session profiles. EXITS always run on every bar.")
+sessStr  = input.session("0930-1600", "Entry window (exchange time)", group = grpS)
+useFlat  = input.bool(false, "Flatten at a fixed time", group = grpS,
+     tooltip = "OFF by default. A hard flatten has cost 55-86% of the per-trade result on every " +
+               "trend family measured on this branch -- fifteen separate confirmations. It is " +
+               "here so the cost can be seen, not because it is recommended.")
+flatH    = input.int(16, "Flatten hour (exchange time)", minval = 0, maxval = 23, group = grpS)
+flatM    = input.int(0,  "Flatten minute", minval = 0, maxval = 59, group = grpS,
+     tooltip = "\"Flat by 16:00\" means flat at the 16:00 OPEN, so the order is submitted on the " +
+               "bar before -- a close submitted ON the 16:00 bar fills at 16:15.")
+
+// ---------------------------------------------------------------------------------------------
+// series
+// ---------------------------------------------------------------------------------------------
+atr = ta.ema(ta.tr(true), atrN)
+
+// The channels EXCLUDE the current bar: the research compares close[i] against the extremes of
+// bars i-N .. i-1, so both are shifted by one.
+entHi = ta.highest(high, entN)[1]
+entLo = ta.lowest(low,  entN)[1]
+exHi  = ta.highest(high, exN)[1]
+exLo  = ta.lowest(low,  exN)[1]
+
+inSess = not useSess or not na(time(timeframe.period, sessStr))
+atrOk  = not na(atr) and atr > 0
+
+longAllowed  = sideI != "short only"
+shortAllowed = sideI != "long only"
+
+rawLong  = close > entHi and longAllowed
+rawShort = close < entLo and shortAllowed
+
+canEnter = barstate.isconfirmed and inSess and atrOk and
+     not na(entHi) and not na(entLo) and strategy.position_size == 0
+
+goLong  = canEnter and rawLong
+goShort = canEnter and rawShort and not rawLong
+
+// The bracket distance is captured at the SIGNAL bar and expressed in ticks, so `strategy.exit`
+// can be armed on the same bar as the entry and the fill bar is never naked.
+var float pendRisk = na
+if goLong or goShort
+    pendRisk := slN * atr
+
+lossTicks = na(pendRisk) ? na : math.max(1.0, pendRisk / syminfo.mintick)
+
+if goLong
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = lossTicks)
+if goShort
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", from_entry = "S", loss = lossTicks)
+
+// ---------------------------------------------------------------------------------------------
+// channel exit -- the engine takes it at this bar's close, a script at the next bar's open
+// ---------------------------------------------------------------------------------------------
+if barstate.isconfirmed and strategy.position_size > 0 and not na(exLo) and close < exLo
+    strategy.close("L", comment = "chan")
+if barstate.isconfirmed and strategy.position_size < 0 and not na(exHi) and close > exHi
+    strategy.close("S", comment = "chan")
+
+// ---------------------------------------------------------------------------------------------
+// optional flatten -- submitted on the bar BEFORE the cutoff so it fills at the cutoff's open
+// ---------------------------------------------------------------------------------------------
+tfMin   = math.max(1, timeframe.in_seconds(timeframe.period) / 60)
+barMin  = hour * 60 + minute
+flatMin = flatH * 60 + flatM
+if useFlat and barstate.isconfirmed and strategy.position_size != 0 and
+     barMin < flatMin and barMin + tfMin >= flatMin
+    strategy.close_all(comment = "flat")
+
+// ---------------------------------------------------------------------------------------------
+// plots
+// ---------------------------------------------------------------------------------------------
+plot(entHi, "entry high", color = color.new(color.teal, 40))
+plot(entLo, "entry low",  color = color.new(color.teal, 40))
+plot(exHi,  "exit high",  color = color.new(color.orange, 60))
+plot(exLo,  "exit low",   color = color.new(color.orange, 60))
+bgcolor(inSess and useSess ? color.new(color.gray, 92) : na, title = "entry window")
