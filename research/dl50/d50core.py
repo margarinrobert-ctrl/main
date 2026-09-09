@@ -90,7 +90,8 @@ def geometry(f):
 
 
 @njit(cache=True)
-def walk(o, h, l, c, ehi, elo, ok_up, ok_dn, stop_pts, tgt_pts, hold, cost, m0, m1, mod):
+def walk(o, h, l, c, ehi, elo, ok_up, ok_dn, stop_pts, tgt_pts, hold, cost, m0, m1, mod,
+         flat_mod=-1):
     """One position at a time. A bar that touches both barriers is resolved as the STOP, and the
     ambiguous share is returned so the reader can see how much of the answer that convention is."""
     n = len(c)
@@ -113,6 +114,10 @@ def walk(o, h, l, c, ehi, elo, ok_up, ok_dn, stop_pts, tgt_pts, hold, cost, m0, 
         if s == 0:
             continue
         j = i + 1
+        # STUDY_V60: a signal whose FILL would land at or after the cutoff must be REFUSED, not
+        # opened and closed at the same open for zero P&L, which dilutes every statistic.
+        if flat_mod >= 0 and mod[j] >= flat_mod:
+            continue
         ent = o[j]
         stop = ent - s * stop_pts
         targ = ent + s * tgt_pts
@@ -131,6 +136,10 @@ def walk(o, h, l, c, ehi, elo, ok_up, ok_dn, stop_pts, tgt_pts, hold, cost, m0, 
             if hold > 0 and t - j >= hold:
                 x = t; px = c[t]; w = 2
                 break
+            # "flat by 11:00" means flat at the 11:00 OPEN, so the order goes in on the bar before
+            if flat_mod >= 0 and t + 1 < n and mod[t] < flat_mod and mod[t + 1] >= flat_mod:
+                x = t + 1; px = o[t + 1]; w = 3
+                break
         if x < 0:
             x = n - 1; px = c[n - 1]; w = 2
         eb[cnt] = j
@@ -142,7 +151,7 @@ def walk(o, h, l, c, ehi, elo, ok_up, ok_dn, stop_pts, tgt_pts, hold, cost, m0, 
 
 
 @njit(cache=True)
-def walk_at(o, h, l, c, sig, side, stop_pts, tgt_pts, hold, cost):
+def walk_at(o, h, l, c, sig, side, stop_pts, tgt_pts, hold, cost, mod, flat_mod):
     n = len(c); m = len(sig)
     out = np.full(m, np.nan)
     last = -1
@@ -151,6 +160,8 @@ def walk_at(o, h, l, c, sig, side, stop_pts, tgt_pts, hold, cost):
         if i <= last or i + 1 >= n:
             continue
         s = side[q]; j = i + 1
+        if flat_mod >= 0 and mod[j] >= flat_mod:
+            continue
         ent = o[j]
         stop = ent - s * stop_pts
         targ = ent + s * tgt_pts
@@ -164,6 +175,9 @@ def walk_at(o, h, l, c, sig, side, stop_pts, tgt_pts, hold, cost):
                 break
             if hold > 0 and t - j >= hold:
                 x = t; px = c[t]
+                break
+            if flat_mod >= 0 and t + 1 < n and mod[t] < flat_mod and mod[t + 1] >= flat_mod:
+                x = t + 1; px = o[t + 1]
                 break
         if x < 0:
             x = n - 1; px = c[n - 1]

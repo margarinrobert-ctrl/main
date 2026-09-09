@@ -142,6 +142,86 @@ Pool 44 → 50 → 46 after the degenerate column and the same three near-duplic
 Adding a family that is genuinely independent of the trigger did not move the noise floor at all,
 which is the cleanest evidence in this study that the problem is the geometry and not the pool.
 
+## Held to 07:00–11:00 New York with an 11:00 flatten
+
+`US30_LONG_15m` is already New York time — the 09:30 mean-bar-range step was re-derived on this feed
+— so the window is minutes 420–660 and the flatten fires at the 660 **open**, submitted on the bar
+before, with any signal whose fill would land at or after the cutoff **refused** rather than opened
+and closed at the same price (`STUDY_V60`).
+
+| target | arm | research pts | PF | HOLDOUT pts | PF | closed on the clock |
+|---|---|---|---|---|---|---|
+| 50 | all hours | −1.894 | 0.927 | −4.195 | 0.845 | — |
+| 50 | 07:00–11:00 entries | −2.111 | 0.919 | −4.695 | 0.829 | — |
+| 50 | + flatten | −3.059 | 0.871 | −5.149 | 0.805 | 17.3% |
+| 100 | all hours | −1.001 | 0.971 | −1.592 | 0.954 | — |
+| 100 | 07:00–11:00 entries | **+0.907** | **1.027** | −0.708 | 0.979 | — |
+| 100 | + flatten | −0.243 | 0.991 | −0.980 | 0.969 | 28.6% |
+| 150 | all hours | +1.237 | 1.033 | −0.718 | 0.981 | — |
+| 150 | 07:00–11:00 entries | **+1.513** | **1.041** | −1.722 | 0.956 | — |
+| 150 | + flatten | −0.049 | 0.998 | −1.868 | 0.945 | 35.9% |
+
+**The window and the flatten do opposite things.** Restricting *entries* to 07:00–11:00 improves the
+100- and 150-point targets on research (+0.907 and +1.513 against −1.001 and +1.237) and worsens the
+50-point one; on the holdout it worsens all three. The **flatten is destructive in all six cells** —
+the sixteenth confirmation on this branch — and it binds hard despite a 30–75 minute median hold,
+closing **17% to 36%** of trades on the clock.
+
+### The win rate rises nine points while the strategy turns negative
+
+This is the trap in the table and it is worth stating separately. At the 150-point target on
+research the flatten takes the win rate **28.40% → 37.31%**, which reads as +11.16 points over the
+break-even — and points per trade go **+1.513 → −0.049**.
+
+`(1 + c) / (1 + R)` is a **two-outcome** formula. Once a third exit reason exists it is no longer the
+right bar, because a clock exit books a small gain or loss that counts as a "win" without ever
+reaching the target. `STUDY_V45` recorded exactly this bound — the formula is valid only where the
+flatten share is small (1.4–5.0% there) — and here that share is **35.9%**. Any win-rate column
+computed against a barrier break-even beside a flatten of that size is not comparable, and reading it
+as an improvement inverts the actual result.
+
+### ADX inside the window: the low reading agrees across blocks, the high one does not
+
+| target | reading | research pts | PF | p | HOLDOUT pts | PF | p |
+|---|---|---|---|---|---|---|---|
+| 50 | no gate | −3.059 | 0.871 | — | −5.149 | 0.805 | — |
+| 50 | ADX ≥ 25 | −1.183 | 0.948 | **0.018** | −6.559 | **0.757** | 0.795 |
+| 100 | no gate | −0.243 | 0.991 | — | −0.980 | 0.969 | — |
+| 100 | ADX ≤ 20 | +1.252 | **1.047** | 0.247 | +1.082 | **1.035** | 0.280 |
+| 150 | no gate | −0.049 | 0.998 | — | −1.868 | 0.945 | — |
+| 150 | ADX ≤ 20 | +3.460 | **1.126** | 0.080 | +3.641 | **1.111** | 0.142 |
+| 150 | ADX ≥ 25 | +0.953 | 1.033 | 0.318 | −5.367 | 0.846 | 0.877 |
+
+**`ADX ≤ 20` is positive on both blocks at the 100- and 150-point targets** — the first ADX cell in
+this study that agrees across the split, and the only arm anywhere in the study that is above break-
+even out of sample. Its direction is consistent with `STUDY_V21` (every ADX floor fails while CHOP
+clears) and with `STUDY_SCALP_REQUIREMENTS` (ADX ≥ 25 is negative at scalp geometry). The high
+reading does the opposite: `ADX ≥ 25` is the one cell in the whole study to clear p ≤ 0.05
+(**p 0.018**, 50-point target, research) and it is the **worst** row on that target's holdout,
+PF 0.757 at p 0.795 — and its research PF is 0.948, so it beats a losing null while still losing.
+One pass in ~30 window gate cells is what chance delivers at 1.5 expected.
+
+### The ladder inside the window
+
+1,694 research events, 41 features after five degenerate columns drop out (`tod.min`, `tod.sin`,
+`tod.cos` are constant-ish inside a four-hour box by construction, plus `vol.rng_atr` and
+`adx.di_aligned`).
+
+| model | IC | twin | |
+|---|---|---|---|
+| ridge | +0.0035 | +0.0308 | TWIN |
+| rf | +0.0275 | +0.0221 | real |
+| lgbm | −0.0121 | +0.0378 | TWIN |
+| xgb d3 | +0.0140 | +0.0082 | real |
+| MLP 2×32 | +0.0062 | +0.0121 | TWIN |
+| MLP 2×64 | +0.0058 | +0.0731 | TWIN |
+| MLP 4×128 | **+0.0343** | −0.0164 | real |
+
+**Twin wins 4 of 7 = 57%**, down from 86% all-hours — the noise floor is lower in the window, but
+still at chance. Gate 2 on the best model: keep-70% reads +1.261 pts at PF 1.045 and **p 0.125**,
+and both tighter rungs are *worse than the base* (keep-50% −0.321, keep-30% −1.619). A gate whose
+best rung is its loosest is not selecting; it is trimming a tail.
+
 ## Verdict
 
 **No edge found, and the reason is stated rather than implied.** The direction call at this geometry
