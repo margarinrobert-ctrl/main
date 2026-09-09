@@ -3706,6 +3706,56 @@ THIS STUDY IS ONE STATEMENT: a movement forecast can only pay where it prices so
 not already price, and both candidates -- the STOP WIDTH and the HOLD CAP -- turn out to be already
 priced.** See `docs/ib/STUDY_MV30.md`, `research/mv30/`.
 
+**A DIVERSIFIED BOOK BEATS EVERY ONE OF ITS OWN LEGS, CHOOSING WHICH LEGS IS WORTH HALF AS MUCH AGAIN,
+AND CHOOSING THE WEIGHTS IS WORTH ALMOST NOTHING.** Eleven (strategy, feed) legs put into one unit --
+percent of entry price at one unit per trade, zero-filled over every date -- and walked forward with the
+weights and the legs RE-CHOSEN inside every training window, eight annual folds. Equal weight over all
+eleven scores Sharpe **1.193 against the best single leg's 0.940** and beats ten of eleven on
+return-over-drawdown, with nothing fitted at all. Holding the top k by TRAINING Sharpe is a HUMP peaking
+at four legs (1.438) and decaying monotonically to eleven -- the fifth confirmation of
+`STUDY_SEMIVARIANCE`'s finding that a decorrelated leg still has to have an edge -- and against a RANDOM
+SUBSET OF THE SAME SIZE re-drawn inside every fold it clears at the **99.5th percentile of 400 draws**
+(top 3) and 99.2nd (top 5), which is the one result here that beats its own null decisively. Weighting is
+the weak layer: over 500 random allocators run through the identical procedure **no scheme reaches the
+95th percentile** (mean-variance 93.8, risk parity 93.4), and inverse vol, risk parity and minimum
+variance each beat equal weight in **2 of 8 folds**. The two layers do stack -- `top 5 x risk parity`
+reads Sharpe 1.581 / ret-DD 14.90 against all-legs equal's 1.193 / 6.97, and risk parity is worth +0.068
+on eleven legs and +0.230 on the top five, because once the losing legs are gone minimising variance
+stops minimising the good legs away. **AND IT STILL DOES NOT CLEAR ZERO**: the paired block bootstrap of
+the daily excess at MATCHED VOLATILITY reads P(<=0) **0.058** for the best arm, 5 of 8 folds beaten where
+chance is 4, and the most recent fold negative for every arm -- `STUDY_V15_BOOK`'s split again, and eight
+annual folds is what stops it, not the scheme. Costs are not the objection (nothing flips at 2x, and the
+SELECTED books degrade less because the legs selection drops are the high-turnover ones). Re-selection
+beats a frozen set of the five legs it usually picks by +0.08 Sharpe -- the fourteenth such comparison on
+this branch and the first the optimiser wins, and the frozen arm was built by reading what the
+walk-forward held so it is contaminated in its own favour and still loses.
+See `docs/ib/STUDY_ALLOCATION.md`.
+
+**EVERY TOTAL-RETURN FIGURE IN AN ALLOCATION STUDY IS A LEVERAGE FIGURE UNTIL IT IS SCALED TO A COMMON
+VOLATILITY, AND THE LARGEST NUMBER HERE INVERTS WHEN IT IS.** `w` proportional to the research mean, no
+covariance at all, returns **58.36 against equal weight's 21.88** -- 2.7x the money, beating equal in 6 of
+8 folds at paired p 0.0055 -- and scaled to the equal-weight book's own realised volatility it returns
+**19.85, LESS than equal weight**, at a lower Sharpe (1.082 vs 1.193). At matched volatility all seven
+schemes collapse into a band of 19.3 to 23.4. §9's "sizing creates no edge" applies to allocation exactly
+as it applies to a single strategy. **AND A SINGLE FIT SAID +0.35 SHARPE WHERE THE WALK-FORWARD SAYS
++0.08**: mean-variance fitted once on research reads reserved Sharpe 1.812 at the 99.4th percentile of
+random weightings and paired p 0.009, and wins at 9 of 10 sliding cuts, then delivers +0.083 when re-fitted
+every fold. The reason is mechanical and worth carrying -- **every sliding cut ENDS ON THE SAME DATE, so
+ten "tests" share their tail and are one test with ten start points**, where a walk-forward uses each
+out-of-sample piece exactly once. Sliding the cut is the right instrument for `STUDY_DL50`'s question
+(is a research-minus-holdout GAP positive everywhere) and the wrong one for "does this scheme win".
+
+**THE COVARIANCE STRUCTURE IS THE MOST TRANSFERABLE THING MEASURED ON THIS BRANCH, AND IT IS TRANSFERABLY
+NEAR ZERO.** Pairwise daily-return correlation research-to-reserved over 55 leg pairs: **+0.7051 Pearson
+/ +0.5898 Spearman**, against research-to-locked figures of -0.03 to +0.2 for profit factor, expectancy
+and feature IC everywhere else here. It is not the trivial same-strategy-two-indices effect -- pairs of
+DIFFERENT strategies transfer at **+0.5276 / +0.4881** on their own (n=50). But read the magnitudes: those
+pairs average |rho| **0.049** research and 0.068 reserved with only 62% keeping their sign, so what
+transfers is that these legs are all nearly uncorrelated and stay that way, which is exactly why a
+covariance ESTIMATE has little to add over a diagonal one. Volatility transfers at +0.93/+0.96 and is the
+reliable input; the MEAN transfers at Spearman +0.718 carried by one outlier leg, over eleven legs that
+are five strategies on two feeds, so its effective sample is nearer six.
+
 ## Tooling
 
 | module | what it does |
@@ -3720,6 +3770,7 @@ priced.** See `docs/ib/STUDY_MV30.md`, `research/mv30/`.
 | `research/dl50/` | the fixed-point / ATR barrier study on US30: `d50core.py` (both walkers, Wilder's ADX returning BOTH DIs, the break-even the geometry implies, the point-stop-in-ATR drift table), `d50feat.py` (50 causal features in 8 families with a causal time-of-day baseline), `run_d1..d8` (geometry -> base rates -> the model ladder beside shuffled twins -> the window and flatten -> ATR barriers and the ADX gate -> the year decomposition), `run_d9.py` (slide the cut across eleven split points; walk-forward with in-fold re-selection beside the constants and a random cell; the sign noise priced by day-block bootstrap), `run_d10.py` (the walk-forward split at the research cut, and the framing test -- the rule against a random entry, always-long, and no window, all in the same block) |
 | `research/mr30/` | US30 alone, four primaries under the two-gate architecture: `mr30core.py` (Phase 0 in the docstring, the displacement event stream with the side FORCED by the mechanism, three blocks incl. a different-provider forward feed, an ATR-barrier walker and a sorted matched control), `run_g0.py` (cost as a fraction of risk, the geometry-free forward-return read with Newey-West t, and the mechanism's own quintile gradient), `run_g1.py` (the mirror split by side against each side's OWN drift baseline), `run_g2.py` (the parameter-free session decomposition and the by-hour table), `run_g3.py` (Gate 1 on the overnight premium: a random SAME-LENGTH window, always-long, the vol gradient, every year), `run_g4.py` (**the exposure-matched timing test** -- 20 declared conditions x 3 holding lengths against a CIRCULAR SHIFT of each condition's own mask, which preserves count and clustering exactly), `run_g5.py` (the ATR percentile as a pre-registered replication across three blocks, its mirror, and V22's mechanism), `run_g6.py` (the sizing fact as a stop policy, with the naive inverse as its falsifier) |
 | `research/mv30/` | US30 15m, movement not price: `mv30core.py` (71 volatility columns plus a declared INEFFICIENCY family -- Lo-MacKinlay variance ratios at four lags x three windows, rolling AR(1), Roll's implied spread from the same serial covariance, Amihud illiquidity, vol-clustering persistence, bar shape against causal time-of-day baselines -- plus the truncation audit), `run_m1.py` (**the exact circular-shift null**: one FFT per feature gives its IC at every shift, so the max over features at each shift is the exact null of a best-of-N IC, ~180k draws; eight targets x three horizons with direction as the control), `run_m2.py` (four unsupervised detectors -- PCA / Mahalanobis / isolation forest / torch autoencoder -- fitted on the research block only and never shown a label, then read against MOVEMENT and against TRADE OUTCOME separately), `run_m3.py` (the volatility-rename check on the trigger's own bars, then the anomaly as a VETO re-simulated against a random gate of the same selectivity on all three blocks), `run_m4.py` (the adaptive hold cap from a time-to-touch forecast, against a fixed cap AND against the same forecast SHUFFLED) |
+| `research/alloc/` | **allocation across the legs that already exist**: `allocbuild.py` / `allocbuild2.py` (every (strategy, feed) trade table from `top5/t5_adapt`, at 1x and 2x cost), `alloccore.py` (the common research cut, the zero-filled daily panel, five weighting schemes with a shrunk covariance, the block bootstrap and the simplex null), `run_a1.py` (correlation transfer BEFORE the schemes, then one reserved read against equal weight and against 2,000 random weightings), `run_a2.py` (is the transfer trivial, does mu transfer, ablate the covariance, walk it forward, slide the cut), `run_a3.py` (the walk-forward against 500 random allocators run through the SAME procedure, per fold, leg count, drop-one, and the book against its best single leg), `run_a4.py` (legs chosen INSIDE every fold against a random subset of the same size, selection crossed with weighting, all at matched volatility), `run_a5.py` (2x cost, the paired bootstrap at matched volatility, selection stability, and a frozen-set ablation), `plot_alloc.py` |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
 | `research/pin/` | the EKOP/Yan PIN mixture: causal four-step fit, the three-hypothesis posterior, the volume-weighted B/S construction, the matched control, and `pin_parity.py` — the shipped Pine's own order model run on bars |
