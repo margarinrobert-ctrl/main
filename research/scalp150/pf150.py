@@ -271,3 +271,93 @@ def run_sig(f, a, sig, ex_n, sl, tp, cap_min, side=0, cost=RT_POINTS, tf=15):
     t["cost_frac"] = cost / t.risk
     t["ts"] = f.index[t.e_bar.to_numpy()]
     return t
+
+
+@njit(cache=True)
+def _walk_flat(o, h, l, c, a, mod, sig, ex_n, sl, tp, w0, w1, side_want):
+    """07:00-11:00 with a HARD FLATTEN at w1. Different strategy from a 4-hour hold cap.
+
+    Two mechanics this branch has had to learn the hard way:
+      * "flat at 11:00" means flat at the 11:00 OPEN -- an order submitted on the bar before. So a
+        position still live when a bar's minute-of-day reaches w1 exits at THAT bar's OPEN, and no
+        barrier may fire on it.
+      * a signal whose FILL would land at or after the cutoff is REFUSED, not opened. Taking it and
+        closing it at the same open books a zero-P&L trade and dilutes every statistic (STUDY_V60).
+    """
+    n = len(c)
+    eb = np.full(n, -1, np.int64); xb = np.full(n, -1, np.int64)
+    ep = np.zeros(n); xp = np.zeros(n); rk = np.zeros(n)
+    sd = np.zeros(n, np.int64); wy = np.zeros(n, np.int64); am = np.zeros(n, np.int64)
+    cnt = 0
+    last = -1
+    for i in range(ex_n + 2, n - 1):
+        if mod[i] < w0 or mod[i] >= w1:
+            continue
+        if i <= last:
+            continue
+        s = sig[i]
+        if s == 0:
+            continue
+        if side_want != 0 and s != side_want:
+            continue
+        if a[i] <= 0 or not np.isfinite(a[i]):
+            continue
+        j = i + 1
+        if mod[j] < w0 or mod[j] >= w1:      # the fill would land outside the window -- refuse
+            continue
+        ent = o[j]
+        stop = ent - s * sl * a[i]
+        tgt = ent + s * tp * a[i] if tp > 0 else 0.0
+        risk = abs(ent - stop)
+        if risk <= 0:
+            continue
+        x = -1; px = 0.0; w = 4
+        for t in range(j, n):
+            if mod[t] >= w1 or mod[t] < w0:  # the flatten, at the OPEN, before any barrier
+                x = t; px = o[t]; w = 4
+                break
+            hs = (l[t] <= stop) if s > 0 else (h[t] >= stop)
+            ht = False
+            if tp > 0:
+                ht = (h[t] >= tgt) if s > 0 else (l[t] <= tgt)
+            if hs and ht:
+                am[cnt] = 1
+            if hs:
+                x = t; px = stop; w = 0
+                break
+            if ht:
+                x = t; px = tgt; w = 1
+                break
+            if t > j and ex_n > 0:
+                eh = h[t - ex_n]; el = l[t - ex_n]
+                for q in range(t - ex_n + 1, t):
+                    if h[q] > eh:
+                        eh = h[q]
+                    if l[q] < el:
+                        el = l[q]
+                if (s > 0 and c[t] < el) or (s < 0 and c[t] > eh):
+                    x = t; px = c[t]; w = 2
+                    break
+        if x < 0:
+            x = n - 1; px = c[n - 1]; w = 4
+        eb[cnt] = j; xb[cnt] = x; ep[cnt] = ent; xp[cnt] = px
+        rk[cnt] = risk; sd[cnt] = s; wy[cnt] = w
+        cnt += 1
+        last = x
+    return eb[:cnt], xb[:cnt], ep[:cnt], xp[:cnt], rk[:cnt], sd[:cnt], wy[:cnt], am[:cnt]
+
+
+def run_flat(f, a, sig, ex_n, sl, tp, side=0, cost=RT_POINTS):
+    mod = (f.index.hour * 60 + f.index.minute).to_numpy()
+    eb, xb, ep, xp, rk, sd, wy, am = _walk_flat(
+        f["open"].to_numpy(), f["high"].to_numpy(), f["low"].to_numpy(), f["close"].to_numpy(),
+        a, mod, sig, int(ex_n), float(sl), float(tp), int(WIN0), int(WIN1), int(side))
+    t = pd.DataFrame(dict(e_bar=eb, x_bar=xb, ent=ep, out=xp, risk=rk, side=sd, why=wy, amb=am))
+    t["gross_pts"] = t.side * (t.out - t.ent)
+    t["net_pts"] = t.gross_pts - cost
+    t["pct"] = 100.0 * t.net_pts / t.ent
+    t["gross_pct"] = 100.0 * t.gross_pts / t.ent
+    t["R"] = t.net_pts / t.risk
+    t["cost_frac"] = cost / t.risk
+    t["ts"] = f.index[t.e_bar.to_numpy()]
+    return t

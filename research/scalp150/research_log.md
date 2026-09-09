@@ -85,3 +85,55 @@ branch).
 **1,372 cells evaluated. Zero reach PF 1.50 on the research block**, which is the block permitted
 to be optimistic. The requirement is arithmetic: PF 1.50 needs a +9.3 point win-rate lift over the
 driftless break-even at scalp geometry, and the honest lifts measured on this branch are +1 to +5.
+
+---
+
+## Round 3 — the spec corrected: HARD FLATTEN at 11:00 (`run_p3.py`)
+
+Rounds 1–2 allowed a trade entered at 10:59 to be held 240 minutes, to 14:59. The user's spec is a
+**hard flatten at 11:00**, so the same declared 972-cell grid was re-run with:
+
+* the position closed at the **open of the 11:00 bar**, before any barrier may fire on it;
+* any signal whose **fill would land at or after 11:00 refused, not opened** (taking it and closing
+  it at the same open books a zero-P&L trade and dilutes every statistic — `STUDY_V60`).
+
+Mechanics verified: entries confined to minute-of-day 435–645, no exit past 660, 53% of trades
+exiting on the flatten in the probe cell.
+
+### Population, hard flatten
+
+| | cap-240 (round 2) | **flatten 11:00** |
+|---|---|---|
+| research-profitable | 23.3% | **9.8%** |
+| research PF ≥ 1.50 | 0 | **0** |
+| best research PF | 1.310 | **1.104** |
+| that cell on holdout | 0.843 | **0.899** |
+| PF > 1.00 on both blocks | 12.8% (chance 7.6%) | **2.4% (chance 2.9%)** |
+| corr(research PF, holdout PF) | +0.262 | **−0.164** |
+| gross research-profitable | 45.1% | **33.3%** |
+
+### What the flatten costs (972 matched cells, only the exit rule differs)
+
+| | cap-240 | flatten | Δ |
+|---|---|---|---|
+| mean research PF | 0.929 | 0.910 | −0.019 |
+| mean holdout PF | 0.963 | 0.933 | −0.030 |
+| mean trades (research) | 845 | 813 | −32 |
+
+The flatten helps research PF in 44.1% of cells and holdout PF in **38.6%** — worse than a coin
+flip, and the 16th confirmation on this branch that a hard intraday flatten is subtractive.
+
+### Declared best, one holdout read
+
+15m CMMA 20 / z 1.0, both sides, 4.0 ATR stop, no target:
+research PF **1.104** (801 trades, 361/yr, +14.95%) → holdout PF **0.899** (262 trades, −5.43%).
+Gross 1.160 → 0.934. Deflated Sharpe **0.0341** at 1,944 cumulative trials.
+
+Top-10 research mean 1.079 → holdout 0.867, against a population holdout mean of 0.933: the top
+decile again transfers **worse than an average cell**.
+
+## Final combined verdict
+
+**2,344 cells evaluated across three rounds. Zero reach PF 1.50 on the research block under any
+exit rule.** Under the user's exact specification — 07:00–11:00 New York, hard flatten at 11:00 —
+the in-sample ceiling is **PF 1.104**, and it reads 0.899 out of sample.
