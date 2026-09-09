@@ -3594,6 +3594,39 @@ lesson.) What is worth keeping is `ttb`: the most predictable target in the grid
 honest statement about a trade -- how long before +/-1 ATR resolves. It prices PATIENCE, not
 direction. See `docs/ib/STUDY_V67_MOVEMENT.md`.
 
+**SLIDE THE CUT BEFORE CALLING AN INVERSION A DECAY, AND THEN ASK WHETHER A RANDOM ENTRY FAILED
+TOO.** A US30 Donchian-20 + EMA200 breakout in 07:00-11:00 New York with a fixed 50-point stop and a
+150-point target reads research +1.513 pts / PF 1.041 and holdout -1.722 / 0.956, and three cheap
+tests settle what that means. **(1) SLIDE THE SPLIT**: across eleven cut points from 40% to 90% of
+the trades the research-minus-holdout gap is POSITIVE AT ALL ELEVEN (min +0.0259 R, median +0.1078,
+max +0.1767) and the research half is positive at every one -- so the date is not the explanation,
+though the POINT-barrier version is only 8/11 and goes NEGATIVE at the two latest cuts, so the two
+parameterisations do not agree there is decay at all. **(2) SPLIT THE WALK-FORWARD AT THE CUT**: a
+12-cell barrier x ADX grid re-chosen inside every training window looks like the rare optimiser win
+(expanding +0.1713 R against the constants' +0.0918) and **THE WHOLE ADVANTAGE IS PRE-CUT** -- on the
+three folds whose test window post-dates the research block every arm is negative, the fixed arm is
+**0/3**, and a RANDOM CELL is least bad (-0.0289 against re-chosen -0.0712). Thirteenth re-optimiser
+here to lose to the author's constants, third to also lose to a coin flip -- and its selection is
+STABLE (`1.25 ATR, ADX>=25` in 6 of 8 folds), so an optimiser that settles on one cell is not
+thereby right. **(3) THE FRAMING TEST IS DECISIVE**: on the holdout a RANDOM ENTRY in the same window
+with the same geometry BEATS the rule (-0.0303 against -0.0761, p 0.815) while **ALWAYS-LONG in that
+window is POSITIVE** (+0.0280 against the rule's -0.0761) -- so 2023-2025 is not a bad market for
+being long in that window, it is a bad market for this breakout; removing the window entirely
+reproduces the inversion (+0.0365 -> -0.0589), so the session is not the cause either. The failure is
+in the TRIGGER. And the research pass's own null earns **-0.0458**, i.e. random entries in that
+window lose money, so part of a p 0.000 is a hostile window rather than a good trigger.
+**AND TEN YEARS COULD NEVER HAVE ANSWERED IT**: annual mean R runs -0.160 to +0.147 with sd **0.1075**
+around a YEAR-weighted mean of +0.0108 (trade-weighted +0.0282; `corr(trades in a year, that year's
+mean R)` is **+0.527**, so unlike `STUDY_TREND_LONG` the busy years are the GOOD ones and the
+trade-weighted figure is the flattering one) -- a two-sd separation from zero needs ~380 years.
+Two repairs failed informatively: **ATR barriers** made the geometry scale-free (a 50-point stop is
+4.23 ATR in 2016 and 1.10 in 2025) and left the inversion WIDER at 1.0 and 1.25 ATR, so the drift was
+real and was not what was wrong; and **ADX flips winner five times in ten years** while median ADX
+stays flat at 21.8-24.5, so neither block is telling the truth about it. Cost is NOT the objection
+for once -- the round turn is 4.58% of a 50-point stop and the win rates sit within two points of
+their own driftless bounds -- so this family fails on DIRECTION. Six of seven models lost to their
+shuffled twins. See `docs/ib/STUDY_DL50.md`, `research/dl50/run_d9.py`, `run_d10.py`.
+
 ## Tooling
 
 | module | what it does |
@@ -3605,6 +3638,7 @@ direction. See `docs/ib/STUDY_V67_MOVEMENT.md`.
 | `research/intrabar.py` | true 1-minute path execution modelling |
 | `research/pine_export.py` | Pine strategy + indicator emitters |
 | `research/v67/` | movement vs price: `v67core.py` (eight declared targets incl. a duration target and direction as the control, each with its own trailing baseline, plus a Newey-West t and a BH helper), `run_v1` (audit then the whole grid), `run_v2` (the max-of-71 null, cached, and the causal HMM with V27's collapse and filtered-vs-smoothed diagnostics and an expected-sojourn feature), `run_v3` (the CIRCULAR BLOCK permutation that replaces it), `run_v4` (the decision test: a vol forecast against the fixed stop, V22's rule and its own SHUFFLED twin) |
+| `research/dl50/` | the fixed-point / ATR barrier study on US30: `d50core.py` (both walkers, Wilder's ADX returning BOTH DIs, the break-even the geometry implies, the point-stop-in-ATR drift table), `d50feat.py` (50 causal features in 8 families with a causal time-of-day baseline), `run_d1..d8` (geometry -> base rates -> the model ladder beside shuffled twins -> the window and flatten -> ATR barriers and the ADX gate -> the year decomposition), `run_d9.py` (slide the cut across eleven split points; walk-forward with in-fold re-selection beside the constants and a random cell; the sign noise priced by day-block bootstrap), `run_d10.py` (the walk-forward split at the research cut, and the framing test -- the rule against a random entry, always-long, and no window, all in the same block) |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
 | `research/pin/` | the EKOP/Yan PIN mixture: causal four-step fit, the three-hypothesis posterior, the volume-weighted B/S construction, the matched control, and `pin_parity.py` — the shipped Pine's own order model run on bars |

@@ -285,18 +285,131 @@ flat at 21.8–24.5 all sample and the share of bars under 20 moves only 0.31–
 is telling the truth about ADX; the direction that "wins" is whichever one happened to catch that
 block's years.**
 
+## Decay, or a badly-placed cut? Three tests, and they agree
+
+The year table above admits two readings that call for different decisions. Either the mechanism
+worked and stopped — in which case the holdout is informative and the research block is stale — or
+the annual sign is noise and the 2023-05 cut happened to land on a bad run, in which case
+"research positive, holdout negative" is not evidence of anything. `run_d9.py` and `run_d10.py`
+separate them without introducing a single new parameter.
+
+### 1. The cut is not the explanation
+
+Slide the split across the sample and read both halves at each position (1.25 ATR / 3R,
+07:00–11:00 entries, no flatten, n = 2,495):
+
+| cut | date | R research | R holdout | gap |
+|---|---|---|---|---|
+| 0.40 | 2020-06-11 | +0.0437 | +0.0178 | +0.0259 |
+| 0.50 | 2021-05-27 | +0.0498 | +0.0066 | +0.0432 |
+| 0.60 | 2022-04-14 | +0.0640 | −0.0255 | +0.0895 |
+| 0.70 | 2023-02-02 | +0.0747 | −0.0803 | +0.1550 |
+| **0.75** | **2023-07-06** | **+0.0724** | **−0.1043** | **+0.1767** |
+| 0.85 | 2024-04-29 | +0.0482 | −0.0852 | +0.1334 |
+| 0.90 | 2024-09-19 | +0.0390 | −0.0688 | +0.1078 |
+
+**The gap is positive at all eleven cut points** (min +0.0259, median +0.1078), and the research
+half is positive at every one of them. What moves is the holdout half, which is positive at the two
+earliest cuts and turns negative only once it is confined to 2023 and later. So the sample genuinely
+got worse late; the date was not chosen to make it look that way. The point-barrier arm is weaker
+evidence for the same thing — 8 of 11 gaps positive, and **negative at the 0.85 and 0.90 cuts**
+(−0.0401, −0.0148), so the two barrier versions do not even agree that there is decay.
+
+### 2. On the folds that post-date the cut, everything loses and a random cell loses least
+
+Walk-forward with the 12-cell barrier × ADX grid re-chosen inside every training window, one
+calendar year per test fold, beside the fixed arm, the point arm, and a random cell from the same
+grid (mean R per trade):
+
+| scheme | folds | re-chosen | fixed 1.25 ATR | 50/150 pts | random cell |
+|---|---|---|---|---|---|
+| rolling, pre-cut | 5 | +0.0568 | +0.0918 | +0.0379 | +0.0486 |
+| rolling, **post-cut** | 3 | **−0.0695** | **−0.0789** | −0.0307 | −0.0289 |
+| expanding, pre-cut | 5 | **+0.1713** | +0.0918 | +0.0379 | +0.0486 |
+| expanding, **post-cut** | 3 | **−0.0712** | **−0.0789** | −0.0307 | −0.0289 |
+| post-cut folds positive | | 1/3 | **0/3** | 1/3 | 1/3 |
+
+The expanding re-optimiser looks like the rare optimiser win — +0.1713 against the constants'
++0.0918 — and **the whole advantage is pre-cut**, exactly the shape `STUDY_VWAP_EMA_GOLD` and
+`STUDY_VWAP_EMA_INDICES` recorded. On the three honest folds it is the second-worst arm and loses
+to a **random cell**; thirteenth re-optimiser on this branch to lose to the author's constants and
+the third to also lose to a coin flip. And the selection is *stable* — expanding picks
+`1.25 ATR, ADX ≥ 25` in six of eight folds — so this is not an optimiser that cannot make up its
+mind. It settles on one cell and that cell stops working.
+
+### 3. The framing test: it is the trigger, not the window and not the market
+
+Same block, same geometry (1.25 ATR / 3R), same position lock:
+
+| arm | research | | holdout | |
+|---|---|---|---|---|
+| | R | PF | R | PF |
+| **the arm, 07:00–11:00** | **+0.0673** | 1.088 | **−0.0761** | 0.903 |
+| random entry in the window, same geometry | −0.0458 | — | −0.0303 | — |
+| → control p | **0.000** | | **0.815** | |
+| always-long in the window, same geometry | −0.0116 | 0.985 | **+0.0280** | 1.037 |
+| the arm, all hours | +0.0365 | 1.047 | −0.0589 | 0.925 |
+
+Three readings, and they point one way:
+
+- **On the holdout a random entry in the same window with the same geometry beats the arm**
+  (−0.0303 against −0.0761, p 0.815). The trigger is worth less than nothing there.
+- **Always-long in that window is *positive* on the holdout** (+0.0280) while the arm is −0.0761.
+  So 2023–2025 is not a bad market for being long between 07:00 and 11:00 — it is a bad market for
+  this breakout. The window is not the cause.
+- **Removing the window entirely reproduces the inversion** (+0.0365 → −0.0589). So the session
+  constraint is not the cause either.
+- Note the research pass's own null: the control there earns **−0.0458**, i.e. random entries in
+  this window *lose money*, so part of the p 0.000 is the window being hostile rather than the
+  trigger being good. `STUDY_V15_BOOK`'s distinction, again — clearing a matched control and
+  clearing zero are different questions.
+
+### 4. Ten years cannot separate this arm from zero anyway
+
+| arm | mean R | day-block 95% CI | P(mean ≤ 0) | sd across years |
+|---|---|---|---|---|
+| 1.25 ATR / 3R | +0.0282 | [−0.0431, +0.1021] | 0.223 | 0.1075 |
+| 50 / 150 points | +0.0120 | [−0.0583, +0.0860] | 0.369 | 0.0829 |
+
+Annual means on the ATR arm run **−0.160 to +0.147**. The trade-weighted mean is +0.0282 and the
+**year-weighted mean is +0.0108** — and the disagreement runs the *opposite* way to
+`STUDY_TREND_LONG`'s: here `corr(trades in a year, that year's mean R) = +0.527`, so the busy years
+are the good ones and the trade-weighted figure is the flattering one. At an annual spread of 0.1075
+around +0.0108, a two-standard-deviation separation from zero needs roughly **380 years**. Neither
+block was ever going to answer this.
+
 ## Verdict
 
-**No edge found, and the reason is stated rather than implied.** The direction call at this geometry
-is worth less than the two-point cost gap; the win rates sit on their own driftless bounds; six of
-seven models lose to random labels; and the spec's fixed-point barrier is itself a moving target
-across the sample.
+**No edge, and now for a stated reason rather than a failed test.** The arm under work
+(07:00–11:00 entries, no flatten, R = 3, in either the point or the ATR parameterisation) is closed:
 
-What would change the answer, in order of expected value:
+1. The research-minus-holdout gap is positive at **every one of eleven cut points**, so the split
+   date is not the explanation.
+2. On the three walk-forward folds that post-date the research cut the fixed arm is **0/3** and every
+   arm is negative, with a **random cell least bad**.
+3. On the holdout a **random entry** in the same window with the same geometry **beats it**
+   (p 0.815) while **always-long in that window is positive** — so the failure is in the trigger,
+   not in the session and not in the market direction.
+4. And the whole-sample edge does not separate from zero on ten years (P(mean ≤ 0) 0.223, annual
+   sd 0.1075 against a year-weighted mean of +0.0108).
 
-1. **Express the barrier in ATR, not points.** A 1.5 ATR stop with 1.5 / 3 / 4.5 ATR targets is the
-   same *intent* and is scale-free across the 2.8× move in the index — and it makes research and
-   holdout the same strategy for the first time.
-2. **More events at the tight end.** 1,657 holdout events at a 27% base rate is ~430 winners; a
-   1.7-point win-rate edge needs several thousand to separate.
-3. Not more capacity and not more features — both were swept, and both are at the noise floor.
+The two proposed repairs both failed and both failed informatively. **ATR barriers** made the
+geometry scale-free and left the inversion *wider* at 1.0 and 1.25 ATR — so the fixed-point drift
+was real but was not what was wrong. **ADX in either direction** flips winner five times in ten
+years while the market's own ADX distribution barely moves, so neither block was telling the truth
+about it.
+
+What is left of the work, as findings rather than a strategy:
+
+- **A 50-point stop on US30 is not a cost problem** (round turn 4.58% of risk, and the win rates sit
+  within two points of their own driftless bounds) — so this family fails on direction, which is
+  the rarer and more useful diagnosis on this branch.
+- **A fixed point barrier is not one geometry** across a 2.8× move in the index (4.23 ATR in 2016,
+  1.10 ATR in 2025). Any multi-year study on a point barrier is a mixture of strategies.
+- **Six of seven models lost to their shuffled twins**, before and after the window was added — the
+  noise floor is above the signal, so capacity and features are not the constraint.
+- The `run_d9` / `run_d10` battery — slide the cut, split the walk-forward at it, then ask whether a
+  random entry and an always-in position in the *same block* also failed — is the cheapest way to
+  tell decay from a bad draw, and it is three short scripts.
+
+Do not re-run this family on US30 at these barriers.
