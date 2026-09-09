@@ -4052,3 +4052,39 @@ counted trials. Third volume-profile result here, agreeing with `STUDY_AUCTION` 
 fewer than chance, 0 surviving) and `STUDY_VP_TPO_NEXT` (the one NQ survivor scoring PF 0.927 against
 0.973 ON THIS EXACT US30 FILE). **DO NOT RE-RUN THIS FAMILY.**
 See `docs/ib/STUDY_VP_US30.md`, `research/vpus30/`.
+
+**A DONCHIAN BREAK ON US30 IS PROFITABLE ON EVERY CELL AND DISTINGUISHABLE FROM A COIN FLIP ON
+NONE, AND THE META LAYER'S ICs TRANSFER WHILE ITS UPLIFT DOES NOT.** `STUDY_VP_US30`'s profile
+setups were demoted to the meta layer and a Donchian channel break with an ATR stop made the
+primary. Gate 1, 8 declared cells (entry 20/55 x stop 2.0/3.0N x long/both, opposite-20 channel
+exit, no target, entries RTH, exits on the full frame): **all eight are net-profitable on BOTH
+blocks (PF 1.02-1.13) and 0 of 8 clear a risk-matched random entry** (best p 0.150 against 0.4
+expected), with cost at 1.4-2.7% of the stop so cost is not the objection. Eighth Donchian breakout
+here to fail its own control. 66 features (22 VP + 30 quant + 14 new `don.*`), truncation audit
+**0/168**, and the base-rate check binds honestly for once -- only `p_neut` and `don.age` are
+degenerate on the trigger's own bars and the largest lift is **1.75x**, against RSI's 94.7%,
+Aroon's 100.0% and MACD's 99.8%. Screen: **8 of 128 veto cells clear against 6.4 expected**, and the
+two leaders are `p_bull` and `stack5` -- exactly the two constructions in Anderson's book that were
+NOT in `STUDY_AUCTION`'s 47-condition pool. Ladder: **twin wins 0 of 4**, the cleanest noise floor
+measured here, **ridge wins outright** (IC +0.0755 against rf 0.0438, xgb 0.0334, lgbm 0.0178) --
+sixth family where the linear model beats every booster. Gate 2 clears 2 of 12 (0.6 expected), both
+ridge, monotone in selectivity, research P(uplift<=0) 0.066. **AND THE FAMILY ABLATION SAYS THE
+REQUESTED FEATURES ARE THE MOST HARMFUL**: dropping `don`, `ffd`, `hmm` and `str` all IMPROVE the
+model and the 40-feature load-bearing subset (vol/vp/tod/mom) scores 0.0890 against 62 features'
+0.0755 -- feature engineering subtractive for the fifth time. **ONE HOLDOUT READ: uplift +0.0016,
+IC -0.0032, a random gate of the same size EARNS MORE (p 0.525), total return 12.87% -> 6.94%** --
+and the threshold **kept 0.507 against the 0.50 it was set for**, so it is CALIBRATED and the
+failure is predictability, not `STUDY_AUTOBNN`'s miscalibration. DSR **0.427 at 157 looks**:
+per-trade Sharpe 0.0350 against an expected best-of-noise **0.0452**, below its own noise floor.
+**THE TRANSFER DIAGNOSTIC IS THE FINDING AND IT IS A DIFFERENT FAILURE FROM THE USUAL ONE**: across
+62 features `corr(research IC, holdout IC)` is **+0.641 Pearson with the sign kept 71%** -- far
+above this branch's usual -0.03 to +0.2 -- while mean |IC| halves **0.0707 -> 0.0386**. The
+direction survives and the SIZE does not, so a high transfer correlation is not evidence a filter
+will work. **AND THE EIGHT STRONGEST FEATURES ARE ONE FEATURE**: `d_poc`/`d_vah`/`d_val`/`dev_pos`/
+`d_ema78`/`d_ema26`/`rsi14`/`ffd.z250` have mean pairwise **|rho| 0.820 on the signal bars**
+(d_ema26 vs rsi14 **0.99**) and all point one way -- the further above its references price already
+is when the channel breaks, the better -- which is `STUDY_V40`'s distance finding with the POC and
+value edges in place of an MA. **Seventh pool-duplication catch**, two of them EXACT:
+`dev_pos == str.sess_pos` (rho 1.0000, `vpquant` reads the column) and
+`don.atr_pct == don.stop_pct` (a constant multiple). Ships nothing.
+See `docs/ib/STUDY_VP_DONCHIAN_US30.md`.
