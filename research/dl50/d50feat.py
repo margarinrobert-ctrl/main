@@ -92,6 +92,19 @@ def build(f, ent_ch=20, ema_len=200, state_w=500):
     X["str.gap"] = (o - np.r_[np.nan, c[:-1]]) / at
     X["str.uwick"] = (h - np.maximum(o, c)) / np.where(h - l > 0, h - l, np.nan)
 
+    # ---- adx. NOT the trigger restated on this base, which is why it is here: ADX(14)>=25
+    # passes 45.4% of the signal bars against 45.5% of all bars, a lift of 1.00, where RSI>=55
+    # passes 94.7% of a long-only Donchian-55 breakout and Aroon 100.0%. A both-sided break with a
+    # slow EMA state does not concentrate in high-ADX regimes the way those triggers do.
+    a14, pdi, ndi = D.adx(f, 14)
+    a28, _, _ = D.adx(f, 28)
+    X["adx.a14"] = a14
+    X["adx.a28"] = a28
+    X["adx.di_spread"] = (pdi - ndi)
+    X["adx.di_aligned"] = np.sign(pdi - ndi) * np.sign(c - ema)
+    X["adx.slope14"] = a14 - pd.Series(a14).shift(10).to_numpy()
+    X["adx.rank500"] = pd.Series(a14).rolling(500, min_periods=100).rank(pct=True).to_numpy()
+
     # ---- tod.
     X["tod.min"] = mod
     X["tod.sin"] = np.sin(2 * np.pi * mod / 1440.0)

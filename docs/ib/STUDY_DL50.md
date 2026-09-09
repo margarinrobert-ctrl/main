@@ -77,6 +77,71 @@ backwards. Above 50% the noise floor is higher than the signal; at 86% there is 
 so **Gate 2 was not run and the holdout was not opened for a model read**. Capacity is inert again:
 the deepest net (+0.0054) is indistinguishable from the shallowest (+0.0037) and from ridge.
 
+## ADX, added both ways
+
+### The base rate is the surprise, and it inverts four prior findings
+
+| reading | signal bars | all bars | lift |
+|---|---|---|---|
+| ADX(14) ≥ 20 | 0.660 | 0.652 | **1.01** |
+| ADX(14) ≥ 25 | 0.454 | 0.455 | **1.00** |
+| ADX(14) ≥ 30 | 0.307 | 0.305 | 1.01 |
+| ADX(14) ≤ 20 | 0.340 | 0.348 | 0.98 |
+| ADX(28) ≥ 20 | 0.344 | 0.401 | 0.86 |
+| ADX(28) ≤ 20 | 0.656 | 0.599 | 1.09 |
+
+**On this base ADX is not the trigger restated.** That is new. RSI ≥ 55 passes **94.7%** of a
+long-only Donchian-55 breakout, Aroon 100.0%, MACD 99.8%, MFI 91.7% — four measurements of one
+mechanism — and ADX(14) ≥ 25 passes 45.4% here against 45.5% of all bars. The reason is structural:
+this primary takes **both sides** with a slow EMA200 state, so its signal bars are not concentrated
+in high-ADX regimes the way a long-only breakout's are. ADX is therefore a genuinely independent
+reading on this base and worth the test — which is exactly what the base-rate check is for.
+
+### As a gate, the direction that works flips between blocks
+
+Scored as a veto, re-simulated, against a random gate keeping the same share. `no gate` rows in bold.
+
+| target | reading | research PF | research p | HOLDOUT PF | HOLDOUT p |
+|---|---|---|---|---|---|
+| 50 | **no gate** | **0.927** | — | **0.845** | — |
+| 50 | ADX ≥ 25 | 0.906 | 0.845 | 0.869 | 0.278 |
+| 50 | ADX ≤ 20 | **0.971** | 0.128 | 0.853 | 0.460 |
+| 100 | **no gate** | **0.971** | — | **0.954** | — |
+| 100 | ADX ≥ 25 | 0.949 | 0.830 | **1.023** | 0.115 |
+| 100 | ADX ≤ 20 | **1.030** | **0.085** | 0.948 | 0.550 |
+| 150 | **no gate** | **1.033** | — | **0.981** | — |
+| 150 | ADX ≥ 25 | 1.012 | 0.710 | **1.017** | 0.273 |
+| 150 | ADX ≤ 20 | **1.077** | 0.193 | 0.968 | 0.608 |
+
+**On research every ADX floor is worse than no gate and the ceiling is the better direction; on the
+holdout that reverses and the floor is the better one.** Both directions were run on both blocks, so
+this is a clean sign-flip rather than a one-sided read — the **sixth** time ADX's sign has moved on
+this branch (`STUDY_V39`, `V52`, `V60`, `SCALP_FILTERS`, `SCALP_REQUIREMENTS`, here). Nothing clears
+p ≤ 0.05 anywhere; the best cell in the table is `ADX ≤ 20` on the 100-point target at **p 0.085**,
+research only, and it is the direction the holdout likes least.
+
+### As features, it changes nothing
+
+Six `adx.` columns added (ADX 14 and 28, the DI spread, DI alignment with the EMA state, the ADX
+slope, and its 500-bar rank). `adx.di_aligned` is **degenerate on the trigger's own bars** and drops
+out — the EMA200 state and the sign of the DI spread agree by construction on a directional break.
+Pool 44 → 50 → 46 after the degenerate column and the same three near-duplicates. Truncation audit
+**0 of 300**.
+
+| model | IC without adx | IC with adx | twin (with) |
+|---|---|---|---|
+| ridge | +0.0211 | **+0.0100** | +0.0033 |
+| rf | −0.0085 | −0.0124 | +0.0407 |
+| lgbm | −0.0175 | −0.0265 | +0.0350 |
+| xgb d3 | −0.0114 | −0.0098 | +0.0309 |
+| MLP 2×32 | +0.0037 | −0.0207 | +0.0487 |
+| MLP 2×64 | −0.0151 | −0.0088 | +0.0531 |
+| MLP 4×128 | +0.0054 | −0.0125 | +0.0321 |
+
+**Twin wins 6 of 7 = 86%, unchanged**, and six of seven ICs are now negative against four before.
+Adding a family that is genuinely independent of the trigger did not move the noise floor at all,
+which is the cleanest evidence in this study that the problem is the geometry and not the pool.
+
 ## Verdict
 
 **No edge found, and the reason is stated rather than implied.** The direction call at this geometry

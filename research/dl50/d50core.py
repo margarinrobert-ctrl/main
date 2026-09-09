@@ -55,6 +55,25 @@ def load(tf=15):
     return f
 
 
+def adx(f, n=14):
+    """Wilder's ADX. Note the Pine trap this branch recorded: `ta.dmi` returns [+DI, -DI, ADX],
+    so destructuring the first element substitutes +DI for ADX silently. Both DIs are returned
+    here so a caller can never take the wrong one by position."""
+    h, l, c = f["high"].to_numpy(), f["low"].to_numpy(), f["close"].to_numpy()
+    up, dn = np.diff(h, prepend=h[0]), -np.diff(l, prepend=l[0])
+    pdm = np.where((up > dn) & (up > 0), up, 0.0)
+    ndm = np.where((dn > up) & (dn > 0), dn, 0.0)
+    pc = np.r_[c[0], c[:-1]]
+    tr = np.maximum(h - l, np.maximum(np.abs(h - pc), np.abs(l - pc)))
+    a = 1.0 / n
+    atr_ = pd.Series(tr).ewm(alpha=a, adjust=False).mean().to_numpy()
+    den = np.where(atr_ > 0, atr_, np.nan)
+    pdi = 100 * pd.Series(pdm).ewm(alpha=a, adjust=False).mean().to_numpy() / den
+    ndi = 100 * pd.Series(ndm).ewm(alpha=a, adjust=False).mean().to_numpy() / den
+    dx = 100 * np.abs(pdi - ndi) / np.where(pdi + ndi > 0, pdi + ndi, np.nan)
+    return pd.Series(dx).ewm(alpha=a, adjust=False).mean().to_numpy(), pdi, ndi
+
+
 def breakeven(target_pts, stop_pts=STOP_PTS, cost=COST):
     r = target_pts / stop_pts
     c = cost / stop_pts
