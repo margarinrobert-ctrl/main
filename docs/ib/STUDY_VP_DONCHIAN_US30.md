@@ -153,6 +153,52 @@ Two parity harnesses, because a port cannot be asserted by reading it:
   difference is invisible in a correlation and total in the bins, which is why it is an input and
   why the session-only ATR is the default.
 
+## The scalp question, answered by the grid rather than by preference
+
+`scalp_grid.py` / `scalp_judge.py`. 4,320 declared configurations on US30 — timeframe 15/30/60m,
+entry channel 10/15/20/30/55, exit 5/10/20, stop 0.75–2.5 ATR, target none/1.5/2.0/3.0 ATR, hold cap
+8/16/26 bars, and RTH-entries-plus-16:00-flatten against all-hours. Percent of entry price, both
+sides, 2.29-point round turn. **Descriptive**: US30's later block has been read repeatedly here and
+this is a 4,320-cell search on top of that.
+
+**Population first. 29.0% of the grid is profitable and every axis marginal is negative at every
+setting** — the leaders are the top of a mostly-losing population. Two marginals carry everything:
+
+| axis | marginal mean total % |
+|---|---|
+| session | all hours **−41.13**, RTH + flatten **−0.86** |
+| hold cap | 8 bars −27.12, 16 −20.34, 26 **−15.52** |
+| target | 3.0 ATR −20.63, none **−8.61** |
+| entry channel | 10 −35.81, 20 −21.59, 55 **−11.24** |
+
+The hold axis is monotone toward **longer** and the best cell sits at the grid's longest cap — the
+search wants out of the scalp, for the sixteenth time on this branch.
+
+**The leaders, split and controlled** (control = a risk-matched random entry, same count, same side
+mix, same exits, re-simulated):
+
+| cell | blk | n | total % | %/trade | PF | median hold | control | p |
+|---|---|---|---|---|---|---|---|---|
+| 15m 55/20, 1.0N, 3 ATR, cap 26, RTH | research | 2103 | +44.58 | +0.0212 | 1.161 | 45 min | −4.95 | 0.003 |
+| | HOLDOUT | 774 | +3.18 | +0.0041 | 1.037 | 45 min | −1.16 | **0.253** |
+| 15m 30/20, 0.75N, 3 ATR, cap 26, RTH | research | 2553 | +30.49 | +0.0119 | 1.106 | 30 min | −6.98 | 0.013 |
+| | HOLDOUT | 888 | +3.14 | +0.0035 | 1.038 | 30 min | −0.79 | 0.293 |
+| 15m 55/20, 1.0N, no target, cap 26, RTH | research | 1900 | +38.15 | +0.0201 | 1.145 | 45 min | −1.44 | 0.003 |
+| | HOLDOUT | 687 | +0.06 | +0.0001 | 1.001 | 45 min | −1.12 | 0.443 |
+| 15m 15/5, 0.75N, 1.5 ATR, cap 8, RTH | research | 3772 | +0.74 | +0.0002 | 1.002 | 15 min | −22.62 | 0.050 |
+| | HOLDOUT | 1273 | **−7.66** | −0.0060 | **0.926** | 15 min | −6.13 | 0.637 |
+
+Three readings, in order of how much they matter:
+
+1. **The control loses money on every block** (−0.79 to −22.62). So the research p-values say the
+   rule beats a *losing* null, which `STUDY_IB_US30_OPTUNA` and `STUDY_VWAP_EMA_GOLD` both record as
+   the weaker of the two questions. Against zero, the holdout column answers it: p 0.253–0.637.
+2. **Decay is 5x.** +0.0212 → +0.0041 %/trade, PF 1.161 → 1.037. That is the right *shape* and the
+   wrong *size* — 774 holdout trades at PF 1.04 is not separable from nothing.
+3. **The genuinely tight cell is negative out of sample.** At a 15-minute median hold the rule reads
+   PF 0.926 on the holdout and is beaten by a random entry. Cost is not the reason — the round turn
+   is 4.5% of a 1.0N stop at 15m and 6.0% at 0.75N.
+
 ## Nothing here is tradeable
 
 157 counted looks; the primary fails its own control on all eight cells; the meta layer fails the
