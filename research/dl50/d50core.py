@@ -201,3 +201,111 @@ def signals(f, ent_ch=20, ema_len=200):
 def pf(x):
     x = np.asarray(x, float); x = x[np.isfinite(x)]
     return float(x[x > 0].sum() / max(-x[x < 0].sum(), 1e-12)) if len(x) >= 5 else np.nan
+
+
+# =================================================================================================
+# ATR barriers -- the same intent, made scale-free
+#
+# The point barrier is 4.23 ATR in 2016 and 1.10 ATR in 2025, so research and holdout are not the
+# same strategy. Sizing the stop as k x ATR at the SIGNAL bar and the target as R x that stop keeps
+# the reward:risk fixed at R and makes the geometry constant across the 2.8x move in the index.
+# 150/50 points is R = 3, so `tgt_r=3.0` is the direct analogue of the arm being worked on.
+# =================================================================================================
+@njit(cache=True)
+def walk_atr(o, h, l, c, at, ehi, elo, ok_up, ok_dn, stop_mult, tgt_r, hold, cost,
+             m0, m1, mod, flat_mod, gate):
+    """`gate` is an integer mask on the SIGNAL bar: 1 admits, 0 refuses. Refusing releases the
+    position lock, so this is a veto and not a subset."""
+    n = len(c)
+    eb = np.full(n, -1, np.int64); out = np.empty(n); rr = np.empty(n)
+    sd = np.empty(n, np.int64); hl = np.empty(n, np.int64)
+    why = np.empty(n, np.int64); amb = np.empty(n, np.int64)
+    cnt = 0; last = -1
+    for i in range(1, n - 1):
+        if i <= last or gate[i] == 0:
+            continue
+        if at[i] <= 0 or not np.isfinite(at[i]):
+            continue
+        if m0 >= 0 and (mod[i] < m0 or mod[i] >= m1):
+            continue
+        if np.isnan(ehi[i]) or np.isnan(elo[i]):
+            continue
+        s = 0
+        if c[i] > ehi[i] and ok_up[i] == 1:
+            s = 1
+        elif c[i] < elo[i] and ok_dn[i] == 1:
+            s = -1
+        if s == 0:
+            continue
+        j = i + 1
+        if flat_mod >= 0 and mod[j] >= flat_mod:
+            continue
+        ent = o[j]
+        risk = stop_mult * at[i]
+        stop = ent - s * risk
+        targ = ent + s * tgt_r * risk
+        x = -1; px = 0.0; w = 2; a = 0
+        for t in range(j, n):
+            hs = (l[t] <= stop) if s > 0 else (h[t] >= stop)
+            ht = (h[t] >= targ) if s > 0 else (l[t] <= targ)
+            if hs and ht:
+                a = 1
+            if hs:
+                x = t; px = stop; w = 0
+                break
+            if ht:
+                x = t; px = targ; w = 1
+                break
+            if hold > 0 and t - j >= hold:
+                x = t; px = c[t]; w = 2
+                break
+            if flat_mod >= 0 and t + 1 < n and mod[t] < flat_mod and mod[t + 1] >= flat_mod:
+                x = t + 1; px = o[t + 1]; w = 3
+                break
+        if x < 0:
+            x = n - 1; px = c[n - 1]; w = 2
+        eb[cnt] = j
+        out[cnt] = s * (px - ent) - cost
+        rr[cnt] = (s * (px - ent) - cost) / risk
+        sd[cnt] = s; hl[cnt] = x - j; why[cnt] = w; amb[cnt] = a
+        cnt += 1
+        last = x
+    return eb[:cnt], out[:cnt], rr[:cnt], sd[:cnt], hl[:cnt], why[:cnt], amb[:cnt]
+
+
+@njit(cache=True)
+def walk_at_atr(o, h, l, c, at, sig, side, stop_mult, tgt_r, hold, cost, mod, flat_mod):
+    n = len(c); m = len(sig)
+    out = np.full(m, np.nan); rr = np.full(m, np.nan)
+    last = -1
+    for q in range(m):
+        i = sig[q]
+        if i <= last or i + 1 >= n or at[i] <= 0 or not np.isfinite(at[i]):
+            continue
+        s = side[q]; j = i + 1
+        if flat_mod >= 0 and mod[j] >= flat_mod:
+            continue
+        ent = o[j]
+        risk = stop_mult * at[i]
+        stop = ent - s * risk
+        targ = ent + s * tgt_r * risk
+        x = -1; px = 0.0
+        for t in range(j, n):
+            if (l[t] <= stop) if s > 0 else (h[t] >= stop):
+                x = t; px = stop
+                break
+            if (h[t] >= targ) if s > 0 else (l[t] <= targ):
+                x = t; px = targ
+                break
+            if hold > 0 and t - j >= hold:
+                x = t; px = c[t]
+                break
+            if flat_mod >= 0 and t + 1 < n and mod[t] < flat_mod and mod[t + 1] >= flat_mod:
+                x = t + 1; px = o[t + 1]
+                break
+        if x < 0:
+            x = n - 1; px = c[n - 1]
+        out[q] = s * (px - ent) - cost
+        rr[q] = out[q] / risk
+        last = x
+    return out, rr

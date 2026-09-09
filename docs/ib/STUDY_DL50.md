@@ -222,6 +222,69 @@ still at chance. Gate 2 on the best model: keep-70% reads +1.261 pts at PF 1.045
 and both tighter rungs are *worse than the base* (keep-50% −0.321, keep-30% −1.619). A gate whose
 best rung is its loosest is not selecting; it is trimming a tail.
 
+## ATR barriers instead of points — the fix I proposed does not work
+
+The hypothesis was explicit: a fixed 50-point stop is 4.23 ATR in 2016 and 1.10 ATR in 2025, so
+research and holdout are different strategies, and sizing the stop as k × ATR at the signal bar with
+the target at 3 × that stop should shrink the inversion. **It does not.** Same arm — 07:00–11:00
+entries, no flatten, R = 3.
+
+| barrier | research R | HOLDOUT R | research PF | HOLDOUT PF | entry-null p (res) |
+|---|---|---|---|---|---|
+| 50 / 150 points | +0.0303 | −0.0344 | 1.041 | 0.956 | 0.177 |
+| 1.0 ATR / 3R | +0.0216 | −0.0694 | 1.044 | **0.913** | **0.010** |
+| 1.25 ATR / 3R | **+0.0662** | −0.0768 | **1.068** | **0.877** | **0.007** |
+| 1.5 ATR / 3R | +0.0266 | −0.0135 | 0.995 | 0.924 | 0.128 |
+| 2.0 ATR / 3R | +0.0395 | +0.0010 | 1.034 | 0.896 | 0.142 |
+
+Every ATR cell is research-positive and holdout-negative, and at 1.0 and 1.25 ATR the profit-factor
+gap is **wider** than the point version's. Making the geometry scale-free did not remove the
+inversion, so **the inversion is not a geometry artifact** — it is decay or regime. One thing did
+improve: the trigger now clears its random-entry control on research (p 0.007–0.010 against the
+point version's 0.177), and fails it on the holdout (0.585–0.720). That is the right *shape* for
+decay and it does not rescue a negative holdout.
+
+## ADX ≤ 20 on the ATR barriers
+
+| barrier | gate | research R | PF | p | HOLDOUT R | PF | p |
+|---|---|---|---|---|---|---|---|
+| 1.25 ATR | ADX ≥ 25 | **+0.1738** | 1.138 | **0.010** | −0.0526 | 0.946 | 0.345 |
+| 1.25 ATR | ADX ≤ 20 | +0.0188 | 1.079 | 0.787 | −0.0119 | 0.952 | 0.282 |
+| 1.5 ATR | ADX ≤ 20 | +0.0547 | 1.069 | 0.323 | **+0.1340** | **1.206** | 0.090 |
+| 2.0 ATR | ADX ≥ 25 | +0.1118 | 1.112 | 0.065 | −0.0361 | 0.922 | 0.705 |
+| 2.0 ATR | ADX ≤ 20 | +0.0077 | 1.032 | 0.685 | **+0.1497** | **1.222** | 0.090 |
+
+**The same flip reproduces on ATR barriers**: research prefers `ADX ≥ 25` (p 0.007–0.065) and the
+holdout prefers `ADX ≤ 20` (p 0.090 at both wide stops). At 1.5 and 2.0 ATR the low reading is
+holdout-positive at PF 1.21–1.22 on 168–172 trades — but it is **better on the holdout than on
+research** (p 0.323 / 0.685 there), the wrong shape, and it fails on the block permitted to choose.
+
+## Why it inverts — year by year
+
+| year | 50/150 pts PF | 1.25 ATR PF | 2.0 ATR PF | ADX winner (1.5 ATR) |
+|---|---|---|---|---|
+| 2017 | 1.080 | 1.019 | 1.071 | high |
+| 2018 | 0.980 | 1.104 | 1.080 | low |
+| 2019 | 1.130 | **1.305** | 1.173 | low |
+| 2020 | 0.896 | 0.943 | 1.129 | low |
+| 2021 | **1.253** | 1.155 | 1.123 | high |
+| 2022 | 1.012 | 1.092 | 0.910 | high |
+| 2023 | 0.970 | 0.933 | 0.917 | low |
+| 2024 | **0.875** | **0.818** | 0.987 | low |
+| 2025 | 1.041 | 0.870 | **0.683** | low |
+
+**This is not a decay curve — it is year-to-year sign noise with a bad run at the end.** 2018–2022
+is five mostly-positive years across all three geometries; 2023–2025 is three mostly-negative ones,
+and the split date (2023-05) sits exactly on that boundary. The three barrier versions **disagree
+about which years were good** (2020: 0.896 / 0.943 / 1.129; 2022: 1.012 / 1.092 / 0.910), which is
+what noise looks like rather than a shared underlying signal.
+
+The ADX winner flips **five times** across ten years with no persistence — high in 2017, low
+2018–2020, high 2021–2022, low 2023–2025. The market statistics do not explain it: median ADX is
+flat at 21.8–24.5 all sample and the share of bars under 20 moves only 0.31–0.43. **So neither block
+is telling the truth about ADX; the direction that "wins" is whichever one happened to catch that
+block's years.**
+
 ## Verdict
 
 **No edge found, and the reason is stated rather than implied.** The direction call at this geometry
