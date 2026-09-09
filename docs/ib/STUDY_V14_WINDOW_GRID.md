@@ -111,3 +111,45 @@ It degrades and stays positive in all four cells. **Reassuring, not conclusive.*
 US100 data makes it answerable.
 
 Shipped as `pine/turtle/V14_WINDOW_SHORT_strategy.pine`.
+
+---
+
+## Addendum — the short book re-measured with ONE LIVE ORDER
+
+`research/vpus30/v14_oneorder.py`, `pine/v14/US30_V14_SHORT_BOOK_strategy.pine`.
+
+The configuration above rests a limit **0.75 × ATR(5) above the signal close with an 8-bar expiry**
+and was measured on `limit_entry._walk_limit`. `STUDY_V34_MECHANIC` later established that this
+walker frees its position lock only on **exit**, so an unfilled resting order blocks nothing and the
+next trigger places its own — a mean of 2.45 live orders at expiry 2 rising to 15.9 at expiry 18.
+The V14 figures were never re-measured under the correction. This does it.
+
+| engine | block | n | pts/trade | PF | total | median hold |
+|---|---|---|---|---|---|---|
+| book (what V14 used) | research | 437 | +6.17 | 1.095 | +2,695 | 150 min |
+| book | HOLDOUT | 169 | +3.55 | 1.051 | +600 | 135 min |
+| **one live order** | research | 353 | **−6.82** | **0.904** | −2,407 | 135 min |
+| **one live order** | HOLDOUT | 133 | **−9.58** | **0.869** | −1,274 | 120 min |
+
+**The sign flips on both blocks**, and `STUDY_V34`'s signature reproduces exactly — under the book
+engine $/signal climbs monotonically with resting time while the fill rate barely moves; under one
+order it does not:
+
+| expiry | 2 | 4 | 8 | 12 | 18 |
+|---|---|---|---|---|---|
+| fill rate (book) | .320 | .388 | .416 | .430 | .435 |
+| $/signal (book) | −0.03 | +0.00 | **+2.26** | **+2.73** | **+3.38** |
+| $/signal (one order) | +0.25 | −1.51 | −2.53 | −2.52 | −2.92 |
+
+**What this does and does not establish.** The published 1.46 / 1.82 came from a different US30
+block (an ISO 2026 tail) and a cell selected there; this runs on `US30_LONG_15m` with the branch's
+own 75% split, where the **book-engine** numbers are 1.095 / 1.051, not 1.46 / 1.82. So it is *not*
+a restatement of "1.82 becomes 0.87". What it establishes is the **direction and size of the
+one-order correction on this exact configuration** — about 13 points a trade, enough to take it from
+profitable to losing on both blocks. Still unresolvable: only 15-minute US30 bars exist, so
+`STUDY_V10_LIMIT`'s standing rule that limit-entry questions are settled on the true 1-minute path
+could not be applied, and a fill is awarded when the bar's high reaches the limit, the optimistic
+reading.
+
+The Pine ships because a script holds one order by construction, so it *is* the corrected version —
+and its header carries these numbers rather than the published ones.
