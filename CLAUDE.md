@@ -3627,6 +3627,47 @@ for once -- the round turn is 4.58% of a 50-point stop and the win rates sit wit
 their own driftless bounds -- so this family fails on DIRECTION. Six of seven models lost to their
 shuffled twins. See `docs/ib/STUDY_DL50.md`, `research/dl50/run_d9.py`, `run_d10.py`.
 
+**HOLD THE EXPOSURE FIXED AND US30's TIMING IS WORTH NOTHING -- 1 OF 60 DECLARED CELLS AGAINST 3.0
+EXPECTED BY CHANCE.** Asked for an edge on US30 alone. Four primaries died in four runs, each with
+its null in front. **(1) MEAN REVERSION, tested head-on for the first time on this market** because
+twelve routes here had pointed at it while every US30 primary ever tested was a breakout: side
+FORCED to `-sign(d)` on a displacement `d = (close - close[n])/ATR`, and **every declared fade cell
+is negative before any barrier** while the mechanism's own conditioning variable inverts -- the
+quintile gradient FALLS in 7 of 8 cells, `STUDY_LEV_ETF_REBALANCE`'s kill reproduced. **(2) ITS
+MIRROR IS NOT DRIFT AND STILL DIES**: given each side its OWN drift baseline it beats drift on BOTH
+(+0.0769 long / +0.0775 short ATR excess) on research and INVERTS on both (-0.0654 / -0.0730) on
+the holdout, with the drift itself collapsing +0.0977 -> +0.0265. **(3) THE OVERNIGHT PREMIUM IS
+EXPOSURE, NOT TIMING** -- zero fitted parameters, net +0.0337/+0.0092/+0.0538 %/session on three
+blocks, decaying then returning on a reserved DIFFERENT-PROVIDER forward feed, research skew -1.08
+exactly as risk transfer predicts, **90.2% of the research block's whole move arriving overnight**
+-- and a RANDOM 15-HOUR WINDOW EARNS THE SAME on all three (p 0.405 / 0.782 / 0.383), with
+always-long better risk-adjusted on the holdout. **(4) THE HEADLINE**: that null is the sharp
+instrument, so hold the exposure EXACTLY fixed -- long at the next open, hold exactly L bars, exit
+at an open, no stop, no target, nothing to fit, cost identical in both arms and cancelling -- and
+put 20 declared conditions in seven families (every family that has ever cleared anything here) x 3
+holding lengths through it: **1 of 60 clears p<=0.05 where 3.0 are expected, 0 survive BH**. That
+is the cleanest statement of why eight Donchian breakouts, the IB, the VWAP-EMA spec and the volume
+profile all failed the same way on this market. **THE NULL IS THE METHOD**: a circular shift of the
+condition's OWN MASK within the block keeps its count and run-length structure EXACTLY and destroys
+only its alignment with price -- a random-BAR null has too narrow a spread on clustered conditions
+and passes everything, which is the `research/edgelab` 17,121-of-27,786 defect. **(5) THE ONE
+CONDITION WITH A PRIOR INVERTS A SEVENTH TIME**: `ATR percentile <= 0.2`, one of only two survivors
+of V28's 240 US30 cells at p 0.003, scored here as a REPLICATION reads research p 0.021 -> holdout
+**0.888** -> forward 0.746, and its MIRROR clears the holdout at **p 0.005** while failing the other
+two. **(6) WHAT REPLICATED IS A SIZING FACT, NOT AN EDGE, AND IT SURVIVED THE FORWARD FEED**: median
+forward realised vol / trailing ATR by ATR percentile is 3.364/2.936/2.535/2.177/1.926 on research,
+3.746 -> 1.867 on locked and 2.930 -> 1.728 on the different-provider block -- monotone all three
+times, so `STUDY_V22`'s mechanism confirms on a third instrument and **an ATR stop's real width
+varies about 2x with the volatility percentile**. **(7) AND ITS ACTIONABLE FORM DOES NOT TRANSFER**:
+with the signal stripped out entirely (long the RTH open, out at the RTH close or the stop, one
+trade a session) adaptive-minus-fixed-2.0N reads +0.0136 / **-0.0192** / +0.0126 and the NAIVE
+INVERSE is the BEST policy on the holdout (PF 1.206, Sharpe 0.91) -- because the CALM SHARE ITSELF
+MOVES, 47.9% -> 23.3% -> 22.0%, so a rule keyed to a fixed percentile cut is a different rule in
+each block. The base is null on both US30L blocks and NEGATIVE at every stop on the forward one.
+What would move it is 1-MINUTE US30 BARS, not more parameter search -- the exposure-matched test IS
+that question in its strongest form and it came back below chance.
+See `docs/ib/STUDY_MR30.md`, `research/mr30/`.
+
 ## Tooling
 
 | module | what it does |
@@ -3639,6 +3680,7 @@ shuffled twins. See `docs/ib/STUDY_DL50.md`, `research/dl50/run_d9.py`, `run_d10
 | `research/pine_export.py` | Pine strategy + indicator emitters |
 | `research/v67/` | movement vs price: `v67core.py` (eight declared targets incl. a duration target and direction as the control, each with its own trailing baseline, plus a Newey-West t and a BH helper), `run_v1` (audit then the whole grid), `run_v2` (the max-of-71 null, cached, and the causal HMM with V27's collapse and filtered-vs-smoothed diagnostics and an expected-sojourn feature), `run_v3` (the CIRCULAR BLOCK permutation that replaces it), `run_v4` (the decision test: a vol forecast against the fixed stop, V22's rule and its own SHUFFLED twin) |
 | `research/dl50/` | the fixed-point / ATR barrier study on US30: `d50core.py` (both walkers, Wilder's ADX returning BOTH DIs, the break-even the geometry implies, the point-stop-in-ATR drift table), `d50feat.py` (50 causal features in 8 families with a causal time-of-day baseline), `run_d1..d8` (geometry -> base rates -> the model ladder beside shuffled twins -> the window and flatten -> ATR barriers and the ADX gate -> the year decomposition), `run_d9.py` (slide the cut across eleven split points; walk-forward with in-fold re-selection beside the constants and a random cell; the sign noise priced by day-block bootstrap), `run_d10.py` (the walk-forward split at the research cut, and the framing test -- the rule against a random entry, always-long, and no window, all in the same block) |
+| `research/mr30/` | US30 alone, four primaries under the two-gate architecture: `mr30core.py` (Phase 0 in the docstring, the displacement event stream with the side FORCED by the mechanism, three blocks incl. a different-provider forward feed, an ATR-barrier walker and a sorted matched control), `run_g0.py` (cost as a fraction of risk, the geometry-free forward-return read with Newey-West t, and the mechanism's own quintile gradient), `run_g1.py` (the mirror split by side against each side's OWN drift baseline), `run_g2.py` (the parameter-free session decomposition and the by-hour table), `run_g3.py` (Gate 1 on the overnight premium: a random SAME-LENGTH window, always-long, the vol gradient, every year), `run_g4.py` (**the exposure-matched timing test** -- 20 declared conditions x 3 holding lengths against a CIRCULAR SHIFT of each condition's own mask, which preserves count and clustering exactly), `run_g5.py` (the ATR percentile as a pre-registered replication across three blocks, its mirror, and V22's mechanism), `run_g6.py` (the sizing fact as a stop policy, with the naive inverse as its falsifier) |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
 | `research/pin/` | the EKOP/Yan PIN mixture: causal four-step fit, the three-hypothesis posterior, the volume-weighted B/S construction, the matched control, and `pin_parity.py` — the shipped Pine's own order model run on bars |
