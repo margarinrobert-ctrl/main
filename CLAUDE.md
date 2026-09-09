@@ -4020,3 +4020,35 @@ SHADOWED IT SILENTLY** -- `from ivb import ivbcore` resolved to the MODULE and r
 which is the lucky failure; a name that had resolved would have imported the wrong code. Sixth
 name-collision on this branch after `.first`, `.align`, `agg`, `metrics` and the `vol.`/`vlm.`
 feature prefixes. Check `ls research/<name>.py` before creating `research/<name>/`.
+
+**A VOLUME-PROFILE FEATURE FAMILY CAN BE CLEAN, CAUSAL AND BINDING AND STILL CLEAR NOTHING -- AND
+THE ADVANCED QUANT LAYER SUBTRACTED FROM BOTH PRIMARIES.** Max Anderson's *Volume Profile Analysis*
+plus a combined US30 study guide (Forthmann/Whalestrader/Anderson), built on the uploaded
+`us30_20162025_15m_data1.csv` -- sha256 24dcf2e1c7ba398f, BYTE-IDENTICAL to `US30_LONG_15m`, so both
+blocks are second reads. **`Volume` IS ZERO ON 100% OF ROWS and `TickVolume` is the real column**
+(corr with bar range +0.7661), so every profile here is a TICK COUNT profile; the study guide reaches
+the same conclusion independently and correctly rules the whole order-flow layer (footprint, delta,
+absorption) MEANINGLESS on a CFD feed, because those tools read an aggressor side a CFD does not
+have. 2,246 RTH profiles, bins scale-free at 0.10 x session ATR, POC inside the value area on 100.0%
+of sessions. **52 causal features** -- 22 volume-profile (POC/VAH/VAL distances, nearest HVN/LVN,
+STACKED-POC counts, the bullish/bearish/neutral distribution taxonomy, developing intraday POC) plus
+30 advanced quant (Parkinson/Garman-Klass, vol-of-vol, ATR rank, the same quantities against a CAUSAL
+TIME-OF-DAY baseline, fracdiff d=0.2 by ADF on research only, a Baum-Welch HMM read FILTERED,
+momentum, structure). **Truncation audit 3/3 on profiles and 0 mismatches of 23 on the rolling quant
+features**, and the BASE-RATE CHECK PASSED FOR THE FIRST TIME IN THIS FAMILY -- no feature exceeds 95%
+on the trigger's own bars, largest lift `inside_va` at 2.92x. **GATE 1 ON FIVE PRIMARIES: 0 of 10
+tests clear p<=0.05 against 0.5 expected.** HVN retracement 1.008/1.045 (p 0.440/0.440), LVN breakout
+1.054/1.086 (0.200/0.340), NAKED POC 1.124/1.273 (0.200/**0.100**, the best), open rejection reverse
+1.021/1.034 (0.500/0.260) -- and **POC SHIFT, WHICH THE GUIDE CALLS "THE BEST TREND-ENTRY SIGNAL IN
+THE BOOK", IS THE ONLY NEGATIVE PRIMARY ON RESEARCH** (PF 0.907, p 0.620) and positive only on the
+holdout, the wrong shape for the 14th time. Cost is NOT the objection: the round turn is 2.1-2.6% of
+a 1.5xATR stop and every primary is gross-positive. **GATE 2 IS THE REAL FINDING: EVERY UPLIFT AT
+EVERY KEEP FRACTION ON BOTH PRIMARIES IS NEGATIVE** (LVN -0.0035/-0.0005/-0.0255, naked POC
+-0.0409/-0.0379/-0.0087) at random-veto p 0.420-0.700, scored as a VETO and re-simulated; the
+holdout kept-50% read is WORSE than the base on both (LVN +0.0215 -> **-0.0525**, naked POC +0.1065
+-> +0.0620) and **the threshold is not calibrated across the split** (kept 0.575-0.600 against a 0.50
+target). The SHUFFLED TWIN wins 1 of 4 models on LVN and **2 of 4 on naked POC**. DSR 0.1015 at 14
+counted trials. Third volume-profile result here, agreeing with `STUDY_AUCTION` (7 of 172 passes,
+fewer than chance, 0 surviving) and `STUDY_VP_TPO_NEXT` (the one NQ survivor scoring PF 0.927 against
+0.973 ON THIS EXACT US30 FILE). **DO NOT RE-RUN THIS FAMILY.**
+See `docs/ib/STUDY_VP_US30.md`, `research/vpus30/`.
