@@ -126,7 +126,34 @@ eight names. **Seventh time the pool has been caught duplicating**, and three of
 `dev_pos == str.sess_pos` (rho 1.0000, `vpquant` literally reads the column) and
 `don.atr_pct == don.stop_pct` (rho 1.0000, one is a constant multiple of the other).
 
-## Ships nothing
+## What ships
+
+Two scripts, both with the numbers in their headers and **no edge claimed**:
+
+- `pine/vpus30/US30_DONCHIAN_ATR_strategy.pine` — the bare Gate 1 primary.
+- `pine/vpus30/US30_VP_DONCHIAN_ATR_strategy.pine` — the same rule with the **volume profile actually
+  computed on the chart**: every completed session binned at 0.10 × its own mean ATR, each bar's
+  volume spread uniformly across its `[low, high]`, the value area grown outward from the POC always
+  taking the richer neighbour to 70%, the prior session's POC/VAH/VAL frozen and plotted, and the
+  last 20 sessions' POCs kept for the stacked-POC counts. The four screen leaders ship as gates,
+  **all default off**, each tooltip carrying its own research → holdout pair.
+
+Two parity harnesses, because a port cannot be asserted by reading it:
+
+- `don_parity.py` — the script's order model against the engine: trade count 0.993, side agreement
+  1.0000, per-trade correlation 0.9997, script +6.1% research / +0.7% holdout. The exit bar differs
+  on two trades in three by construction (the engine takes a channel break at that bar's close; a
+  script fills at the next open) and the script reads slightly *better*, the non-conservative
+  direction.
+- `vp_parity.py` — the script's **profile** against `vpcore.sessions` over all 2,246 sessions. With
+  a session-only ATR, POC/VAL/VAH are **identical 1.0000, max diff 0.0, bin count identical
+  1.0000**. With a chart ATR instead, correlation is 0.99998 and **not one bin count matches**,
+  because a chart ATR sees the overnight and runs **0.884×** the RTH-only one, moving every bin edge
+  — median POC shift 0.036 ATR, shape agreement 96.5%, stacked-POC ≥ 1 agreement 96.5%. That
+  difference is invisible in a correlation and total in the bins, which is why it is an input and
+  why the session-only ATR is the default.
+
+## Nothing here is tradeable
 
 157 counted looks; the primary fails its own control on all eight cells; the meta layer fails the
 holdout at p 0.525 with IC −0.0032 and a deflated Sharpe below its own noise floor. What would move
