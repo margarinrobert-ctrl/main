@@ -3668,6 +3668,44 @@ What would move it is 1-MINUTE US30 BARS, not more parameter search -- the expos
 that question in its strongest form and it came back below chance.
 See `docs/ib/STUDY_MR30.md`, `research/mr30/`.
 
+**A CIRCULAR SHIFT IS AN EXACT NULL FOR A MAX-OVER-FEATURES IC, AND FFT GIVES EVERY SHIFT AT ONCE.**
+Asked to attack US30 15m by feature-engineering ANOMALIES and INEFFICIENCIES to predict MOVES rather
+than prices. The reported statistic is the MAXIMUM |IC| over 100 features, which no single shuffled
+twin can price, and the targets overlap so a free permutation is far too easy (`STUDY_V67`: p95 at
+~0.014 for every target regardless of persistence, 32 of 32 cells clearing including direction). A
+circular shift of the TARGET preserves its entire autocorrelation exactly -- it is the same vector --
+and destroys only alignment; and the circular cross-correlation `irfft(conj(rfft(x)) * rfft(y))/n`
+gives one feature's IC at ALL n shifts, so the max over features at each shift is the EXACT null
+distribution of the statistic being reported: **~180,000 draws instead of a few hundred, cheaper
+than the naive loop.** Use it wherever a best-of-N IC is quoted on overlapping data.
+**V67's SPLIT REPLICATES ON A SECOND INSTRUMENT**: over 8 declared targets x 3 horizons, mfe 3.03x
+the null, rng 2.96x, TIME-TO-TOUCH 2.86x, mae 2.76x, rv 2.68x, mag 2.62x, straightness 1.21x and
+**DIRECTION 1.02x** -- and every movement target also clears its own TRAILING REALISATION, the bar
+STUDY_V28 set. Direction's one "pass" is an IC of 0.0270, real against a shift and far too small to
+pay a round turn. Truncation audit 0/120. **AND THE ANOMALY FAMILY IS NOT A VOLATILITY RENAME** --
+PCA reconstruction error, Mahalanobis, isolation forest and a torch autoencoder, ALL fitted on block
+A only and none ever seeing a label, correlate with the ATR percentile on the trigger's own bars at
+just **+0.099 / +0.179 / +0.230 / +0.130**; this branch has caught its own pool duplicating seven
+times and here it does not. **`STUDY_VWANOM`'s DIRECTION STRENGTHENS TO 12 OF 12**: rho(detector,
+trade return) is NEGATIVE in every cell across three blocks and TWO PROVIDERS (research -0.169 to
+-0.206, holdout -0.073 to -0.123, forward -0.028 to -0.088), decaying across the split, the right
+shape. **AND IT CONVERTS INTO NOTHING, FOR A READABLE REASON**: VWANOM's own caveat that the
+quantile means are NOT monotone is what decides it -- on the reserved forward block the TOP-QUARTILE
+MEAN IS HIGHER (+0.0575 vs +0.0295) while rho is negative, so the negative correlation lives in the
+MIDDLE of the distribution and not in the tail a veto cuts. Re-simulated as a VETO against a random
+gate of the same selectivity it clears on both US30L blocks (holdout p **0.000** on a base that
+loses money) and on the different-provider block **7 of 8 cells have a NEGATIVE uplift and none
+clears** (best p 0.387). **AND THE ADAPTIVE HOLD CAP LOSES TO ITS OWN SHUFFLED FORECAST** -- every
+hold cap here is a constant and time-to-touch is the one predictable thing an ATR stop says nothing
+about, so a ridge forecasting it (research IC +0.3344, **holdout +0.4150**) set the cap at 2x the
+forecast: research +0.0032 %/trade against a shuffled twin's -0.0042, forward block **+0.0099
+against the twin's +0.0126**, and the FIXED cap beats both on every block. Trade count nearly
+triples (1745 -> 5023) because shorter caps release the position lock, so the adaptive policy is a
+DIFFERENT STRATEGY and the shuffled arm is the only honest comparison. **THE PATTERN ACROSS V67 AND
+THIS STUDY IS ONE STATEMENT: a movement forecast can only pay where it prices something the ATR does
+not already price, and both candidates -- the STOP WIDTH and the HOLD CAP -- turn out to be already
+priced.** See `docs/ib/STUDY_MV30.md`, `research/mv30/`.
+
 ## Tooling
 
 | module | what it does |
@@ -3681,6 +3719,7 @@ See `docs/ib/STUDY_MR30.md`, `research/mr30/`.
 | `research/v67/` | movement vs price: `v67core.py` (eight declared targets incl. a duration target and direction as the control, each with its own trailing baseline, plus a Newey-West t and a BH helper), `run_v1` (audit then the whole grid), `run_v2` (the max-of-71 null, cached, and the causal HMM with V27's collapse and filtered-vs-smoothed diagnostics and an expected-sojourn feature), `run_v3` (the CIRCULAR BLOCK permutation that replaces it), `run_v4` (the decision test: a vol forecast against the fixed stop, V22's rule and its own SHUFFLED twin) |
 | `research/dl50/` | the fixed-point / ATR barrier study on US30: `d50core.py` (both walkers, Wilder's ADX returning BOTH DIs, the break-even the geometry implies, the point-stop-in-ATR drift table), `d50feat.py` (50 causal features in 8 families with a causal time-of-day baseline), `run_d1..d8` (geometry -> base rates -> the model ladder beside shuffled twins -> the window and flatten -> ATR barriers and the ADX gate -> the year decomposition), `run_d9.py` (slide the cut across eleven split points; walk-forward with in-fold re-selection beside the constants and a random cell; the sign noise priced by day-block bootstrap), `run_d10.py` (the walk-forward split at the research cut, and the framing test -- the rule against a random entry, always-long, and no window, all in the same block) |
 | `research/mr30/` | US30 alone, four primaries under the two-gate architecture: `mr30core.py` (Phase 0 in the docstring, the displacement event stream with the side FORCED by the mechanism, three blocks incl. a different-provider forward feed, an ATR-barrier walker and a sorted matched control), `run_g0.py` (cost as a fraction of risk, the geometry-free forward-return read with Newey-West t, and the mechanism's own quintile gradient), `run_g1.py` (the mirror split by side against each side's OWN drift baseline), `run_g2.py` (the parameter-free session decomposition and the by-hour table), `run_g3.py` (Gate 1 on the overnight premium: a random SAME-LENGTH window, always-long, the vol gradient, every year), `run_g4.py` (**the exposure-matched timing test** -- 20 declared conditions x 3 holding lengths against a CIRCULAR SHIFT of each condition's own mask, which preserves count and clustering exactly), `run_g5.py` (the ATR percentile as a pre-registered replication across three blocks, its mirror, and V22's mechanism), `run_g6.py` (the sizing fact as a stop policy, with the naive inverse as its falsifier) |
+| `research/mv30/` | US30 15m, movement not price: `mv30core.py` (71 volatility columns plus a declared INEFFICIENCY family -- Lo-MacKinlay variance ratios at four lags x three windows, rolling AR(1), Roll's implied spread from the same serial covariance, Amihud illiquidity, vol-clustering persistence, bar shape against causal time-of-day baselines -- plus the truncation audit), `run_m1.py` (**the exact circular-shift null**: one FFT per feature gives its IC at every shift, so the max over features at each shift is the exact null of a best-of-N IC, ~180k draws; eight targets x three horizons with direction as the control), `run_m2.py` (four unsupervised detectors -- PCA / Mahalanobis / isolation forest / torch autoencoder -- fitted on the research block only and never shown a label, then read against MOVEMENT and against TRADE OUTCOME separately), `run_m3.py` (the volatility-rename check on the trigger's own bars, then the anomaly as a VETO re-simulated against a random gate of the same selectivity on all three blocks), `run_m4.py` (the adaptive hold cap from a time-to-touch forecast, against a fixed cap AND against the same forecast SHUFFLED) |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
 | `research/pin/` | the EKOP/Yan PIN mixture: causal four-step fit, the three-hypothesis posterior, the volume-weighted B/S construction, the matched control, and `pin_parity.py` — the shipped Pine's own order model run on bars |
