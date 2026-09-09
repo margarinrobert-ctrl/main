@@ -1,0 +1,135 @@
+// ================================================================================================
+// VIX IMPLIED DAILY RANGE -- daily VIX read on a 1-minute chart, without repainting
+//
+// I do not have your script, so this is a correct implementation rather than a patch to yours.
+// Paste yours and I will fix that one; the four traps below are what produce the red "!" badge on
+// a title of exactly this shape, and all four are handled here.
+//
+// TRAP 1 -- THE REQUEST REPAINTS OR ERRORS. `request.security(sym, "D", close)` on an intraday
+//   chart returns the STILL-FORMING daily bar, so the value changes all session and the history
+//   does not match what you saw live. The non-repainting idiom is `close[1]` with
+//   `lookahead_on`: it asks for the last CONFIRMED daily bar and is the one combination that is
+//   both stable and honest. `lookahead_on` with `close` (no [1]) is the actual look-ahead leak --
+//   it hands an intraday bar the value of a daily bar that has not closed yet.
+//
+// TRAP 2 -- THE SYMBOL. "VIX" alone often does not resolve. Use a fully qualified ticker:
+//   TVC:VIX (index, most widely available), CBOE:VIX, or CAPITALCOM:VIX. If the ticker cannot be
+//   resolved the script errors rather than plotting nothing, which is what a red "!" looks like.
+//
+// TRAP 3 -- VIX DOES NOT TRADE WHEN YOUR FUTURES CHART DOES. On a 1-minute CME chart the overnight
+//   session has no VIX bar, so the request returns `na` and anything dividing by it produces `na`
+//   or a runtime error. Every consumer here is `na`-guarded and the last good value is held.
+//
+// TRAP 4 -- THE ARITHMETIC. VIX is an ANNUALISED standard deviation in PERCENT. The one-day
+//   1-sigma move is  price * (VIX/100) / sqrt(N)  with N trading days a year. The familiar
+//   "divide by 16" is sqrt(256); the honest constant is sqrt(252) = 15.87. Both are inputs.
+//
+// WHAT THIS CANNOT BE ON THIS BRANCH: it is not backtested and no edge is claimed. `data/VIX_daily.csv`
+// ends 2021-12-31 while NQ begins 2022-12-26 -- zero shared sessions -- and no market-data host is
+// reachable from this environment (CBOE, Stooq and Yahoo all answer 403 at the CONNECT, an
+// organization egress-policy denial). Every VIX statement on this branch is daily-scale evidence
+// about the equity complex transferred by analogy, never by a join. TradingView can pull VIX live;
+// this repository cannot, so the script is written and linted here and verified on your chart.
+// ================================================================================================
+//@version=5
+indicator("VIX Implied Daily Range", overlay = true, max_lines_count = 500,
+     max_labels_count = 100)
+
+grpV = "VIX"
+vixSym = input.symbol("TVC:VIX", "VIX symbol", group = grpV,
+     tooltip = "Fully qualified. TVC:VIX is the most widely available; CBOE:VIX and " +
+       "CAPITALCOM:VIX also work. A bare 'VIX' frequently fails to resolve, which is an error " +
+       "rather than an empty plot.")
+useConfirmed = input.bool(true, "Use the last CONFIRMED daily VIX", group = grpV,
+     tooltip = "ON = close[1] with lookahead, the non-repainting idiom. OFF reads the forming " +
+       "daily bar, which repaints all session -- shown only so the difference is visible.")
+dayCount = input.int(252, "Trading days per year", options = [252, 256], group = grpV,
+     tooltip = "252 gives sqrt = 15.87. 256 gives exactly 16, which is where the 'divide by 16' " +
+       "rule of thumb comes from.")
+
+grpD = "Display"
+anchorRTH = input.bool(true, "Anchor the band to the RTH open", group = grpD)
+sessStr   = input.session("0930-1600", "Session (exchange time)", group = grpD,
+     tooltip = "Exchange time, NOT New York -- on a CME symbol those differ.")
+showHalf  = input.bool(true, "Also plot the 0.5-sigma band", group = grpD)
+showHud   = input.bool(true, "Show the panel", group = grpD)
+
+// ---------------------------------------------------------------------------------------------
+// the request -- one call, both readings, so the symbol is resolved exactly once
+// ---------------------------------------------------------------------------------------------
+[vixConf, vixLive] = request.security(vixSym, "D", [close[1], close],
+     lookahead = barmerge.lookahead_on)
+
+vixRaw = useConfirmed ? vixConf : vixLive
+// TRAP 3: hold the last good value through any bar where VIX has no quote.
+var float vix = na
+if not na(vixRaw) and vixRaw > 0
+    vix := vixRaw
+
+// ---------------------------------------------------------------------------------------------
+// the anchor -- the session open, frozen for the session
+// ---------------------------------------------------------------------------------------------
+inSess   = not na(time(timeframe.period, sessStr))
+sessOpen = inSess and not inSess[1]
+
+var float anchor = na
+if anchorRTH
+    if sessOpen
+        anchor := open
+else
+    anchor := close
+
+anchorPx = anchorRTH ? anchor : close
+
+// ---------------------------------------------------------------------------------------------
+// TRAP 4: the arithmetic, guarded end to end
+// ---------------------------------------------------------------------------------------------
+sqN     = math.sqrt(dayCount)
+sigmaPc = na(vix) ? na : (vix / 100.0) / sqN            // one-day 1-sigma, as a fraction of price
+sigmaPt = (na(sigmaPc) or na(anchorPx)) ? na : anchorPx * sigmaPc
+
+up1 = na(sigmaPt) ? na : anchorPx + sigmaPt
+dn1 = na(sigmaPt) ? na : anchorPx - sigmaPt
+up5 = na(sigmaPt) ? na : anchorPx + 0.5 * sigmaPt
+dn5 = na(sigmaPt) ? na : anchorPx - 0.5 * sigmaPt
+
+plot(up1, "+1 sigma", color = color.new(color.red, 0), style = plot.style_linebr, linewidth = 2)
+plot(dn1, "-1 sigma", color = color.new(color.green, 0), style = plot.style_linebr, linewidth = 2)
+plot(showHalf ? up5 : na, "+0.5 sigma", color = color.new(color.red, 55),
+     style = plot.style_linebr)
+plot(showHalf ? dn5 : na, "-0.5 sigma", color = color.new(color.green, 55),
+     style = plot.style_linebr)
+plot(anchorRTH ? anchorPx : na, "anchor", color = color.new(color.gray, 40),
+     style = plot.style_linebr)
+
+// how much of the implied range today's actual range has already used
+var float dHi = na
+var float dLo = na
+if anchorRTH and sessOpen
+    dHi := high
+    dLo := low
+else if inSess or not anchorRTH
+    dHi := na(dHi) ? high : math.max(dHi, high)
+    dLo := na(dLo) ? low : math.min(dLo, low)
+
+usedPc = (na(dHi) or na(dLo) or na(sigmaPt) or sigmaPt <= 0) ? na
+     : 100.0 * (dHi - dLo) / (2.0 * sigmaPt)
+
+var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+if showHud and barstate.islast
+    table.cell(hud, 0, 0, "VIX (" + (useConfirmed ? "confirmed" : "live") + ")",
+         text_size = size.small)
+    table.cell(hud, 1, 0, na(vix) ? "no quote" : str.tostring(vix, "#.##"),
+         text_size = size.small)
+    table.cell(hud, 0, 1, "1-sigma day", text_size = size.small)
+    table.cell(hud, 1, 1, na(sigmaPc) ? "-" : str.tostring(sigmaPc * 100, "#.##") + "%",
+         text_size = size.small)
+    table.cell(hud, 0, 2, "in points", text_size = size.small)
+    table.cell(hud, 1, 2, na(sigmaPt) ? "-" : str.tostring(sigmaPt, format.mintick),
+         text_size = size.small)
+    table.cell(hud, 0, 3, "band", text_size = size.small)
+    table.cell(hud, 1, 3, na(dn1) ? "-" : str.tostring(dn1, format.mintick) + "  ..  " +
+         str.tostring(up1, format.mintick), text_size = size.small)
+    table.cell(hud, 0, 4, "range used", text_size = size.small)
+    table.cell(hud, 1, 4, na(usedPc) ? "-" : str.tostring(usedPc, "#.#") + "%",
+         text_size = size.small)
