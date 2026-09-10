@@ -70,3 +70,8 @@ results/inst/frontier_grid.parquet
 results/vwanom/*.pkl
 results/xanom/*.pkl
 research/alloc/*.pkl
+research/us30meta/logs/
+research/us30exit/logs/
+research/us30xmkt/_cache/
+research/us30rate/logs/
+**/__pycache__/
