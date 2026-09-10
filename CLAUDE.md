@@ -4016,6 +4016,58 @@ execution, data noise and path luck as explanations and identifies the arm that 
 rather than largest; it does not move the detectability bar.
 See `docs/ib/STUDY_US30_SCALP_0711.md` section 13.
 
+**RAISING THE TRADE RATE MAKES DETECTABILITY WORSE, SO BOTH ROUTES TO MORE EVENTS ARE NOW CLOSED --
+AND THE LADDER INVERTS SECTION 13'S ARM RANKING.** The MDE is `2.802*sd/sqrt(n)` and the requirement
+was 1,073 trades against 400 in hand, so the entry channel -- the only parameter that changes the
+EVENT RATE without touching the mechanism, geometry, session or cost -- was laddered over six
+declared rungs x three arms x three blocks. **A LADDER IS READABLE WHERE A GRID IS NOT**: over
+those 18 cells `E[max t | pure noise]` is **1.854** against the 2.802 detection threshold, where
+section 10's 1,176 cells gave 3.301 -- that single comparison is what makes one run admissible and
+the other not, and it should be computed before any multi-cell run on this branch. Result: channel
+20 -> 10 buys **28% more trades and costs 46% of the per-trade edge**, so delivered/MDE FALLS
+0.610 -> 0.380 and years-to-verify rises 16.6 -> 42.7; `spearman(rate, t)` has no consistent sign
+across the three blocks (+0.714 / -0.314 / +0.657). The unfiltered base needs **15,000-53,000
+trades** at every rung. With pooling already measured to shrink the edge faster than the error bar,
+neither axis raises power here. **AND THE RANKING INVERTS**: section 13 named `+adx<=20` the only
+arm positive on all three blocks, which was true AT CHANNEL 20 and is not true of the condition.
+Against a same-selectivity random VETO (400 draws, re-simulated) `+ema align` beats its own null in
+**18 of 18 cells including 6/6 on the reserved different-provider feed** while `+adx<=20` is 15/18
+and **3/6 there -- a coin flip on the block nobody chose** (median p 0.617 against 0.301). The
+mechanism is readable and partly mechanical: `ema align` keeps 54-85% of signals with selectivity
+RISING in the channel, `adx<=20` keeps 19-34% and FALLING, leaving 61 forward trades at channel 55
+-- so the milder condition is the one that survives a short reserved block, which is a reason to
+prefer it that has nothing to do with which filters better. **AND 18 CELLS ARE NOT 18 TESTS**:
+applying `N_hat = rho + (1-rho)*M` to the arms' own signal sets, mean pairwise Jaccard **0.839**
+for `ema align` gives **1.80 effective rungs of 6** (18/18 -> 5/5, binomial p 0.0312) and 0.585 for
+`adx<=20` gives 3.07 (15/18 -> 8/9, p 0.0195) -- so the PERFECT record is worth LESS than the messy
+one looks, because its rungs are very nearly one test. Both land near p 0.02-0.03: about one and a
+half real confirmations each, neither detectable on the reserved block, and on the holdout the base
+LOSES money at every rung so both filters merely rescue a losing null.
+
+**AND THE PROMOTED CONDITION IS ONE INEQUALITY, NOT THREE -- THE FAST EMA IS A COIN FLIP.** Seven
+declared readings decomposing `ema13>34>89` at channel 20, one fitted number (the distance median,
+taken on research and carried unchanged), 21 cells at `E[max t | noise]` 1.90. The base-rate check
+BINDS for once -- every reading passes 44-92% of the trigger's own bars at lifts 1.19-2.32x, so
+nothing in the pool is the trigger restated, which after eight consecutive catches is worth
+recording. **`ema34>ema89` ALONE carries it**: 3/3 blocks, the best p in the table (0.030), and it
+beats the full alignment on the holdout (+3.780 vs +2.727), while `ema13>ema34` alone is NEGATIVE on
+both out-of-sample blocks. Confirmed on the six-rung ladder: the fast inequality is **9 of 18 cells,
+median p 0.575, mean delta -0.324, mean PF exactly 1.000**. **But read the head-to-head honestly --
+the slow half beats the full alignment in only 6 of 18 cells at +0.033 points a trade**, so they are
+the same condition and the finding is NOT that dropping the 13-EMA makes money; it is that dropping
+it costs nothing while removing a parameter, which is the only reason needed. Two negatives kept:
+`close>ema89` and `(close-ema89)/ATR >= 0` reproduce each other TO THE CENT, which was the
+construction check on my own readings and is worth building into any distance/state comparison; and
+**the DISTANCE reading does not transfer at this geometry** -- it is the best cell on research
+(+4.202, p 0.003) and on the forward feed (+4.248) and the WORST on the holdout (-6.238, p 0.990),
+with V51's 1.5 ATR floor frozen from another market 1/3 and negative on the reserved feed. So
+`STUDY_V40`'s distance-beats-state finding fails here, `STUDY_V52`'s geometry lesson for a third
+time. What the two sections leave standing is **Donchian 20 long + `EMA34 > EMA89`, 07:00-11:00 New
+York, flat at the 11:00 open, 50/150** -- one condition, not three, and not the ADX ceiling section
+13 named. Every cell of it is still inside its own MDE. Ninth name-shadow here: `j.align` returns a
+bound `DataFrame.align` and the comparison raises, the second time `.align` specifically has done
+it. See `docs/ib/STUDY_US30_SCALP_0711.md` sections 14-15.
+
 ## Tooling
 
 | module | what it does |
@@ -4032,6 +4084,7 @@ See `docs/ib/STUDY_US30_SCALP_0711.md` section 13.
 | `research/mv30/` | US30 15m, movement not price: `mv30core.py` (71 volatility columns plus a declared INEFFICIENCY family -- Lo-MacKinlay variance ratios at four lags x three windows, rolling AR(1), Roll's implied spread from the same serial covariance, Amihud illiquidity, vol-clustering persistence, bar shape against causal time-of-day baselines -- plus the truncation audit), `run_m1.py` (**the exact circular-shift null**: one FFT per feature gives its IC at every shift, so the max over features at each shift is the exact null of a best-of-N IC, ~180k draws; eight targets x three horizons with direction as the control), `run_m2.py` (four unsupervised detectors -- PCA / Mahalanobis / isolation forest / torch autoencoder -- fitted on the research block only and never shown a label, then read against MOVEMENT and against TRADE OUTCOME separately), `run_m3.py` (the volatility-rename check on the trigger's own bars, then the anomaly as a VETO re-simulated against a random gate of the same selectivity on all three blocks), `run_m4.py` (the adaptive hold cap from a time-to-touch forecast, against a fixed cap AND against the same forecast SHUFFLED) |
 | `research/alloc/` | **allocation across the legs that already exist**: `allocbuild.py` / `allocbuild2.py` (every (strategy, feed) trade table from `top5/t5_adapt`, at 1x and 2x cost), `alloccore.py` (the common research cut, the zero-filled daily panel, five weighting schemes with a shrunk covariance, the block bootstrap and the simplex null), `run_a1.py` (correlation transfer BEFORE the schemes, then one reserved read against equal weight and against 2,000 random weightings), `run_a2.py` (is the transfer trivial, does mu transfer, ablate the covariance, walk it forward, slide the cut), `run_a3.py` (the walk-forward against 500 random allocators run through the SAME procedure, per fold, leg count, drop-one, and the book against its best single leg), `run_a4.py` (legs chosen INSIDE every fold against a random subset of the same size, selection crossed with weighting, all at matched volatility), `run_a5.py` (2x cost, the paired bootstrap at matched volatility, selection stability, and a frozen-set ablation), `run_a6.py` (the two Monte Carlos on the book itself -- day-block bootstrap against ZERO and a permutation for the path, with MC p99 drawdown and the underwater profile), `run_a7.py` (DAY-level profit factor with the win-rate/payoff decomposition, both nulls, and the legs' trade-level PF printed beside it so the two units are not conflated), `plot_alloc.py` |
 | `research/us30scalp/` | the 07:00-11:00 US30 question asked as ARITHMETIC first: `s30core.py` (the `mr30core` walker plus a CLOCK FLATTEN filling at the cutoff bar's open with a fill-at-or-after-the-bell signal REFUSED, a `tie` switch so stop-first and target-first can be run as a bracket, the break-even a geometry implies, seven declared triggers and a sorted matched control drawn from eligible in-window bars), `run_s1.py` (cost as a fraction of risk, the population at nine geometries GROSS and NET, the hours inside the window, and window-vs-flatten separated), `run_s2.py` (the tie-break bracket, then 21 trigger x geometry cells against the matched control, plus always-in), `run_s3.py` (a 175-cell geometry sweep read by marginal average, the consensus cell read once on the holdout AND the different-provider forward block, and the cost ladder), `run_s4.py` (the BRIEF'S OWN space -- 168 cells over 20-150 POINTS x 8 targets x three caps with the cap binding instead of a bell, the population beside the trigger, and the same distances re-run in ATR so the two parameterisations can be compared), `run_s5.py` (seven triggers at the marginal consensus and eight geometries on the best of them, each against a matched random entry, one read on the holdout and the forward block, and a day-block bootstrap against zero), `run_s6.py` (**diagnose the null before trusting it** -- the ratio of the null's spread to the rule's own standard error, the null's trade-count stability, signals per session, first-signal-only, and concurrency), `run_s7.py` (the minimum detectable effect by trade count, the edge each profit factor requires and how long each would take to verify, and the same grid ranked by mean / t / Sharpe / PF), `run_s8.py` (every trigger x the full space, the detection threshold against E[max t | noise] for a search that size, deflation over the counted looks, and the research-to-holdout transfer of the whole population), `run_s9.py` (**the rule the team's component findings imply, declared in full before running** -- five arms x two geometries with the conventional ADX-floor stack included as the arm that must lose, a Wilder ADX diffed against an explicit reference, control and bootstrap and MDE on every cell, and one read each of the holdout and the different-provider forward block), `s10lib.py` + `run_s10.py` + `plot_s10.py` (the full battery: a numba Wilder ADX asserted identical to the reference, four Monte Carlos kept separate -- day-block bootstrap for the EDGE, permutation for the PATH, an execution perturbation applied INSIDE the walk, and price jitter with every indicator RECOMPUTED -- a fixed-constant walk-forward with re-chosen and random arms beside it, and three correlation matrices: between arms on daily P&L, between conditions ON THE SIGNAL BARS, and the arm ranking across blocks) |
+| `research/us30rate/` | **is the trade rate a lever on detectability?** `r_lib.py` (six declared channel rungs, `e_max_normal` so a ladder's noise floor is computed before it is read, a same-selectivity random FILTER re-simulated as a VETO, and the trades-to-verify arithmetic), `run_r1.py` (the power ladder: n, rate, edge, sd, MDE, delivered/MDE and years-needed per rung, plus the Jaccard between rungs so the cells are not mistaken for independent tests), `run_r2.py` (every cell against its own null, and the Bailey/Lopez de Prado effective-rung correction applied to the sign test), `run_r3.py` (seven declared readings decomposing the EMA stack, with `close>ema89` and `dist>=0` included as a construction check that must agree exactly), `run_r4.py` (the drop-the-fast-EMA claim re-run on all six rungs, head to head) |
 | `research/us30team/` | the three-agent team on US30 07:00-11:00 with the flatten, each workstream a PRE-DECLARED grid with a null in front: `base_rates.py` + `run_b1..b4.py` (base rates on the trigger's own bars, a CAUSAL time-of-day ATR baseline beside the broken trailing one, the signal-bar correlation matrix, 42 single-condition VETOES and 24 drop-one arms with the MDE printed beside every one, ADX and ATR run as floors AND ceilings, one read each of the holdout and the different-provider forward block); `pool.py` + `run_p1..p4.py` (three feeds with their clocks re-derived, the trigger-overlap matrix and date-clustered effective sample size BEFORE any power claim, pooling in ATR units and percent of price, and the pooled MDE printed against the pooled edge); `session.py` + `run_f1..f3.py` (the flatten priced by a PAIRED comparison on identical entry bars, the exit mix and the counterfactual, give-back against a barrier-resolved control, the tie-break bracket, and a permutation on the drawdown) |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
