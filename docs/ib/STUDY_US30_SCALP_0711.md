@@ -386,6 +386,90 @@ window's rate, against the 8.7 years US30L carries.** That is the first number i
 a reachable condition rather than an impossible one: doubling the US30 history would settle this
 rule, and the different-provider forward feed is accumulating it in real time at ~65 trades a year.
 
+
+## 13. The full battery on `+adx<=20`: four Monte Carlos, three blocks, a fixed walk-forward, three matrices
+
+Figures: `research/us30scalp/s10_oos_walkforward.png`, `s10_montecarlo_correlations.png`.
+Code: `s10lib.py` (ADX kernel asserted identical to the §12 reference, max |diff| 0.000e+00 over
+193,928 bars), `run_s10.py`, `plot_s10.py`.
+
+**Out of sample, points a trade:**
+
+| arm | A research | B holdout | C forward (different provider) |
+|---|---|---|---|
+| **+adx<=20** | **+6.260** | **+4.596** | **+6.382** |
+| +ema align | +2.794 | +1.126 | +6.787 |
+| +both | +6.613 | +8.515 | **-1.378** |
+| base | +0.956 | -1.601 | +4.613 |
+| conventional | +1.419 | **-3.269** | +11.417 |
+
+`+adx<=20` is the only arm positive on all three with a tight spread (+4.6 to +6.4); `+both` and
+the conventional stack each swing by 10-15 points between blocks.
+
+**Monte Carlo on `+adx<=20`** — four different questions, kept separate:
+
+| | research | holdout |
+|---|---|---|
+| **bootstrap (EDGE)** P(mean<=0) | **0.037** | 0.229 |
+| 95% CI, points/day | [-0.52, +14.45] | [-8.02, +18.53] |
+| **permutation (PATH)** realised DD | 1117 | 1081 |
+| percentile of realised | 0.760 | 0.865 |
+| **MC p99 / realised** | **1.62x** | 1.38x |
+| **execution** P(<=0) | **0.000** | **0.000** |
+| **price jitter**, indicators recomputed, sign kept | **1.000** | **0.993** |
+
+The rule is robust to everything that is not the sample: 250 execution draws (slippage U(0,2x),
+cost U(0.5x,2x) applied inside the walk) never turn it negative, and 150 price-jitter draws with
+**ADX, both EMAs, ATR and the Donchian channel all recomputed from jittered bars** keep the sign
+1.000 / 0.993 of the time. What it is not robust to is its own sample size: the research bootstrap
+excludes zero at 0.037 and the holdout's does not at 0.229. **And the realised drawdown sits at the
+76th and 87th percentile of reshuffles of its own trades — the path was UNLUCKY, not lucky, so the
+sizing number is MC p99 = 1.62x the realised drawdown, not less.**
+
+**Walk-forward with the constants FIXED** — the honest test for a derived rule — eight calendar
+folds:
+
+| arm | folds positive | mean pts/trade |
+|---|---|---|
+| **+both** | 5/8 | **+14.638** |
+| **+adx<=20** | **6/8** | +9.236 |
+| random arm | 5/8 | +3.817 |
+| +ema align | 5/8 | +3.439 |
+| **re-chosen each fold** | **4/8** | **+1.189** |
+| base | 4/8 | +1.119 |
+| conventional | 5/8 | **-0.687** |
+
+**The re-optimiser loses again** — 4/8 folds at +1.189 against the fixed `+adx<=20`'s 6/8 at
++9.236, and it also loses to a RANDOM arm (+3.817). Fifteenth such comparison on this branch. It
+picked `conventional` twice and got -23.798 in 2020 for it. Two more things the fold table says
+that no summary statistic does: **2023 and 2024 are negative for every single arm** — a two-year
+drawdown the equity curves make plain — and **2025 supplies +36.253 for `+adx<=20` and +76.297 for
+`+both`**, so a large share of the mean sits in one year.
+
+**Three correlation matrices, three different questions.**
+
+*Between the arms (daily P&L, research):* `+adx<=20` correlates **0.052** with the conventional
+stack — they are opposite ADX readings and behave that way — and **0.328** with always-long, the
+lowest of any arm, so it is the least drift-like object in the set. `+ema align` correlates 0.742
+with the conventional stack, which is why the conventional stack is not simply noise.
+
+*Between the conditions on the SIGNAL BARS:* `adx<=20` vs `ema align` is **-0.1185**, confirming
+the team's cross-family 0.236 on a different construction — ADX and EMA are genuinely separate
+axes here, which is unusual on this branch and is why the two filters stack at all. `adx<=20` vs
+`adx>=25` is -0.6043, the expected mirror.
+
+*Arms across blocks:* the rank correlation of the arm ordering is **A→B +0.900**, and
+**A→C -0.400, B→C -0.700**. **The ranking transfers perfectly between two blocks of the same feed
+and INVERTS on a different provider.** That is `STUDY_TREND_LONG`'s lesson arriving one more time —
+two blocks of one data feed are not two tests — and it is the reason `+both`, which looks best on
+A and B, is the arm that dies on C.
+
+**What the battery changes, and what it does not.** It removes execution, data noise and path
+luck as explanations, and it identifies `+adx<=20` as the arm whose result is most stable across
+providers rather than merely largest. It does not move the detectability bar: the holdout bootstrap
+still fails to exclude zero, every cell is still inside its MDE, and the forward block disagrees
+about which arm is best.
+
 ## Verdict
 
 **§12 is the current state and the one thing worth acting on: the rule derived from the team's
