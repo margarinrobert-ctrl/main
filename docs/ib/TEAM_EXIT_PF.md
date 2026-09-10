@@ -4,12 +4,21 @@ Asked to improve **profit factor** on `STUDY_US30_SCALP_0711` §12's primary, va
 geometry and position management only. The entry trigger (Donchian 20 long), the filters
 (`+adx<=20`), the window (07:00-11:00 New York) and the 11:00 flatten are held fixed throughout.
 
-`research/us30exit/`: `x_lib.py`, `x_run1.py` .. `x_run5.py`.
+`research/us30exit/`: `x_lib.py`, `x_run1.py` .. `x_run7.py`.
 
 **The answer in one line: a trailing stop raises profit factor from 1.24 to 1.42 and a COIN FLIP
 with the same trailing stop raises it from 0.94 to 1.00 — and at a 0.25 ATR trail the coin flip
 reads PF 2.44. Profit factor is not comparable across exit geometries, and once every cell is
 priced against its own null nothing in the 80-cell space beats the incumbent out of sample.**
+
+**A note on the base arm, added after the grid ran.** §1-8 are built on `+adx<=20` because that is
+the arm `STUDY_US30_SCALP_0711` §12-13 named. §18 of that study has since **withdrawn** it — its
++6.260 is a POINTS figure that inverts in ATR, and the ceiling clears 5 of 14 cells on four fresh
+markets where chance is 7. **This study does not rest on it.** §9 re-runs the identical 80-cell grid
+on `+ema align` and `ema34>89` and the exit verdict is the same on all three arms; §9.6 re-reads the
+exit marginal in ATR units and shows the exit axis does not re-select volatility the way the arm
+comparison does (trail/flatten median signal-bar ATR 0.98-1.00 against §18's 0.894). Read §9 as the
+load-bearing part.
 
 **Trial count: 255 research cells and 38 reserved reads.** 80 declared grid cells, plus 6 extra
 trail-multiplier rungs, 1 extra stop rung and 2 extra target rungs added as declared neighbourhoods;
@@ -525,6 +534,50 @@ that the trail's twin prefers it too, and they agree that the incumbent's 50/150
 what survives everywhere. If anything the cross-arm read makes §4's case stronger, because the one
 arm on which the trail's excess looked best is the one arm on which it inverts hardest out of sample.
 
+### 9.6 Does the exit marginal invert in ATR units, as the ARM comparison does?
+
+`STUDY_US30_SCALP_0711` §18, published while this grid was running, found that `+adx<=20` beats its
+base by **+5.304 POINTS and by −0.0134 ATR** — the ceiling selects calmer bars (median signal-bar
+ATR **0.894x** the base's) so its point advantage is carried by the high-ATR minority it keeps.
+Everything in §1-9.5 is in points, so the same question had to be put to the EXIT axis. `x_run7.py`.
+
+**The exposure is much smaller here, and the reason is measurable.** §18 compares two different
+ENTRY populations; every comparison in this study holds the entry fixed. The policies do admit
+slightly different trade counts, so the ATR mix can still move — and it barely does:
+
+| arm | median signal-bar ATR, trail / flatten |
+|---|---|
+| `+adx<=20` | **0.9954** |
+| `+ema align` | 0.9877 |
+| `ema34>89` | 0.9814 |
+
+against the 0.894 that drives §18's inversion. The exit axis does not re-select the volatility
+regime.
+
+**But the two units DO disagree on one arm, and it is the arm §18 flagged.** Spearman between the
+d_pts and d_atr rankings of the four policies: `+adx<=20` **−0.400**, `+ema align` **+1.000**,
+`ema34>89` **+0.800**. On the ADX arm the trail is LAST by excess points and FIRST by excess ATR.
+
+**Excess over its own twin, both units, stop 100 / target 150:**
+
+| arm | flatten pts | trail pts | flatten **ATR** | trail **ATR** |
+|---|---|---|---|---|
+| `+adx<=20` | **+6.535** | +5.467 | +0.0686 | **+0.1038** |
+| `+ema align` | **+4.409** | +3.558 | **+0.1487** | +0.0836 |
+| `ema34>89` | **+4.040** | +3.340 | **+0.1232** | +0.0805 |
+
+**Flatten-only beats the trail in excess in 5 of 6 arm x unit cells.** The single exception is the
+ADX arm read in ATR — one cell of six, on the arm whose points figures §18 has just withdrawn. That
+is the honest location of the only evidence favouring a trail anywhere in this study, and it does
+not survive being asked on a second entry condition.
+
+**And §4's mechanism holds in the second unit too**: the matched twin's ATR-unit result is
+**positive under the trail on all three arms** (+0.0364 / +0.0278 / +0.0348) and **negative under
+every other policy** (−0.0176 to −0.0638). A coin flip is lifted by the trail in ATR exactly as it
+is in points. Nothing about the trail's advantage belongs to the entry in either unit.
+
+Measuring the same 12 cells in a second unit adds no configurations to the trial count.
+
 ---
 
 ## 10. Verdict
@@ -534,9 +587,11 @@ a way that survives its own null.**
 
 - **The trailing stop is the only thing that moves PF materially, and it is geometry.** It takes PF
   1.24 → 1.42 at 1.0 ATR and → 3.24 at 0.25 ATR, and a **coin flip with the same trail reads 1.00 →
-  2.44**, replicated at 2.20-2.50 on both reserved blocks and a second provider. In excess of its
-  own twin it is worth **4% more than doing nothing in total and less per trade**, and on the
-  different-provider block it is **worse than its twin at every rung**.
+  2.44**, replicated at 2.20-2.50 on both reserved blocks and a second provider — and in **ATR units
+  as well as points**, the twin being lifted into positive territory by the trail on all three arms
+  and negative under every other policy. In excess of its own twin the trail is beaten by doing
+  nothing in **5 of 6 arm x unit cells**, and on the different-provider block it is **worse than its
+  twin at every rung**.
 - **Breakeven-after-1R subtracts on every arm** — bottom of every column on the ADX arm (22% below
   the flatten on excess total) and last or next-to-last in excess on the two EMA arms too. **The
   channel exit is a wash**: within 1% of flatten-only in excess on the ADX arm, first by a nose on
