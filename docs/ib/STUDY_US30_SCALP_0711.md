@@ -636,3 +636,67 @@ One more caveat that outranks all of the above: **on the holdout the base loses 
 (−0.44 to −5.05 points) and both filters merely rescue it, so those "clears" are against a null that
 is itself losing — `STUDY_IB_US30_OPTUNA`'s sentence again. A rule that beats a losing null is still
 a rule with nothing established.
+
+---
+
+## 15. Decomposing the promoted condition: the fast EMA is a coin flip and removing it is free
+
+`research/us30rate/run_r3.py`, `run_r4.py`.
+
+§14 promoted `ema13>34>89` over `adx<=20`, so the stack is worth taking apart before anything is
+built on it. Two of this branch's own findings say to check: `STUDY_V40`/`STUDY_V51` — a moving
+average is priced by its **distance**, not its crossing — and `STUDY_V16`/`STUDY_V41` — the state
+form of an EMA condition passes 82–91% of breakout bars and is nearly free of information. Seven
+declared readings at channel 20, one fitted number (the distance median, taken on the research
+block and carried unchanged), 21 cells at `E[max t | noise] = 1.90`.
+
+**The base-rate check binds for once.** Every reading passes 44–92% of the trigger's own bars at
+lifts of 1.19–2.32x. Nothing here is the trigger restated — the ninth time that check has been run
+on this branch and one of the few times the whole pool survived it.
+
+Delta over the same-rung base, all three blocks:
+
+| reading | research | holdout | forward | positive | min p |
+|---|---|---|---|---|---|
+| A `ema13>34>89` | +1.838 | +2.727 | +1.499 | **3/3** | 0.052 |
+| B `ema13>ema34` | +0.836 | **−1.323** | **−2.435** | 1/3 | 0.130 |
+| **C `ema34>ema89`** | +1.556 | **+3.780** | +1.297 | **3/3** | **0.030** |
+| D `close>ema89` | +0.818 | +0.249 | +0.563 | 3/3 | 0.070 |
+| E `dist>=0` | +0.818 | +0.249 | +0.563 | 3/3 | 0.070 |
+| F `dist>=median` | **+4.202** | **−6.238** | +4.248 | 2/3 | 0.003 |
+| G `dist>=1.5 ATR` | +0.436 | −0.543 | −2.217 | 1/3 | 0.320 |
+
+**The slow half is the whole condition.** `ema34>ema89` alone is 3/3 with the best p in the table
+and beats the full alignment on the holdout. **The fast inequality is negative on both
+out-of-sample blocks.** Confirmed on the six-rung ladder §14 declared, 18 (rung × block) cells each:
+
+| reading | positive | p≤0.05 | median p | mean delta | holdout mean | forward mean |
+|---|---|---|---|---|---|---|
+| `align 13>34>89` | 18/18 | 6 | 0.092 | +2.675 | +4.315 | +2.269 |
+| `slow 34>89` | 18/18 | **7** | 0.098 | **+2.708** | **+4.486** | **+2.337** |
+| `fast 13>34` | **9/18** | 2 | **0.575** | **−0.324** | −0.112 | −1.397 |
+
+`fast 13>34` on its own is a coin flip — 9 of 18, median p 0.575 against a random gate of its own
+selectivity, mean delta negative, mean PF exactly 1.000.
+
+**Read the head-to-head honestly: the slow half beats the full alignment in only 6 of 18 cells at a
+mean advantage of +0.033 points a trade.** They are the same condition. So the finding is *not* that
+dropping the 13-EMA makes money — it is that **dropping it costs nothing while removing a
+parameter**, and that is the reason to do it. The aggregate out-of-sample means and totals tilt the
+same way (holdout +4.486 vs +4.315, forward +2.337 vs +2.269, both totals higher), which is
+corroboration and not a second result.
+
+Two negatives worth keeping:
+
+- **`E` reproduces `D` to the cent**, as it must — `close > ema89` *is* `(close−ema89)/ATR >= 0`.
+  That was included as a construction check on my own readings and it passed.
+- **The distance reading does not transfer on this base.** `F` is the best cell on research
+  (+4.202, p 0.003) and on the forward feed (+4.248) and the **worst** on the holdout (−6.238,
+  p 0.990); `G`, V51's 1.5 ATR floor frozen at the value a different market chose, is 1/3 and
+  negative on the reserved feed. So `STUDY_V40`'s distance-beats-state finding **does not
+  reproduce at this geometry** — `STUDY_V52`'s lesson that a filter is a property of a geometry
+  rather than of a market, reached a third time.
+
+**The rule the two sections leave standing** is Donchian 20 long, 07:00–11:00 New York, flat at the
+11:00 open, 50-point stop / 150-point target, `EMA34 > EMA89`. One condition, not three, not the ADX
+ceiling §13 named. Every cell of it is still inside its own MDE.
