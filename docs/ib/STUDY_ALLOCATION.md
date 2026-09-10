@@ -219,6 +219,55 @@ return-over-drawdown. That is the largest effect in the study and it needed no f
 Everything after it — weighting +0.07, selection +0.16, the two together +0.39 — is smaller than
 the step from one leg to eleven.
 
+## 9. The two Monte Carlos: it clears zero, and the best-looking path was the luckiest
+
+Bootstrap WITH REPLACEMENT for the edge, PERMUTE for the path. Day-block bootstrap, 4,000 draws:
+
+| arm | n | total | Sharpe | mean/day | 95% CI | P(mean <= 0) |
+|---|---|---|---|---|---|---|
+| walk-fwd all 11, equal | 1996 | 21.88 | 1.193 | 0.0110 | [0.0049, 0.0173] | **0.0005** |
+| walk-fwd all 11, risk parity | 1996 | 14.17 | 1.261 | 0.0071 | [0.0032, 0.0110] | 0.0008 |
+| walk-fwd all 11, mean-variance | 1996 | 27.69 | 1.275 | 0.0139 | [0.0071, 0.0213] | 0.0000 |
+| walk-fwd top 4, equal | 1996 | 46.87 | 1.438 | 0.0235 | [0.0129, 0.0346] | 0.0000 |
+| walk-fwd top 5, risk parity | 1996 | 31.40 | 1.581 | 0.0157 | [0.0087, 0.0230] | 0.0000 |
+| single-fit reserved, equal | 1178 | 14.51 | 1.463 | 0.0123 | [0.0044, 0.0205] | 0.0012 |
+| single-fit reserved, mean-variance | 1178 | 22.37 | 1.812 | 0.0190 | [0.0094, 0.0294] | 0.0000 |
+
+**Every arm's 95% CI excludes zero.** That is `STUDY_V15_BOOK`'s split running the OTHER WAY from
+§5: the book clears ZERO comfortably and no arm clears its own matched null. Both are true and
+neither is the other. What is being bought by allocating is not "a profitable book" — eight legs at
+equal weight already gives that — it is a claim about *which* weights, and that claim is the one
+that does not separate.
+
+Permutation of each arm's own daily series, 4,000 reshuffles:
+
+| arm | realised DD | MC median | MC p95 | **MC p99** | percentile of realised | p99 / realised |
+|---|---|---|---|---|---|---|
+| walk-fwd all 11, equal | 3.14 | 3.18 | 4.92 | 5.99 | 0.480 | 1.91 |
+| walk-fwd all 11, risk parity | 1.91 | 1.88 | 2.91 | 3.40 | 0.527 | 1.78 |
+| walk-fwd all 11, mean-variance | 2.68 | 3.62 | 5.60 | 6.76 | **0.088** | 2.52 |
+| walk-fwd top 4, equal | 4.46 | 4.88 | 7.63 | 9.13 | 0.340 | 2.05 |
+| walk-fwd top 5, risk parity | 2.11 | 2.83 | 4.41 | 5.36 | **0.078** | 2.54 |
+| single-fit reserved, equal | 2.15 | 2.13 | 3.34 | 4.02 | 0.512 | 1.87 |
+| single-fit reserved, mean-variance | 2.19 | 2.31 | 3.58 | 4.28 | 0.413 | 1.95 |
+
+**The two arms with the best return-over-drawdown are the two whose realised path was luckiest.**
+Mean-variance sits at the 8.8th percentile of reshuffles of its own trades and top-5 × risk parity
+at the 7.8th, against 48-53% for the two un-selected equal-weight arms — so their drawdown
+advantage is substantially a draw, not a property. Re-read return-over-drawdown at the p99
+drawdown instead of the realised one and the ranking survives but the gap collapses:
+
+    top 5 x risk parity   14.90 realised  ->  5.86 at p99
+    top 4 x equal         10.52           ->  5.14
+    all 11, mean-variance 10.33           ->  4.10
+    all 11, equal          6.97           ->  3.65
+
+2.14x becomes 1.61x. **Size for the p99 and the case for selection is weaker than §4 makes it
+look** — which is the same correction the permutation has forced on every other candidate here.
+
+The practical numbers for the shipped-shape book (walk-forward top 5 × risk parity): **82.8% of
+days underwater, longest underwater run 339 days**, max drawdown 2.11 against an MC p99 of 5.36.
+
 ## Verdict
 
 Build the book; be careful what you claim for the allocation on top of it.
@@ -235,6 +284,12 @@ Build the book; be careful what you claim for the allocation on top of it.
   volatility, 5 of 8 folds) and its most recent fold is negative.
 - **Every total-return figure in an allocation study is a leverage figure until it is scaled to
   a common volatility**, and the largest raw number here inverts when it is.
+- **The book clears zero and no arm clears its own null.** Every day-block bootstrap CI excludes
+  zero (P(mean <= 0) 0.0000-0.0012) while the paired test against equal weight reads 0.058 at best
+  — diversification is the part that is established; allocation on top of it is not.
+- **The two best-looking arms had the luckiest paths** (realised drawdown at the 8th percentile of
+  their own reshuffles against 48-53% for the un-selected arms); at MC p99 drawdown their
+  return-over-drawdown advantage falls from 2.14x to 1.61x.
 
 What would move it: NQ legs, which this construction cannot use because NQ begins after the
 common cut — and more folds. Eight annual folds is what stops the strongest arm reaching p 0.05,
