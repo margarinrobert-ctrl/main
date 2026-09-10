@@ -541,3 +541,98 @@ The rest of the verdict, on the tighter geometry I first tested:
 What would move it, in order: **1-minute US30 bars** (settles §2 and unlocks the true exit path),
 then a cheaper round turn — at 0.5N the fee is 14.7% of risk, so the 2.29-point assumption is
 carrying the whole scalp verdict and no feed here can check it.
+
+---
+
+## 14. The trade-rate ladder: raising `n` makes the detectability *worse*, and the ranking of the two arms inverts
+
+`research/us30rate/` — `r_lib.py`, `run_r1.py`, `run_r2.py`.
+
+§10 left one number governing everything: the minimum detectable effect is `2.802·sd/√n`, and the
+best arm delivers +6.26 points against an MDE of 10.26 on 400 trades. §12 put the requirement at
+**1,073 trades against the 400 in hand**. Two axes can raise `n` — more markets, or a higher event
+rate. The entry channel is the only parameter that changes the rate without touching the mechanism,
+the geometry, the session or the cost, so it is the one to test.
+
+**Why a ladder is readable where a grid is not.** §10 established that over 1,176 cells
+`E[max t | pure noise] = 3.301`, already above the `t = 2.802` detection threshold — so no
+configuration selected from a space that size could be believed even if one had scored. Over the
+**18 cells declared here** (six ordered channel rungs × three arms, all six rungs reported) the same
+expression gives **1.854**, comfortably below the threshold. The distinction is the whole reason
+this run is admissible. Nothing here is permitted to pick a channel.
+
+### 14.1 A shorter channel raises the count and loses the edge faster
+
+Research block, `+adx<=20`, by channel:
+
+| channel | n | trades/yr | pts | MDE | delivered / MDE | n needed | years needed |
+|---|---|---|---|---|---|---|---|
+| 10 | 511 | 82.8 | +3.379 | 8.89 | 0.380 | 3,533 | 42.7 |
+| 15 | 447 | 72.4 | +4.905 | 9.65 | 0.508 | 1,732 | 23.9 |
+| **20** | **400** | **64.8** | **+6.260** | **10.26** | **0.610** | **1,075** | **16.6** |
+| 30 | 337 | 54.6 | +3.060 | 11.10 | 0.276 | 4,435 | 81.2 |
+| 40 | 312 | 50.5 | +2.357 | 11.32 | 0.208 | 7,192 | 142.3 |
+| 55 | 254 | 41.1 | +3.245 | 12.43 | 0.261 | 3,724 | 90.5 |
+
+Halving the channel from 20 to 10 buys **28% more trades and costs 46% of the per-trade edge**, so
+the ratio of the delivered effect to its own MDE *falls* 0.610 → 0.380 and the years-to-verify rises
+16.6 → 42.7. The `spearman(rate, t)` readings have no consistent sign across the three blocks
+(+0.714 / −0.314 / +0.657 for this arm), so there is no gradient to exploit in either direction.
+**The trade rate is not a lever on detectability here.** Cross-market pooling stays the only axis
+that raises `n` without paying for it in edge — and §11's pooling workstream measured that the
+pooled edge shrank faster than the error bar, so both routes are now closed.
+
+The unfiltered base is worse still: at every rung it needs **15,000 to 53,000 trades**, i.e. more
+than a century of this window.
+
+### 14.2 The ranking of the two arms inverts once the channel is varied
+
+§13's headline was that `+adx<=20` was the only arm positive on all three blocks. **That was true at
+channel 20 and is not true of the condition.** Across the ladder, versus each arm's own base at the
+same rung:
+
+| | positive delta | forward-feed rungs |
+|---|---|---|
+| `+adx<=20` | **15 of 18** | −7.461, −3.547, −5.005 at channels 30/40/55 |
+| `+ema align` | **18 of 18** | positive at all six |
+
+All three of `adx<=20`'s failures are on `US30_ISO`, the reserved different-provider block, at the
+long channels. Against a **same-selectivity random VETO** (400 draws, re-simulated, so a refused
+signal releases the position lock — `STUDY_AUCTION`) the split is the same and sharper:
+
+| arm | beats its own null median | research | holdout | **forward** | cells at p≤0.05 (0.9 expected) |
+|---|---|---|---|---|---|
+| `+adx<=20` | 15 / 18 | 6/6 | 6/6 | **3/6** | 7 |
+| `+ema align` | **18 / 18** | 6/6 | 6/6 | **6/6** | 5 |
+
+On the block nobody chose, `adx<=20` is a coin flip against a random gate of its own selectivity
+(median p 0.617) while `ema align` is 6/6 (median p 0.301). Neither is *significant* there. **The
+EMA alignment is the more robust of the two conditions and §13 named the wrong one**, because §13
+read a single channel.
+
+**The correction has a readable mechanism and it is not mysterious.** `ema align` keeps 54–85% of
+signals and its selectivity *rises* with the channel; `adx<=20` keeps 19–34% and its selectivity
+*falls*. At channel 55 on the forward feed that leaves `adx<=20` **61 trades** against `ema align`'s
+166. So part of the inversion is sample size rather than mechanism — which is exactly why the
+condition with the *milder* selectivity is the one that survives a short reserved block, and is a
+reason to prefer it that has nothing to do with which is the better filter in principle.
+
+### 14.3 Eighteen cells are not eighteen tests
+
+The rungs share their trades — Jaccard between channel signal sets runs 0.455 (10 vs 55) to 0.880
+(30 vs 40). Applying Bailey/López de Prado's `N̂ = ρ̄ + (1−ρ̄)·M` to the arm's own signal sets:
+
+- `+adx<=20`: mean pairwise Jaccard **0.585** → **3.07 effective rungs** of 6; 15/18 becomes 8/9,
+  binomial **p = 0.0195**.
+- `+ema align`: mean pairwise Jaccard **0.839** → **1.80 effective rungs** of 6; 18/18 becomes 5/5,
+  binomial **p = 0.0312**.
+
+So `ema align`'s perfect record is worth *less* than its 18/18 looks — its rungs are very nearly one
+test — while `adx<=20`'s messier record is spread over more genuinely distinct trade sets. Both land
+near p 0.02–0.03 after the correction, which is the honest reading: **two conditions, each about one
+and a half real confirmations, neither detectable on the reserved block.**
+
+One more caveat that outranks all of the above: **on the holdout the base loses money at every rung**
+(−0.44 to −5.05 points) and both filters merely rescue it, so those "clears" are against a null that
+is itself losing — `STUDY_IB_US30_OPTUNA`'s sentence again. A rule that beats a losing null is still
+a rule with nothing established.
