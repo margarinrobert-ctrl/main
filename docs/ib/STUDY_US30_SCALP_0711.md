@@ -841,3 +841,136 @@ the headline:
 (and only +0.5 to +0.8 on the trail arms, which close trades themselves) — the seventeenth
 confirmation, and the largest single improvement available to this rule remains switching the
 session constraint off.
+
+---
+
+## 18. Cross-market and meta workstreams: §12's headline was a points figure, and the ADX ceiling is dead
+
+`research/us30xmkt/` (`docs/ib/TEAM_XMKT.md`, 98 declared cells) and `research/us30meta/`
+(`docs/ib/TEAM_META_HMM.md`, 113 counted looks). Parity asserted before any other market was read:
+the kernel was **copied** from `s10lib`, masks identical on all 193,928 US30 bars, Wilder ADX
+**max |diff| 0.000e+00**, and all ten US30 cells reproduce the published figures to the cent.
+
+### 18.1 **The correction: §12's +6.260 is a POINTS figure and it inverts in ATR**
+
+On US30's research block, the **same trades**, §12's own parameterisation:
+
+| unit | base | `+adx<=20` | delta |
+|---|---|---|---|
+| points/trade | +0.956 | **+6.260** | **+5.304** |
+| ATR units/trade | +0.049 | +0.036 | **−0.013** |
+
+At matched ATR geometry it is +5.65 points and **−0.050 ATR**. **The condition that §12 and §13
+named the best arm on all three blocks loses to its own base once the unit is scale-free.** The
+mechanism is measured, not guessed: `adx<=20` selects calmer bars — median signal-bar ATR **0.894×
+the base's, below 1.0 in 9 of 9 market-blocks** — so its point advantage is carried by the high-ATR
+minority it happens to keep. Across 72 comparisons the two units disagree in 10, and **`+adx<=20` is
+the worst offender** (4 of the 10; 11/18 positive in points against 7/18 in ATR). Both US30 research
+cells are among the disagreements.
+
+This is `STUDY_DL50`'s finding arriving from the other side — a 50-point stop was 4.23 ATR in 2016
+and 1.10 in 2025, so a points grid confounds geometry with era — and it is why §7 already recorded
+that the ATR mirror of the same grid was 49.4% profitable against points' 45.2%. **Score this family
+in ATR units. §§12, 13 and 16 quote points and are corrected here, not elsewhere.**
+
+### 18.2 The ADX ceiling fails on every market that had no part in finding it
+
+Frozen and run on US100, NQ, XAU and US30_ISO, in each market's own ATR:
+
+| pre-declared hypothesis | cells | markets |
+|---|---|---|
+| **H1 `adx<=20` ceiling** | **5 of 14 (chance is 7)** | **0 of 4** |
+| H2 `ema13>34>89` alignment | 9 of 14 | 2 of 4 (US100 4/4, US30I 2/2) |
+
+**And `conventional` — the `adx>=25` stack put in the table because it had to lose — beats its base
+in 10 of 14 and is the best arm on all three "A" blocks.** Over all 18 cells including US30 it is
+12/18 ATR-positive against `+adx<=20`'s 7/18. The team's own headline finding, the one §12 built the
+derived rule on, does not survive contact with four fresh markets *and* inverts in unit on the
+market that produced it. The one change §12 said the evidence supported "without qualification" —
+removing `adx>=25` — is withdrawn.
+
+### 18.3 §15's EMA decomposition replicates on four fresh markets
+
+Independently, and this is the one thing that strengthens: **`ema34>ema89` is 10 of 14 at +0.0291
+ATR and beats the FULL alignment in 9 of 14, while `ema13>ema34` alone is 2 of 14 at −0.0498.**
+§15 reached that by decomposition on US30 alone; four markets that chose nothing agree. **Drop the
+13-EMA** — now supported from two independent directions.
+
+### 18.4 There were never five markets, and pooling brings PF 1.2 into resolution for the first time
+
+Same-bar in-window signal overlap: **US100/NQ 81.9–85.4%** (daily leg correlation **+0.879**),
+**US30/US30_ISO 89.1–91.2%** (+0.922), US30/US100 38.6–43.3%, and **XAU against everything
+9.1–14.5%** — **three objects, not five**. Date-clustered effective *n* falls 4,893 → 3,865 over the
+four fresh markets, and **adding NQ to US100 adds 592 trades while removing 269 effective ones**: a
+duplicate feed subtracts power. On the de-duplicated three, MDE falls **0.1606 → 0.0957 ATR**, a
+1.68× gain, so **PF 1.2 (+0.170) is inside resolution for the first time in this study**. What it
+resolves is a loss: pooled edge **−0.0455 net**, gross **+0.0735 and still inside its own gross MDE
+of 0.0992**, with the round turn at **162% of gross**. 0 of 70 cells lie outside their MDE; 6 of 70
+clear a matched control against 3.5 expected, two of them while losing money, and the control median
+is negative in 60 of 70. NQ is gross-negative on both blocks (a signal failure) while gold is
+gross-positive on both (a cost failure) — cost/risk 9.10% on XAU against 2.66–5.52% on the indices,
+so gold's floor is ~2× the indices' rather than the 3× recorded, once expressed against its own stop.
+
+US30_ISO accrues **173 base / 53 `+adx<=20` trades a year**, so §12's 1,073-trade requirement is
+**twenty years** away on the forward feed. Pooling was the alternative and has now been run.
+
+### 18.5 The meta layer: nothing clears, and the HMM collapses hardest yet
+
+55 causal features, **truncation audit 0 mismatches of 1,100 comparisons over 20 probes**. The
+base-rate check flagged **8 of 55 inert** (`mom.roc4`, `str.pos_in_ch`, `str.excess` at exactly
+1.000; RSI at 0.9963 — the trigger restated for the fifth time), and the correlation collapse caught
+**the pool duplicating again**: `par.z_tod` vs `par.vs_tod` at **rho +1.0000**, a log-difference and
+a ratio of the same baseline two lines apart in one file. 55 → 47 → **38**.
+
+- **`hmm.side` vs `vol.rv96` reads −0.9755 on the signal bars** — the strongest such reading on this
+  branch (V61 0.945, V67 −0.478), and the twelve-step matrix power `hmm.fwd12` takes **187,293
+  distinct values** yet reproduces the bare state label at **Jaccard 0.9524** with rho(fwd12, edge)
+  **+0.9952**. V27's collapse on a signal three orders of magnitude larger than V67's. Best HMM IC
+  0.1166 against volatility's 0.1303. Filtered-vs-smoothed agreement 0.968 / 0.963.
+- **The shuffled twin wins 2 of 8 on IC (25%) and 8 of 8 on the top-30% mean (100%)** — both true,
+  and the second is the statistic a gate is actually made of. Capacity inert again; **ridge is the
+  worst rung**, breaking a six-family run.
+- **KEEP-ONE found what drop-one could not**: drop-one calls only `mom` harmful (1 of 7), while
+  `par` **alone — four features — scores IC +0.0791 against all 38 at +0.0422**, every other family
+  solo ≤ +0.013 and four negative. Greedy lands on **10 features at +0.0821, paired t +15.53**,
+  deleting 28 of 38. Feature engineering subtractive for the sixth time, reached from a new
+  direction. The survivor is participation against a **causal time-of-day baseline with a negative
+  sign** — a third route to `STUDY_VWANOM` / `STUDY_DIVERGENCE_CONFIRM`.
+- **Gate 2: 0 of 10 research cells clear both nulls and 0 of 10 uplifts exceed their split MDE.**
+  The single random-gate pass is `+adx<=20` keep 0.70 at **+2.983 points against MDE_split 21.92**
+  (boot p 0.250). The one read looked positive on 4 of 4 and is not: the score **keeps 0.70 / 0.34 /
+  0.12** across the three blocks, so it is not calibrated. Cutting by RANK to fix selectivity gives
+  **0 of 4 positive out of sample**, `+adx<=20` holdout **−5.605 pts at PF 0.969**. DSR **0.6230
+  FAIL** (best Sharpe +0.1263 against E[max|null] +0.1084) and White's reality check **p 0.0655
+  FAIL** at 113 looks.
+
+### 18.6 A truncated fracdiff is not level-free — with the scope corrected
+
+The agent's finding, verified independently: for `0 < d < 1` the truncated fixed-width weights sum
+to a **positive** number, so `ffd.price` carries that fraction of the log price level. At its
+`d = 0.4` and `tau = 1e-4` the sum is **+0.070369**, reproduced exactly here; US30's log price rises
+0.944 over the file and the measured block means move **+3.23 research sd** onto the
+different-provider feed, on a feature whose sd is 0.0123. ADF passes it because the residual is a
+slow drift. That is what broke the threshold.
+
+**But the scope claimed was too wide, and the size is governed by two free parameters.**
+`sum(w)` **halves per decade of the truncation threshold** (0.264 at 1e-2, 0.070 at 1e-4, 0.0189 at
+1e-6 — measured) and falls steeply with `d`. At the shared `tau = 1e-4`:
+
+| study | d | fraction of log price carried |
+|---|---|---|
+| `STUDY_V61_FEATURES_15M` | 0.8 | **0.79%** |
+| `STUDY_XAU_TWO_LAYER` | 0.7 | **1.37%** |
+| this run / `STUDY_V66_DL_META` | 0.4 | 7.04% |
+| `STUDY_IB_US30_OPTUNA` | 0.3 | **12.89%** |
+| `STUDY_VP_DONCHIAN_US30` | 0.2 | **24.82%** |
+
+So the two high-`d` studies are effectively immune and only the low-`d` ones are exposed — and
+`STUDY_VP_DONCHIAN_US30`'s named strong feature was `ffd.z250`, a **rolling z-score**, which is
+immune by construction (measured drift **−0.01 sd** against `ffd.price`'s +3.23). The one study
+whose calibration actually failed, `STUDY_IB_US30_OPTUNA` (kept 15% against a 40% target), is also
+the one carrying 12.9% of the level in a raw column — consistent, not proven.
+
+**Print `sum(w)` beside `d` whenever a fracdiff column is thresholded, and prefer the rolling
+z-score.** Naming a study is not enough; the leak is a function of `d`, of `tau`, of whether the raw
+or z-scored column is used, and of how far the price actually travelled between blocks.

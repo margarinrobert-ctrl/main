@@ -24,7 +24,7 @@ fig.suptitle("The section-12 rule FROZEN and run on four markets that chose noth
              x=0.5, y=0.985, fontsize=15, fontweight="bold")
 fig.text(0.5, 0.955, "Donchian 20 long, 07:00-11:00 New York, flat at the 11:00 open, "
          "50/150 expressed as the matched ATR multiple (1.613N / 4.838N).  "
-         "70 declared cells, one read each.", ha="center", fontsize=10, color="#444")
+         "98 declared cells, one read each.", ha="center", fontsize=10, color="#444")
 
 ARMC = {"base": "#888888", "+adx<=20": "#d1495b", "+ema align": "#2a7fbf",
         "+both": "#7b4fa0", "conventional": "#e08e0b"}
@@ -47,7 +47,7 @@ for k, (arm, _) in enumerate(X.ARMS):
                 ecolor="#333", elinewidth=0.8, capsize=1.6, alpha=0.55)
 ax.axhline(0, color="k", lw=0.9)
 ax.axvline(6.5, color="#999", lw=1.2, ls="--")
-ax.text(7.5, ax.get_ylim()[1] * 0.92, "US30 reference\n(spent blocks)", ha="center",
+ax.text(7.5, ax.get_ylim()[0] * 0.80, "US30 reference\n(spent blocks)", ha="center",
         fontsize=8, color="#666")
 ax.set_xticks(xs)
 ax.set_xticklabels([o.replace(" ", "\n", 1) for o in order], fontsize=8)
@@ -87,10 +87,12 @@ for arm in ("+adx<=20", "+ema align", "+both", "conventional"):
     s = DE[DE.arm == arm]
     ax.scatter(s.d_pts, s.d_atru, s=42, color=ARMC[arm], label=arm, alpha=0.85,
                edgecolor="white", linewidth=0.5)
-h30 = DE[(DE.market == "US30") & (DE.block == "A_research") & (DE.arm == "+adx<=20")]
+h30 = DE[(DE.market == "US30") & (DE.block == "A_research") & (DE.arm == "+adx<=20")
+         & (DE.param == "pts")]
 for _, r in h30.iterrows():
-    ax.annotate("US30 research\n(section 12's cell)", (r.d_pts, r.d_atru),
-                textcoords="offset points", xytext=(12, -26), fontsize=8, color="#d1495b",
+    ax.annotate("US30 research, section 12's own\nparameterisation: +5.30 pts, -0.013 ATR",
+                (r.d_pts, r.d_atru), textcoords="offset points", xytext=(-30, -70),
+                fontsize=8, color="#d1495b",
                 arrowprops=dict(arrowstyle="->", color="#d1495b", lw=0.9))
 ax.axhline(0, color="k", lw=0.9)
 ax.axvline(0, color="k", lw=0.9)
@@ -118,7 +120,7 @@ ax.axhline(b["need_pf12"].mean(), color="#2a7fbf", ls="--", lw=1.6,
            label=f"what PF 1.2 requires ({b['need_pf12'].mean():.3f})")
 ax.axhline(b["need_pf11"].mean(), color="#4fa04f", ls=":", lw=1.6,
            label=f"what PF 1.1 requires ({b['need_pf11'].mean():.3f})")
-ax.axhline(0.1849, color="#000", ls="-.", lw=1.2, label="US30 alone (section 12): 0.185")
+ax.axhline(0.1606, color="#000", ls="-.", lw=1.2, label="US30 alone, this geometry: 0.161")
 for i, (nm, r) in enumerate(b.iterrows()):
     ax.text(i, b["mde80"].iloc[i] + 0.012, f"n={int(r['n'])}", ha="center", fontsize=8)
 ax.set_xticks(xs)

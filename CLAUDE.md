@@ -3984,7 +3984,7 @@ CONDITION NAMED ANYWHERE IN THIS FAMILY**: `+adx<=20` at 50/150 carries sd 73.2 
 MDE of 10.26 while delivering 6.26, so detecting it needs **n = (2.802 x 73.2 / 6.26)^2 = 1,073
 trades against 400 in hand -- about 16 years at this window's rate against the 8.7 US30L carries.**
 Doubling the US30 history would settle this rule, and the forward feed accrues ~65 trades a year.
-**Removing `adx>=25` is the one change the evidence supports without qualification.**
+**Removing `adx>=25` was called the one change the evidence supports without qualification, and that is WITHDRAWN -- see the cross-market paragraph below: the ADX ceiling fails on 0 of 4 fresh markets, the `adx>=25` stack that was placed in the table because it HAD TO LOSE beats its base in 10 of 14, and on US30 itself the ceiling's advantage is a POINTS artifact that inverts in ATR units.**
 See `docs/ib/STUDY_US30_SCALP_0711.md` section 12.
 
 **THE FULL BATTERY ON THE DERIVED RULE: ROBUST TO EVERYTHING EXCEPT ITS OWN SAMPLE SIZE, AND THE
@@ -4118,6 +4118,67 @@ a trade breathe, the seventeenth confirmation. Transcription first: the extended
 the published engine on **8 of 8 configurations at max |dpts| 0.00e+00**.
 See `docs/ib/TEAM_EXIT_PF.md` and `docs/ib/STUDY_US30_SCALP_0711.md` section 17.
 
+**THE DERIVED RULE'S HEADLINE WAS A POINTS FIGURE AND IT INVERTS IN ATR UNITS -- THE ADX CEILING IS
+DEAD.** Two agent workstreams, parity asserted before any other market was read (kernel COPIED from
+`s10lib`, masks identical on all 193,928 US30 bars, Wilder ADX max |diff| 0.000e+00, all ten US30
+cells reproducing the published figures to the cent). **On the SAME TRADES, `+adx<=20` beats its base
+by +5.304 POINTS and by -0.0134 ATR** (matched geometry: +5.65 points, **-0.050 ATR**) -- the
+condition sections 12/13/16 named the best arm on all three blocks LOSES once the unit is scale-free.
+The mechanism is measured: `adx<=20` selects calmer bars, median signal-bar ATR **0.894x the base's,
+below 1.0 in 9 of 9 market-blocks**, so its point advantage is carried by the high-ATR minority it
+keeps. Across 72 comparisons the units disagree in 10 and **`+adx<=20` is the worst offender**
+(11/18 positive in points against 7/18 in ATR). `STUDY_DL50`'s era confound from the other side.
+**SCORE A POINTS-PARAMETERISED FAMILY IN ATR BEFORE BELIEVING ANY OF IT.** Frozen on four markets
+that had no part in finding it: **H1 the ADX ceiling clears 5 of 14 cells where chance is 7, and 0 of
+4 markets**, while **`conventional` -- the `adx>=25` stack included BECAUSE IT HAD TO LOSE -- beats
+its base in 10 of 14 and is the best arm on all three "A" blocks**. H2 the EMA alignment is 9 of 14
+and 2 of 4 markets. **AND THE ONE THING THAT STRENGTHENS IS THE DECOMPOSITION**: `ema34>ema89` is
+10 of 14 at +0.0291 ATR and beats the FULL alignment in 9 of 14 while `ema13>ema34` alone is 2 of 14
+at **-0.0498** -- four fresh markets agreeing with what section 15 reached by decomposition on US30
+alone, so dropping the 13-EMA now has two independent footings. **THERE WERE NEVER FIVE MARKETS**:
+same-bar signal overlap US100/NQ **81.9-85.4%** (daily leg corr +0.879) and US30/US30_ISO
+**89.1-91.2%** (+0.922) against gold's 9.1-14.5% -- three objects, and **adding NQ to US100 adds 592
+trades while REMOVING 269 effective ones**. On the de-duplicated three the MDE falls **0.1606 ->
+0.0957 ATR (1.68x) and PF 1.2 is inside resolution for the first time** -- and what it resolves is a
+loss: pooled **-0.0455 net, gross +0.0735 still inside its own gross MDE of 0.0992**, round turn
+**162% of gross**, 0 of 70 cells outside their MDE. NQ is gross-NEGATIVE both blocks (signal failure)
+and gold gross-POSITIVE both (cost failure, cost/risk 9.10% against the indices' 2.66-5.52%, so
+gold's floor is ~2x not the 3x recorded). The forward feed accrues 173 base / 53 gated trades a year,
+so the 1,073-trade requirement is TWENTY YEARS away there.
+
+**AND KEEP-ONE FINDS WHAT DROP-ONE CANNOT.** The meta layer on the same primary: 55 causal features,
+truncation audit **0 mismatches of 1,100**, base rates flagging **8 of 55 inert** (RSI at 0.9963, the
+trigger restated a fifth time) and the correlation collapse catching **the pool duplicating again**
+-- `par.z_tod` vs `par.vs_tod` at **rho +1.0000**, a log-difference and a ratio of the same baseline
+two lines apart in one file. Drop-one calls only ONE family harmful; **keep-one shows `par` ALONE --
+four features -- scores IC +0.0791 against all 38 at +0.0422**, every other family solo <= +0.013 and
+four negative, with greedy landing on 10 features at +0.0821 (paired t +15.53) and deleting 28 of 38.
+Subtractive for the sixth time, reached from a new direction. **`hmm.side` vs `vol.rv96` reads
+-0.9755 on the signal bars, the strongest on this branch**, and `hmm.fwd12` takes **187,293 distinct
+values** while reproducing the bare state label at **Jaccard 0.9524** -- V27's collapse on a signal
+three orders of magnitude larger than V67's. **The shuffled twin wins 2 of 8 on IC and 8 of 8 on the
+TOP-30% MEAN**, which is the statistic a gate is made of; ridge is the WORST rung, breaking a
+six-family run. Gate 2: **0 of 10 cells clear both nulls, 0 of 10 uplifts exceed their split MDE**,
+the score keeps **0.70 / 0.34 / 0.12** across three blocks so it is not calibrated, and cutting by
+RANK to fix selectivity gives **0 of 4 positive out of sample**. DSR **0.6230 FAIL**, White's reality
+check **p 0.0655 FAIL** at 113 looks.
+
+**A TRUNCATED FRACDIFF IS NOT LEVEL-FREE, AND ITS SIZE IS TWO FREE PARAMETERS RATHER THAN A STUDY
+NAME.** For 0<d<1 the truncated fixed-width weights sum to a POSITIVE number, so `ffd.price` carries
+that fraction of the log price level; at d 0.4 / tau 1e-4 the sum is **+0.070369** and US30's 0.944
+log-price rise moves the block means **+3.23 research sd** onto the different-provider feed, on a
+feature whose sd is 0.0123 -- ADF passes it because the residual is a slow drift. **But `sum(w)`
+HALVES PER DECADE OF THE TRUNCATION THRESHOLD** (0.264 at 1e-2, 0.070 at 1e-4, 0.0189 at 1e-6,
+measured) and falls steeply with `d`, so at the shared tau 1e-4 the exposure runs **0.79% at d 0.8
+(`STUDY_V61_FEATURES_15M`), 1.37% at 0.7 (`STUDY_XAU_TWO_LAYER`), 7.04% at 0.4, 12.89% at 0.3
+(`STUDY_IB_US30_OPTUNA`) and 24.82% at 0.2 (`STUDY_VP_DONCHIAN_US30`)** -- the two high-`d` studies
+are effectively immune, and VP_DONCHIAN's named strong feature was `ffd.z250`, a ROLLING Z-SCORE,
+which is immune by construction (drift **-0.01 sd** against `ffd.price`'s +3.23). The one study whose
+calibration actually failed is also the one carrying 12.9% of the level in a raw column, which is
+consistent and not proof. **Print `sum(w)` beside `d` whenever a fracdiff column is thresholded, and
+prefer the rolling z-score.** See `docs/ib/TEAM_XMKT.md`, `docs/ib/TEAM_META_HMM.md` and
+`docs/ib/STUDY_US30_SCALP_0711.md` section 18.
+
 ## Tooling
 
 | module | what it does |
@@ -4136,6 +4197,8 @@ See `docs/ib/TEAM_EXIT_PF.md` and `docs/ib/STUDY_US30_SCALP_0711.md` section 17.
 | `research/us30scalp/` | the 07:00-11:00 US30 question asked as ARITHMETIC first: `s30core.py` (the `mr30core` walker plus a CLOCK FLATTEN filling at the cutoff bar's open with a fill-at-or-after-the-bell signal REFUSED, a `tie` switch so stop-first and target-first can be run as a bracket, the break-even a geometry implies, seven declared triggers and a sorted matched control drawn from eligible in-window bars), `run_s1.py` (cost as a fraction of risk, the population at nine geometries GROSS and NET, the hours inside the window, and window-vs-flatten separated), `run_s2.py` (the tie-break bracket, then 21 trigger x geometry cells against the matched control, plus always-in), `run_s3.py` (a 175-cell geometry sweep read by marginal average, the consensus cell read once on the holdout AND the different-provider forward block, and the cost ladder), `run_s4.py` (the BRIEF'S OWN space -- 168 cells over 20-150 POINTS x 8 targets x three caps with the cap binding instead of a bell, the population beside the trigger, and the same distances re-run in ATR so the two parameterisations can be compared), `run_s5.py` (seven triggers at the marginal consensus and eight geometries on the best of them, each against a matched random entry, one read on the holdout and the forward block, and a day-block bootstrap against zero), `run_s6.py` (**diagnose the null before trusting it** -- the ratio of the null's spread to the rule's own standard error, the null's trade-count stability, signals per session, first-signal-only, and concurrency), `run_s7.py` (the minimum detectable effect by trade count, the edge each profit factor requires and how long each would take to verify, and the same grid ranked by mean / t / Sharpe / PF), `run_s8.py` (every trigger x the full space, the detection threshold against E[max t | noise] for a search that size, deflation over the counted looks, and the research-to-holdout transfer of the whole population), `run_s9.py` (**the rule the team's component findings imply, declared in full before running** -- five arms x two geometries with the conventional ADX-floor stack included as the arm that must lose, a Wilder ADX diffed against an explicit reference, control and bootstrap and MDE on every cell, and one read each of the holdout and the different-provider forward block), `s10lib.py` + `run_s10.py` + `plot_s10.py` (the full battery: a numba Wilder ADX asserted identical to the reference, four Monte Carlos kept separate -- day-block bootstrap for the EDGE, permutation for the PATH, an execution perturbation applied INSIDE the walk, and price jitter with every indicator RECOMPUTED -- a fixed-constant walk-forward with re-chosen and random arms beside it, and three correlation matrices: between arms on daily P&L, between conditions ON THE SIGNAL BARS, and the arm ranking across blocks) |
 | `research/us30rate/` | **is the trade rate a lever on detectability?** `r_lib.py` (six declared channel rungs, `e_max_normal` so a ladder's noise floor is computed before it is read, a same-selectivity random FILTER re-simulated as a VETO, and the trades-to-verify arithmetic), `run_r1.py` (the power ladder: n, rate, edge, sd, MDE, delivered/MDE and years-needed per rung, plus the Jaccard between rungs so the cells are not mistaken for independent tests), `run_r2.py` (every cell against its own null, and the Bailey/Lopez de Prado effective-rung correction applied to the sign test), `run_r3.py` (seven declared readings decomposing the EMA stack, with `close>ema89` and `dist>=0` included as a construction check that must agree exactly), `run_r4.py` (the drop-the-fast-EMA claim re-run on all six rungs, head to head), `run_r5.py` (the section-13 battery re-run on the promoted arm: four Monte Carlos, a fixed-constant walk-forward and the arm-vs-arm daily-P&L matrix with always-long in it), `plot_rate.py`, `plot_r5.py` |
 | `research/us30exit/` | exit geometry and position management on the section-12 primary: `x_lib.py` (four exit paths added to `s30core._walk` with a transcription check that must reproduce it exactly on the flatten-only policy, a channel exit filling at the NEXT open, and breakeven/trail ratchets that can only bind from the bar after they are set), `x_run1..x_run5.py` (the 80-cell declared grid, each cell against its OWN coin-flip twin; the trail-multiplier ladder with the twin beside it at every rung; the tie-break pass; the reserved reads), `x_run6.py` (**the same grid on two more entry arms, which is what turns raw-PF-vs-excess into a measurement**) |
+| `research/us30xmkt/` | the frozen rule on four markets that chose nothing: `xm_core.py` (the `s10lib` kernel COPIED and asserted mask-for-mask and bar-for-bar before any other feed is opened, five clocks re-derived, per-market ATR geometry and cost-as-a-fraction-of-its-own-stop), `run_x1..x9.py` (overlap matrix and date-clustered effective n BEFORE any pooled claim; the two pre-declared hypotheses read once per market; **the POINTS-vs-ATR unit test that inverts the headline**; the pooled MDE against the pooled edge; and the zero-cost variant that separates a signal failure from a cost failure), `plot_xmkt.py` |
+| `research/us30meta/` | the HMM/quant meta layer under the two-gate architecture: `m_core.py`, `m_feat.py` (55 causal features, fracdiff with `sum(w)` printed beside `d`, a causal HMM read FILTERED with the smoothed decode kept only as the leak diagnostic, truncation audit), `m_ml.py`, `m_run1..m_run6.py` (base rates and the rho-1.0000 duplicate catch; the HMM-vs-volatility collapse and the matrix-power Jaccard; the model ladder beside shuffled twins scored on IC AND on the top-decile mean; **KEEP-ONE beside drop-one, which is what found the four-feature answer**; Gate 2 with its split MDE, the kept-fraction calibration and a rank cut that fixes selectivity; and the fracdiff level-drift table) |
 | `research/us30team/` | the three-agent team on US30 07:00-11:00 with the flatten, each workstream a PRE-DECLARED grid with a null in front: `base_rates.py` + `run_b1..b4.py` (base rates on the trigger's own bars, a CAUSAL time-of-day ATR baseline beside the broken trailing one, the signal-bar correlation matrix, 42 single-condition VETOES and 24 drop-one arms with the MDE printed beside every one, ADX and ATR run as floors AND ceilings, one read each of the holdout and the different-provider forward block); `pool.py` + `run_p1..p4.py` (three feeds with their clocks re-derived, the trigger-overlap matrix and date-clustered effective sample size BEFORE any power claim, pooling in ATR units and percent of price, and the pooled MDE printed against the pooled edge); `session.py` + `run_f1..f3.py` (the flatten priced by a PAIRED comparison on identical entry bars, the exit mix and the counterfactual, give-back against a barrier-resolved control, the tie-break bracket, and a permutation on the drawdown) |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
