@@ -3789,6 +3789,37 @@ PF 1.235 research against 1.416 reserved, and the legs do the same (median leg t
 research are the three the drop-one removes and all three are US30 -- the selection is not finding a
 subtle interaction, it is declining to trade the legs that lose.
 
+**THE 07:00-11:00 US30 WINDOW IS NOT WHAT IS WRONG -- THE SCALP GEOMETRY IS, AND ON 15-MINUTE BARS
+IT IS NOT EVEN MEASURABLE.** `US30_1m` is MISSING from disk, so the finest US30 series is 15-minute
+and a 07:00-11:00 session is SIXTEEN BARS. Asked arithmetically before any rule: median in-window
+ATR(14) **31.17 pts** on a 26,542 index against a 2.29-pt round turn, so cost/risk runs **14.69% at
+a 0.5N stop down to 2.45% at 3.0N**, break-even 57.35% -> 51.22%, against a population resolved win
+rate of **43.21% -> 49.20%** -- the shortfall narrows MONOTONICALLY from 14.1 points to 2.0 and
+NEVER CLOSES. **AND BELOW 1N THE TIE-BREAK DECIDES THE ANSWER**: 14.03% of 0.5N trades touch both
+barriers inside one bar, and stop-first against target-first reads **PF 0.604 against 1.056, a
+spread of 5.27 points a trade** -- larger than any edge anywhere in the study, and flipping the
+SIGN. `STUDY_VOLBO_BREAKOUT` settled the same question by dropping to 1-minute bars where the
+ambiguous share was exactly 0.000; that is impossible here. **A sub-1N barrier result on US30 is a
+statement about the convention, not about the market.** Seven declared triggers x three measurable
+geometries against a matched random entry from the same eligible in-window bars: **0 of 21 clear
+p<=0.05 where 1.1 are expected, and every one of the 21 is unprofitable** -- the best is
+`donch20 long 1.5N` at -0.983 pts p 0.155, beating a control that loses 2.83, which is
+`STUDY_IB_US30_OPTUNA`'s sentence again. Longs beat their controls in 8 of 9 cells and shorts lose
+in every one -- drift, not a signal -- and always-in long in the window is negative at all three
+geometries. **WHAT THE WINDOW SUPPORTS IS NOT A SCALP**: a 175-cell declared sweep read by MARGINAL
+AVERAGE picks 1.5N stop / **NO TARGET** (25th time) / no flatten (16th), median hold **105 MINUTES**,
+research +4.05 pts PF 1.110 -- and it reads holdout **-5.49 PF 0.886** and forward (US30_ISO, a
+DIFFERENT PROVIDER) -0.52, clears no control on three blocks, and on the holdout ALWAYS-IN BEATS IT
+(+1.854 vs -5.494). Cost is not that cell's objection -- at ZERO cost it is still PF 1.181 on
+research -- the transfer is. **THE ONE COMPONENT THAT HELPED ON BOTH BLOCKS IS THE WINDOW ITSELF**:
+07:00-11:00 improves the Donchian against all hours by +0.94 pts research AND +2.11 holdout, while
+the flatten is mixed and every barrier choice subtracts. Hour by hour, 10:00-11:00 is the only
+positive hour on research (reproducing `STUDY_TREND_PULLBACK`) and INVERTS on the holdout -- sixth
+session preference here not to transfer. **KEEP THE WINDOW, DROP THE SCALP.** What would move it, in
+order: 1-MINUTE US30 BARS, then a cheaper round turn -- at 0.5N the fee is 14.7% of risk, so the
+2.29-point assumption is carrying the whole verdict and no feed here can check it.
+See `docs/ib/STUDY_US30_SCALP_0711.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -3804,6 +3835,7 @@ subtle interaction, it is declining to trade the legs that lose.
 | `research/mr30/` | US30 alone, four primaries under the two-gate architecture: `mr30core.py` (Phase 0 in the docstring, the displacement event stream with the side FORCED by the mechanism, three blocks incl. a different-provider forward feed, an ATR-barrier walker and a sorted matched control), `run_g0.py` (cost as a fraction of risk, the geometry-free forward-return read with Newey-West t, and the mechanism's own quintile gradient), `run_g1.py` (the mirror split by side against each side's OWN drift baseline), `run_g2.py` (the parameter-free session decomposition and the by-hour table), `run_g3.py` (Gate 1 on the overnight premium: a random SAME-LENGTH window, always-long, the vol gradient, every year), `run_g4.py` (**the exposure-matched timing test** -- 20 declared conditions x 3 holding lengths against a CIRCULAR SHIFT of each condition's own mask, which preserves count and clustering exactly), `run_g5.py` (the ATR percentile as a pre-registered replication across three blocks, its mirror, and V22's mechanism), `run_g6.py` (the sizing fact as a stop policy, with the naive inverse as its falsifier) |
 | `research/mv30/` | US30 15m, movement not price: `mv30core.py` (71 volatility columns plus a declared INEFFICIENCY family -- Lo-MacKinlay variance ratios at four lags x three windows, rolling AR(1), Roll's implied spread from the same serial covariance, Amihud illiquidity, vol-clustering persistence, bar shape against causal time-of-day baselines -- plus the truncation audit), `run_m1.py` (**the exact circular-shift null**: one FFT per feature gives its IC at every shift, so the max over features at each shift is the exact null of a best-of-N IC, ~180k draws; eight targets x three horizons with direction as the control), `run_m2.py` (four unsupervised detectors -- PCA / Mahalanobis / isolation forest / torch autoencoder -- fitted on the research block only and never shown a label, then read against MOVEMENT and against TRADE OUTCOME separately), `run_m3.py` (the volatility-rename check on the trigger's own bars, then the anomaly as a VETO re-simulated against a random gate of the same selectivity on all three blocks), `run_m4.py` (the adaptive hold cap from a time-to-touch forecast, against a fixed cap AND against the same forecast SHUFFLED) |
 | `research/alloc/` | **allocation across the legs that already exist**: `allocbuild.py` / `allocbuild2.py` (every (strategy, feed) trade table from `top5/t5_adapt`, at 1x and 2x cost), `alloccore.py` (the common research cut, the zero-filled daily panel, five weighting schemes with a shrunk covariance, the block bootstrap and the simplex null), `run_a1.py` (correlation transfer BEFORE the schemes, then one reserved read against equal weight and against 2,000 random weightings), `run_a2.py` (is the transfer trivial, does mu transfer, ablate the covariance, walk it forward, slide the cut), `run_a3.py` (the walk-forward against 500 random allocators run through the SAME procedure, per fold, leg count, drop-one, and the book against its best single leg), `run_a4.py` (legs chosen INSIDE every fold against a random subset of the same size, selection crossed with weighting, all at matched volatility), `run_a5.py` (2x cost, the paired bootstrap at matched volatility, selection stability, and a frozen-set ablation), `run_a6.py` (the two Monte Carlos on the book itself -- day-block bootstrap against ZERO and a permutation for the path, with MC p99 drawdown and the underwater profile), `run_a7.py` (DAY-level profit factor with the win-rate/payoff decomposition, both nulls, and the legs' trade-level PF printed beside it so the two units are not conflated), `plot_alloc.py` |
+| `research/us30scalp/` | the 07:00-11:00 US30 question asked as ARITHMETIC first: `s30core.py` (the `mr30core` walker plus a CLOCK FLATTEN filling at the cutoff bar's open with a fill-at-or-after-the-bell signal REFUSED, a `tie` switch so stop-first and target-first can be run as a bracket, the break-even a geometry implies, seven declared triggers and a sorted matched control drawn from eligible in-window bars), `run_s1.py` (cost as a fraction of risk, the population at nine geometries GROSS and NET, the hours inside the window, and window-vs-flatten separated), `run_s2.py` (the tie-break bracket, then 21 trigger x geometry cells against the matched control, plus always-in), `run_s3.py` (a 175-cell geometry sweep read by marginal average, the consensus cell read once on the holdout AND the different-provider forward block, and the cost ladder) |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
 | `research/pin/` | the EKOP/Yan PIN mixture: causal four-step fit, the three-hypothesis posterior, the volume-weighted B/S construction, the matched control, and `pin_parity.py` — the shipped Pine's own order model run on bars |
