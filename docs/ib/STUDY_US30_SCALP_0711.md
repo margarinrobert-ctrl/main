@@ -216,10 +216,156 @@ the one opened LAST — better out of sample than in, the wrong shape yet again.
 against zero: research P(mean <= 0) **0.444**, holdout **0.631**, with a daily CI of
 [-7.86, +10.10] points. Nothing separates from zero on either block.
 
+
+## 8. The null was sound, and diagnosing it produced the number that governs everything
+
+`STUDY_V59` records that a control whose median sits far below the rule and which still cannot
+reject anything is broken, and S7's headline had exactly that shape: an excess of **+3.04 points**
+failing at **p 0.260**. Diagnosed rather than assumed:
+
+    fade n8 k2.0   sd(null mean) / sd(rule's own standard error) = 1.134
+    donch20 long                                                = 1.005
+    null trade count: target 1679, actual 1104.7 +- 14.0 (min 1065, max 1149)
+
+The null is as tight as the estimate it is testing and its trade count is stable, so it is
+correctly specified. One construction note for reuse: the control is handed the rule's
+POST-lock count and then has the lock applied again, so it settles at ~34% fewer trades than the
+rule; that makes the test slightly conservative rather than invalid, and the fix is to over-draw by
+the reciprocal of the lock's rejection rate.
+
+**What the diagnostic actually found is the dispersion.** Per-trade sd is **157.1 points on a mean
+of +0.683**, so with 1,679 trades the standard error of the mean is 3.84 points and the rule sits
+**0.18 standard errors from zero**. Its excess over the null is 0.70 null sd. The p-value is not a
+verdict on the rule — it is a statement that this sample cannot resolve effects of this size.
+
+Event structure, measured because a 4-hour cap inside a 4-hour window nearly forces it:
+`donch20 long` opens only one trade on **98.3%** of sessions (2.43 in-window signals offered per
+session), so the rule is very nearly *the first break after 07:00* rather than *a break*. Reduced
+to first-signal-only it is unchanged in verdict — **0 of 14 cells clear, 0.7 expected**. Concurrency
+is **max 1, mean 1.00, 12.3% of bars in a position**, so there is no hidden portfolio; exits are
+70.9% clock, 29.1% stop, 0% target.
+
+## 9. Anything worth trading here is detectable, and anything undetectable is not worth trading
+
+At sd 157.1 points and 272 trades a year, the minimum detectable effect at 80% power:
+
+| trades | years at this rate | MDE (pts/trade) | as % of a 150-pt stop |
+|---|---|---|---|
+| 500 | 1.8 | 19.69 | 13.1% |
+| **1,679 (the research block)** | **6.2** | **10.74** | **7.2%** |
+| 5,000 | 18.4 | 6.23 | 4.2% |
+| 20,000 | 73.5 | 3.11 | 2.1% |
+
+And what each profit factor requires, from the observed win 129.78 / loss 104.04 / win rate 0.4479:
+
+| target PF | needs win rate | = edge | detectable in |
+|---|---|---|---|
+| 1.1 | 0.4686 (+2.1 pts) | +5.53 pts/trade | 6,341 trades (23 yrs) |
+| **1.2** | 0.4903 (+4.2) | **+10.61** | **1,723 trades (6 yrs)** |
+| 1.5 | 0.5460 (+9.8) | +23.62 | 347 trades (1 yr) |
+| 2.0 | 0.6159 (+16.8) | +39.96 | 121 trades |
+
+**The frontier inverts the usual complaint.** Six years is not a small sample for a PF-1.5 rule — it
+is a large one, and a PF-1.2 rule lands almost exactly at the sample's resolution. The sample is
+insufficient only for edges too small to be worth trading. Detecting the observed +0.68 pts would
+take **415,506 trades = 1,528 years**.
+
+## 10. The search's own noise floor exceeds the detection threshold
+
+Every declared trigger x the full geometry space — **1,176 scorable cells**, research only:
+
+    profitable                        10.6%
+    best t achieved                    1.348
+    detectable at 80% power requires   t >= 2.802
+    E[max t | pure noise] over 1,176   t  = 3.301
+    cells reaching 2.802:  0 of 1,176
+    cells reaching 3.301:  0 of 1,176
+
+**Over a space this size a detectable edge and the search's luckiest draw are the same number.**
+The threshold a configuration must clear to be trusted (2.802) is BELOW what pure noise produces as
+its best of 1,176 draws (3.301), so a search this wide cannot separate the two even in principle —
+and the best thing actually found reaches less than half of either. Deflation says the same from
+the other side: trial Sharpe sd 0.09704 per session gives **E[max Sharpe | null] = 0.32031 against
+a best achieved of 0.03377**, an order of magnitude below its own noise floor, with 1,401 counted
+looks across S1-S8.
+
+Best cell per trigger, by t — and note the ordering, because it reverses §7:
+
+| trigger | geometry | n | pts | sd | **t** | Sharpe | PF | win | med min |
+|---|---|---|---|---|---|---|---|---|---|
+| **donch20 long** | 30 / 150 / 4h | 1173 | +2.508 | 63.7 | **1.348** | 0.535 | 1.107 | 26.7% | 30 |
+| donch10 long | 30 / 150 / 4h | 1474 | +1.701 | 63.7 | 1.025 | 0.408 | 1.072 | 25.4% | 45 |
+| donch20 short | 75 / 150 / 4h | 963 | +2.753 | 94.5 | 0.904 | 0.341 | 1.068 | 39.0% | 90 |
+| fade n8 k2.0 | 150 / none / 4h | 1679 | +0.683 | 157.1 | 0.178 | 0.071 | 1.012 | 44.8% | 240 |
+
+The mean-reversion fade led §7 on points and is LAST on t, because its dispersion is 2.5x the
+Donchian's. **Ranking by mean chose the widest, noisiest cell in the space.** Across the whole grid
+the four statistics are nonetheless one statistic wearing four names — corr(mean, t) **+0.990**,
+corr(t, Sharpe) **+1.000**, corr(PF, Sharpe) **+0.997** — so it is the TOP ROW that differs, not the
+ranking, which is precisely why a top row should never be read.
+
+## 11. The ranking transfers and the level does not
+
+Across all 1,176 cells, research against holdout:
+
+    corr(research pts, holdout pts)   +0.6898 Pearson / +0.6965 Spearman
+    top 1% by research:  research +3.230  ->  holdout -1.339
+    whole population:                          holdout -4.172
+    holdout-profitable share: population 4.7%,  research top 1% 45.5%
+
+**Selecting on research works** — it lifts the holdout-profitable share **9.7-fold**, from 4.7% to
+45.5%, and a +0.69 transfer correlation is far above this branch's usual -0.03 to +0.2. **And it is
+not enough**, because the space it is selecting within is so negative that its top 1% still lands
+at -1.34 points and below a coin flip. Same structure as `STUDY_VP_DONCHIAN_US30`: the direction
+survives, the size does not. This is the cleanest case on the branch of a search that is working
+correctly and has nothing to find.
+
+The best cell read once — chosen from 168 geometries on research, so its research p is
+post-selection and 400 control draws cannot resolve the 0.0003 a Bonferroni over that grid needs:
+
+| feed | block | n | pts | t | Sharpe | PF | win | control p |
+|---|---|---|---|---|---|---|---|---|
+| US30L | A research | 1214 | +2.076 | 1.332 | 0.536 | 1.093 | 30.5% | **0.000** |
+| US30L | B holdout | 604 | **-1.987** | -0.896 | -0.542 | 0.919 | 23.8% | 0.425 |
+| US30I | C forward | 304 | +2.776 | 0.837 | 0.739 | 1.118 | 27.0% | 0.130 |
+
+It is the only cell in the study to clear a control anywhere, and it does so on the block that
+chose it, then inverts.
+
 ## Verdict
 
-Read §6-7 first: they use the brief's own definition (20-150 points, up to four hours) and they
-supersede the framing in §1-5, which tested a tighter geometry than was asked for.
+Read §8-11 first. They settle the question the earlier sections could only circle: **this window,
+at 15-minute resolution and this cost, cannot support a verifiable scalp — and the obstacle is
+statistical power, not the rule.**
+
+- **Per-trade dispersion is 157 points on a mean of +0.68**, so the research block's minimum
+  detectable effect is **10.74 points a trade** and the observed edge sits 0.18 standard errors
+  from zero. Detecting it would take 1,528 years.
+- **But a PF-1.2 rule needs +10.61 and a PF-1.5 rule +23.62**, both at or inside that resolution.
+  Six years is a LARGE sample for anything worth trading here; it is small only for edges that are
+  not.
+- **The best of 1,176 cells reaches t = 1.348 against the 2.802 detectability requires — and
+  against a search noise floor of 3.301.** The luckiest draw of a null search this wide would look
+  more convincing than a genuinely detectable edge, so no configuration selected this way can be
+  trusted, and none came close anyway. Best Sharpe is an order of magnitude below its own noise
+  floor.
+- **The research ranking genuinely transfers (+0.69) and it does not rescue anything** — selection
+  lifts the holdout-profitable share from 4.7% to 45.5% and still lands at -1.34 points a trade.
+
+**What would move it, in order.** (1) **Pool the window across US100 and NQ**: three markets triples
+the trade count and takes the MDE from 10.74 to ~6.2 points, which brings PF 1.1 (+5.53) inside the
+sample's resolution for the first time. That is the single highest-value next step and the feeds are
+on disk. (2) **1-minute US30 bars**, which fix the MEASUREMENT — the tie-break of §2 and entry
+precision — though not the sample size, since a 4-hour cap keeps the rate near one trade a session
+whatever the bar size. (3) A cheaper round turn: at a 20-point stop the fee is 11.45% of risk.
+
+The best object found, offered as a SHAPE and with no edge claimed: **Donchian 20 long, 30-point
+stop, 150-point target, four-hour cap, entries 07:00-11:00** — a 1:5 payoff won 26.7% of the time
+with a 30-minute median hold, which is a scalp in the brief's own terms. Research PF 1.107 at
+control p 0.000; holdout PF 0.919 at p 0.425; forward-block PF 1.118 at p 0.130.
+
+Sections 6-7 use the brief's definition and supersede the framing in §1-5, which tested a tighter
+geometry than was asked for.
 
 **Inside 20-150 points the shape of the answer is clear and consistent, and none of it clears a
 control.** The trigger does separate from the population (45.2% of cells profitable against 2.4%),
