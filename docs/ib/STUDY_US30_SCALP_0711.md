@@ -770,3 +770,74 @@ own null and whose conjunction dies out of sample is a sample-size statement, no
 **Nothing here changes the verdict.** Every cell of every arm is still inside its own MDE, the
 bootstrap excludes zero on no block, and the strongest object in the study remains a rule that beats
 a null and cannot be shown to beat zero.
+
+---
+
+## 17. Exit geometry (agent workstream): profit factor ranks the exit, not the entry
+
+`research/us30exit/`, full report `docs/ib/TEAM_EXIT_PF.md`. 255 research cells, 38 reserved reads.
+Transcription first: the extended walker reproduces `s30core._walk` on the flatten-only policy in
+**8 of 8 configurations, trade count identical, max |Δpts| 0.00e+00**.
+
+An 80-cell declared grid — 5 stops × 4 targets × 4 exit policies — on the §12 primary, every cell
+scored against **its own coin-flip twin** (same geometry, same exits, random entry).
+
+| policy | raw PF | pts/trade | n | ret/DD | **twin PF** | **excess total** |
+|---|---|---|---|---|---|---|
+| flatten only | 1.145 | +4.36 | 392 | 1.25 | 0.938 | **2,451** |
+| + channel 10 | 1.133 | +3.93 | 396 | 1.20 | 0.931 | 2,315 |
+| + breakeven 1R | 1.106 | +3.14 | 393 | 0.79 | 0.935 | 1,910 |
+| **+ 1.0 ATR trail** | **1.415** | **+5.84** | 438 | **5.69** | **1.000** | 2,552 |
+
+**The trail is the only thing that raises profit factor and it raises the coin flip's too.** Tighten
+it and the twin runs away: a **random entry with a 0.25 ATR trail reads PF 2.444 at ret/DD 12.0**,
+monotone in tightness (0.970 → 1.043 → 1.530 → 2.444), replicated at **2.20–2.50 on three blocks and
+two providers**, and on the different-provider block the trail's PF ratio is **below 1 at every
+rung**. `STUDY_ABSORPTION_LEVELS` measured exactly this on a different base, market and entry — it
+reproduces here, so a trail's win rate is set by its distance relative to the bar's own range before
+any signal is consulted.
+
+### 17.1 The rank-correlation diagnostic is the durable output
+
+The same 80-cell grid was re-run on `+ema align` and `ema34>ema89` (which correlate **+0.99/+0.98**
+with each other — §15's decomposition confirmed a third time, from the exit side). Ranking the 80
+geometries:
+
+| unit | adx vs ema | adx vs slow | ema vs slow |
+|---|---|---|---|
+| raw PF | **+0.751** | **+0.799** | +0.990 |
+| return/DD | +0.741 | +0.784 | +0.984 |
+| **excess total** | **−0.168** | **−0.116** | +0.810 |
+
+**Raw profit factor ranks 80 exit geometries almost identically on two entries that share only 46%
+of their daily P&L, while the excess ranking is NEGATIVELY correlated.** Raw PF is measuring the
+exit, which every arm shares; excess measures the entry, which they do not. The two EMA arms — which
+§15 established *are* the same condition — agree on both (+0.99, +0.81), which is the control
+showing the diagnostic works. **Rank exit geometries by excess over their own twin, never by raw
+PF.** And the policy ranking duly inverts: the trail is best in excess on the ADX arm and the
+**worst** on `+ema align`, while flatten-only and the channel exit are top-two on all three.
+
+### 17.2 Nothing beats the incumbent, and two standing findings break here
+
+The §12 cell (50/150, flatten only) reads PF 1.236, +6.260 pts, n 400, ret/DD 2.24 — **rank 3 of 80
+on excess total**, and the only one of five declared cells above its own twin on **9 of 9 arm ×
+block cells**. **3 of 80 research cells clear their own MDE**, and 1 of 30 on the reserved reads;
+PF 1.2 still needs +10.61 against a best delivered +8.41. The tie-break decides nothing at these
+widths — 0.63% mean ambiguity and **0 sign flips of 80**.
+
+Two branch-standing findings do not hold on this geometry, and both are worth the caveat rather than
+the headline:
+
+- **The stop marginal is INTERIOR, not monotone toward wider** — 50 (1.221) and 100 (1.222) beat
+  both 30 (1.155) and 150 (1.216) on raw PF and on excess. That reverses the monotone-toward-wider
+  result recorded for eight previous families. Mechanism is readable: this is a POINTS grid at a 1:5
+  payoff behind a hard 11:00 flatten, so a stop wide enough to be "safe" simply never binds before
+  the bell and the trade is closed on the clock instead.
+- **A 150-point target beats no target** within flatten-only (PF 1.174 vs 1.149, excess 2,751 vs
+  2,397) while tying on points per trade (5.019 vs 5.027) — the first break in a 25-instance streak,
+  and again only because the flatten already caps the tail a no-target rule exists to hold.
+
+**Removing the flatten is worth +4.5 to +6.9 pts a trade on every policy that lets a trade breathe**
+(and only +0.5 to +0.8 on the trail arms, which close trades themselves) — the seventeenth
+confirmation, and the largest single improvement available to this rule remains switching the
+session constraint off.

@@ -11,7 +11,7 @@ with the same trailing stop raises it from 0.94 to 1.00 — and at a 0.25 ATR tr
 reads PF 2.44. Profit factor is not comparable across exit geometries, and once every cell is
 priced against its own null nothing in the 80-cell space beats the incumbent out of sample.**
 
-**Trial count: 249 research cells and 38 reserved reads.** 80 declared grid cells, plus 6 extra
+**Trial count: 255 research cells and 38 reserved reads.** 80 declared grid cells, plus 6 extra
 trail-multiplier rungs, 1 extra stop rung and 2 extra target rungs added as declared neighbourhoods;
 the `tie=1` pass and the control attachment in `x_run5` are re-reads of the same 80. Reserved: 5
 declared cells x 2 reserved blocks, plus a 4-rung control ladder on each — the ladder being a
@@ -377,7 +377,157 @@ target.
 
 ---
 
-## 9. Verdict
+## 9. THE SAME 80 CELLS ON TWO MORE ARMS -- side by side, not replacing
+
+A parallel workstream (`research/us30rate/`, `STUDY_US30_SCALP_0711` §14-15) measured after this
+grid was built that `+adx<=20` -- the arm §1-9 rest on -- is not clearly the stronger of the two
+conditions, and that the two tests disagree about which is:
+
+- against a same-selectivity random VETO over six channel rungs x three blocks, `+ema align` is
+  **18/18** and `+adx<=20` is 15/18 with only **3/6 on the reserved different-provider feed**;
+- on a fixed-constant walk-forward over eight annual folds `+adx<=20` is the BETTER arm
+  (**6/8 folds, +3,608, worst -237** against `+ema align`'s 5/8, +2,128, worst -729);
+- the permutation says the EMA arm's research path was **LUCKY** (drawdown at the 12th percentile of
+  reshuffles of its own trades) where §13 found the ADX arm's was UNLUCKY (76th-87th);
+- and the two arms correlate only **+0.461** in daily P&L, so they are genuinely distinct.
+
+**Neither dominates.** So the identical 80-cell grid was re-run on `+ema align` and on
+`ema34>89` -- nothing refitted, the same policies, units and reading order, only the arm changing.
+`ema34>89` is carried as a REDUNDANCY CHECK rather than a third opinion: across the 80 cells it
+correlates with `+ema align` at **+0.99 on raw PF and +0.98 on points a trade**, confirming from the
+exit side that it is the same condition (the rate workstream measured +0.968 on daily P&L).
+
+**Population per arm, before any ranking:**
+
+| arm | cells | PF>1 | total>0 | outside its MDE | median PF | median total | median n | best PF | best t |
+|---|---|---|---|---|---|---|---|---|---|
+| `+adx<=20` | 80 | 98.8% | 98.8% | **3.8%** | 1.150 | 1,712 | 400 | 1.607 | 2.914 |
+| `+ema align` | 80 | 97.5% | 97.5% | **3.8%** | 1.143 | 2,070 | 679 | 1.416 | 3.078 |
+| `ema34>89` | 80 | 96.3% | 96.3% | **3.8%** | 1.121 | 1,941 | 706 | 1.420 | 3.177 |
+
+Identical detectability on all three: **3 of 80 cells outside their own MDE**. The EMA arms carry
+~1.7x the trades, so their MDEs are ~30% smaller (policy marginal 8.2-8.7 against 11.4-12.2 points)
+— which is the mechanism behind the rate workstream's "the milder condition survives a short
+reserved block".
+
+### 9.1 Where the arms AGREE
+
+**The trail wins raw profit factor on all three arms** — flatten / channel / breakeven / trail:
+
+| arm | flatten | +chan10 | +be1R | **+trail** |
+|---|---|---|---|---|
+| `+adx<=20` | 1.145 | 1.133 | 1.106 | **1.415** |
+| `+ema align` | 1.109 | 1.112 | 1.116 | **1.253** |
+| `ema34>89` | 1.091 | 1.094 | 1.102 | **1.250** |
+
+**And so does its own coin-flip twin, on all three arms** — the twin's PF under the trail is
+**1.000 / 1.012 / 1.007** against 0.932-0.946 under every other policy. §4's mechanism reproduces on
+two independent signal sets: the trail lifts the null as much as it lifts the rule.
+
+**The trail also wins return-over-drawdown on all three** (5.69 / 3.76 / 3.30 against 0.79-1.86 for
+everything else) and cuts the MDE roughly in half on all three. Both are real and both belong to the
+geometry.
+
+**150 points is the worst stop on all three arms in excess total** (2,438 / 2,191 / 1,925) and the
+stop optimum is INTERIOR on all three — 50-100 on the ADX arm, 75 on both EMA arms. **This family
+does not reproduce the branch's monotone-toward-wider stop finding on any arm.**
+
+**The wide end of the target axis wins on all three** (150 or 200 or none), and 100 points is the
+worst or second-worst everywhere.
+
+### 9.2 Where they DISAGREE — and it is the excess column
+
+| policy, EXCESS TOTAL (rule − twin, × n) | `+adx<=20` | `+ema align` | `ema34>89` |
+|---|---|---|---|
+| flatten only | 2,474 | **3,207** | 2,867 |
+| + channel 10 | 2,302 | **3,208** | **3,064** |
+| + breakeven 1R | **1,902** (last) | 2,950 | **2,746** (last) |
+| **+ 1.0 ATR trail** | **2,552** (best) | **2,604** (last) | 2,764 |
+
+**The trail is the best policy in excess on the ADX arm and the WORST on `+ema align`.** In excess
+per trade it is last on both EMA arms (3.13 and 3.19 against flatten's 4.90 and 4.21) and second on
+the ADX arm. Flatten-only and the channel exit are top-two on all three arms; the two ACTIVE
+management policies each finish last somewhere.
+
+And the rank correlations across the 80 cells make the point directly:
+
+| unit | adx vs ema | adx vs slow | ema vs slow |
+|---|---|---|---|
+| raw PF | **+0.751** | **+0.799** | +0.990 |
+| return/DD | +0.741 | +0.784 | +0.984 |
+| PF ratio | +0.347 | +0.500 | +0.890 |
+| points/trade | +0.326 | +0.404 | +0.976 |
+| **excess total** | **−0.168** | **−0.116** | +0.810 |
+
+**Raw profit factor ranks the 80 exit geometries almost identically on two entries that share only
+46% of their daily P&L (+0.75 / +0.80), and the excess ranking is NEGATIVELY correlated (−0.17).**
+That is §4's finding stated as a measurement rather than an argument: **a raw PF ranking over exit
+geometries is measuring the exit, which every arm shares, and not the entry, which they do not.**
+The two EMA arms, which ARE the same condition, agree on both (+0.99 and +0.81) — the control that
+shows the diagnostic is working.
+
+### 9.3 The best cell per arm, per unit
+
+| unit | `+adx<=20` | `+ema align` | `ema34>89` |
+|---|---|---|---|
+| by raw PF | 150/none **trail** (1.607) | 150/none **trail** (1.416) | 150/none **trail** (1.420) |
+| by ret/DD | 150/none **trail** (8.37) | 150/none **trail** (6.33) | 150/150 **trail** (5.44) |
+| by **excess total** | 100/none **flatten** | 30/200 **+chan10** | 75/none **+chan10** |
+
+**The trail is the top cell by raw PF and by return-over-drawdown on all three arms, and the top
+cell by excess on none of them.** No arm's excess winner contains a trailing stop.
+
+### 9.4 The tie-break on the new arms
+
+| arm | mean ambiguous | max | mean \|spread\| | max \|spread\| | sign flips |
+|---|---|---|---|---|---|
+| `+ema align` | 0.43% | 2.47% | 0.569 pts | 2.188 | **0 of 80** |
+| `ema34>89` | 0.42% | 2.49% | 0.550 | 2.154 | **1 of 80** |
+
+Same answer as §5: at these barrier widths a 15-minute bar resolves the pair, and the convention
+does not decide any verdict. The one sign flip on `ema34>89` is a cell whose points-per-trade is
+within a point of zero.
+
+### 9.5 One read of both reserved blocks on the two new arms
+
+The same five declared cells, declared again in `x_run6`'s docstring before the read, each with its
+own matched twin. **PF RATIO — the cell's PF over what its own exit machinery gives a coin flip:**
+
+| cell | adx A / B / C | ema A / B / C | slow A / B / C | **>1** |
+|---|---|---|---|---|
+| **D0 50/150 flatten** | 1.312 / 1.172 / 1.131 | 1.184 / 1.060 / 1.129 | 1.171 / 1.088 / 1.147 | **9/9** |
+| D2 100/none flatten | 1.271 / 1.182 / **0.800** | 1.178 / 1.009 / 1.266 | 1.147 / 1.020 / 1.211 | 8/9 |
+| D4 150/none trail | 1.360 / 1.514 / **0.771** | 1.198 / 1.019 / 1.117 | 1.201 / 1.003 / 1.125 | 8/9 |
+| D3 100/150 trail | 1.367 / 1.389 / **0.773** | 1.238 / **0.984** / 1.023 | 1.241 / 1.026 / 1.010 | 7/9 |
+| D1 50/none flatten | 1.271 / 1.092 / **0.982** | 1.248 / **0.997** / 1.340 | 1.210 / **0.988** / 1.326 | 6/9 |
+
+**The incumbent geometry is the only one of the five above its own null on all three blocks of all
+three arms — 9 of 9 on PF ratio and 9 of 9 on excess points.** Every other cell fails somewhere, and
+the two trail cells fail on the different-provider block of the ADX arm by the widest margin in the
+table (PF ratio 0.771-0.773, i.e. a coin flip with the same trail earns ~30% more).
+
+**And on the EMA arms the trail's PF ratio collapses to ~1.0 out of sample while its raw PF still
+looks good.** `+ema align` D3: raw PF 1.106 on the holdout against a twin's 1.124, ratio **0.984**;
+D4 raw 1.301 against a twin's 1.277, ratio **1.019**. Raw PF says the trail took 1.035 → 1.301 on
+that block; the ratio says all of it was the exit machinery. Out-of-sample excess per trade on the
+trail cells is +3.23 / **−0.14** / +1.06 (ema) and +3.31 / +0.60 / +0.70 (slow) against the flatten
+cells' +4.68 / +1.92 / +4.71 and +6.02 / +0.35 / +14.60.
+
+Two other things this read settles. **D2 (100/none flatten) is not portable** — it is the best
+excess cell on the ADX arm and reads PF 0.826 with a −11.6-point excess on that arm's forward block,
+while on the EMA arms it is 3/3. **And `ema34>89` tracks `+ema align` cell for cell out of sample
+too** (D0 +2.51/+2.18/+6.55 against +2.79/+1.13/+6.79), which is the redundancy confirmed on a third
+statistic. `D4` is outside its MDE on 1 of 3 blocks for every arm — the research block, always.
+
+**Nothing in §9 tilts the verdict toward either arm.** The two arms disagree about which exit is
+best in excess (trail on ADX, flatten/channel on EMA), they agree that raw PF prefers the trail and
+that the trail's twin prefers it too, and they agree that the incumbent's 50/150 flatten geometry is
+what survives everywhere. If anything the cross-arm read makes §4's case stronger, because the one
+arm on which the trail's excess looked best is the one arm on which it inverts hardest out of sample.
+
+---
+
+## 10. Verdict
 
 **Nothing in the exit-geometry or position-management space improves the §12 rule's profit factor in
 a way that survives its own null.**
@@ -387,8 +537,10 @@ a way that survives its own null.**
   2.44**, replicated at 2.20-2.50 on both reserved blocks and a second provider. In excess of its
   own twin it is worth **4% more than doing nothing in total and less per trade**, and on the
   different-provider block it is **worse than its twin at every rung**.
-- **The channel exit and breakeven-after-1R both subtract**, on every unit, in sample and out.
-  Breakeven-after-1R is the worst object in the study — 22% below the flatten on excess total.
+- **Breakeven-after-1R subtracts on every arm** — bottom of every column on the ADX arm (22% below
+  the flatten on excess total) and last or next-to-last in excess on the two EMA arms too. **The
+  channel exit is a wash**: within 1% of flatten-only in excess on the ADX arm, first by a nose on
+  both EMA arms, and behind flatten-only out of sample — an addition that changes nothing.
 - **The incumbent's geometry is already at or above the marginal optimum.** Stop 50 leads
   return/drawdown and PF ratio and is second on excess; target 150 leads every column, raw and
   excess. On the flatten sub-grid alone, 50/150 is the best cell on PF (1.236) and on ret/DD (2.242)
@@ -400,6 +552,14 @@ a way that survives its own null.**
   +0.728 PF on the holdout is +8.41 points against an MDE of 15.37; D3's +0.452 is +4.05 against
   11.59. PF 1.2 still requires **+10.61 points a trade** and PF 1.5 **+23.62**.
 
+**And the cross-arm replication (§9) is the strongest form of that finding.** The identical grid on
+two more entry conditions puts the trail top of the raw-PF and return/drawdown tables on **all
+three** arms, top of the excess table on **none**, and — decisively — **raw PF ranks the 80 exit
+geometries at +0.75/+0.80 across arms that share only 46% of their daily P&L, while the excess
+ranking correlates −0.17.** Raw PF is ranking the exit; excess is ranking the entry. The incumbent
+50/150 flatten geometry is above its own null on **9 of 9** arm x block cells, the only one of five
+declared cells that is.
+
 **What this changes methodologically, and it is the durable output: PROFIT FACTOR IS NOT COMPARABLE
 ACROSS EXIT GEOMETRIES.** A trail, a breakeven stop or a tight target rescales both the numerator
 and the denominator, and the rescaling is worth up to **+1.5 PF on a coin flip**. Any request to
@@ -408,8 +568,11 @@ Report **PF against the PF the same exit machinery gives a random entry**, and r
 total** — the two rankings correlate only **+0.686** by rank and **+0.496** by level across these
 80 cells.
 
-**The single change the evidence supports is a negative one: do not add a breakeven stop, a channel
-exit or a trailing stop to this rule.** If a trail is wanted for drawdown control rather than for
+**The single change the evidence supports is a negative one: do not add a breakeven stop or a
+trailing stop to this rule.** (The channel exit is the one addition that is never last: top-two in
+excess on all three arms and the excess winner on both EMA arms — but it is behind flatten-only on
+the ADX arm and behind it out of sample, so it is a coin flip against doing nothing, not an
+improvement.) If a trail is wanted for drawdown control rather than for
 edge, that is a defensible and separate decision — it cuts maximum drawdown 1,742 → 470 and halves
 the MDE — but it must be argued as sizing, and its profit factor must not be quoted beside the
 flatten's.
