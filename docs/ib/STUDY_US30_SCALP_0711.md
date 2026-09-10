@@ -332,9 +332,71 @@ post-selection and 400 control draws cannot resolve the 0.0003 a Bonferroni over
 It is the only cell in the study to clear a control anywhere, and it does so on the block that
 chose it, then inverts.
 
+
+## 12. The rule the team's evidence implies — positive on all three blocks, and still not proven
+
+The three agents produced two component findings that reproduced across three blocks and two
+providers: **ADX is inverted** (ceilings beat their block's base 12/12, floors 6/24, `adx>=25`
+negative 6/6) and **the EMA ALIGNMENT carries where the state does not** (`ema13>34>89` positive
+6/6 with the pool's most stable lift; `ema13>48` passes 84.2% of breakout bars and is the trigger
+restated). ATR was at chance both ways. Nobody had built the rule those three statements imply.
+
+Declared in full before running — Donchian 20 long, 07:00-11:00 with the 11:00 flatten, geometries
+30/150 and 50/150 points, five arms including the conventional `adx>=25` stack **as the arm that
+must lose if the inversion is real**. Ten research cells, nothing else tried, then one read of
+B_holdout and one of C_forward.
+
+**The prediction held at both geometries:**
+
+| geometry | base | +adx<=20 | +ema align | +both | **conventional (+adx>=25)** |
+|---|---|---|---|---|---|
+| 30/150 | +1.411 | +3.753 | +3.106 | **+4.972** | +2.516 |
+| 50/150 | +0.956 | +6.260 | +2.794 | **+6.613** | +1.419 |
+
+Every arm built from the team's findings beats the base; the conventional stack is beaten by both
+of its own components taken separately.
+
+**Across all three blocks, per arm:**
+
+| arm | A research | B holdout | C forward | cells positive | mean | clears control | **outside its MDE** |
+|---|---|---|---|---|---|---|---|
+| base | +1.183 | **-1.086** | +5.272 | 4/6 | +1.790 | 1/6 | **0/6** |
+| **+adx<=20** | +5.007 | +3.442 | +7.474 | **6/6** | **+5.308** | 2/6 | **0/6** |
+| **+ema align** | +2.950 | +1.947 | +7.523 | **6/6** | +4.140 | 2/6 | **0/6** |
+| +both | +5.792 | +6.772 | +0.753 | 5/6 | +4.439 | 1/6 | **0/6** |
+| conventional | +1.967 | **-3.065** | +10.088 | 4/6 | +2.997 | **0/6** | **0/6** |
+
+**Both single filters are positive on all six cells — research, holdout, and a different-provider
+forward feed — and each turns a holdout the base LOSES on into a positive one.** `adx<=20` at
+50/150 clears its research control at **p 0.010** with a day-block bootstrap of **0.037**, the only
+cell in the entire study to exclude zero. The conventional `adx>=25` stack clears **0 of 6** and is
+the only arm negative on the holdout. That is the inversion confirmed out of sample.
+
+**And every one of the thirty cells is inside its own MDE — 0 of 6 for every arm.** The best cell
+(`+both`, 50/150, holdout) delivers **+8.51 points against an MDE of 24.84**. The bar for a
+tradeable rule is unchanged: PF 1.2 requires **+10.61 points a trade** and the best arm delivers
++6.61 on research and +8.51 on the holdout. Out of sample no cell clears a control at p<=0.05
+(best 0.070). Trade counts fall hard with the filters — `+both` is 227 / 87 / 43 across the three
+blocks — which is where the MDE goes.
+
+**What would settle it, exactly.** `+adx<=20` at 50/150 carries sd 73.2 on 400 research trades for
+an MDE of 10.26 while delivering 6.26. Detecting an effect that size at 80% power needs
+**n = (2.802 x 73.2 / 6.26)^2 = 1,073 trades**, against 400 in hand — roughly **16 years at this
+window's rate, against the 8.7 years US30L carries.** That is the first number in this study naming
+a reachable condition rather than an impossible one: doubling the US30 history would settle this
+rule, and the different-provider forward feed is accumulating it in real time at ~65 trades a year.
+
 ## Verdict
 
-Read §8-11 first. They settle the question the earlier sections could only circle: **this window,
+**§12 is the current state and the one thing worth acting on: the rule derived from the team's
+component findings — Donchian 20 long with an ADX CEILING and/or the EMA alignment, and NO ATR
+condition — is positive on all six research / holdout / forward cells, turns a holdout the base
+loses on into a profit, and clears a research control at p 0.010 with a bootstrap of 0.037. It is
+also inside its own MDE in every cell, so it is confirmed in direction and unproven in size.
+Removing `adx>=25` is the single change the evidence supports without qualification.**
+
+Read §8-11 for why that qualification is unavoidable. They settle the question the earlier sections
+could only circle: **this window,
 at 15-minute resolution and this cost, cannot support a verifiable scalp — and the obstacle is
 statistical power, not the rule.**
 
