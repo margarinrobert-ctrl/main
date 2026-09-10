@@ -700,3 +700,73 @@ Two negatives worth keeping:
 **The rule the two sections leave standing** is Donchian 20 long, 07:00–11:00 New York, flat at the
 11:00 open, 50-point stop / 150-point target, `EMA34 > EMA89`. One condition, not three, not the ADX
 ceiling §13 named. Every cell of it is still inside its own MDE.
+
+---
+
+## 16. The §13 battery on the promoted arm — and the correction to §14's own framing
+
+`research/us30rate/run_r5.py`.
+
+§13 put four Monte Carlos, a fixed-constant walk-forward and three correlation matrices on
+`+adx<=20`. §§14–15 then demoted that arm and promoted the EMA inequality — so the battery has to be
+re-run on the new arm, because quoting §13's robustness for a rule it never tested is exactly the
+error to avoid. Rule fixed before this runs; nothing chosen here.
+
+### 16.1 All three filtered arms are 3/3, and they buy it differently
+
+| arm | research | holdout | forward | n (A/B/C) | ret/DD (A/B/C) |
+|---|---|---|---|---|---|
+| base | +0.956 | **−1.601** | +4.613 | 1054/508/274 | +0.46 / −0.26 / +1.04 |
+| `+adx<=20` | **+6.260** | **+4.596** | +6.382 | 400/157/**76** | +2.24 / +0.67 / +1.16 |
+| `+ema align` | +2.794 | +1.126 | **+6.787** | 668/310/173 | +1.52 / +0.23 / +1.41 |
+| `+slow 34>89` | +2.512 | +2.178 | +6.546 | 697/330/183 | +1.69 / +0.58 / +1.22 |
+
+`+adx<=20` has the largest per-trade edge on every block and the smallest sample on every block —
+**76 forward trades against 183**. That trade-off is the whole disagreement between the two arms.
+
+### 16.2 **The walk-forward reverses §14, and §14's framing was too strong**
+
+Eight annual folds, constants fixed, nothing re-selected:
+
+| arm | folds positive | total | worst fold |
+|---|---|---|---|
+| base | 4/8 | +79 | −1685 |
+| **`+adx<=20`** | **6/8** | **+3608** | **−237** |
+| `+ema align` | 5/8 | +2128 | −729 |
+| `+slow 34>89` | 5/8 | +2432 | −719 |
+
+**On the walk-forward `+adx<=20` is the better arm** — more folds, 48% more points, and a worst fold
+a third the size. §14 concluded the EMA condition was "the more robust of the two"; that is true
+**of the same-selectivity null test** and **false of the walk-forward**, and the honest statement is
+that *neither arm dominates* — they disagree by which test you ask. §14's sentence is corrected
+here rather than left standing.
+
+The Monte Carlo adds the same warning from the other side. On `+slow 34>89` the realised research
+drawdown sits at the **12th percentile** of reshuffles of its own trades — a **lucky** path — where
+§13 found `+adx<=20`'s at the 76th and 87th, an **unlucky** one. So part of the EMA arm's better
+return-over-drawdown is a draw rather than a property, and MC p99 drawdown is **2.50× / 1.87×** the
+realised. On robustness the new arm is fine and on significance it is not: execution
+P(≤0) 0.000/0.040, price jitter with every indicator recomputed keeps the sign **1.000 / 0.987**,
+and the day-block bootstrap reads **P(mean≤0) 0.166 research / 0.310 holdout** — it clears its null
+and does not clear zero, `STUDY_V15_BOOK`'s split for the *n*-th time.
+
+### 16.3 The two conditions are genuinely distinct, which is the one clean result
+
+Daily-P&L correlation over research + holdout:
+
+| | base | `+adx<=20` | `+ema align` | `+slow 34>89` | always-long |
+|---|---|---|---|---|---|
+| `+adx<=20` | +0.623 | 1.000 | +0.432 | **+0.461** | +0.242 |
+| `+slow 34>89` | +0.788 | +0.461 | **+0.968** | 1.000 | +0.316 |
+
+`+slow 34>89` and `+ema align` correlate **+0.968** — confirming §15's decomposition from a third
+direction, they are one condition. And the ADX ceiling correlates only **+0.461** with either, so
+the two arms are *not* two names for one thing; both also sit far from always-long (+0.242 / +0.316),
+so neither is drift. That is the case for §13's `+both`, and §13 already measured what `+both` does:
+best on A and B, **−1.378 on the reserved feed**. Two distinct conditions that each survive their
+own null and whose conjunction dies out of sample is a sample-size statement, not a mechanism one —
+`+both` leaves fewer than 60 forward trades.
+
+**Nothing here changes the verdict.** Every cell of every arm is still inside its own MDE, the
+bootstrap excludes zero on no block, and the strongest object in the study remains a rule that beats
+a null and cannot be shown to beat zero.
