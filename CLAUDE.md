@@ -4091,6 +4091,33 @@ P(<=0) 0.000/0.040, price jitter with every indicator recomputed keeps the sign 
 day-block bootstrap P(mean<=0) 0.166/0.310, MC p99 drawdown 2.50x/1.87x realised, and **2023 and
 2024 are negative for every arm**. See `docs/ib/STUDY_US30_SCALP_0711.md` section 16.
 
+**PROFIT FACTOR RANKS THE EXIT, NOT THE ENTRY -- AND THE RANK CORRELATION ACROSS TWO ENTRIES PROVES
+IT IN ONE TABLE.** An 80-cell declared exit grid (5 stops x 4 targets x 4 policies) on the section-12
+primary, every cell scored against ITS OWN COIN-FLIP TWIN, then the identical grid re-run on two more
+entry arms. **Raw PF ranks the 80 geometries at Spearman +0.751 / +0.799 across entries sharing only
+46% of their daily P&L, while EXCESS-OVER-TWIN ranks correlate -0.168 / -0.116** -- raw PF measures
+the exit, which every arm shares, and excess measures the entry, which they do not. The control that
+shows the diagnostic works is the pair of arms that ARE one condition (`ema align` vs `ema34>89`,
++0.99 raw and +0.81 excess). **RANK EXIT GEOMETRIES BY EXCESS OVER THEIR OWN TWIN, NEVER BY RAW PF**
+-- and the policy ranking duly inverts, the 1.0 ATR trail being BEST in excess on the ADX arm and
+WORST on `+ema align` while flatten-only and the channel exit are top-two on all three.
+**THE TRAIL IS THE ONLY THING THAT RAISES PF AND IT RAISES THE COIN FLIP'S TOO** (rule 1.24 -> 1.42,
+twin 0.94 -> 1.00), and tightened to 0.25 ATR **a RANDOM ENTRY reads PF 2.444 at ret/DD 12.0**,
+monotone in tightness (0.970 -> 1.043 -> 1.530 -> 2.444), replicated at **2.20-2.50 on three blocks
+and two providers**, with the trail's PF ratio BELOW 1 at every rung on the different-provider feed
+-- `STUDY_ABSORPTION_LEVELS` reproduced on a different base, market AND entry. Nothing beats the
+incumbent (rank 3 of 80 on excess; the only declared cell above its twin on **9 of 9** arm x block
+cells), **3 of 80 research cells clear their own MDE**, and the tie-break decides nothing at these
+widths (0.63% ambiguity, **0 sign flips of 80**). **TWO STANDING FINDINGS BREAK ON THIS GEOMETRY AND
+BOTH HAVE THE SAME CAUSE**: the stop marginal is **INTERIOR** (50 and 100 beat 30 AND 150), reversing
+the monotone-toward-wider result of eight previous families, and a **150-point target BEATS no
+target** (PF 1.174 vs 1.149) for the first time in a 25-instance streak -- because a hard 11:00
+flatten already caps the tail that a wide stop and a no-target rule exist to hold, so neither can
+express itself. Removing the flatten is worth **+4.5 to +6.9 pts a trade** on every policy that lets
+a trade breathe, the seventeenth confirmation. Transcription first: the extended walker reproduces
+the published engine on **8 of 8 configurations at max |dpts| 0.00e+00**.
+See `docs/ib/TEAM_EXIT_PF.md` and `docs/ib/STUDY_US30_SCALP_0711.md` section 17.
+
 ## Tooling
 
 | module | what it does |
