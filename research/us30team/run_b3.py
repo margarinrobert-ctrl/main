@@ -52,7 +52,7 @@ def prep(name):
     return f, blk, win, X, ok
 
 
-def read_block(f, mask, X, name, tag, usable):
+def read_block(f, mask, X, tag, usable):
     pop = mask
     sig0, side0 = B.S.donchian(f, 20, 1)
     keep = np.isin(sig0, np.flatnonzero(pop))
@@ -131,7 +131,7 @@ def main():
     btA = B.base_rates(X, np.isin(np.arange(len(f)), sigA[kA]), popA).set_index("cond")
     usable = [c for c in X.columns if 0.10 <= btA.loc[c, "p_sig"] <= 0.95]
     print(f"usable rungs FROZEN from A_research: {len(usable)} of {len(X.columns)}")
-    out.append(read_block(f, blk["B_holdout"] & win & ok, X, "US30L",
+    out.append(read_block(f, blk["B_holdout"] & win & ok, X,
                           "B_holdout (US30L, one read)", usable))
     g, blkI, winI, XI, okI = prep("US30I")
     out.append(read_block(g, blkI["C_forward"] & winI & okI, XI,

@@ -3880,6 +3880,89 @@ time, and the feeds are on disk -- then 1-minute US30 bars, which fix the MEASUR
 but NOT the sample size, since a four-hour cap holds the rate near one trade a session whatever the
 bar size. See `docs/ib/STUDY_US30_SCALP_0711.md` sections 8-11.
 
+**A THREE-AGENT TEAM ON THE SAME WINDOW FOUND THREE THINGS THAT REPRODUCE ACROSS BLOCKS AND
+PROVIDERS AND NOT ONE THAT IS DETECTABLE -- WHICH IS WHAT THE POWER ANALYSIS PREDICTED BEFORE THEY
+RAN.** Donchian x ATR x ADX x EMA, US30 07:00-11:00 New York with the 11:00 flatten, three
+non-overlapping mandates, each given a small PRE-DECLARED grid rather than a sweep because
+`STUDY_US30_SCALP_0711` §10 had established that over 1,176 cells E[max t | noise] = 3.301 already
+exceeds the t = 2.802 detectability requires. Every workstream independently returned the same
+shape: a consistent DIRECTION, an undetectable SIZE.
+
+**(1) BASE RATES AND COMPONENT ATTRIBUTION.** `+DI > -DI` passes **97.8%** of Donchian-20 breakout
+bars (96.4% / 95.1% on the other two blocks) -- INERT, excluded before any P&L, the EIGHTH
+confirmation-is-the-trigger finding here -- and `ema13>48` passes **84.2%**, reproducing NQ's 82.6%
+almost exactly on a different market. But `adx>=25` (lift 1.042) and `atr/tod>=1.0` (1.029) DO bind.
+**AND FOR ONCE THE POOL DOES NOT DUPLICATE**: max cross-family |rho| ON THE SIGNAL BARS is **0.236**,
+so ADX, ATR and EMA are three genuinely separate axes -- the redundancy is WITHIN the EMA family
+(`ema13>34>89` vs `d_ema200>=2.0` at +0.747). **DROP-ONE IS UNANIMOUS AND INVERTS THE CONVENTIONAL
+STACK**: across two readable stacks at two geometries, ADX contributes NEGATIVELY 4/4, ATR
+negatively 4/4 and EMA positively 4/4; removing `adx>=25` takes the stack +2.000 -> **+2.972** and
+its control p 0.237 -> **0.040**. **ADX is inverted and it replicates**: ceilings beat their block's
+base in **12 of 12 cells across three blocks and two providers** (mean +3.37 pts) against floors'
+6 of 24 (mean -0.97); `adx>=25` is negative 6/6 and `adx<=20` positive 6/6 (best p 0.090) while
+keeping 37% of trades and earning MORE TOTAL points than the base, so it is not the trade-less
+artifact. **ATR is at chance in both directions** (58% / 44%), and `atrpct250<=0.5` inverts out of
+sample for the third time on this market with its kept share drifting **0.318 -> 0.212 -> 0.142** --
+it is not the same filter on each block, which is why a percentile rule keyed to a fixed cut cannot
+transfer. **EMA: the STATE is the trigger restated and worth nothing; the ALIGNMENT `ema13>34>89` is
+positive 6/6 with the most stable lift in the pool (1.569 / 1.583 / 1.590)** and counter-trend
+readings beat the base 0 of 18. The conventional ADX-floor + ATR-floor + EMA-state stack is the
+WORST object measured (-5.68 / -7.73 pts on the holdout). Every one of 42 research, 24 drop-one and
+88 out-of-sample cells is INSIDE ITS OWN MDE, and 4 of 88 out-of-sample cells clear a control
+against 4.4 expected. The one actionable item is REMOVING `adx>=25` wherever it is on.
+
+**(2) POOLING BOUGHT THE POWER IT PROMISED AND THE EDGE SHRANK FASTER THAN THE ERROR BAR.** MDE fell
+**0.1849 -> 0.1340 ATR** a trade (5.73 -> 4.15 US30 points, factor 0.72 against a forecast ~6.2) and
+exactly one rung moved -- **PF 1.2 crossed into resolution** (0.75x -> 1.06x of MDE) while PF 1.1 did
+not (0.39x -> 0.54x) and needs ~10 independent markets. But the pooled edge is **+0.0184 ATR against
+US30's +0.0481**: the SE fell 1.38x and the MEAN fell 2.6x, so **t went 0.729 -> 0.386**. Pooling
+made the statistic worse. **THERE WERE NEVER THREE MARKETS**: NQ and US100 share **85.3%** of
+in-window Donchian signals at the IDENTICAL bar and 93.8% within two, at daily leg correlation
+**+0.967** -- worse than the 68% already recorded -- while US100/US30 correlate +0.293. Effective
+sample **2,247 against 2,754 nominal**, and that 81.6% retention is mild only because NQ's research
+block is CALENDAR-DISJOINT from the other two (0 shared research dates with US30). **THE FAILURE IS
+IN THE SIGN STRUCTURE, NOT THE NOISE**: 0 of 54 cells is positive on all three markets, and US30
+agrees with US100 and with NQ on **21 of 54, BELOW the 27 chance expects**, while US100 and NQ agree
+on 50 of 54. Cochran's Q clears 0 of 54 with median I^2 0%, but Q has no power at k=3, so the sign
+agreement is the informative statistic. And the POINTS grid is **0.0% profitable pooled against the
+matched-ATR mirror's 29.6%**, because 30 points is 0.97N on US30 and **2.20N** on US100.
+
+**(3) THE 11:00 FLATTEN COSTS ABOUT A POINT A TRADE, AND THE CONVENTION PRICES THE LEVEL RATHER THAN
+THE FLATTEN.** Paired on IDENTICAL entry bars so only the exit differs, the bell costs **+0.95 pts**
+against a 4-hour cap, +1.11 vs a 12:00 bell, +1.42 vs 16:00 and +1.85 vs a one-day cap -- positive
+in 4/4 alternatives on research AND 4/4 on the holdout, every delta inside its own MDE (t 0.10-1.64).
+Mechanism: the bell closes **27.9% of trades, 81.5% of them in profit, and 35.0% of those were on
+their way to the target**; under the bell the barrier pair resolves 11.5% winners against a driftless
+17.9% and contributes **-8.38 pts/trade**, while given a day it resolves 18.8% and contributes +1.50.
+So the flatten is simultaneously the only profitable exit reason in the cell and is leaving +8.46
+pts a trade on the table. **THREE CORRECTIONS TO STANDING FINDINGS.** GIVE-BACK DOES NOT ISOLATE A
+FLATTEN: clock-closed trades give back 1.20 ATR and BARRIER-resolved trades give back MORE, 1.27, so
+give-back is a property of a 1:5 payoff and not of the clock -- the counterfactual is the isolator,
+which revises how `STUDY_INTRADAY_HEAT`'s "one actionable number" should be read. THE TIE-BREAK
+PRICES THE LEVEL, NOT THE FLATTEN: the convention spread (1.28 / 1.96 / 3.17 pts) is the same order
+as the effect and FLIPS the holdout's sign outright (-0.571 stop-first against +1.389 target-first),
+yet the PAIRED cost is identical TO SIX DECIMALS under both conventions in **12 of 12 cells**,
+because the ambiguous trades resolve before the bell in both arms -- **a paired comparison is immune
+where an absolute level is not**, and that is the way to get a verdict out of a resolution this
+coarse. THE DRAWDOWN DEFENCE DOES NOT EXIST AT THIS GEOMETRY: the bell RAISES realised drawdown
+1283 -> 1694 (+32%) and cuts ret/DD 2.29 -> 0.94, because a 30-pt stop already caps every loss and
+leaves the bell only winners to cut -- V63's design had no target and a 480-bar cap. **The strongest
+single piece of evidence the team produced is a DOSE-RESPONSE**: the cost of the bell against how
+often it binds, across five entry windows, Spearman **+0.900 / +1.000 / +0.900** on research /
+holdout / different-provider forward. And **09:30-11:00 is the WORST window ending at 11:00**
+(+0.065 against 07:00-11:00's +1.411), contradicting the branch's standing preference because it
+leaves only 90 minutes for a 1:5 target -- the SEVENTH non-transfer of a session preference here.
+
+**"CLEARS THE CONTROL" AND "INSIDE THE MDE" ARE BOTH TRUE AND ANSWER DIFFERENT QUESTIONS.** A
+same-selectivity control's null sd is **3-10x TIGHTER** than the per-trade MDE, because its draws
+are SUBSETS OF THE SAME SIGNAL SET and so share most of their variance with the rule, while the MDE
+prices the rule against zero from scratch. A cell can beat its control and still be an effect the
+sample cannot resolve -- which is exactly what every passing cell here is. Report both, and never
+let a control p-value stand in for detectability. Eighth name-shadowing catch on this branch: a
+`stack` column silently shadowed `DataFrame.stack` and printed an empty drop-one table, after
+`.first`, `.align`, `agg`, `metrics`, the `vol.`/`vlm.` prefixes and `research/ivb`.
+See `docs/ib/TEAM_BASE_RATES.md`, `docs/ib/TEAM_POOLED_WINDOW.md`, `docs/ib/TEAM_FLATTEN.md`.
+
 ## Tooling
 
 | module | what it does |
@@ -3896,6 +3979,7 @@ bar size. See `docs/ib/STUDY_US30_SCALP_0711.md` sections 8-11.
 | `research/mv30/` | US30 15m, movement not price: `mv30core.py` (71 volatility columns plus a declared INEFFICIENCY family -- Lo-MacKinlay variance ratios at four lags x three windows, rolling AR(1), Roll's implied spread from the same serial covariance, Amihud illiquidity, vol-clustering persistence, bar shape against causal time-of-day baselines -- plus the truncation audit), `run_m1.py` (**the exact circular-shift null**: one FFT per feature gives its IC at every shift, so the max over features at each shift is the exact null of a best-of-N IC, ~180k draws; eight targets x three horizons with direction as the control), `run_m2.py` (four unsupervised detectors -- PCA / Mahalanobis / isolation forest / torch autoencoder -- fitted on the research block only and never shown a label, then read against MOVEMENT and against TRADE OUTCOME separately), `run_m3.py` (the volatility-rename check on the trigger's own bars, then the anomaly as a VETO re-simulated against a random gate of the same selectivity on all three blocks), `run_m4.py` (the adaptive hold cap from a time-to-touch forecast, against a fixed cap AND against the same forecast SHUFFLED) |
 | `research/alloc/` | **allocation across the legs that already exist**: `allocbuild.py` / `allocbuild2.py` (every (strategy, feed) trade table from `top5/t5_adapt`, at 1x and 2x cost), `alloccore.py` (the common research cut, the zero-filled daily panel, five weighting schemes with a shrunk covariance, the block bootstrap and the simplex null), `run_a1.py` (correlation transfer BEFORE the schemes, then one reserved read against equal weight and against 2,000 random weightings), `run_a2.py` (is the transfer trivial, does mu transfer, ablate the covariance, walk it forward, slide the cut), `run_a3.py` (the walk-forward against 500 random allocators run through the SAME procedure, per fold, leg count, drop-one, and the book against its best single leg), `run_a4.py` (legs chosen INSIDE every fold against a random subset of the same size, selection crossed with weighting, all at matched volatility), `run_a5.py` (2x cost, the paired bootstrap at matched volatility, selection stability, and a frozen-set ablation), `run_a6.py` (the two Monte Carlos on the book itself -- day-block bootstrap against ZERO and a permutation for the path, with MC p99 drawdown and the underwater profile), `run_a7.py` (DAY-level profit factor with the win-rate/payoff decomposition, both nulls, and the legs' trade-level PF printed beside it so the two units are not conflated), `plot_alloc.py` |
 | `research/us30scalp/` | the 07:00-11:00 US30 question asked as ARITHMETIC first: `s30core.py` (the `mr30core` walker plus a CLOCK FLATTEN filling at the cutoff bar's open with a fill-at-or-after-the-bell signal REFUSED, a `tie` switch so stop-first and target-first can be run as a bracket, the break-even a geometry implies, seven declared triggers and a sorted matched control drawn from eligible in-window bars), `run_s1.py` (cost as a fraction of risk, the population at nine geometries GROSS and NET, the hours inside the window, and window-vs-flatten separated), `run_s2.py` (the tie-break bracket, then 21 trigger x geometry cells against the matched control, plus always-in), `run_s3.py` (a 175-cell geometry sweep read by marginal average, the consensus cell read once on the holdout AND the different-provider forward block, and the cost ladder), `run_s4.py` (the BRIEF'S OWN space -- 168 cells over 20-150 POINTS x 8 targets x three caps with the cap binding instead of a bell, the population beside the trigger, and the same distances re-run in ATR so the two parameterisations can be compared), `run_s5.py` (seven triggers at the marginal consensus and eight geometries on the best of them, each against a matched random entry, one read on the holdout and the forward block, and a day-block bootstrap against zero), `run_s6.py` (**diagnose the null before trusting it** -- the ratio of the null's spread to the rule's own standard error, the null's trade-count stability, signals per session, first-signal-only, and concurrency), `run_s7.py` (the minimum detectable effect by trade count, the edge each profit factor requires and how long each would take to verify, and the same grid ranked by mean / t / Sharpe / PF), `run_s8.py` (every trigger x the full space, the detection threshold against E[max t | noise] for a search that size, deflation over the counted looks, and the research-to-holdout transfer of the whole population) |
+| `research/us30team/` | the three-agent team on US30 07:00-11:00 with the flatten, each workstream a PRE-DECLARED grid with a null in front: `base_rates.py` + `run_b1..b4.py` (base rates on the trigger's own bars, a CAUSAL time-of-day ATR baseline beside the broken trailing one, the signal-bar correlation matrix, 42 single-condition VETOES and 24 drop-one arms with the MDE printed beside every one, ADX and ATR run as floors AND ceilings, one read each of the holdout and the different-provider forward block); `pool.py` + `run_p1..p4.py` (three feeds with their clocks re-derived, the trigger-overlap matrix and date-clustered effective sample size BEFORE any power claim, pooling in ATR units and percent of price, and the pooled MDE printed against the pooled edge); `session.py` + `run_f1..f3.py` (the flatten priced by a PAIRED comparison on identical entry bars, the exit mix and the counterfactual, give-back against a barrier-resolved control, the tie-break bracket, and a permutation on the drawdown) |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
 | `research/pin/` | the EKOP/Yan PIN mixture: causal four-step fit, the three-hypothesis posterior, the volume-weighted B/S construction, the matched control, and `pin_parity.py` — the shipped Pine's own order model run on bars |
