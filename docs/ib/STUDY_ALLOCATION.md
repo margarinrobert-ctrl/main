@@ -268,6 +268,83 @@ look** — which is the same correction the permutation has forced on every othe
 The practical numbers for the shipped-shape book (walk-forward top 5 × risk parity): **82.8% of
 days underwater, longest underwater run 339 days**, max drawdown 2.11 against an MC p99 of 5.36.
 
+## 10. Profit factor, and the unit trap in asking for it
+
+**A book has no trade-level profit factor.** Eleven legs net against each other inside a day, so
+the only PF a portfolio has is over its DAILY series, and that number is not comparable to the
+trade-level PF every other study here quotes. Both are below.
+
+Day-level, walk-forward:
+
+| arm | day PF | day win rate | mean up day | mean down day | payoff |
+|---|---|---|---|---|---|
+| all 11, equal | 1.325 | 47.9% | +0.104 | -0.072 | 1.44 |
+| all 11, inverse vol | 1.308 | 47.6% | +0.071 | -0.049 | 1.44 |
+| all 11, risk parity | 1.332 | 47.5% | +0.067 | -0.045 | 1.47 |
+| all 11, minimum variance | 1.328 | 48.1% | +0.053 | -0.037 | 1.43 |
+| all 11, mean-variance | 1.395 | 52.5% | +0.121 | -0.096 | 1.26 |
+| top 3, equal | 1.519 | 57.0% | +0.362 | -0.316 | 1.14 |
+| **top 4, equal** | **1.528** | 57.3% | +0.275 | -0.242 | 1.14 |
+| top 5, equal | 1.481 | 55.6% | +0.230 | -0.195 | 1.18 |
+| top 5 × risk parity | 1.497 | 54.7% | +0.173 | -0.140 | 1.24 |
+| single-fit reserved, equal | 1.416 | 49.1% | +0.103 | -0.070 | 1.47 |
+| single-fit reserved, mean-variance | 1.589 | 51.4% | +0.120 | -0.080 | 1.50 |
+| single-fit RESEARCH, equal | 1.235 | 46.3% | +0.088 | -0.061 | 1.43 |
+
+**SELECTION CHANGES HOW THE BOOK EARNS, NOT ONLY HOW MUCH.** Equal weight over eleven legs makes
+money on a MINORITY of days — 47.9% — carried by a 1.44 payoff. Dropping to the top four takes the
+day win rate to 57.3% and the payoff DOWN to 1.14. Same family, opposite shape: the losing legs
+were contributing small frequent losses against the good legs' larger wins, and removing them
+converts a payoff book into a hit-rate book. Weighting does not do this — every weighting scheme on
+all eleven legs sits at 47.5-48.1% and 1.43-1.47, i.e. it rescales the same shape.
+
+**AND PF GIVES A SHARPER VERDICT ON SELECTION THAN SHARPE DID.** Against the same two nulls:
+
+    500 random allocators, same procedure:   p5 1.187  median 1.278  p95 1.411
+        all 11, equal          1.325  at percentile  73.0
+        all 11, risk parity    1.332  at percentile  75.8
+        all 11, mean-variance  1.395  at percentile  92.6
+        top 4, equal           1.528  at percentile 100.0
+        top 5 x risk parity    1.497  at percentile  99.6
+
+    400 random SUBSETS of the same size, re-drawn each fold:
+        top 3   PF 1.519  at percentile  98.0   (random median 1.224)
+        top 4   PF 1.528  at percentile  99.8   (random median 1.235)
+        top 5   PF 1.481  at percentile 100.0   (random median 1.268)
+
+On Sharpe no weighting scheme reached the 95th percentile (§3) and selection reached 99.5 (§4); on
+PF weighting still tops out at 92.6 and selection reaches **100.0 against both nulls**. The two
+statistics agree on the ranking and PF separates it more cleanly, because it is not penalised by
+the volatility that concentration adds.
+
+**THE SHAPE IS WRONG AT BOOK LEVEL, AND IT IS THE LEGS' OWN SHAPE.** Equal weight reads day PF
+**1.235 on research against 1.416 on the reserved block**, and the legs do the same thing: median
+leg trade-PF **1.089 research -> 1.255 reserved**, with TRENDDAY/US100 going 1.119 -> 2.556 and
+APM_VWAP/US30 0.858 -> 1.182. Nine of eleven legs improve out of sample. That is the wrong shape by
+this branch's own standard, it is inherited rather than created by the allocation, and it is the
+same regime statement the per-fold table makes — the gain is concentrated in 2020-2021 and
+2022-2023, and the most recent fold is negative for every arm.
+
+Leg trade-level PF, for contrast (**not** comparable to the day-level table above):
+
+| leg | research n | research PF | reserved n | reserved PF |
+|---|---|---|---|---|
+| APM_VWAP/US100 | 174 | 1.624 | 134 | 1.576 |
+| IBS_SESSION/US100 | 166 | 1.580 | 153 | 1.543 |
+| TFI/US100 | 357 | 1.253 | 256 | 1.485 |
+| TRENDDAY/US100 | 62 | 1.119 | 63 | 2.556 |
+| IBS_SESSION/US30 | 173 | 1.197 | 125 | 1.255 |
+| TRENDDAY/US30 | 62 | 1.089 | 44 | 1.264 |
+| CMMA/US100 | 1285 | 1.012 | 977 | 1.171 |
+| VWAP_DRIFT/US100 | 1170 | 1.017 | 984 | 1.003 |
+| TFI/US30 | 330 | 0.993 | 247 | 0.999 |
+| VWAP_DRIFT/US30 | 966 | 0.859 | 776 | 1.053 |
+| APM_VWAP/US30 | 148 | 0.858 | 119 | 1.182 |
+
+The three legs below PF 1.0 on research — APM_VWAP/US30, VWAP_DRIFT/US30, TFI/US30 — are exactly
+the three the drop-one in §4 says to remove, and all three are US30. The selection is not finding
+a subtle interaction; it is declining to trade the legs that lose.
+
 ## Verdict
 
 Build the book; be careful what you claim for the allocation on top of it.
@@ -287,6 +364,9 @@ Build the book; be careful what you claim for the allocation on top of it.
 - **The book clears zero and no arm clears its own null.** Every day-block bootstrap CI excludes
   zero (P(mean <= 0) 0.0000-0.0012) while the paired test against equal weight reads 0.058 at best
   — diversification is the part that is established; allocation on top of it is not.
+- **On profit factor the selection verdict is cleaner than on Sharpe**: day PF 1.528 for the top
+  four against equal weight's 1.325, at the 100.0th percentile of both nulls, where no weighting
+  scheme passes 92.6.
 - **The two best-looking arms had the luckiest paths** (realised drawdown at the 8th percentile of
   their own reshuffles against 48-53% for the un-selected arms); at MC p99 drawdown their
   return-over-drawdown advantage falls from 2.14x to 1.61x.
