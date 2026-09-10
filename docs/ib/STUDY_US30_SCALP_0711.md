@@ -842,6 +842,40 @@ the headline:
 confirmation, and the largest single improvement available to this rule remains switching the
 session constraint off.
 
+### 17.3 The exit axis re-read in ATR after §18 — and the trail's last support falls
+
+§18 found §12's headline was a points figure, so the same question was put to the exit axis
+(`x_run7.py`, re-run and reproduced independently here). **The exposure is far smaller and the
+reason is measurable**: §18 compares two different ENTRY populations, while every comparison in §17
+holds the entry fixed. Median signal-bar ATR, trail against flatten: **0.9954 / 0.9877 / 0.9814** on
+the three arms, against the **0.894** that drives §18's inversion — *an exit axis does not re-select
+the volatility regime.*
+
+**But the two units disagree on exactly one arm, and it is the arm §18 withdrew.** Spearman between
+the points and ATR rankings of the four policies: `+adx<=20` **−0.400**, `+ema align` **+1.000**,
+`ema34>89` **+0.800**. Excess over own twin at 100/150:
+
+| arm | flatten pts | trail pts | flatten **ATR** | trail **ATR** |
+|---|---|---|---|---|
+| `+adx<=20` | **+6.535** | +5.467 | +0.0686 | **+0.1038** |
+| `+ema align` | **+4.409** | +3.558 | **+0.1487** | +0.0836 |
+| `ema34>89` | **+4.040** | +3.340 | **+0.1232** | +0.0805 |
+
+**Doing nothing beats the trail in 5 of 6 arm × unit cells.** The single exception is the ADX arm
+read in ATR — one cell of six, on the condition §18 refuted on four fresh markets. That is the
+entire remaining evidence for a trailing stop anywhere in this study, and it does not survive being
+asked on a second entry condition.
+
+**And §17's mechanism holds in the second unit**: the matched twin's ATR-unit result is **positive
+under the trail on all three arms** (+0.0364 / +0.0278 / +0.0348) and **negative under every other
+policy** (−0.0176 to −0.0638). A coin flip is lifted by the trail in ATR exactly as in points, so
+nothing about the trail's advantage belongs to the entry in either unit.
+
+One correction to §17.1: **the channel exit is a wash, not a subtractor** — within 1% of
+flatten-only in excess on the ADX arm, first by a nose on both EMA arms. Only breakeven-after-1R
+genuinely subtracts. **Ship: add neither a breakeven nor a trailing stop.**
+
+
 ---
 
 ## 18. Cross-market and meta workstreams: §12's headline was a points figure, and the ADX ceiling is dead

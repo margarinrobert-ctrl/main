@@ -4118,6 +4118,22 @@ a trade breathe, the seventeenth confirmation. Transcription first: the extended
 the published engine on **8 of 8 configurations at max |dpts| 0.00e+00**.
 See `docs/ib/TEAM_EXIT_PF.md` and `docs/ib/STUDY_US30_SCALP_0711.md` section 17.
 
+**AND THE EXIT AXIS RE-READ IN ATR TAKES THE TRAIL'S LAST SUPPORT AWAY.** The points-vs-ATR problem
+was put to the exit axis too, and **the exposure is far smaller for a measurable reason**: that test
+compares two different ENTRY populations while an exit comparison holds the entry fixed -- median
+signal-bar ATR trail-against-flatten is **0.9954 / 0.9877 / 0.9814** on the three arms against the
+0.894 driving the entry inversion, so **an exit axis does not re-select the volatility regime**. But
+the units disagree on exactly ONE arm and it is the withdrawn one (Spearman `+adx<=20` **-0.400**
+against `+ema align` **+1.000** and `ema34>89` +0.800), and in excess over its own twin **DOING
+NOTHING BEATS THE TRAIL IN 5 OF 6 ARM x UNIT CELLS** -- the lone exception being the ADX arm in ATR,
+so the whole remaining case for a trailing stop rests on the one condition four fresh markets just
+refuted. The mechanism holds in the second unit as well: the matched twin's ATR result is POSITIVE
+under the trail on all three arms (+0.0364/+0.0278/+0.0348) and NEGATIVE under every other policy
+(-0.0176 to -0.0638). Also corrected: the channel exit is a **WASH**, not a subtractor (within 1% of
+flatten-only on the ADX arm, first by a nose on both EMA arms); only breakeven-after-1R subtracts.
+**Ship neither a breakeven nor a trailing stop.**
+
+
 **THE DERIVED RULE'S HEADLINE WAS A POINTS FIGURE AND IT INVERTS IN ATR UNITS -- THE ADX CEILING IS
 DEAD.** Two agent workstreams, parity asserted before any other market was read (kernel COPIED from
 `s10lib`, masks identical on all 193,928 US30 bars, Wilder ADX max |diff| 0.000e+00, all ten US30
