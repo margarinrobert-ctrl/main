@@ -4179,6 +4179,17 @@ the score keeps **0.70 / 0.34 / 0.12** across three blocks so it is not calibrat
 RANK to fix selectivity gives **0 of 4 positive out of sample**. DSR **0.6230 FAIL**, White's reality
 check **p 0.0655 FAIL** at 113 looks.
 
+**AND THE ARM THAT SURVIVES FOUR FRESH MARKETS IS THE WEAKER OF THE TWO IN SAMPLE** -- `ema34>89`
+reads research control p **0.060** and bootstrap 0.164 against `+adx<=20`'s **0.005** and 0.0375.
+That is the RIGHT shape (a condition should look better where it was chosen and decay out of
+sample) and it is the shape the derived rule did not have, because it named the arm with the
+STRONGEST in-sample p as its survivor. **Reading research significance as a proxy for transfer was
+the specific error**, and it is worth separating from the unit error that sits beside it. On Gate 2
+the profit factor rises in 4 of 10 cells while **total points rises in 1 of 10** -- the filter
+trading count for ratio again, `STUDY_V61`'s finding, with one cell in ten actually making more
+money.
+
+
 **A TRUNCATED FRACDIFF IS NOT LEVEL-FREE, AND ITS SIZE IS TWO FREE PARAMETERS RATHER THAN A STUDY
 NAME.** For 0<d<1 the truncated fixed-width weights sum to a POSITIVE number, so `ffd.price` carries
 that fraction of the log price level; at d 0.4 / tau 1e-4 the sum is **+0.070369** and US30's 0.944

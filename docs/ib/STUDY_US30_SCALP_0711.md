@@ -978,6 +978,16 @@ a ratio of the same baseline two lines apart in one file. 55 → 47 → **38**.
   FAIL** (best Sharpe +0.1263 against E[max|null] +0.1084) and White's reality check **p 0.0655
   FAIL** at 113 looks.
 
+One addition from the meta workstream's own Gate 1 that bears directly on §18.2: **the arm that
+survives four fresh markets is the WEAKER of the two in sample.** `ema34>89` reads control p **0.060**
+and bootstrap 0.164 on research, against `+adx<=20`'s **0.005** and 0.0375. That is the right shape —
+a condition should look better where it was chosen and decay out of sample — and it is the shape §12
+and §13 did not have, having named the arm with the *strongest* in-sample p as the survivor. Reading
+research significance as a proxy for transfer was the specific error. And on Gate 2, the profit
+factor rises in 4 of 10 cells while **total points rises in 1 of 10** — the filter is trading count
+for ratio again, `STUDY_V61`'s finding, and only one cell of ten actually makes more money.
+
+
 ### 18.6 A truncated fracdiff is not level-free — with the scope corrected
 
 The agent's finding, verified independently: for `0 < d < 1` the truncated fixed-width weights sum
