@@ -63,7 +63,8 @@ def window(f, m0=W0, m1=W1):
 
 # ------------------------------------------------------------------ the walker ---------------
 @njit(cache=True)
-def _walk(o, h, l, c, at, mod, day, sig, side, stop_a, tgt_a, hold, cost, m0, m1, flat, tie):
+def _walk(o, h, l, c, at, mod, day, sig, side, stop_a, tgt_a, hold, cost, m0, m1, flat, tie,
+          use_pts):
     """One live position, ATR barriers at the SIGNAL bar, stop-first tie-break with the ambiguous
     share returned, and a CLOCK FLATTEN that fills at the open of the first bar at or after
     `flat` -- `STUDY_V60`: "flat by 11:00" means flat at the 11:00 OPEN, and a signal whose fill
@@ -86,9 +87,9 @@ def _walk(o, h, l, c, at, mod, day, sig, side, stop_a, tgt_a, hold, cost, m0, m1
             continue                                   # the fill itself would be at/after the bell
         s = side[q]
         ent = o[j]
-        rk = stop_a * at[i]
+        rk = stop_a if use_pts == 1 else stop_a * at[i]
         stop = ent - s * rk
-        targ = ent + s * tgt_a * at[i]
+        targ = ent + s * (tgt_a if use_pts == 1 else tgt_a * at[i])
         x = -1; px = 0.0; w = 2; a = 0
         for t in range(j, n):
             if flat > 0 and (mod[t] >= flat or day[t] != day[j]):
@@ -125,7 +126,10 @@ WHY = {0: "stop", 1: "target", 2: "hold", 3: "flatten"}
 
 
 def walk(f, sig, side, stop_a=1.5, tgt_a=1.5, hold=0, cost=COST, m0=W0, m1=W1, flat=FLAT,
-         tie=0):
+         tie=0, use_pts=0):
+    """`use_pts=1` reads stop_a/tgt_a as ABSOLUTE POINTS rather than ATR multiples. Both are
+    provided because `STUDY_DL50` found the two parameterisations disagree about whether a US30
+    result decays at all -- a fixed 50-point stop is 4.23 ATR in 2016 and 1.10 ATR in 2025."""
     order = np.argsort(np.asarray(sig))
     s_ = np.asarray(sig)[order].astype(np.int64)
     d_ = np.asarray(side)[order].astype(np.int64)
@@ -134,7 +138,7 @@ def walk(f, sig, side, stop_a=1.5, tgt_a=1.5, hold=0, cost=COST, m0=W0, m1=W1, f
         f["open"].to_numpy(), f["high"].to_numpy(), f["low"].to_numpy(), f["close"].to_numpy(),
         f["atr"].to_numpy(), f["mod"].to_numpy().astype(np.int64), day, s_, d_,
         float(stop_a), float(tgt_a), int(hold), float(cost), int(m0), int(m1), int(flat),
-        int(tie))
+        int(tie), int(use_pts))
     t = pd.DataFrame(dict(e_bar=eb, x_bar=xb, pts=pts, R=rr, risk=rk, why=why, amb=amb, side=sd))
     if not len(t):
         return t
