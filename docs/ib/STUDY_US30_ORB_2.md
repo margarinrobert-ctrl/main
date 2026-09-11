@@ -207,6 +207,22 @@ Pine script's default. Same geometry, 100/100, flat 16:00:
 | market at the next open (the original) | research | 232 | 47.4% | −10.1 | 0.81 | −0.85 |
 | | locked | 130 | 40.0% | −23.4 | 0.62 | −2.24 |
 
+A second clarification: the entry still looked late on the chart. The reason is sequencing, not
+the order type. The resting stop can only sit at the line while the conditions already hold, and
+on many days the break bar is what flips the fast EMA, so the conditions confirm at the close of
+the break bar with price already beyond the line; a stop placed then is below the market and
+fills at the next open. The Pine now has a "late rule" input for that case, and each choice was
+measured as the first fill per session across the two mechanics:
+
+| stop at the line, then when conditions confirm after the break … | block | n | win | per trade | control z |
+| --- | --- | --- | --- | --- | --- |
+| wait for the retest at the line (default) | research | 266 | 50.8% | −2.1 | 0.58 |
+| | locked | 153 | 42.5% | −17.8 | −1.25 |
+| enter at market now | research | 274 | 48.5% | −6.5 | −0.13 |
+| | locked | 156 | 41.7% | −19.4 | −1.46 |
+| EMA condition off, trend gate only (order always resting from 09:15) | research | 305 | 45.2% | −12.9 | −1.24 |
+| | locked | 169 | 40.2% | −22.4 | −1.80 |
+
 Entering at the line is better than entering at the next open by about 4.6 points a trade on
 research, which is roughly the distance the close-break entry gives up, and it is still a coin
 flip against its control (z 0.03) that loses 20.6 a trade on the holdout. The EMA conditions

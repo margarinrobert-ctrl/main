@@ -20,11 +20,18 @@
 //
 //   MEASURED on US30 15-minute bars, 2024-08-19 to 2026-08-26, 511 sessions, research = first
 //   65% of sessions, locked = last 35%, 3 points round turn + 1 point stop slippage.
-//   ENTRY AT THE LINE (this script's default):
+//   ENTRY AT THE LINE, stop resting before the break, EMA 13/48 + EMA 200 on the prior bar:
 //     research (332 sessions)     263 trades   49.0% win   -1,442 pt    -5.5 pt/trade   PF 0.90
 //     locked   (179 sessions)     151 trades   41.1% win   -3,117 pt   -20.6 pt/trade   PF 0.66
 //     whole file                  414 trades   46.1% win   -4,559 pt   (-$22,795 on one YM contract)
 //     vs a random entry matched on side, minute and block:  z 0.03 research, z -1.58 locked
+//   ... plus the late rule when the conditions confirm only after the break (this script's default
+//   is the retest):   retest  research 266 trades -2.1 pt/trade (z 0.58), locked 153 -17.8 (z -1.25)
+//                     market  research 274 trades -6.5 pt/trade (z -0.13), locked 156 -19.4 (z -1.46)
+//   ... with the EMA condition OFF (order rests from 09:15 on every session, trend gate only):
+//                     research 305 trades -12.9 pt/trade (z -1.24), locked 169 -22.4 (z -1.80)
+//   ... with NO conditions at all (every break, both sides):
+//                     research 332 trades -4.7 pt/trade (z 0.40), locked 179 -8.7 (z 0.07)
 //   LIMIT AT THE LINE ON THE RETEST:  research 123 trades -4.5 pt/trade (z 0.02); locked 84
 //     trades +10.0 pt/trade (z 1.45, p 0.07). Better on the holdout than on research is the
 //     wrong shape, and the bare limit-retest fill with NO conditions made +11.6 pt/trade on
@@ -86,6 +93,15 @@ entryMode   = input.string("Stop order AT the 09:00 high/low", "Entry", group = 
      "at the next open after a close beyond the level (the original, and the worst of the three).")
 winEndH     = input.int(10, "Last fill hour",   minval = 0, maxval = 23, group = "Window")
 winEndM     = input.int(30, "Last fill minute", minval = 0, maxval = 59, group = "Window")
+lateMode    = input.string("Wait for the retest AT the line", "If the EMA/trend conditions confirm only AFTER the break",
+     options = ["Wait for the retest AT the line", "Enter at market now", "Skip the day"], group = "Entry",
+     tooltip = "The stop order can only rest at the line while the conditions already hold. On many " +
+     "days the break bar itself is what flips the EMAs, so the conditions confirm at its close with " +
+     "price already beyond the line. A stop placed then is below the market and fills at the next " +
+     "open, which looks like a late entry. This input decides what happens instead.")
+momOn       = input.bool(true, "EMA momentum condition on", group = "Momentum",
+     tooltip = "Off = the order rests at the 09:00 high/low from 09:15 with no EMA condition; the " +
+     "trend gate still applies if it is on.")
 fastLen     = input.int(13,  "Fast EMA",  minval = 2, group = "Momentum")
 slowLen     = input.int(48,  "Slow EMA",  minval = 3, group = "Momentum")
 crossK      = input.int(0,   "Cross within last k bars (0 = EMA state only)", minval = 0, group = "Momentum")
@@ -105,6 +121,8 @@ flatMin    = flatH * 60 + flatM
 modeStop   = entryMode == "Stop order AT the 09:00 high/low"
 modeLimit  = entryMode == "Limit AT the level on the retest"
 modeMarket = not modeStop and not modeLimit
+lateRetest = lateMode == "Wait for the retest AT the line"
+lateMarket = lateMode == "Enter at market now"
 
 // ---- backtest window -------------------------------------------------------------------------
 winMode  = input.string("All available history", "Backtest window", group = "Backtest window",
@@ -155,8 +173,8 @@ if inSig and rangeOk and barstate.isconfirmed
 
 tUp = not trendOn or close > emaT
 tDn = not trendOn or close < emaT
-condUp = momUp and freshUp and tUp
-condDn = (not momUp) and freshDn and tDn
+condUp = (not momOn or (momUp and freshUp)) and tUp
+condDn = (not momOn or ((not momUp) and freshDn)) and tDn
 longSig  = inSig and rangeOk and brokeUp and condUp        // market / limit: a close beyond it
 shortSig = inSig and rangeOk and brokeDn and condDn
 longArm  = inPlace and rangeOk and condUp                  // stop mode: conditions hold, order rests
@@ -175,15 +193,34 @@ slT = math.max(math.round((useAtr ? slPts * atrV : slPts) / syminfo.mintick), 1)
 tpT = math.max(math.round((useAtr ? tpPts * atrV : tpPts) / syminfo.mintick), 1)
 if ready and isFlat and oncePerDay and inWindow and barstate.isconfirmed
     if modeStop
-        // a stop order AT the 09:00 high / low; re-issued every bar the conditions hold, cancelled
-        // the bar they stop holding. Both sides can rest at once only when momentum is off.
+        // BEFORE the break: a stop order AT the 09:00 high / low, re-issued every bar the
+        // conditions hold, cancelled the bar they stop holding. AFTER a close beyond the line
+        // with the conditions confirming only now, the stop would sit below the market and fill
+        // at the next open -- so the late rule decides: rest a limit AT the line for the retest,
+        // enter at market now, or skip the day.
+        lateUp = brokeUp and close > rHi
+        lateDn = brokeDn and close < rLo
         if longArm and allowLong
-            strategy.entry("L", strategy.long, stop = rHi)
+            if not lateUp
+                strategy.entry("L", strategy.long, stop = rHi)
+            else if lateRetest
+                strategy.entry("L", strategy.long, limit = rHi)
+            else if lateMarket
+                strategy.entry("L", strategy.long)
+            else
+                strategy.cancel("L")
             strategy.exit("Lx", "L", loss = slT, profit = tpT)
         else
             strategy.cancel("L")
         if shortArm and allowShort
-            strategy.entry("S", strategy.short, stop = rLo)
+            if not lateDn
+                strategy.entry("S", strategy.short, stop = rLo)
+            else if lateRetest
+                strategy.entry("S", strategy.short, limit = rLo)
+            else if lateMarket
+                strategy.entry("S", strategy.short)
+            else
+                strategy.cancel("S")
             strategy.exit("Sx", "S", loss = slT, profit = tpT)
         else
             strategy.cancel("S")
