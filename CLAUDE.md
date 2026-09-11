@@ -4206,6 +4206,56 @@ consistent and not proof. **Print `sum(w)` beside `d` whenever a fracdiff column
 prefer the rolling z-score.** See `docs/ib/TEAM_XMKT.md`, `docs/ib/TEAM_META_HMM.md` and
 `docs/ib/STUDY_US30_SCALP_0711.md` section 18.
 
+**A BAR COUNT IS NOT A SETTING -- AND ON A WHOLE STRATEGY IT IS WORTH 37 PERCENTAGE POINTS OF TOTAL
+RETURN.** `STUDY_V57` recorded the trap on two parameters of one rule; here it is measured on every
+length of the shipped Turtle at once. The script's `entry1 = 20` is five hours on a 15m chart and
+eighty on a 240m one, so its four presets are four different strategies, and its red WRONG TIMEFRAME
+banner is the script correctly refusing a question it was never asked. Swept in both readings, three
+markets x five timeframes x two blocks: **CARRIED bar counts are negative at every timeframe except
+the one each preset was measured on (-0.051/-0.047/-0.053/-0.035 research), while holding the
+preset's REACH IN MINUTES constant is positive at four of five (+0.008/+0.053/+0.053/+0.008)**.
+Paired cell by cell, matched beats carried in **9 of 12 research and 9 of 12 locked cells** per
+trade -- and because matched keeps only 12-64% of the trades, which is the shape that has faked an
+improvement repeatedly here, the same comparison was run on TOTAL return where trading less is a
+cost: **11 of 12 and 9 of 12 there, mean total -38.13% carried against -0.91% matched on research**
+and -16.50% against +0.25% on locked. It is a UNITS FIX, not a fitted parameter. **AND THE ATR MUST
+NOT BE SCALED WITH THE CHANNELS**: `atrLen` is a bar count too, and scaling it as well beats
+channels-only in 4 of 12 research and 6 of 12 locked cells. A channel length is a statement about how
+much market a breakout must clear, which is a quantity of TIME; ATR(20) is a statement about how much
+a bar of THIS chart moves, which is already resolution-relative. The fix also moves the GATE: Gate 1
+on the matched primary clears **3 of 9 research cells against 0.5 expected, one of them on a
+nine-year feed** where the carried reading fails every cell.
+
+**A BREAKOUT BAR DOES NOT RESTATE A CANDLESTICK PATTERN -- IT MAKES MOST OF THEM ARITHMETICALLY
+IMPOSSIBLE.** A System 1 entry needs `high > highest(high, 20)[1]`, and that maximum INCLUDES the
+previous bar's high, so `high > high[1]` follows by construction -- measured at **100.00% of signal
+bars over fifteen market x timeframe cells**. Every pattern requiring `high <= high[1]` is therefore
+unavailable: **5 of 32 declared patterns NEVER fire** (harami bullish, harami bearish, inside bar,
+piercing, dragonfly), **14 more fire under 5%** of the time, leaving 13 testable -- and **NONE passes
+over 50%**. So candlesticks are the first confirmation family here that is NOT the trigger restated
+(against RSI>=55 at 94.7%, Aroon osc>=0 at 100.0%, MACD>0 at 99.8-100.0%, MFI>=50 at 91.7%,
+EMA13>48 at 82.6%, +DI>-DI at 97.8%, close>EMA50 at 93.7%); they fail the OPPOSITE test, availability.
+The continuous shape readings do restate the trigger, as expected (10-bar bullish share 93.3%,
+five-bar up-closes 85.8%, close-above-previous-high 82.5%). **Compute a pattern's AVAILABILITY on the
+trigger's own bars, not only its pass rate** -- the two are different failure modes and the cheap
+check catches both. Ninth pool-duplication catch here, and the sharpest statement of it yet: on a bar
+that CLOSES UP, close-position and upper-wick share sum to 1 at max |diff| **0.00e+00** (rho exactly
+-1.0000), but a breakout bar closes up only **78-79%** of the time, so over all signal bars they
+correlate -0.75 to -0.81 -- a near-duplicate whose 21% of disagreement IS the failed-break population.
+
+**A CONTROL GUARDED BY `np.isfinite` CANNOT BE HANDED AN INFINITE SENTINEL, AND IT FAILS SILENTLY AS
+A PERFECT NULL.** Forcing a random-entry control by rewriting the channel to -inf at the drawn bars
+produced p = 1.0000 in all twenty cells, because the shipped order model guards its breakout test
+with `np.isfinite(C["hi1"][t])` -- so every drawn bar was skipped and the control took NO TRADES AT
+ALL. A finite -1e18 fixes it. Seventh control-construction error on this branch, and the tell was
+that EVERY cell returned exactly 1.0000 rather than a spread. Also fixed in the same control: it must
+match the SYSTEM MIX, not only the trade count, because a System 2 entry exits on the 20-bar channel
+and a System 1 entry on the 10-bar one, so an all-System-1 null gets a systematically tighter exit
+and the comparison flatters the rule. **And `pkill -f "run_x.py"` MATCHES ITS OWN COMMAND LINE** --
+the CLAUDE.md waiter lesson from the other side; `pkill -f "run_x[.]py"` does not, because the
+bracket expression is literal text in the invoking shell's argv and the regex will not match it.
+
+
 ## Tooling
 
 | module | what it does |
@@ -4227,6 +4277,7 @@ prefer the rolling z-score.** See `docs/ib/TEAM_XMKT.md`, `docs/ib/TEAM_META_HMM
 | `research/us30exit/` | exit geometry and position management on the section-12 primary: `x_lib.py` (four exit paths added to `s30core._walk` with a transcription check that must reproduce it exactly on the flatten-only policy, a channel exit filling at the NEXT open, and breakeven/trail ratchets that can only bind from the bar after they are set), `x_run1..x_run5.py` (the 80-cell declared grid, each cell against its OWN coin-flip twin; the trail-multiplier ladder with the twin beside it at every rung; the tie-break pass; the reserved reads), `x_run6.py` (**the same grid on two more entry arms, which is what turns raw-PF-vs-excess into a measurement**) |
 | `research/us30xmkt/` | the frozen rule on four markets that chose nothing: `xm_core.py` (the `s10lib` kernel COPIED and asserted mask-for-mask and bar-for-bar before any other feed is opened, five clocks re-derived, per-market ATR geometry and cost-as-a-fraction-of-its-own-stop), `run_x1..x9.py` (overlap matrix and date-clustered effective n BEFORE any pooled claim; the two pre-declared hypotheses read once per market; **the POINTS-vs-ATR unit test that inverts the headline**; the pooled MDE against the pooled edge; and the zero-cost variant that separates a signal failure from a cost failure), `plot_xmkt.py` |
 | `research/us30meta/` | the HMM/quant meta layer under the two-gate architecture: `m_core.py`, `m_feat.py` (55 causal features, fracdiff with `sum(w)` printed beside `d`, a causal HMM read FILTERED with the smoothed decode kept only as the leak diagnostic, truncation audit), `m_ml.py`, `m_run1..m_run6.py` (base rates and the rho-1.0000 duplicate catch; the HMM-vs-volatility collapse and the matrix-power Jaccard; the model ladder beside shuffled twins scored on IC AND on the top-decile mean; **KEEP-ONE beside drop-one, which is what found the four-feature answer**; Gate 2 with its split MDE, the kept-fraction calibration and a rank cut that fixes selectivity; and the fracdiff level-drift table) |
+| `research/tcandle/` | the Turtle script's two asks, in the order the evidence requires: `tc_core.py` (the shipped order model IMPORTED from `turtle15/pine_parity` rather than rewritten, since it already takes the entry gate as a mask; a matched random entry that also matches the SYSTEM MIX and sorts its drawn bars; a same-selectivity random GATE re-simulated as a veto), `tc_feat.py` (48 causal candlestick features in four declared families with a truncation audit), `run_c0.py` (**which patterns a breakout bar makes arithmetically impossible**, proved on 15 market x timeframe cells before any P&L), `run_c1.py` (Gate 1 on the shipped presets plus base rates on the trigger's own bars), `run_c2.py` (the timeframe axis in BOTH readings -- bar counts carried and reach matched -- read by marginal average and by total return so a trade-count artifact cannot hide), `run_c2b.py` (whether the ATR length must scale with the channels; it must not), `run_c1b.py` (Gate 1 again on the matched primary), `run_c3.py` (Gate 2: every reading as a veto in BOTH polarities against a null cached by selectivity, with BH, the MDE and the search's own noise floor printed beside it), `run_c4.py` (one read of the survivors), `tc_parity.py` (the shipped Pine's own candle expressions diffed bar for bar -- it caught two transcription bugs before shipping) |
 | `research/us30team/` | the three-agent team on US30 07:00-11:00 with the flatten, each workstream a PRE-DECLARED grid with a null in front: `base_rates.py` + `run_b1..b4.py` (base rates on the trigger's own bars, a CAUSAL time-of-day ATR baseline beside the broken trailing one, the signal-bar correlation matrix, 42 single-condition VETOES and 24 drop-one arms with the MDE printed beside every one, ADX and ATR run as floors AND ceilings, one read each of the holdout and the different-provider forward block); `pool.py` + `run_p1..p4.py` (three feeds with their clocks re-derived, the trigger-overlap matrix and date-clustered effective sample size BEFORE any power claim, pooling in ATR units and percent of price, and the pooled MDE printed against the pooled edge); `session.py` + `run_f1..f3.py` (the flatten priced by a PAIRED comparison on identical entry bars, the exit mix and the counterfactual, give-back against a barrier-resolved control, the tie-break bracket, and a permutation on the drawdown) |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
