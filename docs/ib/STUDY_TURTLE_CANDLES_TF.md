@@ -262,3 +262,71 @@ clearing is what a best-of-70 selection produces from noise, the two research pa
 that chose it, and every cell is inside its own MDE. What would settle it is more events — the
 screen needs roughly seven times its current per-trade resolution, and that comes from trades, not
 from more features.
+
+## 9. Four Monte Carlos, kept apart because they answer four different questions
+
+Twenty cells — five market × timeframe pairs × carried/matched × research/locked — through:
+
+* **EDGE** — day-block bootstrap, resampling whole days *with their trades attached* and taking the
+  trade-weighted mean. Trades cluster inside a session, so a trade-wise resample would pretend 216
+  trades are 216 independent draws when they are nearer 150 days.
+* **PATH** — permutation of the realised trades. This answers a drawdown question only; permuting
+  cannot change the endpoint.
+* **EXECUTION** — round turn drawn U(0.5×, 2.0×) **inside** the walk, so the trade *set* can move.
+* **DATA** — price jitter with ATR, ADX, the EMA100 and all four channels **recomputed** from the
+  jittered bars, so the *signal* moves and not just the fill.
+
+| arm | block | cells | %/trade | total % | P(mean ≤ 0) | MC p99 / realised DD |
+|---|---|---|---|---|---|---|
+| carried | research | 5 | −0.0500 | −32.24 | 0.860 | 1.59× |
+| carried | locked | 5 | −0.0466 | −11.43 | 0.788 | 1.71× |
+| **matched** | research | 5 | **+0.0320** | −0.32 | **0.497** | 1.69× |
+| **matched** | locked | 5 | **+0.0289** | **+3.63** | **0.414** | 2.07× |
+
+**Matched beats carried on total return in 10 of 10 cells and has the lower P(mean ≤ 0) in 10 of
+10.** That is the strongest form of the timeframe finding in the study, and it is a *paired*
+comparison on identical bars with only the units differing.
+
+**But 0 of 20 cells have a bootstrap that excludes zero on the positive side** — and two *carried*
+cells exclude it on the **negative** side (US100L 30m research, 95% CI [−0.1100, −0.0322],
+P(mean ≤ 0) = 1.000; NQ 60m locked, [−0.2601, −0.0060]). So the honest summary is that the bar-count
+reading is a **measurably losing** configuration in two cells while the matched reading is
+indistinguishable from zero everywhere. Fixing the units removes a demonstrable loss; it does not
+manufacture a demonstrable gain.
+
+**Read the execution and data Monte Carlos last, and do not mistake them for evidence.** They split
+almost perfectly — carried arms P(total ≤ 0) = 1.000, matched arms 0.000 in six cells, and the sign
+survives price jitter in 98–100% of draws. That looks decisive and is nearly free: the stop is 2.0N
+and the round turn is 0.6–1.9% of it, so doubling the cost cannot move a system like this. A tight
+band there says the *implementation* is not fragile, not that the edge is real. The bootstrap is the
+binding test and it declines to clear zero.
+
+**MC p99 drawdown runs 1.18× to 2.65× the realised, median 1.76×** — that is the sizing number, and
+the matched arm's locked cells are the widest (2.07× on average), because they trade less.
+
+## 10. Figures
+
+![timeframe](../../research/tcandle/fig1_timeframe.png)
+![availability](../../research/tcandle/fig2_availability.png)
+![screen](../../research/tcandle/fig3_screen.png)
+![monte carlo](../../research/tcandle/fig4_montecarlo.png)
+
+## 11. What ships
+
+`pine/tcandle/TURTLE_SCALED_CANDLES_strategy.pine`:
+
+* **`scaleToChart` ON.** The preset's reach in minutes is held constant, so its channels mean the
+  same amount of market on any chart, and the hard timeframe lock is released while scaling is on.
+  Turning it off reproduces the original script exactly.
+* **The ATR is not scaled**, on the measurement in §4.
+* **Every candlestick input OFF**, each carrying its own measured base rate in its tooltip, and the
+  five arithmetically impossible patterns omitted from the list rather than offered and never firing.
+* `require 3 higher highs` is present because its direction was unanimous across six cells, labelled
+  with the fact that it cleared its control in only two of them and both chose it.
+* The HUD prints the effective lengths, whether scaling is on, and whether any candle filter is
+  engaged — a changed setting must never be invisible in a screenshot.
+
+**No edge is claimed.** The Turtle presets clear a matched random entry only on the market that chose
+them; the reach fix is a units correction that removes a measurable loss on every other chart; and
+the candlestick layer is, on this primary at this sample size, unresolvable rather than merely
+absent — which the MDE table says in advance and the screen confirms.

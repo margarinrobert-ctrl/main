@@ -197,13 +197,18 @@ def fig_mc():
     key = "US100L|30|{}|A|{}"
     fig, ax = plt.subplots(1, 4, figsize=(19.0, 4.4))
 
+    lab = {}
     for mode, c in (("carried", C_CARRIED), ("matched", C_MATCHED)):
         k = key.format(mode, "boot")
+        row = df[(df.mkt == "US100L") & (df.tf == 30) & (df["mode"] == mode) & (df.block == "A")]
+        p0 = float(row.iloc[0].p_le0) if len(row) else np.nan
+        lab[mode] = f"{mode}   P(mean<=0) = {p0:.3f}"
         if k in z:
-            ax[0].hist(z[k], bins=48, alpha=0.72, color=c, label=mode)
+            ax[0].hist(z[k], bins=48, alpha=0.72, color=c, label=lab[mode])
     ax[0].axvline(0, color="#a02b2b", lw=1.4)
     _tidy(ax[0], "EDGE -- day-block bootstrap", "% of entry price per trade", "draws")
-    ax[0].legend(frameon=False, fontsize=8.5)
+    ax[0].legend(frameon=False, fontsize=8, loc="upper left")
+    ax[0].set_ylim(0, ax[0].get_ylim()[1] * 1.22)
 
     k = key.format("matched", "perm")
     if k in z:
@@ -219,7 +224,7 @@ def fig_mc():
             ax[1].text(r.dd_p99, ax[1].get_ylim()[1] * 0.60,
                        f"  p99 = {r.dd_p99/r.dd:.2f}x realised", fontsize=8.5, color="#a02b2b",
                        va="top")
-    _tidy(ax[1], "PATH -- permutation of the same trades", "max drawdown, % of entry price",
+    _tidy(ax[1], "PATH -- permutation of the matched arm's own trades", "max drawdown, % of entry price",
           "draws")
 
     for j, (nm, title, xl) in enumerate((("exec_tot", "EXECUTION -- round turn U(0.5x, 2x)",

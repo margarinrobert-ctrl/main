@@ -4243,6 +4243,38 @@ that CLOSES UP, close-position and upper-wick share sum to 1 at max |diff| **0.0
 -1.0000), but a breakout bar closes up only **78-79%** of the time, so over all signal bars they
 correlate -0.75 to -0.81 -- a near-duplicate whose 21% of disagreement IS the failed-break population.
 
+**AND THE PAIRED MONTE CARLO IS WHERE THE UNITS FIX BECOMES UNAMBIGUOUS: MATCHED BEATS CARRIED IN
+10 OF 10 CELLS ON TOTAL RETURN AND 10 OF 10 ON P(mean<=0).** Twenty cells through four Monte Carlos
+kept apart -- day-block bootstrap for the EDGE, permutation for the PATH, a round turn drawn
+U(0.5x,2x) INSIDE the walk for EXECUTION, and price jitter with ATR, ADX, EMA100 and all four
+channels RECOMPUTED for DATA. **0 of 20 cells clear zero on the positive side, and two CARRIED cells
+clear it on the NEGATIVE side** (US100L 30m research CI [-0.1100, -0.0322] at P(mean<=0) 1.000; NQ
+60m locked [-0.2601, -0.0060]) -- so the bar-count reading is a MEASURABLY LOSING configuration
+while the matched one is indistinguishable from zero. Fixing units removes a demonstrable loss; it
+does not manufacture a demonstrable gain. **READ THE EXECUTION AND DATA MONTE CARLOS LAST AND DO NOT
+MISTAKE THEM FOR EVIDENCE**: they split perfectly (carried P(total<=0) 1.000, matched 0.000 in six
+cells, sign surviving jitter in 98-100% of draws) and that is nearly free, because the stop is 2.0N
+and the round turn is 0.6-1.9% of it. A tight band there says the IMPLEMENTATION is not fragile, not
+that the edge is real. MC p99 drawdown 1.18-2.65x realised, median 1.76x.
+
+**A CANDLESTICK SCREEN THAT RETURNS EXACTLY CHANCE, WITH THE POWER STATED IN ADVANCE.** 96 declared
+arms (48 causal features x two polarities) on the only Gate-1 pass with enough trades, each a VETO
+re-simulated end to end against a random gate of the same selectivity, the null CACHED BY KEPT
+FRACTION (a gate keeping 37% of bars is the same null whichever feature keeps 37% -- 96 sets of 200
+re-simulations become ~25 and the test is unchanged). **3 of 70 scorable arms clear p<=0.05 against
+3.5 expected, 0 survive BH, and 70 OF 70 ARE INSIDE THEIR OWN MDE** (median ratio 0.124). The bound
+was computable first: at 216 trades with a per-trade sd of 0.977 the MDE is **0.1863 %/trade = 6.8x
+the strategy's whole per-trade edge**, rising to 12.5x for an arm keeping 30% -- and `E[max t |
+noise]` over 70 arms is **2.402 against the 2.802 detection needs**, so the luckiest draw of a
+pure-noise search this wide could not have been believed either. **COMPUTE BOTH BOUNDS BEFORE THE
+SCREEN; they turn a null result from a shrug into a measurement.** The largest effect the pool
+contains reaches 0.994 of its own MDE and is `require a shooting star` at **-0.2202** -- the biggest
+thing available is a way to DESTROY the edge by demanding a failed-break candle, the right direction
+and still unresolvable. One arm has a unanimous direction (`3 higher highs`, 6 of 6 cells beating
+their base, lift 3.34) and clears its control in 2 of 6, both blocks that chose it; it ships
+default-OFF with those numbers and no claim.
+
+
 **A CONTROL GUARDED BY `np.isfinite` CANNOT BE HANDED AN INFINITE SENTINEL, AND IT FAILS SILENTLY AS
 A PERFECT NULL.** Forcing a random-entry control by rewriting the channel to -inf at the drawn bars
 produced p = 1.0000 in all twenty cells, because the shipped order model guards its breakout test
