@@ -43,14 +43,29 @@ four of five.** Paired cell by cell, excluding 240m where the two readings coinc
 matched beats carried in **9 of 12 research cells and 9 of 12 locked cells** (mean +0.0770 and
 +0.0250 per trade).
 
-**And it is not the usual trade-count artifact.** The matched reading keeps only 12–64% of the
-trades, which is exactly the shape that has faked an improvement repeatedly on this branch — so the
-same comparison was run on **total** return, where trading less is a cost rather than a free win.
-Matched beats carried in **11 of 12 research cells and 9 of 12 locked cells** there too, and the gap
-is not marginal: mean total return over the twelve cells is **−38.13% carried against −0.91% matched**
-on research and **−16.50% against +0.25%** on the locked block. The bar-count reading is not merely
-worse per trade; it is what makes the strategy lose money on any chart faster than the one its preset
-names.
+**CORRECTED — the total-return claim was in the wrong unit, and it reverses.** The first pass
+reported total return as the sum of `pct`, which `tc_core.run` defines **per ladder unit**. That is
+the right unit for comparing *entry quality* across markets and the wrong one for "total return",
+because the Turtle's extra units are part of the strategy and the account books all of them — and
+the division is not neutral, since a ladder only adds units when the trade is already going your
+way, so dividing by units penalises exactly the winners. Re-scored in **account units** (units ×
+per-unit result), over the same 24 paired cells:
+
+| measure | matched wins | carried mean | matched mean |
+|---|---|---|---|
+| per-trade result | **19 of 24** | +0.283 | **+0.494** |
+| profit factor | **19 of 24** | 1.452 | **1.714** |
+| max drawdown (lower better) | **20 of 24** | 28.09 | **21.24** |
+| return / drawdown | 11 of 24 | **4.28** | 3.20 |
+| total return | 6 of 24 | **+95.70** | +53.31 |
+| trade count | 0 of 24 | **577** | 120 |
+
+**So the reach fix buys per-trade quality, a higher profit factor and a shallower drawdown, and gives
+up 79% of the trades to get them — and on return-over-drawdown, the one measure that prices both, the
+two readings are a tie (11 of 24).** The per-unit reading is still the correct one for judging entry
+quality and it still says matched wins 20 of 24; it is simply not a statement about total return, and
+presenting it as one overstated the finding. `research/tcandle/run_c2c.py` writes both units side by
+side so this cannot recur.
 
 What that does and does not say. It is a **units fix, not a fitted parameter** — nothing here was
 chosen to make a number larger, and the reference reach is the preset's own. It does not make the
@@ -283,9 +298,11 @@ Twenty cells — five market × timeframe pairs × carried/matched × research/l
 | **matched** | research | 5 | **+0.0320** | −0.32 | **0.497** | 1.69× |
 | **matched** | locked | 5 | **+0.0289** | **+3.63** | **0.414** | 2.07× |
 
-**Matched beats carried on total return in 10 of 10 cells and has the lower P(mean ≤ 0) in 10 of
-10.** That is the strongest form of the timeframe finding in the study, and it is a *paired*
-comparison on identical bars with only the units differing.
+**Matched beats carried on per-unit total in 10 of 10 cells and has the lower P(mean ≤ 0) in 10 of
+10** — a paired comparison on identical bars with only the units differing. Read §1's correction
+alongside it: these MC figures are computed on the **per-unit** series, so they price *entry quality*
+and not the account's total. In account units the total-return ranking reverses, because the carried
+reading takes 4.8× the trades.
 
 **But 0 of 20 cells have a bootstrap that excludes zero on the positive side** — and two *carried*
 cells exclude it on the **negative** side (US100L 30m research, 95% CI [−0.1100, −0.0322],
@@ -315,7 +332,9 @@ the matched arm's locked cells are the widest (2.07× on average), because they 
 
 `pine/tcandle/TURTLE_SCALED_CANDLES_strategy.pine`:
 
-* **`scaleToChart` ON.** The preset's reach in minutes is held constant, so its channels mean the
+* **`scaleToChart` ON** — on per-trade quality, profit factor and drawdown, which it wins 19–20 of
+  24 paired cells, *not* on total return, which it loses 18 of 24 by trading a fifth as often.
+  Return-over-drawdown is a tie. The preset's reach in minutes is held constant, so its channels mean the
   same amount of market on any chart, and the hard timeframe lock is released while scaling is on.
   Turning it off reproduces the original script exactly.
 * **The ATR is not scaled**, on the measurement in §4.

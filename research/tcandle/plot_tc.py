@@ -66,7 +66,7 @@ def fig_timeframe():
         ax[k].get_xaxis().set_major_formatter(matplotlib.ticker.FixedFormatter(
             [str(t) for t in tfs]))
         _tidy(ax[k], f"Per-trade edge, {blk} block", "chart timeframe (minutes)",
-              "% of entry price per trade" if k == 0 else None)
+              "% of entry price per LADDER UNIT" if k == 0 else None)
         lo, hi = ax[k].get_ylim()
         ax[k].set_ylim(lo - (hi - lo) * 0.22, hi + (hi - lo) * 0.06)
         ax[k].legend(frameon=False, fontsize=8.5, loc="lower center", ncol=2)
@@ -74,21 +74,34 @@ def fig_timeframe():
                    fontsize=7.5, color=INK2, ha="right",
                    textcoords="offset points", xytext=(-10, 10))
 
-    sub = df[df.tf != 240].copy()
-    sub["cell"] = sub.mkt + " " + sub.tf.astype(str) + "m"
-    order = (sub[["mkt", "tf", "cell"]].drop_duplicates()
-             .sort_values(["mkt", "tf"], ascending=[False, False])["cell"].tolist())
-    w = sub.pivot_table(index="cell", columns="mode", values="totA").reindex(order)
-    y = np.arange(len(w))
-    ax[2].barh(y - 0.19, w["carried"], 0.36, color=C_CARRIED, label="carried")
-    ax[2].barh(y + 0.19, w["matched"], 0.36, color=C_MATCHED, label="matched")
-    ax[2].axvline(0, color=INK2, lw=1.0)
+    u = pd.read_csv(f"{HERE}/c2c_units.csv")
+    w = u[u.tf != 240].pivot_table(index=["mkt", "tf", "block"], columns="mode",
+                                   values=["per_acct", "pf", "dd", "rdd", "tot_acct", "n"])
+    meas = [("per_acct", "per-trade result", False), ("pf", "profit factor", False),
+            ("dd", "max drawdown", True), ("rdd", "return / drawdown", False),
+            ("tot_acct", "total return", False), ("n", "trade count", False)]
+    names, wins = [], []
+    for col, nm, lower in meas:
+        a, b = w[col]["matched"], w[col]["carried"]
+        wins.append(int((a < b).sum()) if lower else int((a > b).sum()))
+        names.append(nm)
+    y = np.arange(len(names))
+    cols = [C_MATCHED if v > 12 else C_CARRIED for v in wins]
+    ax[2].barh(y, wins, 0.62, color=cols)
+    ax[2].axvline(12, color=INK2, lw=1.4, ls="--")
+    ax[2].text(12.3, -0.78, "12 of 24 = a tie", color=INK2, fontsize=8)
+    for i, v in enumerate(wins):
+        ax[2].text(v + 0.4, i, str(v), va="center", fontsize=8.5, color=INK2)
     ax[2].set_yticks(y)
-    ax[2].set_yticklabels(w.index, fontsize=8)
-    _tidy(ax[2], "Total return, research block", "cumulative % of entry price, 1 unit/trade")
-    ax[2].legend(frameon=False, fontsize=8.5, loc="lower right")
-    fig.suptitle("A bar count is not a setting: the same preset on a faster chart keeps its numbers "
-                 "and loses its reach", fontsize=11.5, x=0.008, ha="left", color=INK)
+    ax[2].set_yticklabels(names, fontsize=8.5)
+    ax[2].set_xlim(0, 25)
+    _tidy(ax[2], "Cells the MATCHED reading wins, of 24 (account units)",
+          "paired market x timeframe x block cells")
+    ax[2].set_ylim(-0.9, len(names) - 0.1)
+    ax[2].text(24.6, 0.15,
+               "matched buys quality and gives up count;\nreturn/drawdown, which prices both, is a tie",
+               fontsize=8, color=INK2, va="bottom", ha="right")
+    fig.suptitle("A bar count is not a setting -- but fixing it buys per-trade quality, not total return", fontsize=11.5, x=0.008, ha="left", color=INK)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     fig.savefig(f"{HERE}/fig1_timeframe.png", dpi=150)
     plt.close(fig)

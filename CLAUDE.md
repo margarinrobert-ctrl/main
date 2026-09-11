@@ -4215,10 +4215,15 @@ markets x five timeframes x two blocks: **CARRIED bar counts are negative at eve
 the one each preset was measured on (-0.051/-0.047/-0.053/-0.035 research), while holding the
 preset's REACH IN MINUTES constant is positive at four of five (+0.008/+0.053/+0.053/+0.008)**.
 Paired cell by cell, matched beats carried in **9 of 12 research and 9 of 12 locked cells** per
-trade -- and because matched keeps only 12-64% of the trades, which is the shape that has faked an
-improvement repeatedly here, the same comparison was run on TOTAL return where trading less is a
-cost: **11 of 12 and 9 of 12 there, mean total -38.13% carried against -0.91% matched on research**
-and -16.50% against +0.25% on locked. It is a UNITS FIX, not a fitted parameter. **AND THE ATR MUST
+trade. **AND THE UNIT THE TOTAL IS SCORED IN DECIDES WHO WINS -- I GOT THIS WRONG FIRST.** The first
+pass summed a PER-LADDER-UNIT result and reported it as total return, which reverses: over 24 paired
+cells in ACCOUNT units (units x per-unit result) matched wins per-trade result **19/24**, profit
+factor **19/24** (1.714 against 1.452) and max drawdown **20/24**, while carried wins TOTAL RETURN
+**18/24** (+95.70 against +53.31) purely by taking **4.8x the trades** (577 against 120) -- and
+return-over-drawdown, the one measure pricing both, is a **TIE at 11/24**. Dividing by units is not
+neutral on a pyramiding system: a ladder only adds units when the trade is already going your way,
+so the division penalises exactly the winners. It is a UNITS FIX that buys QUALITY, not a total-return
+improvement; `research/tcandle/run_c2c.py` prints both units side by side so it cannot recur. **AND THE ATR MUST
 NOT BE SCALED WITH THE CHANNELS**: `atrLen` is a bar count too, and scaling it as well beats
 channels-only in 4 of 12 research and 6 of 12 locked cells. A channel length is a statement about how
 much market a breakout must clear, which is a quantity of TIME; ATR(20) is a statement about how much
@@ -4243,8 +4248,9 @@ that CLOSES UP, close-position and upper-wick share sum to 1 at max |diff| **0.0
 -1.0000), but a breakout bar closes up only **78-79%** of the time, so over all signal bars they
 correlate -0.75 to -0.81 -- a near-duplicate whose 21% of disagreement IS the failed-break population.
 
-**AND THE PAIRED MONTE CARLO IS WHERE THE UNITS FIX BECOMES UNAMBIGUOUS: MATCHED BEATS CARRIED IN
-10 OF 10 CELLS ON TOTAL RETURN AND 10 OF 10 ON P(mean<=0).** Twenty cells through four Monte Carlos
+**AND THE PAIRED MONTE CARLO AGREES ON THE PER-UNIT READING: MATCHED BEATS CARRIED IN 10 OF 10
+CELLS ON PER-UNIT TOTAL AND 10 OF 10 ON P(mean<=0)** -- read with the unit caveat above, since these
+are computed on the per-unit series and price ENTRY QUALITY rather than the account's total. Twenty cells through four Monte Carlos
 kept apart -- day-block bootstrap for the EDGE, permutation for the PATH, a round turn drawn
 U(0.5x,2x) INSIDE the walk for EXECUTION, and price jitter with ATR, ADX, EMA100 and all four
 channels RECOMPUTED for DATA. **0 of 20 cells clear zero on the positive side, and two CARRIED cells

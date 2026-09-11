@@ -26,15 +26,26 @@
 // four of five. Paired cell by cell (240m excluded, where they are identical by construction),
 // matched beats carried in 9 of 12 research cells and 9 of 12 locked cells.
 //
-// AND IT IS NOT THE USUAL TRADE-COUNT ARTIFACT. The matched reading keeps only 12-64% of the
-// trades, which is the shape that has faked an improvement repeatedly on this branch, so the same
-// comparison was run on TOTAL return where trading less is a cost: matched still wins 11 of 12
-// research cells and 9 of 12 locked, mean total +(-0.91%) against carried's -38.13% on research and
-// +0.25% against -16.50% on the locked block.
+// WHAT IT BUYS, AND WHAT IT COSTS -- scored in ACCOUNT units (all ladder units), 24 paired cells:
 //
-// So `scaleToChart` ships ON. It is a UNITS FIX, not a fitted parameter -- nothing was chosen to
-// make a number larger, and the reference reach is the preset's own. Turn it off to reproduce the
-// original script exactly.
+//     per-trade result    matched wins 19 of 24     +0.494  against  +0.283
+//     profit factor       matched wins 19 of 24      1.714  against   1.452
+//     max drawdown        matched wins 20 of 24      21.24  against   28.09
+//     return / drawdown   matched wins 11 of 24       3.20  against    4.28   <- a TIE
+//     total return        matched wins  6 of 24     +53.31  against  +95.70
+//     trade count         matched wins  0 of 24        120  against      577
+//
+// So the fix buys PER-TRADE QUALITY, a higher profit factor and a shallower drawdown, and gives up
+// 79% of the trades to get them. On return-over-drawdown -- the one measure that prices both -- the
+// two readings are indistinguishable. It ships ON because it is a UNITS FIX rather than a fitted
+// parameter (nothing was chosen to make a number larger, and the reference reach is the preset's
+// own), and because a preset that means the same thing on every chart is worth having on its own
+// terms. Turn it off to reproduce the original script exactly.
+//
+// A CORRECTION KEPT IN PLACE: an earlier draft of this header claimed the fix also won on TOTAL
+// return. That figure was summed PER LADDER UNIT, and dividing by units is not neutral on a
+// pyramiding system -- the ladder only adds units when the trade is already going your way, so the
+// division penalises exactly the winners. In account units the total-return ranking reverses.
 //
 // WHAT IT DOES NOT CLAIM. It does not make this system profitable: the matched locked marginal is
 // still negative at three of five timeframes. It claims only that the script throws away most of
