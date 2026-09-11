@@ -186,3 +186,28 @@ bodies to be majority-body, and `shootSt` omitted the `close[1] < close` leg, wh
 over ~100,000 bars on four market × timeframe cells (max |diff| 0.000e+00 on the continuous readings,
 0 disagreements on the discrete ones). Zero-range bars, where the two range floors could in principle
 diverge, exist (14 on US100L 60m, 1 on US30L 120m) and change nothing.
+
+## 6. The power calculation, computed before the screen reports
+
+The screen cell is the only Gate 1 pass carrying enough trades to screen on: **US100L 30m matched,
+216 research trades, +0.0274 %/trade at PF 1.664, control p 0.035**. Its per-trade standard deviation
+is **0.9774**, so:
+
+| arm keeps | trades left | MDE (%/trade) | as a multiple of the base edge |
+|---|---|---|---|
+| 100% | 216 | 0.1863 | **6.8×** |
+| 50% | 108 | 0.2635 | 9.6× |
+| 30% | 64 | 0.3423 | 12.5× |
+
+**A candlestick filter would have to be worth nearly seven times the entire strategy's per-trade
+result to be detectable here**, and more as it filters harder — which is the direction a filter moves
+by definition. Against that, the best honest filter lifts measured anywhere on this branch are +0.02
+to +0.10 R.
+
+And the search's own noise floor closes the other end. Over the 96 declared arms (48 features × two
+polarities), `E[max t | pure noise]` is **2.516** against the **2.802** detection requires — so the
+luckiest draw of a pure-noise search this size lands within 0.29 of the threshold, while the effect
+it is looking for is 6.8× the strategy's whole edge. **Both bounds point the same way before a single
+arm is scored: this primary cannot resolve a candlestick filter, and a screen this wide could not be
+trusted if one appeared.** The screen below is therefore reported as a measurement of absence, not as
+a search for a winner.
