@@ -1,7 +1,8 @@
 # Working notes for this repository
 
 Quantitative futures research on NQ/MNQ. One instrument, OHLCV 1-minute bars,
-2022-12-26 → 2025-12-12. Read `docs/RESEARCH_PROTOCOL.md` before proposing or judging a strategy.
+2022-12-26 → 2025-12-12, plus one US30 15-minute file (2024-08-19 → 2026-08-26, see
+`docs/ib/STUDY_US30_ORB.md`). Read `docs/RESEARCH_PROTOCOL.md` before proposing or judging a strategy.
 
 ## The rules that keep getting re-learned the hard way
 
@@ -118,6 +119,16 @@ asserted trade-for-trade against `runBacktest`; note the app sizes stops in WILD
 `runBacktest` uses) while the research layer uses `ema(tr, n)`, so compare the two on shape, not to
 the dollar. See `docs/ib/STUDY_TUNER.md`.
 
+**The 09:00 range-break + EMA-cross open structure has no edge on US30 at 15 minutes. Do not
+re-run it on this file.** The rule as asked for (EMA 13/48 cross, EMA 200 gate, 09:00-09:30 range
+broken 09:30-10:30, 100/100 points) loses on research AND is 2.2 sd worse than a matched random
+entry on the holdout; at zero cost it still loses 7 pt/trade. Its own neighbourhood, 16,200 cells
+with the matched control in front, produced 0 cells at z > 2 (2.3% expected by chance), a spike
+for a winner, and a plateau pick that made +12.8 pt/trade on research and -8.1 on locked.
+Walk-forward lost 7 of 9 folds. What would change the question: 1-minute bars (the idea is a
+1-minute idea and the 09:30 15-minute bar alone spans 160 points, larger than the barrier), the
+instrument's real cost, and the volume column, which the rule never read. `research/us30_orb.py`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -157,6 +168,8 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
+| `research/us30_ingest.py` | the US30 RTF export -> `data/US30_15m.csv`, canonical UTC columns, with an audit |
+| `research/us30_orb.py` | US30 09:00 range-break + EMA-cross study: cached exit tensor, matched control as the gate, sweep, walk-forward, locked reveal |
 
 ## Pine
 

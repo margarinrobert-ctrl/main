@@ -15,7 +15,15 @@
 //
 //   MEASURED on US30 15-minute bars, 2024-08-19 to 2026-08-26, 511 sessions, research = first
 //   65% of sessions, locked = last 35%, 3 points round turn + 1 point stop slippage:
-//   __HEADER_NUMBERS__
+//     research (332 sessions)     232 trades   47.4% win   -2,352 pt   -10.1 pt/trade   PF 0.81
+//     locked   (179 sessions)     130 trades   40.0% win   -3,041 pt   -23.4 pt/trade   PF 0.62
+//     whole file                  362 trades   44.8% win   -5,393 pt   (-$26,967 on one YM contract)
+//     vs a random entry matched on side, minute and block:  z -0.84 research, z -2.20 locked
+//     at ZERO cost it still loses 7.1 pt/trade on research and 20.4 on locked
+//     neighbourhood swept: 16,200 cells on research, 0 beat the control at z > 2; the best
+//     plateau (EMA 8/34, no trend gate, range 09:15-09:30, fills to 10:00, cross within one
+//     bar, 100/100, flat 12:00) made 12.8 pt/trade on research and -8.1 on locked.
+//     walk-forward: 2 of 9 folds profitable, stitched out-of-sample -24.3 pt/trade.
 //
 //   READ docs/ib/STUDY_US30_ORB.md BEFORE TRADING THIS. The study's verdict is in that file,
 //   and it is not "trade it".
