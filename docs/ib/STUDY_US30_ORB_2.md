@@ -186,6 +186,33 @@ first is the one that matters:
    make or break.
 3. **A second instrument or more history.** Both blocks here sit inside one bull market.
 
+## 7. Addendum: the entry at the line itself
+
+The user's clarification after pass two: the entry belongs **at the 09:00 high or low**, not at
+the close of the bar that breaks it. That is a stop order resting at the level, filled the moment
+price trades through it, with the EMA and trend conditions read on the bar before the fill
+(`Rule2(entry="stop", buffer=0)`; pass two's stop cells used a 5-point buffer). It is now the
+Pine script's default. Same geometry, 100/100, flat 16:00:
+
+| variant | block | n | win | per trade | PF | control z |
+| --- | --- | --- | --- | --- | --- | --- |
+| **at the line**, EMA 13/48 + EMA 200 | research | 263 | 49.0% | −5.5 | 0.90 | 0.03 |
+| | locked | 151 | 41.1% | **−20.6** | 0.66 | −1.58 |
+| at the line, no trend gate | research | 299 | 46.2% | −11.2 | 0.80 | −1.00 |
+| | locked | 166 | 39.8% | −23.3 | 0.62 | −1.86 |
+| at the line, every break, no conditions | research | 332 | 49.1% | −4.7 | 0.91 | 0.40 |
+| | locked | 179 | 46.9% | −8.7 | 0.84 | 0.07 |
+| limit at the line on the retest, EMA 13/48 + 200 | research | 123 | 49.6% | −4.5 | 0.91 | 0.02 |
+| | locked | 84 | 56.0% | +10.0 | 1.23 | 1.45 |
+| market at the next open (the original) | research | 232 | 47.4% | −10.1 | 0.81 | −0.85 |
+| | locked | 130 | 40.0% | −23.4 | 0.62 | −2.24 |
+
+Entering at the line is better than entering at the next open by about 4.6 points a trade on
+research, which is roughly the distance the close-break entry gives up, and it is still a coin
+flip against its control (z 0.03) that loses 20.6 a trade on the holdout. The EMA conditions
+make it worse than taking every break. The retest limit is the only positive locked number in
+either pass, and §5 says why it is not a signal.
+
 ## Files
 
 | file | what |
