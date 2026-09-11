@@ -47,14 +47,17 @@ def pine_side(d, mintick):
                & (np.abs(c2 - o2) >= 0.5 * rng2))
     spin = (body_shr <= 0.30) & (up_w >= 0.25 * rng) & (lo_w >= 0.25 * rng)
     shoot = (body <= 0.35 * rng) & (up_w >= 2.0 * body) & (lo_w <= 0.20 * rng) & (c1 < c)
-    return dict(body_shr=body_shr, close_pos=close_pos, up_shr=up_shr, engulf=engulf,
+    h2, h3 = s(h, 2), s(h, 3)
+    hh3 = (h > h1) & (h1 > h2) & (h2 > h3)
+    return dict(hh3=hh3, body_shr=body_shr, close_pos=close_pos, up_shr=up_shr, engulf=engulf,
                 outside=outside, three_w=three_w, spin=spin, shoot=shoot)
 
 
 PAIRS = [("body_shr", "shp.body_share"), ("close_pos", "shp.close_pos"),
          ("up_shr", "shp.upper_share"), ("engulf", "p2.engulf_bull"),
          ("outside", "p2.outside_bar"), ("three_w", "p3.three_white"),
-         ("spin", "p1.spinning_top"), ("shoot", "p1.shooting_star")]
+         ("spin", "p1.spinning_top"), ("shoot", "p1.shooting_star"),
+         ("hh3", "seq.higher_highs_3")]
 
 
 if __name__ == "__main__":
@@ -69,7 +72,7 @@ if __name__ == "__main__":
         for pk, fk in PAIRS:
             a, b = P[pk].astype(float), np.nan_to_num(F[fk], nan=0.0)
             m = np.isfinite(a) & np.isfinite(b)
-            m[:3] = False
+            m[:4] = False
             if set(np.unique(b[m]).tolist()) <= {0.0, 1.0}:
                 dis = int((a[m] != b[m]).sum())
                 note = f"{dis} disagreements of {int(m.sum())}"

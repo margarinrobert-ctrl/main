@@ -72,9 +72,10 @@ if __name__ == "__main__":
     pd.set_option("display.width", 220)
     S = json.load(open("research/tcandle/c3_survivors.json"))
     scr = pd.read_csv("research/tcandle/c3_screen.csv")
+    scr["note"] = scr["note"].fillna("")          # pandas reads an empty cell as NaN
     n_arms = int((scr.note == "").sum())
     arms = S["survivors"][:6]
-    print(f"screened on {S['mkt']} 240m: {n_arms} scorable arms, "
+    print(f"screened on {S['mkt']} {S.get('tf','?')}m {S.get('reach','')}: {n_arms} scorable arms, "
           f"{len(S['survivors'])} cleared p<=0.05 (expected by chance {0.05*n_arms:.1f}), "
           f"{len(S['bh'])} survived BH q=0.10")
     print(f"E[max |t| | pure noise] over {n_arms} arms: {e_max_normal(max(n_arms,2)):.3f}\n")

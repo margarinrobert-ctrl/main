@@ -211,3 +211,54 @@ it is looking for is 6.8× the strategy's whole edge. **Both bounds point the sa
 arm is scored: this primary cannot resolve a candlestick filter, and a screen this wide could not be
 trusted if one appeared.** The screen below is therefore reported as a measurement of absence, not as
 a search for a winner.
+
+## 7. Gate 2: the screen returns exactly chance, and every arm is inside its own MDE
+
+48 features × two polarities = 96 declared arms on US100L 30m matched, each applied as a **veto and
+re-simulated end to end** (not as a split of the base run's realised trades — refusing a signal
+releases the position lock and admits a later breakout the unfiltered run never saw), each scored
+against a **random gate of the same selectivity**, with the null cached by kept fraction because a
+random gate keeping 37% of bars is the same null whichever feature happens to keep 37%.
+
+```
+scorable arms: 70      inert: 23      thin: 3
+clearing p<=0.05: 3    expected by chance: 3.5    surviving BH q=0.10: 0
+E[max t | pure noise] over 70 arms: 2.402   (detection needs t >= 2.802)
+arms whose |effect| is INSIDE their own MDE: 70 of 70
+    median MDE 0.1926 %/trade against a median |effect| of 0.0268   (7.2x)
+```
+
+**Three arms clear where 3.5 are expected.** Nothing survives BH. The largest |effect| anywhere in
+the pool reaches **0.994 of its own MDE** and is `p1.shooting_star [require]` at **−0.2202** — the
+biggest thing the pool can find is a way to *destroy* the edge by demanding a failed-break candle,
+which is the sensible direction and still not resolvable. Median ratio across the 70 arms is 0.124.
+
+The pool audit is clean for once: **0 pairs at |rho| ≥ 0.98** on the signal bars, 5 features constant
+there. The near-duplicate this branch has recorded before is real but conditional — on a bar that
+**closes up**, close-position and upper-wick share sum to 1 at max |diff| **0.00e+00** (rho exactly
+−1.0000), and a breakout bar closes up only **78–79%** of the time, so over all signal bars they
+correlate −0.75 to −0.81. The 21% where they differ is precisely the failed-break population.
+
+## 8. The three chance-level arms, read once and labelled descriptive
+
+Reading them is descriptive, not a test: they are the top three of 70 by research p-value in a pool
+that returned exactly its chance count, and the US100L locked block had already been opened by Gate 1.
+
+| arm | beats its base | clears p ≤ 0.05 | better total return |
+|---|---|---|---|
+| `seq.higher_highs_3 [require]` | **6 of 6** | 2 of 6 | 5 of 6 |
+| `shp.lower_share [require]` | 5 of 6 | 1 of 6 | 4 of 6 |
+| `p3.evening_star [refuse]` | 5 of 6 | 1 of 6 | 5 of 6 |
+
+`seq.higher_highs_3` — three consecutive higher highs — is the only one whose *direction* is
+unanimous, and it is not a candlestick pattern but a sequence reading: it passes 52.5% of signal bars
+against 15.7% of the population (lift **3.34**), so it genuinely selects. On US100L 30m it takes
+research +0.0274 → +0.0984 (p 0.010) and locked +0.0671 → +0.0933 (p 0.333); on US30L it turns a
+losing research block positive (−0.0345 → +0.0015); on NQ locked both arms are heavily negative and
+it changes nothing (−0.1898 → −0.1826).
+
+**It ships as a default-OFF input with those numbers on it and no claim attached.** Two of six
+clearing is what a best-of-70 selection produces from noise, the two research passes are the blocks
+that chose it, and every cell is inside its own MDE. What would settle it is more events — the
+screen needs roughly seven times its current per-trade resolution, and that comes from trades, not
+from more features.
