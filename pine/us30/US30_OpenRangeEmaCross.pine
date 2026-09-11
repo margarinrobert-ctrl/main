@@ -60,7 +60,7 @@ tzIn   = input.string("America/New_York", "Timezone for clock conditions",
      group = "Setup", tooltip = "Pine's bare hour/minute are in the EXCHANGE timezone. The research " +
      "is New York time. Getting this wrong runs the strategy an hour late.")
 barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
-dayKey = tzIn == "exchange" ? year * 1000 + dayofyear : year(time, tzIn) * 1000 + dayofyear(time, tzIn)
+dayKey = tzIn == "exchange" ? year * 10000 + month * 100 + dayofmonth : year(time, tzIn) * 10000 + month(time, tzIn) * 100 + dayofmonth(time, tzIn)
 newDay = dayKey != dayKey[1]
 
 // ---- the rule's parameters ---------------------------------------------------------------------
