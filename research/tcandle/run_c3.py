@@ -75,6 +75,19 @@ def screen(mkt, tf, n_draw=N_DRAW, reach="carried"):
     M, cuts = masks_for(F, sig0)
     pnl0 = tr0["pnl"].to_numpy(float)
     pf0 = pnl0[pnl0 > 0].sum() / max(-pnl0[pnl0 < 0].sum(), 1e-9)
+    # The null depends on the arm ONLY through its selectivity, so the draws are cached by the
+    # kept fraction rounded to 2 decimals.  That turns 96 sets of 200 re-simulations into ~25 and
+    # changes nothing about the test -- a random gate keeping 37% of bars is the same null whichever
+    # feature happens to keep 37%.
+    ctl_cache: dict = {}
+
+    def null_for(keep):
+        k = round(float(keep), 2)
+        if k not in ctl_cache:
+            ctl_cache[k] = T.random_gate(d, C, atr, m0, k, cost, seed=int(k * 1000) + 7,
+                                         n_draw=n_draw)
+        return ctl_cache[k]
+
     rows = []
     for name, on in M.items():
         m = m0 & on
@@ -88,8 +101,7 @@ def screen(mkt, tf, n_draw=N_DRAW, reach="carried"):
             rows.append(dict(arm=name, keep=keep, n=len(tr), pct=np.nan, pf=np.nan,
                              ctl=np.nan, p=np.nan, note="thin"))
             continue
-        ctl = T.random_gate(d, C, atr, m0, keep, cost,
-                            seed=abs(hash(name)) % 9999, n_draw=n_draw)
+        ctl = null_for(keep)
         pnl = tr["pnl"].to_numpy(float)
         rows.append(dict(arm=name, keep=keep, n=len(tr), pct=tr["pct"].mean(),
                          pf=pnl[pnl > 0].sum() / max(-pnl[pnl < 0].sum(), 1e-9),

@@ -180,9 +180,11 @@ upShr    = upWick / rngBar
 isUp     = close > open
 engulfB  = isUp and close[1] < open[1] and close >= open[1] and open <= close[1]
 outsideB = high > high[1] and low < low[1]
-threeW   = isUp and close[1] > open[1] and close[2] > open[2] and close > close[1] and close[1] > close[2] and bodyShr >= 0.5
+rng1Bar  = math.max(high[1] - low[1], syminfo.mintick / 100.0)
+rng2Bar  = math.max(high[2] - low[2], syminfo.mintick / 100.0)
+threeW   = isUp and close[1] > open[1] and close[2] > open[2] and close > close[1] and close[1] > close[2] and bodyShr >= 0.5 and math.abs(close[1] - open[1]) >= 0.5 * rng1Bar and math.abs(close[2] - open[2]) >= 0.5 * rng2Bar
 spinTop  = bodyShr <= 0.30 and upWick >= 0.25 * rngBar and (math.min(open, close) - low) >= 0.25 * rngBar
-shootSt  = bodyBar <= 0.35 * rngBar and upWick >= 2.0 * bodyBar and (math.min(open, close) - low) <= 0.20 * rngBar
+shootSt  = bodyBar <= 0.35 * rngBar and upWick >= 2.0 * bodyBar and (math.min(open, close) - low) <= 0.20 * rngBar and close[1] < close
 
 cndOkBody  = cndBody  == "off" ? true : cndBody  == "require large" ? bodyShr >= 0.50 : bodyShr < 0.50
 cndOkClose = cndClose == "off" ? true : cndClose == "require upper half" ? closePos >= 0.50 : closePos < 0.50

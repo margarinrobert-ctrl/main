@@ -132,3 +132,57 @@ Two readings that have to stay attached to the passes:
 **Cost is not the objection here, which is rare.** The round turn is **0.6% to 1.9% of the 2.0N
 stop** on every cell, against the 24% a 0.75×ATR scalping stop carries on this data. Nothing in this
 study is a cost problem.
+
+## 4. The reach fix changes the Gate 1 verdict, and the ATR must NOT be scaled with it
+
+Gate 1 re-run on the **matched-reach** primary — same gate, same geometry, channels scaled so the
+240m preset's reach is preserved — against the same matched random entry:
+
+| market | tf | e1/x1 | block | n | %/trade | PF | control | p |
+|---|---|---|---|---|---|---|---|---|
+| NQ | 30 | 160/80 | research | 65 | +0.1673 | 2.77 | −0.0188 | **0.020** |
+| NQ | 60 | 80/40 | research | 49 | +0.2198 | 2.80 | +0.0238 | **0.005** |
+| NQ | 120 | 40/20 | research | 44 | +0.1420 | 2.72 | +0.0219 | 0.100 |
+| US100L | 30 | 160/80 | research | 216 | +0.0274 | 1.66 | −0.0556 | **0.035** |
+| US100L | 60 | 80/40 | research | 192 | −0.0831 | 1.42 | −0.0757 | 0.572 |
+| US30L | 60 | 80/40 | research | 168 | +0.0208 | 1.74 | −0.0182 | 0.219 |
+| US30L | 120 | 40/20 | research | 144 | +0.0305 | 1.72 | −0.0310 | 0.164 |
+
+**3 of 9 clear against 0.5 expected**, and — the point — one of them is on a nine-year feed. The
+carried reading fails every US100L and US30L cell; the matched reading takes US100L 30m from
+negative to +0.0274 at p 0.035. That is the reach fix showing up in the gate, not only in the
+marginal table.
+
+It does not rescue the locked block. NQ inverts hard (30m +0.1673 → **−0.1898**, 60m +0.2198 →
+−0.1226) and US100L 30m reads +0.0671 on locked against +0.0274 on research — **better out of
+sample, which is the wrong shape**, and the caveat stays attached to everything built on that cell
+below.
+
+**And scaling the ATR with the channels makes it worse.** `atrLen = 20` is a bar count too — five
+hours at 15m, eighty at 240m — and it sets the stop distance and the ladder step, so a reading that
+scales the channels and not the ATR is only half a units fix. Three arms, marginal average over
+three markets and four timeframes:
+
+| arm | research %/trade | research total % | locked %/trade | locked total % |
+|---|---|---|---|---|
+| A: channels carried, ATR 20 | −0.0466 | −38.13 | −0.0494 | −16.50 |
+| **B: channels matched, ATR 20** | **+0.0305** | **−0.91** | −0.0244 | +0.25 |
+| C: channels matched, ATR matched | +0.0178 | −2.26 | −0.0189 | +0.58 |
+
+C beats B in only 4 of 12 research cells and 6 of 12 locked, while B beats A in 9–11 of 12 on every
+column. **Scale the channels; leave the ATR alone.** That is also the reading with a mechanism behind
+it: a channel length is a statement about how much market a breakout has to clear, which is a
+quantity of *time*; ATR(20) is a statement about how much a bar of *this* chart moves, which is
+already resolution-relative and does not want re-scaling.
+
+## 5. Parity: the shipped script's candle expressions, diffed rather than read
+
+`research/tcandle/tc_parity.py` rebuilds the Pine's own expressions — including its
+`math.max(high − low, mintick/100)` range floor, which differs from the research's 1e-12 — and
+requires them to agree bar for bar. It found **two real transcription bugs before the script
+shipped**: `threeW` checked only the current bar's body share where the research requires all three
+bodies to be majority-body, and `shootSt` omitted the `close[1] < close` leg, which disagreed on
+104 / 481 / 1,359 / 567 bars across four cells. After the fix, all eight expressions agree exactly
+over ~100,000 bars on four market × timeframe cells (max |diff| 0.000e+00 on the continuous readings,
+0 disagreements on the discrete ones). Zero-range bars, where the two range floors could in principle
+diverge, exist (14 on US100L 60m, 1 on US30L 120m) and change nothing.

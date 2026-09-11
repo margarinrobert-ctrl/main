@@ -21,8 +21,6 @@ sys.path.insert(0, "research/tcandle")
 import tc_core as T, tc_feat as CF                      # noqa: E402
 from run_c3 import prep, masks_for, N_DRAW             # noqa: E402
 
-READ = [("NQ", 240), ("US100L", 240), ("US30L", 240)]
-
 
 def e_max_normal(n):
     """Bailey/Lopez de Prado's expected maximum of n standard normals -- the noise floor a search
@@ -32,10 +30,10 @@ def e_max_normal(n):
     return (1 - g) * norm.ppf(1 - 1.0 / n) + g * norm.ppf(1 - 1.0 / (n * np.e))
 
 
-def read_arm(mkt, tf, arm, cuts, blocks=("A", "B"), n_draw=N_DRAW):
+def read_arm(mkt, tf, arm, cuts, reach="carried", blocks=("A", "B"), n_draw=N_DRAW):
     feat, pol = arm.rsplit(" [", 1)
     pol = pol.rstrip("]")
-    d, atr, C, base, cut = prep(mkt, tf)
+    d, atr, C, base, cut = prep(mkt, tf, reach=reach)
     F = CF.build(d, atr)
     v = F[feat]
     u = np.unique(v[np.isfinite(v)])
@@ -53,7 +51,7 @@ def read_arm(mkt, tf, arm, cuts, blocks=("A", "B"), n_draw=N_DRAW):
         tr0 = T.run(d, C, atr, m0, cost)
         tr = T.run(d, C, atr, m0 & on, cost)
         if len(tr) < 10 or not len(tr0):
-            out.append(dict(mkt=mkt, tf=tf, arm=arm, block=blk, n=len(tr),
+            out.append(dict(mkt=mkt, tf=tf, reach=reach, arm=arm, block=blk, n=len(tr),
                             pct=np.nan, base=np.nan, p=np.nan))
             continue
         sig0 = T.signal_bars(d, C, m0, atr)
@@ -61,7 +59,7 @@ def read_arm(mkt, tf, arm, cuts, blocks=("A", "B"), n_draw=N_DRAW):
         ctl = T.random_gate(d, C, atr, m0, keep, cost,
                             seed=abs(hash((mkt, blk, arm))) % 9999, n_draw=n_draw)
         p0 = tr0["pnl"].to_numpy(float); p1 = tr["pnl"].to_numpy(float)
-        out.append(dict(mkt=mkt, tf=tf, arm=arm, block=blk, n=len(tr), n_base=len(tr0),
+        out.append(dict(mkt=mkt, tf=tf, reach=reach, arm=arm, block=blk, n=len(tr), n_base=len(tr0),
                         keep=keep, pct=tr["pct"].mean(), base=tr0["pct"].mean(),
                         pf=p1[p1 > 0].sum() / max(-p1[p1 < 0].sum(), 1e-9),
                         pf_base=p0[p0 > 0].sum() / max(-p0[p0 < 0].sum(), 1e-9),
@@ -83,7 +81,12 @@ if __name__ == "__main__":
     if not arms:
         print("NOTHING CLEARED THE SCREEN -- no locked read taken, the block stays unspent.")
         sys.exit(0)
-    rows = [read_arm(m, tf, a, S["cuts"]) for a in arms for m, tf in READ]
+    tf, reach = int(S.get("tf", 240)), S.get("reach", "carried")
+    # The screen cell's own locked block, then the SAME geometry on the two markets that had no
+    # part in choosing anything here.
+    READ = [(S["mkt"], tf), ("NQ", tf), ("US30L", tf)]
+    READ = [(m, t) for m, t in dict.fromkeys(READ)]
+    rows = [read_arm(m, t, a, S["cuts"], reach=reach) for a in arms for m, t in READ]
     df = pd.concat(rows, ignore_index=True)
     df.to_csv("research/tcandle/c4_read.csv", index=False)
     print("=" * 110)
