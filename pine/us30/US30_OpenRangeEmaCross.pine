@@ -24,6 +24,10 @@
 //     plateau (EMA 8/34, no trend gate, range 09:15-09:30, fills to 10:00, cross within one
 //     bar, 100/100, flat 12:00) made 12.8 pt/trade on research and -8.1 on locked.
 //     walk-forward: 2 of 9 folds profitable, stitched out-of-sample -24.3 pt/trade.
+//   SECOND PASS, time held fixed, the rules widened (stop / limit-retest / fade entries, four
+//   momentum variants, break distance, volume, range width, overnight gap, range-anchored and
+//   break-even exits): 12,672 more cells, 13 beat the control at z > 2 where 41 would by chance,
+//   none was a plateau, none beat its own bare entry mechanic. Nothing here is changed by it.
 //
 //   READ docs/ib/STUDY_US30_ORB.md BEFORE TRADING THIS. The study's verdict is in that file,
 //   and it is not "trade it".

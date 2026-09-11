@@ -125,7 +125,13 @@ broken 09:30-10:30, 100/100 points) loses on research AND is 2.2 sd worse than a
 entry on the holdout; at zero cost it still loses 7 pt/trade. Its own neighbourhood, 16,200 cells
 with the matched control in front, produced 0 cells at z > 2 (2.3% expected by chance), a spike
 for a winner, and a plateau pick that made +12.8 pt/trade on research and -8.1 on locked.
-Walk-forward lost 7 of 9 folds. What would change the question: 1-minute bars (the idea is a
+Walk-forward lost 7 of 9 folds. A second pass held the time and widened the RULES (stop,
+limit-retest and fade entries; momentum variants; break distance; volume; range width; overnight
+gap; range-anchored and break-even exits; 12,672 cells, `research/us30_orb2.py`): 13 cells at
+z > 2 where 41 are expected by chance, 0 plateaus, 0 beat their own bare mechanic. The one cell
+read on locked did BETTER there than on research (the wrong shape), and its bare limit-retest
+mechanic alone made 11.6 pt/trade on locked -- the STUDY_LIMIT_ENTRY effect, not a signal. Two
+passes, 28,872 cells, one file. What would change the question: 1-minute bars (the idea is a
 1-minute idea and the 09:30 15-minute bar alone spans 160 points, larger than the barrier), the
 instrument's real cost, and the volume column, which the rule never read. `research/us30_orb.py`.
 
