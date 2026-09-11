@@ -1,0 +1,191 @@
+V62 stage A -- base rates first, then the population, the marginals and the matched pairs.
+
+RESEARCH ONLY. `run_v62b.py` reads the locked block once.
+
+THE MATCHED-PAIRS TEST IS THE POINT. A marginal average tells you what a setting does on average
+over a grid whose other axes move; a matched pair holds every other axis FIXED and switches one
+condition on. The grid is built so that every filtered cell has an exact `off` twin, which makes
+the ablation free -- `STUDY_V41` used the same construction to show an EMA cross helping in 42.0%
+of 51,216 matched pairs on research and 50.0% on locked, which is chance.
+
+============================================================================================================
+A1. THE BASE RATE ON THE TRIGGER'S OWN BARS -- before any profit and loss
+============================================================================================================
+  A confirmation that passes 90% of the bars the trigger already fires on is not a
+  filter. `STUDY_V16`: RSI(14) >= 55 passes 94.7% of breakout bars. `STUDY_V60`: Aroon
+  osc >= 0 passes 100.0%. Two lines, ahead of any sweep.
+
+  --- 15-minute bars, Donchian 20 breakout bars vs all bars
+    MFI(9) mfi>=50                     passes  93.6% of breakouts against  52.7% of bars   lift 1.78  <-- INERT, removes under 15% of signals
+    MFI(9) mfi>=55                     passes  89.4% of breakouts against  44.2% of bars   lift 2.02  <-- INERT, removes under 15% of signals
+    MFI(9) mfi>=60                     passes  82.8% of breakouts against  36.2% of bars   lift 2.29
+    MFI(9) mfi<=80                     passes  62.6% of breakouts against  89.5% of bars   lift 0.70
+    MFI(9) mfi rising                  passes  71.8% of breakouts against  49.5% of bars   lift 1.45
+    MFI(14) mfi>=50                    passes  93.2% of breakouts against  52.8% of bars   lift 1.76  <-- INERT, removes under 15% of signals
+    MFI(14) mfi>=55                    passes  87.4% of breakouts against  42.9% of bars   lift 2.03  <-- INERT, removes under 15% of signals
+    MFI(14) mfi>=60                    passes  78.5% of breakouts against  33.3% of bars   lift 2.36
+    MFI(14) mfi<=80                    passes  76.1% of breakouts against  93.5% of bars   lift 0.81
+    MFI(14) mfi rising                 passes  75.5% of breakouts against  49.8% of bars   lift 1.52
+    MFI(21) mfi>=50                    passes  89.8% of breakouts against  53.0% of bars   lift 1.69  <-- INERT, removes under 15% of signals
+    MFI(21) mfi>=55                    passes  80.9% of breakouts against  41.4% of bars   lift 1.96
+    MFI(21) mfi>=60                    passes  68.8% of breakouts against  30.5% of bars   lift 2.26
+    MFI(21) mfi<=80                    passes  85.8% of breakouts against  95.9% of bars   lift 0.89  <-- INERT, removes under 15% of signals
+    MFI(21) mfi rising                 passes  78.2% of breakouts against  50.3% of bars   lift 1.56
+    EMA9/21 state                      passes  95.1% of breakouts against  55.6% of bars   lift 1.71  <-- INERT, removes under 15% of signals
+    EMA9/21 cross<=5                   passes  26.2% of breakouts against  12.7% of bars   lift 2.06  <-- selective
+    EMA9/21 spread rising              passes  87.3% of breakouts against  49.7% of bars   lift 1.76  <-- INERT, removes under 15% of signals
+    EMA9/21 spread>0 and rising        passes  82.8% of breakouts against  27.0% of bars   lift 3.07
+    EMA9/21 spread momentum>=0.02 ATR  passes  81.1% of breakouts against  41.1% of bars   lift 1.98
+    EMA13/48 state                     passes  81.2% of breakouts against  56.8% of bars   lift 1.43
+    EMA13/48 cross<=5                  passes  15.9% of breakouts against   7.1% of bars   lift 2.25  <-- selective
+    EMA13/48 spread rising             passes  91.6% of breakouts against  49.4% of bars   lift 1.85  <-- INERT, removes under 15% of signals
+    EMA13/48 spread>0 and rising       passes  73.1% of breakouts against  26.3% of bars   lift 2.78
+    EMA13/48 spread momentum>=0.02 ATR passes  88.2% of breakouts against  42.4% of bars   lift 2.08  <-- INERT, removes under 15% of signals
+    EMA21/55 state                     passes  75.2% of breakouts against  57.1% of bars   lift 1.32
+    EMA21/55 cross<=5                  passes  11.7% of breakouts against   5.1% of bars   lift 2.31  <-- selective
+    EMA21/55 spread rising             passes  92.0% of breakouts against  49.4% of bars   lift 1.86  <-- INERT, removes under 15% of signals
+    EMA21/55 spread>0 and rising       passes  67.4% of breakouts against  26.1% of bars   lift 2.58
+    EMA21/55 spread momentum>=0.02 ATR passes  87.1% of breakouts against  39.1% of bars   lift 2.23  <-- INERT, removes under 15% of signals
+
+  --- 30-minute bars, Donchian 20 breakout bars vs all bars
+    MFI(9) mfi>=50                     passes  91.7% of breakouts against  52.4% of bars   lift 1.75  <-- INERT, removes under 15% of signals
+    MFI(9) mfi>=55                     passes  87.6% of breakouts against  44.8% of bars   lift 1.96  <-- INERT, removes under 15% of signals
+    MFI(9) mfi>=60                     passes  82.1% of breakouts against  37.0% of bars   lift 2.22
+    MFI(9) mfi<=80                     passes  58.6% of breakouts against  87.8% of bars   lift 0.67  <-- selective
+    MFI(9) mfi rising                  passes  74.3% of breakouts against  49.9% of bars   lift 1.49
+    MFI(14) mfi>=50                    passes  91.5% of breakouts against  52.2% of bars   lift 1.75  <-- INERT, removes under 15% of signals
+    MFI(14) mfi>=55                    passes  85.8% of breakouts against  43.0% of bars   lift 1.99  <-- INERT, removes under 15% of signals
+    MFI(14) mfi>=60                    passes  77.2% of breakouts against  34.5% of bars   lift 2.24
+    MFI(14) mfi<=80                    passes  70.7% of breakouts against  91.3% of bars   lift 0.77
+    MFI(14) mfi rising                 passes  80.4% of breakouts against  50.6% of bars   lift 1.59
+    MFI(21) mfi>=50                    passes  87.6% of breakouts against  52.0% of bars   lift 1.68  <-- INERT, removes under 15% of signals
+    MFI(21) mfi>=55                    passes  79.7% of breakouts against  42.0% of bars   lift 1.90
+    MFI(21) mfi>=60                    passes  69.3% of breakouts against  32.5% of bars   lift 2.13
+    MFI(21) mfi<=80                    passes  78.0% of breakouts against  93.4% of bars   lift 0.84
+    MFI(21) mfi rising                 passes  77.3% of breakouts against  50.0% of bars   lift 1.55
+    EMA9/21 state                      passes  93.8% of breakouts against  56.4% of bars   lift 1.66  <-- INERT, removes under 15% of signals
+    EMA9/21 cross<=5                   passes  26.4% of breakouts against  12.7% of bars   lift 2.07  <-- selective
+    EMA9/21 spread rising              passes  84.8% of breakouts against  49.2% of bars   lift 1.72
+    EMA9/21 spread>0 and rising        passes  79.4% of breakouts against  26.6% of bars   lift 2.99
+    EMA9/21 spread momentum>=0.02 ATR  passes  79.7% of breakouts against  41.2% of bars   lift 1.93
+    EMA13/48 state                     passes  80.1% of breakouts against  57.8% of bars   lift 1.39
+    EMA13/48 cross<=5                  passes  14.9% of breakouts against   6.6% of bars   lift 2.25  <-- selective
+    EMA13/48 spread rising             passes  90.2% of breakouts against  49.6% of bars   lift 1.82  <-- INERT, removes under 15% of signals
+    EMA13/48 spread>0 and rising       passes  71.2% of breakouts against  26.8% of bars   lift 2.65
+    EMA13/48 spread momentum>=0.02 ATR passes  86.1% of breakouts against  42.4% of bars   lift 2.03  <-- INERT, removes under 15% of signals
+    EMA21/55 state                     passes  75.2% of breakouts against  58.4% of bars   lift 1.29
+    EMA21/55 cross<=5                  passes  11.6% of breakouts against   5.0% of bars   lift 2.31  <-- selective
+    EMA21/55 spread rising             passes  91.1% of breakouts against  49.2% of bars   lift 1.85  <-- INERT, removes under 15% of signals
+    EMA21/55 spread>0 and rising       passes  67.0% of breakouts against  27.0% of bars   lift 2.48
+    EMA21/55 spread momentum>=0.02 ATR passes  85.4% of breakouts against  38.9% of bars   lift 2.19  <-- INERT, removes under 15% of signals
+
+  --- 60-minute bars, Donchian 20 breakout bars vs all bars
+    MFI(9) mfi>=50                     passes  89.8% of breakouts against  52.5% of bars   lift 1.71  <-- INERT, removes under 15% of signals
+    MFI(9) mfi>=55                     passes  85.2% of breakouts against  46.0% of bars   lift 1.85  <-- INERT, removes under 15% of signals
+    MFI(9) mfi>=60                     passes  79.2% of breakouts against  39.1% of bars   lift 2.03
+    MFI(9) mfi<=80                     passes  52.7% of breakouts against  84.5% of bars   lift 0.62  <-- selective
+    MFI(9) mfi rising                  passes  75.6% of breakouts against  50.1% of bars   lift 1.51
+    MFI(14) mfi>=50                    passes  86.8% of breakouts against  52.2% of bars   lift 1.66  <-- INERT, removes under 15% of signals
+    MFI(14) mfi>=55                    passes  82.1% of breakouts against  44.8% of bars   lift 1.83
+    MFI(14) mfi>=60                    passes  76.1% of breakouts against  37.2% of bars   lift 2.05
+    MFI(14) mfi<=80                    passes  59.8% of breakouts against  87.1% of bars   lift 0.69  <-- selective
+    MFI(14) mfi rising                 passes  74.6% of breakouts against  49.5% of bars   lift 1.51
+    MFI(21) mfi>=50                    passes  83.2% of breakouts against  52.1% of bars   lift 1.60
+    MFI(21) mfi>=55                    passes  77.1% of breakouts against  43.6% of bars   lift 1.77
+    MFI(21) mfi>=60                    passes  68.6% of breakouts against  35.3% of bars   lift 1.94
+    MFI(21) mfi<=80                    passes  74.2% of breakouts against  90.7% of bars   lift 0.82
+    MFI(21) mfi rising                 passes  77.3% of breakouts against  50.0% of bars   lift 1.55
+    EMA9/21 state                      passes  94.0% of breakouts against  58.0% of bars   lift 1.62  <-- INERT, removes under 15% of signals
+    EMA9/21 cross<=5                   passes  22.9% of breakouts against  12.2% of bars   lift 1.88  <-- selective
+    EMA9/21 spread rising              passes  83.7% of breakouts against  49.5% of bars   lift 1.69
+    EMA9/21 spread>0 and rising        passes  78.5% of breakouts against  27.3% of bars   lift 2.87
+    EMA9/21 spread momentum>=0.02 ATR  passes  76.7% of breakouts against  41.1% of bars   lift 1.87
+    EMA13/48 state                     passes  83.8% of breakouts against  59.6% of bars   lift 1.41
+    EMA13/48 cross<=5                  passes  14.4% of breakouts against   6.4% of bars   lift 2.24  <-- selective
+    EMA13/48 spread rising             passes  90.1% of breakouts against  49.1% of bars   lift 1.84  <-- INERT, removes under 15% of signals
+    EMA13/48 spread>0 and rising       passes  74.4% of breakouts against  28.0% of bars   lift 2.66
+    EMA13/48 spread momentum>=0.02 ATR passes  87.0% of breakouts against  42.2% of bars   lift 2.06  <-- INERT, removes under 15% of signals
+    EMA21/55 state                     passes  78.2% of breakouts against  59.6% of bars   lift 1.31
+    EMA21/55 cross<=5                  passes  10.8% of breakouts against   4.9% of bars   lift 2.20  <-- selective
+    EMA21/55 spread rising             passes  91.7% of breakouts against  49.3% of bars   lift 1.86  <-- INERT, removes under 15% of signals
+    EMA21/55 spread>0 and rising       passes  70.3% of breakouts against  28.4% of bars   lift 2.48
+    EMA21/55 spread momentum>=0.02 ATR passes  86.3% of breakouts against  38.7% of bars   lift 2.23  <-- INERT, removes under 15% of signals
+
+  .. tf 15 swept
+  .. tf 30 swept
+  .. tf 60 swept
+============================================================================================================
+A2. THE POPULATION
+============================================================================================================
+  cells swept 3,096,576   scorable (>= 60 research trades) 2,064,245 (66.7%)
+  profitable on research 94.8%   median pct/trade +0.0539   median PF 1.346
+
+============================================================================================================
+A3. THE MARGINAL AVERAGE PER AXIS -- total percent of price, then percent per trade
+============================================================================================================
+  tf     15: +8.8%/+0.0563/n251   30: +8.4%/+0.0696/n161   60: +7.5%/+0.0542/n128
+  ent    30: +8.6%/+0.0648/n184   15: +8.4%/+0.0580/n203   20: +8.3%/+0.0604/n195
+  exN    30: +8.8%/+0.0642/n187   20: +8.7%/+0.0627/n192   10: +7.8%/+0.0561/n203
+  stop   3.0: +9.3%/+0.0704/n183   2.5: +8.8%/+0.0649/n188   2.0: +8.1%/+0.0589/n195   1.5: +7.4%/+0.0506/n210
+  tp     0.0: +10.8%/+0.0845/n173   6.0: +8.8%/+0.0622/n188   4.0: +7.8%/+0.0550/n202   3.0: +6.4%/+0.0439/n212
+  adapt  0: +8.9%/+0.0662/n188   1: +7.9%/+0.0559/n200
+  cvd    off: +11.0%/+0.0374/n426   k3w30: +8.7%/+0.0627/n171   k3w20: +8.5%/+0.0666/n143   k5w20: +7.6%/+0.0715/n116   k5w30: +7.2%/+0.0589/n133   k3w10: +7.1%/+0.0766/n110   k5w10: +6.2%/+0.0721/n9
+  psh    1: +9.1%/+0.0786/n147   0: +7.8%/+0.0474/n230
+  mfi    mfi>=60: +9.4%/+0.0709/n187   mfi>=55: +9.4%/+0.0685/n195   mfi>=50: +8.6%/+0.0612/n198   off: +8.4%/+0.0581/n203   mfi rising: +8.2%/+0.0592/n196   mfi<=80: +6.2%/+0.0452/n192
+  mfi_n  21: +8.5%/+0.0624/n192   14: +8.5%/+0.0617/n195   0: +8.4%/+0.0581/n203   9: +8.2%/+0.0595/n194
+  ema    spread>0 and rising: +9.0%/+0.0680/n188   state: +8.9%/+0.0664/n193   spread rising: +8.7%/+0.0598/n207   spread momentum>=0.02 ATR: +8.7%/+0.0604/n204   off: +8.7%/+0.0586/n212   cross<=5: 
+  ema_f  21: +8.8%/+0.0655/n190   0: +8.7%/+0.0586/n212   13: +8.2%/+0.0600/n192   9: +8.2%/+0.0584/n197
+  ema_s  55: +8.8%/+0.0655/n190   0: +8.7%/+0.0586/n212   48: +8.2%/+0.0600/n192   21: +8.2%/+0.0584/n197
+
+============================================================================================================
+A4. MATCHED PAIRS ON RESEARCH -- every cell against its own `off` twin, the OTHER
+    family held off, so one condition is the only difference
+============================================================================================================
+  --- MFI
+    mfi>=60 21                    8692 pairs   keeps  76.5% of the signals   helps  79.5%   mean change +0.0174 %/trade
+    mfi>=60 14                    9131 pairs   keeps  83.7% of the signals   helps  70.4%   mean change +0.0150 %/trade
+    mfi>=55 14                    9444 pairs   keeps  89.9% of the signals   helps  74.4%   mean change +0.0133 %/trade
+    mfi>=55 21                    9077 pairs   keeps  85.5% of the signals   helps  74.4%   mean change +0.0100 %/trade
+    mfi>=55 9                     9827 pairs   keeps  92.7% of the signals   helps  74.3%   mean change +0.0076 %/trade
+    mfi>=60 9                     9711 pairs   keeps  89.3% of the signals   helps  71.1%   mean change +0.0071 %/trade
+    mfi>=50 9                    10017 pairs   keeps  95.4% of the signals   helps  69.5%   mean change +0.0036 %/trade
+    mfi>=50 14                    9983 pairs   keeps  94.4% of the signals   helps  62.1%   mean change +0.0023 %/trade
+    mfi rising 21                10120 pairs   keeps  93.9% of the signals   helps  59.4%   mean change +0.0015 %/trade
+    mfi rising 9                  9920 pairs   keeps  93.2% of the signals   helps  51.8%   mean change +0.0007 %/trade
+    mfi rising 14                 9989 pairs   keeps  94.7% of the signals   helps  48.2%   mean change -0.0000 %/trade
+    mfi>=50 21                    9706 pairs   keeps  91.4% of the signals   helps  52.9%   mean change -0.0000 %/trade
+    mfi<=80 21                    9590 pairs   keeps  92.0% of the signals   helps  30.1%   mean change -0.0080 %/trade
+    mfi<=80 14                    8829 pairs   keeps  87.5% of the signals   helps  25.2%   mean change -0.0123 %/trade
+    mfi<=80 9                     8491 pairs   keeps  79.4% of the signals   helps  24.0%   mean change -0.0153 %/trade
+  --- EMA
+    spread>0 and rising 21 55     9100 pairs   keeps  76.9% of the signals   helps  82.5%   mean change +0.0113 %/trade
+    state 21 55                   9276 pairs   keeps  80.6% of the signals   helps  78.6%   mean change +0.0094 %/trade
+    spread>0 and rising 13 48     9439 pairs   keeps  82.4% of the signals   helps  72.5%   mean change +0.0062 %/trade
+    state 13 48                   9513 pairs   keeps  85.2% of the signals   helps  69.1%   mean change +0.0047 %/trade
+    spread momentum>=0.02 ATR 21 55 10015 pairs   keeps  92.8% of the signals   helps  67.0%   mean change +0.0034 %/trade
+    spread>0 and rising 9 21      9971 pairs   keeps  91.7% of the signals   helps  60.9%   mean change +0.0032 %/trade
+    state 9 21                   10071 pairs   keeps  94.5% of the signals   helps  55.1%   mean change +0.0018 %/trade
+    cross<=5 21 55                2096 pairs   keeps  19.7% of the signals   helps  49.9%   mean change +0.0017 %/trade
+    spread rising 9 21           10161 pairs   keeps  96.4% of the signals   helps  60.1%   mean change +0.0013 %/trade
+    spread momentum>=0.02 ATR 9 21 10139 pairs   keeps  94.9% of the signals   helps  55.7%   mean change +0.0009 %/trade
+    spread rising 13 48          10164 pairs   keeps  96.6% of the signals   helps  51.1%   mean change +0.0007 %/trade
+    spread rising 21 55          10113 pairs   keeps  95.7% of the signals   helps  56.9%   mean change +0.0005 %/trade
+    spread momentum>=0.02 ATR 13 48 10122 pairs   keeps  95.5% of the signals   helps  46.6%   mean change -0.0001 %/trade
+    cross<=5 9 21                 5936 pairs   keeps  47.3% of the signals   helps  49.5%   mean change -0.0009 %/trade
+    cross<=5 13 48                3430 pairs   keeps  27.7% of the signals   helps  30.3%   mean change -0.0235 %/trade
+
+============================================================================================================
+A5. THE FINALISTS -- declared here, read once on the locked block by run_v62b
+============================================================================================================
+  F1 marginal consensus                  n  278  total  +14.55%  pct/trade +0.0523  PF  1.30  Sharpe +0.95
+     tf=15, ent=30, exN=30, stop=3.0, tp=0.0, adapt=0, cvd=off, psh=1, mfi=mfi>=60, mfi_n=21, ema=spread>0 and rising, ema_f=21, ema_s=55
+  F2 top research total                  n  916  total  +37.64%  pct/trade +0.0411  PF  1.14  Sharpe +1.88
+     tf=15, ent=15, exN=30, stop=3.0, tp=6.0, adapt=0, cvd=off, psh=0, mfi=off, mfi_n=0, ema=spread momentum>=0.02 ATR, ema_f=21, ema_s=55
+  F3 top research Sharpe                 n  159  total  +21.80%  pct/trade +0.1371  PF  2.06  Sharpe +3.15
+     tf=30, ent=15, exN=10, stop=3.0, tp=3.0, adapt=1, cvd=k3w20, psh=0, mfi=mfi>=60, mfi_n=14, ema=spread momentum>=0.02 ATR, ema_f=21, ema_s=55
+  F4 CVD + a confirmation, top total     n   87  total  +29.13%  pct/trade +0.3348  PF  2.11  Sharpe +1.49
+     tf=60, ent=15, exN=30, stop=3.0, tp=0.0, adapt=0, cvd=k3w30, psh=0, mfi=off, mfi_n=0, ema=spread rising, ema_f=21, ema_s=55
+  F5 CVD + a confirmation, top Sharpe    n  159  total  +21.80%  pct/trade +0.1371  PF  2.06  Sharpe +3.15
+     tf=30, ent=15, exN=10, stop=3.0, tp=3.0, adapt=1, cvd=k3w20, psh=0, mfi=mfi>=60, mfi_n=14, ema=spread momentum>=0.02 ATR, ema_f=21, ema_s=55
+  S  V61 incumbent (no confirmation)     n  157  total  +18.88%  pct/trade +0.1203  PF  1.71  Sharpe +1.52
+     tf=30, ent=20, exN=20, stop=2.0, tp=0.0, adapt=0, cvd=k3w20, psh=0, mfi=off, mfi_n=0, ema=off, ema_f=0, ema_s=0

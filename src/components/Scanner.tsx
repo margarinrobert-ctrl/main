@@ -5,6 +5,7 @@ import type { HistoryBar } from "@/lib/barchart/types";
 import { loadChain, loadHistory } from "@/lib/client-data";
 import { scanRow, type ScanRow } from "@/lib/flow/signals";
 import { withBase } from "@/lib/paths";
+import { Provenance } from "./Provenance";
 import { Chip, EmptyState, Loading, SectionHeader } from "./states";
 
 const DEFAULT_SYMBOLS = (process.env.NEXT_PUBLIC_WATCHLIST ?? "SPY,QQQ")
@@ -100,6 +101,7 @@ export function Scanner() {
 
   return (
     <div className="glass p-4">
+      <Provenance source={source} feed="CBOE delayed ~15 min" count={rows.length} className="mb-3" />
       <SectionHeader
         eyebrow="Watchlist"
         title="Signal scanner"

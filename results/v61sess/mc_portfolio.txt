@@ -1,0 +1,115 @@
+MONTE CARLO on the incumbent (both timeframes, both session settings) and PORTFOLIO CONSTRUCTION.
+
+MONTE CARLO -- the branch's four, on each of the four configurations:
+  bootstrap over whole DAYS with their trades attached (edge), permutation of the realised sequence
+  (path, drawdown only), execution perturbation (cost and slippage drawn inside the walk), and a
+  five-axis parameter jitter (neighbourhood).
+
+PORTFOLIO -- the question is whether the 15m and 30m legs are two strategies or one. This branch has
+recorded the trap twice: STUDY_HYPO found eight "different" breakout hypotheses correlating 0.87-0.96
+in daily returns and combining them took Sharpe 0.30 -> 0.11; STUDY_TOP5 found the NQ + US100 book
+had daily correlation 0.90, i.e. one index wearing two names. So the correlation is measured on
+DAILY STRATEGY RETURNS before any weighting is proposed, and the combination is reported against the
+best single leg rather than against the average one.
+
+
+==============================================================================================================================
+MONTE CARLO -- 1  EDGE. Day-block bootstrap, 2,000 draws, whole days with their trades
+==============================================================================================================================
+  leg                            block        n  mean pts        p5       p95   P(mean<=0)
+  30m all hours                  research   158   +23.864    +7.045   +43.253        0.006
+  30m all hours                  locked      87   +31.188    -1.988   +66.857        0.065
+  30m 07-11 no flatten           research    75   +20.325    +1.304   +40.273        0.040
+  30m 07-11 no flatten           locked      39   +75.287    +4.822  +160.247        0.035
+  15m all hours                  research   225   +13.429    +4.279   +23.235        0.008
+  15m all hours                  locked     125   +23.299    +7.602   +40.262        0.003
+  15m 07-11 + flatten (yours)    research    87    +3.808    -8.384   +16.428        0.314
+  15m 07-11 + flatten (yours)    locked      45   +18.610    +0.540   +37.732        0.047
+
+==============================================================================================================================
+MONTE CARLO -- 2  PATH. Permutation of the realised trades, drawdown only, 2,000 reshuffles
+==============================================================================================================================
+  leg                            block     realised DD $  MC median $   MC p99 $  pctile  p99/real
+  30m all hours                  research            746         1320       2596    0.01      3.48x
+  30m all hours                  locked             3127         2004       3791    0.94      1.21x
+  30m 07-11 no flatten           research            595          913       1717    0.05      2.89x
+  30m 07-11 no flatten           locked             1019          944       1884    0.60      1.85x
+  15m all hours                  research            798         1263       2382    0.02      2.98x
+  15m all hours                  locked              697         1080       2147    0.03      3.08x
+  15m 07-11 + flatten (yours)    research            876         1039       1898    0.24      2.17x
+  15m 07-11 + flatten (yours)    locked              388          503       1029    0.17      2.65x
+
+==============================================================================================================================
+MONTE CARLO -- 3  EXECUTION. cost ~ U(0.5x, 2x), slippage ~ U(0, 2x), inside the walk, 250 draws
+==============================================================================================================================
+  leg                            block          p5 $  median $     p95 $   P(total<=0)
+  30m all hours                  research       7193      7416      7624         0.000
+  30m all hours                  locked         5260      5383      5496         0.000
+  30m 07-11 no flatten           research       2976      3074      3168         0.000
+  30m 07-11 no flatten           locked         5852      5903      5954         0.000
+  15m all hours                  research       5490      5993      6437         0.000
+  15m all hours                  locked         5542      5696      5862         0.000
+  15m 07-11 + flatten (yours)    research        538       643       750         0.000
+  15m 07-11 + flatten (yours)    locked         1583      1640      1697         0.000
+
+==============================================================================================================================
+MONTE CARLO -- 4  PARAMETERS. entry, exit, stop, pivot and window jittered together, 300 draws
+==============================================================================================================================
+  leg                            block      shipped PF   p5 PF  median     p95   % PF>1  % beating
+  30m all hours                  research        1.784   1.360   1.582   1.905     100%        17%
+  30m all hours                  locked          1.611   1.243   1.549   1.950     100%        38%
+  30m 07-11 no flatten           research        1.683   1.475   1.714   2.073     100%        57%
+  30m 07-11 no flatten           locked          2.853   1.644   2.349   3.366     100%        24%
+  15m all hours                  research        1.570   1.236   1.452   1.805     100%        31%
+  15m all hours                  locked          1.869   1.306   1.701   2.099     100%        29%
+  15m 07-11 + flatten (yours)    research        1.151   0.861   1.216   1.751      86%        67%
+  15m 07-11 + flatten (yours)    locked          1.859   1.560   1.872   2.414     100%        52%
+
+==============================================================================================================================
+PORTFOLIO -- are these two strategies, or one wearing two names?
+==============================================================================================================================
+  Daily strategy returns in POINTS, zero-filled on days a leg did not trade -- the only
+  honest way to correlate two legs with different trade counts (STUDY_V17: a filter that is
+  paid for trading less looks good on traded days only).
+
+  daily-return correlation matrix (all days, whole sample):
+                                30m all hours  30m 07-11 no flatten  15m all hours  15m 07-11 + flatten (yours)
+   30m all hours                        1.000                 0.689          0.358                        0.210
+   30m 07-11 no flatten                 0.689                 1.000          0.127                        0.280
+   15m all hours                        0.358                 0.127          1.000                        0.484
+   15m 07-11 + flatten (yours)          0.210                 0.280          0.484                        1.000
+
+==============================================================================================================================
+PORTFOLIO -- combinations, against the BEST single leg rather than the average one
+==============================================================================================================================
+  combination                                    block      days   $ (MNQ)   maxDD $  ret/DD  Sharpe     PF
+  30m all hours                                  research    136      7482       746   10.02    1.40  1.865
+  30m all hours                                  locked       80      5417      2393    2.26    1.29  1.706
+  30m 07-11 no flatten                           research     68      3092       595    5.20    1.13  1.718
+  30m 07-11 no flatten                           locked       37      5913      1019    5.80    1.39  2.853
+  15m all hours                                  research    169      5933       734    8.09    1.45  1.663
+  15m all hours                                  locked       96      5741       599    9.58    2.07  2.051
+  15m 07-11 + flatten (yours)                    research     72       674       876    0.77    0.34  1.173
+  15m 07-11 + flatten (yours)                    locked       39      1656       388    4.26    1.38  2.014
+  EQUAL 30m+15m all hours                        research    203      6707       556   12.06    1.65  1.808
+  EQUAL 30m+15m all hours                        locked      119      5579       921    6.06    2.00  1.924
+  EQUAL all four legs                            research    203      4295       436    9.84    1.58  1.736
+  EQUAL all four legs                            locked      120      4682       699    6.69    2.00  2.157
+  30m all hours + 30m 07-11                      research    136      5287       534    9.91    1.50  1.850
+  30m all hours + 30m 07-11                      locked       82      5665      1385    4.09    1.40  2.049
+  INVERSE-VOL all four (weights from research only) research    203      3324       415    8.00    1.43  1.660
+  INVERSE-VOL all four (weights from research only) locked      120      4163       538    7.74    2.03  2.277
+
+==============================================================================================================================
+DOES COMBINING BEAT THE BEST SINGLE LEG?
+==============================================================================================================================
+  research  EQUAL 30m+15m all hours                        ret/DD  12.06 vs best single leg (30m all hours)  10.02   BETTER
+  research  EQUAL all four legs                            ret/DD   9.84 vs best single leg (30m all hours)  10.02   worse
+  research  30m all hours + 30m 07-11                      ret/DD   9.91 vs best single leg (30m all hours)  10.02   worse
+  research  INVERSE-VOL all four (weights from research only) ret/DD   8.00 vs best single leg (30m all hours)  10.02   worse
+  locked    EQUAL 30m+15m all hours                        ret/DD   6.06 vs best single leg (15m all hours)   9.58   worse
+  locked    EQUAL all four legs                            ret/DD   6.69 vs best single leg (15m all hours)   9.58   worse
+  locked    30m all hours + 30m 07-11                      ret/DD   4.09 vs best single leg (15m all hours)   9.58   worse
+  locked    INVERSE-VOL all four (weights from research only) ret/DD   7.74 vs best single leg (15m all hours)   9.58   worse
+
+  runtime 271s

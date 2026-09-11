@@ -23,7 +23,7 @@ from oner_anom import control_from, exits_from
 from test_suite import build, use_pool, _daily, _dd, _sharpe
 
 
-def load(path="/tmp/phase5_mega2.npy"):
+def load(path="results/mega2/phase5_mega2.npy"):
     return list(np.load(path, allow_pickle=True))
 
 

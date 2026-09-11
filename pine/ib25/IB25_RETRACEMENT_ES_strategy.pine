@@ -1,0 +1,242 @@
+//@version=6
+// IB 25 RETRACEMENT -- ES / MES build (docs/ib/STUDY_IB25_RETRACEMENT.md, docs/ib/STUDY_IB25_ES.md).
+//
+// THE RULE AS POSTED, transcribed with nothing added: session VWAP anchored to the 09:30 New York
+// open; nothing before the 10:20 candle closes; the morning range runs 09:30 to 10:30 and keeps
+// adjusting until it is formed; direction from the VWAP slope; a resting limit at 25% of the range
+// from the target-side extreme; target that extreme (1:1); stop at 50%. No new setup past noon or
+// once the range is swept. The three judgement calls the post leaves in prose -- "sloping in your
+// direction", "hasn't chopped around it too much", "swept" -- are each an explicit input here,
+// because they cannot be coded from prose and each one is a free parameter.
+//
+// >>> WHAT THIS WAS MEASURED AT. NQ 1-minute, 2022-12 to 2025-12, one live order, one trade a
+// >>> session, real MNQ costs, 527 trades. NO ES SERIES EXISTS ON THE RESEARCH BRANCH, so the
+// >>> numbers below are the Nasdaq's and the S&P's are unmeasured. They are here because they are
+// >>> the only honest read available and because the cost arithmetic (next paragraph) is not in
+// >>> the strategy's favour on ES.
+// >>>   as posted (25 / 50)   research -0.0169 %/trade  PF 0.807  -$6.55 an MNQ contract
+// >>>                         locked   +0.0097 %/trade  PF 1.111  +$4.42     <- loses on the block
+// >>>                                                                           that would select it
+// >>>   NEGATIVE GROSS at zero cost and zero slippage (-0.0047 %/trade), so better fills, a cheaper
+// >>>   broker or a bigger contract cannot rescue it. Loses to a RANDOM entry minute in the same
+// >>>   window with the same side and the same barriers, p 0.845. Research bootstrap P(mean<=0) 0.965.
+// >>>   The post's own best observation is correct and worthless: moving the stop to 75% raises the
+// >>>   win rate 48.4% -> 66.4% exactly as claimed, and the DRIFTLESS BREAK-EVEN for that geometry
+// >>>   rises to 66.7% at the same time. The win rate tracks its own break-even at every rung
+// >>>   (32.5 vs 28.6, 48.4 vs 50.0, 56.5 vs 60.0, 66.4 vs 66.7, 74.2 vs 75.0). A higher win rate
+// >>>   bought by widening the stop is arithmetic, not edge.
+// >>>   The two judgement calls the post insists on earn nothing: over 16 cells of VWAP-slope
+// >>>   threshold x VWAP-cross ceiling not one is positive; the chop ceiling removes 63% of the
+// >>>   sample and changes the per-trade result by 0.0001.
+//
+// >>> THE ES COST ARITHMETIC, which IS transferable and is the reason to expect ES to be worse.
+// >>> This rule's stop is a FRACTION OF THE MORNING RANGE, and a morning range is a percentage of
+// >>> the index, not a number of points -- median risk 0.151% of price. At equal percentage risk:
+// >>>       MNQ  round turn 1.22 pts = 0.0049% of price = 3.2% of risk
+// >>>       MES  round turn 0.79 pts = 0.0116% of price = 7.7% of risk   <- 2.37x MNQ
+// >>>       NQ   0.71 pts = 0.0029% = 1.9% of risk      ES  0.59 pts = 0.0086% = 5.7% of risk
+// >>> ES is the cheaper contract in DOLLARS and the more expensive one in R, because its 0.25 tick
+// >>> is 0.0037% of a 6,800 index against 0.0010% of a 25,000 one -- 3.7x. Charging the NQ series
+// >>> at MES's relative cost takes research from -0.0099 to -0.0170 %/trade and PF 0.871 to 0.796.
+// >>> Cheaper in dollars is not cheaper in R (STUDY_TURTLE_15M recorded the same trap on gold).
+//
+// SHIPPED SO IT CAN BE MEASURED ON ES, NOT AS A RECOMMENDATION. Defaults are the post's. The
+// mechanics are corrected -- one live order, a fill-relative bracket placed WITH the entry so the
+// fill bar is never naked, isconfirmed on every block that writes state -- and no edge is claimed.
+// Commission below is the MES/micro stack ($0.72 a side = $1.44 round turn, CME + NFA + clearing +
+// broker per STUDY_COSTS). For FULL-SIZE ES set commission_value to 2.14.
+strategy("IB 25 retracement -- ES (measured, no edge claimed)", overlay = true, default_qty_type = strategy.fixed,
+     default_qty_value = 1, initial_capital = 50000, commission_type = strategy.commission.cash_per_contract,
+     commission_value = 0.72, slippage = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+// ---------------- the rule ----------------
+retrPct  = input.float(25.0, "Entry retracement (% of the morning range)", minval = 1.0, maxval = 99.0, step = 5.0, group = "The rule",
+     tooltip = "The post's 25%. Measured on NQ this axis is NON-MONOTONE and every rung is negative net: 0.10 -0.0206, 0.25 -0.0169, 0.35 -0.0212, 0.50 -0.0069, 0.65 -0.0154. Note this is the OPPOSITE of STUDY_V58_ANATOMY, where a retracement ladder on a breakout was monotone and cleared its control -- that family retraced INTO a break, this one fades back toward the range extreme. Same fib tool, different trade.")
+stopPct  = input.float(50.0, "Stop (% of the morning range)", minval = 2.0, maxval = 200.0, step = 5.0, group = "The rule",
+     tooltip = "The post's 50%, and its suggested 75%. Both are correct about the WIN RATE and neither changes expectancy: the win rate tracks the driftless break-even 1/(1+RR) at every rung. 50% -> 48.4% actual vs 50.0% needed; 75% -> 66.4% vs 66.7%.")
+tgtPct   = input.float(0.0, "Target (% of the range from the extreme)", minval = 0.0, maxval = 100.0, step = 5.0, group = "The rule",
+     tooltip = "0 = the post's 'target low' (or high). With entry 25 and stop 50 that is exactly 1:1.")
+firstH   = input.int(10, "First entry -- hour (New York)", minval = 0, maxval = 23, group = "The rule")
+firstM   = input.int(21, "First entry -- minute", minval = 0, maxval = 59, group = "The rule",
+     tooltip = "'Wait till the 10:20 candle to close' -- so the first bar that may place an order opens at 10:21.")
+cutH     = input.int(12, "Stop looking -- hour (New York)", minval = 0, maxval = 23, group = "The rule")
+cutM     = input.int(0, "Stop looking -- minute", minval = 0, maxval = 59, group = "The rule",
+     tooltip = "'I stopped mainly looking for an entry past 12 noon.' Measured on NQ this cutoff is free and worthless -- removing it changes the per-trade result by less than a tenth of a basis point.")
+useSweep = input.bool(true, "Void the session once the range is swept", group = "The rule",
+     tooltip = "'or when the IB high or low is swept'. Measured on NQ this rule COSTS money: the sessions it removes were net positive.")
+sideMode = input.string("Both", "Sides", options = ["Both", "Long only", "Short only"], group = "The rule",
+     tooltip = "On NQ the LONG side loses (-0.0322 %/trade, PF 0.669) against a nearly flat short side, in a market that rose 89% over the sample.")
+
+// ---------------- the two judgement calls ----------------
+slopeMin = input.int(20, "VWAP slope window (MINUTES, not bars)", minval = 1, group = "Judgement calls",
+     tooltip = "Declared in minutes and converted by the chart's timeframe, so the same number means the same thing on a 1m and a 5m chart. STUDY_V57 recorded a shipped script whose 30-minute settings became 1-minute ones on a 1m chart -- one thirtieth of their reach.")
+slopeThr = input.float(0.0, "  minimum |slope| over that window (x ATR)", minval = 0.0, step = 0.05, group = "Judgement calls",
+     tooltip = "'Make sure VWAP is sloping in your direction.' Scale-free: the VWAP's change over the window divided by ATR(14). 0 means any slope counts. Measured on NQ this threshold is MONOTONICALLY HARMFUL -- over 16 cells of threshold x cross-ceiling not one is positive.")
+maxCross = input.int(99, "Maximum VWAP crossings since 09:30", minval = 0, group = "Judgement calls",
+     tooltip = "'price hasn't chopped around it too much', made explicit as the number of bar CLOSES that changed side of the VWAP. On NQ a ceiling of 6 removes 63% of the sample and changes the per-trade result by 0.0001.")
+
+// ---------------- housekeeping ----------------
+flatH    = input.int(15, "Flatten -- hour (New York)", minval = 0, maxval = 23, group = "Session")
+flatM    = input.int(55, "Flatten -- minute", minval = 0, maxval = 59, group = "Session")
+showLv   = input.bool(true, "Draw the VWAP, the range and the levels", group = "Display")
+
+// ---------------- series ----------------
+// New York explicitly. Bare hour/minute are EXCHANGE time -- Chicago for CME -- which is one hour
+// off the entire rule.
+nyH   = hour(time, "America/New_York")
+nyM   = minute(time, "America/New_York")
+nyMin = nyH * 60 + nyM
+newNY = ta.change(time("D", session.regular, "America/New_York")) != 0
+
+OPEN_M  = 9 * 60 + 30
+RANGE_M = 10 * 60 + 30
+firstEn = firstH * 60 + firstM
+cutoff  = cutH * 60 + cutM
+flatAt  = flatH * 60 + flatM
+
+// ATR is ema(tr, 14), NOT ta.atr -- ta.atr is an RMA and reads ~10% different.
+atrN  = ta.ema(ta.tr(true), 14)
+tfMin = math.max(1.0, timeframe.in_seconds() / 60.0)
+slopeBars = int(math.max(1, math.round(slopeMin / tfMin)))
+
+inRTH = nyMin >= OPEN_M and nyMin < 16 * 60
+
+// ---------------- session state ----------------
+// Every block that writes a var is guarded by barstate.isconfirmed. STUDY_TICK_RECALC measured what
+// happens otherwise: the same rules went from 11,398 trades to 14,462 because mid-bar `close` is the
+// current price and durable state was being written from a price the bar-close run cannot see.
+var float pv      = na
+var float vv      = na
+var float ibHi    = na
+var float ibLo    = na
+var int   crosses = 0
+var int   prevSide = 0
+var bool  swept   = false
+var bool  placed  = false
+var bool  doneTdy = false
+var float lvlPx   = na
+var float stpPx   = na
+var float tgtPx   = na
+var int   ordSide = 0
+
+if barstate.isconfirmed
+    if newNY
+        pv := na
+        vv := na
+        ibHi := na
+        ibLo := na
+        crosses := 0
+        prevSide := 0
+        swept := false
+        placed := false
+        doneTdy := false
+        lvlPx := na
+        stpPx := na
+        tgtPx := na
+        ordSide := 0
+    if inRTH
+        tp = (high + low + close) / 3.0
+        pv := nz(pv) + tp * volume
+        vv := nz(vv) + volume
+    if nyMin >= OPEN_M and nyMin <= RANGE_M
+        ibHi := na(ibHi) ? high : math.max(ibHi, high)
+        ibLo := na(ibLo) ? low : math.min(ibLo, low)
+
+vwapS = vv > 0 ? pv / vv : na
+
+if barstate.isconfirmed and not na(vwapS)
+    sd = close > vwapS ? 1 : -1
+    if prevSide != 0 and sd != prevSide
+        crosses := crosses + 1
+    prevSide := sd
+
+rng    = na(ibHi) or na(ibLo) ? na : ibHi - ibLo
+frozen = nyMin > RANGE_M and not na(rng) and rng > 0
+
+if barstate.isconfirmed and useSweep and frozen and (high > ibHi or low < ibLo)
+    swept := true
+
+// ---------------- the setup ----------------
+// 'sloping in your direction', and 'do not trade a flat VWAP': the slope must be strictly non-zero
+// AND at least slopeThr ATRs over the window. At slopeThr = 0 that reduces to any non-flat slope.
+slopeOK = 0
+if barstate.isconfirmed and not na(vwapS) and not na(vwapS[slopeBars]) and atrN > 0
+    sl = (vwapS - vwapS[slopeBars]) / atrN
+    slopeOK := sl > 0 and sl >= slopeThr ? 1 : sl < 0 and -sl >= slopeThr ? -1 : 0
+
+allowL = sideMode != "Short only"
+allowS = sideMode != "Long only"
+
+canLook = barstate.isconfirmed and frozen and not swept and not placed and not doneTdy and strategy.position_size == 0 and nyMin >= firstEn and nyMin < cutoff and crosses <= maxCross
+
+if canLook and slopeOK != 0
+    s = slopeOK
+    ok = s > 0 ? allowL : allowS
+    if ok
+        lv = s > 0 ? ibHi - (retrPct / 100.0) * rng : ibLo + (retrPct / 100.0) * rng
+        tg = s > 0 ? ibHi - (tgtPct / 100.0) * rng : ibLo + (tgtPct / 100.0) * rng
+        st = s > 0 ? ibHi - (stopPct / 100.0) * rng : ibLo + (stopPct / 100.0) * rng
+        // the limit must still be away from price, or there is no limit to rest
+        rest = s > 0 ? close > lv : close < lv
+        if rest and math.abs(lv - st) > syminfo.mintick
+            lvlPx := lv
+            stpPx := st
+            tgtPx := tg
+            ordSide := s
+            placed := true
+
+// ---------------- orders ----------------
+// The bracket is FILL-RELATIVE and goes out WITH the entry. STUDY_V56 measured the alternative:
+// strategy.exit only runs on a bar where a position already exists, so the first stop lands at the
+// CLOSE of the fill bar and the fill bar itself is naked -- 4.4-13.0% of trades on the scripts where
+// it was counted. Here the entry is a LIMIT at a known price, so the loss and profit distances are
+// known at order time and the bracket is live from the fill.
+if barstate.isconfirmed and placed and not doneTdy and strategy.position_size == 0 and not na(lvlPx)
+    lossT   = math.abs(lvlPx - stpPx) / syminfo.mintick
+    profitT = math.abs(lvlPx - tgtPx) / syminfo.mintick
+    if profitT >= 1 and lossT >= 1
+        strategy.entry("IB25", ordSide > 0 ? strategy.long : strategy.short, limit = lvlPx)
+        strategy.exit("IB25x", "IB25", loss = lossT, profit = profitT)
+
+// cancel a resting order that the session has invalidated
+if barstate.isconfirmed and placed and strategy.position_size == 0 and (swept or nyMin >= cutoff)
+    strategy.cancel("IB25")
+    placed := false
+    doneTdy := true
+
+// one trade a session: once a position has existed, the session is finished. Without this the
+// entry block re-fires the moment the bracket closes the trade and the limit rests again.
+if barstate.isconfirmed and strategy.position_size != 0
+    doneTdy := true
+    placed := false
+
+// flatten. strategy.close_all fills at the NEXT bar's open -- it cannot sell the close of the bar
+// that triggers it -- so the order goes out on the bar BEFORE the cutoff (STUDY_V60).
+if barstate.isconfirmed and nyMin + int(tfMin) >= flatAt and strategy.position_size != 0
+    strategy.close_all(comment = "flat")
+    placed := false
+
+// ---------------- display ----------------
+plot(showLv and inRTH ? vwapS : na, "Anchored VWAP", color = color.new(color.orange, 0), linewidth = 2)
+plot(showLv and frozen ? ibHi : na, "Range high", color = color.new(color.gray, 30), style = plot.style_linebr)
+plot(showLv and frozen ? ibLo : na, "Range low", color = color.new(color.gray, 30), style = plot.style_linebr)
+plot(showLv and placed ? lvlPx : na, "Limit", color = color.new(color.blue, 0), style = plot.style_linebr, linewidth = 2)
+plot(showLv and placed ? stpPx : na, "Stop", color = color.new(color.red, 0), style = plot.style_linebr)
+plot(showLv and placed ? tgtPx : na, "Target", color = color.new(color.green, 0), style = plot.style_linebr)
+
+var table hud = table.new(position.top_right, 2, 6, border_width = 1)
+if barstate.islast
+    rr = stopPct > retrPct ? (retrPct - tgtPct) / (stopPct - retrPct) : na
+    be = na(rr) ? na : 100.0 / (1.0 + rr)
+    table.cell(hud, 0, 0, "IB 25 retracement", text_color = color.white, bgcolor = color.new(color.blue, 20))
+    table.cell(hud, 1, 0, syminfo.ticker + "  " + timeframe.period, text_color = color.white, bgcolor = color.new(color.blue, 20))
+    table.cell(hud, 0, 1, "reward : risk", text_color = color.gray)
+    table.cell(hud, 1, 1, na(rr) ? "n/a" : str.tostring(rr, "#.##") + " : 1", text_color = color.white)
+    table.cell(hud, 0, 2, "driftless break-even win", text_color = color.gray)
+    table.cell(hud, 1, 2, na(be) ? "n/a" : str.tostring(be, "#.#") + "%", text_color = color.yellow)
+    table.cell(hud, 0, 3, "actual win rate", text_color = color.gray)
+    table.cell(hud, 1, 3, strategy.closedtrades > 0 ? str.tostring(100.0 * strategy.wintrades / strategy.closedtrades, "#.#") + "%" : "-", text_color = color.white)
+    table.cell(hud, 0, 4, "trades", text_color = color.gray)
+    table.cell(hud, 1, 4, str.tostring(strategy.closedtrades), text_color = color.white)
+    table.cell(hud, 0, 5, "read the win rate against the break-even", text_color = color.orange, text_size = size.tiny)
+    table.cell(hud, 1, 5, "not against 50%", text_color = color.orange, text_size = size.tiny)

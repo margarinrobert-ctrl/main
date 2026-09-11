@@ -1,7 +1,7 @@
 """What does search width DO to the thing you find? Measured, not asserted."""
 import sys; sys.path.insert(0,'research')
 import numpy as np
-rows=np.load("/tmp/mega_rows.npy")
+rows=np.load("results/mnq/mega_rows.npy")
 ok = rows[:,4] >= 20
 R = rows[ok]
 rNet,rSh,lNet,lSh,nT = R[:,0],R[:,1],R[:,2],R[:,3],R[:,4]

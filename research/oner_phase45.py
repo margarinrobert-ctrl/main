@@ -103,9 +103,9 @@ if __name__ == "__main__":
     pref = sys.argv[1] if len(sys.argv) > 1 else "mega"
     # the mega2 sweep enumerated the 198-rung ladder, so its rule names only resolve there
     use_pool("ladder" if pref == "mega2" else "factory")
-    rows = list(np.load(f"/tmp/phase3_{pref}.npy", allow_pickle=True))
+    rows = list(np.load(f"results/oner/phase3_{pref}.npy", allow_pickle=True))
     out, ok = phase4(rows)
-    np.save(f"/tmp/phase4_{pref}.npy", np.array(
+    np.save(f"results/oner/phase4_{pref}.npy", np.array(
         [{k: v for k, v in o.items() if k != "s"} for o in out], dtype=object), allow_pickle=True)
     sel, chosen, D = phase5(ok)
     print(f"\n  {'#':<4}{'rule':<46}{'tf':>4}{'dir':>6}{'stop':>5}{'n':>5}{'win%':>7}"
@@ -132,5 +132,5 @@ if __name__ == "__main__":
         print(f"     largest pairwise correlation {np.abs(C[iu]).max():+.2f}")
         print(f"     book Sharpe {_sharpe(port):.2f}   best single "
               f"{max(o['sharpe'] for o in sel):.2f}   book maxDD ${dd:,.0f}")
-    np.save(f"/tmp/phase5_{pref}.npy", np.array(
+    np.save(f"results/oner/phase5_{pref}.npy", np.array(
         [{k: v for k, v in o.items() if k != "s"} for o in sel], dtype=object), allow_pickle=True)

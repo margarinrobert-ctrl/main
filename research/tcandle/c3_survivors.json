@@ -1,0 +1,27 @@
+{
+ "mkt": "US100L",
+ "tf": 30,
+ "reach": "matched",
+ "cuts": {
+  "shp.body_share": 0.5569620253164863,
+  "shp.upper_share": 0.23681776133210247,
+  "shp.lower_share": 0.12994350282487038,
+  "shp.close_pos": 0.7358490566036797,
+  "shp.body_atr": 0.6234413343845868,
+  "shp.range_atr": 1.1846602612780304,
+  "shp.range_vs_med": 1.5328467153283858,
+  "shp.body_vs_med": 1.9310344827586208,
+  "shp.body_vs_prev": 1.2280701754384398,
+  "shp.gap_atr": 0.0,
+  "shp.close_vs_prev_hi": 0.2735916459909508,
+  "seq.up_closes_5": 4.0,
+  "seq.bull_share_10": 0.6,
+  "seq.wick_rej_5": 1.0
+ },
+ "survivors": [
+  "seq.higher_highs_3 [require]",
+  "shp.lower_share [require]",
+  "p3.evening_star [refuse]"
+ ],
+ "bh": []
+}

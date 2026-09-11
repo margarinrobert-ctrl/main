@@ -1,0 +1,224 @@
+// ================================================================================================
+// V46 -- CARVER'S BREAKOUT, the best-performing configuration from a 999,717-cell search.
+//
+// ========================== WHAT THIS IS AND WHAT THE CONTROL SAYS ==========================
+// Both presets are PROFITABLE on every block tested, including two markets that had no part in
+// the search -- and SEVEN OF EIGHT CELLS FAIL A RANDOM-ENTRY CONTROL. Read both columns:
+//
+//   preset      market   block         n     PF      pts/trade    random entry    p
+//   TOP ROW     US100    research    102   1.656      +59.95        +47.87      0.302
+//   TOP ROW     US100    LOCKED       63   1.694      +95.62        +60.25      0.205
+//   TOP ROW     US30     never seen  165   1.736     +145.37        +59.65      0.033
+//   TOP ROW     NQ       never seen   67   1.379      +55.43        +78.00      0.667
+//   CONSENSUS   US100    research     67   1.741      +57.99        +40.23      0.260
+//   CONSENSUS   US100    LOCKED       42   1.643      +84.38        +73.54      0.407
+//   CONSENSUS   US30     never seen   98   1.682     +114.48        +59.91      0.145
+//   CONSENSUS   NQ       never seen   41   1.159      +20.34        +82.10      0.880
+//
+// The control is a RANDOM ENTRY with the identical stop, max hold, fill convention and costs. It
+// earns +40 to +82 points a trade ON ITS OWN: with a 3 ATR stop, no target and a 480-bar hold on
+// markets that rose, a coin flip is profitable. ON NQ THE RANDOM ENTRY BEATS CARVER IN BOTH
+// PRESETS. Only TOP ROW on US30 clears at p 0.033, one of eight uncorrected tests.
+//
+// So what the search found is the EXIT GEOMETRY and the DRIFT, not the indicator. Trade it in that
+// knowledge or not at all.
+//
+// TOP ROW IS THE DEFAULT because it is better on BOTH readings -- raw return and excess over the
+// control -- on every market. That is worth saying because it is not the usual outcome here: V42's
+// two rankings were exactly reversed. But TOP ROW is also literally the argmax of 999,717 cells,
+// which is the most selection-biased object in the study; CONSENSUS is the modal setting of each
+// axis over the top 1000 and is the more defensible construction. Both are provided.
+//
+// ================================ WHAT THE GRID LOOKED LIKE ================================
+// 61.3% of the 999,717 scorable cells are profitable, so the best cell is the maximum of roughly
+// 613,000 positive draws. 0.00% OF A MILLION CONFIGURATIONS HAS ALL EIGHT WALK-FORWARD FOLDS
+// POSITIVE. Marginal averages run monotone to 60m, to a 3.0 ATR stop and to a 480-bar hold --
+// THREE AXES SITTING AT THE EDGE OF THE DECLARED GRID, so the optimum was never bracketed.
+// NO TAKE PROFIT beat every target, for the tenth independent time on this branch, and Carver's
+// own forecast is WORTHLESS AS AN EXIT (off beat every threshold tested).
+//
+// THE ONE DURABLE FINDING IS ABOUT CARVER, NOT ABOUT A STRATEGY: his published span range 10-320
+// BRACKETS the optimum. Span 5 -- faster than anything he publishes -- is the only negative row in
+// the whole span table (PF 0.952), which confirms his own caveat that fast breakouts are eaten by
+// costs. Span 640, slower than his set, falls back too.
+//
+// ==================================== THE INDICATOR ====================================
+//   maxN, minN = rolling max/min of CLOSE over N        <- Carver uses PRICE, not high/low
+//   meanN      = (maxN + minN) / 2
+//   raw        = (close - meanN) / (maxN - minN)         in [-0.5, +0.5] by construction
+//   forecast   = clip( 40 * EMA(raw, N/smooth), -20, +20 )
+// Carver picks the 40 so the mean absolute forecast is about 10; measured here it is 10.70-12.16
+// across his span set, which is the positive control that the implementation is right.
+//
+// TRANSCRIPTION VERIFIED. Pine's `ta.ema` seeds with an SMA and the research EWMA seeds with its
+// first value. Re-derived in Python: after warm-up the two differ by at most 0.0005 forecast
+// points, correlation 1.00000000, and the ENTRY CROSSES FIRE ON IDENTICAL BARS -- 269 of 269 at
+// threshold 0 and 110 of 110 at threshold 5. The seeding difference does not reach the trades.
+//
+// ==================== THE MACD FILTER, AND WHY IT DEFAULTS TO OFF ====================
+// Added because it was asked for, measured before being wired in, and defaulted OFF because the
+// measurement says it does not earn a place.
+//
+// OVERLAP FIRST -- a confirmation the trigger already implies cannot add anything. Share of CARVER
+// ENTRY BARS that already pass, against the share of all bars:
+//
+//   condition            all bars   entry bars   lift
+//   macd > 0               56-59%     95-98%     1.6-1.7x   <- removes 2-5% of signals: inert
+//   macd > signal          49%        68-84%     1.4-1.7x
+//   hist rising            50%        42-55%     0.85-1.10x <- leans AWAY from entry bars
+//
+// That is `STUDY_V16_MOMENTUM` reproducing: RSI>=55 passed 94.7% of breakout bars there and added
+// nothing, because a breakout IS a momentum event.
+//
+// AND THE TEST. Every reading against a RANDOM FILTER KEEPING THE SAME NUMBER OF SIGNALS, 2,000
+// draws, both presets x three markets = 23 scorable cells:
+//
+//   cells beating their own no-MACD baseline on points : 9 of 23  (chance expects 11.5)
+//   cells clearing the selectivity control at p <= 0.05: 2 of 23  (chance expects 1.2)
+//
+// MACD makes it WORSE more often than better. The two that clear are both TOP ROW on US30
+// (`macd>0` p 0.043, `macd>signal and >0` p 0.034) and every cell on US100 and NQ fails -- one
+// market of three, uncorrected. On NQ under CONSENSUS, `macd>signal` takes +20.34 points a trade
+// to MINUS 18.36.
+//
+// It is provided as a switch so the finding can be reproduced from the chart, not because it helps.
+//
+// ATR is ta.atr(14), Wilder's RMA, matching the research layer's rma(TR, 14).
+// This is a 60-MINUTE system holding up to 480 bars -- twenty days. It is not a scalp.
+//
+// KNOWN GAP, stated rather than implied: the research engine anchors the stop to the FILL (the next
+// bar's open) and this script anchors it to the SIGNAL BAR'S CLOSE, the only price knowable when
+// the order is written, so the exit is live from the entry bar. Not separately re-verified here.
+// A vectorbt cross-check was attempted and FAILED TRANSCRIPTION (trade-count ratios 0.12-0.98
+// because `sl_stop` is a fraction of price while this stop is a per-trade ATR multiple), so it is
+// reported as inconclusive and these numbers rest on ONE engine.
+//
+// Research tooling for education and analysis. NOT FINANCIAL ADVICE.
+// See docs/ib/STUDY_V46_CARVER.md.
+// ================================================================================================
+//@version=6
+strategy("V46 Carver breakout", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false,
+     process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order,
+     commission_value = 0.72, slippage = 1)
+
+gP = "Preset"
+preset = input.string("TOP ROW  (span 80, cross >= 0)", "Configuration", group = gP,
+     options = ["TOP ROW  (span 80, cross >= 0)",
+          "CONSENSUS  (span 320, cross >= 5)",
+          "Custom"],
+     tooltip = "TOP ROW is better on raw return AND on excess over the random-entry control on every market -- and it is the argmax of 999,717 cells. CONSENSUS is the modal setting of each axis over the top 1000, which is the more defensible construction. Seven of eight cells fail the control either way.")
+cSpan = input.int(80, "Custom Carver span N", minval = 2, group = gP)
+cSm   = input.int(2, "Custom smoothing divisor (Carver uses 4)", minval = 1, group = gP)
+cThr  = input.float(0.0, "Custom entry threshold", step = 0.5, group = gP)
+
+gG = "Geometry"
+stopN = input.float(3.0, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG,
+     tooltip = "3.0 is the best marginal average and it is the WIDEST value in the declared grid, so the axis ran off the edge. Read it as 'at least 3', not as an optimum.")
+maxHold = input.int(480, "Max hold (bars)", minval = 1, group = gG,
+     tooltip = "480 bars at 60m is twenty days, and it too is the largest value tested. 99.2% of the top 1000 chose it.")
+useTP = input.bool(false, "Use a take profit", group = gG,
+     tooltip = "OFF is correct on the evidence: no-take-profit beat every target in the grid, the tenth independent time on this branch.")
+tpR = input.float(3.0, "Take profit (R)", minval = 0.1, step = 0.5, group = gG)
+
+gM = "MACD filter -- default OFF, it does not earn its place (see header)"
+macdMode = input.string("off", "MACD condition", group = gM,
+     options = ["off", "macd > signal", "macd > 0", "hist rising", "macd > signal and > 0"],
+     tooltip = "Measured on both presets across three markets: 9 of 23 cells beat their own no-MACD baseline where chance expects 11.5, and 2 of 23 clear a same-selectivity random filter where chance expects 1.2. `macd > 0` already passes 95-98% of Carver entry bars, so it removes almost nothing. Switch it on to reproduce that, not to improve the strategy.")
+macdFast = input.int(12, "MACD fast", minval = 1, group = gM)
+macdSlow = input.int(26, "MACD slow", minval = 2, group = gM)
+macdSig  = input.int(9,  "MACD signal", minval = 1, group = gM)
+
+gS = "Session (New York) -- default OFF, all figures above are all-hours"
+useSess = input.bool(false, "Restrict entries to a window", group = gS)
+startH = input.int(9,  "Start hour",   minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(16, "Stop hour",    minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute",  minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "Flatten at the stop time", group = gS,
+     tooltip = "A fixed flatten truncates exactly the trades a 480-bar hold exists to carry. Expect it to cost.")
+
+isTop = str.startswith(preset, "TOP ROW")
+isCon = str.startswith(preset, "CONSENSUS")
+spanN = isTop ? 80 : isCon ? 320 : cSpan
+smDiv = isTop ? 2 : isCon ? 8 : cSm
+entThr = isTop ? 0.0 : isCon ? 5.0 : cThr
+
+// --- Carver's breakout forecast. CLOSE, not high/low -- that is his definition.
+hiN = ta.highest(close, spanN)
+loN = ta.lowest(close, spanN)
+rngN = hiN - loN
+meanN = (hiN + loN) / 2.0
+raw = rngN > 0 ? (close - meanN) / rngN : 0.0
+emaLen = math.max(1, math.round(spanN / smDiv))
+fc = math.max(-20.0, math.min(20.0, 40.0 * ta.ema(raw, emaLen)))
+
+atrN = ta.atr(14)
+
+// ta.macd returns THREE values -- [macdLine, signalLine, histLine]. Destructuring fewer, or
+// assuming the order, is the same class of trap as ta.dmi returning [+DI, -DI, ADX] and silently
+// handing back +DI when only the first element is taken.
+[macdLine, macdSignal, macdHist] = ta.macd(close, macdFast, macdSlow, macdSig)
+macdOk = macdMode == "off" ? true :
+     macdMode == "macd > signal" ? macdLine > macdSignal :
+     macdMode == "macd > 0" ? macdLine > 0 :
+     macdMode == "hist rising" ? macdHist > macdHist[1] :
+     (macdLine > macdSignal and macdLine > 0)
+
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin  = not useSess ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = useSess and flatOn and not inWin
+
+var float stopLvl = na
+var float tgtLvl  = na
+var int   entBar  = na
+
+flat = strategy.position_size == 0
+trig = ta.crossover(fc, entThr)
+
+if barstate.isconfirmed and flat and trig and inWin and not doFlat and macdOk and atrN > 0
+    risk = stopN * atrN
+    stopLvl := close - risk
+    tgtLvl  := useTP ? close + tpR * risk : na
+    entBar  := bar_index
+    strategy.entry("L", strategy.long)
+
+if barstate.isconfirmed and not flat and not na(stopLvl)
+    strategy.exit("x", from_entry = "L", stop = stopLvl, limit = tgtLvl)
+
+// Max hold and the optional flatten are both MARKET orders, so they fill at the NEXT bar's open --
+// Pine cannot sell the close of the bar that triggers them. The resting stop is deliberately left
+// live over that bar rather than cancelled, so the position is never unprotected.
+held = na(entBar) ? 0 : bar_index - entBar
+if barstate.isconfirmed and not flat and (held >= maxHold or doFlat)
+    strategy.close_all(held >= maxHold ? "max hold" : "flat")
+
+plot(flat ? na : stopLvl, "Stop", color.new(color.red, 0), style = plot.style_linebr)
+plot(flat ? na : tgtLvl, "Target", color.new(color.teal, 0), style = plot.style_linebr)
+plot(hiN, "Carver channel high", color.new(color.aqua, 60))
+plot(loN, "Carver channel low", color.new(color.aqua, 60))
+
+var table hud = table.new(position.top_right, 1, 5, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, preset, text_color = color.white,
+         bgcolor = isTop ? color.new(color.teal, 20) : color.new(color.orange, 25))
+    table.cell(hud, 0, 1, str.format("span {0}  EMA {1}  entry cross >= {2,number,#.#}   forecast now {3,number,#.#}",
+         spanN, emaLen, entThr, fc),
+         text_color = color.white, bgcolor = color.new(color.gray, 40))
+    table.cell(hud, 0, 2, str.format("stop {0,number,#.#} ATR   max hold {1} bars   {2}",
+         stopN, maxHold, useTP ? "TP " + str.tostring(tpR) + "R" : "no take profit"),
+         text_color = color.white, bgcolor = color.new(color.gray, 40))
+    table.cell(hud, 0, 3, macdMode == "off" ? "MACD filter off - as measured" :
+         "MACD \"" + macdMode + "\" ON - measured as NOT earning its place",
+         text_color = color.white,
+         bgcolor = macdMode == "off" ? color.new(color.teal, 40) : color.new(color.orange, 25))
+    table.cell(hud, 0, 4, timeframe.period == "60" ?
+         "60m: as measured - but a RANDOM ENTRY earns +40 to +82 pts here too" :
+         "measured on 60m - this chart is " + timeframe.period,
+         text_color = color.white,
+         bgcolor = timeframe.period == "60" ? color.new(color.orange, 30) : color.new(color.red, 20))

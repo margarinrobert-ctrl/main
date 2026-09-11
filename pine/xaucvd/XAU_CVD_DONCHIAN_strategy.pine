@@ -1,0 +1,271 @@
+//@version=6
+// GOLD -- DONCHIAN BREAKOUT + CVD EXHAUSTED-SELLERS GATE   (docs/ib/STUDY_XAU_CVD_FEATURES.md)
+//
+// The one cell that survived a 229-cell screen on XAUUSD: 60-minute chart, Donchian 20 entry /
+// 20 exit, 2.0 ATR stop, NO take profit, long only, gated on a CVD "exhausted sellers" divergence
+// (price Lower Low with CVD Higher Low at a CONFIRMED swing) inside the last 20 bars, with the
+// delta built from 15-minute sub-bars. It is the same pattern already shipped on NQ by V54/V55.
+//
+// ================================ WHAT IT MEASURED, ALL THREE BLOCKS ================================
+// These are VETO numbers -- the gate deciding which bars may OPEN a trade, re-simulated end to end,
+// which is what this script does. Scored against a RANDOM gate passing the same fraction of bars
+// (32.3%), also re-simulated, 400 draws:
+//   block          gated n   %/event    control p50    excess     p        PF (vs ungated)
+//   A 2010-2017      400     +0.0563      +0.0053     +0.0510   0.003      1.193  (1.101)
+//   B 2018-2022      265     +0.1018      +0.0398     +0.0620   0.003      1.411  (1.076)
+//   C 2023-2026      150     +0.2233      +0.1765     +0.0468   0.110      1.776  (1.642)
+//   It clears BOTH research blocks decisively and DECAYS on the locked one -- the right shape.
+//   Truncation audit 0 mismatches over 1,500 comparisons. Parity against the research engine:
+//   100.00% identical exit bars, per-trade correlation 1.0000, and the script reads CONSERVATIVE
+//   on all three blocks (-18.4% / -0.0% / -0.0%), which is the safe direction.
+//
+// >>> IT LOSES TOTAL RETURN ON TWO OF THREE BLOCKS, and that is the number most people would care
+// >>> about. Ungated -> gated total: A 24.67% -> 22.54%, B 12.03% -> 26.97%, C 56.96% -> 33.50%.
+// >>> The gate raises profit factor on every block by REMOVING 53% of the trades. If you are sizing
+// >>> to a return target rather than to a ratio, the gate is a cost. Same result V61 recorded on NQ.
+//
+// ================================ READ THIS BEFORE TRADING IT ================================
+// >>> 1. IT IS ONE CELL OF 229 SCREENED. 13 cleared p<=0.05 against 11.5 expected by chance and one
+// >>>    survived Benjamini-Hochberg. This is that one. It is a NEAR-REPLICATION of an NQ result on
+// >>>    an independent market, which is why it is worth having -- it is not an independent result.
+// >>> 2. ITS OWN FAMILY'S POLARITY IS INVERTED ON GOLD. On a LONG-only base the two BEARISH patterns
+// >>>    mean +0.108 against the two BULLISH ones' +0.009 -- 11x -- and ABSORBED BUYING, the most
+// >>>    bearish of the four and the only row negative on BOTH blocks when this was measured on NQ,
+// >>>    is gold's BEST pattern. A condition that works whichever way its own directional test points
+// >>>    is not that directional test. That is the single strongest argument against this gate.
+// >>> 3. THE BASE UNDER IT IS A BULL-MARKET DRIFT EXPOSURE. Against a random entry with the same
+// >>>    exits the gold Donchian scores p 0.077 on block A, p 0.593 on block B and p 0.000 on block C
+// >>>    -- where gold rose 167.8% (STUDY_XAU_TWO_LAYER). The gate sits on top of that.
+// >>> 4. BLOCK C IS A SECOND READ. STUDY_XAU_TWO_LAYER read it once already over 690 counted trials,
+// >>>    so the 0.065 above is descriptive, not a fresh out-of-sample p-value.
+// >>> 5. A COIN FLIP KEPT AT THE SAME FRACTION OF PIVOTS clears only at this exact cell
+// >>>    (p 0.013 / 0.050 / 0.090) and fails at every other pivot width and timeframe (0.19-0.43).
+// >>> 6. THE LOCK-FREED TRADES ARE BAD. Refusing a breakout releases the one-position lock and lets a
+// >>>    LATER one be taken that the ungated run never saw -- 82 / 56 / 34 of them, earning -0.148 /
+// >>>    +0.062 / -0.177 %/event. That dilution is why the veto per-trade edge (+0.056 on block A) is
+// >>>    well below a post-hoc split of the ungated trades (+0.109). The script gets the veto number.
+// >>> NO EDGE IS CLAIMED. The numbers are here so the script can be judged on them.
+//
+// ================================ WHAT THE CVD IS, EXACTLY ================================
+// A PROXY, and the same one TradingView uses: each lower-timeframe bar's WHOLE volume signed by that
+// bar's own direction, accumulated. It is not aggressor-side order flow; no feed on the research
+// branch carries that. TWO GOLD-SPECIFIC DEGRADATIONS on top of it:
+//   * Gold's finest data is 15-MINUTE, so a 60m chart gets FOUR sub-bars a bar. The NQ study had 30.
+//   * Gold's volume is TICK VOLUME, not contracts -- so this signs TICK COUNTS, not size.
+// Both make this a cruder object than the NQ version and both are reasons the null here is weaker
+// evidence than a null on NQ would be.
+//
+// ================================ WHAT DID NOT WORK, MEASURED ================================
+//   Every CONTINUOUS CVD reading has a NEGATIVE mean edge over 95 cells with ZERO hits: CVD slope,
+//   CVD z-score, CVD percentile rank, the bar's own signed delta, the sub-bar up-share, price moved
+//   per unit of net delta, and CVD making a new high alongside price ("confirming the break").
+//   Do not re-run them. Whatever is here is in the discrete pivot patterns and nowhere else.
+//   Strip the CVD out and keep only "a confirmed swing low happened in the last w bars" and the edge
+//   collapses from +0.066 to +0.0027 -- so the CVD comparison is NOT decoration, it just does not
+//   survive a coin flip anywhere except this one cell.
+//
+// COSTS. Defaults are the research model: 0.30 USD/oz round turn plus 0.05/side slippage. On a spot
+// XAUUSD CFD one "contract" is usually one ounce and mintick is 0.01, which is what 0.15/side and
+// 5 ticks assume. CHECK BOTH AGAINST YOUR SYMBOL -- gold's cost floor decides gold questions, and a
+// contract size of 100 makes the commission a hundredth of what it should be.
+strategy("Gold Donchian + CVD exhausted sellers (measured, no edge claimed)", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 50000,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.15,
+     slippage = 5, calc_on_every_tick = false, process_orders_on_close = false, pyramiding = 0)
+
+gG = "Geometry -- frozen on other markets, nothing fitted on gold"
+gC = "Order flow -- set in MINUTES so it means the same on every chart"
+gO = "The other three patterns -- all measured, all default OFF"
+gS = "Session"
+
+entN    = input.int(20, "Entry channel (bars)", minval = 2, group = gG,
+     tooltip = "The V54/V55 geometry, frozen from NQ. The V38 geometry (70/30, 2.5 ATR) was also run on gold and is weaker: it fails its random-entry control on blocks A and B.")
+exitN   = input.int(20, "Exit channel (bars)", minval = 2, group = gG)
+stopN   = input.float(2.0, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG)
+tpATR   = input.float(0.0, "Take profit (ATR, 0 = none)", minval = 0.0, step = 0.5, group = gG,
+     tooltip = "No take profit is the researched setting. It has now won on this branch eighteen times across independent families; on the NQ version of this exact rule a 4 ATR target clears its control and still loses on total R.")
+maxHold = input.int(480, "Max hold (bars)", minval = 1, group = gG)
+touchOk = input.bool(false, "Count a TOUCH of the channel as a break (>= instead of >)", group = gG,
+     tooltip = "OFF by default because the gold numbers in the header were measured with a STRICT break (high > channel), and the defaults must reproduce the header. On the NQ base a touch was measured free (research p 0.000 -> 0.001, locked p 0.005 -> 0.005, 62 extra signal bars in 5,000), so turning it on is cheap -- but it is not what the gold table above measured.")
+
+useMinutes = input.bool(true, "Set pivot and window in MINUTES (recommended)", group = gC,
+     tooltip = "The researched settings are a 2-bar pivot and a 20-bar window on 60-MINUTE gold bars = 120 and 1200 minutes. As raw bar counts they mean a twelfth as much on a 5-minute chart. STUDY_V57 recorded a shipped script that lost its setups exactly this way.")
+pivMin  = input.int(120,  "Pivot half-width (minutes)", minval = 1, group = gC,
+     tooltip = "120 min = k2 on a 60m chart, the surviving cell. k3 and k5 were both run: k3 fails the coin-flip control on block A (p 0.267) and k5 is worse still.")
+winMin  = input.int(1200, "Recency window (minutes)", minval = 1, group = gC,
+     tooltip = "1200 min = 20 bars on a 60m chart. The edge falls as this widens, the same shape STUDY_V55 measured on NQ: 10/20/30 bars give +0.078/+0.083/+0.032 on block A.")
+pivBars = input.int(2,  "Pivot half-width (bars)  -- used when MINUTES is off", minval = 1, group = gC)
+winBars = input.int(20, "Recency window (bars)  -- used when MINUTES is off", minval = 1, group = gC)
+cvLTF   = input.string("15", "Volume-delta lower timeframe", group = gC,
+     options = ["1", "5", "15", "30", "60"],
+     tooltip = "MUST be strictly lower than the chart's timeframe or request.security_lower_tf returns nothing and the CVD is flat -- no divergence can ever fire. The research used 15 minutes under a 60-minute chart, which is FOUR sub-bars a bar. If your feed has 1-minute gold, use it: a finer delta is the single biggest improvement available here.")
+
+useAbsBuy  = input.bool(false, "Also enter on ABSORBED BUYING (price LH + CVD HH)", group = gO,
+     tooltip = "THE BEARISH PATTERN, and on gold it is the BEST of the four: mean research edge +0.1145, positive in 94.4% of 18 cells, against exhausted sellers' +0.0639. On NQ it was the only row negative on BOTH blocks. That contradiction is the study's main negative finding -- it is offered as a switch so it can be looked at, NOT as a recommendation.")
+useAbsSell = input.bool(false, "Also enter on ABSORBED SELLING (price HL + CVD LL)", group = gO,
+     tooltip = "The other bullish pattern. WORST of the four on gold: mean edge -0.0450, positive in only 27.8% of cells. On NQ, adding it to exhausted sellers halved the edge and lost the locked block (p 0.005 -> 0.210) -- a union is diluted by its weaker member.")
+useExhBuy  = input.bool(false, "Also enter on EXHAUSTED BUYERS (price HH + CVD LH)", group = gO,
+     tooltip = "The other bearish pattern: mean edge +0.1008, positive in 88.2% of cells -- again above both bullish readings on a long-only base.")
+
+sessOn = input.bool(false, "Restrict entries to a window", group = gS,
+     tooltip = "Gold's own anchor is 08:30 New York, not an equity open (its summer peak in mean |15m return| lands there to the minute). No session was found to help; this is here to be tried, default off.")
+startH = input.int(8,  "Start hour (New York)",  minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(16, "Stop hour (New York)",   minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute", minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "Flatten at the stop time", group = gS,
+     tooltip = "A hard flatten has cost money on every family measured on this branch -- thirteen separate confirmations. It truncates exactly the trades a channel exit exists to hold.")
+
+// ------------------------------------------------------------------------------------------------
+// Minutes -> bars, from the chart's own timeframe.
+// ------------------------------------------------------------------------------------------------
+barMin = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+pivK   = useMinutes ? math.max(1, math.round(pivMin / barMin)) : pivBars
+cvWin  = useMinutes ? math.max(1, math.round(winMin / barMin)) : winBars
+
+// ------------------------------------------------------------------------------------------------
+// CVD. TradingView's own rule: a lower-timeframe bar's whole volume signed by its own direction.
+// ------------------------------------------------------------------------------------------------
+ltfDelta() =>
+    close > open ? volume : close < open ? -volume : 0.0
+
+dArr = request.security_lower_tf(syminfo.tickerid, cvLTF, ltfDelta())
+subN = array.size(dArr)
+barDelta = subN > 0 ? array.sum(dArr) : 0.0
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := cvd + barDelta
+
+// ------------------------------------------------------------------------------------------------
+// The four patterns at CONFIRMED swings. ta.pivotlow(src, k, k) returns the pivot only once k bars
+// have printed on the right, so it is confirmation-stamped by construction -- never at the pivot
+// itself. STUDY_DIVERGENCE_CONFIRM caught the alternative once: a divergence feature that reached
+// back to the pivot bar read +999 truncated against +37 full.
+// The CVD is read AT the pivot bar, cvd[pivK], to match the research exactly.
+// ------------------------------------------------------------------------------------------------
+pvLow  = ta.pivotlow(low, pivK, pivK)
+pvHigh = ta.pivothigh(high, pivK, pivK)
+var float prevLowP  = na
+var float prevLowC  = na
+var float prevHighP = na
+var float prevHighC = na
+var bool exhaustedSellers = false
+var bool absorbedSelling  = false
+var bool exhaustedBuyers  = false
+var bool absorbedBuying   = false
+
+if barstate.isconfirmed
+    exhaustedSellers := false
+    absorbedSelling  := false
+    exhaustedBuyers  := false
+    absorbedBuying   := false
+    if not na(pvLow)
+        curP = pvLow
+        curC = cvd[pivK]
+        if not na(prevLowP)
+            exhaustedSellers := curP < prevLowP and curC > prevLowC
+            absorbedSelling  := curP > prevLowP and curC < prevLowC
+        prevLowP := curP
+        prevLowC := curC
+    if not na(pvHigh)
+        curP = pvHigh
+        curC = cvd[pivK]
+        if not na(prevHighP)
+            exhaustedBuyers := curP > prevHighP and curC < prevHighC
+            absorbedBuying  := curP < prevHighP and curC > prevHighC
+        prevHighP := curP
+        prevHighC := curC
+
+sinceES = nz(ta.barssince(exhaustedSellers), 1000000)
+sinceAS = nz(ta.barssince(absorbedSelling), 1000000)
+sinceEB = nz(ta.barssince(exhaustedBuyers), 1000000)
+sinceAB = nz(ta.barssince(absorbedBuying), 1000000)
+flowOk = (sinceES <= cvWin - 1)
+     or (useAbsSell and sinceAS <= cvWin - 1)
+     or (useExhBuy  and sinceEB <= cvWin - 1)
+     or (useAbsBuy  and sinceAB <= cvWin - 1)
+
+// ------------------------------------------------------------------------------------------------
+// Series. ATR is ema(tr, 14) -- ta.atr is an RMA and reads about 10% different.
+// ------------------------------------------------------------------------------------------------
+atrN   = ta.ema(ta.tr(true), 14)
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)[1]
+broke  = touchOk ? (high >= entHi) : (high > entHi)
+
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin = not sessOn ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = sessOn and flatOn and not inWin
+
+gateOk = flowOk and inWin and atrN > 0 and not na(entHi)
+
+// ------------------------------------------------------------------------------------------------
+// Orders. The bracket is FILL-RELATIVE and goes out WITH the entry, so the fill bar is protected:
+// strategy.exit only runs on a bar where a position already exists, so placing it later leaves the
+// entry bar naked -- STUDY_PINE_PARITY counted 4.4-13.0% of trades that way, averaging -33 to -118
+// points. The ATR is frozen at the SIGNAL bar in pendAtr, because reading it at the fill bar reads a
+// bar that closes after the order was sent.
+// ------------------------------------------------------------------------------------------------
+var float pendAtr = na
+var int   heldBars = 0
+
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk and broke
+    pendAtr := atrN
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+    lossTk = stopN * pendAtr / syminfo.mintick
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", loss = lossTk, profit = tpATR * pendAtr / syminfo.mintick)
+    else
+        strategy.exit("x", from_entry = "L", loss = lossTk)
+
+if barstate.isconfirmed and strategy.position_size > 0 and not na(pendAtr)
+    fillStop = strategy.position_avg_price - stopN * pendAtr
+    lvl = math.max(fillStop, nz(exitLo, fillStop))
+    lvl := math.min(lvl, close[1])
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", stop = lvl,
+             limit = strategy.position_avg_price + tpATR * pendAtr)
+    else
+        strategy.exit("x", from_entry = "L", stop = lvl)
+
+if barstate.isconfirmed and strategy.position_size > 0 and (heldBars >= maxHold or doFlat)
+    strategy.close("L", comment = doFlat ? "flat" : "maxhold")
+
+// ------------------------------------------------------------------------------------------------
+// Display
+// ------------------------------------------------------------------------------------------------
+plot(entHi,  "Entry channel", color = color.new(color.teal, 40))
+plot(exitLo, "Exit channel",  color = color.new(color.maroon, 40))
+plotshape(exhaustedSellers, "Exhausted sellers (the gate)", shape.triangleup, location.belowbar,
+     color.new(color.lime, 0), size = size.tiny)
+plotshape(useAbsBuy and absorbedBuying, "Absorbed buying", shape.triangledown, location.abovebar,
+     color.new(color.orange, 0), size = size.tiny)
+
+var table hud = table.new(position.top_right, 2, 7, border_width = 1)
+if barstate.islast
+    lowerOk = subN > 0
+    table.cell(hud, 0, 0, "Gold Donchian + CVD", text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 1, 0, syminfo.ticker + "  " + timeframe.period, text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 0, 1, "delta source", text_color = color.gray)
+    table.cell(hud, 1, 1, lowerOk ? (cvLTF + "m, " + str.tostring(subN) + " sub-bars/bar") : "NO SUB-BARS -- CVD IS FLAT",
+         text_color = lowerOk ? color.white : color.red)
+    table.cell(hud, 0, 2, "pivot / window (bars)", text_color = color.gray)
+    table.cell(hud, 1, 2, str.tostring(pivK) + " / " + str.tostring(cvWin), text_color = color.white)
+    table.cell(hud, 0, 3, "bars since exhausted sellers", text_color = color.gray)
+    table.cell(hud, 1, 3, sinceES > 999999 ? "never" : str.tostring(sinceES),
+         text_color = sinceES <= cvWin - 1 ? color.lime : color.gray)
+    table.cell(hud, 0, 4, "trades / win rate", text_color = color.gray)
+    table.cell(hud, 1, 4, str.tostring(strategy.closedtrades) + "  " +
+         (strategy.closedtrades > 0 ? str.tostring(100.0 * strategy.wintrades / strategy.closedtrades, "#.#") + "%" : "-"),
+         text_color = color.white)
+    table.cell(hud, 0, 5, "check commission and mintick", text_color = color.orange, text_size = size.tiny)
+    table.cell(hud, 1, 5, "gold's cost floor decides gold", text_color = color.orange, text_size = size.tiny)
+    table.cell(hud, 0, 6, "one cell of 229 screened", text_color = color.orange, text_size = size.tiny)
+    table.cell(hud, 1, 6, "no edge claimed", text_color = color.orange, text_size = size.tiny)

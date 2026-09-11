@@ -253,9 +253,9 @@ def main():
         print(f"   zones {H:>5}m -> confirm {L:>3}m   {row:>9,} rows   "
               f"{time.time()-t0:7.1f}s", flush=True)
 
-    np.save("/tmp/sd_tf_out.npy", out[:row])
-    np.save("/tmp/sd_tf_meta.npy", meta[:row])
-    np.save("/tmp/sd_tf_sel.npy", P)
+    np.save("results/sd/sd_tf_out.npy", out[:row])
+    np.save("results/sd/sd_tf_meta.npy", meta[:row])
+    np.save("results/sd/sd_tf_sel.npy", P)
     print(f"\ndone in {time.time()-t0:.0f}s, {row:,} rows")
 
 

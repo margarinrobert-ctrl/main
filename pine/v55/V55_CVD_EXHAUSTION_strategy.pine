@@ -1,0 +1,209 @@
+// ================================================================================================
+// V55 -- AUTOMATED. No dropdown, no KAMA, one hard-wired order-flow gate.
+//
+// ================== TWO OF THE THREE REQUESTED CHANGES BREAK THE STATED BAR ==================
+// The bar was set explicitly: the shipped rule must reproduce EXHAUSTED SELLERS k3 w20 --
+// research +0.3509 PF 1.696 p 0.001, locked +0.3176 PF 1.648 p 0.009. It was re-measured here and
+// it holds (p 0.000 / 0.005 on a fresh 2,000-draw control). Then each requested change was added
+// to it and re-measured against the same control:
+//
+//   reading                                        research               LOCKED
+//   base, no condition                          +0.0945 PF 1.16       +0.1280 PF 1.24
+//   EXHAUSTED SELLERS            (shipped)      +0.3509 PF 1.70 p.000 +0.3176 PF 1.65 p.005  <==
+//   EITHER exhausted OR absorbed (the union)    +0.1842 PF 1.34 p.043 +0.1829 PF 1.34 p.210  FAILS
+//   EXHAUSTED SELLERS + EMA13 > EMA48           +0.2980 PF 1.59 p.014 +0.2079 PF 1.42 p.158  FAILS
+//   EXHAUSTED SELLERS + EMA13x48 cross <=20     +0.0967 PF 1.17 p.677 +0.2350 PF 1.55 p.174  FAILS
+//   ABSORBED SELLING alone                      +0.2308 PF 1.40 p.050 +0.0329 PF 1.06 p.908  FAILS
+//   ABSORBED SELLING + EMA13 > EMA48            +0.3370 PF 1.62 p.002 +0.0967 PF 1.17 p.611  FAILS
+//   EITHER + EMA13 > EMA48                      +0.2206 PF 1.41 p.024 +0.1710 PF 1.33 p.286  FAILS
+//
+// ADDING ABSORBED SELLING TO THE GATE HALVES THE EDGE (+0.3509 -> +0.1842) AND LOSES THE LOCKED
+// BLOCK. That is the union rule this branch already had written down: a union is diluted by its
+// weaker member, so gate on the SIZE of the excess and never on its sign. Absorbed selling does not
+// clear the locked block in ANY form tested -- alone p 0.908, with the EMA state p 0.611, with the
+// cross p 0.685.
+//
+// THE EMA 13x48 CROSS ALSO COSTS THE LOCKED GATE, in both readings. As a state it takes locked from
+// p 0.005 to p 0.158; as a fresh cross it destroys the research block outright (p 0.677).
+//
+// SO THE GATE IS HARD-WIRED TO EXHAUSTED SELLERS AND NOTHING ELSE. Absorbed selling and the two
+// EMAs are computed and PLOTTED so they are visible on the chart, and each can be switched into the
+// gate by a single checkbox that is OFF by default and states its own measured cost. There is no
+// pattern to choose from and nothing to configure to get the shipped behaviour.
+//
+// ============================== THE NEIGHBOURHOOD, WHICH IS THE POINT ==============================
+// A real mechanism decays smoothly across its own parameters and a fitted one spikes. Exhausted
+// sellers, research R / locked R across the whole pivot-width x recency-window grid:
+//
+//            w=5             w=10            w=20            w=40
+//   k=2   +0.535/+0.073   +0.341/+0.143   +0.269/+0.233   +0.163/+0.242
+//   k=3   +0.550/+0.631   +0.395/+0.449   +0.351/+0.318   +0.245/+0.236
+//   k=4   +0.458/+0.222   +0.453/+0.311   +0.405/+0.185   +0.320/+0.252
+//   k=5   +0.248/+0.043   +0.385/+0.228   +0.385/+0.163   +0.207/+0.216
+//
+// POSITIVE IN ALL 16 CELLS ON BOTH BLOCKS, falling monotonically as the window widens. That is the
+// shape an edge is supposed to have. k=3 / w=20 is NOT the maximum -- k=3 / w=5 scores higher on
+// both (+0.550 / +0.631) -- and w=20 is shipped anyway because it carries n=88 locked trades
+// against w=5's n=37. The larger sample is worth more than the larger number.
+//
+// ==================================== WHAT THE CVD ACTUALLY IS ====================================
+// TRUE cumulative volume delta needs the AGGRESSOR SIDE of every trade and no feed on this branch
+// carries it. This script computes the delta ITSELF with `request.security_lower_tf` rather than
+// calling a built-in, so the rule here is provably the one the research measured: sign each
+// lower-timeframe bar's whole volume by that bar's own direction (close > open is buying), sum
+// inside the chart bar, accumulate. It is a direction-weighted volume sum, NOT order flow, and it
+// will disagree with a real tick-delta feed. Leave the lower timeframe on "1" to reproduce the
+// numbers above.
+//
+// EXHAUSTED SELLERS is price making a LOWER LOW while CVD makes a HIGHER LOW: sellers pushed price
+// to a new low on weaker aggressive selling than the previous low. Compared at CONFIRMED swing
+// points, never at arbitrary candles. The CVD value used is the one AT THE PRICE PIVOT'S OWN BAR,
+// not a pivot of the CVD series -- the two points share a timestamp, as specified.
+//
+// NO LOOKAHEAD. A pivot at bar i needs bars i-k..i+k, so it is knowable only at i+k. The signal is
+// stamped at the CONFIRMATION bar and this script does not repaint. `STUDY_DIVERGENCE_CONFIRM`
+// caught exactly this leak once: a feature that filled forward to the next pivot's confirmation
+// read +999 truncated against +37 full.
+//
+// CAVEATS THAT STAY ATTACHED: n = 88 on the locked block, under 100. ONE MARKET -- CVD needs
+// 1-minute bars and NQ is the only feed here that has them, so there is NO cross-market read. The
+// CVD is a proxy. This is one confirmation, not a result.
+//
+// ATR is `ta.atr(14)`, Wilder's RMA. Entries and every `var` write require `barstate.isconfirmed`.
+// The working stop is capped at the PRIOR BAR'S CLOSE -- a Donchian exit channel can sit above the
+// fill, and a sell stop resting above the market is not a stop.
+// COSTS ARE NOT SET. The research charged 0.72 points round turn plus 0.25 per fill on MNQ. Set
+// commission and slippage in Properties before reading any number this produces.
+// See docs/ib/STUDY_V55_AUTOMATED_CVD.md.
+// ================================================================================================
+
+//@version=5
+strategy("V55 CVD exhaustion (automated)", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 100000,
+     calc_on_every_tick = false, process_orders_on_close = false, pyramiding = 0)
+
+gG = "Geometry"
+gC = "Order flow"
+gO = "Overrides -- each one was measured to COST the locked block"
+gS = "Session"
+
+entN    = input.int(20, "Entry channel (bars)", minval = 2, group = gG)
+exitN   = input.int(20, "Exit channel (bars)", minval = 2, group = gG)
+stopN   = input.float(2.0, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG)
+maxHold = input.int(480, "Max hold (bars)", minval = 1, group = gG)
+
+pivK  = input.int(3, "Pivot bars either side", minval = 1, group = gC,
+     tooltip = "Positive on both blocks at k = 2, 3, 4 and 5. A pivot at bar i needs i-k..i+k, so the signal is stamped at i+k and does not repaint.")
+cvWin = input.int(20, "Exhaustion counts if it fired within N bars", minval = 1, group = gC,
+     tooltip = "Positive on both blocks at w = 5, 10, 20 and 40, falling monotonically as w widens. 20 is shipped over the higher-scoring 5 because it carries n=88 locked trades against 37.")
+cvLTF = input.string("1", "Volume-delta lower timeframe", group = gC,
+     options = ["1S", "5S", "10S", "30S", "1", "5"],
+     tooltip = "The research used 1-minute. Lower timeframes carry only a bounded history on TradingView, so the earliest bars on a long chart will simply have no CVD.")
+
+useAbs = input.bool(false, "Also enter on ABSORBED SELLING (price HL + CVD LL)", group = gO,
+     tooltip = "MEASURED COST: the union halves the edge (+0.3509 -> +0.1842) and loses the locked block (p 0.005 -> 0.210). Absorbed selling does not clear locked in any form tested.")
+useCross = input.bool(false, "Also require EMA 13 > EMA 48", group = gO,
+     tooltip = "MEASURED COST: locked p 0.005 -> 0.158. As a FRESH cross instead of a state it destroys the research block (p 0.677).")
+
+sessOn = input.bool(false, "Restrict entries to a window", group = gS)
+startH = input.int(9,  "Start hour (New York)",  minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(16, "Stop hour (New York)",   minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute", minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "Flatten at the stop time", group = gS,
+     tooltip = "Measured destructive on every window tested, and it fills at the NEXT bar's open because strategy.close_all() cannot sell the close of the bar that triggers it.")
+
+// ------------------------------------------------------------------------------------------------
+// CVD, computed here so the rule is provably the researched one.
+// ------------------------------------------------------------------------------------------------
+ltfDelta() =>
+    close > open ? volume : close < open ? -volume : 0.0
+
+dArr = request.security_lower_tf(syminfo.tickerid, cvLTF, ltfDelta())
+barDelta = array.size(dArr) > 0 ? array.sum(dArr) : 0.0
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := cvd + barDelta
+
+pvLow = ta.pivotlow(low, pivK, pivK)
+
+var float prevLowP = na
+var float prevLowC = na
+var bool exhaustedSellers = false
+var bool absorbedSelling = false
+
+if barstate.isconfirmed
+    exhaustedSellers := false
+    absorbedSelling := false
+    if not na(pvLow)
+        curP = pvLow
+        curC = cvd[pivK]
+        if not na(prevLowP)
+            exhaustedSellers := curP < prevLowP and curC > prevLowC
+            absorbedSelling := curP > prevLowP and curC < prevLowC
+        prevLowP := curP
+        prevLowC := curC
+
+// `barssince` is na until an event first fires; nz() keeps that from blocking every early entry.
+// A window of N bars INCLUDES the current bar, so the test is `<= N-1`.
+sinceES = nz(ta.barssince(exhaustedSellers), 1000000)
+sinceAS = nz(ta.barssince(absorbedSelling), 1000000)
+flowOk = (sinceES <= cvWin - 1) or (useAbs and sinceAS <= cvWin - 1)
+
+// ------------------------------------------------------------------------------------------------
+atrN   = ta.atr(14)
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)[1]
+eFast  = ta.ema(close, 13)
+eSlow  = ta.ema(close, 48)
+crossOk = not useCross or eFast > eSlow
+
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin = not sessOn ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = sessOn and flatOn and not inWin
+
+gateOk = flowOk and crossOk and inWin and atrN > 0 and not na(entHi)
+
+var float stopLvl = na
+var int   heldBars = 0
+
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk and high > entHi
+    stopLvl := na
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+
+if barstate.isconfirmed and strategy.position_size > 0
+    if na(stopLvl)
+        stopLvl := strategy.position_avg_price - stopN * atrN
+    lvl = math.max(stopLvl, nz(exitLo, stopLvl))
+    lvl := math.min(lvl, close[1])
+    strategy.exit("x", from_entry = "L", stop = lvl)
+
+if barstate.isconfirmed and strategy.position_size > 0 and (doFlat or heldBars >= maxHold)
+    strategy.close_all(doFlat ? "flat" : "max hold")
+
+plot(entHi, "Entry channel", color = color.new(color.teal, 50))
+plot(exitLo, "Exit channel", color = color.new(color.maroon, 50))
+plot(eFast, "EMA 13", color = color.new(color.aqua, 55))
+plot(eSlow, "EMA 48", color = color.new(color.orange, 55))
+plotshape(exhaustedSellers, "Exhausted sellers (gating)", shape.triangleup, location.belowbar,
+     color.new(color.lime, 0), size = size.small)
+plotshape(absorbedSelling, "Absorbed selling (shown, not gating unless enabled)", shape.circle,
+     location.belowbar, color.new(color.green, 30), size = size.tiny)
+
+var table hud = table.new(position.top_right, 1, 2, border_width = 1)
+if barstate.islast
+    over = (useAbs ? "+absorbed " : "") + (useCross ? "+EMA13>48 " : "") + (sessOn ? "+session" : "")
+    table.cell(hud, 0, 0, over == "" ? "exhausted sellers only -- the measured rule"
+         : "OVERRIDES ON: " + over + " (each costs the locked block)",
+         text_color = color.white,
+         bgcolor = over == "" ? color.new(color.teal, 30) : color.new(color.orange, 20))
+    table.cell(hud, 0, 1, "CVD from " + cvLTF + "   pivot k=" + str.tostring(pivK)
+         + "   window " + str.tostring(cvWin), text_color = color.white,
+         bgcolor = color.new(color.gray, 40))

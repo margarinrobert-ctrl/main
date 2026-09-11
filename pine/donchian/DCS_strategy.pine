@@ -1,0 +1,164 @@
+//@version=5
+// Donchian channel + EMA + ADX + choppiness index, with an ATR trailing stop.
+// The published rules, reconstructed exactly, with the parameters left free.
+//
+// ============================== READ THIS BEFORE RUNNING IT ==============================
+// THIS IS A REPRODUCTION, NOT A RECOMMENDATION. It exists so the source's claim can be
+// checked, and the check did not go the source's way. Measured on NQ, 2022-12 to 2025-12,
+// with MNQ fees and bar-speed slippage, split at the first 65% of sessions:
+//
+//   THE PUBLISHED 1-HOUR TIMEFRAME HAS NO EDGE. All 432 published parameter combinations
+//   were scored against a matched control -- random entries with the same side, the same
+//   trailing-stop geometry, the same minute-of-day distribution and the same ATR at entry.
+//   ZERO of 384 scorable combinations beat that control at p<0.05, where 19 would be
+//   expected by chance alone, and the median combination earned LESS than its own control
+//   (+0.031 R against +0.037 R). On the 1-hour chart these four indicators, as a set, are
+//   indistinguishable from entering at random and using the same trailing stop.
+//
+//   NONE OF THE THREE FILTERS EARNS ITS KEEP ON 1H. Against random filters of identical
+//   selectivity: EMA p 0.047 (but it keeps 96% of signals), ADX p 0.553, CHOP p 0.863 --
+//   choppiness is WORSE than a coin flip that discards the same proportion. The full
+//   published stack (+0.079 R) scores BELOW the raw unfiltered breakout (+0.090 R).
+//
+//   THE EDGE, SUCH AS IT IS, IS ON FASTER CHARTS. 30-minute, published defaults:
+//     research  n 256  +20.70 pts/trade  R +0.127  control +0.028  p 0.026  PF 1.57
+//     LOCKED    n 149  +26.71 pts/trade  R +0.196  control +0.034  p 0.006  PF 1.49
+//   5-minute is significant on both blocks too (p 0.006 / 0.019) but earns +1.18 and
+//   +5.43 points a trade, which is thin against real fills.
+//
+// THREE REASONS TO DISTRUST EVEN THAT, stated because they are the reasons this is
+// shipped as a research script:
+//
+//   1. WRONG SHAPE. Every timeframe scored BETTER on the locked block than on research,
+//      including the two that plainly failed research (1H p 0.498 -> 0.035; 4H p 0.394 ->
+//      0.018). A rule chosen on research should decay out of sample, not improve. Uniform
+//      improvement across five timeframes is the signature of a favourable REGIME in the
+//      later block, not of a rule that works.
+//   2. ONE YEAR CARRIES IT. On 30m: 2023 is NEGATIVE (-4.73 pts/trade, R -0.076); 2024
+//      returns +61.16 pts/trade and supplies +7,278 of the +9,277 total points.
+//   3. A HANDFUL OF TRADES CARRY THAT. On 5m the top 1% of trades (19 of 1,923) supply
+//      171% of net P&L -- remove them and the system loses money. On 30m, 47%.
+//
+//   AND IT CANNOT BE MADE INTRADAY. Every session-constrained variant tested -- 06:00-12:00,
+//   09:30-12:00, 09:30-16:00 New York, on 5m/15m/30m, forced flat at the window end -- is
+//   insignificant or negative on the locked block; most fall under PF 1.00. The mechanism is
+//   visible in the holds: winners run a median 2.1h against losers' 0.8h on 5m, and trades
+//   carried overnight supply 338% of net P&L. A 3xATR trailing stop pays for itself in the
+//   tail, and a daily flatten cuts the tail off. If you need to be flat by lunch, this is
+//   not the system to use.
+//
+// ONLY NQ. No second instrument was available when this was measured, so nothing here is
+// cross-market evidence.
+//
+// FOUR DEFINITIONAL CHOICES the source leaves open, resolved here and marked in the code:
+//   1. The Donchian band EXCLUDES the current bar. ta.highest(high, n) includes bar n's own
+//      high, so close can never exceed it and the signal would never fire.
+//   2. "Crosses above" is a CROSS, not a level -- otherwise one breakout becomes a run.
+//   3. Conditions are read on the SIGNAL bar; the fill is the next bar's open.
+//   4. The trail ratchets from entry and never loosens; the stop is checked against a bar's
+//      extreme BEFORE that bar is allowed to advance the trail.
+// ATR here is Wilder's (ta.atr), which is what an "ATR multiplier" means in the source.
+// ========================================================================================
+
+strategy("Donchian + EMA + ADX + CHOP", overlay=true, initial_capital=100000,
+  default_qty_type=strategy.fixed, default_qty_value=1, pyramiding=0,
+  commission_type=strategy.commission.cash_per_order, commission_value=0.72,
+  slippage=2, calc_on_every_tick=false, process_orders_on_close=false)
+
+// ---- the published grid, left free -----------------------------------------------------
+gP     = "Rules"
+dcLen  = input.int(20,   "Donchian period",        minval=2,  group=gP)
+emaLen = input.int(50,   "EMA period",             minval=2,  group=gP)
+adxLen = input.int(14,   "ADX length",             minval=2,  group=gP)
+adxMin = input.float(20, "ADX above",              minval=0,  group=gP, step=1)
+chLen  = input.int(14,   "Choppiness length",      minval=2,  group=gP)
+chMax  = input.float(40, "Choppiness below",       minval=0,  group=gP, step=1)
+atrLen = input.int(14,   "ATR length",             minval=1,  group=gP)
+atrMul = input.float(3.0,"ATR trailing stop x",    minval=0.1,group=gP, step=0.1)
+useL   = input.bool(true,  "Longs",  group=gP, inline="side")
+useS   = input.bool(true,  "Shorts", group=gP, inline="side")
+
+// ---- optional session box. OFF by default, and the header says why --------------------
+gS     = "Session (measured NEGATIVE -- see header)"
+useSess= input.bool(false, "Restrict to a session and flatten at its end", group=gS)
+sHour  = input.int(6,  "Start hour (New York)",  minval=0, maxval=23, group=gS, inline="a")
+sMin   = input.int(0,  "Start minute",           minval=0, maxval=59, group=gS, inline="a")
+fHour  = input.int(12, "Flatten hour (New York)",minval=0, maxval=23, group=gS, inline="b")
+fMin   = input.int(0,  "Flatten minute",         minval=0, maxval=59, group=gS, inline="b")
+
+// NEW YORK time explicitly. Bare hour/minute are EXCHANGE time -- Chicago for CME -- which
+// is an hour off and has bitten this repository before.
+nyH = hour(time, "America/New_York")
+nyM = minute(time, "America/New_York")
+mod = nyH * 60 + nyM
+inWin   = not useSess or (mod >= sHour * 60 + sMin and mod < fHour * 60 + fMin)
+flatNow = useSess and mod >= fHour * 60 + fMin
+
+// ---- indicators ------------------------------------------------------------------------
+// choice 1: the band is the extreme of the dcLen bars ENDING ONE BAR AGO.
+upper = ta.highest(high, dcLen)[1]
+lower = ta.lowest(low,  dcLen)[1]
+emaV  = ta.ema(close, emaLen)
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER -- taking the first element gives +DI, not ADX.
+[_pdi, _mdi, adxV] = ta.dmi(adxLen, adxLen)
+
+// choppiness index: 100 * log10(sum(TR, n) / (highest(high,n) - lowest(low,n))) / log10(n)
+trSum = math.sum(ta.tr(true), chLen)
+chRng = ta.highest(high, chLen) - ta.lowest(low, chLen)
+chopV = chRng > 0 ? 100.0 * math.log10(trSum / chRng) / math.log10(chLen) : na
+
+atrV  = ta.atr(atrLen)   // Wilder's -- what an "ATR multiplier" means here
+
+ready = not na(upper) and not na(lower) and not na(emaV) and not na(adxV) and not na(chopV) and not na(atrV) and atrV > 0
+regime = adxV > adxMin and chopV < chMax
+
+// choice 2: a cross, not a level.
+xUp = close > upper and close[1] <= upper[1]
+xDn = close < lower and close[1] >= lower[1]
+
+// choice 3: read on the SIGNAL bar, and barstate.isconfirmed so tick evaluation cannot
+// change the result -- without it the Strategy Tester fires on bars that never qualified.
+goLong  = useL and ready and regime and xUp and close > emaV and inWin and barstate.isconfirmed
+goShort = useS and ready and regime and xDn and close < emaV and inWin and barstate.isconfirmed
+
+// ---- the trail. choice 4: ratchets from entry, never loosens. --------------------------
+var float trail   = na
+var float entATR  = na
+
+if strategy.position_size == 0
+    trail  := na
+    entATR := na
+
+if goLong and strategy.position_size == 0
+    entATR := atrV
+    strategy.entry("L", strategy.long)
+
+if goShort and strategy.position_size == 0
+    entATR := atrV
+    strategy.entry("S", strategy.short)
+
+if strategy.position_size > 0 and not na(entATR)
+    seed = strategy.position_avg_price - atrMul * entATR
+    cand = high - atrMul * entATR
+    trail := na(trail) ? seed : math.max(trail, cand)
+
+if strategy.position_size < 0 and not na(entATR)
+    seed = strategy.position_avg_price + atrMul * entATR
+    cand = low + atrMul * entATR
+    trail := na(trail) ? seed : math.min(trail, cand)
+
+if strategy.position_size > 0 and not na(trail)
+    strategy.exit("L x", from_entry="L", stop=trail)
+
+if strategy.position_size < 0 and not na(trail)
+    strategy.exit("S x", from_entry="S", stop=trail)
+
+if flatNow and strategy.position_size != 0
+    strategy.close_all(comment="flat")
+
+// ---- plots -----------------------------------------------------------------------------
+plot(upper, "Donchian upper", color=color.new(color.teal, 0))
+plot(lower, "Donchian lower", color=color.new(color.teal, 0))
+plot(emaV,  "EMA",            color=color.new(color.orange, 0))
+plot(strategy.position_size != 0 ? trail : na, "ATR trail", color=color.new(color.red, 0),
+  style=plot.style_linebr)

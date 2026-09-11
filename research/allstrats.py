@@ -49,7 +49,7 @@ def _mirror():
                         trig=np.flatnonzero(m).astype(np.int64), d=d, src="mirror")}
 
 
-def _mega2(path="/tmp/phase5_mega2.npy"):
+def _mega2(path="results/allstrats/phase5_mega2.npy"):
     import os
     if not os.path.exists(path):
         return {}

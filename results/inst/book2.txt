@@ -1,0 +1,9 @@
+legs kept by RESEARCH PF > 1.10 (n >= 25): [('APM_VWAP', 'NQ'), ('APM_VWAP', 'US100'), ('FTM_ORB', 'NQ'), ('TFI', 'NQ'), ('TFI', 'US100'), ('TRENDDAY', 'NQ'), ('TRENDDAY', 'US100')]
+  research : 1,037 trades / 8.0 yrs =  129 trades/yr  pooled PF 1.402  pct/trade +0.0739  win 54.5%  Sharpe 2.13  top 5% of trades = 91% of net
+  reserved :   724 trades / 3.9 yrs =  186 trades/yr  pooled PF 1.608  pct/trade +0.1184  win 58.3%  Sharpe 2.87  top 5% of trades = 73% of net
+  TRENDDAY             research :    89 trades =   11/yr  PF 1.476
+  TRENDDAY             reserved :    79 trades =   21/yr  PF 2.688
+  TRENDDAY+APM_VWAP    research :   335 trades =   42/yr  PF 1.528
+  TRENDDAY+APM_VWAP    reserved :   245 trades =   63/yr  PF 2.030
+  FTM_ORB              research :   195 trades =  170/yr  PF 1.370
+  FTM_ORB              reserved :   147 trades =  229/yr  PF 1.269

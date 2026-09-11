@@ -1,0 +1,229 @@
+//@version=5
+// Turtle Long-Only, 15-MINUTE. Same architecture, three gates re-derived on 15m data.
+//
+// ================================ WHAT CHANGED, AND WHY ====================================
+// The Turtle skeleton is untouched: 20/55-bar Donchian entries, 10/20-bar channel exits, ATR(20),
+// a 2N stop anchored to the actual fill, a 0.5N pyramid ladder, and the skip-after-winner rule.
+// What changed is the REGIME GATE, because on a 15-minute chart two of the three shipped filters
+// point the wrong way. NQ 15m, 2022-12 to 2025-12, MNQ fees and slippage, split at the first 65%
+// of sessions, holdout read once.
+//
+//   1. ADX CEILING 22  ->  ADX FLOOR 20.        The shipped filter takes breakouts when trend
+//      strength is LOW. Measured as a ceiling on 15m: PF 0.65 at <=18, 0.76 at <=22, and a random
+//      filter of the same selectivity beats it 98% of the time. As a floor: PF 1.15 at >=22.
+//   2. EMA100 "NOT EXTENDED" CEILING  ->  DISTANCE FLOOR of 3.0 ATR.  The shipped filter rejects
+//      price that has travelled far from its mean. On 15m that is exactly backwards, and smoothly
+//      so: PF 0.98 at >=0 ATR, 1.04 at >=2, 1.20 at >=3, 1.31 at >=4. The ceiling direction is
+//      monotonically bad (PF 0.80 to 0.92, p 0.88 to 0.98).
+//   3. NEW: ATR(20) / mean ATR(20,200) >= 1.10. Volatility EXPANSION, with no counterpart in the
+//      shipped rules. Plateau PF 1.52-1.60 from 1.05 to 1.15.
+//   4. MAX UNITS 4 -> 3, on risk-adjusted grounds only. Raw profit prefers 4; return-over-drawdown
+//      prefers 3 (5.23 against 4.14 on research), and that ordering HELD on the holdout
+//      (1.68 against 1.46). Drawdown is what a funded evaluation actually measures.
+//
+// The three gates are near-independent -- pairwise |correlation| at most 0.23 -- which is why they
+// stack rather than repeat: singles PF 1.15 to 1.20, pairs 1.33 to 1.52, all three 1.57.
+//
+// THE HEADLINE NUMBERS
+//                                        research                        HOLDOUT
+//   raw Turtle, no gate       n 1238  -3.61 pts  PF 0.94   n 616   -5.60 pts  PF 0.94
+//   the SHIPPED preset        n  671 -15.83 pts  PF 0.73   n 345   +0.86 pts  PF 1.01
+//   this script               n  216 +34.34 pts  PF 1.58   n  88  +52.47 pts  PF 1.56
+//
+// Research 1.58 -> holdout 1.56 is the right shape: an edge chosen on one block should hold or
+// decay slightly, not appear. Max drawdown falls 8,032 -> 1,417 points on research. All five
+// rolling walk-forward windows are positive (PF 1.19 to 2.40) where the baseline is mixed.
+// Every full year is positive: 2023 +28.03, 2024 +49.13, 2025 +45.47 points a trade.
+// Costs: PF 1.62 at zero cost, 1.56 as modelled, 1.50 at 2x, 1.44 at 3x, 1.34 at 5x.
+//
+// ============================ WHAT IS NOT ESTABLISHED. READ THIS. ===========================
+//   * ONLY NQ. ES, YM and GC were requested and are NOT AVAILABLE in this research environment,
+//     so there is no cross-market confirmation and no cross-market feature in this script.
+//   * n = 88 ON THE HOLDOUT. The selectivity control gives p 0.0335, but a bootstrap of the mean
+//     gives a 95% interval of [-23.9, +140.7] points and P(mean <= 0) = 0.098. The interval is
+//     that wide because the payoff is fat-tailed -- 36% win rate at 2.72:1. Treat the direction
+//     as supported and the MAGNITUDE as unresolved.
+//   * ABOUT 173 RESEARCH EVALUATIONS went into choosing this (112 ablation gates, ~34 threshold
+//     rungs, 7 combinations, 20 perturbation cells). The three gate DIRECTIONS each survived a
+//     selectivity-matched control independently and each has a monotone threshold curve; the
+//     exact thresholds and the unit cap were chosen on research and carry that selection.
+//   * THE EMA-DISTANCE RIDGE RUNS OFF THE GRID (PF keeps rising to 2.06 at >=4.5 ATR on n=142).
+//     3.0 is deliberately the interior of the curve, not its edge. Picking the edge would be
+//     buying a smaller sample.
+//   * ON THE HOLDOUT THE 2-of-3 BUCKET EARNED MORE IN TOTAL than 3-of-3 (n 308 at +47.66, PF 1.66
+//     against n 88 at +52.47, PF 1.56). `minScore` is exposed so you can see it, but it is set to
+//     3 because that is what research chose -- loosening it because the HOLDOUT prefers it would
+//     be selecting on the block reserved for judging.
+// ==========================================================================================
+
+strategy("Turtle Long 15m (regime-gated)", overlay = true, pyramiding = 4,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, calc_on_every_tick = false,
+         process_orders_on_close = false,
+         commission_type = strategy.commission.cash_per_order,
+         commission_value = 0.72, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES -- WHAT TO SET AND WHY =====================
+//   Script execution        ON BAR CLOSE, nothing else. See docs/ib/STUDY_TICK_RECALC.md.
+//   Bar detalization        High, with Deep Backtesting.
+//   Order execution delay   One tick.
+//   Commission              CASH PER ORDER, per side. MNQ ~$0.72, NQ ~$2.05 (this repo's model,
+//                           not a quote). With a 3-unit ladder a full trade pays it SIX times.
+//   Slippage                2 ticks. A stop fills INTO the move that triggered it.
+//   Leverage = Infinity     stops the emulator silently rejecting unfundable orders; the %
+//                           figures are then not an account return, so read DOLLAR drawdown.
+// ==========================================================================================
+
+gR       = "Regime gate (the change)"
+useGate  = input.bool(true,  "Apply the 15m regime gate", group = gR)
+minScore = input.int(3, "Minimum regime score (0-3)", minval = 0, maxval = 3, group = gR,
+     tooltip = "3 = all three conditions. Research grades monotonically: 3/3 PF 1.58, 2/3 1.19, 1/3 0.93, 0/3 0.63. On the holdout 2/3 earned more in total, but that block is for judging, not choosing.")
+adxMin   = input.float(20.0, "ADX floor (was a CEILING of 22)", minval = 0, step = 1, group = gR)
+distMin  = input.float(3.0,  "EMA100 distance floor, in ATR (was a CEILING)", minval = 0, step = 0.1, group = gR)
+volMin   = input.float(1.10, "ATR expansion floor, ATR(20)/mean(ATR,200)", minval = 0, step = 0.05, group = gR)
+
+gT       = "Turtle structure (unchanged unless noted)"
+entry1   = input.int(20, "Entry 1 (bars)", minval = 2, group = gT)
+entry2   = input.int(55, "Entry 2 (bars)", minval = 2, group = gT)
+exit1    = input.int(10, "Exit 1 (bars)",  minval = 2, group = gT)
+exit2    = input.int(20, "Exit 2 (bars)",  minval = 2, group = gT)
+atrLen   = input.int(20, "ATR length",     minval = 2, group = gT)
+atrMult  = input.float(2.0, "ATR stop multiple", minval = 0.1, step = 0.1, group = gT)
+pyrStep  = input.float(0.5, "Pyramid step (N)",  minval = 0.0, step = 0.05, group = gT)
+maxUnits = input.int(3, "Max units (was 4 -- risk-adjusted)", minval = 1, maxval = 4, group = gT)
+skipWin  = input.bool(true, "Skip after a winning trade", group = gT,
+     tooltip = "Measured INERT on 15m: PF 1.57 either way, 209 trades against 211. Kept because it is part of the specification, not because it earns anything here.")
+unitQty  = input.float(1.0, "Units per Turtle unit", minval = 0.01, step = 0.01, group = gT)
+
+gS       = "Entry session (free, never locked)"
+sessOn   = input.bool(false, "Restrict entries to a session", group = gS)
+sessStr  = input.session("0000-0000", "Entry session", group = gS,
+     tooltip = "Only the decision to OPEN is gated; exits are never gated. Measured on the 1-hour variant: 08:00-20:00 best, RTH-only harmful. Not re-measured at 15m.")
+sessTZ   = input.string("America/New_York", "Session timezone", group = gS,
+     options = ["America/New_York", "America/Chicago", "Europe/London", "UTC"])
+
+// ----------------------------------------------------------------- series
+atrN    = ta.atr(atrLen)                 // Wilder's, as the Turtle definition requires
+chanHi1 = ta.highest(high, entry1)
+chanHi2 = ta.highest(high, entry2)
+chanLo1 = ta.lowest(low,  exit1)
+chanLo2 = ta.lowest(low,  exit2)
+ema100  = ta.ema(close, 100)
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER -- the first element is +DI, not ADX.
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)
+atrLong = ta.sma(atrN, 200)
+distEma = atrN > 0 ? (close - ema100) / atrN : na
+volRat  = atrLong > 0 ? atrN / atrLong : na
+
+// ----------------------------------------------------------------- the regime score
+// Three near-independent readings of "is this a market that continues": trend STRENGTH, whether
+// price has a directional environment at all, and whether volatility is EXPANDING.
+okAdx  = adxVal  >= adxMin
+okDist = distEma >= distMin
+okVol  = volRat  >= volMin
+ready  = not na(atrN) and atrN > 0 and not na(distEma) and not na(volRat) and not na(adxVal)
+score  = (okAdx ? 1 : 0) + (okDist ? 1 : 0) + (okVol ? 1 : 0)
+inSess = not sessOn or not na(time(timeframe.period, sessStr, sessTZ))
+gateOk = ready and inSess and (not useGate or score >= minScore)
+
+// ----------------------------------------------------------------- state
+var float stopLvl   = na
+var float nextAdd   = na
+var float firstFill = na
+var float pendAtr   = na
+var int   unitsOn   = 0
+var int   sysOn     = 0
+var int   lastCount = 0
+var bool  lastWin   = false
+
+// EVERY BLOCK THAT WRITES var STATE IS GUARDED, AND SO IS THE EXIT CALL. Guarding only some of a
+// coupled set desynchronises them rather than partially fixing them: on the 1-hour script,
+// guarding the state while leaving strategy.exit open let a mid-bar fill find `stopLvl` still
+// `na`, so the exit fell through to the channel level and cut positions early. Full account in
+// docs/ib/STUDY_TICK_RECALC.md. With all four guarded, the three Script-execution checkbox
+// combinations should produce the identical report -- verify that before trusting any run.
+
+if barstate.isconfirmed and strategy.position_size == 0 and lastCount > 0
+    lastWin   := close > firstFill
+    unitsOn   := 0
+    sysOn     := 0
+    stopLvl   := na
+    nextAdd   := na
+    lastCount := 0
+
+if barstate.isconfirmed and strategy.opentrades > lastCount
+    fillPx    = strategy.opentrades.entry_price(strategy.opentrades - 1)
+    anchorAtr = na(pendAtr) ? atrN : pendAtr
+    if lastCount == 0
+        firstFill := fillPx
+    stopLvl   := fillPx - atrMult * anchorAtr
+    nextAdd   := fillPx + pyrStep * anchorAtr
+    unitsOn   := strategy.opentrades
+    lastCount := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ----------------------------------------------------------------- entries
+sig2 = high > chanHi2[1]
+sig1 = high > chanHi1[1]
+
+if barstate.isconfirmed and flat and gateOk
+    if sig2
+        strategy.entry("S2", strategy.long, qty = unitQty)
+        sysOn   := 2
+        pendAtr := atrN
+    else if sig1
+        if skipWin and lastWin
+            lastWin := false
+        else
+            strategy.entry("S1", strategy.long, qty = unitQty)
+            sysOn   := 1
+            pendAtr := atrN
+
+// ----------------------------------------------------------------- pyramid adds
+if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
+    if high >= nextAdd
+        strategy.entry("add" + str.tostring(unitsOn + 1), strategy.long, qty = unitQty)
+        pendAtr := atrN
+
+// ----------------------------------------------------------------- exit
+// One stop at the HIGHER of the ATR stop and the channel low: falling price reaches that first.
+chanExit  = sysOn == 1 ? chanLo1[1] : chanLo2[1]
+exitLevel = na(stopLvl) ? chanExit : (na(chanExit) ? stopLvl : math.max(stopLvl, chanExit))
+
+if barstate.isconfirmed and not flat and lastCount > 0 and not na(exitLevel)
+    strategy.exit("x", stop = exitLevel)
+
+// ----------------------------------------------------------------- plots
+plot(chanHi1, "Entry 1 (20-bar high)", color = color.new(color.aqua, 40))
+plot(chanHi2, "Entry 2 (55-bar high)", color = color.new(color.blue, 40))
+plot(chanLo1, "Exit 1 (10-bar low)",   color = color.new(color.red, 60))
+plot(chanLo2, "Exit 2 (20-bar low)",   color = color.new(color.purple, 60))
+plot(ema100,  "EMA100",                color = color.new(color.orange, 50))
+plot(flat ? na : exitLevel, "Active stop", color = color.fuchsia, style = plot.style_linebr)
+
+regimeCol = score >= 3 ? color.new(color.teal, 88) : score == 2 ? color.new(color.teal, 94) :
+     score == 1 ? color.new(color.gray, 94) : color.new(color.red, 92)
+bgcolor(ready ? regimeCol : na)
+
+regimeTxt = score >= 3 ? "3/3 STRONG TREND" : score == 2 ? "2/3 DEVELOPING" :
+     score == 1 ? "1/3 TRANSITION" : "0/3 CHOP"
+onTf       = timeframe.period == "15"
+ladderCost = close * maxUnits * unitQty * syminfo.pointvalue
+fundsOk    = ladderCost <= strategy.equity * 0.9
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, regimeTxt + (useGate ? "  (min " + str.tostring(minScore) + ")" : "  GATE OFF"),
+         text_color = color.white,
+         bgcolor = score >= minScore ? color.new(color.teal, 20) : color.new(color.red, 20))
+    table.cell(hud, 0, 1, "ADX " + str.tostring(adxVal, "#.0") + (okAdx ? " ok" : " LOW") +
+         "   dist " + str.tostring(distEma, "#.00") + (okDist ? " ok" : " NEAR") +
+         "   volx " + str.tostring(volRat, "#.00") + (okVol ? " ok" : " FLAT"),
+         text_color = color.white, bgcolor = color.new(color.gray, 40))
+    table.cell(hud, 0, 2, onTf ? "15m chart" : "NOT 15m - this was measured on 15m only",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 40) : color.red)
+    table.cell(hud, 0, 3, fundsOk ? "ladder funded" :
+         "LADDER DOES NOT FIT - orders will be REJECTED (needs " +
+         str.tostring(math.round(ladderCost)) + " vs equity " +
+         str.tostring(math.round(strategy.equity)) + ")",
+         text_color = color.white, bgcolor = fundsOk ? color.new(color.teal, 40) : color.red)

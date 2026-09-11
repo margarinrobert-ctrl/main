@@ -19,6 +19,7 @@ import { clockFor, sessionIndex } from "../clock";
 import type { Bar, Instrument } from "../types";
 import { get, makeContext, type IndicatorContext } from "./indicators";
 import { fillTemplate, ruleMask, templateKeys } from "./rule";
+import { costHurdle, exitSplit, medianBarTicks, verdict, type CostHurdle, type EdgeVerdict, type ExitSplit } from "./edge";
 import {
   buildTensor,
   DEFAULT_COSTS,
@@ -34,6 +35,8 @@ import {
 } from "./tensor";
 
 export * from "./tensor";
+export { costHurdle, exitSplit, medianBarTicks, verdict } from "./edge";
+export type { CostHurdle, EdgeVerdict, ExitSplit } from "./edge";
 export { catalogue, type CatalogueEntry } from "./indicators";
 export { RuleError, templateKeys } from "./rule";
 
@@ -171,6 +174,20 @@ export class TunerSession {
     this.lockedFromSession = cutSession;
     this.ctx = makeContext(bars, this.sessionOfBar, clock.minuteOfDay, label);
   }
+
+  /** Median bar range in ticks — the scale that makes the cost hurdle interpretable. */
+  medianBarTicks(): number {
+    if (this._medBar === undefined) {
+      this._medBar = medianBarTicks(
+        this.bars.map((b) => b.h),
+        this.bars.map((b) => b.l),
+        this.inst.tickSize,
+      );
+    }
+    return this._medBar;
+  }
+
+  private _medBar: number | undefined;
 
   /** ATR the stop is sized in — memoised through the same registry the rules use. */
   atr(period: number): Float64Array {
@@ -350,12 +367,24 @@ export class TunerSession {
       const t = this.tensors.get(r.ref.tensorKey);
       const trig = this.triggerCache.get(r.ref.triggerKey);
       if (!t || !trig) throw new Error("reveal must be called on the session that produced the sweep");
+      // Re-walk to recover the full statistics the sweep row does not carry -- the exit split in
+      // particular, which is what separates a barrier edge from a direction bet.
+      const full = walk(t, r.ref.gi, trig, r.ref.costs, this.lockedFromSession, this.sessionOfBar);
       const ctrl = matchedControl(
         t, r.ref.gi, trig, r.ref.costs, this.lockedFromSession, this.sessionOfBar,
-        { all: r.perTrade, research: r.perTradeResearch, locked: r.lockedInternal.perTrade },
+        {
+          all: r.perTrade,
+          research: r.perTradeResearch,
+          locked: r.lockedInternal.perTrade,
+          winPct: full.n ? (100 * full.wins) / full.n : 0,
+        },
         draws, seed,
       );
+      const hurdle = costHurdle(this.inst, this.medianBarTicks());
       return {
+        hurdle,
+        exits: exitSplit(full),
+        edge: verdict(full, ctrl, result.evaluated, hurdle),
         row: r,
         window: w.label,
         locked: r.lockedInternal,
@@ -369,6 +398,12 @@ export class TunerSession {
 }
 
 export interface RevealRow {
+  /** The cost floor this configuration has to clear before it earns anything. */
+  hurdle: CostHurdle;
+  /** Where the trades ended — a barrier edge and a direction bet look identical without this. */
+  exits: ExitSplit[];
+  /** Win rate against its own geometry's base rate, plus the flags that survived. */
+  edge: EdgeVerdict;
   row: SweepRow;
   window: string;
   locked: { n: number; perTrade: number; netUsd: number; winPct: number };

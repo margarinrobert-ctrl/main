@@ -1,0 +1,377 @@
+// ================================================================================================
+// V37 -- IFVG + THREE-TIMEFRAME ORDER-FLOW ALIGNMENT
+//
+// READ THIS BEFORE RUNNING IT: THE RESEARCH SAYS THIS MODEL FAILED.
+//
+//   * On the source's own M1 entry timeframe, 0 of 32 declared configurations is profitable after
+//     costs, and the mean GROSS profit factor is 1.003 -- a coin flip BEFORE a $4.78 round turn.
+//   * Re-run at 5m and 15m entry with the barrier scaled to the entry timeframe's own ATR, gross
+//     PF climbs 1.025 -> 1.053 -> 1.173 while the round turn stays flat. That is a COST gradient,
+//     not an edge gradient: the barrier grew, the edge did not.
+//   * The 15-minute cell that cleared its matched control on the training block at p 0.005 scored
+//     -29.05 per trade out of sample, and ALL 16 cells of that family are negative there
+//     (family mean +3.04 -> -15.92 per trade).
+//   * What DID replicate is order-flow alignment itself: +0.63 per trade, correct sign net and
+//     gross, on both blocks and at every entry timeframe. That is an order of magnitude UNDER the
+//     cost floor. It is a real effect and it is not a tradeable one.
+//   * The confirmation entry -- the source's answer to "price does not always retrace" -- is worth
+//     nothing in either direction on any block.
+//
+// This script exists so the model can be inspected and re-measured, not because it is recommended.
+// See docs/ib/STUDY_V37_IFVG_ORDERFLOW.md and research/v37/.
+//
+// WHAT IT IMPLEMENTS, and how each clause maps to the source
+//   "order flow alignment across M15, M5 and M1 -- if even one timeframe is not aligned we do not
+//    take the trade"                 -> both higher timeframes must agree with the entry inversion
+//   "price respects bullish PD arrays and disrespects bearish PD arrays"
+//                                    -> order flow = POLARITY OF THE MOST RECENT INVERSION on that
+//                                       timeframe. Closing through a bearish FVG IS a bullish
+//                                       inversion, so this is the source's own definition and it
+//                                       adds no threshold of its own.
+//   "enter on the IFVG once it is confirmed by the next candle"
+//                                    -> Confirmation entry (default on); the fill is the open
+//                                       after that candle closes.
+//   CISD                             -> NOT implemented, deliberately. The source uses it to
+//                                       confirm the same order-flow shift the inversion already
+//                                       marks, so it would double-count one event. Untested, not
+//                                       dismissed.
+//
+// CAUSALITY. An FVG is knowable at the close of its third candle; an inversion at the close of the
+// candle that closes through it. Higher-timeframe state is read with lookahead_on applied to a [1]
+// offset, which returns the last COMPLETED higher bar and cannot repaint. Every block that writes
+// var state is guarded by barstate.isconfirmed -- CLAUDE.md: guarding the entries alone is not
+// enough, and guarding SOME of a coupled set desynchronises it.
+//
+// The stop is anchored to the SIGNAL BAR'S CLOSE, not to the fill price, because the fill price
+// does not exist at the moment the exit order is written -- that is what lets entry and exit go
+// out together and stops the entry bar being naked.
+//
+// Research tooling for education and analysis. NOT FINANCIAL ADVICE, and on this evidence not a
+// strategy either.
+// ================================================================================================
+//@version=6
+strategy("V37 IFVG + Order-Flow Alignment", overlay = true,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, currency = currency.USD,
+         commission_type = strategy.commission.cash_per_order, commission_value = 0.72,
+         slippage = 1, calc_on_every_tick = false, process_orders_on_close = false,
+         pyramiding = 0)
+
+// ------------------------------------------------------------------------------------------------
+// inputs
+// ------------------------------------------------------------------------------------------------
+gM = "Model"
+tfA        = input.timeframe("5",  "Order-flow timeframe A", group = gM)
+tfB        = input.timeframe("15", "Order-flow timeframe B", group = gM)
+reqAlign   = input.bool(true,  "Require alignment on BOTH higher timeframes", group = gM)
+useConfirm = input.bool(true,  "Enter on the confirming candle (source's instruction)", group = gM)
+maxAge     = input.int(500, "Bars an un-inverted FVG stays live", minval = 20, maxval = 2000,
+                       group = gM)
+
+gE = "Entry / exit"
+entMode  = input.string("Market (next open)", "Entry mechanic",
+     options = ["Market (next open)", "Limit at IFVG edge"], group = gE)
+restBars = input.int(30, "Bars a resting limit stays live (ONE order at a time)", minval = 1,
+                     group = gE)
+atrLen   = input.int(14, "ATR length", minval = 2, group = gE)
+stopK    = input.float(1.5, "Stop, in ATR", minval = 0.1, step = 0.1, group = gE)
+tpR      = input.float(2.0, "Target, in R", minval = 0.25, step = 0.25, group = gE)
+
+gS = "Session (New York)"
+useSess   = input.bool(true, "Restrict entries to a window and flatten", group = gS)
+sessStart = input.int(570, "Entries from (minutes past NY midnight, 570 = 09:30)", group = gS)
+sessEnd   = input.int(930, "Entries until (930 = 15:30)", group = gS)
+flatAt    = input.int(960, "Flatten at (960 = 16:00)", group = gS)
+
+gD = "Display"
+showZones = input.bool(true, "Draw the inverted zone on a signal", group = gD)
+
+// ------------------------------------------------------------------------------------------------
+// ATR -- ema(TR), NOT ta.atr. ta.atr is Wilder's RMA and is a different number; every barrier in
+// the research is ema(TR, 14). CLAUDE.md records this shipping broken once.
+// ------------------------------------------------------------------------------------------------
+atr = ta.ema(ta.tr(true), atrLen)
+
+// ------------------------------------------------------------------------------------------------
+// New York clock. Bare `hour` / `minute` are EXCHANGE time -- Chicago for CME -- so they are wrong
+// by an hour for every session boundary in this file.
+// ------------------------------------------------------------------------------------------------
+nyMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+inWin = not useSess or (nyMin >= sessStart and nyMin <= sessEnd)
+atFlat = useSess and nyMin >= flatAt
+
+// ------------------------------------------------------------------------------------------------
+// ORDER FLOW ON ONE TIMEFRAME.
+//
+// Each call site of a Pine function keeps its OWN var state, so this one body serves both higher
+// timeframes independently. It is fed the last COMPLETED bar of that timeframe and a flag saying
+// whether that bar is new.
+//
+// Returns the polarity of the most recent inversion: +1 bullish, -1 bearish, 0 before any has
+// happened (the source's "range" state, which it says to avoid, so it is excluded rather than
+// defaulted to a side).
+//
+// When one candle inverts several zones at once the NEWEST wins, which is what the research code
+// does; the downward scan takes the first hit and ignores later ones.
+// ------------------------------------------------------------------------------------------------
+f_of(float hN, float lN, float cN, bool isNew, int mAge) =>
+    var zPol = array.new_int()
+    var zLo = array.new_float()
+    var zHi = array.new_float()
+    var zAt = array.new_int()
+    var float h1 = na
+    var float h2 = na
+    var float l1 = na
+    var float l2 = na
+    var int st = 0
+    var int nb = 0
+    if isNew and not na(cN)
+        nb += 1
+        int hit = 0
+        int i = array.size(zPol) - 1
+        while i >= 0
+            int p = array.get(zPol, i)
+            float lo = array.get(zLo, i)
+            float hi = array.get(zHi, i)
+            bool drop = nb - array.get(zAt, i) > mAge
+            if not drop
+                if p > 0 and cN < lo
+                    drop := true
+                    hit := hit == 0 ? -1 : hit
+                else if p < 0 and cN > hi
+                    drop := true
+                    hit := hit == 0 ? 1 : hit
+            if drop
+                array.remove(zPol, i)
+                array.remove(zLo, i)
+                array.remove(zHi, i)
+                array.remove(zAt, i)
+            i -= 1
+        if hit != 0
+            st := hit
+        if not na(h2) and not na(l2)
+            if lN > h2
+                array.push(zPol, 1)
+                array.push(zLo, h2)
+                array.push(zHi, lN)
+                array.push(zAt, nb)
+            else if hN < l2
+                array.push(zPol, -1)
+                array.push(zLo, hN)
+                array.push(zHi, l2)
+                array.push(zAt, nb)
+        while array.size(zPol) > 200
+            array.shift(zPol)
+            array.shift(zLo)
+            array.shift(zHi)
+            array.shift(zAt)
+        h2 := h1
+        h1 := hN
+        l2 := l1
+        l1 := lN
+    st
+
+// ------------------------------------------------------------------------------------------------
+// THE ENTRY TIMEFRAME'S INVERSION -- the same machinery, but it also hands back the zone, because
+// the limit entry rests at its proximal boundary. Runs on the chart's own bars.
+// ------------------------------------------------------------------------------------------------
+f_inv(int mAge) =>
+    var zPol = array.new_int()
+    var zLo = array.new_float()
+    var zHi = array.new_float()
+    var zAt = array.new_int()
+    int hit = 0
+    float hLo = na
+    float hHi = na
+    if barstate.isconfirmed
+        int i = array.size(zPol) - 1
+        while i >= 0
+            int p = array.get(zPol, i)
+            float lo = array.get(zLo, i)
+            float hi = array.get(zHi, i)
+            bool drop = bar_index - array.get(zAt, i) > mAge
+            if not drop
+                if p > 0 and close < lo
+                    drop := true
+                    if hit == 0
+                        hit := -1
+                        hLo := lo
+                        hHi := hi
+                else if p < 0 and close > hi
+                    drop := true
+                    if hit == 0
+                        hit := 1
+                        hLo := lo
+                        hHi := hi
+            if drop
+                array.remove(zPol, i)
+                array.remove(zLo, i)
+                array.remove(zHi, i)
+                array.remove(zAt, i)
+            i -= 1
+        if low > high[2]
+            array.push(zPol, 1)
+            array.push(zLo, high[2])
+            array.push(zHi, low)
+            array.push(zAt, bar_index)
+        else if high < low[2]
+            array.push(zPol, -1)
+            array.push(zLo, high)
+            array.push(zHi, low[2])
+            array.push(zAt, bar_index)
+        while array.size(zPol) > 200
+            array.shift(zPol)
+            array.shift(zLo)
+            array.shift(zHi)
+            array.shift(zAt)
+    [hit, hLo, hHi]
+
+// ------------------------------------------------------------------------------------------------
+// HIGHER-TIMEFRAME FEEDS.
+//
+// lookahead_on APPLIED TO A [1] OFFSET returns the last COMPLETED higher bar and cannot repaint --
+// nothing from the forming bar is ever read. lookahead_off on a bare `high` would return the
+// FORMING bar's running high, which is the classic repaint.
+// ------------------------------------------------------------------------------------------------
+[aH, aL, aC, aT] = request.security(syminfo.tickerid, tfA, [high[1], low[1], close[1], time[1]],
+     lookahead = barmerge.lookahead_on)
+[bH, bL, bC, bT] = request.security(syminfo.tickerid, tfB, [high[1], low[1], close[1], time[1]],
+     lookahead = barmerge.lookahead_on)
+
+aNew = barstate.isconfirmed and ta.change(aT) != 0
+bNew = barstate.isconfirmed and ta.change(bT) != 0
+ofA = f_of(aH, aL, aC, aNew, maxAge)
+ofB = f_of(bH, bL, bC, bNew, maxAge)
+
+[invPol, invLo, invHi] = f_inv(maxAge)
+
+// ------------------------------------------------------------------------------------------------
+// SIGNAL. The alignment test is read on the bar the ORDER is decided on, which is the inversion
+// bar when confirmation is off and the bar after it when confirmation is on.
+// ------------------------------------------------------------------------------------------------
+var int pendPol = 0
+var float pendLo = na
+var float pendHi = na
+
+aligned(int p) => not reqAlign or (ofA == p and ofB == p)
+
+int sigPol = 0
+float sigLo = na
+float sigHi = na
+if barstate.isconfirmed
+    if useConfirm
+        if pendPol != 0
+            sigPol := pendPol
+            sigLo := pendLo
+            sigHi := pendHi
+        pendPol := invPol
+        pendLo := invLo
+        pendHi := invHi
+    else
+        sigPol := invPol
+        sigLo := invLo
+        sigHi := invHi
+
+fire = sigPol != 0 and aligned(sigPol) and inWin and not atFlat and not na(atr) and atr > 0
+
+// ------------------------------------------------------------------------------------------------
+// ORDERS.
+//
+// ONE LIVE ORDER. STUDY_V34_MECHANIC found the research walker released its position lock only on
+// EXIT, so an unfilled resting order blocked nothing and the backtest held a mean of 2.45 orders at
+// once where a script holds one -- correcting that deleted the whole measured effect. Here an
+// unfilled limit holds the slot until it expires and is then cancelled outright, never re-priced:
+// "keep the order current" chases the market and scores half as well.
+//
+// THE EXIT MARKER IS UPDATED BEFORE THE ENTRY TEST RUNS. STUDY_V22 shipped a draft that was
+// lint-clean, read correctly, and re-entered on the bar a trade closed because the marker was
+// written below the entry block -- 95 extra trades on 15m. strategy.closedtrades is counted rather
+// than watching position_size[1], which misses a trade that opens and stops out inside one bar.
+// ------------------------------------------------------------------------------------------------
+var int lastExitBar = -1
+var int nClosed = 0
+var float stopLvl = na
+var float tgtLvl = na
+var int pendingSince = -1
+
+if barstate.isconfirmed and strategy.closedtrades > nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+flat = strategy.position_size == 0
+canFire = fire and flat and lastExitBar != bar_index and pendingSince < 0
+
+if barstate.isconfirmed and canFire
+    float ref = close
+    float risk = stopK * atr
+    float lvl = sigPol > 0 ? sigHi : sigLo
+    if entMode == "Market (next open)"
+        stopLvl := ref - sigPol * risk
+        tgtLvl := ref + sigPol * tpR * risk
+        if sigPol > 0
+            strategy.entry("L", strategy.long)
+        else
+            strategy.entry("S", strategy.short)
+    else
+        // the stop is anchored to the SIGNAL BAR'S CLOSE, not to a fill price that does not exist
+        // yet, so the protective order can be written in the same breath as the entry
+        stopLvl := lvl - sigPol * risk
+        tgtLvl := lvl + sigPol * tpR * risk
+        pendingSince := bar_index
+        if sigPol > 0
+            strategy.entry("L", strategy.long, limit = lvl)
+        else
+            strategy.entry("S", strategy.short, limit = lvl)
+
+// an unfilled limit expires; it is CANCELLED, not re-priced
+if barstate.isconfirmed and pendingSince >= 0
+    if strategy.position_size != 0
+        pendingSince := -1
+    else if bar_index - pendingSince >= restBars
+        strategy.cancel("L")
+        strategy.cancel("S")
+        pendingSince := -1
+        stopLvl := na
+        tgtLvl := na
+
+if strategy.position_size != 0 and not na(stopLvl) and not na(tgtLvl)
+    if strategy.position_size > 0
+        strategy.exit("xL", from_entry = "L", stop = stopLvl, limit = tgtLvl)
+    else
+        strategy.exit("xS", from_entry = "S", stop = stopLvl, limit = tgtLvl)
+
+// FLATTEN. strategy.close_all cannot sell the close of the bar that triggers it -- it fills at the
+// NEXT bar's open, and CLAUDE.md records the research engine being changed to match the script
+// rather than the other way round. Costs about half the per-trade edge when there is no entry
+// window, and is roughly free inside a morning window.
+if barstate.isconfirmed and atFlat and strategy.position_size != 0
+    strategy.close_all(comment = "flat")
+
+if barstate.isconfirmed and atFlat and pendingSince >= 0
+    strategy.cancel("L")
+    strategy.cancel("S")
+    pendingSince := -1
+
+// ------------------------------------------------------------------------------------------------
+// display
+// ------------------------------------------------------------------------------------------------
+plotshape(showZones and fire and sigPol > 0, "bullish IFVG", shape.triangleup, location.belowbar,
+     color.new(color.teal, 0), size = size.tiny)
+plotshape(showZones and fire and sigPol < 0, "bearish IFVG", shape.triangledown, location.abovebar,
+     color.new(color.maroon, 0), size = size.tiny)
+
+var box zb = na
+if showZones and fire and barstate.isconfirmed
+    zb := box.new(bar_index, sigHi, bar_index + 8, sigLo,
+         border_color = color.new(sigPol > 0 ? color.teal : color.maroon, 30),
+         bgcolor = color.new(sigPol > 0 ? color.teal : color.maroon, 88))
+
+plot(strategy.position_size != 0 ? stopLvl : na, "stop", color.new(color.red, 0), 1,
+     plot.style_linebr)
+plot(strategy.position_size != 0 ? tgtLvl : na, "target", color.new(color.green, 0), 1,
+     plot.style_linebr)
+
+bgcolor(useSess and not inWin ? color.new(color.gray, 94) : na, title = "outside the entry window")
+
+plotchar(ofA, "order flow A", "", location.top)
+plotchar(ofB, "order flow B", "", location.top)

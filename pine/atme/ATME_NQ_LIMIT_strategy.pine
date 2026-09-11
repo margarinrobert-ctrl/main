@@ -1,0 +1,145 @@
+//@version=5
+// ATME -- NQ/MNQ limit-entry 1R intraday scalp, long only, 5-minute chart.
+//
+// WHAT THIS SCRIPT IS. It is NOT an entry signal. There is no breakout, no trend filter and no
+// indicator condition of any kind: it arms an order on every Nth eligible bar inside the session
+// window. The whole of it is an EXECUTION mechanic -- a resting limit one ATR below the signal
+// close, a one-ATR stop from the fill and a one-R target. That is deliberate. Across this branch,
+// 27,786 entry conditions produced one candidate and a coin-flip entry matched the Turtle
+// breakout, while the way a trade is entered was worth roughly ten times the best signal found.
+//
+// MEASURED RESULT, and read this before running it. The 5-minute-bar engine that selected this
+// configuration scores it at PF 1.99 / +0.331 R per trade. Re-simulating the SAME trades against
+// the true 1-MINUTE path -- which is the only way to know whether a resting limit was reached
+// inside a bar, and whether the stop or the target came first when one bar touched both -- gives:
+//
+//     block          n      win      E[R]      PF     note
+//     research     2131   53.1%   -0.0029   0.994    BREAK-EVEN, slightly negative
+//     validation   1204   54.6%   +0.0697   1.157    out-of-sample
+//
+// Fills agree between the two engines (35.7% of signals); the entire difference is exit ordering.
+// The residual ambiguity that 1-minute bars still cannot resolve is 1.6% of trades, resolved as
+// stops. Two flags come with the number and neither is cosmetic:
+//
+//   * it is WORSE on research than out-of-sample, which is the wrong shape -- a rule chosen on
+//     research should look better there, and this branch treats the reverse as a defect;
+//   * 98% of the out-of-sample profit sits in the top 5% of trades.
+//
+// The mechanic itself does survive the true path. Same bars, same barriers, MARKET entry instead
+// of the limit: -0.0745 R research, -0.0876 R out-of-sample. So the limit is worth +0.07 to
+// +0.16 R, consistently and on both blocks -- it is just that it is buying a market whose
+// unconditional expectancy is negative by about that much. Trade this as an execution study,
+// sized accordingly, not as a validated edge.
+//
+// WHAT IS LOCKED AND WHAT IS NOT. Every measured constant below (ATR length, limit depth, order
+// validity, stop, target, max hold) is a fixed constant, because these are what the search
+// selected. The SESSION START AND STOP ARE FREE INPUTS and no preset touches them, the same
+// convention the Turtle script here uses: 09:00-13:00 New York is what was measured, but the
+// window that suits a given broker's feed is not a universal constant.
+//
+// DEFINITIONAL NOTES, all three of which have shipped broken on this branch before:
+//   * ATR here is ta.ema(ta.tr(true), 14), NOT ta.atr (which is Wilder's RMA). The research
+//     layer uses an EMA of true range and the two differ materially at n=14.
+//   * bare `hour`/`minute` are EXCHANGE time (Chicago for CME), so the session is computed with
+//     an explicit timezone argument.
+//   * entries require barstate.isconfirmed so the Strategy Tester's tick-evaluation settings
+//     cannot change the result.
+//
+// COSTS are set for MNQ: $2/point, $1.44 commission per round turn = $0.72 per order, and four
+// ticks of slippage standing for a one-tick half-spread plus three ticks of stop slippage. Pine
+// does not slip limit orders, so the target is filled half a tick better here than the research
+// model assumes; that is a small optimism and it is the only one.
+//
+// The Broker Emulator resolves a bar that touches both barriers by its own rule. Enable Bar
+// Magnifier in the Strategy Tester properties if the account has it -- the research figure above
+// is a true 1-minute walk, and without the magnifier the tester is reading 5-minute bars.
+
+strategy("ATME NQ limit-entry 1R scalp", overlay=true, pyramiding=0,
+   default_qty_type=strategy.fixed, default_qty_value=1, initial_capital=25000,
+   currency=currency.USD, commission_type=strategy.commission.cash_per_order,
+   commission_value=0.72, slippage=4, process_orders_on_close=true,
+   calc_on_every_tick=false)
+
+// ---------------------------------------------------------------- free inputs
+tz        = input.string("America/New_York", "Session timezone", group="Session",
+   options=["America/New_York", "America/Chicago", "Europe/London", "UTC"])
+startHour = input.int(9,  "Start hour",   minval=0, maxval=23, group="Session")
+startMin  = input.int(0,  "Start minute", minval=0, maxval=59, group="Session")
+stopHour  = input.int(13, "Stop hour",    minval=0, maxval=23, group="Session")
+stopMin   = input.int(0,  "Stop minute",  minval=0, maxval=59, group="Session")
+stride    = input.int(4,  "Arm an order every Nth eligible bar", minval=1, maxval=24,
+   group="Signal", tooltip="4 is what was measured: one candidate order every 20 minutes on a " +
+   "5-minute chart. Lower values were not simulated on the true 1-minute path.")
+drawIt    = input.bool(true, "Plot the resting limit and the barriers", group="Display")
+
+// ------------------------------------------------- measured constants (locked)
+ATR_LEN   = 14      // EMA of true range, not Wilder
+ENTRY_K   = 1.0     // resting limit, ATR multiples below the signal close
+WAIT_BARS = 3       // order validity in bars (15 minutes at 5m) then cancelled
+STOP_K    = 1.0     // stop distance from the FILL, in ATR of the SIGNAL bar
+TP_R      = 1.0     // target, in R
+MAX_HOLD  = 24      // bars from fill (120 minutes at 5m)
+
+atr = ta.ema(ta.tr(true), ATR_LEN)
+
+nowMin  = hour(time, tz) * 60 + minute(time, tz)
+startM  = startHour * 60 + startMin
+stopM   = stopHour * 60 + stopMin
+inWin   = startM <= stopM ? (nowMin >= startM and nowMin < stopM) : (nowMin >= startM or nowMin < stopM)
+
+eligible = inWin and barstate.isconfirmed and not na(atr) and atr > 0.0
+
+// The stride counts ELIGIBLE bars, not calendar bars, so a short session or a data gap does not
+// silently change the sampling rate.
+var int eligCount = 0
+if eligible
+    eligCount += 1
+fire = eligible and eligCount % stride == 0
+
+// --------------------------------------------------------------- order state
+var float pendAtr = na      // ATR of the bar that armed the resting order
+var float pendPx  = na      // its limit price, stored rather than re-derived from history
+var int   pendBar = na      // bar the order was armed on
+var float riskPts = na      // risk of the OPEN trade, carried from its own signal bar
+
+inTrade    = strategy.position_size > 0
+justFilled = inTrade and strategy.position_size[1] == 0
+
+if justFilled
+    riskPts := pendAtr
+    pendAtr := na
+    pendPx  := na
+    pendBar := na
+
+// cancel an unfilled order once its validity expires or the window closes
+if not inTrade and not na(pendBar) and (bar_index - pendBar >= WAIT_BARS or not inWin)
+    strategy.cancel("L")
+    pendBar := na
+    pendAtr := na
+    pendPx  := na
+
+// arm a new resting limit
+if fire and not inTrade and na(pendBar)
+    pendAtr := atr
+    pendPx  := close - ENTRY_K * atr
+    pendBar := bar_index
+    strategy.entry("L", strategy.long, limit=pendPx)
+
+// -------------------------------------------------------------------- exits
+if inTrade and not na(riskPts)
+    held = bar_index - strategy.opentrades.entry_bar_index(0)
+    if not inWin or held >= MAX_HOLD
+        strategy.close("L", comment="time")
+    else
+        ep = strategy.opentrades.entry_price(0)
+        strategy.exit("X", from_entry="L", stop=ep - riskPts, limit=ep + TP_R * riskPts)
+
+// -------------------------------------------------------------------- display
+restAt = not inTrade and not na(pendBar) ? pendPx : na
+stopAt = inTrade and not na(riskPts) ? strategy.opentrades.entry_price(0) - riskPts : na
+tgtAt  = inTrade and not na(riskPts) ? strategy.opentrades.entry_price(0) + TP_R * riskPts : na
+
+plot(drawIt ? restAt : na, "resting limit", color=color.new(color.orange, 0), style=plot.style_linebr)
+plot(drawIt ? stopAt : na, "stop",   color=color.new(color.red, 0),   style=plot.style_linebr)
+plot(drawIt ? tgtAt  : na, "target", color=color.new(color.green, 0), style=plot.style_linebr)
+bgcolor(drawIt and inWin ? color.new(color.blue, 94) : na, title="session window")

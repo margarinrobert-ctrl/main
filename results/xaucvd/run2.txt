@@ -1,0 +1,103 @@
+GOLD x DONCHIAN x CVD, part 2 -- the leakage audit, the sign-structure test, the neighbourhood,
+and ONE read of block C.
+
+THE SIGN-STRUCTURE TEST IS THE DECISIVE ONE and it is cheap. The four patterns make a DIRECTIONAL
+prediction: on a LONG-only base the two BULLISH readings (exhausted sellers = price LL + CVD HL;
+absorbed selling = price HL + CVD LL) should help and the two BEARISH ones should not.
+`STUDY_V54_CVD_KAMA` measured exactly that on NQ -- the two bullish patterns cleared both blocks or
+came close, and ABSORBED BUYING, the most bearish of the four, was the only NEGATIVE row on both
+blocks, "which is the sign a long-only system predicts".
+
+If gold's ranking does not respect that ordering, the pattern family is not measuring what it
+claims to measure here, whatever any individual p-value says.
+
+
+============================================================================================================================
+STEP 4 -- TRUNCATION AUDIT. Recompute every feature on history ENDING at bar i
+============================================================================================================================
+  This is the test that caught the divergence fill-forward leak in STUDY_DIVERGENCE_CONFIRM
+  (+37 full against +999 truncated). A confirmed pivot is stamped at i+k; anything that
+  reaches back to the pivot bar itself would show up here.
+
+    60m    0 mismatches over 1,500 value comparisons on 25 probe bars
+   240m    0 mismatches over 1,500 value comparisons on 25 probe bars
+
+============================================================================================================================
+STEP 5 -- THE SIGN STRUCTURE. On a LONG-only base the two BULLISH patterns should lead
+============================================================================================================================
+polarity           pattern  cells  mean_edge       pos    best_p    mean_C
+ BEARISH   absorbed_buying     18     0.1145   94.4444    0.0000   -0.0599
+ BEARISH  exhausted_buyers     17     0.1008   88.2353    0.0100    0.1148
+ BULLISH  absorbed_selling     18    -0.0450   27.7778    0.0450    0.0171
+ BULLISH exhausted_sellers     18     0.0639   94.4444    0.0033   -0.2231
+
+  mean research edge  BULLISH +0.00945   BEARISH +0.10786
+  On NQ (STUDY_V54) the ordering was bullish-first and ABSORBED BUYING was the only negative
+  row on both blocks. Here the best pattern of the four is ABSORBED_BUYING (BEARISH).
+
+============================================================================================================================
+STEP 6 -- THE NEIGHBOURHOOD. STUDY_V55: the k x w grid is the evidence, not the p-value
+============================================================================================================================
+  On NQ, EXHAUSTED SELLERS was positive in ALL 16 cells of the pivot-width x recency-window
+  grid on BOTH blocks and fell monotonically as the window widened. That coherence, not any
+  single cell, is what made it shippable.
+
+  exhausted_sellers  60m  research edge by pivot width (k) x recency window (w):
+   w       w10      w20      w30
+   k                            
+   k2  +0.0782  +0.0826  +0.0323
+   k3  +0.0717  +0.0516  +0.0153
+   k5  +0.0623  +0.0091  +0.0153
+   cells positive 100%   monotone in w? NO
+
+  exhausted_sellers  240m  research edge by pivot width (k) x recency window (w):
+   w       w10      w20      w30
+   k                            
+   k2  +0.2220  +0.0271  +0.0674
+   k3  +0.0449  +0.0945  +0.1091
+   k5  -0.0430  +0.1187  +0.0904
+   cells positive 89%   monotone in w? NO
+
+  absorbed_buying  60m  research edge by pivot width (k) x recency window (w):
+   w       w10      w20      w30
+   k                            
+   k2  +0.1239  +0.0424  +0.0375
+   k3  +0.0409  +0.0297  +0.0438
+   k5  +0.1092  +0.0606  +0.0151
+   cells positive 100%   monotone in w? NO
+
+  absorbed_buying  240m  research edge by pivot width (k) x recency window (w):
+   w       w10      w20      w30
+   k                            
+   k2  -0.0302  +0.1115  +0.1044
+   k3  +0.1399  +0.1916  +0.1877
+   k5  +0.3309  +0.3203  +0.2021
+   cells positive 89%   monotone in w? NO
+
+
+============================================================================================================================
+STEP 7 -- BLOCK C, ONE READ, for the single BH survivor
+============================================================================================================================
+  >>> Block C has ALREADY been read once on gold by STUDY_XAU_TWO_LAYER. This is the SECOND
+  >>> read. It is reported as DESCRIPTIVE, and the multiplicity is stated: 229 screened cells
+  >>> here, plus 690 counted trials in the earlier gold study.
+
+  survivor: div.exhausted_sellers_k2_w20  on V54  20/20 2.0N no-tp at 60m
+  research: base +0.02603 -> filtered +0.10861  (edge +0.08259, p 0.000, keeps 38%)
+
+  arm                                    n  net %/event      PF
+  block C, unfiltered                  319      0.17855   1.642
+  block C + the filter                 116      0.34068   2.197
+  edge +0.16213   random filter of the same size: median -0.01323, p 0.066
+  kept on block C 36% against 38% on research
+
+============================================================================================================================
+STEP 8 -- DOES A BETTER DELTA HELP? 60m has 4 sub-bars a chart bar, 240m has 16
+============================================================================================================================
+  If CVD carried information, the FINER delta should score better. It is the cleanest
+  internal check available without a 1-minute gold feed.
+
+    60m ( 4 sub-bars)  cells 120  p<=0.05  8 (chance 6.0)  mean edge +0.00395   div-family mean +0.01410
+   240m (16 sub-bars)  cells 109  p<=0.05  5 (chance 5.5)  mean edge +0.01416   div-family mean +0.06876
+
+  runtime 87s

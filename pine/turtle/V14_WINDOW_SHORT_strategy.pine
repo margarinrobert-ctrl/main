@@ -1,0 +1,212 @@
+//@version=5
+// V14 -- 07:00-11:00 New York, entries only, exits run free. A 1,290,240-cell grid per side,
+// ranked on both instruments at once, judged once on 2026. The SHORT side survived. The long did not.
+//
+// ================================ THE NUMBER THAT FRAMES EVERYTHING ================================
+// **58% of the long grid and 44% of the short grid were profitable on BOTH instruments on train.**
+// The top of a 1.29M ranking is therefore the maximum of roughly 750,000 profitable draws. Row 1 of
+// the long ranking showed profit factor 2.79 / 3.10 -- that is what such a maximum looks like, and it
+// is not evidence. What the top 1000 AGREE on is the reading; the single best row never is.
+//
+//   LONG,  top 1000 from train, read once on 2026: **0.3% still profitable on both. 0.0% kept PF>1.2.**
+//          median 2026 profit factor 0.52. The train #1 went from 2.79/3.10 to 0.47/1.82.
+//          A limit entry does not rescue it either (US30 2026: 0.72 market, 0.75 limit).
+//   SHORT, top 1000 from train, read once on 2026: **73.3% still profitable on both, 28.4% kept PF>1.2.**
+//          median 2026 profit factor 1.12.
+//
+// That contrast, from one grid under one protocol, is the finding. The long side inside this window
+// is an overfit; the short side is not.
+//
+// ================================ WHAT ACTUALLY EARNS IT ================================
+// The dominant driver is the ENTRY MECHANIC, not the indicators. Same geometry, same window,
+// no indicator at all -- only the entry order type changes:
+//
+//                              market order        resting limit 0.75 x ATR(5)
+//   US30  train                PF 0.77  -17.71     PF 1.44  +24.73  pts/trade
+//   US30  2026                 PF 1.05   +3.78     PF 1.43  +27.32
+//   US100 2026                 PF 0.92   -5.97     PF 1.14   +9.00
+//
+// The indicators then add on top of that, consistently in all four cells (US30 train 1.44 -> 1.46,
+// US30 2026 1.43 -> 1.82, US100 train 1.42 -> 1.58, US100 2026 1.14 -> 1.46). Both parts are real;
+// the mechanic is the larger one. Shorting a rally back UP into a resting limit is selling strength,
+// which is why a short book works here where "shorts lose by existing" everywhere else on this branch.
+//
+//                          n     PF   pts/trade  Sharpe  ret/DD
+//   US30  train (chosen)  145   1.46   +27.89     3.04    4.98
+//   US30  2026  JUDGE      71   1.82   +48.28     4.07    4.25
+//   US100 train (chosen)  139   1.58   +25.18     3.09    6.99
+//   US100 2026  JUDGE      75   1.46   +28.25     2.69    2.25
+//
+// ============================ THE LIMITATION YOU SHOULD WEIGH MOST ============================
+// **THIS RESULT RESTS ON A LIMIT ENTRY, AND IT COULD NOT BE SETTLED AT 1-MINUTE RESOLUTION.**
+// docs/ib/STUDY_V10_LIMIT.md found that a limit-entry backtest run on the same bars that decide the
+// exits measures intrabar ordering, and that three such artifacts together were worth a Sharpe of 11
+// on a rule-free test. The engine here carries all three fixes, and the standing rule on this branch
+// is that limit-entry questions are settled on `limit_entry.run_1m`, the true 1-minute path.
+// Only 15-minute bars were supplied for US30 and US100, so that test could not be run.
+//
+// The best available proxy is a THROUGH-FILL requirement -- price must trade BEYOND the limit before
+// a fill is counted, which removes exactly the trades a touch-fill backtest invents:
+//
+//   through   US30 train      US30 2026      US100 train    US100 2026
+//   0.00N     1.46 / Sh 3.04  1.82 / 4.07    1.58 / 3.09    1.46 / 2.69
+//   0.10N     1.35 / Sh 2.28  1.76 / 3.81    1.39 / 2.23    1.30 / 1.84
+//   0.20N     1.20 / Sh 1.38  1.67 / 3.44    1.36 / 2.07    1.22 / 1.47
+//
+// It degrades and it stays positive in all four cells. That is reassuring, not conclusive.
+// **Supply 1-minute US30/US100 data and this becomes answerable.**
+// ==========================================================================================
+
+strategy("V14 07:00-11:00 short (limit entry)", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72, slippage = 1)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Bar detalization   HIGH, WITH DEEP BACKTESTING. Not optional: the whole question is whether the
+//                      limit filled before the stop, and without intrabar data the emulator guesses.
+//   Slippage           1 tick. A RESTING LIMIT pays no slippage on entry -- you provide liquidity --
+//                      but the exit stop does. 1 tick is the compromise.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+// ======================================================================
+
+gW       = "Window -- entries only, exits run free"
+winStart = input.int(420, "Entry window start, minutes after New York midnight", minval=0, maxval=1439, group=gW)
+winEnd   = input.int(660, "Entry window end",  minval=0, maxval=1440, group=gW,
+     tooltip="420-660 = 07:00-11:00 New York. A signal may only fire inside this window; once open the trade exits on its own stop and channel, however long that takes. Forcing a close at 11:00 is the variant that failed three times on this branch.")
+
+gE       = "Entry"
+donE     = input.int(30,   "Donchian entry length", minval=2, group=gE)
+maFast   = input.int(13,   "MA fast", minval=2, group=gE)
+maSlow   = input.int(34,   "MA slow", minval=3, group=gE)
+useMA    = input.bool(true,"Require the MA state to agree with the trade direction", group=gE)
+adxMin   = input.float(22, "ADX(14) floor", minval=0, step=1, group=gE,
+     tooltip="22 appeared in 80% of the surviving top-1000 short configurations.")
+limMult  = input.float(0.75,"Resting limit, x ATR(5) in our favour", minval=0, step=0.05, group=gE,
+     tooltip="THIS IS THE LARGEST SINGLE EFFECT IN THE STUDY. Set it to 0 for a market order and the same rules go from profit factor 1.44 to 0.77 on US30 train.")
+limWait  = input.int(8,    "Bars the limit rests before it is cancelled", minval=1, group=gE)
+
+gX       = "Exit"
+atrLen   = input.int(20,   "ATR length", minval=2, group=gX)
+atrMult  = input.float(2.5,"ATR stop multiple", minval=0.1, step=0.1, group=gX)
+tpR      = input.float(2.0,"Take profit, in R (0 = none)", minval=0, step=0.5, group=gX)
+exitCh   = input.int(25,   "Donchian exit channel", minval=2, group=gX)
+qty      = input.int(1,    "Contracts", minval=1, group=gX)
+useLong  = input.bool(false,"Also trade the LONG side", group=gX,
+     tooltip="OFF for a reason. On the 2026 judge block only 0.3% of the top-1000 long configurations stayed profitable on both instruments, and none kept profit factor above 1.2.")
+
+// ----------------------------------------------------------------- series
+// ta.atr IS Wilder's RMA of true range, matching the research layer. The LIMIT distance uses
+// ema(TR,5), which is a DIFFERENT series and is what the research layer uses for that purpose.
+atrN   = ta.atr(atrLen)
+atrLim = ta.ema(ta.tr(true), 5)
+donHi  = ta.highest(high, donE)[1]      // EXCLUDES the current bar, or a break is impossible
+donLo  = ta.lowest(low,  donE)[1]
+exHi   = ta.highest(high, exitCh)[1]
+exLo   = ta.lowest(low,  exitCh)[1]
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)   // returns [+DI, -DI, ADX] IN THAT ORDER
+emaF   = ta.ema(close, maFast)
+emaS   = ta.ema(close, maSlow)
+
+// BARE `hour` AND `minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME. Read New York explicitly.
+modNY  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+inWin  = modNY >= winStart and modNY < winEnd
+okAdx  = adxMin <= 0 or (not na(adxVal) and adxVal >= adxMin)
+ready  = not na(atrN) and atrN > 0 and not na(atrLim) and atrLim > 0
+gateOk = ready and okAdx and inWin
+
+shortOk = (not useMA or emaF < emaS) and not na(donLo) and low < donLo
+longOk  = useLong and (not useMA or emaF > emaS) and not na(donHi) and high > donHi
+
+// ----------------------------------------------------------------- state
+var float sigAtr  = na       // ATR FROZEN AT THE SIGNAL BAR; stop and target read this all trade
+var int   pendBar = na
+var int   pendSide= 0
+var int   sideOn  = 0
+var int   lastCnt = 0
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL -- see docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    sigAtr := na
+    sideOn := 0
+    lastCnt := 0
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    sideOn  := pendSide
+    pendBar := na
+    pendSide := 0
+    lastCnt := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ----------------------------------------------------------------- entry
+// The order price and the ATR are BOTH frozen at the bar the order is placed. Re-pricing the limit
+// every bar would be a different strategy -- it would chase price instead of resting.
+// The bracket rides with the entry so the FILL BAR is covered: `loss` and `profit` are measured by
+// Pine from the actual fill, which is what the research anchors to.
+if barstate.isconfirmed and flat
+    if not na(pendBar) and bar_index - pendBar >= limWait
+        strategy.cancel_all()
+        pendBar := na
+        pendSide := 0
+    if na(pendBar) and gateOk
+        if shortOk
+            sigAtr := atrN
+            pendBar := bar_index
+            pendSide := -1
+            lossTk = int(math.max(1, math.round(atrMult * atrN / syminfo.mintick)))
+            tpTk   = tpR <= 0 ? na : int(math.max(1, math.round(tpR * atrMult * atrN / syminfo.mintick)))
+            lp = limMult <= 0 ? na : close + limMult * atrLim
+            if na(lp)
+                strategy.entry("S", strategy.short, qty = qty)
+            else
+                strategy.entry("S", strategy.short, qty = qty, limit = lp)
+            strategy.exit("x0", from_entry = "S", loss = lossTk, profit = tpTk)
+        else if longOk
+            sigAtr := atrN
+            pendBar := bar_index
+            pendSide := 1
+            lossTk = int(math.max(1, math.round(atrMult * atrN / syminfo.mintick)))
+            tpTk   = tpR <= 0 ? na : int(math.max(1, math.round(tpR * atrMult * atrN / syminfo.mintick)))
+            lp = limMult <= 0 ? na : close - limMult * atrLim
+            if na(lp)
+                strategy.entry("L", strategy.long, qty = qty)
+            else
+                strategy.entry("L", strategy.long, qty = qty, limit = lp)
+            strategy.exit("x0", from_entry = "L", loss = lossTk, profit = tpTk)
+
+// ----------------------------------------------------------------- exit
+// Working stop = the NEARER of the ATR stop and the exit channel. For a short that is the LOWER of
+// the two; a buy stop cannot rest below the market, so it is capped at the last close.
+avgPx    = strategy.position_avg_price
+atrStopS = na(avgPx) or na(sigAtr) ? na : avgPx + atrMult * sigAtr
+atrStopL = na(avgPx) or na(sigAtr) ? na : avgPx - atrMult * sigAtr
+lvlS     = na(atrStopS) ? exHi : (na(exHi) ? atrStopS : math.min(atrStopS, exHi))
+lvlL     = na(atrStopL) ? exLo : (na(exLo) ? atrStopL : math.max(atrStopL, exLo))
+exitLvl  = sideOn < 0 ? lvlS : lvlL
+tpLvl    = tpR <= 0 or na(avgPx) or na(sigAtr) ? na : (sideOn < 0 ? avgPx - tpR * atrMult * sigAtr : avgPx + tpR * atrMult * sigAtr)
+
+if barstate.isconfirmed and not flat and lastCnt > 0 and not na(exitLvl)
+    // "x0" covered the fill bar; "x" takes over. Cancel the first or both rest.
+    strategy.cancel("x0")
+    strategy.exit("x", stop = exitLvl, limit = tpLvl)
+
+// ----------------------------------------------------------------- plots
+plot(donLo, "Donchian 30 low", color = color.new(color.aqua, 35))
+plot(useLong ? donHi : na, "Donchian 30 high", color = color.new(color.aqua, 60))
+plot(flat and not na(pendBar) and pendSide < 0 ? close + limMult * atrLim : na, "Resting limit",
+     color = color.new(color.orange, 0), style = plot.style_linebr, linewidth = 2)
+plot(flat ? na : exitLvl, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+plot(flat or tpR <= 0 ? na : tpLvl, "Target", color = color.new(color.lime, 0), style = plot.style_linebr)
+bgcolor(inWin ? color.new(color.teal, 94) : na, title = "entry window")
+
+onTf = timeframe.period == "15"
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V14 - SHORT survived 2026; the LONG side did not",
+         text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 0, 1, onTf ? "15m chart" : "NOT 15m - studied on 15m only",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 45) : color.red)
+    table.cell(hud, 0, 2, "Rests on a LIMIT entry not settled at 1-minute resolution. Deep Backtesting required.",
+         text_color = color.white, bgcolor = color.new(color.orange, 15))

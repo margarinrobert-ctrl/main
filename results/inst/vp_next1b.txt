@@ -1,0 +1,64 @@
+
+======================================================================================================================
+1.2  STOP LADDER INSIDE THE GATE (research; locked in brackets) -- judge on R/trade and MC p99 drawdown
+======================================================================================================================
+  stop                                        n     PF     %/tr     R/tr   sumR   tot%   DD%  p99DD tot/p99 stop% |    n     PF     R/tr   tot%   DD%   p99 tot/p99
+  fixed 1.50 ATR                            366  1.180  +0.0181  +0.0326  +11.9  +6.62  2.87   6.47    1.02    59 |  201  1.571  +0.0962 +12.36  3.16  4.43    2.79
+  fixed 2.00 ATR                            357  1.283  +0.0301  +0.0821  +29.3 +10.73  3.32   6.08    1.76    52 |  194  1.461  +0.0702 +11.02  3.88  5.55    1.99
+  fixed 2.50 ATR                            351  1.398  +0.0417  +0.0873  +30.6 +14.64  2.74   5.36    2.73    48 |  189  1.482  +0.0679 +11.79  4.04  6.02    1.96
+  fixed 3.00 ATR                            351  1.464  +0.0481  +0.0913  +32.0 +16.89  3.03   5.36    3.15    46 |  189  1.411  +0.0428 +10.60  4.54  6.67    1.59
+  fixed 3.19 ATR                            350  1.446  +0.0469  +0.0845  +29.6 +16.42  3.10   5.35    3.07    45 |  187  1.382  +0.0371  +9.93  4.69  6.85    1.45
+  fixed 4.00 ATR                            349  1.436  +0.0463  +0.0648  +22.6 +16.16  3.30   5.46    2.96    45 |  187  1.355  +0.0266  +9.42  4.83  7.59    1.24
+  fixed 6.00 ATR                            349  1.415  +0.0448  +0.0415  +14.5 +15.62  3.40   5.73    2.72    45 |  187  1.436  +0.0286 +11.11  4.83  6.94    1.60
+  below EMA200 + 0.25 ATR (fallback 3.19)   350  1.374  +0.0402  +0.0930  +32.5 +14.06  3.10   5.41    2.60    46 |  189  1.353  +0.0683  +9.29  5.20  7.12    1.31
+  below EMA48 + 0.25 ATR                    354  1.315  +0.0330  +0.0411  +14.6 +11.69  2.85   5.97    1.96    51 |  191  1.430  +0.0746 +10.85  4.20  6.80    1.60
+  adaptive 4.0 calm / 2.5 hot (V22)         350  1.446  +0.0461  +0.0902  +31.6 +16.13  2.78   5.37    3.01    47 |  189  1.440  +0.0531 +11.08  4.21  6.51    1.70
+  adaptive 3.19 calm / 2.0 hot              352  1.368  +0.0385  +0.0938  +33.0 +13.54  2.88   5.60    2.42    49 |  192  1.408  +0.0514 +10.21  3.62  6.26    1.63
+
+======================================================================================================================
+1.3  THE EXTENSION FACTOR on the research signal bars -- Spearman matrix, conditional IC inside the gate, decile monotonicity
+======================================================================================================================
+  Spearman among the extension variables (research signal bars, pairwise complete):
+                                      d_sp (single print above, ATR)  e13_48 (EMA13-EMA48)/ATR  e200 (close-EMA200)/ATR  d_poc (close-prior POC)/ATR  d_vwap07 (close-VWAP from 07:00)/ATR  d_hi (close-prior high)/ATR  d_hvn_above (nearest HVN above, ATR)
+d_sp (single print above, ATR)                                  1.00                     -0.23                    -0.18                        -0.40                                 -0.14                        -0.49                                  0.05
+e13_48 (EMA13-EMA48)/ATR                                       -0.23                      1.00                     0.66                         0.73                                  0.19                         0.67                                 -0.31
+e200 (close-EMA200)/ATR                                        -0.18                      0.66                     1.00                         0.68                                  0.23                         0.75                                 -0.41
+d_poc (close-prior POC)/ATR                                    -0.40                      0.73                     0.68                         1.00                                  0.25                         0.82                                 -0.78
+d_vwap07 (close-VWAP from 07:00)/ATR                           -0.14                      0.19                     0.23                         0.25                                  1.00                         0.34                                 -0.09
+d_hi (close-prior high)/ATR                                    -0.49                      0.67                     0.75                         0.82                                  0.34                         1.00                                 -0.60
+d_hvn_above (nearest HVN above, ATR)                            0.05                     -0.31                    -0.41                        -0.78                                 -0.09                        -0.60                                  1.00
+
+  IC vs 15-bar forward return (ATR):  all signal bars | inside the gate | outside;  decile monotonicity = Spearman(decile index, decile mean fwd)
+  d_sp (single print above, ATR)           -0.098 (n 1184) | -0.078 (n  768) | -0.039 (n  416)   deciles: low +0.542 mid -0.226 high -0.177  mono -0.70
+  e13_48 (EMA13-EMA48)/ATR                 +0.031 (n 2071) | -0.020 (n  768) | +0.069 (n 1303)   deciles: low -1.078 mid -0.643 high +0.344  mono +0.33
+  e200 (close-EMA200)/ATR                  +0.030 (n 2071) | +0.019 (n  768) | +0.055 (n 1303)   deciles: low -0.981 mid -0.003 high -0.362  mono +0.36
+  d_poc (close-prior POC)/ATR              +0.012 (n 2071) | -0.026 (n  768) | +0.046 (n 1303)   deciles: low -1.291 mid +0.046 high -0.510  mono -0.01
+  d_vwap07 (close-VWAP from 07:00)/ATR     +0.015 (n 2071) | -0.087 (n  768) | +0.083 (n 1303)   deciles: low +0.514 mid -0.176 high +0.041  mono +0.14
+  d_hi (close-prior high)/ATR              +0.013 (n 2071) | +0.006 (n  768) | +0.040 (n 1303)   deciles: low -0.865 mid +0.215 high -0.646  mono +0.32
+  d_hvn_above (nearest HVN above, ATR)     -0.065 (n  693) | +0.078 (n  308) | -0.151 (n  385)   deciles: low -0.252 mid +0.835 high -1.962  mono -0.18
+
+======================================================================================================================
+1.4  DROP-ONE EXTENDED -- the gate within terciles of each extension variable (research PF gated / ungated; locked in brackets)
+======================================================================================================================
+  e13_48 (EMA13-EMA48)/ATR low  tercile: gated n 179 PF 1.907 R +0.152 | ungated n 187 PF 1.121 R +0.002   [locked gated 1.485 n  99 | ungated 0.842 n  82]
+  e13_48 (EMA13-EMA48)/ATR mid  tercile: gated n 153 PF 0.890 R -0.042 | ungated n 205 PF 0.934 R -0.034   [locked gated 1.126 n  75 | ungated 1.160 n  88]
+  e13_48 (EMA13-EMA48)/ATR high tercile: gated n  61 PF 1.331 R +0.070 | ungated n 215 PF 1.256 R +0.027   [locked gated 0.736 n  36 | ungated 0.951 n 118]
+  e200 (close-EMA200)/ATR  low  tercile: gated n 175 PF 1.653 R +0.102 | ungated n 160 PF 1.030 R -0.045   [locked gated 2.133 n  98 | ungated 0.773 n  74]
+  e200 (close-EMA200)/ATR  mid  tercile: gated n 145 PF 1.338 R +0.075 | ungated n 198 PF 0.931 R -0.009   [locked gated 1.091 n  88 | ungated 1.240 n  81]
+  e200 (close-EMA200)/ATR  high tercile: gated n  58 PF 0.872 R -0.019 | ungated n 232 PF 1.179 R +0.007   [locked gated 0.685 n  31 | ungated 1.025 n 123]
+  d_poc (close-prior POC)/ low  tercile: gated n 163 PF 1.728 R +0.119 | ungated n 173 PF 1.191 R +0.013   [locked gated 2.139 n  94 | ungated 0.705 n  76]
+  d_poc (close-prior POC)/ mid  tercile: gated n 182 PF 1.138 R +0.030 | ungated n 176 PF 0.790 R -0.055   [locked gated 0.698 n  91 | ungated 1.219 n  74]
+  d_poc (close-prior POC)/ high tercile: gated n  47 PF 0.650 R -0.098 | ungated n 225 PF 1.345 R +0.036   [locked gated 2.132 n  27 | ungated 1.167 n 117]
+  d_vwap07 (close-VWAP fro low  tercile: gated n 196 PF 1.358 R +0.076 | ungated n 245 PF 0.854 R -0.056   [locked gated 1.352 n  98 | ungated 0.802 n 107]
+  d_vwap07 (close-VWAP fro mid  tercile: gated n 171 PF 1.094 R -0.010 | ungated n 246 PF 0.924 R -0.052   [locked gated 1.686 n  93 | ungated 0.876 n 121]
+  d_vwap07 (close-VWAP fro high tercile: gated n 114 PF 1.178 R +0.038 | ungated n 256 PF 1.205 R +0.038   [locked gated 1.145 n  70 | ungated 1.175 n 114]
+
+======================================================================================================================
+1.5  THE DAY EFFECT WITHOUT THE DONCHIAN -- single-print days vs the rest, and a random entry inside the gate's own days
+======================================================================================================================
+  07:00 open -> 11:00 close  research  single-print days n 192 mean +0.727 ATR (share up 56%) | other days n 305 mean -0.460 (45%)   Welch t +1.92 p 0.056
+  07:00 open -> 11:00 close  locked    single-print days n 104 mean -0.015 ATR (share up 52%) | other days n 165 mean -0.147 (51%)   Welch t +0.18 p 0.861
+  09:30 open -> 16:00 close  research  single-print days n 192 mean +1.160 ATR (share up 60%) | other days n 304 mean -0.229 (51%)   Welch t +2.52 p 0.012
+  09:30 open -> 16:00 close  locked    single-print days n 104 mean -0.244 ATR (share up 59%) | other days n 165 mean +0.120 (55%)   Welch t -0.43 p 0.666
+  random entry inside the gate's 261 active days, research : control PF median 1.318 mean +0.0311 | gated breakout PF 1.446 mean +0.0469   p(PF) 0.143 p(mean) 0.040
+  random entry inside the gate's 141 active days, locked   : control PF median 1.215 mean +0.0262 | gated breakout PF 1.382 mean +0.0531   p(PF) 0.173 p(mean) 0.060

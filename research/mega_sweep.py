@@ -29,7 +29,7 @@ sys.path.insert(0, "research")
 from ib_sim import COMMISSION_PTS, POINT_VALUE, TAKER_SIDE, TICK, simulate
 from nqdata import load_bars, minute_of_day, minutes_since_open, session_index, session_slice
 
-OUT = "/tmp/mega.npz"
+OUT = "results/mega/mega.npz"
 for i, a in enumerate(sys.argv):
     if a == "--out":
         OUT = sys.argv[i + 1]

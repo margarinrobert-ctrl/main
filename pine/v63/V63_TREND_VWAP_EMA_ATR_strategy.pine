@@ -1,0 +1,350 @@
+// ================================================================================================
+// V63 -- a trend-following design on a VWAP, a triple EMA cross and ATR. Long only, 30-minute bars.
+//
+// THE RULE. Enter at the next bar's open when all three hold at the close of a bar:
+//   1. EMA 13 > EMA 34 > EMA 89, and that stack is no more than 900 minutes old (30 bars at 30m)
+//   2. close is above the session VWAP and the VWAP is RISING
+//   3. ATR(14) is at or above its own 50-bar mean
+// Exit: a 1.5 x ATR stop anchored to the SIGNAL bar's ATR, no trail, no target, and a hard cap at
+// 480 bars. There is no session window and no daily flatten.
+//
+// ==================== HOW IT WAS BUILT, AND WHERE IT HAS BEEN READ ====================
+// 146,880 configurations swept on US100's RESEARCH BLOCK ONLY (2016-11 to 2022-01): timeframe,
+// five EMA triples, a recency window, five VWAP readings, two anchors, two weightings, three ATR
+// gates, four stops, three trails, four targets. Then frozen and read ONCE on US100's later two
+// blocks, on the WHOLE of US30 and on the WHOLE of NQ -- two markets that had no part in the
+// search. Percent of ENTRY PRICE for one unit, after each feed's own costs.
+//
+//   market  block         n     %/trade   PF     vs a random FILTER   vs a random ENTRY
+//   US100   research    264     +0.2200   1.67        p 0.924              p 0.282     <- chose it
+//   US100   validation  116     +0.1596   1.31        p 0.123              p 0.018
+//   US100   test         91     +0.3842   2.03        p 0.000              p 0.013
+//   US30    research    261     +0.1799   1.69        p 0.726              p 0.250
+//   US30    validation  115     +0.1352   1.42        p 0.000              p 0.010
+//   US30    test         85     +0.1797   1.68        p 0.000              p 0.117
+//   NQ      research    113     +0.3585   2.28        p 0.045              p 0.018
+//   NQ      locked       69     -0.0401   0.90        p 0.171              p 0.863     <- the failure
+//
+// SEVEN OF EIGHT BLOCKS POSITIVE, on three markets, and it clears a random entry with the identical
+// geometry on four of the seven blocks that chose nothing. That is better than anything else on
+// this branch has managed across three markets. It is not significance: seven blocks over
+// overlapping calendars are not seven independent tests, and NQ's locked block loses.
+//
+// ============================ THE THINGS YOU MUST KNOW TO TRADE IT ============================
+//  * IT WINS 9-19% OF THE TIME. 86% of trades stop out for a small loss and 14% run to the cap for
+//    a large gain: the capped trades supply 261-264% of net and the top 5% of trades supply
+//    140-153%. The longest run of consecutive losers in the pooled out-of-sample stream is 28.
+//  * IT IS NOT A SCALP AND NOT AN INTRADAY SYSTEM. Median hold is 13-16 HOURS; the median WINNER
+//    holds 240 hours -- ten trading days -- and closes on the cap. It carries overnight and
+//    weekend gap risk. About 52-61 trades a year.
+//  * THE CAP IS LOAD-BEARING, not a formality. Pooled over the blocks that chose nothing:
+//        60 bars +0.0590 PF 1.24 | 120 +0.1054 1.40 | 240 +0.1427 1.48 | 480 +0.1988 1.60
+//        | 960 +0.2484 1.69     -- monotone toward longer, and 7/7 blocks positive at every rung
+//    except 480 (6/7). Shorten it and the edge goes with it.
+//  * THE VOLUME IN "VWAP" DOES NOTHING HERE. Over 69,003 matched pairs the volume-weighted anchor
+//    beats its UNWEIGHTED twin in 55.7% of them, mean difference +0.0096 Sharpe; at the shipped
+//    cell it is +0.0399 against +0.0406. A session average price would do the same job. The
+//    weighting is kept because it costs nothing and it is what a reader expects.
+//  * COMPONENTS, pooled over the blocks that chose nothing: dropping the VWAP filter takes
+//    +0.0406 to +0.0320; adding a 3 ATR target takes it to +0.0145; a chandelier trail was in the
+//    original candidate and REMOVING it took +0.0406 to +0.1465 -- a trail is a take profit
+//    wearing a stop's name, which is the same finding this branch has made fifteen times.
+//  * COST STRESS: pooled +0.0470 at zero cost, +0.0406 at 1x, +0.0344 at 2x, +0.0225 at 4x.
+//
+// ======================= ATR AS A REGIME FILTER: 86 DECLARED READINGS =======================
+// Expansion against a rolling mean, the percentile of ATR in its own trailing window, the same on
+// ATR/price, and the slope -- each in BOTH directions, each scored against a random filter of the
+// SAME selectivity over the base's own signals. THE DIRECTION IS THE FINDING, and it is consistent
+// across all four families on the seven blocks that had no part in the search:
+//
+//   family      direction           cells   mean edge   beats no-regime   clears its control
+//   expansion   floor / rising       112     +0.0471        71.4%              36.6%
+//   expansion   ceiling / falling    112     -0.0431        35.7%              14.3%
+//   level       floor / rising        84     +0.0320        57.1%              26.2%
+//   level       ceiling / falling     84     -0.0542        34.5%              15.5%
+//   normalised  floor / rising        84     +0.0338        57.1%              21.4%
+//   normalised  ceiling / falling     84     -0.0539        35.7%              16.7%
+//   slope       rising                21     +0.0061        57.1%              19.0%
+//   slope       falling               21     -0.0275        47.6%              19.0%
+//
+// TRADE THE EXPANSION, NOT THE CALM. That INVERTS two earlier results on this branch -- V28's only
+// ATR survivor was `atr percentile 500 <= 0.2`, the bottom fifth, and re-run here it improves 3 of
+// 7 blocks with a mean edge of -0.0615 and clears its control once. Volatility-state rules invert;
+// this is the fourth time.
+//
+// THREE READINGS IMPROVE ON EVERY ONE OF THE SEVEN BLOCKS THAT CHOSE NOTHING:
+//   atr / sma(100) >= 1.0   keeps 33.7%   mean edge +0.0845   clears its control on 4 of 7
+//   atr percentile(100) >= 0.6  keeps 28.9%   +0.0874   clears on 4 of 7
+//   atr / sma(250) >= 1.2   keeps 15.3%   +0.0981   clears on 3 of 7, and it is the most selective
+// against 0.67 expected by chance if each block were a coin flip -- and the blocks are NOT
+// independent, US100 and US30 being the same weeks, so read that as modest rather than decisive.
+//
+// THE SHIPPED DEFAULT is `atr / sma(50) >= 1.0`, which is what was declared BEFORE the blocks were
+// read. It improves 5 of 7 and its mean edge is +0.0693. The sma(100) rung is strictly better on
+// every count at the same selectivity -- 7 of 7, +0.0845, clears on 4 -- and it was picked AFTER
+// those blocks were read, so it is offered as an input and not as the default. Flip it knowingly.
+//
+// AND NOTE THE SHAPE: EVERY reading, including all three survivors, has a NEGATIVE edge on the
+// block that CHOSE the strategy (US100 research). The regime filter helps on the seven blocks that
+// chose nothing and subtracts on the one that chose. That is unusual and it is not an argument in
+// its favour.
+//  * PARITY: this script's own order model, written out in Python and diffed against the research
+//    engine, agrees on the trade count within one and gives correlation 1.0000 with a gap of
+//    +0.1% / +0.3% / -0.0% on the three markets. The only structural difference is that a time cap
+//    fills at the NEXT bar's open, which the engine cannot do and which is worth ~0.2%.
+//  * COSTS ARE NOT SET HERE. Set commission and slippage in Properties before reading any number.
+// ================== A TIME WINDOW AND A HARD FLATTEN: BOTH MEASURED, BOTH OFF ==================
+// Added because they were asked for, and priced on the seven blocks that had no part in the search.
+// Percent of entry price per trade, pooled:
+//
+//   window        no flatten                  with a hard flatten at the stop time
+//   all hours     +0.1988  6/7 blocks +       (not applicable)
+//   09:30-12:00   +0.1964  7/7              -0.0060  3/7   64% of trades closed by the clock
+//   03:00-12:00   +0.1894  6/7              -0.0132  2/7   57%
+//   09:30-11:00   +0.1803  6/7              +0.0119  5/7   63%
+//   08:00-12:00   +0.1841  6/7              -0.0165  2/7   60%
+//   09:30-16:00   +0.1693  6/7              +0.0350  6/7   60%
+//   13:00-16:00   +0.1580  6/7              +0.0356  6/7   72%
+//   07:00-11:00   +0.1590  6/7              -0.0072  4/7   55%
+//
+// THE FLATTEN COSTS -0.1710 %/TRADE AVERAGED OVER THE SEVEN WINDOWS -- 86% of the edge -- and four
+// of the seven flattened windows are outright negative. The mechanism is not subtle: this rule's
+// median WINNER holds 240 hours and exits on the 480-bar cap, so a daily flatten truncates every
+// winner it has and closes 55-72% of all trades on the clock. Twelfth confirmation on this branch.
+// It does cut drawdown, from 16.5% to 4.3-5.6% pooled -- but the permutation puts those realised
+// drawdowns at the 2nd to 6th percentile of their own distribution with a p99 of 13-15%, so most
+// of that comfort is luck rather than the flatten.
+//
+// NO ENTRY WINDOW BEATS ALL HOURS. The one row worth knowing about is 09:30-12:00 without a
+// flatten: +0.1964 against all hours' +0.1988 on HALF the trades, and positive on 7 of 7 blocks
+// against 6 of 7. Same edge, more consistent, less exposure -- a reasonable preference, not an
+// improvement.
+//
+// AND THE WALK-FORWARD OPTIMISER WOULD NOT TAKE THE FLATTEN. The window, the flatten and the stop
+// re-chosen inside every training fold from 60 declared cells and applied to the fold it had never
+// seen, expanding and rolling, three markets -- 36 fold decisions in total and **the flatten was
+// chosen in 0 of 36**. Walk-forward efficiency against the fixed shipped constants: US100 1.38 and
+// 1.28, US30 0.71 and 0.60, NQ 0.95 and 1.01 -- mean 0.99, so re-optimising bought nothing, and
+// the fixed constants are positive on 5-6 of 6 folds on all three markets against the re-chosen
+// 3-6. Fifth time on this branch that a re-optimiser has lost to the author's constants.
+//
+// MONTE CARLO on the pooled out-of-sample trades (day-block bootstrap for the edge, permutation
+// for the path): shipped P(mean<=0) 0.0000, 95% CI [+0.0865, +0.3191], realised drawdown 16.5%
+// against an MC p99 of 34.6%. Size for the p99. Both flattened variants also exclude zero, at a
+// fifth of the magnitude.
+// COST: the shipped design holds +0.1811 %/trade at 4x the modelled cost; the flattened variants
+// +0.0167 to +0.0173.
+// ================= STOP LOSS AND TAKE PROFIT: 405 CELLS, AND THE UNIT DECIDES =================
+// 9 stops (0.75N to 12N, where 12N cannot bind) x 15 targets (none, 0.5R-8R, and 1-8 ATR absolute,
+// because those are NOT the same axis) x 3 partial exits (none, half off at 1R or 2R), pooled over
+// the seven blocks that had no part in the search. 405 of 405 scorable, 99.8% profitable, so read
+// the marginals and not the top row.
+//
+// NO TAKE PROFIT WINS IN BOTH PARAMETERISATIONS, MONOTONICALLY -- the sixteenth time on this branch:
+//   as a multiple of the stop   none +0.2023 | 8R +0.1745 | 6R +0.1594 | 4R +0.1359 | 3R +0.1241
+//                               2R +0.1085 | 1.5R +0.0934 | 1R +0.0628 | 0.5R +0.0348
+//   as absolute ATR             none +0.2023 | 8 +0.0951 | 6 +0.0725 | 4 +0.0396 | 3 +0.0261
+//                               2 +0.0254 | 1 +0.0181
+// AND EVERY TARGET CLEARS ITS OWN BREAK-EVEN WIN RATE -- 0.5R needs 66.7% and gets 68.5%, 8R needs
+// 11.1% and gets 30.5% -- and still loses to having no target at all. Both are true: a target is
+// profitable in isolation and worse than not truncating the trade. The shortfall GROWS with the
+// target (+1.9% at 0.5R to +19.4% at 8R) because the trades that reach a wide target were going
+// much further than it.
+//
+// PARTIAL EXITS SUBTRACT: none +0.1071, half at 1R +0.0746, half at 2R +0.0928. No partial input
+// is offered, on purpose.
+//
+// THE STOP AXIS IS THE TRAP, AND THE UNIT DECIDES THE ANSWER:
+//   stop      0.75N    1N     1.5N    2N     2.5N    3N      4N      6N      12N
+//   %/trade  +0.015  +0.026  +0.048 +0.048  +0.080 +0.073  +0.116  +0.186  +0.232   monotone WIDER
+//   in R     +0.077  +0.099  +0.128 +0.094  +0.139 +0.113  +0.131  +0.124  +0.102   peaks at 2.5N
+//   TOTAL %  --      --      +169.0  --     +171.0  --     +163.1  +172.0  +133.9   FLAT
+//   max DD   --      --       16.5   --      21.4   --      20.5    26.1    38.2    monotone WORSE
+//   return/DD --     --       10.3   --       8.0   --       7.9     6.6     3.5
+//   risk of one unit, as a % of entry price:  1.5N 0.37% | 2.5N 0.64% | 4N 1.02% | 6N 1.53% | 12N 3.08%
+//
+// PER TRADE the wide stops look far better and it is a TRADE-COUNT ARTIFACT: 434 trades at 6N
+// against 850 at 1.5N, and the total money earned at one unit is the SAME (+163 to +172) while the
+// drawdown nearly doubles. On return-over-drawdown the SHIPPED 1.5N is the best rung in the grid.
+// This supersedes the note in an earlier section preferring 2.5N -- that was a per-trade reading.
+// A per-trade optimum on an axis that also changes the trade count is not an optimum.
+//
+// AND THE STOP DOES EARN ITS PLACE: at 12N, where it cannot bind, total return falls to +133.9 and
+// the bootstrap's P(mean<=0) rises from 0.0003 to 0.0137. Removing the stop is worse than having it.
+// The tightest cells are the scalping geometry and they are dead: 0.75N with a 0.5R target is
+// -0.0044 %/trade on 4,399 trades, and its ambiguous share (stop and target inside one bar) is
+// 5.5% against 0.0% for every wide cell, so those numbers are set by the tie-break rule.
+// See docs/ib/STUDY_V63_TREND_VWAP.md.
+// ================================================================================================
+
+//@version=5
+strategy("V63 trend: VWAP + triple EMA + ATR", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 100000,
+     calc_on_every_tick = false, process_orders_on_close = false, pyramiding = 0)
+
+gT = "Trigger -- the triple EMA stack"
+gV = "Trend -- the session VWAP"
+gA = "ATR"
+gX = "Exit"
+gS = "Session -- both MEASURED and both OFF"
+
+f1 = input.int(13, "EMA fast", minval = 2, group = gT)
+f2 = input.int(34, "EMA mid", minval = 3, group = gT)
+f3 = input.int(89, "EMA slow", minval = 4, group = gT)
+winMin = input.int(900, "Enter within this many MINUTES of the stack forming", minval = 0,
+     group = gT,
+     tooltip = "900 minutes is 30 bars on a 30-minute chart, which is what was measured. Declared in minutes so the same number means the same thing on any chart. 0 = the stack bar only, which pooled at +0.0311 against +0.0406 for the full window.")
+
+useVwap = input.bool(true, "Require close above a RISING session VWAP", group = gV,
+     tooltip = "Dropping it takes the pooled out-of-sample result from +0.0406 to +0.0320 %/trade. Requiring `above` without `rising` gives +0.0374.")
+anchorMin = input.int(570, "VWAP anchor, minutes after New York midnight", minval = 0,
+     maxval = 1439, group = gV,
+     tooltip = "570 = 09:30 New York. 1080 = the 18:00 exchange roll, which scored the same (+0.0406 against +0.0395) on 6/7 blocks instead of 7/7.")
+volWeight = input.bool(true, "Weight the VWAP by volume", group = gV,
+     tooltip = "MEASURED AS DOING NOTHING: the volume-weighted anchor beats its unweighted twin in 55.7% of 69,003 matched pairs, mean +0.0096 Sharpe. Turn it off and you have a session average price, which scores the same.")
+
+atrLen = input.int(14, "ATR length", minval = 2, group = gA)
+regMode = input.string("expansion: ATR / mean >= k", "ATR regime filter", group = gA,
+     options = ["off", "expansion: ATR / mean >= k", "contraction: ATR / mean <= k",
+                 "level: ATR percentile >= q", "calm: ATR percentile <= q",
+                 "slope: ATR rising over k bars"],
+     tooltip = "Measured over 86 declared readings on eight blocks of three markets. The FLOOR/RISING direction has a mean edge of +0.0471 (expansion), +0.0320 (level), +0.0338 (normalised) and beats the no-regime baseline 57-71% of the time; every CEILING/FALLING direction is negative (-0.027 to -0.054) and beats it 34-48%. Trade the expansion, not the calm.")
+atrMeanN = input.int(50, "Regime length (mean or percentile window)", minval = 2, group = gA,
+     tooltip = "50 is the pre-declared default and improves 5 of the 7 blocks that chose nothing, mean edge +0.0693. 100 improves 7 of 7 at +0.0845 with the same selectivity, and 250 with k=1.2 gives +0.0981 on 15% of the signals -- but both were picked AFTER those blocks were read.")
+atrGMult = input.float(1.0, "k -- the ATR / mean multiple", minval = 0.1, step = 0.05, group = gA)
+atrGQ = input.float(0.6, "q -- the percentile, 0 to 1", minval = 0.0, maxval = 1.0, step = 0.05,
+     group = gA)
+atrSlopeK = input.int(10, "Slope lookback (bars)", minval = 1, group = gA)
+
+stopN = input.float(1.5, "Stop (ATR at the SIGNAL bar)", minval = 0.1, step = 0.1, group = gX,
+     tooltip = "SWEPT 0.75N to 12N. Per trade, wider is monotonically better (+0.015 at 0.75N to +0.232 at 12N) and that is a TRADE-COUNT ARTIFACT: total money earned at one unit is flat (+163 to +172 percent) while max drawdown goes 16.5 to 38.2. On return-over-drawdown 1.5N is the best rung in the grid at 10.3, against 8.0 at 2.5N and 6.6 at 6N. It also risks the least per trade: 0.37% of entry price against 1.53% at 6N. Widen it only if you want fewer, larger trades and can carry the drawdown.")
+holdMin = input.int(14400, "Hard cap on a trade, in MINUTES", minval = 1, group = gX,
+     tooltip = "14400 minutes is 480 bars at 30m, about ten trading days. THIS IS LOAD-BEARING: 60/120/240/480/960 bars pool at +0.0590 / +0.1054 / +0.1427 / +0.1988 / +0.2484 %/trade. The median WINNER exits on this cap.")
+tpATR = input.float(0.0, "Take profit (ATR, 0 = none)", minval = 0.0, step = 0.5, group = gX,
+     tooltip = "SWEPT in both parameterisations and no target wins monotonically in each. As absolute ATR: none +0.2023, 8 +0.0951, 6 +0.0725, 4 +0.0396, 3 +0.0261, 2 +0.0254, 1 +0.0181. As a multiple of the stop: none +0.2023 down to 0.5R +0.0348. Every target clears its own break-even win rate and still loses to no target, because it truncates exactly the trades that were going further.")
+sessOn = input.bool(false, "Restrict ENTRIES to a time window", group = gS,
+     tooltip = "No window beats all hours on the pooled out-of-sample read. The best is 09:30-12:00 at +0.1964 %/trade against all hours' +0.1988, on half the trades and positive on 7 of 7 blocks against 6 of 7. Same edge, more consistent, less exposure.")
+startH = input.int(9,  "Start hour (New York)",  minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(12, "Stop hour (New York)",   minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute", minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "FLATTEN any open position at the stop time", group = gS,
+     tooltip = "MEASURED COST -0.1710 %/trade averaged over seven windows -- 86% of the edge -- and four of the seven flattened windows are negative. The median WINNER of this rule holds 240 hours, so a daily flatten truncates every winner it has and closes 55-72% of all trades on the clock. A walk-forward optimiser free to pick it chose it in 0 of 36 folds.")
+
+trailATR = input.float(0.0, "Chandelier trail (ATR, 0 = none)", minval = 0.0, step = 0.5,
+     group = gX,
+     tooltip = "A 2.5 ATR trail was in the original candidate. REMOVING it took the pooled result from +0.0406 to +0.1465 %/trade and profit factor from 1.24 to 1.46. A trail is a take profit wearing a stop's name.")
+
+// ---------------------------------------------------------------------------------------------
+barMin = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+winBars = math.max(0, math.round(winMin / barMin))
+holdBars = math.max(1, math.round(holdMin / barMin))
+
+nyMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+newAnchor = nyMin >= anchorMin and (na(nyMin[1]) or nyMin[1] < anchorMin)
+
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin = not sessOn ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+// "flat at the stop time" means flat at the stop minute's OPEN, so the order goes out on the bar
+// BEFORE it -- `strategy.close_all()` fills at the next bar's open and cannot sell the close of the
+// bar that triggers it. And a signal whose fill would land at or after the cutoff is REFUSED rather
+// than opened for zero, which is the V60 mechanic.
+tfMin = math.max(1, math.round(timeframe.in_seconds() / 60))
+atCut = sessOn and flatOn and (nyMin + tfMin >= sStop) and (nyMin < sStop)
+willCut = sessOn and flatOn and (nyMin + tfMin >= sStop)
+
+var float cumPV = 0.0
+var float cumV = 0.0
+if barstate.isconfirmed
+    if newAnchor
+        cumPV := 0.0
+        cumV := 0.0
+    wgt = volWeight ? volume : 1.0
+    cumPV := cumPV + hlc3 * wgt
+    cumV := cumV + wgt
+vwapV = cumV > 0 ? cumPV / cumV : na
+
+eFast = ta.ema(close, f1)
+eMid  = ta.ema(close, f2)
+eSlow = ta.ema(close, f3)
+stack = eFast > eMid and eMid > eSlow
+fresh = stack and not stack[1]
+since = ta.barssince(fresh)
+
+atrN = ta.ema(ta.tr(true), atrLen)                 // NOT ta.atr, which is Wilder
+atrM = ta.sma(atrN, atrMeanN)
+// `ta.percentrank` ranks the current value against the PREVIOUS n; the research ranked it inside a
+// window that includes the current bar. On a 100-bar window the two differ by at most one rank.
+atrP = ta.percentrank(atrN, atrMeanN) / 100.0
+atrUp = atrN > atrN[atrSlopeK]
+
+trigOk = stack and not na(since) and since <= winBars
+vwapOk = not useVwap or (not na(vwapV) and not na(vwapV[1]) and close > vwapV and vwapV > vwapV[1])
+atrOk = regMode == "off" ? true :
+     regMode == "expansion: ATR / mean >= k" ? (not na(atrM) and atrN >= atrGMult * atrM) :
+     regMode == "contraction: ATR / mean <= k" ? (not na(atrM) and atrN <= atrGMult * atrM) :
+     regMode == "level: ATR percentile >= q" ? (not na(atrP) and atrP >= atrGQ) :
+     regMode == "calm: ATR percentile <= q" ? (not na(atrP) and atrP <= atrGQ) :
+     (not na(atrN[atrSlopeK]) and atrUp)
+gateOk = trigOk and vwapOk and atrOk and atrN > 0 and inWin and not willCut
+
+var float pendAtr = na
+var float runHi = na
+var int   held = 0
+
+if barstate.isconfirmed
+    held := strategy.position_size > 0 ? held + 1 : 0
+    runHi := strategy.position_size > 0 ? (na(runHi) ? high : math.max(runHi, high)) : na
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk
+    pendAtr := atrN
+    held := 0
+    runHi := na
+    strategy.entry("L", strategy.long)
+    lossTk = stopN * pendAtr / syminfo.mintick
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", loss = lossTk,
+             profit = tpATR * pendAtr / syminfo.mintick)
+    else
+        strategy.exit("x", from_entry = "L", loss = lossTk)
+
+if barstate.isconfirmed and strategy.position_size > 0 and not na(pendAtr)
+    fixed = strategy.position_avg_price - stopN * pendAtr
+    lvl = fixed
+    if trailATR > 0 and not na(runHi)
+        lvl := math.max(lvl, runHi - trailATR * pendAtr)
+    lvl := math.min(lvl, close[1])
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", stop = lvl,
+             limit = strategy.position_avg_price + tpATR * pendAtr)
+    else
+        strategy.exit("x", from_entry = "L", stop = lvl)
+
+if barstate.isconfirmed and strategy.position_size > 0 and (held >= holdBars or atCut)
+    strategy.close_all(atCut ? "flat" : "cap")
+
+plot(vwapV, "Session VWAP", color = color.new(color.orange, 0), linewidth = 2)
+plot(eFast, "EMA fast", color = color.new(color.aqua, 55))
+plot(eMid,  "EMA mid",  color = color.new(color.teal, 55))
+plot(eSlow, "EMA slow", color = color.new(color.gray, 40))
+bgcolor(stack ? color.new(color.green, 92) : na, title = "EMA stack")
+
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "EMA " + str.tostring(f1) + "/" + str.tostring(f2) + "/"
+         + str.tostring(f3) + "   window " + str.tostring(winBars) + " bars   cap "
+         + str.tostring(holdBars) + " bars", text_color = color.white,
+         bgcolor = color.new(color.teal, 25))
+    table.cell(hud, 0, 1, "regime: " + regMode + "   stop " + str.tostring(stopN) + "N"
+         + (tpATR > 0 ? "   TP " + str.tostring(tpATR) + "N" : "   no target")
+         + (trailATR > 0 ? "   trail " + str.tostring(trailATR) + "N" : "   no trail"),
+         text_color = color.white,
+         bgcolor = (tpATR > 0 or trailATR > 0) ? color.new(color.orange, 20)
+             : color.new(color.gray, 40))
+    sess = not sessOn ? "all hours" : str.tostring(startH) + ":" + str.tostring(startM)
+         + "-" + str.tostring(stopH) + ":" + str.tostring(stopM) + (flatOn ? " +FLATTEN" : "")
+    table.cell(hud, 0, 2, sess + "   -- wins 9-19%; 86% stop out; median winner holds ~10 days",
+         text_color = color.white,
+         bgcolor = (sessOn and flatOn) ? color.red : color.new(color.maroon, 40))

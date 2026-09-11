@@ -1,0 +1,68 @@
+
+================================================================================================================================
+5. SIGNAL-LEVEL CORRELATION -- does the EMA condition already live inside the breakout?
+================================================================================================================================
+
+   15m, research block, 46,090 bars
+      condition                     % of ALL bars    % of BREAKOUT bars    lift
+      EMA13 > EMA48 (state)                 36.9%                 82.6%    2.24
+      cross within 5 bars                    4.6%                 16.8%    3.64
+      cross within 10 bars                   8.3%                 25.1%    3.03
+      cross within 40 bars                  26.8%                 52.6%    1.96
+
+   30m, research block, 23,292 bars
+      condition                     % of ALL bars    % of BREAKOUT bars    lift
+      EMA13 > EMA48 (state)                 37.4%                 81.6%    2.18
+      cross within 5 bars                    4.3%                 16.8%    3.92
+      cross within 10 bars                   7.8%                 24.4%    3.14
+      cross within 40 bars                  25.6%                 48.4%    1.89
+
+   60m, research block, 11,895 bars
+      condition                     % of ALL bars    % of BREAKOUT bars    lift
+      EMA13 > EMA48 (state)                 38.3%                 83.2%    2.17
+      cross within 5 bars                    4.2%                 15.4%    3.69
+      cross within 10 bars                   7.6%                 21.6%    2.82
+      cross within 40 bars                  25.9%                 47.9%    1.85
+
+================================================================================================================================
+6. SELECTION -- three rules, all read ONCE on the locked block
+================================================================================================================================
+   TOP (best research PF)         tf=60  ema_f=21  ema_s=48  mode=cross  win=5  don_e=30  don_x=10  stop=2.5  tp=0.0  gate=adx>=20
+   CONSENSUS (top-100 mode)       tf=60  ema_f=21  ema_s=48  mode=cross  win=10  don_e=30  don_x=10  stop=2.5  tp=0.0  gate=adx>=20
+   THE BRIEF (EMA 13/48 fixed)    tf=60  ema_f=13  ema_s=48  mode=cross  win=40  don_e=55  don_x=20  stop=1.5  tp=0.0  gate=chop<=45
+
+   TOP (best research PF)
+      NQ research                        n    33  PF  3.363  $/t  +144.09  win 0.545  Sh +1.27  DD $     570  ret/DD  8.34
+      NQ LOCKED                          n    21  PF  0.647  $/t   -47.37  win 0.333  Sh -0.63  DD $   1,579  ret/DD -0.63
+
+   CONSENSUS (top-100 mode)
+      NQ research                        n    37  PF  3.189  $/t  +140.60  win 0.541  Sh +1.34  DD $     547  ret/DD  9.51
+      NQ LOCKED                          n    27  PF  0.957  $/t    -6.23  win 0.333  Sh -0.06  DD $   2,165  ret/DD -0.08
+
+   THE BRIEF (EMA 13/48 fixed)
+      NQ research                        n    67  PF  2.444  $/t  +122.01  win 0.403  Sh +1.37  DD $   1,251  ret/DD  6.53
+      NQ LOCKED                          n    42  PF  0.691  $/t   -44.96  win 0.214  Sh -0.78  DD $   3,474  ret/DD -0.54
+
+================================================================================================================================
+7. STRATEGY-RETURN CORRELATION AMONG THE TOP CELLS
+================================================================================================================================
+   Daily P&L of the 12 highest research-PF cells, correlated pairwise. A hypothesis
+   count is not a diversification count.
+
+             #1     #2     #3     #4     #5     #6     #7     #8     #9    #10    #11    #12
+   #1        --   0.73   0.82   1.00   0.73   0.72   0.82   0.67   0.82   0.86   0.47   0.84
+   #2      0.73     --   0.90   0.73   1.00   0.99   0.89   0.94   0.84   0.86   0.65   0.85
+   #3      0.82   0.90     --   0.82   0.89   0.89   1.00   0.77   0.94   0.70   0.56   0.70
+   #4      1.00   0.73   0.82     --   0.73   0.72   0.82   0.67   0.82   0.85   0.47   0.84
+   #5      0.73   1.00   0.89   0.73     --   0.99   0.90   0.95   0.85   0.86   0.66   0.85
+   #6      0.72   0.99   0.89   0.72   0.99     --   0.89   0.94   0.84   0.85   0.65   0.86
+   #7      0.82   0.89   1.00   0.82   0.90   0.89     --   0.78   0.95   0.70   0.56   0.70
+   #8      0.67   0.94   0.77   0.67   0.95   0.94   0.78     --   0.82   0.87   0.67   0.87
+   #9      0.82   0.84   0.94   0.82   0.85   0.84   0.95   0.82     --   0.70   0.58   0.71
+   #10     0.86   0.86   0.70   0.85   0.86   0.85   0.70   0.87   0.70     --   0.59   0.98
+   #11     0.47   0.65   0.56   0.47   0.66   0.65   0.56   0.67   0.58   0.59     --   0.59
+   #12     0.84   0.85   0.70   0.84   0.85   0.86   0.70   0.87   0.71   0.98   0.59     --
+
+   median |rho| 0.820   max 0.999   pairs above 0.7: 52 of 66
+
+   elapsed 2s

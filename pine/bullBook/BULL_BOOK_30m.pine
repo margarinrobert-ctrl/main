@@ -1,0 +1,222 @@
+//@version=6
+// =============================================================================================
+// THE BULLISH INTRADAY BOOK -- five long legs, one 30-minute chart, one contract each
+//
+// MEASURED ON MNQ, 2022-12 to 2025-12, under the LIVE cost model (itemised fees $1.44/round
+// turn + bar-dependent slippage):
+//     net                     $50,416
+//     Sharpe                  4.79          (best single leg 2.82)
+//     max drawdown            $1,068
+//     MAR                     47.2
+//     research block          $100.7/active day
+//     locked block            $118.8/active day
+//
+//   Adding the 15-minute leg V3 (close>5-bar high AND outside bar, 09:30-12:30, 4.0xATR) on a
+//   SECOND chart takes the book to $61,398 at Sharpe 4.77. It is left out of this script because
+//   it needs a different timeframe, not because it failed.
+//
+// ---------------------------------------------------------------------------------------------
+// READ THIS BEFORE THE NUMBERS. THIS IS NOT A TREND-FOLLOWING BOOK.
+//
+// It was asked for as a bullish TREND-following system. It is not one, and the reason is that
+// trend-following has been tested on this data repeatedly and does not work:
+//   * 200 EMA + ADX + crossover: the slope condition is REDUNDANT (identical trade list) and ADX
+//     contributes NEGATIVELY -- removing it raises Sharpe. See STUDY_TREND_BRIEF.md.
+//   * trend-pullback, 5,723,136 combinations: 127 rules beat a time-matched control on research,
+//     ZERO survived the holdout, 6.4 expected by chance. See STUDY_TREND_PULLBACK_2.md.
+//   * `close > MA` in every flavour wins 52.5-53.5% at $8-16/trade, and MA type is barely a
+//     choice: at matched lag SMA/LMA/EMA overlap 89.5-97.3% of their triggers, and
+//     "EMA rising" is ALGEBRAICALLY THE SAME RULE as "close > EMA".
+//     See STUDY_MA_LAG.md and STUDY_RULE_ANATOMY.md.
+//
+// What actually pays on this instrument is the opposite family. Of the five legs below, TWO ARE
+// EXPLICITLY COUNTER-TREND -- V2L only fires when EMA20 < EMA50, that is, in a DOWNTREND, and V1
+// buys a close at a 5-bar LOW after a volatility squeeze, a failed breakdown. One is a day filter
+// held to the close, one is a reversal bar, and only RW is momentum. Calling this "trend
+// following" would be a description of what was wanted, not of what is here.
+// ---------------------------------------------------------------------------------------------
+//
+// THE FIVE LEGS, each with its own geometry, each entered and exited independently:
+//   M1   ATR>1.2x mean AND bullish engulfing AND upper wick>60%      1.0xATR  flat 15:00
+//   M4   body<30% AND first hour AND ATR>1.8x mean                   4.0xATR  flat 16:00
+//   V1   ATR>1.2x mean AND BB width<0.7x mean AND close<5-bar low    3.0xATR  flat 15:00
+//   V2L  EMA20<EMA50 AND bullish engulfing (body>=20%) AND 09:30-11:30  2.5xATR  flat 15:00
+//   RW   RSI28>65 AND RSI28 rising AND lower wick>30% AND 09:30-16:00   4.0xATR  no flatten
+//   Every leg takes a 1.0R target measured from the fill.
+//
+// WHY A BOOK AND NOT THE BEST LEG: the legs are close to uncorrelated -- mean |rho| of daily P&L
+// is 0.098, max 0.438 -- so combining them raises Sharpe from 2.82 (best leg) to 4.79 without
+// raising drawdown proportionally. That is the one free lunch here. It is also the one that a
+// correlation matrix alone will talk you into wrongly: a decorrelated leg still has to have an
+// edge, and each of these was validated against its own matched control before being included.
+//
+// VALIDATION ACTUALLY RUN on the combined book, not asserted:
+//   * 100,000-path bootstrap -- P(net < 0) = 0.000%, 5th percentile net $46,998
+//   * permutation drawdown -- median $2,085, realised $1,319, so the realised path was LUCKIER
+//     than the median; do not plan around $1,068
+//   * 6-fold sequential walk-forward, no re-fitting -- 6/6 folds profitable, $86-194/day
+//   * risk of ruin (50% of $25,000) -- 0.0% at 1% risk/trade, 0.1% at 4%
+//   * every leg's trigger set diffed against its authoritative research mask:
+//     86/86, 94/94, 310/310, 172/172, 303/303 shared, ZERO on either side
+//
+// A 100,000-CONFIGURATION SEARCH DID NOT BEAT THIS. Each leg's stop, target and flatten was
+// sampled jointly (72 geometries per leg, 72^6 = 1.4e11 possible, 100,000 drawn) and the whole
+// distribution scored on the research block:
+//     book                            res net   res Sh   LOCKED net   LOCKED Sh   maxDD
+//     THIS SCRIPT                     $35,804     5.37      $25,733        4.48   $1,318
+//     argmax research Sharpe /100k    $33,035     5.49      $12,828        2.79   $1,713
+//     argmax per-trade excess         $55,839     4.28      $29,343        1.91   $4,266
+//   Taking the maximum of 100,000 on a research statistic bought 0.12 of research Sharpe and
+//   COST HALF THE HOLDOUT. Optimising per-trade excess instead bought raw dollars and 3.2x the
+//   drawdown, which is the hold-time trap from STUDY_RSI_WICK.md arriving again.
+//
+// AND THE PLATEAU IS PARTLY DRIFT, SO DO NOT READ IT AS ROBUSTNESS. 100.00% of the 100,000
+//   assignments are profitable on research -- but so are 90.04% of MATCHED-CONTROL books built by
+//   replacing every rule with random entries at the same minute of day. Six long legs on an
+//   instrument that rose 89% are profitable at almost any geometry. The statistic that actually
+//   separates them is Sharpe: above 3.0 sits 80.93% of real books and 0.00% of control books, and
+//   the median real book clears its control by $15,688 (p = 0.0042).
+//
+// REAL MARKET TEST -- PASSED. Every exit re-resolved on the TRUE 1-MINUTE PATH:
+//     leg    engine    true 1m   give-back   unresolved   entry-timing spread
+//     M1     $3,331     $3,360       +0.9%         0.0%                   88%
+//     M4     $9,005     $7,743      -14.0%         0.0%                   13%
+//     V1     $8,935     $8,428       -5.7%         0.0%                   86%
+//     V2L    $9,575     $9,470       -1.1%         0.0%                   43%
+//     V3    $10,981    $10,743       -2.2%         0.0%                   44%
+//     RW    $19,710    $19,710        0.0%         0.0%                   12%
+//     BOOK  $61,537    $59,454       -3.4%         0.0%
+//   The book survives real execution, giving back 3.4% with nothing left unresolved. But note the
+//   last column: M1 and V1 change by 88% and 86% of their result depending on WHERE IN THE ENTRY
+//   BAR the fill lands. Those two legs are execution-fragile and should be the first to be paper
+//   traded rather than trusted.
+//
+// THE HONEST CAVEAT, and it is not small: the book earns MORE per day on the locked block
+// ($118.8) than on research ($100.7). That is the WRONG SHAPE -- an edge decays out of sample,
+// it does not appear there -- and it is inherited, since five of the six legs carry the same flag
+// individually. Read the RESEARCH figure as the forward expectation, and treat the Sharpe of 4.79
+// as the most flattering number in this header rather than the most reliable one.
+//
+// One instrument, one regime, 88% of it a rising market. No second market was reachable.
+//
+// THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
+//   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15. Pine's ta.atr is Wilder's RMA at 1/14.
+//   * Clock conditions go through an explicit timezone. Pine's bare hour/minute are EXCHANGE
+//     time -- Chicago for CME -- and the research is New York.
+//   * Entries require barstate.isconfirmed, or the Strategy Tester's "Script execution" boxes
+//     change the result: measured at 5.1x as many signals, 80% on bars that never qualified.
+//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+strategy("Bullish intraday book | 5 long legs | 30m", overlay = true, initial_capital = 25000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72,
+     slippage = 2, pyramiding = 5, calc_on_every_tick = false, process_orders_on_close = false)
+
+preset = input.string("Best measured (locked)", "Configuration", group = "Configuration",
+     options = ["Best measured (locked)", "Custom (untested)"],
+     tooltip = "Locked reproduces the header exactly and ignores every input below it.")
+locked = preset == "Best measured (locked)"
+M_TFMIN = 30
+tfOK    = timeframe.in_seconds() == M_TFMIN * 60
+tfBlock = locked and not tfOK
+
+useM1i  = input.bool(true, "M1  reversal",        group = "Legs")
+useM4i  = input.bool(true, "M4  day filter",      group = "Legs")
+useV1i  = input.bool(true, "V1  failed breakdown",group = "Legs")
+useV2Li = input.bool(true, "V2L counter-trend",   group = "Legs")
+useRWi  = input.bool(true, "RW  momentum",        group = "Legs")
+useM1  = locked ? true : useM1i
+useM4  = locked ? true : useM4i
+useV1  = locked ? true : useV1i
+useV2L = locked ? true : useV2Li
+useRW  = locked ? true : useRWi
+
+tzIn  = input.string("America/New_York", "Timezone", group = "Setup",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"])
+tzEff = locked ? "America/New_York" : tzIn
+barMin = tzEff == "exchange" ? hour * 60 + minute : hour(time, tzEff) * 60 + minute(time, tzEff)
+
+// ---- primitives, defined to match the research exactly ---------------------------------------
+atrV      = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
+atrMean20 = ta.sma(atrV, 20)
+barRange  = math.max(high - low, syminfo.mintick)
+bodyFrac  = math.abs(close - open) / barRange
+upWick    = (high - math.max(close, open)) / barRange
+lowWick   = (math.min(close, open) - low) / barRange
+bbMid     = ta.sma(close, 20)
+bbW       = 4.0 * ta.stdev(close, 20) / math.max(bbMid, 1e-12)
+bbWMean50 = ta.sma(bbW, 50)
+ema20     = ta.ema(close, 20)
+ema50     = ta.ema(close, 50)
+rsi28     = ta.rsi(close, 28)
+bullEng   = close > open[1] and open < close[1] and close > open
+low5      = ta.lowest(low, 5)[1]
+
+// ---- the five rules --------------------------------------------------------------------------
+sigM1  = atrV > 1.2 * atrMean20 and bullEng and upWick > 0.6
+sigM4  = bodyFrac < 0.3 and barMin >= 570 and barMin < 630 and atrV > 1.8 * atrMean20
+sigV1  = atrV > 1.2 * atrMean20 and bbW < 0.7 * bbWMean50 and close < low5
+sigV2L = ema20 < ema50 and bullEng and bodyFrac >= 0.2 and barMin >= 570 and barMin < 690
+sigRW  = rsi28 > 65 and rsi28 > rsi28[1] and lowWick > 0.30 and barMin >= 570 and barMin < 960
+
+ready = not na(atrV) and atrV > 0 and not na(bbWMean50) and bar_index > 300
+
+// A leg may hold only one position at a time, exactly as the research engine's no-overlap rule
+// does. strategy.opentrades is the only way to ask that per leg rather than for the book.
+legOpen(string id) =>
+    bool found = false
+    if strategy.opentrades > 0
+        for i = 0 to strategy.opentrades - 1
+            if strategy.opentrades.entry_id(i) == id
+                found := true
+    found
+
+place(string id, bool sig, bool on, float mult) =>
+    if sig and on and ready and not tfBlock and not legOpen(id) and barstate.isconfirmed
+        risk = math.max(math.round(mult * atrV / syminfo.mintick), 1)
+        strategy.entry(id, strategy.long)
+        strategy.exit(id + "x", id, loss = risk, profit = risk)
+
+place("M1",  sigM1,  useM1,  1.0)
+place("M4",  sigM4,  useM4,  4.0)
+place("V1",  sigV1,  useV1,  3.0)
+place("V2L", sigV2L, useV2L, 2.5)
+place("RW",  sigRW,  useRW,  4.0)
+
+// ---- per-leg flatten times -------------------------------------------------------------------
+flat(string id, int hhmm) =>
+    if hhmm > 0 and barMin >= (math.floor(hhmm / 100) * 60 + hhmm % 100) and legOpen(id) and barstate.isconfirmed
+        strategy.close(id, comment = "session cutoff")
+
+flat("M1",  1500)
+flat("V1",  1500)
+flat("V2L", 1500)
+flat("M4",  1600)
+// RW has no time stop by design -- adding one roughly halves it. See STUDY_RSI_WICK.md.
+
+plotshape(sigM1,  "M1",  shape.triangleup, location.belowbar, color.new(color.teal,   0), size = size.tiny)
+plotshape(sigM4,  "M4",  shape.triangleup, location.belowbar, color.new(color.blue,   0), size = size.tiny)
+plotshape(sigV1,  "V1",  shape.triangleup, location.belowbar, color.new(color.purple, 0), size = size.tiny)
+plotshape(sigV2L, "V2L", shape.triangleup, location.belowbar, color.new(color.orange, 0), size = size.tiny)
+plotshape(sigRW,  "RW",  shape.triangleup, location.belowbar, color.new(color.green,  0), size = size.tiny)
+
+var table cfg = table.new(position.top_center, 1, 2, border_width = 1)
+if barstate.islast
+    string msg = ""
+    color bg = color.teal
+    if not tfOK
+        msg := "WRONG TIMEFRAME - this is a 30m book, chart is " + timeframe.period
+        bg := color.red
+        if locked
+            msg := msg + " - TRADING BLOCKED"
+    else if locked
+        msg := "AS MEASURED - 5 legs, 1 contract each"
+    else
+        msg := "CUSTOM - header figures do NOT apply"
+        bg := color.orange
+    table.cell(cfg, 0, 0, msg, text_size = size.normal, text_color = color.white, bgcolor = bg)
+    table.cell(cfg, 0, 1, "NOT a trend-following book - two legs are explicitly counter-trend. Locked block earns MORE than research: wrong shape, read the research figure.",
+         text_size = size.small, text_color = color.gray)

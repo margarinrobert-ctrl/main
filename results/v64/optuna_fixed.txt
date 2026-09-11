@@ -1,0 +1,31 @@
+
+==========================================================================================================================
+A. SHARPE, RECOMPUTED ON DAILY RETURNS (the figures in run_v64 section F were wrong)
+==========================================================================================================================
+  A per-trade series annualised with a per-BAR factor gave 7-12. Below, each trade is
+  placed on its EXIT day, summed per day and zero-filled over every session in the
+  block, then annualised at sqrt(252).
+
+  configuration                       res n  res tot%   res Sh  lock n  lock tot%  lock %/t  lock PF  lock Sh  lock maxDD%
+  shipped incumbent (V61 30m)           157     18.88     1.37      85      12.14    0.1428    1.596     1.19        -7.83
+  shipped 15m preset                    409     25.70     1.71     208      17.91    0.0861    1.479     1.71        -5.64
+  TPE / return best                     180     40.93     2.81      96       8.62    0.0898    1.316     0.87        -7.49
+  TPE / fold-median best                 63     26.43     1.93      31      -0.07   -0.0022    0.996    -0.01        -5.76
+  NSGA-II best return                   348     29.35     2.11     166      14.80    0.0891    1.513     1.70        -4.23
+  neighbourhood centre                  178     35.46     2.54      92      10.18    0.1107    1.411     1.03        -7.80
+
+==========================================================================================================================
+B. THE BOX EDGES -- widen it and see whether the optimum keeps running
+==========================================================================================================================
+  1,500 more trials on a box 2-3x wider on every continuous axis.
+  best research total +55.40% at tf 30 ent 17 exN 106 stop 7.74 tp 10.35 hold 451 k 4 w 67
+
+  axis                   box  top-50 median  top-50 p90   at the ceiling?
+  ent              [10, 150]          17.00       23.20                no
+  exN              [10, 150]         105.50      114.10                no
+  stop            [1.0, 8.0]           7.61        7.89               YES
+  tp             [0.0, 12.0]          10.35       10.82               YES
+  w                 [3, 120]          68.00       71.10                no
+  hold            [120, 960]         453.00      519.70                no
+
+  and on the LOCKED block that widest-box optimum reads n 70  +0.2334 %/trade  total +16.34%  against the shipped 15m preset's +17.91%

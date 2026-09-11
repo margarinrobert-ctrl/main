@@ -1,0 +1,131 @@
+//@version=5
+// Top of a 110,250-configuration sweep -- 1-HOUR chart, LONG ONLY.
+//
+// ================================ READ BEFORE RUNNING ================================
+// Selected on the IN-SAMPLE block only, across US30, US100, NQ, XAUUSD, EURUSD and BTC,
+// then read ONCE on an untouched block and re-validated on the TRUE INTRADAY PATH:
+//
+//                          n      win      E[R]     PF
+//     in-sample          411    25.6%    +0.488   1.65
+//     OUT-OF-SAMPLE      294    22.8%    +0.279   1.35    six of six markets positive
+//     US30 +0.584  XAUUSD +0.595  US100 +0.503  NQ +0.079  BTC +0.055  EURUSD +0.024
+//
+// INTRABAR AMBIGUITY IS 0.00%. With a 5R target and a wide channel stop, no bar ever
+// touches both barriers, so nothing here depends on a stop-vs-target tie-break. That is
+// the opposite of the earlier ATME configuration, whose barriers sat inside one bar and
+// which lost four fifths of its result when walked at 1-minute resolution.
+//
+// FIVE THINGS THAT ARE WRONG WITH IT, AND THEY MATTER MORE THAN THE TABLE:
+//
+//   1. IT WAS CHOSEN FROM 110,250 CONFIGURATIONS. No p-value here survives that
+//      multiplicity. Being the best of 110,250 is the weakest possible evidence.
+//   2. THE ENTRY TRIGGER IS INERT. A risk-matched random entry with identical filters
+//      and exits beats the Donchian breakout, and against an ATR stop (which cannot
+//      produce a degenerate risk denominator) the trigger is worth +0.02 R -- nothing.
+//      What this configuration earns comes from BEING LONG ABOVE A SLOW EMA WITH A WIDE
+//      TARGET, not from the 55-bar channel.
+//   3. IT IS DRIFT CAPTURE. 100% of the sweep's top 110 configurations are long-only
+//      with a 5R target, on a sample where all six markets rose. That is the same
+//      conclusion reached about the original Turtle: what it harvests is drift.
+//   4. THE NEIGHBOURHOOD IS UNSTABLE. One configuration a single channel-length away
+//      scores -0.351 R out of sample where this scores +0.279. Adjacent settings differ
+//      by half an R, which is noise, not a ridge.
+//   5. THE WIN RATE IS 23%. Nine of ten losers are full stop-outs and the account is
+//      carried by the rare 5R winner. Expect long, deep losing runs; a previous version
+//      of this family measured a 37-trade losing streak.
+//
+// THE RULES -- every constant below is from the sweep and none should be re-tuned here.
+//   chart    1 hour
+//   side     LONG ONLY (the sweep rejected shorts outright)
+//   entry    55-bar Donchian high, as a stop order
+//   stop     20-bar Donchian low, FIXED at the fill
+//   target   entry + 5.0 x risk, one exit, no scaling out
+//   filter   previous bar's close above the 100-period EMA on the 4H chart
+//   avoid    skip the trade unless the nearest prior DAILY / WEEKLY / MONTHLY high is at
+//            least 1.0 x risk above the entry
+//
+// NON-REPAINTING. Every higher-timeframe read uses lookahead_off AND the previous
+// completed bar, so the 4H EMA and the daily/weekly/monthly levels never contain data
+// from the period the current bar sits inside. Without the [1] this would read up to
+// 3h45m ahead on the EMA and a full month ahead on the monthly level. The research
+// layer's truncation audit passes at 105 checks with 0 mismatches.
+//
+// SIZING. Position size is left as a free input rather than fixed, because on a funded
+// evaluation the risk per trade is the dominant variable: modelled against a 6% target,
+// 4% trailing drawdown and 2% daily loss, P(pass) peaks near 0.50% risk per trade and
+// falls to 30% at 1% and 17% at 2%.
+//
+// Research tooling for education and analysis. Not financial advice.
+// =====================================================================================
+
+strategy("Sweep Top 1H | 55/20 Donchian + 4H EMA100 + 5R", overlay = true,
+     initial_capital = 100000, default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 100, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false, commission_type = strategy.commission.percent,
+     commission_value = 0.01, slippage = 1)
+
+entLen = input.int(55,  "Entry Donchian length", minval = 2,  group = "Rules")
+stpLen = input.int(20,  "Stop Donchian length",  minval = 2,  group = "Rules")
+emaLen = input.int(100, "Higher-timeframe EMA",  minval = 2,  group = "Rules")
+htf    = input.timeframe("240", "Higher timeframe", group = "Rules")
+tpR    = input.float(5.0, "Target, in R", minval = 0.25, step = 0.25, group = "Rules")
+tolR   = input.float(1.0, "Minimum clearance to major resistance, in R",
+     minval = 0.0, step = 0.25, group = "Rules")
+drawIt = input.bool(true, "Plot levels", group = "Display")
+
+// ---------------------------------------------- higher timeframe, non-repainting
+htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1],
+     lookahead = barmerge.lookahead_off)
+dHigh  = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_off)
+wHigh  = request.security(syminfo.tickerid, "W", high[1], lookahead = barmerge.lookahead_off)
+mHigh  = request.security(syminfo.tickerid, "M", high[1], lookahead = barmerge.lookahead_off)
+
+nearestAbove(a, b, d, px) =>
+    r = float(na)
+    if not na(a) and a > px
+        r := a
+    if not na(b) and b > px and (na(r) or b < r)
+        r := b
+    if not na(d) and d > px and (na(r) or d < r)
+        r := d
+    r
+
+resAbove = nearestAbove(dHigh, wHigh, mHigh, close)
+
+hiEnt = ta.highest(high, entLen)[1]
+loStp = ta.lowest(low, stpLen)[1]
+
+ready = not na(hiEnt) and not na(loStp) and not na(htfEma)
+flat  = strategy.position_size == 0
+
+// the gate is evaluated on the BREAKOUT LEVEL, so the decision is deterministic before
+// the order is sent. A missing major level BLOCKS the trade rather than waving it through.
+risk0 = hiEnt - loStp
+room0 = na(resAbove) ? na : resAbove - hiEnt
+ok = ready and close[1] > htfEma and risk0 > 0 and not na(room0) and room0 >= tolR * risk0
+
+var float riskPts = na
+
+if flat and barstate.isconfirmed
+    if ok
+        strategy.entry("L", strategy.long, stop = hiEnt)
+    else
+        strategy.cancel("L")
+
+if strategy.position_size > 0 and strategy.position_size[1] == 0
+    riskPts := strategy.opentrades.entry_price(0) - loStp
+
+if strategy.position_size > 0 and not na(riskPts) and riskPts > 0
+    ep = strategy.opentrades.entry_price(0)
+    strategy.exit("X", from_entry = "L", stop = ep - riskPts, limit = ep + tpR * riskPts)
+
+if strategy.position_size == 0
+    riskPts := na
+
+plot(drawIt ? htfEma : na, "4H EMA", color = color.new(color.blue, 0), linewidth = 2)
+plot(drawIt ? hiEnt : na, "entry channel", color = color.new(color.teal, 30),
+     style = plot.style_stepline)
+plot(drawIt ? loStp : na, "stop channel", color = color.new(color.maroon, 30),
+     style = plot.style_stepline)
+plot(drawIt ? resAbove : na, "major resistance", color = color.new(color.red, 0),
+     style = plot.style_linebr)

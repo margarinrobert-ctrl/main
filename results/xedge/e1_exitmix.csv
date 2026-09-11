@@ -1,0 +1,13 @@
+side,block,exit,n,share,mean_R,total_R,share_of_net
+LONG,research,initial stop,100,26.5,-1.1122,-111.2,-657.7
+LONG,research,3R target,47,12.4,2.9398,138.2,817.1
+LONG,research,EMA trail,231,61.1,-0.1899,-43.9,-259.4
+LONG,locked,initial stop,51,23.8,-1.0749,-54.8,-180.0
+LONG,locked,3R target,34,15.9,2.9317,99.7,327.3
+LONG,locked,EMA trail,129,60.3,-0.1117,-14.4,-47.3
+SHORT,research,initial stop,135,46.9,-1.2026,-162.3,-217.2
+SHORT,research,3R target,23,8.0,2.795,64.3,86.0
+SHORT,research,EMA trail,130,45.1,0.1794,23.3,31.2
+SHORT,locked,initial stop,83,46.9,-1.1387,-94.5,-1117.6
+SHORT,locked,3R target,25,14.1,2.8586,71.5,845.1
+SHORT,locked,EMA trail,69,39.0,0.2114,14.6,172.5

@@ -15,9 +15,9 @@ import numpy as np
 sys.path.insert(0, "research")
 import tf_sweep as T
 
-out = np.load("/tmp/tf_sweep_out.npy")
-meta = np.load("/tmp/tf_sweep_meta.npy")
-G = np.load("/tmp/tf_sweep_grid.npy")
+out = np.load("results/tf/tf_sweep_out.npy")
+meta = np.load("results/tf/tf_sweep_meta.npy")
+G = np.load("results/tf/tf_sweep_grid.npy")
 nk = len(G)
 GG = np.tile(G, (len(meta) // nk, 1))
 

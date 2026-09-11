@@ -1,0 +1,50 @@
+
+====================================================================================================
+B. CONDITIONAL MARGINALS inside the 08:30-11:30 window (research, long), the consensus
+   cell, the NQ defaults run on gold unchanged, the top research cell (the max of 24,192
+   draws), LOCKED read once for each with a random-bar control
+====================================================================================================
+    level  03:00-12:00: R +0.060 PF 1.17 win 51% (n 160)  RTH 09:30-16:00: R +0.057 PF 1.17 win 50% (n 166)  day 00:00-24:00: R +0.061 PF 1.19 win 51% (n 159)   -> day 00:00-24:00
+    flat   12:00: R +0.056 PF 1.16 win 51% (n 162)  16:00: R +0.063 PF 1.20 win 50% (n 162)   -> 16:00
+    N      20: R +0.045 PF 1.14 win 50% (n 169)  55: R +0.074 PF 1.22 win 52% (n 154)   -> 55
+    adx    0: R +0.033 PF 1.07 win 48% (n 204)  20: R +0.067 PF 1.21 win 52% (n 163)  25: R +0.078 PF 1.25 win 52% (n 118)   -> 25
+    gate   False: R +0.058 PF 1.16 win 50% (n 188)  True: R +0.060 PF 1.19 win 52% (n 135)   -> True
+    ema    0.0: R +0.051 PF 1.16 win 51% (n 176)  2.0: R +0.068 PF 1.20 win 51% (n 148)   -> 2.0
+    atrx   0.0: R +0.070 PF 1.20 win 51% (n 163)  1.1: R +0.049 PF 1.16 win 51% (n 161)   -> 0.0
+    stop   1.5: R +0.092 PF 1.18 win 50% (n 169)  2.5: R +0.050 PF 1.16 win 51% (n 160)  3.5: R +0.036 PF 1.19 win 52% (n 157)   -> 1.5
+    exN    10: R +0.063 PF 1.19 win 51% (n 162)  20: R +0.056 PF 1.17 win 51% (n 162)   -> 10
+    tp     0.0: R +0.059 PF 1.17 win 48% (n 156)  1.0: R +0.060 PF 1.19 win 54% (n 167)   -> 1.0
+
+  NQ defaults on gold, unchanged: {'level': 'RTH 09:30-16:00', 'window': '09:30-14:00', 'flat': '16:00', 'N': 55, 'adx': 20, 'gate': True, 'ema': 0.0, 'atrx': 0.0, 'stop': 2.5, 'exN': 20, 'tp': 0.0}
+  research (signals 220)                   n  152 win 46.1% PF 0.885 R -0.0683 pts  -0.40 Sharpe -0.32 stop 23% chan 3% flat 74% tgt 0% | ctl -0.0484 p 0.683
+  locked (signals 146)                     n   88 win 53.4% PF 1.197 R +0.0550 pts  +1.22 Sharpe 0.44 stop 18% chan 3% flat 78% tgt 0% | ctl -0.0074 p 0.167
+    bootstrap P(mean R <= 0) 0.256; net +107.3 USD/oz per 1 oz; by year: 2025: n 62.0 R +0.089  2026: n 26.0 R -0.025
+    exit split (locked): stop 16 $-361.3, target 0 $+0.0, channel 3 $-55.5, flat 69 $+524.1
+    cost x1.5                              n   88 win 53.4% PF 1.164 R +0.0442 pts  +1.03 Sharpe 0.38 stop 18% chan 3% flat 78% tgt 0%
+    cost x2.0                              n   88 win 53.4% PF 1.132 R +0.0334 pts  +0.84 Sharpe 0.31 stop 18% chan 3% flat 78% tgt 0%
+
+  GOLD CONSENSUS (marginal per axis in the window): {'level': 'day 00:00-24:00', 'window': '08:30-11:30', 'flat': '16:00', 'N': 55, 'adx': 25, 'gate': True, 'ema': 2.0, 'atrx': 0.0, 'stop': 1.5, 'exN': 10, 'tp': 1.0}
+  research (signals 132)                   n  103 win 63.1% PF 1.499 R +0.2217 pts  +1.17 Sharpe 1.08 stop 31% chan 5% flat 6% tgt 58% | ctl -0.1231 p 0.000
+  locked (signals 78)                      n   64 win 50.0% PF 0.908 R -0.0325 pts  -0.55 Sharpe -0.24 stop 47% chan 3% flat 5% tgt 45% | ctl -0.0234 p 0.520
+    bootstrap P(mean R <= 0) 0.594; net -35.4 USD/oz per 1 oz; by year: 2025: n 48.0 R +0.004  2026: n 16.0 R -0.143
+    exit split (locked): stop 30 $-375.9, target 29 $+334.8, channel 2 $-4.0, flat 3 $+9.7
+    cost x1.5                              n   64 win 48.4% PF 0.853 R -0.0767 pts  -0.91 Sharpe -0.39 stop 48% chan 3% flat 5% tgt 44%
+    cost x2.0                              n   64 win 46.9% PF 0.800 R -0.1132 pts  -1.27 Sharpe -0.55 stop 48% chan 3% flat 6% tgt 42%
+
+  top research cell (max of 24,192): {'level': 'day 00:00-24:00', 'window': '08:30-11:30', 'flat': '12:00', 'N': 55, 'adx': 25, 'gate': np.True_, 'ema': np.float64(2.0), 'atrx': np.float64(0.0), 'stop': np.float64(3.5), 'exN': 10, 'tp': np.float64(1.0)}
+  research (signals 132)                   n   94 win 61.7% PF 1.754 R +0.1334 pts  +1.75 Sharpe 1.17 stop 6% chan 5% flat 76% tgt 13% | ctl -0.0496 p 0.000
+  locked (signals 78)                      n   61 win 50.8% PF 0.745 R -0.0861 pts  -1.64 Sharpe -0.53 stop 13% chan 5% flat 74% tgt 8% | ctl -0.0028 p 0.947
+    bootstrap P(mean R <= 0) 0.874; net -100.0 USD/oz per 1 oz; by year: 2025: n 46.0 R -0.136  2026: n 15.0 R +0.068
+    exit split (locked): stop 8 $-169.9, target 5 $+106.8, channel 3 $-53.1, flat 45 $+16.2
+    cost x1.5                              n   61 win 50.8% PF 0.720 R -0.0941 pts  -1.82 Sharpe -0.59 stop 13% chan 5% flat 74% tgt 8%
+    cost x2.0                              n   61 win 50.8% PF 0.697 R -0.1021 pts  -2.01 Sharpe -0.65 stop 13% chan 5% flat 74% tgt 8%
+
+  LOCKED neighbours of the consensus (multiplicity: 8 extra reads):
+    stop 2.5                               n   62 win 53.2% PF 0.869 R -0.0435 pts  -0.93 Sharpe -0.30 stop 24% chan 21% flat 31% tgt 24%
+    stop 1.5                               n   64 win 50.0% PF 0.908 R -0.0325 pts  -0.55 Sharpe -0.24 stop 47% chan 3% flat 5% tgt 45%
+    no target                              n   61 win 36.1% PF 0.677 R -0.1976 pts  -2.35 Sharpe -0.80 stop 56% chan 15% flat 30% tgt 0%
+    target 0.75x                           n   65 win 52.3% PF 0.815 R -0.0889 pts  -1.06 Sharpe -0.48 stop 45% chan 2% flat 2% tgt 52%
+    ADX 20                                 n   86 win 52.3% PF 0.911 R -0.0081 pts  -0.51 Sharpe -0.27 stop 44% chan 5% flat 6% tgt 45%
+    no gate                                n   80 win 48.8% PF 0.912 R -0.0384 pts  -0.54 Sharpe -0.25 stop 46% chan 4% flat 5% tgt 45%
+    flat 16:00                             n   64 win 50.0% PF 0.908 R -0.0325 pts  -0.55 Sharpe -0.24 stop 47% chan 3% flat 5% tgt 45%
+    window 08:00-12:00                     n   84 win 47.6% PF 0.888 R -0.0746 pts  -0.66 Sharpe -0.33 stop 49% chan 2% flat 6% tgt 43%

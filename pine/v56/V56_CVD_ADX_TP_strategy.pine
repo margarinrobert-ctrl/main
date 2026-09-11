@@ -1,0 +1,239 @@
+// ================================================================================================
+// V56 -- V55 plus ADX and an ATR take profit, and a PARITY FIX that was found by diffing this
+// script's own order model against the research engine rather than by reading it.
+//
+// ==================== THE ANSWER TO "IS IT 100%": NO, AND HERE IS THE GAP ====================
+// The V55 script and the backtest behind it did NOT agree. The script's order model was rebuilt in
+// Python and run against the engine on the identical signals:
+//
+//   model                          trades   mean R    count vs engine   same exit bar   corr    dR
+//   engine (the research)             254   +0.3394        --                --          --      --
+//   V55 as shipped                    245   +0.3429      96.5%             80.0%      0.9833  +1.1%
+//   THIS BUILD                        253   +0.3284      99.6%             87.7%      0.9997  -3.2%
+//   -- with a 4 ATR target --
+//   engine (the research)             315   +0.2131        --                --          --      --
+//   V55 as shipped                    301   +0.2456      95.6%             77.6%      0.9520 +15.2%
+//   THIS BUILD                        314   +0.2233      99.7%             93.9%      0.9879  +4.8%
+//
+// V55 LOST 9 TRADES IN 254 AND READ 15.2% BETTER THAN THE RESEARCH ONCE A TARGET WAS ADDED. A
+// Strategy Tester number BETTER than the research is the gap, not an edge -- that is the finding
+// `STUDY_PINE_PARITY` was written for. Three causes were found; two are fixed here:
+//
+//   1. FIXED -- NO EXIT ORDER WAS LIVE DURING THE ENTRY BAR. `strategy.exit` was only called on a
+//      bar where a position already existed, so the first one was placed at the CLOSE of the fill
+//      bar and could not trigger until the bar after. This build places a FILL-RELATIVE bracket
+//      (`loss`/`profit` in ticks) at the SIGNAL bar, which is live during the fill bar.
+//   2. FIXED -- THE RISK WAS ANCHORED TO THE FILL BAR'S ATR. It is now stored at the signal bar in
+//      `pendAtr`, which is the only ATR knowable when the order is sent, and is what the research
+//      uses.
+//   3. NOT FIXABLE -- THE WORKING LEVEL IS ONE BAR STALE. An order placed at the close of bar j is
+//      live during bar j+1; the engine evaluates the level at bar j and applies it at bar j. This
+//      is a property of Pine, not a bug, and it is what the remaining 12.3% of differing exit bars
+//      is. It now reads CONSERVATIVE (-3.2%), which is the right direction for a residual.
+//
+// ============================== ADX: NOT ONE OF FOUR EARNS A PLACE ==============================
+// Measured under the model THIS SCRIPT implements, against a random filter of the same
+// selectivity, 2,000 draws, on both blocks. Low p is good.
+//
+//   condition                   research              LOCKED                keep
+//   CVD only (shipped)      +0.3051 PF1.59 p 0.002  +0.3125 PF1.63 p 0.003  21.5%
+//   + ADX >= 20             +0.1900 PF1.38 p 0.281  +0.2703 PF1.59 p 0.035  14.6%
+//   + ADX >= 25             +0.1345 PF1.28 p 0.553  +0.1579 PF1.36 p 0.275   9.7%
+//   + ADX <= 20             +0.3166 PF1.59 p 0.100  +0.4015 PF1.80 p 0.013   6.9%
+//
+// The conventional readings (>= 20, >= 25) LOWER the edge and fail. The INVERTED one, ADX <= 20,
+// scores best -- and it fails research at p 0.100 under this script's model while clearing it at
+// p 0.027 under the engine's. A result that depends on the order model is not a result. It also
+// keeps only 6.9% of signals, which is n=39 on the locked block. All four default OFF.
+//
+// ============================ THE ATR TARGET: CLEARS ITS CONTROL AND ============================
+// ================================ STILL LOSES TO NO TARGET ================================
+//   target        research R   locked R    research p   locked p   target hit   trades (res)
+//   none            +0.3051     +0.3125      0.002       0.003         --           166
+//   2 ATR (1R)      +0.0797     +0.0652      0.048       0.127       49.1%          273
+//   3 ATR (1.5R)    +0.1669     +0.2178      0.001       0.003       40.0%          230
+//   4 ATR (2R)      +0.1949     +0.2268      0.004       0.002       31.4%          210
+//   6 ATR (3R)      +0.1783     +0.3305      0.056       0.000       17.4%          184
+//
+// 3, 4 and 6 ATR all clear their controls on both blocks -- and every one of them earns LESS PER
+// TRADE than no target, and less in TOTAL too: 166 x 0.3051 = 50.6 R on research against
+// 210 x 0.1949 = 40.9 R at a 4 ATR target, and 88 x 0.3125 = 27.5 against 105 x 0.2268 = 23.8 on
+// locked. The target raises the TRADE COUNT (positions close sooner and free the position lock)
+// and lowers the edge. This is the ELEVENTH time no-target has beaten every target tested on this
+// branch. It defaults to OFF, and the control column is why it is offered at all rather than
+// refused.
+//
+// ==================================== WHAT IS UNCHANGED ====================================
+// The gate is EXHAUSTED SELLERS -- price Lower Low with CVD Higher Low at a confirmed pivot --
+// and nothing else by default. Under this script's own order model it scores research +0.3051
+// PF 1.588 p 0.002 and locked +0.3125 PF 1.634 p 0.003, so the headline survives the honest model.
+// Absorbed selling and the EMA 13x48 state remain available and remain measured to COST the locked
+// block (p 0.210 and p 0.158 respectively).
+//
+// CVD IS A PROXY. True aggressor delta is in no feed on this branch, so each lower-timeframe bar's
+// whole volume is signed by its own direction and accumulated -- TradingView's own rule, computed
+// here rather than called from a built-in so the identity with the research is provable.
+// NO LOOKAHEAD: a pivot at bar i needs i-k..i+k and is stamped at i+k. n = 88 on the locked block.
+// ONE MARKET -- CVD needs 1-minute bars and NQ is the only feed here that has them.
+// COSTS ARE NOT SET. The research charged 0.72 points round turn plus 0.25 per fill on MNQ.
+// See docs/ib/STUDY_V56_PARITY_ADX_TP.md.
+// ================================================================================================
+
+//@version=5
+strategy("V56 CVD exhaustion + ADX + ATR target", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 100000,
+     calc_on_every_tick = false, process_orders_on_close = false, pyramiding = 0)
+
+gG = "Geometry"
+gC = "Order flow"
+gA = "ADX -- none of the four cleared both blocks"
+gT = "Take profit -- clears its control and still loses to no target"
+gO = "Overrides -- each was measured to cost the locked block"
+gS = "Session"
+
+entN    = input.int(20, "Entry channel (bars)", minval = 2, group = gG)
+exitN   = input.int(20, "Exit channel (bars)", minval = 2, group = gG)
+stopN   = input.float(2.0, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG)
+maxHold = input.int(480, "Max hold (bars)", minval = 1, group = gG)
+
+pivK  = input.int(3, "Pivot bars either side", minval = 1, group = gC,
+     tooltip = "Positive on both blocks at k = 2, 3, 4 and 5.")
+cvWin = input.int(20, "Exhaustion counts if it fired within N bars", minval = 1, group = gC,
+     tooltip = "Positive on both blocks at w = 5, 10, 20 and 40, decaying as w widens. 20 ships over the higher-scoring 5 because it carries n=88 locked trades against 37.")
+cvLTF = input.string("1", "Volume-delta lower timeframe", group = gC,
+     options = ["1S", "5S", "10S", "30S", "1", "5"])
+
+adxMode = input.string("off", "ADX condition", group = gA,
+     options = ["off", "ADX >= 20", "ADX >= 25", "ADX <= 20"],
+     tooltip = "The conventional floors LOWER the edge and fail (p 0.281 and 0.553 on research). ADX <= 20 scores best and is model-dependent -- p 0.100 under this script's order model against 0.027 under the engine's -- on n=39 locked trades.")
+adxLen = input.int(14, "ADX length", minval = 2, group = gA)
+
+tpATR = input.float(0.0, "Take profit (ATR, 0 = none)", minval = 0.0, step = 0.5, group = gT,
+     tooltip = "3, 4 and 6 ATR all clear their controls on both blocks and every one earns LESS per trade AND less in total than no target. Eleventh time no-target has won on this branch.")
+
+useAbs = input.bool(false, "Also enter on ABSORBED SELLING (price HL + CVD LL)", group = gO,
+     tooltip = "MEASURED COST: halves the edge (+0.3509 -> +0.1842) and loses locked (p 0.005 -> 0.210).")
+useCross = input.bool(false, "Also require EMA 13 > EMA 48", group = gO,
+     tooltip = "MEASURED COST: locked p 0.005 -> 0.158.")
+
+sessOn = input.bool(false, "Restrict entries to a window", group = gS)
+startH = input.int(9,  "Start hour (New York)",  minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(16, "Stop hour (New York)",   minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute", minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "Flatten at the stop time", group = gS)
+
+// ------------------------------------------------------------------------------------------------
+// CVD, computed here so the rule is provably the one the research measured.
+// ------------------------------------------------------------------------------------------------
+ltfDelta() =>
+    close > open ? volume : close < open ? -volume : 0.0
+
+dArr = request.security_lower_tf(syminfo.tickerid, cvLTF, ltfDelta())
+barDelta = array.size(dArr) > 0 ? array.sum(dArr) : 0.0
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := cvd + barDelta
+
+pvLow = ta.pivotlow(low, pivK, pivK)
+var float prevLowP = na
+var float prevLowC = na
+var bool exhaustedSellers = false
+var bool absorbedSelling = false
+
+if barstate.isconfirmed
+    exhaustedSellers := false
+    absorbedSelling := false
+    if not na(pvLow)
+        curP = pvLow
+        curC = cvd[pivK]
+        if not na(prevLowP)
+            exhaustedSellers := curP < prevLowP and curC > prevLowC
+            absorbedSelling := curP > prevLowP and curC < prevLowC
+        prevLowP := curP
+        prevLowC := curC
+
+sinceES = nz(ta.barssince(exhaustedSellers), 1000000)
+sinceAS = nz(ta.barssince(absorbedSelling), 1000000)
+flowOk = (sinceES <= cvWin - 1) or (useAbs and sinceAS <= cvWin - 1)
+
+// ------------------------------------------------------------------------------------------------
+atrN   = ta.atr(14)
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)[1]
+eFast  = ta.ema(close, 13)
+eSlow  = ta.ema(close, 48)
+[_dip, _dim, adxVal] = ta.dmi(adxLen, adxLen)      // [+DI, -DI, ADX] -- the THIRD element is ADX
+
+crossOk = not useCross or eFast > eSlow
+adxOk = adxMode == "off" ? true :
+     adxMode == "ADX >= 20" ? (adxVal >= 20.0) :
+     adxMode == "ADX >= 25" ? (adxVal >= 25.0) : (adxVal <= 20.0)
+
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin = not sessOn ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = sessOn and flatOn and not inWin
+
+gateOk = flowOk and crossOk and adxOk and inWin and atrN > 0 and not na(entHi)
+
+// ------------------------------------------------------------------------------------------------
+// PARITY FIX. The risk is anchored to the SIGNAL bar's ATR -- the only one knowable when the order
+// is sent -- and a FILL-RELATIVE bracket is placed at the signal bar so a stop is live during the
+// fill bar. From the next bar the absolute level takes over, maxed against the exit channel and
+// capped at the prior close, because a sell stop resting above the market is not a stop.
+// ------------------------------------------------------------------------------------------------
+var float pendAtr = na
+var int   heldBars = 0
+
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk and high > entHi
+    pendAtr := atrN
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+    lossTk = stopN * pendAtr / syminfo.mintick
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", loss = lossTk,
+             profit = tpATR * pendAtr / syminfo.mintick)
+    else
+        strategy.exit("x", from_entry = "L", loss = lossTk)
+
+if barstate.isconfirmed and strategy.position_size > 0 and not na(pendAtr)
+    fillStop = strategy.position_avg_price - stopN * pendAtr
+    lvl = math.max(fillStop, nz(exitLo, fillStop))
+    lvl := math.min(lvl, close[1])
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", stop = lvl,
+             limit = strategy.position_avg_price + tpATR * pendAtr)
+    else
+        strategy.exit("x", from_entry = "L", stop = lvl)
+
+if barstate.isconfirmed and strategy.position_size > 0 and (doFlat or heldBars >= maxHold)
+    strategy.close_all(doFlat ? "flat" : "max hold")
+
+plot(entHi, "Entry channel", color = color.new(color.teal, 50))
+plot(exitLo, "Exit channel", color = color.new(color.maroon, 50))
+plot(eFast, "EMA 13", color = color.new(color.aqua, 55))
+plot(eSlow, "EMA 48", color = color.new(color.orange, 55))
+plotshape(exhaustedSellers, "Exhausted sellers (gating)", shape.triangleup, location.belowbar,
+     color.new(color.lime, 0), size = size.small)
+plotshape(absorbedSelling, "Absorbed selling", shape.circle, location.belowbar,
+     color.new(color.green, 30), size = size.tiny)
+
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    over = (useAbs ? "+absorbed " : "") + (useCross ? "+EMA13>48 " : "")
+         + (adxMode != "off" ? "+" + adxMode + " " : "") + (tpATR > 0 ? "+TP " : "")
+         + (sessOn ? "+session" : "")
+    table.cell(hud, 0, 0, over == "" ? "exhausted sellers only -- the measured rule"
+         : "OVERRIDES: " + over, text_color = color.white,
+         bgcolor = over == "" ? color.new(color.teal, 30) : color.new(color.orange, 20))
+    table.cell(hud, 0, 1, "CVD from " + cvLTF + "   pivot k=" + str.tostring(pivK)
+         + "   window " + str.tostring(cvWin), text_color = color.white,
+         bgcolor = color.new(color.gray, 40))
+    table.cell(hud, 0, 2, "parity vs research: 99.6% of trades, R corr 0.9997",
+         text_color = color.white, bgcolor = color.new(color.gray, 40))

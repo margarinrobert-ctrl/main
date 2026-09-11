@@ -1,0 +1,160 @@
+PHASE 3 + PHASE 4 + PHASE 5. The meta layer over the V38 primary, GATE 2, and the deflation.
+
+THE PRIMARY. Donchian 70 entry / 30 exit, 2.5 ATR stop, no target, long only, 30-minute bars --
+the V38 geometry, FROZEN on other markets and never fitted on gold. Among the five frozen
+geometries it is the only LONG cell that is not negative on block A (+0.00061 %/event), which is
+how it was chosen: block A is the designated primary-fitting block, so choosing here keeps block B
+clean for the meta layer, per the architecture's rule that the primary must be fitted on data the
+meta layer does not see.
+
+>>> GATE 1 ALREADY FAILED. On block B this primary reads +0.02766 %/event at p 0.211 (MARGINAL);
+>>> across five geometries x three sides, 0 of 15 cells cleared p<=0.10 on block A and 0 of 15 on
+>>> block B. The architecture's instruction at that point is to stop. The meta layer is built anyway
+>>> because it was asked for, and because a completed Gate 2 on a failed Gate 1 is itself worth
+>>> recording -- but NOTHING it returns can be read as rescuing the primary. That is precisely the
+>>> claim the two-gate structure exists to make impossible.
+
+THE META LAYER. Features live here and nowhere else. Trained INSIDE block B with purged, embargoed
+K-fold cross-validation, every model run beside a SHUFFLED-LABEL TWIN, and scored on UNSIZED
+per-event returns. Fracdiff and the HMM enter as features only; neither ever emits a signal.
+
+
+==========================================================================================================================
+THE PRIMARY'S EVENT STREAM (unchanged, unfiltered, unsized)
+==========================================================================================================================
+  A_primary  n  743   net +0.00061 %/event   p 0.467   hit 34.6%   MARGINAL
+  B_meta     n  483   net +0.02766 %/event   p 0.211   hit 32.3%   MARGINAL
+  C_locked   n  289   net +0.13560 %/event   p 0.019   hit 36.3%   PASS
+
+==========================================================================================================================
+PHASE 3 -- FRACDIFF ORDER, chosen by ADF on BLOCK A ONLY
+==========================================================================================================================
+        d  window     adf_t     crit5  stationary
+   0.0000       1   -1.9073   -2.8600       False
+   0.1000     503   -2.0958   -2.8600       False
+   0.2000     497   -2.2987   -2.8600       False
+   0.3000     388   -2.4190   -2.8600       False
+   0.4000     282   -2.4641   -2.8600       False
+   0.5000     200   -2.5394   -2.8600       False
+   0.6000     140   -2.8117   -2.8600       False
+   0.7000      97   -3.0048   -2.8600        True
+   0.8000      64   -3.9846   -2.8600        True
+   0.9000      38   -6.0834   -2.8600        True
+   1.0000       2  -16.8913   -2.8600        True
+
+  chosen d = 0.7  (smallest on the ladder clearing the 5% MacKinnon value on block A)
+
+==========================================================================================================================
+PHASE 3 -- HMM, Baum-Welch on BLOCK A ONLY, FILTERED posteriors everywhere
+==========================================================================================================================
+  states ordered by drift (bear, side, bull):
+    bear  mean 30m log-return x100 -0.00328   mean rv48  0.23689   self-transition 0.9279
+    side  mean 30m log-return x100 -0.00080   mean rv48  0.08648   self-transition 0.9627
+    bull  mean 30m log-return x100 +0.00189   mean rv48  0.13979   self-transition 0.9431
+  log-likelihood 65484.9;  K=3 is one hyperparameter and is counted as a trial
+  fracdiff fixed window 97 bars;  28 features built
+
+==========================================================================================================================
+LEAKAGE CHECKS
+==========================================================================================================================
+  truncation audit: 0 mismatches over 1,680 value comparisons on 60 probe bars
+  filtered vs SMOOTHED HMM state agreement 96.4% -- the smoothed version reads the future
+  and is computed here only to show the two are NOT the same labelling (STUDY_V27: identical
+  trade counts, locked PF 1.351 smoothed against 0.973 causal).
+
+  events with a complete feature row: 1515 of 1515
+
+==========================================================================================================================
+PHASE 3 -- META MODELS on BLOCK B only (483 events), purged + embargoed 5-fold, each beside a SHUFFLED TWIN
+==========================================================================================================================
+  model        OOF AUC  twin AUC    OOF IC   twin IC   (IC = Spearman of score vs %/event)
+  logit         0.4871    0.4681   -0.1076   -0.1115
+  rf            0.5097    0.4987   -0.0797   -0.0945
+  lgbm          0.4780    0.5019   -0.0934   -0.0506
+
+==========================================================================================================================
+GATE 2 -- does the meta layer improve UNSIZED per-event return? Sizing is reported, never credited
+==========================================================================================================================
+  Thresholds are DECLARED as keep-fractions of the OOF score, not tuned: 80/70/60/50/40/30%.
+
+  model     keep     n  base %/ev   filtered    uplift                 95% CI       p     sized  verdict
+  logit      80%   386    0.02766    0.01810  -0.00956 [ -0.0460, +0.0241]   1.000   0.01665  FAIL
+  logit      70%   338    0.02766    0.02768  +0.00002 [ -0.0443, +0.0446]   0.505   0.02247  MARGINAL
+  logit      60%   290    0.02766    0.01819  -0.00947 [ -0.0623, +0.0402]   1.000   0.01523  FAIL
+  logit      50%   242    0.02766   -0.03401  -0.06167 [ -0.1267, +0.0026]   1.000  -0.02130  FAIL
+  logit      40%   193    0.02766   -0.02619  -0.05385 [ -0.1380, +0.0309]   1.000  -0.01377  FAIL
+  logit      30%   145    0.02766   -0.03457  -0.06223 [ -0.1602, +0.0452]   1.000  -0.01687  FAIL
+  rf         80%   386    0.02766    0.02571  -0.00195 [ -0.0315, +0.0267]   1.000   0.02795  FAIL
+  rf         70%   338    0.02766    0.04962  +0.02195 [ -0.0171, +0.0608]   0.122   0.04685  MARGINAL
+  rf         60%   290    0.02766    0.05461  +0.02695 [ -0.0284, +0.0825]   0.160   0.05033  MARGINAL
+  rf         50%   242    0.02766    0.04862  +0.02095 [ -0.0451, +0.0902]   0.267   0.04412  MARGINAL
+  rf         40%   193    0.02766    0.02818  +0.00052 [ -0.0801, +0.0900]   0.460   0.02588  MARGINAL
+  rf         30%   145    0.02766   -0.00346  -0.03112 [ -0.1306, +0.0716]   1.000  -0.00082  FAIL
+  lgbm       80%   386    0.02766    0.03445  +0.00679 [ -0.0194, +0.0316]   0.293   0.02913  MARGINAL
+  lgbm       70%   338    0.02766    0.02510  -0.00256 [ -0.0433, +0.0381]   1.000   0.02304  FAIL
+  lgbm       60%   290    0.02766    0.02403  -0.00363 [ -0.0581, +0.0515]   1.000   0.02190  FAIL
+  lgbm       50%   242    0.02766    0.03430  +0.00664 [ -0.0567, +0.0756]   0.424   0.02901  MARGINAL
+  lgbm       40%   193    0.02766    0.02386  -0.00380 [ -0.0783, +0.0749]   1.000   0.02193  FAIL
+  lgbm       30%   145    0.02766    0.03713  +0.00947 [ -0.0918, +0.1233]   0.403   0.03185  MARGINAL
+
+==========================================================================================================================
+GATE 2 CONTROL -- a RANDOM filter keeping the same fraction. 400 draws per cell
+==========================================================================================================================
+  model     keep  real uplift  random p50  random p95       p
+  logit      80%     -0.00956    +0.00089    +0.03009   0.715
+  logit      70%     +0.00002    +0.00039    +0.03840   0.505
+  logit      60%     -0.00947    +0.00249    +0.05123   0.640
+  logit      50%     -0.06167    -0.00095    +0.06848   0.958
+  logit      40%     -0.05385    -0.00164    +0.08077   0.873
+  logit      30%     -0.06223    -0.01197    +0.09465   0.825
+  rf         80%     -0.00195    +0.00291    +0.03221   0.583
+  rf         70%     +0.02195    +0.00052    +0.03888   0.198
+  rf         60%     +0.02695    +0.00103    +0.05071   0.182
+  rf         50%     +0.02095    +0.00224    +0.06025   0.318
+  rf         40%     +0.00052    +0.00316    +0.08975   0.512
+  rf         30%     -0.03112    -0.00088    +0.11023   0.682
+  lgbm       80%     +0.00679    -0.00060    +0.02890   0.385
+  lgbm       70%     -0.00256    -0.00022    +0.04302   0.532
+  lgbm       60%     -0.00363    +0.00412    +0.05835   0.568
+  lgbm       50%     +0.00664    +0.00145    +0.06136   0.460
+  lgbm       40%     -0.00380    +0.00078    +0.08649   0.552
+  lgbm       30%     +0.00947    -0.00225    +0.10512   0.407
+
+==========================================================================================================================
+BLOCK C -- ONE READ. The primary, the fracdiff order, the HMM parameters, the model and the
+==========================================================================================================================
+  threshold are all frozen before this line. The model is refitted on ALL of block B once.
+
+  declared choice: the block-B cell with the lowest bootstrap p -- rf at keep 70% (uplift +0.02195, p 0.122)
+
+  arm                                    n  net %/event     hit   p vs 0
+  primary, unfiltered                  289      0.13560   36.3%    0.019
+  primary + meta filter                209      0.13983   34.9%    0.030
+  uplift                                       +0.00423
+  random filter of the same size: median +0.00068, p 0.443
+  kept fraction on block C 72.3% against the 70% the threshold was set for -- if these differ the score is NOT CALIBRATED across the split (STUDY_AUTOBNN).
+
+==========================================================================================================================
+PHASE 5 -- DEFLATION. Every look on gold, counted
+==========================================================================================================================
+  optuna_primary           600
+  frozen_cells              45
+  drift_control_cells       12
+  fracdiff_d                11
+  hmm_K                      1
+  meta_models                3
+  meta_thresholds           18
+  TOTAL                    690
+
+  effective trials at avg correlation 0.5: 346 of 690
+  block-C Sharpe per event 0.1379 on 209 events
+  DEFLATED SHARPE 0.9919   (expected max under the null 0.0008)
+
+==========================================================================================================================
+WHITE'S REALITY CHECK across every candidate that was scored, kept not discarded
+==========================================================================================================================
+  candidates 18;  best rf@70% at mean +0.000347
+  reality-check p 0.276;  null max p95 +0.000691
+  FAIL -- a set of worthless candidates searched this hard would produce a winner this good at least 5% of the time
+
+  runtime 221s

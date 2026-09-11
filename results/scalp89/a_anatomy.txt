@@ -1,0 +1,47 @@
+
+============================================================================================================================
+1. THE EXIT MACHINE -- the configured 15/8-point trail against the alternatives
+============================================================================================================================
+  variant                                          n   %/trade      PF    win       R    $ 5 MNQ   hold
+  as configured: trail fixed 15/8, stop 1.5 / tgt 2.5 ATR  1309   -0.0392   0.393   49.9  -0.286    -92,951      2   trail62% stop37% target1%
+  trail OFF: plain 1.5 / 2.5 ATR bracket        1178   -0.0145   0.863   38.8  -0.090    -27,612      5   stop61% target39%
+  trail in ATR (code default 1.0 arm / 0.5 off)  [~10pt ATR proxy]  1344   -0.0352   0.397   48.9  -0.264    -86,006      1   trail69% stop31% target0%
+  trail fixed 30 / 15 points                    1233   -0.0433   0.483   45.1  -0.282    -96,124      3   stop50% trail41% target9%
+  trail fixed 60 / 30 points                    1190   -0.0247   0.750   40.3  -0.151    -51,245      5   stop59% target28% trail13%
+  no target (stop + trail only)                 1308   -0.0391   0.394   49.8  -0.283    -92,561      2   trail63% stop37%
+  no target, no trail (stop only)                260    0.0710   1.428    1.9   0.134     21,753      9   stop98% target2%
+
+  median ATR(14) on research 5m bars: 10.4 points, so the 1.5x stop is ~16 pts and the trail arms at 15.
+
+============================================================================================================================
+2. THE ORDER-MODEL GAPS -- naked fill bar, and Pine's intrabar path
+============================================================================================================================
+  variant                                          n   %/trade      PF    win       R    $ 5 MNQ   hold
+  script: naked fill bar, Pine path             1309   -0.0392   0.393   49.9  -0.286    -92,951      2
+  bracket live on the fill bar, Pine path       1324   -0.0497   0.151   29.9  -0.338   -118,465      2
+  naked fill bar, STOP-FIRST (conservative)     1309   -0.0389   0.397   49.9  -0.280    -92,171      2
+  bracket on fill bar, stop-first               1324   -0.0497   0.151   29.9  -0.338   -118,465      2
+
+============================================================================================================================
+3. ENTRY ABLATION -- drop one condition at a time (trail OFF so the entry is readable)
+============================================================================================================================
+  variant                                          n   %/trade      PF    win       R    $ 5 MNQ   hold
+  all conditions (trail off)                    1178   -0.0145   0.863   38.8  -0.090    -27,612      5
+  no EMA89 trend gate                           2810   -0.0233   0.785   36.3  -0.154   -118,318      5
+  no 15-pt pullback depth                       1263   -0.0146   0.857   38.7  -0.101    -29,984      5
+  no EMA touch (any low)                        1239   -0.0114   0.893   39.2  -0.076    -22,036      5
+  no StochRSI reset                             1616   -0.0142   0.869   38.7  -0.088    -35,291      5
+  no session window (all hours)                 3556   -0.0103   0.880   38.7  -0.095    -65,201      7
+  longs only (trail off)                         625   -0.0057   0.942   41.1  -0.045     -5,095      5
+  shorts only (trail off)                        580   -0.0241   0.789   35.9  -0.150    -23,034      5
+
+============================================================================================================================
+4. SESSION -- the window includes the pre-open block this branch has measured as worst four times
+============================================================================================================================
+  variant                                          n   %/trade      PF    win       R    $ 5 MNQ   hold
+  as configured 07:01-12:30 NY (06:01-11:30 Chicago), no flatten  1178   -0.0145   0.863   38.8  -0.090    -27,612      5
+  09:30-12:30 NY, no flatten                     688   -0.0192   0.854   36.9  -0.102    -21,832      6
+  09:30-16:00 NY, no flatten                    1326   -0.0150   0.879   37.4  -0.085    -34,833      8
+  as configured + flatten 15:55                 1181   -0.0143   0.864   39.1  -0.088    -26,962      5
+  09:30-12:30 + flatten 15:55                    688   -0.0190   0.853   37.5  -0.099    -21,450      6
+  all hours, no flatten                         3556   -0.0103   0.880   38.7  -0.095    -65,201      7

@@ -13,6 +13,9 @@ def _s(x):
 def ema(x, n):    return _s(x).ewm(span=n, adjust=False).mean().to_numpy()
 def sma(x, n):    return _s(x).rolling(n).mean().to_numpy()
 def rma(x, n):    return _s(x).ewm(alpha=1.0 / n, adjust=False).mean().to_numpy()
+def wma(x, n):    # linearly weighted, weight n on the newest observation down to 1
+    w = np.arange(1, int(n) + 1, dtype=float)
+    return _s(x).rolling(int(n)).apply(lambda v: float(np.dot(v, w) / w.sum()), raw=True).to_numpy()
 def rmax(x, n):   return _s(x).rolling(n).max().to_numpy()
 def rmin(x, n):   return _s(x).rolling(n).min().to_numpy()
 def rstd(x, n):   return _s(x).rolling(n).std(ddof=0).to_numpy()

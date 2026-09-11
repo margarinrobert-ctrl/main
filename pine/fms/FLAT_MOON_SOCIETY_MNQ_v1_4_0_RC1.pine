@@ -1,0 +1,672 @@
+//@version=6
+// FLAT_MOON_SOCIETY_MNQ_v1_4_0_RC1 -- Pine 6 port of the NinjaScript strategy.
+//
+// ============================================================================
+// READ FIRST: THIS IS A PARTIAL PORT, BECAUSE THE SOURCE ARRIVED TRUNCATED.
+// ============================================================================
+// The C# paste ended mid-statement inside ProcessShadowTradeBar, at
+// `Open[0] - state.Side * ModelDayFlatSlippageT`, with roughly 46 KB still to
+// come. Twenty-three methods are CALLED by the visible code and DEFINED in the
+// part that did not arrive:
+//
+//   ProcessShadowTradeBar (remainder), CompleteShadowTrade,
+//   TryRecordCompletedModelLabel, FinalizeShadowPairAtCashClose,
+//   SelectManagementPlan, ProcessPendingEntryDecision,
+//   ProcessPendingFinalEntryDecision, ApplyFinalEntryRefinementOrSubmit,
+//   RecordCompletedSessionHistory, TryGetPriorTrendReturn,
+//   InvalidatePendingSessionState, CancelWorkingEntry,
+//   RequestAdministrativeExit, IsActiveOrder, InitializeRuntimeState,
+//   ValidateConfiguration, the Print/Diagnostic helpers, ToEastern/ToUtc,
+//   MinuteOfDay/IsWeekday/DateKey/ContainsDateKey/RoundPrice/LinearPercentile,
+//   ALL THREE position-sizing calculations, and the property declarations.
+//
+// Everything the visible code FULLY DETERMINES is ported exactly and is marked
+// [EXACT]. Small utilities whose behaviour is unambiguous from name and use
+// site are marked [DERIVED]. Anything whose behaviour is NOT determined is
+// marked [NOT IN SOURCE]: it is implemented as a reconstruction, it is
+// DISABLED by default, and while it is disabled the strategy FAILS CLOSED and
+// submits no orders. Send the remaining 46 KB and the reconstructions are
+// replaced with the real logic.
+//
+// ============================================================================
+// WHAT CANNOT BE 1:1 IN PINE AT ALL, REGARDLESS OF THE MISSING TEXT
+// ============================================================================
+// 1. BAR TIMESTAMPS. NinjaTrader stamps a minute bar at its CLOSE; Pine stamps
+//    it at its OPEN. The source computes barOpenEt = Time[0] - 1 minute. Here
+//    `time` IS the open, so the conversion is inverted throughout. Handled, but
+//    it is the single easiest thing to get wrong when comparing the two.
+// 2. SessionIterator / ActualSessionBegin / ActualSessionEnd /
+//    ActualTradingDayExchange. Pine has no session-schedule object. The full
+//    09:30-16:00 cash-window check is approximated from the bars actually
+//    present, so an exchange early close is detected by MISSING BARS rather
+//    than by asking the schedule in advance.
+// 3. Order objects: Order/Execution/OnOrderUpdate/OnExecutionUpdate,
+//    GetRealtimeOrder, OrderState, ErrorCode, RealtimeErrorHandling,
+//    StartBehavior.WaitUntilFlat, administrative-exit retry counting. Pine has
+//    no order handles and no rejection callbacks. The administrative exit is a
+//    strategy.close_all(); the retry counter has no meaning here.
+// 4. STORED ROLLOVER OFFSETS. Those numbers describe NinjaTrader's Merge
+//    back-adjusted continuous contract through MNQ 09-26. TradingView's
+//    continuous symbol is adjusted differently. Applying them to a TradingView
+//    series would corrupt the prices, so they are NOT ported. Run this on a
+//    matched back-adjusted series or accept that levels differ.
+// 5. `strategy.close_all()` fills at the NEXT bar's open -- it cannot sell the
+//    close of the bar that triggers it. The source's 16:00 and conditional
+//    15:30 exits are market orders with the same property, so this matches, but
+//    the Strategy Tester will show the fill one bar later than the signal.
+// 6. Pine's k-NN is bounded by script runtime. The source keeps every training
+//    row from 2021 forward and refits each quarter. A full-history scan of
+//    thousands of rows x 14 features on every admitted signal will time the
+//    script out on TradingView. `MaxTrainingRows` caps the retained rows to the
+//    most recent N (default 1500). AT THE DEFAULT THIS IS NOT THE SOURCE'S
+//    MODEL. Set it to 0 for unlimited and expect a timeout on long histories.
+//
+// Research tooling for education and analysis -- not financial advice.
+// ============================================================================
+
+strategy("FLAT MOON SOCIETY MNQ 1.4.0-rc.1", "FMS MNQ", overlay = true,
+     initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 1.25,
+     slippage = 1, max_bars_back = 5000, max_labels_count = 100)
+
+TZ = "America/New_York"
+
+// ---------------------------------------------------------------- constants
+// [EXACT] every value below is copied from the C# const block.
+ORB_START_MIN            = 9 * 60 + 30
+ORB_END_MIN              = 9 * 60 + 45
+FIRST_BREAKOUT_CLOSE_MIN = 10 * 60
+FLATTEN_MIN              = 16 * 60
+REQUIRED_CASH_CLOSE_MIN  = 16 * 60
+EXPECTED_ORB_BARS        = 15
+
+STOP_ORB_MULTIPLE        = 1.25
+MINIMUM_STOP_POINTS      = 2.0
+MAXIMUM_STOP_POINTS      = 100.0
+BASELINE_TARGET_R        = 3.0
+HIGH_ORB_TARGET_R        = 1.25
+CONF_ORB_LOOKBACK        = 120
+CONF_ORB_QUANTILE        = 0.75
+DEFENSIVE_MAX_CONTRACTS  = 1
+ADMISSION_BODY_FRACTION  = 0.15
+ADMISSION_CLOSE_LOCATION = 0.60
+ADMISSION_MIN_TOUCHES    = 3
+CONFIRMATION_TICKS       = 1
+CONF_TREND_LOOKBACK      = 20
+BASE_MANAGED_TRIGGER_R   = 1.25
+BASE_MANAGED_LOCK_R      = 0.0
+CT_MANAGED_TRIGGER_R     = 0.75
+CT_MANAGED_LOCK_R        = 0.10
+CONDITIONAL_EXIT_MIN     = 15 * 60 + 30
+COND_LOSS_BOUNDARY_R     = 0.0
+COND_PROFIT_BOUNDARY_R   = 1.0
+
+PRIOR_DAY_CONT_BPS       = 300.0
+MODEL_FEATURE_COUNT      = 14
+MODEL_NEIGHBORS          = 15
+MODEL_MIN_TRAINING_ROWS  = 100
+MODEL_FLIP_THRESHOLD     = 0.65
+MODEL_TRAIN_START_KEY    = 20210101
+MODEL_PREDICT_START_KEY  = 20230101
+WEAK_SIGNAL_BODY_FRAC    = 0.20
+WEAK_SIGNAL_DELAY_BARS   = 1
+HIGH_VOL_TOUCH_LIMIT     = 3
+HIGH_VOL_VOTE_BARS       = 3
+
+INTRADAY_CONT_BPS        = 25.0
+INTRADAY_CONT_MAX_EXT    = 0.25
+INTRADAY_CONT_OBS_BARS   = 1
+PRIOR_DISAGREE_BPS       = 100.0
+PRIOR_DISAGREE_MAX_BODY  = 0.0
+PRIOR_DISAGREE_OBS_BARS  = 2
+
+MODEL_ENTRY_SLIP_TICKS   = 1
+MODEL_STOP_SLIP_TICKS    = 1
+MODEL_DAYFLAT_SLIP_TICKS = 1
+MODEL_ROUND_TURN_COST    = 2.50
+
+// ------------------------------------------------------------------- inputs
+gR = "Risk sizing"
+sizingMode   = input.string("FixedDollar", "Sizing mode", group = gR,
+     options = ["FixedDollar", "ClosedEquityPercent", "ConfidenceScaledPercent"])
+fixedRiskDollars   = input.float(535.0, "Fixed risk (USD)", minval = 1, group = gR)
+fixedDollarMaxCts  = input.int(2, "FixedDollar max contracts", minval = 1, group = gR)
+startingEquity     = input.float(50000.0, "Starting equity", minval = 1, group = gR)
+baseRiskPercent    = input.float(1.0, "Base risk %", minval = 0.01, group = gR)
+minRiskPercent     = input.float(0.5, "Min risk %",  minval = 0.01, group = gR)
+maxRiskPercent     = input.float(2.0, "Max risk %",  minval = 0.01, group = gR)
+portfolioMaxCts    = input.int(10, "Portfolio max contracts", minval = 1, group = gR)
+maxNotionalLev     = input.float(4.0, "Max notional leverage", minval = 0.1, group = gR)
+estRoundTurnCost   = input.float(2.50, "Estimated round-turn cost (sizing reserve)", group = gR)
+stopSlippageTicks  = input.int(1, "Stop slippage ticks", minval = 0, group = gR)
+
+gM = "Model"
+maxTrainingRows = input.int(1500, "Max retained training rows (0 = unlimited)", minval = 0,
+     group = gM, tooltip = "PINE RUNTIME LIMIT, NOT THE SOURCE. The NinjaScript keeps every row from 2021 forward. A full scan will time out on TradingView. At any value other than 0 this is not the source's model.")
+tradingStartKey = input.int(20210101, "Trading start date key (YYYYMMDD)", group = gM)
+
+gX = "Reconstructed logic (NOT from the pasted source)"
+enableReconstruction = input.bool(false, "Enable the reconstructed missing methods", group = gX,
+     tooltip = "OFF by default. While OFF the strategy FAILS CLOSED and submits no orders, because the 23 methods it needs were not in the paste. Turning this ON runs MY reconstruction of them, which is a guess and is not the strategy you asked to port.")
+showHud = input.bool(true, "Show panel", group = "Display")
+
+// -------------------------------------------------------------- [DERIVED] helpers
+// Behaviour is unambiguous from the name and the call sites.
+minuteOfDayEt(t) => hour(t, TZ) * 60 + minute(t, TZ)
+dateKeyEt(t)     => year(t, TZ) * 10000 + month(t, TZ) * 100 + dayofmonth(t, TZ)
+isWeekdayEt(t)   => dayofweek(t, TZ) != dayofweek.saturday and dayofweek(t, TZ) != dayofweek.sunday
+roundPrice(p)    => math.round(p / syminfo.mintick) * syminfo.mintick
+safeReturnBps(numerator, denominator) =>
+    denominator != 0 ? (numerator / denominator - 1.0) * 10000.0 : 0.0
+
+// [DERIVED] numpy-style linear-interpolation percentile, matching the name.
+linearPercentile(arr, q) =>
+    n = array.size(arr)
+    float outv = na
+    if n > 0
+        s = array.copy(arr)
+        array.sort(s, order.ascending)
+        pos = q * (n - 1)
+        lo = math.floor(pos)
+        hi = math.ceil(pos)
+        outv := lo == hi ? array.get(s, int(lo))
+             : array.get(s, int(lo)) * (hi - pos) + array.get(s, int(hi)) * (pos - lo)
+    outv
+
+lagReturnBps(arr, periods) =>
+    n = array.size(arr)
+    float outv = 0.0
+    if n > periods and array.get(arr, n - 1 - periods) != 0
+        outv := safeReturnBps(array.get(arr, n - 1), array.get(arr, n - 1 - periods))
+    outv
+
+pushCapped(arr, v, cap) =>
+    array.push(arr, v)
+    if cap > 0 and array.size(arr) > cap
+        array.shift(arr)
+
+// [EXACT] the two embedded data-quality calendars, verbatim.
+isExcludedDateKey(k) =>
+    k == 20200311 or k == 20200610 or k == 20200909 or k == 20210609 or
+     k == 20210908 or k == 20220608 or k == 20220907 or k == 20260611 or
+     k == 20200227 or k == 20200228 or k == 20200630 or k == 20200701 or
+     k == 20200702 or k == 20211206 or k == 20220103 or k == 20240918 or
+     k == 20240919 or k == 20250917 or k == 20250918 or k == 20250924 or
+     k == 20250925 or k == 20251128 or k == 20260316 or k == 20260317 or
+     k == 20260410 or k == 20260525 or k == 20260730 or k == 20260731
+
+// ----------------------------------------------------------------- state
+var float orbHigh   = na
+var float orbLow    = na
+var float orbOpen   = na
+var float orbClose  = na
+var int   orbBarCount = 0
+var int   expectedNextOrbOpenMinute = ORB_START_MIN
+var bool  orbFinalized = false
+var float currentOrbBps = 0.0
+var float priorOrbQ75Bps = na
+var bool  priorOrbQ75Available = false
+
+var int   currentDateKey = 0
+var bool  dayBlocked = false
+var bool  sessionEnding = false
+var bool  breakoutConsumed = false
+var bool  cashExitTriggered = false
+var bool  referenceOpenCaptured = false
+var float referenceSessionOpen = na
+var int   lastCashBarCloseMin = -1
+
+var float rthTypicalVolumeSum = 0.0
+var float rthVolumeSum = 0.0
+var rthMinuteCloses = array.new<float>(0)
+
+var orbHistoryBps       = array.new<float>(0)
+var rthCloseHistory     = array.new<float>(0)
+var sessionReturnHistBps = array.new<float>(0)
+
+var float activeInitialRiskPoints = na
+var float activeManagedTriggerR = na
+var float activeManagedLockR = na
+var string activeRegime = ""
+var bool  managedStopActivated = false
+var bool  conditionalExitRequested = false
+var float activeEntryPrice = na
+var int   activeSide = 0
+
+// training rows, flattened: featureStore[row*14 + f]
+var featureStore = array.new<float>(0)
+var rowDateKey   = array.new<int>(0)
+var rowFlipWins  = array.new<int>(0)
+
+var modelMeanArr  = array.new<float>(MODEL_FEATURE_COUNT, 0.0)
+var modelScaleArr = array.new<float>(MODEL_FEATURE_COUNT, 1.0)
+var int  modelRowCount = 0
+var int  activeQuarterKey = -1
+var bool modelReady = false
+
+var int cntEligibleSessions = 0
+var int cntAdmitted = 0
+var int cntGeometryReject = 0
+var int cntTouchVeto = 0
+var int cntPriorOverride = 0
+var int cntKnnPrediction = 0
+var int cntKnnOverride = 0
+var int cntFailClosed = 0
+
+// ------------------------------------------------------------- time framing
+// [ADAPTED] Pine stamps a bar at its OPEN, NinjaTrader at its CLOSE. The source
+// derives barOpenEt = Time[0] - 1 minute; here `time` already IS that value.
+barOpenMin  = minuteOfDayEt(time)
+barCloseMin = barOpenMin + 1
+todayKey    = dateKeyEt(time)
+newCashDate = todayKey != currentDateKey
+
+// ------------------------------------------------------------ session reset
+// [EXACT logic of BeginCashDate, minus the order-handle reconciliation, which
+// has no Pine equivalent.]
+if newCashDate
+    inheritedExposure = strategy.position_size != 0
+    currentDateKey := todayKey
+    referenceOpenCaptured := false
+    referenceSessionOpen := na
+    dayBlocked := inheritedExposure
+    sessionEnding := inheritedExposure
+    breakoutConsumed := inheritedExposure
+    cashExitTriggered := false
+    orbFinalized := false
+    orbBarCount := 0
+    expectedNextOrbOpenMinute := ORB_START_MIN
+    orbHigh := na
+    orbLow := na
+    orbOpen := na
+    orbClose := na
+    currentOrbBps := 0.0
+    priorOrbQ75Available := false
+    managedStopActivated := false
+    conditionalExitRequested := false
+    activeInitialRiskPoints := na
+    lastCashBarCloseMin := -1
+    array.clear(rthMinuteCloses)
+    rthTypicalVolumeSum := 0.0
+    rthVolumeSum := 0.0
+    if not isWeekdayEt(time) or isExcludedDateKey(todayKey)
+        dayBlocked := true
+    else
+        cntEligibleSessions += 1
+
+// [EXACT CaptureReferenceSessionOpen] -- the required 23:00 UTC reference open.
+if not dayBlocked and not referenceOpenCaptured
+     and hour(time, "UTC") == 23 and minute(time, "UTC") == 0
+    if na(open) or open <= 0
+        dayBlocked := true
+    else
+        referenceSessionOpen := open
+        referenceOpenCaptured := true
+
+inCashWindow = barOpenMin >= ORB_START_MIN and barCloseMin <= REQUIRED_CASH_CLOSE_MIN
+
+// [EXACT] the one-minute contiguity check inside the cash window.
+if inCashWindow and not dayBlocked
+    if lastCashBarCloseMin != -1 and barOpenMin != lastCashBarCloseMin
+        dayBlocked := true
+        sessionEnding := true
+    else
+        lastCashBarCloseMin := barCloseMin
+        if barOpenMin == ORB_START_MIN and not referenceOpenCaptured
+            dayBlocked := true
+        else
+            v = nz(volume)
+            if v < 0 or na(v)
+                dayBlocked := true
+            else
+                array.push(rthMinuteCloses, close)
+                rthTypicalVolumeSum += ((high + low + close) / 3.0) * v
+                rthVolumeSum += v
+
+// ------------------------------------------------------------ opening range
+// [EXACT CaptureOpeningRange]
+insideOrb = barOpenMin >= ORB_START_MIN and barOpenMin < ORB_END_MIN
+if insideOrb and not orbFinalized and not dayBlocked
+    if barOpenMin != expectedNextOrbOpenMinute or barCloseMin != barOpenMin + 1
+        dayBlocked := true
+        breakoutConsumed := true
+    else
+        if orbBarCount == 0
+            orbOpen := open
+            orbHigh := high
+            orbLow := low
+        else
+            orbHigh := math.max(orbHigh, high)
+            orbLow := math.min(orbLow, low)
+        orbClose := close
+        orbBarCount += 1
+        expectedNextOrbOpenMinute += 1
+        if barCloseMin == ORB_END_MIN
+            if orbBarCount != EXPECTED_ORB_BARS or orbHigh < orbLow
+                dayBlocked := true
+                breakoutConsumed := true
+            else
+                orbFinalized := true
+                midpoint = (orbHigh + orbLow) / 2.0
+                currentOrbBps := midpoint > 0 ? (orbHigh - orbLow) / midpoint * 10000.0 : 0.0
+                priorOrbQ75Available := array.size(orbHistoryBps) == CONF_ORB_LOOKBACK
+                if priorOrbQ75Available
+                    priorOrbQ75Bps := linearPercentile(orbHistoryBps, CONF_ORB_QUANTILE)
+
+if barCloseMin > ORB_END_MIN and not orbFinalized and not dayBlocked and inCashWindow
+    dayBlocked := true
+
+// ------------------------------------------------------- signal-state helpers
+// [EXACT TryGetExactSignalState] -- 15 exact one-minute constituents.
+sigHigh = ta.highest(high, 15)
+sigLow  = ta.lowest(low, 15)
+sigOpen = open[14]
+sigClose = close
+sigExact = bar_index >= 14 and (time - time[14]) == 14 * 60 * 1000 and sigHigh > sigLow
+
+// [EXACT CountSignalTouches]
+countTouches(side, level) =>
+    int c = 0
+    for i = 0 to 14
+        if (side == 1 and high[i] >= level) or (side == -1 and low[i] <= level)
+            c += 1
+    c
+
+// ------------------------------------------------------------ quarterly k-NN
+quarterKeyOf(t) => year(t, TZ) * 10 + ((month(t, TZ) - 1) / 3 + 1)
+
+// [EXACT FitQuarterModel] -- population standard deviation, rows strictly
+// before the quarter start, minimum row count enforced.
+fitQuarterModel(cutoffKey) =>
+    n = array.size(rowDateKey)
+    int used = 0
+    if n > 0
+        for r = 0 to n - 1
+            k = array.get(rowDateKey, r)
+            if k >= MODEL_TRAIN_START_KEY and k < cutoffKey
+                used += 1
+    bool ok = used >= math.max(MODEL_MIN_TRAINING_ROWS, MODEL_NEIGHBORS)
+    if ok
+        for f = 0 to MODEL_FEATURE_COUNT - 1
+            float s = 0.0
+            for r = 0 to n - 1
+                if array.get(rowDateKey, r) >= MODEL_TRAIN_START_KEY
+                     and array.get(rowDateKey, r) < cutoffKey
+                    s += array.get(featureStore, r * MODEL_FEATURE_COUNT + f)
+            mean = s / used
+            float sq = 0.0
+            for r = 0 to n - 1
+                if array.get(rowDateKey, r) >= MODEL_TRAIN_START_KEY
+                     and array.get(rowDateKey, r) < cutoffKey
+                    d = array.get(featureStore, r * MODEL_FEATURE_COUNT + f) - mean
+                    sq += d * d
+            sc = math.sqrt(sq / used)
+            array.set(modelMeanArr, f, mean)
+            array.set(modelScaleArr, f, sc > 0 ? sc : 1.0)
+    [ok, used]
+
+// [EXACT TryPredictDirection] -- 15 nearest neighbours, Laplace-style smoothing
+// (flip + 2) / (k + 4), ties broken by insertion order via the ascending scan.
+predictFlip(qf, cutoffKey) =>
+    n = array.size(rowDateKey)
+    dist = array.new<float>(0)
+    flips = array.new<int>(0)
+    for r = 0 to (n > 0 ? n - 1 : 0)
+        k = n > 0 ? array.get(rowDateKey, r) : -1
+        if k >= MODEL_TRAIN_START_KEY and k < cutoffKey
+            float sq = 0.0
+            for f = 0 to MODEL_FEATURE_COUNT - 1
+                mu = array.get(modelMeanArr, f)
+                sc = array.get(modelScaleArr, f)
+                zr = (array.get(featureStore, r * MODEL_FEATURE_COUNT + f) - mu) / sc
+                zq = (array.get(qf, f) - mu) / sc
+                dv = zr - zq
+                sq += dv * dv
+            array.push(dist, math.sqrt(sq))
+            array.push(flips, array.get(rowFlipWins, r))
+    m = array.size(dist)
+    int flipNeighbors = 0
+    if m >= MODEL_NEIGHBORS
+        used = array.new<bool>(m, false)
+        for k = 1 to MODEL_NEIGHBORS
+            int best = -1
+            float bestd = 1e18
+            for i = 0 to m - 1
+                if not array.get(used, i) and array.get(dist, i) < bestd
+                    bestd := array.get(dist, i)
+                    best := i
+            if best >= 0
+                array.set(used, best, true)
+                flipNeighbors += array.get(flips, best)
+    prob = (flipNeighbors + 2.0) / (MODEL_NEIGHBORS + 4.0)
+    [m >= MODEL_NEIGHBORS, prob, flipNeighbors, m]
+
+// ------------------------------------------------------ decision evaluation
+confirmation = CONFIRMATION_TICKS * syminfo.mintick
+isDecisionClose = barCloseMin >= FIRST_BREAKOUT_CLOSE_MIN and barCloseMin < FLATTEN_MIN
+     and barCloseMin % 15 == 0
+
+// [NOT IN SOURCE] TryGetPriorTrendReturn. The name and the CONF_TREND_LOOKBACK
+// constant imply a 20-session close-to-close return over the eligible RTH close
+// history; the actual definition did not arrive.
+priorTrendAvailable = array.size(rthCloseHistory) >= CONF_TREND_LOOKBACK + 1
+priorTrendBps = priorTrendAvailable ? lagReturnBps(rthCloseHistory, CONF_TREND_LOOKBACK) : 0.0
+
+// [NOT IN SOURCE] SelectManagementPlan. Constrained by the constants -- a
+// baseline plan (target 3.0R, trigger 1.25R, lock 0.0R) and a countertrend plan
+// (trigger 0.75R, lock 0.10R), plus a HIGH_ORB_TARGET_R of 1.25 that must be
+// selected by something. The selector itself did not arrive.
+selectPlan(side) =>
+    countertrend = priorTrendAvailable and side * priorTrendBps < 0
+    highVol = priorOrbQ75Available and currentOrbBps > priorOrbQ75Bps
+    tR = highVol ? HIGH_ORB_TARGET_R : BASELINE_TARGET_R
+    trg = countertrend ? CT_MANAGED_TRIGGER_R : BASE_MANAGED_TRIGGER_R
+    lck = countertrend ? CT_MANAGED_LOCK_R : BASE_MANAGED_LOCK_R
+    [tR, trg, lck, countertrend ? "countertrend" : "baseline"]
+
+// [NOT IN SOURCE] all three sizing calculations.
+sizeContracts(riskPoints) =>
+    pv = syminfo.pointvalue
+    riskDollars = riskPoints * pv + estRoundTurnCost
+    float budget = switch sizingMode
+        "FixedDollar" => fixedRiskDollars
+        "ClosedEquityPercent" => (startingEquity + strategy.netprofit) * baseRiskPercent / 100.0
+        => (startingEquity + strategy.netprofit) * baseRiskPercent / 100.0
+    int q = riskDollars > 0 ? int(math.floor(budget / riskDollars)) : 0
+    capN = sizingMode == "FixedDollar" ? fixedDollarMaxCts : portfolioMaxCts
+    math.max(0, math.min(q, capN))
+
+if isDecisionClose and orbFinalized and not dayBlocked and not breakoutConsumed
+     and not cashExitTriggered and strategy.position_size == 0
+    longBreak  = close >= roundPrice(orbHigh + confirmation)
+    shortBreak = close <= roundPrice(orbLow - confirmation)
+    if longBreak or shortBreak
+        baselineSide = longBreak ? 1 : -1
+        if not sigExact
+            breakoutConsumed := true
+            dayBlocked := true
+            cntFailClosed += 1
+        else
+            // [EXACT] admission geometry
+            signalRange = sigHigh - sigLow
+            bodyFraction = signalRange > 0 ? baselineSide * (sigClose - sigOpen) / signalRange : 0.0
+            closeLocation = signalRange > 0
+                 ? (baselineSide == 1 ? (sigClose - sigLow) / signalRange
+                                      : (sigHigh - sigClose) / signalRange)
+                 : 0.0
+            if bodyFraction < ADMISSION_BODY_FRACTION or closeLocation < ADMISSION_CLOSE_LOCATION
+                cntGeometryReject += 1
+            else
+                baseLevel = baselineSide == 1 ? orbHigh + confirmation : orbLow - confirmation
+                touches = countTouches(baselineSide, baseLevel)
+                if touches < ADMISSION_MIN_TOUCHES
+                    breakoutConsumed := true
+                    cntTouchVeto += 1
+                else
+                    breakoutConsumed := true
+                    cntAdmitted += 1
+                    // [EXACT TryBuildDirectionFeatures] -- the 14-vector, in order.
+                    priorClose = array.size(rthCloseHistory) > 0
+                         ? array.get(rthCloseHistory, array.size(rthCloseHistory) - 1) : orbOpen
+                    priorSessionRet = array.size(sessionReturnHistBps) > 0
+                         ? array.get(sessionReturnHistBps, array.size(sessionReturnHistBps) - 1) : 0.0
+                    vwap = rthVolumeSum > 0 ? rthTypicalVolumeSum / rthVolumeSum : na
+                    nCl = array.size(rthMinuteCloses)
+                    trailingBase = nCl > 30 ? array.get(rthMinuteCloses, nCl - 31) : orbClose
+                    elapsed15 = (barCloseMin - ORB_END_MIN) / 15.0
+                    wd = (dayofweek(time, TZ) + 5) % 7
+                    mo = month(time, TZ)
+                    qf = array.new<float>(0)
+                    array.push(qf, baselineSide * safeReturnBps(orbOpen, priorClose))
+                    array.push(qf, baselineSide * priorSessionRet)
+                    array.push(qf, baselineSide * lagReturnBps(rthCloseHistory, 5))
+                    array.push(qf, baselineSide * lagReturnBps(rthCloseHistory, 20))
+                    array.push(qf, baselineSide * safeReturnBps(sigClose, vwap))
+                    array.push(qf, baselineSide * safeReturnBps(sigClose, trailingBase))
+                    array.push(qf, baselineSide)
+                    array.push(qf, elapsed15)
+                    array.push(qf, currentOrbBps)
+                    array.push(qf, touches)
+                    array.push(qf, math.sin(2.0 * math.pi * wd / 5.0))
+                    array.push(qf, math.cos(2.0 * math.pi * wd / 5.0))
+                    array.push(qf, math.sin(2.0 * math.pi * (mo - 1) / 12.0))
+                    array.push(qf, math.cos(2.0 * math.pi * (mo - 1) / 12.0))
+
+                    // [EXACT] prior-session continuation override
+                    priorOverride = baselineSide * priorSessionRet < -PRIOR_DAY_CONT_BPS
+                    if priorOverride
+                        cntPriorOverride += 1
+
+                    // [EXACT] quarterly refit boundary, then the flip prediction
+                    qk = quarterKeyOf(time)
+                    qStartKey = (qk / 10) * 10000 + (((qk % 10) - 1) * 3 + 1) * 100 + 1
+                    if qk != activeQuarterKey
+                        activeQuarterKey := qk
+                        [ok, used] = fitQuarterModel(qStartKey)
+                        modelReady := ok
+                        modelRowCount := used
+                    bool knnOverride = false
+                    float flipProb = 0.0
+                    if modelReady and todayKey >= MODEL_PREDICT_START_KEY
+                        [avail, prob, fn, mm] = predictFlip(qf, qStartKey)
+                        if avail
+                            cntKnnPrediction += 1
+                            flipProb := prob
+                            knnOverride := prob > MODEL_FLIP_THRESHOLD
+                            if knnOverride
+                                cntKnnOverride += 1
+
+                    directionSide = (priorOverride or knnOverride) ? -baselineSide : baselineSide
+
+                    // [EXACT] weak-signal and high-volatility touch-vote branches
+                    directionalBody = directionSide * (sigClose - sigOpen) / signalRange
+                    weakSignal = directionalBody <= WEAK_SIGNAL_BODY_FRAC
+                    highVol = priorOrbQ75Available and currentOrbBps > priorOrbQ75Bps
+                    dirLevel = directionSide == 1 ? orbHigh + confirmation : orbLow - confirmation
+                    dirTouches = countTouches(directionSide, dirLevel)
+                    highVolTouchVote = highVol and dirTouches <= HIGH_VOL_TOUCH_LIMIT
+
+                    // ------------------------------------------------------------------
+                    // [NOT IN SOURCE] ProcessPendingEntryDecision,
+                    // ProcessPendingFinalEntryDecision and
+                    // ApplyFinalEntryRefinementOrSubmit resolve the delay branches and
+                    // the two entry-refinement conditions. Without them the strategy
+                    // FAILS CLOSED rather than guessing which bar it enters on.
+                    // ------------------------------------------------------------------
+                    if not enableReconstruction
+                        cntFailClosed += 1
+                    else if not (weakSignal or highVolTouchVote) and todayKey >= tradingStartKey
+                        [tR, trg, lck, regime] = selectPlan(directionSide)
+                        rawStop = math.max(MINIMUM_STOP_POINTS,
+                             math.min(MAXIMUM_STOP_POINTS, (orbHigh - orbLow) * STOP_ORB_MULTIPLE))
+                        qty = sizeContracts(rawStop)
+                        if qty > 0
+                            activeSide := directionSide
+                            activeInitialRiskPoints := rawStop
+                            activeManagedTriggerR := trg
+                            activeManagedLockR := lck
+                            activeRegime := regime
+                            managedStopActivated := false
+                            conditionalExitRequested := false
+                            if directionSide == 1
+                                strategy.entry("FMS", strategy.long, qty = qty)
+                            else
+                                strategy.entry("FMS", strategy.short, qty = qty)
+
+// ------------------------------------------------------------ trade management
+// The bracket is attached once the position exists, anchored to the actual fill.
+if strategy.position_size != 0 and not na(activeInitialRiskPoints)
+    if na(activeEntryPrice)
+        activeEntryPrice := strategy.position_avg_price
+    [tR, trg, lck, regime] = selectPlan(activeSide)
+    stopPx = roundPrice(activeEntryPrice - activeSide * activeInitialRiskPoints)
+    tgtPx  = roundPrice(activeEntryPrice + activeSide * activeInitialRiskPoints * tR)
+    strategy.exit("FMSx", from_entry = "FMS",
+         stop = managedStopActivated
+             ? roundPrice(activeEntryPrice + activeSide * activeInitialRiskPoints * activeManagedLockR)
+             : stopPx,
+         limit = tgtPx)
+else
+    activeEntryPrice := na
+
+// [EXACT ManageProtectiveStopAtQuarterHour] -- evaluated only on a completed
+// quarter-hour close; the revised stop protects the NEXT one-minute bar.
+if strategy.position_size != 0 and not managedStopActivated and isDecisionClose
+     and not na(activeInitialRiskPoints) and activeInitialRiskPoints > 0
+    closeR = activeSide * (close - activeEntryPrice) / activeInitialRiskPoints
+    if closeR >= activeManagedTriggerR
+        managedStopActivated := true
+
+// [EXACT ManageConditionalExit1530] -- exit when closeR is OUTSIDE [0R, +1R).
+if strategy.position_size != 0 and not conditionalExitRequested
+     and barCloseMin == CONDITIONAL_EXIT_MIN
+     and not na(activeInitialRiskPoints) and activeInitialRiskPoints > 0
+    closeR = activeSide * (close - activeEntryPrice) / activeInitialRiskPoints
+    if not (closeR >= COND_LOSS_BOUNDARY_R and closeR < COND_PROFIT_BOUNDARY_R)
+        conditionalExitRequested := true
+        strategy.close_all(comment = "Conditional1530ET")
+
+// [EXACT] the mandated 16:00 ET flatten, and the session history it records first.
+if barCloseMin >= FLATTEN_MIN and not cashExitTriggered
+    cashExitTriggered := true
+    // [PARTIAL RecordCompletedSessionHistory] -- only a complete, unblocked cash
+    // session may enter the histories. What the real method stores beyond these
+    // three series did not arrive.
+    if not dayBlocked and orbFinalized and lastCashBarCloseMin == REQUIRED_CASH_CLOSE_MIN
+        pushCapped(orbHistoryBps, currentOrbBps, CONF_ORB_LOOKBACK)
+        array.push(rthCloseHistory, close)
+        if not na(referenceSessionOpen) and referenceSessionOpen > 0
+            array.push(sessionReturnHistBps, safeReturnBps(close, referenceSessionOpen))
+    dayBlocked := true
+    strategy.close_all(comment = "CashClose1600ET")
+
+// ------------------------------------------------------------------- display
+plot(orbFinalized ? orbHigh : na, "ORB high", color.new(color.teal, 0), 2, plot.style_linebr)
+plot(orbFinalized ? orbLow : na,  "ORB low",  color.new(color.teal, 0), 2, plot.style_linebr)
+bgcolor(insideOrb ? color.new(color.teal, 92) : na, title = "opening range")
+bgcolor(dayBlocked and inCashWindow ? color.new(color.red, 94) : na, title = "blocked day")
+
+var table hud = table.new(position.top_right, 2, 7, border_width = 1)
+if showHud and barstate.islast
+    table.cell(hud, 0, 0, "FMS MNQ 1.4.0-rc.1", text_color = color.white,
+         bgcolor = color.new(color.teal, 20), text_size = size.small)
+    table.cell(hud, 1, 0, timeframe.period, text_color = color.white,
+         bgcolor = color.new(color.teal, 20), text_size = size.small)
+    table.cell(hud, 0, 1, "PORT STATUS", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 1, enableReconstruction ? "reconstructed logic ON" : "FAIL CLOSED -- 23 methods missing",
+         text_size = size.small,
+         text_color = enableReconstruction ? color.new(color.orange, 0) : color.new(color.red, 0))
+    table.cell(hud, 0, 2, "Eligible sessions", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 2, str.tostring(cntEligibleSessions), text_size = size.small)
+    table.cell(hud, 0, 3, "Admitted / geometry / touch", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 3, str.tostring(cntAdmitted) + " / " + str.tostring(cntGeometryReject)
+         + " / " + str.tostring(cntTouchVeto), text_size = size.small)
+    table.cell(hud, 0, 4, "kNN rows / predictions", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 4, str.tostring(modelRowCount) + " / " + str.tostring(cntKnnPrediction),
+         text_size = size.small)
+    table.cell(hud, 0, 5, "Prior / kNN overrides", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 5, str.tostring(cntPriorOverride) + " / " + str.tostring(cntKnnOverride),
+         text_size = size.small)
+    table.cell(hud, 0, 6, "Fail-closed events", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 6, str.tostring(cntFailClosed), text_size = size.small)

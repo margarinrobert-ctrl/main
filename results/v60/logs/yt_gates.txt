@@ -1,0 +1,37 @@
+====================================================================================================
+THE YOUTUBE TURTLE WITH A SESSION WINDOW, A FLATTEN AND AN ADX FLOOR
+====================================================================================================
+  NQ 1H only -- the other five feeds were wiped by a container recycle.
+  R per trade, net of the study's own cost model. IS = in-sample, OOS = the block the
+  frozen rules were judged on once.
+
+  parity is   frozen n   158  gated n   158  identical R: True
+  parity oos  frozen n    70  gated n    70  identical R: True
+
+  clock check (mean bar range, bp, by New York hour): peak at 10:00 = 60.6   10:00 = 60.6   17:00 = 2.2   03:00 = 25.7
+     the 09:30 open must be the peak and the 17:00 CME break must be near zero;
+     on the RAW index this peaks at 14:00, which is how the UTC stamping was caught.
+
+  window        flatten     adx   IS n     IS R   IS PF   OOS n    OOS R   OOS PF
+  all hours     none        off    158   +0.193    1.46      70   -0.090     0.83
+  all hours     12:00       off    261   +0.121    1.39     138   +0.174     1.65
+  all hours     16:00       off    326   +0.123    1.38     168   +0.111     1.36
+  09:30-11:00   none        off     82   +0.117    1.27      44   +0.094     1.21
+  09:30-11:00   12:00       off    111   +0.159    2.31      58   +0.073     1.57
+  09:30-11:00   16:00       off    111   +0.068    1.24      58   +0.029     1.11
+  09:30-12:00   none        off     90   +0.169    1.42      51   -0.006     0.99
+  09:30-12:00   12:00       off    111   +0.159    2.31      58   +0.073     1.57
+  09:30-12:00   16:00       off    133   +0.099    1.40      69   +0.039     1.16
+  08:00-12:00   none        off    155   +0.164    1.40      84   -0.016     0.97
+  08:00-12:00   12:00       off    200   +0.161    1.59     101   +0.191     1.80
+  08:00-12:00   16:00       off    221   +0.127    1.37     110   +0.129     1.40
+  09:30-16:00   none        off    108   +0.144    1.33      60   -0.056     0.89
+  09:30-16:00   16:00       off    187   +0.145    1.71      94   +0.039     1.19
+  10:00-16:00   none        off    108   +0.144    1.33      60   -0.056     0.89
+  10:00-16:00   16:00       off    187   +0.145    1.71      94   +0.039     1.19
+
+  all hours     none        off    158   +0.193    1.46      70   -0.090     0.83
+  all hours     none       >=15    161   +0.164    1.38      69   -0.101     0.81
+  all hours     none       >=20    138   +0.147    1.33      62   +0.140     1.34
+  all hours     none       >=25    114   +0.170    1.39      57   +0.156     1.35
+  all hours     none       >=30     96   +0.140    1.30      36   +0.307     1.84

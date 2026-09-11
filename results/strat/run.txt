@@ -1,0 +1,84 @@
+====================================================================================================
+THE STRAT COMBO ENGINE (3-2 / 1-3-2 / 2-1-2 / 3-1-2 reversals, hammer bonus, location
+score >= 2, stop order 20 pts past the trigger, SL 20 pts past the other side, TP 2R,
+one trade at a time) -- 15-minute bars, US30 / US100 / NQ. Point = 0.1 on the CFD feeds,
+0.25 on NQ. Nothing was fitted here; every block is out of sample for the parameters.
+====================================================================================================
+
+US30: 193,942 bars 2016-10-26 to 2025-07-15. Combo triggers 4,098 (2.11% of bars), long 2076 / short 2022; location >= 2 on 67.6% of them (fractal 65%, PMG 36%, reclaim 33%, HTF 21%)
+  combo occurrences (each alone, any score): 3-2 2177, 1-3-2 565, 2-1-2 10671, 3-1-2 1867
+  AS CONFIGURED, whole file                n  1315  R -0.2502  PF 0.708  win 33.9%  pts   -4.28  DD  333.0R  TP 34%  fill-bar exit 11%  amb 0.6%  hold 4
+    block research                         n   795  R -0.3199  PF 0.644  win 32.7%  pts   -4.61  DD  255.8R  TP 33%  fill-bar exit 10%  amb 0.4%  hold 4
+    block validation                       n   292  R -0.0891  PF 0.884  win 37.3%  pts   +4.97  DD   37.1R  TP 37%  fill-bar exit 12%  amb 1.0%  hold 4
+    block test                             n   228  R -0.2137  PF 0.737  win 33.8%  pts  -14.99  DD   61.7R  TP 34%  fill-bar exit 15%  amb 0.9%  hold 4
+    long only                              n   664  R -0.2098  PF 0.749  win 35.4%  pts   -2.96  DD  141.4R  TP 35%  fill-bar exit 10%  amb 0.6%  hold 5
+    short only                             n   651  R -0.2914  PF 0.667  win 32.4%  pts   -5.62  DD  191.6R  TP 32%  fill-bar exit 12%  amb 0.6%  hold 4
+  per year: 2016: -0.634 (30)  2017: -0.297 (136)  2018: -0.220 (157)  2019: -0.356 (174)  2020: -0.443 (140)  2021: -0.230 (158)  2022: +0.007 (149)  2023: -0.189 (143)  2024: -0.181 (155)  2025: -0.283 (73)
+  exit stop    n   869  mean R -1.295  sum R -1125.0
+  exit target  n   446  mean R +1.785  sum R +796.0
+  random-trigger control (300 draws, 1297 trades/draw vs 1315, same order, buffers, stop, 2R, lock): mean R -0.3790 median -0.3789; P(control >= strategy) 0.000
+    no location filter at all              n  1946  R -0.2258  PF 0.729  win 33.7%  pts   -6.14  DD  445.2R  TP 34%  fill-bar exit 11%  amb 0.7%  hold 4
+    location >= 4 (fractal AND pmg, or all) n   689  R -0.3634  PF 0.605  win 31.9%  pts   -7.84  DD  252.7R  TP 32%  fill-bar exit 12%  amb 0.6%  hold 4
+
+US100: 206,703 bars 2016-11-14 to 2025-10-01. Combo triggers 4,716 (2.28% of bars), long 2487 / short 2229; location >= 2 on 82.1% of them (fractal 81%, PMG 53%, reclaim 51%, HTF 34%)
+  combo occurrences (each alone, any score): 3-2 2534, 1-3-2 712, 2-1-2 10580, 3-1-2 2118
+  AS CONFIGURED, whole file                n  1459  R -0.1155  PF 0.850  win 35.8%  pts   -0.45  DD  170.6R  TP 36%  fill-bar exit 7%  amb 0.8%  hold 6
+    block research                         n   785  R -0.1124  PF 0.856  win 36.8%  pts   -1.07  DD   90.9R  TP 37%  fill-bar exit 7%  amb 0.5%  hold 7
+    block validation                       n   347  R -0.0785  PF 0.896  win 36.0%  pts   +1.63  DD   55.8R  TP 36%  fill-bar exit 7%  amb 0.3%  hold 5
+    block test                             n   327  R -0.1623  PF 0.791  win 33.3%  pts   -1.17  DD   52.4R  TP 33%  fill-bar exit 7%  amb 1.8%  hold 5
+    long only                              n   741  R -0.0476  PF 0.936  win 37.9%  pts   +1.18  DD   62.9R  TP 38%  fill-bar exit 8%  amb 0.9%  hold 7
+    short only                             n   718  R -0.1857  PF 0.768  win 33.7%  pts   -2.13  DD  134.8R  TP 34%  fill-bar exit 7%  amb 0.6%  hold 6
+  per year: 2016: -0.507 (14)  2017: -0.261 (98)  2018: +0.007 (144)  2019: -0.336 (151)  2020: +0.019 (192)  2021: -0.051 (186)  2022: -0.079 (163)  2023: -0.078 (184)  2024: -0.245 (196)  2025: -0.039 (131)
+  exit stop    n   936  mean R -1.204  sum R -1126.6
+  exit target  n   523  mean R +1.832  sum R +958.0
+  random-trigger control (300 draws, 1456 trades/draw vs 1459, same order, buffers, stop, 2R, lock): mean R -0.2561 median -0.2563; P(control >= strategy) 0.000
+    no location filter at all              n  1805  R -0.1249  PF 0.838  win 35.0%  pts   -0.90  DD  228.2R  TP 35%  fill-bar exit 8%  amb 0.9%  hold 6
+    location >= 4 (fractal AND pmg, or all) n   941  R -0.1487  PF 0.813  win 35.7%  pts   -0.92  DD  143.5R  TP 36%  fill-bar exit 7%  amb 0.7%  hold 6
+
+NQ: 70,685 bars 2022-12-26 to 2025-12-11. Combo triggers 1,727 (2.44% of bars), long 940 / short 787; location >= 2 on 92.8% of them (fractal 91%, PMG 71%, reclaim 68%, HTF 50%)
+  combo occurrences (each alone, any score): 3-2 934, 1-3-2 252, 2-1-2 3330, 3-1-2 784
+  AS CONFIGURED, whole file                n   489  R -0.0897  PF 0.877  win 33.3%  pts   -1.89  DD   55.4R  TP 33%  fill-bar exit 5%  amb 1.4%  hold 7
+    block research                         n   310  R -0.1093  PF 0.852  win 32.9%  pts   -7.44  DD   45.2R  TP 33%  fill-bar exit 4%  amb 1.3%  hold 8
+    block locked                           n   181  R -0.0507  PF 0.929  win 34.3%  pts   +7.67  DD   21.1R  TP 34%  fill-bar exit 6%  amb 1.7%  hold 7
+    long only                              n   264  R -0.0782  PF 0.892  win 33.7%  pts   +1.34  DD   37.1R  TP 34%  fill-bar exit 5%  amb 1.5%  hold 8
+    short only                             n   225  R -0.1032  PF 0.860  win 32.9%  pts   -5.68  DD   36.0R  TP 33%  fill-bar exit 5%  amb 1.3%  hold 7
+  per year: 2022: +0.883 (3)  2023: -0.185 (148)  2024: -0.043 (171)  2025: -0.071 (167)
+  exit stop    n   326  mean R -1.096  sum R -357.2
+  exit target  n   163  mean R +1.922  sum R +313.4
+  random-trigger control (300 draws, 505 trades/draw vs 489, same order, buffers, stop, 2R, lock): mean R -0.1452 median -0.1474; P(control >= strategy) 0.183
+    no location filter at all              n   541  R -0.1270  PF 0.829  win 32.0%  pts   -5.71  DD   76.6R  TP 32%  fill-bar exit 5%  amb 1.3%  hold 7
+    location >= 4 (fractal AND pmg, or all) n   392  R -0.1084  PF 0.853  win 32.9%  pts   -4.00  DD   49.5R  TP 33%  fill-bar exit 6%  amb 1.3%  hold 7
+
+====================================================================================================
+LADDERS (whole file, 15m, R per trade / trades / PF)
+====================================================================================================
+
+Point scale of every tolerance and buffer (x0.5 .. x10; x1 = the EA's 0.1 / 0.25 point):
+  US30   x0.5  -0.400/979/0.58   x1    -0.250/1315/0.71   x2    -0.150/1382/0.81   x5    -0.140/1050/0.82   x10   -0.078/650/0.89
+  US100  x0.5  -0.277/1366/0.68   x1    -0.116/1459/0.85   x2    -0.068/1292/0.91   x5    -0.050/703/0.93   x10   -0.106/318/0.85
+  NQ     x0.5  -0.116/554/0.85   x1    -0.090/489/0.88   x2    -0.145/335/0.80   x5    -0.075/107/0.89   x10   +0.281/37/1.49
+
+Take-profit ratio (RR 1 / 1.5 / 2 / 3 / 4), configured location:
+  US30   RR1   -0.275/1377/win 49% (be 50%)   RR1.5 -0.288/1343/win 39% (be 40%)   RR2   -0.250/1315/win 34% (be 33%)   RR3   -0.312/1265/win 24% (be 25%)   RR4   -0.317/1221/win 19% (be 20%)
+  US100  RR1   -0.163/1530/win 51% (be 50%)   RR1.5 -0.144/1486/win 42% (be 40%)   RR2   -0.116/1459/win 36% (be 33%)   RR3   -0.093/1382/win 27% (be 25%)   RR4   -0.151/1311/win 21% (be 20%)
+  NQ     RR1   -0.035/527/win 53% (be 50%)   RR1.5 -0.039/505/win 42% (be 40%)   RR2   -0.090/489/win 33% (be 33%)   RR3   -0.142/468/win 24% (be 25%)   RR4   -0.172/435/win 18% (be 20%)
+
+Each combo family alone (weight 10, others 0, hammer 0), configured location:
+  US30   3-2   -0.239/784/0.72   1-3-2 -0.240/236/0.71   2-1-2 -0.444/2993/0.54   3-1-2 -0.284/552/0.68   no-hammer -0.251/1297
+  US100  3-2   -0.114/884/0.85   1-3-2 -0.219/251/0.73   2-1-2 -0.261/2748/0.69   3-1-2 -0.137/625/0.83   no-hammer -0.115/1438
+  NQ     3-2   -0.043/301/0.94   1-3-2 -0.106/79/0.86   2-1-2 -0.140/848/0.82   3-1-2 -0.206/217/0.73   no-hammer -0.089/486
+
+Entry buffer 0 / 20 / 50 / 100 pts (SL buffer moves with it):
+  US30     0: -0.438/1600/0.55    20: -0.250/1315/0.71    50: -0.174/1041/0.78   100: -0.093/702/0.87
+  US100    0: -0.433/2136/0.56    20: -0.116/1459/0.85    50: -0.055/973/0.92   100: -0.007/545/0.99
+  NQ       0: -0.246/845/0.70    20: -0.090/489/0.88    50: -0.076/240/0.89   100: -0.075/88/0.89
+
+Cost stress 0x / 1x / 1.5x / 2x:
+  US30   0x +0.000   1x -0.250   1.5x -0.375   2x -0.501
+  US100  0x +0.071   1x -0.116   1.5x -0.209   2x -0.302
+  NQ     0x -0.001   1x -0.090   1.5x -0.134   2x -0.178
+
+Timeframe, as configured (60m on all; 5m on NQ where 1-minute data exists):
+  US30   60min: -0.294/349/PF 0.65/win 30%, control -0.274 p 0.64
+  US100  60min: -0.043/372/PF 0.94/win 36%, control -0.200 p 0.01
+  NQ     5min: -0.049/876/PF 0.93/win 36%, control -0.150 p 0.01   60min: -0.001/181/PF 1.00/win 35%, control -0.182 p 0.04

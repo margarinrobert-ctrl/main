@@ -1,0 +1,63 @@
+========================================================================================================
+F. MONTE CARLO AND COST STRESS
+========================================================================================================
+  A no-stop strategy's risk is ENTIRELY in the flatten tail, so the drawdown permutation and the loss quantiles
+  matter more than the mean. Bootstrap = edge uncertainty, permutation = path risk.
+
+
+NQ 1m
+  ALL         n  43 mean   +40.9 | P(mean<=0) 0.000 95% CI [+16.3, +67.5] | DD realised 188 at pct 0.64, p95 295, p99 374 | worst trade -151.3, p5 -115.0
+  research    n  26 mean   +36.3 | P(mean<=0) 0.002 95% CI [+14.0, +57.7] | DD realised 151 at pct 0.81, p95 183, p99 194 | worst trade -151.3, p5 -26.7
+  locked      n  17 mean   +47.9 | P(mean<=0) 0.033 95% CI [-2.5, +104.4] | DD realised 188 at pct 0.74, p95 268, p99 288 | worst trade -143.9, p5 -128.2
+  cost stress:
+  cost x0.0                  | rese n  26   +38.0 PF 6.23 Sh +2.1 | lock n  17   +49.6 PF 3.98 Sh +1.6
+  cost x1.0                  | rese n  26   +36.3 PF 5.86 Sh +2.0 | lock n  17   +47.9 PF 3.83 Sh +1.6
+  cost x2.0                  | rese n  26   +34.6 PF 5.51 Sh +1.9 | lock n  17   +46.2 PF 3.68 Sh +1.5
+  cost x4.0                  | rese n  26   +31.1 PF 4.81 Sh +1.8 | lock n  17   +42.7 PF 3.37 Sh +1.4
+  cost x8.0                  | rese n  26   +24.3 PF 3.60 Sh +1.5 | lock n  17   +35.8 PF 2.80 Sh +1.2
+
+NQ 15m
+  ALL         n  43 mean   +39.0 | P(mean<=0) 0.001 95% CI [+15.2, +64.1] | DD realised 201 at pct 0.65, p95 301, p99 384 | worst trade -149.0, p5 -113.2
+  research    n  26 mean   +35.1 | P(mean<=0) 0.002 95% CI [+12.4, +56.5] | DD realised 149 at pct 0.75, p95 181, p99 191 | worst trade -149.0, p5 -27.9
+  locked      n  17 mean   +45.0 | P(mean<=0) 0.038 95% CI [-4.2, +102.1] | DD realised 201 at pct 0.76, p95 266, p99 292 | worst trade -142.9, p5 -126.4
+  cost stress:
+  cost x0.0                  | rese n  26   +36.8 PF 6.02 Sh +2.0 | lock n  17   +46.8 PF 3.77 Sh +1.6
+  cost x1.0                  | rese n  26   +35.1 PF 5.62 Sh +2.0 | lock n  17   +45.0 PF 3.62 Sh +1.5
+  cost x2.0                  | rese n  26   +33.4 PF 5.24 Sh +1.9 | lock n  17   +43.3 PF 3.46 Sh +1.5
+  cost x4.0                  | rese n  26   +29.9 PF 4.53 Sh +1.7 | lock n  17   +39.9 PF 3.16 Sh +1.4
+  cost x8.0                  | rese n  26   +23.1 PF 3.29 Sh +1.4 | lock n  17   +33.0 PF 2.60 Sh +1.2
+
+US100 15m
+  ALL         n 125 mean   +20.8 | P(mean<=0) 0.003 95% CI [+6.1, +35.7] | DD realised 399 at pct 0.22, p95 787, p99 941 | worst trade -316.8, p5 -149.5
+  research    n  63 mean    +5.0 | P(mean<=0) 0.257 95% CI [-10.5, +19.8] | DD realised 399 at pct 0.61, p95 581, p99 669 | worst trade -178.7, p5 -114.2
+  validation  n  38 mean   +31.2 | P(mean<=0) 0.047 95% CI [-5.9, +65.4] | DD realised 317 at pct 0.20, p95 703, p99 814 | worst trade -316.8, p5 -183.7
+  test        n  24 mean   +45.6 | P(mean<=0) 0.001 95% CI [+17.7, +74.1] | DD realised 157 at pct 0.98, p95 157, p99 167 | worst trade -142.9, p5 -13.5
+  cost stress:
+  cost x0.0                  | rese n  63    +6.5 PF 1.39 Sh +0.4 | vali n  38   +32.7 PF 2.15 Sh +1.2 | test n  24   +47.1 PF 7.97 Sh +2.1
+  cost x1.0                  | rese n  63    +5.0 PF 1.29 Sh +0.3 | vali n  38   +31.2 PF 2.08 Sh +1.2 | test n  24   +45.6 PF 7.53 Sh +2.0
+  cost x2.0                  | rese n  63    +3.5 PF 1.20 Sh +0.2 | vali n  38   +29.7 PF 2.02 Sh +1.1 | test n  24   +44.1 PF 7.10 Sh +2.0
+  cost x4.0                  | rese n  63    +0.5 PF 1.03 Sh +0.0 | vali n  38   +26.7 PF 1.90 Sh +1.0 | test n  24   +41.1 PF 6.32 Sh +1.9
+  cost x8.0                  | rese n  63    -5.5 PF 0.75 Sh -0.3 | vali n  38   +20.7 PF 1.66 Sh +0.8 | test n  24   +35.1 PF 4.97 Sh +1.7
+
+US30 15m
+  ALL         n 106 mean    +8.6 | P(mean<=0) 0.346 95% CI [-34.6, +52.6] | DD realised 1380 at pct 0.11, p95 2789, p99 3133 | worst trade -1178.9, p5 -264.5
+  research    n  64 mean    +1.4 | P(mean<=0) 0.448 95% CI [-37.4, +34.6] | DD realised 1380 at pct 0.82, p95 1601, p99 1780 | worst trade -791.0, p5 -141.3
+  validation  n  21 mean   +28.3 | P(mean<=0) 0.146 95% CI [-27.6, +78.1] | DD realised 356 at pct 0.53, p95 592, p99 666 | worst trade -274.0, p5 -236.0
+  test        n  21 mean   +10.8 | P(mean<=0) 0.470 95% CI [-162.2, +201.8] | DD realised 1207 at pct 0.16, p95 1850, p99 1945 | worst trade -1178.9, p5 -356.3
+  cost stress:
+  cost x0.0                  | rese n  64    +4.4 PF 1.11 Sh +0.1 | vali n  21   +31.3 PF 1.89 Sh +0.8 | test n  21   +13.8 PF 1.14 Sh +0.1
+  cost x1.0                  | rese n  64    +1.4 PF 1.03 Sh +0.0 | vali n  21   +28.3 PF 1.79 Sh +0.7 | test n  21   +10.8 PF 1.11 Sh +0.1
+  cost x2.0                  | rese n  64    -1.6 PF 0.96 Sh -0.0 | vali n  21   +25.3 PF 1.69 Sh +0.7 | test n  21    +7.8 PF 1.08 Sh +0.1
+  cost x4.0                  | rese n  64    -7.6 PF 0.83 Sh -0.2 | vali n  21   +19.3 PF 1.51 Sh +0.5 | test n  21    +1.8 PF 1.02 Sh +0.0
+  cost x8.0                  | rese n  64   -19.6 PF 0.61 Sh -0.5 | vali n  21    +7.3 PF 1.17 Sh +0.2 | test n  21   -10.2 PF 0.90 Sh -0.1
+
+US30_ISO 15m
+  ALL         n  24 mean   +53.4 | P(mean<=0) 0.246 95% CI [-102.3, +221.9] | DD realised 1158 at pct 0.35, p95 1612, p99 1761 | worst trade -1157.5, p5 -240.6
+  research    n  20 mean   +39.6 | P(mean<=0) 0.344 95% CI [-147.6, +237.0] | DD realised 1158 at pct 0.26, p95 1695, p99 1814 | worst trade -1157.5, p5 -291.8
+  locked      n 4 -- too few to resample
+  cost stress:
+  cost x0.0                  | rese n  20   +42.6 PF 1.44 Sh +0.4 | lock n   4  +125.7 PF 502902708628.96 Sh +2.1
+  cost x1.0                  | rese n  20   +39.6 PF 1.41 Sh +0.3 | lock n   4  +122.7 PF 490902708628.96 Sh +2.1
+  cost x2.0                  | rese n  20   +36.6 PF 1.37 Sh +0.3 | lock n   4  +119.7 PF 478902708628.96 Sh +2.1
+  cost x4.0                  | rese n  20   +30.6 PF 1.31 Sh +0.3 | lock n   4  +113.7 PF 454902708628.96 Sh +2.0
+  cost x8.0                  | rese n  20   +18.6 PF 1.18 Sh +0.2 | lock n   4  +101.7 PF 65.09 Sh +2.0

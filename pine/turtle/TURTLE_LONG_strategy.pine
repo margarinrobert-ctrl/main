@@ -1,0 +1,438 @@
+//@version=5
+// Turtle Trading, long only -- four measured presets, with the SESSION LEFT FREE.
+//
+// WHAT IS LOCKED AND WHAT IS NOT
+// ------------------------------
+// Every structural parameter -- channel lengths, ATR multiple, pyramid step, unit cap, the
+// skip-after-winner rule, the regime gate and the design timeframe -- is OVERRIDDEN by the
+// preset's measured constant. That lock exists because two scripts on this branch lost money
+// purely from being run on the wrong chart or with an edited stop (see STUDY_PINE_CONFIG.md).
+//
+// The ENTRY SESSION is deliberately exempt. Start and stop are free inputs and a preset never
+// touches them, because the session that suits a broker's US100 feed is not the session that
+// suits a futures chart, and the measurement below shows the choice matters and is not a
+// one-size constant. What the research DOES say about it:
+//
+//     all hours     research +0.595 R/trade   out-of-sample +0.398
+//     08:00-20:00   research +0.595           out-of-sample +0.462   <- best measured
+//     09:00-16:00   research +0.701           out-of-sample -0.017   <- RTH ONLY IS HARMFUL
+//
+// A cash-session-only window destroys this system: it is a multi-day trend follower and it needs
+// the extended hours in which the breakouts actually occur. The default below is therefore
+// "all hours", and the plot marks any window that differs from it so a changed session is never
+// invisible in a screenshot.
+//
+// ATR NOTE. This script uses ta.atr(), which is Wilder's RMA. That is CORRECT here and is a
+// deliberate departure from this repo's usual ta.ema(ta.tr(true), n): the Turtle definition and
+// the Python engine this was validated against both use Wilder.
+//
+// Measured on US100 CFD 15-minute source data resampled to the preset timeframe, one unit per
+// Turtle unit, ~1.0 point spread and 0.25 point slippage assumed. Research 2016-2021,
+// out-of-sample 2022-2025. See docs/ib/STUDY_TURTLE.md -- including the finding that a RANDOM
+// entry with these same exits performs as well as the breakout itself.
+// COSTS WERE MISSING FROM THIS DECLARATION AND ARE NOW CHARGED. The header above says the
+// research assumed ~1.0 point spread and 0.25 point slippage; the SCRIPT charged neither, so
+// every Strategy Tester run of it reported "Commission load 0.00%" -- a zero-cost backtest of a
+// system that takes thousands of trades. Set both to your instrument below before reading any
+// number this produces. Defaults are the research's own assumption on a 1-point-per-unit index
+// CFD; on a futures contract use the contract's real per-order fee instead.
+// =============================================================================================
+// FOUR OPTIONAL ADDITIONS, ALL OFF BY DEFAULT, ALL MEASURED ON A DIFFERENT BASE
+// ---------------------------------------------------------------------------------------------
+// AO >= 0.25 + CHOP <= 40, the volatility-adaptive stop, an EMA crossover and pullback entry
+// confirmation are all available below. Every one of them ships OFF, and every one carries the
+// same warning: THE FIGURES BEHIND THEM WERE MEASURED ON A DONCHIAN 30/20 BASE WITH A SINGLE
+// UNIT AND A 2.0N STOP -- not on a four-unit Turtle ladder with 20-period ATR and a skip rule.
+// Transplanting a filter across bases is untested here, and this branch has watched a filter
+// invert when moved (STUDY_V12: the ADX gate that survived selection is the thing that flips).
+//
+//   AO >= 0.25 WITH CHOP <= 40 is the one that was asked for by name. On the Donchian base it is
+//   row 25 of a top-100 ranked on research out of a 1,184-cell grid:
+//       research  n 258  PF 1.416  R +0.1970  Sharpe 1.58
+//       LOCKED    n 143  PF 1.276  R +0.1322  Sharpe 1.18
+//   Read it against the NO-MOMENTUM row of that same table -- `30m off / ADX off / CHOP<=40`:
+//       research  PF 1.355                    LOCKED  PF 1.229
+//   So AO buys +0.047 of locked profit factor. In the same grid, 16 of 36 momentum settings beat
+//   the no-momentum baseline on the locked block -- 44%, where chance is 50%. The CHOP gate is
+//   doing the work; AO is inside the noise. See STUDY_V23_MOMENTUM_REGIME.md.
+//
+//   THE VOLATILITY-ADAPTIVE STOP widens when 20-bar realised volatility sits LOW in its own
+//   250-bar percentile, because ATR is backward-looking and volatility mean-reverts, so a fixed
+//   multiple is too tight exactly when vol is about to expand. On the Donchian base it took
+//   locked PF 1.158 -> 1.249 and the naive inverse was worse than flat on all six cells tested.
+//   But it is BETTER ON LOCKED THAN ON RESEARCH, which is the wrong shape and why it is off.
+//   See STUDY_V22_VOLATILITY.md.
+//
+//   THE EMA CROSSOVER is included because it was asked for, and the measurement is unambiguous:
+//   over 1,016 declared MA-crossover cells, 45% beat the no-MA baseline out of sample where
+//   chance is 50%, mean locked PF change +0.015, and a lag-matched follow-up showed the apparent
+//   differences between MA TYPES are a sample-size effect. See STUDY_V24_MA_CROSSOVER.md.
+//
+//   PULLBACK ENTRY CONFIRMATION is the one with a mechanism against it rather than just a null.
+//   Waiting for price to retrace before entering discards precisely the trades whose edge is
+//   IMMEDIACY. Measured two independent ways on this branch: a resting limit 0.75xATR below the
+//   signal took a validated book from $55,424 to $13,415 (STUDY_LIMIT_ENTRY.md), and a moving
+//   average tap earned -0.0223 R on the 31% of breakouts that pulled back against +0.1387 R on
+//   simply taking all of them -- despite the fill being 1.44 ATR cheaper (STUDY_KAMA_ENTRY.md).
+//   A pullback entry SUBSTITUTES for a signal; it does not complement one. On a Turtle, whose
+//   whole premise is that the breakout itself is the event, expect this to hurt.
+// =============================================================================================
+strategy("Turtle Long-Only (measured presets)", overlay = true, pyramiding = 4,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, calc_on_every_tick = false,
+         process_orders_on_close = false,
+         commission_type = strategy.commission.cash_per_order,
+         commission_value = 0.50, slippage = 1)
+
+// ===================== STRATEGY TESTER PROPERTIES -- WHAT TO SET AND WHY =====================
+// The declaration above only supplies DEFAULTS. The Properties tab overrides them per chart, and
+// four of its fields decide whether the report means anything.
+//
+//   Script execution        ON BAR CLOSE, nothing else. The other two re-run the script inside the
+//                           bar; see docs/ib/STUDY_TICK_RECALC.md for what that did here.
+//   Bar detalization        High, with Deep Backtesting. Finer intrabar data is strictly better for
+//                           a stop system, because the stop is what the intrabar path decides.
+//   Order execution delay   One tick. Free realism; leave it on.
+//   Commission              THE DEFAULT IS TOO LOW. 0.50 cash per order was carried over from an
+//                           index-CFD assumption; a run of this script reported Commission load
+//                           0.29%, about $520 of fees against $180,206 of gross profit, which is
+//                           not a cost model. On CME index futures through a retail broker use
+//                           CASH PER ORDER -- it is charged per SIDE, which is what you want:
+//                             MNQ  ~$0.72/side  (broker $0.35 + exchange $0.35 + NFA $0.02)
+//                             NQ   ~$2.05/side  (broker $0.85 + exchange $1.18 + NFA $0.02)
+//                           Those are this repo's model, not a quote -- check your own statement,
+//                           and note that with PYRAMIDING 4 a full ladder pays this EIGHT times.
+//                           Use PERCENT only on crypto or FX, where fees scale with notional.
+//   Slippage                In the instrument's own ticks. NQ/MNQ tick is 0.25 points. One tick is
+//                           optimistic for a STOP-exit system: a stop fills into the move that
+//                           triggered it, so 2 ticks per side is the more honest setting here.
+//
+//   TIMEFRAME. Every "T" preset is LOCKED to the chart it was measured on -- T1 and T2 to 240m,
+//   T3 to 120m, T4 to 60m -- and on any other chart `onDesignTF` goes false, `gateOk` goes false,
+//   and the script takes NO TRADES AT ALL. The HUD's second row says so in red. If you are on a
+//   15-minute chart and still seeing fills, you are on "Spec defaults (no gate)" or "Custom",
+//   which is the RAW Turtle with no ADX ceiling and no extension filter -- a different strategy
+//   from the measured ones, and one nothing in docs/ib/ has validated at that speed.
+//   `STUDY_TURTLE_YOUTUBE.md` is the nearest evidence and it points the wrong way: the 15-minute
+//   variant fails out of sample where the 1-hour one holds.
+//
+//   Leverage = Infinity is a deliberate choice with a consequence. It stops the broker emulator
+//   silently REJECTING orders the account cannot fund, which is what made the same script report
+//   850 trades at 100K and 4,806 at 1M on US100 -- so for measuring the RULES, Infinity is the
+//   setting you want. But it also means the percentage figures are no longer an account return:
+//   "+47.23%" is the P&L of one to four units divided by an arbitrary 100,000. Read the DOLLAR
+//   drawdown, not the percentage, whenever leverage is unbounded.
+//
+//   Limit order execution = "Requested price" does not affect this script, which exits on STOP
+//   orders. It is optimistic for any script that rests limits -- pine/donchian/ does.
+// ============================================================================================
+
+// ----------------------------------------------------------------- preset (locks everything)
+presetName = input.string("T1  240m  ADX<22 + not extended", "Preset", options = [
+     "T1  240m  ADX<22 + not extended",
+     "T2  240m  ADX<22",
+     "T3  120m  ADX<22",
+     "T4   60m  ADX<22 + not extended",
+     "Spec defaults (no gate)",
+     "Custom"])
+
+// ----------------------------------------------------------------- POSITION SIZE
+// EXPOSED BECAUSE AN UNDERFUNDED ACCOUNT SILENTLY CHANGES THE STRATEGY. With pyramiding 4 the
+// ladder needs four units of notional; when the account cannot fund the next one the broker
+// emulator REJECTS the order rather than reporting an error, so the run quietly trades a
+// different, self-selected subset of the signals. Measured on US100 over the same range and the
+// same script: 100K capital gave 850 trades, 1M capital gave 4,806 -- 5.65x, from capital alone.
+// The HUD warns when the full ladder does not fit.
+unitQty = input.float(1.0, "Units per Turtle unit", minval = 0.01, step = 0.01,
+     group = "Position size",
+     tooltip = "Lower this instead of raising capital if the HUD says the ladder does not fit. A rejected order is not a neutral event -- the rejections cluster where price is high and the position is already large, so what gets dropped is systematic, not random.")
+
+// ----------------------------------------------------------------- SESSION: FREE, NEVER LOCKED
+sessOn    = input.bool(false, "Restrict entries to a session", group = "Entry session (free)")
+sessStart = input.session("0000-0000", "Entry session", group = "Entry session (free)",
+     tooltip = "Exchange-independent: evaluated in America/New_York. Exits are NEVER gated -- a Turtle position is held for days, so only the decision to OPEN is restricted. Measured: 08:00-20:00 was best out of sample; 09:00-16:00 (RTH only) was harmful.")
+sessTZ    = input.string("America/New_York", "Session timezone", group = "Entry session (free)",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "UTC"])
+
+// ----------------------------------------------------------------- OPTIONAL ADD-ONS (all OFF)
+gAO = "Add-on: AO + CHOP gate (OFF -- measured on a different base)"
+useAO   = input.bool(false, "Require Awesome Oscillator above a floor", group = gAO,
+     tooltip = "AO normalised by ATR. On the Donchian base, AO>=0.25 with CHOP<=40 scored locked PF 1.276 against the no-momentum row's 1.229 -- +0.047, inside the noise of a 1,184-cell grid where only 44% of momentum settings beat baseline out of sample and chance is 50%.")
+aoMin   = input.float(0.25, "  AO floor, in ATR units", step = 0.05, group = gAO)
+useChop = input.bool(false, "Require CHOP(14) at or below a ceiling", group = gAO,
+     tooltip = "The only regime filter on this branch that has cleared a same-selectivity control on both blocks (locked p 0.048). In the AO grid it is doing most of the work that the AO row appears to show.")
+chopMax = input.float(40.0, "  CHOP ceiling", minval = 1, maxval = 100, group = gAO)
+
+gVS = "Add-on: volatility-adaptive stop and target (OFF)"
+useVolStop = input.bool(false, "Scale the ATR stop by the volatility percentile", group = gVS,
+     tooltip = "Wider when 20-bar realised vol sits LOW in its own 250-bar range, because ATR is backward-looking and vol mean-reverts. Donchian base: locked PF 1.158 -> 1.249, and the naive inverse was worse than flat on all six cells. It is BETTER ON LOCKED THAN RESEARCH -- the wrong shape -- which is why it is off.")
+volLen     = input.int(20, "  realised-vol window", minval = 2, group = gVS)
+volRankLen = input.int(250, "  percentile lookback", minval = 20, group = gVS)
+volSplit   = input.float(50.0, "  percentile split", minval = 1, maxval = 99, group = gVS)
+stopCalm   = input.float(2.5, "  ATR multiple when CALM (at or below split)", step = 0.1, group = gVS)
+stopFast   = input.float(1.5, "  ATR multiple when FAST (above split)", step = 0.1, group = gVS)
+useTp      = input.bool(false, "Take profit at a multiple of the stop", group = gVS,
+     tooltip = "OFF. No take profit has beaten every target tested on this branch eight independent times, and a Turtle in particular earns in the tail -- a target truncates exactly the trades the channel exit exists to hold.")
+tpR        = input.float(2.0, "  target, in R", minval = 0.1, step = 0.1, group = gVS)
+
+gMA = "Add-on: EMA crossover (OFF)"
+useMa   = input.bool(false, "Require an EMA crossover condition", group = gMA,
+     tooltip = "Over 1,016 declared MA-crossover cells, 45% beat the no-MA baseline out of sample where chance is 50%, and the mean locked profit-factor change was +0.015. A lag-matched follow-up showed the apparent differences between MA types are a sample-size effect.")
+maFast  = input.int(20, "  fast EMA", minval = 2, group = gMA)
+maSlow  = input.int(50, "  slow EMA", minval = 3, group = gMA)
+maMode  = input.string("state (fast above slow)", "  reading", group = gMA,
+     options = ["state (fast above slow)", "cross (within N bars)"],
+     tooltip = "STATE forms were neutral in the grid; CROSS forms carried the highest research profit factor and the lowest locked one -- classic selection decay.")
+maBars  = input.int(5, "  cross counts for this many bars", minval = 1, group = gMA)
+
+gPB = "Add-on: pullback entry confirmation (OFF -- a mechanism argues against it)"
+usePb   = input.bool(false, "Wait for a pullback before entering", group = gPB,
+     tooltip = "Measured twice, independently: a resting limit 0.75xATR below the signal took a validated book from $55,424 to $13,415, and a moving-average tap earned -0.0223 R on the 31% of breakouts that pulled back against +0.1387 R on taking all of them. A pullback entry SUBSTITUTES for a signal rather than complementing one, and a Turtle's premise is that the breakout IS the event.")
+pbAtr   = input.float(0.75, "  retrace this many ATR below the signal close", minval = 0.05,
+     step = 0.05, group = gPB)
+pbBars  = input.int(6, "  cancel if unfilled after this many bars", minval = 1, group = gPB)
+pbApply = input.string("entries only", "  apply to", options = ["entries only", "entries and adds"],
+     group = gPB, tooltip = "Pyramid adds are momentum events by construction; requiring a pullback on them fights the ladder's purpose.")
+
+// ----------------------------------------------------------------- custom (used only by Custom)
+cEntry1   = input.int(20,  "Custom entry 1 (bars)", minval = 2, group = "Custom only")
+cEntry2   = input.int(55,  "Custom entry 2 (bars)", minval = 2, group = "Custom only")
+cExit1    = input.int(10,  "Custom exit 1 (bars)",  minval = 2, group = "Custom only")
+cExit2    = input.int(20,  "Custom exit 2 (bars)",  minval = 2, group = "Custom only")
+cAtrMult  = input.float(2.0, "Custom ATR stop multiple", minval = 0.1, group = "Custom only")
+cPyrStep  = input.float(0.5, "Custom pyramid step (N)", minval = 0.0, group = "Custom only")
+cMaxUnits = input.int(4,   "Custom max units", minval = 1, maxval = 4, group = "Custom only")
+cAdxMax   = input.float(0, "Custom ADX ceiling (0 = off)", minval = 0, group = "Custom only")
+cExtMax   = input.float(0, "Custom max distance above EMA100 in ATR (0 = off)", minval = 0, group = "Custom only")
+
+// ----------------------------------------------------------------- resolved, locked constants
+isCustom = presetName == "Custom"
+entry1   = isCustom ? cEntry1   : 20
+entry2   = isCustom ? cEntry2   : 55
+exit1    = isCustom ? cExit1    : 10
+exit2    = isCustom ? cExit2    : 20
+atrLen   = 20
+atrMult  = isCustom ? cAtrMult  : 2.0
+pyrStep  = isCustom ? cPyrStep  : 0.5
+maxUnits = isCustom ? cMaxUnits : 4
+skipWin  = true
+
+adxMax = switch presetName
+    "T1  240m  ADX<22 + not extended" => 22.0
+    "T2  240m  ADX<22"                => 22.0
+    "T3  120m  ADX<22"                => 22.0
+    "T4   60m  ADX<22 + not extended" => 22.0
+    "Spec defaults (no gate)"         => 0.0
+    => cAdxMax
+
+extMax = switch presetName
+    "T1  240m  ADX<22 + not extended" => 3.964
+    "T2  240m  ADX<22"                => 0.0
+    "T3  120m  ADX<22"                => 0.0
+    "T4   60m  ADX<22 + not extended" => 3.193
+    "Spec defaults (no gate)"         => 0.0
+    => cExtMax
+
+designTF = switch presetName
+    "T1  240m  ADX<22 + not extended" => "240"
+    "T2  240m  ADX<22"                => "240"
+    "T3  120m  ADX<22"                => "120"
+    "T4   60m  ADX<22 + not extended" => "60"
+    => timeframe.period
+
+// ----------------------------------------------------------------- timeframe lock
+onDesignTF = isCustom or presetName == "Spec defaults (no gate)" or timeframe.period == designTF
+
+// ----------------------------------------------------------------- series
+atrN   = ta.atr(atrLen)
+chanHi1 = ta.highest(high, entry1)
+chanHi2 = ta.highest(high, entry2)
+chanLo1 = ta.lowest(low,  exit1)
+chanLo2 = ta.lowest(low,  exit2)
+ema100  = ta.ema(close, 100)
+[diPlus, diMinus, adxVal] = ta.dmi(14, 14)
+distEma = atrN > 0 ? (close - ema100) / atrN : 0.0
+
+// ---- add-on series. Each is only consulted when its own switch is on.
+// Awesome Oscillator, normalised by ATR so the floor means the same thing at any price level.
+aoRaw  = ta.sma(hl2, 5) - ta.sma(hl2, 34)
+aoV    = atrN > 0 ? aoRaw / atrN : na
+// Choppiness Index: 100 * log10(sum(TR,14) / 14-bar range) / log10(14). LOW means trending.
+chopV  = 100 * math.log10(math.sum(ta.tr(true), 14) /
+     math.max(ta.highest(high, 14) - ta.lowest(low, 14), syminfo.mintick)) / math.log10(14)
+// Realised volatility ranked inside its own trailing window, in [0,1].
+lr1    = math.log(close / close[1])
+ccVol  = math.sqrt(ta.sma(lr1 * lr1, volLen))
+volPct = ta.percentrank(ccVol, volRankLen - 1)
+// The stop multiple actually used. `atrMult` is the preset's locked constant unless the
+// volatility-adaptive switch is on, in which case the percentile chooses between two multiples.
+effMult = not useVolStop ? atrMult : (na(volPct) ? atrMult : (volPct <= volSplit ? stopCalm : stopFast))
+emaF   = ta.ema(close, maFast)
+emaS   = ta.ema(close, maSlow)
+maUp   = emaF > emaS
+maFresh = ta.barssince(maUp and not maUp[1]) <= maBars - 1
+maOk   = not useMa or (not na(emaF) and not na(emaS) and
+     (maMode == "state (fast above slow)" ? maUp : maFresh))
+aoOk   = not useAO or (not na(aoV) and aoV >= aoMin)
+chopOk = not useChop or (not na(chopV) and chopV <= chopMax)
+
+// ----------------------------------------------------------------- gates
+adxOk  = adxMax <= 0 or adxVal < adxMax
+extOk  = extMax <= 0 or distEma < extMax
+inSess = not sessOn or not na(time(timeframe.period, sessStart, sessTZ))
+gateOk = adxOk and extOk and inSess and onDesignTF and aoOk and chopOk and maOk
+
+// ----------------------------------------------------------------- state
+// The stop and the pyramid ladder are anchored to the ACTUAL FILL, not to the signal bar's
+// close. The research fills every entry and add at the NEXT bar's open, which is unknown when
+// the signal fires, so the anchoring is done one bar later from
+// strategy.opentrades.entry_price() -- the real fill price of the newest unit. Anchoring to
+// `close` instead would shift every stop by one bar's move.
+var float stopLvl   = na
+var float nextAdd   = na
+var float firstFill = na
+var float pendAtr   = na
+var float pendMult  = na
+var int   pbExpiry  = na
+var int   unitsOn   = 0
+var int   sysOn     = 0
+var int   lastCount = 0
+var bool  lastWin   = false
+
+// BOTH STATE BLOCKS BELOW ARE GUARDED BY barstate.isconfirmed, AND THAT IS NOT OPTIONAL.
+// Guarding only the ENTRIES is not enough. When the Strategy Tester's "On order fill" or
+// "On realtime bar tick" boxes are ticked, the whole script re-executes INSIDE the bar, and
+// on such a pass `close` is the price at that instant, not the bar's close. `lastWin` is
+// computed from `close`, and `lastWin` drives the System 1 skip rule -- so an unguarded
+// version decides whether to TAKE a 20-bar breakout using a price the bar-close version
+// cannot see. Measured on the same chart and the same range: unguarded, the three boxes on
+// gave +62,278 / PF 1.416 / 14,462 trades and the boxes off gave -913 / PF 0.994 / 11,398.
+// Same rules, 27% more fills and a 63-point swing in return, decided by the checkbox.
+// `anchorAtr` has the same problem one level down: a mid-bar `atrN` is a partly-formed ATR,
+// so every stop and every pyramid step would be anchored off a number that does not exist yet.
+// With the guards, all three checkbox combinations produce the identical report.
+
+// a trade that just closed: record whether it won, so the System 1 skip can read it
+if barstate.isconfirmed and strategy.position_size == 0 and lastCount > 0
+    lastWin   := close > firstFill
+    unitsOn   := 0
+    sysOn     := 0
+    stopLvl   := na
+    nextAdd   := na
+    lastCount := 0
+
+// a fill just happened: re-anchor the stop and the next add to that fill price
+if barstate.isconfirmed and strategy.opentrades > lastCount
+    fillPx = strategy.opentrades.entry_price(strategy.opentrades - 1)
+    anchorAtr = na(pendAtr) ? atrN : pendAtr
+    if lastCount == 0
+        firstFill := fillPx
+    anchorMult = na(pendMult) ? atrMult : pendMult
+    stopLvl   := fillPx - anchorMult * anchorAtr
+    nextAdd   := fillPx + pyrStep * anchorAtr
+    if useTp
+        strategy.exit("tp", limit = fillPx + tpR * anchorMult * anchorAtr)
+    pbExpiry  := na
+    unitsOn   := strategy.opentrades
+    lastCount := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ----------------------------------------------------------------- entries
+sig2 = high > chanHi2[1]
+sig1 = high > chanHi1[1]
+
+// A pullback entry rests a LIMIT below the signal close instead of taking the next open. The
+// order is cancelled after `pbBars` bars, because an unfilled order left live would eventually
+// fill on an unrelated move -- which is a different strategy, not a delayed version of this one.
+pbLevel = close - pbAtr * atrN
+
+if barstate.isconfirmed and flat and gateOk and atrN > 0
+    if sig2
+        if usePb
+            strategy.entry("S2", strategy.long, qty = unitQty, limit = pbLevel)
+            pbExpiry := bar_index + pbBars
+        else
+            strategy.entry("S2", strategy.long, qty = unitQty)
+        sysOn    := 2
+        pendAtr  := atrN
+        pendMult := effMult
+    else if sig1
+        if skipWin and lastWin
+            lastWin := false
+        else
+            if usePb
+                strategy.entry("S1", strategy.long, qty = unitQty, limit = pbLevel)
+                pbExpiry := bar_index + pbBars
+            else
+                strategy.entry("S1", strategy.long, qty = unitQty)
+            sysOn    := 1
+            pendAtr  := atrN
+            pendMult := effMult
+
+// Expire an unfilled pullback order. `flat` is still true because nothing filled.
+if barstate.isconfirmed and usePb and flat and not na(pbExpiry) and bar_index > pbExpiry
+    strategy.cancel("S1")
+    strategy.cancel("S2")
+    pbExpiry := na
+
+// ----------------------------------------------------------------- pyramid adds
+if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
+    if high >= nextAdd
+        addId = "add" + str.tostring(unitsOn + 1)
+        if usePb and pbApply == "entries and adds"
+            strategy.entry(addId, strategy.long, qty = unitQty, limit = close - pbAtr * atrN)
+        else
+            strategy.entry(addId, strategy.long, qty = unitQty)
+        pendAtr  := atrN
+        pendMult := effMult
+
+// ----------------------------------------------------------------- exit
+// One stop order at the HIGHER of the ATR stop and the channel low: falling price reaches that
+// level first, which is what the path-accurate research variant models. It is worth +0.05 to
+// +0.13 R/trade against the spec's own "check the ATR stop first" ordering, so the published
+// research figures are the conservative ones.
+chanExit  = sysOn == 1 ? chanLo1[1] : chanLo2[1]
+exitLevel = na(stopLvl) ? chanExit : (na(chanExit) ? stopLvl : math.max(stopLvl, chanExit))
+
+// THIS CALL HAS TO BE GUARDED TOO, AND LEAVING IT OPEN WAS A HALF-FIX THAT MADE THINGS WORSE.
+// Guarding the state blocks but not this one creates a window that did not exist before: a fill
+// happens mid-bar, "On order fill" re-runs the script, `flat` is already false -- but `stopLvl` is
+// still `na`, because the block that anchors it now waits for the close. `exitLevel` therefore
+// falls through to `chanExit`, the CHANNEL LOW, and a stop goes to the broker at a level the
+// strategy never chose. The position gets cut early and re-entered, which is why the boxes-on run
+// still showed MORE trades and LESS drawdown than the boxes-off one after the first fix:
+// US100, 100K, same range -- 850 trades / PF 1.642 with three boxes against 762 / PF 1.188 with one.
+//
+// `lastCount > 0` is the real condition: it means the state machine has actually anchored to the
+// position that is currently open. Placement now happens once, at the close, from settled state.
+// A strategy order PERSISTS until filled or cancelled, so the stop stays live intrabar on every
+// later bar -- what is deterministic is when the level is SET, not when it can trigger.
+if barstate.isconfirmed and not flat and lastCount > 0 and not na(exitLevel)
+    strategy.exit("x", stop = exitLevel)
+
+// ----------------------------------------------------------------- plots
+plot(chanHi1, "Entry 1 (20-bar high)", color = color.new(color.aqua, 40))
+plot(chanHi2, "Entry 2 (55-bar high)", color = color.new(color.blue, 40))
+plot(chanLo1, "Exit 1 (10-bar low)",   color = color.new(color.red, 60))
+plot(chanLo2, "Exit 2 (20-bar low)",   color = color.new(color.purple, 60))
+plot(flat ? na : exitLevel, "Active stop", color = color.fuchsia, style = plot.style_linebr)
+
+// A changed session must never be invisible in a screenshot.
+sessChanged = sessOn and sessStart != "0000-0000"
+ladderCost = close * maxUnits * unitQty * syminfo.pointvalue
+fundsOk    = ladderCost <= strategy.equity * 0.9
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, presetName, text_color = color.white,
+         bgcolor = onDesignTF ? color.new(color.teal, 20) : color.new(color.red, 10))
+    table.cell(hud, 0, 1, onDesignTF ? "timeframe OK" : "WRONG TIMEFRAME - needs " + designTF,
+         text_color = color.white, bgcolor = onDesignTF ? color.new(color.teal, 40) : color.red)
+    table.cell(hud, 0, 2, sessChanged ? "session " + sessStart + " " + sessTZ : "session: all hours",
+         text_color = color.white,
+         bgcolor = sessChanged ? color.new(color.orange, 20) : color.new(color.gray, 40))
+    table.cell(hud, 0, 3, fundsOk ? "ladder funded" :
+         "LADDER DOES NOT FIT - orders will be REJECTED (needs " +
+         str.tostring(math.round(ladderCost)) + " vs equity " +
+         str.tostring(math.round(strategy.equity)) + ")",
+         text_color = color.white, bgcolor = fundsOk ? color.new(color.teal, 40) : color.red)

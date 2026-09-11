@@ -1,0 +1,165 @@
+
+====================================================================================================================================
+PART 1  BOOTSTRAP -- the EDGE question.  Resample whole DAYS with their trades attached, 4,000 draws.
+====================================================================================================================================
+   configuration                                                         RESEARCH  |                                      LOCKED
+                                          n   R/trade  boot p05  boot p95  P(<=0)  |     n   R/trade  boot p05  boot p95  P(<=0)
+   -- A regime
+   30m base, no filter                  435   +0.0926   -0.0534   +0.2444   0.153  |   226   +0.0873   -0.0882   +0.2859   0.217
+   30m CHOP<=50                         377   +0.0698   -0.0946   +0.2458   0.259  |   190   +0.0676   -0.1121   +0.2554   0.281
+   30m CHOP<=45                         311   +0.1104   -0.0664   +0.2896   0.166  |   163   +0.0622   -0.1361   +0.2675   0.305
+   30m CHOP<=40  << SHIPPED             238   +0.1053   -0.0898   +0.3096   0.199  |   125   +0.1542   -0.0694   +0.3951   0.132
+   30m CHOP<=35                         167   +0.0394   -0.1851   +0.2745   0.414  |    98   +0.0067   -0.2059   +0.2281   0.486
+   30m ADX>=20                          144   +0.2996   +0.0272   +0.6064   0.033  |    76   +0.2099   -0.1315   +0.5706   0.171
+   30m ADX>=25                           45   +0.1580   -0.1413   +0.5018   0.211  |    --                                      
+   30m ADX>=25 & CHOP<=35                --                                        |    --                                      
+   -- B 15m
+   15m base, no filter                  781   -0.0146   -0.1307   +0.1104   0.583  |   385   +0.0939   -0.0640   +0.2627   0.174
+   15m CHOP<=40                         412   +0.1048   -0.0578   +0.2719   0.159  |   235   +0.0162   -0.1750   +0.2228   0.454
+   -- C geometry
+   30m CHOP<=40, 1.5N stop              254   +0.0651   -0.1549   +0.3105   0.327  |   130   +0.1970   -0.0689   +0.4812   0.122
+   30m CHOP<=40, 2.5N stop              234   +0.0336   -0.1305   +0.2034   0.382  |   121   +0.1280   -0.0643   +0.3338   0.141
+   30m CHOP<=40, 3.0N stop              228   +0.0171   -0.1264   +0.1650   0.433  |   120   +0.1048   -0.0684   +0.2848   0.160
+   30m CHOP<=40, 2R target              292   +0.1457   +0.0200   +0.2678   0.025  |   156   +0.1282   -0.0340   +0.2887   0.099
+   30m CHOP<=40, exit ch 10             265   +0.0687   -0.0724   +0.2190   0.215  |   135   +0.2144   +0.0061   +0.4415   0.045
+   30m CHOP<=40, entry ch 55            185   +0.1362   -0.0856   +0.3833   0.172  |   103   +0.0829   -0.1268   +0.3061   0.279
+   -- D additions
+   30m CHOP<=40 + RSI>=55               234   +0.1113   -0.0826   +0.3146   0.187  |   123   +0.1554   -0.0655   +0.3985   0.121
+   30m CHOP<=40 + EMA 9/21 state        231   +0.1267   -0.0716   +0.3427   0.153  |   123   +0.1555   -0.0662   +0.4010   0.122
+   30m CHOP<=40 + EMA 9/21 cross         87   +0.0096   -0.2183   +0.2576   0.474  |    43   +0.3185   -0.0588   +0.7449   0.086
+   30m CHOP<=40 + linreg 9/21 cross     128   +0.1721   -0.0913   +0.4651   0.164  |    66   -0.0933   -0.3892   +0.2375   0.705
+   30m CHOP<=40 + linreg close>val      229   +0.1329   -0.0640   +0.3426   0.145  |   123   +0.1453   -0.0718   +0.3858   0.144
+   -- E windows
+   30m CHOP<=40, 09:30-11:00             95   +0.1457   -0.1200   +0.4431   0.193  |    57   +0.1751   -0.0980   +0.4832   0.150
+   30m CHOP<=40, 07:00-11:00            139   +0.0466   -0.1916   +0.2958   0.377  |    78   +0.0884   -0.1926   +0.3920   0.317
+   30m CHOP<=40, 08:00-12:00            144   +0.1552   -0.0782   +0.4101   0.153  |    78   +0.0865   -0.1826   +0.3698   0.314
+   30m CHOP<=40, 13:00-16:00             72   +0.1278   -0.0468   +0.3154   0.114  |    33   +0.1127   -0.1874   +0.4945   0.311
+   -- F side
+   30m CHOP<=40 SHORT                   210   -0.0675   -0.2650   +0.1481   0.713  |   112   +0.0083   -0.2484   +0.2959   0.485
+   30m base SHORT                       419   -0.1138   -0.2518   +0.0384   0.894  |   210   -0.0696   -0.2807   +0.1418   0.705
+   -- G adaptive
+   30m adaptive 2.5/1.5N                442   +0.1093   -0.0460   +0.2886   0.135  |   223   +0.1008   -0.0792   +0.2962   0.195
+   15m adaptive 2.5/1.5N                783   +0.0082   -0.1065   +0.1327   0.453  |   381   +0.1454   -0.0203   +0.3175   0.073
+   30m adaptive INVERSE 1.5/2.5N        455   +0.0189   -0.1250   +0.1709   0.426  |   241   +0.0433   -0.1550   +0.2518   0.364
+   -- H US30
+   US30 30m base                        984   +0.1763   +0.0753   +0.2838   0.002  |   670   -0.0323   -0.1432   +0.0842   0.689
+   US30 30m CHOP<=40                    552   +0.2139   +0.0709   +0.3584   0.007  |   343   -0.0081   -0.1690   +0.1701   0.539
+   US30 30m CHOP<=40 SHORT              524   -0.1380   -0.2521   -0.0170   0.970  |   315   -0.0612   -0.2219   +0.1163   0.738
+   US30 15m CHOP<=40                   1116   +0.0706   -0.0226   +0.1693   0.106  |   684   -0.1173   -0.2427   +0.0109   0.937
+
+====================================================================================================================================
+PART 2  PERMUTATION -- the PATH question.  Reorder the realised trades, 4,000 draws. Max drawdown in R.  THE ENDPOINT IS INVARIANT AND IS NOT REPORTED.
+====================================================================================================================================
+   configuration                         block     n  realised DD   MC p50   MC p95   MC p99  realised pctile
+   30m base, no filter                research   435        26.46    28.02    44.42    53.93            0.407
+   30m base, no filter                  locked   226        24.65    19.33    30.34    36.00            0.822
+   30m CHOP<=50                       research   377        27.17    30.36    47.09    56.33            0.345
+   30m CHOP<=50                         locked   190        15.00    17.17    27.12    32.24            0.309
+   30m CHOP<=45                       research   311        16.15    23.60    36.88    44.71            0.062
+   30m CHOP<=45                         locked   163        15.28    16.09    25.38    29.98            0.428
+   30m CHOP<=40  << SHIPPED           research   238        12.78    20.11    31.88    37.61            0.029
+   30m CHOP<=40  << SHIPPED             locked   125        11.57    10.86    17.06    20.26            0.588
+   30m CHOP<=35                       research   167        11.68    19.66    30.62    35.10            0.015
+   30m CHOP<=35                         locked    98        16.35    12.55    19.05    22.14            0.849
+   30m ADX>=20                        research   144        12.60    10.37    16.48    19.89            0.750
+   30m ADX>=20                          locked    76        15.44    10.07    16.23    19.06            0.926
+   30m ADX>=25                        research    45         5.67     5.79     9.21    10.93            0.474
+   15m base, no filter                research   781        60.02    64.52    96.33   110.16            0.384
+   15m base, no filter                  locked   385        29.82    28.04    44.59    53.31            0.585
+   15m CHOP<=40                       research   412        15.85    29.41    46.51    56.26            0.004
+   15m CHOP<=40                         locked   235        38.06    26.24    40.44    48.23            0.924
+   30m CHOP<=40, 1.5N stop            research   254        17.55    29.11    45.30    52.51            0.016
+   30m CHOP<=40, 1.5N stop              locked   130        14.28    12.90    20.63    24.76            0.643
+   30m CHOP<=40, 2.5N stop            research   234        18.09    20.76    31.57    36.71            0.295
+   30m CHOP<=40, 2.5N stop              locked   121        11.43     9.20    14.90    17.48            0.770
+   30m CHOP<=40, 3.0N stop            research   228        12.69    18.57    28.86    33.51            0.065
+   30m CHOP<=40, 3.0N stop              locked   120         9.64     8.14    12.90    15.64            0.719
+   30m CHOP<=40, 2R target            research   292         9.51    13.18    20.89    25.25            0.086
+   30m CHOP<=40, 2R target              locked   156        10.14    10.72    16.91    20.30            0.414
+   30m CHOP<=40, exit ch 10           research   265        10.35    17.52    27.79    32.89            0.018
+   30m CHOP<=40, exit ch 10             locked   135        13.24     8.91    14.37    17.42            0.912
+   30m CHOP<=40, entry ch 55          research   185        12.52    16.86    26.43    31.74            0.116
+   30m CHOP<=40, entry ch 55            locked   103        11.27    10.09    16.15    18.99            0.647
+   30m CHOP<=40 + RSI>=55             research   234        12.68    19.98    31.33    37.52            0.033
+   30m CHOP<=40 + RSI>=55               locked   123        11.22    10.93    17.32    21.13            0.534
+   30m CHOP<=40 + EMA 9/21 state      research   231        12.10    19.05    30.40    36.23            0.035
+   30m CHOP<=40 + EMA 9/21 state        locked   123        11.22    10.96    17.37    21.04            0.531
+   30m CHOP<=40 + EMA 9/21 cross      research    87         7.56    12.24    18.80    21.78            0.029
+   30m CHOP<=40 + EMA 9/21 cross        locked    43         4.84     4.84     7.98     9.55            0.500
+   30m CHOP<=40 + linreg 9/21 cross   research   128        14.87    13.24    21.14    25.52            0.656
+   30m CHOP<=40 + linreg 9/21 cross     locked    66        15.37    15.54    22.48    25.56            0.484
+   30m CHOP<=40 + linreg close>val    research   229        11.59    18.43    29.06    34.91            0.028
+   30m CHOP<=40 + linreg close>val      locked   123        11.22    11.06    17.49    20.67            0.521
+   30m CHOP<=40, 09:30-11:00          research    95         9.46    10.39    16.47    19.37            0.361
+   30m CHOP<=40, 09:30-11:00            locked    57         8.81     6.47    10.50    12.74            0.841
+   30m CHOP<=40, 07:00-11:00          research   139        13.52    17.43    26.37    30.50            0.175
+   30m CHOP<=40, 07:00-11:00            locked    78        10.85    10.91    17.22    20.22            0.492
+   30m CHOP<=40, 08:00-12:00          research   144        10.62    13.74    21.95    26.05            0.180
+   30m CHOP<=40, 08:00-12:00            locked    78         9.45    10.28    16.30    19.14            0.378
+   30m CHOP<=40, 13:00-16:00          research    72         3.96     4.51     7.27     8.75            0.307
+   30m CHOP<=40, 13:00-16:00            locked    33         6.03     4.18     6.52     7.39            0.906
+   30m CHOP<=40 SHORT                 research   210        40.18    33.58    49.17    55.69            0.776
+   30m CHOP<=40 SHORT                   locked   112        24.87    17.60    27.03    30.84            0.903
+   30m base SHORT                     research   419        59.87    65.57    86.42    95.44            0.302
+   30m base SHORT                       locked   210        45.06    34.59    49.71    57.25            0.880
+   30m adaptive 2.5/1.5N              research   442        26.98    29.15    45.79    54.56            0.383
+   30m adaptive 2.5/1.5N                locked   223        21.45    17.67    27.84    33.19            0.764
+   15m adaptive 2.5/1.5N              research   783        44.24    57.09    86.31   101.98            0.159
+   15m adaptive 2.5/1.5N                locked   381        23.01    24.38    38.62    46.75            0.412
+   30m adaptive INVERSE 1.5/2.5N      research   455        34.74    39.03    59.80    69.21            0.329
+   30m adaptive INVERSE 1.5/2.5N        locked   241        35.47    25.21    39.32    45.43            0.902
+   US30 30m base                      research   984        25.40    28.20    44.24    54.65            0.318
+   US30 30m base                        locked   670        54.06    58.52    85.15    96.90            0.373
+   US30 30m CHOP<=40                  research   552        20.65    22.31    34.60    41.54            0.370
+   US30 30m CHOP<=40                    locked   343        42.57    36.20    54.40    63.20            0.728
+   US30 30m CHOP<=40 SHORT            research   524        94.96    85.46   105.06   114.42            0.794
+   US30 30m CHOP<=40 SHORT              locked   315        56.38    42.53    61.09    69.09            0.895
+   US30 15m CHOP<=40                  research  1116        32.83    46.65    72.83    88.10            0.067
+   US30 15m CHOP<=40                    locked   684        87.02   102.59   131.90   146.36            0.123
+
+====================================================================================================================================
+PART 3  THE MEAN OF ALL RESULTS.  Two weightings, because they answer different questions.
+====================================================================================================================================
+
+   RESEARCH   33 scorable configurations, 11,212 trades
+      equal-weight over configurations   mean  +0.0830 R   [+0.0575, +0.1087]   P(mean <= 0) 0.000
+      trade-weighted over the pooled set mean  +0.0704 R   [+0.0407, +0.0997]   P(mean <= 0) 0.000
+      share of configurations positive   0.879   (29 of 33)
+      median configuration                +0.1048 R   best +0.2996   worst -0.1380
+
+   LOCKED   32 scorable configurations, 6,166 trades
+      equal-weight over configurations   mean  +0.0846 R   [+0.0573, +0.1123]   P(mean <= 0) 0.000
+      trade-weighted over the pooled set mean  +0.0440 R   [+0.0077, +0.0802]   P(mean <= 0) 0.022
+      share of configurations positive   0.812   (26 of 32)
+      median configuration                +0.0912 R   best +0.3185   worst -0.1173
+
+   DECAY, the only column selection cannot flatter (32 configurations on both blocks)
+      mean research  +0.0806 R  ->  mean locked  +0.0846 R   mean change  +0.0040
+      configurations that got WORSE on locked   15 of 32   (0.469)
+      research-to-locked R correlation (Pearson)  +0.215   (Spearman  +0.088)
+      configurations whose locked bootstrap excludes zero (P(<=0) < 0.05): 1 of 32
+
+====================================================================================================================================
+PART 4  WHAT THE TWO MONTE CARLOS SAY WHEN THEY ARE READ TOGETHER.
+====================================================================================================================================
+
+   4a. THE REALISED PATH AGAINST ITS OWN REORDERINGS.  A percentile near 0 means the realised
+       equity curve was SMOOTHER than a random ordering of the same trades; near 1 means rougher.
+      research  n= 33   mean pctile 0.254   median 0.180   share > 0.50 0.121   share > 0.95 0.000
+      locked    n= 32   mean pctile 0.647   median 0.645   share > 0.50 0.688   share > 0.95 0.000
+      A drawdown at a high percentile is not evidence of a broken rule -- it is one draw. But the
+      SIZE to plan for is the MC p99, not the realised figure; V19 found the realised path had been LUCKY
+      against an MC median of 22.4R on a realised 15.5R, with p99 at 60.8R.
+      locked p99 / realised = 2.15x   30m CHOP<=50                       realised 15.0R -> plan for 32.2R
+      locked p99 / realised = 2.03x   15m adaptive 2.5/1.5N              realised 23.0R -> plan for 46.8R
+      locked p99 / realised = 2.03x   30m CHOP<=40, 08:00-12:00          realised 9.4R -> plan for 19.1R
+
+   4b. THE ROWS THE BOOTSTRAP CALLED SIGNIFICANT ON RESEARCH, READ ONCE ON LOCKED.
+      30m ADX>=20                        research  +0.2996 P(<=0) 0.033   ->   locked  +0.2099 P(<=0) 0.171   does not hold
+      30m CHOP<=40, 2R target            research  +0.1457 P(<=0) 0.025   ->   locked  +0.1282 P(<=0) 0.099   does not hold
+      US30 30m base                      research  +0.1763 P(<=0) 0.002   ->   locked  -0.0323 P(<=0) 0.689   does not hold
+      US30 30m CHOP<=40                  research  +0.2139 P(<=0) 0.007   ->   locked  -0.0081 P(<=0) 0.539   does not hold
+      0 of 4 hold.  At alpha 0.05 on 32 configurations, 1.6 research passes are expected by chance alone.
+
+   4c. THE ROWS THE BOOTSTRAP CALLS SIGNIFICANT ON LOCKED, AND WHAT THEY DID ON RESEARCH.
+      30m CHOP<=40, exit ch 10           research  +0.0687 P(<=0) 0.215   ->   locked  +0.2144 P(<=0) 0.045   WRONG SHAPE -- better on locked than research

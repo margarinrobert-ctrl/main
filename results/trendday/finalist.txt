@@ -1,0 +1,68 @@
+================================================================================================================
+THE SWEEP'S 2x CANDIDATE, PUT THROUGH THE GATES THE SWEEP CANNOT APPLY
+================================================================================================================
+  candidate: ema=15  bucket=15  trend_pct=50  max_touch=2  min_gap=0  target_frac=1  stop_gap=0  max_hold=0  flat_frac=0.75
+  shipped:   ema=20  bucket=15  trend_pct=75  max_touch=0  min_gap=0  target_frac=1  stop_gap=0  max_hold=0  flat_frac=1
+
+  It was chosen as the best worst-feed profit factor among the cells reaching twice the
+  shipped entry count on all three long feeds -- one of 127,008, so the reserved blocks
+  below are a single read and carry that multiplicity.
+
+----------------------------------------------------------------------------------------------------------------
+1. THE CANDIDATE AGAINST THE SHIPPED CELL
+----------------------------------------------------------------------------------------------------------------
+NQ 15m
+  candidate                          | rese n   82 PF  1.70 mean   +13.5 win 69.5% | lock n   38 PF  1.67 mean   +25.8 win 65.8%
+  shipped                            | rese n   26 PF  5.62 mean   +35.1 win 84.6% | lock n   17 PF  3.62 mean   +45.0 win 76.5%
+US100 15m
+  candidate                          | rese n  140 PF  2.12 mean   +13.3 win 72.1% | vali n   98 PF  1.44 mean   +12.9 win 69.4% | test n   60 PF  1.85 mean   +24.7 win 75.0%
+  shipped                            | rese n   63 PF  1.29 mean    +5.0 win 66.7% | vali n   38 PF  2.08 mean   +31.2 win 78.9% | test n   24 PF  7.53 mean   +45.6 win 83.3%
+US30 15m
+  candidate                          | rese n  145 PF  1.72 mean   +16.3 win 68.3% | vali n   66 PF  1.34 mean   +17.9 win 66.7% | test n   50 PF  2.04 mean   +45.9 win 72.0%
+  shipped                            | rese n   64 PF  1.03 mean    +1.4 win 59.4% | vali n   21 PF  1.79 mean   +28.3 win 76.2% | test n   21 PF  1.11 mean   +10.8 win 61.9%
+US30_ISO 15m
+  candidate                          | rese n   50 PF  1.23 mean   +17.0 win 72.0% | lock n   19 PF  1.01 mean    +0.5 win 63.2%
+  shipped                            | rese n   20 PF  1.41 mean   +39.6 win 75.0% | lock n    4 PF 490902708628.96 mean  +122.7 win 100.0%
+
+----------------------------------------------------------------------------------------------------------------
+2. NEIGHBOURHOOD -- one axis moved at a time, RESEARCH ONLY
+----------------------------------------------------------------------------------------------------------------
+  A cell picked from 127,008 must sit on a plateau, not a spike. Research blocks only.
+  ema         10  min PF 1.01   15 *min PF 1.70   20  min PF 0.96   25  min PF 0.97   
+  trend_pct   40  min PF 1.39   50 *min PF 1.70   60  min PF 1.75   70  min PF 1.52   
+  max_touch   1  min PF 1.35   2 *min PF 1.70   3  min PF 1.19   6  min PF 0.94   
+  min_gap     0 *min PF 1.70   0.1  min PF 1.72   0.2  min PF 1.65   
+  target_frac 0.5  min PF 1.39   0.75  min PF 1.70   1 *min PF 1.70   
+  stop_gap    0 *min PF 1.70   1  min PF 1.19   2  min PF 1.32   
+  max_hold    0 *min PF 1.70   8  min PF 1.39   16  min PF 1.52   
+  flat_frac   0.75 *min PF 1.70   1  min PF 1.50   
+  bucket      15 *min PF 1.70   30  min PF 1.14   
+
+----------------------------------------------------------------------------------------------------------------
+3. MATCHED CONTROLS on the candidate
+----------------------------------------------------------------------------------------------------------------
+  DAY: the same geometry on EVERY complete session instead of the qualified ones,
+  drawn at the candidate's trade count, 2,000 times.
+
+  NQ        | rese rule  +13.5 ctl   -2.3 p 0.050 | lock rule  +25.8 ctl   +0.4 p 0.117
+  US100     | rese rule  +13.3 ctl   -1.1 p 0.000 | vali rule  +12.9 ctl   -2.9 p 0.034 | test rule  +24.7 ctl   +3.6 p 0.067
+  US30      | rese rule  +16.3 ctl   -8.4 p 0.004 | vali rule  +17.9 ctl   +1.8 p 0.178 | test rule  +45.9 ctl   +4.1 p 0.044
+
+----------------------------------------------------------------------------------------------------------------
+4. POOLED, IN PERCENT OF PRICE, AND A DAY-BLOCK BOOTSTRAP
+----------------------------------------------------------------------------------------------------------------
+  research only         n  417  mean +0.0794% of price  PF 1.66  win 70.3%  P(mean<=0) 0.0005  95% CI [+0.0320, +0.1274]
+  the reserved blocks   n  331  mean +0.0937% of price  PF 1.55  win 69.5%  P(mean<=0) 0.0125  95% CI [+0.0107, +0.1712]
+  everything            n  748  mean +0.0857% of price  PF 1.60  win 69.9%  P(mean<=0) 0.0000  95% CI [+0.0425, +0.1263]
+  per feed: {'NQ': (120, np.float64(0.0872)), 'US100': (298, np.float64(0.1094)), 'US30': (261, np.float64(0.0711)), 'US30_ISO': (69, np.float64(0.0361))}
+
+----------------------------------------------------------------------------------------------------------------
+5. VECTORBT PORTFOLIO STATISTICS on the stitched equity
+----------------------------------------------------------------------------------------------------------------
+  vectorbt 1.1.0. One unit per trade, returns in percent of price, the four
+  feeds stitched by date so a day traded on two feeds is two positions.
+
+  candidate: total return 84.1%  annualised 9.15%  Sharpe 0.97  Sortino 1.52
+     Calmar 0.73  max drawdown -12.45%  trading days 519 of 2545
+  shipped:   total return 34.5%  annualised 4.49%  Sharpe 0.79  Sortino 1.22
+     Calmar 0.65  max drawdown -6.86%  trading days 227 of 2464

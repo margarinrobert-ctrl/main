@@ -1,0 +1,55 @@
+V61 stage B -- ONE read of the locked block.
+
+Everything here was fixed by `run_v61.py` before this file ran: the nine finalists, the axes, the
+score, the trade floor. What is read here is (1) each finalist's locked figures, (2) a
+same-selectivity matched control on BOTH blocks, (3) a day-block bootstrap and a permutation on
+both, and (4) the population's research-to-locked transfer, which is the diagnostic that says
+whether selecting on research was worth anything at all.
+
+======================================================================================================================
+B1. THE FINALISTS ON THE LOCKED BLOCK -- one read
+======================================================================================================================
+  cell                         block     n   pct/tr    total    PF     Sh    win |      ctl      p |  boot p0             95% CI |     DD  MCp99
+  F1 marginal consensus        res     212  +0.0915   +19.41  1.53  +1.40  38.2% |  +0.0446  0.001 |    0.018 [+0.006,+0.189] |   3.14   9.20
+  F1 marginal consensus        lock    117  +0.0828    +9.69  1.48  +1.39  46.2% |  +0.0902  0.579 |    0.072 [-0.026,+0.203] |   5.60   7.37
+     keeps 25.0% of 6943 entry-channel signals (811 tradeable after the lock)
+  F2 top research total        res     967  +0.0386   +37.29  1.24  +1.84  37.4% |  +0.0386  1.000 |    0.009 [+0.008,+0.070] |   6.72  14.85
+  F2 top research total        lock    481  +0.0590   +28.39  1.29  +1.96  39.9% |  +0.0590  1.000 |    0.023 [+0.001,+0.123] |   7.80  15.35
+     keeps 100.0% of 10715 entry-channel signals (1448 tradeable after the lock)
+  F3 best neighbourhood mean   res     114  +0.2994   +34.14  2.38  +3.08  55.3% |  +0.1733  0.000 |    0.000 [+0.159,+0.432] |   2.22   5.63
+  F3 best neighbourhood mean   lock     60  +0.0406    +2.43  1.13  +0.41  38.3% |  -0.0568  0.031 |    0.338 [-0.139,+0.221] |   4.28   8.77
+     keeps 58.6% of 1475 entry-channel signals (255 tradeable after the lock)
+  F4 top research Sharpe       res      64  +0.2175   +13.92  3.81  +3.39  65.6% |  +0.0202  0.000 |    0.000 [+0.122,+0.311] |   0.61   1.81
+  F4 top research Sharpe       lock     32  +0.0536    +1.72  1.37  +0.80  53.1% |  +0.0105  0.196 |    0.198 [-0.069,+0.178] |   1.79   2.69
+     keeps 3.7% of 5915 entry-channel signals (1314 tradeable after the lock)
+  F5 top research per trade    res      64  +0.4543   +29.07  2.58  +1.93  43.8% |  +0.3204  0.002 |    0.002 [+0.128,+0.811] |   2.31   7.22
+  F5 top research per trade    lock     41  +0.0834    +3.42  1.25  +0.46  39.0% |  -0.0383  0.004 |    0.338 [-0.225,+0.452] |   4.40   9.00
+     keeps 58.6% of 1475 entry-channel signals (147 tradeable after the lock)
+  G1 CVD kept: consensus       res     117  +0.0826    +9.67  1.56  +1.19  49.6% |  +0.0379  0.017 |    0.037 [-0.009,+0.180] |   3.19   5.97
+  G1 CVD kept: consensus       lock     77  +0.0453    +3.49  1.30  +0.72  42.9% |  +0.0691  0.717 |    0.236 [-0.066,+0.178] |   4.30   5.46
+     keeps 11.3% of 6943 entry-channel signals (944 tradeable after the lock)
+  G2 CVD kept: top total       res     269  +0.1083   +29.13  1.80  +2.05  36.4% |  +0.0337  0.000 |    0.000 [+0.043,+0.183] |   2.94   7.04
+  G2 CVD kept: top total       lock    148  +0.0384    +5.68  1.20  +0.74  35.1% |  +0.0799  0.927 |    0.215 [-0.055,+0.140] |   6.90  10.23
+     keeps 24.5% of 10715 entry-channel signals (1172 tradeable after the lock)
+  G3 CVD kept: top Sharpe      res      64  +0.2175   +13.92  3.81  +3.39  65.6% |  +0.0202  0.000 |    0.000 [+0.122,+0.311] |   0.61   1.81
+  G3 CVD kept: top Sharpe      lock     32  +0.0536    +1.72  1.37  +0.80  53.1% |  +0.0105  0.196 |    0.198 [-0.069,+0.178] |   1.79   2.69
+     keeps 3.7% of 5915 entry-channel signals (1314 tradeable after the lock)
+  G4 CVD kept: neighbourhood   res     269  +0.1083   +29.13  1.80  +2.05  36.4% |  +0.0337  0.000 |    0.000 [+0.043,+0.183] |   2.94   7.04
+  G4 CVD kept: neighbourhood   lock    148  +0.0384    +5.68  1.20  +0.74  35.1% |  +0.0799  0.927 |    0.215 [-0.055,+0.140] |   6.90  10.23
+     keeps 24.5% of 10715 entry-channel signals (1172 tradeable after the lock)
+  S  shipped (the incumbent)   res     157  +0.1203   +18.88  1.73  +1.52  35.7% |  +0.0478  0.000 |    0.012 [+0.016,+0.240] |   2.05   7.20
+  S  shipped (the incumbent)   lock     85  +0.1428   +12.14  1.60  +1.12  40.0% |  +0.0544  0.012 |    0.075 [-0.047,+0.363] |   7.83   9.22
+     keeps 21.7% of 4877 entry-channel signals (743 tradeable after the lock)
+
+======================================================================================================================
+B2. WHAT THE POPULATION SAYS ABOUT SELECTING ON RESEARCH AT ALL
+======================================================================================================================
+  1,223,943 cells scorable on BOTH blocks
+  corr(research pct/trade, locked pct/trade)  Pearson -0.0262   Spearman -0.0202
+  corr(research total%, locked total%)        Pearson +0.1270
+    top 100    research pct/trade +0.4005 -> locked +0.0425   (73% of them profitable on locked)
+    top 1%     research pct/trade +0.2315 -> locked -0.0017   (43% of them profitable on locked)
+    top decile research pct/trade +0.1624 -> locked +0.0259   (60% of them profitable on locked)
+    all        research pct/trade +0.0722 -> locked +0.0508   (82% of them profitable on locked)
+
+  profitable on locked: 82.3% of the population, against 97.7% on research.

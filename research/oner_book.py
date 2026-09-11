@@ -16,7 +16,7 @@ from test_suite import build, _daily, _stats, _dd, _sharpe
 
 
 def load_finalists(n=14):
-    rows = list(np.load("/tmp/oner_final.npy", allow_pickle=True))[:n]
+    rows = list(np.load("results/oner/oner_final.npy", allow_pickle=True))[:n]
     out = []
     for r in rows:
         s = build(r["rule"], side=r["side"], atr_mult=r["am"], tp_r=1.0,

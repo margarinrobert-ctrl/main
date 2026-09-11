@@ -1,0 +1,10 @@
+Does a Donchian stop placed INSIDE the channel actually fire, and does it help?
+
+    dc_stop                     where it sits    cells  median stop exits  median clock exits
+       0.00                               off   95,040                 0%                  0%
+       0.25              +75% of width inside   46,080                19%                  0%
+       0.50              the channel midpoint   46,080                 9%                  0%
+       0.75              +25% of width inside   80,268                 8%                  0%
+       1.00               the channel extreme   92,160                36%                  0%
+       1.25               25% of width beyond   92,160                 6%                  0%
+       1.50               50% of width beyond   92,160                 1%                  0%

@@ -1,0 +1,51 @@
+V62 stage E -- is any of this a SCALP? Hold time, the exit split, and the grid's own gradient.
+
+"Scalping performance" is answerable from the grid without a new sweep, in three ways:
+  1. HOW LONG the shipped configurations actually hold, in minutes.
+  2. WHAT THE EXIT IS -- a barrier system and a channel-exit trend system are different animals.
+  3. THE MARGINAL ON THE TWO AXES THAT MAKE A SCALP: the stop and the target. If profitability
+     falls monotonically as the barriers tighten, the family is anti-scalp by construction and no
+     cell inside it can be one.
+
+==============================================================================================================
+E1. HOW LONG DOES IT ACTUALLY HOLD
+==============================================================================================================
+  V61/V62 incumbent 30m                n  244  median hold    660 min (22 bars)  mean    767  p90   1461
+                                       under 60 min:  11.1%   under 15 min:   0.0%   winners 1290 min vs losers 240 min
+                                       +0.1263 %/trade  PF 1.66  win 37.3%
+
+  V61/V62 high activity 15m            n  623  median hold    315 min (21 bars)  mean    431  p90    975
+                                       under 60 min:  11.6%   under 15 min:   1.3%   winners 585 min vs losers 225 min
+                                       +0.0698 %/trade  PF 1.44  win 40.1%
+
+  the tightest cell the grid allows    n  609  median hold     90 min (6 bars)  mean    142  p90    315
+                                       under 60 min:  37.3%   under 15 min:   9.2%   winners 165 min vs losers 75 min
+                                       +0.0229 %/trade  PF 1.23  win 38.3%
+
+==============================================================================================================
+E2. THE GRID'S GRADIENT ON THE TWO AXES THAT MAKE A SCALP -- research block, every
+    scorable cell at that setting, in percent of price
+==============================================================================================================
+  stop, in ATR
+      1.5 : +0.0506 %/trade   mean trades   210   541,013 cells
+      2.0 : +0.0589 %/trade   mean trades   195   516,029 cells
+      2.5 : +0.0649 %/trade   mean trades   188   506,575 cells
+      3.0 : +0.0704 %/trade   mean trades   183   500,628 cells
+
+  take profit, in ATR (0 = none)
+      0.0 : +0.0845 %/trade   mean trades   173   497,318 cells
+      3.0 : +0.0439 %/trade   mean trades   212   537,449 cells
+      4.0 : +0.0550 %/trade   mean trades   202   519,552 cells
+      6.0 : +0.0622 %/trade   mean trades   188   509,926 cells
+
+  Tighter is worse on BOTH axes, monotonically, over a million cells. A scalp is a
+  tight stop and a near target; this family is paid for the opposite of both.
+==============================================================================================================
+E3. THE COST FLOOR THE GEOMETRY IMPLIES
+==============================================================================================================
+  NQ 30m median ATR(14) = 33.1 points; the modelled round turn is 1.94 points.
+    at a 0.25 x ATR stop (  8.3 pts) the round turn is  23.5% of risk, and break-even at 1:1 needs  61.7%
+    at a 0.50 x ATR stop ( 16.5 pts) the round turn is  11.7% of risk, and break-even at 1:1 needs  55.9%
+    at a 1.00 x ATR stop ( 33.1 pts) the round turn is   5.9% of risk, and break-even at 1:1 needs  52.9%
+    at a 2.00 x ATR stop ( 66.1 pts) the round turn is   2.9% of risk, and break-even at 1:1 needs  51.5%
+    at a 3.00 x ATR stop ( 99.2 pts) the round turn is   2.0% of risk, and break-even at 1:1 needs  51.0%

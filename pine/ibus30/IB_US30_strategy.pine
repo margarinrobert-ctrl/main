@@ -1,0 +1,155 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+
+// US30 -- INITIAL BALANCE BREAKOUT-RETRACEMENT, measured, with NO EDGE CLAIMED for the published rules.
+//
+// The Edgeful-style rules (IB = first hour 09:30-10:30 New York; wait for it to close; wait for a
+// break; enter on a retracement back INTO the range; stop deeper inside; target beyond the edge;
+// flat at the close) ported to a US30 CFD chart with two additions the research needed: the IB
+// range filter in ATR UNITS rather than points (points are not stable over nine years), and a
+// NO-TARGET option. The bracket is fill-relative and placed WITH the entry, so the fill bar is
+// protected; the stop is tested ON the fill bar, which is where `STUDY_V58` found a tenth-of-a-range
+// stop and entry sit inside one 15-minute bar.
+//
+// WHAT WAS MEASURED ON US30 (US30_LONG_15m 2016-10..2025-07, research = first 65% of sessions to
+// 2022-06-27, 1.72 points round turn, one unit, percent of entry price)
+//   * AS PUBLISHED (60/25/60/50, both sides, flat 15:55): research n 1,023, -0.0167 %/trade, PF 0.856,
+//     win 34.3%, bootstrap p 1.000 -> Gate 1 FAIL. Gross is NEGATIVE too (-0.0102 at zero cost), so
+//     it is not execution. Against a risk-matched random entry p 0.205.
+//   * THE MECHANISM'S OWN PREDICTION FAILS HERE: the retracement ladder 0.00 -> 0.60 is flat-to-
+//     negative at every depth (%/trade -0.008, -0.018, -0.017, -0.014, -0.016, -0.012). On NQ
+//     (`STUDY_V58_ANATOMY`) the same ladder was monotone and the edge WAS the retracement.
+//   * 3,600 OPTUNA TRIALS on research only: 62.6% of scorable trials profitable; fANOVA puts 0.94 of
+//     every objective on the IB-range CEILING; the total-return optimum sets the retracement to 0.007
+//     -- it buys the break itself, i.e. it discards the mechanism -- and ALWAYS-LONG on the same days
+//     earns MORE (+0.0675 vs +0.0450 %/trade). ONE LOCKED READ (2022-06 .. 2025-07): the total
+//     optimum +0.0426 %/trade PF 1.28 but random-entry p 0.292 and always-long +0.1222 on the same
+//     days; the ret/DD optimum +0.0124 (p 0.510, ret/DD 6.8 -> 0.8); the PF optimum -- 90-minute IB,
+//     retracement 0.455, stop 0.94, target 2.98, both sides, IB 0.33-3.0 ATR -- +0.0662 PF 1.57 on
+//     91 trades, random entry p 0.002, decaying from research (the only one clearing anything).
+//   * THEN THE BLOCK NOTHING TOUCHED, US30_ISO_15m 2025-07 .. 2026-08, a different provider, 288
+//     sessions: EVERY finalist negative -- total -0.0570 (p 0.996), PF optimum -0.0925 on 18, ret/DD
+//     -0.0412 at a 2.2% win rate, as published -0.0320 -- and always-long is negative there too.
+//   * 30 CAUSAL META FEATURES (truncation audit 0/1,200; HMM read filtered, fracdiff d 0.3 by ADF on
+//     research): 4 of 15 Gate-2 cells clear both nulls on research, the score is NOT calibrated on
+//     locked (keep 40% kept 15%) and the research-best cell INVERTS (-0.0279). Deflated Sharpe
+//     0.000 at 3,698 counted looks. Nothing from the meta layer ships. `docs/ib/STUDY_IB_US30_OPTUNA.md`.
+//   * FLATTEN TRAP ON A CFD CHART: on this feed the first bar at/after 15:55 is the 18:30 RE-OPEN on
+//     1,247 of 2,246 sessions (a 16:00 bar exists on 153). `strategy.close_all()` fills at the NEXT
+//     bar's open, so a flatten submitted at 15:55 on a 15-minute chart fills at 18:30 -- through the
+//     closed cash session. This script submits the flatten on the bar BEFORE the cutoff so it fills
+//     at the cutoff bar's open; run it on a 1-5 minute chart where that is 15:55, not 18:30.
+//
+// COMMISSION AND SLIPPAGE ARE NOT SET HERE. Set them in Properties before reading a report.
+
+strategy("US30 Initial Balance", shorttitle = "IB US30", overlay = true, pyramiding = 0, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+TZ = "America/New_York"
+gS = "Session (New York wall-clock)"
+ibMin    = input.int(60, "Initial Balance length (minutes from 09:30)", minval = 15, maxval = 180, step = 15, group = gS)
+exitMin  = input.int(955, "Flatten (minutes past NY midnight, 955 = 15:55)", minval = 600, maxval = 1200, group = gS)
+
+gR = "Rules"
+retrPct  = input.float(25, "Entry: retracement into IB (% of range)", minval = 0, maxval = 99, step = 1, group = gR,
+     tooltip = "As published: 25. Optuna's total-return optimum on US30 research went to 0.7, buying the break itself.")
+stopPct  = input.float(60, "Stop: from broken edge (% of range)", minval = 1, maxval = 200, step = 1, group = gR)
+useTgt   = input.bool(true, "Use a target", group = gR, tooltip = "OFF ships the no-target variant; no take profit has won twenty times on this branch.")
+tgtPct   = input.float(50, "Target: beyond broken edge (% of range)", minval = 1, maxval = 500, step = 1, group = gR)
+sideMode = input.string("both", "Side", options = ["both", "long", "short"], group = gR)
+
+gF = "Filters"
+ibAtrMin = input.float(0.0, "Min IB range (x ATR at IB close, 0 = off)", minval = 0, step = 0.1, group = gF,
+     tooltip = "Optuna's best bin on research was 1.0-1.5x; the population marginal is in the study doc.")
+ibAtrMax = input.float(0.0, "Max IB range (x ATR at IB close, 0 = off)", minval = 0, step = 0.5, group = gF,
+     tooltip = "fANOVA importance 0.94 on every objective -- read the study before trusting it.")
+atrLen   = input.int(14, "ATR length", minval = 2, group = gF)
+
+// ------------------------------------------------------------------ clock and ATR
+nyMin  = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow  = dayofweek(time, TZ)
+wkday  = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+tfMin  = timeframe.in_seconds() / 60
+ibFrom = 9 * 60 + 30
+ibTo   = ibFrom + ibMin
+inIB     = wkday and nyMin >= ibFrom and nyMin < ibTo
+inTrade  = wkday and nyMin >= ibTo and nyMin < exitMin
+ibStart  = inIB and not inIB[1]
+ibClosed = not inIB and inIB[1]
+// the flatten is SUBMITTED on the last bar before the cutoff so it fills at the cutoff bar's open
+lastBar  = wkday and nyMin < exitMin and nyMin + tfMin >= exitMin
+atr = ta.ema(ta.tr(true), atrLen)
+
+// ------------------------------------------------------------------ session state
+var float ibH = na
+var float ibL = na
+var bool  ready = false
+var int   dir = 0
+var float ePrice = na
+var float sPrice = na
+var float tPrice = na
+var float planAtr = na
+var bool  dayDone = false
+if barstate.isconfirmed
+    if ibStart
+        ibH := high
+        ibL := low
+        ready := false
+        dir := 0
+        ePrice := na
+        sPrice := na
+        tPrice := na
+        planAtr := na
+        dayDone := false
+    else if inIB
+        ibH := math.max(ibH, high)
+        ibL := math.min(ibL, low)
+    if ibClosed
+        ready := true
+        planAtr := atr[1]
+ibRange = ready ? ibH - ibL : na
+
+// ------------------------------------------------------------------ break, then the resting limit
+sizeOK  = not na(ibRange) and ibRange > 0 and (ibAtrMin <= 0 or ibRange >= ibAtrMin * planAtr) and (ibAtrMax <= 0 or ibRange <= ibAtrMax * planAtr)
+geomOK  = stopPct > retrPct
+canScan = barstate.isconfirmed and ready and inTrade and dir == 0 and not dayDone and sizeOK and geomOK and strategy.position_size == 0
+brokeUp = canScan and high > ibH and sideMode != "short"
+brokeDn = canScan and low < ibL and sideMode != "long"
+goLong  = brokeUp and (not brokeDn or close >= open)
+goShort = brokeDn and (not brokeUp or close < open)
+
+if goLong
+    dir := 1
+    ePrice := math.round_to_mintick(ibH - ibRange * retrPct / 100)
+    sPrice := math.round_to_mintick(ibH - ibRange * stopPct / 100)
+    tPrice := useTgt ? math.round_to_mintick(ibH + ibRange * tgtPct / 100) : na
+    strategy.entry("L", strategy.long, limit = ePrice)
+    strategy.exit("Lx", from_entry = "L", stop = sPrice, limit = tPrice)
+else if goShort
+    dir := -1
+    ePrice := math.round_to_mintick(ibL + ibRange * retrPct / 100)
+    sPrice := math.round_to_mintick(ibL + ibRange * stopPct / 100)
+    tPrice := useTgt ? math.round_to_mintick(ibL - ibRange * tgtPct / 100) : na
+    strategy.entry("S", strategy.short, limit = ePrice)
+    strategy.exit("Sx", from_entry = "S", stop = sPrice, limit = tPrice)
+else if brokeUp or brokeDn
+    dir := brokeUp ? 1 : -1
+
+// one trade a day: once a position has closed, the day is done
+if barstate.isconfirmed and strategy.position_size == 0 and strategy.position_size[1] != 0
+    dayDone := true
+
+// ------------------------------------------------------------------ flatten
+if barstate.isconfirmed and lastBar
+    strategy.cancel_all()
+    if strategy.position_size != 0
+        strategy.close_all(comment = "flat")
+    ready := false
+
+// ------------------------------------------------------------------ plots
+liveDay = inIB or (ready and inTrade)
+plot(liveDay ? ibH : na, "IB high", color = color.new(#2a78d6, 0), linewidth = 2, style = plot.style_linebr)
+plot(liveDay ? ibL : na, "IB low", color = color.new(#2a78d6, 0), linewidth = 2, style = plot.style_linebr)
+plot(dir != 0 and inTrade ? ePrice : na, "entry", color = color.new(#1baf7a, 0), style = plot.style_linebr)
+plot(dir != 0 and inTrade ? sPrice : na, "stop", color = color.new(#eb6834, 0), style = plot.style_linebr)
+plot(dir != 0 and inTrade and useTgt ? tPrice : na, "target", color = color.new(#1baf7a, 40), style = plot.style_linebr)
+bgcolor(inIB ? color.new(#2a78d6, 92) : na)

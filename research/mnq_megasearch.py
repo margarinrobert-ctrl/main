@@ -58,5 +58,5 @@ for i, combo in enumerate(itertools.product(*[SPACE[k] for k in keys])):
     if i and i % 25000 == 0:
         el = time.time()-t0
         print(f"  {i:,} / {total:,}   {el:.0f}s elapsed, ~{el/i*(total-i):.0f}s left", flush=True)
-np.save("/tmp/mega_rows.npy", rows)
+np.save("results/mnq/mega_rows.npy", rows)
 print(f"done in {time.time()-t0:.0f}s", flush=True)

@@ -1,0 +1,330 @@
+// ================================================================================================
+// V42 -- THE FOUR TURTLE CONFIGURATIONS FROM A 1,152,000-CELL SEARCH, ON ONE SCRIPT.
+//
+// ======================= READ THE TWO RANKINGS BEFORE PICKING A PRESET =======================
+// "Best mean performance" has two answers here and THEY ARE EXACTLY REVERSED. On US30 and NQ --
+// the two markets the search never saw -- averaged across both:
+//
+//   preset            raw agg R    its random-entry control    EXCESS      trades
+//   NEIGHBOURHOOD       +1.433              +1.163             +0.270        140
+//   TOP-MEDIAN          +1.390              +1.306             +0.084        106
+//   SURROGATE           +1.274              +0.547             +0.726        138
+//   SPEC (preset T1)    +1.043              -0.059            +1.101         208
+//
+//   rank by RAW    : NEIGHBOURHOOD > TOP-MEDIAN > SURROGATE > SPEC
+//   rank by EXCESS : SPEC > SURROGATE > NEIGHBOURHOOD > TOP-MEDIAN
+//
+// The control is the SAME ATR stop, channel exit, pyramid ladder, fills and costs with the entry
+// replaced by a coin flip drawing from that preset's own gated population. Read it as: a coin
+// flip earns +1.163 R a trade inside NEIGHBOURHOOD's gates and LOSES money inside SPEC's. So
+// NEIGHBOURHOOD's higher raw number is mostly the regime its gates admit, and SPEC's lower one is
+// mostly the breakout.
+//
+// Per-market, p against that control:
+//   preset            US100 (searched)     US30 (held)      NQ (held)
+//   TOP-MEDIAN          +2.05  p 0.040     +1.54  p 0.532   +1.23  p 0.383
+//   SURROGATE           +2.00  p 0.025     +0.78  p 0.398   +1.77  p 0.050
+//   NEIGHBOURHOOD       +2.00  p 0.035     +1.22  p 0.736   +1.65  p 0.179
+//   SPEC (preset T1)    +1.22  p 0.005     +0.51  p 0.005   +1.57  p 0.005
+//
+// THE THREE SEARCH-DERIVED PRESETS FAIL THEIR CONTROL ON BOTH HELD-BACK MARKETS. The one the
+// search did NOT choose -- the preset this script already shipped -- clears on all three. A
+// million cells bought a third of the edge the un-searched default already had.
+//
+// SPEC IS THE DEFAULT BELOW for that reason. The other three are provided because they were asked
+// for and because seeing them fail beside it is the point.
+//
+// ============================ WHAT IS VERIFIED, AND WHAT IS NOT ============================
+// `research/v42/pine_parity.py` rebuilds every rule in this file from raw OHLC -- both Donchian
+// channels, the ADX gate, the EMA100-distance gate -- independently of the research module, and
+// diffs them against the arrays the engine actually used:
+//
+//   preset            gate bars identical      entry channels identical
+//   TOP-MEDIAN        100.0000%  (0/14,065)    yes / yes
+//   SURROGATE         100.0000%  (0/14,065)    yes / yes
+//   NEIGHBOURHOOD     100.0000%  (0/14,065)    yes / yes
+//   SPEC (T1)         100.0000%  (0/14,065)    yes / yes
+//
+// NOT VERIFIED, and stated plainly rather than implied: the delayed-stop state machine was NOT
+// re-implemented. This script anchors its stop to `strategy.opentrades.entry_price()`, which is
+// only known at the CLOSE of the fill bar, so NO EXIT ORDER IS LIVE DURING THE ENTRY BAR.
+// STUDY_PINE_PARITY measured that gap at 4.4-13.0% of trades averaging -33 to -118 points. This
+// family's own exposure -- trades whose exit lands on the fill bar -- is 2.1% to 3.9%:
+//   TOP-MEDIAN 2.8% of 72 · SURROGATE 3.2% of 93 · NEIGHBOURHOOD 2.1% of 96 · SPEC 3.9% of 155.
+// The P&L impact is quoted from the study that measured it, not re-derived here.
+//
+// ATR IS ta.atr(20), Wilder's RMA -- correct here, and a deliberate departure from this repo's
+// usual ema(TR,n): the Turtle definition and the Python engine both use Wilder.
+// ta.dmi RETURNS [+DI, -DI, ADX]; the third element is the one this file reads.
+//
+// ---------------------------------- TIMEFRAME ----------------------------------
+// All four presets were measured on 240-MINUTE bars and nothing here rescales with the chart.
+// "Restrict to the measured timeframe" (default ON) therefore blocks entries off 240m so a 15m
+// backtest cannot be mistaken for one of the numbers above. It is released automatically by the
+// Custom preset -- exploring another timeframe is what Custom is for -- and can be unticked for
+// the four measured presets as well. OFF 240m THE TABLES ABOVE DO NOT APPLY TO WHAT YOU SEE.
+// Two axes do not carry across: the channel lengths are in BARS, so entry 20/55 spans 80/220
+// hours at 240m and 5/14 hours at 15m; and the round turn is a fixed cash amount, which is a far
+// larger share of a 15m bar's ATR stop than of a 240m one. Re-fit both before reading a result.
+//
+// ------------------------------- SESSION (start / stop / flatten) -------------------------------
+// DEFAULT OFF. Every number above was measured ALL HOURS, so switching the session on means the
+// tables at the top no longer describe the strategy you are running.
+//
+// ON 240-MINUTE BARS A TIME WINDOW IS AN ALIASED SELECTOR, NOT A SESSION. A 240m bar opens only at
+// New York 01, 05, 09, 13, 17 and 21, so a window admits whole four-hour bars by their OPEN:
+//   07:00-11:00 and 08:00-12:00 select the SAME single 09:00 bar and give byte-identical results
+//   (766 bars, 32 trades, +290.195 pts each) -- and 09:30-11:00 contains NO bar open at all and
+//   silently yields ZERO TRADES. If you want a real intraday window, unlock the timeframe first.
+//
+// Measured here on NQ, SPEC geometry, entry window only, net of the research cost assumption:
+//
+//     window          15m trades  pts/trade  |  60m trades  pts/trade  |  240m trades  pts/trade
+//     all hours            961     +15.545   |      224      +11.542   |       56      +358.471
+//     07:00-11:00          351     +20.499   |      118       -3.600   |       32      +290.195
+//     08:00-12:00          341     +26.986   |      137       -8.684   |       32      +290.195
+//     09:30-11:00          181     +35.307   |       56      +53.076   |        0         (none)
+//     09:30-16:00          348     +21.216   |      130      +37.674   |       33      +271.130
+//
+// Read it as ORIENTATION, not as a setting to copy: one market, one block, no matched control, and
+// fifteen cells were looked at, so the best of them is the max of fifteen draws. Two things in it
+// are consistent with what this branch has measured repeatedly and are the parts worth trusting:
+// a window RAISES per-trade return while CUTTING total return, because it removes far more trades
+// than it removes losses (15m: +15.5 -> +35.3 a trade, but 14,939 -> 6,391 net); and the pre-open
+// block is subtractive -- at 60m the two windows that start before 09:30 are NEGATIVE (-3.6,
+// -8.7) while 09:30-11:00 is +53.1.
+//
+// THE FLATTEN IS NOT MEASURED HERE and is expected to COST. `strategy.close_all()` cannot sell the
+// close of the bar that triggers it, so it fills at the NEXT BAR'S OPEN. STUDY_V16 measured a
+// fixed-time flatten at roughly HALF the per-trade edge when there is no entry window
+// (+0.1033 -> +0.0481 locked), because it truncates exactly the trades a channel exit exists to
+// hold; STUDY_V40 found that on a Donchian channel-exit base, switching the session OFF was the
+// single largest improvement available. This strategy has a channel exit. Expect the same.
+// The resting stop is deliberately NOT cancelled when the flatten is issued -- it is what protects
+// the position over the bar between the decision and the fill.
+//
+// Costs default to the research's own assumption on a 1-point-per-unit index CFD. On a futures
+// contract set the contract's real per-order fee before reading any number this produces.
+// See docs/ib/STUDY_V42_TURTLE_MILLION.md and docs/ib/STUDY_TURTLE.md.
+//
+// Research tooling for education and analysis. NOT FINANCIAL ADVICE.
+// ================================================================================================
+//@version=6
+strategy("V42 Turtle -- four measured configurations", overlay = true, pyramiding = 4,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 1000000, calc_on_every_tick = false,
+         process_orders_on_close = false,
+         commission_type = strategy.commission.cash_per_order,
+         commission_value = 0.50, slippage = 1)
+
+// ------------------------------------------------------------------------------------------------
+// preset
+// ------------------------------------------------------------------------------------------------
+gP = "Configuration"
+preset = input.string("SPEC  preset T1  (best EXCESS over control)", "Preset", group = gP,
+     options = ["SPEC  preset T1  (best EXCESS over control)",
+         "NEIGHBOURHOOD  (best RAW mean)",
+         "TOP-MEDIAN  (best fold-median on the search block)",
+         "SURROGATE  (the model's robust region)",
+         "Custom"],
+     tooltip = "The two rankings are reversed. SPEC has the lowest raw return of the four and the highest excess over a random entry with the same exits, and it is the only one that clears its control on both held-back markets.")
+tfLock = input.bool(true, "Restrict to the measured timeframe (240m)", group = gP,
+     tooltip = "Every preset was measured on 240-minute bars. With this ON the script takes no entry on any other timeframe, so a 15m backtest cannot be read as one of the measured results. The Custom preset releases it automatically. Untick it to run a measured preset on another timeframe -- the channel lengths are in bars and the round turn is a fixed cash amount, so neither carries across, and the header's tables no longer describe what you are looking at.")
+
+gS = "Session (New York, DST-aware)"
+useSess = input.bool(false, "Restrict trading to a session", group = gS,
+     tooltip = "OFF by default. The header's tables were all measured ALL HOURS, so turning this on means they no longer describe what you are running. On 240m bars a window selects whole four-hour bars by their open and 09:30-11:00 selects none at all -- see the header.")
+startH = input.int(9,  "Start hour (NY)",   minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute",      minval = 0, maxval = 59, group = gS)
+stopH  = input.int(16, "Stop hour (NY)",    minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute",       minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(true, "Flatten at the stop time", group = gS,
+     tooltip = "Closes any open position once the bar's New York time is at or past the stop. It is a market order, so it fills at the NEXT bar's open -- Pine cannot sell the close of the bar that triggers it. The resting stop is left live on purpose so the position is not naked over that bar. Expect this to cost: a fixed-time flatten truncates the long trades a channel exit exists to hold.")
+
+gC = "Custom only"
+cE1 = input.int(20, "Entry 1 (bars)", minval = 2, group = gC)
+cE2 = input.int(55, "Entry 2 (bars)", minval = 2, group = gC)
+cX1 = input.int(10, "Exit 1 (bars)", minval = 2, group = gC)
+cX2 = input.int(20, "Exit 2 (bars)", minval = 2, group = gC)
+cAM = input.float(2.0, "ATR stop multiple", minval = 0.1, step = 0.1, group = gC)
+cPS = input.float(0.5, "Pyramid step (N)", minval = 0.0, step = 0.05, group = gC)
+cMU = input.int(4, "Max units", minval = 1, maxval = 4, group = gC)
+cAX = input.string("adx<22", "ADX gate", options = ["off","adx<22","adx>=20","adx>=25"], group = gC)
+cEX = input.string("ext<3.964", "EMA100 distance gate",
+     options = ["off","ext<3.193","ext<3.964","ext>=3.0"], group = gC)
+cSK = input.bool(true, "Skip a System-1 breakout after a winner", group = gC)
+
+isC = preset == "Custom"
+isSpec = str.startswith(preset, "SPEC")
+isNbr  = str.startswith(preset, "NEIGHBOURHOOD")
+isTop  = str.startswith(preset, "TOP-MEDIAN")
+
+entry1 = isC ? cE1 : isSpec ? 20 : 40
+entry2 = isC ? cE2 : isSpec ? 55 : 40
+exit1  = isC ? cX1 : isSpec ? 10 : isTop ? 5 : 20
+exit2  = isC ? cX2 : isSpec ? 20 : 30
+atrMlt = isC ? cAM : 2.0
+pyrStp = isC ? cPS : isSpec ? 0.5 : 0.25
+maxU   = isC ? cMU : 4
+adxG   = isC ? cAX : (isTop or isNbr) ? "adx>=20" : "adx<22"
+extG   = isC ? cEX : isTop ? "ext<3.193" : "ext<3.964"
+skipW  = isC ? cSK : not str.startswith(preset, "SURROGATE")
+
+// ------------------------------------------------------------------------------------------------
+// series
+// ------------------------------------------------------------------------------------------------
+atrN  = ta.atr(20)
+chanHi1 = ta.highest(high, entry1)
+chanHi2 = ta.highest(high, entry2)
+chanLo1 = ta.lowest(low, exit1)
+chanLo2 = ta.lowest(low, exit2)
+ema100  = ta.ema(close, 100)
+[diPlus, diMinus, adxVal] = ta.dmi(14, 14)
+distEma = atrN > 0 ? (close - ema100) / atrN : 0.0
+
+adxOk = adxG == "off" ? true : adxG == "adx<22" ? adxVal < 22.0
+     : adxG == "adx>=20" ? adxVal >= 20.0 : adxVal >= 25.0
+extOk = extG == "off" ? true : extG == "ext<3.193" ? distEma < 3.193
+     : extG == "ext<3.964" ? distEma < 3.964 : distEma >= 3.0
+// Custom exists to explore other timeframes, so it releases the lock on its own; the four
+// measured presets keep it until the user unticks tfLock deliberately.
+measuredTF = timeframe.period == "240"
+lockOn = tfLock and not isC
+onTF   = measuredTF or not lockOn
+
+// Session. `hour`/`minute` are given an EXPLICIT timezone -- the bare forms are EXCHANGE time
+// (Chicago for a CME symbol), which is the trap this repo has shipped broken before. The two-arg
+// form follows US daylight saving on its own, so 09:30 is 09:30 in both January and July.
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+// A window whose stop is BEFORE its start wraps through midnight, which is how an overnight
+// session has to be expressed on a 23-hour instrument.
+inWin  = not useSess ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = useSess and flatOn and not inWin
+
+gateOk = adxOk and extOk and onTF and inWin and atrN > 0
+
+// ------------------------------------------------------------------------------------------------
+// state
+//
+// The stop and the ladder anchor to the ACTUAL FILL, read one bar later from
+// strategy.opentrades.entry_price(). That matches the research engine, which fills at the next
+// bar's open and sets the stop from that price. The cost is the naked entry bar quantified in the
+// header; anchoring to `close` instead would shift every stop by one bar's move, which is worse.
+//
+// EVERY var-state write is guarded by barstate.isconfirmed. Guarding only the entries is not
+// enough: `lastWin` is computed from `close`, and mid-bar `close` is the current price, so an
+// unguarded version decides whether to take a System-1 breakout from a price the bar-close run
+// cannot see. Measured on this family: boxes on gave +62,278 / PF 1.416 / 14,462 trades against
+// -913 / PF 0.994 / 11,398 with them off. The trade count is the tell.
+// ------------------------------------------------------------------------------------------------
+var float stopLvl   = na
+var float nextAdd   = na
+var float firstFill = na
+var float pendAtr   = na
+var int   unitsOn   = 0
+var int   sysOn     = 0
+var int   lastCount = 0
+var bool  lastWin   = false
+
+if barstate.isconfirmed and strategy.position_size == 0 and lastCount > 0
+    lastWin   := close > firstFill
+    unitsOn   := 0
+    sysOn     := 0
+    stopLvl   := na
+    nextAdd   := na
+    lastCount := 0
+
+if barstate.isconfirmed and strategy.opentrades > lastCount
+    fillPx = strategy.opentrades.entry_price(strategy.opentrades - 1)
+    anchorAtr = na(pendAtr) ? atrN : pendAtr
+    if lastCount == 0
+        firstFill := fillPx
+    stopLvl   := fillPx - atrMlt * anchorAtr
+    nextAdd   := fillPx + pyrStp * anchorAtr
+    unitsOn   := strategy.opentrades
+    lastCount := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ------------------------------------------------------------------------------------------------
+// entries, ladder, exit
+// ------------------------------------------------------------------------------------------------
+sig2 = high > chanHi2[1]
+sig1 = high > chanHi1[1]
+
+if barstate.isconfirmed and flat and gateOk
+    if sig2
+        strategy.entry("S2", strategy.long)
+        sysOn := 2
+        pendAtr := atrN
+    else if sig1
+        if skipW and lastWin
+            lastWin := false
+        else
+            strategy.entry("S1", strategy.long)
+            sysOn := 1
+            pendAtr := atrN
+
+if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxU and pyrStp > 0
+    if high >= nextAdd
+        strategy.entry("add" + str.tostring(unitsOn + 1), strategy.long)
+        pendAtr := atrN
+
+// ONE stop order at the HIGHER of the ATR stop and the channel low -- falling price reaches that
+// level first, which is what the path-accurate research variant models. Guarding this call too is
+// not optional: leaving it open while the state blocks wait for the close lets a mid-bar re-run
+// find `stopLvl` still `na`, and the exit falls through to the CHANNEL LOW, a level the strategy
+// never chose. `lastCount > 0` is the real condition -- the state machine has anchored to the
+// position that is currently open.
+chanExit  = sysOn == 1 ? chanLo1[1] : chanLo2[1]
+exitLevel = na(stopLvl) ? chanExit : (na(chanExit) ? stopLvl : math.max(stopLvl, chanExit))
+
+if barstate.isconfirmed and not flat and lastCount > 0 and not na(exitLevel)
+    strategy.exit("x", stop = exitLevel)
+
+// The flatten is issued AFTER the stop is placed, and the stop is NOT cancelled. close_all is a
+// market order that fills at the NEXT bar's open, so between this bar's close and that fill the
+// resting stop is the only protection the position has -- cancelling it to keep the exit "clean"
+// would reproduce the naked-bar defect the header already quantifies at the entry.
+if barstate.isconfirmed and doFlat and strategy.position_size != 0
+    strategy.close_all("flat")
+
+// ------------------------------------------------------------------------------------------------
+// plots and HUD
+// ------------------------------------------------------------------------------------------------
+plot(chanHi1, "Entry 1", color.new(color.aqua, 40))
+plot(chanHi2, "Entry 2", color.new(color.blue, 40))
+plot(chanLo1, "Exit 1", color.new(color.red, 60))
+plot(chanLo2, "Exit 2", color.new(color.purple, 60))
+plot(flat ? na : exitLevel, "Active stop", color.fuchsia, style = plot.style_linebr)
+
+// An underfunded account silently changes the strategy: with a four-unit ladder the emulator
+// REJECTS orders it cannot fund rather than reporting an error, and the rejections cluster where
+// price is high and the position is already large. 850 trades at 100K against 4,806 at 1M on the
+// same script and range. Default capital here is 1M for that reason.
+ladderCost = close * maxU * syminfo.pointvalue
+fundsOk = ladderCost <= strategy.equity * 0.9
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, preset, text_color = color.white,
+         bgcolor = isSpec ? color.new(color.teal, 20) : color.new(color.orange, 25))
+    tfMsg = measuredTF ? "240-minute: as measured" :
+         lockOn ? "NO TRADES - locked to 240m. Untick \"Restrict to the measured timeframe\", or pick Custom." :
+         "Chart is " + timeframe.period + ", measured on 240 - the header's numbers DO NOT apply"
+    tfBg = measuredTF ? color.new(color.teal, 40) : lockOn ? color.red : color.new(color.orange, 25)
+    table.cell(hud, 0, 1, tfMsg, text_color = color.white, bgcolor = tfBg)
+    sessMsg = not useSess ? "all hours - as measured" :
+         (measuredTF ? "SESSION ON, 240m: window selects whole 4h bars by their OPEN - " :
+              "SESSION ON - ") +
+         str.format("{0,number,00}:{1,number,00}-{2,number,00}:{3,number,00} NY", startH, startM, stopH, stopM) +
+         (flatOn ? " + flatten (fills next open)" : " (no flatten)") +
+         " - the header's tables are ALL HOURS and no longer apply"
+    table.cell(hud, 0, 2, sessMsg, text_color = color.white,
+         bgcolor = useSess ? color.new(color.orange, 25) : color.new(color.teal, 40))
+    table.cell(hud, 0, 3, fundsOk ? "ladder funded" :
+         "LADDER DOES NOT FIT - orders will be REJECTED (needs " +
+         str.tostring(math.round(ladderCost)) + " vs " + str.tostring(math.round(strategy.equity)) + ")",
+         text_color = color.white, bgcolor = fundsOk ? color.new(color.teal, 40) : color.red)

@@ -23,7 +23,7 @@ from alpha_factory2 import EXITS, build_conditions, price_one
 from bos_choch import prep
 import pine_export as PX
 
-ART = ("/tmp/claude-0/-home-user-main/e473d7de-e277-515e-b24b-75724aaa9da5/"
+ART = ("results/explorer/claude-0/-home-user-main/e473d7de-e277-515e-b24b-75724aaa9da5/"
        "scratchpad/edge-finder.html")
 
 

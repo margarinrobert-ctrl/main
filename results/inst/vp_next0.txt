@@ -1,0 +1,53 @@
+
+======================================================================================================================
+0.1  GATED LOCKED R/TRADE beside %/trade, and constant-R sizing
+======================================================================================================================
+                            n  PF(%)  PF(R)  %/trade  R/trade   sum R   DD %   DD R  t(R) per-trade  t(R) day-clustered
+  base research           765  1.164  1.079  +0.0197  +0.0255   +19.5   5.52  12.20   +1.00          +0.99
+  base locked             389  1.110  0.974  +0.0154  -0.0084    -3.3   7.77  20.77   -0.24          -0.24
+  gated (veto in lock) research  350  1.446  1.303  +0.0469  +0.0845   +29.6   3.10   8.28   +2.35          +2.41
+  gated (veto in lock) locked  187  1.382  1.122  +0.0531  +0.0371    +6.9   4.69   6.99   +0.75          +0.73
+  (R = (exit - fill - cost) / (3.19 x ATR at the signal); constant-R sizing = one R of risk per trade, the equity curve is the running sum of R)
+
+  KILL CRITERION 0.1: gated locked R/trade = +0.0371 -> PROCEED (clearly positive)
+
+======================================================================================================================
+0.2  THE DEPLOYABLE TRADE SET -- veto-in-lock (what the Pine does) vs the post-hoc subset of the base's trades
+======================================================================================================================
+  O._walk tests the gate at the signal bar and `continue`s without setting `busy`, so a vetoed signal never occupies the lock;
+  the shipped 'gated' numbers are therefore already the single-walker, gate-as-veto build.  Overlap with the base:
+  research  gated n  350:  277 also in the base,  73 admitted because a vetoed signal freed the lock (those  73: PF 1.612, R +0.0779)
+            post-hoc SUBSET of base trades passing the gate: n  290  PF 1.382  %/trade +0.0408  R/trade +0.0846  DD 3.10%
+            veto-in-lock (number of record):               n  350  PF 1.446  %/trade +0.0469  R/trade +0.0845  DD 3.10%
+  locked    gated n  187:  155 also in the base,  32 admitted because a vetoed signal freed the lock (those  32: PF 0.924, R -0.0426)
+            post-hoc SUBSET of base trades passing the gate: n  166  PF 1.512  %/trade +0.0669  R/trade +0.0544  DD 4.95%
+            veto-in-lock (number of record):               n  187  PF 1.382  %/trade +0.0531  R/trade +0.0371  DD 4.69%
+
+======================================================================================================================
+0.3  DAY-CLUSTERED CONTROL NULL -- random signal DAYS at the gate's day base rate, bar count matched (250 draws)
+======================================================================================================================
+  research  gate: 261 active days of 443 signal days (59%), 768 bars;  observed PF 1.446, mean +0.0469
+           bar-matched null : PF median 1.109 sd 0.068  p(PF) 0.000  p(mean) 0.000
+           day-clustered null: PF median 1.136 sd 0.098  p(PF) 0.000  p(mean) 0.000
+  locked    gate: 141 active days of 228 signal days (62%), 443 bars;  observed PF 1.382, mean +0.0531
+           bar-matched null : PF median 1.106 sd 0.123  p(PF) 0.008  p(mean) 0.008
+           day-clustered null: PF median 1.109 sd 0.157  p(PF) 0.044  p(mean) 0.024   <- number of record
+
+======================================================================================================================
+LOPEZ DE PRADO STATISTICS -- probabilistic and deflated Sharpe, minimum backtest length
+======================================================================================================================
+  research  traded days 261: SR/day +0.1888 (ann +3.00) skew +0.50 kurt 5.5   zero-filled 599 days: SR/day +0.1234 (ann +1.96) skew +1.20 kurt 12.7
+           PSR(SR* = 0) 0.999
+           DSR at N =  43 trials (trial-SR sd 0.0525/day): expected max-of-noise SR +0.1165/day  DSR 0.571
+           DSR at N = 152 trials (trial-SR sd 0.0525/day): expected max-of-noise SR +0.1405/day  DSR 0.329
+  locked    traded days 141: SR/day +0.1328 (ann +2.11) skew +2.74 kurt 19.2   zero-filled 325 days: SR/day +0.0871 (ann +1.38) skew +4.44 kurt 45.3
+           PSR(SR* = 0) 0.970
+           DSR at N =  43 trials (trial-SR sd 0.0525/day): expected max-of-noise SR +0.1165/day  DSR 0.263
+           DSR at N = 152 trials (trial-SR sd 0.0525/day): expected max-of-noise SR +0.1405/day  DSR 0.125
+  MinBTL at N = 43: 495 trading days needed for a true SR of 1.96 ann to be distinguishable from the best of 43 noise trials; research has 599, locked 325
+  MinBTL at N = 152: 661 trading days needed for a true SR of 1.96 ann to be distinguishable from the best of 152 noise trials; research has 599, locked 325
+
+  POWER at the observed locked effect (R): per-trade d = 0.054, day-clustered d = 0.062 (1.33 trades/day)
+    t = 1.96:  1294 trades unclustered   |   1014 days =  1345 trades day-clustered  (~90 forward months at 15/mo)
+    t = 2.33:  1829 trades unclustered   |   1433 days =  1901 trades day-clustered  (~127 forward months at 15/mo)
+    t = 3.0:  3031 trades unclustered   |   2376 days =  3151 trades day-clustered  (~211 forward months at 15/mo)

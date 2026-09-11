@@ -1,0 +1,290 @@
+// ================================================================================================
+// V62 -- V61 with ADX and CHOP removed, and the Money Flow Index and EMA-cross MOMENTUM added and
+// MEASURED. Both ship OFF, because both are null, and the numbers are below so the decision is
+// yours rather than mine.
+//
+// ============================ THE BASE RATE, WHICH COMES FIRST ============================
+// A confirmation that passes 90% of the bars the trigger already fires on is not a filter. On NQ
+// 30-minute Donchian-20 breakout bars:
+//
+//   condition                     passes of breakouts   of all bars   lift
+//   MFI(9)  >= 50                     91.7%               52.4%       1.75    removes 8% of signals
+//   MFI(14) >= 55                     85.8%               43.0%       1.99
+//   MFI(14) >= 60                     77.2%               34.5%       2.24
+//   MFI(9)  <= 80                     58.6%               87.8%       0.67    the only selective one
+//   EMA 13/48 state (fast > slow)     80.1%               57.8%       1.39
+//   EMA 21/55 spread rising           91.1%               49.2%       1.85    removes 9% of signals
+//   EMA 21/55 spread momentum >=.02   85.4%               38.9%       2.20
+//   EMA 13/48 cross within 5 bars     14.9%                6.6%       2.25    the other selective one
+//
+// A breakout IS a money-flow event and IS an EMA-spread event, so most readings of either are the
+// trigger restated. Same mechanism as RSI(14) >= 55 passing 94.7% of breakout bars
+// (`STUDY_V16_MOMENTUM`) and Aroon osc >= 0 passing 100.0% (`STUDY_V60_AROON`).
+//
+// ======================== AND THE MATCHED PAIRS, WHICH SETTLE IT ========================
+// 3,096,576 cells swept so that every filtered cell has an exact `off` twin with every other axis
+// held fixed. The share of pairs each condition IMPROVES -- chance is 50%:
+//
+//                                   research      LOCKED
+//   MFI, weighted over 15 readings     57.8%       49.3%     research-to-locked Spearman -0.257
+//   EMA, weighted over 15 readings     59.0%       58.0%     research-to-locked Spearman -0.618
+//
+// The MFI is chance. The EMA looks better than chance and its ORDERING INVERTS: the reading that
+// helped LEAST on research (`cross <= 5` on 13/48, 30.3%) helps MOST on the locked block (85.3%),
+// and the two that helped most (`spread > 0 and rising` and `state` on 21/55, 82.5% and 78.6%)
+// fall to 55.8% and 43.2%. That is noise with a sign, not a filter.
+//
+// ================== THE DROP-ONE AT THE BEST CELL THE SEARCH COULD FIND ==================
+// The top cell of 2,055,874 does contain both an MFI and an EMA condition. Removing them one at a
+// time, at that exact geometry, on the locked block:
+//
+//   as found (MFI + EMA)          n  84   +0.1203 %/trade   PF 1.68   entry-null p 0.070
+//   drop the MFI                  n 116   +0.1025           PF 1.59   entry-null p 0.065
+//   drop the EMA momentum         n  92   +0.1080           PF 1.65   entry-null p 0.100
+//   drop BOTH                     n 128   +0.0978           PF 1.61   entry-null p 0.061  <- best
+//   drop the CVD gate as well     n 459   +0.0270           PF 1.15   entry-null p 0.179  <- dies
+//
+// Dropping both earns MORE IN TOTAL (128 x 0.0978 = 12.5% against 84 x 0.1203 = 10.1%) and gives a
+// BETTER p-value against a random entry. Dropping the CVD gate is what kills it. So the CVD gate
+// carries this strategy and the two confirmations subtract.
+//
+// ================================ WHAT THIS SCRIPT SHIPS ================================
+// ADX and CHOP are GONE, as asked. The MFI and the EMA-momentum readings are here as inputs,
+// default OFF, each with its measured cost in the tooltip. The two V61 presets are unchanged:
+//
+//   INCUMBENT     30m, channel 20/20, 2.0 ATR stop, no target, k3 / w20 (90 / 600 minutes)
+//                 locked n 87  +0.1371 %/trade  total +11.93%  PF 1.58
+//                 vs a random FILTER of the same selectivity p 0.010; vs a random ENTRY p 0.205
+//   HIGH ACTIVITY 15m, channel 15/30, 3.0 ATR stop, 6 ATR target, k3 / w30 (45 / 450 minutes)
+//                 locked n 208 +0.0861 %/trade  total +17.91%  PF 1.48  Sharpe +1.89
+//                 vs a random FILTER p 0.066; vs a random ENTRY p 0.020
+//
+// The EMA cross window is declared in MINUTES like the order-flow settings, because a bar count is
+// a setting times a timeframe and moving a script between charts silently divides it
+// (`STUDY_V57_REVERSE_ENGINEER`).
+// ONE MARKET. The CVD needs 1-minute bars and NQ is the only feed here that has them.
+// CVD IS A PROXY -- true aggressor delta is in no feed here.
+// COSTS ARE NOT SET. Set commission and slippage in Properties before reading any number.
+// See docs/ib/STUDY_V62_MFI_EMA.md.
+// ================================================================================================
+
+//@version=5
+strategy("V62 CVD exhaustion + MFI / EMA momentum", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 100000,
+     calc_on_every_tick = false, process_orders_on_close = false, pyramiding = 0)
+
+gP = "Preset"
+gG = "Geometry -- used when the preset is Custom"
+gC = "Order flow -- MINUTES, so it means the same on every chart"
+gM = "Money Flow Index -- MEASURED NULL, 49.3% of matched pairs on the locked block"
+gE = "EMA cross momentum -- MEASURED NULL, and its ordering inverts across the split"
+gO = "Overrides"
+gS = "Session"
+
+preset = input.string("Incumbent 30m (the only pre-declared cell that cleared its control)",
+     "Preset", group = gP,
+     options = ["Incumbent 30m (the only pre-declared cell that cleared its control)",
+                 "High activity 15m (2.4x the trades, descriptive p-values)",
+                 "Custom"],
+     tooltip = "A preset sets the geometry and the order-flow windows and NOTHING ELSE. Every confirmation switch stays where you left it.")
+
+entNi    = input.int(20, "Entry channel (bars)", minval = 2, group = gG)
+exitNi   = input.int(20, "Exit channel (bars)", minval = 2, group = gG)
+stopNi   = input.float(2.0, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG)
+tpATRi   = input.float(0.0, "Take profit (ATR, 0 = none)", minval = 0.0, step = 0.5, group = gG,
+     tooltip = "No target has beaten every target tested fourteen times on this branch, and it does so again here: the best cell's own neighbour at no-target reads +0.2620 on the locked block against its +0.1203.")
+maxHoldi = input.int(480, "Max hold (bars)", minval = 1, group = gG,
+     tooltip = "INERT on every setting measured: with a channel exit and an ATR stop one of them always fires first.")
+pivMini  = input.int(90,  "Pivot half-width (minutes)", minval = 1, group = gG)
+winMini  = input.int(600, "Window (minutes)", minval = 1, group = gG)
+
+touchOk = input.bool(true, "Count a TOUCH of the channel as a break (>= instead of >)", group = gC,
+     tooltip = "Re-measured on the researched base this is free: research p 0.000 -> 0.001, locked p 0.005 -> 0.005.")
+useMinutes = input.bool(true, "Convert the pivot and window from MINUTES (recommended)", group = gC)
+pivBars = input.int(3,  "Pivot half-width (bars)  -- used when MINUTES is off", minval = 1, group = gC)
+winBars = input.int(20, "Window (bars)  -- used when MINUTES is off", minval = 1, group = gC)
+cvLTF   = input.string("1", "Volume-delta lower timeframe", group = gC,
+     options = ["1S", "5S", "10S", "30S", "1", "5"],
+     tooltip = "Must be STRICTLY LOWER than the chart's timeframe or no delta is produced at all.")
+
+mfiMode = input.string("off", "MFI condition", group = gM,
+     options = ["off", "MFI >= 50", "MFI >= 55", "MFI >= 60", "MFI <= 80", "MFI rising"],
+     tooltip = "Locked matched pairs, share of pairs improved (chance is 50%): >=50 39.8-47.2%, >=55 32.2-50.7%, >=60 50.2-62.8%, <=80 41.6-55.8%, rising 57.1-61.1%. Research-to-locked Spearman -0.257. The >=60 rung is the only one that looked good on research and did not invert, and it removes under a fifth of the signals.")
+mfiLen  = input.int(14, "MFI length", minval = 2, group = gM)
+
+emaMode = input.string("off", "EMA momentum condition", group = gE,
+     options = ["off", "fast > slow (state)", "fresh cross", "spread rising",
+                 "spread > 0 and rising", "spread momentum >= 0.02 ATR"],
+     tooltip = "Locked matched pairs: state 43.2-47.6%, fresh cross 63.8-85.3%, spread rising 49.8-73.3%, spread>0 and rising 52.4-59.1%, spread momentum 57.0-65.2%. The ordering INVERTS across the split at Spearman -0.618 -- the fresh cross is the best locked reading and the worst research one, which is the wrong shape, so none of them ships on.")
+emaF    = input.int(21, "EMA fast", minval = 2, group = gE)
+emaS    = input.int(55, "EMA slow", minval = 3, group = gE)
+crossMin = input.int(150, "Fresh cross: how recent, in MINUTES", minval = 1, group = gE,
+     tooltip = "150 minutes is 5 bars on a 30-minute chart, which is what was measured. Declared in minutes so it means the same on any chart.")
+momATR  = input.float(0.02, "Spread momentum floor (ATR per bar)", minval = 0.0, step = 0.01,
+     group = gE)
+
+useAbs   = input.bool(false, "Also enter on ABSORBED SELLING (price HL + CVD LL)", group = gO,
+     tooltip = "MEASURED COST: halves the edge and loses the locked block (p 0.005 -> 0.210).")
+usePsh   = input.bool(false, "Also require close > the prior RTH session high", group = gO,
+     tooltip = "V17's surviving feature. On the V62 grid its marginal is the largest of the additive filters: +9.1% total against +7.8% with it off.")
+
+sessOn = input.bool(false, "Restrict entries to a window", group = gS)
+startH = input.int(9,  "Start hour (New York)",  minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(16, "Stop hour (New York)",   minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute", minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "Flatten at the stop time", group = gS,
+     tooltip = "A hard flatten cost 57-69% of the per-trade result on three markets in STUDY_V60.")
+
+// ---------------------------------------------------------------------------------------------
+isInc = preset == "Incumbent 30m (the only pre-declared cell that cleared its control)"
+isHi  = preset == "High activity 15m (2.4x the trades, descriptive p-values)"
+
+entN    = isInc ? 20   : isHi ? 15   : entNi
+exitN   = isInc ? 20   : isHi ? 30   : exitNi
+stopN   = isInc ? 2.0  : isHi ? 3.0  : stopNi
+tpATR   = isInc ? 0.0  : isHi ? 6.0  : tpATRi
+maxHold = isInc ? 480  : isHi ? 240  : maxHoldi
+pivMin  = isInc ? 90   : isHi ? 45   : pivMini
+winMin  = isInc ? 600  : isHi ? 450  : winMini
+
+barMin  = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+pivK    = useMinutes ? math.max(1, math.round(pivMin / barMin)) : pivBars
+cvWin   = useMinutes ? math.max(1, math.round(winMin / barMin)) : winBars
+crossW  = math.max(1, math.round(crossMin / barMin))
+
+ltfDelta() =>
+    close > open ? volume : close < open ? -volume : 0.0
+
+dArr = request.security_lower_tf(syminfo.tickerid, cvLTF, ltfDelta())
+barDelta = array.size(dArr) > 0 ? array.sum(dArr) : 0.0
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := cvd + barDelta
+
+pvLow = ta.pivotlow(low, pivK, pivK)
+var float prevLowP = na
+var float prevLowC = na
+var bool exhaustedSellers = false
+var bool absorbedSelling = false
+
+if barstate.isconfirmed
+    exhaustedSellers := false
+    absorbedSelling := false
+    if not na(pvLow)
+        curP = pvLow
+        curC = cvd[pivK]
+        if not na(prevLowP)
+            exhaustedSellers := curP < prevLowP and curC > prevLowC
+            absorbedSelling := curP > prevLowP and curC < prevLowC
+        prevLowP := curP
+        prevLowC := curC
+
+sinceES = nz(ta.barssince(exhaustedSellers), 1000000)
+sinceAS = nz(ta.barssince(absorbedSelling), 1000000)
+flowOk = (sinceES <= cvWin - 1) or (useAbs and sinceAS <= cvWin - 1)
+
+atrN   = ta.ema(ta.tr(true), 14)                   // NOT ta.atr, which is Wilder
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)[1]
+mfiV   = ta.mfi(hlc3, mfiLen)
+eF     = ta.ema(close, emaF)
+eS     = ta.ema(close, emaS)
+spread = eF - eS
+dSpread = spread - spread[1]
+freshX = ta.barssince(ta.crossover(spread, 0)) <= crossW - 1
+
+// the prior COMPLETED RTH session high, accumulated on this chart's own bars and frozen at the
+// session end -- `request.security` on a daily bar returns the 24-hour futures high, not this
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+newDay = ta.change(time("D")) != 0
+var float rthRun = na
+var float prevRth = na
+if barstate.isconfirmed
+    if newDay
+        prevRth := na(rthRun) ? prevRth : rthRun
+        rthRun := na
+    if nyMin >= 570 and nyMin < 960
+        rthRun := na(rthRun) ? high : math.max(rthRun, high)
+
+broke = touchOk ? (high >= entHi) : (high > entHi)
+mfiOk = mfiMode == "off" ? true :
+     mfiMode == "MFI >= 50" ? (not na(mfiV) and mfiV >= 50.0) :
+     mfiMode == "MFI >= 55" ? (not na(mfiV) and mfiV >= 55.0) :
+     mfiMode == "MFI >= 60" ? (not na(mfiV) and mfiV >= 60.0) :
+     mfiMode == "MFI <= 80" ? (not na(mfiV) and mfiV <= 80.0) :
+     (not na(mfiV) and not na(mfiV[1]) and mfiV > mfiV[1])
+emaOk = emaMode == "off" ? true :
+     emaMode == "fast > slow (state)" ? (spread > 0) :
+     emaMode == "fresh cross" ? freshX :
+     emaMode == "spread rising" ? (not na(dSpread) and dSpread > 0) :
+     emaMode == "spread > 0 and rising" ? (spread > 0 and not na(dSpread) and dSpread > 0) :
+     (not na(dSpread) and atrN > 0 and dSpread / atrN >= momATR)
+pshOk = not usePsh or (not na(prevRth) and close > prevRth)
+
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin = not sessOn ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = sessOn and flatOn and not inWin
+
+gateOk = flowOk and mfiOk and emaOk and pshOk and inWin and atrN > 0 and not na(entHi)
+
+var float pendAtr = na
+var int   heldBars = 0
+
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk and broke
+    pendAtr := atrN
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+    lossTk = stopN * pendAtr / syminfo.mintick
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", loss = lossTk,
+             profit = tpATR * pendAtr / syminfo.mintick)
+    else
+        strategy.exit("x", from_entry = "L", loss = lossTk)
+
+if barstate.isconfirmed and strategy.position_size > 0 and not na(pendAtr)
+    fillStop = strategy.position_avg_price - stopN * pendAtr
+    lvl = math.max(fillStop, nz(exitLo, fillStop))
+    lvl := math.min(lvl, close[1])
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", stop = lvl,
+             limit = strategy.position_avg_price + tpATR * pendAtr)
+    else
+        strategy.exit("x", from_entry = "L", stop = lvl)
+
+if barstate.isconfirmed and strategy.position_size > 0 and (doFlat or heldBars >= maxHold)
+    strategy.close_all(doFlat ? "flat" : "max hold")
+
+plot(entHi, "Entry channel", color = color.new(color.teal, 50))
+plot(exitLo, "Exit channel", color = color.new(color.maroon, 50))
+plotshape(exhaustedSellers, "Exhausted sellers (gating)", shape.triangleup, location.belowbar,
+     color.new(color.lime, 0), size = size.small)
+plotshape(absorbedSelling, "Absorbed selling", shape.circle, location.belowbar,
+     color.new(color.green, 30), size = size.tiny)
+
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+if barstate.islast
+    ltfBad = timeframe.in_seconds(cvLTF) >= timeframe.in_seconds()
+    table.cell(hud, 0, 0, isInc ? "PRESET: incumbent 30m" : isHi ? "PRESET: high activity 15m"
+         : "PRESET: custom", text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 0, 1, "channel " + str.tostring(entN) + "/" + str.tostring(exitN)
+         + "   stop " + str.tostring(stopN) + "N   TP "
+         + (tpATR > 0 ? str.tostring(tpATR) + "N" : "none"),
+         text_color = color.white, bgcolor = color.new(color.gray, 40))
+    table.cell(hud, 0, 2, "pivot " + str.tostring(pivK) + " bars   window " + str.tostring(cvWin)
+         + " bars   (" + str.tostring(math.round(pivK * barMin)) + " / "
+         + str.tostring(math.round(cvWin * barMin)) + " minutes)",
+         text_color = color.white, bgcolor = color.new(color.teal, 30))
+    conf = (mfiMode != "off" ? "MFI " : "") + (emaMode != "off" ? "EMA " : "")
+         + (useAbs ? "absorbed " : "") + (usePsh ? "prior-high " : "")
+    table.cell(hud, 0, 3, ltfBad ? "CVD TIMEFRAME " + cvLTF + " IS NOT BELOW THE CHART -- NO DELTA"
+         : (conf == "" ? "exhausted sellers only"
+             : "CONFIRMATIONS ON: " + conf + "-- each measured as a cost"),
+         text_color = color.white,
+         bgcolor = ltfBad ? color.red : (conf == "" ? color.new(color.teal, 30)
+             : color.new(color.orange, 20)))

@@ -1,0 +1,184 @@
+//@version=5
+// V12 -- Donchian 30 entry / 20 exit, built to the brief, with the evidence it produced.
+//
+// ============================== READ THE VERDICT FIRST ==============================
+// THIS IS PROFITABLE ON US100 AND NOT ON US30. The parameters were chosen on US30's train block
+// (pre-2026) and then read ONCE on three held-back sets. Two of three came back positive; the
+// instrument it was fitted on came back NEGATIVE.
+//
+//                              n     PF    Sharpe   pts/trade   max DD   ret/DD
+//   US30   train (chosen here) 281   1.45   1.84     +21.16     1,968     3.02
+//   US30   2026  JUDGE         169   0.92  -0.53      -5.77     3,107    -0.31   <-- FAILS
+//   US100  train era           262   1.45   2.24     +15.58     1,504     2.72
+//   US100  held back 2026      135   1.42   2.01     +20.64     1,456     1.91   <-- holds
+//   XAU    train era         2,627   0.98  -0.14      -0.05       399    -0.31
+//   XAU    held back         1,507   1.19   0.94      +0.56       254     3.32   <-- flat
+//
+// US100 was never used to choose anything -- every parameter came from US30 -- so its held-back
+// block is a genuine pre-registered out-of-sample test, and it passed. US30's did not. Run this on
+// US100 / NAS100 / MNQ. Do not run it on US30 on the strength of the train column.
+//
+// ====================== AND THE BREAKOUT IS NOT WHAT EARNS THE MONEY ======================
+// Against a matched control -- a RANDOM BAR with the same stop, the same 20-bar channel exit and
+// the same trade count -- the Donchian 30 breakout does not win anywhere:
+//     US30 train p 0.063  |  US100 train p 0.110  |  US100 held back p 0.293  |  US100 full p 0.060
+// And ADX >= 25 does not beat a random filter of the SAME selectivity:
+//     US30 p 0.135  |  US100 train p 0.249  |  US100 held back p 0.580
+// On the US100 held-back block a random filter of equal size earned MORE (+22.44 against +20.64).
+//
+// So what is doing the work is the EXIT GEOMETRY -- a 2.0 x ATR(20) stop, a 20-bar channel exit,
+// ONE unit and NO take profit -- applied to a long-biased index. The Donchian is the thing that
+// spaces the trades out and keeps the system a Turtle; it is retained because the brief asks for
+// it, and it is honest to say it is not the edge.
+//
+// ============================== WHAT THE SEARCH ACTUALLY FOUND ==============================
+// 900 cells on US30 train, read by MARGINAL AVERAGE per axis rather than by top cell, because a
+// top cell is the maximum of 900 draws:
+//   * ADX >= 25 is a clear step (marginal Sharpe +1.62 against +0.69 to +0.72 at 0/15/20). The
+//     same step appears independently on NQ. It is the only filter that survived selection --
+//     and it is also the thing that inverts on US30 2026 (ungated 2026 PF 1.04, ADX>=20 0.94,
+//     ADX>=25 0.92). Read that as the warning it is.
+//   * AN EMA100-DISTANCE FILTER HURTS. Marginal Sharpe: no filter +1.10, >=0.5 ATR +0.91,
+//     >=1.0 +1.00, >=1.5 +0.87. Not included.
+//   * THE ATR-EXPANSION FILTER IS NOT REAL. It looks strong (PF 1.42 -> 1.77 as the floor rises)
+//     and it fails a same-selectivity random filter at p 0.117 - 0.454. That is what ANY
+//     restrictive filter does. Not included.
+//   * NO TAKE PROFIT beats every target tested, for the third independent time on this branch.
+//   * ONE UNIT. The ladder is what generates drawdown, not return.
+//
+// ================================ THE INTRADAY WINDOW ================================
+// EVERY window tested FAILED its control, against random same-size subsets of the all-hours
+// trades: 07:00-10:00 p 0.898, 07:00-11:00 p 0.985, 08:00-12:00 p 0.817, 09:00-12:00 p 0.700,
+// 09:30-16:00 p 0.913, 08:00-20:00 p 0.854. All-hours scores +21.16 points a trade on US30 train;
+// the best window scores +15.16. The window costs money on every measure.
+// It is provided, OFF by default, because "flat by the close" is an operational requirement for
+// some accounts and 08:00-20:00 costs the least (ret/DD 2.73 against 3.02 for all hours).
+// Do not switch it on expecting more performance.
+// =====================================================================================
+
+strategy("Turtle V12 (Donchian 30/20, US100 15m)", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Bar detalization   High, with Deep Backtesting.   Order execution delay  One tick.
+//   Commission         cash per order, per side, your broker's real number.
+//   Slippage           2 ticks. A stop fills INTO the move that triggered it.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+//   Research charged 3.7% of the 2N stop a round turn on EVERY market. A cost is a FRACTION OF
+//   RISK, not a number of points -- 1.72 points is 3.7% of NQ's 2N stop and 54.2% of gold's.
+// ======================================================================
+
+gE      = "Entry -- fixed by the brief"
+donE    = input.int(30,   "Donchian entry length", minval = 2, group = gE)
+donX    = input.int(20,   "Donchian exit length",  minval = 2, group = gE,
+     tooltip = "The exit channel is the one sensitive parameter: shortening it to 15 costs 0.21 of profit factor.")
+adxMin  = input.float(25, "ADX floor (0 = off)", minval = 0, step = 1, group = gE,
+     tooltip = "The only filter that survived selection. It is also the one that inverts on US30 2026, so treat it as the least robust part of the system.")
+
+gX      = "Exit -- one unit, ATR stop or channel, whichever is nearer"
+atrLen  = input.int(20,   "ATR length", minval = 2, group = gX)
+atrMult = input.float(2.0,"ATR stop multiple", minval = 0.1, step = 0.1, group = gX,
+     tooltip = "Flat from 1.5N to 2.5N on US100 (PF 1.46 / 1.44 / 1.42).")
+useTp   = input.bool(false,"Use a take profit", group = gX,
+     tooltip = "OFF is a result, not an omission. No target beat having none, across 900 cells.")
+tpR     = input.float(3.0,"  target, in R", minval = 0.1, step = 0.1, group = gX)
+qty     = input.int(1,    "Contracts", minval = 1, group = gX)
+
+gS      = "Intraday window -- OFF by default, and it costs money"
+sessOn  = input.bool(false, "Restrict entries to a window and flatten", group = gS,
+     tooltip = "Every window tested failed its matched control (p 0.700 to 0.985). Use it only if you must be flat by a set time.")
+startHH = input.int(8,  "Window start -- hour (New York)", minval = 0, maxval = 23, group = gS)
+startMM = input.int(0,  "Window start -- minute",          minval = 0, maxval = 59, group = gS)
+flatHH  = input.int(20, "Flatten -- hour (New York)",      minval = 0, maxval = 23, group = gS)
+flatMM  = input.int(0,  "Flatten -- minute",               minval = 0, maxval = 59, group = gS)
+
+// ----------------------------------------------------------------- series
+// ta.atr IS Wilder's RMA of true range, which is what the research layer's wilder_atr computes.
+// Elsewhere on this branch ema(TR, n) is used for a different purpose; they are NOT the same
+// series and swapping them silently moves every level in the script.
+atrN   = ta.atr(atrLen)
+donHi  = ta.highest(high, donE)[1]    // EXCLUDES the current bar, or a break is impossible
+chanLo = ta.lowest(low,  donX)[1]
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER -- the first element is +DI, not ADX.
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)
+
+// BARE `hour` AND `minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME. Read New York explicitly.
+modNY  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+startM = startHH * 60 + startMM
+flatM  = flatHH * 60 + flatMM
+barMin = timeframe.in_seconds(timeframe.period) / 60
+inWin  = not sessOn or (modNY >= startM and modNY < flatM - barMin)
+atFlat = sessOn and modNY >= flatM
+
+okAdx  = adxMin <= 0 or (not na(adxVal) and adxVal >= adxMin)
+ready  = not na(atrN) and atrN > 0 and not na(donHi)
+gateOk = ready and okAdx and inWin
+
+// ----------------------------------------------------------------- state
+var float sigAtr  = na       // ATR FROZEN AT THE SIGNAL BAR; the stop reads this for the whole trade
+var float entryPx = na
+var int   lastCnt = 0
+var int   exitBar = -1
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL. Guarding part of a coupled set
+// desynchronises it rather than partly fixing it -- see docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    exitBar := bar_index
+    sigAtr  := na
+    entryPx := na
+    lastCnt := 0
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    entryPx := strategy.opentrades.entry_price(strategy.opentrades - 1)
+    lastCnt := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ----------------------------------------------------------------- entry
+// `bar_index > exitBar` reproduces the engine resuming its scan at the bar AFTER the exit bar.
+// The bracket rides with the entry so the ENTRY BAR is covered. Where `stop` and `loss` are both
+// given Pine takes the SMALLER LOSS, which for a long is the HIGHER level -- exactly the engine's
+// max(ATR stop, channel low), reproduced rather than approximated.
+lossTk = int(math.max(1, math.round(atrMult * atrN / syminfo.mintick)))
+tpTk   = useTp ? int(math.max(1, math.round(tpR * atrMult * atrN / syminfo.mintick))) : na
+
+if barstate.isconfirmed and flat and gateOk and bar_index > exitBar and high > donHi
+    sigAtr := atrN
+    strategy.entry("B", strategy.long, qty = qty)
+    strategy.exit("x0", from_entry = "B", stop = chanLo, loss = lossTk, profit = tpTk)
+
+// ----------------------------------------------------------------- exit
+atrStop   = na(entryPx) or na(sigAtr) ? na : entryPx - atrMult * sigAtr
+exitLevel = na(atrStop) ? chanLo : (na(chanLo) ? atrStop : math.max(atrStop, chanLo))
+tpLevel   = not useTp or na(entryPx) or na(sigAtr) ? na : entryPx + tpR * atrMult * sigAtr
+
+if barstate.isconfirmed and not flat and lastCnt > 0 and not na(exitLevel)
+    // "x0" covered the entry bar; "x" takes over. Cancel the first or both rest.
+    strategy.cancel("x0")
+    strategy.exit("x", stop = exitLevel, limit = tpLevel)
+
+// ----------------------------------------------------------------- flatten
+// LAST, so it cancels what the blocks above just placed.
+if barstate.isconfirmed and atFlat
+    strategy.cancel_all()
+    if not flat
+        strategy.close_all(comment = "flatten")
+
+// ----------------------------------------------------------------- plots
+plot(donHi,  "Donchian 30 entry", color = color.new(color.aqua, 30))
+plot(chanLo, "Donchian 20 exit",  color = color.new(color.red, 55))
+plot(flat ? na : exitLevel, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+plot(flat or not useTp ? na : tpLevel, "Target", color = color.new(color.lime, 0), style = plot.style_linebr)
+
+onTf = timeframe.period == "15"
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V12 Donchian 30/20 - validated on US100, NOT on US30",
+         text_color = color.white, bgcolor = color.new(color.teal, 25))
+    table.cell(hud, 0, 1, onTf ? "15m chart" : "NOT 15m - studied on 15m only",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 45) : color.red)
+    table.cell(hud, 0, 2, "The breakout fails its matched control. The EXIT geometry is the edge.",
+         text_color = color.white, bgcolor = color.new(color.orange, 15))

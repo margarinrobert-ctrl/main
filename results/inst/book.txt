@@ -1,0 +1,56 @@
+
+==============================================================================================================================
+A. EACH INTRADAY LEG, per feed, research and reserved -- percent of entry price, real costs
+==============================================================================================================================
+       leg  feed    block    n    tpy     pct      pf
+   FTM_ORB    NQ research  195 169.99 +0.0647    1.37
+   FTM_ORB    NQ reserved  147 229.45 +0.0456    1.27
+  APM_VWAP    NQ research   70  36.47 +0.1207    1.54
+  APM_VWAP    NQ reserved   34  34.02 +0.2731    4.17
+  APM_VWAP US100 research  176  34.41 +0.1182    1.54
+  APM_VWAP US100 reserved  132  35.61 +0.1789    1.66
+  APM_VWAP  US30 research  148  29.02 -0.0343 +0.8578
+  APM_VWAP  US30 reserved  119  34.06 +0.0409    1.18
+       TFI    NQ research  145  76.09 +0.0745    1.40
+       TFI    NQ reserved   81  79.96 +0.0545    1.30
+       TFI US100 research  362  70.74 +0.0469    1.28
+       TFI US100 reserved  251  67.61 +0.0945    1.45
+       TFI  US30 research  335  65.19 +0.0007    1.00
+       TFI  US30 reserved  242  68.89 -0.0026 +0.9863
+  TRENDDAY    NQ research   26  14.26 +0.1916    5.22
+  TRENDDAY    NQ reserved   17  17.39 +0.2127    4.13
+  TRENDDAY US100 research   63  12.36 +0.0322    1.15
+  TRENDDAY US100 reserved   62  17.03 +0.2318    2.51
+  TRENDDAY  US30 research   64  12.59 +0.0034    1.02
+  TRENDDAY  US30 reserved   42  12.47 +0.0645    1.37
+VWAP_DRIFT    NQ research  425 222.08 -0.0159 +0.8795
+VWAP_DRIFT    NQ reserved  226 221.90 -0.0126 +0.9215
+VWAP_DRIFT US100 research 1178 229.96 +0.0040    1.03
+VWAP_DRIFT US100 reserved  976 260.97 -0.0011 +0.9936
+VWAP_DRIFT  US30 research  973 187.94 -0.0186 +0.8646
+VWAP_DRIFT  US30 reserved  769 218.07 +0.0054    1.05
+
+==============================================================================================================================
+B. THE POOLED BOOK -- every leg on every feed, one unit each, trades pooled by calendar
+==============================================================================================================================
+  research :  4,160 trades over 8.1 calendar years =    515 trades/yr  pooled PF 1.079  pct/trade +0.0125  Sharpe (daily, traded days) 0.57
+             by leg: APM_VWAP PF 1.27/n394  FTM_ORB PF 1.37/n195  TFI PF 1.20/n842  TRENDDAY PF 1.29/n153  VWAP_DRIFT PF 0.95/n2576
+  reserved :  3,098 trades over 3.9 calendar years =    787 trades/yr  pooled PF 1.180  pct/trade +0.0300  Sharpe (daily, traded days) 1.32
+             by leg: APM_VWAP PF 1.58/n285  FTM_ORB PF 1.27/n147  TFI PF 1.24/n574  TRENDDAY PF 2.15/n121  VWAP_DRIFT PF 1.00/n1971
+
+==============================================================================================================================
+C. DIVERSIFICATION -- correlation of daily returns between legs on shared dates (research)
+==============================================================================================================================
+leg         APM_VWAP  FTM_ORB   TFI  TRENDDAY  VWAP_DRIFT
+leg                                                      
+APM_VWAP        1.00     0.05  0.19     -0.04        0.09
+FTM_ORB         0.05     1.00  0.04      0.01        0.03
+TFI             0.19     0.04  1.00     -0.08        0.08
+TRENDDAY       -0.04     0.01 -0.08      1.00       -0.09
+VWAP_DRIFT      0.09     0.03  0.08     -0.09        1.00
+
+==============================================================================================================================
+D. WHAT THE POOLED BOOK WOULD NEED -- to reach PF 2.0 at its trade count
+==============================================================================================================================
+  research book: win 43.1%, avg win +0.3955, avg loss -0.2780, PF 1.079
+  with the same average win and loss, PF 2.0 needs a 58.4% win rate -- a lift of +15.3 points.

@@ -1,0 +1,254 @@
+====================================================================================================
+PART 1. THE MECHANISM WITHOUT THE INDICATOR
+====================================================================================================
+  OD(k): go with the sign of (close - 09:30 open) the first time it exceeds k ATR14 before the 10:50 fill, exit 16:00. k = 0 at a fixed bar is the published first-half-hour momentum.
+  p = share of 2,000 coin-flip-side draws on the same bars >= the rule (the direction null).
+
+NQ 10m
+  rule                              | resea    n    mean    PF      p | locke    n    mean    PF      p 
+  APM as specified                  | resea   70   +24.0  1.62  0.050 | locke   34   +62.8  4.12  0.000 
+  OD(k=0.5)                         | resea  480    +1.5  1.03  0.287 | locke  255   +21.9  1.32  0.065 
+  OD(k=1.0)                         | resea  475    -0.9  0.98  0.467 | locke  253   +14.3  1.20  0.142 
+  OD(k=1.5)                         | resea  453    +1.2  1.02  0.322 | locke  242   +24.5  1.41  0.038 
+  OD(k=2.0)                         | resea  406    +4.6  1.10  0.161 | locke  221   +11.4  1.17  0.205 
+  OD(k=2.5)                         | resea  332    +0.8  1.02  0.351 | locke  182    +7.4  1.12  0.247 
+  OD(k=3.0)                         | resea  247    +5.5  1.12  0.194 | locke  148    +9.8  1.17  0.234 
+  OD(k=3.5)                         | resea  191    +4.5  1.10  0.235 | locke  104    +2.9  1.05  0.399 
+  OD(k=4.0)                         | resea  148    -4.2  0.91  0.589 | locke   76   +21.9  1.48  0.105 
+  OD(k=5.0)                         | resea   68    -8.4  0.85  0.641 | locke   45   +27.1  1.73  0.070 
+  first 30 min sign, enter 10:00    | resea  479    +0.6  1.01  0.348 | locke  255    -0.3  1.00  0.457 
+  first 60 min sign, enter 10:30    | resea  480   +10.8  1.27  0.009 | locke  255    -2.3  0.97  0.503 
+  first 90 min sign, enter 11:00    | resea  480    +0.9  1.02  0.289 | locke  255   +16.0  1.30  0.098 
+  APM vs OD(3.0): same day AND side on 93 of APM's 104 trades; OD has 395
+
+US100 15m
+  rule                              | resea    n    mean    PF      p | valid    n    mean    PF      p | test     n    mean    PF      p 
+  APM as specified                  | resea  176   +10.8  1.53  0.018 | valid   70   +34.5  1.89  0.015 | test    62   +15.3  1.31  0.279 
+  OD(k=0.5)                         | resea 1095    -1.2  0.96  0.380 | valid  468    +4.1  1.06  0.222 | test   400   +11.2  1.19  0.096 
+  OD(k=1.0)                         | resea 1074    -2.1  0.93  0.522 | valid  462    +2.2  1.03  0.299 | test   391   +12.5  1.22  0.069 
+  OD(k=1.5)                         | resea  987    -1.4  0.95  0.420 | valid  428    +1.6  1.03  0.314 | test   351   +10.3  1.19  0.086 
+  OD(k=2.0)                         | resea  826    -0.9  0.97  0.356 | valid  359    +7.9  1.14  0.124 | test   299   +15.0  1.32  0.022 
+  OD(k=2.5)                         | resea  662    +1.2  1.04  0.155 | valid  280   +12.4  1.24  0.069 | test   245    +9.6  1.19  0.118 
+  OD(k=3.0)                         | resea  503    -1.0  0.97  0.407 | valid  216    +7.2  1.13  0.203 | test   188   +10.5  1.21  0.135 
+  OD(k=3.5)                         | resea  367    -0.9  0.97  0.393 | valid  155   +16.7  1.37  0.060 | test   144    -0.2  1.00  0.426 
+  OD(k=4.0)                         | resea  266    +3.0  1.13  0.141 | valid  119   +19.8  1.45  0.059 | test   104    -4.2  0.93  0.569 
+  OD(k=5.0)                         | resea  132    -0.9  0.97  0.441 | valid   36   +18.4  1.41  0.218 | test    51    -4.9  0.91  0.555 
+  first 30 min sign, enter 10:00    | resea 1096    +0.4  1.01  0.188 | valid  468    +3.4  1.05  0.249 | test   400    +1.5  1.02  0.377 
+  first 60 min sign, enter 10:30    | resea 1096    -2.9  0.90  0.651 | valid  468   +14.1  1.29  0.009 | test   400   +13.6  1.28  0.044 
+  first 90 min sign, enter 11:00    | resea 1096    -3.4  0.87  0.729 | valid  468    +8.8  1.19  0.051 | test   400    +2.9  1.06  0.303 
+  APM vs OD(3.0): same day AND side on 248 of APM's 308 trades; OD has 907
+
+US30 15m
+  rule                              | resea    n    mean    PF      p | valid    n    mean    PF      p | test     n    mean    PF      p 
+  APM as specified                  | resea  148    -7.9  0.88  0.559 | valid   68   +16.4  1.19  0.256 | test    51    +4.6  1.06  0.377 
+  OD(k=0.5)                         | resea    0                      | valid    0                      | test   153   +21.9  1.18  0.235 
+  OD(k=1.0)                         | resea    0                      | valid    0                      | test   148   +34.0  1.31  0.131 
+  OD(k=1.5)                         | resea    0                      | valid    0                      | test   128   +47.1  1.45  0.083 
+  OD(k=2.0)                         | resea    0                      | valid    0                      | test   106   +34.1  1.33  0.120 
+  OD(k=2.5)                         | resea    0                      | valid    0                      | test    77    +2.2  1.02  0.442 
+  OD(k=3.0)                         | resea    0                      | valid    0                      | test    62   -25.9  0.81  0.696 
+  OD(k=3.5)                         | resea    0                      | valid    0                      | test    46    -8.1  0.93  0.527 
+  OD(k=4.0)                         | resea    0                      | valid    0                      | test    33    -3.6  0.97  0.491 
+  OD(k=5.0)                         | resea    0                      | valid    0                      | test     9                      
+  first 30 min sign, enter 10:00    | resea    0                      | valid    0                      | test   153    +5.1  1.04  0.396 
+  first 60 min sign, enter 10:30    | resea    0                      | valid    0                      | test   153   +23.2  1.23  0.203 
+  first 90 min sign, enter 11:00    | resea    0                      | valid    0                      | test   153   +35.9  1.43  0.104 
+  APM vs OD(3.0): same day AND side on 17 of APM's 267 trades; OD has 62
+
+====================================================================================================
+PART 2. FEATURE ENGINEERING ON THE RULE'S TRADES
+====================================================================================================
+  Each feature is split at its RESEARCH median; 'high' keeps trades above it, 'low' below. p = share of 2,000 random subsets of the same size with a mean >= the kept trades (research).
+
+NQ 10m, research block, n 70, base mean +24.0
+       family            feature  median  n_hi  mean_hi   p_hi  n_lo  mean_lo   p_lo   corr
+    gap/drive            gap_atr  +2.502    34    +25.7 +0.441    35    +21.2 +0.547 +0.088
+    gap/drive          drive_atr  +3.921    35    +16.9 +0.676    35    +31.1 +0.307 -0.055
+    gap/drive          drive_eff  +0.606    35    +52.5 +0.033    35   -4.513 +0.971 +0.120
+       timing    bars_since_open  +1.000    32   +3.671 +0.888    38    +41.1 +0.111 -0.053
+   rule's own          vwap_dist  +1.690    35   +4.173 +0.907    35    +43.9 +0.091 -0.080
+   rule's own         osc_excess  +5.682    35    +43.9 +0.104    35   +4.087 +0.904 +0.178
+participation            rel_vol  +1.097    34    +33.3 +0.255    34    +12.1 +0.747 +0.047
+   volatility         atr_regime  +1.305    34    +28.4 +0.372    35    +18.6 +0.613 +0.013
+   volatility    prior_range_atr  +7.920    34    +42.1 +0.116    35   +5.380 +0.888 +0.034
+   volatility       on_range_atr  +230.0    35    +29.1 +0.379    35    +18.9 +0.618 +0.010
+    prior day      prior_day_ret  -0.586    34    +23.9 +0.486    35    +23.0 +0.496 -0.016
+    prior day beyond_prior_level  +1.000    52    +17.9 +0.764    18    +41.7 +0.243 -0.141
+    prior day   dist_prior_level  +2.846    34    +33.8 +0.246    35    +13.4 +0.748 +0.017
+    prior day           ibs_prev  -0.014    34    +20.1 +0.582    35    +26.7 +0.409 -0.020
+        trend           trend200  +5.867    35    +26.1 +0.451    35    +22.0 +0.536 +0.072
+        trend        trend_daily  +0.000    33   +9.030 +0.822    37    +37.4 +0.180 -0.117
+       candle         body_share  +0.624    35    +31.5 +0.320    35    +16.5 +0.667 +0.060
+
+US100 15m, research block, n 176, base mean +10.8
+       family            feature  median  n_hi  mean_hi   p_hi  n_lo  mean_lo   p_lo   corr
+    gap/drive            gap_atr  +2.470    87    +14.7 +0.248    88   +6.791 +0.750 +0.033
+    gap/drive          drive_atr  +4.044    88   +9.447 +0.585    88    +12.1 +0.425 -0.052
+    gap/drive          drive_eff  +0.642    88    +14.6 +0.260    88   +6.942 +0.736 +0.055
+       timing    bars_since_open  +1.000    84   -5.868 +0.997    92    +26.0 +0.002 -0.162
+   rule's own          vwap_dist  +1.558    88   +0.175 +0.961    88    +21.4 +0.038 -0.040
+   rule's own         osc_excess  +8.301    88    +27.6 +0.002    88   -6.015 +0.999 +0.169
+participation            rel_vol  +1.002    87    +18.1 +0.104    87   +3.429 +0.889 +0.091
+   volatility         atr_regime  +1.122    87    +15.4 +0.211    88   +6.088 +0.780 +0.041
+   volatility    prior_range_atr  +7.408    87    +20.7 +0.038    88   +0.926 +0.958 +0.061
+   volatility       on_range_atr  +5.578    88    +12.2 +0.405    88   +9.364 +0.591 -0.032
+    prior day      prior_day_ret  +0.372    87   +8.990 +0.613    88    +12.5 +0.374 -0.051
+    prior day beyond_prior_level  +1.000   131    +12.8 +0.280    45   +4.791 +0.734 +0.012
+    prior day   dist_prior_level  +2.753    87   +6.794 +0.744    88    +14.6 +0.260 -0.085
+    prior day           ibs_prev  +0.001    87    +12.1 +0.406    88   +9.428 +0.596 -0.072
+        trend           trend200  +5.802    88   +5.384 +0.815    88    +16.2 +0.186 -0.066
+        trend        trend_daily  +1.000    94   +2.761 +0.927    82    +19.9 +0.068 -0.077
+       candle         body_share  +0.656    88   +9.901 +0.560    88    +11.6 +0.450 +0.052
+
+  two-feed agreement (same half beats a random filter at p <= 0.10 on BOTH research blocks):
+    vwap_dist keep lo (rule's own)
+
+  READ ONCE: vwap_dist keep lo
+    NQ    research    base  +24.0 on  70 | kept  +43.9 on  35 | p 0.091
+    NQ    locked      base  +62.8 on  34 | kept  +68.8 on  17 | p 0.377
+    US100 research    base  +10.8 on 176 | kept  +21.4 on  88 | p 0.030
+    US100 validation  base  +34.5 on  70 | kept  +41.3 on  35 | p 0.348
+    US100 test        base  +15.3 on  62 | kept  -15.6 on  31 | p 0.872
+
+  base rates on the rule's own signal bars (NQ research / US100 research):
+    beyond_prior_level: 74% / 74%
+    trend_daily: 47% / 53%
+====================================================================================================
+PART 1. THE MECHANISM WITHOUT THE INDICATOR
+====================================================================================================
+  OD(k): go with the sign of (close - 09:30 open) the first time it exceeds k ATR14 before the 10:50 fill, exit 16:00. k = 0 at a fixed bar is the published first-half-hour momentum.
+  p = share of 2,000 coin-flip-side draws on the same bars >= the rule (the direction null).
+
+NQ 10m
+  rule                              | resea    n    mean    PF      p | locke    n    mean    PF      p 
+  APM as specified                  | resea   70   +24.0  1.62  0.050 | locke   34   +62.8  4.12  0.000 
+  OD(k=0.5)                         | resea  480    +1.5  1.03  0.287 | locke  255   +21.9  1.32  0.065 
+  OD(k=1.0)                         | resea  475    -0.9  0.98  0.467 | locke  253   +14.3  1.20  0.142 
+  OD(k=1.5)                         | resea  453    +1.2  1.02  0.322 | locke  242   +24.5  1.41  0.038 
+  OD(k=2.0)                         | resea  406    +4.6  1.10  0.161 | locke  221   +11.4  1.17  0.205 
+  OD(k=2.5)                         | resea  332    +0.8  1.02  0.351 | locke  182    +7.4  1.12  0.247 
+  OD(k=3.0)                         | resea  247    +5.5  1.12  0.194 | locke  148    +9.8  1.17  0.234 
+  OD(k=3.5)                         | resea  191    +4.5  1.10  0.235 | locke  104    +2.9  1.05  0.399 
+  OD(k=4.0)                         | resea  148    -4.2  0.91  0.589 | locke   76   +21.9  1.48  0.105 
+  OD(k=5.0)                         | resea   68    -8.4  0.85  0.641 | locke   45   +27.1  1.73  0.070 
+  first 30 min sign, enter 10:00    | resea  479    +0.6  1.01  0.348 | locke  255    -0.3  1.00  0.457 
+  first 60 min sign, enter 10:30    | resea  480   +10.8  1.27  0.009 | locke  255    -2.3  0.97  0.503 
+  first 90 min sign, enter 11:00    | resea  480    +0.9  1.02  0.289 | locke  255   +16.0  1.30  0.098 
+  APM vs OD(3.0): same day AND side on 93 of APM's 104 trades; OD has 395
+
+US100 15m
+  rule                              | resea    n    mean    PF      p | valid    n    mean    PF      p | test     n    mean    PF      p 
+  APM as specified                  | resea  176   +10.8  1.53  0.018 | valid   70   +34.5  1.89  0.015 | test    62   +15.3  1.31  0.279 
+  OD(k=0.5)                         | resea 1095    -1.2  0.96  0.380 | valid  468    +4.1  1.06  0.222 | test   400   +11.2  1.19  0.096 
+  OD(k=1.0)                         | resea 1074    -2.1  0.93  0.522 | valid  462    +2.2  1.03  0.299 | test   391   +12.5  1.22  0.069 
+  OD(k=1.5)                         | resea  987    -1.4  0.95  0.420 | valid  428    +1.6  1.03  0.314 | test   351   +10.3  1.19  0.086 
+  OD(k=2.0)                         | resea  826    -0.9  0.97  0.356 | valid  359    +7.9  1.14  0.124 | test   299   +15.0  1.32  0.022 
+  OD(k=2.5)                         | resea  662    +1.2  1.04  0.155 | valid  280   +12.4  1.24  0.069 | test   245    +9.6  1.19  0.118 
+  OD(k=3.0)                         | resea  503    -1.0  0.97  0.407 | valid  216    +7.2  1.13  0.203 | test   188   +10.5  1.21  0.135 
+  OD(k=3.5)                         | resea  367    -0.9  0.97  0.393 | valid  155   +16.7  1.37  0.060 | test   144    -0.2  1.00  0.426 
+  OD(k=4.0)                         | resea  266    +3.0  1.13  0.141 | valid  119   +19.8  1.45  0.059 | test   104    -4.2  0.93  0.569 
+  OD(k=5.0)                         | resea  132    -0.9  0.97  0.441 | valid   36   +18.4  1.41  0.218 | test    51    -4.9  0.91  0.555 
+  first 30 min sign, enter 10:00    | resea 1096    +0.4  1.01  0.188 | valid  468    +3.4  1.05  0.249 | test   400    +1.5  1.02  0.377 
+  first 60 min sign, enter 10:30    | resea 1096    -2.9  0.90  0.651 | valid  468   +14.1  1.29  0.009 | test   400   +13.6  1.28  0.044 
+  first 90 min sign, enter 11:00    | resea 1096    -3.4  0.87  0.729 | valid  468    +8.8  1.19  0.051 | test   400    +2.9  1.06  0.303 
+  APM vs OD(3.0): same day AND side on 248 of APM's 308 trades; OD has 907
+
+US30 15m
+  rule                              | resea    n    mean    PF      p | valid    n    mean    PF      p | test     n    mean    PF      p 
+  APM as specified                  | resea  148    -7.9  0.88  0.559 | valid   68   +16.4  1.19  0.256 | test    51    +4.6  1.06  0.377 
+  OD(k=0.5)                         | resea    0                      | valid    0                      | test   153   +21.9  1.18  0.235 
+  OD(k=1.0)                         | resea    0                      | valid    0                      | test   148   +34.0  1.31  0.131 
+  OD(k=1.5)                         | resea    0                      | valid    0                      | test   128   +47.1  1.45  0.083 
+  OD(k=2.0)                         | resea    0                      | valid    0                      | test   106   +34.1  1.33  0.120 
+  OD(k=2.5)                         | resea    0                      | valid    0                      | test    77    +2.2  1.02  0.442 
+  OD(k=3.0)                         | resea    0                      | valid    0                      | test    62   -25.9  0.81  0.696 
+  OD(k=3.5)                         | resea    0                      | valid    0                      | test    46    -8.1  0.93  0.527 
+  OD(k=4.0)                         | resea    0                      | valid    0                      | test    33    -3.6  0.97  0.491 
+  OD(k=5.0)                         | resea    0                      | valid    0                      | test     9                      
+  first 30 min sign, enter 10:00    | resea    0                      | valid    0                      | test   153    +5.1  1.04  0.396 
+  first 60 min sign, enter 10:30    | resea    0                      | valid    0                      | test   153   +23.2  1.23  0.203 
+  first 90 min sign, enter 11:00    | resea    0                      | valid    0                      | test   153   +35.9  1.43  0.104 
+  APM vs OD(3.0): same day AND side on 17 of APM's 267 trades; OD has 62
+
+====================================================================================================
+PART 2. FEATURE ENGINEERING ON THE RULE'S TRADES
+====================================================================================================
+  Each feature is split at its RESEARCH median; 'high' keeps trades above it, 'low' below. p = share of 2,000 random subsets of the same size with a mean >= the kept trades (research).
+
+NQ 10m, research block, n 70, base mean +24.0
+       family            feature  median  n_hi  mean_hi   p_hi  n_lo  mean_lo   p_lo   corr
+    gap/drive            gap_atr  +2.502    34    +25.7 +0.441    35    +21.2 +0.547 +0.088
+    gap/drive          drive_atr  +3.921    35    +16.9 +0.676    35    +31.1 +0.307 -0.055
+    gap/drive          drive_eff  +0.606    35    +52.5 +0.033    35   -4.513 +0.971 +0.120
+       timing    bars_since_open  +1.000    32   +3.671 +0.888    38    +41.1 +0.111 -0.053
+   rule's own          vwap_dist  +1.690    35   +4.173 +0.907    35    +43.9 +0.091 -0.080
+   rule's own         osc_excess  +5.682    35    +43.9 +0.104    35   +4.087 +0.904 +0.178
+participation            rel_vol  +1.097    34    +33.3 +0.255    34    +12.1 +0.747 +0.047
+   volatility         atr_regime  +1.305    34    +28.4 +0.372    35    +18.6 +0.613 +0.013
+   volatility    prior_range_atr  +7.920    34    +42.1 +0.116    35   +5.380 +0.888 +0.034
+   volatility       on_range_atr  +230.0    35    +29.1 +0.379    35    +18.9 +0.618 +0.010
+    prior day      prior_day_ret  -0.586    34    +23.9 +0.486    35    +23.0 +0.496 -0.016
+    prior day beyond_prior_level  +1.000    52    +17.9 +0.764    18    +41.7 +0.243 -0.141
+    prior day   dist_prior_level  +2.846    34    +33.8 +0.246    35    +13.4 +0.748 +0.017
+    prior day           ibs_prev  -0.014    34    +20.1 +0.582    35    +26.7 +0.409 -0.020
+        trend           trend200  +5.867    35    +26.1 +0.451    35    +22.0 +0.536 +0.072
+        trend        trend_daily  +0.000    33   +9.030 +0.822    37    +37.4 +0.180 -0.117
+       candle         body_share  +0.624    35    +31.5 +0.320    35    +16.5 +0.667 +0.060
+
+US100 15m, research block, n 176, base mean +10.8
+       family            feature  median  n_hi  mean_hi   p_hi  n_lo  mean_lo   p_lo   corr
+    gap/drive            gap_atr  +2.470    87    +14.7 +0.248    88   +6.791 +0.750 +0.033
+    gap/drive          drive_atr  +4.044    88   +9.447 +0.585    88    +12.1 +0.425 -0.052
+    gap/drive          drive_eff  +0.642    88    +14.6 +0.260    88   +6.942 +0.736 +0.055
+       timing    bars_since_open  +1.000    84   -5.868 +0.997    92    +26.0 +0.002 -0.162
+   rule's own          vwap_dist  +1.558    88   +0.175 +0.961    88    +21.4 +0.038 -0.040
+   rule's own         osc_excess  +8.301    88    +27.6 +0.002    88   -6.015 +0.999 +0.169
+participation            rel_vol  +1.002    87    +18.1 +0.104    87   +3.429 +0.889 +0.091
+   volatility         atr_regime  +1.122    87    +15.4 +0.211    88   +6.088 +0.780 +0.041
+   volatility    prior_range_atr  +7.408    87    +20.7 +0.038    88   +0.926 +0.958 +0.061
+   volatility       on_range_atr  +5.578    88    +12.2 +0.405    88   +9.364 +0.591 -0.032
+    prior day      prior_day_ret  +0.372    87   +8.990 +0.613    88    +12.5 +0.374 -0.051
+    prior day beyond_prior_level  +1.000   131    +12.8 +0.280    45   +4.791 +0.734 +0.012
+    prior day   dist_prior_level  +2.753    87   +6.794 +0.744    88    +14.6 +0.260 -0.085
+    prior day           ibs_prev  +0.001    87    +12.1 +0.406    88   +9.428 +0.596 -0.072
+        trend           trend200  +5.802    88   +5.384 +0.815    88    +16.2 +0.186 -0.066
+        trend        trend_daily  +1.000    94   +2.761 +0.927    82    +19.9 +0.068 -0.077
+       candle         body_share  +0.656    88   +9.901 +0.560    88    +11.6 +0.450 +0.052
+
+  two-feed agreement (same half beats a random filter at p <= 0.10 on BOTH research blocks):
+    vwap_dist keep lo (rule's own)
+
+  READ ONCE: vwap_dist keep lo
+    NQ    research    base  +24.0 on  70 | kept  +43.9 on  35 | p 0.091
+    NQ    locked      base  +62.8 on  34 | kept  +68.8 on  17 | p 0.377
+    US100 research    base  +10.8 on 176 | kept  +21.4 on  88 | p 0.030
+    US100 validation  base  +34.5 on  70 | kept  +41.3 on  35 | p 0.348
+    US100 test        base  +15.3 on  62 | kept  -15.6 on  31 | p 0.872
+
+  base rates on the rule's own signal bars (NQ research / US100 research):
+    beyond_prior_level: 74% / 74%
+    trend_daily: 47% / 53%
+
+====================================================================================================
+PART 3. WHAT SEPARATES THE APM SELECTION FROM A PLAIN 3-ATR DRIVE
+====================================================================================================
+
+NQ 10m
+  APM as specified              | resea n   70  +24.0 PF 1.62 p 0.050 | locke n   34  +62.8 PF 4.12 p 0.000 
+  APM, raw phase (no EMA3)      | resea n  144   +9.3 PF 1.21 p 0.137 | locke n   78  +43.8 PF 1.89 p 0.016 
+  APM, VWAP band off            | resea n  101  +13.3 PF 1.30 p 0.133 | locke n   55  +32.9 PF 1.79 p 0.043 
+  APM, raw phase AND band off   | resea n  185   +0.3 PF 1.01 p 0.401 | locke n   99  +29.0 PF 1.52 p 0.060 
+  OD(3.0), no band              | resea n  247   +5.5 PF 1.12 p 0.194 | locke n  148   +9.8 PF 1.17 p 0.234 
+  OD(3.0) + VWAP band 2.5       | resea n  218   +7.8 PF 1.17 p 0.153 | locke n  131  +11.0 PF 1.19 p 0.207 
+  OD(3.0) + VWAP band 1.5       | resea n   67  +15.2 PF 1.31 p 0.189 | locke n   57   -8.3 PF 0.88 p 0.604 
+  OD(2.0) + VWAP band 2.5       | resea n  393   +6.3 PF 1.13 p 0.099 | locke n  213  +11.5 PF 1.17 p 0.207 
+
+US100 15m
+  APM as specified              | resea n  176  +10.8 PF 1.53 p 0.018 | valid n   70  +34.5 PF 1.89 p 0.015 | test  n   62  +15.3 PF 1.31 p 0.279 
+  APM, raw phase (no EMA3)      | resea n  352   +4.9 PF 1.19 p 0.054 | valid n  145   +5.6 PF 1.10 p 0.282 | test  n  105  +15.9 PF 1.30 p 0.142 
+  APM, VWAP band off            | resea n  226   +3.6 PF 1.14 p 0.163 | valid n   87  +26.6 PF 1.60 p 0.042 | test  n   83  +10.1 PF 1.20 p 0.317 
+  APM, raw phase AND band off   | resea n  422   +1.6 PF 1.06 p 0.191 | valid n  171  +10.2 PF 1.20 p 0.150 | test  n  144   +0.5 PF 1.01 p 0.434 
+  OD(3.0), no band              | resea n  503   -1.0 PF 0.97 p 0.407 | valid n  216   +7.2 PF 1.13 p 0.203 | test  n  188  +10.5 PF 1.21 p 0.135 
+  OD(3.0) + VWAP band 2.5       | resea n  446   +1.2 PF 1.04 p 0.206 | valid n  200   +6.3 PF 1.11 p 0.221 | test  n  165   +9.0 PF 1.18 p 0.173 
+  OD(3.0) + VWAP band 1.5       | resea n  215   +2.8 PF 1.10 p 0.224 | valid n  106  +12.7 PF 1.21 p 0.188 | test  n   75  +25.9 PF 1.50 p 0.072 
+  OD(2.0) + VWAP band 2.5       | resea n  792   -0.3 PF 0.99 p 0.276 | valid n  351   +8.6 PF 1.15 p 0.112 | test  n  287  +14.9 PF 1.33 p 0.026 

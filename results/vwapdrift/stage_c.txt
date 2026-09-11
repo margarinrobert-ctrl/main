@@ -1,0 +1,148 @@
+==============================================================================================================
+C. ANATOMY -- one condition at a time
+==============================================================================================================
+
+NQ 1m
+  as written                   | rese n   69 -0.35R PF 0.48 Sh -1.7 | lock n   43 +0.05R PF 1.69 Sh +0.9
+  efficiency-ratio filter OFF  | rese n  369 -0.18R PF 0.75 Sh -1.6 | lock n  202 -0.04R PF 1.10 Sh +0.4
+  VWAP-slope filter OFF        | rese n   70 -0.36R PF 0.48 Sh -1.7 | lock n   44 +0.10R PF 1.88 Sh +1.2
+  drift filter OFF             | rese n  112 -0.28R PF 0.54 Sh -1.7 | lock n   60 -0.05R PF 1.54 Sh +0.8
+  VWAP-touch requirement OFF   | rese n  596 -0.01R PF 1.08 Sh +0.6 | lock n  324 +0.09R PF 1.40 Sh +1.8
+  ALL four filters OFF         | rese n 1190 -0.07R PF 1.03 Sh +0.3 | lock n  649 -0.06R PF 1.07 Sh +0.6
+  direction INVERTED           | rese n   69 -0.18R PF 0.96 Sh -0.1 | lock n   44 -0.13R PF 0.58 Sh -0.8
+  ER floor 0.20                | rese n  156 -0.26R PF 0.57 Sh -2.0 | lock n   82 +0.05R PF 1.33 Sh +0.8
+  ER floor 0.40                | rese n   27 -0.58R PF 0.18 Sh -2.2 | lock n   12 -0.12R PF 2.44 Sh +0.8
+  ER floor 0.50                | rese n    9 -0.59R PF 0.10 Sh -1.5 | lock n    1 +0.91R PF 915280000000.00 Sh +1.0
+  drift 0.05%                  | rese n   75 -0.36R PF 0.49 Sh -1.7 | lock n   44 +0.03R PF 1.68 Sh +0.9
+  drift 0.20%                  | rese n   53 -0.19R PF 0.58 Sh -1.1 | lock n   32 +0.10R PF 1.86 Sh +1.0
+  drift 0.30%                  | rese n   31 -0.29R PF 0.59 Sh -0.9 | lock n   25 +0.28R PF 2.29 Sh +1.1
+  drift lookback 2             | rese n  112 -0.17R PF 0.81 Sh -0.6 | lock n   58 +0.03R PF 1.66 Sh +1.1
+  drift lookback 5             | rese n   42 -0.38R PF 0.48 Sh -1.3 | lock n   23 +0.07R PF 2.26 Sh +1.0
+  slope lookback 2             | rese n   54 -0.36R PF 0.49 Sh -1.5 | lock n   34 -0.00R PF 1.63 Sh +0.8
+  slope lookback 4             | rese n   18 -0.37R PF 0.52 Sh -0.8 | lock n   18 -0.05R PF 1.80 Sh +0.7
+  target 1R                    | rese n   69 -0.28R PF 0.57 Sh -1.4 | lock n   44 +0.04R PF 1.97 Sh +1.1
+  target 1.5R                  | rese n   69 -0.31R PF 0.53 Sh -1.5 | lock n   43 -0.04R PF 1.54 Sh +0.7
+  target 3R                    | rese n   69 -0.33R PF 0.49 Sh -1.7 | lock n   43 -0.04R PF 1.64 Sh +0.9
+  target 4R                    | rese n   69 -0.41R PF 0.42 Sh -2.0 | lock n   43 -0.16R PF 1.42 Sh +0.6
+  stop 1.5x the bucket extreme | rese n   67 -0.25R PF 0.48 Sh -1.7 | lock n   41 -0.10R PF 1.41 Sh +0.7
+  stop 2.0x the bucket extreme | rese n   66 -0.31R PF 0.38 Sh -2.1 | lock n   41 -0.01R PF 1.58 Sh +0.8
+  no daily cap                 | rese n   69 -0.35R PF 0.48 Sh -1.7 | lock n   43 +0.05R PF 1.69 Sh +0.9
+  window to 15:00              | rese n   83 -0.28R PF 0.52 Sh -1.6 | lock n   54 -0.02R PF 1.39 Sh +0.7
+  zero cost                    | rese n   69 -0.30R PF 0.52 Sh -1.5 | lock n   43 +0.10R PF 1.76 Sh +1.0
+  2x cost                      | rese n   69 -0.39R PF 0.45 Sh -1.8 | lock n   43 +0.01R PF 1.63 Sh +0.9
+
+NQ 15m
+  as written                   | rese n  425 -0.04R PF 0.87 Sh -0.8 | lock n  226 -0.03R PF 0.93 Sh -0.4
+  efficiency-ratio filter OFF  | rese n  426 -0.04R PF 0.88 Sh -0.8 | lock n  226 -0.03R PF 0.93 Sh -0.4
+  VWAP-slope filter OFF        | rese n  425 -0.04R PF 0.87 Sh -0.8 | lock n  226 -0.03R PF 0.93 Sh -0.4
+  drift filter OFF             | rese n  687 -0.08R PF 0.96 Sh -0.3 | lock n  359 -0.09R PF 0.84 Sh -1.2
+  VWAP-touch requirement OFF   | rese n 1075 -0.00R PF 1.08 Sh +0.7 | lock n  566 -0.05R PF 1.03 Sh +0.2
+  ALL four filters OFF         | rese n 1210 -0.03R PF 1.14 Sh +1.2 | lock n  642 -0.06R PF 1.03 Sh +0.2
+  direction INVERTED           | rese n  448 -0.24R PF 0.82 Sh -1.0 | lock n  248 -0.16R PF 0.77 Sh -1.4
+  ER floor 0.20                | rese n  426 -0.04R PF 0.88 Sh -0.8 | lock n  226 -0.03R PF 0.93 Sh -0.4
+  ER floor 0.40                | rese n  419 -0.04R PF 0.87 Sh -0.8 | lock n  222 -0.02R PF 0.94 Sh -0.3
+  ER floor 0.50                | rese n  396 -0.03R PF 0.88 Sh -0.7 | lock n  208 -0.04R PF 0.90 Sh -0.6
+  drift 0.05%                  | rese n  502 -0.08R PF 0.88 Sh -0.8 | lock n  267 -0.04R PF 0.95 Sh -0.3
+  drift 0.20%                  | rese n  266 +0.04R PF 0.96 Sh -0.2 | lock n  149 -0.07R PF 0.92 Sh -0.4
+  drift 0.30%                  | rese n  138 +0.07R PF 1.02 Sh +0.1 | lock n   96 +0.06R PF 1.30 Sh +0.9
+  drift lookback 2             | rese n  520 +0.03R PF 1.07 Sh +0.4 | lock n  276 -0.08R PF 0.77 Sh -1.4
+  drift lookback 5             | rese n  323 -0.07R PF 0.90 Sh -0.5 | lock n  165 -0.09R PF 0.81 Sh -1.0
+  slope lookback 2             | rese n  425 -0.04R PF 0.87 Sh -0.8 | lock n  226 -0.03R PF 0.93 Sh -0.4
+  slope lookback 4             | rese n  223 +0.04R PF 0.97 Sh -0.2 | lock n  126 -0.23R PF 0.66 Sh -1.7
+  target 1R                    | rese n  436 -0.13R PF 0.79 Sh -1.5 | lock n  236 -0.11R PF 0.81 Sh -1.3
+  target 1.5R                  | rese n  427 -0.11R PF 0.80 Sh -1.4 | lock n  231 -0.03R PF 0.92 Sh -0.5
+  target 3R                    | rese n  419 +0.03R PF 0.95 Sh -0.3 | lock n  224 +0.09R PF 1.04 Sh +0.2
+  target 4R                    | rese n  417 +0.12R PF 1.01 Sh +0.1 | lock n  221 +0.05R PF 0.94 Sh -0.4
+  stop 1.5x the bucket extreme | rese n  388 +0.02R PF 0.98 Sh -0.1 | lock n  207 +0.07R PF 0.95 Sh -0.3
+  stop 2.0x the bucket extreme | rese n  364 +0.03R PF 1.00 Sh -0.0 | lock n  190 +0.02R PF 0.92 Sh -0.4
+  no daily cap                 | rese n  440 -0.01R PF 0.91 Sh -0.6 | lock n  243 -0.03R PF 1.01 Sh +0.0
+  window to 15:00              | rese n  479 -0.03R PF 0.85 Sh -1.0 | lock n  248 -0.02R PF 0.93 Sh -0.4
+  zero cost                    | rese n  425 +0.04R PF 0.94 Sh -0.4 | lock n  226 +0.01R PF 0.98 Sh -0.1
+  2x cost                      | rese n  425 -0.11R PF 0.81 Sh -1.3 | lock n  226 -0.07R PF 0.89 Sh -0.7
+
+US100 15m
+  as written                   | rese n 1178 -0.01R PF 1.06 Sh +0.3 | vali n  538 -0.02R PF 0.99 Sh -0.1 | test n  438 +0.02R PF 0.96 Sh -0.3
+  efficiency-ratio filter OFF  | rese n 1186 -0.01R PF 1.06 Sh +0.3 | vali n  541 -0.02R PF 0.99 Sh -0.1 | test n  440 +0.03R PF 0.97 Sh -0.2
+  VWAP-slope filter OFF        | rese n 1179 -0.01R PF 1.06 Sh +0.3 | vali n  538 -0.02R PF 0.99 Sh -0.1 | test n  438 +0.02R PF 0.96 Sh -0.3
+  drift filter OFF             | rese n 1828 -0.08R PF 1.01 Sh +0.1 | vali n  747 -0.01R PF 1.03 Sh +0.2 | test n  657 -0.06R PF 0.89 Sh -0.8
+  VWAP-touch requirement OFF   | rese n 2852 -0.08R PF 0.98 Sh -0.2 | vali n 1153 -0.01R PF 1.11 Sh +0.9 | test n  980 +0.01R PF 1.04 Sh +0.4
+  ALL four filters OFF         | rese n 3270 -0.12R PF 0.99 Sh -0.1 | vali n 1245 -0.02R PF 1.07 Sh +0.7 | test n 1092 -0.03R PF 1.04 Sh +0.4
+  direction INVERTED           | rese n 1235 -0.43R PF 0.84 Sh -0.8 | vali n  587 -0.22R PF 0.93 Sh -0.4 | test n  464 -0.30R PF 0.82 Sh -1.1
+  ER floor 0.20                | rese n 1186 -0.01R PF 1.06 Sh +0.3 | vali n  539 -0.02R PF 0.98 Sh -0.1 | test n  440 +0.03R PF 0.97 Sh -0.2
+  ER floor 0.40                | rese n 1159 -0.02R PF 1.05 Sh +0.3 | vali n  529 -0.03R PF 0.97 Sh -0.2 | test n  430 +0.01R PF 0.94 Sh -0.3
+  ER floor 0.50                | rese n 1108 -0.02R PF 1.05 Sh +0.3 | vali n  501 -0.03R PF 1.00 Sh -0.0 | test n  412 +0.01R PF 1.02 Sh +0.1
+  drift 0.05%                  | rese n 1387 -0.03R PF 1.05 Sh +0.3 | vali n  583 -0.01R PF 1.00 Sh -0.0 | test n  501 +0.01R PF 0.94 Sh -0.4
+  drift 0.20%                  | rese n  752 +0.04R PF 1.07 Sh +0.3 | vali n  424 -0.04R PF 0.99 Sh -0.0 | test n  287 +0.13R PF 1.16 Sh +0.7
+  drift 0.30%                  | rese n  468 +0.05R PF 1.06 Sh +0.2 | vali n  296 -0.05R PF 0.91 Sh -0.5 | test n  160 +0.03R PF 1.07 Sh +0.2
+  drift lookback 2             | rese n 1408 +0.02R PF 1.15 Sh +0.8 | vali n  643 -0.05R PF 0.97 Sh -0.2 | test n  505 -0.04R PF 0.85 Sh -1.0
+  drift lookback 5             | rese n  832 -0.08R PF 1.07 Sh +0.3 | vali n  419 -0.03R PF 0.96 Sh -0.2 | test n  332 -0.04R PF 0.90 Sh -0.6
+  slope lookback 2             | rese n 1178 -0.01R PF 1.06 Sh +0.3 | vali n  538 -0.02R PF 0.99 Sh -0.1 | test n  438 +0.02R PF 0.96 Sh -0.3
+  slope lookback 4             | rese n  608 -0.02R PF 1.07 Sh +0.3 | vali n  309 -0.00R PF 0.97 Sh -0.1 | test n  242 +0.09R PF 1.00 Sh +0.0
+  target 1R                    | rese n 1219 -0.13R PF 0.91 Sh -0.5 | vali n  558 -0.15R PF 0.81 Sh -1.4 | test n  456 -0.07R PF 0.91 Sh -0.6
+  target 1.5R                  | rese n 1198 -0.05R PF 1.02 Sh +0.1 | vali n  543 -0.06R PF 0.94 Sh -0.4 | test n  446 +0.01R PF 0.98 Sh -0.1
+  target 3R                    | rese n 1156 +0.05R PF 1.13 Sh +0.6 | vali n  527 -0.04R PF 0.95 Sh -0.3 | test n  432 +0.09R PF 1.00 Sh -0.0
+  target 4R                    | rese n 1143 +0.05R PF 1.09 Sh +0.4 | vali n  521 +0.01R PF 0.97 Sh -0.2 | test n  429 +0.15R PF 1.07 Sh +0.4
+  stop 1.5x the bucket extreme | rese n 1083 +0.00R PF 1.06 Sh +0.3 | vali n  487 -0.05R PF 0.93 Sh -0.5 | test n  407 +0.09R PF 1.05 Sh +0.3
+  stop 2.0x the bucket extreme | rese n 1007 -0.05R PF 0.91 Sh -0.4 | vali n  446 +0.04R PF 1.10 Sh +0.5 | test n  376 +0.09R PF 1.07 Sh +0.4
+  no daily cap                 | rese n 1221 -0.00R PF 1.08 Sh +0.5 | vali n  570 -0.00R PF 1.00 Sh +0.0 | test n  458 +0.01R PF 1.02 Sh +0.1
+  window to 15:00              | rese n 1288 -0.02R PF 1.07 Sh +0.4 | vali n  591 -0.03R PF 1.02 Sh +0.1 | test n  474 -0.01R PF 0.90 Sh -0.6
+  zero cost                    | rese n 1178 +0.12R PF 1.17 Sh +0.9 | vali n  538 +0.04R PF 1.05 Sh +0.3 | test n  438 +0.08R PF 1.01 Sh +0.1
+  2x cost                      | rese n 1178 -0.12R PF 0.95 Sh -0.3 | vali n  538 -0.08R PF 0.93 Sh -0.5 | test n  438 -0.03R PF 0.91 Sh -0.6
+
+US30 15m
+  as written                   | rese n  973 -0.07R PF 0.88 Sh -0.7 | vali n  445 -0.08R PF 0.90 Sh -0.6 | test n  324 +0.14R PF 1.29 Sh +1.4
+  efficiency-ratio filter OFF  | rese n  977 -0.07R PF 0.89 Sh -0.6 | vali n  448 -0.08R PF 0.90 Sh -0.6 | test n  327 +0.14R PF 1.29 Sh +1.4
+  VWAP-slope filter OFF        | rese n  973 -0.07R PF 0.88 Sh -0.7 | vali n  445 -0.08R PF 0.90 Sh -0.6 | test n  324 +0.14R PF 1.29 Sh +1.4
+  drift filter OFF             | rese n 1889 -0.13R PF 0.91 Sh -0.6 | vali n  742 -0.08R PF 0.93 Sh -0.5 | test n  573 +0.01R PF 1.02 Sh +0.1
+  VWAP-touch requirement OFF   | rese n 2613 -0.10R PF 0.92 Sh -0.6 | vali n 1124 -0.07R PF 0.96 Sh -0.4 | test n  861 +0.09R PF 1.21 Sh +1.7
+  ALL four filters OFF         | rese n 3296 -0.16R PF 0.93 Sh -0.6 | vali n 1279 -0.09R PF 0.97 Sh -0.3 | test n  980 +0.01R PF 1.05 Sh +0.4
+  direction INVERTED           | rese n 1003 -0.33R PF 0.87 Sh -0.6 | vali n  451 -0.25R PF 0.92 Sh -0.4 | test n  339 -0.32R PF 0.77 Sh -1.1
+  ER floor 0.20                | rese n  975 -0.07R PF 0.88 Sh -0.6 | vali n  448 -0.08R PF 0.90 Sh -0.6 | test n  325 +0.15R PF 1.30 Sh +1.5
+  ER floor 0.40                | rese n  959 -0.07R PF 0.88 Sh -0.6 | vali n  438 -0.08R PF 0.89 Sh -0.6 | test n  316 +0.14R PF 1.31 Sh +1.5
+  ER floor 0.50                | rese n  910 -0.09R PF 0.85 Sh -0.8 | vali n  411 -0.09R PF 0.86 Sh -0.9 | test n  296 +0.15R PF 1.34 Sh +1.4
+  drift 0.05%                  | rese n 1312 -0.10R PF 0.90 Sh -0.6 | vali n  528 -0.08R PF 0.92 Sh -0.5 | test n  411 +0.15R PF 1.28 Sh +1.5
+  drift 0.20%                  | rese n  517 -0.06R PF 0.90 Sh -0.4 | vali n  264 -0.09R PF 0.92 Sh -0.4 | test n  151 +0.25R PF 1.51 Sh +1.7
+  drift 0.30%                  | rese n  292 +0.03R PF 0.97 Sh -0.1 | vali n  140 -0.02R PF 1.01 Sh +0.0 | test n   63 +0.10R PF 1.36 Sh +0.8
+  drift lookback 2             | rese n 1162 -0.05R PF 0.91 Sh -0.5 | vali n  494 +0.04R PF 1.05 Sh +0.3 | test n  402 -0.02R PF 0.84 Sh -0.9
+  drift lookback 5             | rese n  741 -0.07R PF 1.02 Sh +0.1 | vali n  337 -0.05R PF 0.99 Sh -0.1 | test n  253 +0.09R PF 1.17 Sh +0.7
+  slope lookback 2             | rese n  973 -0.07R PF 0.88 Sh -0.7 | vali n  445 -0.08R PF 0.90 Sh -0.6 | test n  324 +0.14R PF 1.29 Sh +1.4
+  slope lookback 4             | rese n  494 -0.05R PF 0.96 Sh -0.1 | vali n  225 -0.01R PF 1.02 Sh +0.1 | test n  170 +0.20R PF 1.39 Sh +1.4
+  target 1R                    | rese n 1026 -0.12R PF 0.84 Sh -0.9 | vali n  460 -0.15R PF 0.77 Sh -1.6 | test n  333 -0.05R PF 1.05 Sh +0.3
+  target 1.5R                  | rese n  993 -0.09R PF 0.85 Sh -0.8 | vali n  451 -0.12R PF 0.87 Sh -0.8 | test n  328 +0.06R PF 1.23 Sh +1.2
+  target 3R                    | rese n  950 -0.01R PF 0.92 Sh -0.4 | vali n  432 -0.07R PF 0.82 Sh -1.1 | test n  317 +0.17R PF 1.25 Sh +1.1
+  target 4R                    | rese n  932 +0.02R PF 0.91 Sh -0.4 | vali n  424 -0.07R PF 0.80 Sh -1.2 | test n  316 +0.21R PF 1.30 Sh +1.3
+  stop 1.5x the bucket extreme | rese n  857 -0.00R PF 0.90 Sh -0.5 | vali n  395 -0.06R PF 0.84 Sh -0.9 | test n  301 +0.05R PF 1.06 Sh +0.3
+  stop 2.0x the bucket extreme | rese n  784 +0.00R PF 0.95 Sh -0.2 | vali n  350 -0.03R PF 0.83 Sh -1.0 | test n  270 +0.12R PF 1.24 Sh +1.1
+  no daily cap                 | rese n 1003 -0.06R PF 0.90 Sh -0.5 | vali n  468 -0.07R PF 0.92 Sh -0.5 | test n  332 +0.12R PF 1.27 Sh +1.3
+  window to 15:00              | rese n 1087 -0.06R PF 0.93 Sh -0.4 | vali n  501 -0.10R PF 0.89 Sh -0.7 | test n  357 +0.10R PF 1.16 Sh +0.9
+  zero cost                    | rese n  973 +0.03R PF 0.96 Sh -0.2 | vali n  445 -0.01R PF 0.97 Sh -0.2 | test n  324 +0.22R PF 1.38 Sh +1.8
+  2x cost                      | rese n  973 -0.16R PF 0.81 Sh -1.1 | vali n  445 -0.14R PF 0.84 Sh -1.0 | test n  324 +0.08R PF 1.21 Sh +1.1
+
+US30_ISO 15m
+  as written                   | rese n  323 +0.16R PF 1.44 Sh +2.2 | lock n  146 +0.02R PF 0.81 Sh -1.3
+  efficiency-ratio filter OFF  | rese n  324 +0.17R PF 1.45 Sh +2.3 | lock n  148 +0.01R PF 0.80 Sh -1.5
+  VWAP-slope filter OFF        | rese n  323 +0.16R PF 1.44 Sh +2.2 | lock n  146 +0.02R PF 0.81 Sh -1.3
+  drift filter OFF             | rese n  515 +0.04R PF 1.06 Sh +0.4 | lock n  246 -0.03R PF 0.86 Sh -1.2
+  VWAP-touch requirement OFF   | rese n  761 +0.09R PF 1.23 Sh +1.8 | lock n  359 -0.11R PF 0.79 Sh -2.2
+  ALL four filters OFF         | rese n  869 -0.02R PF 1.03 Sh +0.3 | lock n  411 -0.09R PF 0.87 Sh -1.3
+  direction INVERTED           | rese n  328 -0.38R PF 0.66 Sh -1.8 | lock n  151 -0.38R PF 0.77 Sh -1.3
+  ER floor 0.20                | rese n  324 +0.17R PF 1.45 Sh +2.3 | lock n  147 +0.01R PF 0.81 Sh -1.4
+  ER floor 0.40                | rese n  313 +0.16R PF 1.42 Sh +2.1 | lock n  146 +0.02R PF 0.81 Sh -1.3
+  ER floor 0.50                | rese n  295 +0.17R PF 1.47 Sh +2.1 | lock n  140 +0.05R PF 0.86 Sh -1.0
+  drift 0.05%                  | rese n  385 +0.12R PF 1.37 Sh +2.0 | lock n  181 -0.04R PF 0.83 Sh -1.3
+  drift 0.20%                  | rese n  161 +0.23R PF 1.60 Sh +2.0 | lock n   90 -0.03R PF 0.80 Sh -1.1
+  drift 0.30%                  | rese n   71 +0.05R PF 1.39 Sh +1.0 | lock n   48 -0.11R PF 0.76 Sh -1.1
+  drift lookback 2             | rese n  393 +0.07R PF 1.03 Sh +0.2 | lock n  181 -0.01R PF 0.84 Sh -1.3
+  drift lookback 5             | rese n  248 +0.18R PF 1.37 Sh +1.5 | lock n  115 -0.11R PF 0.78 Sh -1.2
+  slope lookback 2             | rese n  323 +0.16R PF 1.44 Sh +2.2 | lock n  146 +0.02R PF 0.81 Sh -1.3
+  slope lookback 4             | rese n  153 +0.27R PF 1.79 Sh +2.4 | lock n   68 +0.06R PF 1.02 Sh +0.1
+  target 1R                    | rese n  330 -0.01R PF 1.19 Sh +1.2 | lock n  148 +0.00R PF 0.88 Sh -0.8
+  target 1.5R                  | rese n  327 +0.09R PF 1.37 Sh +2.1 | lock n  146 +0.01R PF 0.82 Sh -1.3
+  target 3R                    | rese n  317 +0.15R PF 1.35 Sh +1.6 | lock n  144 -0.02R PF 0.81 Sh -1.3
+  target 4R                    | rese n  314 +0.18R PF 1.41 Sh +1.8 | lock n  141 +0.06R PF 0.82 Sh -1.1
+  stop 1.5x the bucket extreme | rese n  295 +0.14R PF 1.33 Sh +1.6 | lock n  134 +0.05R PF 0.88 Sh -0.8
+  stop 2.0x the bucket extreme | rese n  269 +0.09R PF 1.29 Sh +1.3 | lock n  125 +0.00R PF 0.78 Sh -1.5
+  no daily cap                 | rese n  332 +0.15R PF 1.42 Sh +2.1 | lock n  146 +0.02R PF 0.81 Sh -1.3
+  window to 15:00              | rese n  353 +0.15R PF 1.36 Sh +2.0 | lock n  158 +0.03R PF 0.80 Sh -1.5
+  zero cost                    | rese n  323 +0.23R PF 1.53 Sh +2.6 | lock n  146 +0.07R PF 0.86 Sh -1.0
+  2x cost                      | rese n  323 +0.11R PF 1.36 Sh +1.9 | lock n  146 -0.03R PF 0.77 Sh -1.7

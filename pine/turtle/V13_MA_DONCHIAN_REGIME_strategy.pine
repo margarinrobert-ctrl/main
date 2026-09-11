@@ -1,0 +1,233 @@
+//@version=5
+// V13 -- Donchian 30/20 breakout, gated by a THREE-READING REGIME FILTER and two MA-cross states.
+//
+// ============================ WHAT WAS BUILT AND WHAT SURVIVED ============================
+// 36 engineered features, 180 information-coefficient tests, 18 single-indicator rule tests and
+// 22 combinations -- every one scored against a matched control on nine years of US100, then read
+// once on four independent blocks. What survived is ONE LONG configuration. The short side did not.
+//
+//   ENTRY   Donchian 30-bar high breakout
+//   REGIME  ADX(14) >= 25  AND  efficiency ratio(20) >= 0.30  AND  Choppiness(14) <= 55
+//   TREND   EMA13 > EMA48  AND  EMA12 > EMA100          (both pairs from the brief, both agreeing)
+//   STOP    2.0 x ATR(20), or the 20-bar Donchian low, whichever is NEARER
+//   EXIT    that stop only. ONE unit. NO take profit.
+//
+//                              n     PF   pts/trade  Sharpe    DD    p vs matched control
+//   US100 9yr research       911    1.24    +3.87     1.14     859        0.064
+//   US100 9yr LOCKED         481    1.46   +12.62     2.15     889        0.002
+//   US100 ISO (2nd provider) 300    1.27   +11.03     1.29    1861        0.108
+//   US30  ISO                334    1.26   +13.88     1.18    2317        0.044
+//   XAU   2004-2026        3,059    1.14    +0.30     0.64     256        0.036
+//
+// **Positive on all five blocks, across three asset classes and twenty-two years.** Walk-forward
+// over nine one-year folds: 8/9 positive, median PF 1.35, worst 0.88. Bootstrap of the mean
+// P(mean <= 0) = **0.0001**. A 10% random trade omission leaves profit factor p5 at 1.28.
+//
+// PERTURBATION IS A RIDGE, and the flattest part of it is the part the brief specified:
+//   stop 1.5N/2.5N/3.0N -> 1.39 / 1.29 / 1.23      Donchian 25/35 -> 1.34 / 1.35
+//   exit channel 15/25  -> 1.32 / 1.35             MA 12/48, 15/48 -> 1.35 / 1.35
+//   MA 12/90, 12/110    -> 1.32 / 1.32
+// **The MA LENGTHS BARELY MATTER.** 13/48 and 12/100 are not special; 12/48, 15/48, 12/90 and
+// 12/110 all land within 0.03 of the same profit factor. What matters is that the two pairs
+// AGREE, and that the regime filter is on. Treat the exact numbers as a preference, not an edge.
+//
+// ============================== THE SHORT SIDE: NOT SUPPORTED ==============================
+// The brief asks for both directions. The honest finding is that the short side does not exist here.
+//   * AS SPECIFIED (short a down-breakout when the MAs point DOWN) it LOSES on every block:
+//     research PF 0.92, and every short combination scored worse than a coin (p 0.65 to 0.96).
+//   * INVERTED (short a down-breakout when the MAs point UP -- fading a flush in an uptrend) it
+//     looked significant on three equity blocks, p 0.003 / 0.030 / 0.026. It is not real:
+//       - walk-forward is 4/9 folds, median PF 0.99, and ONE fold carries the whole thing
+//         (2021-10 to 2022-10, PF 2.19, +33.80 points a trade -- the 2022 bear market)
+//       - bootstrap P(mean <= 0) = 0.099, which does not clear 5%
+//       - on XAU it scores PF 0.77 with p 1.000
+//     A rule whose edge is one bear market is a bet on the next one, not an edge.
+// The short leg is provided below, OFF by default. Turning it on is a directional opinion.
+//
+// ================================ WHY THE MA CROSS, HONESTLY ================================
+// The information-coefficient work says the MA features carry real but tiny signal, and at the
+// SCALPING horizon it points the WRONG WAY. 22 of 180 tests survive Benjamini-Hochberg, the largest
+// |IC| anywhere is 0.0305, and every price-versus-MA feature is MEAN-REVERTING at h=1.
+// The arithmetic that follows is the reason this is not a one-bar scalper:
+//   at h=1  an IC of 0.03 is worth 0.39 points against a 1.22-point round turn -- 0.32x, it cannot pay
+//   at h=4                          0.81 points -- 0.67x, still cannot pay
+//   at h=16                         1.79 points -- 1.48x, it pays
+// So the MA pair is used as a STATE FILTER on a swing-length breakout, not as a cross-to-enter
+// scalp signal. Median hold here is measured in hours, not bars. A 15-minute one-bar scalp on
+// these indicators is arithmetically dead before any rule is written.
+// ==========================================================================================
+
+strategy("V13 MA + Donchian + Regime (15m)", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Bar detalization   High, with Deep Backtesting.   Order execution delay  One tick.
+//   Commission         cash per order, per side, your broker's real number.
+//   Slippage           2 ticks. A stop fills INTO the move that triggered it.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+//   Research charged 3.7% of the 2N stop a round turn on EVERY market -- a cost is a FRACTION OF
+//   RISK, not a number of points (1.72 points is 3.7% of NQ's 2N stop and 54.2% of gold's).
+// ======================================================================
+
+gE       = "Entry -- Donchian, fixed by the brief"
+donE     = input.int(30, "Donchian entry length", minval = 2, group = gE)
+donX     = input.int(20, "Donchian exit length",  minval = 2, group = gE)
+useShort = input.bool(false, "Enable the SHORT leg", group = gE,
+     tooltip = "OFF for a reason. As specified the short side loses on every block; inverted it is carried entirely by the 2022 bear market and fails on gold. See the header.")
+
+gM       = "Trend -- the two MA pairs from the brief"
+fast1    = input.int(13,  "Pair 1 fast EMA", minval = 2, group = gM)
+slow1    = input.int(48,  "Pair 1 slow EMA", minval = 3, group = gM)
+fast2    = input.int(12,  "Pair 2 fast EMA", minval = 2, group = gM)
+slow2    = input.int(100, "Pair 2 slow EMA", minval = 3, group = gM,
+     tooltip = "The lengths barely matter: 12/48, 15/48, 12/90 and 12/110 all land within 0.03 profit factor of 13/48 and 12/100. What matters is that BOTH pairs agree.")
+needBoth = input.bool(true, "Require BOTH pairs to agree", group = gM)
+
+gR       = "Regime -- three independent readings of the same idea"
+adxMin   = input.float(25, "ADX(14) floor",            minval = 0, step = 1,   group = gR)
+erMin    = input.float(0.30,"Efficiency ratio(20) floor", minval = 0, step = 0.05, group = gR)
+chopMax  = input.float(55, "Choppiness(14) ceiling",   minval = 0, step = 1,   group = gR,
+     tooltip = "Requiring all three is what makes this a REGIME rather than a filter. Each alone is worthless: ADX>=25 as a standalone trigger scored p 0.994, Choppiness p 0.990.")
+
+gX       = "Exit -- one unit, nearer of the ATR stop and the channel"
+atrLen   = input.int(20,  "ATR length", minval = 2, group = gX)
+atrMult  = input.float(2.0,"ATR stop multiple", minval = 0.1, step = 0.1, group = gX)
+useTp    = input.bool(false,"Use a take profit", group = gX,
+     tooltip = "OFF is a result. No target beat having none, on this branch, four independent times.")
+tpR      = input.float(3.0,"  target, in R", minval = 0.1, step = 0.1, group = gX)
+qty      = input.int(1,   "Contracts", minval = 1, group = gX)
+
+gS       = "Session window (off by default -- every window tested lost money)"
+sessOn   = input.bool(false, "Restrict entries to a window and flatten", group = gS)
+startHH  = input.int(8,  "Window start -- hour (New York)", minval = 0, maxval = 23, group = gS)
+startMM  = input.int(0,  "Window start -- minute",          minval = 0, maxval = 59, group = gS)
+flatHH   = input.int(20, "Flatten -- hour (New York)",      minval = 0, maxval = 23, group = gS)
+flatMM   = input.int(0,  "Flatten -- minute",               minval = 0, maxval = 59, group = gS)
+
+// ----------------------------------------------------------------- series
+// ta.atr IS Wilder's RMA of true range, which is what the research layer computes. ema(TR, n) is a
+// DIFFERENT series used elsewhere on this branch; swapping them silently moves every level.
+atrN   = ta.atr(atrLen)
+donHi  = ta.highest(high, donE)[1]   // EXCLUDES the current bar, or a break is impossible
+donLo  = ta.lowest(low,  donE)[1]
+exHi   = ta.highest(high, donX)[1]
+exLo   = ta.lowest(low,  donX)[1]
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER -- the first element is +DI, not ADX.
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)
+
+// Efficiency ratio: net travel over total travel. Near 1 = a clean move, near 0 = churn.
+netMove = math.abs(close - close[20])
+totMove = math.sum(math.abs(close - close[1]), 20)
+effRat  = totMove > 0 ? netMove / totMove : na
+
+// Choppiness index. High = ranging, low = trending.
+sumTr   = math.sum(ta.tr(true), 14)
+rng14   = ta.highest(high, 14) - ta.lowest(low, 14)
+chop14  = rng14 > 0 and sumTr > 0 ? 100 * math.log10(sumTr / rng14) / math.log10(14) : na
+
+emaF1 = ta.ema(close, fast1)
+emaS1 = ta.ema(close, slow1)
+emaF2 = ta.ema(close, fast2)
+emaS2 = ta.ema(close, slow2)
+upPair1 = emaF1 > emaS1
+upPair2 = emaF2 > emaS2
+trendUp = needBoth ? (upPair1 and upPair2) : (upPair1 or upPair2)
+trendDn = needBoth ? (not upPair1 and not upPair2) : (not upPair1 or not upPair2)
+
+// BARE `hour` AND `minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME. Read New York explicitly.
+modNY  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+startM = startHH * 60 + startMM
+flatM  = flatHH * 60 + flatMM
+barMin = timeframe.in_seconds(timeframe.period) / 60
+inWin  = not sessOn or (modNY >= startM and modNY < flatM - barMin)
+atFlat = sessOn and modNY >= flatM
+
+okAdx    = adxMin  <= 0 or (not na(adxVal) and adxVal >= adxMin)
+okEff    = erMin   <= 0 or (not na(effRat) and effRat >= erMin)
+okChop   = chopMax <= 0 or (not na(chop14) and chop14 <= chopMax)
+regimeOk = okAdx and okEff and okChop
+ready  = not na(atrN) and atrN > 0 and not na(donHi) and not na(donLo)
+gateOk = ready and regimeOk and inWin
+
+// ----------------------------------------------------------------- state
+var float sigAtr  = na       // ATR FROZEN AT THE SIGNAL BAR; the stop reads this all trade
+var float entryPx = na
+var int   sideOn  = 0
+var int   lastCnt = 0
+var int   exitBar = -1
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL. Guarding part of a coupled set
+// desynchronises it rather than partly fixing it -- see docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    exitBar := bar_index
+    sigAtr  := na
+    entryPx := na
+    sideOn  := 0
+    lastCnt := 0
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    entryPx := strategy.opentrades.entry_price(strategy.opentrades - 1)
+    lastCnt := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ----------------------------------------------------------------- entry
+// The bracket rides with the entry so the ENTRY BAR is covered. Where `stop` and `loss` are both
+// given Pine takes the SMALLER LOSS -- for a long the HIGHER level, for a short the LOWER -- which
+// is exactly the engine's "nearer of the ATR stop and the channel", reproduced not approximated.
+lossTk = int(math.max(1, math.round(atrMult * atrN / syminfo.mintick)))
+tpTk   = useTp ? int(math.max(1, math.round(tpR * atrMult * atrN / syminfo.mintick))) : na
+
+if barstate.isconfirmed and flat and gateOk and bar_index > exitBar
+    if trendUp and high > donHi
+        sigAtr := atrN
+        sideOn := 1
+        strategy.entry("L", strategy.long, qty = qty)
+        strategy.exit("x0", from_entry = "L", stop = exLo, loss = lossTk, profit = tpTk)
+    else if useShort and trendDn and low < donLo
+        sigAtr := atrN
+        sideOn := -1
+        strategy.entry("S", strategy.short, qty = qty)
+        strategy.exit("x0", from_entry = "S", stop = exHi, loss = lossTk, profit = tpTk)
+
+// ----------------------------------------------------------------- exit
+atrStopL = na(entryPx) or na(sigAtr) ? na : entryPx - atrMult * sigAtr
+atrStopS = na(entryPx) or na(sigAtr) ? na : entryPx + atrMult * sigAtr
+exitL    = na(atrStopL) ? exLo : (na(exLo) ? atrStopL : math.max(atrStopL, exLo))
+exitS    = na(atrStopS) ? exHi : (na(exHi) ? atrStopS : math.min(atrStopS, exHi))
+exitLvl  = sideOn > 0 ? exitL : exitS
+tpLvl    = not useTp or na(entryPx) or na(sigAtr) ? na : (sideOn > 0 ? entryPx + tpR * atrMult * sigAtr : entryPx - tpR * atrMult * sigAtr)
+
+if barstate.isconfirmed and not flat and lastCnt > 0 and not na(exitLvl)
+    // "x0" covered the entry bar; "x" takes over. Cancel the first or both rest.
+    strategy.cancel("x0")
+    strategy.exit("x", stop = exitLvl, limit = tpLvl)
+
+// ----------------------------------------------------------------- flatten
+// LAST, so it cancels what the blocks above just placed.
+if barstate.isconfirmed and atFlat
+    strategy.cancel_all()
+    if not flat
+        strategy.close_all(comment = "flatten")
+
+// ----------------------------------------------------------------- plots
+plot(donHi, "Donchian 30 high", color = color.new(color.aqua, 35))
+plot(useShort ? donLo : na, "Donchian 30 low", color = color.new(color.aqua, 60))
+plot(sideOn > 0 ? exLo : na, "Exit channel", color = color.new(color.red, 55))
+plot(sideOn < 0 ? exHi : na, "Exit channel", color = color.new(color.red, 55))
+plot(flat ? na : exitLvl, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+plot(flat or not useTp ? na : tpLvl, "Target", color = color.new(color.lime, 0), style = plot.style_linebr)
+bgcolor(regimeOk and trendUp ? color.new(color.teal, 92) : na, title = "long regime on")
+
+onTf = timeframe.period == "15"
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V13 - LONG validated on 5 blocks / 3 asset classes",
+         text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 0, 1, onTf ? "15m chart" : "NOT 15m - studied on 15m only",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 45) : color.red)
+    table.cell(hud, 0, 2, useShort ? "SHORT LEG ON - its edge is the 2022 bear market alone" : "Short leg off, correctly",
+         text_color = color.white, bgcolor = useShort ? color.new(color.red, 15) : color.new(color.teal, 45))
