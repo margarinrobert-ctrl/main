@@ -130,8 +130,12 @@ limit-retest and fade entries; momentum variants; break distance; volume; range 
 gap; range-anchored and break-even exits; 12,672 cells, `research/us30_orb2.py`): 13 cells at
 z > 2 where 41 are expected by chance, 0 plateaus, 0 beat their own bare mechanic. The one cell
 read on locked did BETTER there than on research (the wrong shape), and its bare limit-retest
-mechanic alone made 11.6 pt/trade on locked -- the STUDY_LIMIT_ENTRY effect, not a signal. Two
-passes, 28,872 cells, one file. What would change the question: 1-minute bars (the idea is a
+mechanic alone made 11.6 pt/trade on locked -- the STUDY_LIMIT_ENTRY effect, not a signal. A
+third pass (`research/us30_orb3.py`) with the entry AT the line tried exit management (chandelier
+trail, time exits, partial, gap-fill target), direction from the DAILY trend, and the overnight-
+range position: 720 cells, 0 at z > 2 (11 expected), no exit beats the plain 100/100, daily
+direction is the least-bad axis and still negative, best plateau -1.0 research / -19.4 locked.
+Three passes, 29,337 cells, one file. What would change the question: 1-minute bars (the idea is a
 1-minute idea and the 09:30 15-minute bar alone spans 160 points, larger than the barrier), the
 instrument's real cost, and the volume column, which the rule never read. `research/us30_orb.py`.
 
@@ -176,6 +180,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
 | `research/us30_ingest.py` | the US30 RTF export -> `data/US30_15m.csv`, canonical UTC columns, with an audit |
 | `research/us30_orb.py` | US30 09:00 range-break + EMA-cross study: cached exit tensor, matched control as the gate, sweep, walk-forward, locked reveal |
+| `research/us30_orb2.py`, `us30_orb3.py` | its second and third passes: entry mechanics and filters; exits, daily direction, overnight position |
 
 ## Pine
 

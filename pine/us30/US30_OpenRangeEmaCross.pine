@@ -48,6 +48,15 @@
 //   break-even exits): 12,672 more cells, 13 beat the control at z > 2 where 41 would by chance,
 //   none was a plateau, none beat its own bare entry mechanic. Nothing here is changed by it.
 //
+//   THIRD PASS, entry at the line, time held: exit management (chandelier trail 1.5x/2.5x ATR,
+//   time exits at 11:00/12:00, half-off-and-trail, gap-fill target, 100/200), direction from the
+//   DAILY trend (5-session momentum, 20-session EMA) instead of the 15m EMA 200, and whether the
+//   09:00 range is the overnight extreme: 720 more cells, 0 at z > 2 where 11 would by chance.
+//   No exit beats the plain 100/100 on this rule (research: 100/100 -5.5 pt/trade, trail 1.5x
+//   -5.8, partial -5.9, time exit 11:00 -6.2, 75/75 -16.5, 100/200 -14.1). Best plateau cell
+//   (close entry, daily-EMA direction, 100/100) is -1.0 pt/trade on research and -19.4 on locked.
+//   Three passes, 29,337 cells: no configuration is profitable out of sample on this file.
+//
 //   READ docs/ib/STUDY_US30_ORB.md BEFORE TRADING THIS. The study's verdict is in that file,
 //   and it is not "trade it".
 //
