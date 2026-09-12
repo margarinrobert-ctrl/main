@@ -8,7 +8,7 @@
 //     signal    |gap| >= 0.5 x ATR(14) and |gap| >= 25 points
 //     entry     market at the 09:45 open, TOWARD the prior close (gap up -> short, gap down -> long)
 //     target    the prior close (the gap fills)
-//     stop      one gap-width from the fill, on the far side
+//     stop      0.75 of the gap-width from the fill, on the far side (1.0 was the first read; see below)
 //     flat      12:00 New York; one trade per session
 //
 //   WHY THIS RULE AND NOT THE RANGE BREAK: three passes and 29,337 configurations of the 09:00
@@ -32,6 +32,14 @@
 //                net -15 pt each
 //     whole file 367 trades   52.6% win   +6,226 pt ($31,131 on one YM contract)   PF 1.29
 //                max drawdown 1,164 pt; survives a 10-point round turn on both blocks
+//   WALK-FORWARD (fit 120 sessions, trade 40, 36-cell grid, research/us30_gap2.py): 7 of 9 folds
+//     profitable, stitched out-of-sample 245 trades +24.6 pt/trade PF 1.42, efficiency 0.97; the
+//     stop of 0.75 gap was chosen in 9 of 9 folds and the 1.0 ATR gap threshold in 8 of 9.
+//   ENTRY TIMING, pre-registered: entering at the 09:30 OPEN (gap read from the 09:15 close) is
+//     WORSE (+0.3 to +7.9 pt/trade on research). The first 15-minute bar is the overshoot; the
+//     rule needs it to finish. Fill at the 09:45 open stays.
+//   STOP 0.75 vs 1.0: research +26.3 (z 3.28) vs +21.0 (z 2.62); holdout +6.3 (z 0.86) vs +10.6
+//     (z 1.21). This script ships 0.75, the research and walk-forward choice; 1.0 is one input away.
 //
 //   WHAT IS NOT PROVEN, READ BEFORE TRADING:
 //     * The holdout is positive but not significant on its own (z 1.21). The research block's
@@ -69,8 +77,8 @@ dayKey = tzIn == "exchange" ? year * 10000 + month * 100 + dayofmonth : year(tim
 gapAtr     = input.float(0.5, "Minimum gap, x ATR(14)", minval = 0.0, step = 0.1, group = "Signal",
      tooltip = "Research: every threshold from 0.3 to 1.0 ATR works; 0.5 is the pre-registered value.")
 gapMinPts  = input.float(25.0, "Minimum gap, points", minval = 0.0, step = 5, group = "Signal")
-stopMult   = input.float(1.0, "Stop, x gap", minval = 0.25, step = 0.25, group = "Exit",
-     tooltip = "One gap-width from the fill. Research favoured 0.75 slightly; 1.0 is what the holdout was read with.")
+stopMult   = input.float(0.75, "Stop, x gap", minval = 0.25, step = 0.25, group = "Exit",
+     tooltip = "0.75 of the gap from the fill: the research-block choice (z 3.28 vs 2.62 at 1.0) and the walk-forward's choice in 9 of 9 folds. On the single holdout read 1.0 did better (+10.6 vs +6.3 pt/trade); both are positive.")
 tgtMult    = input.float(1.0, "Target, x gap (1.0 = the prior close)", minval = 0.25, step = 0.25, group = "Exit")
 flatH      = input.int(12, "Flat hour",   minval = 0, maxval = 23, group = "Exit")
 flatM      = input.int(0,  "Flat minute", minval = 0, maxval = 59, group = "Exit")

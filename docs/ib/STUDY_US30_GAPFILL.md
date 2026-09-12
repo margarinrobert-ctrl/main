@@ -175,11 +175,67 @@ The event table in §1 shows the structure they were built on — trade the brea
 range with it — has a negative lift at every horizon on this file; no parameter, entry mechanic,
 filter, exit or direction gate can fix a rule that is pointed against the mechanism.
 
+## 7. Second step: walk-forward, and the one design change the mechanism suggests
+
+`research/us30_gap2.py`, after the locked read above.
+
+**Walk-forward** — fit on 120 sessions, trade the next 40, step 40; grid of gap threshold
+0.3 / 0.5 / 0.75 / 1.0 ATR × stop 0.75 / 1.0 / 1.5 gap × flat 11:00 / 12:00 / 13:00 (36 cells);
+objective in-sample net. This is the first record that includes the cost of having to choose
+parameters, and it spans both blocks by construction.
+
+| fold | test from | chosen (gap, stop, flat) | IS net | OOS n | OOS per trade |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 2025-02-20 | 0.75, 0.75, 12:00 | 1,417 | 33 | +47.7 |
+| 1 | 2025-04-17 | 1.0, 0.75, 13:00 | 3,640 | 27 | +28.2 |
+| 2 | 2025-06-13 | 1.0, 0.75, 13:00 | 4,275 | 25 | +7.0 |
+| 3 | 2025-08-08 | 1.0, 0.75, 13:00 | 3,308 | 21 | −0.4 |
+| 4 | 2025-10-03 | 1.0, 0.75, 12:00 | 1,487 | 26 | +52.2 |
+| 5 | 2025-11-28 | 1.0, 0.75, 12:00 | 1,943 | 23 | −4.3 |
+| 6 | 2026-01-27 | 1.0, 0.75, 12:00 | 1,376 | 29 | +38.3 |
+| 7 | 2026-03-24 | 1.0, 0.75, 12:00 | 2,368 | 32 | +32.1 |
+| 8 | 2026-05-20 | 1.0, 0.75, 13:00 | 2,553 | 29 | +4.5 |
+
+Stitched out-of-sample: **245 trades, 49.8% win, +24.6 pt/trade, PF 1.42, Sharpe 1.97, max
+drawdown 1,160 pt.** 7 of 9 folds profitable. Walk-forward efficiency 0.97. The stop was 0.75
+gap in **9 of 9** folds, the threshold 1.0 ATR in 8 of 9, the flat 12:00 in 5 of 9. That is a
+stable family, not a re-fit every window; gate 10 (efficiency ≥ 0.4) passes.
+
+**Entry timing**, pre-registered before running, research only. The event study's lift begins
+at the open, so the question was whether the rule should enter at the 09:30 open instead of
+waiting for the 09:30 bar to close and filling at 09:45. On a confirmed-bar script that means
+reading the gap from the 09:15 close (the last pre-open price, which has the same sign as the
+09:30 gap on 100% of qualifying sessions) and filling at the 09:30 open.
+
+| entry | stop | n | win | per trade | PF | control z |
+| --- | --- | --- | --- | --- | --- | --- |
+| E1 09:45 open, gap from the 09:30 open | 1.0 | 224 | 51.3% | +21.0 | 1.38 | 2.62 |
+| E1 | **0.75** | 223 | 48.4% | **+26.3** | 1.54 | **3.28** |
+| E2 09:30 open, gap from the 09:15 close | 1.0 | 280 | 46.1% | +0.3 | 1.00 | 0.81 |
+| E2 | 0.75 | 275 | 42.9% | +7.9 | 1.15 | 1.68 |
+
+Entering at the open is decisively worse. The first 15-minute bar *is* the overshoot the rule
+fades; entering before it finishes buys the overshoot instead of fading it. The 09:45 fill stays.
+
+**The stop.** Research prefers 0.75 gap (z 3.28 against 2.62) and the walk-forward chose it in
+every fold, so it was read on locked once:
+
+| stop | research per trade (z) | locked per trade (z) | locked long / short | whole file |
+| --- | --- | --- | --- | --- |
+| 1.0 gap | +21.0 (2.62) | +10.6 (1.21) | +33.9 / −6.8 | 367 trades, +17.0, PF 1.29 |
+| 0.75 gap | +26.3 (3.28) | +6.3 (0.86) | +36.4 / −15.7 | 365 trades, +18.5, PF 1.34 |
+
+Both are positive on both blocks with the right shape. The holdout mildly prefers 1.0; choosing
+on that would be selecting on the holdout, so the shipped default is **0.75**, the research and
+walk-forward choice, with 1.0 one input away. The honest expectation for either on new data is
+the holdout number, +6 to +11 points a trade, not the research number.
+
 ## Files
 
 | file | what |
 | --- | --- |
 | `research/us30_alpha.py` | stage 2: robust autocorrelation, Lo-MacKinlay variance ratios, drift-adjusted time-of-day profile, event studies with lift / HAC / BH, predictability budget |
 | `research/us30_mech.py` | the two pre-registered candidates, matched control, gates, one locked read |
+| `research/us30_gap2.py` | walk-forward of the gap-fill family; the pre-registered entry-timing test; the stop read once |
 | `pine/us30/US30_GapFill.pine` | the gap-fill rule as a Pine v6 strategy with forward-test alerts; linted with `research/pine_lint.py` |
 | `pine/us30/US30_OpenRangeEmaCross.pine` | the original range-break rule, kept for the record |

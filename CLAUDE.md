@@ -143,7 +143,10 @@ the mechanism. One pre-registered rule on that (`research/us30_mech.py`, fade th
 prior close, target the prior close, stop one gap, flat 12:00) passes the control on research
 (z 2.62, +21 pt/trade, plateau 64/96, survives 10 pt cost) and is +10.6 pt/trade on the single
 locked read with the right shape -- but locked z is 1.21, the short side lost on locked, and the
-deflated Sharpe charged for all 29,461 trials is 0.06. A forward-test candidate, not a system.
+deflated Sharpe charged for all 29,461 trials is 0.06. Walk-forward (fit 120 / trade 40, 36 cells): 7 of 9
+folds, stitched OOS +24.6 pt/trade, efficiency 0.97, stop 0.75 gap chosen in 9/9 folds. Entering at the
+09:30 open instead of 09:45 is decisively WORSE: the first bar is the overshoot. A forward-test candidate,
+not a system.
 `docs/ib/STUDY_US30_GAPFILL.md`. What would change the question: 1-minute bars (the idea is a
 1-minute idea and the 09:30 15-minute bar alone spans 160 points, larger than the barrier), the
 instrument's real cost, and the volume column, which the rule never read. `research/us30_orb.py`.
