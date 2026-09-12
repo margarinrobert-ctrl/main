@@ -149,7 +149,10 @@ folds, stitched OOS +24.6 pt/trade, efficiency 0.97, stop 0.75 gap chosen in 9/9
 beyond the 09:30 close (the unfilled days are the best days). Of four pre-registered conditions tested
 against random filters of the same selectivity, one passes: the 09:30 open OUTSIDE the prior session's
 range (research +58 vs -2 pt/trade inside, excess z 2.40; locked +15.1 vs +6.3 unfiltered, z 0.62) --
-the opposite of "gap and go". A forward-test candidate, not a system.
+the opposite of "gap and go". PBO on the 72-cell family is 0.49 (a plateau: which cell wins in sample is
+noise, expect the family's OOS average, not the winner's research number); risk-normalised sizing is WORSE
+than fixed lots on MAR on both blocks because the biggest gaps are the best trades. A forward-test
+candidate, not a system.
 `docs/ib/STUDY_US30_GAPFILL.md`. What would change the question: 1-minute bars (the idea is a
 1-minute idea and the 09:30 15-minute bar alone spans 160 points, larger than the barrier), the
 instrument's real cost, and the volume column, which the rule never read. `research/us30_orb.py`.

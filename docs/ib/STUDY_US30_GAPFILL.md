@@ -338,6 +338,55 @@ different rule: more history on this instrument, the same rule on a second index
 is the opening auction, not the Dow), or forward trades. At roughly one qualifying session in
 three, 70 forward trades is four to six months.
 
+## 10. Fourth step: probability of backtest overfitting, and sizing
+
+`research/us30_gap4.py`, the two protocol stages the rule had not been through.
+
+**PBO (combinatorially symmetric cross-validation).** The 72-cell family (gap threshold × stop
+× flat × filter on/off) on the research block, 12 contiguous groups, all 924 choices of 6 train
+groups; in each split the train-best cell by daily Sharpe is ranked out of sample among all 72.
+
+| family | PBO | median OOS rank of the in-sample winner |
+| --- | --- | --- |
+| all 72 cells | 0.49 | 0.50 |
+| the 36 unfiltered cells | 0.52 | 0.44 |
+| the 36 filtered cells | 0.65 | 0.33 |
+
+Gate 5 (PBO < 0.30) fails, and the reading matters more than the pass/fail. On a plateau every
+cell is roughly as good as every other, so which one wins in sample is noise and its
+out-of-sample rank is a coin — that is what a PBO of 0.5 on a family with 94 of 96 positive
+cells means. The filtered family's 0.33 says the in-sample winner tends to do *worse* than the
+family average afterwards: the specific cell's research number regresses to the family mean.
+The practical consequence is the one already stated in §7 and §9: the number to expect on new
+data is the family's typical out-of-sample result (the walk-forward's +24.6 pt/trade on the
+unfiltered family, the holdout's +6 to +15 on the shipped cells), never the research winner's.
+
+**Sizing.** The gap is the unit of risk and the stop distance runs from 31 to 1,043 points
+(median 174), so the coefficient of variation of dollar risk per trade at one contract is
+**0.83** — sizing has something to work with. One pre-registered scheme against fixed lots, in
+MYM ($0.50/pt) so lots are whole numbers, ranked on MAR (net ÷ max drawdown):
+
+| scheme | block | net $ | max DD $ | MAR | mean lots |
+| --- | --- | --- | --- | --- | --- |
+| fixed 1 MYM | research | 3,058 | 253 | **12.1** | 1.0 |
+| | locked | 521 | 574 | **0.91** | 1.0 |
+| VAPS, 1% of $50,000 per trade, cap 20 | research | 8,042 | 1,718 | 4.7 | 6.5 |
+| | locked | 1,197 | 1,581 | 0.76 | 4.9 |
+
+Risk-normalised sizing is worse on both blocks by MAR, and over 2,000 trade orderings on
+research its median MAR is 2.7 against 7.9 for fixed lots. The reason is specific to this rule:
+the trades with the largest stop distance are the largest gaps, and those are the best trades,
+so normalising risk shrinks exactly the trades that carry the edge. Fixed lots stay, which is
+also what §9 of the protocol found across the whole book.
+
+**Where the engineering stands.** Every stage the protocol has for a single rule has now been
+run on the gap fill: matched control, neighbourhood, cost sweep, bootstrap, Monte Carlo,
+deflated Sharpe, walk-forward, PBO, sizing, and one locked read per design decision. The rule
+passed the ones a real edge passes on research (control, plateau, cost, walk-forward) and failed
+the two that price in the size of the search (deflated Sharpe, PBO). That is the honest profile
+of a modest, mechanism-backed effect measured on one file of one regime: worth forward trading
+at one contract, not worth believing beyond its holdout numbers.
+
 ## Files
 
 | file | what |
@@ -346,5 +395,6 @@ three, 70 forward trades is four to six months.
 | `research/us30_mech.py` | the two pre-registered candidates, matched control, gates, one locked read |
 | `research/us30_gap2.py` | walk-forward of the gap-fill family; the pre-registered entry-timing test; the stop read once |
 | `research/us30_gap3.py` | the limit-fill test on the same days; four pre-registered conditions against random filters of the same selectivity; the one that passed read once |
+| `research/us30_gap4.py` | PBO by combinatorially symmetric cross-validation on the 72-cell family; risk-normalised sizing against fixed lots on MAR |
 | `pine/us30/US30_GapFill.pine` | the gap-fill rule as a Pine v6 strategy with forward-test alerts; linted with `research/pine_lint.py` |
 | `pine/us30/US30_OpenRangeEmaCross.pine` | the original range-break rule, kept for the record |
