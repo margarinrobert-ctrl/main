@@ -136,6 +136,28 @@ What would change the question is unchanged and is not a rule search:
 2. **More history or a second instrument.** Both blocks are one regime.
 3. **The instrument's real cost.** Irrelevant to this verdict, decisive for anything that passes.
 
+## 6. The disciplined next step, and what it needs
+
+Three things were tried after pass three that do not involve searching this file again:
+
+1. **Fetching 1-minute US30 from a public feed.** The session's egress policy blocks every
+   market-data host that was tried (Dukascopy, Yahoo, Stooq). The data has to come from the
+   user's platform.
+2. **Forward-test alerts in the Pine.** The script now fires an alert when a stop order is
+   resting at the line, when it fills (with the stop and target prices), and when the trade
+   closes, once per bar close, so the rule can be paper-traded forward exactly as backtested.
+   A forward test on new data is the only measurement left that is not a re-fit.
+3. **The specification of the data that would change the question**, so it can be tested the
+   day it arrives: the same symbol, **1-minute bars**, the same period or longer (2024-08 →
+   2026-08 at minimum), timestamps with the UTC offset as in the original export, OHLC and
+   volume. With that file the 15-minute rule is kept as it is and the 1-minute path decides the
+   fills and the exits (`research/intrabar.py` does this for NQ), which removes the two
+   limitations every pass has named: the 09:30 bar spanning more than the barrier, and the
+   stop-first booking of bars that hold both barriers.
+
+Until then the honest state of this strategy is the table in §5, and the discipline is to
+leave it there.
+
 ## Files
 
 | file | what |

@@ -272,6 +272,24 @@ if barMin >= flatMin - 15 and strategy.position_size != 0 and barstate.isconfirm
 if strategy.position_size != 0 and not inWindow and barstate.isconfirmed
     strategy.close_all(comment = "outside backtest window")
 
+// ---- alerts, for a disciplined FORWARD test ----------------------------------------------------
+// The only honest next step on this rule is new data. These fire once per bar close so the
+// strategy can be paper-traded forward exactly as backtested: an order resting at the line,
+// a fill, and the flat. Create the alert on "Any alert() function call".
+if barstate.isconfirmed and ready and isFlat and oncePerDay and inWindow
+    if modeStop and longArm and allowLong and not (brokeUp and close > rHi)
+        alert("US30 ORB: buy stop resting at 09:00 high " + str.tostring(rHi, "#.#"), alert.freq_once_per_bar_close)
+    if modeStop and shortArm and allowShort and not (brokeDn and close < rLo)
+        alert("US30 ORB: sell stop resting at 09:00 low " + str.tostring(rLo, "#.#"), alert.freq_once_per_bar_close)
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    alert("US30 ORB: FILLED " + (strategy.position_size > 0 ? "long" : "short") + " at " +
+         str.tostring(strategy.position_avg_price, "#.#") + "  stop " +
+         str.tostring(strategy.position_avg_price - (strategy.position_size > 0 ? 1 : -1) * slT * syminfo.mintick, "#.#") +
+         "  target " + str.tostring(strategy.position_avg_price + (strategy.position_size > 0 ? 1 : -1) * tpT * syminfo.mintick, "#.#"),
+         alert.freq_once_per_bar)
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    alert("US30 ORB: flat, trade closed", alert.freq_once_per_bar)
+
 // ---- drawing -------------------------------------------------------------------------------------
 plot(rangeOk and barMin >= rangeEndMin and barMin < flatMin ? rHi : na, "09:00 range high", color.new(color.orange, 0), style = plot.style_linebr)
 plot(rangeOk and barMin >= rangeEndMin and barMin < flatMin ? rLo : na, "09:00 range low",  color.new(color.orange, 0), style = plot.style_linebr)
