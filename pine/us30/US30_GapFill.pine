@@ -53,6 +53,11 @@
 //              locked    69 trades 55.1% win +1,043 pt +15.1/trade PF 1.21 Sharpe 1.16 maxDD 1,147
 //              (locked long +45.0 / short -12.3); whole file 174 trades +7,158 pt ($35,789) PF 1.71
 //              cost sweep 0/3/6/10 pt: research 61.2/58.2/55.2/51.2, locked 18.1/15.1/12.1/8.1
+//     The locked profit factor of 1.21 on 69 trades has a bootstrap 95% interval of [0.66, 2.22]:
+//     a holdout target such as 1.70 is inside the noise of a sample that size and cannot be
+//     engineered toward without fitting the holdout. Of the remaining research-side variants
+//     (long only, target 0.75 gap, flat 11:00 / 13:00, high-volatility regime, stop 1.0) none
+//     replaces this rule under the pick rule (highest control z with >= 60 research trades).
 //     Half the trades, roughly double the per-trade result, same total, on both blocks. This is
 //     the opposite of the "gap and go" lore: on this file it is the big gaps beyond the prior
 //     day's range that fill, and the small gaps inside it that do not.

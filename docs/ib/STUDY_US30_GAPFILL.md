@@ -291,6 +291,53 @@ Where this leaves the rule after three engineering steps: research +58 pt/trade,
 walk-forward +25 on the unfiltered family. The honest expectation on new data remains the
 holdout number, and the short side remains the part that has not earned its place.
 
+## 9. The holdout profit-factor target, and why it cannot be engineered
+
+The instruction after step three was a minimum profit factor of 1.70 on the locked block. Two
+facts decide what can honestly be done with that.
+
+**A holdout target cannot be iterated toward.** The locked block is informative only because
+each design is read there once, after being chosen on research. A design changed until the
+locked profit factor reaches 1.70 has been fitted to the locked block, and the number then
+says nothing about the future. So the only admissible procedure is the one used at every step
+here: choose on research, read once, report.
+
+**On 69 trades the profit factor cannot be measured to that precision.** Bootstrap of the
+locked trades of the shipped rule:
+
+| | point estimate | 95% interval | P(≥ 1.70) by resampling |
+| --- | --- | --- | --- |
+| locked profit factor (69 trades) | 1.21 | **[0.66, 2.22]** | 0.14 |
+| research profit factor (105 trades) | 2.19 | [1.30, 3.60] | |
+
+The interval on the holdout number is ±0.8 wide. A target of 1.70 is inside the noise of a
+69-trade sample either way; it is a question the data cannot answer, not a question of
+engineering.
+
+**The remaining research-side variants**, pre-registered, picked by control z with ≥ 60
+research trades, read on locked only if the pick changed:
+
+| variant | n | win | per trade | research PF | control z |
+| --- | --- | --- | --- | --- | --- |
+| **shipped** (both sides, target the prior close, stop 0.75, flat 12:00, outside prior range) | 105 | 55.2% | +58.2 | 2.19 | **3.94** |
+| long only | 43 | 62.8% | +93.6 | 3.01 | 3.68 |
+| target 0.75 gap | 105 | 57.1% | +47.9 | 2.01 | 3.50 |
+| flat 11:00 | 105 | 55.2% | +40.8 | 1.88 | 3.32 |
+| flat 13:00 | 105 | 54.3% | +62.0 | 2.14 | 3.93 |
+| plus the high-volatility regime | 56 | 62.5% | +104.1 | 3.31 | 4.74 |
+| long only + target 0.75 gap | 43 | 62.8% | +75.2 | 2.61 | 3.10 |
+| stop 1.0 gap | 105 | 57.1% | +54.8 | 2.02 | 3.53 |
+
+The shipped rule is the pick. The high-volatility combination has the highest z on research and
+the highest research profit factor, and it is not read on locked, because 56 trades is below
+the gate and it is exactly the kind of cell that would produce a flattering holdout number by
+chance. Long-only is the same story at 43 trades: it is also the regime bet §5 warns about.
+
+**What would let a 1.70 profit factor be demonstrated** is a larger out-of-sample sample, not a
+different rule: more history on this instrument, the same rule on a second index (the mechanism
+is the opening auction, not the Dow), or forward trades. At roughly one qualifying session in
+three, 70 forward trades is four to six months.
+
 ## Files
 
 | file | what |
