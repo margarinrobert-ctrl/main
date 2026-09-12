@@ -451,6 +451,146 @@ factor of 1.2 to 1.3, not the research's +62 at 2.3. Optuna did not find a diffe
 it found the centre of the same plateau, and the consistency objective is why it landed there
 rather than on a spike.
 
+## 12. Sixth step: the anatomy of the shipped rule
+
+`research/us30_gap5.py`. Before searching for anything else, the shipped rule was taken apart
+on its own trades: where the money comes from, what the price path does after the fill, and
+whether any of the standard exit-management ideas, the volume column (which no rule on this file
+had read), or the prior day's context has anything to add. Everything was pre-registered with a
+gate, measured on research, and the locked block was read once at the end. Nothing passed, so
+the rule does not change; what was learned is the point of the step.
+
+**A. Leakage audit.** Every input of every one of the 169 trades is listed by bar offset from
+the fill bar: prior close and prior range −64 to −149 bars, ATR −2, gap open and decision close
+−1. All strictly before the fill, all closing before the fill bar opens. A new bar-level
+simulator with dynamic stops was written for the exit variants and reproduces `outcomes2` on the
+shipped geometry trade for trade (max net difference 0.000000, every exit reason equal).
+
+**B. Where the money comes from.** Research, 102 trades:
+
+| exit | n | share | net pt | mean | median hold | median exit time |
+| --- | --- | --- | --- | --- | --- | --- |
+| target (prior close) | 24 | 23.5% | +6,706 | +279 | 3 bars | 10:37 |
+| stop (0.6 gap) | 32 | 31.4% | −3,510 | −110 | 1 bar | 10:15 |
+| flat 12:00 | 46 | 45.1% | +3,116 | +68 | 8 bars | 11:45 |
+
+Half the research net is the barrier edge (targets minus stops, +3,196) and half is the partial
+fill collected at the 12:00 flat. Targets are hit early: 52% of them by the fourth bar after
+the fill, 96% by the eighth. Stops are hit on the first bar in most cases: the losing trades are
+the ones where the overshoot keeps going, not slow bleeds.
+
+**C. The price path.** Probability that the fill reaches a fraction of the gap by 12:00:
+
+| fraction of the gap | 0.25 | 0.50 | 0.75 | 1.00 | 1.25 |
+| --- | --- | --- | --- | --- | --- |
+| research | 72% | 47% | 35% | 26% | 17% |
+| locked | 78% | 43% | 39% | 28% | |
+
+Same curve on both blocks, which is the mechanism holding out of sample. The adverse side:
+33% of research trades go 0.6 gaps against the fill by 12:00 (the stop rate), 21% go a full gap.
+Of the 32 stopped trades only 12% had reached half the target first, so a break-even stop has
+almost nothing to save; of the 24 target hits 46% had gone at least a quarter of the way to the
+stop first, and 17% halfway, so a tighter stop kills winners. The 46 flat exits sit at a median
+MFE of 0.40 of the gap and close at 0.13: they are trades that started to fill and stalled.
+
+**D. Exit variants**, each against its own matched control (random 09:45 fills, same side, stop,
+target and block, same variant logic), gate: research net ≥ 1.10 × shipped, control z ≥ the
+shipped z, better in ≥ 4 of the 5 Optuna folds:
+
+| variant | win | net pt | per trade | PF | max DD | control z | folds better |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| V0 shipped | 54.9% | 6,311 | 61.9 | 2.33 | 506 | 4.48 | |
+| V1 break-even at 50% | 49.0% | 6,236 | 61.1 | 2.41 | 506 | 4.44 | 2/5 |
+| V2 break-even at 75% | 53.9% | 6,342 | 62.2 | 2.39 | 506 | 4.51 | 1/5 |
+| V3 structural stop (09:30 extreme + 5) | 31.4% | 1,522 | 14.9 | 1.34 | 809 | 1.56 | 0/5 |
+| V4 partial at 50%, rest at BE | 58.8% | 4,976 | 48.8 | 2.13 | 506 | 3.92 | 0/5 |
+| V5 time stop 10:30 if < 50% | 52.0% | 3,570 | 35.0 | 1.70 | 760 | 3.09 | 1/5 |
+| V6 trail after 50% | 55.9% | 5,558 | 54.5 | 2.26 | 506 | 4.03 | 1/5 |
+
+None passes. Break-even at 75% is a wash (+0.5%, worse in 4 of 5 folds); everything that takes
+profit early or tightens the stop loses, in the order section C predicts. The structural stop is
+the instructive failure: the 09:30 bar's extreme is close to the 09:45 open on this bar size, so
+the stop is far tighter than 0.6 gap and takes the win rate from 55% to 31%. The rule needs the
+room it has.
+
+**E. The volume column.** Conditions on the research trades against a random filter of the
+same selectivity (2,000 draws), gate excess z ≥ 2 and ≥ 60 kept trades:
+
+| condition | kept | n | per trade | win | excess z | p |
+| --- | --- | --- | --- | --- | --- | --- |
+| C5 09:30 volume ≥ its 20-session median | true | 54 | +101.3 | 64.8% | 1.89 | 0.02 |
+| C6 pre-open (09:00 + 09:15) volume ≥ median | true | 57 | +97.0 | 63.2% | 1.76 | 0.03 |
+| C7 09:30 relative volume in the top tercile | true | 34 | +119.4 | 61.8% | 1.76 | 0.05 |
+| Spearman(net, 09:30 relative volume) | | 102 | | | ρ +0.16 | 0.11 |
+
+Coherent and one-sided: a high-volume open fills better under all three definitions, and the
+low-volume complements make +17 to +33 per trade. But no definition reaches the gate, the
+correlation over all trades is not significant, and three readings of one variable are one
+test, not three. Not shipped; it is the first thing to look at when the 1-minute file arrives,
+because volume at 15 minutes is one number per bar.
+
+**F. Prior-day context.** Gap with versus against the prior day's direction (z −0.32 / +0.37),
+prior day a trend day (+0.32), the 09:30 open at the overnight extreme (4 trades; untestable),
+the prior session also gapped the same way (+0.46): nothing. The prior day does not condition
+the fill.
+
+**G. Stability, research.** Every quarter with more than 4 trades is positive (2024Q4 +547,
+2025Q1 +1,352, 2025Q2 +2,498, 2025Q3 +712, 2025Q4 +1,273). The rolling 40-trade mean is positive
+in 100% of windows (min +28.5, median +80.0). Longest losing streak 3 against a random-ordering
+median of 5. Runs test z +1.91: if anything the sequence is anti-streaky. Longest time under
+water 7 trades. Long +91.1 per trade (43 trades, 60.5% win); short +40.6 (59 trades, 50.8%).
+
+**H. Cost.** Research gross per trade is 65.2 pt, so the break-even round turn is 64.9 pt.
+On the single locked read it is 22.9 pt.
+
+**I. Post hoc, flagged as such.** G's gap-size table shows the response is concentrated in the
+big gaps (research: 55–100 pt +24.7, 100–150 +17.0, 150–250 +15.8, 250+ +109.7 per trade). A
+higher floor was then tested against a random filter of the same selectivity, which is a
+post-hoc threshold grid and is recorded as one:
+
+| minimum gap | n | per trade | win | excess z | p |
+| --- | --- | --- | --- | --- | --- |
+| 100 | 92 | +65.9 | 57% | 0.55 | 0.31 |
+| 150 | 84 | +70.6 | 58% | 0.83 | 0.20 |
+| 200 | 65 | +96.2 | 63% | 2.01 | 0.012 |
+| 250 | 49 | +109.7 | 63% | 2.08 | 0.013 |
+| 300 | 39 | +149.6 | 74% | 2.96 | 0.001 |
+
+The excess grows monotonically with the floor, which is what a real size effect looks like and
+also exactly what the sizing study already found ("the biggest gaps are the best trades"), and
+over a monotone grid the tightest member wins whether the effect is a mechanism or a sizing
+artefact. The Optuna search deliberately bounded the floor at 75 pt. Two other facts: the gap
+in ATR units has a research median of 5.4 and a 10th percentile of 2.4, so the 0.4 ATR threshold
+never binds and the 55-pt floor plus the outside-range filter do all the selecting; and the
+trade after a losing trade makes +121 per trade (z 2.30) on 45 trades, below the trade floor
+and the classic equity-curve artefact, recorded and not acted on.
+
+**Locked, read once.** The shipped rule on the holdout, 67 trades, +19.9 per trade, PF 1.29,
+max drawdown 878:
+
+| exit | n | net pt | mean |
+| --- | --- | --- | --- |
+| target | 18 | +3,229 | +179 |
+| stop | 18 | −3,161 | −176 |
+| flat 12:00 | 31 | +1,262 | +41 |
+
+This is the finding of the step. On the holdout the barrier edge is zero: targets and stops
+cancel to +68 pt, and the whole profit is the partial fill collected at the flat. The fill
+curve is unchanged (0.25: 78%, 0.50: 43%, 1.00: 28%), so the mechanism is intact; what decayed
+is the target-versus-stop race, from 24:32 with a 2.5:1 payoff on research to 18:18 at 1:1. The
+locked quarters are 2026Q1 +1,139 (26 trades), 2026Q2 +484 (23), 2026Q3 −368 (17): the most
+recent 17 trades lost. By gap size the locked bins are 55–150 +25.3 (6 trades), 150–250 −25.1
+(12), 250+ +30.2 (49), so the post-hoc floor would have helped a little on 12 trades and is not
+enough to act on. The break-even round turn on locked is 22.9 pt.
+
+**What this changes.** Nothing in the rule and a lot in the expectation. The forward test
+should watch three things, in this order: the share of trades exiting at the target versus the
+stop (the research 24:32 with a 2.5:1 payoff against the locked 18:18), the sign of the flat
+exits (the holdout's profit), and the 09:30 relative volume, logged per trade so that E can be
+tested on new data with a pre-registered threshold. A minimum gap of 200 pt is an input on the
+Pine (`gapMinPts`) and a legitimate secondary variable for that forward test; it is not the
+default. The multiplicity for the file is now 29,907 trials.
+
 ## Files
 
 | file | what |
@@ -461,5 +601,6 @@ rather than on a spike.
 | `research/us30_gap3.py` | the limit-fill test on the same days; four pre-registered conditions against random filters of the same selectivity; the one that passed read once |
 | `research/us30_gap4.py` | PBO by combinatorially symmetric cross-validation on the 72-cell family; risk-normalised sizing against fixed lots on MAR |
 | `research/us30_optuna.py` | Optuna TPE, 300 trials, consistency-penalised 5-fold research objective, locked untouched until one read |
+| `research/us30_gap5.py` | the anatomy: leakage audit, exit split, MFE/MAE path, six exit variants against their controls, the volume column, prior-day context, stability, cost; one locked read |
 | `pine/us30/US30_GapFill.pine` | the gap-fill rule as a Pine v6 strategy with forward-test alerts; linted with `research/pine_lint.py` |
 | `pine/us30/US30_OpenRangeEmaCross.pine` | the original range-break rule, kept for the record |

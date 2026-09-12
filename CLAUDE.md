@@ -156,8 +156,16 @@ objective = mean - std of per-fold net/trade over 5 contiguous research folds, l
 centre of the same plateau (gap 0.4 ATR, stop 0.6 gap, min gap 55 pt, filter on, flat 12:00): locked +21.4
 pt/trade PF 1.32 z 1.13 vs +15.1 / 1.21 / 0.86 for the earlier cell, deflated Sharpe 0.86 at N 29,882.
 The lesson worth keeping: an optimiser is only as honest as its objective; a consistency-across-folds
-objective with a per-fold trade floor finds plateaus, a profit objective finds spikes. A forward-test
-candidate, not a system.
+objective with a per-fold trade floor finds plateaus, a profit objective finds spikes. The anatomy of the
+shipped rule (`research/us30_gap5.py`): on research half the net is the target-vs-stop race (24:32 at 2.5:1)
+and half the partial fill at the 12:00 flat; on locked the race is 18:18 and cancels, and the ENTIRE holdout
+profit is the flat. The fill curve is identical on both blocks (P(full fill) 26% / 28%). Six exit variants
+(break-even, structural stop, partial, time stop, trail) all fail their matched control gate -- the rule
+needs its room, a stop at the 09:30 bar's extreme takes the win rate from 55% to 31%. The volume column is
+coherent but below the gate (high-volume open +101 vs +18 per trade, z 1.9 under three definitions). The
+0.4 ATR threshold never binds (gaps are 2.4-8.8 ATR): the 55 pt floor and the outside-range filter do the
+selecting, and the research edge is concentrated in gaps >= 250 pt (post hoc, monotone grid, not shipped).
+A forward-test candidate, not a system.
 `docs/ib/STUDY_US30_GAPFILL.md`. What would change the question: 1-minute bars (the idea is a
 1-minute idea and the 09:30 15-minute bar alone spans 160 points, larger than the barrier), the
 instrument's real cost, and the volume column, which the rule never read. `research/us30_orb.py`.
@@ -205,6 +213,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/us30_orb.py` | US30 09:00 range-break + EMA-cross study: cached exit tensor, matched control as the gate, sweep, walk-forward, locked reveal |
 | `research/us30_orb2.py`, `us30_orb3.py` | its second and third passes: entry mechanics and filters; exits, daily direction, overnight position |
 | `research/us30_alpha.py`, `us30_mech.py` | stage-2 alpha discovery on the US30 file, and the two mechanism candidates it produced (the gap fill passed) |
+| `research/us30_gap2.py` .. `us30_gap5.py`, `us30_optuna.py` | the gap fill's six engineering steps: walk-forward and entry timing; fill mechanic and conditions; PBO and sizing; Optuna with a consistency objective; the anatomy (exit split, MFE/MAE, exit variants, volume, stability) |
 
 ## Pine
 
