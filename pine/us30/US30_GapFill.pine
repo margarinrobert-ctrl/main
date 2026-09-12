@@ -5,11 +5,11 @@
 //   THE RULE, all clock conditions in New York time, every decision on a CONFIRMED bar:
 //     gap       at the close of the 09:30 bar: gap = 09:30 open - prior session close (the
 //               close of the bar stamped 15:45, i.e. the 16:00 close)
-//     signal    |gap| >= 0.5 x ATR(14) and |gap| >= 25 points, AND the 09:30 open is OUTSIDE the
+//     signal    |gap| >= 0.4 x ATR(14) and |gap| >= 55 points, AND the 09:30 open is OUTSIDE the
 //               prior session's 09:30-16:00 high-low range (input; see "conditions" below)
 //     entry     market at the 09:45 open, TOWARD the prior close (gap up -> short, gap down -> long)
 //     target    the prior close (the gap fills)
-//     stop      0.75 of the gap-width from the fill, on the far side (1.0 was the first read; see below)
+//     stop      0.6 of the gap-width from the fill, on the far side (0.75 and 1.0 were earlier reads; see below)
 //     flat      12:00 New York; one trade per session
 //
 //   WHY THIS RULE AND NOT THE RANGE BREAK: three passes and 29,337 configurations of the 09:00
@@ -58,6 +58,23 @@
 //     engineered toward without fitting the holdout. Of the remaining research-side variants
 //     (long only, target 0.75 gap, flat 11:00 / 13:00, high-volatility regime, stop 1.0) none
 //     replaces this rule under the pick rule (highest control z with >= 60 research trades).
+//   OPTUNA (research/us30_optuna.py): 300 TPE trials over gap threshold 0.3-1.5 ATR, stop 0.5-1.5
+//     gap, target 0.5-1.25 gap, flat 11:00-14:00, filter on/off, minimum gap 0-75 pt, both/long.
+//     The objective was NOT research profit: the research block was cut into 5 contiguous folds
+//     and the objective is mean(per-fold net/trade) - std(per-fold), with >= 12 trades per fold,
+//     so a trial is rewarded for being consistent across sub-periods, not for one lucky window.
+//     The locked block was never touched during the search. Best trial: gap 0.41 ATR, stop 0.61
+//     gap, target 0.98 gap, flat 12:00, filter ON, min gap 57 pt, both sides; its ten best
+//     neighbours all sit in the same region (stop 0.60-0.73, min gap 51-61, filter on, flat
+//     12:00), stability 0.92 -- a plateau. Marginals: filter on +21 objective points over off;
+//     both sides +19 over long only; flat 14:00 is bad; higher gap thresholds are WORSE (the
+//     floor in points does that job better).
+//       research  101 trades 56.4% win +64.9 pt/trade PF 2.43 Sharpe 4.55 maxDD 506, control z 4.55
+//       locked    67 trades  55.2% win +21.4 pt/trade PF 1.32 maxDD 892, control z 1.13 (read once)
+//                 vs the previous shipped cell on the same locked block: +15.1, PF 1.21, z 0.86
+//       deflated Sharpe with N = 29,882 trials over everything on this file: 0.86 (gate 0.95)
+//     This script ships the ROUNDED pick (0.4 ATR, stop 0.6, target 1.0, min gap 55): research
+//     102 trades +61.9 pt/trade PF 2.33 z 4.27, cost sweep 0/3/6/10 pt: 64.9/61.9/58.9/54.9.
 //     Half the trades, roughly double the per-trade result, same total, on both blocks. This is
 //     the opposite of the "gap and go" lore: on this file it is the big gaps beyond the prior
 //     day's range that fill, and the small gaps inside it that do not.
@@ -95,14 +112,15 @@ barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minut
 dayKey = tzIn == "exchange" ? year * 10000 + month * 100 + dayofmonth : year(time, tzIn) * 10000 + month(time, tzIn) * 100 + dayofmonth(time, tzIn)
 
 // ---- the rule's parameters ---------------------------------------------------------------------
-gapAtr     = input.float(0.5, "Minimum gap, x ATR(14)", minval = 0.0, step = 0.1, group = "Signal",
-     tooltip = "Research: every threshold from 0.3 to 1.0 ATR works; 0.5 is the pre-registered value.")
-gapMinPts  = input.float(25.0, "Minimum gap, points", minval = 0.0, step = 5, group = "Signal")
+gapAtr     = input.float(0.4, "Minimum gap, x ATR(14)", minval = 0.0, step = 0.1, group = "Signal",
+     tooltip = "Research: every threshold from 0.3 to 1.0 ATR works. 0.5 was the pre-registered value; 0.4 with a 55-point floor is the Optuna pick (see header).")
+gapMinPts  = input.float(55.0, "Minimum gap, points", minval = 0.0, step = 5, group = "Signal",
+     tooltip = "A floor in points so a small gap on a quiet day is not traded. Optuna's consistency objective put it at 55-60 in every top trial; 25 was the earlier value.")
 usePrior   = input.bool(true, "Require the 09:30 open OUTSIDE the prior session's range", group = "Signal",
      tooltip = "Research: gaps opening beyond the prior day's 09:30-16:00 high/low filled at +58 pt/trade; gaps " +
      "opening inside it at -2. Holdout: +15.1 with the filter vs +6.3 without, on half the trades.")
-stopMult   = input.float(0.75, "Stop, x gap", minval = 0.25, step = 0.25, group = "Exit",
-     tooltip = "0.75 of the gap from the fill: the research-block choice (z 3.28 vs 2.62 at 1.0) and the walk-forward's choice in 9 of 9 folds. On the single holdout read 1.0 did better (+10.6 vs +6.3 pt/trade); both are positive.")
+stopMult   = input.float(0.6, "Stop, x gap", minval = 0.25, step = 0.05, group = "Exit",
+     tooltip = "0.6 of the gap from the fill: the Optuna pick (its top ten trials sit at 0.60-0.73). Earlier steps shipped 0.75 (walk-forward choice in 9 of 9 folds) and 1.0 (the first locked read).")
 tgtMult    = input.float(1.0, "Target, x gap (1.0 = the prior close)", minval = 0.25, step = 0.25, group = "Exit")
 flatH      = input.int(12, "Flat hour",   minval = 0, maxval = 23, group = "Exit")
 flatM      = input.int(0,  "Flat minute", minval = 0, maxval = 59, group = "Exit")

@@ -387,6 +387,70 @@ the two that price in the size of the search (deflated Sharpe, PBO). That is the
 of a modest, mechanism-backed effect measured on one file of one regime: worth forward trading
 at one contract, not worth believing beyond its holdout numbers.
 
+## 11. Fifth step: Optuna, with an objective built not to overfit
+
+`research/us30_optuna.py`. Optuna's TPE sampler is only as honest as what it is asked to
+maximise. Maximising research-block profit would hand it the same lottery every grid search on
+this file has failed, so the objective was built differently:
+
+| element | choice |
+| --- | --- |
+| space | gap threshold 0.3–1.5 ATR · stop 0.5–1.5 gap · target 0.5–1.25 gap · flat 11:00 / 12:00 / 13:00 / 14:00 · outside-prior-range filter on/off · minimum gap 0–75 pt · sides both / long |
+| objective | the research block in 5 contiguous session folds; per fold the net per trade; **mean over folds − std over folds**; −1,000 if any fold has fewer than 12 trades or the total is under 60 |
+| budget | 300 trials, seed 7, fixed before starting; counted in the deflated Sharpe |
+| locked | never touched during the search; the best trial read there once, next to the previous shipped cell |
+
+The objective rewards a configuration for being good in every sub-period of the research block,
+not for one window, which is the property a real edge has and a mined one does not.
+
+**What Optuna found.** 293 of 300 trials were valid. Objective: shipped cell 23.8, best 30.8,
+median over valid trials 23.9, 90th percentile 27.3.
+
+| rank | gap ATR | stop | target | flat | filter | min gap pt | sides | objective | n |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 0.41 | 0.61 | 0.98 | 12:00 | on | 57 | both | 30.8 | 101 |
+| 2 | 0.39 | 0.61 | 0.97 | 12:00 | on | 57 | both | 30.5 | 101 |
+| 3 | 0.42 | 0.63 | 0.97 | 12:00 | on | 56 | both | 29.6 | 101 |
+| 4 | 0.47 | 0.60 | 0.96 | 12:00 | on | 56 | both | 29.5 | 101 |
+| 5 | 0.55 | 0.61 | 1.01 | 12:00 | on | 57 | both | 29.3 | 101 |
+| 6–10 | 0.30–0.40 | 0.61–0.73 | 0.95–1.12 | 12:00 | on | 51–61 | both | 28.1–28.5 | 100–103 |
+
+The ten best trials are one region: stop 0.60–0.73 gap, a minimum gap of 51–61 points, the
+filter on, flat at 12:00, both sides, the target at the prior close. Perturbing every parameter
+of the best trial by ±15% (and every categorical to its alternatives) gives a median objective
+of 28.4, **stability 0.92**. Marginal effects over all valid trials: filter on 22.6 vs off 1.1;
+both sides 22.3 vs long only 3.5; flat 14:00 −2.2; and a *higher* ATR threshold is worse
+(correlation −0.37), because the floor in points does that job better than a multiple of a
+14-bar ATR.
+
+**Best trial, research:** 101 trades, 56.4% win, +64.9 pt/trade, PF 2.43, Sharpe 4.55, max
+drawdown 506 pt, control z 4.55. Per-fold net per trade 31.9 / 59.3 / 111.1 / 25.7 / 93.3: every
+fold positive, which is what the objective bought.
+
+**Locked, read once**, next to the previously shipped cell (gap 0.5 ATR, stop 0.75, min gap 25):
+
+| cell | research per trade | locked n | locked per trade | locked win | locked PF | locked max DD | control z | long / short |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| previous shipped | +58.2 | 69 | +15.1 | 55.1% | 1.21 | 1,147 | 0.86 | +45.0 / −12.3 |
+| **Optuna best** | +64.9 | 67 | **+21.4** | 55.2% | **1.32** | **892** | 1.13 | +49.5 / −4.2 |
+
+Better on the holdout on every line, in the direction the research predicted, with the right
+shape (research 64.9 → locked 21.4), and still not significant on its own (z 1.13 on 67 trades).
+Deflated Sharpe charged for all 29,882 trials on this file: **0.86**, the closest anything here
+has come to the 0.95 gate and still short of it.
+
+**What ships.** The rounded pick — gap ≥ 0.4 ATR, stop 0.6 gap, target the prior close, minimum
+gap 55 points, flat 12:00, filter on, both sides — which on research is 102 trades, +61.9
+pt/trade, PF 2.33, z 4.27, and survives a 10-point round turn at +54.9. The whole-file figure
+for the rounded cell is 169 trades, +45.2 pt/trade, +7,641 pt, PF 1.82, max drawdown 878 pt;
+its locked part is implied by that and by the exact pick's read, roughly +20 pt/trade.
+
+**What did not change.** The short side is still negative on the holdout (−4.2, improved from
+−12.3). The honest expectation on new data is the holdout's +15 to +21 pt/trade at a profit
+factor of 1.2 to 1.3, not the research's +62 at 2.3. Optuna did not find a different strategy;
+it found the centre of the same plateau, and the consistency objective is why it landed there
+rather than on a spike.
+
 ## Files
 
 | file | what |
@@ -396,5 +460,6 @@ at one contract, not worth believing beyond its holdout numbers.
 | `research/us30_gap2.py` | walk-forward of the gap-fill family; the pre-registered entry-timing test; the stop read once |
 | `research/us30_gap3.py` | the limit-fill test on the same days; four pre-registered conditions against random filters of the same selectivity; the one that passed read once |
 | `research/us30_gap4.py` | PBO by combinatorially symmetric cross-validation on the 72-cell family; risk-normalised sizing against fixed lots on MAR |
+| `research/us30_optuna.py` | Optuna TPE, 300 trials, consistency-penalised 5-fold research objective, locked untouched until one read |
 | `pine/us30/US30_GapFill.pine` | the gap-fill rule as a Pine v6 strategy with forward-test alerts; linted with `research/pine_lint.py` |
 | `pine/us30/US30_OpenRangeEmaCross.pine` | the original range-break rule, kept for the record |

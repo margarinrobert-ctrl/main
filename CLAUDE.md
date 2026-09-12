@@ -151,7 +151,12 @@ against random filters of the same selectivity, one passes: the 09:30 open OUTSI
 range (research +58 vs -2 pt/trade inside, excess z 2.40; locked +15.1 vs +6.3 unfiltered, z 0.62) --
 the opposite of "gap and go". PBO on the 72-cell family is 0.49 (a plateau: which cell wins in sample is
 noise, expect the family's OOS average, not the winner's research number); risk-normalised sizing is WORSE
-than fixed lots on MAR on both blocks because the biggest gaps are the best trades. A forward-test
+than fixed lots on MAR on both blocks because the biggest gaps are the best trades. Optuna (300 TPE trials,
+objective = mean - std of per-fold net/trade over 5 contiguous research folds, locked untouched) landed on the
+centre of the same plateau (gap 0.4 ATR, stop 0.6 gap, min gap 55 pt, filter on, flat 12:00): locked +21.4
+pt/trade PF 1.32 z 1.13 vs +15.1 / 1.21 / 0.86 for the earlier cell, deflated Sharpe 0.86 at N 29,882.
+The lesson worth keeping: an optimiser is only as honest as its objective; a consistency-across-folds
+objective with a per-fold trade floor finds plateaus, a profit objective finds spikes. A forward-test
 candidate, not a system.
 `docs/ib/STUDY_US30_GAPFILL.md`. What would change the question: 1-minute bars (the idea is a
 1-minute idea and the 09:30 15-minute bar alone spans 160 points, larger than the barrier), the
