@@ -145,8 +145,11 @@ prior close, target the prior close, stop one gap, flat 12:00) passes the contro
 locked read with the right shape -- but locked z is 1.21, the short side lost on locked, and the
 deflated Sharpe charged for all 29,461 trials is 0.06. Walk-forward (fit 120 / trade 40, 36 cells): 7 of 9
 folds, stitched OOS +24.6 pt/trade, efficiency 0.97, stop 0.75 gap chosen in 9/9 folds. Entering at the
-09:30 open instead of 09:45 is decisively WORSE: the first bar is the overshoot. A forward-test candidate,
-not a system.
+09:30 open instead of 09:45 is decisively WORSE: the first bar is the overshoot, and so is a resting limit
+beyond the 09:30 close (the unfilled days are the best days). Of four pre-registered conditions tested
+against random filters of the same selectivity, one passes: the 09:30 open OUTSIDE the prior session's
+range (research +58 vs -2 pt/trade inside, excess z 2.40; locked +15.1 vs +6.3 unfiltered, z 0.62) --
+the opposite of "gap and go". A forward-test candidate, not a system.
 `docs/ib/STUDY_US30_GAPFILL.md`. What would change the question: 1-minute bars (the idea is a
 1-minute idea and the 09:30 15-minute bar alone spans 160 points, larger than the barrier), the
 instrument's real cost, and the volume column, which the rule never read. `research/us30_orb.py`.

@@ -5,7 +5,8 @@
 //   THE RULE, all clock conditions in New York time, every decision on a CONFIRMED bar:
 //     gap       at the close of the 09:30 bar: gap = 09:30 open - prior session close (the
 //               close of the bar stamped 15:45, i.e. the 16:00 close)
-//     signal    |gap| >= 0.5 x ATR(14) and |gap| >= 25 points
+//     signal    |gap| >= 0.5 x ATR(14) and |gap| >= 25 points, AND the 09:30 open is OUTSIDE the
+//               prior session's 09:30-16:00 high-low range (input; see "conditions" below)
 //     entry     market at the 09:45 open, TOWARD the prior close (gap up -> short, gap down -> long)
 //     target    the prior close (the gap fills)
 //     stop      0.75 of the gap-width from the fill, on the far side (1.0 was the first read; see below)
@@ -40,6 +41,21 @@
 //     rule needs it to finish. Fill at the 09:45 open stays.
 //   STOP 0.75 vs 1.0: research +26.3 (z 3.28) vs +21.0 (z 2.62); holdout +6.3 (z 0.86) vs +10.6
 //     (z 1.21). This script ships 0.75, the research and walk-forward choice; 1.0 is one input away.
+//   THE FILL (research/us30_gap3.py): a limit resting k x ATR beyond the 09:30 close instead of a
+//     market order at 09:45 does NOT help (k 0 / 0.25 / 0.5: net on the same days 5,475 / 5,273 /
+//     1,450 vs 5,868). The market fill at 09:45 stays.
+//   CONDITIONS, four pre-registered, each tested against a random filter of the same selectivity:
+//     overshoot intact (z 0.5), high-volatility regime (z 1.9), gap >= 1 ATR (z 0.7) -- no;
+//     09:30 open OUTSIDE the prior session's range: research +58.2 pt/trade on 105 trades vs -2.1
+//     on the 118 inside (excess z 2.40, p 0.01). Read once on locked: +15.1 pt/trade on 69 trades
+//     vs +6.3 unfiltered (excess z 0.62, not significant on its own). The filter is ON by default:
+//     WITH IT  research 105 trades 55.2% win +6,115 pt +58.2/trade PF 2.19 Sharpe 4.06 maxDD 506
+//              locked    69 trades 55.1% win +1,043 pt +15.1/trade PF 1.21 Sharpe 1.16 maxDD 1,147
+//              (locked long +45.0 / short -12.3); whole file 174 trades +7,158 pt ($35,789) PF 1.71
+//              cost sweep 0/3/6/10 pt: research 61.2/58.2/55.2/51.2, locked 18.1/15.1/12.1/8.1
+//     Half the trades, roughly double the per-trade result, same total, on both blocks. This is
+//     the opposite of the "gap and go" lore: on this file it is the big gaps beyond the prior
+//     day's range that fill, and the small gaps inside it that do not.
 //
 //   WHAT IS NOT PROVEN, READ BEFORE TRADING:
 //     * The holdout is positive but not significant on its own (z 1.21). The research block's
@@ -77,6 +93,9 @@ dayKey = tzIn == "exchange" ? year * 10000 + month * 100 + dayofmonth : year(tim
 gapAtr     = input.float(0.5, "Minimum gap, x ATR(14)", minval = 0.0, step = 0.1, group = "Signal",
      tooltip = "Research: every threshold from 0.3 to 1.0 ATR works; 0.5 is the pre-registered value.")
 gapMinPts  = input.float(25.0, "Minimum gap, points", minval = 0.0, step = 5, group = "Signal")
+usePrior   = input.bool(true, "Require the 09:30 open OUTSIDE the prior session's range", group = "Signal",
+     tooltip = "Research: gaps opening beyond the prior day's 09:30-16:00 high/low filled at +58 pt/trade; gaps " +
+     "opening inside it at -2. Holdout: +15.1 with the filter vs +6.3 without, on half the trades.")
 stopMult   = input.float(0.75, "Stop, x gap", minval = 0.25, step = 0.25, group = "Exit",
      tooltip = "0.75 of the gap from the fill: the research-block choice (z 3.28 vs 2.62 at 1.0) and the walk-forward's choice in 9 of 9 folds. On the single holdout read 1.0 did better (+10.6 vs +6.3 pt/trade); both are positive.")
 tgtMult    = input.float(1.0, "Target, x gap (1.0 = the prior close)", minval = 0.25, step = 0.25, group = "Exit")
@@ -98,10 +117,21 @@ inWindow = winMode == "Custom dates" ? (time >= fromDate and time <= toDate) : d
 // ---- primitives ----------------------------------------------------------------------------------
 atrV = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
 
-// the prior session close: the close of the bar stamped 15:45 (the 16:00 close)
+// the prior session close: the close of the bar stamped 15:45 (the 16:00 close), and the prior
+// session's 09:30-16:00 high and low, both frozen at the 15:45 close
 var float priorClose = na
+var float rthHi = na
+var float rthLo = na
+var float prevHi = na
+var float prevLo = na
+inRth = barMin >= 9 * 60 + 30 and barMin < 16 * 60
+if inRth and barstate.isconfirmed
+    rthHi := barMin == 9 * 60 + 30 or na(rthHi) ? high : math.max(rthHi, high)
+    rthLo := barMin == 9 * 60 + 30 or na(rthLo) ? low  : math.min(rthLo, low)
 if barMin == 15 * 60 + 45 and barstate.isconfirmed
     priorClose := close
+    prevHi := rthHi
+    prevLo := rthLo
 
 // ---- the signal, on the confirmed 09:30 bar -------------------------------------------------------
 var int   tradedDay = -1
@@ -111,7 +141,8 @@ var int   sideNow   = 0
 is0930 = barMin == 9 * 60 + 30
 gap    = open - priorClose
 ready  = bar_index > 600 and not na(atrV) and not na(priorClose)
-sig    = is0930 and ready and math.abs(gap) >= gapAtr * atrV and math.abs(gap) >= gapMinPts
+outside = not na(prevHi) and not na(prevLo) and (open > prevHi or open < prevLo)
+sig    = is0930 and ready and math.abs(gap) >= gapAtr * atrV and math.abs(gap) >= gapMinPts and (not usePrior or outside)
 oncePerDay = tradedDay != dayKey
 
 // ---- entry at the 09:45 open, toward the prior close ----------------------------------------------
@@ -151,6 +182,8 @@ if strategy.position_size == 0 and strategy.position_size[1] != 0
 
 // ---- drawing -------------------------------------------------------------------------------------
 plot(priorClose, "prior session close", color.new(color.orange, 0), style = plot.style_linebr)
+plot(usePrior ? prevHi : na, "prior session high", color.new(color.gray, 50), style = plot.style_linebr)
+plot(usePrior ? prevLo : na, "prior session low",  color.new(color.gray, 50), style = plot.style_linebr)
 plot(strategy.position_size != 0 ? target : na, "target", color.new(color.teal, 0), style = plot.style_circles)
 plotshape(sig and gap < 0 and allowLong,  "gap down: buy",   shape.triangleup,   location.belowbar, color.teal, size = size.tiny)
 plotshape(sig and gap > 0 and allowShort, "gap up: sell",    shape.triangledown, location.abovebar, color.red,  size = size.tiny)

@@ -230,6 +230,67 @@ on that would be selecting on the holdout, so the shipped default is **0.75**, t
 walk-forward choice, with 1.0 one input away. The honest expectation for either on new data is
 the holdout number, +6 to +11 points a trade, not the research number.
 
+## 8. Third step: the fill mechanic and four conditions
+
+`research/us30_gap3.py`. Base for this step: stop 0.75 gap, flat 12:00 (research 223 trades,
++26.3 pt/trade).
+
+**The fill.** `STUDY_LIMIT_ENTRY.md` found a resting limit beats a market order on random bars,
+so a limit k × ATR beyond the 09:30 close, resting 09:45–10:15, was measured on the same signal
+days as the market fill at 09:45:
+
+| k | filled | fill rate | per filled trade | net, same days | base net |
+| --- | --- | --- | --- | --- | --- |
+| 0 (at the 09:30 close) | 220 of 223 | 98.7% | +24.9 | 5,475 | 5,868 |
+| 0.25 ATR | 195 | 87.4% | +27.0 | 5,273 | 5,868 |
+| 0.50 ATR | 161 | 72.2% | +9.0 | 1,450 | 5,868 |
+
+No. The unfilled days are the best days, which is the same lesson as the entry-timing test:
+this trade wants the overshoot complete and then wants in. The market fill at 09:45 stays.
+
+**Conditions**, each pre-registered with a mechanism, each scored as the working notes require,
+against a random filter of the same selectivity on the research trades (2,000 draws):
+
+| condition | kept side | n | per trade | win | excess z | p |
+| --- | --- | --- | --- | --- | --- | --- |
+| C1 the 09:30 bar extended the gap (overshoot intact) | yes | 142 | +30.3 | 44% | 0.48 | 0.33 |
+| | no | 81 | +19.4 | 56% | −0.42 | |
+| C2 the 09:30 open is inside the prior session's 09:30–16:00 range | yes | 118 | **−2.1** | 42% | −2.52 | |
+| | **no (outside)** | **105** | **+58.2** | **55%** | **+2.40** | **0.01** |
+| C3 ATR(14) above its 60-session median | yes | 110 | +49.3 | 54% | 1.85 | 0.03 |
+| | no | 113 | +4.0 | 43% | −1.85 | |
+| C4 gap ≥ 1.0 ATR | yes | 212 | +28.2 | 50% | 0.70 | 0.24 |
+| | no | 11 | −10.5 | 27% | | |
+
+One condition passes: the gap must open **outside** the prior session's range. That is the
+opposite of the "gap and go" lore, which says a gap beyond yesterday's range runs; on this file
+those are the gaps that fill, and the gaps inside yesterday's range are a coin. High volatility
+(C3) is close and is largely the same days. Read once on locked:
+
+| | research | locked | whole file |
+| --- | --- | --- | --- |
+| trades | 105 | 69 | 174 |
+| win | 55.2% | 55.1% | 55.2% |
+| per trade | **+58.2** | **+15.1** | +41.1 |
+| net | +6,115 pt | +1,043 pt | +7,158 pt ($35,789) |
+| profit factor | 2.19 | 1.21 | 1.71 |
+| Sharpe | 4.06 | 1.16 | 2.97 |
+| max drawdown | 506 pt | 1,147 pt | 1,147 pt |
+| long / short per trade | +93.6 / +33.7 | +45.0 / −12.3 | +72.5 / +16.8 |
+| vs the unfiltered rule, same block | +26.3 | +6.3 | +18.5 |
+| excess over a random filter of the same size | z 2.40 | z 0.62 | |
+| cost sweep 0 / 3 / 6 / 10 pt | 61.2 / 58.2 / 55.2 / 51.2 | 18.1 / 15.1 / 12.1 / 8.1 | |
+
+Half the trades, roughly double the per-trade result, and the same or higher total, on both
+blocks. The locked improvement (+15.1 against +6.3) is in the direction the research predicted
+and is not significant on its own (z 0.62 on 69 trades), and the short side is still negative on
+the holdout. The filter ships **on** by default because research chose it and the holdout did
+not contradict it; it is one input to switch off.
+
+Where this leaves the rule after three engineering steps: research +58 pt/trade, holdout +15,
+walk-forward +25 on the unfiltered family. The honest expectation on new data remains the
+holdout number, and the short side remains the part that has not earned its place.
+
 ## Files
 
 | file | what |
@@ -237,5 +298,6 @@ the holdout number, +6 to +11 points a trade, not the research number.
 | `research/us30_alpha.py` | stage 2: robust autocorrelation, Lo-MacKinlay variance ratios, drift-adjusted time-of-day profile, event studies with lift / HAC / BH, predictability budget |
 | `research/us30_mech.py` | the two pre-registered candidates, matched control, gates, one locked read |
 | `research/us30_gap2.py` | walk-forward of the gap-fill family; the pre-registered entry-timing test; the stop read once |
+| `research/us30_gap3.py` | the limit-fill test on the same days; four pre-registered conditions against random filters of the same selectivity; the one that passed read once |
 | `pine/us30/US30_GapFill.pine` | the gap-fill rule as a Pine v6 strategy with forward-test alerts; linted with `research/pine_lint.py` |
 | `pine/us30/US30_OpenRangeEmaCross.pine` | the original range-break rule, kept for the record |
