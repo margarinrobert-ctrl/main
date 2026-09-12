@@ -1,0 +1,223 @@
+//@version=6
+// =============================================================================================
+// US30 | opening gap fill, 15-minute bars
+//
+//   THE RULE, all clock conditions in New York time, every decision on a CONFIRMED bar:
+//     gap       at the close of the 09:30 bar: gap = 09:30 open - prior session close (the
+//               close of the bar stamped 15:45, i.e. the 16:00 close)
+//     signal    |gap| >= 0.4 x ATR(14) and |gap| >= 55 points, AND the 09:30 open is OUTSIDE the
+//               prior session's 09:30-16:00 high-low range (input; see "conditions" below)
+//     entry     market at the 09:45 open, TOWARD the prior close (gap up -> short, gap down -> long)
+//     target    the prior close (the gap fills)
+//     stop      0.6 of the gap-width from the fill, on the far side (0.75 and 1.0 were earlier reads; see below)
+//     flat      12:00 New York; one trade per session
+//
+//   WHY THIS RULE AND NOT THE RANGE BREAK: three passes and 29,337 configurations of the 09:00
+//   range-break structure found nothing on this file (docs/ib/STUDY_US30_ORB*.md). The alpha-
+//   discovery stage that followed (research/us30_alpha.py) found no single event surviving
+//   false-discovery control, but two effects with the SAME SIGN at every horizon: the first close
+//   beyond the 09:00 range is followed by a move against it, and a gap is followed by a move
+//   toward the prior close. The open's first move on this file is reversed more often than it is
+//   continued. Two candidates were pre-registered on that mechanism; this one passed.
+//
+//   MEASURED on US30 15-minute bars, 2024-08-19 to 2026-08-26, research = first 65% of sessions,
+//   locked = last 35%, 3 points round turn + 1 point stop slippage (docs/ib/STUDY_US30_GAPFILL.md):
+//     research   224 trades   51.3% win   +4,715 pt   +21.0 pt/trade   PF 1.38   Sharpe 1.75
+//                vs a random entry matched on side, minute and block: z 2.62, p 0.007
+//                long (gap down) +31.5 pt/trade, short (gap up) +12.6
+//                neighbourhood (gap 0.3-1.0 ATR, stop 0.75-1.5 gap, flat 11:00-16:00): 64 of 96
+//                cells at z > 2, stability 0.98 -- a plateau, not a spike
+//     locked     143 trades   54.5% win   +1,512 pt   +10.6 pt/trade   PF 1.16   Sharpe 0.93
+//                (read ONCE) vs control z 1.21, p 0.11; long +33.9 pt/trade, SHORT -6.8;
+//                profitable in 2 of 4 quarters; the profit comes from targets, the 12:00 flats
+//                net -15 pt each
+//     whole file 367 trades   52.6% win   +6,226 pt ($31,131 on one YM contract)   PF 1.29
+//                max drawdown 1,164 pt; survives a 10-point round turn on both blocks
+//   WALK-FORWARD (fit 120 sessions, trade 40, 36-cell grid, research/us30_gap2.py): 7 of 9 folds
+//     profitable, stitched out-of-sample 245 trades +24.6 pt/trade PF 1.42, efficiency 0.97; the
+//     stop of 0.75 gap was chosen in 9 of 9 folds and the 1.0 ATR gap threshold in 8 of 9.
+//   ENTRY TIMING, pre-registered: entering at the 09:30 OPEN (gap read from the 09:15 close) is
+//     WORSE (+0.3 to +7.9 pt/trade on research). The first 15-minute bar is the overshoot; the
+//     rule needs it to finish. Fill at the 09:45 open stays.
+//   STOP 0.75 vs 1.0: research +26.3 (z 3.28) vs +21.0 (z 2.62); holdout +6.3 (z 0.86) vs +10.6
+//     (z 1.21). This script ships 0.75, the research and walk-forward choice; 1.0 is one input away.
+//   THE FILL (research/us30_gap3.py): a limit resting k x ATR beyond the 09:30 close instead of a
+//     market order at 09:45 does NOT help (k 0 / 0.25 / 0.5: net on the same days 5,475 / 5,273 /
+//     1,450 vs 5,868). The market fill at 09:45 stays.
+//   CONDITIONS, four pre-registered, each tested against a random filter of the same selectivity:
+//     overshoot intact (z 0.5), high-volatility regime (z 1.9), gap >= 1 ATR (z 0.7) -- no;
+//     09:30 open OUTSIDE the prior session's range: research +58.2 pt/trade on 105 trades vs -2.1
+//     on the 118 inside (excess z 2.40, p 0.01). Read once on locked: +15.1 pt/trade on 69 trades
+//     vs +6.3 unfiltered (excess z 0.62, not significant on its own). The filter is ON by default:
+//     WITH IT  research 105 trades 55.2% win +6,115 pt +58.2/trade PF 2.19 Sharpe 4.06 maxDD 506
+//              locked    69 trades 55.1% win +1,043 pt +15.1/trade PF 1.21 Sharpe 1.16 maxDD 1,147
+//              (locked long +45.0 / short -12.3); whole file 174 trades +7,158 pt ($35,789) PF 1.71
+//              cost sweep 0/3/6/10 pt: research 61.2/58.2/55.2/51.2, locked 18.1/15.1/12.1/8.1
+//     The locked profit factor of 1.21 on 69 trades has a bootstrap 95% interval of [0.66, 2.22]:
+//     a holdout target such as 1.70 is inside the noise of a sample that size and cannot be
+//     engineered toward without fitting the holdout. Of the remaining research-side variants
+//     (long only, target 0.75 gap, flat 11:00 / 13:00, high-volatility regime, stop 1.0) none
+//     replaces this rule under the pick rule (highest control z with >= 60 research trades).
+//   OPTUNA (research/us30_optuna.py): 300 TPE trials over gap threshold 0.3-1.5 ATR, stop 0.5-1.5
+//     gap, target 0.5-1.25 gap, flat 11:00-14:00, filter on/off, minimum gap 0-75 pt, both/long.
+//     The objective was NOT research profit: the research block was cut into 5 contiguous folds
+//     and the objective is mean(per-fold net/trade) - std(per-fold), with >= 12 trades per fold,
+//     so a trial is rewarded for being consistent across sub-periods, not for one lucky window.
+//     The locked block was never touched during the search. Best trial: gap 0.41 ATR, stop 0.61
+//     gap, target 0.98 gap, flat 12:00, filter ON, min gap 57 pt, both sides; its ten best
+//     neighbours all sit in the same region (stop 0.60-0.73, min gap 51-61, filter on, flat
+//     12:00), stability 0.92 -- a plateau. Marginals: filter on +21 objective points over off;
+//     both sides +19 over long only; flat 14:00 is bad; higher gap thresholds are WORSE (the
+//     floor in points does that job better).
+//       research  101 trades 56.4% win +64.9 pt/trade PF 2.43 Sharpe 4.55 maxDD 506, control z 4.55
+//       locked    67 trades  55.2% win +21.4 pt/trade PF 1.32 maxDD 892, control z 1.13 (read once)
+//                 vs the previous shipped cell on the same locked block: +15.1, PF 1.21, z 0.86
+//       deflated Sharpe with N = 29,882 trials over everything on this file: 0.86 (gate 0.95)
+//     This script ships the ROUNDED pick (0.4 ATR, stop 0.6, target 1.0, min gap 55): research
+//     102 trades +61.9 pt/trade PF 2.33 z 4.27, cost sweep 0/3/6/10 pt: 64.9/61.9/58.9/54.9.
+//     Half the trades, roughly double the per-trade result, same total, on both blocks. This is
+//     the opposite of the "gap and go" lore: on this file it is the big gaps beyond the prior
+//     day's range that fill, and the small gaps inside it that do not.
+//
+//   WHAT IS NOT PROVEN, READ BEFORE TRADING:
+//     * The holdout is positive but not significant on its own (z 1.21). The research block's
+//       2024 quarter was -3 pt/trade; the edge is concentrated in 2025-2026.
+//     * The short side (fading a gap UP) lost on the holdout. On a file that rose 32%, "buy the
+//       gap down" is partly buying dips in a bull market. The matched control prices in drift,
+//       and the long side still beats it, but the asymmetry is real and untested elsewhere.
+//     * Charged for every configuration tried on this file (29,461), the deflated Sharpe is
+//       0.06. Charged only for its own family (28), it is 0.55. Neither clears the 0.95 gate.
+//     * This is a candidate for a FORWARD test with the alerts below, not a finished system.
+//
+// THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
+//   * Clock conditions go through an explicit timezone. Pine's bare hour/minute are EXCHANGE time.
+//   * ATR is ta.ema(ta.tr(true), 14), the research definition, not ta.atr (Wilder).
+//   * The chart MUST be 15 minutes and must include the 24-hour session, so the 15:45 bar exists.
+//
+// TICK-SETTING IMMUNE: entries require barstate.isconfirmed.
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+strategy("US30 | opening gap fill", overlay = true, initial_capital = 25000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 2.50,
+     slippage = 1, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// ---- clock ---------------------------------------------------------------------------------------
+tzIn   = input.string("America/New_York", "Timezone for clock conditions",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"], group = "Setup")
+barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
+dayKey = tzIn == "exchange" ? year * 10000 + month * 100 + dayofmonth : year(time, tzIn) * 10000 + month(time, tzIn) * 100 + dayofmonth(time, tzIn)
+
+// ---- the rule's parameters ---------------------------------------------------------------------
+gapAtr     = input.float(0.4, "Minimum gap, x ATR(14)", minval = 0.0, step = 0.1, group = "Signal",
+     tooltip = "Research: every threshold from 0.3 to 1.0 ATR works. 0.5 was the pre-registered value; 0.4 with a 55-point floor is the Optuna pick (see header).")
+gapMinPts  = input.float(55.0, "Minimum gap, points", minval = 0.0, step = 5, group = "Signal",
+     tooltip = "A floor in points so a small gap on a quiet day is not traded. Optuna's consistency objective put it at 55-60 in every top trial; 25 was the earlier value.")
+usePrior   = input.bool(true, "Require the 09:30 open OUTSIDE the prior session's range", group = "Signal",
+     tooltip = "Research: gaps opening beyond the prior day's 09:30-16:00 high/low filled at +58 pt/trade; gaps " +
+     "opening inside it at -2. Holdout: +15.1 with the filter vs +6.3 without, on half the trades.")
+stopMult   = input.float(0.6, "Stop, x gap", minval = 0.25, step = 0.05, group = "Exit",
+     tooltip = "0.6 of the gap from the fill: the Optuna pick (its top ten trials sit at 0.60-0.73). Earlier steps shipped 0.75 (walk-forward choice in 9 of 9 folds) and 1.0 (the first locked read).")
+tgtMult    = input.float(1.0, "Target, x gap (1.0 = the prior close)", minval = 0.25, step = 0.25, group = "Exit")
+flatH      = input.int(12, "Flat hour",   minval = 0, maxval = 23, group = "Exit")
+flatM      = input.int(0,  "Flat minute", minval = 0, maxval = 59, group = "Exit")
+allowLong  = input.bool(true, "Allow longs (gap down)",  group = "Direction")
+allowShort = input.bool(true, "Allow shorts (gap up)",   group = "Direction",
+     tooltip = "The short side was positive on research and NEGATIVE on the holdout. Off is the conservative setting.")
+flatMin    = flatH * 60 + flatM
+
+// ---- backtest window -------------------------------------------------------------------------
+winMode  = input.string("All available history", "Backtest window", group = "Backtest window",
+     options = ["All available history", "Last 90 days", "Last 365 days", "Last 3 years", "Custom dates"])
+fromDate = input.time(timestamp("01 Jan 2023 00:00 +0000"), "Custom from", group = "Backtest window")
+toDate   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "Custom to", group = "Backtest window")
+daysBack = winMode == "Last 90 days" ? 90 : winMode == "Last 365 days" ? 365 : winMode == "Last 3 years" ? 1095 : 0
+inWindow = winMode == "Custom dates" ? (time >= fromDate and time <= toDate) : daysBack == 0 ? true : (time >= timenow - daysBack * 86400000)
+
+// ---- primitives ----------------------------------------------------------------------------------
+atrV = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
+
+// the prior session close: the close of the bar stamped 15:45 (the 16:00 close), and the prior
+// session's 09:30-16:00 high and low, both frozen at the 15:45 close
+var float priorClose = na
+var float rthHi = na
+var float rthLo = na
+var float prevHi = na
+var float prevLo = na
+inRth = barMin >= 9 * 60 + 30 and barMin < 16 * 60
+if inRth and barstate.isconfirmed
+    rthHi := barMin == 9 * 60 + 30 or na(rthHi) ? high : math.max(rthHi, high)
+    rthLo := barMin == 9 * 60 + 30 or na(rthLo) ? low  : math.min(rthLo, low)
+if barMin == 15 * 60 + 45 and barstate.isconfirmed
+    priorClose := close
+    prevHi := rthHi
+    prevLo := rthLo
+
+// ---- the signal, on the confirmed 09:30 bar -------------------------------------------------------
+var int   tradedDay = -1
+var float gapPts    = na
+var float target    = na
+var int   sideNow   = 0
+is0930 = barMin == 9 * 60 + 30
+gap    = open - priorClose
+ready  = bar_index > 600 and not na(atrV) and not na(priorClose)
+outside = not na(prevHi) and not na(prevLo) and (open > prevHi or open < prevLo)
+sig    = is0930 and ready and math.abs(gap) >= gapAtr * atrV and math.abs(gap) >= gapMinPts and (not usePrior or outside)
+oncePerDay = tradedDay != dayKey
+
+// ---- entry at the 09:45 open, toward the prior close ----------------------------------------------
+// The target is the prior close (an absolute price), the stop is one gap-width from the FILL
+// (`loss` is in ticks relative to the entry price), and both are issued with the entry so they
+// are live on the fill bar. barstate.isconfirmed keeps the Strategy Tester's tick settings out.
+if sig and strategy.position_size == 0 and oncePerDay and inWindow and barstate.isconfirmed
+    gapPts  := math.abs(gap)
+    lossT   = math.max(math.round(stopMult * gapPts / syminfo.mintick), 1)
+    if gap < 0 and allowLong
+        target  := priorClose - (1.0 - tgtMult) * gapPts
+        strategy.entry("L", strategy.long)
+        strategy.exit("Lx", "L", loss = lossT, limit = target)
+        tradedDay := dayKey
+        sideNow := 1
+    else if gap > 0 and allowShort
+        target  := priorClose + (1.0 - tgtMult) * gapPts
+        strategy.entry("S", strategy.short)
+        strategy.exit("Sx", "S", loss = lossT, limit = target)
+        tradedDay := dayKey
+        sideNow := -1
+
+// flat: the research exits at the close of the bar before the flat time; close_all on that
+// confirmed bar fills at the next bar's open.
+if barMin >= flatMin - 15 and strategy.position_size != 0 and barstate.isconfirmed
+    strategy.close_all(comment = "flat")
+if strategy.position_size != 0 and not inWindow and barstate.isconfirmed
+    strategy.close_all(comment = "outside backtest window")
+
+// ---- alerts, for a disciplined forward test ---------------------------------------------------
+if sig and strategy.position_size == 0 and oncePerDay and inWindow and barstate.isconfirmed
+    alert("US30 gap fill: " + (gap < 0 ? "BUY" : "SELL") + " at the 09:45 open, target " +
+         str.tostring(priorClose, "#.#") + ", stop " + str.tostring(stopMult * math.abs(gap), "#.#") +
+         " pt from the fill, flat 12:00", alert.freq_once_per_bar_close)
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    alert("US30 gap fill: flat, trade closed", alert.freq_once_per_bar)
+
+// ---- drawing -------------------------------------------------------------------------------------
+plot(priorClose, "prior session close", color.new(color.orange, 0), style = plot.style_linebr)
+plot(usePrior ? prevHi : na, "prior session high", color.new(color.gray, 50), style = plot.style_linebr)
+plot(usePrior ? prevLo : na, "prior session low",  color.new(color.gray, 50), style = plot.style_linebr)
+plot(strategy.position_size != 0 ? target : na, "target", color.new(color.teal, 0), style = plot.style_circles)
+plotshape(sig and gap < 0 and allowLong,  "gap down: buy",   shape.triangleup,   location.belowbar, color.teal, size = size.tiny)
+plotshape(sig and gap > 0 and allowShort, "gap up: sell",    shape.triangledown, location.abovebar, color.red,  size = size.tiny)
+bgcolor(is0930 and ready and math.abs(gap) >= gapAtr * atrV ? color.new(color.blue, 90) : na)
+
+var int firstBarT = na
+if inWindow and na(firstBarT)
+    firstBarT := time
+var table dr = table.new(position.bottom_left, 1, 2, border_width = 1)
+if barstate.islast
+    table.cell(dr, 0, 0, "backtested " + str.format_time(firstBarT, "yyyy-MM-dd") + "  to  " +
+         str.format_time(time, "yyyy-MM-dd"), text_size = size.small, text_color = color.gray)
+    table.cell(dr, 0, 1, timeframe.period == "15" ? "15-minute chart: OK" : "WRONG TIMEFRAME -- the research is 15-minute bars",
+         text_size = size.small, text_color = timeframe.period == "15" ? color.gray : color.red)

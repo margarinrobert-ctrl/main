@@ -1,7 +1,8 @@
 # Working notes for this repository
 
 Quantitative futures research on NQ/MNQ. One instrument, OHLCV 1-minute bars,
-2022-12-26 → 2025-12-12. Read `docs/RESEARCH_PROTOCOL.md` before proposing or judging a strategy.
+2022-12-26 → 2025-12-12, plus one US30 15-minute file (2024-08-19 → 2026-08-26, see
+`docs/ib/STUDY_US30_ORB.md`). Read `docs/RESEARCH_PROTOCOL.md` before proposing or judging a strategy.
 
 ## The rules that keep getting re-learned the hard way
 
@@ -118,6 +119,57 @@ asserted trade-for-trade against `runBacktest`; note the app sizes stops in WILD
 `runBacktest` uses) while the research layer uses `ema(tr, n)`, so compare the two on shape, not to
 the dollar. See `docs/ib/STUDY_TUNER.md`.
 
+**The 09:00 range-break + EMA-cross open structure has no edge on US30 at 15 minutes. Do not
+re-run it on this file.** The rule as asked for (EMA 13/48 cross, EMA 200 gate, 09:00-09:30 range
+broken 09:30-10:30, 100/100 points) loses on research AND is 2.2 sd worse than a matched random
+entry on the holdout; at zero cost it still loses 7 pt/trade. Its own neighbourhood, 16,200 cells
+with the matched control in front, produced 0 cells at z > 2 (2.3% expected by chance), a spike
+for a winner, and a plateau pick that made +12.8 pt/trade on research and -8.1 on locked.
+Walk-forward lost 7 of 9 folds. A second pass held the time and widened the RULES (stop,
+limit-retest and fade entries; momentum variants; break distance; volume; range width; overnight
+gap; range-anchored and break-even exits; 12,672 cells, `research/us30_orb2.py`): 13 cells at
+z > 2 where 41 are expected by chance, 0 plateaus, 0 beat their own bare mechanic. The one cell
+read on locked did BETTER there than on research (the wrong shape), and its bare limit-retest
+mechanic alone made 11.6 pt/trade on locked -- the STUDY_LIMIT_ENTRY effect, not a signal. A
+third pass (`research/us30_orb3.py`) with the entry AT the line tried exit management (chandelier
+trail, time exits, partial, gap-fill target), direction from the DAILY trend, and the overnight-
+range position: 720 cells, 0 at z > 2 (11 expected), no exit beats the plain 100/100, daily
+direction is the least-bad axis and still negative, best plateau -1.0 research / -19.4 locked.
+Three passes, 29,337 cells, one file. THEN the protocol's stage 2 was run on the file
+(`research/us30_alpha.py`): nothing survives FDR, but breaks of the pre-open and overnight ranges
+have NEGATIVE lift at every horizon and gaps have POSITIVE lift toward the prior close at every
+horizon -- the open's first move reverses here, so the whole range-break family was pointed against
+the mechanism. One pre-registered rule on that (`research/us30_mech.py`, fade the gap toward the
+prior close, target the prior close, stop one gap, flat 12:00) passes the control on research
+(z 2.62, +21 pt/trade, plateau 64/96, survives 10 pt cost) and is +10.6 pt/trade on the single
+locked read with the right shape -- but locked z is 1.21, the short side lost on locked, and the
+deflated Sharpe charged for all 29,461 trials is 0.06. Walk-forward (fit 120 / trade 40, 36 cells): 7 of 9
+folds, stitched OOS +24.6 pt/trade, efficiency 0.97, stop 0.75 gap chosen in 9/9 folds. Entering at the
+09:30 open instead of 09:45 is decisively WORSE: the first bar is the overshoot, and so is a resting limit
+beyond the 09:30 close (the unfilled days are the best days). Of four pre-registered conditions tested
+against random filters of the same selectivity, one passes: the 09:30 open OUTSIDE the prior session's
+range (research +58 vs -2 pt/trade inside, excess z 2.40; locked +15.1 vs +6.3 unfiltered, z 0.62) --
+the opposite of "gap and go". PBO on the 72-cell family is 0.49 (a plateau: which cell wins in sample is
+noise, expect the family's OOS average, not the winner's research number); risk-normalised sizing is WORSE
+than fixed lots on MAR on both blocks because the biggest gaps are the best trades. Optuna (300 TPE trials,
+objective = mean - std of per-fold net/trade over 5 contiguous research folds, locked untouched) landed on the
+centre of the same plateau (gap 0.4 ATR, stop 0.6 gap, min gap 55 pt, filter on, flat 12:00): locked +21.4
+pt/trade PF 1.32 z 1.13 vs +15.1 / 1.21 / 0.86 for the earlier cell, deflated Sharpe 0.86 at N 29,882.
+The lesson worth keeping: an optimiser is only as honest as its objective; a consistency-across-folds
+objective with a per-fold trade floor finds plateaus, a profit objective finds spikes. The anatomy of the
+shipped rule (`research/us30_gap5.py`): on research half the net is the target-vs-stop race (24:32 at 2.5:1)
+and half the partial fill at the 12:00 flat; on locked the race is 18:18 and cancels, and the ENTIRE holdout
+profit is the flat. The fill curve is identical on both blocks (P(full fill) 26% / 28%). Six exit variants
+(break-even, structural stop, partial, time stop, trail) all fail their matched control gate -- the rule
+needs its room, a stop at the 09:30 bar's extreme takes the win rate from 55% to 31%. The volume column is
+coherent but below the gate (high-volume open +101 vs +18 per trade, z 1.9 under three definitions). The
+0.4 ATR threshold never binds (gaps are 2.4-8.8 ATR): the 55 pt floor and the outside-range filter do the
+selecting, and the research edge is concentrated in gaps >= 250 pt (post hoc, monotone grid, not shipped).
+A forward-test candidate, not a system.
+`docs/ib/STUDY_US30_GAPFILL.md`. What would change the question: 1-minute bars (the idea is a
+1-minute idea and the 09:30 15-minute bar alone spans 160 points, larger than the barrier), the
+instrument's real cost, and the volume column, which the rule never read. `research/us30_orb.py`.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -157,6 +209,11 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
+| `research/us30_ingest.py` | the US30 RTF export -> `data/US30_15m.csv`, canonical UTC columns, with an audit |
+| `research/us30_orb.py` | US30 09:00 range-break + EMA-cross study: cached exit tensor, matched control as the gate, sweep, walk-forward, locked reveal |
+| `research/us30_orb2.py`, `us30_orb3.py` | its second and third passes: entry mechanics and filters; exits, daily direction, overnight position |
+| `research/us30_alpha.py`, `us30_mech.py` | stage-2 alpha discovery on the US30 file, and the two mechanism candidates it produced (the gap fill passed) |
+| `research/us30_gap2.py` .. `us30_gap5.py`, `us30_optuna.py` | the gap fill's six engineering steps: walk-forward and entry timing; fill mechanic and conditions; PBO and sizing; Optuna with a consistency objective; the anatomy (exit split, MFE/MAE, exit variants, volume, stability) |
 
 ## Pine
 

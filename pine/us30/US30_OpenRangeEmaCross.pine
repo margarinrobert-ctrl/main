@@ -1,0 +1,312 @@
+//@version=6
+// =============================================================================================
+// US30 | 09:00 pre-open range break + EMA cross, 15-minute bars
+//
+//   THE RULE, all clock conditions in New York time, every decision on a CONFIRMED bar, filled
+//   at the next bar's open:
+//     range     the high and low of the bars from 09:00 to 09:30 (two 15-minute bars)
+//     entry     AT THE LINE: a stop order resting at the 09:00 range high (long) or low (short),
+//               filled the moment price trades through it, from the 09:30 bar until 10:30.
+//               The order is placed on each confirmed bar while the conditions below hold and
+//               cancelled when they stop holding. Two alternatives are inputs: a LIMIT at the
+//               level filled on the retest after a close beyond it, and the original MARKET
+//               entry at the next open after a close beyond it.
+//     momentum  EMA(13) above EMA(48) for a long, below for a short (optionally: the cross
+//               must have happened within the last k bars), read on the bar before the fill
+//     trend     close above EMA(200) for a long, below for a short, read on the same bar
+//     window    fills from the 09:30 bar to the 10:30 bar; unfilled orders cancel at 10:30
+//     exit      stop and target in POINTS from the fill (100 / 100), flat at 16:00 New York
+//     one trade per session, first fill wins
+//
+//   MEASURED on US30 15-minute bars, 2024-08-19 to 2026-08-26, 511 sessions, research = first
+//   65% of sessions, locked = last 35%, 3 points round turn + 1 point stop slippage.
+//   ENTRY AT THE LINE, stop resting before the break, EMA 13/48 + EMA 200 on the prior bar:
+//     research (332 sessions)     263 trades   49.0% win   -1,442 pt    -5.5 pt/trade   PF 0.90
+//     locked   (179 sessions)     151 trades   41.1% win   -3,117 pt   -20.6 pt/trade   PF 0.66
+//     whole file                  414 trades   46.1% win   -4,559 pt   (-$22,795 on one YM contract)
+//     vs a random entry matched on side, minute and block:  z 0.03 research, z -1.58 locked
+//   ... plus the late rule when the conditions confirm only after the break (this script's default
+//   is the retest):   retest  research 266 trades -2.1 pt/trade (z 0.58), locked 153 -17.8 (z -1.25)
+//                     market  research 274 trades -6.5 pt/trade (z -0.13), locked 156 -19.4 (z -1.46)
+//   ... with the EMA condition OFF (order rests from 09:15 on every session, trend gate only):
+//                     research 305 trades -12.9 pt/trade (z -1.24), locked 169 -22.4 (z -1.80)
+//   ... with NO conditions at all (every break, both sides):
+//                     research 332 trades -4.7 pt/trade (z 0.40), locked 179 -8.7 (z 0.07)
+//   LIMIT AT THE LINE ON THE RETEST:  research 123 trades -4.5 pt/trade (z 0.02); locked 84
+//     trades +10.0 pt/trade (z 1.45, p 0.07). Better on the holdout than on research is the
+//     wrong shape, and the bare limit-retest fill with NO conditions made +11.6 pt/trade on
+//     locked by itself -- an execution effect of one regime, not the EMA cross.
+//   MARKET AT THE NEXT OPEN (the original):
+//     research 232 trades -10.1 pt/trade (z -0.84); locked 130 trades -23.4 pt/trade (z -2.20)
+//     at ZERO cost it still loses 7.1 pt/trade on research and 20.4 on locked
+//     neighbourhood swept: 16,200 cells on research, 0 beat the control at z > 2; the best
+//     plateau (EMA 8/34, no trend gate, range 09:15-09:30, fills to 10:00, cross within one
+//     bar, 100/100, flat 12:00) made 12.8 pt/trade on research and -8.1 on locked.
+//     walk-forward: 2 of 9 folds profitable, stitched out-of-sample -24.3 pt/trade.
+//   SECOND PASS, time held fixed, the rules widened (stop / limit-retest / fade entries, four
+//   momentum variants, break distance, volume, range width, overnight gap, range-anchored and
+//   break-even exits): 12,672 more cells, 13 beat the control at z > 2 where 41 would by chance,
+//   none was a plateau, none beat its own bare entry mechanic. Nothing here is changed by it.
+//
+//   THIRD PASS, entry at the line, time held: exit management (chandelier trail 1.5x/2.5x ATR,
+//   time exits at 11:00/12:00, half-off-and-trail, gap-fill target, 100/200), direction from the
+//   DAILY trend (5-session momentum, 20-session EMA) instead of the 15m EMA 200, and whether the
+//   09:00 range is the overnight extreme: 720 more cells, 0 at z > 2 where 11 would by chance.
+//   No exit beats the plain 100/100 on this rule (research: 100/100 -5.5 pt/trade, trail 1.5x
+//   -5.8, partial -5.9, time exit 11:00 -6.2, 75/75 -16.5, 100/200 -14.1). Best plateau cell
+//   (close entry, daily-EMA direction, 100/100) is -1.0 pt/trade on research and -19.4 on locked.
+//   Three passes, 29,337 cells: no configuration is profitable out of sample on this file.
+//
+//   READ docs/ib/STUDY_US30_ORB.md BEFORE TRADING THIS. The study's verdict is in that file,
+//   and it is not "trade it".
+//
+// THREE THINGS THAT ARE EASY TO GET WRONG, AND WERE, HERE:
+//   * Clock conditions go through an explicit timezone. Pine's bare hour/minute are EXCHANGE
+//     time, and a Dow CFD or YM chart is not necessarily New York.
+//   * ATR is ta.ema(ta.tr(true), 14), alpha 2/15, the research definition. Pine's ta.atr is
+//     Wilder's RMA at 1/14. Only used when "size stops in ATR" is on.
+//   * The chart MUST be 15 minutes. The range is the two bars stamped 09:00 and 09:15; on any
+//     other timeframe the range and the EMAs mean something else. The script says so on screen.
+//
+// TICK-SETTING IMMUNE: entries require barstate.isconfirmed, so the Strategy Tester's
+// "On order fill" / "On history bar tick" / "On realtime bar tick" boxes cannot change
+// the result. Leave them on or off; the numbers are the same.
+//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. Not financial advice.
+// =============================================================================================
+
+strategy("US30 | 09:00 range break + EMA cross", overlay = true, initial_capital = 25000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 2.50,
+     slippage = 1, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// ---- clock ---------------------------------------------------------------------------------------
+tzIn   = input.string("America/New_York", "Timezone for clock conditions",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "exchange"],
+     group = "Setup", tooltip = "Pine's bare hour/minute are in the EXCHANGE timezone. The research " +
+     "is New York time. Getting this wrong runs the strategy an hour late.")
+barMin = tzIn == "exchange" ? hour * 60 + minute : hour(time, tzIn) * 60 + minute(time, tzIn)
+dayKey = tzIn == "exchange" ? year * 10000 + month * 100 + dayofmonth : year(time, tzIn) * 10000 + month(time, tzIn) * 100 + dayofmonth(time, tzIn)
+newDay = dayKey != dayKey[1]
+
+// ---- the rule's parameters ---------------------------------------------------------------------
+rangeStartH = input.int(9,  "Range start hour",   minval = 0, maxval = 23, group = "Range")
+rangeStartM = input.int(0,  "Range start minute", minval = 0, maxval = 59, group = "Range")
+rangeEndMin = 9 * 60 + 30                                  // the range always ends at the 09:30 open
+entryMode   = input.string("Stop order AT the 09:00 high/low", "Entry", group = "Entry",
+     options = ["Stop order AT the 09:00 high/low", "Limit AT the level on the retest", "Market at next open after a close beyond"],
+     tooltip = "AT the line: a stop order rests at the range high/low and fills when price trades " +
+     "through it. Retest: after a close beyond the level a limit rests at the level. Market: enter " +
+     "at the next open after a close beyond the level (the original, and the worst of the three).")
+winEndH     = input.int(10, "Last fill hour",   minval = 0, maxval = 23, group = "Window")
+winEndM     = input.int(30, "Last fill minute", minval = 0, maxval = 59, group = "Window")
+lateMode    = input.string("Wait for the retest AT the line", "If the EMA/trend conditions confirm only AFTER the break",
+     options = ["Wait for the retest AT the line", "Enter at market now", "Skip the day"], group = "Entry",
+     tooltip = "The stop order can only rest at the line while the conditions already hold. On many " +
+     "days the break bar itself is what flips the EMAs, so the conditions confirm at its close with " +
+     "price already beyond the line. A stop placed then is below the market and fills at the next " +
+     "open, which looks like a late entry. This input decides what happens instead.")
+momOn       = input.bool(true, "EMA momentum condition on", group = "Momentum",
+     tooltip = "Off = the order rests at the 09:00 high/low from 09:15 with no EMA condition; the " +
+     "trend gate still applies if it is on.")
+fastLen     = input.int(13,  "Fast EMA",  minval = 2, group = "Momentum")
+slowLen     = input.int(48,  "Slow EMA",  minval = 3, group = "Momentum")
+crossK      = input.int(0,   "Cross within last k bars (0 = EMA state only)", minval = 0, group = "Momentum")
+trendOn     = input.bool(true, "Trend gate on", group = "Trend")
+trendLen    = input.int(200, "Trend EMA", minval = 5, group = "Trend")
+useAtr      = input.bool(false, "Size stop/target in ATR(14) multiples", group = "Exit")
+slPts       = input.float(100.0, "Stop (points, or x ATR)",   minval = 0.1, step = 5, group = "Exit")
+tpPts       = input.float(100.0, "Target (points, or x ATR)", minval = 0.1, step = 5, group = "Exit")
+flatH       = input.int(16, "Flat hour",   minval = 0, maxval = 23, group = "Exit")
+flatM       = input.int(0,  "Flat minute", minval = 0, maxval = 59, group = "Exit")
+allowLong   = input.bool(true, "Allow longs",  group = "Direction")
+allowShort  = input.bool(true, "Allow shorts", group = "Direction")
+
+rangeStart = rangeStartH * 60 + rangeStartM
+winEnd     = winEndH * 60 + winEndM
+flatMin    = flatH * 60 + flatM
+modeStop   = entryMode == "Stop order AT the 09:00 high/low"
+modeLimit  = entryMode == "Limit AT the level on the retest"
+modeMarket = not modeStop and not modeLimit
+lateRetest = lateMode == "Wait for the retest AT the line"
+lateMarket = lateMode == "Enter at market now"
+
+// ---- backtest window -------------------------------------------------------------------------
+winMode  = input.string("All available history", "Backtest window", group = "Backtest window",
+     options = ["All available history", "Last 90 days", "Last 365 days", "Last 3 years", "Custom dates"])
+fromDate = input.time(timestamp("01 Jan 2023 00:00 +0000"), "Custom from", group = "Backtest window")
+toDate   = input.time(timestamp("01 Jan 2030 00:00 +0000"), "Custom to", group = "Backtest window")
+daysBack = winMode == "Last 90 days" ? 90 : winMode == "Last 365 days" ? 365 : winMode == "Last 3 years" ? 1095 : 0
+inWindow = winMode == "Custom dates" ? (time >= fromDate and time <= toDate) : daysBack == 0 ? true : (time >= timenow - daysBack * 86400000)
+
+// ---- primitives, defined to match the research exactly -------------------------------------------
+emaF   = ta.ema(close, fastLen)
+emaS   = ta.ema(close, slowLen)
+emaT   = ta.ema(close, trendLen)
+atrV   = ta.ema(ta.tr(true), 14)          // NOT ta.atr -- see the header
+momUp  = emaF > emaS
+xUp    = ta.crossover(emaF, emaS)
+xDn    = ta.crossunder(emaF, emaS)
+sinceUp = ta.barssince(xUp)
+sinceDn = ta.barssince(xDn)
+freshUp = crossK == 0 ? true : (not na(sinceUp) and sinceUp < crossK)
+freshDn = crossK == 0 ? true : (not na(sinceDn) and sinceDn < crossK)
+
+// ---- the 09:00 range, built bar by bar and frozen at 09:30 --------------------------------------
+var float rHi = na
+var float rLo = na
+var bool  brokeUp = false
+var bool  brokeDn = false
+var int   tradedDay = -1
+inRange = barMin >= rangeStart and barMin < rangeEndMin
+if inRange
+    rHi := barMin == rangeStart or na(rHi) ? high : math.max(rHi, high)
+    rLo := barMin == rangeStart or na(rLo) ? low  : math.min(rLo, low)
+if newDay
+    brokeUp := false
+    brokeDn := false
+rangeOk = not na(rHi) and not na(rLo) and rHi > rLo
+
+// bars whose CLOSE can decide something: for the market and limit modes the break bar itself
+// (09:30 .. one bar before winEnd); for the stop mode the bar BEFORE the fill bar, so the
+// order is live on the 09:30 bar (placed on the confirmed 09:15 bar) through the winEnd bar.
+inSig   = barMin >= rangeEndMin and barMin < winEnd
+inPlace = barMin >= rangeEndMin - 15 and barMin < winEnd
+if inSig and rangeOk and barstate.isconfirmed
+    if close > rHi
+        brokeUp := true
+    if close < rLo
+        brokeDn := true
+
+tUp = not trendOn or close > emaT
+tDn = not trendOn or close < emaT
+condUp = (not momOn or (momUp and freshUp)) and tUp
+condDn = (not momOn or ((not momUp) and freshDn)) and tDn
+longSig  = inSig and rangeOk and brokeUp and condUp        // market / limit: a close beyond it
+shortSig = inSig and rangeOk and brokeDn and condDn
+longArm  = inPlace and rangeOk and condUp                  // stop mode: conditions hold, order rests
+shortArm = inPlace and rangeOk and condDn
+ready = bar_index > 600 and not na(emaT) and not na(atrV)
+isFlat = strategy.position_size == 0
+oncePerDay = tradedDay != dayKey
+
+// ---- entries -------------------------------------------------------------------------------------
+// Stop and target are measured from the FILL, in ticks relative to the entry price -- the only
+// Pine primitive that matches the research engine. strategy.exit tied to an entry id waits for
+// that entry to fill, so it can be issued together with a resting order.
+// barstate.isconfirmed is what makes this script immune to the Strategy Tester's "Script
+// execution" checkboxes: orders are placed and cancelled at bar closes and nowhere else.
+slT = math.max(math.round((useAtr ? slPts * atrV : slPts) / syminfo.mintick), 1)
+tpT = math.max(math.round((useAtr ? tpPts * atrV : tpPts) / syminfo.mintick), 1)
+if ready and isFlat and oncePerDay and inWindow and barstate.isconfirmed
+    if modeStop
+        // BEFORE the break: a stop order AT the 09:00 high / low, re-issued every bar the
+        // conditions hold, cancelled the bar they stop holding. AFTER a close beyond the line
+        // with the conditions confirming only now, the stop would sit below the market and fill
+        // at the next open -- so the late rule decides: rest a limit AT the line for the retest,
+        // enter at market now, or skip the day.
+        lateUp = brokeUp and close > rHi
+        lateDn = brokeDn and close < rLo
+        if longArm and allowLong
+            if not lateUp
+                strategy.entry("L", strategy.long, stop = rHi)
+            else if lateRetest
+                strategy.entry("L", strategy.long, limit = rHi)
+            else if lateMarket
+                strategy.entry("L", strategy.long)
+            else
+                strategy.cancel("L")
+            strategy.exit("Lx", "L", loss = slT, profit = tpT)
+        else
+            strategy.cancel("L")
+        if shortArm and allowShort
+            if not lateDn
+                strategy.entry("S", strategy.short, stop = rLo)
+            else if lateRetest
+                strategy.entry("S", strategy.short, limit = rLo)
+            else if lateMarket
+                strategy.entry("S", strategy.short)
+            else
+                strategy.cancel("S")
+            strategy.exit("Sx", "S", loss = slT, profit = tpT)
+        else
+            strategy.cancel("S")
+    else if modeLimit
+        // after a close beyond the level, a limit rests AT the level for the retest
+        if longSig and allowLong
+            strategy.entry("L", strategy.long, limit = rHi)
+            strategy.exit("Lx", "L", loss = slT, profit = tpT)
+        else
+            strategy.cancel("L")
+        if shortSig and allowShort
+            strategy.entry("S", strategy.short, limit = rLo)
+            strategy.exit("Sx", "S", loss = slT, profit = tpT)
+        else
+            strategy.cancel("S")
+    else
+        if longSig and allowLong
+            strategy.entry("L", strategy.long)
+            strategy.exit("Lx", "L", loss = slT, profit = tpT)
+        else if shortSig and allowShort
+            strategy.entry("S", strategy.short)
+            strategy.exit("Sx", "S", loss = slT, profit = tpT)
+
+// the moment a resting order fills: mark the session traded and cancel the other side, so an
+// opposite fill cannot reverse the position
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    tradedDay := dayKey
+    strategy.cancel("L")
+    strategy.cancel("S")
+
+// unfilled orders do not outlive the window
+if barMin >= winEnd and isFlat and barstate.isconfirmed
+    strategy.cancel_all()
+
+// flat: the research exits at the close of the bar before the flat time; close_all on that
+// confirmed bar fills at the next bar's open, the same price to within one bar's gap.
+if barMin >= flatMin - 15 and strategy.position_size != 0 and barstate.isconfirmed
+    strategy.close_all(comment = "flat")
+
+if strategy.position_size != 0 and not inWindow and barstate.isconfirmed
+    strategy.close_all(comment = "outside backtest window")
+
+// ---- alerts, for a disciplined FORWARD test ----------------------------------------------------
+// The only honest next step on this rule is new data. These fire once per bar close so the
+// strategy can be paper-traded forward exactly as backtested: an order resting at the line,
+// a fill, and the flat. Create the alert on "Any alert() function call".
+if barstate.isconfirmed and ready and isFlat and oncePerDay and inWindow
+    if modeStop and longArm and allowLong and not (brokeUp and close > rHi)
+        alert("US30 ORB: buy stop resting at 09:00 high " + str.tostring(rHi, "#.#"), alert.freq_once_per_bar_close)
+    if modeStop and shortArm and allowShort and not (brokeDn and close < rLo)
+        alert("US30 ORB: sell stop resting at 09:00 low " + str.tostring(rLo, "#.#"), alert.freq_once_per_bar_close)
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    alert("US30 ORB: FILLED " + (strategy.position_size > 0 ? "long" : "short") + " at " +
+         str.tostring(strategy.position_avg_price, "#.#") + "  stop " +
+         str.tostring(strategy.position_avg_price - (strategy.position_size > 0 ? 1 : -1) * slT * syminfo.mintick, "#.#") +
+         "  target " + str.tostring(strategy.position_avg_price + (strategy.position_size > 0 ? 1 : -1) * tpT * syminfo.mintick, "#.#"),
+         alert.freq_once_per_bar)
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    alert("US30 ORB: flat, trade closed", alert.freq_once_per_bar)
+
+// ---- drawing -------------------------------------------------------------------------------------
+plot(rangeOk and barMin >= rangeEndMin and barMin < flatMin ? rHi : na, "09:00 range high", color.new(color.orange, 0), style = plot.style_linebr)
+plot(rangeOk and barMin >= rangeEndMin and barMin < flatMin ? rLo : na, "09:00 range low",  color.new(color.orange, 0), style = plot.style_linebr)
+plot(emaF, "fast EMA",  color.new(color.teal, 40))
+plot(emaS, "slow EMA",  color.new(color.red, 40))
+plot(trendOn ? emaT : na, "trend EMA", color.new(color.gray, 20), linewidth = 2)
+plotshape((modeStop ? longArm : longSig) and allowLong and ready,    "long armed",  shape.triangleup,   location.belowbar, color.teal, size = size.tiny)
+plotshape((modeStop ? shortArm : shortSig) and allowShort and ready,  "short armed", shape.triangledown, location.abovebar, color.red,  size = size.tiny)
+bgcolor(inSig ? color.new(color.blue, 94) : na)
+
+// ---- what history this chart actually gave you, and whether it is the right timeframe ----------
+var int firstBarT = na
+if inWindow and na(firstBarT)
+    firstBarT := time
+var table dr = table.new(position.bottom_left, 1, 2, border_width = 1)
+if barstate.islast
+    table.cell(dr, 0, 0, "backtested " + str.format_time(firstBarT, "yyyy-MM-dd") + "  to  " +
+         str.format_time(time, "yyyy-MM-dd"), text_size = size.small, text_color = color.gray)
+    table.cell(dr, 0, 1, timeframe.period == "15" ? "15-minute chart: OK" : "WRONG TIMEFRAME -- the research is 15-minute bars",
+         text_size = size.small, text_color = timeframe.period == "15" ? color.gray : color.red)
