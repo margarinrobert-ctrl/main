@@ -135,7 +135,16 @@ third pass (`research/us30_orb3.py`) with the entry AT the line tried exit manag
 trail, time exits, partial, gap-fill target), direction from the DAILY trend, and the overnight-
 range position: 720 cells, 0 at z > 2 (11 expected), no exit beats the plain 100/100, daily
 direction is the least-bad axis and still negative, best plateau -1.0 research / -19.4 locked.
-Three passes, 29,337 cells, one file. What would change the question: 1-minute bars (the idea is a
+Three passes, 29,337 cells, one file. THEN the protocol's stage 2 was run on the file
+(`research/us30_alpha.py`): nothing survives FDR, but breaks of the pre-open and overnight ranges
+have NEGATIVE lift at every horizon and gaps have POSITIVE lift toward the prior close at every
+horizon -- the open's first move reverses here, so the whole range-break family was pointed against
+the mechanism. One pre-registered rule on that (`research/us30_mech.py`, fade the gap toward the
+prior close, target the prior close, stop one gap, flat 12:00) passes the control on research
+(z 2.62, +21 pt/trade, plateau 64/96, survives 10 pt cost) and is +10.6 pt/trade on the single
+locked read with the right shape -- but locked z is 1.21, the short side lost on locked, and the
+deflated Sharpe charged for all 29,461 trials is 0.06. A forward-test candidate, not a system.
+`docs/ib/STUDY_US30_GAPFILL.md`. What would change the question: 1-minute bars (the idea is a
 1-minute idea and the 09:30 15-minute bar alone spans 160 points, larger than the barrier), the
 instrument's real cost, and the volume column, which the rule never read. `research/us30_orb.py`.
 
@@ -181,6 +190,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/us30_ingest.py` | the US30 RTF export -> `data/US30_15m.csv`, canonical UTC columns, with an audit |
 | `research/us30_orb.py` | US30 09:00 range-break + EMA-cross study: cached exit tensor, matched control as the gate, sweep, walk-forward, locked reveal |
 | `research/us30_orb2.py`, `us30_orb3.py` | its second and third passes: entry mechanics and filters; exits, daily direction, overnight position |
+| `research/us30_alpha.py`, `us30_mech.py` | stage-2 alpha discovery on the US30 file, and the two mechanism candidates it produced (the gap fill passed) |
 
 ## Pine
 
