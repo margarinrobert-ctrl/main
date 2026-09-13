@@ -6,6 +6,7 @@ import { loadChain } from "@/lib/client-data";
 import type { OptionContract } from "@/lib/barchart/types";
 import { AXIS_PROPS, CHART, GRID_PROPS, TOOLTIP_CURSOR_LINE, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
 import { EmptyState, ErrorState, Loading } from "./states";
+import { useChartFrame } from "./chartFrame";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -90,8 +91,10 @@ export function VolSmile({ symbol, exp = "ALL" }: { symbol: string; exp?: string
 
   const front = smiles[0];
 
+  const frame = useChartFrame(`${symbol} vol smile`);
+
   return (
-    <div className="glass glass-hover fade-up p-4 sm:p-5">
+    <div ref={frame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${frame.expandedClass}`}>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
           <div className="lbl mb-1">Volatility smile</div>
@@ -111,6 +114,7 @@ export function VolSmile({ symbol, exp = "ALL" }: { symbol: string; exp?: string
               skew {skew >= 0 ? "+" : ""}{skew.toFixed(1)}pt {skew >= 0 ? "(put)" : "(call)"}
             </span>
           )}
+          {frame.controls}
         </div>
       </div>
       {state === "loading" && <Loading label="Loading volatility smile…" />}
@@ -119,7 +123,7 @@ export function VolSmile({ symbol, exp = "ALL" }: { symbol: string; exp?: string
       {state === "ok" && smiles.length === 0 && <EmptyState label="Not enough IV points to draw a smile." />}
       {state === "ok" && smiles.length > 0 && (
         <>
-          <div className="h-[360px] w-full">
+          <div className={`${frame.expanded ? "h-[calc(100vh-200px)]" : "h-[360px]"} w-full`}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart margin={{ top: 10, right: 16, left: 4, bottom: 6 }}>
                 <defs>

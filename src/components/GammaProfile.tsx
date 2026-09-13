@@ -7,6 +7,7 @@ import type { OptionContract } from "@/lib/barchart/types";
 import { callWall, fmtUsd, gammaFlip, gexByStrike, putWall } from "@/lib/flow/analytics";
 import { AXIS_PROPS, CHART, CHART_TICK, TOOLTIP_CURSOR, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
 import { EmptyState, ErrorState, Loading, SectionHeader } from "./states";
+import { useChartFrame } from "./chartFrame";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 
@@ -67,15 +68,26 @@ export function GammaProfile({ symbol, exp = "ALL" }: { symbol: string; exp?: st
 
   const height = Math.min(720, Math.max(380, data.length * 20));
 
+  const frame = useChartFrame(`${symbol} gamma`);
+
   return (
-    <div className="glass glass-hover fade-up p-4 sm:p-5">
-      <SectionHeader eyebrow="Gamma exposure" title={symbol} right={<span className="lbl">Net GEX ($/1%) · {exp === "ALL" ? "all expirations" : exp}</span>} />
+    <div ref={frame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${frame.expandedClass}`}>
+      <SectionHeader
+        eyebrow="Gamma exposure"
+        title={symbol}
+        right={
+          <div className="flex items-center gap-2">
+            <span className="lbl">Net GEX ($/1%) · {exp === "ALL" ? "all expirations" : exp}</span>
+            {frame.controls}
+          </div>
+        }
+      />
       {state === "loading" && <Loading label="Loading gamma exposure…" />}
       {state === "error" && <ErrorState message={error} />}
       {state === "empty" && <EmptyState label="Greeks unavailable for this chain." hint="Gamma exposure requires per-contract gamma; it appears once greeks are present." />}
       {state === "ok" && (
         <>
-          <div style={{ height }} className="relative w-full">
+          <div style={{ height: frame.expanded ? "calc(100vh - 200px)" : height }} className="relative w-full">
             {/* PUT / CALL watermark */}
             <div className="pointer-events-none absolute inset-0 hidden items-center justify-between px-[22%] font-sans text-4xl font-bold tracking-widest text-white/[0.035] sm:flex">
               <span>PUT</span>

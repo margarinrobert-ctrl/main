@@ -24,6 +24,7 @@ import {
 import { loadChain } from "@/lib/client-data";
 import { AXIS_PROPS, CHART, CHART_TICK, TOOLTIP_CURSOR, TOOLTIP_CURSOR_LINE, TOOLTIP_PROPS, refLabel } from "@/lib/chartTheme";
 import { EmptyState, ErrorState, Loading, SectionHeader, Stat } from "./states";
+import { useChartFrame } from "./chartFrame";
 
 type ViewState = "loading" | "error" | "empty" | "ok";
 type ProfMetric = "gex" | "vanna" | "charm";
@@ -55,6 +56,8 @@ export function VannaCharmProfile({ symbol, exp = "ALL" }: { symbol: string; exp
   const [state, setState] = useState<ViewState>("loading");
   const [error, setError] = useState("");
   const [profMetric, setProfMetric] = useState<ProfMetric>("gex");
+  const strikeFrame = useChartFrame(`${symbol} vanna & charm by strike`);
+  const spotFrame = useChartFrame(`${symbol} exposure across spot`);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,8 +103,17 @@ export function VannaCharmProfile({ symbol, exp = "ALL" }: { symbol: string; exp
 
   return (
     <div className="space-y-4">
-      <div className="glass glass-hover fade-up p-4 sm:p-5">
-        <SectionHeader eyebrow="Vanna &amp; charm" title={symbol} right={<span className="lbl">Dealer 2nd-order exposure by strike</span>} />
+      <div ref={strikeFrame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${strikeFrame.expandedClass}`}>
+        <SectionHeader
+          eyebrow="Vanna &amp; charm"
+          title={symbol}
+          right={
+            <div className="flex items-center gap-2">
+              <span className="lbl">Dealer 2nd-order exposure by strike</span>
+              {strikeFrame.controls}
+            </div>
+          }
+        />
         {state === "loading" && <Loading label="Loading second-order greeks…" />}
         {state === "error" && <ErrorState message={error} />}
         {state === "empty" && <EmptyState label="Greeks unavailable for this chain." />}
@@ -114,6 +126,7 @@ export function VannaCharmProfile({ symbol, exp = "ALL" }: { symbol: string; exp
                 data={byStrike.map((x) => ({ strike: x.strike, v: x.vanna }))}
                 nearestStrike={nearestStrike}
                 height={height}
+                expanded={strikeFrame.expanded}
                 pos={CHART.cyan}
                 neg="rgba(255,255,255,0.28)"
               />
@@ -123,6 +136,7 @@ export function VannaCharmProfile({ symbol, exp = "ALL" }: { symbol: string; exp
                 data={byStrike.map((x) => ({ strike: x.strike, v: x.charm }))}
                 nearestStrike={nearestStrike}
                 height={height}
+                expanded={strikeFrame.expanded}
                 pos={CHART.put}
                 neg={CHART.call}
               />
@@ -138,32 +152,35 @@ export function VannaCharmProfile({ symbol, exp = "ALL" }: { symbol: string; exp
       </div>
 
       {state === "ok" && profData.length > 0 && (
-        <div className="glass glass-hover fade-up p-4 sm:p-5">
+        <div ref={spotFrame.ref} className={`glass glass-hover fade-up p-4 sm:p-5 ${spotFrame.expandedClass}`}>
           <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
             <div>
               <div className="lbl mb-1">Exposure across spot</div>
               <h2 className="display text-base text-neutral-50">{symbol}</h2>
             </div>
-            <div className="flex items-center gap-1">
-              {(Object.keys(PROF_META) as ProfMetric[]).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setProfMetric(m)}
-                  aria-pressed={profMetric === m}
-                  className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
-                    profMetric === m ? "bg-accent/15 text-accent-bright" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
-                  }`}
-                >
-                  {PROF_META[m].label}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                {(Object.keys(PROF_META) as ProfMetric[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setProfMetric(m)}
+                    aria-pressed={profMetric === m}
+                    className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
+                      profMetric === m ? "bg-accent/15 text-accent-bright" : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200"
+                    }`}
+                  >
+                    {PROF_META[m].label}
+                  </button>
+                ))}
+              </div>
+              {spotFrame.controls}
             </div>
           </div>
           <p className="mb-2 text-xs text-neutral-500">
             Re-priced (Black-Scholes, sticky-strike) as if spot moved — where {meta.label.toLowerCase()} crosses zero is the
             regime flip. {profMetric === "gex" && profFlip != null ? `Modeled γ-flip ≈ ${profFlip.toFixed(2)}.` : ""}
           </p>
-          <div style={{ height: 300 }} className="w-full">
+          <div style={{ height: spotFrame.expanded ? "calc(100vh - 200px)" : 300 }} className="w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={profData} margin={{ top: 8, right: 16, left: 4, bottom: 8 }}>
                 <XAxis dataKey="spot" type="number" domain={["dataMin", "dataMax"]} {...AXIS_PROPS} />
@@ -197,6 +214,7 @@ function ByStrikeChart({
   data,
   nearestStrike,
   height,
+  expanded = false,
   pos,
   neg,
 }: {
@@ -205,6 +223,7 @@ function ByStrikeChart({
   data: { strike: number; v: number }[];
   nearestStrike: number | null;
   height: number;
+  expanded?: boolean;
   pos: string;
   neg: string;
 }) {
@@ -212,7 +231,7 @@ function ByStrikeChart({
     <div>
       <div className="mb-1 text-sm font-medium text-neutral-100">{title}</div>
       <div className="mb-2 text-[11px] text-neutral-500">{sub}</div>
-      <div style={{ height: Math.min(height, 460) }} className="w-full">
+      <div style={{ height: expanded ? "calc(100vh - 320px)" : Math.min(height, 460) }} className="w-full">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} layout="vertical" margin={{ top: 4, right: 28, left: 4, bottom: 4 }}>
             <XAxis type="number" tickFormatter={(v) => fmtUsd(Number(v))} {...AXIS_PROPS} />

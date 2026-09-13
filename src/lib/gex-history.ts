@@ -7,6 +7,7 @@ export interface GexSample {
   flip: number | null; // zero-gamma level
   iv?: number | null; // front/0DTE ATM implied vol
   pcr?: number | null; // put/call volume ratio
+  dex?: number | null; // net dealer delta ($ notional) — recorded from Aug 2026 on; older samples lack it
 }
 
 const CAP = 600;

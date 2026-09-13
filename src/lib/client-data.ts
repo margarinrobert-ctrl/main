@@ -2,10 +2,12 @@ import type { ScreenerParams } from "./barchart/endpoints";
 import { parseHistoryResponse, parseOptionsResponse, parseQuoteResponse } from "./barchart/normalize";
 import type { HistoryBar, NormalizedQuote, OptionContract } from "./barchart/types";
 import { darkPoolLevels, darkPoolStats, type DarkPoolDay, type DarkPoolProfile, type DarkPoolStats } from "./flow/darkpool";
+import { enrichGreeks } from "./flow/enrich";
 import { scoreContracts, type ScoredContract } from "./flow/heuristic";
 import { applyScreenerFilter } from "./flow/screener-filter";
 import { mergeServerHistory, type GexSample } from "./gex-history";
 import { readJournal, writeJournal, type PredictionRecord } from "./intel/journal";
+import type { DaySnapshot } from "./intel/snapshot";
 import { mergeJournal } from "./intel/merge";
 
 /**
@@ -73,9 +75,9 @@ export async function loadChain(
   const sym = symbol.toUpperCase();
   if (STATIC) {
     const raw = await fetchFixture([`options.${sym}.json`, "options.AAPL.json"]);
-    const chain = parseOptionsResponse(raw);
-    const spot = chain.find((c) => c.underlyingPrice != null)?.underlyingPrice ?? null;
-    return { chain, source: "fixtures", spot, asOf: null };
+    const parsed = parseOptionsResponse(raw);
+    const spot = parsed.find((c) => c.underlyingPrice != null)?.underlyingPrice ?? null;
+    return { chain: enrichGreeks(parsed, spot), source: "fixtures", spot, asOf: null };
   }
   const json = await fetchJson(`/api/barchart/options?symbol=${encodeURIComponent(sym)}`);
   return {
@@ -119,6 +121,24 @@ export async function pullServerData(symbol: string): Promise<{ storeMode: strin
   if (history.length) mergeServerHistory(sym, history);
   if (journal.length) writeJournal(mergeJournal(readJournal(), journal));
   return { storeMode: j.storeMode ?? "memory", history: history.length, journal: journal.length };
+}
+
+/** Which past days have a recorded per-strike snapshot (cheap — day keys only). */
+export async function loadSnapshotDays(symbol: string): Promise<string[]> {
+  if (typeof window === "undefined" || STATIC) return [];
+  const res = await fetch(`/api/intel?symbol=${encodeURIComponent(symbol.toUpperCase())}`, { cache: "no-store" });
+  if (!res.ok) return [];
+  const j = (await res.json()) as { snapshotDays?: string[] };
+  return j.snapshotDays ?? [];
+}
+
+/** The full recorded snapshot (incl. per-strike GEX/DEX/OI) for one past day, or null if not recorded. */
+export async function loadDaySnapshot(symbol: string, day: string): Promise<DaySnapshot | null> {
+  if (typeof window === "undefined" || STATIC) return null;
+  const res = await fetch(`/api/intel?symbol=${encodeURIComponent(symbol.toUpperCase())}&day=${encodeURIComponent(day)}`, { cache: "no-store" });
+  if (!res.ok) return null;
+  const j = (await res.json()) as { snapshot?: DaySnapshot | null };
+  return j.snapshot ?? null;
 }
 
 export async function loadDarkPool(

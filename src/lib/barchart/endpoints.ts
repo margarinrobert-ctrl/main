@@ -3,6 +3,7 @@ import { avOptions } from "../providers/alphavantage";
 import { cboeChain, cboeOptions, cboeQuote } from "../providers/cboe";
 import { stooqHistory, stooqQuote } from "../providers/stooq";
 import { yahooCandles, yahooHistory, yahooQuote } from "../providers/yahoo";
+import { enrichGreeks } from "../flow/enrich";
 import { barchartRequest, readFixtureParsed } from "./client";
 import { config } from "./config";
 import { parseHistoryResponse, parseOptionsResponse, parseQuoteResponse } from "./normalize";
@@ -89,18 +90,24 @@ export async function getEquityOptions(symbol: string) {
   const sym = symbol.toUpperCase();
   const fixtures = [`options.${sym}.json`, "options.AAPL.json"];
 
+  // Backfill missing IV/Δ/Γ in-house (vendors omit them, esp. on 0DTE) so the whole greeks stack renders.
+  const withGreeks = <T extends { data: OptionContract[] }>(r: T): T => ({
+    ...r,
+    data: enrichGreeks(r.data, r.data.find((c) => c.underlyingPrice != null)?.underlyingPrice ?? null),
+  });
+
   if (liveOptionsEnabled()) {
     try {
       // CBOE path carries the feed's own timestamp (asOf) for honest freshness reporting.
       if (config.optionsProvider === "cboe") {
         const { options, asOf } = await cboeChain(sym);
-        return { data: options, source: "live" as const, asOf };
+        return withGreeks({ data: options, source: "live" as const, asOf });
       }
       const data = await cached(`opt:${config.optionsProvider}:${sym}`, optionsTtl(), () => fetchLiveOptions(sym));
-      return { data, source: "live" as const, asOf: null };
+      return withGreeks({ data, source: "live" as const, asOf: null });
     } catch (err) {
       console.warn(`[${config.optionsProvider}] options failed for ${sym}; falling back to fixtures:`, err instanceof Error ? err.message : err);
-      return { data: await readFixtureParsed(fixtures, parseOptionsResponse), source: "fixtures" as const, asOf: null };
+      return withGreeks({ data: await readFixtureParsed(fixtures, parseOptionsResponse), source: "fixtures" as const, asOf: null });
     }
   }
 
@@ -112,7 +119,7 @@ export async function getEquityOptions(symbol: string) {
     },
     parseOptionsResponse,
   );
-  return { ...r, asOf: null as string | null };
+  return withGreeks({ ...r, asOf: null as string | null });
 }
 
 export interface ScreenerParams {

@@ -1,6 +1,6 @@
 import type { HistoryBar, OptionContract } from "../barchart/types";
 import { getEquityOptions, getHistory } from "../barchart/endpoints";
-import { atmIv, gammaFlip, gexByStrike, netGex, putCallRatio } from "../flow/analytics";
+import { atmIv, gammaFlip, gexByStrike, netDex, netGex, putCallRatio } from "../flow/analytics";
 import { anomalyIntel } from "../flow/anomalyPro";
 import { buildSignals } from "../flow/signals";
 import { mmHedge } from "../flow/mmhedge";
@@ -8,7 +8,8 @@ import type { GexSample } from "../gex-history";
 import { buildCandidates, shouldRecord, type PredictionRecord } from "./journal";
 import { mergeHistory } from "./merge";
 import { resolveForSymbol } from "./resolve";
-import { loadServerHistory, loadServerJournal, saveServerHistory, saveServerJournal } from "./store";
+import { buildSnapshot, mergeSnapshots } from "./snapshot";
+import { loadServerHistory, loadServerJournal, loadServerSnapshots, saveServerHistory, saveServerJournal, saveServerSnapshots } from "./store";
 
 // Server-side collection — the same collect+resolve loop the browser runs, but reading/writing the
 // durable store so it works headless on a schedule (Vercel route, or the standalone scripts/collect
@@ -57,7 +58,7 @@ export function stepSymbol(symbol: string, inputs: CollectInputs, prevJournal: P
   const exps = [...new Set(chain.map((c) => c.expiration))].sort();
   const frontExp = exps.find((e) => (chain.find((c) => c.expiration === e)?.dte ?? -1) >= 0) ?? exps[0];
   const iv = frontExp ? atmIv(chain, spot, frontExp) : null;
-  const sample: GexSample = { t: now, spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol };
+  const sample: GexSample = { t: now, spot, gex: netGex(chain, spot), flip, iv, pcr: putCallRatio(chain).vol, dex: netDex(chain, spot) };
   const history = mergeHistory(prevHistory, [sample]);
 
   // engines → candidate predictions
@@ -88,6 +89,9 @@ export async function collectSymbol(symbol: string): Promise<CollectResult> {
   const { journal, history, result } = stepSymbol(sym, inputs, prevJournal, prevHistory);
   await saveServerHistory(sym, history);
   await saveServerJournal(journal);
+  // Per-strike snapshot for the day (expired chains can't be re-fetched, so record the shape as it happens).
+  const snaps = mergeSnapshots(await loadServerSnapshots(sym).catch(() => []), buildSnapshot(inputs.chain, inputs.spot, Date.now()));
+  await saveServerSnapshots(sym, snaps);
   return result;
 }
 
