@@ -280,6 +280,47 @@ points cell.
 modes have to be switched deliberately, because on this evidence 100/100 is worse than the
 researched geometry on every US30 block.
 
+## 12. The range is the 09:00 BAR, and the choice against the half hour is free
+
+Clarified by the user after the first pass: *"it should be 9am high and low"* — the 09:00 candle,
+not the 09:00–09:30 window. That is now the default (`Range end = 555`, i.e. 09:00–09:15 declared in
+minutes so it is the same reach on any chart), with the breakout still armed only at 09:30.
+
+The research event stream had always kept those two apart, so this is a re-read of a cell the
+16,200-grid already contained rather than a new search. Both readings, paired on identical
+feed / block / side / geometry:
+
+| | 09:00 bar | half hour |
+|---|---|---|
+| median range width, ATR | **1.03 – 1.13** | 1.50 – 1.87 |
+| paired cells won | **14 of 28** | 14 of 28 |
+| mean delta | **+0.0014 %/trade** | — |
+| mean MDE | 0.0593 | — |
+
+**Exactly chance, at a delta 42× smaller than the sample can resolve.** The choice is free on
+performance. What it does change is the *level*: the one-bar range is about a third narrower, so the
+breakout sits nearer and fires slightly more often on the long side (US30 research 1,418 long
+signals against 1,378).
+
+On the new default, US30, 1.5×ATR stop, no target, flat 16:00, against a matched random entry:
+
+| block | side | n | %/trade | PF | p |
+|---|---|---|---|---|---|
+| research | long | 1418 | +0.0145 | 1.087 | 0.338 |
+| holdout | long | 600 | +0.0098 | 1.053 | 0.890 |
+| forward (US30_ISO) | long | 268 | +0.0087 | 1.043 | 0.177 |
+| research | both | 1734 | +0.0067 | 1.047 | 0.367 |
+| holdout | both | 733 | +0.0009 | 1.006 | 0.983 |
+| forward (US30_ISO) | both | 315 | +0.0080 | 1.037 | 0.325 |
+
+Positive on all three US30 blocks and on both sides — and **not one of them is a detectable
+effect**. Over the 56 declared window × geometry × block cells, 3 clear their control at p ≤ 0.05
+where 2.8 are expected by chance, **0 of 56 exceed their own MDE**, and `E[max t | pure noise]` over
+56 looks is 2.319 against the 2.802 detection needs.
+
+Parity after the change: **7 of 7 cells at trade count 1.000**, same exit bar 0.962–0.991, per-trade
+correlation 0.996–0.998, gap −0.20 to +0.24 points a trade.
+
 ## 10. What would change the verdict
 
 Not more parameters — the grid's own noise floor already exceeds the detection threshold by 1.4×,

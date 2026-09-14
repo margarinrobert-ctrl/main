@@ -73,7 +73,9 @@ def main():
     print("=" * 100)
     print("PARITY -- the shipped script's order model against the engine")
     print("=" * 100)
-    cfgs = [dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960),
+    cfgs = [dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960),
+            dict(win=(540, 555), side="long", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960),
+            dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960),
             dict(win=(540, 570), side="long", buf=0.0, ema="state", stop=1.5, tgt=0.0, flat=960),
             dict(win=(540, 555), side="both", buf=0.0, ema="x20", stop=1.0, tgt=3.0, flat=960),
             # the POINTS option, parity-checked like every other shipped input
@@ -87,7 +89,8 @@ def main():
         for k, cfg in enumerate(cfgs):
             rs, re_ = cfg["win"]
             rhi, rlo, rn = N.ranges(f, rs, re_)
-            s0, d0 = N.events(f, rhi, rlo, side=cfg["side"], buf_atr=cfg["buf"], rs=rs, re_=re_)
+            s0, d0 = N.events(f, rhi, rlo, side=cfg["side"], buf_atr=cfg["buf"], rs=rs, re_=re_,
+                              open_m=570)
             s1, d1 = gate(f, s0, d0, cfg["ema"])
             spts = cfg.get("spts", 0.0); tpts = cfg.get("tpts", 0.0)
             eng = N.run(f, s1, d1, stop_a=cfg["stop"], tgt_r=cfg["tgt"], flat_m=cfg["flat"],

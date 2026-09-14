@@ -1,15 +1,32 @@
 // SPDX-License-Identifier: MIT
-// 09:00-09:30 New York range -> breakout at or after the 09:30 cash open -> EMA 13/48 momentum
-// confirmation -> optional support/resistance channel gate.
+// The 09:00 New York high and low -> breakout at or after the 09:30 cash open -> EMA 13/48
+// momentum confirmation -> optional support/resistance channel gate.
+//
+// THE RANGE IS THE 09:00 BAR: the high and low of 09:00-09:15, which on a 15-minute chart is
+// exactly the 09:00 candle. The range end and the entry arm time are SEPARATE inputs, so the
+// breakout still waits for 09:30 whatever the range is set to.
 //
 // NO EDGE IS CLAIMED. Every number in this header is measured and every one of them is a null.
 //
-//   US30_LONG_15m, 09:00-09:30 range, break at/after 09:30, 1.5xATR stop, no target, flat 16:00
-//     bare breakout            research  +0.0085 %/trade  PF 1.059   vs a matched random entry p 0.705
-//                              holdout   +0.0102          PF 1.059                             p 0.940
-//     + EMA13>48 state         research  +0.0094          PF 1.071   vs a same-selectivity gate p 0.477
-//                              holdout   -0.0201          PF 0.867                             p 0.998
-//     US30_ISO forward block   -0.0015 / +0.0034 / -0.0272 across the three EMA readings, all null
+//   US30_LONG_15m, the 09:00 bar's range, break at/after 09:30, 1.5xATR stop, no target, flat
+//   16:00, against a matched random entry with identical geometry:
+//     long   research +0.0145 %/trade PF 1.087 p 0.338 | holdout +0.0098 PF 1.053 p 0.890
+//     both   research +0.0067         PF 1.047 p 0.367 | holdout +0.0009 PF 1.006 p 0.983
+//     US30_ISO forward block (a different provider)   long +0.0087 PF 1.043 p 0.177,
+//                                                     both +0.0080 PF 1.037 p 0.325
+//   Positive on all three US30 blocks and NOT ONE of them is a detectable effect: over 56
+//   declared window x geometry x block cells, 3 clear their control at p<=0.05 where 2.8 are
+//   expected by chance and 0 OF 56 exceed their own minimum detectable effect.
+//
+//   THE 09:00 BAR AGAINST THE WHOLE 09:00-09:30 HALF HOUR, paired on identical feed / block /
+//   side / geometry: the 09:00 bar wins 14 of 28, exactly chance, mean delta +0.0014 %/trade
+//   against a mean MDE of 0.0593 -- 42x smaller than the sample can resolve, so the choice is
+//   free. What does change is the LEVEL: the 09:00 bar's range is 1.03-1.13 ATR wide against the
+//   half hour's 1.50-1.87, so the breakout level sits nearer and fires a little more often.
+//
+//   On the half-hour range the same rule read research +0.0085 PF 1.059 / holdout +0.0102, and
+//   with the EMA13>48 state on, research +0.0094 PF 1.071 (gate p 0.477) -> holdout -0.0201
+//   PF 0.867 at p 0.998, where a random filter of the same selectivity beats it 99.8% of the time.
 //
 //   84 declared cells: 2 clear an entry control at p<=0.05 where 4.2 are expected by chance, and
 //   1 of 84 delivers an effect larger than its OWN minimum detectable effect. E[max t | pure
@@ -54,7 +71,7 @@ strategy("09:00 Range Breakout + EMA Momentum", overlay = true,
 // ----------------------------------------------------------------------------- inputs
 grpS = "Session"
 rangeStart = input.int(540,  "Range start, minutes past New York midnight", minval = 0, maxval = 1439, group = grpS, tooltip = "540 = 09:00. The range is built from every bar whose stamp lies in [start, end).")
-rangeEnd   = input.int(570,  "Range end (exclusive)",                      minval = 1, maxval = 1440, group = grpS, tooltip = "570 = 09:30. The range is the HIGH and LOW of every bar stamped in [start, end) -- on a 15-minute chart that is exactly the 09:00 and 09:15 bars, on a 1-minute chart the thirty bars 09:00..09:29. Set 555 to mark the 09:00 BAR ALONE on a 15m chart; measured, the two readings are the same thing (US30 research +0.24 bp against +0.13, holdout -1.75 against -1.78, both inside noise).")
+rangeEnd   = input.int(555,  "Range end (exclusive)",                      minval = 1, maxval = 1440, group = grpS, tooltip = "555 = 09:15, so the range is the HIGH and LOW of 09:00-09:15 -- exactly the 09:00 candle on a 15-minute chart, the fifteen bars 09:00..09:14 on a 1-minute one. Declared in MINUTES so it is the same reach on any chart (STUDY_V57). Set 570 for the whole 09:00-09:30 half hour: measured, the two are the same thing -- the 09:00 bar wins 14 of 28 paired cells, exactly chance, at a mean +0.0014 %/trade against a mean MDE of 0.0593. What DOES change is the range WIDTH: 1.03-1.13 ATR for the 09:00 bar against 1.50-1.87 for the half hour.")
 firstEntry = input.int(570,  "Earliest entry",                             minval = 1, maxval = 1440, group = grpS, tooltip = "570 = the 09:30 cash open. Kept SEPARATE from the range end so shortening the range does not silently move the entry forward with it.")
 lastEntry  = input.int(960,  "No new entries after",                        minval = 1, maxval = 1440, group = grpS)
 flatMin    = input.int(960,  "Flatten at (0 = never)",                      minval = 0, maxval = 1440, group = grpS, tooltip = "Filled at the OPEN of this minute, so the order is submitted on the bar before -- strategy.close_all() cannot sell the close of the bar that triggers it. 960 = 16:00.")
