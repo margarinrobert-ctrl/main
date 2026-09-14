@@ -542,6 +542,72 @@ table and the 0/6 ALIGNED record in the tooltip. Parity: **20 of 20 configuratio
 
 ---
 
+## 16. Trend lines through two confirmed pivots, as a breakout
+
+The ask: draw the trend lines and break them. Three ways that can enter the rule, all declared —
+**GATE** (keep the range break, additionally require price to have cleared the line on the side it
+is breaking), **LEVEL** (the line *is* the breakout level, the range unused), **EITHER** (the level
+is whichever of the two is nearer, so the session fires on the first break of either).
+
+Construction: the resistance line runs through the last **two confirmed** pivot highs and is
+extended to the current bar; the support line through the last two pivot lows. A pivot at bar *j*
+needs bars *j−prd..j+prd*, so it is knowable at *j+prd* and never at *j* — a line anchored at the
+pivot itself back-tests beautifully and cannot be traded, which is exactly the leak
+`STUDY_DIVERGENCE_CONFIRM` caught reading +37 full against +999 truncated. At three points a third,
+earlier pivot must lie within 0.25 ATR of the same line — a pivot the line was *not* fitted to,
+which is the only reading of "three points" that is not automatically true.
+
+**Declared grid**: 4 modes × 2/3 points × 2 geometries (1.5 ATR no target / 100pt–100pt) × 3 blocks
+(US30_LONG research, US30_LONG holdout, US30_ISO forward — a different provider) = **48 cells**.
+`E[max t | pure noise]` over 48 looks is **2.261** against the 2.802 detection needs. The pivot
+period is fixed at 10 and never swept.
+
+### Audit clean, and the base-rate check passes
+
+Levels rebuilt from history ending at the signal bar: **0 mismatches of 48 probes on both feeds**.
+
+| points | admits (long breaks) | on all bars | lift | line exists | median distance |
+| --- | --- | --- | --- | --- | --- |
+| 2 | 0.3756 | 0.2854 | **1.316** | 1.000 | 2.39 ATR |
+| 3 | 0.0793 | 0.0376 | **2.109** | 0.233 | 2.13 ATR |
+
+0 of 8 cells admit over 95%, and the lift runs 1.30–2.71 — so the trend line is the **third**
+condition in this study to be a genuinely separate reading rather than the trigger restated, after
+the EMA 13/48 cross (53–59%) and the 08:00 hourly candle (37.6–54.3%). The MA200 cross failed the
+same check from the other end, at lift exactly 1.00.
+
+### And it clears nothing
+
+Each GATE reading against a random gate of the same selectivity; each LEVEL/EITHER reading against
+a **matched random entry**, because those two change which bars the rule fires on and a selectivity
+control is the wrong null for them. Both re-simulated end to end.
+
+| mode | points | %/trade | Δ vs no filter | beats base | clears p≤0.05 |
+| --- | --- | --- | --- | --- | --- |
+| gate ALIGNED | 2 | +0.0008 | **+0.0034** | 4/6 | 1/6 |
+| gate ALIGNED | 3 | +0.0094 | **+0.0120** | 4/6 | 0/6 |
+| gate COUNTER | 2 | −0.0080 | −0.0055 | 3/6 | 1/6 |
+| level | 2 | −0.0032 | −0.0006 | 4/6 | 0/6 |
+| level | 3 | +0.0125 | +0.0151 | 3/6 | 0/6 |
+| either | 2 | −0.0020 | +0.0005 | 3/6 | 0/6 |
+
+- **2 of 48 cells clear their own null at p≤0.05 where 2.4 are expected by chance.**
+- **1 of 48 exceeds its own minimum detectable effect.**
+- A reading beats the ungated rule in **27 of 48** cells where chance is 50%.
+- **LEVEL is the worst of the four**: on US30 research it takes *more* trades than the range
+  (1,863 against 1,734) and loses to a random entry with the same geometry at **p 1.000**. Using
+  the line as the level is worse than entering at an arbitrary bar in the same session.
+- GATE has the best marginal and **inverts by block** — +0.0186 research, **−0.0171 holdout**,
+  +0.0216 forward.
+- Three points reads the largest number in the table and is the least resolvable: it cuts the
+  sample to ~120 trades a block against an MDE of 0.12–0.14.
+
+Ships as a fourth gate, **default OFF**, with the base-rate table and the 1-of-48 record in the
+tooltip. The lines plot when the mode is on. Parity: **25 of 25 configurations at trade count
+1.000**, same exit bar 0.974–1.000, correlation 0.995–1.000.
+
+---
+
 ## 10. What would change the verdict
 
 Not more parameters — the grid's own noise floor already exceeds the detection threshold by 1.4×,
@@ -567,5 +633,7 @@ count printed beside the win rate so a relabelling cannot be read as an improvem
 own bars, then both polarities against a same-selectivity random gate re-simulated) · `run_n10.py`
 (the MA 200 as a third average: the ANY-equals-ALL degeneracy proved before the grid, the audit,
 the lift-1.00 base rate, then both polarities against a same-selectivity random gate) ·
-`plot_na.py` ·
+`run_n11.py` (trend lines through two confirmed pivots: the audit, the base rate on the
+trigger's own bars, then GATE against a same-selectivity random gate and LEVEL/EITHER against a
+matched random entry, because the last two change the event stream) · `plot_na.py` ·
 `pine/nineam/NINE_AM_RANGE_BREAKOUT_strategy.pine`

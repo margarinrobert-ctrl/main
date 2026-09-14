@@ -131,14 +131,34 @@ def main():
             dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
                  m200=(dict(mode="any", cross_bars=5), 1)),
             dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
-                 spts=100.0, tpts=100.0, m200=(dict(mode="all", cross_bars=0), 1))]
+                 spts=100.0, tpts=100.0, m200=(dict(mode="all", cross_bars=0), 1)),
+            # the TREND LINE readings. `level` and `either` change the event stream itself, so the
+            # two sides must agree on the SIGNAL SET before any P&L is compared.
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 tl=("gate", 2)),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 tl=("gate", 3)),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 tl=("level", 2)),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 tl=("either", 2)),
+            dict(win=(540, 570), side="long", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
+                 spts=100.0, tpts=100.0, tl=("either", 3))]
     for name in ("US30L", "US30I"):
         f = N.load(name, 15)
         cost = N.COST[name]; tick = TICK[name]
         for k, cfg in enumerate(cfgs):
             rs, re_ = cfg["win"]
             rhi, rlo, rn = N.ranges(f, rs, re_)
-            s0, d0 = N.events(f, rhi, rlo, side=cfg["side"], buf_atr=cfg["buf"], rs=rs, re_=re_,
+            tl = cfg.get("tl")
+            up, dn = rhi, rlo
+            if tl is not None:
+                res, sup = N.trendlines(f, 10, tl[1], 0.25)
+                if tl[0] == "level":
+                    up, dn = res, sup
+                elif tl[0] == "either":
+                    up, dn = np.fmin(rhi, res), np.fmax(rlo, sup)
+            s0, d0 = N.events(f, up, dn, side=cfg["side"], buf_atr=cfg["buf"], rs=rs, re_=re_,
                               open_m=570)
             s1, d1 = gate(f, s0, d0, cfg["ema"])
             hd = cfg.get("hdir")
@@ -154,6 +174,12 @@ def main():
                 mk = (np.where(d1 > 0, ol[s1], osh[s1]) if m2[1] > 0
                       else np.where(d1 > 0, osh[s1], ol[s1]))
                 s1, d1 = s1[mk], d1[mk]
+            if tl is not None and tl[0] == "gate":
+                c = f["close"].to_numpy()
+                gk = np.where(d1 > 0,
+                              (np.isfinite(res) & (c > res))[s1],
+                              (np.isfinite(sup) & (c < sup))[s1])
+                s1, d1 = s1[gk], d1[gk]
             spts = cfg.get("spts", 0.0); tpts = cfg.get("tpts", 0.0)
             be = cfg.get("be", 0.0); beoff = cfg.get("beoff", 0.0)
             eng = N.run(f, s1, d1, stop_a=cfg["stop"], tgt_r=cfg["tgt"], flat_m=cfg["flat"],
@@ -173,6 +199,8 @@ def main():
                 geom += f" be{be:.0f}+{beoff:.0f}"
             if hd is not None:
                 geom += f" h:{hd[0][:4]}{'+' if hd[1] > 0 else '-'}"
+            if tl is not None:
+                geom += f" tl:{tl[0]}{tl[1]}"
             if m2 is not None:
                 geom += (f" 200:{m2[0]['mode']}"
                          f"{'x' if m2[0]['cross_bars'] else 's'}"

@@ -104,6 +104,14 @@ srStr    = input.int(2,   "Minimum strength (pivots in the channel)", minval = 1
 srMax    = input.int(6,   "Max channels",             minval = 1, maxval = 10, group = grpR)
 srLook   = input.int(290, "Pivot lookback, bars",     minval = 50, group = grpR)
 
+grpT = "Trend lines (two confirmed pivots)"
+tlMode  = input.string("Off", "Trend line", options = ["Off", "Gate: price must have cleared it", "Level: break the LINE instead of the range", "Either: whichever level is nearer"], group = grpT, tooltip = "DEFAULT OFF, and measured. The resistance line is drawn through the LAST TWO CONFIRMED pivot highs and extended to the current bar; the support line through the last two pivot lows. A pivot at bar j needs bars j-prd..j+prd so it is knowable at j+prd and NEVER at j -- a line anchored at the pivot itself back-tests beautifully and cannot be traded (STUDY_DIVERGENCE_CONFIRM read +37 full against +999 truncated on exactly that mistake). The truncation audit rebuilding these levels from history ending at the signal bar returns 0 mismatches of 48 probes on both feeds.\n\nIT BINDS AND IT IS NOT THE TRIGGER RESTATED: the Gate admits 37.2-40.0% of the breaks it is shown at two points and 6.8-10.7% at three, a lift over all bars of 1.30 to 2.71 -- the third condition in this script to pass the base-rate check that has killed nine confirmation families elsewhere.\n\nIT DOES NOT PAY. Over a declared 48-cell grid (4 modes x 2/3 points x two geometries x US30 research, holdout and a different-provider forward block), each Gate reading scored against a RANDOM gate of the same selectivity and each Level/Either reading against a MATCHED RANDOM ENTRY, both re-simulated end to end: 2 of 48 cells clear p<=0.05 where 2.4 are expected by chance, 1 OF 48 EXCEEDS ITS OWN MINIMUM DETECTABLE EFFECT, and a reading beats the ungated rule in 27 of 48 cells where chance is 50%. LEVEL is the worst of the four -- on US30 research it takes MORE trades than the range (1,863 against 1,734) and loses to a random entry with the same geometry at p 1.000. Gate has the best marginal (+0.0034 at two points, +0.0120 at three) and inverts on the holdout (+0.0186 research, -0.0171 holdout, +0.0216 forward). Three points cuts the sample to ~120 trades a block against an MDE of 0.12-0.14, so its larger number is the least resolvable one in the study.")
+tlPrd   = input.int(10, "Pivot period", minval = 2, maxval = 50, group = grpT, tooltip = "Bars either side of a pivot. Fixed at 10 in the research -- the same value the S/R channel gate uses -- and never swept, because adding a ladder to a 48-cell grid raises the noise floor a survivor must clear without raising what the sample can resolve.")
+tlPts   = input.int(2, "Points the line must touch", minval = 2, maxval = 3, group = grpT, tooltip = "2 = the line is the last two pivots and nothing else, which is the literal ask. 3 = a THIRD, earlier pivot must lie within the tolerance below of the SAME line, so the line has three touches -- and the check is on a pivot the line was not fitted to, which is the only reading of three points that is not automatically true. At 3 a line exists on only 22-30% of signal bars.")
+tlTol   = input.float(0.25, "Third-point tolerance, xATR(14)", minval = 0.01, step = 0.05, group = grpT)
+tlMaxMin = input.int(3000, "Refuse a line whose newer anchor is older than this many MINUTES", minval = 30, group = grpT, tooltip = "3000 minutes = 200 bars on a 15-minute chart, which is what was measured. Declared in MINUTES so the same number means the same reach on any chart (STUDY_V57) -- an extended line from six months ago is a number, not a level.")
+tlShow  = input.bool(true, "Plot the lines", group = grpT)
+
 grpX = "Exit"
 stopMode = input.string("ATR", "Stop mode", options = ["ATR", "Points", "Opposite side of the range"], group = grpX, tooltip = "POINTS is a fixed distance in index points and is NOT the same geometry on two markets: 100 points is 2.35x the median in-window ATR on US30, 3.24x on NQ and 4.36x on US100, and on US30 alone it was 4.23 ATR in 2016 against 1.10 in 2025. A points setting therefore confounds geometry with market and with era (STUDY_DL50). The panel prints what your chosen distance currently is in ATR.")
 stopAtr  = input.float(1.5, "Stop, xATR(14)",   minval = 0.1, maxval = 10, step = 0.1, group = grpX)
@@ -254,12 +262,71 @@ if useSR and rReady and barstate.isconfirmed and array.size(pivots) > 0
                 array.push(srLo, lo)
                 array.push(srHi, hi)
 
+// ----------------------------------------------------------------------------- trend lines
+// A pivot at bar j is CONFIRMED at j + tlPrd, so `ta.pivothigh` returning non-na on this bar means
+// the pivot sat at bar_index - tlPrd. Anchoring at the pivot itself is the leak; anchoring at its
+// confirmation bar is what a script can actually see.
+var int[]   phX = array.new_int(0)
+var float[] phY = array.new_float(0)
+var int[]   plX = array.new_int(0)
+var float[] plY = array.new_float(0)
+tlPh = ta.pivothigh(high, tlPrd, tlPrd)
+tlPl = ta.pivotlow(low,   tlPrd, tlPrd)
+if barstate.isconfirmed
+    if not na(tlPh)
+        array.push(phX, bar_index - tlPrd)
+        array.push(phY, tlPh)
+        if array.size(phX) > 40
+            array.shift(phX)
+            array.shift(phY)
+    if not na(tlPl)
+        array.push(plX, bar_index - tlPrd)
+        array.push(plY, tlPl)
+        if array.size(plX) > 40
+            array.shift(plX)
+            array.shift(plY)
+
+tlMaxBars = int(math.max(1.0, math.round(tlMaxMin / tfMin)))
+
+f_tline(xs, ys, nowBar, maxBars, needPts, tol) =>
+    float outv = na
+    m = array.size(xs)
+    if m >= 2
+        j1 = array.get(xs, m - 2)
+        j2 = array.get(xs, m - 1)
+        p1 = array.get(ys, m - 2)
+        p2 = array.get(ys, m - 1)
+        if j2 > j1 and nowBar - j2 <= maxBars
+            slope = (p2 - p1) / (j2 - j1)
+            ok = needPts < 3
+            if not ok and m >= 3
+                for q = m - 3 to 0
+                    j0 = array.get(xs, q)
+                    if math.abs(array.get(ys, q) - (p2 + slope * (j0 - j2))) <= tol
+                        ok := true
+                        break
+            if ok
+                outv := p2 + slope * (nowBar - j2)
+    outv
+
+tlTolPx = na(atrv) ? 0.0 : tlTol * atrv
+resLvl = tlMode == "Off" ? na : f_tline(phX, phY, bar_index, tlMaxBars, tlPts, tlTolPx)
+supLvl = tlMode == "Off" ? na : f_tline(plX, plY, bar_index, tlMaxBars, tlPts, tlTolPx)
+tlOkL = tlMode == "Off" ? true : not na(resLvl) and close > resLvl
+tlOkS = tlMode == "Off" ? true : not na(supLvl) and close < supLvl
+
 // ----------------------------------------------------------------------------- signals
 armed = rReady and nyMin >= math.max(rangeEnd, firstEntry) and nyMin < lastEntry and not na(atrv) and atrv > 0
-upLvl = rHi + bufAtr * atrv
-dnLvl = rLo - bufAtr * atrv
-hitUp = armed and (touchOk ? high >= upLvl : high > upLvl)
-hitDn = armed and (touchOk ? low  <= dnLvl : low  < dnLvl)
+rngUp = rHi + bufAtr * atrv
+rngDn = rLo - bufAtr * atrv
+// LEVEL replaces the range with the line; EITHER takes whichever is nearer, so the session fires
+// on the first of the two. GATE leaves the level alone and only filters below.
+upLvl = tlMode == "Level: break the LINE instead of the range" ? resLvl :
+         tlMode == "Either: whichever level is nearer" ? (na(resLvl) ? rngUp : math.min(rngUp, resLvl)) : rngUp
+dnLvl = tlMode == "Level: break the LINE instead of the range" ? supLvl :
+         tlMode == "Either: whichever level is nearer" ? (na(supLvl) ? rngDn : math.max(rngDn, supLvl)) : rngDn
+hitUp = armed and not na(upLvl) and (touchOk ? high >= upLvl : high > upLvl)
+hitDn = armed and not na(dnLvl) and (touchOk ? low  <= dnLvl : low  < dnLvl)
 
 var bool tookUp = false
 var bool tookDn = false
@@ -304,8 +371,13 @@ if useSR
 dirOkL = dirMode == "Off" ? true : dirMode == "Align with the hour" ? hDir == 1 : hDir == -1
 dirOkS = dirMode == "Off" ? true : dirMode == "Align with the hour" ? hDir == -1 : hDir == 1
 
-wantLong  = (sideIn == "Long"  or sideIn == "Both") and hitUp and not tookUp and momOkL and srOkL and dirOkL
-wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and momOkS and srOkS and dirOkS
+// The GATE mode is the only one that filters; LEVEL and EITHER have already moved the level, so
+// applying the gate as well would demand price clear a line it has by then broken by construction.
+tlGateL = tlMode == "Gate: price must have cleared it" ? tlOkL : true
+tlGateS = tlMode == "Gate: price must have cleared it" ? tlOkS : true
+
+wantLong  = (sideIn == "Long"  or sideIn == "Both") and hitUp and not tookUp and momOkL and srOkL and dirOkL and tlGateL
+wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and momOkS and srOkS and dirOkS and tlGateS
 
 // ----------------------------------------------------------------------------- orders
 // The exit bracket is placed WITH the entry and priced from the SIGNAL bar, so the fill bar is
@@ -379,10 +451,12 @@ plot(rReady ? rLo : na, "range low",  color = color.new(color.orange, 0), style 
 plot(maMode == "Off" ? na : maF, "fast MA", color = color.new(color.blue, 40))
 plot(maMode == "Off" ? na : maS, "slow MA", color = color.new(color.purple, 40))
 plot(is200 ? maL : na, "long MA (200)", color = color.new(color.orange, 30), linewidth = 2)
+plot(tlShow and tlMode != "Off" ? resLvl : na, "trend line, resistance", color = color.new(color.red, 20), style = plot.style_linebr)
+plot(tlShow and tlMode != "Off" ? supLvl : na, "trend line, support", color = color.new(color.green, 20), style = plot.style_linebr)
 bgcolor(inRange ? color.new(color.gray, 90) : na)
 bgcolor(dirMode != "Off" and inHour ? color.new(hDir == 1 ? color.teal : hDir == -1 ? color.maroon : color.gray, 92) : na)
 
-var table hud = table.new(position.top_right, 2, 10, border_width = 1)
+var table hud = table.new(position.top_right, 2, 11, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "range",   text_size = size.tiny)
     table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)), text_size = size.tiny)
@@ -425,5 +499,8 @@ if barstate.islast
     maTxt = maMode == "Off" ? "off" : not is200 ? maMode : maMode + "  ->  " + m200Txt
     maCol = maMode == "Off" or not is200 ? color.gray : m200L and m200S ? color.gray : m200L ? color.teal : m200S ? color.maroon : color.red
     table.cell(hud, 1, 8, maTxt, text_size = size.tiny, text_color = maCol)
-    table.cell(hud, 0, 9, "edge claimed", text_size = size.tiny)
-    table.cell(hud, 1, 9, "none", text_size = size.tiny, text_color = color.red)
+    table.cell(hud, 0, 9, "trend line", text_size = size.tiny)
+    tlTxt = tlMode == "Off" ? "off" : str.tostring(tlPts) + "-pt, " + str.tostring(tlMaxMin) + "m = " + str.tostring(tlMaxBars) + " bars  res " + (na(resLvl) ? "none" : str.tostring(resLvl, format.mintick)) + "  sup " + (na(supLvl) ? "none" : str.tostring(supLvl, format.mintick))
+    table.cell(hud, 1, 9, tlTxt, text_size = size.tiny, text_color = tlMode == "Off" ? color.gray : color.blue)
+    table.cell(hud, 0, 10, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 10, "none", text_size = size.tiny, text_color = color.red)

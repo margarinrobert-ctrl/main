@@ -603,3 +603,67 @@ def ma200_ok(f, fast=13, slow=48, long_=200, kind="ema", mode="any", cross_bars=
     agg = (lambda A: A.all(axis=0)) if mode == "all" else (lambda A: A.any(axis=0))
     ok = np.isfinite(L)
     return ok & agg(U), ok & agg(D)
+
+
+# ----------------------------------------------------------------------------- trend lines
+def trendlines(f, prd=10, min_pts=2, tol_atr=0.25, max_age=200):
+    """Causal trend lines through CONFIRMED pivots, returned as a per-bar LEVEL.
+
+    A pivot high at bar j needs bars j-prd..j+prd, so it is knowable at j+prd and NEVER at j --
+    the confirmation lag `STUDY_DIVERGENCE_CONFIRM` found, applied here rather than assumed away.
+    At bar i the resistance line is drawn through the last TWO confirmed pivot highs and extended
+    to i; the support line through the last two confirmed pivot lows. That is the "at least two
+    points" definition.
+
+      min_pts = 2   the line is the last two pivots and nothing else.
+      min_pts >= 3  a THIRD (earlier) pivot must lie within `tol_atr` x ATR of the same line, so
+                    the line has three touches. Fewer lines qualify; the check is on pivots the
+                    line was NOT fitted to, which is the only version of "three points" that is
+                    not automatically true.
+
+    `max_age` refuses a line whose newer anchor is more than that many bars back -- an extended
+    line from six months ago is a number, not a level.
+
+    Returns (res, sup): the resistance and support level at every bar, NaN where no line exists.
+    """
+    h = f["high"].to_numpy(); l = f["low"].to_numpy(); at = f["atr"].to_numpy()
+    n = len(h)
+    ph = np.zeros(n, bool); pl = np.zeros(n, bool)
+    for j in range(prd, n - prd):
+        w = h[j - prd:j + prd + 1]
+        if h[j] == w.max() and int(np.argmax(w)) == prd:
+            ph[j] = True
+        w = l[j - prd:j + prd + 1]
+        if l[j] == w.min() and int(np.argmin(w)) == prd:
+            pl[j] = True
+
+    def _line(flags, px):
+        out = np.full(n, np.nan)
+        idx = []          # indices of pivots CONFIRMED so far, oldest first
+        for i in range(n):
+            j = i - prd   # a pivot at i-prd becomes knowable exactly now
+            if j >= 0 and flags[j]:
+                idx.append(j)
+                if len(idx) > 40:
+                    idx.pop(0)
+            if len(idx) < 2:
+                continue
+            j1, j2 = idx[-2], idx[-1]
+            if i - j2 > max_age or j2 == j1:
+                continue
+            slope = (px[j2] - px[j1]) / (j2 - j1)
+            if min_pts >= 3:
+                a = at[i]
+                if not np.isfinite(a) or a <= 0:
+                    continue
+                ok = False
+                for j0 in idx[:-2][::-1]:
+                    if abs(px[j0] - (px[j2] + slope * (j0 - j2))) <= tol_atr * a:
+                        ok = True
+                        break
+                if not ok:
+                    continue
+            out[i] = px[j2] + slope * (i - j2)
+        return out
+
+    return _line(ph, h), _line(pl, l)
