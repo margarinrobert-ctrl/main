@@ -277,11 +277,18 @@ def events(f, rhi, rlo, side="long", buf_atr=0.0, rs=RS, re_=RE, open_m=OPEN_M,
 
 
 @njit(cache=True)
-def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, rhi, rlo):
+def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, rhi, rlo,
+          stop_pts, tgt_pts):
     """One live position. Entry at the NEXT bar's open. The stop is an ATR multiple at the SIGNAL
     bar (knowable when the order is written) or the opposite side of the range when use_rng. The
     target is in R. A bar touching both is resolved as the STOP and the ambiguous share is returned
-    so the convention can be priced (`STUDY_VOLBO_BREAKOUT`: worth twice an edge once)."""
+    so the convention can be priced (`STUDY_VOLBO_BREAKOUT`: worth twice an edge once).
+
+    `stop_pts` / `tgt_pts` override with an ABSOLUTE distance in index points. Kept as a separate
+    parameterisation rather than converted, because the two do not rank the same axis the same way:
+    a fixed 100-point stop is 2.35 ATR on US30 and 4.36 on US100, and 4.23 ATR in 2016 against 1.10
+    in 2025 on US30 alone, so a points grid confounds geometry with market and with era
+    (`STUDY_DL50`, `STUDY_US30_SCALP_0711` sections 6-7). Both are run and both are printed."""
     n = len(c); m = len(sig)
     eb = np.full(m, -1, np.int64); xb = np.full(m, -1, np.int64)
     pts = np.zeros(m); rr = np.zeros(m); risk = np.zeros(m)
@@ -300,16 +307,23 @@ def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, 
             rk = (e - rlo[i]) if s > 0 else (rhi[i] - e)
             if rk <= 0 or not np.isfinite(rk):
                 continue
+        elif stop_pts > 0:
+            rk = stop_pts
         else:
             rk = stop_a * a
         stop = e - s * rk
-        tgt = e + s * tgt_r * rk if tgt_r > 0 else np.nan
+        if tgt_pts > 0:
+            tgt = e + s * tgt_pts
+        elif tgt_r > 0:
+            tgt = e + s * tgt_r * rk
+        else:
+            tgt = np.nan
         j = i + 1
         ex = np.nan; rsn = 0
         while j < n:
             hit_s = (l[j] <= stop) if s > 0 else (h[j] >= stop)
             hit_t = False
-            if tgt_r > 0:
+            if np.isfinite(tgt):
                 hit_t = (h[j] >= tgt) if s > 0 else (l[j] <= tgt)
             if hit_s and hit_t:
                 amb[q] = 1
@@ -333,14 +347,14 @@ def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, 
 
 
 def run(f, sig, side, stop_a=1.0, tgt_r=0.0, flat_m=960, cost=1.72, use_rng=False,
-        rhi=None, rlo=None):
+        rhi=None, rlo=None, stop_pts=0.0, tgt_pts=0.0):
     o = f["open"].to_numpy(); h = f["high"].to_numpy(); l = f["low"].to_numpy()
     c = f["close"].to_numpy(); at = f["atr"].to_numpy(); mod = f["mod"].to_numpy()
     if rhi is None:
         rhi = np.full(len(f), np.nan); rlo = np.full(len(f), np.nan)
     eb, xb, pts, rr, risk, why, amb = _walk(
         o, h, l, c, at, mod, sig, side, float(stop_a), float(tgt_r), int(flat_m),
-        float(cost), 1 if use_rng else 0, rhi, rlo)
+        float(cost), 1 if use_rng else 0, rhi, rlo, float(stop_pts), float(tgt_pts))
     k = eb >= 0
     ent = o[np.where(k, eb, 0)]
     return pd.DataFrame(dict(sig=sig[k], eb=eb[k], xb=xb[k], side=side[k], pts=pts[k],

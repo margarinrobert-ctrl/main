@@ -226,6 +226,60 @@ Parity, `research/nineam/na_parity.py`, six cells on the two US30 feeds:
 The gap is quoted **per trade, not as a share of the total**, because this family's total is near
 zero and a ratio with a collapsing denominator is the artifact `STUDY_SWEEP_110K` recorded.
 
+## 11. Fixed POINT barriers — the option, and what it measures
+
+Requested directly: a TP and an SL selectable as 100 points. Both are now inputs
+(`Stop mode = Points`, `Target mode = Points`), and the arithmetic was run before the option was
+shipped, because a point distance is the one parameterisation that is **not the same geometry
+twice**.
+
+| 100 points is… | US30_LONG | US30_ISO | NQ | US100 |
+|---|---|---|---|---|
+| × median in-window ATR | **2.35** | 1.57 | 3.24 | **4.36** |
+| round turn / risk | 2.29% | 2.29% | 1.72% | 1.22% |
+| driftless break-even @1:1 | 51.1% | 51.1% | 50.9% | 50.6% |
+
+On US30 alone the same 100 points was 4.23 ATR in 2016 and 1.10 in 2025 (`STUDY_DL50`), so a points
+grid confounds geometry with market *and* with era. The script's panel therefore prints the chosen
+distance in both units live.
+
+**The 100 / 100 cell, one read per block:**
+
+| feed | block | side | n | %/trade | PF | win | break-even | p(entry) | P(mean≤0) | MDE |
+|---|---|---|---|---|---|---|---|---|---|---|
+| US30_LONG | research | long | 1378 | +0.0031 | 1.022 | 0.517 | 0.511 | 0.728 | 0.364 | 0.0247 |
+| US30_LONG | holdout | long | 585 | **−0.0164** | 0.872 | 0.475 | 0.511 | **1.000** | 0.933 | 0.0298 |
+| US30_ISO | forward | long | 263 | −0.0048 | 0.954 | 0.502 | 0.511 | 0.480 | 0.663 | 0.0351 |
+| US100 | research | both | 1710 | +0.0407 | 1.107 | 0.535 | 0.506 | **0.025** | 0.012 | 0.0483 |
+| US100 | holdout | both | 635 | −0.0089 | 0.956 | 0.501 | 0.506 | 0.983 | 0.690 | 0.0543 |
+
+**The win rate is its own break-even**, within half a point on every US30 row — the fourth family
+here where the barriers are hit by noise. Across 14 cells, **1 clears p ≤ 0.05 where 0.7 are
+expected by chance, and 0 of 14 exceed their own MDE**. The one pass (US100 research) is the block
+that would choose, and its holdout reads 0.983.
+
+**The 75-cell declared points grid on US30 research** (5 stops × 5 targets × 3 sides): 54.7%
+profitable, 3 of 75 outside their own MDE, best |t| **3.635** against an `E[max t | pure noise]` of
+**2.428** for a search that size — so the top row of this grid is readable only as a marginal.
+
+| target | none | 200 pt | 150 pt | 100 pt | 50 pt |
+|---|---|---|---|---|---|
+| marginal, bp/trade | **+0.87** | +0.80 | +0.43 | −0.44 | **−1.07** |
+
+Monotone, with the tightest target the single worst choice in the space — **no take profit wins for
+the 26th time here**, and this time the points parameterisation says it independently. The stop
+marginal runs the other way (50 pt −0.26 → 200 pt +0.42), reproducing the monotone-toward-wider
+result for the ninth family. The intrabar tie-break decides nothing at these widths: the ambiguous
+share is 1.33% at a 50-point stop and 0.01% at 200.
+
+Parity on the new modes: **10 of 10 cells at trade count 1.000**, same exit bar 0.962–1.000,
+per-trade correlation 0.996–1.000, gap **−0.14 to +0.00 points a trade** — conservative on every
+points cell.
+
+**Defaults are unchanged** (ATR stop, no target). The points values are pre-filled at 100 and the
+modes have to be switched deliberately, because on this evidence 100/100 is worse than the
+researched geometry on every US30 block.
+
 ## 10. What would change the verdict
 
 Not more parameters — the grid's own noise floor already exceeds the detection threshold by 1.4×,
@@ -241,4 +295,6 @@ two levers that change the arithmetic.
 `research/nineam/na_core.py` · `run_n1.py` (arithmetic, base rates, Gate 1) · `run_n2.py` (the
 16,200-cell grid by marginal average) · `run_n3.py` (the rule as asked, both nulls, drop-one, the
 S/R gate) · `run_n4.py` (the consensus cell, four Monte Carlos, deflation) · `na_parity.py` ·
-`plot_na.py` · `pine/nineam/NINE_AM_RANGE_BREAKOUT_strategy.pine`
+`run_n5.py` (the fixed-points parameterisation: the ATR conversion table first, a 75-cell
+declared grid by marginal average, then the 100/100 cell read once per block against a matched
+random entry) · `plot_na.py` · `pine/nineam/NINE_AM_RANGE_BREAKOUT_strategy.pine`

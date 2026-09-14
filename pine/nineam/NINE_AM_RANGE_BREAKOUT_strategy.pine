@@ -28,6 +28,20 @@
 // RSI / Aroon / MACD / MFI / +DI / close>EMA50 on a channel break, this confirmation is NOT the
 // trigger restated. It binds. It also does not pay.
 //
+//   FIXED POINT BARRIERS, measured because the option was asked for. 100 points is NOT one
+//   geometry: it is 2.35x the median in-window ATR on US30, 1.57x on US30_ISO, 3.24x on NQ and
+//   4.36x on US100. At 100 stop / 100 target on US30:
+//     research  +0.0031 %/trade  PF 1.022  win 51.7% against a driftless break-even of 51.1%
+//     holdout   -0.0164          PF 0.872  win 47.5%   -- a random entry of the same geometry
+//                                                         beats it at p 1.000
+//     forward   -0.0048 / -0.0130 (long / both), US30_ISO, a different provider
+//   Over 75 declared points cells on US30 research: 54.7% profitable, 3 outside their own MDE,
+//   best |t| 3.635 against an E[max t | pure noise] of 2.428 for a search that size. The target
+//   marginal is monotone -- none +0.87 bp, 200 pts +0.80, 150 +0.43, 100 -0.44, 50 -1.07 -- and
+//   the stop marginal runs the other way, 50 pts -0.26 to 200 pts +0.42. Across four feeds the
+//   100/100 cell clears its control in 1 of 14 blocks where 0.7 are expected by chance and in
+//   0 of 14 does it exceed its own minimum detectable effect.
+//
 // Settings that are a REACH IN TIME are declared in MINUTES and converted with
 // timeframe.in_seconds(), so the same numbers mean the same thing on any chart (STUDY_V57).
 //@version=5
@@ -65,9 +79,12 @@ srMax    = input.int(6,   "Max channels",             minval = 1, maxval = 10, g
 srLook   = input.int(290, "Pivot lookback, bars",     minval = 50, group = grpR)
 
 grpX = "Exit"
-stopMode = input.string("ATR", "Stop", options = ["ATR", "Opposite side of the range"], group = grpX)
-stopAtr  = input.float(1.5, "Stop, xATR(14)", minval = 0.1, maxval = 10, step = 0.1, group = grpX)
-tgtR     = input.float(0.0, "Target, R (0 = none)",  minval = 0, maxval = 20, step = 0.5, group = grpX, tooltip = "No take profit has beaten every target tested 25 times on this branch. The marginal average here agrees on three of four feeds.")
+stopMode = input.string("ATR", "Stop mode", options = ["ATR", "Points", "Opposite side of the range"], group = grpX, tooltip = "POINTS is a fixed distance in index points and is NOT the same geometry on two markets: 100 points is 2.35x the median in-window ATR on US30, 3.24x on NQ and 4.36x on US100, and on US30 alone it was 4.23 ATR in 2016 against 1.10 in 2025. A points setting therefore confounds geometry with market and with era (STUDY_DL50). The panel prints what your chosen distance currently is in ATR.")
+stopAtr  = input.float(1.5, "Stop, xATR(14)",   minval = 0.1, maxval = 10, step = 0.1, group = grpX)
+stopPts  = input.float(100, "Stop, POINTS",     minval = 0.1, step = 1, group = grpX, tooltip = "Used when Stop mode = Points.")
+tgtMode  = input.string("None", "Target mode", options = ["None", "R", "Points"], group = grpX, tooltip = "No take profit has beaten every target tested 26 times on this branch, and the points grid here agrees: over 75 declared US30 research cells the target marginal runs NONE +0.87 bp, 200 pts +0.80, 150 +0.43, 100 -0.44, 50 -1.07 -- monotone, with the tightest target the single worst choice in the space.")
+tgtR     = input.float(0.0, "Target, R",        minval = 0, maxval = 20, step = 0.5, group = grpX, tooltip = "Used when Target mode = R.")
+tgtPts   = input.float(100, "Target, POINTS",   minval = 0.1, step = 1, group = grpX, tooltip = "Used when Target mode = Points. Measured at 100/100 on US30: research +0.0031 %/trade PF 1.022 at a 51.7% win rate against a driftless break-even of 51.1%, then holdout -0.0164 PF 0.872 with a random entry of the same geometry beating it at p 1.000.")
 
 // ----------------------------------------------------------------------------- clock
 // Exchange time is Chicago on CME; New York is what the rule is written in.
@@ -196,8 +213,13 @@ wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and
 // protected. `strategy.exit` on a later bar leaves the entry bar naked (STUDY_PINE_PARITY:
 // 4.4-13.0% of trades, -33 to -118 points) and a bracket that reads strategy.position_avg_price
 // cannot be armed on the fill bar at all (STUDY_SCALP89).
-riskL = stopMode == "ATR" ? stopAtr * atrv : math.max(close - rLo, syminfo.mintick)
-riskS = stopMode == "ATR" ? stopAtr * atrv : math.max(rHi - close, syminfo.mintick)
+riskL = stopMode == "ATR" ? stopAtr * atrv : stopMode == "Points" ? stopPts : math.max(close - rLo, syminfo.mintick)
+riskS = stopMode == "ATR" ? stopAtr * atrv : stopMode == "Points" ? stopPts : math.max(rHi - close, syminfo.mintick)
+
+// The target is an absolute distance in price, whichever mode set it; `na` means no target, and
+// `strategy.exit` is then a stop-only bracket.
+tgtDistL = tgtMode == "Points" ? tgtPts : tgtMode == "R" and tgtR > 0 ? tgtR * riskL : na
+tgtDistS = tgtMode == "Points" ? tgtPts : tgtMode == "R" and tgtR > 0 ? tgtR * riskS : na
 
 flatNow = flatMin > 0 and (nyMin + tfMin >= flatMin) and nyMin < flatMin
 
@@ -209,12 +231,12 @@ if barstate.isconfirmed and not flatNow and strategy.position_size == 0
         tookUp := true
         strategy.entry("L", strategy.long)
         strategy.exit("Lx", "L", loss = riskL / syminfo.mintick,
-                      profit = tgtR > 0 ? tgtR * riskL / syminfo.mintick : na)
+                      profit = na(tgtDistL) ? na : tgtDistL / syminfo.mintick)
     else if wantShort
         tookDn := true
         strategy.entry("S", strategy.short)
         strategy.exit("Sx", "S", loss = riskS / syminfo.mintick,
-                      profit = tgtR > 0 ? tgtR * riskS / syminfo.mintick : na)
+                      profit = na(tgtDistS) ? na : tgtDistS / syminfo.mintick)
 
 // a break that is refused by a gate still counts as used for the session, so the rule takes the
 // FIRST break or none -- the research event stream does the same and the two must agree
@@ -231,7 +253,7 @@ plot(maMode == "Off" ? na : maF, "fast MA", color = color.new(color.blue, 40))
 plot(maMode == "Off" ? na : maS, "slow MA", color = color.new(color.purple, 40))
 bgcolor(inRange ? color.new(color.gray, 90) : na)
 
-var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+var table hud = table.new(position.top_right, 2, 6, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "range",   text_size = size.tiny)
     table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY", text_size = size.tiny)
@@ -241,5 +263,11 @@ if barstate.islast
     table.cell(hud, 1, 2, str.tostring(strategy.closedtrades), text_size = size.tiny)
     table.cell(hud, 0, 3, "S/R gate", text_size = size.tiny)
     table.cell(hud, 1, 3, useSR ? str.tostring(array.size(srLo)) + " channels" : "off", text_size = size.tiny)
-    table.cell(hud, 0, 4, "edge claimed", text_size = size.tiny)
-    table.cell(hud, 1, 4, "none", text_size = size.tiny, text_color = color.red)
+    stopShow = stopMode == "ATR" ? stopAtr * atrv : stopMode == "Points" ? stopPts : na
+    tgtShow  = tgtMode == "Points" ? tgtPts : tgtMode == "R" and tgtR > 0 ? tgtR * (na(stopShow) ? atrv : stopShow) : na
+    table.cell(hud, 0, 4, "stop / target", text_size = size.tiny)
+    table.cell(hud, 1, 4, (na(stopShow) ? "range" : str.tostring(stopShow, "#.#") + " pt = " + str.tostring(stopShow / atrv, "#.##") + " ATR")
+               + "  /  " + (na(tgtShow) ? "none" : str.tostring(tgtShow, "#.#") + " pt = " + str.tostring(tgtShow / atrv, "#.##") + " ATR"),
+               text_size = size.tiny)
+    table.cell(hud, 0, 5, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 5, "none", text_size = size.tiny, text_color = color.red)

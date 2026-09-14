@@ -21,7 +21,7 @@ from run_n2 import gate
 TICK = {"US30L": 0.1, "US30I": 0.1, "US100L": 0.1, "NQ": 0.25}
 
 
-def pine_walk(f, sig, side, stop_a, tgt_r, flat_m, cost, tick):
+def pine_walk(f, sig, side, stop_a, tgt_r, flat_m, cost, tick, stop_pts=0.0, tgt_pts=0.0):
     """One live position; the bracket is placed with the entry and rounded to the tick."""
     o = f["open"].to_numpy(); h = f["high"].to_numpy(); l = f["low"].to_numpy()
     c = f["close"].to_numpy(); at = f["atr"].to_numpy(); mod = f["mod"].to_numpy()
@@ -36,15 +36,23 @@ def pine_walk(f, sig, side, stop_a, tgt_r, flat_m, cost, tick):
             continue
         s = side[q]
         e = o[i + 1]
-        rk = round(stop_a * a / tick) * tick          # strategy.exit(loss=) is in TICKS
+        raw = stop_pts if stop_pts > 0 else stop_a * a
+        rk = round(raw / tick) * tick                # strategy.exit(loss=) is in TICKS
         if rk <= 0:
             continue
         stop = e - s * rk
-        tgt = e + s * round(tgt_r * rk / tick) * tick if tgt_r > 0 else np.nan
+        if tgt_pts > 0:
+            tgt = e + s * round(tgt_pts / tick) * tick
+        elif tgt_r > 0:
+            tgt = e + s * round(tgt_r * rk / tick) * tick
+        else:
+            tgt = np.nan
         j = i + 1; ex = np.nan; why = 0
         while j < n:
             hs = (l[j] <= stop) if s > 0 else (h[j] >= stop)
-            ht = (h[j] >= tgt) if (tgt_r > 0 and s > 0) else ((l[j] <= tgt) if tgt_r > 0 else False)
+            ht = False
+            if np.isfinite(tgt):
+                ht = (h[j] >= tgt) if s > 0 else (l[j] <= tgt)
             if hs:
                 ex = stop; why = 1; break
             if ht:
@@ -67,7 +75,12 @@ def main():
     print("=" * 100)
     cfgs = [dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960),
             dict(win=(540, 570), side="long", buf=0.0, ema="state", stop=1.5, tgt=0.0, flat=960),
-            dict(win=(540, 555), side="both", buf=0.0, ema="x20", stop=1.0, tgt=3.0, flat=960)]
+            dict(win=(540, 555), side="both", buf=0.0, ema="x20", stop=1.0, tgt=3.0, flat=960),
+            # the POINTS option, parity-checked like every other shipped input
+            dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
+                 spts=100.0, tpts=100.0),
+            dict(win=(540, 570), side="long", buf=0.0, ema="state", stop=0.0, tgt=0.0, flat=960,
+                 spts=100.0, tpts=0.0)]
     for name in ("US30L", "US30I"):
         f = N.load(name, 15)
         cost = N.COST[name]; tick = TICK[name]
@@ -76,17 +89,21 @@ def main():
             rhi, rlo, rn = N.ranges(f, rs, re_)
             s0, d0 = N.events(f, rhi, rlo, side=cfg["side"], buf_atr=cfg["buf"], rs=rs, re_=re_)
             s1, d1 = gate(f, s0, d0, cfg["ema"])
+            spts = cfg.get("spts", 0.0); tpts = cfg.get("tpts", 0.0)
             eng = N.run(f, s1, d1, stop_a=cfg["stop"], tgt_r=cfg["tgt"], flat_m=cfg["flat"],
-                        cost=cost, rhi=rhi, rlo=rlo)
-            scr = pine_walk(f, s1, d1, cfg["stop"], cfg["tgt"], cfg["flat"], cost, tick)
+                        cost=cost, rhi=rhi, rlo=rlo, stop_pts=spts, tgt_pts=tpts)
+            scr = pine_walk(f, s1, d1, cfg["stop"], cfg["tgt"], cfg["flat"], cost, tick,
+                            stop_pts=spts, tgt_pts=tpts)
             j = eng.merge(scr, on="sig", suffixes=("_e", "_s"))
             same_x = float((j["xb_e"] == j["xb_s"]).mean()) if len(j) else np.nan
             corr = float(np.corrcoef(j["pts_e"], j["pts_s"])[0, 1]) if len(j) > 2 else np.nan
             # NOT a percentage of the total: this family's total is near zero, and a ratio with a
             # collapsing denominator is the artifact `STUDY_SWEEP_110K` recorded. Points per trade.
             gap = scr["pts"].mean() - eng["pts"].mean()
+            geom = (f"{spts:.0f}pt/{tpts:.0f}pt" if spts > 0
+                    else f"{cfg['stop']}N/{cfg['tgt']}R")
             print(f"  {name} cfg{k+1} {cfg['win']} {cfg['side']:5s} ema={cfg['ema']:5s} "
-                  f"{cfg['stop']}N/{cfg['tgt']}R : engine {len(eng):5d} trades, script {len(scr):5d} "
+                  f"{geom:12s}: engine {len(eng):5d} trades, script {len(scr):5d} "
                   f"({len(scr)/max(len(eng),1):.3f})  same exit bar {same_x:.4f}  "
                   f"corr {corr:.4f}  gap {gap:+.3f} pts/trade "
                   f"(engine {eng['pts'].mean():+.3f})")
