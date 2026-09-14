@@ -8,7 +8,12 @@ explicitly rather than hoped away:
      exactly what the engine uses -- so the fill bar IS protected in both;
   3. the flatten is submitted on the bar before the cutoff and fills at the cutoff bar's OPEN;
   4. a break refused by a gate still consumes the session, in both, so the two event streams must
-     agree bar for bar before any P&L is compared.
+     agree bar for bar before any P&L is compared;
+  5. the AUTO BREAKEVEN is re-issued as an ABSOLUTE stop once the position exists, so it is priced
+     from `strategy.position_avg_price` and rounded to the tick, and -- unlike the engine, which
+     can move an exact level -- the script cannot arm before the fill bar has closed. Both arm on
+     the fill bar and bind from the bar after, which is why they agree; the tick rounding is the
+     only residual.
 """
 from __future__ import annotations
 import os, sys
@@ -21,7 +26,8 @@ from run_n2 import gate
 TICK = {"US30L": 0.1, "US30I": 0.1, "US100L": 0.1, "NQ": 0.25}
 
 
-def pine_walk(f, sig, side, stop_a, tgt_r, flat_m, cost, tick, stop_pts=0.0, tgt_pts=0.0):
+def pine_walk(f, sig, side, stop_a, tgt_r, flat_m, cost, tick, stop_pts=0.0, tgt_pts=0.0,
+              be_pts=0.0, be_off=0.0):
     """One live position; the bracket is placed with the entry and rounded to the tick."""
     o = f["open"].to_numpy(); h = f["high"].to_numpy(); l = f["low"].to_numpy()
     c = f["close"].to_numpy(); at = f["atr"].to_numpy(); mod = f["mod"].to_numpy()
@@ -48,6 +54,8 @@ def pine_walk(f, sig, side, stop_a, tgt_r, flat_m, cost, tick, stop_pts=0.0, tgt
         else:
             tgt = np.nan
         j = i + 1; ex = np.nan; why = 0
+        armed = False
+        be_lvl = e + s * round(be_off / tick) * tick
         while j < n:
             hs = (l[j] <= stop) if s > 0 else (h[j] >= stop)
             ht = False
@@ -61,6 +69,12 @@ def pine_walk(f, sig, side, stop_a, tgt_r, flat_m, cost, tick, stop_pts=0.0, tgt
                 ex = o[j + 1]; why = 3; j += 1; break
             if flat_m > 0 and j + 1 < n and mod[j + 1] < mod[j]:
                 ex = c[j]; why = 4; break
+            if be_pts > 0 and not armed:
+                fav = (h[j] - e) if s > 0 else (e - l[j])
+                if fav >= be_pts:
+                    armed = True
+                    if (s > 0 and be_lvl > stop) or (s < 0 and be_lvl < stop):
+                        stop = be_lvl
             j += 1
         if not np.isfinite(ex):
             ex = c[n - 1]; why = 5; j = n - 1
@@ -82,7 +96,14 @@ def main():
             dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
                  spts=100.0, tpts=100.0),
             dict(win=(540, 570), side="long", buf=0.0, ema="state", stop=0.0, tgt=0.0, flat=960,
-                 spts=100.0, tpts=0.0)]
+                 spts=100.0, tpts=0.0),
+            # the AUTO BREAKEVEN option, at the asked-for 50 points and with an offset
+            dict(win=(540, 555), side="long", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 be=50.0),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 be=50.0, beoff=10.0),
+            dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
+                 spts=100.0, tpts=0.0, be=25.0)]
     for name in ("US30L", "US30I"):
         f = N.load(name, 15)
         cost = N.COST[name]; tick = TICK[name]
@@ -93,10 +114,12 @@ def main():
                               open_m=570)
             s1, d1 = gate(f, s0, d0, cfg["ema"])
             spts = cfg.get("spts", 0.0); tpts = cfg.get("tpts", 0.0)
+            be = cfg.get("be", 0.0); beoff = cfg.get("beoff", 0.0)
             eng = N.run(f, s1, d1, stop_a=cfg["stop"], tgt_r=cfg["tgt"], flat_m=cfg["flat"],
-                        cost=cost, rhi=rhi, rlo=rlo, stop_pts=spts, tgt_pts=tpts)
+                        cost=cost, rhi=rhi, rlo=rlo, stop_pts=spts, tgt_pts=tpts,
+                        be_pts=be, be_off=beoff)
             scr = pine_walk(f, s1, d1, cfg["stop"], cfg["tgt"], cfg["flat"], cost, tick,
-                            stop_pts=spts, tgt_pts=tpts)
+                            stop_pts=spts, tgt_pts=tpts, be_pts=be, be_off=beoff)
             j = eng.merge(scr, on="sig", suffixes=("_e", "_s"))
             same_x = float((j["xb_e"] == j["xb_s"]).mean()) if len(j) else np.nan
             corr = float(np.corrcoef(j["pts_e"], j["pts_s"])[0, 1]) if len(j) > 2 else np.nan
@@ -105,8 +128,10 @@ def main():
             gap = scr["pts"].mean() - eng["pts"].mean()
             geom = (f"{spts:.0f}pt/{tpts:.0f}pt" if spts > 0
                     else f"{cfg['stop']}N/{cfg['tgt']}R")
+            if be > 0:
+                geom += f" be{be:.0f}+{beoff:.0f}"
             print(f"  {name} cfg{k+1} {cfg['win']} {cfg['side']:5s} ema={cfg['ema']:5s} "
-                  f"{geom:12s}: engine {len(eng):5d} trades, script {len(scr):5d} "
+                  f"{geom:22s}: engine {len(eng):5d} trades, script {len(scr):5d} "
                   f"({len(scr)/max(len(eng),1):.3f})  same exit bar {same_x:.4f}  "
                   f"corr {corr:.4f}  gap {gap:+.3f} pts/trade "
                   f"(engine {eng['pts'].mean():+.3f})")

@@ -103,6 +103,9 @@ stopPts  = input.float(100, "Stop, POINTS",     minval = 0.1, step = 1, group = 
 tgtMode  = input.string("None", "Target mode", options = ["None", "R", "Points"], group = grpX, tooltip = "No take profit has beaten every target tested 26 times on this branch, and the points grid here agrees: over 75 declared US30 research cells the target marginal runs NONE +0.87 bp, 200 pts +0.80, 150 +0.43, 100 -0.44, 50 -1.07 -- monotone, with the tightest target the single worst choice in the space.")
 tgtR     = input.float(0.0, "Target, R",        minval = 0, maxval = 20, step = 0.5, group = grpX, tooltip = "Used when Target mode = R.")
 tgtPts   = input.float(100, "Target, POINTS",   minval = 0.1, step = 1, group = grpX, tooltip = "Used when Target mode = Points. Measured at 100/100 on US30: research +0.0031 %/trade PF 1.022 at a 51.7% win rate against a driftless break-even of 51.1%, then holdout -0.0164 PF 0.872 with a random entry of the same geometry beating it at p 1.000.")
+beMode   = input.string("Off", "Auto breakeven", options = ["Off", "Points"], group = grpX, tooltip = "DEFAULT OFF, and measured rather than assumed. Over a declared 72-cell ladder (0/25/50/75/100/150 points x long/both x two geometries x US30 research, holdout and a different-provider forward block) a breakeven beats its own OFF twin in 19 of 60 scorable cells -- 32%, where chance is 50% -- and the marginal average of the paired delta falls monotonically with the arming distance: +0.0036 at 25 points, -0.0008 at 50, -0.0034 at 75, -0.0034 at 100, -0.0038 at 150 %/trade. It is the second exit policy this branch has measured as a subtractor after breakeven-after-1R (TEAM_EXIT_PF). The mechanism is in the exit mix: at 50 points the stop share rises 14.5 points and the flatten share falls 9.5, so the ratchet arms on a favourable excursion and is taken out on the pullback before the clock would have closed the trade in profit. Every paired delta is inside its own MDE, so this is a direction with a consistent sign, not a resolved effect.")
+bePts    = input.float(50, "Breakeven arms at, POINTS", minval = 1, step = 1, group = grpX, tooltip = "Favourable excursion from the FILL that arms the ratchet, in index points. The 50 asked for sits in the interior of the tested ladder. It arms on the bar that reaches the distance and can only BIND from the bar after -- within one bar OHLC cannot say whether the excursion came before or after the pullback, so arming and filling the moved stop on the same bar invents information.")
+beOffset = input.float(0, "Breakeven locks in, POINTS", minval = 0, step = 1, group = grpX, tooltip = "How far beyond the fill the moved stop sits. It RELABELS exits it does not move: at 50/0 the US30 research cell reads +0.011307 %/trade at a 22.1% win rate and at 50/+10 it reads +0.011322 at a 52.8% win rate -- the same money, 31 points of win rate, because an exit at the fill is a loss after costs and an exit ten points beyond it is a win. Read a win rate against its own geometry, never on its own.")
 
 // ----------------------------------------------------------------------------- clock
 // Exchange time is Chicago on CME; New York is what the rule is written in.
@@ -231,6 +234,9 @@ wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and
 // protected. `strategy.exit` on a later bar leaves the entry bar naked (STUDY_PINE_PARITY:
 // 4.4-13.0% of trades, -33 to -118 points) and a bracket that reads strategy.position_avg_price
 // cannot be armed on the fill bar at all (STUDY_SCALP89).
+var bool  beArmed  = false
+var float pendTgt  = na
+
 riskL = stopMode == "ATR" ? stopAtr * atrv : stopMode == "Points" ? stopPts : math.max(close - rLo, syminfo.mintick)
 riskS = stopMode == "ATR" ? stopAtr * atrv : stopMode == "Points" ? stopPts : math.max(rHi - close, syminfo.mintick)
 
@@ -247,14 +253,39 @@ if barstate.isconfirmed and strategy.position_size != 0 and flatNow
 if barstate.isconfirmed and not flatNow and strategy.position_size == 0
     if wantLong
         tookUp := true
+        beArmed := false
+        pendTgt := tgtDistL
         strategy.entry("L", strategy.long)
         strategy.exit("Lx", "L", loss = riskL / syminfo.mintick,
                       profit = na(tgtDistL) ? na : tgtDistL / syminfo.mintick)
     else if wantShort
         tookDn := true
+        beArmed := false
+        pendTgt := tgtDistS
         strategy.entry("S", strategy.short)
         strategy.exit("Sx", "S", loss = riskS / syminfo.mintick,
                       profit = na(tgtDistS) ? na : tgtDistS / syminfo.mintick)
+
+// ----------------------------------------------------------------------------- auto breakeven
+// The ratchet ARMS on the bar whose favourable extreme reaches bePts from the fill and the moved
+// stop is live only from the NEXT bar, which is what the research walker does and what an order
+// placed at a bar close can actually do. The target distance is the one captured AT ENTRY
+// (`pendTgt`), not recomputed from a later bar's ATR, so re-issuing the bracket cannot silently
+// move the take profit (STUDY_V56).
+if barstate.isconfirmed and beMode == "Points" and strategy.position_size != 0 and not beArmed
+    ep = strategy.position_avg_price
+    if not na(ep)
+        isLong  = strategy.position_size > 0
+        fav     = isLong ? high - ep : ep - low
+        if fav >= bePts
+            beArmed := true
+            beStop = isLong ? ep + beOffset : ep - beOffset
+            if isLong
+                strategy.exit("Lx", "L", stop = beStop,
+                              limit = na(pendTgt) ? na : ep + pendTgt)
+            else
+                strategy.exit("Sx", "S", stop = beStop,
+                              limit = na(pendTgt) ? na : ep - pendTgt)
 
 // a break that is refused by a gate still counts as used for the session, so the rule takes the
 // FIRST break or none -- the research event stream does the same and the two must agree
@@ -271,7 +302,7 @@ plot(maMode == "Off" ? na : maF, "fast MA", color = color.new(color.blue, 40))
 plot(maMode == "Off" ? na : maS, "slow MA", color = color.new(color.purple, 40))
 bgcolor(inRange ? color.new(color.gray, 90) : na)
 
-var table hud = table.new(position.top_right, 2, 6, border_width = 1)
+var table hud = table.new(position.top_right, 2, 7, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "range",   text_size = size.tiny)
     table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)), text_size = size.tiny)
@@ -287,5 +318,9 @@ if barstate.islast
     table.cell(hud, 1, 4, (na(stopShow) ? "range" : str.tostring(stopShow, "#.#") + " pt = " + str.tostring(stopShow / atrv, "#.##") + " ATR")
                + "  /  " + (na(tgtShow) ? "none" : str.tostring(tgtShow, "#.#") + " pt = " + str.tostring(tgtShow / atrv, "#.##") + " ATR"),
                text_size = size.tiny)
-    table.cell(hud, 0, 5, "edge claimed", text_size = size.tiny)
-    table.cell(hud, 1, 5, "none", text_size = size.tiny, text_color = color.red)
+    table.cell(hud, 0, 5, "breakeven", text_size = size.tiny)
+    table.cell(hud, 1, 5, beMode == "Off" ? "off" : str.tostring(bePts, "#.#") + " pt = "
+               + str.tostring(bePts / atrv, "#.##") + " ATR, locks +" + str.tostring(beOffset, "#.#"),
+               text_size = size.tiny)
+    table.cell(hud, 0, 6, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 6, "none", text_size = size.tiny, text_color = color.red)
