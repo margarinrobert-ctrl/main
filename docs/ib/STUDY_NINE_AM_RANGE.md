@@ -468,6 +468,80 @@ gate is on, and the panel prints `bearish -> shorts only` so the state is never 
 Parity with the gate live: **15 of 15 configs at trade count 1.000**, same exit bar 0.977–0.996,
 per-trade correlation 0.995–0.998, gap −0.84 to +0.40 points a trade.
 
+## 15. The MA 200 — a cross of ANY of the provided EMAs, or of ALL of them
+
+The ask: add the 200 as a third average and require the shorter ones to have crossed it on the
+side the break points. This is a third object and not a restatement of two things already
+measured here — it is not the 13×48 cross (§3), which compares two fast averages with each
+other, and it is not `close > MA200`, which `STUDY_V40` found is priced by its DISTANCE and
+`STUDY_V51` found works as a FLOOR and not as support. Both of those are price against the
+average; this is the shorter averages against it.
+
+**Declared grid**, nothing outside it read: 4 readings (`any`/`all` × state/fresh-cross) × 2
+polarities (ALIGNED, the literal ask / COUNTER, the mirror) × 2 geometries (1.5×ATR no target /
+100pt–100pt) × 3 blocks (US30_LONG research, US30_LONG holdout, US30_ISO forward — a different
+provider) = **48 cells**. `E[max t | pure noise]` over 48 looks is **2.261** against the 2.802
+detection needs, so the ceiling was known before the table was read. COUNTER is declared in front
+because this branch has inverted a proposed condition's sign eight times.
+
+### ANY and ALL are the same condition unless a split reading resolves
+
+Read as a single +1/−1/0 direction label the two modes are **identical to four decimals**
+(0.5389 / 0.3810 / 0.0801 on US30 for both) — because "at least one above with none below" *is*
+"all above". The mode axis only binds if a split reading (13 above the 200, 48 below) is allowed
+to confirm *both* sides rather than abstain, which is what `ma200_ok` returns: two masks, not one
+label. Under `any` a split day simply vetoes nothing. Without that the grid would have counted
+twelve tests that were never run — `run_n7`'s inert-rung accounting, reached from a different
+direction.
+
+### The base rate is the finding: lift exactly 1.00
+
+| reading | admits (long breaks) | on all bars | lift |
+| --- | --- | --- | --- |
+| `close > MA200` (reference) | 0.6313 | 0.5798 | **1.089** |
+| any STATE | 0.6155 | 0.6190 | **0.994** |
+| all STATE | 0.5411 | 0.5389 | **1.004** |
+| any CROSS ≤ 5 bars | 0.0515 | 0.0439 | 1.173 |
+| all CROSS ≤ 5 bars | 0.0035 | 0.0027 | 1.296 |
+
+Across every state cell on both feeds and both sides the lift is **0.990 to 1.007**. A
+200-period average is so slow that a 15-minute range break carries *no information whatever*
+about where the 13 and the 48 sit relative to it — so the gate is a coin flip applied to the
+signal set. Price itself does lean (1.089–1.152), which is the contrast that makes the point: the
+information is in where price is, not in where the slow averages are.
+
+This is the opposite failure from the eight confirmation families that died on this check by
+passing 82–100% of the trigger's own bars. Those were the trigger restated. This one is
+independent to the point of carrying nothing.
+
+### Nothing clears, and the direction asked for is the negative one
+
+Scored as a VETO against a random gate of the same selectivity, re-simulated end to end:
+
+| reading × polarity | %/trade | Δ vs no filter | beats base | clears p≤0.05 |
+| --- | --- | --- | --- | --- |
+| any STATE **ALIGNED** | −0.0189 | **−0.0164** | **0/6** | 0/6 |
+| all STATE **ALIGNED** | −0.0199 | **−0.0173** | **0/6** | 0/6 |
+| any CROSS ALIGNED | −0.0007 | +0.0018 | 3/6 | 0/6 |
+| any STATE COUNTER | +0.0085 | +0.0110 | 4/6 | 2/6 |
+| all STATE COUNTER | +0.0113 | +0.0139 | 5/6 | 1/6 |
+| any CROSS COUNTER | −0.0181 | −0.0156 | 3/6 | 0/6 |
+
+- **3 of 36 scorable cells clear p≤0.05 where 1.8 are expected by chance**, and all three are
+  COUNTER.
+- **0 of 36 exceed their own minimum detectable effect.**
+- The gate beats the ungated rule in **15 of 36** cells where chance is 50%.
+- **12 of 48 declared cells are unscorable** (under 25 trades): the `all CROSS` reading admits
+  0.0–1.1% of breaks. That is a fact about the condition, not a reason to loosen it afterwards.
+- By block, COUNTER reads +0.0063 research / +0.0107 holdout / **−0.0077 on the reserved forward
+  feed** — so the one polarity that scores is the one that dies on the block nobody chose.
+
+Ships as four options on the existing MA-confirmation input, **default OFF**, with the base-rate
+table and the 0/6 ALIGNED record in the tooltip. Parity: **20 of 20 configurations at trade count
+1.000**, same exit bar 0.974–1.000, correlation 0.993–1.000.
+
+---
+
 ## 10. What would change the verdict
 
 Not more parameters — the grid's own noise floor already exceeds the detection threshold by 1.4×,
@@ -490,5 +564,8 @@ breakeven ladder: the inert-axis accounting and the noise floor before the table
 comparison against each cell's own OFF twin) · `run_n8.py` (the secured-points rung, with the trade
 count printed beside the win rate so a relabelling cannot be read as an improvement) · `run_n9.py`
 (the 08:00 hourly candle as a direction gate: truncation audit, then the base rate on the trigger's
-own bars, then both polarities against a same-selectivity random gate re-simulated) · `plot_na.py` ·
+own bars, then both polarities against a same-selectivity random gate re-simulated) · `run_n10.py`
+(the MA 200 as a third average: the ANY-equals-ALL degeneracy proved before the grid, the audit,
+the lift-1.00 base rate, then both polarities against a same-selectivity random gate) ·
+`plot_na.py` ·
 `pine/nineam/NINE_AM_RANGE_BREAKOUT_strategy.pine`

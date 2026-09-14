@@ -118,7 +118,20 @@ def main():
             dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
                  hdir=("direction", -1)),
             dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
-                 hdir=("body", 1), hbody=0.25)]
+                 hdir=("body", 1), hbody=0.25),
+            # the MA 200 readings: ANY / ALL, state and fresh cross, both polarities. The ANY form
+            # is the one where the script and the engine could most easily diverge, because a SPLIT
+            # reading confirms BOTH sides and neither is allowed to collapse it to one label.
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 m200=(dict(mode="any", cross_bars=0), 1)),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 m200=(dict(mode="all", cross_bars=0), 1)),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 m200=(dict(mode="any", cross_bars=0), -1)),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 m200=(dict(mode="any", cross_bars=5), 1)),
+            dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
+                 spts=100.0, tpts=100.0, m200=(dict(mode="all", cross_bars=0), 1))]
     for name in ("US30L", "US30I"):
         f = N.load(name, 15)
         cost = N.COST[name]; tick = TICK[name]
@@ -135,6 +148,12 @@ def main():
                 hs = N.hour_side(f, reading=hd[0], body_atr=cfg.get("hbody", 0.0))
                 hk = hs[s1] == hd[1] * d1
                 s1, d1 = s1[hk], d1[hk]
+            m2 = cfg.get("m200")
+            if m2 is not None:
+                ol, osh = N.ma200_ok(f, **m2[0])
+                mk = (np.where(d1 > 0, ol[s1], osh[s1]) if m2[1] > 0
+                      else np.where(d1 > 0, osh[s1], ol[s1]))
+                s1, d1 = s1[mk], d1[mk]
             spts = cfg.get("spts", 0.0); tpts = cfg.get("tpts", 0.0)
             be = cfg.get("be", 0.0); beoff = cfg.get("beoff", 0.0)
             eng = N.run(f, s1, d1, stop_a=cfg["stop"], tgt_r=cfg["tgt"], flat_m=cfg["flat"],
@@ -154,6 +173,10 @@ def main():
                 geom += f" be{be:.0f}+{beoff:.0f}"
             if hd is not None:
                 geom += f" h:{hd[0][:4]}{'+' if hd[1] > 0 else '-'}"
+            if m2 is not None:
+                geom += (f" 200:{m2[0]['mode']}"
+                         f"{'x' if m2[0]['cross_bars'] else 's'}"
+                         f"{'+' if m2[1] > 0 else '-'}")
             print(f"  {name} cfg{k+1} {cfg['win']} {cfg['side']:5s} ema={cfg['ema']:5s} "
                   f"{geom:22s}: engine {len(eng):5d} trades, script {len(scr):5d} "
                   f"({len(scr)/max(len(eng),1):.3f})  same exit bar {same_x:.4f}  "

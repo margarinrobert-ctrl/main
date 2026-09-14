@@ -82,10 +82,11 @@ bufAtr   = input.float(0.0,  "Break buffer, xATR beyond the level", minval = 0, 
 touchOk  = input.bool(true,  "A touch counts as a break",                group = grpE, tooltip = "Measured free on the researched base; a strict inequality loses signals to exact tick equality (STUDY_V57).")
 
 grpM = "Momentum -- the MA 3 in 1 reading"
-maMode   = input.string("Off", "EMA confirmation", options = ["Off", "State (fast > slow)", "Fresh cross"], group = grpM, tooltip = "State passes 53-59% of this trigger's own bars at lift 1.03-1.14, so unlike every other confirmation measured on this branch it is NOT the trigger restated. It is also worth nothing: a random filter of the same selectivity does as well on research and better on the holdout.")
+maMode   = input.string("Off", "MA confirmation", options = ["Off", "State (fast > slow)", "Fresh cross", "200 state: ANY of fast/slow", "200 state: ALL of fast/slow", "200 cross: ANY of fast/slow", "200 cross: ALL of fast/slow"], group = grpM, tooltip = "DEFAULT OFF, and every option below is measured.\n\nTHE 13x48 READINGS (State, Fresh cross). State passes 53-59% of this trigger's own bars at lift 1.03-1.14, so unlike every other confirmation measured on this branch it is NOT the trigger restated. It is also worth nothing: a random filter of the same selectivity does as well on research and better on the holdout (research +0.0094 PF 1.071 at gate p 0.477, holdout -0.0201 PF 0.867 at p 0.998).\n\nTHE 200 READINGS. Each of the fast and slow averages is read against the LONG one, and the break is confirmed when ANY of them (or ALL of them) sits on the side the break points. ANY and ALL are genuinely different only because a SPLIT reading -- 13 above the 200, 48 below -- confirms both sides under ANY; collapsed into one direction label they are the SAME condition, measured identical to four decimals.\n\nITS BASE RATE IS THE FINDING: the state readings admit 38.4-61.6% of this trigger's own bars at a lift over all bars of 0.990 to 1.007 -- EXACTLY ONE. A 200-period average is so slow that a 15-minute range break carries no information whatever about where the 13 and 48 sit relative to it, which makes the gate a coin flip applied to the signal set. (By contrast close > MA200 does lean, at lift 1.089-1.152.)\n\nAND IT DOES NOT PAY, IN THE DIRECTION ASKED FOR. Over a declared 48-cell grid (4 readings x Align/Counter x two geometries x US30 research, holdout and a different-provider forward block) scored against a RANDOM gate of the same selectivity re-simulated end to end: 3 of 36 scorable cells clear p<=0.05 where 1.8 are expected by chance, 0 OF 36 EXCEED THEIR OWN MINIMUM DETECTABLE EFFECT, and the gate beats the ungated rule in 15 of 36 cells where chance is 50%. Aligning with the 200 is negative in 0 of 6 scorable cells for BOTH state readings (-0.0189 and -0.0199 %/trade against no filter); the COUNTER mirror is the one that scores (+0.0085 / +0.0113, all three p<=0.05 cells) and it is negative on the reserved forward block, which is the wrong shape. The ALL CROSS reading is unscorable -- it admits 0.0-1.1% of breaks, 12 of 48 cells under 25 trades.")
 maType   = input.string("EMA", "MA type", options = ["EMA", "SMA", "WMA", "Hull", "VWMA"], group = grpM, tooltip = "STUDY_MA_LAG: MA TYPE is not a degree of freedom for a single average -- matched-lag variants correlate 0.9999+ and overlap 89.5-97.3% of triggers. Measured here the five types span 0.53-0.59 on the same signal bars. Change the LENGTH, not the letter.")
 maFast   = input.int(13, "Fast length", minval = 1, group = grpM)
 maSlow   = input.int(48, "Slow length", minval = 2, group = grpM)
+maLong   = input.int(200, "Long length (the 200)", minval = 3, group = grpM, tooltip = "Used only by the four 200 readings. This is the shorter AVERAGES against the long one, which is a different object from price against it: STUDY_V40 found the MA200 is priced by its DISTANCE and not by its state, and STUDY_V51 found the FLOOR reading (>= 1.5 ATR above) clears three blocks where the support reading fails two. Neither of those is this.")
 crossMin = input.int(75, "Fresh cross: within this many MINUTES", minval = 1, group = grpM, tooltip = "A reach in time, not a bar count -- 75 minutes is 5 bars on a 15-minute chart, which is what was measured.")
 
 grpD = "Direction -- the 08:00 hourly candle"
@@ -134,6 +135,7 @@ f_ma(src, len, typ) =>
 
 maF = f_ma(close, maFast, maType)
 maS = f_ma(close, maSlow, maType)
+maL = f_ma(close, maLong, maType)
 bull = maF > maS
 crossUp = bull and not bull[1]
 crossDn = (not bull) and bull[1]
@@ -143,6 +145,21 @@ var int barsSinceDn = 1000000
 if barstate.isconfirmed
     barsSinceUp := crossUp ? 0 : barsSinceUp + 1
     barsSinceDn := crossDn ? 0 : barsSinceDn + 1
+
+// Each of the two shorter averages against the LONG one. The ages are forward counters, never a
+// fill-forward to the NEXT cross -- that fill-forward is the leak STUDY_DIVERGENCE_CONFIRM caught
+// reading +37 full against +999 truncated, and the research side is audited at 0 mismatches of 80.
+fOverL = maF > maL
+sOverL = maS > maL
+var int barsFup = 1000000
+var int barsFdn = 1000000
+var int barsSup = 1000000
+var int barsSdn = 1000000
+if barstate.isconfirmed
+    barsFup := (fOverL and not fOverL[1]) ? 0 : barsFup + 1
+    barsFdn := ((not fOverL) and fOverL[1]) ? 0 : barsFdn + 1
+    barsSup := (sOverL and not sOverL[1]) ? 0 : barsSup + 1
+    barsSdn := ((not sOverL) and sOverL[1]) ? 0 : barsSdn + 1
 
 // ----------------------------------------------------------------------------- the range
 var float rHi = na
@@ -250,8 +267,25 @@ if barstate.isconfirmed and newDay
     tookUp := false
     tookDn := false
 
-momOkL = maMode == "Off" ? true : maMode == "State (fast > slow)" ? bull : barsSinceUp <= crossBars
-momOkS = maMode == "Off" ? true : maMode == "State (fast > slow)" ? not bull : barsSinceDn <= crossBars
+// The 200 readings, as TWO masks rather than one direction label: under ANY a split reading
+// (13 above the 200, 48 below) confirms both sides, so the gate simply vetoes nothing that day.
+// Collapsed into a single +1/-1/0 label a split has to abstain and ANY becomes ALL exactly.
+m200L = maMode == "200 state: ANY of fast/slow" ? (fOverL or sOverL) :
+         maMode == "200 state: ALL of fast/slow" ? (fOverL and sOverL) :
+         maMode == "200 cross: ANY of fast/slow" ?
+           ((fOverL and barsFup <= crossBars) or (sOverL and barsSup <= crossBars)) :
+           ((fOverL and barsFup <= crossBars) and (sOverL and barsSup <= crossBars))
+m200S = maMode == "200 state: ANY of fast/slow" ? ((not fOverL) or (not sOverL)) :
+         maMode == "200 state: ALL of fast/slow" ? ((not fOverL) and (not sOverL)) :
+         maMode == "200 cross: ANY of fast/slow" ?
+           (((not fOverL) and barsFdn <= crossBars) or ((not sOverL) and barsSdn <= crossBars)) :
+           (((not fOverL) and barsFdn <= crossBars) and ((not sOverL) and barsSdn <= crossBars))
+is200 = str.startswith(maMode, "200")
+
+momOkL = maMode == "Off" ? true : is200 ? m200L :
+          maMode == "State (fast > slow)" ? bull : barsSinceUp <= crossBars
+momOkS = maMode == "Off" ? true : is200 ? m200S :
+          maMode == "State (fast > slow)" ? not bull : barsSinceDn <= crossBars
 
 srOkL = true
 srOkS = true
@@ -344,6 +378,7 @@ plot(rReady ? rHi : na, "range high", color = color.new(color.teal, 0), style = 
 plot(rReady ? rLo : na, "range low",  color = color.new(color.orange, 0), style = plot.style_linebr)
 plot(maMode == "Off" ? na : maF, "fast MA", color = color.new(color.blue, 40))
 plot(maMode == "Off" ? na : maS, "slow MA", color = color.new(color.purple, 40))
+plot(is200 ? maL : na, "long MA (200)", color = color.new(color.orange, 30), linewidth = 2)
 bgcolor(inRange ? color.new(color.gray, 90) : na)
 bgcolor(dirMode != "Off" and inHour ? color.new(hDir == 1 ? color.teal : hDir == -1 ? color.maroon : color.gray, 92) : na)
 

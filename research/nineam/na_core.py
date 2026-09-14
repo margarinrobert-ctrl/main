@@ -527,3 +527,79 @@ def attach_day(f, tr):
     tr = tr.copy()
     tr["_day"] = f["day"].to_numpy()[tr["sig"].to_numpy()]
     return tr
+
+
+# ----------------------------------------------------------------------------- the MA200 gate
+def _pair_state(a, b):
+    """(state, age since the most recent UP cross, age since the most recent DOWN cross) for two
+    arbitrary series. `age` is a forward scan and never a fill-forward to the NEXT cross, which is
+    `STUDY_DIVERGENCE_CONFIRM`'s leak. Written as a new helper rather than by parameterising
+    `ema_state`, so no published result can silently inherit a change (CLAUDE.md: a frozen kernel
+    is copied, never parameterised)."""
+    n = len(a)
+    st = np.zeros(n, bool)
+    ok = np.isfinite(a) & np.isfinite(b)
+    st[ok] = a[ok] > b[ok]
+    up = np.zeros(n, bool); up[1:] = st[1:] & ~st[:-1]
+    dn = np.zeros(n, bool); dn[1:] = (~st[1:]) & st[:-1]
+    au = np.full(n, 10 ** 6, np.int64); ad = np.full(n, 10 ** 6, np.int64)
+    lu = -10 ** 6; ld = -10 ** 6
+    for i in range(n):
+        if up[i]:
+            lu = i
+        if dn[i]:
+            ld = i
+        au[i] = i - lu; ad[i] = i - ld
+    return st, au, ad
+
+
+def ma200_ok(f, fast=13, slow=48, long_=200, kind="ema", mode="any", cross_bars=0,
+             members="both"):
+    """The LONG average as the direction REFERENCE, with the shorter averages read against it.
+    Returns (ok_long, ok_short): whether a LONG break and whether a SHORT break is confirmed.
+
+    The ask was "the 200 cross with ANY ema provided OR ALL". Each member of {fast, slow} is
+    compared with the long average, and
+
+      mode "any"   a long break is confirmed when AT LEAST ONE member sits above the 200
+      mode "all"   a long break is confirmed when EVERY member sits above it
+
+    with the short side mirrored. TWO MASKS RATHER THAN ONE DIRECTION LABEL, deliberately: under
+    `any` a SPLIT reading (13 above the 200, 48 below) confirms BOTH sides, so the gate simply
+    vetoes nothing that day. Collapsed into a single +1/-1/0 label a split has to abstain, and then
+    `any` and `all` are THE SAME CONDITION -- any-above-with-none-below IS all-above -- which is an
+    inert axis wearing two names. Measured on US30: the label form gives 0.5389 / 0.3810 / 0.0801
+    for BOTH modes, identical to four decimals.
+
+      members     "both" (13 and 48) / "fast" / "slow" -- which averages are read against the 200
+      cross_bars  0 = the STATE form. >0 = the RECENCY form: the relevant cross must have happened
+                  within that many BARS. Declared in bars here and converted from MINUTES in the
+                  script, because a bar count is not a setting -- it is a setting times a timeframe
+                  (`STUDY_V57`).
+
+    Note what this is NOT: it is not `close > MA200`. `STUDY_V40` found the MA200 is priced by its
+    DISTANCE and not by the state, and `STUDY_V51` found the FLOOR reading clears where the
+    "support" reading does not. Both are about PRICE against the average; this is about the shorter
+    AVERAGES against it, which is what was asked for and a different object.
+    """
+    c = f["close"].to_numpy()
+    v = f["volume"].to_numpy()
+
+    def _m(n):
+        return vwma(c, v, n) if kind == "vwma" else ma(c, n, kind)
+
+    L = _m(long_)
+    mem = {"both": [fast, slow], "fast": [fast], "slow": [slow]}[members]
+    ups = []; dns = []
+    for p in mem:
+        st, au, ad = _pair_state(_m(p), L)
+        if cross_bars > 0:
+            ups.append(st & (au <= cross_bars))
+            dns.append((~st) & (ad <= cross_bars))
+        else:
+            ups.append(st)
+            dns.append(~st)
+    U = np.asarray(ups); D = np.asarray(dns)
+    agg = (lambda A: A.all(axis=0)) if mode == "all" else (lambda A: A.any(axis=0))
+    ok = np.isfinite(L)
+    return ok & agg(U), ok & agg(D)
