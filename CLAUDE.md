@@ -4294,6 +4294,44 @@ the CLAUDE.md waiter lesson from the other side; `pkill -f "run_x[.]py"` does no
 bracket expression is literal text in the invoking shell's argv and the regex will not match it.
 
 
+**AN EMA CROSS FINALLY BINDS ON A BREAKOUT -- BECAUSE THE BREAKOUT IS A THIRTY-MINUTE RANGE AND NOT
+A CHANNEL -- AND IT IS STILL WORTH NOTHING.** The 09:00-09:30 New York range, broken at or after the
+09:30 cash open, with EMA 13/48 as the momentum confirmation and LonesomeTheBlue's S/R channels as a
+third gate. Base rates on the trigger's own bars FIRST: `ema13>48` passes **53-59%** of these signal
+bars at a lift of **1.03-1.14**, against **82.6% at lift 2.24** on a Donchian-20 breakout
+(`STUDY_V41`). Mechanism: a channel break IS an N-bar high so a fast average is necessarily above a
+slow one, while a range break clears a TWO-BAR window from thirty minutes ago, which says nothing
+about a 48-bar average. **First confirmation family measured on this branch that is not the trigger
+restated** -- against RSI 94.7%, Aroon 100.0%, MACD 99.8-100.0%, MFI 91.7%, +DI>-DI 97.8%,
+close>EMA50 93.7%, EMA13>48-on-Donchian 82.6% and VWAP-vs-stochastic rho +0.831. **Passing the
+base-rate check is necessary and not sufficient**: Gate 1 on the bare primary is **0 of 63 cells
+clearing a matched random entry where 3.2 are expected, and 0 of 63 outside their own MDE**; the
+rule as asked is **1 of 84 cells outside its MDE**, with `+ema13>48 state` reading US30 research
++0.0094 PF 1.071 (gate p 0.477) and holdout **-0.0201 PF 0.867 at p 0.998**, where a random filter
+of the same selectivity beats it 99.8% of the time. Five MA types span 0.533-0.560 on the same
+signal bars -- `STUDY_MA_LAG` on a new base, change the LENGTH not the letter. **THE 16,200-CELL
+GRID IS UNREADABLE BY CONSTRUCTION AND SAYS SO BEFORE IT IS READ**: `E[max t | noise]` over 16,200
+looks is **3.977** against the 2.802 detection needs, so only the marginal average is taken -- and
+on US30 **every setting of every axis is negative on both blocks US30 did not choose**, with one
+setting of one axis positive (+0.09 bp) on the block it did. US30 research is 34.2% profitable and
+its HOLDOUT **5.6%**, corr +0.06 Spearman, research top 1% +0.0556 -> **-0.0550**. The S/R channel
+gate reads **+0.0426 PF 1.316 p 0.048 on the forward block and -0.0500 PF 0.698 p 0.998 on the
+holdout** -- opposite signs on two blocks of one market. Cost is NOT the objection for once (2.4-3.7%
+of a 1.5N stop). 64,947 counted looks, `E[max t | noise]` 4.296, nothing to deflate. Parity: trade
+count **1.000** on 6 of 6 cells, same exit bar 0.973-1.000, correlation 0.989-1.000 -- and the gap is
+quoted PER TRADE because this family's total is near zero and a ratio with a collapsing denominator
+is `STUDY_SWEEP_110K`'s artifact. Ships `pine/nineam/NINE_AM_RANGE_BREAKOUT_strategy.pine` with both
+gates DEFAULT OFF and no edge claimed. See `docs/ib/STUDY_NINE_AM_RANGE.md`.
+
+**A RE-UPLOADED FILE IS NOT A SECOND TEST, AND FIVE MINUTES OF CHECKING SAYS SO.** `us30_2_year_data.rtf`
+arrived mid-run as "do it for us30" and unwraps to **exactly 48,937 rows over exactly the recorded
+span**, with all four OHLC series matching the on-disk `US30_ISO_15m` at **max |diff| 0.0000 on
+100.00% of 48,937 shared stamps**; its clock re-derives independently (mean bar range peaks at
+minute-of-day 570 = 09:30 New York). Every p-value already spent on that block stays spent. It also
+OVERLAPS `US30_LONG_15m` from 2024-08 to 2025-07, so only bars from **2025-07-16** are unseen by a
+US30_LONG search -- `mr30core`'s reservation, kept. **Hash or bar-match every re-upload against the
+registry before treating it as a fresh block**; `research/datasets.py` now records this one.
+
 ## Tooling
 
 | module | what it does |
@@ -4317,6 +4355,7 @@ bracket expression is literal text in the invoking shell's argv and the regex wi
 | `research/us30meta/` | the HMM/quant meta layer under the two-gate architecture: `m_core.py`, `m_feat.py` (55 causal features, fracdiff with `sum(w)` printed beside `d`, a causal HMM read FILTERED with the smoothed decode kept only as the leak diagnostic, truncation audit), `m_ml.py`, `m_run1..m_run6.py` (base rates and the rho-1.0000 duplicate catch; the HMM-vs-volatility collapse and the matrix-power Jaccard; the model ladder beside shuffled twins scored on IC AND on the top-decile mean; **KEEP-ONE beside drop-one, which is what found the four-feature answer**; Gate 2 with its split MDE, the kept-fraction calibration and a rank cut that fixes selectivity; and the fracdiff level-drift table) |
 | `research/tcandle/` | the Turtle script's two asks, in the order the evidence requires: `tc_core.py` (the shipped order model IMPORTED from `turtle15/pine_parity` rather than rewritten, since it already takes the entry gate as a mask; a matched random entry that also matches the SYSTEM MIX and sorts its drawn bars; a same-selectivity random GATE re-simulated as a veto), `tc_feat.py` (48 causal candlestick features in four declared families with a truncation audit), `run_c0.py` (**which patterns a breakout bar makes arithmetically impossible**, proved on 15 market x timeframe cells before any P&L), `run_c1.py` (Gate 1 on the shipped presets plus base rates on the trigger's own bars), `run_c2.py` (the timeframe axis in BOTH readings -- bar counts carried and reach matched -- read by marginal average and by total return so a trade-count artifact cannot hide), `run_c2b.py` (whether the ATR length must scale with the channels; it must not), `run_c1b.py` (Gate 1 again on the matched primary), `run_c3.py` (Gate 2: every reading as a veto in BOTH polarities against a null cached by selectivity, with BH, the MDE and the search's own noise floor printed beside it), `run_c4.py` (one read of the survivors), `tc_parity.py` (the shipped Pine's own candle expressions diffed bar for bar -- it caught two transcription bugs before shipping) |
 | `research/us30team/` | the three-agent team on US30 07:00-11:00 with the flatten, each workstream a PRE-DECLARED grid with a null in front: `base_rates.py` + `run_b1..b4.py` (base rates on the trigger's own bars, a CAUSAL time-of-day ATR baseline beside the broken trailing one, the signal-bar correlation matrix, 42 single-condition VETOES and 24 drop-one arms with the MDE printed beside every one, ADX and ATR run as floors AND ceilings, one read each of the holdout and the different-provider forward block); `pool.py` + `run_p1..p4.py` (three feeds with their clocks re-derived, the trigger-overlap matrix and date-clustered effective sample size BEFORE any power claim, pooling in ATR units and percent of price, and the pooled MDE printed against the pooled edge); `session.py` + `run_f1..f3.py` (the flatten priced by a PAIRED comparison on identical entry bars, the exit mix and the counterfactual, give-back against a barrier-resolved control, the tie-break bracket, and a permutation on the drawdown) |
+| `research/nineam/` | the 09:00-range / 09:30-breakout / EMA-cross question: `na_core.py` (the range built causally per session, the first-break event stream, an ATR-or-range-stop walker, a SORTED matched random entry and a same-selectivity random gate re-simulated as a veto, plus `mde` and `e_max_normal` so both bounds are computed before any screen), `run_n1.py` (cost as a fraction of risk and the break-even it implies, base rates on the trigger's own bars across five MA types, then Gate 1), `run_n2.py` (the 16,200-cell declared grid read ONLY by marginal average, with the population shape and the research-to-locked transfer printed first), `run_n3.py` (the rule exactly as asked, every component dropped one at a time, both nulls, and the S/R channel gate with pivots confirmed at j+prd), `run_n4.py` (the marginal-consensus cell read once per block with four Monte Carlos kept apart and the deflation), `na_parity.py` (the shipped script's order model, the gap quoted per trade), `plot_na.py` |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
 | `research/pine_lint.py` | **run before shipping any Pine** — there is no compiler here; with no arguments it lints the emitted scripts AND every file under `pine/`, and it takes paths |
 | `research/pin/` | the EKOP/Yan PIN mixture: causal four-step fit, the three-hypothesis posterior, the volume-weighted B/S construction, the matched control, and `pin_parity.py` — the shipped Pine's own order model run on bars |

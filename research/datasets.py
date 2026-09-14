@@ -247,7 +247,15 @@ REGISTRY = {
         loader="research/v15/v15book.load, research/v14/*",
         provenance="user upload, 2026-08-26, as an RTF attachment",
         notes="Runs to 2026-08, so 27,436 of its bars post-date every other file here -- it is the "
-              "only genuine forward test on the branch. Used by V12, V13, V14 and V15."),
+              "only genuine forward test on the branch. Used by V12, V13, V14 and V15. "
+              "RE-UPLOADED 2026-09-14 as `us30_2_year_data.rtf` and PROVED IDENTICAL to the disk "
+              "copy: the unwrap yields exactly 48,937 rows over exactly this span, and all four "
+              "OHLC series agree with the stored copy at max|diff| 0.0000 on 100.00% of 48,937 "
+              "shared stamps. Its clock re-derives independently -- mean bar range peaks at "
+              "minute-of-day 570 = 09:30 New York. So a second upload of this file is not a "
+              "second market and not a second test: it is this block, and every p-value already "
+              "spent on it stays spent. NOTE ALSO that it overlaps US30_LONG_15m from 2024-08 to "
+              "2025-07, so only bars from 2025-07-16 are genuinely unseen by a US30_LONG search."),
 
     "US100_ISO_15m": Dataset(
         key="US100_ISO_15m", instrument="US100", timeframe_min=15,

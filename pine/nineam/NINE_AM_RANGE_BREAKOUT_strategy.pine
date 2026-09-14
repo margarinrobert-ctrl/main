@@ -1,0 +1,245 @@
+// SPDX-License-Identifier: MIT
+// 09:00-09:30 New York range -> breakout at or after the 09:30 cash open -> EMA 13/48 momentum
+// confirmation -> optional support/resistance channel gate.
+//
+// NO EDGE IS CLAIMED. Every number in this header is measured and every one of them is a null.
+//
+//   US30_LONG_15m, 09:00-09:30 range, break at/after 09:30, 1.5xATR stop, no target, flat 16:00
+//     bare breakout            research  +0.0085 %/trade  PF 1.059   vs a matched random entry p 0.705
+//                              holdout   +0.0102          PF 1.059                             p 0.940
+//     + EMA13>48 state         research  +0.0094          PF 1.071   vs a same-selectivity gate p 0.477
+//                              holdout   -0.0201          PF 0.867                             p 0.998
+//     US30_ISO forward block   -0.0015 / +0.0034 / -0.0272 across the three EMA readings, all null
+//
+//   84 declared cells: 2 clear an entry control at p<=0.05 where 4.2 are expected by chance, and
+//   1 of 84 delivers an effect larger than its OWN minimum detectable effect. E[max t | pure
+//   noise] over 84 looks is 2.469 against the 2.802 detection needs -- so even the luckiest draw
+//   of a pure-noise search this wide would have looked like this.
+//
+//   Over a declared 16,200-cell parameter grid per feed the US30 research block is 34.2%
+//   profitable and its HOLDOUT is 5.6%, with corr(research, locked) +0.06 Spearman; the research
+//   top 1% scores +0.0556 and reads -0.0550 out of sample. The grid's own marginal averages are
+//   the only reading taken from it.
+//
+// WHAT IS ACTUALLY NEW HERE, and it is a measurement rather than a strategy: on THIS trigger the
+// EMA 13/48 state passes 53-59% of the signal bars at a lift of 1.03-1.14, where on a Donchian
+// breakout the same condition passes 82.6% at a lift of 2.24 (STUDY_V41). A range breakout clears
+// a two-bar window from thirty minutes ago, which says nothing about a 48-bar average, so unlike
+// RSI / Aroon / MACD / MFI / +DI / close>EMA50 on a channel break, this confirmation is NOT the
+// trigger restated. It binds. It also does not pay.
+//
+// Settings that are a REACH IN TIME are declared in MINUTES and converted with
+// timeframe.in_seconds(), so the same numbers mean the same thing on any chart (STUDY_V57).
+//@version=5
+strategy("09:00 Range Breakout + EMA Momentum", overlay = true,
+         initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1,
+         commission_type = strategy.commission.cash_per_order, commission_value = 1.145,
+         slippage = 1, calc_on_every_tick = false, process_orders_on_close = false,
+         pyramiding = 0, margin_long = 0, margin_short = 0)
+
+// ----------------------------------------------------------------------------- inputs
+grpS = "Session"
+rangeStart = input.int(540,  "Range start, minutes past New York midnight", minval = 0, maxval = 1439, group = grpS, tooltip = "540 = 09:00. The range is built from every bar whose stamp lies in [start, end).")
+rangeEnd   = input.int(570,  "Range end (and the earliest entry)",          minval = 1, maxval = 1440, group = grpS, tooltip = "570 = 09:30, the cash open. No order is armed before this minute.")
+lastEntry  = input.int(960,  "No new entries after",                        minval = 1, maxval = 1440, group = grpS)
+flatMin    = input.int(960,  "Flatten at (0 = never)",                      minval = 0, maxval = 1440, group = grpS, tooltip = "Filled at the OPEN of this minute, so the order is submitted on the bar before -- strategy.close_all() cannot sell the close of the bar that triggers it. 960 = 16:00.")
+
+grpE = "Entry"
+sideIn   = input.string("Both", "Side", options = ["Long", "Short", "Both"], group = grpE)
+bufAtr   = input.float(0.0,  "Break buffer, xATR beyond the level", minval = 0, maxval = 2, step = 0.05, group = grpE)
+touchOk  = input.bool(true,  "A touch counts as a break",                group = grpE, tooltip = "Measured free on the researched base; a strict inequality loses signals to exact tick equality (STUDY_V57).")
+
+grpM = "Momentum -- the MA 3 in 1 reading"
+maMode   = input.string("Off", "EMA confirmation", options = ["Off", "State (fast > slow)", "Fresh cross"], group = grpM, tooltip = "State passes 53-59% of this trigger's own bars at lift 1.03-1.14, so unlike every other confirmation measured on this branch it is NOT the trigger restated. It is also worth nothing: a random filter of the same selectivity does as well on research and better on the holdout.")
+maType   = input.string("EMA", "MA type", options = ["EMA", "SMA", "WMA", "Hull", "VWMA"], group = grpM, tooltip = "STUDY_MA_LAG: MA TYPE is not a degree of freedom for a single average -- matched-lag variants correlate 0.9999+ and overlap 89.5-97.3% of triggers. Measured here the five types span 0.53-0.59 on the same signal bars. Change the LENGTH, not the letter.")
+maFast   = input.int(13, "Fast length", minval = 1, group = grpM)
+maSlow   = input.int(48, "Slow length", minval = 2, group = grpM)
+crossMin = input.int(75, "Fresh cross: within this many MINUTES", minval = 1, group = grpM, tooltip = "A reach in time, not a bar count -- 75 minutes is 5 bars on a 15-minute chart, which is what was measured.")
+
+grpR = "Support / Resistance channels (LonesomeTheBlue)"
+useSR    = input.bool(false, "Require the broken level to sit ON a channel", group = grpR, tooltip = "DEFAULT OFF. It reads +0.0426 PF 1.316 on the US30_ISO forward block and -0.0500 PF 0.698 on the US30_LONG holdout -- opposite signs on two blocks of the same market, which is not a finding.")
+srPrd    = input.int(10,  "Pivot period",             minval = 2, maxval = 50, group = grpR)
+srWidth  = input.float(5, "Max channel width, % of the 300-bar range", minval = 0.5, maxval = 20, step = 0.5, group = grpR)
+srStr    = input.int(2,   "Minimum strength (pivots in the channel)", minval = 1, group = grpR)
+srMax    = input.int(6,   "Max channels",             minval = 1, maxval = 10, group = grpR)
+srLook   = input.int(290, "Pivot lookback, bars",     minval = 50, group = grpR)
+
+grpX = "Exit"
+stopMode = input.string("ATR", "Stop", options = ["ATR", "Opposite side of the range"], group = grpX)
+stopAtr  = input.float(1.5, "Stop, xATR(14)", minval = 0.1, maxval = 10, step = 0.1, group = grpX)
+tgtR     = input.float(0.0, "Target, R (0 = none)",  minval = 0, maxval = 20, step = 0.5, group = grpX, tooltip = "No take profit has beaten every target tested 25 times on this branch. The marginal average here agrees on three of four feeds.")
+
+// ----------------------------------------------------------------------------- clock
+// Exchange time is Chicago on CME; New York is what the rule is written in.
+nyH = hour(time, "America/New_York")
+nyM = minute(time, "America/New_York")
+nyMin = nyH * 60 + nyM
+tfMin = math.max(1.0, timeframe.in_seconds(timeframe.period) / 60.0)
+crossBars = int(math.max(1.0, math.round(crossMin / tfMin)))
+newDay = ta.change(time("D", "America/New_York")) != 0
+
+// ----------------------------------------------------------------------------- indicators
+atrv = ta.ema(ta.tr(true), 14)
+
+f_ma(src, len, typ) =>
+    typ == "SMA"  ? ta.sma(src, len)  :
+     typ == "WMA" ? ta.wma(src, len)  :
+     typ == "Hull" ? ta.hma(src, len) :
+     typ == "VWMA" ? ta.vwma(src, len) : ta.ema(src, len)
+
+maF = f_ma(close, maFast, maType)
+maS = f_ma(close, maSlow, maType)
+bull = maF > maS
+crossUp = bull and not bull[1]
+crossDn = (not bull) and bull[1]
+
+var int barsSinceUp = 1000000
+var int barsSinceDn = 1000000
+if barstate.isconfirmed
+    barsSinceUp := crossUp ? 0 : barsSinceUp + 1
+    barsSinceDn := crossDn ? 0 : barsSinceDn + 1
+
+// ----------------------------------------------------------------------------- the range
+var float rHi = na
+var float rLo = na
+var bool  rReady = false
+inRange = nyMin >= rangeStart and nyMin < rangeEnd
+if barstate.isconfirmed
+    if newDay
+        rHi := na
+        rLo := na
+        rReady := false
+    if inRange
+        rHi := na(rHi) ? high : math.max(rHi, high)
+        rLo := na(rLo) ? low  : math.min(rLo, low)
+    if nyMin >= rangeEnd and not na(rHi) and not na(rLo)
+        rReady := true
+
+// ----------------------------------------------------------------------------- S/R channels
+var float[] srLo = array.new_float(0)
+var float[] srHi = array.new_float(0)
+ph = ta.pivothigh(high, srPrd, srPrd)
+pl = ta.pivotlow(low,   srPrd, srPrd)
+var float[] pivots = array.new_float(0)
+if barstate.isconfirmed
+    if not na(ph)
+        array.push(pivots, ph)
+    if not na(pl)
+        array.push(pivots, pl)
+    while array.size(pivots) > 400
+        array.shift(pivots)
+
+srOn = false
+if useSR and rReady and barstate.isconfirmed and array.size(pivots) > 0
+    cw = (ta.highest(high, 300) - ta.lowest(low, 300)) * srWidth / 100.0
+    array.clear(srLo)
+    array.clear(srHi)
+    n = array.size(pivots)
+    for i = 0 to n - 1
+        p = array.get(pivots, i)
+        lo = p
+        hi = p
+        s = 0
+        for j = 0 to n - 1
+            q = array.get(pivots, j)
+            if q >= p - cw and q <= p + cw
+                s += 1
+                lo := math.min(lo, q)
+                hi := math.max(hi, q)
+        if hi - lo > cw
+            hi := lo + cw
+        if s >= srStr and array.size(srLo) < srMax
+            clash = false
+            for k = 0 to math.max(0, array.size(srLo) - 1)
+                if array.size(srLo) > 0
+                    if not (hi < array.get(srLo, k) or lo > array.get(srHi, k))
+                        clash := true
+            if not clash
+                array.push(srLo, lo)
+                array.push(srHi, hi)
+
+// ----------------------------------------------------------------------------- signals
+armed = rReady and nyMin >= rangeEnd and nyMin < lastEntry and not na(atrv) and atrv > 0
+upLvl = rHi + bufAtr * atrv
+dnLvl = rLo - bufAtr * atrv
+hitUp = armed and (touchOk ? high >= upLvl : high > upLvl)
+hitDn = armed and (touchOk ? low  <= dnLvl : low  < dnLvl)
+
+var bool tookUp = false
+var bool tookDn = false
+if barstate.isconfirmed and newDay
+    tookUp := false
+    tookDn := false
+
+momOkL = maMode == "Off" ? true : maMode == "State (fast > slow)" ? bull : barsSinceUp <= crossBars
+momOkS = maMode == "Off" ? true : maMode == "State (fast > slow)" ? not bull : barsSinceDn <= crossBars
+
+srOkL = true
+srOkS = true
+if useSR
+    onL = false
+    onS = false
+    if array.size(srLo) > 0
+        for k = 0 to array.size(srLo) - 1
+            if upLvl >= array.get(srLo, k) - 0.10 * atrv and upLvl <= array.get(srHi, k) + 0.10 * atrv
+                onL := true
+            if dnLvl >= array.get(srLo, k) - 0.10 * atrv and dnLvl <= array.get(srHi, k) + 0.10 * atrv
+                onS := true
+    srOkL := onL
+    srOkS := onS
+
+wantLong  = (sideIn == "Long"  or sideIn == "Both") and hitUp and not tookUp and momOkL and srOkL
+wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and momOkS and srOkS
+
+// ----------------------------------------------------------------------------- orders
+// The exit bracket is placed WITH the entry and priced from the SIGNAL bar, so the fill bar is
+// protected. `strategy.exit` on a later bar leaves the entry bar naked (STUDY_PINE_PARITY:
+// 4.4-13.0% of trades, -33 to -118 points) and a bracket that reads strategy.position_avg_price
+// cannot be armed on the fill bar at all (STUDY_SCALP89).
+riskL = stopMode == "ATR" ? stopAtr * atrv : math.max(close - rLo, syminfo.mintick)
+riskS = stopMode == "ATR" ? stopAtr * atrv : math.max(rHi - close, syminfo.mintick)
+
+flatNow = flatMin > 0 and (nyMin + tfMin >= flatMin) and nyMin < flatMin
+
+if barstate.isconfirmed and strategy.position_size != 0 and flatNow
+    strategy.close_all(comment = "flat")
+
+if barstate.isconfirmed and not flatNow and strategy.position_size == 0
+    if wantLong
+        tookUp := true
+        strategy.entry("L", strategy.long)
+        strategy.exit("Lx", "L", loss = riskL / syminfo.mintick,
+                      profit = tgtR > 0 ? tgtR * riskL / syminfo.mintick : na)
+    else if wantShort
+        tookDn := true
+        strategy.entry("S", strategy.short)
+        strategy.exit("Sx", "S", loss = riskS / syminfo.mintick,
+                      profit = tgtR > 0 ? tgtR * riskS / syminfo.mintick : na)
+
+// a break that is refused by a gate still counts as used for the session, so the rule takes the
+// FIRST break or none -- the research event stream does the same and the two must agree
+if barstate.isconfirmed
+    if hitUp
+        tookUp := true
+    if hitDn
+        tookDn := true
+
+// ----------------------------------------------------------------------------- plots
+plot(rReady ? rHi : na, "range high", color = color.new(color.teal, 0), style = plot.style_linebr)
+plot(rReady ? rLo : na, "range low",  color = color.new(color.orange, 0), style = plot.style_linebr)
+plot(maMode == "Off" ? na : maF, "fast MA", color = color.new(color.blue, 40))
+plot(maMode == "Off" ? na : maS, "slow MA", color = color.new(color.purple, 40))
+bgcolor(inRange ? color.new(color.gray, 90) : na)
+
+var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "range",   text_size = size.tiny)
+    table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY", text_size = size.tiny)
+    table.cell(hud, 0, 1, "fresh cross", text_size = size.tiny)
+    table.cell(hud, 1, 1, str.tostring(crossMin) + "m = " + str.tostring(crossBars) + " bars", text_size = size.tiny)
+    table.cell(hud, 0, 2, "trades",  text_size = size.tiny)
+    table.cell(hud, 1, 2, str.tostring(strategy.closedtrades), text_size = size.tiny)
+    table.cell(hud, 0, 3, "S/R gate", text_size = size.tiny)
+    table.cell(hud, 1, 3, useSR ? str.tostring(array.size(srLo)) + " channels" : "off", text_size = size.tiny)
+    table.cell(hud, 0, 4, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 4, "none", text_size = size.tiny, text_color = color.red)
