@@ -103,7 +103,13 @@ def main():
             dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
                  be=50.0, beoff=10.0),
             dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
-                 spts=100.0, tpts=0.0, be=25.0)]
+                 spts=100.0, tpts=0.0, be=25.0),
+            # the SHIPPED breakeven default: arm at 50, secure 5 -- the tick rounding of the moved
+            # stop is the only place the script and the engine can disagree here
+            dict(win=(540, 555), side="long", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 be=50.0, beoff=5.0),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 be=50.0, beoff=5.0)]
     for name in ("US30L", "US30I"):
         f = N.load(name, 15)
         cost = N.COST[name]; tick = TICK[name]

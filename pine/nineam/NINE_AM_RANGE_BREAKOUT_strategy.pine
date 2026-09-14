@@ -105,7 +105,7 @@ tgtR     = input.float(0.0, "Target, R",        minval = 0, maxval = 20, step = 
 tgtPts   = input.float(100, "Target, POINTS",   minval = 0.1, step = 1, group = grpX, tooltip = "Used when Target mode = Points. Measured at 100/100 on US30: research +0.0031 %/trade PF 1.022 at a 51.7% win rate against a driftless break-even of 51.1%, then holdout -0.0164 PF 0.872 with a random entry of the same geometry beating it at p 1.000.")
 beMode   = input.string("Off", "Auto breakeven", options = ["Off", "Points"], group = grpX, tooltip = "DEFAULT OFF, and measured rather than assumed. Over a declared 72-cell ladder (0/25/50/75/100/150 points x long/both x two geometries x US30 research, holdout and a different-provider forward block) a breakeven beats its own OFF twin in 19 of 60 scorable cells -- 32%, where chance is 50% -- and the marginal average of the paired delta falls monotonically with the arming distance: +0.0036 at 25 points, -0.0008 at 50, -0.0034 at 75, -0.0034 at 100, -0.0038 at 150 %/trade. It is the second exit policy this branch has measured as a subtractor after breakeven-after-1R (TEAM_EXIT_PF). The mechanism is in the exit mix: at 50 points the stop share rises 14.5 points and the flatten share falls 9.5, so the ratchet arms on a favourable excursion and is taken out on the pullback before the clock would have closed the trade in profit. Every paired delta is inside its own MDE, so this is a direction with a consistent sign, not a resolved effect.")
 bePts    = input.float(50, "Breakeven arms at, POINTS", minval = 1, step = 1, group = grpX, tooltip = "Favourable excursion from the FILL that arms the ratchet, in index points. The 50 asked for sits in the interior of the tested ladder. It arms on the bar that reaches the distance and can only BIND from the bar after -- within one bar OHLC cannot say whether the excursion came before or after the pullback, so arming and filling the moved stop on the same bar invents information.")
-beOffset = input.float(0, "Breakeven locks in, POINTS", minval = 0, step = 1, group = grpX, tooltip = "How far beyond the fill the moved stop sits. It RELABELS exits it does not move: at 50/0 the US30 research cell reads +0.011307 %/trade at a 22.1% win rate and at 50/+10 it reads +0.011322 at a 52.8% win rate -- the same money, 31 points of win rate, because an exit at the fill is a loss after costs and an exit ten points beyond it is a win. Read a win rate against its own geometry, never on its own.")
+beOffset = input.float(5, "Secure, POINTS (0 = true breakeven)", minval = 0, step = 1, group = grpX, tooltip = "How far BEYOND the fill the moved stop sits, so the trade is closed for a small profit rather than flat. THE THRESHOLD IS THE ROUND TURN, NOT ZERO: a stop at the fill books minus the commission and slippage, which is why a true breakeven exit paints red in the Strategy Tester. On US30 the round turn is 2.29 points in the research accounting, so 5 points books +2.71 and is a win; the panel computes the round turn LIVE from your own closed trades and this symbol's point value and says whether your setting clears it. Measured at breakeven 50 across US30 research, holdout and a different-provider forward block, securing points mostly RELABELS exits rather than moving them -- the trade count shifts by 0 to 5 -- while the win rate moves +0.41 on average: 0.2207 to 0.5275 on research long, 0.1493 to 0.6493 on the forward block. The money barely moves at 5 points (-0.0008 %/trade, 2 of 6 cells positive) and rises with the distance (+0.0006 at 10, +0.0059 at 25, 5 of 6) -- but that is because a large secured distance stops being a breakeven and becomes a small take profit, and no take profit has beaten every target tested 26 times on this branch. 5 is the asked-for setting and the honest one; treat 25 as a target, not a stop.")
 
 // ----------------------------------------------------------------------------- clock
 // Exchange time is Chicago on CME; New York is what the rule is written in.
@@ -302,7 +302,7 @@ plot(maMode == "Off" ? na : maF, "fast MA", color = color.new(color.blue, 40))
 plot(maMode == "Off" ? na : maS, "slow MA", color = color.new(color.purple, 40))
 bgcolor(inRange ? color.new(color.gray, 90) : na)
 
-var table hud = table.new(position.top_right, 2, 7, border_width = 1)
+var table hud = table.new(position.top_right, 2, 8, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "range",   text_size = size.tiny)
     table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)), text_size = size.tiny)
@@ -320,7 +320,19 @@ if barstate.islast
                text_size = size.tiny)
     table.cell(hud, 0, 5, "breakeven", text_size = size.tiny)
     table.cell(hud, 1, 5, beMode == "Off" ? "off" : str.tostring(bePts, "#.#") + " pt = "
-               + str.tostring(bePts / atrv, "#.##") + " ATR, locks +" + str.tostring(beOffset, "#.#"),
-               text_size = size.tiny)
-    table.cell(hud, 0, 6, "edge claimed", text_size = size.tiny)
-    table.cell(hud, 1, 6, "none", text_size = size.tiny, text_color = color.red)
+               + str.tostring(bePts / atrv, "#.##") + " ATR", text_size = size.tiny)
+    // The round turn is what a secured exit has to clear before the Strategy Tester calls it a
+    // win, and it is not zero. Commission is measured from the run itself (gross minus net) and
+    // converted to POINTS through this symbol's point value; slippage is charged in TICKS on both
+    // sides and never appears in the commission figure, so it is added explicitly.
+    nTr  = math.max(strategy.closedtrades, 1)
+    comm = (strategy.grossprofit - strategy.netprofit) / nTr
+    rtPt = comm / math.max(syminfo.pointvalue, 1e-9) + 2.0 * syminfo.mintick
+    table.cell(hud, 0, 6, "secure", text_size = size.tiny)
+    secTxt = beOffset > rtPt ? "CLEARS (+" + str.tostring(beOffset - rtPt, "#.##") + ")" : "BELOW -- still a loss"
+    secCol = beMode == "Off" ? color.gray : beOffset > rtPt ? color.green : color.red
+    table.cell(hud, 1, 6, beMode == "Off" ? "--"
+      : str.tostring(beOffset, "#.#") + " pt vs round turn " + str.tostring(rtPt, "#.##") + " pt  " + secTxt,
+      text_size = size.tiny, text_color = secCol)
+    table.cell(hud, 0, 7, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 7, "none", text_size = size.tiny, text_color = color.red)

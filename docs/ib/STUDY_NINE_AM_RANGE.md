@@ -359,30 +359,51 @@ so this is a direction with a consistent sign across three blocks and two geomet
 effect. And **0 of 72 cells clear a matched random entry at p ≤ 0.05** where 3.6 are expected — the
 breakeven changes neither the rule's level nor its excess over its own null enough to matter.
 
-### The offset relabels exits it does not move
+### Securing points: the threshold is the round turn, not zero
 
-The second input — how far beyond the fill the moved stop sits — is the cleanest instance of
-*a win rate means nothing without its geometry* measured anywhere on this branch. US30 research,
-long, 1.5N, breakeven at 50 points, identical signals:
+The user's observation was exact — a true breakeven stop shows up as a *losing* trade, because an
+exit at the fill books minus the commission and slippage. The fix is to move the stop slightly
+*beyond* the fill, and the distance it has to clear is the round turn: on US30 that is 2.29 points
+in the research accounting, so a 5-point secure books **+2.71** and is a win.
 
-| offset | %/trade | points/trade | win rate | PF |
+That makes `Secure, POINTS` (default **5**) the second breakeven input. Measured at breakeven = 50,
+1.5N, across US30 research, the US30 holdout and the different-provider forward block:
+
+| secured | Δ %/trade vs 0 | Δ win rate | Δ trade count | cells won |
 |---|---|---|---|---|
-| 0 | +0.011307 | +3.0532 | **0.2207** | 1.1110 |
-| +10 | +0.011322 | +3.0384 | **0.5282** | 1.1134 |
-| +25 | +0.010379 | +2.7916 | 0.5296 | 1.1043 |
+| 5 pt | −0.0008 | **+0.410** | +0.8 | 2 / 6 |
+| 10 pt | +0.0006 | +0.410 | +1.5 | 4 / 6 |
+| 25 pt | +0.0059 | +0.411 | +1.7 | 5 / 6 |
 
-**The same money and thirty-one points of win rate.** An exit at the fill is a loss after a
-2.29-point round turn; an exit ten points beyond it is a win. Nothing about the trades changed.
+**Read the trade count before the win rate.** It moves by 0 to 5 trades out of 268–1,799, so the
+secured level is overwhelmingly *relabelling exits it did not move*. On US30 research long the win
+rate goes 0.2207 → 0.5275 and the money goes +0.011307 → +0.009270 %/trade; on the forward block
+0.1493 → 0.6493 and +0.0098 → +0.0110. Identical trades, +41 points of win rate.
 
-It ships as three inputs — `Auto breakeven` (**default Off**, with 50 pre-filled), the arming
-distance and the offset — with the ladder's own numbers in the tooltips. In the script the ratchet
-is re-issued as an absolute stop priced from `strategy.position_avg_price` once the position exists,
-which is one bar after the entry order is written and exactly when the research walker arms; the
-moved stop then binds from the bar after that, because within one bar OHLC cannot order the
+The ladder does rise with the secured distance, and that is the warning rather than the
+recommendation: once the level is far enough from the fill it has stopped being a breakeven and
+started being a small take profit, and no take profit has beaten every target tested 26 times on
+this branch. **5 is the asked-for setting and the honest one; 25 is a target wearing a stop's name.**
+
+The panel computes the round turn **live** from the run's own closed trades —
+`(gross − net) / trades / point value + 2 × tick`, because slippage is charged in ticks on both
+sides and never appears in the commission figure — and prints the secured distance beside it with a
+CLEARS / BELOW verdict, so the arithmetic is visible on whatever symbol the script is loaded on
+rather than assumed from US30.
+
+### How it ships
+
+Four inputs — `Auto breakeven` (**default Off**), the arming distance (50), `Secure, POINTS` (5),
+and the stop mode they sit under — with each ladder's own numbers in the tooltips. In the script the
+ratchet is re-issued as an absolute stop priced from `strategy.position_avg_price` once the position
+exists, which is one bar after the entry order is written and exactly when the research walker arms;
+the moved stop then binds from the bar after that, because within one bar OHLC cannot order the
 excursion against the pullback.
 
-Parity with the breakeven live: **10 of 10 cells at trade count 1.000**, same exit bar 0.979–0.997
-on the breakeven configs, per-trade correlation 0.995–1.000, gap −0.37 to +0.07 points a trade.
+Parity with the breakeven live, including the shipped 50/+5 default: **12 of 12 cells at trade
+count 1.000**, same exit bar 0.979–0.997 on the breakeven configs, per-trade correlation
+0.995–1.000, gap −0.39 to +0.07 points a trade. The tick rounding of the moved stop is the only
+place the two order models can disagree, and it does not move the trade count anywhere.
 
 ## 10. What would change the verdict
 
@@ -402,7 +423,7 @@ S/R gate) · `run_n4.py` (the consensus cell, four Monte Carlos, deflation) · `
 `run_n5.py` (the fixed-points parameterisation: the ATR conversion table first, a 75-cell
 declared grid by marginal average, then the 100/100 cell read once per block against a matched
 random entry) · `run_n6.py` (the 09:00 bar against the half hour, paired) · `run_n7.py` (the auto
-breakeven ladder: the inert-axis accounting and the noise floor before the table, the paired
-comparison against each cell's own OFF twin, and the offset ladder that moves a win rate thirty-one
-points without moving the money) · `plot_na.py` ·
+breakeven ladder: the inert-axis accounting and the noise floor before the table, and the paired
+comparison against each cell's own OFF twin) · `run_n8.py` (the secured-points rung, with the trade
+count printed beside the win rate so a relabelling cannot be read as an improvement) · `plot_na.py` ·
 `pine/nineam/NINE_AM_RANGE_BREAKOUT_strategy.pine`
