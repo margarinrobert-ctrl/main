@@ -4341,6 +4341,15 @@ decides nothing at these widths (ambiguous share 1.33% at 50 points, 0.01% at 20
 cells at trade count 1.000, gap -0.14 to +0.00 pts/trade. Ships as an INPUT with the researched ATR
 geometry still the default, and the script's panel prints the chosen distance in BOTH units live.
 
+**AN INPUT THAT DOES TWO JOBS MOVES THE SECOND ONE SILENTLY.** The 09:00-range script used
+`rangeEnd` as BOTH the last minute of the range and the first minute an order may arm, so a reader
+shortening the range to mark the 09:00 bar alone (555 on a 15m chart) would also have moved every
+entry forward to 09:15 without being told. Split into `rangeEnd` and `firstEntry`, defaults
+unchanged at 570/570 and parity identical on 10 of 10 cells. Measured, the two range readings are
+the same thing -- 09:00-09:15 against 09:00-09:30 reads US30 research +0.24 bp against +0.13 and
+holdout -1.75 against -1.78 -- so the ambiguity in the ASK was worth nothing, and the ambiguity in
+the INPUT was worth a different strategy. Name what each input controls, one job each.
+
 **A RE-UPLOADED FILE IS NOT A SECOND TEST, AND FIVE MINUTES OF CHECKING SAYS SO.** `us30_2_year_data.rtf`
 arrived mid-run as "do it for us30" and unwraps to **exactly 48,937 rows over exactly the recorded
 span**, with all four OHLC series matching the on-disk `US30_ISO_15m` at **max |diff| 0.0000 on

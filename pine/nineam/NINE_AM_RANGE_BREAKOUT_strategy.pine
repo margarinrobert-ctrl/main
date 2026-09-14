@@ -54,7 +54,8 @@ strategy("09:00 Range Breakout + EMA Momentum", overlay = true,
 // ----------------------------------------------------------------------------- inputs
 grpS = "Session"
 rangeStart = input.int(540,  "Range start, minutes past New York midnight", minval = 0, maxval = 1439, group = grpS, tooltip = "540 = 09:00. The range is built from every bar whose stamp lies in [start, end).")
-rangeEnd   = input.int(570,  "Range end (and the earliest entry)",          minval = 1, maxval = 1440, group = grpS, tooltip = "570 = 09:30, the cash open. No order is armed before this minute.")
+rangeEnd   = input.int(570,  "Range end (exclusive)",                      minval = 1, maxval = 1440, group = grpS, tooltip = "570 = 09:30. The range is the HIGH and LOW of every bar stamped in [start, end) -- on a 15-minute chart that is exactly the 09:00 and 09:15 bars, on a 1-minute chart the thirty bars 09:00..09:29. Set 555 to mark the 09:00 BAR ALONE on a 15m chart; measured, the two readings are the same thing (US30 research +0.24 bp against +0.13, holdout -1.75 against -1.78, both inside noise).")
+firstEntry = input.int(570,  "Earliest entry",                             minval = 1, maxval = 1440, group = grpS, tooltip = "570 = the 09:30 cash open. Kept SEPARATE from the range end so shortening the range does not silently move the entry forward with it.")
 lastEntry  = input.int(960,  "No new entries after",                        minval = 1, maxval = 1440, group = grpS)
 flatMin    = input.int(960,  "Flatten at (0 = never)",                      minval = 0, maxval = 1440, group = grpS, tooltip = "Filled at the OPEN of this minute, so the order is submitted on the bar before -- strategy.close_all() cannot sell the close of the bar that triggers it. 960 = 16:00.")
 
@@ -176,7 +177,7 @@ if useSR and rReady and barstate.isconfirmed and array.size(pivots) > 0
                 array.push(srHi, hi)
 
 // ----------------------------------------------------------------------------- signals
-armed = rReady and nyMin >= rangeEnd and nyMin < lastEntry and not na(atrv) and atrv > 0
+armed = rReady and nyMin >= math.max(rangeEnd, firstEntry) and nyMin < lastEntry and not na(atrv) and atrv > 0
 upLvl = rHi + bufAtr * atrv
 dnLvl = rLo - bufAtr * atrv
 hitUp = armed and (touchOk ? high >= upLvl : high > upLvl)
@@ -256,7 +257,7 @@ bgcolor(inRange ? color.new(color.gray, 90) : na)
 var table hud = table.new(position.top_right, 2, 6, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "range",   text_size = size.tiny)
-    table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY", text_size = size.tiny)
+    table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)), text_size = size.tiny)
     table.cell(hud, 0, 1, "fresh cross", text_size = size.tiny)
     table.cell(hud, 1, 1, str.tostring(crossMin) + "m = " + str.tostring(crossBars) + " bars", text_size = size.tiny)
     table.cell(hud, 0, 2, "trades",  text_size = size.tiny)
