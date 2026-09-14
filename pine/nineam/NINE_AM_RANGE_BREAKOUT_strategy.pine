@@ -382,7 +382,7 @@ plot(is200 ? maL : na, "long MA (200)", color = color.new(color.orange, 30), lin
 bgcolor(inRange ? color.new(color.gray, 90) : na)
 bgcolor(dirMode != "Off" and inHour ? color.new(hDir == 1 ? color.teal : hDir == -1 ? color.maroon : color.gray, 92) : na)
 
-var table hud = table.new(position.top_right, 2, 9, border_width = 1)
+var table hud = table.new(position.top_right, 2, 10, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "range",   text_size = size.tiny)
     table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)), text_size = size.tiny)
@@ -420,5 +420,10 @@ if barstate.islast
       : dirTxt + " -> " + (dirMode == "Align with the hour" ? (hDir == 1 ? "longs only" : hDir == -1 ? "shorts only" : "no trade") : (hDir == 1 ? "shorts only" : hDir == -1 ? "longs only" : "no trade")),
       text_size = size.tiny,
       text_color = dirMode == "Off" ? color.gray : hDir == 1 ? color.teal : hDir == -1 ? color.maroon : color.gray)
-    table.cell(hud, 0, 8, "edge claimed", text_size = size.tiny)
-    table.cell(hud, 1, 8, "none", text_size = size.tiny, text_color = color.red)
+    table.cell(hud, 0, 8, "MA gate", text_size = size.tiny)
+    m200Txt = m200L and m200S ? "both sides ok" : m200L ? "longs only" : m200S ? "shorts only" : "no trade"
+    maTxt = maMode == "Off" ? "off" : not is200 ? maMode : maMode + "  ->  " + m200Txt
+    maCol = maMode == "Off" or not is200 ? color.gray : m200L and m200S ? color.gray : m200L ? color.teal : m200S ? color.maroon : color.red
+    table.cell(hud, 1, 8, maTxt, text_size = size.tiny, text_color = maCol)
+    table.cell(hud, 0, 9, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 9, "none", text_size = size.tiny, text_color = color.red)
