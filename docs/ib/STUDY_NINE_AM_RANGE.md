@@ -405,6 +405,69 @@ count 1.000**, same exit bar 0.979–0.997 on the breakeven configs, per-trade c
 0.995–1.000, gap −0.39 to +0.07 points a trade. The tick rounding of the moved stop is the only
 place the two order models can disagree, and it does not move the trade count anywhere.
 
+## 14. The 08:00 hourly candle as a direction gate — it binds, and it does not pay
+
+Asked for directly: if the 08:00–09:00 New York hourly candle is bearish, take only the bearish
+break. Unusually for a direction filter this one is *causal by construction* — the hour completes
+at 09:00, before the range starts and ninety minutes before the 09:30 arm — so it can be tested
+without an argument about leakage. It was audited anyway: **0 mismatches of 40 probes** on both
+feeds, rebuilding the hour from history that ends at the signal bar.
+
+### It is not the trigger restated — the second condition here to pass that check
+
+The failure mode that has killed RSI (94.7%), Aroon (100.0%), MACD (99.8%), MFI (91.7%), +DI
+(97.8%), `close>EMA50` (93.7%) and `EMA13>48` on a Donchian break (82.6%) is a confirmation that
+the trigger already implies. The 08:00 hour does not:
+
+| reading | admits of long breaks | admits of short breaks |
+|---|---|---|
+| direction (close vs open) | 0.4990 / 0.5430 | 0.4899 / 0.4530 |
+| body ≥ 0.25 ATR | 0.4039 / 0.4242 | 0.4006 / 0.3761 |
+| close position in the hour's range | 0.4970 / 0.5143 | 0.4955 / 0.4850 |
+
+(US30_LONG / US30_ISO.) **Every cell sits between 0.376 and 0.543** — the hour is a genuinely
+independent reading of direction, which is exactly why it was worth measuring.
+
+### And then it fails every null
+
+36 declared cells: 3 readings × {ALIGNED, COUNTER} × two geometries × three blocks, each scored
+against a **random gate of the same selectivity re-simulated end to end** (a filter is a veto, not
+a subset — refusing a signal releases the position lock and admits a later break). COUNTER is in
+the grid because a proposed condition's sign has inverted seven times on this branch.
+
+| reading | polarity | Δ vs no filter | beats baseline | clears its null |
+|---|---|---|---|---|
+| direction | **ALIGNED** (the ask) | **−0.0006** | 3/6 | **0/6** |
+| direction | COUNTER | −0.0040 | 3/6 | 0/6 |
+| body ≥ 0.25N | ALIGNED | −0.0062 | 0/6 | 0/6 |
+| body ≥ 0.25N | COUNTER | −0.0017 | 3/6 | 0/6 |
+| close pos | ALIGNED | −0.0060 | 0/6 | 0/6 |
+| close pos | COUNTER | +0.0016 | 3/6 | 0/6 |
+
+**0 of 36 cells clear p ≤ 0.05 where 1.8 are expected by chance. 0 of 36 exceed their own MDE. The
+gate beats the ungated rule in 12 of 36 cells, where chance is 50%.** `E[max t | pure noise]` over
+36 looks is 2.148 against the 2.802 detection needs.
+
+By block, ALIGNED is negative on all three (−0.0041 research, −0.0045 holdout, −0.0042 forward) —
+consistent, small, and in the wrong direction. COUNTER is positive on research only (+0.0031) and
+negative on both blocks it did not choose, which is the shape this file has now recorded fourteen
+times. On the 1.5N geometry the research block flatters COUNTER hard (+0.0171 to +0.0242 against a
+baseline +0.0067) and then reads −0.0099 to −0.0168 on the holdout; that inversion is the entire
+reason the mirror was declared in advance rather than discovered afterwards.
+
+### How it ships
+
+`08:00 hour gates the side` — **Off** / Align with the hour / Counter to the hour — plus the
+reading, a body threshold and the hour's start and end **declared in minutes**, so the same numbers
+mean the same thing on any chart. The candle is accumulated from the chart's own bars and frozen at
+09:00 rather than pulled with `request.security(…, "60")`, because a 60-minute security bar is the
+*exchange's* hour and need not begin at 08:00 New York — the same reason an RTH session high has to
+be accumulated here rather than requested. The hour is shaded teal or maroon on the chart when the
+gate is on, and the panel prints `bearish -> shorts only` so the state is never in doubt.
+
+Parity with the gate live: **15 of 15 configs at trade count 1.000**, same exit bar 0.977–0.996,
+per-trade correlation 0.995–0.998, gap −0.84 to +0.40 points a trade.
+
 ## 10. What would change the verdict
 
 Not more parameters — the grid's own noise floor already exceeds the detection threshold by 1.4×,
@@ -425,5 +488,7 @@ declared grid by marginal average, then the 100/100 cell read once per block aga
 random entry) · `run_n6.py` (the 09:00 bar against the half hour, paired) · `run_n7.py` (the auto
 breakeven ladder: the inert-axis accounting and the noise floor before the table, and the paired
 comparison against each cell's own OFF twin) · `run_n8.py` (the secured-points rung, with the trade
-count printed beside the win rate so a relabelling cannot be read as an improvement) · `plot_na.py` ·
+count printed beside the win rate so a relabelling cannot be read as an improvement) · `run_n9.py`
+(the 08:00 hourly candle as a direction gate: truncation audit, then the base rate on the trigger's
+own bars, then both polarities against a same-selectivity random gate re-simulated) · `plot_na.py` ·
 `pine/nineam/NINE_AM_RANGE_BREAKOUT_strategy.pine`

@@ -128,6 +128,62 @@ def ranges(f, rs=RS, re_=RE):
     return rhi, rlo, rn
 
 
+
+def hour_candle(f, hs=480, he=540):
+    """The 08:00-09:00 New York HOURLY candle, built from the chart's own bars per session.
+
+    Open = the open of the first bar stamped at or after `hs`; close = the close of the last bar
+    stamped before `he`; high/low over the same set. It COMPLETES at 09:00, before the 09:00 range
+    starts and ninety minutes before the 09:30 arm, so a signal bar reading it is causal by
+    construction -- the truncation audit checks that rather than the comment asserting it.
+
+    Declared in MINUTES like every other reach on this branch, so the same numbers mean the same
+    thing on a 1-minute chart as on a 15-minute one (`STUDY_V57`). Returns per-bar arrays broadcast
+    over the session: open, high, low, close, and the count of constituent bars.
+    """
+    mod = f["mod"].to_numpy(); day = f["day"].to_numpy()
+    o = f["open"].to_numpy(); h = f["high"].to_numpy()
+    l = f["low"].to_numpy(); c = f["close"].to_numpy()
+    m = (mod >= hs) & (mod < he)
+    g = pd.DataFrame({"day": day[m], "mod": mod[m], "o": o[m], "h": h[m],
+                      "l": l[m], "c": c[m]}).sort_values(["day", "mod"])
+    agg = g.groupby("day").agg(op=("o", "first"), hi=("h", "max"),
+                               lo=("l", "min"), cl=("c", "last"), k=("o", "size"))
+    mo = agg["op"].to_dict(); mh = agg["hi"].to_dict()
+    ml = agg["lo"].to_dict(); mc = agg["cl"].to_dict(); mk = agg["k"].to_dict()
+    return (np.array([mo.get(d, np.nan) for d in day]),
+            np.array([mh.get(d, np.nan) for d in day]),
+            np.array([ml.get(d, np.nan) for d in day]),
+            np.array([mc.get(d, np.nan) for d in day]),
+            np.array([mk.get(d, 0) for d in day], np.int64))
+
+
+def hour_side(f, hs=480, he=540, reading="direction", body_atr=0.0):
+    """The 08:00 hour's DIRECTION as +1 / -1 / 0, under three declared readings.
+
+    `direction`  close > open  -- the literal ask.
+    `body`       the same, but only when |close - open| >= body_atr x ATR at the hour's close;
+                 otherwise 0, i.e. the hour has no opinion and the gate passes nothing.
+    `closepos`   where the close sits in the HOUR'S OWN range: upper half bullish, lower half
+                 bearish. A different reading of the same hour rather than a second parameter.
+    """
+    ho, hh, hl, hc, hk = hour_candle(f, hs, he)
+    at = f["atr"].to_numpy()
+    out = np.zeros(len(f), np.int64)
+    ok = np.isfinite(ho) & np.isfinite(hc) & (hk > 0)
+    if reading == "closepos":
+        rng = hh - hl
+        good = ok & np.isfinite(rng) & (rng > 0)
+        pos = np.where(good, (hc - hl) / np.where(rng > 0, rng, 1.0), np.nan)
+        out = np.where(good & (pos > 0.5), 1, np.where(good & (pos < 0.5), -1, 0)).astype(np.int64)
+        return out
+    body = np.abs(hc - ho)
+    good = ok
+    if reading == "body":
+        good = good & np.isfinite(at) & (at > 0) & (body >= body_atr * at)
+    out = np.where(good & (hc > ho), 1, np.where(good & (hc < ho), -1, 0)).astype(np.int64)
+    return out
+
 # ----------------------------------------------------------------------------- moving averages
 def ma(x, n, kind="ema"):
     s = pd.Series(x)

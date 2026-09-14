@@ -9,7 +9,9 @@ explicitly rather than hoped away:
   3. the flatten is submitted on the bar before the cutoff and fills at the cutoff bar's OPEN;
   4. a break refused by a gate still consumes the session, in both, so the two event streams must
      agree bar for bar before any P&L is compared;
-  5. the AUTO BREAKEVEN is re-issued as an ABSOLUTE stop once the position exists, so it is priced
+  5. the 08:00 HOUR direction gate is accumulated from the chart's own bars in both, never pulled
+     from a 60-minute security call, so the two see the same candle;
+  6. the AUTO BREAKEVEN is re-issued as an ABSOLUTE stop once the position exists, so it is priced
      from `strategy.position_avg_price` and rounded to the tick, and -- unlike the engine, which
      can move an exact level -- the script cannot arm before the fill bar has closed. Both arm on
      the fill bar and bind from the bar after, which is why they agree; the tick rounding is the
@@ -109,7 +111,14 @@ def main():
             dict(win=(540, 555), side="long", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
                  be=50.0, beoff=5.0),
             dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
-                 be=50.0, beoff=5.0)]
+                 be=50.0, beoff=5.0),
+            # the 08:00 HOUR direction gate, both polarities and the body reading
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 hdir=("direction", 1)),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 hdir=("direction", -1)),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 hdir=("body", 1), hbody=0.25)]
     for name in ("US30L", "US30I"):
         f = N.load(name, 15)
         cost = N.COST[name]; tick = TICK[name]
@@ -119,6 +128,13 @@ def main():
             s0, d0 = N.events(f, rhi, rlo, side=cfg["side"], buf_atr=cfg["buf"], rs=rs, re_=re_,
                               open_m=570)
             s1, d1 = gate(f, s0, d0, cfg["ema"])
+            hd = cfg.get("hdir")
+            if hd is not None:
+                # NB `hk`, not `k`: `k` is the enumerate counter above and shadowing it printed the
+                # mask as the config number. Tenth name collision recorded on this branch.
+                hs = N.hour_side(f, reading=hd[0], body_atr=cfg.get("hbody", 0.0))
+                hk = hs[s1] == hd[1] * d1
+                s1, d1 = s1[hk], d1[hk]
             spts = cfg.get("spts", 0.0); tpts = cfg.get("tpts", 0.0)
             be = cfg.get("be", 0.0); beoff = cfg.get("beoff", 0.0)
             eng = N.run(f, s1, d1, stop_a=cfg["stop"], tgt_r=cfg["tgt"], flat_m=cfg["flat"],
@@ -136,6 +152,8 @@ def main():
                     else f"{cfg['stop']}N/{cfg['tgt']}R")
             if be > 0:
                 geom += f" be{be:.0f}+{beoff:.0f}"
+            if hd is not None:
+                geom += f" h:{hd[0][:4]}{'+' if hd[1] > 0 else '-'}"
             print(f"  {name} cfg{k+1} {cfg['win']} {cfg['side']:5s} ema={cfg['ema']:5s} "
                   f"{geom:22s}: engine {len(eng):5d} trades, script {len(scr):5d} "
                   f"({len(scr)/max(len(eng),1):.3f})  same exit bar {same_x:.4f}  "

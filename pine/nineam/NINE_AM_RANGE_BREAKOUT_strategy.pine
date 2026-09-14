@@ -88,6 +88,13 @@ maFast   = input.int(13, "Fast length", minval = 1, group = grpM)
 maSlow   = input.int(48, "Slow length", minval = 2, group = grpM)
 crossMin = input.int(75, "Fresh cross: within this many MINUTES", minval = 1, group = grpM, tooltip = "A reach in time, not a bar count -- 75 minutes is 5 bars on a 15-minute chart, which is what was measured.")
 
+grpD = "Direction -- the 08:00 hourly candle"
+dirMode = input.string("Off", "08:00 hour gates the side", options = ["Off", "Align with the hour", "Counter to the hour"], group = grpD, tooltip = "DEFAULT OFF, and measured. If the 08:00-09:00 New York hourly candle is bearish, Align takes only the DOWN break that session; if bullish, only the UP break. It is genuinely causal -- that hour completes at 09:00, before the range starts and ninety minutes before the 09:30 arm -- and the truncation audit rebuilding it from history ending at the signal bar returns 0 mismatches of 40 probes on both feeds. It is also a genuinely SEPARATE reading: it admits 37.6-54.3% of the breaks it is shown, dead centre, where a condition that merely restates the trigger admits 80-100% (RSI 94.7%, Aroon 100.0%, MACD 99.8%, MFI 91.7%, +DI 97.8% on a channel break). It binds. It does not pay: over a declared 36-cell grid (3 readings x Align/Counter x two geometries x US30 research, holdout and a different-provider forward block) scored against a RANDOM gate of the same selectivity re-simulated end to end, 0 OF 36 CELLS CLEAR p<=0.05 where 1.8 are expected by chance, 0 of 36 exceed their own minimum detectable effect, and the gate beats the ungated rule in 12 of 36 cells where chance is 50%. Align is negative on all three blocks (-0.0041 / -0.0045 / -0.0042 %/trade against no filter); Counter is positive on research only (+0.0031) and negative on both blocks it did not choose, which is the wrong shape.")
+dirRead = input.string("Direction (close vs open)", "How the hour is read", options = ["Direction (close vs open)", "Body >= N x ATR", "Close position in the hour's range"], group = grpD, tooltip = "Three declared readings of the same hour rather than three parameters on one. Direction is the literal ask. Body ignores an indecisive hour entirely -- it refuses 18.9-19.9% of sessions as having no opinion, and is the WORST of the three on the marginal (-0.0062 %/trade against no filter, 0 of 6 cells beating baseline). Close position asks where the hour closed inside its own range instead of against its open.")
+dirBody = input.float(0.25, "Body threshold, xATR(14)", minval = 0, step = 0.05, group = grpD, tooltip = "Used when the reading is Body. Below this the hour is treated as having no direction and NO trade is taken that session.")
+dirStart = input.int(480, "Hour starts, minutes past New York midnight", minval = 0, maxval = 1439, group = grpD, tooltip = "480 = 08:00. Declared in MINUTES and accumulated from the chart's own bars rather than pulled with request.security, because a 60-minute security call returns the exchange's hourly bar, which need not start at 08:00 New York (CLAUDE.md: request.security on a daily bar is not the session high either).")
+dirEnd   = input.int(540, "Hour ends (exclusive)", minval = 1, maxval = 1440, group = grpD, tooltip = "540 = 09:00, so the candle is 08:00-09:00 and is complete before the range begins.")
+
 grpR = "Support / Resistance channels (LonesomeTheBlue)"
 useSR    = input.bool(false, "Require the broken level to sit ON a channel", group = grpR, tooltip = "DEFAULT OFF. It reads +0.0426 PF 1.316 on the US30_ISO forward block and -0.0500 PF 0.698 on the US30_LONG holdout -- opposite signs on two blocks of the same market, which is not a finding.")
 srPrd    = input.int(10,  "Pivot period",             minval = 2, maxval = 50, group = grpR)
@@ -152,6 +159,40 @@ if barstate.isconfirmed
         rLo := na(rLo) ? low  : math.min(rLo, low)
     if nyMin >= rangeEnd and not na(rHi) and not na(rLo)
         rReady := true
+
+// ----------------------------------------------------------------------------- the 08:00 hour
+// Accumulated from the chart's own bars and frozen at dirEnd, NOT pulled with request.security:
+// a 60-minute security bar is the exchange's hour and need not begin at 08:00 New York. The value
+// is complete before the range starts, so nothing downstream can read a bar that has not closed.
+var float hOpen  = na
+var float hHigh  = na
+var float hLow   = na
+var float hClose = na
+var bool  hReady = false
+inHour = nyMin >= dirStart and nyMin < dirEnd
+if barstate.isconfirmed
+    if newDay
+        hOpen := na
+        hHigh := na
+        hLow := na
+        hClose := na
+        hReady := false
+    if inHour
+        hOpen := na(hOpen) ? open : hOpen
+        hHigh := na(hHigh) ? high : math.max(hHigh, high)
+        hLow := na(hLow) ? low : math.min(hLow, low)
+        hClose := close
+    if nyMin >= dirEnd and not na(hOpen) and not na(hClose)
+        hReady := true
+
+// +1 bullish, -1 bearish, 0 = no opinion (and then the gate admits nothing that session)
+hBody = hReady ? math.abs(hClose - hOpen) : na
+hRng  = hReady ? hHigh - hLow : na
+hPos  = hReady and not na(hRng) and hRng > 0 ? (hClose - hLow) / hRng : na
+hDir = not hReady ? 0 :
+   dirRead == "Close position in the hour's range" ? (na(hPos) ? 0 : hPos > 0.5 ? 1 : hPos < 0.5 ? -1 : 0) :
+   dirRead == "Body >= N x ATR" ? (na(atrv) or atrv <= 0 or hBody < dirBody * atrv ? 0 : hClose > hOpen ? 1 : hClose < hOpen ? -1 : 0) :
+   (hClose > hOpen ? 1 : hClose < hOpen ? -1 : 0)
 
 // ----------------------------------------------------------------------------- S/R channels
 var float[] srLo = array.new_float(0)
@@ -226,8 +267,11 @@ if useSR
     srOkL := onL
     srOkS := onS
 
-wantLong  = (sideIn == "Long"  or sideIn == "Both") and hitUp and not tookUp and momOkL and srOkL
-wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and momOkS and srOkS
+dirOkL = dirMode == "Off" ? true : dirMode == "Align with the hour" ? hDir == 1 : hDir == -1
+dirOkS = dirMode == "Off" ? true : dirMode == "Align with the hour" ? hDir == -1 : hDir == 1
+
+wantLong  = (sideIn == "Long"  or sideIn == "Both") and hitUp and not tookUp and momOkL and srOkL and dirOkL
+wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and momOkS and srOkS and dirOkS
 
 // ----------------------------------------------------------------------------- orders
 // The exit bracket is placed WITH the entry and priced from the SIGNAL bar, so the fill bar is
@@ -301,8 +345,9 @@ plot(rReady ? rLo : na, "range low",  color = color.new(color.orange, 0), style 
 plot(maMode == "Off" ? na : maF, "fast MA", color = color.new(color.blue, 40))
 plot(maMode == "Off" ? na : maS, "slow MA", color = color.new(color.purple, 40))
 bgcolor(inRange ? color.new(color.gray, 90) : na)
+bgcolor(dirMode != "Off" and inHour ? color.new(hDir == 1 ? color.teal : hDir == -1 ? color.maroon : color.gray, 92) : na)
 
-var table hud = table.new(position.top_right, 2, 8, border_width = 1)
+var table hud = table.new(position.top_right, 2, 9, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "range",   text_size = size.tiny)
     table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)), text_size = size.tiny)
@@ -334,5 +379,11 @@ if barstate.islast
     table.cell(hud, 1, 6, beMode == "Off" ? "--"
       : str.tostring(beOffset, "#.#") + " pt vs round turn " + str.tostring(rtPt, "#.##") + " pt  " + secTxt,
       text_size = size.tiny, text_color = secCol)
-    table.cell(hud, 0, 7, "edge claimed", text_size = size.tiny)
-    table.cell(hud, 1, 7, "none", text_size = size.tiny, text_color = color.red)
+    table.cell(hud, 0, 7, "08:00 hour", text_size = size.tiny)
+    dirTxt = hDir == 1 ? "bullish" : hDir == -1 ? "bearish" : "no opinion"
+    table.cell(hud, 1, 7, dirMode == "Off" ? "off"
+      : dirTxt + " -> " + (dirMode == "Align with the hour" ? (hDir == 1 ? "longs only" : hDir == -1 ? "shorts only" : "no trade") : (hDir == 1 ? "shorts only" : hDir == -1 ? "longs only" : "no trade")),
+      text_size = size.tiny,
+      text_color = dirMode == "Off" ? color.gray : hDir == 1 ? color.teal : hDir == -1 ? color.maroon : color.gray)
+    table.cell(hud, 0, 8, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 8, "none", text_size = size.tiny, text_color = color.red)
