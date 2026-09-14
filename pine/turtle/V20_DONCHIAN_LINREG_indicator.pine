@@ -1,0 +1,266 @@
+//@version=5
+// V20 INDICATOR -- the same rules as V20_DONCHIAN_LINREG_strategy.pine, drawn on the chart.
+//
+// It plots the Donchian entry and exit channels, the 50-period linear regression, the entry window,
+// and a marker on every bar the strategy would take -- with the stop and target it would place, so
+// the levels can be read before the trade rather than after it. Alerts fire on the same condition.
+//
+// ================================ WHAT THE MEASUREMENTS SAY ================================
+// This is not a recommendation to trade the plot. On five markets at two timeframes the rules below
+// have NO demonstrable edge: bootstrap P(mean daily R <= 0) runs 0.41 to 0.97 on the locked block,
+// every market turns negative at 1.5x the assumed spread, and the two long histories -- 8.5 years of
+// US30 and 22 years of gold -- are negative or zero.
+//
+// THE REGRESSION IS REDUNDANT WITH THE TRIGGER, and its most literal reading is backwards. Share of
+// bars passing each confirmation, US30 15m:
+//
+//   reading                    all bars   BREAKOUT bars    lift
+//   slope > 0                     53.1%          78.2%    1.47x
+//   forecast > close              50.5%          12.1%    0.24x   <- rejects breakouts
+//   close > value                 49.7%          89.1%    1.80x   <- passes 89% of them
+//   slope>0 AND close>value       21.8%          67.7%    3.11x
+//
+// On a breakout bar the regression's one-bar-ahead forecast sits BELOW the current price 88% of the
+// time, because the bar has just jumped above the range the line is fitted to. The reading that
+// scores best passes 89.1% of breakout bars, so it removes about a ninth of the trades and adds
+// +0.005 R. Full numbers in docs/ib/STUDY_V20_LINREG.md.
+//
+// Two things the same measurements DO support: turning the take profit OFF (locked EV -0.008 ->
+// +0.158 on US100, -0.002 -> +0.156 on gold, +0.016 -> +0.099 on NQ), and starting the session at
+// the 09:30 cash open rather than before it -- every window beginning at 09:30 is pooled-positive
+// and every window beginning earlier is not.
+// ================================ ADX vs CHOP, MEASURED ================================
+// A 110-cell ADX x CHOP grid on this base, five markets, pooled in R. The population first: 22% of
+// cells have profit factor > 1 on research and 36% on locked, and the correlation between a cell's
+// research PF and its locked PF is **+0.035** -- so a ranking of this grid should not transfer.
+//
+//   family        cells   research PF   LOCKED PF   % of cells with PF>1 on locked
+//   ADX alone        10         0.959       0.961                10%
+//   CHOP alone        9         0.965       0.986                44%
+//   both             90         0.969       0.981                39%
+//   no filter         1         0.959       0.968                 0%
+//
+// CHOP's ladder is monotone on BOTH blocks -- ceiling 100/55/50/45/40/35 gives research
+// 0.959/0.965/0.992/1.007/1.029/1.027 and locked 0.968/0.971/0.986/1.022/1.015/1.044. ADX's is
+// flat: every floor from 10 to 40 sits between 0.911 and 0.977 on research and 0.951 and 1.025 on
+// locked.
+//
+// AGAINST A RANDOM FILTER OF THE SAME SELECTIVITY -- the only null a restrictive condition cannot
+// beat by being restrictive:
+//
+//   filter             research p   LOCKED p
+//   ADX >= 25              0.248      0.372     nothing
+//   ADX >= 40              0.736      0.269     nothing
+//   CHOP <= 50             0.003      0.133
+//   **CHOP <= 45**         0.005      0.015     <- the only setting clearing BOTH blocks
+//   CHOP <= 40             0.005      0.108
+//   CHOP <= 35             0.041      0.083
+//   ADX>=25 + CHOP<=35     0.040      0.215     <- ADX makes CHOP WORSE out of sample
+//   ADX>=18 + CHOP<=35     0.016      0.127
+//
+// WHY ADX FAILS AND CHOP DOES NOT, mechanically: on US30 breakout bars ADX >= 25 passes 55.6%
+// against 50.0% of bars in general -- a lift of **1.11x**, so it barely discriminates. CHOP <= 40
+// passes 41.1% against 21.3% -- a lift of **1.93x**. And 68.3% of the bars CHOP keeps already pass
+// ADX, so stacking them removes little that CHOP has not already removed.
+//
+// Against the harder minute-of-day matched control, CHOP <= 40 clears BOTH blocks only on US30
+// (p 0.016 research, 0.039 locked; CHOP <= 35 gives 0.010 and 0.001). On US100, NQ, the 8.5-year
+// US30 history and gold, research passes and the holdout does not. So: CHOP is a real filter and
+// ADX is not, but "real" here means it clears a selectivity null broadly and a drift-priced null on
+// one market of five.
+//
+// ==========================================================================================
+
+indicator("V20 Donchian 30/20 + linear regression [signals]", overlay = true, max_lines_count = 200)
+
+gE       = "Entry"
+donLen   = input.int(30, "Donchian breakout length", minval = 2, group = gE)
+useLong  = input.bool(true,  "Long signals", group = gE)
+useShort = input.bool(false, "Short signals", group = gE,
+     tooltip="Off by default: the short mirror of this family loses on every market measured, and every sample here is a rising one.")
+
+gR       = "Linear regression confirmation"
+lrLen    = input.int(50, "Regression length", minval = 5, group = gR,
+     tooltip="Inert. 20/30/50/75/100 give pooled EV -0.029/-0.030/-0.024/-0.021/-0.019 across five markets.")
+lrMode   = input.string("close>value", "Confirmation", options = ["off", "slope", "forecast", "close>value", "both"], group = gR,
+     tooltip="forecast: only 12.1% of breakout bars pass this -- it mostly REJECTS breakouts. close>value: passes 89.1% of them and adds +0.005 R.")
+
+gRg      = "Regime filter -- CHOP earns its place, ADX does not"
+useChop  = input.bool(false, "Require CHOP(14) below a ceiling", group = gRg,
+     tooltip="CHOP <= 45 is the only regime setting that beats a random filter of the same selectivity on BOTH blocks (p 0.005 research, 0.015 locked). The pooled profit factor ladder is monotone on both: 100 -> 0.959/0.968, 50 -> 0.992/0.986, 45 -> 1.007/1.022, 40 -> 1.029/1.015, 35 -> 1.027/1.044.")
+chopMax  = input.float(45, "  CHOP ceiling", minval = 1, maxval = 100, step = 1, group = gRg)
+useAdx   = input.bool(false, "Require ADX(14) above a floor", group = gRg,
+     tooltip="OFF because it does nothing. Every ADX floor from 10 to 40 fails a same-selectivity control on both blocks (p 0.248 and 0.372 at 25). On breakout bars ADX >= 25 has a lift of 1.11x -- it barely discriminates. Adding it ON TOP of CHOP makes the holdout WORSE: CHOP<=35 alone p 0.083, with ADX>=25 p 0.215.")
+adxMin   = input.float(25, "  ADX floor", minval = 0, step = 1, group = gRg)
+
+gT       = "Trading window"
+useWin   = input.bool(false, "Restrict signals to a session", group = gT)
+winSess  = input.session("0930-1100", "Entry session, New York time", group = gT,
+     tooltip="Best of seven tested (pooled -0.0179 -> +0.0345) and inconsistent underneath: it helps NQ and gold and hurts US30 and US100. A candidate, not a finding.")
+
+gRisk    = "ATR in real money -- reads the chart's own ticker"
+showRisk = input.bool(true, "Show the live ATR / risk panel", group = gRisk)
+riskMode = input.string("percent of equity", "Size risk by", options = ["percent of equity", "fixed cash"], group = gRisk)
+riskPct  = input.float(0.5, "  risk per trade, % of equity", minval = 0.01, step = 0.05, group = gRisk,
+     tooltip="Every figure in the research is ONE CONTRACT. Sizing changes the equity path and the drawdown; it does not change the per-trade edge.")
+riskCash = input.float(500, "  or a fixed cash amount", minval = 1, step = 50, group = gRisk)
+
+gX       = "Levels"
+atrLen   = input.int(14, "ATR length", minval = 2, group = gX,
+     tooltip="ATR here is ema(TR, n), NOT ta.atr -- ta.atr is Wilder's RMA and a different series.")
+stopMult = input.float(2.0, "ATR stop multiple", minval = 0.1, step = 0.1, group = gX)
+exitCh   = input.int(20, "Donchian exit channel", minval = 2, group = gX)
+useTp    = input.bool(true, "Show a take profit", group = gX,
+     tooltip="Turning this off is the single change the measurements support.")
+tpR      = input.float(2.0, "  target, in R", minval = 0.1, step = 0.1, group = gX)
+showLv   = input.bool(true, "Draw the stop and target of the last signal", group = gX)
+
+// ----------------------------------------------------------------- series
+atrN    = ta.ema(ta.tr(true), atrLen)
+entHi   = ta.highest(high, donLen)[1]    // ENTRY channels exclude this bar so a break is possible
+entLo   = ta.lowest(low,  donLen)[1]
+exLo    = ta.lowest(low,  exitCh)
+exHi    = ta.highest(high, exitCh)
+
+// ta.linreg(source, n, 0) is the fitted value AT the current bar. The slope is that value minus the
+// same fit one bar back; the one-bar-ahead forecast is the value plus the slope. Verified against
+// an explicit least-squares fit to 1e-6 in research/v20/v20linreg.py.
+lrVal   = ta.linreg(close, lrLen, 0)
+lrSlope = lrVal - ta.linreg(close, lrLen, 1)
+lrFc    = lrVal + lrSlope
+
+okLongC  = lrMode == "off" ? true : lrMode == "slope" ? lrSlope > 0 :
+     lrMode == "forecast" ? lrFc > close : lrMode == "close>value" ? close > lrVal :
+     (lrSlope > 0 and close > lrVal)
+okShortC = lrMode == "off" ? true : lrMode == "slope" ? lrSlope < 0 :
+     lrMode == "forecast" ? lrFc < close : lrMode == "close>value" ? close < lrVal :
+     (lrSlope < 0 and close < lrVal)
+
+// BARE `hour`/`minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME, an hour off New York.
+inWin = not useWin or not na(time(timeframe.period, winSess, "America/New_York"))
+// ---------------------------------------------------------- ATR IN THE CHART'S OWN UNITS
+// `syminfo.pointvalue` is the currency value of ONE FULL POINT of this symbol for one contract, and
+// `syminfo.mintick` is its smallest increment. Together they turn an ATR -- which is in points and
+// therefore means nothing across instruments -- into ticks and into money, automatically, for
+// whatever ticker the chart is on. Nothing here is hard-coded to a market.
+// CAVEAT WORTH KNOWING: these two fields come from the BROKER'S symbol record. On CFD and spot
+// symbols a broker sometimes reports a point value of 1 when the real contract is 100 units, so the
+// panel prints the raw fields as well as the derived money -- if `pt value` looks wrong, the money
+// column is wrong by the same factor and nothing else in the script is affected.
+tickMoney = syminfo.pointvalue * syminfo.mintick        // currency per tick, one contract
+atrPts    = atrN                                        // ATR in price points
+atrTicks  = atrN / syminfo.mintick
+atrMoney  = atrN * syminfo.pointvalue
+stopPts   = stopMult * atrN                             // the ATR leg of the working stop
+stopTicks = stopPts / syminfo.mintick
+stopMoney = stopPts * syminfo.pointvalue
+tgtPts    = useTp ? tpR * stopPts : na
+tgtMoney  = useTp ? tgtPts * syminfo.pointvalue : na
+acctSize  = input.float(100000, "Account size for the % option", minval = 1, step = 1000, group = gRisk)
+riskAmt   = riskMode == "percent of equity" ? acctSize * riskPct / 100.0 : riskCash
+sizeSug   = stopMoney > 0 ? math.floor(riskAmt / stopMoney) : na
+
+// CHOP(14) = 100 * log10(sum(TR,14) / (14-bar range)) / log10(14). LOW means trending.
+chopV  = 100 * math.log10(math.sum(ta.tr(true), 14) /
+     math.max(ta.highest(high, 14) - ta.lowest(low, 14), syminfo.mintick)) / math.log10(14)
+[_p2, _m2, adxV] = ta.dmi(14, 14)        // returns [+DI, -DI, ADX] IN THAT ORDER
+regimeOk = (not useChop or (not na(chopV) and chopV <= chopMax))
+     and (not useAdx or (not na(adxV) and adxV >= adxMin))
+
+ready = not na(atrN) and atrN > 0 and not na(lrVal)
+
+// SIGNALS ARE CONFIRMED-BAR ONLY. Without `barstate.isconfirmed` a marker appears and disappears as
+// the bar ticks, and an alert fires on a bar that never satisfied the rule at its close.
+sigL = useLong  and ready and inWin and regimeOk and okLongC  and not na(entHi) and high > entHi and barstate.isconfirmed
+sigS = useShort and ready and inWin and regimeOk and okShortC and not na(entLo) and low  < entLo and barstate.isconfirmed
+
+// ----------------------------------------------------------------- the levels a signal implies
+// The strategy enters at the NEXT bar's open, so these are drawn from the signal bar's close as an
+// estimate. The real fill is one bar later and the stop is measured from it.
+var float lastStop = na
+var float lastTgt  = na
+var int   lastDir  = 0
+
+if sigL
+    lastDir  := 1
+    lastStop := math.max(close - stopMult * atrN, na(exLo) ? close - stopMult * atrN : math.min(exLo, close))
+    lastStop := math.min(lastStop, close)
+    lastTgt  := useTp ? close + tpR * stopMult * atrN : na
+else if sigS
+    lastDir  := -1
+    lastStop := math.min(close + stopMult * atrN, na(exHi) ? close + stopMult * atrN : math.max(exHi, close))
+    lastStop := math.max(lastStop, close)
+    lastTgt  := useTp ? close - tpR * stopMult * atrN : na
+
+// ----------------------------------------------------------------- plots
+plot(useLong  ? entHi : na, "Donchian entry high", color = color.new(color.teal, 25), linewidth = 2)
+plot(useShort ? entLo : na, "Donchian entry low",  color = color.new(color.maroon, 25), linewidth = 2)
+plot(exLo, "Exit channel low",  color = color.new(color.gray, 55))
+plot(exHi, "Exit channel high", color = color.new(color.gray, 55))
+plot(lrVal, "Linear regression", color = color.new(color.orange, 0), linewidth = 2)
+plot(lrMode == "forecast" ? lrFc : na, "Regression forecast (+1 bar)",
+     color = color.new(color.yellow, 30), style = plot.style_circles)
+
+plot(showLv and lastDir != 0 ? lastStop : na, "Stop of last signal",
+     color = color.new(color.fuchsia, 20), style = plot.style_linebr)
+plot(showLv and lastDir != 0 and useTp ? lastTgt : na, "Target of last signal",
+     color = color.new(color.lime, 20), style = plot.style_linebr)
+
+plotshape(sigL, "Long signal", shape.triangleup, location.belowbar,
+     color = color.new(color.teal, 0), size = size.small)
+plotshape(sigS, "Short signal", shape.triangledown, location.abovebar,
+     color = color.new(color.maroon, 0), size = size.small)
+
+bgcolor(useWin and inWin ? color.new(color.teal, 94) : na, title = "entry window")
+
+alertcondition(sigL, "V20 long signal",
+     "V20: Donchian {{ticker}} up-break with the regression confirming, on {{interval}}")
+alertcondition(sigS, "V20 short signal",
+     "V20: Donchian {{ticker}} down-break with the regression confirming, on {{interval}}")
+
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V20 signals - NO demonstrable edge: bootstrap p 0.41 to 0.97, dies at 1.5x spread",
+         text_color = color.white, bgcolor = color.new(color.red, 20))
+    table.cell(hud, 0, 1, lrMode == "forecast" ? "'forecast' passes only 12.1% of breakout bars - it rejects them" : lrMode == "off" ? "Confirmation OFF - this is the bare breakout" : "The regression passes ~89% of breakout bars and adds +0.005 R",
+         text_color = color.white, bgcolor = color.new(color.orange, 20))
+    table.cell(hud, 0, 2, "Supported by the data: take profit OFF, and a session starting at 09:30 not before",
+         text_color = color.white, bgcolor = color.new(color.teal, 30))
+
+// ---------------------------------------------------------- the live ATR / risk panel
+var table rk = table.new(position.bottom_right, 2, 10, border_width = 1)
+if barstate.islast and showRisk
+    bg = color.new(color.gray, 88)
+    hd = color.new(color.teal, 25)
+    table.cell(rk, 0, 0, "ATR in real units", text_color = color.white, bgcolor = hd)
+    table.cell(rk, 1, 0, syminfo.ticker + "  " + timeframe.period, text_color = color.white, bgcolor = hd)
+    table.cell(rk, 0, 1, "tick size", bgcolor = bg)
+    table.cell(rk, 1, 1, str.tostring(syminfo.mintick, format.mintick), bgcolor = bg)
+    table.cell(rk, 0, 2, "pt value / tick value", bgcolor = bg)
+    table.cell(rk, 1, 2, str.tostring(syminfo.pointvalue, "#.##") + " / " +
+         str.tostring(tickMoney, "#.####") + " " + syminfo.currency, bgcolor = bg)
+    table.cell(rk, 0, 3, "ATR(" + str.tostring(atrLen) + ")", bgcolor = bg)
+    table.cell(rk, 1, 3, str.tostring(atrPts, format.mintick) + " pts  |  " +
+         str.tostring(atrTicks, "#.#") + " ticks  |  " +
+         str.tostring(atrMoney, "#.##") + " " + syminfo.currency, bgcolor = bg)
+    table.cell(rk, 0, 4, "stop = " + str.tostring(stopMult, "#.##") + " x ATR", bgcolor = bg)
+    table.cell(rk, 1, 4, str.tostring(stopPts, format.mintick) + " pts  |  " +
+         str.tostring(stopTicks, "#.#") + " ticks  |  " +
+         str.tostring(stopMoney, "#.##") + " " + syminfo.currency, bgcolor = bg)
+    table.cell(rk, 0, 5, useTp ? "target = " + str.tostring(tpR, "#.##") + "R" : "target", bgcolor = bg)
+    table.cell(rk, 1, 5, useTp ? str.tostring(tgtPts, format.mintick) + " pts  |  " +
+         str.tostring(tgtMoney, "#.##") + " " + syminfo.currency : "none", bgcolor = bg)
+    table.cell(rk, 0, 6, "risk per trade", bgcolor = bg)
+    table.cell(rk, 1, 6, str.tostring(riskAmt, "#.##") + " " + syminfo.currency +
+         (riskMode == "percent of equity" ? "  (" + str.tostring(riskPct, "#.##") + "% of " +
+         str.tostring(acctSize, "#") + ")" : ""), bgcolor = bg)
+    table.cell(rk, 0, 7, "contracts at that risk", bgcolor = bg)
+    table.cell(rk, 1, 7, na(sizeSug) or sizeSug < 1 ? "0 -- one contract already risks more" :
+         str.tostring(sizeSug, "#"), bgcolor = sizeSug >= 1 ? color.new(color.teal, 70) : color.new(color.red, 70))
+    table.cell(rk, 0, 8, "1 contract risks", bgcolor = bg)
+    table.cell(rk, 1, 8, str.tostring(stopMoney, "#.##") + " " + syminfo.currency + " = " +
+         str.tostring(stopMoney / math.max(acctSize, 1) * 100, "#.##") + "% of account", bgcolor = bg)
+    table.cell(rk, 0, 9, "the stop is the NEARER of this and the channel", text_color = color.white,
+         bgcolor = color.new(color.orange, 40))
+    table.cell(rk, 1, 9, "so the real risk is <= the figure above", text_color = color.white,
+         bgcolor = color.new(color.orange, 40))

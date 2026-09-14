@@ -1,0 +1,40 @@
+
+================================================================================================================
+GATE 1 -- the PRIMARY alone: every breakout in the window, no filter, equal-weighted, costs in
+================================================================================================================
+  The primary is Donchian 10/10 long, 07:00-11:00 NY, 3.19 ATR stop, 2.3 ATR target, 230-min hold.
+  Skill's own caveat applies and is stated: this primary has SIX tuned parameters chosen by 3,600 Optuna
+  trials, so it is a fitted primary, not a derived one, and inherits the full deflation burden.
+
+  NQ research  % of price         n  765  mean +0.00020  CI [-0.00001, +0.00042]  p 0.041  hit 51.5%  -> PASS
+  NQ research  R (constant risk)  n  765  mean +0.02548  CI [-0.02246, +0.07783]  p 0.164  hit 51.5%  -> MARGINAL
+  NQ locked    % of price         n  389  mean +0.00015  CI [-0.00022, +0.00054]  p 0.209  hit 48.8%  -> MARGINAL
+  NQ locked    R (constant risk)  n  389  mean -0.00843  CI [-0.07817, +0.06192]  p 1.000  hit 48.8%  -> FAIL
+  US100 pre-2022-12-26   % of price      n 2264  mean -0.00005  CI [-0.00022, +0.00012]  p 1.000  hit 49.4%  -> FAIL
+  US30 2016-2025         % of price      n 3131  mean -0.00003  CI [-0.00015, +0.00009]  p 1.000  hit 48.6%  -> FAIL
+
+================================================================================================================
+SEARCH ACCOUNTING -- the 43 candidates regenerated, their correlation measured, the trial count corrected
+================================================================================================================
+  candidates with >= 40 research trades: 41 of 43;  586 research days
+  average pairwise correlation of their DAILY RETURN STREAMS: 0.404
+  effective independent trials  N_hat = rho + (1-rho)*M = 24.8  (raw M = 41)
+  (the earlier study deflated at raw N = 43 and N = 152 -- that OVER-deflates a correlated pool)
+
+================================================================================================================
+DEFLATED SHARPE, corrected for the correlation among trials
+================================================================================================================
+  winner: SR/day +0.1248 (ann +1.98), T 586 days, skew +1.18, kurtosis 12.4
+  variance of the candidates' per-day Sharpe: 0.001066 (sd 0.0327)
+  DSR at raw M = 43 (what the study reported)         0.912   (expected max-of-noise SR/day +0.0718)
+  DSR at effective N = 24.8 (correlation-adjusted)    0.936   (expected max-of-noise SR/day +0.0651)
+  DSR at raw 152 (all research looks)                 0.830   (expected max-of-noise SR/day +0.0873)
+  DSR at effective 152 at the same rho                0.865   (expected max-of-noise SR/day +0.0815)
+
+================================================================================================================
+WHITE'S REALITY CHECK over the full candidate set -- the test the study could not run
+================================================================================================================
+  candidates 41, observations 586;  best by mean daily return: VP no HVN 2 above (+0.000298/day)
+  reality-check p = 0.0630   null max p95 +0.000309
+  -> FAIL -- a set of worthless candidates searched this hard would produce a winner this good at least 5% of the time
+  note: the study's winner ranks below VP no HVN 2 above on mean daily return (the study ranked on profit factor).

@@ -1,0 +1,61 @@
+====================================================================================================
+D. PARAMETER GRID -- US30
+====================================================================================================
+  US30 15m: 4320 cells in 70s
+
+US30: 4320 cells, 3776 with >= 30 research trades
+  share of scorable cells profitable on research: 58.9%   median PF 1.03   median mean +1.6
+  share of scorable cells profitable on validation: 42.4%   median PF 0.96   median mean -3.9
+  share of scorable cells profitable on test: 19.7%   median PF 0.88   median mean -11.9
+  corr(mean per trade research, validation): Pearson +0.088  Spearman +0.027
+  corr(mean per trade research, test): Pearson -0.339  Spearman -0.134
+  corr(mean per trade validation, test): Pearson -0.182  Spearman -0.143
+
+  marginal average of mean pts/trade per axis (scorable cells):
+    ema:
+          13  research  +2.29  validation  +0.24  test -24.43   cells 1045
+          21  research  +1.83  validation  +0.55  test -18.92   cells 1308
+          34  research  +2.68  validation  +1.67  test -11.67   cells 1423
+    atr:
+          10  research  +3.36  validation  +4.90  test -18.51   cells 1174
+          14  research  +2.22  validation  +1.70  test -17.58   cells 1274
+          20  research  +1.38  validation  -3.44  test -17.13   cells 1328
+    osc:
+           1  research  +1.56  validation  -8.01  test -19.71   cells 1040
+           2  research  +2.12  validation  -2.06  test -15.94   cells 981
+           3  research  +2.76  validation  +4.91  test -16.07   cells 926
+           5  research  +2.84  validation +11.04  test -19.13   cells 829
+    dist:
+         1.5  research  +3.13  validation  -8.89  test  -4.42   cells 720
+         2.0  research  +0.02  validation  -8.56  test -10.20   cells 720
+         2.5  research  -1.28  validation  -5.78  test -12.63   cells 715
+         3.0  research  +1.36  validation  +4.52  test -19.50   cells 662
+         3.5  research  +6.08  validation +15.35  test -32.26   cells 556
+         4.0  research  +7.37  validation +21.14  test -40.87   cells 403
+    vwap:
+         1.5  research  +6.06  validation  -4.14  test -19.28   cells 683
+         2.0  research  +1.83  validation  -3.50  test -18.92   cells 748
+         2.5  research  +1.95  validation  +3.30  test -18.38   cells 772
+         3.0  research  +1.44  validation  +5.53  test -15.74   cells 779
+        99.0  research  +0.59  validation  +2.45  test -16.50   cells 794
+    ent1:
+         630  research  +3.79  validation  +1.46  test -24.12   cells 912
+         660  research  +1.09  validation  +3.09  test -17.04   cells 948
+         720  research  +1.63  validation  +0.95  test -14.59   cells 956
+         840  research  +2.66  validation  -1.88  test -15.38   cells 960
+
+  the default cell: [{'research_n': 148, 'research_mean': -7.87, 'research_pf': 0.88, 'validation_n': 68, 'validation_mean': 16.41, 'validation_pf': 1.19, 'test_n': 51, 'test_mean': 4.58, 'test_pf': 1.06}]
+  one-rung box around the default: 729 cells, 640 scorable; research profitable 51% mean +2.1  validation profitable 64% mean +9.4  test profitable 21% mean -21.0
+  top decile by research mean (377 cells): research mean +26.1 (profitable 100%)  validation mean +12.9 (profitable 66%)  test mean -50.0 (profitable 8%)   vs population research +2.3  validation +0.9  test -17.7
+  top 10 cells:
+ ema  atr  osc  dist  vwap  ent1  tf  research_n  research_mean  research_pf  validation_n  validation_mean  validation_pf  test_n  test_mean  test_pf
+  21   14    3   4.0   3.0   630  15          30          56.60         4.22             8           -53.38           0.56      13     -38.22     0.78
+  13   10    5   2.5   2.5   630  15          32          54.44         3.88            18           -31.22           0.73      11     -39.89     0.77
+  13   10    5   2.5   3.0   630  15          32          54.44         3.88            19           -48.79           0.62      11     -39.89     0.77
+  21   10    3   3.0   1.5   630  15          46          51.15         3.18            25            69.60           2.09      14     -50.03     0.61
+  13   10    3   2.5   1.5   630  15          46          50.65         3.13            29            -1.93           0.98      17     -89.75     0.39
+  13   10    3   3.0   2.5   840  15          34          48.12         3.46            16            30.38           1.47      15     -82.70     0.50
+  13   10    3   3.0   2.5   720  15          34          48.12         3.46            16            30.38           1.47      15     -82.70     0.50
+  13   10    3   3.0   2.5   660  15          34          48.12         3.46            16            30.38           1.47      15     -82.70     0.50
+  21   14    3   4.0  99.0   630  15          31          47.81         2.99             9           -88.00           0.41      13     -38.22     0.78
+  13   10    5   2.5  99.0   630  15          33          46.24         2.86            19           -48.79           0.62      11     -39.89     0.77

@@ -1,0 +1,14 @@
+  LABEL GEOMETRY: asked -- fresh 13/48 cross, VWAP state, 1.5 ATR stop, ATR trail 1.0/1.0, 15:55 flatten
+  1290 trades (860 research / 430 locked), 36 features after a 98% coverage floor
+  base research: mean R -0.3671  win 29.0%  p90 R +0.322
+  6 sequential folds, purged on trade lifetime and embargoed one session; mean train size 713
+
+============================================================================================================================
+A. THE LADDER on the research block -- OOF, purged and embargoed; each model beside its SHUFFLED twin
+============================================================================================================================
+  model             objective       IC    AUC |  R keep50     PF    p90 |  R keep30     PF    p90 | twin IC / R keep30
+  UNFILTERED base                             |   -0.3671  0.194  0.322 |   -0.3671  0.194  0.322
+  ridge             R           0.0427  0.556 |   -0.3405  0.248  0.385 |   -0.3742  0.249  0.413 | +0.0241 / -0.3018
+  lightgbm          R          -0.0018  0.513 |   -0.3631  0.223  0.359 |   -0.3860  0.201  0.345 | +0.0493 / -0.3713
+  xgboost           R          -0.0118  0.523 |   -0.3823  0.217  0.370 |   -0.3481  0.251  0.401 | +0.0041 / -0.3754
+  mlp_2x64          R           0.0090  0.499 |   -0.3713  0.186  0.330 |   -0.4058  0.183  0.337 | -0.0130 / -0.3240

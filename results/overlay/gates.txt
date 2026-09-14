@@ -1,0 +1,51 @@
+The four screening gates, before anything is built.
+============================================================================================================
+GATE 1 -- HORIZON SEPARATION
+============================================================================================================
+  fast signal: (close - EMA20) / ATR20 on 1-minute bars
+  AR(1) rho 0.8934  ->  half-life 6.1 minutes
+  slow strategy median holding period 926 minutes (15.4 hours)
+  separation ratio 151x   (the skill asks for at least 10x)  PASS
+
+  expected slow return per minute  +1.4880 bps
+  expected fast drift, next minute, AT THE SIGNAL BARS  -0.0422 bps
+  the overlay is only worth considering if the fast drift OPPOSES the slow direction
+  and is comparable in size. Here it is ADVERSE and 0.03x the slow accrual.
+
+============================================================================================================
+GATE 2 -- SIGN OPPOSITION AT THE DECISION POINT
+============================================================================================================
+  fast signal at the slow strategy's own signal bars: mean +0.4356 ATR, median +0.4457, share extended (z>0) 63.5%
+  fast signal on ALL bars:                             mean +0.0484 ATR
+  A breakout fires into an extended condition, so a mean-reverting fast signal should
+  read POSITIVE here -- that is the opposition the overlay would exploit.
+
+  next-minute return by fast-signal quintile, ALL bars (bps):
+    Q1  +0.0304 bps   n 209,715
+    Q2  -0.0053 bps   n 209,715
+    Q3  -0.0058 bps   n 209,714
+    Q4  +0.0138 bps   n 209,715
+    Q5  -0.0031 bps   n 209,715
+  monotone reversion would run from positive at Q1 to negative at Q5. Spread Q1-Q5: +0.0335 bps
+
+============================================================================================================
+GATE 3 -- IS THE SLOW STRATEGY ALREADY NET-PROFITABLE?
+============================================================================================================
+  Donchian 20 breakout, 2.5N stop anchored to the signal close, no
+  target, 480-bar (240h) clock, long only, 1 unit, both sides of the round turn charged.
+  n 5,045   +21.330 points/trade   +0.1378 % of entry price   win 15.0%   total +107,608 points
+  PASS -- an overlay refines execution, it does not create edge.
+
+============================================================================================================
+GATE 4 -- THE BOUNCE FLOOR (Roll's estimator)
+============================================================================================================
+  {'cov': -0.14111816617728387, 'spread_abs': np.float64(0.7513139588142467), 'spread_bps': np.float64(0.3741710639414166), 'half_spread_bps': np.float64(0.1870855319707083), 'note': 'compare per-trade edge (bps) to half_spread_bps'}
+
+  the fast signal traded DIRECTLY (long the bottom quintile of z, hold one minute):
+    gross edge +0.0304 bps per trade
+    half the Roll implied effective spread: 0.1871 bps
+    ratio 0.16  -- below 1.0 means the 'mean reversion' is substantially bid-ask bounce in the print
+    series rather than a forecastable path, and every later result needs the placebo.
+
+  and the round turn on this instrument is 0.850 bps, against a direct edge of +0.0304 bps
+  -- so the fast signal is INFORMATIONAL, not monetizable, which is the premise of the overlay.

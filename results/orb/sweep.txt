@@ -1,0 +1,159 @@
+sweeping 4,320 configurations (2x3x4 builds) ...
+
+==========================================================================================================================
+A. GRID SHAPE FIRST -- what share of the space is profitable, before any top row
+==========================================================================================================================
+  4,320 configurations, 3,835 with at least 20 in-sample trades
+  profitable in-sample (development + validation): 24.2%
+  profitable on development alone:                 19.6%
+  median in-sample expectancy $-11.46/trade   median trade count 161
+  in-sample to out-of-sample expectancy correlation: Pearson +0.186   Spearman +0.228
+
+==========================================================================================================================
+B. THE MARGINAL AVERAGE PER AXIS -- in-sample, which is the only block that may choose
+==========================================================================================================================
+
+  ttf
+             1   n_cells 1834   median trades   194   mean IS exp    -14.79   median IS exp    -15.03   share profitable  23.9%
+             5   n_cells 2001   median trades   150   mean IS exp    -10.09   median IS exp     -9.64   share profitable  24.5%
+
+  htf
+            15   n_cells 1303   median trades   183   mean IS exp     -7.24   median IS exp     -6.46   share profitable  32.3%
+            30   n_cells 1275   median trades   156   mean IS exp    -20.44   median IS exp    -19.51   share profitable  14.1%
+            60   n_cells 1257   median trades   156   mean IS exp     -9.41   median IS exp     -8.87   share profitable  26.1%
+
+  atr_tf
+             5   n_cells  795   median trades    97   mean IS exp    -17.12   median IS exp    -17.64   share profitable  20.5%
+            30   n_cells  880   median trades   144   mean IS exp    -18.07   median IS exp    -17.94   share profitable  13.0%
+            60   n_cells 1080   median trades   187   mean IS exp    -19.17   median IS exp    -17.01   share profitable   4.4%
+           240   n_cells 1080   median trades   184   mean IS exp     +2.68   median IS exp     +2.32   share profitable  55.9%
+
+  ratio
+       0.3-1.5   n_cells  502   median trades    99   mean IS exp     -9.71   median IS exp     -7.23   share profitable  34.7%
+       0.2-2.0   n_cells  756   median trades   116   mean IS exp    -14.96   median IS exp    -15.81   share profitable  26.6%
+       0.3-2.5   n_cells  849   median trades   141   mean IS exp    -14.58   median IS exp    -13.12   share profitable  20.5%
+       0.5-3.0   n_cells  864   median trades   172   mean IS exp    -11.76   median IS exp    -11.49   share profitable  23.5%
+      0.0-99.0   n_cells  864   median trades   227   mean IS exp     -9.95   median IS exp    -10.42   share profitable  20.5%
+
+  vol
+           1.0   n_cells  981   median trades   198   mean IS exp    -13.50   median IS exp    -11.63   share profitable  22.0%
+           1.1   n_cells  968   median trades   180   mean IS exp    -10.81   median IS exp    -10.28   share profitable  26.5%
+           1.2   n_cells  953   median trades   164   mean IS exp    -12.55   median IS exp    -12.29   share profitable  22.7%
+           1.4   n_cells  933   median trades   139   mean IS exp    -12.49   median IS exp    -11.90   share profitable  25.7%
+
+  buf
+           0.0   n_cells 1272   median trades   162   mean IS exp    -13.35   median IS exp    -11.90   share profitable  19.7%
+          0.05   n_cells 1279   median trades   163   mean IS exp    -14.40   median IS exp    -13.85   share profitable  21.6%
+           0.1   n_cells 1284   median trades   161   mean IS exp     -9.28   median IS exp     -8.18   share profitable  31.3%
+
+  stop
+          0.75   n_cells 1279   median trades   184   mean IS exp    -13.51   median IS exp    -11.75   share profitable  19.9%
+           1.0   n_cells 1279   median trades   179   mean IS exp    -15.29   median IS exp    -16.16   share profitable  26.6%
+           1.5   n_cells 1277   median trades   127   mean IS exp     -8.21   median IS exp     -8.60   share profitable  26.2%
+
+==========================================================================================================================
+C. THE TWO CONFIGURATIONS THE OUT-OF-SAMPLE BLOCK IS READ FOR
+==========================================================================================================================
+  multiplicity: 4,320 configurations were scored in-sample. Two are read out of sample:
+  (1) the spec exactly as written, which chose nothing here, and (2) the marginal
+  consensus -- the best setting of each axis taken independently from panel B, which is
+  NOT the best cell and is not expected to be.
+
+  marginal consensus: {'ttf': np.int64(5), 'htf': np.int64(15), 'atr_tf': np.int64(240), 'ratio': '0.3-1.5', 'vol': np.float64(1.1), 'buf': np.float64(0.1), 'stop': np.float64(1.5)}
+
+  spec as written
+  metric                                 development        validation     out-of-sample
+  trades                                          15                 5                11
+  % of sessions traded                         3.927             4.348             4.104
+  expectancy $/trade                         -88.307             127.6            25.392
+  net $                                     -1,324.6             638.0             279.3
+  profit factor                                0.367             4.152             1.250
+  win rate %                                  40.000            80.000            45.455
+  average win $                                127.7             210.1             279.2
+  average loss $                              -232.3            -202.4            -186.1
+  max drawdown $                            -1,604.4            -202.4            -389.0
+  Sharpe (daily, ann.)                        -1.352             1.765             0.327
+  longest losing streak                            3                 1                 2
+  mean R                                      -0.391             0.674             0.155
+  % trades with an ambiguous bar               0.000             0.000             0.000
+  % long                                      60.000            80.000            72.727
+
+  spec as written [2x slippage]
+  metric                                 development        validation     out-of-sample
+  trades                                          15                 5                11
+  % of sessions traded                         3.927             4.348             4.104
+  expectancy $/trade                         -90.140             126.5            24.119
+  net $                                     -1,352.1             632.5             265.3
+  profit factor                                0.358             4.109             1.236
+  win rate %                                  40.000            80.000            45.455
+  average win $                                125.9             209.0             278.0
+  average loss $                              -234.2            -203.4            -187.5
+  max drawdown $                            -1,626.4            -203.4            -391.5
+  Sharpe (daily, ann.)                        -1.375             1.754             0.310
+  longest losing streak                            3                 1                 2
+  mean R                                      -0.399             0.669             0.149
+  % trades with an ambiguous bar               0.000             0.000             0.000
+  % long                                      60.000            80.000            72.727
+
+  marginal consensus
+  metric                                 development        validation     out-of-sample
+  trades                                         111                 6                23
+  % of sessions traded                        29.058             5.217             8.582
+  expectancy $/trade                           6.223             133.0           -26.501
+  net $                                        690.8             798.0            -609.5
+  profit factor                                1.088             4.260             0.711
+  win rate %                                  48.649            66.667            30.435
+  average win $                                158.4             260.7             213.7
+  average loss $                              -137.9            -122.4            -131.6
+  max drawdown $                            -1,481.5            -235.9          -1,483.9
+  Sharpe (daily, ann.)                         0.295             2.018            -0.658
+  longest losing streak                            5                 1                 9
+  mean R                                       0.039             0.762            -0.106
+  % trades with an ambiguous bar               0.000             0.000             0.000
+  % long                                      54.054            50.000            47.826
+
+  marginal consensus [2x slippage]
+  metric                                 development        validation     out-of-sample
+  trades                                         111                 6                23
+  % of sessions traded                        29.058             5.217             8.582
+  expectancy $/trade                           5.354             132.2           -27.305
+  net $                                        594.3             793.0            -628.0
+  profit factor                                1.075             4.219             0.703
+  win rate %                                  47.748            66.667            30.435
+  average win $                                160.4             259.8             212.7
+  average loss $                              -136.3            -123.2            -132.3
+  max drawdown $                            -1,499.5            -236.4          -1,496.9
+  Sharpe (daily, ann.)                         0.254             2.009            -0.678
+  longest losing streak                            5                 1                 9
+  mean R                                       0.035             0.758            -0.110
+  % trades with an ambiguous bar               0.000             0.000             0.000
+  % long                                      54.054            50.000            47.826
+
+==========================================================================================================================
+D. DOUBLED SLIPPAGE, SIDE BY SIDE
+==========================================================================================================================
+  config                      block              expectancy      2x slip          Δ       PF    PF 2x
+  spec as written             development            -88.31       -90.14      -1.83    0.367    0.358
+  spec as written             validation             127.60       126.50      -1.10    4.152    4.109
+  spec as written             out-of-sample           25.39        24.12      -1.27    1.250    1.236
+  marginal consensus          development              6.22         5.35      -0.87    1.088    1.075
+  marginal consensus          validation             132.99       132.16      -0.83    4.260    4.219
+  marginal consensus          out-of-sample          -26.50       -27.31      -0.80    0.711    0.703
+
+==========================================================================================================================
+E. THE TOP TEN IN-SAMPLE CELLS, AND WHAT THEY DID OUT OF SAMPLE
+==========================================================================================================================
+ ttf  htf  atr_tf   ratio   vol   buf  stop  is_n  is_exp  oos_trades  oos_expectancy  oos_pf
+   1   15      30 0.3-1.5 1.100 0.050 0.750    20  77.292          11         102.242   2.593
+   1   15      30 0.3-1.5 1.200 0.050 0.750    20  77.292          11          85.407   2.331
+   1   60       5 0.3-2.5 1.200 0.100 1.000    20  57.217           8          16.523   1.159
+   1   60       5 0.3-2.5 1.100 0.100 1.000    20  56.499           8          16.523   1.159
+   1   60       5 0.3-2.5 1.100 0.100 1.500    20  51.141           8          51.593   1.625
+   1   60       5 0.3-2.5 1.200 0.100 1.500    20  50.118           8          51.593   1.625
+   1   15      30 0.3-1.5 1.000 0.100 0.750    22  49.562          12          99.774   2.679
+   5   60       5 0.2-2.0 1.100 0.100 0.750    58  47.351          25         -11.929   0.900
+   5   30       5 0.3-1.5 1.100 0.000 0.750    21  43.215          13          62.008   1.809
+   5   60       5 0.3-1.5 1.100 0.100 0.750    20  42.000          10          -6.043   0.947
+
+  mean IS expectancy of the top 10 +55.17 against OOS +46.77; that gap is the selection premium.
+  This block is printed BECAUSE it is not the answer, not as the answer.

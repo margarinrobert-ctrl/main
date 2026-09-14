@@ -1,0 +1,63 @@
+V63 stage B -- the four finalists frozen and read ONCE on every block of every market.
+
+US100's later blocks have not been touched. US30 and NQ have had NO part in the search at all, so
+they are the test, and `STUDY_V12_DONCHIAN_3020`'s shape applies: watch whether the market that
+CHOSE is the one that fails.
+
+Two nulls, because they ask different questions:
+  RANDOM ENTRY        same geometry, same block, matched trade count, same position lock. Asks
+                      whether the trigger and its filters are worth anything at all.
+  SAME-SELECTIVITY    a random subset of the TRIGGER's own bars, of the same size. Asks whether the
+  FILTER              VWAP and ATR conditions are worth anything GIVEN the trigger. Degenerate --
+                      and reported as such -- for a cell that filters nothing.
+
+==========================================================================================================================
+  cell                               market  block           n   pct/tr    total    PF    win     DD   boot |  filter p |  entry p
+  F1 marginal consensus              US100   research      262  +0.1086   +28.46  1.45  43.1%   5.76  0.021 |     0.339 |    0.100
+  F1 marginal consensus              US100   validation    107  +0.2785   +29.80  1.75  43.9%   8.82  0.015 |     0.061 |    0.000
+  F1 marginal consensus              US100   test          100  -0.0973    -9.73  0.72  30.0%  12.61  0.888 |     1.000 |    0.998
+     US100: keeps 19.4% of 11897 trigger bars
+  F1 marginal consensus              US30    research      243  +0.0511   +12.42  1.22  36.6%   7.69  0.186 |     0.981 |    0.710
+  F1 marginal consensus              US30    validation    111  +0.0382    +4.25  1.15  43.2%   8.74  0.313 |     0.682 |    0.182
+  F1 marginal consensus              US30    test           76  +0.2622   +19.93  3.03  59.2%   1.55  0.000 |     0.000 |    0.000
+     US30: keeps 19.6% of 10983 trigger bars
+  F1 marginal consensus              NQ      research      113  +0.1629   +18.41  1.65  38.9%   4.65  0.030 |     0.292 |    0.052
+  F1 marginal consensus              NQ      locked         53  +0.0340    +1.80  1.12  37.7%   5.28  0.390 |     0.100 |    0.378
+     NQ: keeps 19.9% of 3988 trigger bars
+
+  F2 top research Sharpe             US100   research      899  +0.1025   +92.11  1.64  39.9%   6.50  0.000 |     0.000 |    0.000
+  F2 top research Sharpe             US100   validation    324  +0.0680   +22.03  1.27  32.4%  10.31  0.087 |     0.005 |    0.033
+  F2 top research Sharpe             US100   test          325  +0.0214    +6.95  1.11  33.2%  11.84  0.300 |     0.460 |    0.600
+     US100: keeps 70.6% of 23830 trigger bars
+  F2 top research Sharpe             US30    research      861  +0.0594   +51.13  1.41  35.5%   9.71  0.001 |     0.060 |    0.033
+  F2 top research Sharpe             US30    validation    320  +0.0207    +6.64  1.12  33.4%   5.35  0.257 |     0.551 |    0.430
+  F2 top research Sharpe             US30    test          285  -0.0055    -1.56  0.96  31.9%  11.45  0.597 |     0.044 |    0.897
+     US30: keeps 68.3% of 21596 trigger bars
+  F2 top research Sharpe             NQ      research      352  +0.0369   +12.98  1.23  33.5%   5.59  0.110 |     0.723 |    0.482
+  F2 top research Sharpe             NQ      locked        185  +0.0512    +9.48  1.27  35.1%   9.83  0.176 |     0.032 |    0.142
+     NQ: keeps 70.3% of 8109 trigger bars
+
+  F3 top research total              US100   research      230  +0.5694  +130.96  2.28  23.9%  12.59  0.000 |     0.000 |    0.000
+  F3 top research total              US100   validation    100  +0.0817    +8.17  1.12  15.0%  17.39  0.384 |     0.389 |    0.122
+  F3 top research total              US100   test           86  +0.2194   +18.87  1.37  19.8%  20.02  0.189 |     0.162 |    0.383
+     US100: keeps 63.5% of 4916 trigger bars
+  F3 top research total              US30    research      242  +0.2574   +62.28  1.67  22.3%   8.84  0.007 |     0.664 |    0.250
+  F3 top research total              US30    validation     96  +0.0859    +8.25  1.19  14.6%  10.95  0.323 |     0.165 |    0.048
+  F3 top research total              US30    test           75  +0.1014    +7.60  1.27  16.0%   9.95  0.267 |     0.015 |    0.765
+     US30: keeps 63.2% of 4483 trigger bars
+  F3 top research total              NQ      research       98  +0.2697   +26.43  1.67  19.4%   5.53  0.068 |     0.802 |    0.527
+  F3 top research total              NQ      locked         54  -0.0142    -0.77  0.98  16.7%  19.30  0.541 |     0.032 |    0.820
+     NQ: keeps 65.3% of 1685 trigger bars
+
+  F4 the same trigger with NO VWAP   US100   research      534  +0.1504   +80.30  1.67  44.0%   4.30  0.000 |       nan |    0.000
+  F4 the same trigger with NO VWAP   US100   validation    192  -0.0287    -5.51  0.93  37.5%  14.64  0.647 |       nan |    0.242
+  F4 the same trigger with NO VWAP   US100   test          182  +0.0410    +7.46  1.14  40.7%  10.83  0.258 |       nan |    0.512
+     US100: keeps 100.0% of 7552 trigger bars
+  F4 the same trigger with NO VWAP   US30    research      501  +0.0581   +29.11  1.27  41.7%   8.69  0.036 |       nan |    0.113
+  F4 the same trigger with NO VWAP   US30    validation    199  -0.0171    -3.41  0.94  37.2%  11.13  0.630 |       nan |    0.610
+  F4 the same trigger with NO VWAP   US30    test          148  -0.0215    -3.18  0.91  39.2%  11.17  0.681 |       nan |    0.975
+     US30: keeps 100.0% of 7030 trigger bars
+  F4 the same trigger with NO VWAP   NQ      research      205  +0.0284    +5.82  1.12  38.0%   5.87  0.275 |       nan |    0.800
+  F4 the same trigger with NO VWAP   NQ      locked        105  -0.0402    -4.22  0.88  41.9%  12.54  0.680 |       nan |    0.667
+     NQ: keeps 100.0% of 2520 trigger bars
+

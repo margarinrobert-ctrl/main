@@ -8,7 +8,7 @@ SPACE = dict(minutes=[15,30,60], swing_k=[2,3,4,5,6], ema_n=[50,100,200,300], at
     atr_mult=[1.0,1.5,2.0,2.5,3.0,4.0], n_bos=[1,2,3], use_ema=[0,1], use_choch=[0,1],
     max_hold=[0,10,20,40], min_ema_dist=[0.0,0.5,1.0,1.5,2.0], side_mode=[-1,0,1])
 keys=list(SPACE)
-rows=np.load("/tmp/mega_rows.npy")
+rows=np.load("results/mnq/mega_rows.npy")
 ok=rows[:,4]>=20; idx=np.where(ok)[0]; R=rows[ok]
 rSh,lSh=R[:,1],R[:,3]
 

@@ -1,0 +1,385 @@
+// ================================================================================================
+// US30 VOLUME PROFILE + DONCHIAN + ATR -- docs/ib/STUDY_VP_DONCHIAN_US30.md
+//
+// NO EDGE IS CLAIMED, AND EVERY PROFILE GATE SHIPS DEFAULT OFF. Read this before the inputs.
+//
+// The profile here is REAL and computed on the chart: each completed session is binned at
+// 0.10 x that session's own mean ATR, every bar's volume is spread uniformly across its own
+// [low, high], and the value area is grown outward from the POC always taking the richer
+// neighbour until it holds 70% of the session's volume. That is bar-for-bar the construction in
+// research/vpus30/vpcore.py. The prior session's POC / VAH / VAL are frozen and plotted, and the
+// last 20 sessions' POCs are kept so the stacked-POC counts can be read.
+//
+// ------------------------------------------------------------------------------------------
+// WHAT THE PROFILE IS WORTH, MEASURED
+// ------------------------------------------------------------------------------------------
+// The base rule (Donchian 55, 3.0 ATR stop, opposite 20-bar channel exit, no target, both sides)
+// is PROFITABLE on both blocks and INDISTINGUISHABLE FROM A COIN FLIP: against a risk-matched
+// random entry -- same count, same side mix, same exits, re-simulated end to end so only the entry
+// bar moves -- 0 of 8 declared cells clear p<=0.05, best p 0.150 against 0.4 expected by chance.
+//
+//   base                 blk        n   net %  gross %     PF  cost/risk  control      p
+//   don55 3.0N both      research 1477  0.0209  0.0293  1.087     0.017  -0.0020  0.150
+//   don55 3.0N both      HOLDOUT   529  0.0243  0.0302  1.124     0.014   0.0116  0.307
+//
+// 66 causal features were then screened as VETOES on those events -- refusing a signal releases
+// the position lock, so every cell is re-simulated end to end -- against a random gate of the same
+// selectivity. 8 of 128 cells cleared p<=0.05 where 6.4 are expected by chance, i.e. the pool as a
+// whole is at its own noise floor. The four leaders are all volume-profile columns and are the
+// four gates below:
+//
+//   gate                RESEARCH  n    net %     PF     p   |  HOLDOUT  n    net %     PF     p
+//   (base, no gate)          1477  0.0209  1.087    -    |            529  0.0243  1.124    -
+//   prior session bullish     348  0.1039  1.465  0.000  |            138  0.0274  1.148  0.457
+//   stacked POC (5) >= 1      426  0.0950  1.434  0.000  |            138  0.0286  1.145  0.460
+//   stacked POC (20) >= 1     702  0.0655  1.291  0.005  |            236  0.0395  1.202  0.290
+//   inside prior value area   349  0.0665  1.289  0.005  |            131 -0.0410  0.781  0.910
+//
+// The holdout p-values are against a RANDOM GATE keeping the same number of trades. Not one of the
+// four clears. `inside prior value area` is worse than the ungated base out of sample and worse
+// than a random gate of its own size, so it is the one to distrust most. The holdout column is
+// also a SECOND read of that block and is therefore DESCRIPTIVE -- the single pre-declared read
+// was spent on a 40-feature ridge, which returned uplift +0.0016 with IC -0.0032 and a random gate
+// of the same size earning MORE (p 0.525), at a deflated Sharpe of 0.427 against an expected
+// best-of-noise 0.0452 over 157 counted looks.
+//
+// So: the profile is here because it was asked for and because it is the only part of the pool
+// that reached the top of the screen. It is off because nothing in it survived the holdout.
+//
+// ------------------------------------------------------------------------------------------
+// TWO THINGS THAT WILL SILENTLY BREAK THE PROFILE
+// ------------------------------------------------------------------------------------------
+// 1. VOLUME. `US30_LONG_15m` carries Volume = 0 on 100% of rows and TickVolume as the real column,
+//    so every profile in the research is a TICK COUNT profile. If your feed reports no volume this
+//    script would build an empty histogram, so the volume source input falls back to ONE UNIT PER
+//    BAR (a TPO-shaped profile) and the panel tells you which one is live. A tick is not a
+//    contract and neither is a bar; the caveat travels with any number you read off this.
+// 2. TIMEFRAME AND SESSION. `hour`/`minute` and the session input are EXCHANGE time, not New York.
+//    The profile is built on the input session's bars only, and the research used 09:30-16:00 on a
+//    15-minute chart. On a much finer chart the bin count per session rises and the profile is a
+//    different object.
+//
+// PROFILE PARITY (research/vpus30/vp_parity.py -- this script's profile transliterated and diffed
+// against vpcore.sessions over all 2,246 sessions):
+//     with the session-only ATR ON (the default)   POC / VAL / VAH identical 1.0000, max diff 0.0
+//                                                  bin count identical 1.0000
+//     with a chart ATR instead                     corr 0.99998 but identical 0.0000, because the
+//                                                  chart ATR is 0.884x the RTH-only one, so every
+//                                                  bin edge moves -- median POC shift 0.036 ATR,
+//                                                  shape agrees 96.5%, stacked-POC>=1 agrees 96.5%
+// That input exists because the difference is invisible in a correlation and total in the bins.
+//
+// PARITY on the base rule (research/vpus30/don_parity.py -- the script's own order model written
+// out in Python and diffed against the engine): trade count 0.993, side agreement 1.0000,
+// per-trade correlation 0.9997, script +6.1% research / +0.7% holdout. The exit bar differs on two
+// trades in three BY CONSTRUCTION -- the engine takes a channel break at that bar's CLOSE, which
+// no script can order, so this one fills at the next open -- and the script reads slightly BETTER,
+// which is the non-conservative direction and is why the gap is printed rather than buried.
+//
+// ATR is ta.ema(ta.tr(true), n), NOT ta.atr (Wilder's), because that is what the research uses.
+// Exits run on every bar including the overnight session: load the chart with EXTENDED HOURS ON.
+// ================================================================================================
+//@version=5
+strategy("US30 Volume Profile + Donchian + ATR", overlay = true, max_bars_back = 1000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000, currency = currency.USD,
+     commission_type = strategy.commission.cash_per_order, commission_value = 1.145,
+     slippage = 0, pyramiding = 0, calc_on_every_tick = false,
+     process_orders_on_close = false)
+
+// ---------------------------------------------------------------------------------------------
+// inputs
+// ---------------------------------------------------------------------------------------------
+grpR  = "Rule"
+entN  = input.int(55, "Entry channel (bars)", minval = 2, group = grpR,
+     tooltip = "Close beyond the highest high / lowest low of the previous N bars. 55 and 20 are " +
+               "the two declared settings; neither clears the random-entry control.")
+exN   = input.int(20, "Exit channel (bars)", minval = 2, group = grpR)
+atrN  = input.int(14, "ATR length", minval = 2, group = grpR)
+slN   = input.float(3.0, "Stop (x ATR)", minval = 0.25, step = 0.25, group = grpR,
+     tooltip = "Declared at 2.0 and 3.0. The stop axis is monotone toward wider across this whole " +
+               "branch; 3.0 is the wider declared rung, not a swept optimum.")
+sideI = input.string("both", "Side", options = ["both", "long only", "short only"], group = grpR)
+
+grpS    = "Session"
+sessStr = input.session("0930-1600", "RTH window (exchange time)", group = grpS,
+     tooltip = "Entries are restricted to this window and the profile is built from its bars. " +
+               "EXITS always run on every bar, including overnight.")
+useSess = input.bool(true, "Entries in this window only", group = grpS)
+useFlat = input.bool(false, "Flatten at a fixed time", group = grpS,
+     tooltip = "OFF. A hard flatten has cost 55-86% of the per-trade result on every trend family " +
+               "measured on this branch -- fifteen separate confirmations.")
+flatH   = input.int(16, "Flatten hour (exchange time)", minval = 0, maxval = 23, group = grpS)
+flatM   = input.int(0, "Flatten minute", minval = 0, maxval = 59, group = grpS,
+     tooltip = "\"Flat by 16:00\" means flat at the 16:00 OPEN, so the order goes in on the bar " +
+               "before -- a close submitted ON the 16:00 bar fills at 16:15.")
+
+grpP    = "Volume profile"
+volSrc  = input.string("auto", "Volume source", options = ["auto", "volume", "one per bar"],
+     group = grpP,
+     tooltip = "auto = use the feed's volume when it is non-zero, otherwise fall back to one unit " +
+               "per bar (a TPO-shaped profile). The panel shows which is live.")
+binAtr  = input.float(0.10, "Bin width (x session ATR)", minval = 0.01, step = 0.01, group = grpP,
+     tooltip = "Scale-free by construction, so the bin count does not drift with the index level " +
+               "over nine years. 0.10 is the research value.")
+vaFrac  = input.float(0.70, "Value area fraction", minval = 0.30, maxval = 0.95, step = 0.05,
+     group = grpP)
+stkAtr  = input.float(0.5, "Stacked-POC tolerance (x ATR)", minval = 0.05, step = 0.05, group = grpP,
+     tooltip = "A prior session's POC counts as stacked at price when it sits within this many " +
+               "ATR of the current close. 0.5 is the research value.")
+sessAtr = input.bool(true, "Size bins from a SESSION-ONLY ATR", group = grpP,
+     tooltip = "ON reproduces the research exactly. The research computes ATR on the RTH-only " +
+               "frame; a chart ATR sees the overnight too and runs 0.884x of it here, which moves " +
+               "every bin edge -- measured, that is 0.0000 identical bin counts and a 0.036 ATR " +
+               "median shift in the POC. OFF to see the chart-ATR version.")
+showVP  = input.bool(true, "Plot the prior session's POC / VAH / VAL", group = grpP)
+showHud = input.bool(true, "Show the profile panel", group = grpP)
+
+grpG    = "Profile gates -- all DEFAULT OFF, none survives the holdout"
+gBull   = input.bool(false, "Require the prior session to be BULLISH", group = grpG,
+     tooltip = "Close in the upper half of the session range and outside the value area. " +
+               "research n 348 / +0.1039 %/trade / PF 1.465 / p 0.000  ->  " +
+               "holdout n 138 / +0.0274 / PF 1.148 / p 0.457 against a random gate the same size.")
+gS5     = input.bool(false, "Require >= 1 stacked POC in the last 5 sessions", group = grpG,
+     tooltip = "research n 426 / +0.0950 / PF 1.434 / p 0.000  ->  " +
+               "holdout n 138 / +0.0286 / PF 1.145 / p 0.460.")
+gS20    = input.bool(false, "Require >= 1 stacked POC in the last 20 sessions", group = grpG,
+     tooltip = "research n 702 / +0.0655 / PF 1.291 / p 0.005  ->  " +
+               "holdout n 236 / +0.0395 / PF 1.202 / p 0.290. The least selective of the four.")
+gInVA   = input.bool(false, "Require price INSIDE the prior value area", group = grpG,
+     tooltip = "THE WORST OF THE FOUR. research n 349 / +0.0665 / PF 1.289 / p 0.005  ->  " +
+               "holdout n 131 / -0.0410 / PF 0.781 / p 0.910 -- it LOSES money out of sample and " +
+               "a random gate of its own size beats it. Present so it can be seen, not used.")
+
+// ---------------------------------------------------------------------------------------------
+// price series
+// ---------------------------------------------------------------------------------------------
+atr   = ta.ema(ta.tr(true), atrN)
+entHi = ta.highest(high, entN)[1]          // channels EXCLUDE the current bar, as the research does
+entLo = ta.lowest(low,  entN)[1]
+exHi  = ta.highest(high, exN)[1]
+exLo  = ta.lowest(low,  exN)[1]
+
+inSess    = not na(time(timeframe.period, sessStr))
+sessOpen  = inSess and not inSess[1]
+sessShut  = not inSess and inSess[1]       // first bar AFTER the window closed
+
+vRaw = nz(volume)
+vUse = volSrc == "one per bar" ? 1.0 : (volSrc == "volume" ? vRaw : (vRaw > 0 ? vRaw : 1.0))
+
+// ---------------------------------------------------------------------------------------------
+// a SESSION-ONLY ATR, because the research computes ATR on the RTH-only frame
+//
+// This is an EMA of true range taken over in-session bars only, never reset, so the previous close
+// it differences against is the previous SESSION bar's close. It sizes the profile bins and the
+// stacked-POC tolerance. The STOP keeps the chart ATR, which is what the research engine uses.
+// ---------------------------------------------------------------------------------------------
+var float rthPrevC = na
+var float rthAtr   = na
+rthAlpha = 2.0 / (atrN + 1)
+if barstate.isconfirmed and inSess
+    pc = na(rthPrevC) ? close : rthPrevC
+    tr = math.max(high - low, math.max(math.abs(high - pc), math.abs(low - pc)))
+    rthAtr   := na(rthAtr) ? tr : rthAtr + rthAlpha * (tr - rthAtr)
+    rthPrevC := close
+
+vpAtr = sessAtr ? rthAtr : atr
+
+// ---------------------------------------------------------------------------------------------
+// the session accumulator
+// ---------------------------------------------------------------------------------------------
+var float[] sH = array.new_float()
+var float[] sL = array.new_float()
+var float[] sV = array.new_float()
+var float sLo = na
+var float sHi = na
+var float sAtrSum = 0.0
+var int   sAtrN = 0
+
+if barstate.isconfirmed and inSess
+    if sessOpen
+        array.clear(sH)
+        array.clear(sL)
+        array.clear(sV)
+        sLo := low
+        sHi := high
+        sAtrSum := 0.0
+        sAtrN := 0
+    array.push(sH, high)
+    array.push(sL, low)
+    array.push(sV, vUse)
+    sLo := na(sLo) ? low : math.min(sLo, low)
+    sHi := na(sHi) ? high : math.max(sHi, high)
+    if not na(vpAtr)
+        sAtrSum += vpAtr
+        sAtrN += 1
+
+// ---------------------------------------------------------------------------------------------
+// the completed profile -- built once, on the first bar after the window closes
+//
+// A Pine function may not assign to a global, so this returns the whole profile as a tuple and
+// every stored value is written in the main scope below. Mutating an array passed in is legal and
+// is how the histogram is filled.
+// ---------------------------------------------------------------------------------------------
+profile(float[] ah, float[] al, float[] av, float lo0, float binw, int nb, float frac) =>
+    hist = array.new_float(nb, 0.0)
+    n = array.size(ah)
+    for i = 0 to n - 1
+        a = int(math.floor((array.get(al, i) - lo0) / binw))
+        b = int(math.floor((array.get(ah, i) - lo0) / binw))
+        a := math.max(a, 0)
+        b := math.min(b, nb - 1)
+        b := math.max(b, a)
+        w = array.get(av, i) / (b - a + 1)
+        for k = a to b
+            array.set(hist, k, array.get(hist, k) + w)
+    tot = array.sum(hist)
+    poc = array.indexof(hist, array.max(hist))
+    lo = poc
+    hi = poc
+    got = array.get(hist, poc)
+    while got < frac * tot and (lo > 0 or hi < nb - 1)
+        dn = lo > 0 ? array.get(hist, lo - 1) : -1.0
+        up = hi < nb - 1 ? array.get(hist, hi + 1) : -1.0
+        if up >= dn
+            hi += 1
+            got += array.get(hist, hi)
+        else
+            lo -= 1
+            got += array.get(hist, lo)
+    [lo0 + (poc + 0.5) * binw, lo0 + (lo + 0.5) * binw, lo0 + (hi + 0.5) * binw, tot]
+
+// frozen prior-session values, read from the next session's first bar onward
+var float pPoc = na
+var float pVah = na
+var float pVal = na
+var float pLo  = na
+var float pHi  = na
+var int   pShape = 0                       // 1 bullish, -1 bearish, 0 neutral
+var int   pBins = 0
+var float[] pocHist = array.new_float()    // POCs of completed sessions, oldest first
+
+if barstate.isconfirmed and sessShut and array.size(sH) >= 8 and not na(sLo) and sHi > sLo
+     and sAtrN > 0
+    mAtr = sAtrSum / sAtrN
+    binw = math.max(binAtr * mAtr, 1e-6)
+    nb   = int(math.ceil((sHi - sLo) / binw)) + 1
+    if nb >= 5 and nb <= 4000
+        [pc, vl, vh, tt] = profile(sH, sL, sV, sLo, binw, nb, vaFrac)
+        if tt > 0
+            pPoc  := pc
+            pVal  := vl
+            pVah  := vh
+            pLo   := sLo
+            pHi   := sHi
+            pBins := nb
+            cl    = close[1]                       // the session's last close
+            cpos  = (cl - sLo) / (sHi - sLo)
+            inVa  = cl >= vl and cl <= vh
+            pShape := inVa ? 0 : (cpos >= 0.5 ? 1 : -1)
+            array.push(pocHist, pc)
+            if array.size(pocHist) > 20
+                array.shift(pocHist)
+
+// ---------------------------------------------------------------------------------------------
+// the profile-derived conditions, read at the signal bar
+// ---------------------------------------------------------------------------------------------
+stackCount(int k, float px, float tol) =>
+    n = array.size(pocHist)
+    cnt = 0
+    if n >= k
+        for i = n - k to n - 1
+            if math.abs(array.get(pocHist, i) - px) <= tol
+                cnt += 1
+    cnt
+
+tol   = na(vpAtr) ? na : stkAtr * vpAtr
+stk5  = na(tol) ? 0 : stackCount(5,  close, tol)
+stk20 = na(tol) ? 0 : stackCount(20, close, tol)
+inVaNow = not na(pVal) and not na(pVah) and close >= pVal and close <= pVah
+
+okBull = not gBull or pShape == 1
+okS5   = not gS5   or stk5  >= 1
+okS20  = not gS20  or stk20 >= 1
+okInVA = not gInVA or inVaNow
+vpOk   = okBull and okS5 and okS20 and okInVA and (not (gBull or gS5 or gS20 or gInVA)
+     or not na(pPoc))
+
+// ---------------------------------------------------------------------------------------------
+// entries
+// ---------------------------------------------------------------------------------------------
+longAllowed  = sideI != "short only"
+shortAllowed = sideI != "long only"
+rawLong  = close > entHi and longAllowed
+rawShort = close < entLo and shortAllowed
+
+canEnter = barstate.isconfirmed and (not useSess or inSess) and not na(atr) and atr > 0
+     and not na(entHi) and not na(entLo) and strategy.position_size == 0 and vpOk
+
+goLong  = canEnter and rawLong
+goShort = canEnter and rawShort and not rawLong
+
+// the bracket distance is captured at the SIGNAL bar and expressed in ticks, so strategy.exit can
+// be armed with the entry and the fill bar is never naked
+var float pendRisk = na
+if goLong or goShort
+    pendRisk := slN * atr
+lossTicks = na(pendRisk) ? na : math.max(1.0, pendRisk / syminfo.mintick)
+
+if goLong
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = lossTicks)
+if goShort
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", from_entry = "S", loss = lossTicks)
+
+// channel exit -- the engine takes it at this bar's close, a script at the next bar's open
+if barstate.isconfirmed and strategy.position_size > 0 and not na(exLo) and close < exLo
+    strategy.close("L", comment = "chan")
+if barstate.isconfirmed and strategy.position_size < 0 and not na(exHi) and close > exHi
+    strategy.close("S", comment = "chan")
+
+// optional flatten -- submitted on the bar BEFORE the cutoff so it fills at the cutoff's open
+tfMin   = math.max(1, timeframe.in_seconds(timeframe.period) / 60)
+barMin  = hour * 60 + minute
+flatMin = flatH * 60 + flatM
+if useFlat and barstate.isconfirmed and strategy.position_size != 0
+     and barMin < flatMin and barMin + tfMin >= flatMin
+    strategy.close_all(comment = "flat")
+
+// ---------------------------------------------------------------------------------------------
+// plots and panel
+// ---------------------------------------------------------------------------------------------
+plot(showVP ? pPoc : na, "prior POC", color = color.new(color.red, 0), style = plot.style_linebr)
+plot(showVP ? pVah : na, "prior VAH", color = color.new(color.blue, 30),
+     style = plot.style_linebr)
+plot(showVP ? pVal : na, "prior VAL", color = color.new(color.blue, 30),
+     style = plot.style_linebr)
+plot(entHi, "entry high", color = color.new(color.teal, 45))
+plot(entLo, "entry low",  color = color.new(color.teal, 45))
+plot(exHi,  "exit high",  color = color.new(color.orange, 65))
+plot(exLo,  "exit low",   color = color.new(color.orange, 65))
+bgcolor(useSess and inSess ? color.new(color.gray, 92) : na, title = "entry window")
+
+var table hud = table.new(position.top_right, 2, 8, border_width = 1)
+if showHud and barstate.islast
+    srcTxt = volSrc == "one per bar" ? "one per bar (TPO)" :
+         (volSrc == "volume" ? "feed volume" : (nz(volume) > 0 ? "feed volume" : "one per bar (TPO)"))
+    shapeTxt = pShape == 1 ? "bullish" : (pShape == -1 ? "bearish" : "neutral")
+    table.cell(hud, 0, 0, "volume source", text_size = size.small)
+    table.cell(hud, 1, 0, srcTxt, text_size = size.small)
+    table.cell(hud, 0, 1, "sessions profiled", text_size = size.small)
+    table.cell(hud, 1, 1, str.tostring(array.size(pocHist)), text_size = size.small)
+    table.cell(hud, 0, 2, "bins last session", text_size = size.small)
+    table.cell(hud, 1, 2, str.tostring(pBins), text_size = size.small)
+    table.cell(hud, 0, 3, "prior POC", text_size = size.small)
+    table.cell(hud, 1, 3, str.tostring(pPoc, format.mintick), text_size = size.small)
+    table.cell(hud, 0, 4, "prior VAL / VAH", text_size = size.small)
+    table.cell(hud, 1, 4, str.tostring(pVal, format.mintick) + " / " +
+         str.tostring(pVah, format.mintick), text_size = size.small)
+    table.cell(hud, 0, 5, "prior shape", text_size = size.small)
+    table.cell(hud, 1, 5, shapeTxt, text_size = size.small)
+    table.cell(hud, 0, 6, "stacked POC 5 / 20", text_size = size.small)
+    table.cell(hud, 1, 6, str.tostring(stk5) + " / " + str.tostring(stk20), text_size = size.small)
+    table.cell(hud, 0, 7, "inside prior VA", text_size = size.small)
+    table.cell(hud, 1, 7, inVaNow ? "yes" : "no", text_size = size.small)

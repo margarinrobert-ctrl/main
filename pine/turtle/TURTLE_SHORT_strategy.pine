@@ -1,0 +1,236 @@
+//@version=5
+// Turtle Trading, SHORT ONLY -- the exact mirror of TURTLE_LONG_strategy.pine.
+//
+// ======================= READ THIS BEFORE YOU RUN IT: THE MIRROR LOSES =======================
+// MIRRORING THE CODE IS TRIVIAL. MIRRORING THE EVIDENCE IS NOT POSSIBLE, because every constant
+// in the long presets was fitted on long trades. So the mirror was MEASURED rather than assumed.
+// NQ futures, 20/55 entry channels, 10/20 exit channels, 2N stop, 0.5N ladder, max 4 units,
+// skip-after-winner on, MNQ fees and slippage, 65/35 session split, out-of-sample read once:
+//
+//   timeframe  side    block       trades   pts/trade      PF     net points
+//     60m      long    research      348       +9.17      1.08       +3,190
+//     60m      SHORT   research      337      -47.03      0.65      -15,848
+//     60m      SHORT   LOCKED        165      -55.88      0.73       -9,221
+//    120m      SHORT   research      145      -61.44      0.68       -8,908
+//    120m      SHORT   LOCKED         72     -147.50      0.55      -10,620
+//    240m      SHORT   research       74     -184.46      0.36      -13,650
+//    240m      SHORT   LOCKED         44     -311.67      0.39      -13,713
+//
+// SIX CELLS OUT OF SIX ARE LOSSES, on both blocks and all three timeframes, profit factor 0.36
+// to 0.73. This is not a near miss that a parameter fixes. It also matches the original Turtle
+// programme, where the short side inverted from +0.098 R in sample to -0.403 out of sample.
+//
+// WHAT THAT MEASUREMENT CANNOT TELL YOU, and it matters more than the table. NQ rose 89% across
+// this sample and 81% of its bars sit in a daily uptrend. A short book therefore LOSES BY
+// EXISTING here, and no control available on this data can separate "the mirror is broken" from
+// "this sample had nothing to short". So read the table as: the mirror is not rescued by its own
+// rules on a rising market. Whether it works in a falling one is UNTESTED, and it needs history
+// this research does not have.
+//
+// THE PRESET CONSTANTS ARE NOT MEASURED ON THIS SIDE. ADX < 22 and the 3.964 / 3.193 extension
+// caps were fitted long. They are offered below because removing them would silently change the
+// system, but treat them as an unfitted guess wearing fitted numbers -- which is why this script
+// defaults to "Spec defaults (no gate)" rather than to a preset that pretends to be measured.
+//
+// ATR NOTE. ta.atr() is Wilder's RMA, which is what the Turtle definition and the Python engine
+// both use -- a deliberate departure from this repo's usual ta.ema(ta.tr(true), n).
+// ============================================================================================
+
+strategy("Turtle Short-Only (mirror)", overlay = true, pyramiding = 4,
+         default_qty_type = strategy.fixed, default_qty_value = 1,
+         initial_capital = 100000, calc_on_every_tick = false,
+         process_orders_on_close = false,
+         commission_type = strategy.commission.cash_per_order,
+         commission_value = 0.72, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES -- WHAT TO SET AND WHY =====================
+//   Script execution        ON BAR CLOSE, nothing else. See docs/ib/STUDY_TICK_RECALC.md.
+//   Bar detalization        High, with Deep Backtesting.
+//   Order execution delay   One tick.
+//   Commission              CASH PER ORDER, charged per side. MNQ ~$0.72, NQ ~$2.05 (this repo's
+//                           model, not a quote). With pyramiding 4 a full ladder pays it EIGHT
+//                           times. Use PERCENT only on crypto or FX.
+//   Slippage                2 ticks. A stop fills INTO the move that triggered it, so one tick is
+//                           optimistic for a stop-exit system.
+//   Leverage = Infinity     stops the emulator silently REJECTING unfundable orders -- right for
+//                           measuring rules, but the % figures are then not an account return.
+//                           Read the DOLLAR drawdown.
+// ============================================================================================
+
+presetName = input.string("Spec defaults (no gate)", "Preset", options = [
+     "Spec defaults (no gate)",
+     "T1  240m  ADX<22 + not extended (UNFITTED on this side)",
+     "T2  240m  ADX<22 (UNFITTED on this side)",
+     "T3  120m  ADX<22 (UNFITTED on this side)",
+     "T4   60m  ADX<22 + not extended (UNFITTED on this side)",
+     "Custom"])
+
+unitQty = input.float(1.0, "Units per Turtle unit", minval = 0.01, step = 0.01,
+     group = "Position size",
+     tooltip = "Lower this rather than raising capital if the HUD says the ladder does not fit. A rejected order is not neutral -- rejections cluster where the position is already large, so what gets dropped is systematic.")
+
+sessOn    = input.bool(false, "Restrict entries to a session", group = "Entry session (free)")
+sessStart = input.session("0000-0000", "Entry session", group = "Entry session (free)",
+     tooltip = "Only the decision to OPEN is gated; exits are never gated, because a Turtle position is held for days. On the LONG side an RTH-only window was harmful and 08:00-20:00 was best. That was not re-measured on the short side.")
+sessTZ    = input.string("America/New_York", "Session timezone", group = "Entry session (free)",
+     options = ["America/New_York", "America/Chicago", "Europe/London", "UTC"])
+
+cEntry1   = input.int(20,  "Custom entry 1 (bars)", minval = 2, group = "Custom only")
+cEntry2   = input.int(55,  "Custom entry 2 (bars)", minval = 2, group = "Custom only")
+cExit1    = input.int(10,  "Custom exit 1 (bars)",  minval = 2, group = "Custom only")
+cExit2    = input.int(20,  "Custom exit 2 (bars)",  minval = 2, group = "Custom only")
+cAtrMult  = input.float(2.0, "Custom ATR stop multiple", minval = 0.1, group = "Custom only")
+cPyrStep  = input.float(0.5, "Custom pyramid step (N)", minval = 0.0, group = "Custom only")
+cMaxUnits = input.int(4,   "Custom max units", minval = 1, maxval = 4, group = "Custom only")
+cAdxMax   = input.float(0, "Custom ADX ceiling (0 = off)", minval = 0, group = "Custom only")
+cExtMax   = input.float(0, "Custom max distance BELOW EMA100 in ATR (0 = off)", minval = 0, group = "Custom only")
+
+isCustom = presetName == "Custom"
+isSpec   = presetName == "Spec defaults (no gate)"
+entry1   = isCustom ? cEntry1   : 20
+entry2   = isCustom ? cEntry2   : 55
+exit1    = isCustom ? cExit1    : 10
+exit2    = isCustom ? cExit2    : 20
+atrLen   = 20
+atrMult  = isCustom ? cAtrMult  : 2.0
+pyrStep  = isCustom ? cPyrStep  : 0.5
+maxUnits = isCustom ? cMaxUnits : 4
+skipWin  = true
+
+adxMax = switch presetName
+    "Spec defaults (no gate)"                              => 0.0
+    "T1  240m  ADX<22 + not extended (UNFITTED on this side)" => 22.0
+    "T2  240m  ADX<22 (UNFITTED on this side)"                => 22.0
+    "T3  120m  ADX<22 (UNFITTED on this side)"                => 22.0
+    "T4   60m  ADX<22 + not extended (UNFITTED on this side)" => 22.0
+    => cAdxMax
+
+extMax = switch presetName
+    "T1  240m  ADX<22 + not extended (UNFITTED on this side)" => 3.964
+    "T4   60m  ADX<22 + not extended (UNFITTED on this side)" => 3.193
+    => isCustom ? cExtMax : 0.0
+
+designTF = switch presetName
+    "T1  240m  ADX<22 + not extended (UNFITTED on this side)" => "240"
+    "T2  240m  ADX<22 (UNFITTED on this side)"                => "240"
+    "T3  120m  ADX<22 (UNFITTED on this side)"                => "120"
+    "T4   60m  ADX<22 + not extended (UNFITTED on this side)" => "60"
+    => timeframe.period
+
+onDesignTF = isCustom or isSpec or timeframe.period == designTF
+
+// ----------------------------------------------------------------- series
+// MIRRORED: entries break the channel LOW, exits reclaim the channel HIGH.
+atrN    = ta.atr(atrLen)
+chanLo1 = ta.lowest(low,  entry1)
+chanLo2 = ta.lowest(low,  entry2)
+chanHi1 = ta.highest(high, exit1)
+chanHi2 = ta.highest(high, exit2)
+ema100  = ta.ema(close, 100)
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)
+// MIRRORED: "extended" now means far BELOW the mean, so the sign of the distance flips.
+distEma = atrN > 0 ? (ema100 - close) / atrN : 0.0
+
+adxOk  = adxMax <= 0 or adxVal < adxMax
+extOk  = extMax <= 0 or distEma < extMax
+inSess = not sessOn or not na(time(timeframe.period, sessStart, sessTZ))
+gateOk = adxOk and extOk and inSess and onDesignTF
+
+// ----------------------------------------------------------------- state
+var float stopLvl   = na
+var float nextAdd   = na
+var float firstFill = na
+var float pendAtr   = na
+var int   unitsOn   = 0
+var int   sysOn     = 0
+var int   lastCount = 0
+var bool  lastWin   = false
+
+// EVERY BLOCK THAT WRITES var STATE IS GUARDED, AND SO IS THE EXIT CALL. Guarding only some of a
+// coupled set desynchronises them: on the long script, guarding the state while leaving
+// strategy.exit open let a mid-bar fill find stopLvl still `na`, so the exit fell through to the
+// channel level and cut positions early. See docs/ib/STUDY_TICK_RECALC.md.
+
+// MIRRORED: a short wins when price ends BELOW the first fill.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCount > 0
+    lastWin   := close < firstFill
+    unitsOn   := 0
+    sysOn     := 0
+    stopLvl   := na
+    nextAdd   := na
+    lastCount := 0
+
+// MIRRORED: the stop sits ABOVE the fill and the ladder steps DOWN.
+if barstate.isconfirmed and strategy.opentrades > lastCount
+    fillPx = strategy.opentrades.entry_price(strategy.opentrades - 1)
+    anchorAtr = na(pendAtr) ? atrN : pendAtr
+    if lastCount == 0
+        firstFill := fillPx
+    stopLvl   := fillPx + atrMult * anchorAtr
+    nextAdd   := fillPx - pyrStep * anchorAtr
+    unitsOn   := strategy.opentrades
+    lastCount := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+// ----------------------------------------------------------------- entries
+// MIRRORED: the breakout is a new LOW.
+sig2 = low < chanLo2[1]
+sig1 = low < chanLo1[1]
+
+if barstate.isconfirmed and flat and gateOk and atrN > 0
+    if sig2
+        strategy.entry("S2", strategy.short, qty = unitQty)
+        sysOn   := 2
+        pendAtr := atrN
+    else if sig1
+        if skipWin and lastWin
+            lastWin := false
+        else
+            strategy.entry("S1", strategy.short, qty = unitQty)
+            sysOn   := 1
+            pendAtr := atrN
+
+// ----------------------------------------------------------------- pyramid adds
+// MIRRORED: add as price falls THROUGH the next rung.
+if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
+    if low <= nextAdd
+        strategy.entry("add" + str.tostring(unitsOn + 1), strategy.short, qty = unitQty)
+        pendAtr := atrN
+
+// ----------------------------------------------------------------- exit
+// MIRRORED: one stop at the LOWER of the ATR stop and the channel high, because rising price
+// reaches the lower of the two first -- the exact counterpart of math.max on the long side.
+chanExit  = sysOn == 1 ? chanHi1[1] : chanHi2[1]
+exitLevel = na(stopLvl) ? chanExit : (na(chanExit) ? stopLvl : math.min(stopLvl, chanExit))
+
+if barstate.isconfirmed and not flat and lastCount > 0 and not na(exitLevel)
+    strategy.exit("x", stop = exitLevel)
+
+// ----------------------------------------------------------------- plots
+plot(chanLo1, "Entry 1 (20-bar low)",  color = color.new(color.aqua, 40))
+plot(chanLo2, "Entry 2 (55-bar low)",  color = color.new(color.blue, 40))
+plot(chanHi1, "Exit 1 (10-bar high)",  color = color.new(color.red, 60))
+plot(chanHi2, "Exit 2 (20-bar high)",  color = color.new(color.purple, 60))
+plot(flat ? na : exitLevel, "Active stop", color = color.fuchsia, style = plot.style_linebr)
+
+sessChanged = sessOn and sessStart != "0000-0000"
+ladderCost  = close * maxUnits * unitQty * syminfo.pointvalue
+fundsOk     = ladderCost <= strategy.equity * 0.9
+unfitted    = not isSpec and not isCustom
+var table hud = table.new(position.top_right, 1, 5, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "SHORT MIRROR - measured NEGATIVE on all 6 cells",
+         text_color = color.white, bgcolor = color.new(color.red, 10))
+    table.cell(hud, 0, 1, presetName, text_color = color.white,
+         bgcolor = unfitted ? color.new(color.orange, 10) : color.new(color.gray, 40))
+    table.cell(hud, 0, 2, onDesignTF ? "timeframe OK" : "WRONG TIMEFRAME - needs " + designTF,
+         text_color = color.white, bgcolor = onDesignTF ? color.new(color.teal, 40) : color.red)
+    table.cell(hud, 0, 3, sessChanged ? "session " + sessStart + " " + sessTZ : "session: all hours",
+         text_color = color.white,
+         bgcolor = sessChanged ? color.new(color.orange, 20) : color.new(color.gray, 40))
+    table.cell(hud, 0, 4, fundsOk ? "ladder funded" :
+         "LADDER DOES NOT FIT - orders will be REJECTED (needs " +
+         str.tostring(math.round(ladderCost)) + " vs equity " +
+         str.tostring(math.round(strategy.equity)) + ")",
+         text_color = color.white, bgcolor = fundsOk ? color.new(color.teal, 40) : color.red)

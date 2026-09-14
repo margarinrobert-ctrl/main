@@ -1,0 +1,301 @@
+// ================================================================================================
+// V52 -- THE TURTLE WITH ONE ENTRY AND ONE EXIT, and the four requested filters, measured.
+//
+// This is the pasted "Turtle Long-Only (measured presets)" script with System 2 removed, the
+// pyramid ladder off by default, and six selectable conditions added -- the MA 200 as a level, an
+// EMA 13 x 48 cross, an absorption proxy, a session window with an optional flatten, and the
+// script's OWN two gates now available in BOTH directions.
+//
+// ================== THE HEADLINE: THIS SCRIPT'S OWN TWO GATES DO NOT SURVIVE ==================
+// 4,644,864 configurations swept. Every condition then scored against a RANDOM FILTER KEEPING THE
+// SAME SHARE OF THE SAME SIGNALS, 2,000 draws, on three blocks: US100 research (the only block
+// used to search), US100 locked, and the whole of US30, which had no part in anything. p is the
+// share of random filters that did as well or better, so LOW is good. Base: 240m, one entry
+// (20-bar), one exit (10-bar), 2.0N stop, ONE unit, no gate.
+//
+//   condition                          research         US100 locked      US30 held back
+//   base, no gate at all            +0.1730 PF1.45    +0.4090 PF2.21    +0.2557 PF1.71
+//   ADX < 22        (this script)   +0.2818 p 0.005   +0.4242 p 0.141   +0.2039 p 0.940  <- FAILS
+//   ADX >= 22       (inverted)      +0.1859 p 0.334   +0.4282 p 0.163   +0.3249 p 0.014
+//   ADX >= 25       (inverted)      +0.0703 p 1.000   +0.2597 p 0.963   +0.3416 p 0.011
+//   EMA100 < 3.964  (this script)   +0.2233 p 0.120   +0.4458 p 0.093   +0.2267 p 0.905  <- FAILS
+//   EMA100 >= 1.5   (inverted)      +0.2390 p 0.000   +0.3430 p 0.968   +0.2488 p 0.805
+//   BOTH this script's gates        +0.3776 p 0.000   +0.4670 p 0.066   +0.1524 p 0.983  <- FAILS
+//   BOTH inverted                   +0.2795 p 0.001   +0.4144 p 0.223   +0.3500 p 0.005
+//   MA200 >= 1.5 ATR above          +0.2312 p 0.000   +0.3163 p 0.994   +0.2463 p 0.853
+//   MA200 above & within 3.0 ATR    +0.1931 p 0.303   +0.3716 p 0.221   +0.2022 p 0.761
+//   EMA13 > EMA48 (state)           +0.2824 p 0.000   +0.3831 p 0.784   +0.2640 p 0.413
+//   EMA13 x 48 cross <= 20 bars     +0.4419 p 0.000   +0.3343 p 0.483   +0.1953 p 0.964
+//   avoid SELLER absorption <= 20   +0.1593 p 0.793   +0.2989 p 0.999   +0.2718 p 0.177
+//   require SELLER absorption <=20  +0.3821 p 0.004   +0.5669 p 0.017   +0.2721 p 0.380  (n 48/22/49)
+//   session 08:00-12:00             +0.2292 p 0.138   +0.3974 p 0.189   +0.2262 p 0.766
+//   session 08:00-12:00 + FLATTEN   +0.0058 p 0.138   +0.0106 p 0.750   +0.0148 p 0.861
+//
+// NOTHING CLEARS ALL THREE BLOCKS. That is the result, and it is why every condition below
+// defaults to OFF. Read three things out of the table:
+//
+// 1. `ADX < 22` -- the gate every preset in the pasted script hard-codes -- clears research at
+//    p 0.005 and is BEATEN BY A RANDOM FILTER on the market that had no part in the search
+//    (+0.2039 against the control's +0.2658, p 0.940). Both of the script's gates together read
+//    p 0.983 there. The gates are not carrying the presets; the exits and the drift are.
+// 2. THE INVERSIONS ARE REAL BUT THE WRONG SHAPE. ADX >= 22 and >= 25 clear US30 at p 0.014 and
+//    0.011 and FAIL research (0.334, 1.000). A rule chosen on research should look better there;
+//    passing out of sample while failing in sample is a defect, not a result. `STUDY_TURTLE_15M`
+//    found these same two gates inverted on 15m NQ and that transferred -- it does not transfer
+//    to 240m here, and the timeframe is the difference.
+// 3. `require SELLER absorption` is the one condition that clears BOTH US100 blocks (p 0.004 and
+//    0.017) -- on n = 48 and n = 22 trades, and it fails US30 at p 0.380. Twenty-two trades is not
+//    a finding. Note also that the SIGN IS OPPOSITE to what the same proxy measured on 60m
+//    (`STUDY_V51_MA_ABSORPTION.md`), where requiring it lost money out of sample. Treat the whole
+//    absorption axis as unresolved.
+//
+// ============================== WHAT THE POPULATION LOOKS LIKE ==============================
+// 237,681 cells carry >= 100 research trades and 77.3% of them are profitable, so any single cell
+// is the maximum of ~184,000 positive draws. Marginal average per axis, research block:
+//   exit channel  10 +0.0614 | 20 +0.1064          stop  1.5 +0.1084 | 2.0 +0.0856 | 3.0 +0.0647
+//   ADX      off +0.1018 | <22 +0.1112 | >=22 +0.0701 | >=25 +0.0415
+//   EMA100   off +0.0806 | <3.964 +0.1215 | >=1.5 +0.0810 | >=3.0 +0.0703
+//   session  all hours +0.1604 | 09:30-16:00 +0.1862 | 08:00-12:00 +0.1282 | 07:00-11:00 +0.1142
+// THE STOP AXIS RUNS TO THE EDGE OF THE GRID (1.5 is the tightest tested and the best), so the
+// optimum is not bracketed and the grid was not extended after seeing that.
+//
+// THE FLATTEN IS DESTRUCTIVE ON EVERY WINDOW, again: all-hours +0.1604, and every flattened window
+// lands between -0.0000 and +0.0172 with roughly half the cells negative. At the base geometry it
+// takes 08:00-12:00 from +0.2292 to +0.0058 and 09:30-16:00 on US30 to -0.0042 (PF 0.908). It
+// truncates exactly the trades a channel exit exists to hold. Provided because it was asked for,
+// defaulted off, and it fills at the NEXT BAR'S OPEN because `strategy.close_all()` cannot sell
+// the close of the bar that triggers it.
+//
+// ============================ WHAT WAS REMOVED, AND WHY, EXPLICITLY ============================
+// SYSTEM 2 is gone, as asked. Both channel lengths survive as a single selectable entry, so
+// nothing is silently lost. THE SKIP-AFTER-A-WINNER RULE went with it: it exists to decide which
+// System 1 breakouts to take when System 2 is there to catch the skipped ones, and with one system
+// it is a pure signal-remover. THE PYRAMID LADDER DEFAULTS TO ONE UNIT AND WAS NOT SWEPT -- a
+// trade's outcome under a ladder depends on the ladder, so it cannot live in the cached exit
+// tensor the sweep is built on. The branch has measured that question separately: same rules on
+// US30 15m, three units run a max drawdown of 4,428 all-hours against 1,488-1,573 for one unit at
+// the SAME profit factor. The ladder input is still here; it is untested by this study.
+//
+// ============================== DEFINITIONS, TRAPS AND HONESTY ==============================
+// ATR is `ta.atr()`, Wilder's RMA -- correct for the Turtle and matching the Python engine.
+// `ta.dmi` returns [+DI, -DI, ADX]; destructuring the first element substitutes +DI for ADX
+// silently, which this branch has shipped once.
+// Hours are NEW YORK. Bare `hour`/`minute` are EXCHANGE time (Chicago for CME).
+// The working stop is capped at the PRIOR BAR'S CLOSE -- a Donchian exit channel can sit above the
+// fill, and a sell stop resting above the market is not a stop.
+// Every entry and every `var` write is guarded by `barstate.isconfirmed`, for the reason the
+// pasted script documents: unguarded, the three recalculation checkboxes moved the same rules from
+// -913 / PF 0.994 / 11,398 trades to +62,278 / PF 1.416 / 14,462.
+// ABSORPTION USES `volume`, which on a CFD or index symbol is TICK COUNT. The research ran on the
+// broker's TickVolume column so the two agree; on a futures symbol they will not.
+// COSTS ARE CHARGED BELOW and the defaults are the research's own assumption on a 1-point index
+// CFD. Set them to your instrument before reading any number.
+//
+// THE ENGINE WAS VERIFIED BEFORE ANYTHING WAS READ: the cached exit tensor was diffed against an
+// independent plain-Python simulation on 10 cells across two markets and two timeframes -- trade
+// counts identical, mean R equal to 1e-9 on every one. 4,644,864 configurations in 19.3 seconds.
+// See docs/ib/STUDY_V52_TURTLE_ONE_SYSTEM.md.
+// ================================================================================================
+
+//@version=5
+strategy("V52 Turtle -- one system, measured filters", overlay = true, pyramiding = 4,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.50, slippage = 1)
+
+gG = "Geometry (one entry, one exit)"
+gT = "The script's own gates -- BOTH directions"
+gM = "MA 200 as a level"
+gX = "EMA 13 x 48"
+gA = "Absorption (a proxy)"
+gS = "Entry session (free)"
+
+entN  = input.int(20, "Entry channel (bars)", minval = 2, group = gG,
+     tooltip = "20 is the Turtle's System 1. 55 was System 2's; it is here as a choice, not a second system.")
+exitN = input.int(20, "Exit channel (bars)", minval = 2, group = gG,
+     tooltip = "The Turtle pairs 10 with a 20-bar entry. The sweep's marginal average prefers 20 (+0.1064 against +0.0614) and 93.2% of the top 1000 use it.")
+stopN = input.float(2.0, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG,
+     tooltip = "2.0 is the Turtle's N. 1.5 has the better marginal average (+0.1084) but it is the tightest value tested, so that axis runs off the edge of the grid.")
+atrLen = input.int(20, "ATR length", minval = 2, group = gG)
+maxUnits = input.int(1, "Max units (pyramid ladder)", minval = 1, maxval = 4, group = gG,
+     tooltip = "NOT SWEPT by this study. Three units ran a 4,428 max drawdown against 1,488-1,573 for one unit at the same profit factor in an earlier measurement.")
+pyrStep = input.float(0.5, "Pyramid step (N)", minval = 0.0, group = gG)
+maxHold = input.int(480, "Max hold (bars)", minval = 1, group = gG)
+
+adxMode = input.string("off", "ADX condition", group = gT,
+     options = ["off", "ADX < 22  (this script's gate)", "ADX >= 22", "ADX >= 25"],
+     tooltip = "The script's own gate reads p 0.940 on the market that had no part in the search -- a random filter of the same selectivity beat it. Defaults off.")
+extMode = input.string("off", "Distance above EMA100 condition", group = gT,
+     options = ["off", "dist < 3.964 ATR  (this script's gate)", "dist >= 1.5 ATR",
+     "dist >= 3.0 ATR"])
+
+maMode = input.string("off", "MA200 condition", group = gM,
+     options = ["off", "above", "above & within 1.5 ATR", "above & within 3.0 ATR",
+     "at least 1.5 ATR above", "at least 3.0 ATR above"])
+maLen = input.int(200, "MA length", minval = 2, group = gM)
+
+cxMode = input.string("off", "EMA 13 x 48 condition", group = gX,
+     options = ["off", "13 > 48 (state)", "cross within 5 bars", "cross within 20 bars"])
+fastLen = input.int(13, "Fast EMA", minval = 1, group = gX)
+slowLen = input.int(48, "Slow EMA", minval = 2, group = gX)
+
+absMode = input.string("off", "Absorption condition", group = gA,
+     options = ["off", "require BUYER absorption <= 5", "require BUYER absorption <= 20",
+     "avoid SELLER absorption <= 5", "avoid SELLER absorption <= 20",
+     "require SELLER absorption <= 5", "require SELLER absorption <= 20"])
+volMult = input.float(1.5, "Volume spike (x the 200-bar mean)", minval = 1.0, step = 0.1, group = gA)
+wickFrac = input.float(0.40, "Close inside this fraction of the range", minval = 0.05,
+     maxval = 0.95, step = 0.05, group = gA,
+     tooltip = "Seller absorption: an UP bar on spike volume closing in the LOWER 40% of its own range. Buyer absorption is the mirror. A PROXY -- real absorption needs bid/ask volume at price.")
+
+sessOn = input.bool(false, "Restrict entries to a window", group = gS)
+startH = input.int(9,  "Start hour (New York)",  minval = 0, maxval = 23, group = gS)
+startM = input.int(30, "Start minute", minval = 0, maxval = 59, group = gS)
+stopH  = input.int(16, "Stop hour (New York)",   minval = 0, maxval = 23, group = gS)
+stopM  = input.int(0,  "Stop minute", minval = 0, maxval = 59, group = gS)
+flatOn = input.bool(false, "Flatten at the stop time", group = gS,
+     tooltip = "Destructive on every window measured. Fills at the NEXT bar's open.")
+
+// ------------------------------------------------------------------------------------------------
+// Series
+// ------------------------------------------------------------------------------------------------
+atrN    = ta.atr(atrLen)
+chanHi  = ta.highest(high, entN)[1]
+chanLo  = ta.lowest(low, exitN)[1]
+ema100  = ta.ema(close, 100)
+maV     = ta.ema(close, maLen)
+eFast   = ta.ema(close, fastLen)
+eSlow   = ta.ema(close, slowLen)
+[diPlus, diMinus, adxVal] = ta.dmi(14, 14)      // [+DI, -DI, ADX] -- the third element is ADX
+
+distEma = atrN > 0 ? (close - ema100) / atrN : na
+maDist  = atrN > 0 ? (close - maV) / atrN : na
+
+adxOk = adxMode == "off" ? true :
+     adxMode == "ADX < 22  (this script's gate)" ? (adxVal < 22.0) :
+     adxMode == "ADX >= 22" ? (adxVal >= 22.0) : (adxVal >= 25.0)
+
+extOk = extMode == "off" ? true :
+     extMode == "dist < 3.964 ATR  (this script's gate)" ? (distEma < 3.964) :
+     extMode == "dist >= 1.5 ATR" ? (distEma >= 1.5) : (distEma >= 3.0)
+
+maOk = maMode == "off" ? true :
+     maMode == "above" ? (maDist > 0) :
+     maMode == "above & within 1.5 ATR" ? (maDist > 0 and maDist <= 1.5) :
+     maMode == "above & within 3.0 ATR" ? (maDist > 0 and maDist <= 3.0) :
+     maMode == "at least 1.5 ATR above" ? (maDist >= 1.5) : (maDist >= 3.0)
+
+cxState = eFast > eSlow
+cxFresh = cxState and not cxState[1]
+// `barssince` is `na` until the event first happens, and `na <= 5` is `na`, which would silently
+// block every early entry in the AVOID modes. nz() to a large number fixes both. The research
+// window of K bars INCLUDES the current bar, so the test is `<= K-1`.
+bsCross = nz(ta.barssince(cxFresh), 1000000)
+cxOk = cxMode == "off" ? true :
+     cxMode == "13 > 48 (state)" ? cxState :
+     cxMode == "cross within 5 bars" ? (bsCross <= 4) : (bsCross <= 19)
+
+rngB  = math.max(high - low, syminfo.mintick)
+posB  = (close - low) / rngB
+volMA = ta.sma(volume, 200)[1]
+hiVol = not na(volMA) and volMA > 0 and volume >= volMult * volMA
+sellAbs = hiVol and close > open and posB <= wickFrac
+buyAbs  = hiVol and close < open and posB >= 1.0 - wickFrac
+bsBuy  = nz(ta.barssince(buyAbs), 1000000)
+bsSell = nz(ta.barssince(sellAbs), 1000000)
+absOk = absMode == "off" ? true :
+     absMode == "require BUYER absorption <= 5" ? (bsBuy <= 4) :
+     absMode == "require BUYER absorption <= 20" ? (bsBuy <= 19) :
+     absMode == "avoid SELLER absorption <= 5" ? not (bsSell <= 4) :
+     absMode == "avoid SELLER absorption <= 20" ? not (bsSell <= 19) :
+     absMode == "require SELLER absorption <= 5" ? (bsSell <= 4) : (bsSell <= 19)
+
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60 + startM
+sStop  = stopH * 60 + stopM
+inWin = not sessOn ? true :
+     sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = sessOn and flatOn and not inWin
+
+gateOk = adxOk and extOk and maOk and cxOk and absOk and inWin and atrN > 0 and not na(chanHi)
+
+// ------------------------------------------------------------------------------------------------
+// State. The stop and the ladder anchor to the ACTUAL FILL, not the signal bar's close, and every
+// write is guarded -- mid-bar `close` and a partly-formed `atrN` are not prices the bar-close run
+// can see.
+// ------------------------------------------------------------------------------------------------
+var float stopLvl = na
+var float nextAdd = na
+var float pendAtr = na
+var int   unitsOn = 0
+var int   lastCount = 0
+var int   heldBars = 0
+
+if barstate.isconfirmed and strategy.position_size == 0 and lastCount > 0
+    unitsOn := 0
+    stopLvl := na
+    nextAdd := na
+    lastCount := 0
+    heldBars := 0
+
+if barstate.isconfirmed and strategy.position_size > 0
+    heldBars := heldBars + 1
+
+if barstate.isconfirmed and strategy.opentrades > lastCount
+    fillPx = strategy.opentrades.entry_price(strategy.opentrades - 1)
+    anchorAtr = na(pendAtr) ? atrN : pendAtr
+    stopLvl := fillPx - stopN * anchorAtr
+    nextAdd := fillPx + pyrStep * anchorAtr
+    unitsOn := strategy.opentrades
+    lastCount := strategy.opentrades
+
+flat = strategy.position_size == 0
+
+if barstate.isconfirmed and flat and gateOk and high > chanHi
+    pendAtr := atrN
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+
+if barstate.isconfirmed and not flat and unitsOn > 0 and unitsOn < maxUnits and pyrStep > 0
+    if high >= nextAdd
+        pendAtr := atrN
+        strategy.entry("add" + str.tostring(unitsOn + 1), strategy.long)
+
+exitLevel = na(stopLvl) ? chanLo : (na(chanLo) ? stopLvl : math.max(stopLvl, chanLo))
+exitLevel := na(exitLevel) ? na : math.min(exitLevel, close[1])
+
+if barstate.isconfirmed and not flat and lastCount > 0 and not na(exitLevel)
+    strategy.exit("x", stop = exitLevel)
+
+if barstate.isconfirmed and not flat and (doFlat or heldBars >= maxHold)
+    strategy.close_all(doFlat ? "flat" : "max hold")
+
+// ------------------------------------------------------------------------------------------------
+plot(chanHi, "Entry channel", color = color.new(color.aqua, 40))
+plot(chanLo, "Exit channel", color = color.new(color.maroon, 50))
+plot(maV, "MA 200", color = color.new(color.purple, 0), linewidth = 2)
+plot(ema100, "EMA 100", color = color.new(color.gray, 60))
+plot(flat ? na : exitLevel, "Active stop", color = color.fuchsia, style = plot.style_linebr)
+plotshape(sellAbs, "Seller absorption", shape.triangledown, location.abovebar,
+     color.new(color.red, 0), size = size.tiny)
+plotshape(buyAbs, "Buyer absorption", shape.triangleup, location.belowbar,
+     color.new(color.lime, 0), size = size.tiny)
+
+anyFilter = adxMode != "off" or extMode != "off" or maMode != "off" or cxMode != "off"
+     or absMode != "off" or sessOn
+ladderCost = close * maxUnits * syminfo.pointvalue
+fundsOk = ladderCost <= strategy.equity * 0.9
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, anyFilter ? "FILTERS ON -- none cleared all three blocks"
+         : "no filter -- the measured baseline", text_color = color.white,
+         bgcolor = anyFilter ? color.new(color.orange, 20) : color.new(color.teal, 30))
+    table.cell(hud, 0, 1, sessOn ? "session " + str.tostring(startH) + ":" + str.tostring(startM)
+         + "-" + str.tostring(stopH) + ":" + str.tostring(stopM) + (flatOn ? " + FLATTEN" : "")
+         : "session: all hours", text_color = color.white,
+         bgcolor = sessOn ? color.new(color.orange, 20) : color.new(color.gray, 40))
+    table.cell(hud, 0, 2, fundsOk ? "ladder funded" :
+         "LADDER DOES NOT FIT - orders will be REJECTED (needs " +
+         str.tostring(math.round(ladderCost)) + " vs equity " +
+         str.tostring(math.round(strategy.equity)) + ")",
+         text_color = color.white, bgcolor = fundsOk ? color.new(color.teal, 40) : color.red)

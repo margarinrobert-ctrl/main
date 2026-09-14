@@ -1,0 +1,30 @@
+DEFLATION, CORRECTED. `run_meta_gate2.py` fed `deflated_sharpe` the variance of the 18 GATE-2
+UPLIFTS as `var_trials`. That is the wrong quantity: the DSR's null is the distribution of the
+SHARPE RATIOS THE SEARCH PRODUCED, and 18 near-zero uplifts have a variance three orders of
+magnitude too small, which drove the expected max under the null to 0.0008 and the DSR to 0.9919.
+
+The right input is the spread of per-event Sharpes across the trials actually run. The 600 Optuna
+trials were scored as t-statistics on block A, and t = SR x sqrt(n), so each trial's per-event
+Sharpe is recoverable directly. The 45 frozen cells and the 12 drift-control cells are added.
+
+Same error class as the one recorded on the VP/TPO study, reached from the other side: there the
+trial variance was estimated from annualised figures and the DSR came out too HARSH (0.571 against
+a corrected 0.912); here it was estimated from uplifts and came out far too GENEROUS. State what
+`var_trials` is measured over, every time.
+
+  trial Sharpe pool: 639 scored trials  (600 Optuna on block A + 45 frozen cells)
+  per-event Sharpe   mean -0.01678   sd 0.06027   min -0.2572   max +0.1343
+
+  (block-C event returns not cached; re-deriving from the parquet event table)
+  block-C primary UNFILTERED       rho 0.0  N_eff    690   E[max SR|null] 0.1897   DSR 0.1676
+  block-C primary UNFILTERED       rho 0.5  N_eff    346   E[max SR|null] 0.1772   DSR 0.2261
+  block-C primary UNFILTERED       rho 0.8  N_eff    139   E[max SR|null] 0.1594   DSR 0.3261
+  block-C primary + meta filter    rho 0.0  N_eff    690   E[max SR|null] 0.1897   DSR 0.2284
+  block-C primary + meta filter    rho 0.5  N_eff    346   E[max SR|null] 0.1772   DSR 0.2863
+  block-C primary + meta filter    rho 0.8  N_eff    139   E[max SR|null] 0.1594   DSR 0.3789
+
+  PSR against zero, ignoring multiplicity entirely, for the filtered arm: 0.9761
+
+  The number to quote is the DSR CURVE, not one cell of it. At every assumed correlation the
+  expected max Sharpe from 690 worthless trials EXCEEDS the block-C Sharpe, so the deflated
+  Sharpe is ~0: nothing here survives its own search.

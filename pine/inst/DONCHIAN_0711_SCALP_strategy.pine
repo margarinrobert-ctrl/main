@@ -1,0 +1,71 @@
+//@version=6
+// DONCHIAN 07:00-11:00 SCALP -- the surviving finalist of a 3,600-trial Optuna search under the
+// constraints "entries 07:00-11:00 New York, hold at most four hours" (docs/ib/STUDY_BAYESOPT_SCALP.md)
+//
+// MEASURED (NQ 15m, MNQ costs $0.72/side + 1 tick), the ONLY finalist that clears a random entry
+// inside the same window on BOTH blocks (locked p 0.040 on PF, 0.015 on total):
+//   research  763 trades  PF 1.18  win 51%  +16.2%
+//   locked    387 trades  PF 1.13  win 49%   +6.9%
+// READ THIS: it is a coin flip with a small, real edge, not a high-PF strategy. The research-to-
+// locked transfer of the whole search was NEGATIVE (-0.24): this is one draw that held, its own
+// top-10 neighbourhood is 20% locked-positive, and its 10-bar entry sits AT the evaluator's channel floor (the search's 5-9 range was dead)
+// minimum. CORRECTION: the search reported this cell as 7/8; its evaluator clips channel lengths to
+// 10, so the cell actually measured -- and shipped here -- is 10/10. The unconstrained cell (55/30, hold to the channel exit) reads locked PF 1.93 on 104
+// trades for about the same money -- the window and the cap buy nothing but trade count.
+// The PF-optimised settings for this window INVERT out of sample (1.53 -> 0.84); do not chase PF here.
+strategy("Donchian 10/10 07:00-11:00 scalp (Optuna, measured)", overlay = true, default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000, commission_type = strategy.commission.cash_per_contract, commission_value = 0.72, slippage = 1)
+entN     = input.int(10, "Donchian entry length")
+exitN    = input.int(10, "Channel exit length")
+stopCalm = input.float(3.19, "ATR stop, calm volatility (x ATR)", step = 0.1)
+stopHot  = input.float(3.19, "ATR stop, high volatility (x ATR)", step = 0.1)
+useTP    = input.bool(true, "Use a take profit")
+tpATR    = input.float(2.3, "Take profit (x ATR)", step = 0.5)
+holdMin  = input.int(230, "Maximum hold (minutes)")
+useMA    = input.bool(false, "Require price >= N ATR above SMA200")
+maFloor  = input.float(0, "  N (ATR)", step = 0.5)
+useChop  = input.bool(false, "Require CHOP(14) <= ceiling")
+chopMax  = input.float(50, "  CHOP ceiling")
+startH   = input.int(7,  "Entries from hour (New York)", minval = 0, maxval = 23)
+startM   = input.int(0,  "Entries from minute", minval = 0, maxval = 59)
+endH     = input.int(11, "Entries until hour (New York)", minval = 0, maxval = 23)
+endM     = input.int(0,  "Entries until minute", minval = 0, maxval = 59)
+atrN   = ta.ema(ta.tr(true), 14)
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)
+sma200 = ta.sma(close, 200)
+chopV  = 100 * math.log10(math.sum(ta.tr(true), 14) / (ta.highest(high, 14) - ta.lowest(low, 14))) / math.log10(14)
+volPct = ta.percentrank(atrN / close, 250) / 100.0
+stopMult = volPct <= 0.5 ? stopCalm : stopHot
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+inWin  = nyMin >= startH * 60 + startM and nyMin < endH * 60 + endM
+barMin = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+holdBars = math.max(1, math.round(holdMin / barMin))
+maOk   = not useMA or (not na(sma200) and (close - sma200) / atrN >= maFloor)
+chopOk = not useChop or (not na(chopV) and chopV <= chopMax)
+ready  = not na(atrN) and atrN > 0 and not na(entHi) and not na(volPct) and bar_index > 300
+gateOk = ready and inWin and maOk and chopOk and high > entHi
+var float pendRisk = na
+var int heldBars = 0
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk
+    pendRisk := stopMult * atrN
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+    if useTP
+        strategy.exit("x", from_entry = "L", loss = pendRisk / syminfo.mintick, profit = tpATR * atrN / syminfo.mintick)
+    else
+        strategy.exit("x", from_entry = "L", loss = pendRisk / syminfo.mintick)
+if barstate.isconfirmed and strategy.position_size > 0 and not na(pendRisk)
+    if heldBars >= holdBars
+        strategy.close("L", comment = "hold cap")
+    else
+        lvl = math.min(math.max(strategy.position_avg_price - pendRisk, nz(exitLo, strategy.position_avg_price - pendRisk)), close)
+        if useTP
+            strategy.exit("x", from_entry = "L", stop = lvl, limit = strategy.position_avg_price + tpATR * atrN)
+        else
+            strategy.exit("x", from_entry = "L", stop = lvl)
+plot(entHi, "entry channel", color = color.new(color.teal, 40))
+plot(exitLo, "exit channel", color = color.new(color.red, 60))
+plot(useMA ? sma200 + maFloor * atrN : na, "MA floor", color = color.new(color.orange, 50), style = plot.style_circles)

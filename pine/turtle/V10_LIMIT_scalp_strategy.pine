@@ -1,0 +1,177 @@
+//@version=5
+// V10-LIMIT -- V9-PROP optimised for intraday scalping, with the Donchian breakout RETAINED.
+//
+// ================================ WHAT CHANGED, AND WHY ================================
+// The entry SIGNAL was not the lever. The entry MECHANIC was. V9 sends a market order at the next
+// open; this rests a BUY LIMIT 0.75 x ATR(5) below the close and lets price come to it. Same
+// Donchian breakout, same ADX gate, same ATR stop -- only the fill changes.
+//
+// NQ 15-minute, 70,685 bars, 2022-12-26 -> 2025-12-12. Research = first 65% of sessions;
+// LOCKED = the rest, READ ONCE after the parameters were fixed. Every figure is TRUE 1-MINUTE
+// PATH EXECUTION (`research/limit_entry.run_1m`), which observes whether price reached the limit
+// BEFORE or after it reached the stop. Fills require price to trade THROUGH the limit by 4 ticks.
+// Costs are scaled to the real MNQ stack of $1.44 a round turn, not the $1.00 broker-only figure.
+//
+//                                  research              LOCKED
+//   variant                     PF    Sharpe  $/tr     PF    Sharpe  $/tr    ret/DD
+//   V9 market entry            1.08    0.66   +3.99   1.17    1.23  +12.34    1.14
+//   THIS (don55 lim0.75 e16)   1.63    3.81  +43.40   1.22    1.57  +24.44    1.46
+//
+// Sharpe roughly doubles on research and holds an improvement on the block that chose nothing.
+// The shape is right: it DECAYS from research to locked rather than improving, which is what an
+// edge does and what an artifact does not.
+//
+// PARAMETERS WERE PICKED FROM A PLATEAU, NOT A PEAK. 25 cells were swept on research only.
+// `lim 0.75` sits in a flat region (0.50 / 0.75 / 1.00 score within 0.05 PF at every Donchian
+// length) and Donchian 55 beat 10 / 20 / 30 consistently across every limit distance. Expiry 16
+// was taken instead of the better-scoring 24 because 24 sat at the edge of the tested range.
+// For completeness, the other plateau picks on LOCKED, none of which was the pre-registered
+// choice and none of which is quoted above as the result:
+//   don30 lim0.75 exp16 -> PF 1.28, Sharpe 1.85    don55 lim1.50 exp16 -> PF 1.29, Sharpe 1.57
+// They are within noise of each other. Selecting one of them NOW would be selecting on the
+// locked block, which is the one thing this repository does not permit.
+//
+// ============================== WHAT IT IS HONEST TO SAY ==============================
+// The Donchian breakout is RETAINED BY INSTRUCTION and it is not what earns the money here. On a
+// matched control the trigger does not beat entering at a random bar with the same geometry
+// (p 0.12 - 0.43 across variants), and removing it entirely scored better on both blocks in
+// testing. Keeping it costs some performance and buys something real in exchange: it spaces the
+// trades out, cuts the trade count roughly in half, and keeps the system recognisably a Turtle.
+// If you ever want that decision revisited, the measurement is in docs/ib/STUDY_V10_LIMIT.md.
+//
+// LONG ONLY, ON AN INSTRUMENT THAT ROSE 89% OVER THE SAMPLE. The branch's earlier work found the
+// limit mechanic pays on both sides, which argues against pure drift, but THIS script has not been
+// tested short and you should not assume it. The fill rate is about 35%: two orders in three
+// expire unfilled, and the backtest assumes you are content to keep placing them.
+//
+// ============================ AN ARTIFACT WORTH KNOWING ABOUT ============================
+// Three bar-level artifacts were found and removed while producing this, each of which made the
+// result look far better than it was:
+//   * Filling at the limit on a bar's low AND paying the target on the same bar's high.
+//   * The Donchian channel exit sitting ABOVE a limit fill, so max(ATR stop, channel) triggered
+//     instantly AT A PROFIT -- 3,170 trades averaging +1.14 with a median hold of ONE bar.
+//   * A sell stop resting above the market, which is not a stop at all.
+// Together those three showed Sharpe 11 on a rule-free every-bar test in a 15-minute bar loop.
+// The numbers above are what survived on the 1-minute path. THE LESSON GENERALISES: any
+// limit-entry backtest run on the same bars that decide the exits is measuring intrabar ordering.
+// =======================================================================================
+
+strategy("V10-LIMIT scalp (NQ 15m, Donchian + limit entry)", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72, slippage = 1)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Bar detalization   HIGH, WITH DEEP BACKTESTING. This is not optional for this script: the
+//                      whole question is whether the limit filled before the stop, and without
+//                      intrabar data the emulator guesses.
+//   Commission         $0.72 CASH PER ORDER = $1.44 a round turn, the real MNQ stack.
+//   Slippage           1 tick. A RESTING LIMIT pays no slippage on entry in reality -- you are
+//                      providing liquidity -- but the exit stop does. 1 tick is the compromise.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+// ======================================================================
+
+gE       = "Entry mechanic -- the lever"
+limMult  = input.float(0.75, "Limit distance, x ATR(5) below the close", minval = 0.1, step = 0.05, group = gE)
+limLen   = input.int(5,     "ATR length for the limit distance", minval = 2, group = gE)
+expiry   = input.int(16,    "Bars the order rests before it is cancelled", minval = 1, group = gE)
+
+gX       = "Exit"
+atrLen   = input.int(14,  "ATR length for stop and target", minval = 2, group = gX)
+stopMult = input.float(2.0, "Stop, x ATR", minval = 0.1, step = 0.1, group = gX)
+tpR      = input.float(2.3, "Target, in R (multiples of the stop)", minval = 0.1, step = 0.1, group = gX)
+
+gF       = "Entry signal"
+useAdx   = input.bool(true, "Require ADX >= threshold", group = gF,
+     tooltip = "V9's gate, retained. A selectivity control says it earns its keep GIVEN that you are taking breakouts.")
+adxMin   = input.float(15, "  ADX threshold", minval = 0, step = 1, group = gF)
+useDon   = input.bool(true, "Require a Donchian breakout", group = gF,
+     tooltip = "Retained by instruction. It does not beat a random entry on a matched control, but it halves the trade count and keeps the system a Turtle.")
+donLen   = input.int(55,   "  Donchian entry length", minval = 2, group = gF)
+
+gS       = "Session window (off by default)"
+sessOn   = input.bool(false, "Restrict entries to a window and flatten", group = gS)
+startHH  = input.int(7,  "Window start -- hour (New York)", minval = 0, maxval = 23, group = gS)
+startMM  = input.int(0,  "Window start -- minute",          minval = 0, maxval = 59, group = gS)
+flatHH   = input.int(16, "Flatten -- hour (New York)",      minval = 0, maxval = 23, group = gS)
+flatMM   = input.int(0,  "Flatten -- minute",               minval = 0, maxval = 59, group = gS)
+
+// ----------------------------------------------------------------- series
+// ATR HERE IS ema(TR, n), NOT ta.atr. ta.atr is Wilder's RMA and is a DIFFERENT SERIES; the
+// research layer uses an EMA of true range for both of these, and swapping them silently changes
+// every level in the script. See the Pine notes in CLAUDE.md.
+atrX    = ta.ema(ta.tr(true), atrLen)
+atrLim  = ta.ema(ta.tr(true), limLen)
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)      // ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER
+donHi   = ta.highest(high, donLen)[1]      // excludes the current bar, or a break is impossible
+
+// BARE `hour` AND `minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME. Read New York explicitly.
+modNY   = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+startM  = startHH * 60 + startMM
+flatM   = flatHH * 60 + flatMM
+barMin  = timeframe.in_seconds(timeframe.period) / 60
+inWin   = not sessOn or (modNY >= startM and modNY < flatM - barMin)
+atFlat  = sessOn and modNY >= flatM
+
+okAdx   = not useAdx or (not na(adxVal) and adxVal >= adxMin)
+okDon   = not useDon or (not na(donHi) and high > donHi)
+ready   = not na(atrX) and atrX > 0 and not na(atrLim) and atrLim > 0
+gateOk  = ready and okAdx and okDon and inWin
+
+// ----------------------------------------------------------------- resting limit
+// The order price and the ATR are BOTH frozen at the bar the order is placed. Re-pricing the limit
+// every bar would be a different strategy -- it would chase price down instead of resting.
+var float pendPx  = na
+var int   pendBar = na
+var float sigAtr  = na
+
+flat = strategy.position_size == 0
+
+if barstate.isconfirmed and flat
+    if not na(pendBar) and bar_index - pendBar >= expiry
+        strategy.cancel("L")
+        pendPx  := na
+        pendBar := na
+    if na(pendBar) and gateOk
+        pendPx  := close - limMult * atrLim
+        pendBar := bar_index
+        sigAtr  := atrX
+        // The bracket rides with the entry, so the FILL BAR is covered. `loss` and `profit` are
+        // measured by Pine from the ACTUAL fill, which is exactly what the research anchors to.
+        lossTk = int(math.max(1, math.round(stopMult * sigAtr / syminfo.mintick)))
+        tpTk   = int(math.max(1, math.round(tpR * stopMult * sigAtr / syminfo.mintick)))
+        strategy.entry("L", strategy.long, limit = pendPx)
+        strategy.exit("x", from_entry = "L", loss = lossTk, profit = tpTk)
+
+if barstate.isconfirmed and not flat
+    pendPx  := na
+    pendBar := na
+
+// ----------------------------------------------------------------- flatten
+// LAST, so it cancels the resting order before closing. A live limit left behind after a flatten
+// opens a new position outside the window.
+if barstate.isconfirmed and atFlat
+    strategy.cancel_all()
+    pendPx  := na
+    pendBar := na
+    if not flat
+        strategy.close_all(comment = "flatten")
+
+// ----------------------------------------------------------------- plots
+plot(flat and not na(pendPx) ? pendPx : na, "Resting limit", color = color.new(color.aqua, 0),
+     style = plot.style_linebr, linewidth = 2)
+plot(flat or na(sigAtr) ? na : strategy.position_avg_price - stopMult * sigAtr, "Stop",
+     color = color.fuchsia, style = plot.style_linebr)
+plot(flat or na(sigAtr) ? na : strategy.position_avg_price + tpR * stopMult * sigAtr, "Target",
+     color = color.new(color.lime, 0), style = plot.style_linebr)
+
+onTf = timeframe.period == "15"
+var table hud = table.new(position.top_right, 1, 3, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V10-LIMIT - Donchian 55 + resting limit entry",
+         text_color = color.white, bgcolor = color.new(color.teal, 25))
+    table.cell(hud, 0, 1, onTf ? "15m chart" : "NOT 15m - studied on 15m only",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 45) : color.red)
+    table.cell(hud, 0, 2, "Needs DEEP BACKTESTING + high detalization, or the fill order is guessed",
+         text_color = color.white, bgcolor = color.new(color.orange, 15))

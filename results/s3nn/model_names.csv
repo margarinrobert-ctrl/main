@@ -1,0 +1,8 @@
+ridge
+rf
+lgbm
+xgb_d3
+xgb_d6
+mlp_2x32
+mlp_2x64
+mlp_4x128

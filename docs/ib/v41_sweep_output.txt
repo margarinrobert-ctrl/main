@@ -1,0 +1,132 @@
+
+================================================================================================================================
+V41 -- EMA 13/48 CROSS AS FIRST SIGNAL, DONCHIAN AS CONFIRMATION
+================================================================================================================================
+   nominal cells 103,680   EFFECTIVE distinct configurations 62,208
+   inert axis: under mode 'state' the confirmation-window rungs are one cell, so the
+   multiplicity correction must use the effective count, not the nominal one.
+   built-in ablation: mode 'cross' with win=0 is the DONCHIAN-ALONE control.
+   ATR is WILDER's RMA(20), matching the source script and the Turtle definition --
+   a deliberate departure from this branch's usual ema(TR, n).
+   LONG only, one position at a time, real MNQ costs x1.44, market at the next open.
+
+   DATA: only NQ_1m/NQ_5m survived the last container recycle, so this is NQ ONLY.
+   The cross-market leg is UNAVAILABLE, not skipped -- it needs the feeds re-uploaded.
+   15m: 70,685 bars -> 34,560 scorable cells (62s)
+   30m: 35,721 bars -> 34,560 scorable cells (49s)
+   60m: 18,243 bars -> 33,936 scorable cells (46s)
+
+================================================================================================================================
+1. THE SHAPE OF THE GRID
+================================================================================================================================
+   scorable 103,056 of 103,680 nominal   non-inert scorable 61,584 of 62,208 effective
+   research PF > 1.00: 72.5%   > 1.20: 34.1%   > 1.50: 11.2%
+   median research PF 1.110   max 3.751
+   scorable on locked too: 60,355   locked PF > 1.00: 67.2%
+   research-to-locked PF correlation: Pearson -0.391   Spearman -0.388
+
+================================================================================================================================
+2. MARGINAL AVERAGE PER AXIS -- non-inert cells only
+================================================================================================================================
+
+   tf:
+      value          cells   res PF   res $/t  res Sh   lock PF  lock $/t  PF>1 res
+      15            20,736    1.018     +0.86   +0.06     1.190    +14.33     58.8%
+      30            20,736    1.099     +7.44   +0.26     1.282    +25.74     70.3%
+      60            20,112    1.374    +37.76   +0.67     0.876    -26.59     89.0%
+
+   ema_f:
+      value          cells   res PF   res $/t  res Sh   lock PF  lock $/t  PF>1 res
+      8             20,520    1.137    +13.15   +0.29     1.110     +4.65     70.8%
+      13            20,544    1.162    +15.30   +0.33     1.121     +5.43     72.8%
+      21            20,520    1.185    +16.91   +0.36     1.134     +5.59     74.0%
+
+   ema_s:
+      value          cells   res PF   res $/t  res Sh   lock PF  lock $/t  PF>1 res
+      34            20,520    1.166    +15.40   +0.35     1.144     +7.14     76.5%
+      48            20,520    1.171    +16.04   +0.33     1.113     +4.49     72.7%
+      62            20,544    1.147    +13.93   +0.29     1.107     +4.01     68.4%
+
+   mode:
+      value          cells   res PF   res $/t  res Sh   lock PF  lock $/t  PF>1 res
+      cross         51,216    1.148    +14.10   +0.26     1.143     +7.32     69.3%
+      state         10,368    1.226    +20.19   +0.64     1.019     -4.88     88.3%
+
+   win:
+      value          cells   res PF   res $/t  res Sh   lock PF  lock $/t  PF>1 res
+      0             20,736    1.208    +18.91   +0.61     1.054     -0.80     88.0%
+      5              9,960    1.115    +10.90   +0.06     1.230    +14.75     59.1%
+      10            10,152    1.139    +13.37   +0.13     1.203    +12.43     62.1%
+      20            10,368    1.104     +9.82   +0.17     1.152     +7.43     66.6%
+      40            10,368    1.191    +18.63   +0.35     1.053     -0.23     70.5%
+
+   don_e:
+      value          cells   res PF   res $/t  res Sh   lock PF  lock $/t  PF>1 res
+      10            15,552    1.140    +13.23   +0.34     1.137     +7.83     73.0%
+      20            15,552    1.142    +13.99   +0.28     1.112     +4.45     71.8%
+      30            15,552    1.151    +14.55   +0.30     1.096     +1.16     70.2%
+      55            14,928    1.215    +18.88   +0.38     1.145     +7.68     75.2%
+
+   don_x:
+      value          cells   res PF   res $/t  res Sh   lock PF  lock $/t  PF>1 res
+      10            30,792    1.147    +11.68   +0.34     1.175    +12.60     73.2%
+      20            30,792    1.176    +18.56   +0.32     1.068     -2.17     71.8%
+
+   stop:
+      value          cells   res PF   res $/t  res Sh   lock PF  lock $/t  PF>1 res
+      1.5           15,396    1.156    +12.58   +0.29     1.164     +9.94     68.9%
+      2.0           15,396    1.164    +15.11   +0.32     1.103     +3.04     71.0%
+      2.5           15,396    1.163    +15.99   +0.35     1.112     +5.24     75.2%
+      3.0           15,396    1.162    +16.82   +0.35     1.107     +2.66     75.0%
+
+   tp:
+      value          cells   res PF   res $/t  res Sh   lock PF  lock $/t  PF>1 res
+      0.0           20,528    1.236    +22.04   +0.44     1.125     +4.92     82.1%
+      2.0           20,528    1.097     +9.49   +0.20     1.124     +6.93     63.0%
+      3.0           20,528    1.150    +13.84   +0.34     1.116     +3.81     72.5%
+
+   gate:
+      value          cells   res PF   res $/t  res Sh   lock PF  lock $/t  PF>1 res
+      adx<22        15,120    1.028     +3.65   -0.08     1.061     -3.04     48.0%
+      adx>=20       15,360    1.249    +21.91   +0.52     1.143     +6.38     82.6%
+      chop<=45      15,552    1.237    +21.80   +0.53     1.186    +12.91     85.6%
+      off           15,552    1.127    +12.90   +0.32     1.094     +4.23     73.3%
+
+================================================================================================================================
+3. THE ABLATION -- does the EMA cross add anything to the Donchian?
+================================================================================================================================
+   Matched PAIRWISE: every (tf, don_e, don_x, stop, tp, gate) geometry compared against
+   its OWN Donchian-alone twin, so nothing but the EMA condition differs.
+
+   51,216 matched pairs
+   EMA helps on RESEARCH in 42.0% of pairs (mean -2.66 $/trade)
+   EMA helps on LOCKED   in 50.0% of pairs (mean +0.67 $/trade)
+   trade count: EMA-confirmed 198 vs Donchian alone 395 (-50%)
+
+   by mode:
+      cross    research helps  36.5% (  -3.99)   locked helps  54.7% (  +2.98)
+      state    research helps  63.5% (  +2.57)   locked helps  31.2% (  -8.16)
+   by confirmation window (cross mode only):
+      win   5   research helps  36.4% (  -5.49)   locked helps  52.0% (  +6.33)   n   115
+      win  10   research helps  34.9% (  -3.72)   locked helps  62.5% (  +6.69)   n   141
+      win  20   research helps  33.0% (  -7.80)   locked helps  60.7% (  +3.01)   n   174
+      win  40   research helps  41.7% (  +1.01)   locked helps  43.8% (  -3.56)   n   226
+
+================================================================================================================================
+4. WHAT THE TOP 100 AGREE ON
+================================================================================================================================
+   tf        60: 84% (pop 33%)   30: 16% (pop 34%)
+   ema_f     21: 55% (pop 33%)   13: 30% (pop 33%)   8: 15% (pop 33%)
+   ema_s     48: 49% (pop 33%)   34: 44% (pop 33%)   62: 7% (pop 33%)
+   mode      cross: 100% (pop 83%)
+   win       5: 50% (pop 16%)   10: 44% (pop 16%)   40: 5% (pop 17%)   20: 1% (pop 17%)
+   don_e     55: 53% (pop 24%)   30: 22% (pop 25%)   20: 15% (pop 25%)   10: 10% (pop 25%)
+   don_x     10: 55% (pop 50%)   20: 45% (pop 50%)
+   stop      1.5: 29% (pop 25%)   2.5: 27% (pop 25%)   3.0: 25% (pop 25%)   2.0: 19% (pop 25%)
+   tp        0.0: 70% (pop 33%)   3.0: 18% (pop 33%)   2.0: 12% (pop 33%)
+   gate      adx>=20: 61% (pop 25%)   chop<=45: 21% (pop 25%)   adx<22: 16% (pop 25%)   off: 2% (pop 25%)
+
+   top-100 mean research PF 2.781  n 33
+   top-100 mean LOCKED  PF 0.733  n 30   <- the gap is the selection premium
+
+   elapsed 165s

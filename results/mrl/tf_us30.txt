@@ -1,0 +1,44 @@
+A US30 version: not a re-tune of TFI, which is a null on US30 on every cell, but the one
+US30 configuration on this branch that survived a genuine forward block -- STUDY_MEGA_144K's
+Donchian 30/20, 2.5 x ATR stop, ADX >= 15, take-profit 2R, all hours, no flatten (one unit here
+instead of the study's three; STUDY_TURTLE_15M found one unit is the drawdown answer). It is
+re-measured through this engine on US30's research / validation / test blocks, on the ISO feed's
+2026 tail (a re-read of a block the earlier study already judged once, so a confirmation and not
+a selection), and on NQ and US100 for balance, each against a random-bar control. The shipped
+TFI cell on the same blocks is the comparison.
+
+====================================================================================================
+US30 CONFIGURATION (Donchian 30/20, ADX >= 15, 2.5 x ATR stop, target 2R, all hours, no
+flatten, one unit) on every feed and block, random-bar control 200 draws
+====================================================================================================
+  US30 research (median hold 19 bars)      n 1491 win 38.0% PF 1.051 R +0.0164 pts  +2.36 Sharpe 0.26 stop 45% chan 29% flat 0% tgt 26% | ctl +0.0462 p 0.870
+  US30 validation (median hold 17 bars)    n  583 win 35.2% PF 0.860 R -0.0853 pts  -9.36 Sharpe -0.90 stop 49% chan 30% flat 0% tgt 21% | ctl -0.0309 p 0.895
+  US30 test (median hold 16 bars)          n  486 win 38.1% PF 0.982 R -0.0041 pts  -1.18 Sharpe -0.12 stop 49% chan 25% flat 0% tgt 26% | ctl +0.0028 p 0.565
+  US30_ISO iso_pre2026 (median hold 18 bars) n  426 win 39.2% PF 1.099 R +0.0564 pts  +6.51 Sharpe 0.62 stop 45% chan 28% flat 0% tgt 27% | ctl -0.0007 p 0.160
+  US30_ISO iso_2026 (median hold 19 bars)  n  203 win 40.4% PF 1.245 R +0.1122 pts +18.02 Sharpe 1.26 stop 41% chan 32% flat 0% tgt 28% | ctl -0.0045 p 0.095
+  NQ research (median hold 18 bars)        n  620 win 39.0% PF 1.071 R +0.0471 pts  +2.33 Sharpe 0.43 stop 46% chan 27% flat 0% tgt 27% | ctl +0.0537 p 0.530
+  NQ locked (median hold 22 bars)          n  312 win 39.4% PF 1.098 R +0.0602 pts  +4.66 Sharpe 0.59 stop 38% chan 38% flat 0% tgt 24% | ctl +0.0221 p 0.245
+  US100 research (median hold 19 bars)     n 1614 win 37.4% PF 0.943 R -0.0239 pts  -1.16 Sharpe -0.30 stop 46% chan 30% flat 0% tgt 24% | ctl +0.0508 p 1.000
+  US100 validation (median hold 18 bars)   n  619 win 37.0% PF 0.946 R -0.0271 pts  -2.14 Sharpe -0.34 stop 48% chan 28% flat 0% tgt 24% | ctl +0.0220 p 0.860
+  US100 test (median hold 19 bars)         n  570 win 39.1% PF 1.145 R +0.0532 pts  +5.65 Sharpe 0.93 stop 44% chan 31% flat 0% tgt 26% | ctl +0.0654 p 0.615
+
+  the same configuration with the 16:00 flatten and 09:30-14:00 entries (the intraday form):
+  US30 research                            n  647 win 45.9% PF 1.044 R -0.0200 pts  +1.91 Sharpe 0.16 stop 35% chan 3% flat 53% tgt 9%
+  US30 validation                          n  239 win 47.3% PF 1.020 R +0.0339 pts  +1.40 Sharpe 0.08 stop 38% chan 0% flat 52% tgt 10%
+  US30 test                                n  206 win 44.2% PF 0.998 R +0.0076 pts  -0.17 Sharpe -0.01 stop 40% chan 0% flat 47% tgt 12%
+  US30_ISO iso_pre2026                     n  184 win 46.7% PF 1.022 R +0.0302 pts  +1.77 Sharpe 0.10 stop 40% chan 1% flat 47% tgt 12%
+  US30_ISO iso_2026                        n   82 win 39.0% PF 0.800 R -0.0823 pts -20.06 Sharpe -0.93 stop 33% chan 5% flat 55% tgt 7%
+
+  variants on US30 test + ISO 2026 (the reserved blocks), multiplicity 6:
+    no target    US30 test                 n  404 win 28.5% PF 0.998 R -0.0369 pts  -0.15 Sharpe -0.01 stop 56% chan 44% flat 0% tgt 0%
+    no target    US30_ISO iso_2026         n  169 win 33.7% PF 1.118 R +0.0799 pts  +9.55 Sharpe 0.54 stop 46% chan 54% flat 0% tgt 0%
+    target 1.5R  US30 test                 n  535 win 40.2% PF 0.921 R -0.0527 pts  -4.77 Sharpe -0.59 stop 47% chan 22% flat 0% tgt 31%
+    target 1.5R  US30_ISO iso_2026         n  230 win 44.8% PF 1.211 R +0.1130 pts +15.07 Sharpe 1.26 stop 38% chan 25% flat 0% tgt 37%
+    target 3R    US30 test                 n  449 win 33.4% PF 0.968 R -0.0320 pts  -2.17 Sharpe -0.20 stop 53% chan 33% flat 0% tgt 14%
+    target 3R    US30_ISO iso_2026         n  188 win 39.4% PF 1.210 R +0.1470 pts +15.70 Sharpe 1.08 stop 39% chan 44% flat 0% tgt 16%
+    ADX 20       US30 test                 n  380 win 40.3% PF 1.026 R +0.0467 pts  +1.67 Sharpe 0.15 stop 46% chan 29% flat 0% tgt 26%
+    ADX 20       US30_ISO iso_2026         n  173 win 39.3% PF 1.229 R +0.1265 pts +17.04 Sharpe 1.12 stop 43% chan 28% flat 0% tgt 29%
+    ADX 0        US30 test                 n  536 win 35.1% PF 0.911 R -0.0691 pts  -5.76 Sharpe -0.63 stop 51% chan 24% flat 0% tgt 24%
+    ADX 0        US30_ISO iso_2026         n  223 win 39.5% PF 1.292 R +0.1091 pts +20.54 Sharpe 1.51 stop 43% chan 28% flat 0% tgt 29%
+    stop 2.0     US30 test                 n  557 win 35.4% PF 0.947 R -0.0572 pts  -3.01 Sharpe -0.38 stop 55% chan 18% flat 0% tgt 26%
+    stop 2.0     US30_ISO iso_2026         n  235 win 40.4% PF 1.163 R +0.1153 pts +10.87 Sharpe 1.03 stop 49% chan 20% flat 0% tgt 31%

@@ -1,0 +1,200 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+
+// GOLD 07:00-11:00 NEW YORK -- ADAPTIVE EXIT. Loss control, not alpha, and the header says which.
+//
+// THE ASK WAS: make the losses smaller, secure the profit on winners, verify the reason, and hold
+// the session to 07:00-11:00 New York with a hard flatten. All four are delivered and measured
+// below. What is NOT delivered is an edge: the entry this rides on does not have one, and no exit
+// policy creates one. Read the last block before trading it.
+//
+// ============================ MEASURED ON TWO FEEDS ============================
+// XAU_ISO_15m   371,586 bars 2010-01..2026-01, real broker tick volume (corr with bar range +0.64)
+// XAUUSD15_MT   100,000 bars 2022-06..2026-08, a DIFFERENT provider -- and its sixth column is the
+//               BAR'S LENGTH IN MINUTES, not volume: 99.62% of rows read exactly 15 and its
+//               correlation with the bar's own range is +0.005. No volume rule can run on it.
+// Costs: gold's floor, 0.30 USD/oz round turn + 0.05 a side. Research block to 2020; ONE locked read.
+//
+// ============================ THE WINDOW, VERIFIED FIRST ============================
+// The clock was DERIVED from each feed rather than inherited: mean |return| and mean bar range peak
+// at 08:30 New York, in winter AND in summer, on BOTH feeds -- gold's own anchor, not the equity
+// open. (The MT feed is stamped in UTC and needs a real conversion; a fixed -7h shift puts its peak
+// at 06:30 in winter and 05:30 in summer, which is how you know it is not a broker-server stamp.)
+//   * 07:00-11:00 holds 27.1% of the 24-hour range against 16.7% for a flat day, and the FOUR
+//     BUSIEST New York hours of gold's day are exactly the four in the window. The window is right
+//     for GOLD -- and this is the opposite of the equity indices, where 07:00-09:00 is the worst
+//     part of the day, because their anchor is 09:30 and gold's is 08:30.
+//   * The 11:00 flatten forfeits less than you would fear: only 36.5% of sessions extend beyond
+//     their own 11:00 high, and the window holds a median 71% of the whole 07:00-16:00 upside range.
+//
+// ============================ WHY EACH EXIT COMPONENT IS HERE ============================
+// Uncensored paths -- no stop, so nothing is truncated -- on 2,721 research trades:
+//   * EVENTUAL WINNERS TAKE A THIRD OF THE HEAT LOSERS TAKE: |MAE| 1.17 ATR against 3.37. A 2.9x
+//     separation on adverse excursion before any feature is consulted. That is why a stop works.
+//   * THE AVERAGE TRADE BANKS A NEGATIVE FRACTION OF WHAT IT WAS SHOWN: mean MFE 2.38 ATR, mean
+//     result -0.13, mean pullback from the running high 3.13. And 61-67% of eventual LOSERS were
+//     once more than 0.5 ATR in front -- that fraction is the whole addressable market for a
+//     breakeven or a trail, and it is large.
+//   * HEAT SCALES AS THE SQUARE ROOT OF THE TIME THE TRADE HAS LEFT. |MAE| runs 1.46 / 1.63 / 2.76 /
+//     3.67 ATR for entries with <1h / 1-2h / 2-3h / 3-4h before the flatten, and a log-log fit wants
+//     an exponent of 0.472 (ISO) and 0.476 (MT) against the 0.500 a random walk predicts -- a number
+//     named BEFORE the fit. A 07:15 entry and a 10:30 entry are not the same trade and must not
+//     carry the same stop. This term exists only BECAUSE of the flatten.
+//   * HEAT IN ATR UNITS IS 1.66x-2.24x LARGER IN THE LOWEST VOLATILITY QUARTILE, monotone across all
+//     four, on both feeds and both blocks. ATR is backward-looking and volatility mean-reverts, so a
+//     FIXED multiple of it is too small exactly when vol has just contracted. First cross-market
+//     replication of a result found on NQ.
+//   * DOES THE SCALING DO WHAT IT CLAIMS? A fixed 2.0N stop is hit on 56.8% of trades in the lowest
+//     volatility quartile and 24.5% in the highest -- a 32-point spread. Scaling by volatility and
+//     the clock halves that to 15 points. Equalising the stop-out rate is the mechanism's OWN
+//     prediction and a stronger test than expectancy.
+//
+// ============================ WHAT IT BOUGHT (ISO long, research, paired) ============================
+//   mean loss per losing trade   -2.215 ATR  ->  -1.336 ATR      (-40%)
+//   5th-percentile trade         -5.357      ->  -2.368          (-56%)
+//   WORST SINGLE TRADE          -17.00       ->  -3.204          (-81%)
+//   max drawdown                435.7        ->  366.8           (-16%)
+//   win rate                     45.2%       ->   47.8%
+//   expectancy                   -0.1270 ATR ->  -0.1281 ATR     UNCHANGED (bootstrap p 0.518)
+// Drawdown falls in 8 OF 8 feed x side x block cells, by 16% to 83%. Expectancy improves in 7 of 8
+// and NOT ONE clears p <= 0.05. This is a risk transformation, not an edge: the same trades, a much
+// smaller-tailed distribution, the same mean.
+//
+// ============================ THE THREE THINGS THAT WOULD STOP YOU ============================
+// 1. THE ENTRY HAS NO EDGE. Six declared entries in this window -- Donchian break and its fade,
+//    overnight high and low breaks, an EMA50 pullback, a first-hour range break -- are ALL negative
+//    on the 2010-2026 feed's research block, and 0 of 4,480 declared exit configurations is
+//    profitable there. A stop cannot make a losing entry win; it makes it lose less violently.
+// 2. THE TRAIL COSTS MONEY IN A STRONG TREND. Its counterfactual: on the trades the trail closed it
+//    paid +0.109 / +0.064 / +0.036 ATR more than the 11:00 flatten would have on three cells, and
+//    -0.670 ATR LESS on MT's locked block -- the 2024-26 gold rally, where the tail arrived before
+//    11:00 and the trail cut it off. On every cell about half the trades it closed would have
+//    finished better without it. Default ON because it is positive on three of four; switch it off
+//    if you believe gold is trending.
+// 3. THE ADAPTIVE STOP TIGHTENS THE AVERAGE. Equalising the stop-out rate across volatility states
+//    costs a lower mean stop (1.41 ATR against a fixed 2.00) and a HIGHER overall stop-out rate.
+//    It buys consistency, not a free lunch.
+//
+// COMMISSION AND SLIPPAGE ARE NOT SET HERE. Set them in Properties before reading any report.
+// A round turn is about 17% of a 1xATR barrier on 15-minute gold, which is why every scalping
+// geometry on this instrument is arithmetically dead.
+
+strategy("XAU 07:00-11:00 Adaptive Exit", shorttitle = "XAU 0711", overlay = true, pyramiding = 0, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+gS = "Session (New York wall clock)"
+winOpen  = input.int(420, "Window opens (min past NY midnight, 420 = 07:00)", group = gS)
+winClose = input.int(660, "Flatten at      (min past NY midnight, 660 = 11:00)", group = gS, tooltip = "The flatten fills at the NEXT bar's open -- a script cannot sell the close of the bar that triggers it -- so the order is submitted on the bar before the cutoff.")
+
+gE = "Entry (this is the part with no measured edge)"
+donLen  = input.int(20, "Donchian length", minval = 2, group = gE)
+doLong  = input.bool(true,  "Long side", group = gE)
+doShort = input.bool(false, "Short side", group = gE, tooltip = "Short is -0.153 ATR on the ISO research block against long's -0.127. Neither is positive.")
+
+gX = "Smaller losses"
+baseStop = input.float(2.0, "Base stop (x ATR at the signal bar)", minval = 0.25, step = 0.25, group = gX, tooltip = "The stop marginal across the whole 4,480-cell grid is flat from 2.0 to 3.0; 2.0 is the tighter end of that plateau. Tighter than 1.5 is monotonically worse on expectancy while continuing to shrink the loss -- which is the trade the ask is making.")
+useVol   = input.bool(true, "Widen the stop when volatility sits LOW in its own history", group = gX, tooltip = "x1.4 below the 50th percentile of ATR over the last 500 bars, x0.8 above it. Heat in ATR units is 1.66x-2.24x larger in the bottom quartile, monotone, on both feeds and both blocks.")
+useClock = input.bool(true, "Scale the stop by the square root of the time left", group = gX, tooltip = "|MAE| runs 1.46 -> 3.67 ATR from <1h left to 3-4h left, and the fitted exponent is 0.472/0.476 against the 0.500 a random walk predicts. A 10:30 entry cannot travel as far as a 07:15 entry, so it does not need the same stop.")
+volLen   = input.int(500, "Volatility percentile lookback", minval = 50, group = gX)
+
+gW = "Securing the winner"
+beAt   = input.float(1.00, "Move the stop to breakeven once this much is in front (ATR, 0 = off)", minval = 0.0, step = 0.25, group = gW)
+beOff  = input.float(0.25, "...and put it this far the RIGHT side of the entry (ATR)", minval = 0.0, step = 0.25, group = gW)
+trArm  = input.float(1.00, "Arm a trailing stop at (ATR in front, 0 = off)", minval = 0.0, step = 0.25, group = gW)
+trDist = input.float(1.00, "Trail distance behind the running high (ATR)", minval = 0.25, step = 0.25, group = gW, tooltip = "Positive on three of four feed-block cells and -0.670 ATR on MT locked, which is the gold rally. Turn it off if you think gold is trending.")
+tighten = input.bool(true, "Halve the trail in the second half of the window", group = gW, tooltip = "Worth +0.013 to +0.022 ATR on the ISO cells. Small, consistent, and free -- the clock is going to close the trade anyway.")
+
+showHUD = input.bool(true, "Show the panel", group = gW)
+
+// ------------------------------------------------------------------ clock
+TZ = "America/New_York"
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow = dayofweek(time, TZ)
+wkday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+inWin = wkday and nyMin >= winOpen and nyMin < winClose
+tfMin = timeframe.in_seconds() / 60
+// the flatten ORDER goes out on the bar before the cutoff, so it FILLS at the 11:00 open
+lastWin = inWin and nyMin + tfMin >= winClose
+
+// ------------------------------------------------------------------ indicators
+// ta.atr is Wilder's; the research uses ema(tr, n). This matches the research.
+atr = ta.ema(ta.tr(true), 14)
+hiN = ta.highest(high, donLen)[1]
+loN = ta.lowest(low, donLen)[1]
+// the volatility percentile of the CURRENT ATR within its own trailing history
+volPct = ta.percentrank(atr, volLen) / 100.0
+
+// ------------------------------------------------------------------ the per-trade stop multiple
+minsLeft = math.max(winClose - nyMin, 1)
+winLen   = math.max(winClose - winOpen, 1)
+volTerm   = not useVol   ? 1.0 : (na(volPct) or volPct <= 0.5 ? 1.4 : 0.8)
+clockTerm = not useClock ? 1.0 : math.pow(math.min(math.max(minsLeft / winLen, 0.02), 1.0), 0.5)
+// clipped to [0.5x, 2.5x] of the base so no reading can drive the stop to a distance where the
+// risk denominator collapses -- the trap a channel or structural stop falls into
+stopMult = math.min(math.max(baseStop * volTerm * clockTerm, baseStop * 0.5), baseStop * 2.5)
+
+longSig  = doLong  and inWin and close > hiN
+shortSig = doShort and inWin and close < loN
+
+// ------------------------------------------------------------------ orders
+// The exit-bar marker updates BEFORE the entry test so a trade cannot re-enter on the bar it closed
+// on. The initial stop is placed FILL-RELATIVE with the entry, so it is live on the fill bar --
+// leaving that bar naked is worth 4.4-13.0% of trades on this branch's parity measurements.
+var int lastExitBar = -1
+var int nClosed = 0
+var float riskPts = na
+var float peak = na
+if strategy.closedtrades != nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and bar_index != lastExitBar and not na(atr) and atr > 0
+
+if canEnter and longSig
+    riskPts := stopMult * atr
+    peak := na
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick))
+
+if canEnter and shortSig
+    riskPts := stopMult * atr
+    peak := na
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", from_entry = "S", loss = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick))
+
+// ------------------------------------------------------------------ breakeven and trail
+// Both act on the CLOSE, and neither can act on the bar the position filled: `position_avg_price`
+// does not exist until one bar after the fill, so a stop or trail written from it on that bar is
+// `na` and silently does nothing -- the defect that was worth 1.1 profit factor on another script
+// here. The hard stop above is fill-relative and covers exactly that bar.
+inPos = strategy.position_size != 0 and bar_index > lastExitBar
+sideN = strategy.position_size > 0 ? 1 : -1
+if barstate.isconfirmed and inPos and not na(strategy.position_avg_price) and riskPts > 0
+    adv = sideN * (close - strategy.position_avg_price)
+    peak := na(peak) ? adv : math.max(peak, adv)
+    elapsed = 1.0 - minsLeft / winLen
+    td = trDist * atr * (tighten and elapsed >= 0.5 ? 0.5 : 1.0)
+    beLvl = beAt > 0 and peak >= beAt * atr ? strategy.position_avg_price + sideN * beOff * atr : na
+    trLvl = trArm > 0 and peak >= trArm * atr ? strategy.position_avg_price + sideN * (peak - td) : na
+    lvl = na(beLvl) ? trLvl : (na(trLvl) ? beLvl : (sideN > 0 ? math.max(beLvl, trLvl) : math.min(beLvl, trLvl)))
+    if not na(lvl) and (sideN > 0 ? close < lvl : close > lvl)
+        strategy.close_all(comment = "secured")
+
+if barstate.isconfirmed and lastWin and strategy.position_size != 0
+    strategy.close_all(comment = "11:00 flat")
+
+// ------------------------------------------------------------------ plots
+bgcolor(inWin ? color.new(#1baf7a, 93) : na)
+plot(inWin and strategy.position_size != 0 and not na(strategy.position_avg_price) ? strategy.position_avg_price - sideN * stopMult * atr : na, "initial stop", color = color.new(#c0392b, 0), style = plot.style_linebr, linewidth = 2)
+
+var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+if showHUD and barstate.islast
+    table.cell(hud, 0, 0, "stop now", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 0, str.tostring(stopMult, "#.##") + " ATR  (base " + str.tostring(baseStop, "#.#") + ")", text_size = size.tiny)
+    table.cell(hud, 0, 1, "vol x  /  clock x", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 1, str.tostring(volTerm, "#.##") + "  /  " + str.tostring(clockTerm, "#.##") + "   (vol pct " + str.tostring(volPct, "#.##") + ")", text_size = size.tiny)
+    table.cell(hud, 0, 2, "minutes left", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 2, str.tostring(minsLeft, "#"), text_size = size.tiny)
+    table.cell(hud, 0, 3, "corr(volume, bar range)", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 3, str.tostring(ta.correlation(volume, high - low, 500), "#.###") + "  (near 0 = not volume)", text_size = size.tiny)
+    table.cell(hud, 0, 4, "measured expectancy", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 4, "UNCHANGED vs no stop — this is loss control", text_color = color.new(#eb6834, 0), text_size = size.tiny)

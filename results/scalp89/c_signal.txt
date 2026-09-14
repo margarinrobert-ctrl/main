@@ -1,0 +1,21 @@
+
+============================================================================================================================
+1. FIXED-HORIZON FORWARD RETURN at signal bars vs random in-session bars, in ATR units (research)
+============================================================================================================================
+   horizon  long n  long fwd/ATR  short n  short fwd/ATR    random  long-rand  short-rand  p long  p short
+         1     776       -0.0013      753        -0.0120    0.0048    -0.0068     -0.0041   0.570    0.560
+         3     776        0.0415      753         0.1156    0.0125     0.0270      0.1242   0.304    0.020
+         6     776        0.0881      753         0.1732    0.0251     0.0671      0.2015   0.234    0.006
+        12     776        0.0298      753         0.1536    0.0489    -0.0178      0.2103   0.564    0.074
+        24     776        0.0582      753         0.0518    0.0570     0.0042      0.0982   0.508    0.348
+        48     776        0.1374      753        -0.1806    0.1776    -0.0242     -0.0188   0.564    0.534
+  'random' is the unconditional forward move of an in-session research bar (long sign). p is the share of
+  500 random same-size draws that match or beat the signal's mean forward move in ITS direction.
+
+============================================================================================================================
+2. MATCHED CONTROL -- same bars' GEOMETRY and side, random in-session entry bar, trail OFF and as configured
+============================================================================================================================
+  trail OFF (1.5 / 2.5 ATR bracket)    n  1178  observed -0.0145  control median -0.0121  5-95% [-0.0203, -0.0043]  p 0.730
+  as configured (15/8 trail)           n  1309  observed -0.0392  control median -0.0413  5-95% [-0.0447, -0.0376]  p 0.177
+  The control draws the same MIX of long/short at random in-session bars and runs the identical exit machine
+  (with the position lock), so it prices the geometry, the session and the drift; the rule must beat it.

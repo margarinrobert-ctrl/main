@@ -1,0 +1,31 @@
+====================================================================================================
+B. MATCHED CONTROLS -- the rule against random entries with its own exits
+====================================================================================================
+  random: random eligible fill bar, coin-flip side.  days: the rule's sessions, random bar, the rule's side.  side: the rule's bars, coin-flip side.  p = share of 2,000 draws >= rule.
+
+NQ 10m
+  research   | random: rule  +24.0 ctl   -2.1 excess  +26.1 p 0.054 (n 70/66) | days: rule  +24.0 ctl  +29.0 excess   -5.0 p 0.855 (n 70/70) | side: rule  +24.0 ctl   -0.1 excess  +24.1 p 0.051 (n 70/70)
+  locked     | random: rule  +62.8 ctl   -0.4 excess  +63.2 p 0.062 (n 34/32) | days: rule  +62.8 ctl  +72.2 excess   -9.4 p 0.851 (n 34/34) | side: rule  +62.8 ctl   +2.7 excess  +60.1 p 0.001 (n 34/34)
+  VWAP filter keeps 66.7% of intents: rule mean +36.7 on 104 | no filter +20.2 on 156 | random filter of the same selectivity median +20.7, p 0.007
+
+NQ 15m
+  research   | random: rule  +34.1 ctl   -2.2 excess  +36.3 p 0.013 (n 67/64) | days: rule  +34.1 ctl  +46.0 excess  -12.0 p 0.994 (n 67/67) | side: rule  +34.1 ctl   -1.4 excess  +35.4 p 0.007 (n 67/67)
+  locked     | random: rule   +7.0 ctl   -0.5 excess   +7.6 p 0.407 (n 41/39) | days: rule   +7.0 ctl  +37.3 excess  -30.3 p 1.000 (n 41/41) | side: rule   +7.0 ctl   -1.6 excess   +8.7 p 0.447 (n 41/41)
+  VWAP filter keeps 83.7% of intents: rule mean +23.8 on 108 | no filter +17.5 on 129 | random filter of the same selectivity median +16.8, p 0.153
+
+US100 15m
+  research   | random: rule  +10.8 ctl   -2.3 excess  +13.0 p 0.019 (n 176/167) | days: rule  +10.8 ctl  +15.0 excess   -4.2 p 0.998 (n 176/176) | side: rule  +10.8 ctl   -2.9 excess  +13.7 p 0.012 (n 176/176)
+  validation | random: rule  +34.5 ctl   +0.5 excess  +34.0 p 0.032 (n 70/66) | days: rule  +34.5 ctl  +47.2 excess  -12.7 p 1.000 (n 70/70) | side: rule  +34.5 ctl   +3.6 excess  +30.9 p 0.034 (n 70/70)
+  test       | random: rule  +15.3 ctl   -1.6 excess  +16.9 p 0.230 (n 62/59) | days: rule  +15.3 ctl  +30.5 excess  -15.2 p 0.996 (n 62/62) | side: rule  +15.3 ctl   -2.2 excess  +17.5 p 0.262 (n 62/62)
+  VWAP filter keeps 77.8% of intents: rule mean +17.1 on 308 | no filter +10.0 on 396 | random filter of the same selectivity median +9.5, p 0.010
+
+US30 15m
+  research   | random: rule   -7.9 ctl   -4.4 excess   -3.4 p 0.585 (n 148/141) | days: rule   -7.9 ctl  +20.1 excess  -27.9 p 1.000 (n 148/148) | side: rule   -7.9 ctl   -8.3 excess   +0.5 p 0.490 (n 148/148)
+  validation | random: rule  +16.4 ctl   -3.5 excess  +19.9 p 0.283 (n 68/64) | days: rule  +16.4 ctl  +51.6 excess  -35.2 p 1.000 (n 68/68) | side: rule  +16.4 ctl   -3.6 excess  +20.0 p 0.259 (n 68/68)
+  test       | random: rule   +4.6 ctl   -3.5 excess   +8.0 p 0.411 (n 51/48) | days: rule   +4.6 ctl  +36.6 excess  -32.0 p 1.000 (n 51/51) | side: rule   +4.6 ctl   -2.1 excess   +6.6 p 0.410 (n 51/51)
+  VWAP filter keeps 79.7% of intents: rule mean +0.7 on 267 | no filter -5.8 on 335 | random filter of the same selectivity median -5.3, p 0.133
+
+XAUUSD 15m
+  research   | random: rule   +0.5 ctl   -0.5 excess   +0.9 p 0.270 (n 46/45) | days: rule   +0.5 ctl   +1.7 excess   -1.3 p 0.939 (n 46/46) | side: rule   +0.5 ctl   -0.2 excess   +0.6 p 0.350 (n 46/46)
+  locked     | random: rule  +12.0 ctl   -0.3 excess  +12.3 p 0.027 (n 26/26) | days: rule  +12.0 ctl  +13.0 excess   -1.0 p 0.598 (n 26/26) | side: rule  +12.0 ctl   +0.5 excess  +11.5 p 0.020 (n 26/26)
+  VWAP filter keeps 43.9% of intents: rule mean +4.6 on 72 | no filter +1.8 on 164 | random filter of the same selectivity median +1.9, p 0.063

@@ -1,0 +1,74 @@
+
+============================================================================================================================
+marginal-best: close 15m edge/max atr30 k1.5 tp0.75   TRAIN n=361  R/trade -0.0031
+============================================================================================================================
+
+   BY SESSION / TIME OF DAY (tmin = minutes since the 18:00 roll)
+      NY open 09:30-10   n   60  R  +0.0532  PF  1.132  win 0.650
+      NY 10-11:30        n  125  R  -0.0024  PF  0.994  win 0.648
+      NY lunch 11:30-13  n   72  R  +0.0829  PF  1.241  win 0.694
+      NY pm 13-16        n  104  R  -0.0959  PF  0.799  win 0.587
+
+   BY LIQUIDITY SOURCE
+      60m        n  120  R  +0.0408  PF  1.105
+      asia       n   41  R  -0.2579  PF  0.552
+      london     n  140  R  +0.0181  PF  1.045
+      prevday    n   36  R  +0.0421  PF  1.114
+
+   SINGLE-FEATURE QUARTILES -- best quartile vs a same-size RANDOM subset
+      gap_bars       Q2  n   78  R  +0.1732  control p 0.018  <-- clears the control
+      rvol           Q1  n   90  R  +0.1687  control p 0.015  <-- clears the control
+      pen_atr        Q1  n   90  R  +0.1567  control p 0.022  <-- clears the control
+      atr_z          Q2  n   90  R  +0.1356  control p 0.033  <-- clears the control
+      zone_atr       Q3  n   90  R  +0.1342  control p 0.040  <-- clears the control
+      vwap_slope     Q3  n   90  R  +0.1197  control p 0.060
+      sweep_dist     Q1  n   90  R  +0.1134  control p 0.068
+      vwap_dist      Q3  n   90  R  +0.1046  control p 0.072
+      adx            Q2  n   90  R  +0.0836  control p 0.138
+      tmin           Q0  n   92  R  +0.0577  control p 0.207
+      eff            Q2  n   90  R  +0.0492  control p 0.247
+      features clearing p<=0.05: 5 of 11   (expected by chance 0.6)
+
+   GRADIENT-BOOSTED QUALITY SCORE, purged folds, with a shuffled twin
+        keep     n   R/trade      PF    shuffled R  control p
+        100%   361   -0.0031   0.993       -0.0031      0.300
+         50%   180   +0.0241   1.061       -0.0571      0.295
+         25%    90   +0.0208   1.054       -0.1046      0.362
+         10%    36   -0.0016   0.996       +0.0450      0.517
+
+============================================================================================================================
+train winner: pen_only 15m edge/sweep atr14 k1.0 tp1.5   TRAIN n=219  R/trade +0.9544
+============================================================================================================================
+
+   BY SESSION / TIME OF DAY (tmin = minutes since the 18:00 roll)
+      NY open 09:30-10   n   36  R  +0.3189  PF  1.665  win 0.583
+      NY 10-11:30        n   79  R  -0.2616  PF  0.656  win 0.367
+      NY lunch 11:30-13  n   47  R  -0.1206  PF  0.823  win 0.404
+      NY pm 13-16        n   57  R  +3.9276  PF  7.332  win 0.456
+
+   BY LIQUIDITY SOURCE
+      60m        n   73  R  +3.0629  PF  5.812
+      london     n  111  R  -0.0728  PF  0.890
+
+   SINGLE-FEATURE QUARTILES -- best quartile vs a same-size RANDOM subset
+      rvol           Q3  n   55  R  +4.3933  control p 0.000  <-- clears the control
+      atr_z          Q3  n   55  R  +4.3902  control p 0.000  <-- clears the control
+      vwap_slope     Q2  n   54  R  +4.3151  control p 0.037  <-- clears the control
+      tmin           Q3  n   53  R  +4.2595  control p 0.102
+      sweep_dist     Q0  n   55  R  +4.1751  control p 0.050  <-- clears the control
+      vwap_dist      Q2  n   54  R  +4.1486  control p 0.110
+      gap_bars       Q3  n   53  R  +4.1014  control p 0.200
+      pen_atr        Q2  n   54  R  +4.0711  control p 0.172
+      zone_atr       Q3  n   55  R  +4.0704  control p 0.115
+      eff            Q1  n   55  R  +4.0621  control p 0.125
+      adx            Q2  n   54  R  +4.0459  control p 0.200
+      features clearing p<=0.05: 4 of 11   (expected by chance 0.6)
+
+   GRADIENT-BOOSTED QUALITY SCORE, purged folds, with a shuffled twin
+        keep     n   R/trade      PF    shuffled R  control p
+        100%   219   +0.9544   2.445       +0.9544      0.600
+         50%   109   +2.0716   4.391       +0.0507      0.098
+         25%    54   -0.0180   0.971       +0.2224      0.537
+         10%    25   +0.1820   1.353       +0.4739      0.220
+
+   elapsed 373s

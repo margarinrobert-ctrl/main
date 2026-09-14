@@ -1,0 +1,57 @@
+
+============================================================================================================================
+A. THE DECLARED GRID -- levels x trail x stop x side x absorption threshold; RESEARCH block
+============================================================================================================================
+  211 scorable cells (>=30 trades); share net-profitable 49.8%; median %/trade -0.0003
+
+  MARGINAL AVERAGE PER AXIS -- read this, never the top row:
+     levels: 1H+4H swings: +0.0722 (PF 1.23, n~297)   all six: +0.0914 (PF 1.31, n~480)   mid + swings: +0.0693 (PF 1.24, n~437)   mid only: +0.1361 (PF 1.51, n~263)
+       vmin: 0.1: +0.1072 (PF 1.41, n~650)   1.0: +0.1216 (PF 1.45, n~287)   2.0: +0.0500 (PF 1.12, n~172)
+       side: both: +0.0858 (PF 1.27, n~481)   long: +0.3130 (PF 2.22, n~314)   short: -0.1065 (PF 0.54, n~311)
+      trail: False: +0.1917 (PF 1.69, n~108)   True: -0.0024 (PF 0.98, n~619)
+       stop: 1.0: +0.0899 (PF 1.42, n~407)   1.5: +0.0936 (PF 1.31, n~366)   2.5: +0.0936 (PF 1.23, n~334)
+
+  top 8 cells by %/trade (the max of many draws -- shown for shape, not as a selection):
+      levels  vmin side  trail  stop  n      pct       pf      win       tot
+    mid only   1.0 long  False   1.5 34 1.250076 5.417171 5.882353 42.502585
+    mid only   2.0 long  False   2.5 37 1.159744 3.829230 8.108108 42.910519
+    mid only   1.0 long  False   1.0 41 1.081666 6.702926 4.878049 44.348302
+1H+4H swings   0.1 long  False   1.5 31 0.972279 4.746978 6.451613 30.140663
+1H+4H swings   1.0 long  False   2.5 30 0.919803 3.030343 6.666667 27.594089
+mid + swings   2.0 long  False   2.5 32 0.874391 3.068016 6.250000 27.980502
+     all six   0.1 long  False   2.5 33 0.873457 3.272018 6.060606 28.824070
+     all six   1.0 both  False   1.0 46 0.870257 4.402342 2.173913 40.031814
+
+============================================================================================================================
+B. THE ASK AS SPECIFIED -- mid + 1H/4H swings, absorption on, 1.5 ATR stop, ATR trail; RESEARCH
+============================================================================================================================
+                                                           n  %/trade     PF  win%   $ 1 MNQ  hold  exits
+  as asked (trail 1.0/1.0 ATR)                          1888  -0.0070  0.920  53.4    -4,771     3  trail57% stop43%
+    - no trail                                           110  -0.0040  0.985   1.8    -1,024    20  stop98% target2%
+    - no absorption requirement                         3421  -0.0042  0.952  54.5    -5,945     3  trail58% stop42%
+    - no absorption, no trail                            135   0.0940  1.347   1.5       105    12  stop99% target1%
+    - swings only (no midline)                          1219  -0.0142  0.843  51.8    -6,101     3  trail55% stop45%
+    - midline only (no swings)                          1184   0.0015  1.018  54.8       108     3  trail58% stop42%
+    longs only                                          1216   0.0038  1.046  54.7     1,640     3  trail58% stop42%
+    shorts only                                         1075  -0.0157  0.822  52.2    -6,144     3  trail55% stop45%
+    zero cost                                           1890   0.0035  1.043  57.8     2,536     3  trail58% stop42%
+
+  the trail ladder at the asked geometry:
+                                                           n  %/trade     PF  win%   $ 1 MNQ  hold  exits
+    trail arm 0.5 / offset 0.5 ATR                      2268   0.0034  1.061  65.0     2,325     1  trail71% stop29%
+    trail arm 1.0 / offset 0.5 ATR                      1976  -0.0008  0.991  56.5      -638     2  trail57% stop43%
+    trail arm 1.0 / offset 1.0 ATR                      1888  -0.0070  0.920  53.4    -4,771     3  trail57% stop43%
+    trail arm 2.0 / offset 1.0 ATR                      1545  -0.0108  0.915  38.7    -5,332     5  stop61% trail39%
+    trail arm 2.0 / offset 2.0 ATR                      1366  -0.0101  0.923  36.8    -4,195     6  stop62% trail38%
+    trail arm 3.0 / offset 2.0 ATR                      1221  -0.0015  0.990  31.1       250     7  stop69% trail31%
+    NO TRAIL                                             110  -0.0040  0.985   1.8    -1,024    20  stop98% target2%
+
+============================================================================================================================
+C. TWO MATCHED CONTROLS on the asked configuration (research block)
+============================================================================================================================
+  as asked (trail ON): n=1888  observed -0.0070
+     random ENTRY  median -0.0015  5-95% [-0.0105, +0.0069]  p 0.857
+     random FILTER median -0.0024  5-95% [-0.0096, +0.0044]  p 0.843
+  no trail: n=110  observed -0.0040
+     random ENTRY  median +0.1605  5-95% [-0.0378, +0.7170]  p 0.887
+     random FILTER median +0.1166  5-95% [-0.0775, +0.7155]  p 0.813

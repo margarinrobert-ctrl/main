@@ -1,0 +1,527 @@
+// ================================================================================================
+// V60 -- DONCHIAN BREAKOUT + EMA CROSS CONFIRMATION + AROON OSCILLATOR + CHOP/ADX REGIME
+//
+// Two presets, every component switchable, and each switch states its own MEASURED cost. The
+// research is `docs/ib/STUDY_V60_AROON.md`: 1,166,400 configurations evaluated on 60-minute bars
+// across US100 (51,889 bars), NQ (18,243) and US30 (49,325), of which 142,560 per market are
+// DISTINCT once the inert axes are collapsed.
+//
+// ============================ READ THIS BEFORE TURNING THE AROON ON ============================
+// THE AROON OSCILLATOR CANNOT FILTER THIS STRATEGY, AND IT IS AN IDENTITY RATHER THAN A WEAK
+// SIGNAL. Aroon Up(N) is 100 exactly when the newest bar of its window is the window's highest. A
+// Donchian(E) long breakout fires when the close exceeds the prior E-bar high. So WHENEVER
+// N <= E THE BREAKOUT BAR IS THE N-BAR HIGH BY CONSTRUCTION: Aroon Up is 100 and the oscillator
+// is non-negative, always. Checked bar by bar on all three markets:
+//
+//   market   donchian  aroon N   breakout bars   Aroon Up == 100   osc >= 0   osc >= 50
+//   US100        20       14         4,114           100.0%          100.0%      74.8%
+//   US100        30       25         3,407           100.0%          100.0%      84.0%
+//   NQ           20       14         1,370           100.0%          100.0%      72.0%
+//   NQ           55       25           875           100.0%          100.0%      80.5%
+//   US30         30       25         2,878           100.0%          100.0%      86.2%
+//   US30         55       25         2,291           100.0%          100.0%      88.3%
+//
+// ZERO EXCEPTIONS in every cell where N <= E. `osc >= 0` and `up >= 70` cannot remove ONE signal.
+// The proof is visible in the P&L: at Donchian 55 with Aroon 25 the three readings below are the
+// SAME NUMBERS TO THE CENT as Aroon off --
+//
+//   aroon at don 55/20 + CHOP<=45      US100 res/lock        NQ res/lock        US30 res/lock
+//   off                              +48.70 / +84.83     +130.03 / -44.65    +232.91 / +92.12
+//   osc >= 0   (25)                  +48.70 / +84.83     +130.03 / -44.65    +232.91 / +92.12
+//   up  >= 70  (25)                  +48.70 / +84.83     +130.03 / -44.65    +232.91 / +92.12
+//   osc >= 50  (25)                  +57.94 / +37.69     +135.91 / -148.77   +213.91 / +101.52
+//
+// Only `osc >= 50` binds at all, and it is the one that damages the locked block. The HUD on this
+// script prints the live pass rate of your Aroon setting ON BREAKOUT BARS so you can watch the
+// identity hold on your own chart: if it reads 100.0%, the filter is doing nothing.
+//
+// Over the WHOLE grid, no Aroon setting beats `off` in more than 2 of the 6 market-block columns,
+// and the differences are +-1 dollar a trade on a base of 25 to 90. Aroon also correlates
+// +0.57 to +0.60 with the EMA state it is being added to, so it is not even an independent second
+// reading. IT SHIPS OFF. It is wired, plotted and counted rather than deleted, so the claim can be
+// re-checked rather than taken on trust.
+//
+// ================================ WHAT THE GRID SAYS DOES HELP ================================
+// Marginal average per axis over the whole grid (never the top row -- that is the maximum of
+// 132,396 draws). A setting earns its place only by beating `off` in ALL SIX market-block columns.
+//
+//   EMA condition on (either form)      5 of 6   the only trigger component that carries
+//   NO TAKE PROFIT                      5 of 6   fifth independent confirmation on this branch
+//   wide stop (3.0 x ATR)               4 of 6   the stop axis is monotone toward wider
+//   long entry channel (55)             5 of 6
+//   long exit channel (20)              5 of 6
+//   CHOP(14) <= 45                      4 of 6
+//   ADX(14) >= 20                       2 of 6   the WEAKER gate, and the top cell uses it
+//   AROON, every setting             <= 2 of 6   see above
+//
+// ================================== THE TWO PRESETS =====================================
+// PRESET A -- RESEARCH TOP CELL. EMA 21/62 cross, confirm within 40 bars, Donchian 10 entry /
+// 10 exit, 3.0N stop, no target, ADX >= 20. This is the configuration that was actually put
+// through the gates: it clears a minute-of-day matched control on US100 (p 0.000) and US30
+// (p 0.005) and fails on NQ (p 0.062); day-block bootstrap P(mean<=0) 0.000 / 0.017 / 0.001 on
+// research. Read once on locked: PF 1.250 / 1.056 / 1.127 against research 2.143 / 1.831 / 1.893.
+//
+// PRESET B -- MARGINAL CONSENSUS. The same rule at the settings the WHOLE grid prefers rather
+// than the settings its top row happens to carry: Donchian 55 entry / 20 exit, CHOP <= 45 instead
+// of ADX. Its locked numbers are better on two of three markets. THAT COMPARISON IS A LOCKED-BLOCK
+// READ AND IS NOT A SELECTION: preset A is what was chosen on research and validated, and B is
+// offered because the marginal table -- computed on research alone for don_e and don_x -- prefers
+// those settings. Treat B as a hypothesis, not as an improvement.
+//
+// =============================== WHAT THIS SCRIPT DOES NOT CLAIM ===============================
+// * NOTHING HERE SHIPS AS AN EDGE. The one-rung neighbourhood of preset A is 128 of 128 cells
+//   profitable on research on all three markets and 26.6% profitable on NQ's locked block. That is
+//   a perfect plateau that does not replicate. corr(research, locked) across 121,282 NQ
+//   configurations is -0.4426.
+// * THE CHANNEL EXIT FILLS AT THE NEXT BAR'S OPEN HERE and at the breaking bar's CLOSE in the
+//   research engine, because a script cannot place a market-on-close order decided by the close it
+//   fills at. An independent vectorbt build measured that convention at 1.9 to 10.3 points a trade
+//   and up to 353 points on a single trade across an overnight gap, and under it the locked block
+//   reads +5.98 / -12.28 / -0.09 against the engine's +17.36 / +6.81 / +14.94. EXPECT THIS SCRIPT
+//   TO UNDERPERFORM THE RESEARCH NUMBERS, and that direction is the honest one.
+// * The costs below are MNQ's ($1.44 round turn, one tick of slippage). CHANGE THEM for any other
+//   instrument -- a cost is a fraction of the risk being taken, not a number of points, and
+//   charging one instrument's fees on another has produced a decisive-looking failure here before.
+//   Read the TRADE COUNT and the COMMISSION LOAD before the P&L.
+// * Long only. The short mirror of this family loses on every block measured on this branch.
+// * All hours, no flatten. A fixed-time flatten is destructive on every window tested here -- nine
+//   independent confirmations -- because it truncates exactly the trades a channel exit exists to
+//   hold.
+//
+// Research tooling for education and analysis. Not financial advice.
+// ================================================================================================
+//@version=6
+strategy("V60 Donchian + EMA cross + Aroon", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000, currency = currency.USD,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72,
+     slippage = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+// ------------------------------------------------------------------------------------------------
+// INPUTS
+// ------------------------------------------------------------------------------------------------
+gP = "Preset"
+preset = input.string("A - research top cell", "Preset", group = gP,
+     options = ["A - research top cell", "B - marginal consensus", "Custom"],
+     tooltip = "A is the configuration that went through the matched control, the Monte Carlo and " +
+     "the robustness box. B is what the whole grid's marginal average prefers. Custom uses every " +
+     "input below exactly as set.")
+
+gE = "Entry -- EMA confirmation"
+emaModeIn = input.string("cross", "EMA condition", group = gE,
+     options = ["off", "state", "cross"],
+     tooltip = "off: the Donchian breakout alone. state: fast above slow. cross: a breakout " +
+     "within N bars AFTER an upward cross. Marginal: the EMA condition on beats off in 5 of 6 " +
+     "market-block columns -- the only trigger component that does.")
+emaFastIn = input.int(21, "EMA fast", minval = 2, group = gE)
+emaSlowIn = input.int(62, "EMA slow", minval = 3, group = gE)
+confirmWinIn = input.int(40, "Confirmation window (bars after the cross)", minval = 0, group = gE,
+     tooltip = "Only used in `cross` mode. 0 means no recency requirement at all, which is the " +
+     "grid's own Donchian-alone ablation.")
+
+gD = "Entry -- Donchian and exits"
+donEntryIn = input.int(10, "Donchian entry length", minval = 2, group = gD,
+     tooltip = "A is 10 (the top cell). The grid's marginal average prefers 55, in 5 of 6 columns.")
+donExitIn = input.int(10, "Donchian exit channel length", minval = 2, group = gD,
+     tooltip = "A is 10. The marginal average prefers 20, in 5 of 6 columns.")
+stopNIn = input.float(3.0, "Stop, x ATR(20 Wilder)", minval = 0.25, step = 0.25, group = gD,
+     tooltip = "The stop axis is monotone toward WIDER across the whole grid. 3.0 is the grid edge.")
+tpRIn = input.float(0.0, "Take profit, R (0 = none)", minval = 0.0, step = 0.5, group = gD,
+     tooltip = "0 is best in 5 of 6 columns. No take profit has now beaten every target tested " +
+     "five separate times on this branch. Setting this above zero is going against that.")
+
+gR = "Regime gate"
+useAdxIn = input.bool(true, "ADX(14) floor", group = gR,
+     tooltip = "Beats `off` in only 2 of 6 market-block columns. It is in preset A because the " +
+     "top cell carries it, not because the marginal table supports it.")
+adxMinIn = input.float(20.0, "ADX minimum", minval = 0.0, step = 1.0, group = gR)
+useChopIn = input.bool(false, "CHOP(14) ceiling", group = gR,
+     tooltip = "Beats `off` in 4 of 6 columns -- the better-supported of the two gates, and the " +
+     "one preset B uses.")
+chopMaxIn = input.float(45.0, "CHOP maximum", minval = 0.0, step = 1.0, group = gR)
+
+gA = "Aroon oscillator"
+aroonMode = input.string("off", "Aroon condition", group = gA,
+     options = ["off", "osc >= 0", "osc >= 50", "osc >= -50", "up >= 70"],
+     tooltip = "THIS INPUT IS LIVE IN EVERY PRESET. An earlier build resolved the presets by " +
+     "overwriting it with `off`, so choosing a condition here did nothing unless the preset read " +
+     "Custom -- that was a defect and it is fixed. Ships off because of the identity below, not " +
+     "because it is merely weak.")
+aroonLen = input.int(25, "Aroon length", minval = 2, group = gA)
+aroonAt = input.string("prior bar", "Read Aroon at", group = gA,
+     options = ["signal bar", "prior bar"],
+     tooltip = "THIS IS THE SETTING THAT DECIDES WHETHER AROON CAN DO ANYTHING AT ALL. At the " +
+     "SIGNAL bar, whenever the Aroon length is <= the Donchian entry length the breakout bar IS " +
+     "the N-bar high, so `osc >= 0` and `up >= 70` are true by construction and remove nothing -- " +
+     "on preset B they return the same P&L to the cent as `off` (NQ 54 trades, +67.30, PF 2.03, " +
+     "identical). At the PRIOR bar the identity does not apply, because the bar before a breakout " +
+     "need not be the N-bar high, and the condition asks a real question: was the trend already " +
+     "up before the break. THREE MARKETS, gross, research then locked $/trade at preset A with " +
+     "`osc >= 0`: NQ off +41.28 / +6.81, signal +48.55 / +10.57, PRIOR +55.86 / +14.09; US100 off " +
+     "+35.22 / +17.36, PRIOR +29.22 / +26.25; US30 off +53.49 / +14.94, PRIOR +42.48 / +13.60. " +
+     "READ THE SHAPE, NOT THE LOCKED COLUMN: the prior-bar reading improves NQ on both blocks and " +
+     "makes RESEARCH WORSE on US100 and US30 while improving their locked block. A rule chosen on " +
+     "research should look better THERE; the holdout is where an edge decays, not where it " +
+     "appears. That is the wrong shape on 2 of 3 markets, and the whole-grid marginal already " +
+     "said no Aroon setting beats `off` in more than 2 of 6 market-block columns. A knob to " +
+     "explore, not an edge.")
+showAroonIn = input.bool(true, "Report the oscillator in the status line / data window", group = gA,
+     tooltip = "This script is an overlay, so the oscillator is NOT drawn on the price scale -- " +
+     "it would squash the chart. Its live value appears in the status line, the Data Window and " +
+     "the panel instead.")
+
+gM = "MACD"
+macdMode = input.string("off", "MACD condition", group = gM,
+     options = ["off", "hist > 0", "macd > 0", "hist > 0 and macd > 0", "hist rising",
+     "hist > 0 and rising", "fresh bullish cross"],
+     tooltip = "SHIPS OFF, and for the same arithmetic reason the Aroon does. On preset B " +
+     "(Donchian 55) `macd > 0` at 12/26/9 fires on 100.0% of US30 breakout bars, 99.9% of US100's " +
+     "and 99.8% of NQ's -- and on US30 that is exact: 162 trades, +48.44 research / +20.28 " +
+     "locked, IDENTICAL to no condition at all. On NQ at 8/21/5 it is 100.0% and identical too. A " +
+     "close above the 55-bar high on a 60-minute chart essentially guarantees EMA(12) > EMA(26), " +
+     "so the zero-line filter cannot refuse anything. This is the third indicator on this branch " +
+     "to turn out to be the breakout restated (RSI >= 55 passes 94.7% of breakout bars; Aroon " +
+     "osc >= 0 passes 100.0%). Watch the panel's `macd pass on breakouts` row.")
+macdFast = input.int(12, "Fast length", minval = 1, group = gM)
+macdSlow = input.int(26, "Slow length", minval = 1, group = gM)
+macdSig = input.int(9, "Signal length", minval = 1, group = gM)
+macdOscType = input.string("EMA", "Oscillator MA type", options = ["EMA", "SMA"], group = gM,
+     tooltip = "STUDY_MA_LAG says MA TYPE is not a degree of freedom for a single moving average, " +
+     "and that is NOT true here: the MACD is a DIFFERENCE of two averages plus a third smoothing, " +
+     "so the lag mismatch compounds. At 12/26/9 the EMA and SMA readings of `hist > 0` agree on " +
+     "only 79.2% of bars and `hist > 0 and rising` on 76.2%. The SMA column reads better on the " +
+     "locked block (NQ preset A, `macd > 0`: EMA +8.24, SMA +25.27) -- but that difference lives " +
+     "on the ~20% of trades that differ, which STUDY_MA_LAG calls noise until it replicates on a " +
+     "second market. EMA is the default because it is the reference indicator's.")
+macdSigType = input.string("EMA", "Signal MA type", options = ["EMA", "SMA"], group = gM)
+macdCrossWin = input.int(10, "Fresh cross: bars since the bullish cross", minval = 1, group = gM,
+     tooltip = "THE ONLY MACD READING THAT MEANINGFULLY BINDS -- 42-45% of preset B's signals -- " +
+     "and the one to trust least. Preset B locked $/trade at 12/26/9: NQ -20.02 -> +9.48, US100 " +
+     "+44.71 -> +99.44, US30 +20.28 -> +0.94. It looks spectacular and it fails every shape test: " +
+     "on US100 it makes RESEARCH WORSE (+26.61 -> +19.70) while more than doubling the locked " +
+     "block, and on NQ it flips from +9.48 at 12/26/9 to -29.51 at 8/21/5. A result that flips " +
+     "sign one parameter rung away is a spike, not a plateau; this branch rejects those BEFORE " +
+     "the holdout, and this one was seen after, which is worse.")
+macdAt = input.string("signal bar", "Read MACD at", options = ["signal bar", "prior bar"],
+     group = gM,
+     tooltip = "The same diagnostic as the Aroon's. The MACD is not an identity -- it is a " +
+     "difference of exponential averages, not a channel position -- but reading it one bar back " +
+     "is free to run. NQ preset A locked $/trade for `macd > 0`: signal bar +8.24 / +1.82 / " +
+     "+17.59 at 12/26/9, 8/21/5 and 19/39/9; prior bar +15.00 / +15.23 / +22.75 -- consistent " +
+     "across all three parameterisations, which is a better shape than the fresh cross. On preset " +
+     "B the prior-bar reading is itself near-inert (98.5-99.1% of signals on all three markets), " +
+     "because a long channel makes the zero-line condition redundant however it is read.")
+
+gS = "Session -- entry window and hard flatten"
+useSession = input.bool(false, "Restrict entries to a window", group = gS,
+     tooltip = "OFF by default and the reason is measured on THREE markets, not preferred. " +
+     "Preset A, gross, research then locked $/trade. All hours: NQ +41.28 / +6.81, US100 " +
+     "+35.22 / +17.36, US30 +53.49 / +14.94. 09:30-11:00: NQ +39.71 / -36.70, US100 " +
+     "+18.04 / +33.63, US30 -1.66 / -56.91. 09:30-12:00: NQ +73.37 / -12.53, US100 " +
+     "+12.62 / +15.21, US30 -16.06 / -5.54. NO WINDOW BEATS ALL HOURS ON RESEARCH ON MORE THAN " +
+     "ONE MARKET, and US30 is NEGATIVE in both morning windows on both blocks. NQ's +73.37 at " +
+     "09:30-12:00 is the best research cell in the table and reads -12.53 out of sample -- the " +
+     "single-market story this table exists to prevent. Tenth independent time the intraday " +
+     "constraint has come out negative on this branch.")
+entrySession = input.session("0930-1600", "Entry window (New York)", group = gS,
+     tooltip = "A bar is eligible when its OPEN falls inside the window. The window gates ENTRIES " +
+     "only -- a position already open is managed by its stop and channel exit unless the flatten " +
+     "below is also on.")
+useFlatten = input.bool(false, "Hard flatten", group = gS,
+     tooltip = "OFF by default. Preset A, all hours, gross, research $/trade with the flatten at " +
+     "16:00: NQ +41.28 -> +17.78 (-57%), US100 +35.22 -> +10.83 (-69%), US30 +53.49 -> +20.98 " +
+     "(-61%). At 12:00: NQ -0.57 (-101%), US100 +8.80 (-75%), US30 +18.50 (-65%). A FIXED-TIME " +
+     "FLATTEN COSTS 57-69% OF THE RESEARCH RESULT PER TRADE ON EVERY MARKET, because it truncates " +
+     "exactly the trades a channel exit exists to hold, and it RAISES the trade count (NQ 83 -> " +
+     "103, US100 212 -> 260, US30 208 -> 259) which is where the cost goes. The locked column is " +
+     "mixed (NQ +6.81 -> +5.39, US100 +17.36 -> +11.18, US30 +14.94 -> +38.35) and does not " +
+     "rescue it. `Flat by 16:00` means FLAT AT THE 16:00 OPEN: the order goes in on the bar " +
+     "before, because strategy.close() cannot sell the close that triggers it. A signal whose " +
+     "fill would land at or after the cutoff is refused rather than opened and closed at the " +
+     "same price.")
+flatHour = input.int(16, "Flatten by -- hour (New York)", minval = 0, maxval = 23, group = gS)
+flatMinute = input.int(0, "Flatten by -- minute", minval = 0, maxval = 59, group = gS)
+
+gH = "Display"
+showHudIn = input.bool(true, "Show the diagnostic panel", group = gH)
+showLevelsIn = input.bool(true, "Plot the Donchian channels", group = gH)
+
+// ------------------------------------------------------------------------------------------------
+// PRESET RESOLUTION. Done here in main scope, once, so every downstream line reads one variable.
+// ------------------------------------------------------------------------------------------------
+isA = preset == "A - research top cell"
+isB = preset == "B - marginal consensus"
+
+emaMode = isA or isB ? "cross" : emaModeIn
+emaFast = isA or isB ? 21 : emaFastIn
+emaSlow = isA or isB ? 62 : emaSlowIn
+confirmWin = isA or isB ? 40 : confirmWinIn
+donEntry = isA ? 10 : isB ? 55 : donEntryIn
+donExit = isA ? 10 : isB ? 20 : donExitIn
+stopN = isA or isB ? 3.0 : stopNIn
+tpR = isA or isB ? 0.0 : tpRIn
+useAdx = isA ? true : isB ? false : useAdxIn
+adxMin = isA or isB ? 20.0 : adxMinIn
+useChop = isA ? false : isB ? true : useChopIn
+chopMax = isA or isB ? 45.0 : chopMaxIn
+// THE AROON GROUP IS DELIBERATELY ABSENT FROM THIS BLOCK. Both presets were SELECTED with Aroon
+// off, so `off` is their researched value -- but overwriting the input made it impossible to turn
+// on without also leaving the preset, which is not what a switch is for. The presets now set the
+// entry, geometry and gate; Aroon, the session and the display are always the user's.
+
+// ------------------------------------------------------------------------------------------------
+// SERIES. ATR is ta.atr, which is Wilder's rma(TR, n) -- and that is deliberate here: the research
+// used rma(TR, 20), not this branch's usual ema(TR, n), because the family started from a Turtle
+// definition. Do not "fix" it to ta.ema(ta.tr(true), n).
+// ------------------------------------------------------------------------------------------------
+atrVal = ta.atr(20)
+
+emaF = ta.ema(close, emaFast)
+emaS = ta.ema(close, emaSlow)
+emaUp = emaF > emaS
+emaCross = ta.crossover(emaF, emaS)
+
+// GUARDED. `ta.crossover` reads `close`, which differs mid-bar, and `lastCrossBar` is DURABLE
+// state that decides which breakouts are eligible. An unguarded write here is exactly the Turtle
+// script's `lastWin := close > firstFill` defect: a cross that happens intrabar and unwinds by the
+// close would still arm the confirmation window forever.
+var int lastCrossBar = na
+if emaCross and barstate.isconfirmed
+    lastCrossBar := bar_index
+barsSinceCross = na(lastCrossBar) ? -1 : bar_index - lastCrossBar
+
+emaOk = emaMode == "off" ? true : emaMode == "state" ? emaUp :
+     confirmWin <= 0 ? barsSinceCross >= 0 :
+     barsSinceCross >= 0 and barsSinceCross <= confirmWin
+
+// ta.dmi returns [+DI, -DI, ADX] IN THAT ORDER. Destructuring only the first element substitutes
+// +DI for ADX silently, which has shipped broken on this branch once.
+[diPlus, diMinus, adxVal] = ta.dmi(14, 14)
+
+chopLen = 14
+chopRange = ta.highest(high, chopLen) - ta.lowest(low, chopLen)
+chopVal = 100.0 * math.log10(math.sum(ta.tr(true), chopLen) / math.max(chopRange, syminfo.mintick)) /
+     math.log10(chopLen)
+
+// AROON, written to match the research construction EXACTLY: its window is the last N+1 bars
+// (i-N .. i) and Up is 100 * (offset of the highest from the oldest) / N, so the current bar being
+// the highest gives 100 and the oldest bar being the highest gives 0. ta.highestbars returns a
+// non-positive offset from the current bar, hence the + aroonLen.
+aroonUp = 100.0 * (ta.highestbars(high, aroonLen + 1) + aroonLen) / aroonLen
+aroonDn = 100.0 * (ta.lowestbars(low, aroonLen + 1) + aroonLen) / aroonLen
+aroonOsc = aroonUp - aroonDn
+
+// READ AT THE SIGNAL BAR OR THE BAR BEFORE IT. `[1]` is what breaks the Donchian identity: the bar
+// before a breakout is not required to be the N-bar high, so the condition can actually refuse.
+aroonOscRead = aroonAt == "prior bar" ? aroonOsc[1] : aroonOsc
+aroonUpRead = aroonAt == "prior bar" ? aroonUp[1] : aroonUp
+
+aroonOk = aroonMode == "off" ? true :
+     aroonMode == "osc >= 0" ? aroonOscRead >= 0.0 :
+     aroonMode == "osc >= 50" ? aroonOscRead >= 50.0 :
+     aroonMode == "osc >= -50" ? aroonOscRead >= -50.0 : aroonUpRead >= 70.0
+
+// MACD, built exactly as the reference indicator builds it: an oscillator MA type and a signal MA
+// type that switch independently, and the histogram as line minus signal.
+macdFastMa = macdOscType == "EMA" ? ta.ema(close, macdFast) : ta.sma(close, macdFast)
+macdSlowMa = macdOscType == "EMA" ? ta.ema(close, macdSlow) : ta.sma(close, macdSlow)
+macdLine = macdFastMa - macdSlowMa
+macdSignal = macdSigType == "EMA" ? ta.ema(macdLine, macdSig) : ta.sma(macdLine, macdSig)
+macdHist = macdLine - macdSignal
+macdCrossUp = ta.crossover(macdHist, 0.0)
+
+var int lastMacdCross = na
+if macdCrossUp and barstate.isconfirmed
+    lastMacdCross := bar_index
+macdSinceCross = na(lastMacdCross) ? -1 : bar_index - lastMacdCross
+
+macdLineRead = macdAt == "prior bar" ? macdLine[1] : macdLine
+macdHistRead = macdAt == "prior bar" ? macdHist[1] : macdHist
+macdHistPrev = macdAt == "prior bar" ? macdHist[2] : macdHist[1]
+macdRising = macdHistRead > macdHistPrev
+
+macdOk = macdMode == "off" ? true :
+     macdMode == "hist > 0" ? macdHistRead > 0.0 :
+     macdMode == "macd > 0" ? macdLineRead > 0.0 :
+     macdMode == "hist > 0 and macd > 0" ? macdHistRead > 0.0 and macdLineRead > 0.0 :
+     macdMode == "hist rising" ? macdRising :
+     macdMode == "hist > 0 and rising" ? macdHistRead > 0.0 and macdRising :
+     macdSinceCross >= 0 and macdSinceCross <= macdCrossWin
+
+donHi = ta.highest(high, donEntry)[1]
+donLo = ta.lowest(low, donExit)[1]
+
+// SESSION. Bare `hour`/`minute` are EXCHANGE time in Pine -- Chicago for a CME future -- so New
+// York is named explicitly everywhere. That trap has shipped broken on this branch once.
+nyMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+tfMin = timeframe.in_seconds(timeframe.period) / 60.0
+flatMin = flatHour * 60 + flatMinute
+inWindow = not useSession or not na(time(timeframe.period, entrySession, "America/New_York"))
+// FLAT BY `flatMin` MEANS FLAT AT THAT BAR'S OPEN, so the order is submitted on the bar BEFORE it.
+// `strategy.close()` fills at the next open and cannot sell the close that triggers it, which is
+// the same `flat_open` correction this branch made in the engine rather than in the script.
+flatDue = useFlatten and nyMin + tfMin >= flatMin
+
+gateOk = (not useAdx or adxVal >= adxMin) and (not useChop or chopVal <= chopMax)
+breakout = close > donHi
+atrOk = not na(atrVal) and atrVal > 0
+warm = bar_index > math.max(math.max(emaSlow * 3, donEntry + 2), math.max(aroonLen + 2, 30))
+
+// `not flatDue` on the ENTRY as well as the exit. Without it a signal on the last bar before the
+// flatten fills at the open of the flatten bar and is closed at the same open -- a zero-P&L trade
+// that exists only to dilute the statistics. The engine takes those; this script refuses them, and
+// `v60_parity.py` reports the resulting trade-count difference rather than hiding it.
+signal = breakout and emaOk and gateOk and aroonOk and macdOk and atrOk and warm and inWindow and
+     not flatDue
+
+// ------------------------------------------------------------------------------------------------
+// ORDERS. Three rules of this branch's Pine discipline are load-bearing here:
+//
+//  1. `barstate.isconfirmed` guards the entry, so ticking the Strategy Tester's "Script execution"
+//     boxes cannot change the report. Without it a mid-bar `close` fires signals on bars that never
+//     satisfied the rule. If a checkbox changes the report, the report is about the checkbox.
+//  2. THE EXIT BRACKET IS PLACED WITH THE ENTRY, as a FILL-RELATIVE `loss` in ticks, using the ATR
+//     stored at the SIGNAL bar. `strategy.exit` only runs on a bar where a position already exists,
+//     so writing it a bar later leaves the entry bar naked -- 4.4 to 13.0% of trades at -33 to -118
+//     points when that was last measured (STUDY_PINE_PARITY / STUDY_V56).
+//  3. THE EXIT BAR IS RECORDED BEFORE THE ENTRY TEST RUNS on the same bar. A stale marker lets the
+//     script re-enter on the bar a trade closed -- 95 extra trades on 15m when that was last
+//     measured. Position state is read through `strategy.closedtrades`, not by watching
+//     `strategy.position_size[1]`, which misses a trade that opens and stops out inside ONE bar.
+// ------------------------------------------------------------------------------------------------
+var float pendAtr = na
+var int signalBar = na
+var bool pending = false
+
+// (3) resolve the pending order FIRST, so the entry test below sees current state. This reads
+// ONLY `bar_index`, which does not vary mid-bar: a market order submitted at the close of bar b
+// is resolved by the open of b+1, one way or the other.
+if pending and not na(signalBar) and bar_index > signalBar
+    pending := false
+
+flat = strategy.position_size == 0 and not pending
+inTrade = strategy.position_size > 0
+pastFillBar = not na(signalBar) and bar_index > signalBar + 1
+
+// the researched channel exit: close below the prior donExit-bar low, never on the fill bar.
+// IT FILLS AT THE NEXT BAR'S OPEN. The engine fills at THIS bar's close, which no script can do.
+channelExit = inTrade and pastFillBar and not na(donLo) and close < donLo
+
+if inTrade and flatDue and barstate.isconfirmed
+    strategy.close("L", comment = "flatten")
+
+if channelExit and not flatDue and barstate.isconfirmed
+    strategy.close("L", comment = "channel")
+
+if signal and flat and barstate.isconfirmed
+    pendAtr := atrVal
+    signalBar := bar_index
+    pending := true
+    stopTicks = math.max(math.round(stopN * pendAtr / syminfo.mintick), 1)
+    profTicks = tpR > 0.0 ? math.max(math.round(tpR * stopN * pendAtr / syminfo.mintick), 1) : na
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = stopTicks, profit = profTicks, comment = "stop/tp")
+
+// ------------------------------------------------------------------------------------------------
+// DIAGNOSTICS. The counters exist so the Aroon claim is testable on YOUR chart rather than on
+// trust: `aroon pass on breakouts` is the whole finding, live.
+// ------------------------------------------------------------------------------------------------
+var int nBreak = 0
+var int nAroonOnBreak = 0
+var int nEmaOnBreak = 0
+var int nGateOnBreak = 0
+var int nMacdOnBreak = 0
+var int nSignal = 0
+var int nInWindow = 0
+
+if barstate.isconfirmed and warm and inWindow
+    nInWindow += 1
+
+if barstate.isconfirmed and warm
+    if breakout and atrOk
+        nBreak += 1
+        if aroonOk
+            nAroonOnBreak += 1
+        if emaOk
+            nEmaOnBreak += 1
+        if gateOk
+            nGateOnBreak += 1
+        if macdOk
+            nMacdOnBreak += 1
+    if signal
+        nSignal += 1
+
+pctBreak(k) => nBreak > 0 ? str.tostring(100.0 * k / nBreak, "#.0") + "%" : "--"
+
+plot(showLevelsIn ? donHi : na, "Donchian entry", color.new(color.teal, 0), 1, plot.style_stepline)
+plot(showLevelsIn ? donLo : na, "Donchian exit", color.new(color.maroon, 0), 1, plot.style_stepline)
+// NOT drawn on the price scale: an overlay strategy has no second pane, and a -100..100 series on
+// a price axis makes the chart unreadable. Status line and Data Window only.
+plot(showAroonIn ? aroonOsc : na, "Aroon oscillator", color.new(color.orange, 0), 1,
+     display = display.data_window + display.status_line)
+plot(showAroonIn ? aroonUp : na, "Aroon up", color.new(color.green, 0), 1,
+     display = display.data_window + display.status_line)
+plotshape(signal and barstate.isconfirmed, "signal", shape.triangleup, location.belowbar,
+     color.new(color.teal, 0), size = size.tiny)
+
+if showHudIn and barstate.islast
+    var table hud = table.new(position.top_right, 2, 17, border_width = 1)
+    // THE IDENTITY ONLY APPLIES TO THE SIGNAL-BAR READING. At the prior bar the breakout has not
+    // yet happened, so the Aroon is free to be anything and the condition can refuse a trade.
+    identity = aroonMode != "off" and aroonLen <= donEntry and aroonAt == "signal bar" and
+         aroonMode != "osc >= 50"
+    table.cell(hud, 0, 0, "V60", bgcolor = color.new(color.teal, 70), text_size = size.small)
+    table.cell(hud, 1, 0, preset, bgcolor = color.new(color.teal, 70), text_size = size.small)
+    table.cell(hud, 0, 1, "EMA", text_size = size.tiny)
+    table.cell(hud, 1, 1, emaMode == "off" ? "off" : emaMode == "state" ?
+         str.tostring(emaFast) + "/" + str.tostring(emaSlow) + " state" :
+         str.tostring(emaFast) + "/" + str.tostring(emaSlow) + " cross w" +
+         str.tostring(confirmWin), text_size = size.tiny)
+    table.cell(hud, 0, 2, "Donchian", text_size = size.tiny)
+    table.cell(hud, 1, 2, str.tostring(donEntry) + " in / " + str.tostring(donExit) + " out",
+         text_size = size.tiny)
+    table.cell(hud, 0, 3, "stop / tp", text_size = size.tiny)
+    table.cell(hud, 1, 3, str.tostring(stopN, "#.##") + "N / " +
+         (tpR > 0.0 ? str.tostring(tpR, "#.#") + "R" : "none"), text_size = size.tiny)
+    table.cell(hud, 0, 4, "gate", text_size = size.tiny)
+    table.cell(hud, 1, 4, (useAdx ? "ADX>=" + str.tostring(adxMin, "#.#") + " " : "") +
+         (useChop ? "CHOP<=" + str.tostring(chopMax, "#.#") : "") +
+         (not useAdx and not useChop ? "off" : ""), text_size = size.tiny)
+    table.cell(hud, 0, 5, "aroon", text_size = size.tiny)
+    table.cell(hud, 1, 5, aroonMode == "off" ? "off" : aroonMode + " (" + str.tostring(aroonLen) +
+         ") @ " + aroonAt, text_size = size.tiny)
+    table.cell(hud, 0, 6, "breakout bars", text_size = size.tiny)
+    table.cell(hud, 1, 6, str.tostring(nBreak), text_size = size.tiny)
+    table.cell(hud, 0, 7, "aroon pass on breakouts", text_size = size.tiny,
+         bgcolor = identity ? color.new(color.orange, 60) : na)
+    table.cell(hud, 1, 7, pctBreak(nAroonOnBreak), text_size = size.tiny,
+         bgcolor = identity ? color.new(color.orange, 60) : na)
+    table.cell(hud, 0, 8, "EMA pass on breakouts", text_size = size.tiny)
+    table.cell(hud, 1, 8, pctBreak(nEmaOnBreak), text_size = size.tiny)
+    table.cell(hud, 0, 9, "gate pass on breakouts", text_size = size.tiny)
+    table.cell(hud, 1, 9, pctBreak(nGateOnBreak), text_size = size.tiny)
+    table.cell(hud, 0, 10, "signals", text_size = size.tiny)
+    table.cell(hud, 1, 10, str.tostring(nSignal), text_size = size.tiny)
+    table.cell(hud, 0, 11, "closed trades", text_size = size.tiny)
+    table.cell(hud, 1, 11, str.tostring(strategy.closedtrades), text_size = size.tiny)
+    macdInert = macdMode != "off" and pctBreak(nMacdOnBreak) == "100.0%"
+    table.cell(hud, 0, 12, "macd", text_size = size.tiny)
+    table.cell(hud, 1, 12, macdMode == "off" ? "off" : macdMode + " " + str.tostring(macdFast) +
+         "/" + str.tostring(macdSlow) + "/" + str.tostring(macdSig) + " @ " + macdAt,
+         text_size = size.tiny)
+    table.cell(hud, 0, 13, "macd pass on breakouts", text_size = size.tiny,
+         bgcolor = macdInert ? color.new(color.orange, 60) : na)
+    table.cell(hud, 1, 13, macdMode == "off" ? "--" : pctBreak(nMacdOnBreak), text_size = size.tiny,
+         bgcolor = macdInert ? color.new(color.orange, 60) : na)
+    table.cell(hud, 0, 14, "session", text_size = size.tiny)
+    table.cell(hud, 1, 14, (useSession ? entrySession : "all hours") +
+         (useFlatten ? "  flat " + str.tostring(flatHour) + ":" +
+         (flatMinute < 10 ? "0" : "") + str.tostring(flatMinute) : ""), text_size = size.tiny)
+    table.cell(hud, 0, 15, "eligible bars in window", text_size = size.tiny)
+    table.cell(hud, 1, 15, useSession ? str.tostring(nInWindow) : "--", text_size = size.tiny)
+    table.cell(hud, 0, 16, identity ? "AROON IS INERT HERE" : "aroon length vs channel",
+         text_size = size.tiny, bgcolor = identity ? color.new(color.orange, 60) : na)
+    table.cell(hud, 1, 16, identity ? "len " + str.tostring(aroonLen) + " <= entry " +
+         str.tostring(donEntry) + " @ signal bar" : "len " + str.tostring(aroonLen) + " vs entry " +
+         str.tostring(donEntry) + " @ " + aroonAt, text_size = size.tiny,
+         bgcolor = identity ? color.new(color.orange, 60) : na)

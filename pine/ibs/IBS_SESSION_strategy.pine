@@ -1,0 +1,177 @@
+// ================================================================================================
+// IBS NEW YORK SESSION -- a port of the Zeta FX IBS EA (MQL5 v2.00) order model.
+//
+//     IBS  = (session close - session low) / (session high - session low) * 100
+//            over the 09:30-16:00 New York cash session, accumulated from the chart's own bars.
+//     BUY  at the first tick after the session's last bar when flat and IBS < entry threshold.
+//     STOP = session range x multiplier below the entry, live from the fill.
+//     EXIT at the first tick after a later session's last bar when IBS > exit threshold, or when
+//          the number of completed sessions held reaches the maximum.
+//     A session with fewer than "minimum % of expected bars", or whose final bar is missing, or
+//     whose high equals its low, is SKIPPED: no signal, no exit, no count -- exactly as the EA.
+//     A rule exit and an entry never share a session; after a STOP the strategy is flat at that
+//     session's close and may re-enter on it.
+//
+// WHAT THIS PORT DOES THAT A NAIVE ONE WOULD NOT
+//  1. Session bars are identified on a NEW YORK clock ("America/New_York"), never bare `hour`,
+//     which is exchange time (Chicago for CME).
+//  2. Every write to `var` state sits under `barstate.isconfirmed`, so the Strategy Tester's
+//     "script execution" boxes cannot change the result. If a checkbox changes the report, the
+//     report is about the checkbox.
+//  3. The entry and its stop go in on the SAME bar, so the stop is live during the entry bar. The
+//     EA measures the stop from the fill's bid; a script cannot see the fill until the bar
+//     closes, so the stop is measured from the signal bar's close -- the difference is one
+//     close-to-fill gap: measured in the research engine at 0.000 R on NQ (the fill is the 16:00
+//     open) and -0.010 to +0.027 R per trade on the CFD feeds, where the fill is the re-open.
+//  4. Position size risks a % of equity over the stop distance, as the EA does, capped.
+//
+// CHART REQUIREMENTS: an intraday timeframe that tiles the session (1, 5, 15, 30 minutes) and
+// EXTENDED HOURS ON -- the entry fills after the cash close and the stop lives overnight. On a
+// CFD symbol whose feed has no bars for a while after 16:00, the fill is the re-open, which is
+// what the EA gets from that broker too.
+//
+// MEASURED (research/ibs, docs/ib/STUDY_IBS_SESSION.md): the family is a long-only drift
+// exposure. A random session with the same stop, exit and hold earns most of what it earns, and
+// on the reserved test blocks the defaults' excess over that control is -0.005 / +0.014 / -0.008
+// R (US100 / NQ / US30). No parameter search beats these defaults out of sample. Backtest it by
+// all means; do not mistake a rising index for the signal.
+//
+// Research tooling for education and analysis -- not financial advice.
+// ================================================================================================
+//@version=6
+strategy("IBS NY Session (Zeta FX port)", shorttitle = "IBS-NY", overlay = true,
+     pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false,
+     initial_capital = 100000, currency = currency.USD,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.72,
+     slippage = 1, max_labels_count = 500)
+
+// ---------------------------------------------------------------- inputs
+grpS = "IBS signal"
+entryIBS = input.float(20.0, "Enter long if session IBS is below", minval = 0.0, maxval = 100.0,
+     step = 5.0, group = grpS)
+exitIBS = input.float(80.0, "Exit long if session IBS is above", minval = 0.0, maxval = 100.0,
+     step = 5.0, group = grpS)
+maxHold = input.int(5, "Maximum completed sessions held after entry", minval = 1, group = grpS)
+
+grpW = "Session (New York time)"
+startHour = input.int(9, "Session start hour", minval = 0, maxval = 23, group = grpW)
+startMin = input.int(30, "Session start minute", minval = 0, maxval = 59, group = grpW)
+endHour = input.int(16, "Session end hour", minval = 0, maxval = 23, group = grpW)
+endMin = input.int(0, "Session end minute", minval = 0, maxval = 59, group = grpW)
+minPct = input.float(75.0, "Minimum % of expected bars for a valid session", minval = 1.0,
+     maxval = 100.0, group = grpW)
+
+grpR = "Risk"
+riskPct = input.float(1.0, "Risk per trade (% of equity)", minval = 0.01, maxval = 10.0,
+     step = 0.25, group = grpR)
+stopMult = input.float(1.0, "Stop distance = session range x", minval = 0.05, step = 0.25,
+     group = grpR)
+maxQty = input.float(100.0, "Maximum position size (contracts / lots)", minval = 0.01,
+     group = grpR)
+qtyStep = input.float(1.0, "Position size step (1 for futures, 0.01 for CFD lots)",
+     minval = 0.0001, group = grpR)
+
+grpD = "Display"
+showHud = input.bool(true, "Show status panel", group = grpD)
+showLevels = input.bool(true, "Plot session high / low and the live stop", group = grpD)
+
+// ---------------------------------------------------------------- clock
+tz = "America/New_York"
+nyMod = hour(time, tz) * 60 + minute(time, tz)
+nyDay = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+tfMin = timeframe.isseconds ? timeframe.multiplier / 60.0 : timeframe.multiplier * 1.0
+sessStart = startHour * 60 + startMin
+sessEnd = endHour * 60 + endMin
+expectedBars = math.max(1, math.floor((sessEnd - sessStart) / tfMin))
+needBars = math.max(1, math.ceil(expectedBars * minPct / 100.0))
+inSession = nyMod >= sessStart and nyMod < sessEnd
+isFinalBar = nyMod == sessEnd - tfMin        // the EA fires only on the bar opening at end - 1
+tfOk = timeframe.isintraday and not timeframe.isseconds and tfMin <= sessEnd - sessStart
+     and math.abs((sessEnd - sessStart) / tfMin - expectedBars) < 1e-9
+
+// ---------------------------------------------------------------- session accumulators
+var int curDay = na
+var float sHigh = na
+var float sLow = na
+var float sClose = na
+var int sCount = 0
+var float lastIbs = na
+var float lastRange = na
+var int held = 0
+var float stopLvl = na
+var float frozenHigh = na
+var float frozenLow = na
+
+sessionDone = false
+float ibs = na
+
+if barstate.isconfirmed
+    // a comparison against na is FALSE in Pine, so the first day must be caught explicitly
+    if na(curDay) or nyDay != curDay
+        curDay := nyDay
+        sHigh := na
+        sLow := na
+        sClose := na
+        sCount := 0
+    if inSession
+        sHigh := na(sHigh) ? high : math.max(sHigh, high)
+        sLow := na(sLow) ? low : math.min(sLow, low)
+        sClose := close
+        sCount := sCount + 1
+        if isFinalBar and sCount >= needBars and sHigh > sLow
+            sessionDone := true
+            ibs := (sClose - sLow) / (sHigh - sLow) * 100.0
+            lastIbs := ibs
+            lastRange := sHigh - sLow
+            frozenHigh := sHigh
+            frozenLow := sLow
+
+// ---------------------------------------------------------------- orders
+inPos = strategy.position_size > 0
+if barstate.isconfirmed and not inPos and held > 0
+    held := 0                                    // a stop closed the trade intrabar
+if barstate.isconfirmed and tfOk and sessionDone
+    if inPos
+        held := held + 1
+        if ibs > exitIBS or held >= maxHold
+            strategy.close("L", comment = held >= maxHold and ibs <= exitIBS ? "hold" : "ibs")
+            stopLvl := na
+    else if ibs < entryIBS
+        dist = (sHigh - sLow) * stopMult
+        riskMoney = strategy.equity * riskPct / 100.0
+        perUnit = dist * syminfo.pointvalue
+        rawQty = perUnit > 0 ? riskMoney / perUnit : 0.0
+        qty = math.min(math.floor(rawQty / qtyStep) * qtyStep, maxQty)
+        if qty >= qtyStep
+            stopLvl := close - dist
+            held := 0
+            strategy.entry("L", strategy.long, qty = qty, comment = "ibs " + str.tostring(ibs, "#.#"))
+            strategy.exit("stop", from_entry = "L", stop = stopLvl, comment = "stop")
+
+// ---------------------------------------------------------------- display
+plot(showLevels ? frozenHigh : na, "Session high", color = color.new(color.gray, 40), style = plot.style_linebr)
+plot(showLevels ? frozenLow : na, "Session low", color = color.new(color.gray, 40), style = plot.style_linebr)
+plot(showLevels and inPos ? stopLvl : na, "Stop", color = color.new(color.red, 0), style = plot.style_linebr,
+     linewidth = 2)
+bgcolor(inSession ? color.new(color.blue, 96) : na)
+
+var table hud = table.new(position.top_right, 2, 6, border_width = 1)
+if showHud and barstate.islast
+    table.cell(hud, 0, 0, "Last session IBS", text_size = size.small)
+    table.cell(hud, 1, 0, na(lastIbs) ? "-" : str.tostring(lastIbs, "#.#"), text_size = size.small,
+         text_color = na(lastIbs) ? color.gray : lastIbs < entryIBS ? color.green
+         : lastIbs > exitIBS ? color.red : color.gray)
+    table.cell(hud, 0, 1, "Session range", text_size = size.small)
+    table.cell(hud, 1, 1, na(lastRange) ? "-" : str.tostring(lastRange, "#.##"), text_size = size.small)
+    table.cell(hud, 0, 2, "Position", text_size = size.small)
+    table.cell(hud, 1, 2, inPos ? "long " + str.tostring(strategy.position_size, "#.##") : "flat",
+         text_size = size.small, text_color = inPos ? color.green : color.gray)
+    table.cell(hud, 0, 3, "Sessions held", text_size = size.small)
+    table.cell(hud, 1, 3, inPos ? str.tostring(held) + " / " + str.tostring(maxHold) : "-",
+         text_size = size.small)
+    table.cell(hud, 0, 4, "Stop", text_size = size.small)
+    table.cell(hud, 1, 4, inPos and not na(stopLvl) ? str.tostring(stopLvl, "#.##") : "-",
+         text_size = size.small)
+    table.cell(hud, 0, 5, "Timeframe", text_size = size.small)
+    table.cell(hud, 1, 5, tfOk ? "ok" : "must tile the session", text_size = size.small,
+         text_color = tfOk ? color.gray : color.red)

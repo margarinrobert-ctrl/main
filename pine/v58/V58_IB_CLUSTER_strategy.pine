@@ -1,0 +1,205 @@
+//@version=6
+// V58 -- Initial Balance retracement, the one configuration of 1,555,200 that survived a
+// pre-registered test on a market that had no part in choosing it.
+//
+// READ THIS BEFORE TRADING IT.
+//
+// The Initial Balance family as it is normally published -- 60-minute range, 25% retracement
+// entry, 60% stop, 50% target, both sides, no filter -- LOSES on every market measured here:
+//   US30  research PF 0.83 / locked 0.78     US100 research 0.92 / locked 0.85     NQ 0.94
+// and it loses to a RANDOM entry of the same risk on the same days (p 0.76 to 0.99). An
+// independent vectorbt re-implementation agrees on the trade count to 100% and on the loss.
+//
+// This script is not that. It is a 30-minute Initial Balance, long only, entered HALF WAY back
+// into the range, with a wide stop, NO take profit, and four conditions -- and its whole claim
+// rests on 48 trades:
+//   NQ 15m, never searched:  +0.354 ATR/trade, PF 1.80, 45.8% wins, n 48,
+//                            risk-matched control p 0.003, pooled bootstrap P(mean<=0) 0.010
+// The US30 and US100 numbers are NOT independent evidence -- the configuration was picked by
+// looking at their held-back blocks, so their strength there is the selection criterion showing
+// up again, not a test. One clean read on 48 trades is a footing, not a result. Size accordingly.
+//
+// WHAT THE SEARCH ACTUALLY ESTABLISHED, which is more reliable than the configuration:
+//   * Only 13% of 777,600 configurations are profitable on the research block, and the MEDIAN
+//     configuration loses on both markets.
+//   * Of the four indicator conditions swept, only the ADX FLOOR is better than `off` in all
+//     four market-block columns. The EMA 13/48 cross that 74% of the top 1000 agreed on does
+//     NOT hold on the second market.
+//   * Entering ON the break is the worst rung of the entry axis in all four columns; the deeper
+//     the retracement, the better -- up to half the range, after which the two markets disagree.
+//   * No take profit ties for best, for the twelfth independent time on this branch.
+//
+// Research tooling for education and analysis -- not financial advice. Never backtested on
+// TradingView; the Strategy Tester's own report is not evidence until you read its trade count
+// and its commission load.
+
+strategy("V58 IB Cluster", "V58 IB", overlay = true, initial_capital = 100000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72,
+     slippage = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+TZ = "America/New_York"
+
+gS = "Session (New York wall-clock)"
+ibH0    = input.int(9,  "IB starts -- hour", minval = 0, maxval = 23, group = gS, inline = "a")
+ibM0    = input.int(30, ":",                 minval = 0, maxval = 59, group = gS, inline = "a")
+ibMin   = input.int(30, "IB length (minutes)", minval = 5, maxval = 240, group = gS,
+     tooltip = "30 is the researched value. The published 60 is WORSE on both markets in both blocks.")
+flatH   = input.int(15, "Flatten -- hour",   minval = 0, maxval = 23, group = gS, inline = "c")
+flatM   = input.int(55, ":",                 minval = 0, maxval = 59, group = gS, inline = "c")
+
+gR = "Geometry (fractions of the Initial Balance range)"
+retrF   = input.float(0.50, "Entry -- retracement back inside", minval = 0.0, maxval = 1.5, step = 0.05, group = gR)
+stopF   = input.float(1.00, "Stop -- from the broken edge",     minval = 0.1, maxval = 3.0,  step = 0.05, group = gR)
+useTgt  = input.bool(false, "Use a take profit", group = gR,
+     tooltip = "OFF is the researched setting. No target tied for best on every axis read here.")
+tgtF    = input.float(2.50, "Target -- beyond the broken edge", minval = 0.1, maxval = 9.0, step = 0.25, group = gR)
+
+gF = "Conditions, all read at the Initial Balance CLOSE"
+useAdx  = input.bool(true,  "ADX floor", group = gF, inline = "x")
+adxMin  = input.float(20.0, "", minval = 0, maxval = 60, step = 1, group = gF, inline = "x",
+     tooltip = "The only one of the four conditions that beat `off` on both markets in both blocks.")
+useRng  = input.bool(true,  "IB range vs its own trailing median", group = gF, inline = "y")
+rngMin  = input.float(0.80, "", minval = 0.1, maxval = 3.0, step = 0.05, group = gF, inline = "y")
+rngLook = input.int(20, "  lookback (days)", minval = 5, maxval = 120, group = gF)
+useCpos = input.bool(true,  "Last IB bar closes at or above", group = gF, inline = "z")
+cposMin = input.float(0.50, "", minval = 0.0, maxval = 1.0, step = 0.05, group = gF, inline = "z")
+useEma  = input.bool(true,  "Require EMA 13 BELOW EMA 48", group = gF,
+     tooltip = "BELOW, not above. A momentum-agreeing cross scored WORSE than no filter on both markets. This is a counter-trend entry.")
+emaFast = input.int(13, "EMA fast", minval = 2, group = gF, inline = "e")
+emaSlow = input.int(48, "EMA slow", minval = 3, group = gF, inline = "e")
+
+gD = "Display"
+showLv  = input.bool(true, "Plot the plan", group = gD)
+showHud = input.bool(true, "Show panel",    group = gD)
+
+// --- indicators. ATR is ema(tr) not ta.atr; ta.dmi returns [+DI, -DI, ADX] and only the THIRD
+// element is the ADX -- destructuring the first substitutes +DI silently.
+atrN = ta.ema(ta.tr(true), 14)
+[_pdi, _ndi, adxV] = ta.dmi(14, 14)
+emaF = ta.ema(close, emaFast)
+emaS = ta.ema(close, emaSlow)
+
+nyMin  = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow  = dayofweek(time, TZ)
+isWeek = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+ibFrom = ibH0 * 60 + ibM0
+ibTo   = ibFrom + ibMin
+flatAt = flatH * 60 + flatM
+
+inIB    = isWeek and nyMin >= ibFrom and nyMin < ibTo
+inTrade = isWeek and nyMin >= ibTo   and nyMin < flatAt
+ibOpen  = inIB and not inIB[1]
+ibShut  = not inIB and inIB[1]
+dayShut = not inTrade and inTrade[1]
+
+var float ibHi   = na
+var float ibLo   = na
+var bool  armed  = false
+var bool  broke  = false
+var float entLvl = na
+var float stpLvl = na
+var float tgtLvl = na
+var float pendAtr = na
+var float rngMed = na
+var rangeHist = array.new<float>(0)
+
+// Every block that writes `var` state is guarded by barstate.isconfirmed, not just the entries.
+// `close`, `high`, `ta.dmi` and `ta.ema` all differ mid-bar, and durable state read from a
+// mid-bar value is a price the bar-close run cannot see (`STUDY_TICK_RECALC.md`).
+if barstate.isconfirmed
+    if ibOpen
+        ibHi   := high
+        ibLo   := low
+        armed  := false
+        broke  := false
+        entLvl := na
+        stpLvl := na
+        tgtLvl := na
+    else if inIB
+        ibHi := math.max(ibHi, high)
+        ibLo := math.min(ibLo, low)
+
+    if ibShut and not na(ibHi) and ibHi > ibLo
+        rng  = ibHi - ibLo
+        // the trailing median is taken BEFORE today's range is pushed, so it never sees itself
+        n = array.size(rangeHist)
+        rngMed := n >= 5 ? array.median(rangeHist) : na
+        cpos = (close - ibLo) / rng
+        okAdx  = not useAdx  or adxV >= adxMin
+        okRng  = not useRng  or (not na(rngMed) and rngMed > 0 and rng / rngMed >= rngMin)
+        okCpos = not useCpos or cpos >= cposMin
+        okEma  = not useEma  or emaF < emaS
+        okGeom = stopF > retrF
+        armed  := okAdx and okRng and okCpos and okEma and okGeom
+        if armed
+            entLvl := ibHi - rng * retrF
+            stpLvl := ibHi - rng * stopF
+            tgtLvl := ibHi + rng * tgtF
+            pendAtr := atrN
+        array.push(rangeHist, rng)
+        if array.size(rangeHist) > rngLook
+            array.shift(rangeHist)
+
+    if inTrade and armed and not broke and high > ibHi
+        broke := true
+
+    if dayShut
+        armed := false
+        broke := false
+
+// The entry and its bracket are placed TOGETHER on the signal bar, so the stop is live on the
+// bar the limit fills. The research engine is run the same way (`fillbar=1`): when the entry
+// level and the stop sit inside one 15-minute bar, an engine that skips the fill bar hands the
+// configuration a free option, and across this grid that option is worth up to +0.09 ATR/trade.
+canEnter = barstate.isconfirmed and inTrade and armed and broke
+     and strategy.position_size == 0 and not na(entLvl) and stpLvl < entLvl
+if canEnter
+    strategy.entry("IB", strategy.long, limit = entLvl)
+    if useTgt
+        strategy.exit("x", from_entry = "IB", stop = stpLvl, limit = tgtLvl)
+    else
+        strategy.exit("x", from_entry = "IB", stop = stpLvl)
+
+// `strategy.close_all()` fills at the NEXT bar's open -- it cannot sell the close of the bar
+// that triggers it -- so the flatten is stated as what it is rather than assumed away.
+if barstate.isconfirmed and dayShut and strategy.position_size != 0
+    strategy.close_all(comment = "flat")
+
+plot(showLv and (inIB or (armed and inTrade)) ? ibHi : na, "IB high", color.new(color.teal, 0),
+     2, plot.style_linebr)
+plot(showLv and (inIB or (armed and inTrade)) ? ibLo : na, "IB low", color.new(color.teal, 0),
+     2, plot.style_linebr)
+plot(showLv and armed and inTrade ? entLvl : na, "Entry", color.new(color.blue, 0), 2,
+     plot.style_linebr)
+plot(showLv and armed and inTrade ? stpLvl : na, "Stop", color.new(color.red, 0), 2,
+     plot.style_linebr)
+plot(showLv and armed and inTrade and useTgt ? tgtLvl : na, "Target", color.new(color.green, 0),
+     2, plot.style_linebr)
+bgcolor(inIB ? color.new(color.teal, 92) : na, title = "IB window")
+
+var table hud = table.new(position.top_right, 2, 6, border_width = 1)
+if showHud and barstate.islast
+    st = not isWeek ? "weekend" : inIB ? "IB forming" : armed and not broke ?
+         "armed -- waiting for the break" : armed and broke ? "broken -- limit resting" :
+         inTrade ? "stood down" : "outside the window"
+    table.cell(hud, 0, 0, "V58 IB", text_color = color.white,
+         bgcolor = color.new(color.teal, 20), text_size = size.small)
+    table.cell(hud, 1, 0, timeframe.period, text_color = color.white,
+         bgcolor = color.new(color.teal, 20), text_size = size.small)
+    table.cell(hud, 0, 1, "State", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 1, st, text_size = size.small)
+    table.cell(hud, 0, 2, "IB high / low", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 2, na(ibHi) ? "--" : str.tostring(ibHi, format.mintick) + " / " +
+         str.tostring(ibLo, format.mintick), text_size = size.small)
+    table.cell(hud, 0, 3, "ADX / range x median", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 3, str.tostring(adxV, "#.0") + "  /  " + (na(rngMed) or rngMed <= 0 ? "--" :
+         str.tostring((ibHi - ibLo) / rngMed, "#.00") + "x"), text_size = size.small)
+    table.cell(hud, 0, 4, "EMA " + str.tostring(emaFast) + " vs " + str.tostring(emaSlow),
+         text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 4, emaF < emaS ? "below -- condition met" : "above -- blocks",
+         text_size = size.small,
+         text_color = emaF < emaS ? color.new(color.green, 0) : color.new(color.red, 0))
+    table.cell(hud, 0, 5, "Evidence", text_size = size.small, text_color = color.gray)
+    table.cell(hud, 1, 5, "48 trades on NQ, p 0.003", text_size = size.small,
+         text_color = color.new(color.orange, 0))

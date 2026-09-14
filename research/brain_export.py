@@ -25,7 +25,7 @@ import quant_brain as QB
 import regimes as RG
 from test_suite import _daily
 
-ART = ("/tmp/claude-0/-home-user-main/e473d7de-e277-515e-b24b-75724aaa9da5/"
+ART = ("results/brain/claude-0/-home-user-main/e473d7de-e277-515e-b24b-75724aaa9da5/"
        "scratchpad/edge-finder.html")
 N_KEEP = 40
 

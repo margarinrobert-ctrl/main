@@ -1,0 +1,6 @@
+====================================================================================================
+G. CLUSTERS -- is the grid one strategy in 4,320 hats?
+====================================================================================================
+  600 cells with >= 60 trades, 731 trading days; pairwise daily-P&L correlation median 0.446, mean 0.454
+  clusters at corr >= 0.7: 47; largest [59, 55, 52, 42, 36]
+  principal components for 90% of variance: 26 of 600

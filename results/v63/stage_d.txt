@@ -1,0 +1,59 @@
+V63 stage D -- the two changes the drop-one pointed at, priced on every block with both nulls.
+
+BE CLEAR ABOUT WHAT THIS IS. The candidate was chosen on US100's research block. The drop-one in
+stage C was then run on the blocks that chose nothing, and two of its rows stood out: removing the
+chandelier trail (7/7 -> per-trade x3.6) and adding the ATR expansion gate (7/7 blocks positive).
+COMBINING THEM IS A CHOICE MADE AFTER SEEING OUT-OF-SAMPLE BLOCKS, so the p-values below are
+descriptive. They are run because a recommendation without a null attached is not one, and because
+one of the two changes -- dropping a trailing exit that cuts winners short -- is the same finding
+this branch has made fifteen times about take profits.
+
+==========================================================================================================================
+V63 FINAL -- the candidate, no trail, ATR expansion gate, session VWAP
+  tf=30, ema=13/34/89, win=30, vwap=above and rising, anchor=session, weight=vol, atrg=atr>=mean, stop=1.5, trail=0.0, tp=0.0
+==========================================================================================================================
+  market  block           n   pct/tr    total    PF    win     DD   boot |  filter p |  entry p
+  US100   research      264  +0.2200   +58.09  1.67  14.0%  15.69  0.009 |     0.924 |    0.282
+  US100   validation    116  +0.1596   +18.51  1.31  10.3%  12.23  0.240 |     0.123 |    0.018
+  US100   test           91  +0.3842   +34.96  2.03  18.7%  15.43  0.031 |     0.000 |    0.013
+     keeps 27.6% of 23830 trigger bars
+  US30    research      261  +0.1799   +46.96  1.69  16.5%  10.06  0.009 |     0.726 |    0.250
+  US30    validation    115  +0.1352   +15.55  1.42  10.4%   9.82  0.193 |     0.000 |    0.010
+  US30    test           85  +0.1797   +15.28  1.68  16.5%   9.70  0.105 |     0.000 |    0.117
+     keeps 24.6% of 21596 trigger bars
+  NQ      research      113  +0.3585   +40.51  2.28  16.8%   5.15  0.009 |     0.045 |    0.018
+  NQ      locked         69  -0.0401    -2.77  0.90   8.7%  16.27  0.612 |     0.171 |    0.863
+     keeps 30.7% of 8109 trigger bars
+
+  POOLED over the 7 blocks that chose nothing: n 850, +0.1988 %/trade, P(mean<=0) 0.0002, blocks positive 6/7, entry-null p<=0.05 in 4/7, filter-null p<=0.05 in 4/7
+  The pooled bootstrap treats blocks from three markets over OVERLAPPING calendars as
+  independent, which they are not -- US100 and US30 are the same weeks. Read the
+  per-block column, not the pooled p.
+
+==========================================================================================================================
+D2. THE STOP LADDER on the final design -- a display, not a selection
+==========================================================================================================================
+    stop 1.5 ATR                               blocks 6/7 positive   n   850   +0.1988 %/trade   PF  1.60   mean of block means +0.1939
+    stop 2.0 ATR                               blocks 6/7 positive   n   737   +0.2166 %/trade   PF  1.52   mean of block means +0.2040
+    stop 2.5 ATR                               blocks 7/7 positive   n   627   +0.2728 %/trade   PF  1.54   mean of block means +0.2614
+    stop 3.0 ATR                               blocks 6/7 positive   n   582   +0.2589 %/trade   PF  1.44   mean of block means +0.2363
+
+==========================================================================================================================
+D3. THE EMA TRIPLE -- every set at the final geometry, pooled over the same blocks
+==========================================================================================================================
+    EMA 5/13/21                                blocks 5/7 positive   n  1292   +0.1001 %/trade   PF  1.26   mean of block means +0.1069
+    EMA 8/21/55                                blocks 7/7 positive   n   993   +0.1700 %/trade   PF  1.48   mean of block means +0.1692
+    EMA 9/21/50                                blocks 7/7 positive   n  1009   +0.1705 %/trade   PF  1.48   mean of block means +0.1627
+    EMA 13/34/89                               blocks 6/7 positive   n   850   +0.1988 %/trade   PF  1.60   mean of block means +0.1939
+    EMA 10/30/60                               blocks 6/7 positive   n   913   +0.1894 %/trade   PF  1.56   mean of block means +0.1712
+
+==========================================================================================================================
+D4. HOLD TIME, and a 60-day funded evaluation on the pooled out-of-sample days
+==========================================================================================================================
+  US100   n   471   median hold    930 min   winners  14430   losers   690   trades a year  52.3
+  US30    n   461   median hold    780 min   winners  14430   losers   555   trades a year  51.2
+  NQ      n   182   median hold    960 min   winners  14430   losers   840   trades a year  60.7
+  evaluation at x2 notional (60 TRADES, not days): pass 55.9%  bust 44.0%  neither  0.1%
+  evaluation at x4 notional (60 TRADES, not days): pass 43.1%  bust 56.9%  neither  0.0%
+  evaluation at x6 notional (60 TRADES, not days): pass 37.8%  bust 62.2%  neither  0.0%
+  evaluation at x8 notional (60 TRADES, not days): pass 35.7%  bust 64.3%  neither  0.0%

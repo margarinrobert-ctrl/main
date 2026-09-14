@@ -1,0 +1,96 @@
+Backtest report for FTM_OPENING_RANGE_BREAKOUT_MNQ_v1_8_0_RC1.
+
+WHAT THIS IS. The strategy's own rules, transliterated from the shipped Pine port
+and walked over real one-minute index-futures bars with MNQ contract specs
+(0.25 tick, $2 a point, $2.50 sizing reserve). Sizing, the managed stop, the
+conditional 15:30 exit and the 16:00 flatten are the source's.
+
+WHAT IT IS NOT. It is not an NT8 Analyzer run and it is not a TradingView
+Strategy Tester run. Three caveats travel with every number below:
+
+  * THE PRICE SERIES IS NQ, NOT MNQ. They are the same underlying future at a
+    different multiplier, so the PATH is right and the contract specs make the
+    dollars MNQ's. What differs is nothing a rule here reads.
+  * THE LEVELS ARE SYNTHETIC. `NQ_1m` is a back-adjusted continuous contract
+    (`STUDY_US100.md`): 2023-01-10 reads 13,915.8 where the real index was near
+    11,100. Points, R-multiples, win rates and dollars are unaffected. Anything
+    in BASIS POINTS is not -- an inflated denominator shrinks `orb_bps`, the
+    120-day quantile and five of the fourteen model features. That biases branch
+    selection in a direction this file cannot sign.
+  * THE SAMPLE IS 2022-12-26 to 2025-12-11 and the first ~120 eligible sessions
+    cannot trade at all, because the rule requires that much warm-up. The
+    effective test is what is left.
+
+The matched control is the branch's standard null: same day, same side, same
+stop and target in points, the same managed stop, the same 15:30 rule and the
+same 16:00 flatten -- entered at a RANDOM quarter-hour close of the same
+session. It prices drift, session timing and the exit machinery, so whatever
+excess survives is the entry rule and nothing else.
+
+============================================================================================
+ALL THREE SIZING MODES, same signals and same exits -- only the contract count differs
+============================================================================================
+mode                       trades       net $     PF   win %    maxDD $  ret/DD
+FixedDollar                   342      11,661  1.351    47.4     -3,032    3.85
+ClosedEquityPercent           342      16,932  1.395    47.4     -4,044    4.19
+ConfidenceScaledPercent       342      24,676  1.275    47.4     -7,800    3.16
+
+============================================================================================
+FIXED DOLLAR -- the shipped default (risk $535, cap 2 contracts, $50,000 start)
+============================================================================================
+  trades              342
+  net                 $11,661   on $50,000 = 23.3%
+  profit factor       1.351
+  win rate            47.4%
+  expectancy          $+34.10   +12.81 pts   +0.1620 R
+  avg win / avg loss  $277 / $-185
+  max drawdown        $-3,032   return/DD 3.85
+  longest losing run  9
+  Sharpe (daily, zero-filled over every weekday in the span)  1.46
+  bootstrap on R      P(mean <= 0) 0.005   90% CI [+0.0569, +0.2710] R
+
+  by year
+        n      net   win    R
+time                         
+2023   39  -214.50 51.28 0.01
+2024  156 7,292.50 44.87 0.24
+2025  147 4,583.00 48.98 0.12
+
+  by exit reason
+             n        net     R    pts
+reason                                
+close1600   49   5,786.00  0.52  43.25
+cond1530    67  14,687.50  0.89  68.70
+stop       168 -30,200.50 -0.81 -66.40
+target      58  21,388.00  1.82 151.94
+
+  by decision path -- which branch of 1.8.0 actually produces the result
+                         n      net   win     R
+path                                           
+parent_no_condition    211 9,675.00 48.82  0.20
+rc1_direct              62   797.00 43.55  0.10
+prior_session_reverse   16   721.50 62.50  0.33
+intraday_reverse        22   612.50 40.91  0.05
+intraday_keep           19   256.50 47.37  0.13
+delay_weak               7   -32.00 42.86  0.13
+delay_hv                 5  -369.50 20.00 -0.36
+
+  concentration   top 1% (3 trades) = 29% of net,   top 5% (17) = 117% of net
+  halves          first 171 $6,234 (R +0.1952)   second $5,428 (R +0.1288)
+
+  by side
+        n      net   win    R
+side                         
+-1    170 3,005.50 45.88 0.09
+ 1    172 8,655.50 48.84 0.23
+
+============================================================================================
+MATCHED CONTROL -- same sessions, same geometry, RANDOM quarter-hour entry
+============================================================================================
+  rule            +0.1620 R per trade over 342 trades
+  control median  +0.0607 R    5th-95th [-0.0043, +0.1267]
+  excess          +0.1013 R
+  p (control >= rule)  0.004
+
+  control flow over the whole sample
+   elig=473  adm=458  geom=82  touch=31  prior=3  knn=7  rc1=79  parent=379  weak=9  hv=6  hvflip=5  prev=20  ikeep=24  irev=26  labels=374  fail=13  warm=116  entries=342  longs=172  shorts=170

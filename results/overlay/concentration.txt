@@ -1,0 +1,11 @@
+Concentration of the locked-baseline overlay gain (+508 points over 227 trades)
+
+  top  1% of trades (  2) supply   32.0% of the gain
+  top  3% of trades (  7) supply   76.7% of the gain
+  top  5% of trades ( 11) supply  101.1% of the gain
+  top 10% of trades ( 23) supply  147.7% of the gain
+
+  better 50.2%   unchanged 33.0%   WORSE 16.7%
+  median per-trade delta +0.250 pts against a mean of +2.240
+  research-block median +0.000, locked-block median +2.875
+  single largest trade +107 pts = 21.1% of the gain

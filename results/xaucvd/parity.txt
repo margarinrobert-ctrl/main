@@ -1,0 +1,51 @@
+THE SHIPPED PINE'S OWN ORDER MODEL, IN PYTHON, DIFFED AGAINST THE RESEARCH ENGINE.
+
+`STUDY_PINE_PARITY` and `STUDY_V56_PARITY_ADX_TP` both recorded the same thing: a Pine port that is
+transcribed carefully, read back twice and lint-clean can still be a different strategy. The only
+thing that settles it is writing the SCRIPT'S order model out and diffing it trade for trade.
+
+FOUR PLACES THIS PORT COULD DIVERGE, and each is checked rather than argued:
+
+ 1. PIVOT DEFINITION. The research uses `v54cvd.pivots`, which takes bar i when x[i] equals the
+    window extreme AND is its FIRST occurrence -- ties allowed. Pine's `ta.pivotlow(src, k, k)`
+    requires the bar to be STRICTLY beyond every neighbour. On a tick-quantised series like gold
+    those are not the same set, and the difference is measured below rather than assumed.
+ 2. THE BREAK TEST. The research walker uses a STRICT `high > channel`; the script exposes a touch
+    option. Parity is run with it OFF, which is why it ships OFF.
+ 3. THE STOP ANCHOR. Both anchor the ATR at the SIGNAL bar and the stop level at the FILL price.
+ 4. THE EXIT ORDER. Both take max(ATR stop, prior-bar exit channel) capped at the previous close.
+
+Run twice: once with the research's own pivot definition (the TRANSCRIPTION check, which must come
+back near-identical) and once with Pine's (the ORDER-MODEL gap, which is what a user would get).
+
+
+==========================================================================================================================
+PIVOT DEFINITIONS -- how much do the two disagree on gold's tick-quantised lows?
+==========================================================================================================================
+  research pivots  13036   Pine pivots  12934   shared  12934   Jaccard 0.9922
+
+==========================================================================================================================
+RESEARCH pivot definition (the TRANSCRIPTION check)
+==========================================================================================================================
+  block       engine n  script n   ratio  engine %/ev  script %/ev       gap  same exit bar    corr
+  A_primary        400       408   1.020      0.05634      0.04616    -18.1%        100.00%  1.0000
+  B_meta           265       265   1.000      0.10177      0.10177     +0.0%        100.00%  1.0000
+  C_locked         150       150   1.000      0.22331      0.22331     +0.0%        100.00%  1.0000
+
+==========================================================================================================================
+PINE pivot definition (what the script actually does)
+==========================================================================================================================
+  block       engine n  script n   ratio  engine %/ev  script %/ev       gap  same exit bar    corr
+  A_primary        399       407   1.020      0.05550      0.04531    -18.4%        100.00%  1.0000
+  B_meta           263       263   1.000      0.09352      0.09352     +0.0%        100.00%  1.0000
+  C_locked         150       150   1.000      0.21479      0.21479     +0.0%        100.00%  1.0000
+
+==========================================================================================================================
+VERDICT
+==========================================================================================================================
+  A_primary  research-as-published +0.05634 %/ev on  400 events   -> the shipped script +0.04531 on  407   (CONSERVATIVE)
+  B_meta     research-as-published +0.10177 %/ev on  265 events   -> the shipped script +0.09352 on  263   (CONSERVATIVE)
+  C_locked   research-as-published +0.22331 %/ev on  150 events   -> the shipped script +0.21479 on  150   (CONSERVATIVE)
+
+  A script that reads BETTER than the research is reporting the order-model gap, not an edge
+  (STUDY_V56: the first V55 draft read +15.2% better and that was the naked fill bar).

@@ -1,0 +1,26 @@
+
+============================================================================================================================
+A. THE TIGHT TRAIL AGAINST A RANDOM ENTRY -- the cell that looks best, controlled
+============================================================================================================================
+  trail 0.25/0.25 ATR: rule n= 2515 +0.0237  PF 1.751  win 75.2%
+     RANDOM ENTRY, same trail: +0.0194  PF 1.617  win 73.7%   p 0.040
+  trail 0.5/0.5 ATR: rule n= 2268 +0.0034  PF 1.061  win 65.0%
+     RANDOM ENTRY, same trail: +0.0070  PF 1.132  win 66.7%   p 0.877
+  trail 1.0/1.0 ATR: rule n= 1888 -0.0070  PF 0.920  win 53.4%
+     RANDOM ENTRY, same trail: -0.0015  PF 0.983  win 55.6%   p 0.873
+
+============================================================================================================================
+B. THE INTRABAR TIE-BREAK -- CLAUDE.md: any sub-0.5 ATR barrier result is set by this, not the market
+============================================================================================================================
+  trail 0.25/0.25: Pine path +0.0237 PF 1.751  |  stop-first +0.0129 PF 1.329  -> the convention is worth +0.0108 %/trade
+  trail 0.5/0.5: Pine path +0.0034 PF 1.061  |  stop-first -0.0043 PF 0.929  -> the convention is worth +0.0078 %/trade
+  trail 1.0/1.0: Pine path -0.0070 PF 0.920  |  stop-first -0.0105 PF 0.882  -> the convention is worth +0.0035 %/trade
+  Trail offset in points: 0.25 ATR = 5.7 pts, 0.5 ATR = 11.4 pts, 1.0 ATR = 22.8 pts;  round turn = 1.72 pts
+
+============================================================================================================================
+C. THE ONE LOCKED READ -- pre-declared: the ask as specified, and the tight-trail variant
+============================================================================================================================
+  as asked (1.0/1.0 ATR trail)     [research] n= 1888 -0.0070  PF 0.920  win 53.4%  $    -4,771  | random entry -0.0016 PF 0.981  p 0.865
+  as asked (1.0/1.0 ATR trail)     [locked  ] n= 1032 -0.0251  PF 0.778  win 55.5%  $   -10,415  | random entry +0.0013 PF 1.013  p 0.990
+  tight trail (0.25/0.25 ATR)      [research] n= 2515 +0.0237  PF 1.751  win 75.2%  $    21,260  | random entry +0.0194 PF 1.616  p 0.045
+  tight trail (0.25/0.25 ATR)      [locked  ] n= 1400 +0.0281  PF 1.684  win 78.0%  $    18,049  | random entry +0.0296 PF 1.787  p 0.610

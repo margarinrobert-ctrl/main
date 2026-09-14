@@ -1,0 +1,299 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+
+// NQ 07:00-11:00 NEW YORK -- FIVE INTRADAY DESIGNS, ONE SCRIPT. Every number measured, none claimed.
+//
+// The ask was five strategies with the highest EV and Sharpe for intraday scalping in this window.
+// Five were designed, each around a DIFFERENT NAMED MECHANISM rather than a different indicator,
+// and they are genuinely independent -- their daily P&L correlates |0.117| on average against the
+// 0.87-0.96 an eight-breakout programme on this branch produced. That part of the brief worked.
+// What did not: 2 of 5 are positive on the block that chose them, 0 of 5 clear a matched random
+// entry, and the geometry that makes money holds for 50-86 minutes, which is not a scalp.
+//
+// ============================ THE ARITHMETIC THAT BOUNDS IT ============================
+// MNQ all-in round turn 1.72 points (commission + exchange + NFA + slippage). Cost is a FRACTION
+// OF RISK, and that fraction is set by geometry before any signal exists:
+//   1-minute bars, 0.5xATR stop : cost 45.6% of risk, 1:1 break-even 72.8%
+//   5-minute bars, 1.5xATR stop : cost  7.6% of risk, 1:1 break-even 53.8%
+//   5-minute bars, 3.0xATR stop : cost  3.8% of risk, 1:1 break-even 51.9%
+// To reach PROFIT FACTOR 1.5 at a 3xATR stop and a 1R target you need 61.8% -- a lift of +11.8
+// points over a coin flip. The best of these five delivers +2.4 (52.4% on 380 trades). That gap,
+// not the choice of indicator, is why intraday scalping keeps failing.
+//
+// ============================ THE FIVE, AND WHO IS ON THE OTHER SIDE ============================
+// S1 OPENING DRIVE       overnight inventory repriced at a fixed time. A sustained displacement
+//                        from a pre-open-anchored EMA, taken WITH the drive, while the session
+//                        VWAP is still within 2.5 ATR so the move is not already spent.
+// S2 LEVEL RECLAIM       resting orders at yesterday's completed RTH extreme -- the one reference
+//                        every participant can see. The single engineered feature that has
+//                        survived on this branch, and it is a LEVEL, not a trend.
+// S3 FLOW EXHAUSTION     sellers out of size: price lower low + cumulative delta HIGHER low, at
+//                        CONFIRMED pivots (a pivot at i is knowable at i+k, never at i). The delta
+//                        is a PROXY built from 1-minute bars -- no feed here carries aggressor tags.
+// S4 STRETCH FADE        a one-sided flow paying for immediacy: price >2 ATR from the session VWAP
+//                        while realised volatility is FALLING. Twelve independent routes on this
+//                        branch end in mean reversion; this is the one facing that way on purpose.
+// S5 RANGE EXPANSION     no counterparty named, so it carries the full deflation burden. It exists
+//                        because compression setups are ANTI-SELECTIVE ON COST, so this trades the
+//                        opening range only when ATR clears its own causal time-of-day baseline.
+//
+// ============================ MEASURED, NQ 5m, 766 sessions 2022-12..2025-12 ============================
+// Geometry is the MARGINAL CONSENSUS of an 800-cell declared grid, not any design's top cell:
+// 3.0xATR stop, NO take profit, breakeven to +0.25R at 1R, trail armed at 1R one R behind.
+//
+//   design            research Sharpe    EV/trade    trades/yr   vs random entry
+//   S3 flow exhaust        +0.55        +2.31 pts       193        p 0.107
+//   S1 opening drive       +0.26        +0.73 pts       216        p 0.255
+//   S4 stretch fade        -0.03        -0.27 pts        28        p 0.420
+//   S5 range expansion     -0.57        -2.39 pts       196        p 0.598
+//   S2 level reclaim       -1.25        -5.31 pts       184        p 0.885
+//
+//   THE TWO-LEG BOOK (S1 + S3, the research-positive ones, chosen on research only):
+//     research  409 trades/yr, +2.95 pts/trade, PF 1.115, Sharpe +0.59, ret/DD 1.03
+//     LOCKED    384 trades/yr, +5.96 pts/trade, PF 1.353, Sharpe +1.60, ret/DD 3.06
+//   It beats its own best leg by 0.04 Sharpe on research and LOSES to it out of sample (1.60
+//   against 1.75), so diversification bought almost nothing -- and the ALL-FIVE book is Sharpe
+//   -0.46 on research and +1.16 on locked, which is the wrong shape.
+//
+// ============================ FOUR THINGS TO KNOW BEFORE TRADING IT ============================
+// 1. NOTHING CLEARS ITS CONTROL. A random entry in the same window at the same rate with the same
+//    side mix and the same geometry beats S3 10.7% of the time and S1 25.5%. And that control
+//    LOSES 1.5-2.3 points a trade, so clearing it would not have meant profit either.
+// 2. THE MARGINALS SAY THIS IS NOT A SCALP. Over 800 cells Sharpe rises monotonically as the stop
+//    WIDENS (1.0N -1.89 to 3.0N -0.70) and NO TAKE PROFIT is the best target rung -- the 23rd time
+//    on this branch. At the geometry that makes money the median hold is 50-86 minutes.
+// 3. THE WALK-FORWARD PREFERS DOING NOTHING. Re-choosing the legs inside every training window
+//    earns +3.65 points a day against +7.63 for simply holding all five and +5.97 for the best
+//    leg fixed -- the thirteenth re-optimiser on this branch to lose to its own starting point.
+// 4. THE LOCKED BLOCK WAS READ ONCE, after 800 geometry cells and five design specifications.
+//    Every locked number above is a single read at a stated multiplicity, not a validation.
+//
+// COMMISSION AND SLIPPAGE ARE NOT SET HERE. Set them in Properties before reading any report.
+
+strategy("NQ 07:00-11:00 Five Designs", shorttitle = "NQ5", overlay = true, pyramiding = 0, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+gD = "Design"
+design = input.string("S3 flow exhaustion", "Which mechanism", group = gD, options = ["S1 opening drive", "S2 level reclaim", "S3 flow exhaustion", "S4 stretch fade", "S5 range expansion"], tooltip = "Research-block Sharpe: S3 +0.55, S1 +0.26, S4 -0.03, S5 -0.57, S2 -1.25. S2 and S5 are shipped because they were declared, not because they work.")
+doLong  = input.bool(true, "Long side", group = gD)
+doShort = input.bool(true, "Short side", group = gD)
+
+gS = "Session (New York wall clock)"
+winOpen  = input.int(420, "Window opens (min past NY midnight, 420 = 07:00)", group = gS)
+winClose = input.int(660, "Flatten at (min past NY midnight, 660 = 11:00)", group = gS, tooltip = "The flatten order is submitted on the bar BEFORE the cutoff so it fills at the 11:00 open -- a script cannot sell the close of the bar that triggers it.")
+
+gX = "Exit geometry (the marginal consensus of an 800-cell grid)"
+stopN  = input.float(3.0, "Stop, x ATR at the signal bar", minval = 0.25, step = 0.25, group = gX, tooltip = "Sharpe rises monotonically toward wider across the whole grid. At 3xATR the round turn is 3.8% of risk against 22.8% at 1xATR on 1-minute bars.")
+tgtR   = input.float(0.0, "Target in R (0 = none)", minval = 0.0, step = 0.5, group = gX, tooltip = "No take profit is the best target rung on the grid -- the 23rd time on this branch.")
+beAt   = input.float(1.0, "Breakeven once this many R are in front (0 = off)", minval = 0.0, step = 0.25, group = gX)
+beOff  = input.float(0.25, "...placed this many R the right side of entry", minval = 0.0, step = 0.05, group = gX)
+trArm  = input.float(1.0, "Arm the trail at (R in front, 0 = off)", minval = 0.0, step = 0.25, group = gX)
+trDist = input.float(1.0, "Trail distance behind the running high (R)", minval = 0.25, step = 0.25, group = gX)
+
+gP = "Design parameters"
+driveThr = input.float(1.5, "S1  displacement threshold (ATR from the pre-open EMA)", step = 0.25, group = gP)
+driveCut = input.int(90, "S1  minutes after the open in which it may fire", group = gP)
+lvlBuf   = input.float(0.05, "S2  buffer beyond yesterday's extreme (ATR)", step = 0.05, group = gP)
+pivK     = input.int(3, "S3  pivot half-width, bars", minval = 1, group = gP)
+pivW     = input.int(20, "S3  look back this many bars for the prior pivot", minval = 2, group = gP)
+fadeK    = input.float(2.0, "S4  stretch from the session VWAP (ATR)", step = 0.25, group = gP)
+orMin    = input.int(30, "S5  opening range length, minutes", minval = 5, group = gP)
+showHUD  = input.bool(true, "Show the panel", group = gP)
+
+// ------------------------------------------------------------------ clock
+TZ = "America/New_York"
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow = dayofweek(time, TZ)
+wkday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+inWin = wkday and nyMin >= winOpen and nyMin < winClose
+newWin = inWin and not inWin[1]
+tfMin = timeframe.in_seconds() / 60
+lastWin = inWin and nyMin + tfMin >= winClose
+
+// ta.atr is Wilder's; the research uses ema(tr, n). This matches the research.
+atr = ta.ema(ta.tr(true), 14)
+
+// ------------------------------------------------------------------ session VWAP, reset at the open
+var float cumPV = 0.0
+var float cumV = 0.0
+if barstate.isconfirmed
+    if newWin
+        cumPV := 0.0
+        cumV := 0.0
+    if inWin
+        cumPV := cumPV + ((high + low + close) / 3.0) * volume
+        cumV := cumV + volume
+vwap = cumV > 0 ? cumPV / cumV : na
+dVwap = (close - vwap) / math.max(atr, 1e-9)
+
+// ------------------------------------------------------------------ S1 opening drive
+emaPre = ta.ema(close, 42)
+drive = (close - emaPre) / math.max(atr, 1e-9)
+sust = math.sign(drive) == math.sign(drive[1]) and math.sign(drive) == math.sign(drive[2])
+fresh = math.abs(drive[3]) < driveThr
+early = nyMin < winOpen + driveCut
+band = math.abs(dVwap) <= 2.5
+s1L = inWin and early and band and sust and fresh and drive >= driveThr
+s1S = inWin and early and band and sust and fresh and drive <= -driveThr
+
+// ------------------------------------------------------------------ S2 prior RTH level
+// Accumulated on the chart's own bars and FROZEN at the session end -- `request.security` on a
+// daily bar returns the 24-hour futures high, not the RTH session high.
+inRth = wkday and nyMin >= 570 and nyMin < 960
+var float rHi = na
+var float rLo = na
+var float pHi = na
+var float pLo = na
+if barstate.isconfirmed
+    if inRth and not inRth[1]
+        rHi := high
+        rLo := low
+    else if inRth
+        rHi := math.max(rHi, high)
+        rLo := math.min(rLo, low)
+    if not inRth and inRth[1]
+        pHi := rHi
+        pLo := rLo
+strong = (close - low) / math.max(high - low, 1e-9)
+s2L = inWin and not na(pHi) and close > pHi + lvlBuf * atr and close[1] <= pHi and strong >= 0.6
+s2S = inWin and not na(pLo) and close < pLo - lvlBuf * atr and close[1] >= pLo and strong <= 0.4
+
+// ------------------------------------------------------------------ S3 flow exhaustion
+// The delta is a PROXY: each lower-timeframe bar's whole volume is signed by its own direction,
+// which is TradingView's own rule. `request.security_lower_tf` with a timeframe NOT strictly below
+// the chart's returns nothing, so on a 1-minute chart this is flat and the design cannot fire.
+ltf = timeframe.in_seconds() >= 300 ? "1" : "1"
+lo_c = request.security_lower_tf(syminfo.tickerid, ltf, close)
+lo_o = request.security_lower_tf(syminfo.tickerid, ltf, open)
+lo_v = request.security_lower_tf(syminfo.tickerid, ltf, volume)
+barDelta = 0.0
+if array.size(lo_c) > 0
+    for i = 0 to array.size(lo_c) - 1
+        barDelta += math.sign(array.get(lo_c, i) - array.get(lo_o, i)) * array.get(lo_v, i)
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := newWin ? barDelta : (inWin ? cvd + barDelta : cvd)
+pl = ta.pivotlow(low, pivK, pivK)
+ph = ta.pivothigh(high, pivK, pivK)
+var float lastPL = na
+var float lastPLcvd = na
+var int lastPLbar = na
+var float lastPH = na
+var float lastPHcvd = na
+var int lastPHbar = na
+s3L = false
+s3S = false
+if barstate.isconfirmed
+    if not na(pl)
+        if not na(lastPL) and bar_index - lastPLbar <= pivW and pl < lastPL and cvd[pivK] > lastPLcvd
+            s3L := true
+        lastPL := pl
+        lastPLcvd := cvd[pivK]
+        lastPLbar := bar_index
+    if not na(ph)
+        if not na(lastPH) and bar_index - lastPHbar <= pivW and ph > lastPH and cvd[pivK] < lastPHcvd
+            s3S := true
+        lastPH := ph
+        lastPHcvd := cvd[pivK]
+        lastPHbar := bar_index
+s3L := s3L and inWin
+s3S := s3S and inWin
+
+// ------------------------------------------------------------------ S4 stretch fade
+rvF = math.sqrt(ta.sma(math.pow(math.log(close / close[1]), 2), 12))
+rvS = math.sqrt(ta.sma(math.pow(math.log(close / close[1]), 2), 60))
+calm = rvF / math.max(rvS, 1e-12) <= 1.0
+s4L = inWin and calm and dVwap <= -fadeK and close > open and close[1] < open[1]
+s4S = inWin and calm and dVwap >= fadeK and close < open and close[1] > open[1]
+
+// ------------------------------------------------------------------ S5 range expansion
+// The ATR gate is against a CAUSAL time-of-day baseline, not a trailing mean: on a 23-hour tape an
+// active-hours bar clears its own trailing ATR mean almost always, so `atr / sma(atr)` is a clock.
+var float atrTodSum = 0.0
+var int atrTodN = 0
+var float orHi = na
+var float orLo = na
+if barstate.isconfirmed
+    if newWin
+        orHi := high
+        orLo := low
+    else if inWin and nyMin < winOpen + orMin
+        orHi := math.max(orHi, high)
+        orLo := math.min(orLo, low)
+    if inWin and nyMin == winOpen + orMin
+        atrTodSum := atrTodSum + atr
+        atrTodN := atrTodN + 1
+atrTod = atrTodN >= 20 ? atr / math.max(atrTodSum / atrTodN, 1e-9) : na
+orLive = inWin and nyMin >= winOpen + orMin and not na(atrTod) and atrTod >= 1.0
+s5L = orLive and close > orHi and close[1] <= orHi
+s5S = orLive and close < orLo and close[1] >= orLo
+
+// ------------------------------------------------------------------ resolve
+rawL = design == "S1 opening drive" ? s1L : design == "S2 level reclaim" ? s2L : design == "S3 flow exhaustion" ? s3L : design == "S4 stretch fade" ? s4L : s5L
+rawS = design == "S1 opening drive" ? s1S : design == "S2 level reclaim" ? s2S : design == "S3 flow exhaustion" ? s3S : design == "S4 stretch fade" ? s4S : s5S
+sigL = doLong and rawL
+sigS = doShort and rawS
+
+// ------------------------------------------------------------------ orders
+// The exit-bar marker updates BEFORE the entry test so a trade cannot re-enter on the bar it
+// closed on. The bracket is fill-relative and goes out WITH the entry, so the initial stop is live
+// on the fill bar -- leaving it naked is 4.4-13.0% of trades on this branch's parity measurements.
+var int lastExitBar = -1
+var int nClosed = 0
+var float riskPts = na
+var float peak = na
+if strategy.closedtrades != nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and bar_index != lastExitBar and not na(atr) and atr > 0 and not lastWin
+
+if canEnter and sigL
+    riskPts := stopN * atr
+    peak := na
+    ticks = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick)
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = ticks, profit = tgtR > 0 ? math.round(tgtR * ticks) : na)
+
+if canEnter and sigS
+    riskPts := stopN * atr
+    peak := na
+    ticks = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick)
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", from_entry = "S", loss = ticks, profit = tgtR > 0 ? math.round(tgtR * ticks) : na)
+
+// Breakeven and trail act on the CLOSE and cannot act on the fill bar: `position_avg_price` does
+// not exist until one bar after the fill, so a level written from it there is `na` and silently
+// does nothing. The fill-relative bracket above covers exactly that bar.
+sideN = strategy.position_size > 0 ? 1 : -1
+if barstate.isconfirmed and strategy.position_size != 0 and bar_index > lastExitBar and not na(strategy.position_avg_price) and riskPts > 0
+    adv = sideN * (close - strategy.position_avg_price) / riskPts
+    peak := na(peak) ? adv : math.max(peak, adv)
+    beLvl = beAt > 0 and peak >= beAt ? strategy.position_avg_price + sideN * beOff * riskPts : na
+    trLvl = trArm > 0 and peak >= trArm ? strategy.position_avg_price + sideN * (peak - trDist) * riskPts : na
+    lvl = na(beLvl) ? trLvl : (na(trLvl) ? beLvl : (sideN > 0 ? math.max(beLvl, trLvl) : math.min(beLvl, trLvl)))
+    if not na(lvl) and (sideN > 0 ? close < lvl : close > lvl)
+        strategy.close_all(comment = "secured")
+
+if barstate.isconfirmed and lastWin and strategy.position_size != 0
+    strategy.close_all(comment = "11:00 flat")
+
+// ------------------------------------------------------------------ plots
+bgcolor(inWin ? color.new(#2a78d6, 94) : na)
+plot(inWin ? vwap : na, "session VWAP", color = color.new(#2a78d6, 0), style = plot.style_linebr, linewidth = 2)
+plot(design == "S2 level reclaim" ? pHi : na, "prior RTH high", color = color.new(#eb6834, 0), style = plot.style_linebr)
+plot(design == "S2 level reclaim" ? pLo : na, "prior RTH low", color = color.new(#eb6834, 0), style = plot.style_linebr)
+plot(design == "S5 range expansion" and inWin ? orHi : na, "opening range high", color = color.new(#c8a032, 0), style = plot.style_linebr)
+plot(design == "S5 range expansion" and inWin ? orLo : na, "opening range low", color = color.new(#c8a032, 0), style = plot.style_linebr)
+
+var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+if showHUD and barstate.islast
+    table.cell(hud, 0, 0, "design", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 0, design, text_size = size.tiny)
+    table.cell(hud, 0, 1, "research Sharpe / EV", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 1, design == "S1 opening drive" ? "+0.26  /  +0.73 pts" : design == "S2 level reclaim" ? "-1.25  /  -5.31 pts" : design == "S3 flow exhaustion" ? "+0.55  /  +2.31 pts" : design == "S4 stretch fade" ? "-0.03  /  -0.27 pts" : "-0.57  /  -2.39 pts", text_size = size.tiny)
+    table.cell(hud, 0, 2, "vs a random entry", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 2, design == "S1 opening drive" ? "p 0.255" : design == "S2 level reclaim" ? "p 0.885" : design == "S3 flow exhaustion" ? "p 0.107" : design == "S4 stretch fade" ? "p 0.420" : "p 0.598", text_color = color.new(#eb6834, 0), text_size = size.tiny)
+    table.cell(hud, 0, 3, "break-even this geometry needs", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 3, "51.9% at 1:1  (3N stop, 5m NQ)", text_size = size.tiny)
+    table.cell(hud, 0, 4, "sub-bar delta live?", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 4, array.size(lo_c) > 0 ? str.tostring(array.size(lo_c)) + " sub-bars" : "NO — S3 cannot fire", text_color = array.size(lo_c) > 0 ? color.gray : color.new(#c0392b, 0), text_size = size.tiny)
