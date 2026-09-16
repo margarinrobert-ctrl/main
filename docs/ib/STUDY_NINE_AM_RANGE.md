@@ -923,3 +923,244 @@ on the gap.
 One mechanic worth recording: in the parity harness the OR's two masks must be combined **before
 either drops a signal**. Gating in sequence — the MA gate, then the bypass — is an AND, which is a
 different strategy; the harness computes both masks on the full event stream and unions them.
+
+---
+
+## 20. Optuna and vectorbt, on a daily zero-filled Sharpe and Sortino
+
+The ask was to use Optuna and vectorbt to find a better Sharpe and Sortino. Both were run with
+their known failure modes in front rather than hidden: Optuna has lost to the author's constants
+fifteen times on this branch and vectorbt has failed its transcription check three times.
+`research/nineam/na_opt.py` (the evaluator), `run_n16.py` (the search), `run_n17.py` (one read),
+`run_n18.py` (second engine, intrabar arbiter, deflation), `run_n19.py` (the retro-correction),
+`fig5_optuna_vbt.png`.
+
+### 20.1 The objective, written before the search
+
+* **Sharpe and Sortino over every trading day in the block, ZERO-FILLED on days that did not
+  trade.** Over traded days only, a filter is paid for trading less. An optimiser handed a
+  traded-day ratio finds a barely-trading cell — `STUDY_V30` measured two of four optima that
+  could not muster 25 out-of-sample trades.
+* **A trades-per-YEAR floor (100/yr), not an absolute count** — `STUDY_V33`'s defect, where an
+  absolute floor admitted configurations with 67 training trades and zero validation trades.
+* **The unit is percent of entry price.** R divides by the stop, so an optimiser scored in R is
+  partly paid for tightening it (`STUDY_V61`); points confound era and market (`STUDY_DL50`).
+* **The axes are the script's own inputs and nothing else**, so anything found is reachable by a
+  reader of the Pine. The four MA lengths are fixed at 13/48/200 EMA, because `STUDY_MA_LAG` and
+  section 15 already established that axis is inert and searching it would only inflate the
+  deflation every survivor must clear.
+* **Two flatten regimes, declared and reported apart**: `intraday` pins the 16:00 flatten on,
+  which is the strategy as designed and as the user runs it; `free` lets the optimiser switch it
+  off, which turns a 09:00-range breakout into a multi-day position.
+
+### 20.2 The baselines, before any search — and the user's own settings are the worst arm in the table
+
+Read off the Inputs dialog: 09:00–09:30 range, both sides, a **100-point stop and a 100-point
+target**, breakeven arming at 75 securing 3, MA confirmation = **Fresh cross**, opposite-cross exit
+**on**.
+
+| configuration | block | n | /yr | Sharpe | Sortino | PF | %/trade |
+|---|---|---|---|---|---|---|---|
+| USER | US30L research | 281 | 45.5 | **−0.27** | −0.37 | 0.901 | −0.0130 |
+| USER | US30L holdout | 135 | 53.4 | **−1.05** | −1.34 | 0.704 | −0.0400 |
+| USER | US30I forward | 59 | 53.1 | **−0.70** | −0.93 | 0.795 | −0.0194 |
+| DEFAULT (shipped) | US30L research | 1734 | 280.9 | +0.19 | +0.35 | 1.039 | +0.0067 |
+| DEFAULT | US30L holdout | 733 | 289.7 | +0.03 | +0.05 | 1.006 | +0.0009 |
+| DEFAULT | US30I forward | 315 | 283.4 | +0.31 | +0.62 | 1.055 | +0.0080 |
+
+The shipped default is positive on all three blocks and the user's configuration is negative on all
+three. That is the first finding and it did not need a search: **the four non-default settings
+together cost about 0.02–0.05 % of price a trade and cut the trade count by six sevenths.** None of
+it separates from zero in either direction — the default's own bootstrap reads P(mean ≤ 0) = 0.282
+on research — so the honest statement is that the additions are a measurable cost against a base
+that is itself indistinguishable from nothing.
+
+### 20.3 THE SEARCH FOUND A BUG IN THE ENGINE BEFORE IT FOUND A STRATEGY
+
+The first 6,000-trial run returned research Sharpe 2.68 and a population **94–98 % profitable with
+a mean holdout Sharpe of +0.74** against the default's +0.03. A flat improvement across a whole
+parameter block is a bug signature, not a plateau (`STUDY_V8_EXIT_OPT`), and it was.
+
+**All six finalists chose the breakeven ratchet at `be_off` = 25 against `be_pts` = 25 or 50.** The
+ratchet arms on the bar whose favourable **extreme** reaches `be_pts` and moves the stop to
+`be_off` beyond the fill. When the two are close the moved stop is written **above the market** —
+the high touched +25, the bar closed at +8, and a sell stop is placed at +25 — and `na_core._walk`
+fills a stop **at its level**, so `l[j] ≤ stop` is immediately true and it books +25. A sell stop
+above the market is not a stop; the same artifact is recorded in `STUDY_V10_LIMIT`. At
+`be_pts = be_off = 25`, **928 of 1,436 trades (65 %) exited at exactly +22.71 points** — the
+secured level minus the round turn — for a 78.1 % win rate.
+
+The correction is one line of arithmetic and it handles a genuine gap and a through-the-market
+order together: **a stop fills at the WORSE of its level and the bar's open, and a limit target at
+the BETTER.** `na_opt.run2` is a COPY of the kernel, not a parameterisation of it (CLAUDE.md), and
+`fix = 0` reproduces `na_core.run` at **identical exit bars and max |Δpts| 0.000e+00** on four
+configurations including the ratchet.
+
+| be_pts / be_off | n | pts/trade published | corrected | artifact | trades filling through | Sharpe pub → corr |
+|---|---|---|---|---|---|---|
+| 25 / 25 | 1811 | +11.385 | +0.377 | **−11.007** | 37.8 % | 2.43 → **0.08** |
+| 25 / 10 | 1810 | +8.236 | +1.468 | −6.768 | 20.9 % | 1.64 → 0.29 |
+| 50 / 25 | 1744 | +6.773 | +2.680 | −4.094 | 11.3 % | 1.17 → 0.51 |
+| 50 / 5 | 1743 | +6.243 | +3.826 | −2.416 | 6.5 % | 1.02 → 0.64 |
+| 75 / 3 *(the user's)* | 1705 | +5.792 | +5.005 | −0.788 | 2.6 % | 0.85 → 0.75 |
+| 150 / 25 | 1664 | +6.454 | +6.453 | −0.001 | 0.2 % | 0.87 → 0.87 |
+| **0 / 0 (no ratchet)** | 1664 | +6.454 | +6.453 | **−0.001** | 0.2 % | 0.87 → 0.87 |
+
+**The artifact is entirely in the ratchet and scales with `be_off / be_pts`.** At `be_pts = 0` the
+correction is worth −0.001 points a trade, which is `STUDY_V50` restated — on a continuous future
+the next open *is* the prior close, so a genuine gap through an initial stop is worth nothing. The
+user's own 75/3 is exposed on 2.6 % of trades and their baseline above is unchanged by the fix.
+
+### 20.4 It corrects two published ladders, and it strengthens what they concluded
+
+`run_n7` and `run_n8` measured the breakeven ladder and the secured-points offset through the same
+kernel. Re-run under both engines over the same declared ladder, two geometries and three blocks
+(240 paired cells), each rung against its own `be_pts = 0` twin:
+
+| secured points | cells | paired Δ as published | corrected | artifact | beats OFF published | corrected |
+|---|---|---|---|---|---|---|
+| 0 | 60 | +0.0001 | −0.0037 | −0.0038 | 25/60 | **8/60** |
+| 5 | 60 | +0.0002 | −0.0043 | −0.0045 | 26/60 | 8/60 |
+| 10 | 60 | +0.0007 | −0.0046 | −0.0053 | 25/60 | 7/60 |
+| 25 | 60 | **+0.0046** | −0.0039 | −0.0085 | 32/60 | 7/60 |
+
+As published the offset ladder **rises** with the secured distance, and that rise was recorded as
+"a large secured distance stops being a breakeven and becomes a small take profit". **Corrected,
+the rise is the artifact**: every rung is negative and flat, and the breakeven beats its own OFF
+twin in **7–8 of 60 cells = 12 %, where chance is 50 %** rather than the published 42–53 %. So the
+correction *strengthens* the conclusion the ladders reached — the breakeven subtracts — and deletes
+the single sub-finding that ran the other way. The script's tooltips carry the corrected numbers.
+
+### 20.5 The corrected search: population first, and the ranking does not transfer
+
+6,000 trials (1,000 × 3 objectives × 2 regimes), 4,710 scorable. `E[max t | pure noise]` over a
+search that size is **3.734 against the 2.802 detection needs**, so the top row is not believable
+on its own p-value however it scores, which is stated in the runner's own output before any table.
+
+| study | scorable | % profitable | % beating the default | Pearson | Spearman | top 1 % research | → holdout | population holdout |
+|---|---|---|---|---|---|---|---|---|
+| intraday_sharpe | 753 | 0.895 | 0.793 | +0.250 | +0.208 | +1.130 | **−0.589** | −0.513 |
+| intraday_sortino | 824 | 0.948 | 0.887 | +0.481 | +0.383 | +1.223 | +0.019 | −0.156 |
+| intraday_retdd | 794 | 0.936 | 0.901 | +0.621 | +0.496 | +1.170 | +0.153 | −0.034 |
+| free_sharpe | 799 | 0.964 | 0.929 | +0.357 | +0.309 | +1.453 | −0.071 | −0.095 |
+| free_sortino | 731 | 0.930 | 0.845 | +0.363 | +0.287 | +1.270 | +0.036 | +0.078 |
+| free_retdd | 809 | 0.930 | 0.871 | +0.532 | +0.489 | +1.302 | −0.028 | −0.262 |
+
+Pooled over all 4,710: **research Sharpe +0.621 → holdout −0.164**, the top 1 % by research
+**+1.369 → −0.049**, and only **38.2 %** of trials have a positive holdout Sharpe at all. The
+positive Pearson is the `STUDY_V64_OPTUNA` artefact — TPE concentrates in a narrow good region, so
+the correlation is measured over a restricted range with both ends positive; it says the
+neighbourhood is uniformly decent, not that research ranking picks winners, and the finalist table
+below says the opposite.
+
+**fANOVA gives `ma_mode` 0.47–0.75 of every objective** and `m200_form` a further 0.06–0.42; every
+geometry axis is under 0.15. The optimiser is overwhelmingly choosing a *gate*, not a stop or a
+target — which is worth knowing precisely because sections 15 and 19 measured those gates as
+worthless against a same-selectivity control.
+
+### 20.6 One read: every finalist inverts, the un-searched default does not
+
+Six finalists, plus the default, the user's configuration and three cells drawn uniformly from the
+same declared space (three of the fifteen re-optimisers on this branch lost to a random cell).
+
+| arm | research Sharpe | %/trade | holdout Sharpe | %/trade | forward Sharpe | %/trade |
+|---|---|---|---|---|---|---|
+| intraday_sharpe | +1.15 | +0.0456 | **−0.55** | −0.0169 | **−0.62** | −0.0181 |
+| intraday_sortino | +1.23 | +0.0420 | −0.10 | −0.0029 | −0.21 | −0.0065 |
+| intraday_retdd | +1.12 | +0.0367 | +0.08 | +0.0022 | −0.98 | −0.0253 |
+| free_sharpe | +1.49 | +0.0641 | −0.07 | −0.0023 | −1.13 | −0.0335 |
+| free_sortino | +0.97 | +0.0422 | −0.08 | −0.0016 | **−7.07** | −0.0412 |
+| free_retdd | +1.29 | +0.0935 | +0.08 | +0.0040 | −0.78 | −0.0325 |
+| **DEFAULT (shipped)** | +0.19 | +0.0067 | **+0.03** | +0.0009 | **+0.31** | +0.0080 |
+| USER (their inputs) | −0.27 | −0.0130 | −1.05 | −0.0400 | −0.70 | −0.0194 |
+| RANDOM cells 1–3 | −0.43 / +0.10 / −0.75 | | −0.31 / −1.28 / −1.11 | | +0.65 / −1.30 / −0.54 | |
+
+Against a **matched random entry** — a random bar at or after 09:30 on the same sessions, same
+side, same geometry, same exits, same cost, drawn bars sorted so the position lock keeps the same
+fraction each draw:
+
+* **4 of 6 finalists clear on research** (p 0.000–0.010).
+* **0 of 6 clear on the holdout** (best p 0.623) and **0 of 6 on the reserved forward block**
+  (best p 0.175).
+* Every finalist's research bootstrap CI excludes zero (P(mean ≤ 0) 0.000–0.001); **not one
+  holdout or forward CI excludes zero on the positive side**, and `free_sortino` excludes it on the
+  **negative** side on the forward block.
+* `per / MDE` runs 0.96–1.47 on research and **0.05–0.47 out of sample** — the finalists are not
+  merely unproven out of sample, they are an order of magnitude inside what that sample could
+  resolve.
+
+**Deflation.** Over 4,710 scorable trials the per-day trial Sharpe has sd 0.02447, and
+`E[max per-day Sharpe | pure noise]` at N = 6,000 is **+0.09137** against a best achieved
+**+0.09366** — the best thing 6,000 trials found sits at **1.025×** its own noise floor. The
+deflated Sharpe of the best research finalist is **0.5398, FAIL**. White's reality check over 250
+sampled trial streams reads p 0.0235 and passes — but on the **research** block, where the
+candidates were chosen; the fresh-sample answer is the 0-of-6 above.
+
+### 20.7 vectorbt passes its transcription check for the first time on this branch
+
+Run count-first, at **zero cost in both arms**, on the reduced geometry both engines can express.
+vectorbt 1.1.0 cannot represent three of this strategy's axes and they are named rather than
+quietly dropped: `sl_stop`/`tp_stop` are **fractions of price**, not per-trade ATR multiples (solved
+for per entry here); `td_stop`/`dt_stop` **do not exist**, so a hold cap is unavailable; and there
+is **no breakeven ratchet at all**.
+
+| arm | block | engine n | vbt n | ratio | engine pts | vbt pts | gap |
+|---|---|---|---|---|---|---|---|
+| intraday_sharpe | research | 1260 | 1254 | 0.995 | 9.795 | 8.341 | −1.454 |
+| intraday_retdd | research | 807 | 804 | 0.996 | 13.715 | 13.398 | −0.317 |
+| free_sharpe | research | 519 | 519 | **1.000** | 19.330 | 19.243 | −0.087 |
+| DEFAULT | research | 1418 | 1413 | 0.996 | 6.244 | 7.899 | +1.654 |
+| DEFAULT | holdout | 600 | 600 | **1.000** | 5.384 | 3.690 | −1.694 |
+| USER | holdout | 76 | 75 | 0.987 | −7.803 | −18.627 | **−10.824** |
+
+**14 of 14 cells pass** at a count ratio of 0.987–1.000, against three prior transcription failures
+on this branch (`STUDY_V46` 0.12–0.98, `STUDY_V53` 0.034, `STUDY_VWAP_EMA_INDICES` 0.83–0.86). The
+gap is ±1.7 points a trade on most cells — an order of magnitude smaller than `STUDY_V38`'s 2.1×
+and `STUDY_V41`'s 22.9×, because this geometry's stop and flatten rarely fall inside one bar. The
+one large gap is the **user's own configuration on the holdout, −10.8 points a trade**, which is a
+100/100 barrier pair — exactly the geometry where the intrabar convention binds, and it makes their
+configuration *worse* under the second engine, not better.
+
+### 20.8 The 30-second feed settles the intrabar question this geometry actually has
+
+`US30_30s` (390,552 bars, 2025-08 → 2026-09) post-dates the whole search but overlaps the reserved
+forward block, so a P&L read there is a second read of the same weeks and is descriptive. What it
+settles is the measurement. **Coverage first**: the feed omits bars with no activity, and of its
+293 sessions **270 carry a 09:30 bar while only 92 carry the 09:00–09:30 pre-open** the range is
+built from. The pre-open is exactly where a Dow CFD is quiet. So the geometry question — which is a
+property of the *barriers*, not of the trigger — is asked on a 09:30-open long on every session,
+with the rule's own trigger run beside it on the 92.
+
+| stop / target (pts) | trades | ambiguous | share | resolve at 30 s | stop first | target first |
+|---|---|---|---|---|---|---|
+| 50 / 50 | 292 | 52 | **17.8 %** | 1.000 | 0.577 | 0.423 |
+| 50 / 100 | 292 | 18 | 6.2 % | 1.000 | 0.833 | 0.167 |
+| 75 / 50 | 292 | 22 | 7.5 % | 1.000 | 0.364 | **0.636** |
+| 100 / 100 | 292 | 6 | 2.1 % | 1.000 | 0.500 | 0.500 |
+| 150 / 50 | 292 | 7 | 2.4 % | 1.000 | 0.143 | **0.857** |
+| 100 / 200, 150 / 200 | 291 | **0** | 0.0 % | — | — | — |
+
+**Every ambiguous 15-minute trade resolves at 30 seconds** — 135 of 135 — and pooled the stop came
+first **52.6 %** of the time. That is a sharper statement than section 20 of
+`STUDY_US30_SCALP_0711`, which measured a single 61.4 %: **the convention's accuracy depends on the
+geometry and runs the obvious way.** With a target tighter than the stop the *target* usually comes
+first (150/50: 85.7 %), so stop-always is wrong five times in six there; with a target wider than
+the stop the stop usually comes first (50/100: 83.3 %). A 15-minute file is adequate for any cell
+with a target at or beyond 200 points, where ambiguity is exactly zero.
+
+### 20.9 Verdict
+
+**Optuna and vectorbt did not find a better Sharpe or Sortino; they found a bug in the fill model,
+and correcting it is the deliverable.** Six finalists reach research Sharpe 0.97–1.49 against the
+shipped default's 0.19, four clear a matched random entry there, and **every one of them is at or
+below zero on the holdout and on a different provider's forward block, where none clears any
+control and all sit inside their own MDE.** The best of 6,000 trials is at 1.025× its own noise
+floor and deflates to 0.5398. That is the sixteenth re-optimiser on this branch to lose to the
+author's constants.
+
+What the user should change is not a parameter the optimiser found — it is the four settings they
+are already running. **Turn the breakeven, the opposite-cross exit, the fresh-cross MA
+confirmation and the 100/100 points barriers off**, i.e. return to the shipped defaults, which are
+the only arm in the table positive on all three blocks. Nothing here is an edge: the default's own
+bootstrap does not exclude zero on any block either, and the honest claim is that the additions are
+a measurable cost on a base that is indistinguishable from nothing.

@@ -4620,6 +4620,12 @@ See `docs/ib/STUDY_US30_SCALP_0711.md` section 20, `research/us30s/`.
 | `research/tcandle/` | the Turtle script's two asks, in the order the evidence requires: `tc_core.py` (the shipped order model IMPORTED from `turtle15/pine_parity` rather than rewritten, since it already takes the entry gate as a mask; a matched random entry that also matches the SYSTEM MIX and sorts its drawn bars; a same-selectivity random GATE re-simulated as a veto), `tc_feat.py` (48 causal candlestick features in four declared families with a truncation audit), `run_c0.py` (**which patterns a breakout bar makes arithmetically impossible**, proved on 15 market x timeframe cells before any P&L), `run_c1.py` (Gate 1 on the shipped presets plus base rates on the trigger's own bars), `run_c2.py` (the timeframe axis in BOTH readings -- bar counts carried and reach matched -- read by marginal average and by total return so a trade-count artifact cannot hide), `run_c2b.py` (whether the ATR length must scale with the channels; it must not), `run_c1b.py` (Gate 1 again on the matched primary), `run_c3.py` (Gate 2: every reading as a veto in BOTH polarities against a null cached by selectivity, with BH, the MDE and the search's own noise floor printed beside it), `run_c4.py` (one read of the survivors), `tc_parity.py` (the shipped Pine's own candle expressions diffed bar for bar -- it caught two transcription bugs before shipping) |
 | `research/us30team/` | the three-agent team on US30 07:00-11:00 with the flatten, each workstream a PRE-DECLARED grid with a null in front: `base_rates.py` + `run_b1..b4.py` (base rates on the trigger's own bars, a CAUSAL time-of-day ATR baseline beside the broken trailing one, the signal-bar correlation matrix, 42 single-condition VETOES and 24 drop-one arms with the MDE printed beside every one, ADX and ATR run as floors AND ceilings, one read each of the holdout and the different-provider forward block); `pool.py` + `run_p1..p4.py` (three feeds with their clocks re-derived, the trigger-overlap matrix and date-clustered effective sample size BEFORE any power claim, pooling in ATR units and percent of price, and the pooled MDE printed against the pooled edge); `session.py` + `run_f1..f3.py` (the flatten priced by a PAIRED comparison on identical entry bars, the exit mix and the counterfactual, give-back against a barrier-resolved control, the tie-break bracket, and a permutation on the drawdown) |
 | `research/nineam/` | the 09:00-range / 09:30-breakout / EMA-cross question: `na_core.py` (the range built causally per session, the first-break event stream, an ATR-or-range-stop walker, a SORTED matched random entry and a same-selectivity random gate re-simulated as a veto, plus `mde` and `e_max_normal` so both bounds are computed before any screen), `run_n1.py` (cost as a fraction of risk and the break-even it implies, base rates on the trigger's own bars across five MA types, then Gate 1), `run_n2.py` (the 16,200-cell declared grid read ONLY by marginal average, with the population shape and the research-to-locked transfer printed first), `run_n3.py` (the rule exactly as asked, every component dropped one at a time, both nulls, and the S/R channel gate with pivots confirmed at j+prd), `run_n4.py` (the marginal-consensus cell read once per block with four Monte Carlos kept apart and the deflation), `run_n5.py` (fixed POINT barriers: the points-to-ATR conversion table per feed BEFORE any P&L, a 75-cell declared grid read by marginal average, and the 100/100 cell read once per block against a matched random entry with the driftless break-even printed beside the win rate), `run_n6.py` (the 09:00 bar against the half hour, paired on identical feed/block/side/geometry with the entry armed at 09:30 in both), `run_n7.py` (the auto-breakeven ladder: the inert-rung accounting and the noise floor printed BEFORE the table, every rung paired against its own OFF twin with the exit-mix shift as the mechanism), `run_n8.py` (the secured-points rung against the round turn, with the TRADE COUNT printed beside the win rate so a relabelling cannot be read as an improvement), `run_n9.py` (the 08:00 hourly candle as a direction gate, in the only order that can kill it cheaply: truncation audit, then the base rate on the trigger's own bars, then both polarities against a same-selectivity random GATE re-simulated end to end), `run_n10.py` (the MA 200 as a third average: the ANY-equals-ALL degeneracy proved before the grid is run, the audit, the lift-1.00 base rate on the trigger's own bars, then both polarities against a same-selectivity random gate), `run_n11.py` (trend lines through two confirmed pivots -- the audit, the base rate, then GATE against a same-selectivity random gate and LEVEL/EITHER against a matched random ENTRY, because the last two change the event stream and a selectivity control is the wrong null for them), `run_n12.py` (the opposite-cross exit: the binding rate and both arms' trade counts printed before any verdict, each reading paired against its own OFF twin), `run_n13.py` (its placebo -- the same number of early exits at RANDOM bars, the only test that separates closing AT THE CROSS from closing early at that RATE), `run_n14.py` (the ATR period laddered against its own ATR(14) twin and the ATR target against no target, with the ATR-target/R-target identity asserted on exit bars before either is read), `run_n15.py` (the 200 AT the break level as a bypass -- audit and base rate first, then confluence as a REQUIREMENT against a same-selectivity random gate, then the OR paired against BOTH arms it sits between), `na_parity.py` (the shipped script's order model incl. the ratchet re-issued as an absolute stop, the gap quoted per trade), `plot_na.py` |
+| `research/nineam/na_opt.py` | the Optuna evaluator: every array an axis can ask for cached once, a DAILY ZERO-FILLED Sharpe/Sortino with a trades-per-YEAR floor, the declared space as the script's own inputs, and `run2` -- the kernel COPIED with a stop filling at the WORSE of its level and the bar's open, `fix=0` asserting parity with the published one |
+| `research/nineam/run_n16.py` | the search: kernel parity and the artifact ladder FIRST, then the baselines, then `E[max t \| noise]` for the trial count, then population shape, fANOVA and the box-edge check -- and no holdout read anywhere in it |
+| `research/nineam/run_n17.py` | one read of the finalists plus the default, the user's own configuration and three RANDOM cells from the same space, each against a matched random entry, with the MDE beside a day-block bootstrap and the deflation at the stated trial count |
+| `research/nineam/run_n18.py` | vectorbt as a transcription check (count first, zero cost, the axes 1.1.0 cannot express named), the 30-second feed as the intrabar arbiter with its coverage printed first, and White's reality check over 250 sampled trials rather than six finalists |
+| `research/nineam/run_n19.py` | the correction applied BACKWARDS to the two published ratchet ladders, both engines side by side |
+| `research/nineam/na_30s.py` | the 30-second US30 feed in `na_core` shape, with what it can and cannot carry in the docstring |
 | `research/us30s/` | US30 at THIRTY SECONDS, the first parquet feed: `us30s.py` (the clock RE-DERIVED from the bars rather than trusted from the tz-aware dtype, the volume era boundary exported so nothing averages a zero into a mean, and a `convert` that asserts the 09:30 peak before it writes), `run_u1.py` (the intrabar tie-break at 15m / 1m / 30s on the SAME trades at the SAME geometry, with ties inside a fine bar still counted as ties rather than guessed) |
 | `research/ma13/` | the submitted MA 13/48/200 rule with 100-point barriers, and the session / session-stop / breakeven additions measured before they shipped: `m13core.py` (the cross event stream, a barrier walker carrying the window, the flatten filling at the cutoff bar's open and a breakeven that ARMS on one bar and BINDS from the next, plus a SORTED matched random entry), `run_s1.py` (cost and the driftless break-even first, then both declared ladders read by marginal average with the TRADE COUNT printed beside the win rate so a relabelling and a lock-freeing cannot be read as improvements), `run_s2.py` (nine cells against a matched random entry with each cell's own MDE and a day-block bootstrap), `m13_parity.py` |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
@@ -5171,3 +5177,77 @@ Tenth self-inflicted name collision here (`k = mk_ma | mk_cf` shadowed the `enum
 the parity label printed the MASK instead of the config number) after `.first`, `.align` twice,
 `agg`, `metrics`, the `vol.`/`vlm.` prefixes, `research/ivb`, `stack` and runlog's argument order.
 See `docs/ib/STUDY_NINE_AM_RANGE.md` section 19.
+
+**A STOP WRITTEN THROUGH THE MARKET FILLS THERE, AND A 6,000-TRIAL OPTUNA SEARCH FOUND THAT BEFORE
+IT FOUND A STRATEGY.** Asked for a better Sharpe and Sortino on the 09:00-range breakout. The first
+run returned research Sharpe 2.68 on a population **94-98% profitable with a mean HOLDOUT Sharpe of
++0.74** against the shipped default's +0.03 -- a flat improvement across a whole parameter block,
+which is a bug signature and not a plateau (`STUDY_V8_EXIT_OPT`). **All six finalists chose the
+breakeven ratchet at `be_off` = 25 against `be_pts` = 25 or 50**: the ratchet arms when the bar's
+favourable EXTREME reaches the distance, so the moved stop can be written ABOVE the market -- the
+high touched +25, the bar closed at +8, the sell stop goes at +25 -- and `na_core._walk` fills a
+stop AT ITS LEVEL, so `l[j] <= stop` is immediately true. **928 of 1,436 trades booked exactly
++22.71 points**, the secured level minus the round turn, for a 78.1% win rate. THE CORRECTION IS
+ONE LINE AND IT PRICES A GENUINE GAP AND A THROUGH-THE-MARKET ORDER TOGETHER: **a stop fills at the
+WORSE of its level and the bar's OPEN, a limit target at the BETTER**. Copied not parameterised, and
+`fix=0` reproduces the published kernel at identical exit bars and max |dpts| **0.000e+00**. The
+artifact is worth **-11.007 pts/trade at 25/25 (37.8% of trades filling through), -2.416 at 50/5,
+-0.788 at the user's 75/3 (2.6%), and -0.001 at be_pts=0** -- so it is ENTIRELY in the ratchet and
+scales with `be_off/be_pts`, while a genuine gap through an INITIAL stop is worth nothing, which is
+`STUDY_V50` restated. **AND THE RETRO-CORRECTION STRENGTHENED WHAT THE PUBLISHED LADDERS
+CONCLUDED**: over the same 240 paired cells the secured-offset marginal was +0.0001/+0.0002/+0.0007/
+**+0.0046** at 0/5/10/25 points and is now **-0.0037/-0.0043/-0.0046/-0.0039 -- flat and negative at
+every distance** -- with the breakeven beating its own OFF twin in **7-8 of 60 = 12% against the
+published 42-53%, where chance is 50%**. The one sub-finding that ran the other way ("a large
+secured distance stops being a breakeven and becomes a small take profit") was the artifact.
+
+**CORRECTED, THE SEARCH IS THE SIXTEENTH RE-OPTIMISER TO LOSE TO THE AUTHOR'S CONSTANTS.** 6,000
+trials (1,000 x 3 objectives x 2 flatten regimes), 4,710 scorable, on a **DAILY ZERO-FILLED** Sharpe
+and Sortino with a trades-per-YEAR floor. Pooled: **research Sharpe +0.621 -> holdout -0.164**, the
+top 1% by research **+1.369 -> -0.049**, and only **38.2%** of trials have a positive holdout Sharpe
+at all. Six finalists reach research 0.97-1.49 against the default's 0.19, **4 of 6 clear a matched
+random entry on research (p 0.000-0.010) and 0 of 6 clear on the holdout (best p 0.623) or on a
+different provider's reserved forward block (best 0.175)**; every research bootstrap CI excludes
+zero and not one out-of-sample CI does, with `per/MDE` falling 0.96-1.47 -> **0.05-0.47**. Best of
+6,000 sits at **1.025x its own E[max Sharpe | noise]**, DSR **0.5398 FAIL**, and `E[max t | noise]`
+over that many looks is **3.734 against the 2.802 detection needs** -- stated in the runner before
+any table. **fANOVA gives `ma_mode` 0.47-0.75 of every objective** and every geometry axis under
+0.15, i.e. the optimiser is choosing a GATE that sections 15/19 already measured as worthless. And
+the positive Pearson (+0.44) against Spearman (+0.38) is `STUDY_V64_OPTUNA`'s sampler artefact:
+TPE concentrates in a narrow good region, so a correlation over a restricted range says the
+neighbourhood is decent, never that the ranking picks winners. **THE USER'S OWN SETTINGS WERE THE
+WORST ARM IN THE TABLE** -- 100/100-point barriers, breakeven 75/3, fresh-cross MA confirmation and
+the opposite-cross exit read Sharpe **-0.27 / -1.05 / -0.70** on the three blocks against the
+shipped default's +0.19 / +0.03 / +0.31, which needed no search at all.
+
+**VECTORBT PASSED ITS TRANSCRIPTION CHECK FOR THE FIRST TIME ON THIS BRANCH -- 14 OF 14 CELLS AT A
+COUNT RATIO OF 0.987-1.000**, against `STUDY_V46`'s 0.12-0.98, `STUDY_V53`'s 0.034 and
+`STUDY_VWAP_EMA_INDICES`'s 0.83-0.86. Run count-first at ZERO cost in both arms, on the reduced
+geometry both engines express, with the three axes 1.1.0 cannot represent NAMED rather than quietly
+dropped (`sl_stop`/`tp_stop` are fractions of price; `td_stop`/`dt_stop` do not exist; there is no
+breakeven ratchet). The gap is **+-1.7 points a trade** on most cells -- an order of magnitude below
+`STUDY_V38`'s 2.1x and `STUDY_V41`'s 22.9x, because this geometry's stop and flatten rarely fall
+inside one bar -- and the ONE large gap is the user's own 100/100 configuration on the holdout at
+**-10.8 points a trade**, which is exactly the geometry where the convention binds and which makes
+their settings worse under the second engine, not better.
+
+**THE STOP-ALWAYS CONVENTION'S ACCURACY DEPENDS ON THE GEOMETRY, AND IT RUNS THE OBVIOUS WAY.**
+`US30_30s` arbitrating 15-minute trades: **every ambiguous trade resolves at 30 seconds (135 of
+135)** and pooled the stop came first **52.6%** of the time -- but split by geometry, with a target
+TIGHTER than the stop the TARGET usually comes first (150/50: **85.7%**, so stop-always is wrong
+five times in six) and with a target wider than the stop the stop does (50/100: 83.3%). Sharper
+than `STUDY_US30_SCALP_0711` section 20's single 61.4%. Ambiguity runs **17.8% at 50/50 down to
+EXACTLY 0.0% at 100/200**, so a 15-minute file is adequate for any cell whose target sits at or
+beyond 200 points. **AND THE 30-SECOND FEED CANNOT CARRY THIS STRATEGY'S OWN RANGE**: it omits bars
+with no activity and the 09:00-09:30 pre-open is exactly where a Dow CFD is quiet, so of 293
+sessions **270 carry a 09:30 bar and only 92 carry the pre-open** -- the geometry question is a
+property of the BARRIERS and not of the trigger, so ask it on a 09:30-open long on every session
+and run the rule's own trigger beside it.
+
+**AND `.corr` ALIGNS ON THE INDEX, SO A RESET-INDEX SERIES SILENTLY PAIRS ALMOST NOTHING.**
+`pd.Series(k["a"]).corr(pd.Series(k["b"].to_numpy()), method="spearman")` keeps the original index
+on the left and 0..n-1 on the right; the overlap is whatever the two happen to share and the number
+is wrong. It printed -0.077 where the correct value is +0.208, and it was caught only because a
+figure recomputed the same quantity from the same frame. Take both series from the SAME frame.
+Eleventh alignment or name collision on this branch, and the second involving `.align`/`.corr`
+index semantics specifically.

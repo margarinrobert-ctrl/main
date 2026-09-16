@@ -1,0 +1,15 @@
+tag,block,eng_n,vbt_n,ratio,eng_pts,vbt_pts,dropped,gap,transcription
+intraday_sharpe,A_research,1260,1254,0.9952380952380953,9.794967087423469,8.341307527785835,breakeven ratchet (no vbt equivalent),-1.453659559637634,PASS
+intraday_sharpe,B_holdout,549,546,0.994535519125683,7.856726080055165,6.3498208447200835,breakeven ratchet (no vbt equivalent),-1.5069052353350818,PASS
+intraday_sortino,A_research,728,724,0.9945054945054945,10.154652898458787,9.793228982980956,breakeven ratchet (no vbt equivalent); opposite-cross exit (would need a second signal array),-0.3614239154778307,PASS
+intraday_sortino,B_holdout,295,293,0.9932203389830508,5.535158052280056,4.779868671681719,breakeven ratchet (no vbt equivalent); opposite-cross exit (would need a second signal array),-0.7552893805983372,PASS
+intraday_retdd,A_research,807,804,0.9962825278810409,13.715334510578927,13.398463499751076,breakeven ratchet (no vbt equivalent); opposite-cross exit (would need a second signal array),-0.3168710108278514,PASS
+intraday_retdd,B_holdout,332,330,0.9939759036144579,5.395982903974598,5.0182538586102465,breakeven ratchet (no vbt equivalent); opposite-cross exit (would need a second signal array),-0.3777290453643518,PASS
+free_sharpe,A_research,519,519,1.0,19.32978037937528,19.242956712519895,breakeven ratchet (no vbt equivalent); opposite-cross exit (would need a second signal array),-0.08682366685538412,PASS
+free_sharpe,B_holdout,231,231,1.0,6.079638852897805,5.501544003035503,breakeven ratchet (no vbt equivalent); opposite-cross exit (would need a second signal array),-0.5780948498623015,PASS
+free_retdd,A_research,330,329,0.996969696969697,51.784338745309924,52.581379182702435,breakeven ratchet (no vbt equivalent); opposite-cross exit (would need a second signal array),0.7970404373925106,PASS
+free_retdd,B_holdout,163,163,1.0,1.320351276794367,0.8936148667133551,breakeven ratchet (no vbt equivalent); opposite-cross exit (would need a second signal array),-0.42673641008101193,PASS
+DEFAULT,A_research,1418,1413,0.9964739069111425,6.244279759534185,7.898550438142041,none,1.6542706786078565,PASS
+DEFAULT,B_holdout,600,600,1.0,5.383918695667217,3.689537534435282,none,-1.6943811612319348,PASS
+USER,A_research,142,141,0.9929577464788732,4.683098591549296,5.326241134751696,breakeven ratchet (no vbt equivalent); opposite-cross exit (would need a second signal array),0.6431425432023996,PASS
+USER,B_holdout,76,75,0.9868421052631579,-7.802631578947464,-18.626666666666765,breakeven ratchet (no vbt equivalent); opposite-cross exit (would need a second signal array),-10.8240350877193,PASS
