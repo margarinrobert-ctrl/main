@@ -755,3 +755,54 @@ def shuffle_exit(f, cx, seed=0):
     pick = rng.choice(n, size=nz.size, replace=False)
     out[pick] = cx[nz]
     return out
+
+
+# ------------------------------------------------------- the 200 average AT the break level
+def ma200_conf(f, rhi, rlo, long_=200, kind="ema", tol_atr=0.5, reading="confluence"):
+    """Does the 09:00 range level a break clears COINCIDE with the long average?
+
+    The ask: "if the breakout of the 9am high or low is the same as the ema 200 as support or
+    resistance it could enter without a ema cross". So the object is a LEVEL COINCIDENCE -- the
+    price being broken and the 200-period average are the same price, within a tolerance scaled
+    by ATR rather than stated in points, because a point distance is not a setting (`STUDY_V57`,
+    and `STUDY_US30_SCALP_0711`'s points-vs-ATR inversion).
+
+    This is a FOURTH MA object in this study and not a restatement of the other three: N3's 13x48
+    cross compares two fast averages with each other, N10's `ma200_ok` compares the shorter
+    averages with the 200, and `close > MA200` is price against it. This one is the BREAK LEVEL
+    against it -- a coincidence of two levels, which is what was asked for.
+
+    Returns (ok_long, ok_short) at every bar; the caller indexes them at the signal bar. The
+    average uses closes through that bar and the fill is the next open, which is the same
+    convention every other gate here uses.
+
+      "confluence"  |level - MA| <= tol x ATR. The literal ask, whichever side the average is on.
+      "through"     confluence AND the average is the barrier the break CLEARS: MA >= range high
+                    for a long, MA <= range low for a short -- the break goes THROUGH it.
+      "behind"      confluence AND the average is already on the trade's side: MA < range high for
+                    a long, MA > range low for a short.
+
+    THE ASK'S OWN NAMING IS "behind". Restated as "support/bullish or resistance/bearish", a long
+    break at the level leaves the average BENEATH price, which is support and is bullish; a short
+    break at the level leaves it ABOVE price, which is resistance and is bearish. That is `behind`
+    on both sides. `through` is the opposite configuration and is declared as its mirror, because
+    this branch has inverted a proposed condition's sign nine times.
+
+    "through" and "behind" PARTITION "confluence" exactly -- they are a split of one set, not a
+    new parameter -- and the runner asserts that their masks sum to it.
+    """
+    c = f["close"].to_numpy()
+    v = f["volume"].to_numpy()
+    L = vwma(c, v, long_) if kind == "vwma" else ma(c, long_, kind)
+    at = f["atr"].to_numpy()
+    tol = tol_atr * at
+    ok = np.isfinite(L) & np.isfinite(at) & (at > 0)
+    nearU = ok & np.isfinite(rhi) & (np.abs(rhi - L) <= tol)
+    nearD = ok & np.isfinite(rlo) & (np.abs(rlo - L) <= tol)
+    if reading == "confluence":
+        return nearU, nearD
+    if reading == "through":
+        return nearU & (L >= rhi), nearD & (L <= rlo)
+    if reading == "behind":
+        return nearU & (L < rhi), nearD & (L > rlo)
+    raise ValueError(reading)

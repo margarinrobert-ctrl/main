@@ -159,7 +159,26 @@ def main():
             dict(win=(540, 555), side="long", buf=0.0, ema="off", stop=2.5, tgt=0.0, flat=960,
                  tatr=1.5, alen=21),
             dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
-                 spts=100.0, tatr=4.0)]
+                 spts=100.0, tatr=4.0),
+            # the 200-AT-THE-BREAK-LEVEL BYPASS, all three readings. It is an OR with the MA gate,
+            # so every config here carries a LIVE MA gate -- with the gate off the bypass is inert
+            # by construction in both models, which is worth asserting too (the last row).
+            dict(win=(540, 555), side="both", buf=0.0, ema="state", stop=1.5, tgt=0.0, flat=960,
+                 conf=dict(tol_atr=0.25, reading="confluence")),
+            dict(win=(540, 555), side="both", buf=0.0, ema="state", stop=1.5, tgt=0.0, flat=960,
+                 conf=dict(tol_atr=1.00, reading="confluence")),
+            dict(win=(540, 555), side="long", buf=0.0, ema="state", stop=1.5, tgt=0.0, flat=960,
+                 conf=dict(tol_atr=0.50, reading="through")),
+            dict(win=(540, 555), side="both", buf=0.0, ema="x5", stop=1.5, tgt=0.0, flat=960,
+                 conf=dict(tol_atr=0.50, reading="behind")),
+            # `behind` at 0.25 is the reading the ask names (support long / resistance short) at
+            # the only rung with a positive marginal, so it is the one a reader will switch on
+            dict(win=(540, 555), side="both", buf=0.0, ema="state", stop=1.5, tgt=0.0, flat=960,
+                 conf=dict(tol_atr=0.25, reading="behind")),
+            dict(win=(540, 570), side="both", buf=0.0, ema="state", stop=0.0, tgt=0.0, flat=960,
+                 spts=100.0, tpts=100.0, conf=dict(tol_atr=0.25, reading="confluence")),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 conf=dict(tol_atr=0.50, reading="confluence"))]
     for name in ("US30L", "US30I"):
         f0 = N.load(name, 15)
         cost = N.COST[name]; tick = TICK[name]
@@ -169,7 +188,18 @@ def main():
             rhi, rlo, rn = N.ranges(f, rs, re_)
             s0, d0 = N.events(f, rhi, rlo, side=cfg["side"], buf_atr=cfg["buf"], rs=rs, re_=re_,
                               open_m=570)
-            s1, d1 = gate(f, s0, d0, cfg["ema"])
+            cf = cfg.get("conf")
+            if cf is None:
+                s1, d1 = gate(f, s0, d0, cfg["ema"])
+            else:
+                # the BYPASS is an OR, so the two masks are combined BEFORE either drops a signal
+                # -- gating in sequence would be an AND, which is a different strategy
+                sg, _ = gate(f, s0, d0, cfg["ema"])
+                mk_ma = np.isin(s0, sg)
+                cl, cs = N.ma200_conf(f, rhi, rlo, **cf)
+                mk_cf = np.where(d0 > 0, cl[s0], cs[s0])
+                kk = mk_ma | mk_cf
+                s1, d1 = s0[kk], d0[kk]
             m2 = cfg.get("m200")
             if m2 is not None:
                 ol, osh = N.ma200_ok(f, **m2[0])
@@ -203,6 +233,8 @@ def main():
                 geom += f" atr{cfg['alen']}"
             if xc is not None:
                 geom += f" x:{xc}"
+            if cf is not None:
+                geom += f" byp:{cf['reading'][:4]}{cf['tol_atr']:.2f}"
             if m2 is not None:
                 geom += (f" 200:{m2[0]['mode']}"
                          f"{'x' if m2[0]['cross_bars'] else 's'}"

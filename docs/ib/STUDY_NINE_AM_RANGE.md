@@ -641,7 +641,10 @@ before any verdict, each reading paired against its own OFF twin on identical en
 `run_n13.py` (its placebo -- the same number of early exits at RANDOM bars, 100 seeds a cell,
 which is what separates closing AT THE CROSS from closing early at that RATE) ·
 `run_n14.py` (the ATR period as a ladder paired against its own ATR(14) twin, and the ATR target
-against no target -- with the ATR-target/R-target identity asserted on exit bars before either) · `plot_na.py` ·
+against no target -- with the ATR-target/R-target identity asserted on exit bars before either) ·
+`run_n15.py` (the 200 AT the break level as a bypass: the audit and the base rate first, then
+confluence as a REQUIREMENT against a same-selectivity random gate, then the OR paired against
+BOTH arms it sits between -- the MA gate alone and no gate at all) · `plot_na.py` ·
 `pine/nineam/NINE_AM_RANGE_BREAKOUT_strategy.pine`
 
 ## 17. Close the position on an opposite EMA cross
@@ -775,3 +778,148 @@ different base. Ships with `tgtMode` default **None**.
 Parity after all of it: **28 of 28 configs at trade count 1.000**, same exit bar 0.972-1.000,
 correlation 0.989-1.000, with the six new ATR-period and ATR-target configs reading 1.000 on the
 count and −0.33 to +0.02 points a trade on the gap.
+
+---
+
+## 19. The EMA 200 *at* the break level, as a bypass of the MA-cross confirmation
+
+The ask, restated by the user with the polarity spelled out: *"if the breakout of the 9am high or
+low is the same as the ema 200 as support/bullish or resistance/bearish it could enter without a
+ema cross"*.
+
+So the proposal is an **OR** — the MA confirmation may be satisfied *either* by its own reading *or*
+by the broken level coinciding with the 200-period average. That shape is what decides how it has
+to be measured. **An OR loosens a gate, so it sits between two arms that already exist here: the
+MA gate alone, and no gate at all.** Read against the gated arm only, an OR looks like an
+improvement whenever the gate was worth nothing — which on this trigger is exactly what §15 and
+§10 of the MA work both found. The question inside the ask is therefore not "does the OR help" but
+**"does confluence with the 200 carry anything on its own"**.
+
+### 19.1 What the object is, and what it is not
+
+This is a **level coincidence** — the price the break clears and the average are the same price,
+within a tolerance in ATR rather than points, because a point distance is not a setting (§5's
+points-vs-ATR table, and `STUDY_US30_SCALP_0711`). It is the fourth distinct MA object in this
+study and a restatement of none of the other three:
+
+| object | what it compares | where |
+| --- | --- | --- |
+| 13×48 cross | two fast averages against each other | §3 |
+| `ma200_ok` | the shorter averages against the 200 | §15 |
+| `close > MA200` | price against the average | `STUDY_V40` / `STUDY_V51` |
+| **`ma200_conf`** | **the broken level against the average** | here |
+
+Three readings, declared in front:
+
+- **`behind`** — the average ends up on the trade's side: below price on a long (`MA < range
+  high`), above it on a short (`MA > range low`). **This is the reading the ask names**: a long
+  break at the level leaves the 200 beneath price, which is support and is bullish; a short break
+  leaves it above, which is resistance and is bearish.
+- **`through`** — the average is the barrier the break *clears* (`MA ≥ range high` long, `MA ≤
+  range low` short). The opposite configuration, declared as the mirror because this branch has
+  inverted a proposed condition's sign nine times.
+- **`confluence`** — either. `through` and `behind` **partition it exactly**, asserted on both
+  sides at every tolerance rather than assumed.
+
+Declared grid: tolerance 0.25 / 0.50 / 1.00 ×ATR × 3 readings × two geometries (1.5N no target,
+100pt/100pt) × three blocks (US30L research, US30L holdout, US30_ISO forward — a *different
+provider*) = 54 cells for the strict test, plus 36 further cells for the OR itself.
+**90 declared cells, `E[max t | pure noise]` = 2.493 against the 2.802 detection needs** — so the
+top row is unreadable and only marginals are taken.
+
+### 19.2 Audit and base rate
+
+Truncation audit, both masks rebuilt from history *ending* at the signal bar: **0 mismatches of 48
+probes on each feed**. The range levels are the part that can leak (a level that exists only
+because the session *later* had bars), and they do not.
+
+**And it passes the base-rate check, which nine confirmation families on this branch did not.**
+Confluence admits **5.2% to 28.0%** of the trigger's own bars at a lift over all bars of
+**1.25 to 1.63** — genuinely selective, and a real lean rather than the trigger restated. Against
+RSI≥55 at 94.7% of breakout bars, Aroon at 100.0%, MACD at 99.8-100.0%, MFI at 91.7%, +DI>−DI at
+97.8%, close>EMA50 at 93.7%, EMA13>48 on a Donchian break at 82.6%, the stochastic against a
+session VWAP at ρ +0.831, and §15's MA200 cross at lift *exactly* 1.00. The arm it would bypass
+admits 11.3-58.8%.
+
+A bypass has **two** ways to be worthless and they are opposite ends of one table: fire almost
+never and it is an inert switch, fire almost always and it *is* "no gate". This one lands in the
+middle, which is why it was worth running.
+
+### 19.3 Confluence as a *requirement* — the strict direction first
+
+A condition that cannot earn its place as a requirement has nothing to contribute to an OR. Scored
+against a **random gate of the same selectivity, re-simulated end to end** — a filter is a veto and
+not a subset of realised trades (`STUDY_AUCTION`):
+
+| reading | tol | mean %/trade | Δ vs no filter | beats no filter | clears p≤0.05 |
+| --- | --- | --- | --- | --- | --- |
+| **behind** | **0.25** | **+0.0234** | **+0.0268** | **3/4** | **1/4** |
+| behind | 0.50 | −0.0180 | −0.0154 | 2/6 | 0/6 |
+| behind | 1.00 | +0.0007 | +0.0032 | 3/6 | 0/6 |
+| confluence | 0.25 | +0.0039 | +0.0064 | 3/6 | 1/6 |
+| confluence | 0.50 | −0.0186 | −0.0161 | 2/6 | 0/6 |
+| confluence | 1.00 | −0.0222 | −0.0197 | 1/6 | 0/6 |
+| through | 0.25 | −0.0011 | +0.0023 | 2/4 | 0/4 |
+| through | 0.50 | −0.0150 | −0.0124 | 3/6 | 0/6 |
+| through | 1.00 | −0.0278 | −0.0253 | 1/6 | 0/6 |
+
+**The reading the ask names is the best of the three, and it is still nothing.** `behind` at 0.25
+ATR is the only family in the table with a clearly positive marginal, and the whole of it is one
+cell: US30L research, 82 trades, **+0.1438 %/trade at PF 2.029, p 0.043** — which reads
+**−0.0825 %/trade at PF 0.523 and p 0.803 on the holdout**, and whose research effect sits *inside
+its own MDE of 0.2107*. The `confluence` pass beside it does the same thing (PF 1.820 research →
+0.694 holdout).
+
+Over the grid: **2 of 50 scorable cells clear their null at p≤0.05 where 2.5 are expected by
+chance**, **0 of 50 exceed their own minimum detectable effect**, and the requirement beats the
+ungated rule in **20 of 50 cells where chance is 50%**. Both the `confluence` and `through`
+marginals get **monotonically worse as the tolerance widens**, which is the shape of a condition
+whose only content is selectivity.
+
+### 19.4 The ask as configured — four arms, so the OR is priced against both of its bounds
+
+| arm | cells | mean %/trade | mean PF | mean keep |
+| --- | --- | --- | --- | --- |
+| **1 no gate** | 6 | **−0.0025** | **0.974** | 1.000 |
+| 2 MA gate | 12 | −0.0123 | 0.922 | 0.315 |
+| 3 confluence only | 18 | −0.0123 | 0.933 | 0.134 |
+| **4 MA *or* confluence** | 36 | **−0.0188** | **0.882** | 0.407 |
+
+**The loosest arm is the best one and the OR is the worst.** Paired cell by cell against both of
+its bounds:
+
+| MA reading | tol | signals added | Δ vs MA gate | beats it | Δ vs *no* gate | beats it |
+| --- | --- | --- | --- | --- | --- | --- |
+| state 13>48 | 0.25 | 80 | −0.0032 | 2/6 | −0.0154 | 1/6 |
+| state 13>48 | 0.50 | 180 | −0.0054 | 1/6 | −0.0176 | 0/6 |
+| state 13>48 | 1.00 | 360 | −0.0018 | 4/6 | −0.0140 | 1/6 |
+| cross≤5b | 0.25 | 133 | −0.0061 | 2/6 | −0.0134 | 1/6 |
+| cross≤5b | 0.50 | 282 | −0.0129 | 2/6 | −0.0202 | 0/6 |
+| cross≤5b | 1.00 | 550 | −0.0094 | 2/6 | −0.0168 | 1/6 |
+
+The OR beats the MA gate in **13 of 36** cells and beats **no gate at all in 4 of 36**; every
+marginal delta is negative; **0 of 36 paired deltas against the MA gate exceed their own MDE**. And
+note *which* row is least bad: `state 13>48` at 1.00 ATR, the loosest OR in the table, adding 360
+signals — i.e. the closer the bypass takes the rule to "no gate", the better it does, which is the
+same statement as the arm table.
+
+**So the bypass is a slower way of switching the MA gate off, and switching it off is free.** That
+is not a criticism of the idea's logic — the mechanism is real, measurable and selective, and it
+passed the check nine other confirmations failed. It is that on this trigger there is no gate worth
+bypassing.
+
+### 19.5 Shipped
+
+Two inputs in the momentum group, **default OFF**, with the numbers above in their tooltips:
+`confBypass` (Off / *Support (long) / resistance (short)* / Through / Confluence) and `confTol`
+(×ATR, 0.25 pre-filled as the only rung with a positive marginal). It is inert while
+`maMode = "Off"`, by construction in both models — `maOk` is already true there, so the OR cannot
+change anything — which is asserted as a parity config rather than argued.
+
+Parity after it: **35 of 35 configs at trade count 1.000**, same exit bar 0.972-1.000, correlation
+0.989-1.000, the seven bypass configs reading 1.000 on the count and −2.07 to +0.12 points a trade
+on the gap.
+
+One mechanic worth recording: in the parity harness the OR's two masks must be combined **before
+either drops a signal**. Gating in sequence — the MA gate, then the bypass — is an AND, which is a
+different strategy; the harness computes both masks on the full event stream and unions them.

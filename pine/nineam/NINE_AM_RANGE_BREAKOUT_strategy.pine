@@ -98,6 +98,8 @@ maFast   = input.int(13, "Fast length", minval = 1, group = grpM)
 maSlow   = input.int(48, "Slow length", minval = 2, group = grpM)
 maLong   = input.int(200, "Long length (the 200)", minval = 3, group = grpM, tooltip = "Used only by the four 200 readings. This is the shorter AVERAGES against the long one, which is a different object from price against it: STUDY_V40 found the MA200 is priced by its DISTANCE and not by its state, and STUDY_V51 found the FLOOR reading (>= 1.5 ATR above) clears three blocks where the support reading fails two. Neither of those is this.")
 crossMin = input.int(75, "Fresh cross: within this many MINUTES", minval = 1, group = grpM, tooltip = "A reach in time, not a bar count -- 75 minutes is 5 bars on a 15-minute chart, which is what was measured.")
+confBypass = input.string("Off", "Bypass: the 200 AT the break level", options = ["Off", "Support (long) / resistance (short)", "Through (the break clears the 200)", "Confluence (either configuration)"], group = grpM, tooltip = "DEFAULT OFF. The ask was \"if the breakout of the 9am high or low is the same as the ema 200 as support or resistance it could enter without a ema cross\", so this is an OR: the MA confirmation above may be satisfied EITHER by its own reading OR by the broken level coinciding with the long average. It does nothing while MA confirmation is Off.\n\nAN OR LOOSENS A GATE, so it can only be read against BOTH arms it sits between -- the MA gate alone AND no gate at all. Read against the gated arm alone it looks like an improvement whenever the gate was worth nothing, which on this trigger is exactly what was measured.\n\nTHE READING ASKED FOR IS \"Support (long) / resistance (short)\": a long break at the level leaves the 200 BENEATH price, which is support and is bullish, and a short break leaves it ABOVE, which is resistance and is bearish. \"Through\" is the opposite configuration -- the break clearing the average -- and is offered as its mirror because this branch has inverted a proposed condition's sign nine times. The two partition \"Confluence\" exactly.\n\nTHE READING ASKED FOR IS THE BEST OF THE THREE AND STILL NOTHING. At 0.25 ATR it is the only family in the table with a positive marginal (+0.0268 %/trade over no filter, beating the ungated rule in 3 of 4 scorable cells) and its one clearing cell is US30 research at PF 2.029, p 0.043 on 82 trades -- which reads -0.0825 %/trade at PF 0.523 and p 0.803 on the holdout, and whose research effect of +0.1438 sits inside its own MDE of 0.2107. Widen the tolerance and even that goes: -0.0154 at 0.50 ATR, +0.0032 at 1.00.\n\nIT PASSES THE BASE-RATE CHECK, which nine confirmation families on this branch did not: confluence admits 5.2-28.0% of this trigger's own bars at a lift over all bars of 1.25-1.63, so it is genuinely selective and is not the trigger restated. Through and Behind partition Confluence exactly.\n\nAND IT EARNS NOTHING. As a REQUIREMENT, over a declared 54-cell grid (3 tolerances x 3 readings x two geometries x US30 research, holdout and a different-provider forward block) scored against a RANDOM gate of the same selectivity re-simulated end to end: 2 of 50 scorable cells clear p<=0.05 where 2.5 are expected by chance, 0 OF 50 EXCEED THEIR OWN MINIMUM DETECTABLE EFFECT, and it beats the ungated rule in 20 of 50 cells where chance is 50%. The marginal average gets WORSE as the tolerance widens (+0.0064 / -0.0161 / -0.0197 %/trade at 0.25 / 0.50 / 1.00 ATR). The two cells that do clear are both research cells at 0.25 ATR (PF 1.820 and 2.029) and both INVERT on the holdout (PF 0.694 and 0.523, p 0.750 and 0.803).\n\nAS THE OR ITSELF, over 36 further cells: it beats the MA gate in 13 of 36 and NO GATE AT ALL in 4 of 36, every marginal delta is negative, and 0 of 36 paired deltas against the MA gate exceed their own MDE. Pooled arm means run no gate -0.0025, MA gate -0.0123, confluence only -0.0123, MA-or-confluence -0.0188 %/trade -- the loosest arm is the best one and the OR is the worst, so the bypass is a slower way of switching the gate off and switching it off is free.")
+confTol    = input.float(0.25, "Bypass tolerance (xATR)", minval = 0.01, step = 0.05, group = grpM, tooltip = "How near the broken level the long average must sit, in ATR rather than points -- a point distance is not a setting, it is a setting times a market (STUDY_US30_SCALP_0711). Measured at 0.25 / 0.50 / 1.00. For the reading asked for the ladder runs +0.0268 / -0.0154 / +0.0032 %/trade against no filter, so 0.25 is the only rung with a positive marginal and all three sit inside their own MDE.")
 
 
 grpX = "Exit"
@@ -206,10 +208,35 @@ m200S = maMode == "200 state: ANY of fast/slow" ? ((not fOverL) or (not sOverL))
            (((not fOverL) and barsFdn <= crossBars) and ((not sOverL) and barsSdn <= crossBars))
 is200 = str.startswith(maMode, "200")
 
-momOkL = maMode == "Off" ? true : is200 ? m200L :
-          maMode == "State (fast > slow)" ? bull : barsSinceUp <= crossBars
-momOkS = maMode == "Off" ? true : is200 ? m200S :
-          maMode == "State (fast > slow)" ? not bull : barsSinceDn <= crossBars
+maOkL = maMode == "Off" ? true : is200 ? m200L :
+         maMode == "State (fast > slow)" ? bull : barsSinceUp <= crossBars
+maOkS = maMode == "Off" ? true : is200 ? m200S :
+         maMode == "State (fast > slow)" ? not bull : barsSinceDn <= crossBars
+
+// The 200 AT the break level. A LEVEL COINCIDENCE -- the price the break clears and the long
+// average are the same price, within a tolerance in ATR -- which is a different object from the
+// three MA readings above: those compare two averages with each other, or the shorter averages
+// with the 200. "Through" is the ask's "resistance" on the long side and "support" on the short
+// side, named by the ROLE so the two sides mirror instead of swapping words, and it partitions
+// "Confluence" exactly with "Behind".
+confOn  = confBypass != "Off"
+confTolP = confTol * atrv
+confNearU = confOn and not na(rHi) and not na(maL) and math.abs(rHi - maL) <= confTolP
+confNearD = confOn and not na(rLo) and not na(maL) and math.abs(rLo - maL) <= confTolP
+confThruU = confNearU and maL >= rHi
+confThruD = confNearD and maL <= rLo
+confAny = str.startswith(confBypass, "Confluence")
+confThr = str.startswith(confBypass, "Through")
+// "Support (long) / resistance (short)" is the average sitting BEHIND the break -- beneath price
+// on a long, above it on a short -- which is what support/bullish and resistance/bearish mean.
+confOkL = not confOn ? false : confAny ? confNearU :
+           confThr ? confThruU : (confNearU and not confThruU)
+confOkS = not confOn ? false : confAny ? confNearD :
+           confThr ? confThruD : (confNearD and not confThruD)
+
+// The OR the ask proposes. With MA confirmation Off, maOk is already true and the bypass is inert.
+momOkL = maOkL or confOkL
+momOkS = maOkS or confOkS
 
 wantLong  = (sideIn == "Long"  or sideIn == "Both") and hitUp and not tookUp and momOkL
 wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and momOkS
@@ -300,7 +327,7 @@ plot(rReady ? rHi : na, "range high", color = color.new(color.teal, 0), style = 
 plot(rReady ? rLo : na, "range low",  color = color.new(color.orange, 0), style = plot.style_linebr)
 plot(maMode == "Off" ? na : maF, "fast MA", color = color.new(color.blue, 40))
 plot(maMode == "Off" ? na : maS, "slow MA", color = color.new(color.purple, 40))
-plot(is200 ? maL : na, "long MA (200)", color = color.new(color.orange, 30), linewidth = 2)
+plot(is200 or confOn ? maL : na, "long MA (200)", color = color.new(color.orange, 30), linewidth = 2)
 bgcolor(inRange ? color.new(color.gray, 90) : na)
 
 var table hud = table.new(position.top_right, 2, 10, border_width = 1)
@@ -341,8 +368,10 @@ if barstate.islast
     table.cell(hud, 0, 3, "MA gate", text_size = size.tiny)
     m200Txt = m200L and m200S ? "both sides ok" : m200L ? "longs only" : m200S ? "shorts only" : "no trade"
     maTxt = maMode == "Off" ? "off" : not is200 ? maMode : maMode + "  ->  " + m200Txt
+    bypTxt = not confOn ? "" : "  OR 200@level " + str.tostring(confTol, "#.##") + "N" +
+              (confOkL and confOkS ? " (both)" : confOkL ? " (long)" : confOkS ? " (short)" : "")
     maCol = maMode == "Off" or not is200 ? color.gray : m200L and m200S ? color.gray : m200L ? color.teal : m200S ? color.maroon : color.red
-    table.cell(hud, 1, 3, maTxt, text_size = size.tiny, text_color = maCol)
+    table.cell(hud, 1, 3, maTxt + bypTxt, text_size = size.tiny, text_color = maCol)
     xTxt = xMode == "Off" ? "off" : xMode == "Fresh opposite cross"
              ? "fresh cross, binds ~5% of trades" : "opposite state, binds ~35%, cuts the hold 40%"
     xCol = xMode == "Off" ? color.gray : color.red
