@@ -1018,3 +1018,69 @@ the one carrying 12.9% of the level in a raw column — consistent, not proven.
 **Print `sum(w)` beside `d` whenever a fracdiff column is thresholded, and prefer the rolling
 z-score.** Naming a study is not enough; the leak is a function of `d`, of `tau`, of whether the raw
 or z-scored column is used, and of how far the price actually travelled between blocks.
+
+---
+
+## 20. A 30-second US30 feed arrived, and it answers section 8's tie-break
+
+`data/US30_30s.csv` — 390,552 bars, 2025-08-18 to 2026-09-16 New York, the finest US30 series on
+the branch by a factor of thirty. Sections 1 and 8 named this file twice as the first thing that
+would move their verdict. What it changes and what it does not:
+
+### 20.1 What it is, checked before it is used
+
+| property | measured |
+| --- | --- |
+| format | the **tenth** export format here and the **first parquet** (ClickHouse 26.6.1, one row group) |
+| clock | **UTC, and the column says so** — re-derived anyway: after `tz_convert('America/New_York')` mean bar range peaks at minute-of-day **570 = 09:30 New York** (74.69 pts against 26.65 one bar earlier) |
+| volume | **real, and only from 2026-04-27 10:45 NY** — identically zero on the first 134,655 bars, then present on every bar at `corr(volume, high−low)` **+0.7001** |
+| coverage | 390,552 of 1,135,775 possible slots = **34.4%** — 92% inside 10:00-16:00, 31% overnight, the 17:00 hour absent entirely |
+| provider | **a third US30 provider** — against `US30_ISO_15m` on 11,882 shared 15m stamps: corr 0.999926, level ratio 1.000463, and mean \|diff\| **26.8 points** at an exact-match share of 0.03-0.07%, i.e. chance |
+
+Two of those are traps this branch has already paid for. The **UTC stamp** is `NQ_1m`'s: every
+other US30 file is broker time at New York + 7, and a loader that forgets the conversion puts a
+09:30 window at 04:30 — the pre-open block four studies measured as the worst part of the day.
+And **bars with no activity are omitted**, so a bar index is not a clock here and any setting
+expressed in bars has to be converted to minutes first (`STUDY_V57`). The export dialog's own
+estimate of 812,571 rows assumed continuous coverage and is wrong by 2.1x.
+
+**It is not a fresh calendar.** It overlaps `US30_ISO_15m` from 2025-08-18 to 2026-08-26 and only
+**2026-08-27 onward** post-dates every other US30 file. Over the shared span a second provider is
+a feed-parity check and not a second test — US30 and US30_ISO already measure daily leg
+correlation +0.922.
+
+### 20.2 The tie-break, answered
+
+Same trades, same geometry, same 15-minute bars; the only thing that changes is the resolution the
+exits are read at. Donchian-20 long breaks in 07:00-11:00 NY, target = stop, 541 trades.
+
+| stop | ambiguous on 15m | n | resolved at 1m | resolved at 30s | stop first | target first | still tied |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0.5N | **11.65%** | 63 | 95.24% | **96.83%** | 38 | 23 | 2 |
+| 0.75N | 3.70% | 20 | 90.00% | 90.00% | 10 | 8 | 2 |
+| 1.0N | 1.85% | 10 | 80.00% | 80.00% | 5 | 3 | 2 |
+| 1.5N | 0.37% | 2 | 50.00% | 50.00% | 1 | 0 | 1 |
+| 3.0N | 0.00% | 0 | — | — | 0 | 0 | 0 |
+
+Section 1 measured 11.6% here against **14.03%** on its own provider at 0.5N — two feeds, not a
+correction. Pooled over the five stops, **92.63% of the 95 ambiguous trades resolve at 30
+seconds**, and of those that resolve the split is **stop first 61.4% / target first 38.6%**.
+
+**So the branch's standing stop-always convention is right about six times in ten, not ten.** It
+is the conservative direction, as intended, but it over-charges on 38.6% of the ambiguous
+population rather than on none of it — which is why section 1 could report PF 0.604 against 1.056
+for the same trades and neither number was the market's answer.
+
+**And 1-minute bars would have done almost all of it**: 95.24% against 96.83% at 0.5N, +1.6
+points for a 2x finer series. What unlocked the measurement was going below 15 minutes at all.
+Above 1.0N the question is nearly moot (0.37%, then 0.00%), confirming section 1's own statement
+that a sub-1N barrier result on this market is a statement about the convention.
+
+### 20.3 What it does not fix
+
+The sample. A four-hour cap holds the rate near one trade a session whatever the bar size, so
+section 10's power table is unchanged: the MDE is 10.74 pts/trade, PF 1.2 requires +10.61, and
+`+adx<=20` at 50/150 still needs 1,073 trades against 400 in hand. Finer bars fix the
+measurement; only more calendar or more independent markets fix the resolution.
+
+`research/us30s/us30s.py`, `research/us30s/run_u1.py`.

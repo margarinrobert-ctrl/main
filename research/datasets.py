@@ -383,6 +383,58 @@ REGISTRY = {
               "on this branch is therefore evidence about the equity complex at DAILY scale, "
               "transferred to intraday futures by analogy and never by a join."),
 
+    "US30_30s": Dataset(
+        key="US30_30s", instrument="US30", timeframe_min=0.5,
+        restore_to="data/US30_30s.csv",
+        rows=390552, span="2025-08-18 09:30 to 2026-09-16 18:17 New York", bytes=24060767,
+        sha256_16="13df4505a25b95f6",
+        fmt="A TENTH EXPORT FORMAT AND THE FIRST PARQUET -- delivered as "
+            "`index_US30_USD_30s.parquet`, one row group, written by ClickHouse 26.6.1, source "
+            "sha256 904ca8137fda42d2. Read it with `pyarrow`; the recorded bytes/sha256 above "
+            "are of the CSV DERIVATIVE, so rows+span are its identity (as for US30_ISO_15m).",
+        columns="ts (timestamp[us, tz=UTC]), symbol ('US30/USD', constant), open, high, low, "
+                "close, volume -- converted to the branch convention (`ny`,open,high,low,close,"
+                "volume) by `research/us30s/us30s.convert`",
+        order="ascending as delivered",
+        clock="UTC, AND THE FILE SAYS SO -- the column is tz-aware. RE-DERIVED ANYWAY and not "
+              "taken from the dtype: after tz_convert('America/New_York') mean bar range peaks "
+              "at minute-of-day 570 = 09:30 New York (74.69 points against 26.65 one bar "
+              "earlier); the raw-UTC profile peaks at 13:30, the same instant. So this is a true "
+              "UTC -> New York conversion and daylight saving is handled by construction. EVERY "
+              "OTHER US30 FILE HERE IS BROKER TIME AT NEW YORK + 7 -- a loader that forgets the "
+              "conversion puts a 09:30 window at 04:30, which is the pre-open block four studies "
+              "measured as the worst part of the day (`STUDY_V58`'s NQ table moved 48 trades at "
+              "PF 1.80 to 89 at 1.49 on exactly that error).",
+        volume="REAL, AND ONLY FROM 2026-04-27 10:45 New York. It is identically ZERO on the "
+               "first 134,655 bars and present on every bar after, with corr(volume, high-low) = "
+               "+0.7001 on that era -- inside the +0.71..+0.77 band of the genuine feeds and "
+               "nothing like `XAUUSD15_MT`'s +0.0048 fake column. So it is 4.5 months of usable "
+               "volume in a 13-month file; `us30s.usable_volume_from()` returns the boundary so "
+               "nothing averages a zero into a mean.",
+        defects="0 duplicate timestamps, 0 NaN, 0 OHLC violations, monotonic. 0.92% zero-range "
+                "bars. BARS WITH NO ACTIVITY ARE OMITTED: 390,552 rows against 1,135,775 "
+                "possible 30-second slots = 34.4% coverage, 92% inside 10:00-16:00 New York and "
+                "31% overnight, with the 17:00 hour absent entirely (the CME maintenance break) "
+                "and 13,310 Sunday bars from the 18:00 re-open. So a BAR INDEX IS NOT A CLOCK "
+                "here and any setting expressed in bars must be converted to minutes first "
+                "(`STUDY_V57`). Note also the export dialog's own row estimate of 812,571 "
+                "assumed continuous coverage and is wrong by 2.1x.",
+        loader="research/us30s/us30s.load(tf_minutes)",
+        provenance="user upload, 2026-09-16, as index_US30_USD_30s.parquet",
+        notes="A THIRD US30 PROVIDER AND THE FINEST US30 SERIES ON THE BRANCH by a factor of 30. "
+              "It is NOT a re-upload of anything here: resampled to 15 minutes and joined on "
+              "11,882 shared New York stamps against US30_ISO_15m it reads correlation 0.999926 "
+              "and a mean level ratio 1.000463, but mean |diff| 26.8 POINTS and an exact-match "
+              "share of 0.03-0.07%, which is chance. BUT IT IS ALSO NOT A FRESH CALENDAR: it "
+              "overlaps US30_ISO from 2025-08-18 to 2026-08-26 and only 2026-08-27 onward "
+              "post-dates every other US30 file, so over that shared span it is a FEED-PARITY "
+              "check and not a second test (US30/US30_ISO already measure daily leg correlation "
+              "+0.922). WHAT IT UNLOCKS IS THE MEASUREMENT, NOT THE SAMPLE: it answers "
+              "`STUDY_US30_SCALP_0711`'s intrabar tie-break, which that study named twice as the "
+              "first thing that would move its verdict -- see `research/us30s/run_u1.py`. It "
+              "does NOT raise the trade count, because a four-hour cap holds the rate near one "
+              "trade a session whatever the bar size."),
+
     "XAU_ISO_15m": Dataset(
         key="XAU_ISO_15m", instrument="XAUUSD", timeframe_min=15,
         restore_to="data/XAU_ISO_15m.csv",
