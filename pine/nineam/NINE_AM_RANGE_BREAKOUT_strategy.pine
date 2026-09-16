@@ -122,6 +122,7 @@ tgtPts   = input.float(100, "Target, POINTS",   minval = 0.1, step = 1, group = 
 beMode   = input.string("Off", "Auto breakeven", options = ["Off", "Points"], group = grpX, tooltip = "DEFAULT OFF, and measured rather than assumed. Over a declared 72-cell ladder (0/25/50/75/100/150 points x long/both x two geometries x US30 research, holdout and a different-provider forward block) a breakeven beats its own OFF twin in 19 of 60 scorable cells -- 32%, where chance is 50% -- and the marginal average of the paired delta falls monotonically with the arming distance: +0.0036 at 25 points, -0.0008 at 50, -0.0034 at 75, -0.0034 at 100, -0.0038 at 150 %/trade. It is the second exit policy this branch has measured as a subtractor after breakeven-after-1R (TEAM_EXIT_PF). The mechanism is in the exit mix: at 50 points the stop share rises 14.5 points and the flatten share falls 9.5, so the ratchet arms on a favourable excursion and is taken out on the pullback before the clock would have closed the trade in profit. Every paired delta is inside its own MDE, so this is a direction with a consistent sign, not a resolved effect.")
 bePts    = input.float(50, "Breakeven arms at, POINTS", minval = 1, step = 1, group = grpX, tooltip = "Favourable excursion from the FILL that arms the ratchet, in index points. The 50 asked for sits in the interior of the tested ladder. It arms on the bar that reaches the distance and can only BIND from the bar after -- within one bar OHLC cannot say whether the excursion came before or after the pullback, so arming and filling the moved stop on the same bar invents information.")
 beOffset = input.float(5, "Secure, POINTS (0 = true breakeven)", minval = 0, step = 1, group = grpX, tooltip = "How far BEYOND the fill the moved stop sits, so the trade is closed for a small profit rather than flat. THE THRESHOLD IS THE ROUND TURN, NOT ZERO: a stop at the fill books minus the commission and slippage, which is why a true breakeven exit paints red in the Strategy Tester. On US30 the round turn is 2.29 points in the research accounting, so 5 points books +2.71 and is a win; the panel computes the round turn LIVE from your own closed trades and this symbol's point value and says whether your setting clears it. Measured at breakeven 50 across US30 research, holdout and a different-provider forward block, securing points mostly RELABELS exits rather than moving them -- the trade count shifts by 0 to 5 -- while the win rate moves +0.41 on average: 0.2207 to 0.5275 on research long, 0.1493 to 0.6493 on the forward block. The money barely moves at 5 points (-0.0008 %/trade, 2 of 6 cells positive) and rises with the distance (+0.0006 at 10, +0.0059 at 25, 5 of 6) -- but that is because a large secured distance stops being a breakeven and becomes a small take profit, and no take profit has beaten every target tested 26 times on this branch. 5 is the asked-for setting and the honest one; treat 25 as a target, not a stop.")
+xMode    = input.string("Off", "Close on an opposite MA cross", options = ["Off", "Fresh opposite cross", "Opposite state"], group = grpX, tooltip = "DEFAULT OFF, and measured rather than wired up. Over a declared 72-cell grid (off / fresh cross / opposite state x pair 13/48 and 21/55 x long and both x two geometries x US30 research, holdout and a different-provider forward block -- 48 of them scorable, because the OFF arm never reads the pair and its two rows are ONE cell) the policy beats its own OFF twin in 15 of 48 cells, which is 31% where chance is 50%, and 0 of 48 paired deltas exceed their own minimum detectable effect. Both readings are negative on the marginal average: fresh cross -0.0010 %/trade, opposite state -0.0044, and both pairs agree in sign so it is not a spike. BY READING: the FRESH CROSS barely binds -- it closes 4.5-7.5% of trades, because a 09:00-range trade holds a median 10 bars and a 13/48 flip inside that window is rare -- so it is close to an inert switch. The OPPOSITE STATE binds on 35% and cuts the median hold 10.9 bars to 6.5, which RAISES the win rate (research long 0.326 to 0.389, holdout 0.293 to 0.347) and LOWERS the money (research +0.0145 to +0.0076, holdout +0.0098 to -0.0101, PF 1.053 to 0.907): it converts a payoff book into a hit-rate book and pays for it. AND THE PLACEBO IS THE REASON IT SHIPS OFF: re-run against an exit array with the SAME NUMBER of early exits placed at RANDOM bars, 100 seeds a cell, the real delta sits at a mean percentile of 0.38 (cross) and 0.57 (state) of its own null, the placebo does BETTER in 12 of 24 cells, and 3 of 24 clear the 95th percentile where 1.2 are expected by chance. Closing early at that RATE costs what closing early AT THE CROSS costs -- the moving average is not doing the work. It is the fourth exit policy this branch has measured as a wash or worse, after the ATR trail, the channel exit and breakeven-after-1R (TEAM_EXIT_PF, run_n7).")
 
 // ----------------------------------------------------------------------------- clock
 // Exchange time is Chicago on CME; New York is what the rule is written in.
@@ -400,7 +401,18 @@ flatNow = flatMin > 0 and (nyMin + tfMin >= flatMin) and nyMin < flatMin
 if barstate.isconfirmed and strategy.position_size != 0 and flatNow
     strategy.close_all(comment = "flat")
 
-if barstate.isconfirmed and not flatNow and strategy.position_size == 0
+// The opposite-cross exit reads the SAME pair the momentum gate and the plots use, so one pair
+// means one thing everywhere. It is read at this bar's CLOSE and fills at the NEXT bar's open,
+// which is what strategy.close() can actually do and what the research walker was made to match
+// (STUDY_V16's flat_open lesson). The stop and the target are intrabar and resolve first.
+xFlip = xMode == "Off" or strategy.position_size == 0 ? false
+         : strategy.position_size > 0 ? (xMode == "Fresh opposite cross" ? crossDn : not bull)
+         : (xMode == "Fresh opposite cross" ? crossUp : bull)
+
+if barstate.isconfirmed and not flatNow and xFlip
+    strategy.close_all(comment = "opp cross")
+
+if barstate.isconfirmed and not flatNow and not xFlip and strategy.position_size == 0
     if wantLong
         tookUp := true
         beArmed := false
@@ -456,7 +468,7 @@ plot(tlShow and tlMode != "Off" ? supLvl : na, "trend line, support", color = co
 bgcolor(inRange ? color.new(color.gray, 90) : na)
 bgcolor(dirMode != "Off" and inHour ? color.new(hDir == 1 ? color.teal : hDir == -1 ? color.maroon : color.gray, 92) : na)
 
-var table hud = table.new(position.top_right, 2, 11, border_width = 1)
+var table hud = table.new(position.top_right, 2, 12, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "range",   text_size = size.tiny)
     table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)), text_size = size.tiny)
@@ -502,5 +514,10 @@ if barstate.islast
     table.cell(hud, 0, 9, "trend line", text_size = size.tiny)
     tlTxt = tlMode == "Off" ? "off" : str.tostring(tlPts) + "-pt, " + str.tostring(tlMaxMin) + "m = " + str.tostring(tlMaxBars) + " bars  res " + (na(resLvl) ? "none" : str.tostring(resLvl, format.mintick)) + "  sup " + (na(supLvl) ? "none" : str.tostring(supLvl, format.mintick))
     table.cell(hud, 1, 9, tlTxt, text_size = size.tiny, text_color = tlMode == "Off" ? color.gray : color.blue)
-    table.cell(hud, 0, 10, "edge claimed", text_size = size.tiny)
-    table.cell(hud, 1, 10, "none", text_size = size.tiny, text_color = color.red)
+    xTxt = xMode == "Off" ? "off" : xMode == "Fresh opposite cross"
+             ? "fresh cross, binds ~5% of trades" : "opposite state, binds ~35%, cuts the hold 40%"
+    xCol = xMode == "Off" ? color.gray : color.red
+    table.cell(hud, 0, 10, "opp-cross exit", text_size = size.tiny)
+    table.cell(hud, 1, 10, xTxt, text_size = size.tiny, text_color = xCol)
+    table.cell(hud, 0, 11, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 11, "none", text_size = size.tiny, text_color = color.red)

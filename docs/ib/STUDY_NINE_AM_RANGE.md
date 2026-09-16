@@ -635,5 +635,73 @@ own bars, then both polarities against a same-selectivity random gate re-simulat
 the lift-1.00 base rate, then both polarities against a same-selectivity random gate) ·
 `run_n11.py` (trend lines through two confirmed pivots: the audit, the base rate on the
 trigger's own bars, then GATE against a same-selectivity random gate and LEVEL/EITHER against a
-matched random entry, because the last two change the event stream) · `plot_na.py` ·
+matched random entry, because the last two change the event stream) ·
+`run_n12.py` (the opposite-cross exit: the binding rate and the trade count in both arms printed
+before any verdict, each reading paired against its own OFF twin on identical entry bars) ·
+`run_n13.py` (its placebo -- the same number of early exits at RANDOM bars, 100 seeds a cell,
+which is what separates closing AT THE CROSS from closing early at that RATE) · `plot_na.py` ·
 `pine/nineam/NINE_AM_RANGE_BREAKOUT_strategy.pine`
+
+## 17. Close the position on an opposite EMA cross
+
+Asked for as an exit rule. Measured rather than wired up, because this branch has now measured
+three exit policies on this family and none of them earned a place: `TEAM_EXIT_PF` found the 1.0
+ATR trail raising its own coin flip's profit factor by as much as its own, the channel exit a wash
+and breakeven-after-1R the one arm below its baseline; `run_n7` found the auto breakeven beating
+its own OFF twin in 19 of 60 scorable cells; `STUDY_V63` found removing a chandelier trail worth
+3.6x the per-trade result. The prior on closing a position early is poor and the correct null is
+not zero.
+
+**The declared grid.** off / fresh cross / opposite state x pair 13/48 and 21/55 x long and both
+x two geometries (1.5xATR stop no target, 100pt stop 100pt target) x three blocks (US30_LONG
+research and holdout, US30_ISO forward, a different provider) = **72 NOMINAL cells and 48
+SCORABLE**. The OFF arm never reads the pair, so its two pair rows are one cell and not two;
+counting them twice would correct the multiplicity for 24 tests never run. `E[max t | pure noise]`
+over 48 looks is **2.261** against the 2.802 detection needs.
+
+**The binding rate first, because an exit that never fires is an inert switch.** The two readings
+are different rules and were kept apart for exactly this reason:
+
+| reading | binds | median hold | mechanism |
+| --- | --- | --- | --- |
+| fresh opposite cross | **4.5-7.5%** of trades | 10.1 bars (off: 10.9) | a 13/48 flip inside a 2.5-hour hold is rare |
+| opposite state | **35%** | **6.5 bars** | fires on the first bar the state is against the fill |
+
+**The result.** The policy beats its own OFF twin in **15 of 48 cells -- 31%, where chance is
+50%** -- and **0 of 48 paired deltas exceed their own minimum detectable effect**. Both marginal
+averages are negative (fresh cross -0.0010 %/trade, opposite state -0.0044) and both pairs agree in
+sign (13/48 -0.0033, 21/55 -0.0022), so it is a consistent direction rather than a spike. By block:
+research -0.0034, holdout -0.0055, forward +0.0006.
+
+**The mechanism is the win-rate-for-money trade, and it is visible in one row.** The opposite-state
+reading takes US30 research long from **+0.0145 %/trade at a 32.6% win rate to +0.0076 at 38.9%**,
+and the holdout from **+0.0098 PF 1.053 to -0.0101 PF 0.907 at a 34.7% win rate**. It converts a
+payoff book into a hit-rate book and pays for the conversion. The stop share rises from 0.633 to
+0.424 and the flatten share falls 0.364 to 0.207 -- the cross closes, at a worse price, trades the
+clock would have closed in profit.
+
+**AND THE PLACEBO IS THE FINDING.** A before/after cannot separate "closing at the cross helps"
+from "closing early at that RATE helps", and the second needs no forecasting at all -- a coin flip
+closing as often would also cut the hold, also raise the win rate and also change the trade count
+by freeing the position lock. So every cell was re-run against an exit array carrying the **same
+number of exit bars with the same signed mix, placed at random bars**, 100 seeds a cell
+(`run_n13.py`). The real delta sits at a mean percentile of **0.38** (cross) and **0.57** (state)
+of its own null; **the placebo does BETTER in 12 of 24 cells**; and 3 of 24 clear the 95th
+percentile where 1.2 are expected by chance. The moving average is not doing the work. This is the
+random-delay placebo of the execution-overlay literature applied to an exit rather than an entry.
+
+One row is worth reading carefully because it is the trap: on research long at 1.5N the state
+reading beats its placebo at percentile **1.00** -- and its delta is still **-0.0069**. It beats a
+null that loses more. `STUDY_IB_US30_OPTUNA`'s sentence from the other side: a rule that beats a
+losing null is still a losing rule.
+
+**Causality.** The cross is read at a bar's CLOSE and the exit FILLS AT THE NEXT BAR'S OPEN,
+because `strategy.close()` cannot sell the close of the bar that triggers it -- `STUDY_V16`'s
+`flat_open` lesson, where the engine was changed to match the script rather than the other way
+round. The stop and the target are intrabar and resolve first within the same bar.
+
+Ships as an input on the existing MA pair, **DEFAULT OFF**, with the binding rate and the placebo
+record in the tooltip. Parity: **30 of 30 configs at trade count 1.000**, same exit bar
+0.986-1.000, correlation 0.989-1.000, and the gap is negative on every cross-exit config
+(-1.06 to -2.19 points a trade) -- the script reads worse than the engine, which is the
+conservative direction.

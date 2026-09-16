@@ -334,7 +334,7 @@ def events(f, rhi, rlo, side="long", buf_atr=0.0, rs=RS, re_=RE, open_m=OPEN_M,
 
 @njit(cache=True)
 def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, rhi, rlo,
-          stop_pts, tgt_pts, be_pts, be_off):
+          stop_pts, tgt_pts, be_pts, be_off, cx):
     """One live position. Entry at the NEXT bar's open. The stop is an ATR multiple at the SIGNAL
     bar (knowable when the order is written) or the opposite side of the range when use_rng. The
     target is in R. A bar touching both is resolved as the STOP and the ambiguous share is returned
@@ -344,6 +344,13 @@ def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, 
     fill, the stop moves to the fill (+ `be_off`). The ratchet can only BIND FROM THE NEXT BAR --
     within the trigger bar OHLC cannot say whether the move came before or after the pullback, so
     arming and filling the moved stop on the same bar invents information (`research/us30exit`).
+
+    `cx` is a per-bar signed array: +1 where the momentum reading is long-favourable, -1 where
+    it is short-favourable, 0 where neither. A position is closed when `side * cx[j] < 0` -- the
+    OPPOSITE-CROSS EXIT. It is detected on a bar's CLOSE and FILLS AT THE NEXT BAR'S OPEN, because
+    `strategy.close()` cannot sell the close of the bar that triggers it (`STUDY_V16`'s `flat_open`
+    lesson). Pass an all-zero array to switch it off; the two arms then differ in nothing else,
+    which is what makes the paired comparison a measurement of this policy alone.
 
     `stop_pts` / `tgt_pts` override with an ABSOLUTE distance in index points. Kept as a separate
     parameterisation rather than converted, because the two do not rank the same axis the same way:
@@ -398,6 +405,9 @@ def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, 
                 ex = o[j + 1]; rsn = 3; j = j + 1; break
             if j + 1 < n and mod[j + 1] < mod[j] and flat_m > 0:
                 ex = c[j]; rsn = 4; break
+            # the opposite cross is read at this bar's CLOSE and fills at the NEXT open
+            if j + 1 < n and s * cx[j] < 0.0:
+                ex = o[j + 1]; rsn = 6; j = j + 1; break
             # arm the breakeven on this bar; it binds from the NEXT one
             if be_pts > 0 and not armed:
                 fav = (h[j] - e) if s > 0 else (e - l[j])
@@ -417,15 +427,17 @@ def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, 
 
 
 def run(f, sig, side, stop_a=1.0, tgt_r=0.0, flat_m=960, cost=1.72, use_rng=False,
-        rhi=None, rlo=None, stop_pts=0.0, tgt_pts=0.0, be_pts=0.0, be_off=0.0):
+        rhi=None, rlo=None, stop_pts=0.0, tgt_pts=0.0, be_pts=0.0, be_off=0.0, cx=None):
     o = f["open"].to_numpy(); h = f["high"].to_numpy(); l = f["low"].to_numpy()
     c = f["close"].to_numpy(); at = f["atr"].to_numpy(); mod = f["mod"].to_numpy()
     if rhi is None:
         rhi = np.full(len(f), np.nan); rlo = np.full(len(f), np.nan)
+    if cx is None:
+        cx = np.zeros(len(f))
     eb, xb, pts, rr, risk, why, amb = _walk(
         o, h, l, c, at, mod, sig, side, float(stop_a), float(tgt_r), int(flat_m),
         float(cost), 1 if use_rng else 0, rhi, rlo, float(stop_pts), float(tgt_pts),
-        float(be_pts), float(be_off))
+        float(be_pts), float(be_off), np.ascontiguousarray(cx, dtype=np.float64))
     k = eb >= 0
     ent = o[np.where(k, eb, 0)]
     return pd.DataFrame(dict(sig=sig[k], eb=eb[k], xb=xb[k], side=side[k], pts=pts[k],
@@ -667,3 +679,56 @@ def trendlines(f, prd=10, min_pts=2, tol_atr=0.25, max_age=200):
         return out
 
     return _line(ph, h), _line(pl, l)
+
+
+def cross_exit(f, fast=13, slow=48, kind="ema", reading="cross"):
+    """The per-bar signed array `_walk` reads as an OPPOSITE-CROSS EXIT.
+
+    Two readings, both declared before either was run, because they are different rules and
+    collapsing them would hide which one any result belongs to:
+
+      "cross"  +1 only on the bar of a fresh UP cross, -1 only on a fresh DOWN cross, 0 elsewhere.
+               The position is closed when the pair actually FLIPS against it after the fill.
+      "state"  +1 wherever fast > slow, -1 wherever it does not. The position is closed on the
+               first bar the state is against it -- which, for an entry taken while the state was
+               already opposed, is the bar immediately after the fill. That is not a defect of the
+               reading, it is what the reading says, and it is why the two are reported apart.
+
+    Zero wherever either average is still in warm-up, so an unfinished indicator reads as "no
+    exit" rather than as a flip (`STUDY_V54`: an all-NaN recursive indicator reads as no signal).
+    """
+    c = f["close"].to_numpy()
+    if kind == "vwma":
+        a = vwma(c, f["volume"].to_numpy(), fast); b = vwma(c, f["volume"].to_numpy(), slow)
+    else:
+        a = ma(c, fast, kind); b = ma(c, slow, kind)
+    ok = np.isfinite(a) & np.isfinite(b)
+    st = np.zeros(len(c), bool)
+    st[ok] = a[ok] > b[ok]
+    cx = np.zeros(len(c))
+    if reading == "state":
+        cx[ok] = np.where(st[ok], 1.0, -1.0)
+        return cx
+    up = np.zeros(len(c), bool); dn = np.zeros(len(c), bool)
+    up[1:] = st[1:] & ~st[:-1]
+    dn[1:] = (~st[1:]) & st[:-1]
+    up &= ok; dn &= ok
+    cx[up] = 1.0
+    cx[dn] = -1.0
+    return cx
+
+
+def shuffle_exit(f, cx, seed=0):
+    """A PLACEBO exit array: the same NUMBER of exit bars as `cx`, placed at random bars, with the
+    same signed mix. It answers the question a raw before/after cannot -- whether closing early AT
+    THE CROSS beats closing early at that RATE. The random-delay placebo of the execution-overlay
+    literature, applied to an exit rather than an entry."""
+    rng = np.random.default_rng(seed)
+    n = len(cx)
+    nz = np.flatnonzero(cx != 0.0)
+    out = np.zeros(n)
+    if nz.size == 0:
+        return out
+    pick = rng.choice(n, size=nz.size, replace=False)
+    out[pick] = cx[nz]
+    return out
