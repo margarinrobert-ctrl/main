@@ -29,7 +29,7 @@ TICK = {"US30L": 0.1, "US30I": 0.1, "US100L": 0.1, "NQ": 0.25}
 
 
 def pine_walk(f, sig, side, stop_a, tgt_r, flat_m, cost, tick, stop_pts=0.0, tgt_pts=0.0,
-              be_pts=0.0, be_off=0.0, cx=None):
+              be_pts=0.0, be_off=0.0, cx=None, tgt_atr=0.0):
     """One live position; the bracket is placed with the entry and rounded to the tick."""
     o = f["open"].to_numpy(); h = f["high"].to_numpy(); l = f["low"].to_numpy()
     c = f["close"].to_numpy(); at = f["atr"].to_numpy(); mod = f["mod"].to_numpy()
@@ -51,7 +51,9 @@ def pine_walk(f, sig, side, stop_a, tgt_r, flat_m, cost, tick, stop_pts=0.0, tgt
         if rk <= 0:
             continue
         stop = e - s * rk
-        if tgt_pts > 0:
+        if tgt_atr > 0:
+            tgt = e + s * round(tgt_atr * a / tick) * tick
+        elif tgt_pts > 0:
             tgt = e + s * round(tgt_pts / tick) * tick
         elif tgt_r > 0:
             tgt = e + s * round(tgt_r * rk / tick) * tick
@@ -116,13 +118,6 @@ def main():
                  be=50.0, beoff=5.0),
             dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
                  be=50.0, beoff=5.0),
-            # the 08:00 HOUR direction gate, both polarities and the body reading
-            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
-                 hdir=("direction", 1)),
-            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
-                 hdir=("direction", -1)),
-            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
-                 hdir=("body", 1), hbody=0.25),
             # the MA 200 readings: ANY / ALL, state and fresh cross, both polarities. The ANY form
             # is the one where the script and the engine could most easily diverge, because a SPLIT
             # reading confirms BOTH sides and neither is allowed to collapse it to one label.
@@ -136,18 +131,6 @@ def main():
                  m200=(dict(mode="any", cross_bars=5), 1)),
             dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
                  spts=100.0, tpts=100.0, m200=(dict(mode="all", cross_bars=0), 1)),
-            # the TREND LINE readings. `level` and `either` change the event stream itself, so the
-            # two sides must agree on the SIGNAL SET before any P&L is compared.
-            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
-                 tl=("gate", 2)),
-            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
-                 tl=("gate", 3)),
-            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
-                 tl=("level", 2)),
-            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
-                 tl=("either", 2)),
-            dict(win=(540, 570), side="long", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
-                 spts=100.0, tpts=100.0, tl=("either", 3)),
             # the OPPOSITE-CROSS EXIT, both readings. The exit is read at a bar's CLOSE and fills
             # at the NEXT open in both models, so any disagreement here is the tick rounding of a
             # bracket that the cross pre-empted, not the exit rule itself.
@@ -160,53 +143,50 @@ def main():
             dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
                  spts=100.0, tpts=100.0, xc="cross"),
             dict(win=(540, 555), side="long", buf=0.0, ema="state", stop=1.5, tgt=0.0, flat=960,
-                 xc="state")]
+                 xc="state"),
+            # the ATR PERIOD, which now feeds the buffer, the stop and the target at once, and the
+            # ATR TARGET. Under an ATR stop the last of these is an exact restatement of the R
+            # target (run_n14 section 1), so the parity check that matters is that BOTH reach the
+            # engine as the same absolute distance.
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 alen=7),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 alen=50),
+            dict(win=(540, 555), side="long", buf=0.25, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 alen=21),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 tatr=3.0),
+            dict(win=(540, 555), side="long", buf=0.0, ema="off", stop=2.5, tgt=0.0, flat=960,
+                 tatr=1.5, alen=21),
+            dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
+                 spts=100.0, tatr=4.0)]
     for name in ("US30L", "US30I"):
-        f = N.load(name, 15)
+        f0 = N.load(name, 15)
         cost = N.COST[name]; tick = TICK[name]
         for k, cfg in enumerate(cfgs):
+            f = N.set_atr(f0, cfg.get("alen", 14))
             rs, re_ = cfg["win"]
             rhi, rlo, rn = N.ranges(f, rs, re_)
-            tl = cfg.get("tl")
-            up, dn = rhi, rlo
-            if tl is not None:
-                res, sup = N.trendlines(f, 10, tl[1], 0.25)
-                if tl[0] == "level":
-                    up, dn = res, sup
-                elif tl[0] == "either":
-                    up, dn = np.fmin(rhi, res), np.fmax(rlo, sup)
-            s0, d0 = N.events(f, up, dn, side=cfg["side"], buf_atr=cfg["buf"], rs=rs, re_=re_,
+            s0, d0 = N.events(f, rhi, rlo, side=cfg["side"], buf_atr=cfg["buf"], rs=rs, re_=re_,
                               open_m=570)
             s1, d1 = gate(f, s0, d0, cfg["ema"])
-            hd = cfg.get("hdir")
-            if hd is not None:
-                # NB `hk`, not `k`: `k` is the enumerate counter above and shadowing it printed the
-                # mask as the config number. Tenth name collision recorded on this branch.
-                hs = N.hour_side(f, reading=hd[0], body_atr=cfg.get("hbody", 0.0))
-                hk = hs[s1] == hd[1] * d1
-                s1, d1 = s1[hk], d1[hk]
             m2 = cfg.get("m200")
             if m2 is not None:
                 ol, osh = N.ma200_ok(f, **m2[0])
                 mk = (np.where(d1 > 0, ol[s1], osh[s1]) if m2[1] > 0
                       else np.where(d1 > 0, osh[s1], ol[s1]))
                 s1, d1 = s1[mk], d1[mk]
-            if tl is not None and tl[0] == "gate":
-                c = f["close"].to_numpy()
-                gk = np.where(d1 > 0,
-                              (np.isfinite(res) & (c > res))[s1],
-                              (np.isfinite(sup) & (c < sup))[s1])
-                s1, d1 = s1[gk], d1[gk]
             spts = cfg.get("spts", 0.0); tpts = cfg.get("tpts", 0.0)
             be = cfg.get("be", 0.0); beoff = cfg.get("beoff", 0.0)
+            tatr = cfg.get("tatr", 0.0)
             xc = cfg.get("xc")
             cx = None if xc is None else N.cross_exit(f, 13, 48, "ema", xc)
             eng = N.run(f, s1, d1, stop_a=cfg["stop"], tgt_r=cfg["tgt"], flat_m=cfg["flat"],
                         cost=cost, rhi=rhi, rlo=rlo, stop_pts=spts, tgt_pts=tpts,
-                        be_pts=be, be_off=beoff, cx=cx)
+                        be_pts=be, be_off=beoff, cx=cx, tgt_atr=tatr)
             scr = pine_walk(f, s1, d1, cfg["stop"], cfg["tgt"], cfg["flat"], cost, tick,
                             stop_pts=spts, tgt_pts=tpts, be_pts=be, be_off=beoff,
-                            cx=cx)
+                            cx=cx, tgt_atr=tatr)
             j = eng.merge(scr, on="sig", suffixes=("_e", "_s"))
             same_x = float((j["xb_e"] == j["xb_s"]).mean()) if len(j) else np.nan
             corr = float(np.corrcoef(j["pts_e"], j["pts_s"])[0, 1]) if len(j) > 2 else np.nan
@@ -217,12 +197,12 @@ def main():
                     else f"{cfg['stop']}N/{cfg['tgt']}R")
             if be > 0:
                 geom += f" be{be:.0f}+{beoff:.0f}"
-            if hd is not None:
-                geom += f" h:{hd[0][:4]}{'+' if hd[1] > 0 else '-'}"
+            if tatr > 0:
+                geom += f" tgt{tatr:.1f}A"
+            if cfg.get("alen", 14) != 14:
+                geom += f" atr{cfg['alen']}"
             if xc is not None:
                 geom += f" x:{xc}"
-            if tl is not None:
-                geom += f" tl:{tl[0]}{tl[1]}"
             if m2 is not None:
                 geom += (f" 200:{m2[0]['mode']}"
                          f"{'x' if m2[0]['cross_bars'] else 's'}"

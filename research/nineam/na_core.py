@@ -92,9 +92,23 @@ def load(name="NQ", tf=15):
     h, l, c = f["high"].to_numpy(), f["low"].to_numpy(), f["close"].to_numpy()
     pc = np.r_[c[0], c[:-1]]
     tr = np.maximum(h - l, np.maximum(np.abs(h - pc), np.abs(l - pc)))
+    f["tr"] = tr
     f["atr"] = pd.Series(tr).ewm(span=14, adjust=False).mean().to_numpy()
     f["mod"] = f.index.hour * 60 + f.index.minute
     f["day"] = (f.index.normalize().view("int64") // 86_400_000_000_000).astype(np.int64)
+    return f
+
+
+def set_atr(f, n=14):
+    """Recompute the ATR column at a different period, IN PLACE, from the stored true range.
+
+    The branch's ATR is `ema(tr, n)` with a SPAN, not Wilder's `ewm(alpha=1/n)` -- the two differ
+    by a factor of about two in effective lookback, and `na_parity` holds the script to the same
+    definition (`ta.ema(ta.tr(true), n)`). Every published figure in this study used n = 14, so a
+    ladder over this axis is a new axis and is measured as one rather than shipped as a knob.
+    """
+    f = f.copy()
+    f["atr"] = pd.Series(f["tr"].to_numpy()).ewm(span=int(n), adjust=False).mean().to_numpy()
     return f
 
 
@@ -334,7 +348,7 @@ def events(f, rhi, rlo, side="long", buf_atr=0.0, rs=RS, re_=RE, open_m=OPEN_M,
 
 @njit(cache=True)
 def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, rhi, rlo,
-          stop_pts, tgt_pts, be_pts, be_off, cx):
+          stop_pts, tgt_pts, be_pts, be_off, cx, tgt_atr):
     """One live position. Entry at the NEXT bar's open. The stop is an ATR multiple at the SIGNAL
     bar (knowable when the order is written) or the opposite side of the range when use_rng. The
     target is in R. A bar touching both is resolved as the STOP and the ambiguous share is returned
@@ -351,6 +365,11 @@ def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, 
     `strategy.close()` cannot sell the close of the bar that triggers it (`STUDY_V16`'s `flat_open`
     lesson). Pass an all-zero array to switch it off; the two arms then differ in nothing else,
     which is what makes the paired comparison a measurement of this policy alone.
+
+    `tgt_atr` sets the target as a multiple of the SIGNAL BAR's ATR. Where the stop is also an ATR
+    multiple this is an exact restatement of `tgt_r` -- `tgt_atr = tgt_r * stop_a` gives the same
+    level to the float -- and it only becomes a separate axis under a POINTS or range stop. The
+    identity is asserted in `run_n14.py` rather than assumed.
 
     `stop_pts` / `tgt_pts` override with an ABSOLUTE distance in index points. Kept as a separate
     parameterisation rather than converted, because the two do not rank the same axis the same way:
@@ -380,7 +399,9 @@ def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, 
         else:
             rk = stop_a * a
         stop = e - s * rk
-        if tgt_pts > 0:
+        if tgt_atr > 0:
+            tgt = e + s * tgt_atr * a
+        elif tgt_pts > 0:
             tgt = e + s * tgt_pts
         elif tgt_r > 0:
             tgt = e + s * tgt_r * rk
@@ -427,7 +448,8 @@ def _walk(o, h, l, c, at, mod, sig, side, stop_a, tgt_r, flat_m, cost, use_rng, 
 
 
 def run(f, sig, side, stop_a=1.0, tgt_r=0.0, flat_m=960, cost=1.72, use_rng=False,
-        rhi=None, rlo=None, stop_pts=0.0, tgt_pts=0.0, be_pts=0.0, be_off=0.0, cx=None):
+        rhi=None, rlo=None, stop_pts=0.0, tgt_pts=0.0, be_pts=0.0, be_off=0.0, cx=None,
+        tgt_atr=0.0):
     o = f["open"].to_numpy(); h = f["high"].to_numpy(); l = f["low"].to_numpy()
     c = f["close"].to_numpy(); at = f["atr"].to_numpy(); mod = f["mod"].to_numpy()
     if rhi is None:
@@ -437,7 +459,8 @@ def run(f, sig, side, stop_a=1.0, tgt_r=0.0, flat_m=960, cost=1.72, use_rng=Fals
     eb, xb, pts, rr, risk, why, amb = _walk(
         o, h, l, c, at, mod, sig, side, float(stop_a), float(tgt_r), int(flat_m),
         float(cost), 1 if use_rng else 0, rhi, rlo, float(stop_pts), float(tgt_pts),
-        float(be_pts), float(be_off), np.ascontiguousarray(cx, dtype=np.float64))
+        float(be_pts), float(be_off), np.ascontiguousarray(cx, dtype=np.float64),
+        float(tgt_atr))
     k = eb >= 0
     ent = o[np.where(k, eb, 0)]
     return pd.DataFrame(dict(sig=sig[k], eb=eb[k], xb=xb[k], side=side[k], pts=pts[k],

@@ -639,7 +639,9 @@ matched random entry, because the last two change the event stream) ·
 `run_n12.py` (the opposite-cross exit: the binding rate and the trade count in both arms printed
 before any verdict, each reading paired against its own OFF twin on identical entry bars) ·
 `run_n13.py` (its placebo -- the same number of early exits at RANDOM bars, 100 seeds a cell,
-which is what separates closing AT THE CROSS from closing early at that RATE) · `plot_na.py` ·
+which is what separates closing AT THE CROSS from closing early at that RATE) ·
+`run_n14.py` (the ATR period as a ladder paired against its own ATR(14) twin, and the ATR target
+against no target -- with the ATR-target/R-target identity asserted on exit bars before either) · `plot_na.py` ·
 `pine/nineam/NINE_AM_RANGE_BREAKOUT_strategy.pine`
 
 ## 17. Close the position on an opposite EMA cross
@@ -705,3 +707,71 @@ record in the tooltip. Parity: **30 of 30 configs at trade count 1.000**, same e
 0.986-1.000, correlation 0.989-1.000, and the gap is negative on every cross-exit config
 (-1.06 to -2.19 points a trade) -- the script reads worse than the engine, which is the
 conservative direction.
+
+## 18. Three gates removed, the ATR period made selectable, and an ATR take profit
+
+Asked to delete the 08:00 hourly-candle direction gate, the LonesomeTheBlue support/resistance
+channels and the trend lines, and to add one ATR period governing every ATR setting plus an ATR
+take profit.
+
+**The removals cost nothing, because all three had already been measured to nothing** -- the 08:00
+hour cleared 0 of 36 cells (section 14), the S/R channel read opposite signs on two blocks of one
+market (section 2), and the trend lines managed 1 of 48 outside its own MDE with the literal
+LEVEL reading losing to a random entry at p 1.000 (section 16). The measurements stay in this
+document and in `run_n9.py` / `run_n11.py`; what goes is three switches on a chart, which is three
+fewer ways to fit it.
+
+### The ATR target is not a new axis under an ATR stop, and that is asserted rather than reasoned
+
+`target = k x ATR` and `target = r x stop` are the same level when `k = r x stopAtr`. Checked on
+2,295-2,580 trades at 1.5N and 2.5N across three R multiples: **identical trade counts, identical
+exit bars, max |dpts| 0.000e+00** (one cell at 3.6e-12, float noise). It separates only under a
+POINTS or range stop, where the risk is not an ATR multiple -- there the two agree on **66-73%** of
+exit bars and the trade counts differ. So the axis is real, and only outside the default geometry.
+
+### The ATR period ladder: 21 of 60 rungs beat ATR(14), where chance is 50%
+
+Every figure in this study was measured at `ema(tr, 14)`, so the period is a genuinely new axis.
+Declared rungs 7 / 10 / 14 / 21 / 30 / 50 x long and both x two geometries x three blocks = 72
+cells, 60 of them paired against their own ATR(14) twin. `E[max t | pure noise]` over 60 looks is
+**2.345** against the 2.802 detection needs.
+
+| ATR period | paired Δ %/trade | Δ trades | beats ATR(14) |
+| --- | --- | --- | --- |
+| 7 | −0.0027 | −15.1 | 25% |
+| 10 | −0.0019 | −6.4 | 25% |
+| 21 | **+0.0004** | +4.4 | 58% |
+| 30 | −0.0002 | +9.2 | 42% |
+| 50 | −0.0021 | +12.9 | 25% |
+
+**0 of 60 paired deltas exceed their own MDE**, and the two rungs either side of 14 are the only
+non-negative ones -- a smooth hump centred on the incumbent, which is what an axis with no
+information in it looks like when the default happens to sit in the middle. 14 stays the default.
+
+**What moves with it is the TRADE COUNT, and not for the obvious reason.** The count rises
+monotonically with the period (−15 at 7, +13 at 50) even though the break level is unchanged at the
+default zero buffer -- so the events are identical and the difference is downstream: a wider stop
+holds positions longer and the one-position lock then refuses later breaks. `STUDY_V56`'s mechanism
+again, reached from the stop rather than the exit.
+
+### The ATR take profit loses monotonically -- the 27th confirmation
+
+Paired against NO TARGET at the shipped 1.5N stop, over three blocks and both sides:
+
+| target | R equivalent | paired Δ %/trade | target-hit rate | beats no target |
+| --- | --- | --- | --- | --- |
+| 1.5 ATR | 1R | **−0.0167** | 48.2% | 0 of 6 |
+| 2.25 ATR | 1.5R | −0.0115 | 38.2% | 0 of 6 |
+| 3.0 ATR | 2R | −0.0070 | 29.5% | 2 of 6 |
+| 4.5 ATR | 3R | −0.0042 | 16.5% | 1 of 6 |
+| 6.0 ATR | 4R | +0.0020 | **9.4%** | 5 of 6 |
+
+Monotone, with the tightest target the worst choice in the space. **A target beats no target in 8
+of 30 cells where chance is 50%**, and 0 of 30 paired deltas exceed their own MDE. The one
+non-negative rung reaches its target on 9.4% of trades, so it is barely a target at all -- setting
+6 ATR and setting NONE are nearly the same strategy, which is `STUDY_INTRADAY_HEAT`'s finding on a
+different base. Ships with `tgtMode` default **None**.
+
+Parity after all of it: **28 of 28 configs at trade count 1.000**, same exit bar 0.972-1.000,
+correlation 0.989-1.000, with the six new ATR-period and ATR-target configs reading 1.000 on the
+count and −0.33 to +0.02 points a trade on the gap.

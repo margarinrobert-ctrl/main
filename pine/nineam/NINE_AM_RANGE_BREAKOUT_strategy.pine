@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MIT
-// The 09:00 New York high and low -> breakout at or after the 09:30 cash open -> EMA 13/48
-// momentum confirmation -> optional support/resistance channel gate.
+// The 09:00 New York high and low -> breakout at or after the 09:30 cash open -> optional MA
+// confirmation -> ATR stop, optional ATR target.
+//
+// FOUR GATES WERE REMOVED rather than left switched off: the 08:00 hourly-candle direction gate,
+// the LonesomeTheBlue support/resistance channels and the trend lines through confirmed pivots.
+// Each was measured and each cleared nothing (0 of 36, opposite signs on two blocks of one market,
+// and 1 of 48 outside its own MDE respectively); the measurements stay in
+// docs/ib/STUDY_NINE_AM_RANGE.md sections 14-16 and in research/nineam/run_n9..n11.py, so removing
+// the switches loses no evidence and removes three ways to fit the chart.
 //
 // THE RANGE IS THE 09:00 BAR: the high and low of 09:00-09:15, which on a 15-minute chart is
 // exactly the 09:00 candle. The range end and the entry arm time are SEPARATE inputs, so the
@@ -76,6 +83,9 @@ firstEntry = input.int(570,  "Earliest entry",                             minva
 lastEntry  = input.int(960,  "No new entries after",                        minval = 1, maxval = 1440, group = grpS)
 flatMin    = input.int(960,  "Flatten at (0 = never)",                      minval = 0, maxval = 1440, group = grpS, tooltip = "Filled at the OPEN of this minute, so the order is submitted on the bar before -- strategy.close_all() cannot sell the close of the bar that triggers it. 960 = 16:00.")
 
+grpA = "ATR -- one period, used by every ATR setting below"
+atrLen = input.int(14, "ATR period", minval = 1, maxval = 500, group = grpA, tooltip = "ONE period, read by the break buffer, the stop, the ATR target and every ATR figure on the panel -- so the strategy has a single definition of volatility rather than one per setting. It is `ta.ema(ta.tr(true), n)`, a SPAN, which is what the research uses; Wilder's `ta.atr` is a different average with roughly twice the effective lookback and would silently change every distance. MEASURED BEFORE IT SHIPPED, because every figure in this study was taken at 14: over a declared ladder 7/10/14/21/30/50 x long and both x two geometries x US30 research, holdout and a different-provider forward block -- 60 cells paired against their own ATR(14) twin -- a rung beats 14 in 21 of 60 = 35% where chance is 50%, and 0 of 60 paired deltas exceed their own minimum detectable effect. The marginal average of the paired delta runs -0.0027 %/trade at 7, -0.0019 at 10, +0.0004 at 21, -0.0002 at 30, -0.0021 at 50: the two rungs either side of 14 are the only non-negative ones and nothing is resolvable, so 14 stays the default and this is a knob rather than a finding. Note what moves with it -- the TRADE COUNT rises monotonically with the period (-15 trades at 7, +13 at 50) even though the break level is unchanged at the default zero buffer, because a wider stop holds positions longer and the one-position lock then refuses later breaks.")
+
 grpE = "Entry"
 sideIn   = input.string("Both", "Side", options = ["Long", "Short", "Both"], group = grpE)
 bufAtr   = input.float(0.0,  "Break buffer, xATR beyond the level", minval = 0, maxval = 2, step = 0.05, group = grpE)
@@ -89,35 +99,14 @@ maSlow   = input.int(48, "Slow length", minval = 2, group = grpM)
 maLong   = input.int(200, "Long length (the 200)", minval = 3, group = grpM, tooltip = "Used only by the four 200 readings. This is the shorter AVERAGES against the long one, which is a different object from price against it: STUDY_V40 found the MA200 is priced by its DISTANCE and not by its state, and STUDY_V51 found the FLOOR reading (>= 1.5 ATR above) clears three blocks where the support reading fails two. Neither of those is this.")
 crossMin = input.int(75, "Fresh cross: within this many MINUTES", minval = 1, group = grpM, tooltip = "A reach in time, not a bar count -- 75 minutes is 5 bars on a 15-minute chart, which is what was measured.")
 
-grpD = "Direction -- the 08:00 hourly candle"
-dirMode = input.string("Off", "08:00 hour gates the side", options = ["Off", "Align with the hour", "Counter to the hour"], group = grpD, tooltip = "DEFAULT OFF, and measured. If the 08:00-09:00 New York hourly candle is bearish, Align takes only the DOWN break that session; if bullish, only the UP break. It is genuinely causal -- that hour completes at 09:00, before the range starts and ninety minutes before the 09:30 arm -- and the truncation audit rebuilding it from history ending at the signal bar returns 0 mismatches of 40 probes on both feeds. It is also a genuinely SEPARATE reading: it admits 37.6-54.3% of the breaks it is shown, dead centre, where a condition that merely restates the trigger admits 80-100% (RSI 94.7%, Aroon 100.0%, MACD 99.8%, MFI 91.7%, +DI 97.8% on a channel break). It binds. It does not pay: over a declared 36-cell grid (3 readings x Align/Counter x two geometries x US30 research, holdout and a different-provider forward block) scored against a RANDOM gate of the same selectivity re-simulated end to end, 0 OF 36 CELLS CLEAR p<=0.05 where 1.8 are expected by chance, 0 of 36 exceed their own minimum detectable effect, and the gate beats the ungated rule in 12 of 36 cells where chance is 50%. Align is negative on all three blocks (-0.0041 / -0.0045 / -0.0042 %/trade against no filter); Counter is positive on research only (+0.0031) and negative on both blocks it did not choose, which is the wrong shape.")
-dirRead = input.string("Direction (close vs open)", "How the hour is read", options = ["Direction (close vs open)", "Body >= N x ATR", "Close position in the hour's range"], group = grpD, tooltip = "Three declared readings of the same hour rather than three parameters on one. Direction is the literal ask. Body ignores an indecisive hour entirely -- it refuses 18.9-19.9% of sessions as having no opinion, and is the WORST of the three on the marginal (-0.0062 %/trade against no filter, 0 of 6 cells beating baseline). Close position asks where the hour closed inside its own range instead of against its open.")
-dirBody = input.float(0.25, "Body threshold, xATR(14)", minval = 0, step = 0.05, group = grpD, tooltip = "Used when the reading is Body. Below this the hour is treated as having no direction and NO trade is taken that session.")
-dirStart = input.int(480, "Hour starts, minutes past New York midnight", minval = 0, maxval = 1439, group = grpD, tooltip = "480 = 08:00. Declared in MINUTES and accumulated from the chart's own bars rather than pulled with request.security, because a 60-minute security call returns the exchange's hourly bar, which need not start at 08:00 New York (CLAUDE.md: request.security on a daily bar is not the session high either).")
-dirEnd   = input.int(540, "Hour ends (exclusive)", minval = 1, maxval = 1440, group = grpD, tooltip = "540 = 09:00, so the candle is 08:00-09:00 and is complete before the range begins.")
-
-grpR = "Support / Resistance channels (LonesomeTheBlue)"
-useSR    = input.bool(false, "Require the broken level to sit ON a channel", group = grpR, tooltip = "DEFAULT OFF. It reads +0.0426 PF 1.316 on the US30_ISO forward block and -0.0500 PF 0.698 on the US30_LONG holdout -- opposite signs on two blocks of the same market, which is not a finding.")
-srPrd    = input.int(10,  "Pivot period",             minval = 2, maxval = 50, group = grpR)
-srWidth  = input.float(5, "Max channel width, % of the 300-bar range", minval = 0.5, maxval = 20, step = 0.5, group = grpR)
-srStr    = input.int(2,   "Minimum strength (pivots in the channel)", minval = 1, group = grpR)
-srMax    = input.int(6,   "Max channels",             minval = 1, maxval = 10, group = grpR)
-srLook   = input.int(290, "Pivot lookback, bars",     minval = 50, group = grpR)
-
-grpT = "Trend lines (two confirmed pivots)"
-tlMode  = input.string("Off", "Trend line", options = ["Off", "Gate: price must have cleared it", "Level: break the LINE instead of the range", "Either: whichever level is nearer"], group = grpT, tooltip = "DEFAULT OFF, and measured. The resistance line is drawn through the LAST TWO CONFIRMED pivot highs and extended to the current bar; the support line through the last two pivot lows. A pivot at bar j needs bars j-prd..j+prd so it is knowable at j+prd and NEVER at j -- a line anchored at the pivot itself back-tests beautifully and cannot be traded (STUDY_DIVERGENCE_CONFIRM read +37 full against +999 truncated on exactly that mistake). The truncation audit rebuilding these levels from history ending at the signal bar returns 0 mismatches of 48 probes on both feeds.\n\nIT BINDS AND IT IS NOT THE TRIGGER RESTATED: the Gate admits 37.2-40.0% of the breaks it is shown at two points and 6.8-10.7% at three, a lift over all bars of 1.30 to 2.71 -- the third condition in this script to pass the base-rate check that has killed nine confirmation families elsewhere.\n\nIT DOES NOT PAY. Over a declared 48-cell grid (4 modes x 2/3 points x two geometries x US30 research, holdout and a different-provider forward block), each Gate reading scored against a RANDOM gate of the same selectivity and each Level/Either reading against a MATCHED RANDOM ENTRY, both re-simulated end to end: 2 of 48 cells clear p<=0.05 where 2.4 are expected by chance, 1 OF 48 EXCEEDS ITS OWN MINIMUM DETECTABLE EFFECT, and a reading beats the ungated rule in 27 of 48 cells where chance is 50%. LEVEL is the worst of the four -- on US30 research it takes MORE trades than the range (1,863 against 1,734) and loses to a random entry with the same geometry at p 1.000. Gate has the best marginal (+0.0034 at two points, +0.0120 at three) and inverts on the holdout (+0.0186 research, -0.0171 holdout, +0.0216 forward). Three points cuts the sample to ~120 trades a block against an MDE of 0.12-0.14, so its larger number is the least resolvable one in the study.")
-tlPrd   = input.int(10, "Pivot period", minval = 2, maxval = 50, group = grpT, tooltip = "Bars either side of a pivot. Fixed at 10 in the research -- the same value the S/R channel gate uses -- and never swept, because adding a ladder to a 48-cell grid raises the noise floor a survivor must clear without raising what the sample can resolve.")
-tlPts   = input.int(2, "Points the line must touch", minval = 2, maxval = 3, group = grpT, tooltip = "2 = the line is the last two pivots and nothing else, which is the literal ask. 3 = a THIRD, earlier pivot must lie within the tolerance below of the SAME line, so the line has three touches -- and the check is on a pivot the line was not fitted to, which is the only reading of three points that is not automatically true. At 3 a line exists on only 22-30% of signal bars.")
-tlTol   = input.float(0.25, "Third-point tolerance, xATR(14)", minval = 0.01, step = 0.05, group = grpT)
-tlMaxMin = input.int(3000, "Refuse a line whose newer anchor is older than this many MINUTES", minval = 30, group = grpT, tooltip = "3000 minutes = 200 bars on a 15-minute chart, which is what was measured. Declared in MINUTES so the same number means the same reach on any chart (STUDY_V57) -- an extended line from six months ago is a number, not a level.")
-tlShow  = input.bool(true, "Plot the lines", group = grpT)
 
 grpX = "Exit"
 stopMode = input.string("ATR", "Stop mode", options = ["ATR", "Points", "Opposite side of the range"], group = grpX, tooltip = "POINTS is a fixed distance in index points and is NOT the same geometry on two markets: 100 points is 2.35x the median in-window ATR on US30, 3.24x on NQ and 4.36x on US100, and on US30 alone it was 4.23 ATR in 2016 against 1.10 in 2025. A points setting therefore confounds geometry with market and with era (STUDY_DL50). The panel prints what your chosen distance currently is in ATR.")
-stopAtr  = input.float(1.5, "Stop, xATR(14)",   minval = 0.1, maxval = 10, step = 0.1, group = grpX)
+stopAtr  = input.float(1.5, "Stop, xATR",   minval = 0.1, maxval = 10, step = 0.1, group = grpX)
 stopPts  = input.float(100, "Stop, POINTS",     minval = 0.1, step = 1, group = grpX, tooltip = "Used when Stop mode = Points.")
-tgtMode  = input.string("None", "Target mode", options = ["None", "R", "Points"], group = grpX, tooltip = "No take profit has beaten every target tested 26 times on this branch, and the points grid here agrees: over 75 declared US30 research cells the target marginal runs NONE +0.87 bp, 200 pts +0.80, 150 +0.43, 100 -0.44, 50 -1.07 -- monotone, with the tightest target the single worst choice in the space.")
+tgtMode  = input.string("None", "Target mode", options = ["None", "R", "ATR", "Points"], group = grpX, tooltip = "No take profit has beaten every target tested 26 times on this branch, and the points grid here agrees: over 75 declared US30 research cells the target marginal runs NONE +0.87 bp, 200 pts +0.80, 150 +0.43, 100 -0.44, 50 -1.07 -- monotone, with the tightest target the single worst choice in the space.")
 tgtR     = input.float(0.0, "Target, R",        minval = 0, maxval = 20, step = 0.5, group = grpX, tooltip = "Used when Target mode = R.")
+tgtAtr   = input.float(3.0, "Target, xATR",      minval = 0.1, maxval = 30, step = 0.25, group = grpX, tooltip = "Used when Target mode = ATR: the target sits this many ATR from the FILL. MEASURED, and it loses. UNDER AN ATR STOP THIS IS NOT A NEW AXIS -- `k x ATR` and `r x stop` are the same level when k = r x stopAtr, asserted on 2,295-2,580 trades at 1.5N and 2.5N with IDENTICAL exit bars and a max difference of 0.000e+00; it separates from the R target only under a POINTS or range stop, where the two agree on just 66-73% of exit bars. Paired against NO TARGET at the shipped 1.5N stop over US30 research, holdout and a different-provider forward block, the marginal average of the paired delta is -0.0167 %/trade at 1.5 ATR (= 1R), -0.0115 at 2.25 (1.5R), -0.0070 at 3.0 (2R), -0.0042 at 4.5 (3R) and +0.0020 at 6.0 (4R) -- monotone, with the tightest target the worst choice, and a target beats no target in 8 of 30 cells where chance is 50%. The one non-negative rung is 6 ATR, and its target-hit rate is 9.4%, so it is barely a target at all: setting it and setting NONE are nearly the same strategy. 0 of 30 paired deltas exceed their own minimum detectable effect. This is the 27th time no take profit has won on this branch.")
 tgtPts   = input.float(100, "Target, POINTS",   minval = 0.1, step = 1, group = grpX, tooltip = "Used when Target mode = Points. Measured at 100/100 on US30: research +0.0031 %/trade PF 1.022 at a 51.7% win rate against a driftless break-even of 51.1%, then holdout -0.0164 PF 0.872 with a random entry of the same geometry beating it at p 1.000.")
 beMode   = input.string("Off", "Auto breakeven", options = ["Off", "Points"], group = grpX, tooltip = "DEFAULT OFF, and measured rather than assumed. Over a declared 72-cell ladder (0/25/50/75/100/150 points x long/both x two geometries x US30 research, holdout and a different-provider forward block) a breakeven beats its own OFF twin in 19 of 60 scorable cells -- 32%, where chance is 50% -- and the marginal average of the paired delta falls monotonically with the arming distance: +0.0036 at 25 points, -0.0008 at 50, -0.0034 at 75, -0.0034 at 100, -0.0038 at 150 %/trade. It is the second exit policy this branch has measured as a subtractor after breakeven-after-1R (TEAM_EXIT_PF). The mechanism is in the exit mix: at 50 points the stop share rises 14.5 points and the flatten share falls 9.5, so the ratchet arms on a favourable excursion and is taken out on the pullback before the clock would have closed the trade in profit. Every paired delta is inside its own MDE, so this is a direction with a consistent sign, not a resolved effect.")
 bePts    = input.float(50, "Breakeven arms at, POINTS", minval = 1, step = 1, group = grpX, tooltip = "Favourable excursion from the FILL that arms the ratchet, in index points. The 50 asked for sits in the interior of the tested ladder. It arms on the bar that reaches the distance and can only BIND from the bar after -- within one bar OHLC cannot say whether the excursion came before or after the pullback, so arming and filling the moved stop on the same bar invents information.")
@@ -134,7 +123,7 @@ crossBars = int(math.max(1.0, math.round(crossMin / tfMin)))
 newDay = ta.change(time("D", "America/New_York")) != 0
 
 // ----------------------------------------------------------------------------- indicators
-atrv = ta.ema(ta.tr(true), 14)
+atrv = ta.ema(ta.tr(true), atrLen)
 
 f_ma(src, len, typ) =>
     typ == "SMA"  ? ta.sma(src, len)  :
@@ -186,148 +175,15 @@ if barstate.isconfirmed
     if nyMin >= rangeEnd and not na(rHi) and not na(rLo)
         rReady := true
 
-// ----------------------------------------------------------------------------- the 08:00 hour
-// Accumulated from the chart's own bars and frozen at dirEnd, NOT pulled with request.security:
-// a 60-minute security bar is the exchange's hour and need not begin at 08:00 New York. The value
-// is complete before the range starts, so nothing downstream can read a bar that has not closed.
-var float hOpen  = na
-var float hHigh  = na
-var float hLow   = na
-var float hClose = na
-var bool  hReady = false
-inHour = nyMin >= dirStart and nyMin < dirEnd
-if barstate.isconfirmed
-    if newDay
-        hOpen := na
-        hHigh := na
-        hLow := na
-        hClose := na
-        hReady := false
-    if inHour
-        hOpen := na(hOpen) ? open : hOpen
-        hHigh := na(hHigh) ? high : math.max(hHigh, high)
-        hLow := na(hLow) ? low : math.min(hLow, low)
-        hClose := close
-    if nyMin >= dirEnd and not na(hOpen) and not na(hClose)
-        hReady := true
 
-// +1 bullish, -1 bearish, 0 = no opinion (and then the gate admits nothing that session)
-hBody = hReady ? math.abs(hClose - hOpen) : na
-hRng  = hReady ? hHigh - hLow : na
-hPos  = hReady and not na(hRng) and hRng > 0 ? (hClose - hLow) / hRng : na
-hDir = not hReady ? 0 :
-   dirRead == "Close position in the hour's range" ? (na(hPos) ? 0 : hPos > 0.5 ? 1 : hPos < 0.5 ? -1 : 0) :
-   dirRead == "Body >= N x ATR" ? (na(atrv) or atrv <= 0 or hBody < dirBody * atrv ? 0 : hClose > hOpen ? 1 : hClose < hOpen ? -1 : 0) :
-   (hClose > hOpen ? 1 : hClose < hOpen ? -1 : 0)
 
-// ----------------------------------------------------------------------------- S/R channels
-var float[] srLo = array.new_float(0)
-var float[] srHi = array.new_float(0)
-ph = ta.pivothigh(high, srPrd, srPrd)
-pl = ta.pivotlow(low,   srPrd, srPrd)
-var float[] pivots = array.new_float(0)
-if barstate.isconfirmed
-    if not na(ph)
-        array.push(pivots, ph)
-    if not na(pl)
-        array.push(pivots, pl)
-    while array.size(pivots) > 400
-        array.shift(pivots)
-
-srOn = false
-if useSR and rReady and barstate.isconfirmed and array.size(pivots) > 0
-    cw = (ta.highest(high, 300) - ta.lowest(low, 300)) * srWidth / 100.0
-    array.clear(srLo)
-    array.clear(srHi)
-    n = array.size(pivots)
-    for i = 0 to n - 1
-        p = array.get(pivots, i)
-        lo = p
-        hi = p
-        s = 0
-        for j = 0 to n - 1
-            q = array.get(pivots, j)
-            if q >= p - cw and q <= p + cw
-                s += 1
-                lo := math.min(lo, q)
-                hi := math.max(hi, q)
-        if hi - lo > cw
-            hi := lo + cw
-        if s >= srStr and array.size(srLo) < srMax
-            clash = false
-            for k = 0 to math.max(0, array.size(srLo) - 1)
-                if array.size(srLo) > 0
-                    if not (hi < array.get(srLo, k) or lo > array.get(srHi, k))
-                        clash := true
-            if not clash
-                array.push(srLo, lo)
-                array.push(srHi, hi)
-
-// ----------------------------------------------------------------------------- trend lines
-// A pivot at bar j is CONFIRMED at j + tlPrd, so `ta.pivothigh` returning non-na on this bar means
-// the pivot sat at bar_index - tlPrd. Anchoring at the pivot itself is the leak; anchoring at its
-// confirmation bar is what a script can actually see.
-var int[]   phX = array.new_int(0)
-var float[] phY = array.new_float(0)
-var int[]   plX = array.new_int(0)
-var float[] plY = array.new_float(0)
-tlPh = ta.pivothigh(high, tlPrd, tlPrd)
-tlPl = ta.pivotlow(low,   tlPrd, tlPrd)
-if barstate.isconfirmed
-    if not na(tlPh)
-        array.push(phX, bar_index - tlPrd)
-        array.push(phY, tlPh)
-        if array.size(phX) > 40
-            array.shift(phX)
-            array.shift(phY)
-    if not na(tlPl)
-        array.push(plX, bar_index - tlPrd)
-        array.push(plY, tlPl)
-        if array.size(plX) > 40
-            array.shift(plX)
-            array.shift(plY)
-
-tlMaxBars = int(math.max(1.0, math.round(tlMaxMin / tfMin)))
-
-f_tline(xs, ys, nowBar, maxBars, needPts, tol) =>
-    float outv = na
-    m = array.size(xs)
-    if m >= 2
-        j1 = array.get(xs, m - 2)
-        j2 = array.get(xs, m - 1)
-        p1 = array.get(ys, m - 2)
-        p2 = array.get(ys, m - 1)
-        if j2 > j1 and nowBar - j2 <= maxBars
-            slope = (p2 - p1) / (j2 - j1)
-            ok = needPts < 3
-            if not ok and m >= 3
-                for q = m - 3 to 0
-                    j0 = array.get(xs, q)
-                    if math.abs(array.get(ys, q) - (p2 + slope * (j0 - j2))) <= tol
-                        ok := true
-                        break
-            if ok
-                outv := p2 + slope * (nowBar - j2)
-    outv
-
-tlTolPx = na(atrv) ? 0.0 : tlTol * atrv
-resLvl = tlMode == "Off" ? na : f_tline(phX, phY, bar_index, tlMaxBars, tlPts, tlTolPx)
-supLvl = tlMode == "Off" ? na : f_tline(plX, plY, bar_index, tlMaxBars, tlPts, tlTolPx)
-tlOkL = tlMode == "Off" ? true : not na(resLvl) and close > resLvl
-tlOkS = tlMode == "Off" ? true : not na(supLvl) and close < supLvl
 
 // ----------------------------------------------------------------------------- signals
 armed = rReady and nyMin >= math.max(rangeEnd, firstEntry) and nyMin < lastEntry and not na(atrv) and atrv > 0
-rngUp = rHi + bufAtr * atrv
-rngDn = rLo - bufAtr * atrv
-// LEVEL replaces the range with the line; EITHER takes whichever is nearer, so the session fires
-// on the first of the two. GATE leaves the level alone and only filters below.
-upLvl = tlMode == "Level: break the LINE instead of the range" ? resLvl :
-         tlMode == "Either: whichever level is nearer" ? (na(resLvl) ? rngUp : math.min(rngUp, resLvl)) : rngUp
-dnLvl = tlMode == "Level: break the LINE instead of the range" ? supLvl :
-         tlMode == "Either: whichever level is nearer" ? (na(supLvl) ? rngDn : math.max(rngDn, supLvl)) : rngDn
-hitUp = armed and not na(upLvl) and (touchOk ? high >= upLvl : high > upLvl)
-hitDn = armed and not na(dnLvl) and (touchOk ? low  <= dnLvl : low  < dnLvl)
+upLvl = rHi + bufAtr * atrv
+dnLvl = rLo - bufAtr * atrv
+hitUp = armed and (touchOk ? high >= upLvl : high > upLvl)
+hitDn = armed and (touchOk ? low  <= dnLvl : low  < dnLvl)
 
 var bool tookUp = false
 var bool tookDn = false
@@ -355,30 +211,10 @@ momOkL = maMode == "Off" ? true : is200 ? m200L :
 momOkS = maMode == "Off" ? true : is200 ? m200S :
           maMode == "State (fast > slow)" ? not bull : barsSinceDn <= crossBars
 
-srOkL = true
-srOkS = true
-if useSR
-    onL = false
-    onS = false
-    if array.size(srLo) > 0
-        for k = 0 to array.size(srLo) - 1
-            if upLvl >= array.get(srLo, k) - 0.10 * atrv and upLvl <= array.get(srHi, k) + 0.10 * atrv
-                onL := true
-            if dnLvl >= array.get(srLo, k) - 0.10 * atrv and dnLvl <= array.get(srHi, k) + 0.10 * atrv
-                onS := true
-    srOkL := onL
-    srOkS := onS
+wantLong  = (sideIn == "Long"  or sideIn == "Both") and hitUp and not tookUp and momOkL
+wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and momOkS
 
-dirOkL = dirMode == "Off" ? true : dirMode == "Align with the hour" ? hDir == 1 : hDir == -1
-dirOkS = dirMode == "Off" ? true : dirMode == "Align with the hour" ? hDir == -1 : hDir == 1
 
-// The GATE mode is the only one that filters; LEVEL and EITHER have already moved the level, so
-// applying the gate as well would demand price clear a line it has by then broken by construction.
-tlGateL = tlMode == "Gate: price must have cleared it" ? tlOkL : true
-tlGateS = tlMode == "Gate: price must have cleared it" ? tlOkS : true
-
-wantLong  = (sideIn == "Long"  or sideIn == "Both") and hitUp and not tookUp and momOkL and srOkL and dirOkL and tlGateL
-wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and momOkS and srOkS and dirOkS and tlGateS
 
 // ----------------------------------------------------------------------------- orders
 // The exit bracket is placed WITH the entry and priced from the SIGNAL bar, so the fill bar is
@@ -393,8 +229,10 @@ riskS = stopMode == "ATR" ? stopAtr * atrv : stopMode == "Points" ? stopPts : ma
 
 // The target is an absolute distance in price, whichever mode set it; `na` means no target, and
 // `strategy.exit` is then a stop-only bracket.
-tgtDistL = tgtMode == "Points" ? tgtPts : tgtMode == "R" and tgtR > 0 ? tgtR * riskL : na
-tgtDistS = tgtMode == "Points" ? tgtPts : tgtMode == "R" and tgtR > 0 ? tgtR * riskS : na
+tgtDistL = tgtMode == "Points" ? tgtPts : tgtMode == "ATR" ? tgtAtr * atrv :
+             tgtMode == "R" and tgtR > 0 ? tgtR * riskL : na
+tgtDistS = tgtMode == "Points" ? tgtPts : tgtMode == "ATR" ? tgtAtr * atrv :
+             tgtMode == "R" and tgtR > 0 ? tgtR * riskS : na
 
 flatNow = flatMin > 0 and (nyMin + tfMin >= flatMin) and nyMin < flatMin
 
@@ -463,23 +301,23 @@ plot(rReady ? rLo : na, "range low",  color = color.new(color.orange, 0), style 
 plot(maMode == "Off" ? na : maF, "fast MA", color = color.new(color.blue, 40))
 plot(maMode == "Off" ? na : maS, "slow MA", color = color.new(color.purple, 40))
 plot(is200 ? maL : na, "long MA (200)", color = color.new(color.orange, 30), linewidth = 2)
-plot(tlShow and tlMode != "Off" ? resLvl : na, "trend line, resistance", color = color.new(color.red, 20), style = plot.style_linebr)
-plot(tlShow and tlMode != "Off" ? supLvl : na, "trend line, support", color = color.new(color.green, 20), style = plot.style_linebr)
 bgcolor(inRange ? color.new(color.gray, 90) : na)
-bgcolor(dirMode != "Off" and inHour ? color.new(hDir == 1 ? color.teal : hDir == -1 ? color.maroon : color.gray, 92) : na)
 
-var table hud = table.new(position.top_right, 2, 12, border_width = 1)
+var table hud = table.new(position.top_right, 2, 10, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "range",   text_size = size.tiny)
     table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)), text_size = size.tiny)
     table.cell(hud, 0, 1, "fresh cross", text_size = size.tiny)
     table.cell(hud, 1, 1, str.tostring(crossMin) + "m = " + str.tostring(crossBars) + " bars", text_size = size.tiny)
-    table.cell(hud, 0, 2, "trades",  text_size = size.tiny)
-    table.cell(hud, 1, 2, str.tostring(strategy.closedtrades), text_size = size.tiny)
-    table.cell(hud, 0, 3, "S/R gate", text_size = size.tiny)
-    table.cell(hud, 1, 3, useSR ? str.tostring(array.size(srLo)) + " channels" : "off", text_size = size.tiny)
+    table.cell(hud, 0, 2, "ATR", text_size = size.tiny)
+    table.cell(hud, 1, 2, "period " + str.tostring(atrLen) + " = "
+               + str.tostring(atrv, "#.##") + " pt  (ema of true range, not Wilder)",
+               text_size = size.tiny)
+    table.cell(hud, 0, 8, "trades",  text_size = size.tiny)
+    table.cell(hud, 1, 8, str.tostring(strategy.closedtrades), text_size = size.tiny)
     stopShow = stopMode == "ATR" ? stopAtr * atrv : stopMode == "Points" ? stopPts : na
-    tgtShow  = tgtMode == "Points" ? tgtPts : tgtMode == "R" and tgtR > 0 ? tgtR * (na(stopShow) ? atrv : stopShow) : na
+    tgtShow  = tgtMode == "Points" ? tgtPts : tgtMode == "ATR" ? tgtAtr * atrv :
+                 tgtMode == "R" and tgtR > 0 ? tgtR * (na(stopShow) ? atrv : stopShow) : na
     table.cell(hud, 0, 4, "stop / target", text_size = size.tiny)
     table.cell(hud, 1, 4, (na(stopShow) ? "range" : str.tostring(stopShow, "#.#") + " pt = " + str.tostring(stopShow / atrv, "#.##") + " ATR")
                + "  /  " + (na(tgtShow) ? "none" : str.tostring(tgtShow, "#.#") + " pt = " + str.tostring(tgtShow / atrv, "#.##") + " ATR"),
@@ -500,24 +338,15 @@ if barstate.islast
     table.cell(hud, 1, 6, beMode == "Off" ? "--"
       : str.tostring(beOffset, "#.#") + " pt vs round turn " + str.tostring(rtPt, "#.##") + " pt  " + secTxt,
       text_size = size.tiny, text_color = secCol)
-    table.cell(hud, 0, 7, "08:00 hour", text_size = size.tiny)
-    dirTxt = hDir == 1 ? "bullish" : hDir == -1 ? "bearish" : "no opinion"
-    table.cell(hud, 1, 7, dirMode == "Off" ? "off"
-      : dirTxt + " -> " + (dirMode == "Align with the hour" ? (hDir == 1 ? "longs only" : hDir == -1 ? "shorts only" : "no trade") : (hDir == 1 ? "shorts only" : hDir == -1 ? "longs only" : "no trade")),
-      text_size = size.tiny,
-      text_color = dirMode == "Off" ? color.gray : hDir == 1 ? color.teal : hDir == -1 ? color.maroon : color.gray)
-    table.cell(hud, 0, 8, "MA gate", text_size = size.tiny)
+    table.cell(hud, 0, 3, "MA gate", text_size = size.tiny)
     m200Txt = m200L and m200S ? "both sides ok" : m200L ? "longs only" : m200S ? "shorts only" : "no trade"
     maTxt = maMode == "Off" ? "off" : not is200 ? maMode : maMode + "  ->  " + m200Txt
     maCol = maMode == "Off" or not is200 ? color.gray : m200L and m200S ? color.gray : m200L ? color.teal : m200S ? color.maroon : color.red
-    table.cell(hud, 1, 8, maTxt, text_size = size.tiny, text_color = maCol)
-    table.cell(hud, 0, 9, "trend line", text_size = size.tiny)
-    tlTxt = tlMode == "Off" ? "off" : str.tostring(tlPts) + "-pt, " + str.tostring(tlMaxMin) + "m = " + str.tostring(tlMaxBars) + " bars  res " + (na(resLvl) ? "none" : str.tostring(resLvl, format.mintick)) + "  sup " + (na(supLvl) ? "none" : str.tostring(supLvl, format.mintick))
-    table.cell(hud, 1, 9, tlTxt, text_size = size.tiny, text_color = tlMode == "Off" ? color.gray : color.blue)
+    table.cell(hud, 1, 3, maTxt, text_size = size.tiny, text_color = maCol)
     xTxt = xMode == "Off" ? "off" : xMode == "Fresh opposite cross"
              ? "fresh cross, binds ~5% of trades" : "opposite state, binds ~35%, cuts the hold 40%"
     xCol = xMode == "Off" ? color.gray : color.red
-    table.cell(hud, 0, 10, "opp-cross exit", text_size = size.tiny)
-    table.cell(hud, 1, 10, xTxt, text_size = size.tiny, text_color = xCol)
-    table.cell(hud, 0, 11, "edge claimed", text_size = size.tiny)
-    table.cell(hud, 1, 11, "none", text_size = size.tiny, text_color = color.red)
+    table.cell(hud, 0, 7, "opp-cross exit", text_size = size.tiny)
+    table.cell(hud, 1, 7, xTxt, text_size = size.tiny, text_color = xCol)
+    table.cell(hud, 0, 9, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 9, "none", text_size = size.tiny, text_color = color.red)
