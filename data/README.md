@@ -54,6 +54,13 @@ bars is 1.05M output rows but 31.5M one-second bars and ~330 MB of ZIPs; three y
 and ~1 GB. The 1s interval is published as DAILY archive files for much of its history, so a long
 pull is ~365 requests per year rather than 12.
 
+**Nothing is stored but the output.** The bytes have to cross the wire, but they are never all
+resident: sources are generators yielding one archive file at a time, the folder holds exactly one
+open bucket, and completed bars go straight to the CSV. Peak memory is flat at well under a
+megabyte whether the pull is a day or three years -- the alternative, folding a list at the end,
+needs 10 GB for one year of 1s bars and 30 GB for three. Peak disk is the output file: 1.05M 30s
+bars is about 80 MB, against ~330 MB of ZIPs that are decompressed, folded and discarded.
+
 Two things BTC is not. It is not a second sample of the same market -- it trades 24/7 with no RTH
 session, so every minute-of-day, session-index and daily-trend construction on this branch has to
 be re-derived rather than re-pointed. And BTCUSDT is not BTCUSD: do not splice the two venues into

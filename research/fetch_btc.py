@@ -19,10 +19,14 @@ SUB-MINUTE. No venue publishes a 30-second bar. Binance's finest native kline is
 every coarser timeframe that 1s divides is an EXACT aggregation of it -- a 30s bar is 30 of them,
 first open, max high, min low, last close, summed volume, with no information lost and no
 interpolation. So `--tf 30s` fetches 1s and folds. The same machinery gives 2m, 10m or 45s.
-What it costs is bandwidth: see `estimate` below, and read the 1s note before starting a long pull.
 
-Binance quotes BTC in USDT, Coinbase in USD. They are not the same instrument and the basis is
-small but real; do not splice them into one file.
+NOTHING IS STORED BUT THE OUTPUT, which is the point of the design. A year of 30s bars means
+31.5M one-second source bars; held in a list to fold at the end, that is 10 GB of RAM (measured:
+317 bytes per row tuple), and three years is 30 GB. So every source is a GENERATOR yielding one
+archive file or one REST page at a time, `Folder` keeps exactly one open bucket, and completed
+bars go straight to the CSV. Peak memory is one file's rows, peak disk is the output file, and
+neither grows with the length of the pull. The bytes still have to cross the wire -- that part is
+irreducible -- but they are never all resident anywhere.
 
 NO THIRD-PARTY IMPORTS. stdlib urllib honours HTTPS_PROXY, so this runs unchanged inside the
 sandbox once the destination host is allowed by the egress policy.
@@ -95,29 +99,82 @@ def native_for(sec: int) -> tuple[str, int]:
     return next(k for k, v in NATIVE.items() if v == best), best
 
 
-def fold(rows, sec: int):
-    """Aggregate native bars into `sec` buckets: first open, max high, min low, last close, sum vol.
+class Folder:
+    """Folds a stream of ascending native bars into `sec` buckets, holding exactly one of them.
 
-    Buckets are anchored to the UNIX epoch, which for any timeframe dividing a day means they also
-    align to midnight UTC. Rows must be sorted; `write` sorts, so fold is called before that and
-    does its own. A partial bucket at either end is kept -- clipping is `write`'s job, and dropping
-    it here would silently shorten the sample.
+    This is the whole reason a multi-GB pull fits in a few MB of memory. Bars arrive a file or a
+    page at a time; each completed bucket is handed to `sink` and forgotten. Clipping to the
+    window and the gap/OHLC audit happen on the way past, so no second pass over the data is ever
+    needed -- there is no second pass available, because nothing is kept.
+
+    Buckets are anchored to the UNIX epoch, which for any timeframe dividing a day also aligns
+    them to midnight UTC.
+
+    Input must be ascending and de-duplicated ACROSS files as well as within them: monthly and
+    daily archives overlap, and a repeated bar would double-count its volume into the bucket. A
+    row at or before the last one seen is dropped and counted in `backwards` rather than silently
+    accepted; a large count there means the source is not ordered the way this assumes, which is a
+    bug to investigate, not a number to ignore.
     """
-    out, cur, ms = [], None, sec * 1000
-    for r in sorted(rows, key=lambda r: r[0]):
-        k = r[0] - (r[0] % ms)
-        if cur is None or k != cur[0]:
-            if cur is not None:
-                out.append(_row(cur[0], cur[1], cur[2], cur[3], cur[4], cur[5]))
-            cur = [k, r[2], r[3], r[4], r[5], r[6]]          # open, high, low, close, volume
+
+    def __init__(self, sec: int, lo: int | None = None, hi: int | None = None, sink=None):
+        self.sec, self.ms, self.lo, self.hi = sec, sec * 1000, lo, hi
+        self.sink = sink
+        self.rows = [] if sink is None else None   # collect only when no sink: used by fold()
+        self._cur = None
+        self._last_src = None
+        self._prev_out = None
+        self.backwards = self.n = self.gaps = self.bad = 0
+        self.first = self.last = None
+
+    def _emit(self, b):
+        row = _row(b[0], b[1], b[2], b[3], b[4], b[5])
+        if self.lo is not None and not (self.lo <= b[0] < self.hi):
+            return                                  # outside the requested window
+        if self._prev_out is not None and (b[0] - self._prev_out) // 1000 != self.sec:
+            self.gaps += 1
+        self._prev_out = b[0]
+        if not (row[3] >= max(row[2], row[5]) and row[4] <= min(row[2], row[5])):
+            self.bad += 1
+        self.n += 1
+        if self.first is None:
+            self.first = row[1]
+        self.last = row[1]
+        if self.sink is None:
+            self.rows.append(row)
         else:
-            cur[2] = max(cur[2], r[3])
-            cur[3] = min(cur[3], r[4])
-            cur[4] = r[5]
-            cur[5] += r[6]
-    if cur is not None:
-        out.append(_row(cur[0], cur[1], cur[2], cur[3], cur[4], cur[5]))
-    return out
+            self.sink(row)
+
+    def feed(self, rows):
+        for r in rows:
+            if self._last_src is not None and r[0] <= self._last_src:
+                self.backwards += 1
+                continue
+            self._last_src = r[0]
+            k = r[0] - (r[0] % self.ms)
+            if self._cur is None or k != self._cur[0]:
+                if self._cur is not None:
+                    self._emit(self._cur)
+                self._cur = [k, r[2], r[3], r[4], r[5], r[6]]   # open, high, low, close, volume
+            else:
+                self._cur[2] = max(self._cur[2], r[3])
+                self._cur[3] = min(self._cur[3], r[4])
+                self._cur[4] = r[5]
+                self._cur[5] += r[6]
+
+    def close(self):
+        """Flush the final bucket. It is partial only if the window ended mid-bar."""
+        if self._cur is not None:
+            self._emit(self._cur)
+            self._cur = None
+        return self
+
+
+def fold(rows, sec: int):
+    """Batch convenience over `Folder`: one fold definition, exercised by both paths."""
+    f = Folder(sec)
+    f.feed(sorted(rows, key=lambda r: r[0]))
+    return f.close().rows
 
 
 def _get(url: str, tries: int = 4) -> bytes:
@@ -182,33 +239,37 @@ def _klines(reader):
 
 
 # --------------------------------------------------------------------------- sources
+# Each yields an iterable of rows per network round trip, and never accumulates. The caller folds
+# and writes as chunks arrive, so peak memory is one chunk regardless of how long the pull runs.
 
 def from_binance(symbol, interval, start, end, log):
     """Paged klines. Binance returns bars with openTime >= startTime, up to `limit` of them."""
     url = "https://api.binance.com/api/v3/klines"
     step_ms = NATIVE[interval] * 1000
-    cur, end_ms, out = _ms(start), _ms(end), []
+    cur, end_ms, seen = _ms(start), _ms(end), 0
     while cur < end_ms:
         q = f"{url}?symbol={symbol}&interval={interval}&startTime={cur}&endTime={end_ms}&limit=1000"
         k = json.loads(_get(q))
         if not k:
             break
-        out.extend(_klines(k))
+        seen += len(k)
+        yield _klines(k)
         nxt = int(k[-1][0]) + step_ms
         if nxt <= cur:                     # no forward progress: stop rather than spin
             break
         cur = nxt
-        log(f"  binance {len(out):>10,} bars, through {out[-1][1]}")
+        log(f"  binance {seen:>12,} bars fetched, through "
+            f"{datetime.fromtimestamp(int(k[-1][0]) / 1000, tz=timezone.utc):%Y-%m-%d %H:%M}")
         if len(k) < 1000:
             break
         time.sleep(0.12)                   # well inside the 1,200 weight/minute budget
-    return out
 
 
 def _unzip(blob):
+    """Rows from an archive ZIP. Decompressed in memory and dropped as soon as they are folded."""
     with zipfile.ZipFile(io.BytesIO(blob)) as z:
         with z.open(z.namelist()[0]) as fh:
-            return list(_klines(csv.reader(io.TextIOWrapper(fh, "utf-8"))))
+            yield from _klines(csv.reader(io.TextIOWrapper(fh, "utf-8")))
 
 
 def from_vision(symbol, interval, start, end, log):
@@ -218,24 +279,22 @@ def from_vision(symbol, interval, start, end, log):
     interval is published DAILY only for much of its history -- so a 30s pull that only tried
     monthly would come back empty for the exact case it exists to serve.
     """
-    base = f"https://data.binance.vision/data/spot"
-    out, got, missed = [], 0, 0
+    base = "https://data.binance.vision/data/spot"
+    got = missed = 0
     m = start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     while m <= end:
         nxt = (m + timedelta(days=32)).replace(day=1)
         try:
-            out.extend(_unzip(_get(f"{base}/monthly/klines/{symbol}/{interval}/"
-                                   f"{symbol}-{interval}-{m:%Y-%m}.zip")))
-            got += 1
-            log(f"  vision {m:%Y-%m} monthly: {len(out):>10,} bars")
+            blob = _get(f"{base}/monthly/klines/{symbol}/{interval}/"
+                        f"{symbol}-{interval}-{m:%Y-%m}.zip")
         except urllib.error.HTTPError as e:
             if e.code != 404:
                 raise
             d, days = max(m, start.replace(hour=0, minute=0, second=0, microsecond=0)), 0
             while d < min(nxt, end + timedelta(days=1)):
                 try:
-                    out.extend(_unzip(_get(f"{base}/daily/klines/{symbol}/{interval}/"
-                                           f"{symbol}-{interval}-{d:%Y-%m-%d}.zip")))
+                    yield _unzip(_get(f"{base}/daily/klines/{symbol}/{interval}/"
+                                      f"{symbol}-{interval}-{d:%Y-%m-%d}.zip"))
                     days += 1
                 except urllib.error.HTTPError as e2:
                     if e2.code != 404:
@@ -243,14 +302,17 @@ def from_vision(symbol, interval, start, end, log):
                     missed += 1            # before listing, or today's not-yet-published file
                 d += timedelta(days=1)
             got += bool(days)
-            log(f"  vision {m:%Y-%m} daily:   {len(out):>10,} bars ({days} files)")
+            log(f"  vision {m:%Y-%m} daily:   {days} files")
+        else:
+            got += 1
+            yield _unzip(blob)
+            log(f"  vision {m:%Y-%m} monthly")
         m = nxt
     if not got:
         raise SystemExit(f"every archive file 404'd for {symbol} {interval} -- check the symbol "
                          f"spelling and that this interval is published for this date range")
     if missed:
         log(f"  {missed} archive file(s) absent (before listing, or not yet published)")
-    return out
 
 
 def check_source(source, interval, tf):
@@ -266,17 +328,17 @@ def from_coinbase(symbol, interval, start, end, log):
     check_source("coinbase", interval, interval)
     gran = NATIVE[interval]
     url = f"https://api.exchange.coinbase.com/products/{symbol}/candles"
-    span, cur, out = gran * 300, start, []
+    span, cur, seen = gran * 300, start, 0
     while cur < end:
         stop = min(cur + timedelta(seconds=span), end)
         c = json.loads(_get(f"{url}?granularity={gran}"
                             f"&start={cur:%Y-%m-%dT%H:%M:%S}&end={stop:%Y-%m-%dT%H:%M:%S}"))
-        out.extend(_row(int(b[0]) * 1000, b[3], b[2], b[1], b[4], b[5])
-                   for b in sorted(c, key=lambda x: x[0]))
+        seen += len(c)
+        yield [_row(int(b[0]) * 1000, b[3], b[2], b[1], b[4], b[5])
+               for b in sorted(c, key=lambda x: x[0])]
         cur = stop
-        log(f"  coinbase {len(out):>10,} bars, through {out[-1][1] if out else '-'}")
+        log(f"  coinbase {seen:>10,} bars fetched, through {stop:%Y-%m-%d %H:%M}")
         time.sleep(0.12)                   # 10 req/s public limit, shared across the IP
-    return out
 
 
 SOURCES = {"binance": from_binance, "vision": from_vision, "coinbase": from_coinbase}
@@ -286,11 +348,7 @@ DEFAULT_SYMBOL = {"binance": "BTCUSDT", "vision": "BTCUSDT", "coinbase": "BTC-US
 # --------------------------------------------------------------------------- output
 
 def estimate(source, interval, sec, start, end):
-    """What the pull will cost, in requests, native bars and rough download. Cheap insurance.
-
-    A 30s pull over three years is 94M one-second bars and several GB of ZIPs. That is worth
-    knowing before starting it, not after filling the disk.
-    """
+    """What the pull will cost, in requests, native bars, output bars and rough download."""
     span = (end - start).total_seconds()
     native = int(span // NATIVE[interval])
     final = int(span // sec)
@@ -304,31 +362,9 @@ def estimate(source, interval, sec, start, end):
     return reqs, native, final, native * BYTES_PER_BAR
 
 
-def write(rows, path, start, end):
-    """Sort, de-duplicate on open time, clip to the window, and report what the file contains."""
-    seen, keep = set(), []
-    lo, hi = _ms(start), _ms(end)
-    for r in sorted(rows, key=lambda r: r[0]):
-        if r[0] in seen or not (lo <= r[0] < hi):
-            continue
-        seen.add(r[0])
-        keep.append(r)
-    if not keep:
-        raise SystemExit("no bars in the requested window -- nothing written")
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    tmp = f"{path}.{os.getpid()}.tmp"
-    with open(tmp, "w", newline="") as fh:
-        w = csv.writer(fh)
-        w.writerow(HEADER)
-        for r in keep:
-            w.writerow([r[1], f"{r[2]:.8g}", f"{r[3]:.8g}", f"{r[4]:.8g}",
-                        f"{r[5]:.8g}", f"{r[6]:.8g}"])
-    os.replace(tmp, path)                  # atomic, so a killed run leaves no half file
-    return keep
-
-
 def audit(rows, sec):
-    """The cheap sanity checks data/README.md applies to any new bar file."""
+    """Gap and OHLC-violation counts for a list of bars. `Folder` computes these as it streams;
+    this is the batch equivalent, kept for tests and for checking a file someone else produced."""
     gaps = sum(1 for a, b in zip(rows, rows[1:]) if (b[0] - a[0]) // 1000 != sec)
     bad = sum(1 for r in rows if not (r[3] >= max(r[2], r[5]) and r[4] <= min(r[2], r[5])))
     return gaps, bad
@@ -370,32 +406,46 @@ def main(argv=None):
     if nat != sec:
         log(f"  no native {a.tf} bar; fetching {interval} and folding {sec // nat}:1")
     log(f"  ~{reqs:,} requests, ~{native_n:,} {interval} bars -> ~{final_n:,} {a.tf} bars, "
-        f"~{_human(dl)} down")
+        f"~{_human(dl)} over the wire, streamed (nothing kept but the output)")
     if a.dry_run:
         return 0
-    if nat < 60 and (end - start).days > 120:
-        log(f"  WARNING: {interval} source data over {(end - start).days} days is a large pull. "
-            f"Consider a shorter window, or --dry-run to size it.")
 
     t0 = time.time()
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    tmp = f"{out}.{os.getpid()}.tmp"
     try:
-        rows = SOURCES[a.source](symbol, interval, start, end, log)
+        with open(tmp, "w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(HEADER)
+            f = Folder(sec, _ms(start), _ms(end),
+                       sink=lambda r: w.writerow([r[1], f"{r[2]:.8g}", f"{r[3]:.8g}",
+                                                  f"{r[4]:.8g}", f"{r[5]:.8g}", f"{r[6]:.8g}"]))
+            for chunk in SOURCES[a.source](symbol, interval, start, end, log):
+                f.feed(chunk)
+            f.close()
     except Blocked as e:
+        os.path.exists(tmp) and os.remove(tmp)
         print(f"\nEGRESS BLOCKED: {e}\n\n"
               "The proxy refused the connection, so the request never reached the exchange.\n"
               "The host is not on this environment's network allow-list. Either widen the\n"
               "policy (https://code.claude.com/docs/en/claude-code-on-the-web) or run this\n"
               "script on a machine with open egress and commit the CSV.", file=sys.stderr)
         return 2
+    except BaseException:
+        os.path.exists(tmp) and os.remove(tmp)   # a killed run leaves no half file behind
+        raise
 
-    if nat != sec:
-        rows = fold(rows, sec)
-    kept = write(rows, out, start, end)
-    gaps, bad = audit(kept, sec)
-    log(f"\n{out}")
-    log(f"  {len(kept):,} bars  {kept[0][1]} -> {kept[-1][1]}  in {time.time() - t0:.1f}s")
-    log(f"  {gaps:,} gaps (missing bars / venue downtime), {bad} OHLC violations")
-    if bad:
+    if not f.n:
+        os.remove(tmp)
+        raise SystemExit("no bars in the requested window -- nothing written")
+    os.replace(tmp, out)                   # atomic: the name appears only once it is complete
+    log(f"\n{out}  ({_human(os.path.getsize(out))})")
+    log(f"  {f.n:,} bars  {f.first} -> {f.last}  in {time.time() - t0:.1f}s")
+    log(f"  {f.gaps:,} gaps (missing bars / venue downtime), {f.bad} OHLC violations")
+    if f.backwards:
+        log(f"  {f.backwards:,} rows dropped as duplicate or out-of-order "
+            f"(expected where monthly and daily archives overlap)")
+    if f.bad:
         log("  OHLC violations are a red flag: a real tape has none. Inspect before using.")
     return 0
 
