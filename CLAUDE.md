@@ -4661,6 +4661,28 @@ booking exactly +2.71 points** (the secured 5 minus the 2.29 round turn). Intrab
 the observed effect needs 104 trades against 57. Ships nothing.
 See `docs/ib/STUDY_NINE_AM_RANGE.md` section 22, `research/nineam/na_s30.py`, `run_n21..n23.py`.
 
+**FIFTY TRADES IS NOT A ROUND NUMBER, IT IS THE NUMBER THAT CROSSES THE MDE -- AND A FORWARD TEST'S
+THRESHOLDS MUST BE SET BEFORE ITS FIRST TRADE.** The 30-second 09:00-range configuration reads
++0.0358 %/trade on 57 trades with a bootstrap CI of [+0.0018, +0.0693] -- **$740 to $28,053 a year
+on one US30 contract**, the backtest's $14,486 being the MIDPOINT of that range and not an estimate.
+No further analysis of those 57 trades narrows it. At n=107 the MDE falls to **0.0353 against a
+delivered 0.0358 (1.02x)**, so fifty more is exactly what makes the effect resolvable, and that is
+what `research/nineam/fwd_track.py` tracks. **THE WHOLE POINT IS THAT THE VERDICT IS DECIDED NOW**:
+the configuration is hashed (**2e070e002ce49df3**) and asserted on every run -- changing the stop to
+90 points raises `CONFIGURATION CHANGED` and refuses to continue -- the cutoff is the studied file's
+last bar, and three bands are declared in advance (**CONFIRM >= +0.0303 %/trade on the forward
+trades alone, REFUTE <= 0, CONSISTENT between, then the pooled n=107 read against its own MDE**).
+**AND THE MIDDLE BAND IS THE LIKELY ONE**: even if the strategy is exactly as good as its backtest,
+50 trades clear a one-sided 5% test by themselves only **61.8%** of the time against 5% under the
+null -- so declaring the pooled reading up front is what stops it being invented later. Two guards
+that are not decoration: the tracker re-checks that bars at or before the cutoff are UNCHANGED (a
+feed revision would void the ledger rather than shift the baseline), and it prints the covered share
+of every new session, because this feed already changed its export behaviour once mid-file and
+**a shortfall in the trade count is a data question before it is a strategy question**. 155
+trades/yr means the answer lands around mid-January 2027. Nothing is scheduled; it runs on a drop.
+See `docs/ib/STUDY_NINE_AM_RANGE.md` section 23.
+
+| `research/nineam/fwd_track.py` | the PRE-REGISTERED forward test: the frozen config hashed and asserted, the cutoff, three declared outcome bands, an accumulating ledger, a feed-revision check on the studied span and per-drop session coverage |
 | `research/nineam/na_s30.py` | the 09:00-range rule on 30-SECOND bars: the screenshot configuration as `CFG`, and a `Ctx30` adding only the script's LOOSE fresh-cross mask and a `firstEntry` threaded through `events` |
 | `research/nineam/run_n21.py` | coverage FIRST (a rule that cannot see its own range has no result), then the transcription, the bypass degeneracy asserted on the signal set, base rates, the ratchet artifact priced, IS/OOS, and both nulls |
 | `research/nineam/run_n22.py` | walk-forward with the constants fixed beside a re-chosen arm and a random cell; four Monte Carlos kept apart (edge / path / execution per TRADE / price jitter with every indicator recomputed); three correlation matrices -- arms, conditions on the signal bars, and resolutions |

@@ -1407,3 +1407,63 @@ is carried entirely by the fresh-cross gate, does not survive a change of bar si
 reading, and is inside its own MDE in every block. Robust to execution and to data noise; not
 resolved by the sample. Ship nothing; forward-test ~50 more trades on a feed whose pre-open the
 export actually carries.
+
+---
+
+## 23. Forward test — pre-registered 2026-09-18, before any forward trade exists
+
+§22 measured 57 trades at **+0.0358 %/trade with a bootstrap CI of [+0.0018, +0.0693]** — between
+**$740 and $28,053 a year** on one US30 contract. No further analysis of those 57 trades narrows
+that. Only more trades do, and the count is not arbitrary: at n = 107 the MDE falls to **0.0353**
+against a delivered 0.0358, so **fifty more trades is exactly what crosses the detection bar**.
+
+| n | MDE | delivered / MDE |
+|---|---|---|
+| 57 (now) | 0.0483 | 0.74 |
+| 87 | 0.0391 | 0.92 |
+| **107** | **0.0353** | **1.02** |
+| 157 | 0.0291 | 1.23 |
+
+### 23.1 What is frozen
+
+`na_s30.CFG`, sha **2e070e002ce49df3**, asserted on every run of `research/nineam/fwd_track.py` —
+range 540..545, first entry 568, no new entries after 960, flatten 960, ATR 14, side BOTH, buffer
+0, touch counts, MA confirmation FRESH CROSS 13x48 within 7 MINUTES, the 200 bypass OFF, stop
+POINTS 100, target POINTS 100, breakeven POINTS arming 43 securing 5, exit on a FRESH OPPOSITE
+CROSS. **If any parameter moves the hash changes, the run aborts, and the count restarts at zero.**
+Verified: changing the stop to 90 points raises `CONFIGURATION CHANGED` and refuses to continue.
+
+**Cutoff 2026-09-16 18:17 New York**, the last bar of the studied file. A trade is forward only if
+its ENTRY bar post-dates it. The last studied trade entered 2026-09-11, so the three sessions
+between are neither studied nor forward and are excluded by the same rule.
+
+### 23.2 The decision rule, declared now
+
+On the **forward trades alone**, nothing else:
+
+| band | forward mean | reading |
+|---|---|---|
+| **CONFIRM** | ≥ **+0.0303** %/trade | clears a one-sided 5% test on 50 trades by itself |
+| **CONSISTENT** | 0 < mean < +0.0303 | pooled n = 107 then read against its own MDE of 0.0353 |
+| **REFUTE** | ≤ 0 | the research block was the draw — no re-fit, no re-parameterisation |
+
+**Read the middle band honestly: even if the strategy is exactly as good as its backtest, it lands
+in CONFIRM only 61.8% of the time** (against 5% if the truth is zero). CONSISTENT is the single
+most likely outcome of a real effect this size, which is why the pooled reading is declared here
+rather than invented when the trades arrive.
+
+### 23.3 Timeline and the one thing that could go wrong quietly
+
+155 trades a year over the studied span, so **50 trades is about four months — roughly mid-January
+2027**. That assumes the feed keeps carrying the 09:00 half hour, which it only began doing on
+2026-04-30 (§22.1). `fwd_track.coverage()` prints the covered share of every new session on each
+drop, because **a shortfall in the trade count is a data question before it is a strategy
+question** — and this feed has already changed its export behaviour once, mid-file.
+
+`fwd_track.update()` also re-checks that the bars at or before the cutoff are unchanged: a feed
+revision on the studied span would void the ledger rather than silently shift the baseline.
+
+### 23.4 Status
+
+**0 of 50 forward trades.** The feed ends on the cutoff bar. Nothing is scheduled; drop a newer
+`US30_30s` export over `data/US30_30s.csv` and run `python research/nineam/fwd_track.py`.
