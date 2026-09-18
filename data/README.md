@@ -24,6 +24,26 @@ reports any row landing in a non-existent (spring-forward) or ambiguous (fall-ba
 The source column order is free and headers are matched loosely, so `timestamp ET,open,high,low,
 close,volume,Vwap_RTH,Vwap_ETH` works as-is; extra columns are ignored.
 
+## Bitcoin
+
+`research/fetch_btc.py` pulls BTC bars straight from an exchange into the format above, so a
+crypto file is reproducible the same way an NQ one is:
+
+```bash
+python3 research/fetch_btc.py --tf 1d --start 2017-08-17 --out data/BTCUSDT_1d.csv
+python3 research/fetch_btc.py --tf 1m --start 2023-01-01 --source vision --out data/BTCUSDT_1m.csv
+python3 research/fetch_btc.py --tf 1h --source coinbase --out data/BTCUSD_1h.csv   # different tape
+```
+
+Use `--source vision` (monthly ZIPs) for minute bars and `binance` for hourly or daily; below an
+hour the paged REST endpoint needs thousands of calls to cover the same span. It reports gap and
+OHLC-violation counts on the way out.
+
+Two things BTC is not. It is not a second sample of the same market -- it trades 24/7 with no RTH
+session, so every minute-of-day, session-index and daily-trend construction on this branch has to
+be re-derived rather than re-pointed. And BTCUSDT is not BTCUSD: do not splice the two venues into
+one file to extend history.
+
 ## Then run a study
 
 ```bash
