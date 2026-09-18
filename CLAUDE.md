@@ -4626,6 +4626,7 @@ See `docs/ib/STUDY_US30_SCALP_0711.md` section 20, `research/us30s/`.
 | `research/nineam/run_n18.py` | vectorbt as a transcription check (count first, zero cost, the axes 1.1.0 cannot express named), the 30-second feed as the intrabar arbiter with its coverage printed first, and White's reality check over 250 sampled trials rather than six finalists |
 | `research/nineam/run_n19.py` | the correction applied BACKWARDS to the two published ratchet ladders, both engines side by side |
 | `research/nineam/na_30s.py` | the 30-second US30 feed in `na_core` shape, with what it can and cannot carry in the docstring |
+| `research/nineam/run_n20.py` | a fresh 13x48 cross as a bypass of the 200: the degeneracy asserted on the signal set first, then what the bypass can ACT ON (its share of the breaks the gate refuses), then four arms -- none / the gate / the OR / the bypass alone -- each against a null CACHED BY KEPT FRACTION, with both readings of "fresh cross" declared rather than picked |
 | `research/us30s/` | US30 at THIRTY SECONDS, the first parquet feed: `us30s.py` (the clock RE-DERIVED from the bars rather than trusted from the tz-aware dtype, the volume era boundary exported so nothing averages a zero into a mean, and a `convert` that asserts the 09:30 peak before it writes), `run_u1.py` (the intrabar tie-break at 15m / 1m / 30s on the SAME trades at the SAME geometry, with ties inside a fine bar still counted as ties rather than guessed) |
 | `research/ma13/` | the submitted MA 13/48/200 rule with 100-point barriers, and the session / session-stop / breakeven additions measured before they shipped: `m13core.py` (the cross event stream, a barrier walker carrying the window, the flatten filling at the cutoff bar's open and a breakeven that ARMS on one bar and BINDS from the next, plus a SORTED matched random entry), `run_s1.py` (cost and the driftless break-even first, then both declared ladders read by marginal average with the TRADE COUNT printed beside the win rate so a relabelling and a lock-freeing cannot be read as improvements), `run_s2.py` (nine cells against a matched random entry with each cell's own MDE and a day-block bootstrap), `m13_parity.py` |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
@@ -5251,3 +5252,46 @@ is wrong. It printed -0.077 where the correct value is +0.208, and it was caught
 figure recomputed the same quantity from the same frame. Take both series from the SAME frame.
 Eleventh alignment or name collision on this branch, and the second involving `.align`/`.corr`
 index semantics specifically.
+
+**A SECOND BYPASS OF THE SAME GATE MEASURES THE SAME WAY, AND THE LOOSEST ARM WINS AGAIN.** Asked
+to let a FRESH 13x48 cross override the 200 on the 09:00-range breakout ("it can long or short
+against the 200 ema"). That is an OR, so it was read against BOTH arms it sits between -- the 200
+gate alone and NO GATE AT ALL -- which is the only reading that survives the fact that the 200 state
+readings have **lift exactly 1.00** on this trigger (section 15): a gate at lift 1.00 is a coin flip
+applied to the signal set, so anything loosening it reads as an improvement half the time for no
+reason. **144 declared cells, pooled arm means: no gate -0.0005, the fresh cross alone -0.0057, the
+200 gate -0.0119, THE OR -0.0141 %/trade.** The OR beats the 200 gate in 18 of 68 (26%) and beats no
+gate in **6 of 68 (9%)**, chance 50%; **0 of 424 arm-cells clear a same-selectivity random gate at
+p<=0.05 where 21 are expected**, and 12 of 144 OR cells exceed their own MDE with every one NEGATIVE
+-- resolvably bad rather than merely unproven. Same shape as section 19's level-coincidence bypass
+(no gate -0.0025, MA gate -0.0123, OR -0.0188). **THE DECOMPOSITION IS THE KEEPER: of the two
+conditions the ask combines, the CROSS -- which it treats as the override -- is the better of the
+two and the 200 -- which it treats as the base -- is the worse.**
+
+**A BYPASS HAS TWO OPPOSITE WAYS TO BE WORTHLESS AND ONE COLUMN HOLDS BOTH: the share of the breaks
+the gate REFUSES on which the bypass fires.** Near zero it is an inert switch; near one it IS "no
+gate". Measured here at **7.0-20.1%**, so the OR keeps 50.1-63.7% of breaks against the 200 gate's
+46.1-54.6% -- the inert end. Compute it before any P&L; it is two lines and it bounds the whole
+question. And the bypass is NOT selective on the trigger's own bars either: its lift runs **1.08 at
+30 minutes down to 0.79 at 150**, i.e. at wide rungs a fresh cross is LESS common on a range break
+than on an average bar, because a break happens when the market is already moving and a recent cross
+means the trend only just turned.
+
+**AND PARITY PASSED FOR THE WRONG REASON UNTIL THE TWO DEFINITIONS WERE DIFFED.** The harness hands
+the SAME mask to both walkers, so a research-vs-script disagreement in how a condition is COMPUTED
+is invisible to it -- it can only catch order-model differences. Here the script's `barsSinceUp <=
+crossBars` has no state requirement and admits a bar where the 13 crossed up recently and has since
+crossed back DOWN: **4.2 / 8.2 / 13.2% of its own population at 30 / 75 / 150 minutes** against the
+research mask's `state AND recency`. Both readings were then declared and measured -- paired, they
+differ by **-0.0001 %/trade over 68 cells** -- so file consistency decided it rather than the
+numbers, and the harness was changed to model the script. **Diff the MASK as well as the ORDER
+MODEL; a parity harness that is handed both masks cannot check either.**
+
+**AND THE DEGENERACY WAS ASSERTED ON THE SIGNAL SET, NOT REASONED.** With MA confirmation on "Fresh
+cross" the bypass IS the gate -- the same expression -- so the OR is an identity keeping **296 / 456
+/ 690** signals identically at 30 / 75 / 150 minutes, and with the gate Off it is inert (the parity
+harness reproduces both at the script level, cfg41 and cfg42). Those rungs are excluded rather than
+counted, the same inert-rung accounting `run_n7` used on a breakeven armed beyond its own target.
+My first version of that assertion was a TAUTOLOGY -- it compared the bypass mask with itself -- and
+the non-trivial statement is that the strict mask is a SUBSET of the script's own gate, which is
+what makes the OR that gate. Parity 84 of 84 configurations at trade count exactly 1.000.

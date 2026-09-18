@@ -178,7 +178,26 @@ def main():
             dict(win=(540, 570), side="both", buf=0.0, ema="state", stop=0.0, tgt=0.0, flat=960,
                  spts=100.0, tpts=100.0, conf=dict(tol_atr=0.25, reading="confluence")),
             dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
-                 conf=dict(tol_atr=0.50, reading="confluence"))]
+                 conf=dict(tol_atr=0.50, reading="confluence")),
+            # the FRESH-CROSS BYPASS of the 200. Every row carries a live 200 reading, because that
+            # is the gate the ask overrides; the last two are the degeneracy and the inert case --
+            # against a 13/48 FRESH-CROSS gate the bypass is an identity, and with the MA gate off
+            # it is inert, and the harness must reproduce both rather than be told them.
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 m200=(dict(mode="any", cross_bars=0), 1), xbyp=5),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 m200=(dict(mode="all", cross_bars=0), 1), xbyp=5),
+            dict(win=(540, 555), side="long", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 m200=(dict(mode="all", cross_bars=0), 1), xbyp=10),
+            dict(win=(540, 570), side="both", buf=0.0, ema="off", stop=0.0, tgt=0.0, flat=960,
+                 spts=100.0, tpts=100.0, m200=(dict(mode="any", cross_bars=0), 1), xbyp=2),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 m200=(dict(mode="any", cross_bars=0), 1), xbyp=5,
+                 conf=dict(tol_atr=0.25, reading="behind")),
+            dict(win=(540, 555), side="both", buf=0.0, ema="x5", stop=1.5, tgt=0.0, flat=960,
+                 xbyp=5),
+            dict(win=(540, 555), side="both", buf=0.0, ema="off", stop=1.5, tgt=0.0, flat=960,
+                 xbyp=5)]
     for name in ("US30L", "US30I"):
         f0 = N.load(name, 15)
         cost = N.COST[name]; tick = TICK[name]
@@ -188,24 +207,36 @@ def main():
             rhi, rlo, rn = N.ranges(f, rs, re_)
             s0, d0 = N.events(f, rhi, rlo, side=cfg["side"], buf_atr=cfg["buf"], rs=rs, re_=re_,
                               open_m=570)
+            # THE SCRIPT'S OWN SHAPE, one to one: `maMode` is a SINGLE selector, so the MA gate is
+            # either a 13/48 reading or a 200 reading and never both, and the two bypasses are OR
+            # terms on it -- `momOk = maOk or confOk or xbypOk`. Every mask is built on the FULL
+            # event stream and combined before any of them drops a signal; gating in sequence
+            # would be an AND, which is a different strategy.
             cf = cfg.get("conf")
-            if cf is None:
-                s1, d1 = gate(f, s0, d0, cfg["ema"])
-            else:
-                # the BYPASS is an OR, so the two masks are combined BEFORE either drops a signal
-                # -- gating in sequence would be an AND, which is a different strategy
-                sg, _ = gate(f, s0, d0, cfg["ema"])
-                mk_ma = np.isin(s0, sg)
-                cl, cs = N.ma200_conf(f, rhi, rlo, **cf)
-                mk_cf = np.where(d0 > 0, cl[s0], cs[s0])
-                kk = mk_ma | mk_cf
-                s1, d1 = s0[kk], d0[kk]
             m2 = cfg.get("m200")
-            if m2 is not None:
+            xb = cfg.get("xbyp")
+            if cfg["ema"] != "off":
+                sgm, _ = gate(f, s0, d0, cfg["ema"])
+                mk_ma = np.isin(s0, sgm)
+            elif m2 is not None:
                 ol, osh = N.ma200_ok(f, **m2[0])
-                mk = (np.where(d1 > 0, ol[s1], osh[s1]) if m2[1] > 0
-                      else np.where(d1 > 0, osh[s1], ol[s1]))
-                s1, d1 = s1[mk], d1[mk]
+                mk_ma = (np.where(d0 > 0, ol[s0], osh[s0]) if m2[1] > 0
+                         else np.where(d0 > 0, osh[s0], ol[s0]))
+            else:
+                mk_ma = np.ones(len(s0), bool)
+            kk = mk_ma
+            if cf is not None:
+                cl, cs = N.ma200_conf(f, rhi, rlo, **cf)
+                kk = kk | np.where(d0 > 0, cl[s0], cs[s0])
+            if xb is not None:
+                # the SCRIPT's reading: `barsSinceUp <= crossBars`, with NO state requirement, so
+                # it is the same expression its own Fresh-cross MA mode uses -- one meaning for
+                # "fresh cross" across the file. The stricter form (the state must still hold) is
+                # a SUBSET and run_n20 measures both: they differ by -0.0001 %/trade over 68 paired
+                # cells, so the file's consistency decides it rather than the numbers.
+                _, au, ad = N.ema_state(f, 13, 48, "ema")
+                kk = kk | np.where(d0 > 0, (au <= xb)[s0], (ad <= xb)[s0])
+            s1, d1 = s0[kk], d0[kk]
             spts = cfg.get("spts", 0.0); tpts = cfg.get("tpts", 0.0)
             be = cfg.get("be", 0.0); beoff = cfg.get("beoff", 0.0)
             tatr = cfg.get("tatr", 0.0)
@@ -235,6 +266,8 @@ def main():
                 geom += f" x:{xc}"
             if cf is not None:
                 geom += f" byp:{cf['reading'][:4]}{cf['tol_atr']:.2f}"
+            if xb is not None:
+                geom += f" xbyp{xb}"
             if m2 is not None:
                 geom += (f" 200:{m2[0]['mode']}"
                          f"{'x' if m2[0]['cross_bars'] else 's'}"

@@ -1164,3 +1164,122 @@ confirmation and the 100/100 points barriers off**, i.e. return to the shipped d
 the only arm in the table positive on all three blocks. Nothing here is an edge: the default's own
 bootstrap does not exclude zero on any block either, and the honest claim is that the additions are
 a measurable cost on a base that is indistinguishable from nothing.
+
+---
+
+## 21. A fresh 13×48 cross overriding the 200 — the ask, measured as an OR
+
+> *"if ema cross of 13 and 48 cross it with a orb breakout of the 9am high and low that is chosen
+> in the current rule selection it can long or short against the 200 ema"*
+
+So when a fresh 13/48 cross coincides with the range break, the trade is allowed **even if the
+shorter averages sit on the wrong side of the 200** — the 200 gate is overridden. That is an OR,
+and §19 established the reading an OR requires: it loosens a gate, so it sits between two arms and
+can only be judged against both.
+
+```
+no gate at all   ≤   the 200 gate OR a fresh cross   ≤   the 200 gate alone
+  (loosest)                  (the ask)                       (tightest)
+```
+
+Read against the **gated** arm alone an OR looks like an improvement whenever the gate was worth
+nothing — and §15 already measured that the 200 state readings admit 38.4–61.6 % of the signal bars
+at a lift over all bars of **0.990 to 1.007, exactly one**. A gate with lift 1.00 is a coin flip
+applied to the signal set, so anything that loosens it reads as an improvement about half the time
+for no reason at all. The `none` arm is what stops that reading.
+
+`research/nineam/run_n20.py`. Four arms, all vetoes on the same event stream, so a
+same-selectivity random **gate** is the right null for each (§16: a gate takes a selectivity
+control; something that changes *which bars fire* takes a matched random entry).
+
+### 21.1 The degeneracy, asserted before the grid
+
+The script's `maMode = "Fresh cross"` is `barsSinceUp <= crossBars`, and the bypass is the same
+expression — so with that MA mode selected **the OR is an identity and the switch does nothing**.
+Verified on the real signal set: the gate keeps **296 / 456 / 690** signals at 30 / 75 / 150
+minutes and the OR keeps exactly the same, for both readings of "fresh" below. Reproduced at the
+script level by the parity harness (cfg41). With MA confirmation `Off` it is inert for the same
+reason (cfg42 = the ungated base, 2,467 trades, to the trade). Those rungs are excluded rather
+than counted — the same inert-rung accounting `run_n7` applied to a breakeven armed beyond its own
+target and `run_n14` to an ATR target under an ATR stop.
+
+### 21.2 Two readings of "a fresh cross", declared rather than picked
+
+The script's own Fresh-cross mode requires only recency, so it admits a bar where the 13 crossed up
+recently and **has since crossed back down** — 4.2 / 8.2 / 13.2 % of its own population at 30 / 75 /
+150 minutes. The strict form additionally requires the state still to hold, and is a **subset**, so
+the §21.1 identity holds either way. Both were measured:
+
+| reading | cells | OR mean | OR − 200 gate | OR − no gate |
+|---|---|---|---|---|
+| strict (state must hold) | 68 | −0.0143 | −0.0019 | −0.0136 |
+| **loose (the script's form)** | 68 | −0.0145 | −0.0021 | −0.0137 |
+
+Paired, loose minus strict on the OR arm is **−0.0001 %/trade over 68 cells** (loose better in
+28, 41 %). They are indistinguishable, so file consistency decides it rather than the numbers: the
+script keeps one expression, and therefore one meaning, for "fresh cross" throughout.
+
+### 21.3 What the bypass can possibly act on
+
+A bypass has two opposite ways to be worthless — fire almost never and it is an inert switch, fire
+almost always and it *is* "no gate" — and both live in one column: the share of the breaks the 200
+**refuses** on which a fresh cross fires.
+
+| | 200 keeps | 200 refuses | bypass rescues, of refused | OR keeps |
+|---|---|---|---|---|
+| across 24 feed × reading × recency cells | 0.461–0.546 | 0.454–0.539 | **0.070–0.201** | 0.501–0.637 |
+
+So it sits near the inert end. It is also *not* selective on the trigger's own bars: the bypass's
+lift over all bars runs **1.08 at 30 minutes down to 0.79 at 150** — at the wide rungs a fresh
+13/48 cross is *less* common on a 09:00-range break than on an average bar, because a break tends
+to happen when the market is already moving and a cross within 150 minutes means the trend only
+just turned.
+
+### 21.4 The four arms
+
+144 declared cells per arm (2 readings of the 200 × 2 readings of "fresh" × 3 recencies × 2
+geometries × long/both × three blocks); `E[max t | pure noise]` over 144 looks is **2.656** against
+the 2.802 detection needs.
+
+| arm | mean %/trade | vs no gate | beats no gate | clears p≤0.05 | outside its own MDE |
+|---|---|---|---|---|---|
+| none | −0.0005 | — | — | 0/144 | 0/144 |
+| fresh cross alone | −0.0057 | −0.0050 | 28/68 (41 %) | 0/136 | 0/136 |
+| the 200 gate alone | −0.0119 | −0.0117 | 18/68 (26 %) | 0/144 | 0/144 |
+| **the OR (the ask)** | **−0.0141** | **−0.0137** | **6/68 (9 %)** | 0/144 | **12/144, all negative** |
+
+Paired cell for cell on the shipped reading: **the OR beats the 200 gate in 18 of 68 (26 %)** at a
+mean −0.0021, and **beats no gate at all in 6 of 68 (9 %)** at −0.0137, where chance is 50 %.
+**0 of 424 arm-cells clear their same-selectivity control at p ≤ 0.05 where 21 are expected by
+chance** — below chance across the whole table. Twelve OR cells do exceed their own minimum
+detectable effect and every one is on the negative side, so those are resolvably bad rather than
+merely unproven.
+
+By block, the OR minus each arm it sits between:
+
+| feed | block | OR − 200 | OR − none | 200 − none | fresh − none |
+|---|---|---|---|---|---|
+| US30L | research | −0.0026 | −0.0065 | −0.0039 | −0.0071 |
+| US30L | holdout | −0.0048 | −0.0192 | −0.0144 | −0.0045 |
+| US30I | forward (different provider) | +0.0019 | −0.0159 | −0.0178 | −0.0029 |
+
+The one positive figure in the table is the OR beating the 200 gate on the forward block by
++0.0019 %/trade — an order of magnitude inside that block's own MDE, and against an arm that is
+itself the worst thing on that block.
+
+### 21.5 Verdict
+
+**The OR is the worst arm in the table and the loosest arm is the best** — the second bypass on
+this trigger to measure that way, after §19's level-coincidence version (which read no gate
+−0.0025, MA gate −0.0123, the OR −0.0188). Switching the 200 gate off is free and costs nothing to
+try; this is a slower route to the same place.
+
+The one thing worth keeping is the decomposition: **of the two conditions the ask combines, the
+CROSS — which it treats as the override — is the better of the two, and the 200 — which it treats
+as the base — is the worse** (−0.0057 against −0.0119). Neither is positive against no gate on any
+block, so that is a ranking of two nulls and not a recommendation.
+
+Ships as one input, **DEFAULT OFF**, with these numbers in its tooltip and the panel naming the
+degenerate case when both it and the Fresh-cross MA mode are on. Parity: **84 of 84 configurations
+at a trade-count ratio of exactly 1.000**, same exit bar 0.962–1.000, per-trade gap −2.14 to +0.09
+points.
