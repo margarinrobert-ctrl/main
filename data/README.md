@@ -35,9 +35,24 @@ python3 research/fetch_btc.py --tf 1m --start 2023-01-01 --source vision --out d
 python3 research/fetch_btc.py --tf 1h --source coinbase --out data/BTCUSD_1h.csv   # different tape
 ```
 
-Use `--source vision` (monthly ZIPs) for minute bars and `binance` for hourly or daily; below an
-hour the paged REST endpoint needs thousands of calls to cover the same span. It reports gap and
-OHLC-violation counts on the way out.
+Use `--source vision` (archive ZIPs) for minute and sub-minute bars and `binance` for hourly or
+daily; below an hour the paged REST endpoint needs thousands of calls to cover the same span. It
+reports gap and OHLC-violation counts on the way out.
+
+**Sub-minute.** No venue publishes a 30-second bar. Binance's finest native kline is **1 second**,
+and a 30s bar is an exact fold of 30 of them -- first open, max high, min low, last close, summed
+volume, nothing interpolated. `--tf 30s` does that fold; so does any other multiple (`45s`, `2m`).
+Coinbase is floored at one minute and refuses.
+
+```bash
+python3 research/fetch_btc.py --tf 30s --start 2025-01-01 --source vision --dry-run
+python3 research/fetch_btc.py --tf 30s --start 2025-01-01 --source vision --out data/BTCUSDT_30s.csv
+```
+
+Price it with `--dry-run` first, because the 1s source data is the expensive part: one year of 30s
+bars is 1.05M output rows but 31.5M one-second bars and ~330 MB of ZIPs; three years is 94.7M bars
+and ~1 GB. The 1s interval is published as DAILY archive files for much of its history, so a long
+pull is ~365 requests per year rather than 12.
 
 Two things BTC is not. It is not a second sample of the same market -- it trades 24/7 with no RTH
 session, so every minute-of-day, session-index and daily-trend construction on this branch has to
