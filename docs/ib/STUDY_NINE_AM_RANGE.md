@@ -1283,3 +1283,127 @@ Ships as one input, **DEFAULT OFF**, with these numbers in its tooltip and the p
 degenerate case when both it and the Fresh-cross MA mode are on. Parity: **84 of 84 configurations
 at a trade-count ratio of exactly 1.000**, same exit bar 0.962–1.000, per-trade gap −2.14 to +0.09
 points.
+
+---
+
+## 22. The user's own settings, on 30-second bars only
+
+**The ask.** Run the configuration in the Inputs screenshots on 30-second bars and nothing else,
+with IS/OOS, a walk-forward, a Monte Carlo simulation, a Monte Carlo perturbation, correlation
+matrices, every table as a figure, and "more advanced quant tests".
+
+**The configuration, transcribed and nothing inferred.** Range 540..545 (09:00–09:04:30), earliest
+entry 568 (09:28), no new entries after 960, flatten 960, ATR 14, side BOTH, buffer 0, touch counts
+as a break, MA confirmation FRESH CROSS 13x48 within 7 MINUTES, the 200-at-level bypass OFF, the
+fresh-cross bypass ON, stop POINTS 100, target POINTS 100, auto breakeven POINTS arming at 43 and
+securing 5, and a close on a FRESH OPPOSITE CROSS. `research/nineam/na_s30.py` carries it as `CFG`;
+`run_n21.py`, `run_n22.py`, `run_n23.py` and `plot_n21.py` are the run.
+
+### 22.1 The feed cannot see the rule's own range on 69% of its sessions
+
+`US30_30s` omits bars with no activity and the 09:00 half hour is exactly where a Dow CFD is quiet.
+Of 293 sessions carrying a 09:30 bar, **92 (31.4%) carry the 09:00–09:04:30 range**, and the
+coverage is ALL-OR-NOTHING: where it exists it is the full ten bars, where it does not there is no
+bar at all. It begins **2026-04-30**, three days after the volume column starts — the export's
+behaviour changed mid-file. So the tradeable sample is not the file; it is a 4.5-month tail, and
+every number below lives on it. `US30_30s` also OVERLAPS the reserved `US30_ISO_15m` forward block
+to 2026-08-26, so this is a second read of those weeks and is descriptive.
+
+### 22.2 The bypass is inert at these settings, asserted on the signal set
+
+With MA confirmation on "Fresh cross" the script's gate is `barsSinceUp <= crossBars` and the bypass
+is the same expression, so their OR is an identity: **174 ungated signals, 58 kept by the gate, 58
+by the bypass, 58 by the OR**. The shipped panel already prints "OR fresh cross — INERT, it IS the
+gate" for exactly this case. The strict research mask (state AND recency) keeps the same 58 here,
+because a 14-bar recency window at 30 seconds is too short for the state to flip back — so the
+mask ambiguity §21 found on 15-minute bars does not bite on this feed.
+
+### 22.3 What the run says
+
+| | n | %/trade | PF | win | total % | MDE | delivered/MDE |
+|---|---|---|---|---|---|---|---|
+| ALL | 57 | +0.0358 | 2.022 | 0.702 | +2.040 | 0.0483 | **0.74×** |
+| IS | 29 | +0.0284 | 1.862 | 0.655 | +0.823 | 0.0642 | 0.44× |
+| OOS | 28 | +0.0435 | 2.169 | 0.750 | +1.218 | 0.0735 | 0.59× |
+
+It **clears both nulls** — a matched random entry p **0.003**, a same-selectivity random gate
+p **0.010** — and the day-block bootstrap excludes zero on the whole sample (P(mean≤0) **0.018**),
+while every block is **inside its own MDE**. Both statements are true and they answer different
+questions (`STUDY_V15_BOOK`): a control's null sd is far tighter than the MDE because its draws are
+subsets of the same signal set. Daily zero-filled Sharpe 3.31 / Sortino 7.50 — annualised from 92
+days, so read them as a shape, not a rate.
+
+### 22.4 The MA gate is the strategy, and everything else is decoration
+
+Drop-one: removing the fresh-cross confirmation takes the rule from **+0.0358 on 57 trades to
+−0.0130 on 131**, PF 2.022 → 0.781. Nothing else moves it by more than a third of that — the
+breakeven −0.0019, the cross exit −0.0018, the target −0.0213, the five-minute range −0.0173 — and
+moving the arm from 568 to the 09:30 open **improves** it (+0.0417 on 65 trades). The base-rate
+check passes: the gate keeps a third of the trigger's own bars at lift **1.86×**, so unlike the nine
+confirmation families that died here it is neither the trigger restated nor inert.
+
+### 22.5 The result is the BAR SIZE, not the rule
+
+The same configuration on 1-minute and 5-minute bars resampled from the **same file**:
+
+| bars | EMA as configured | EMA held at 6.5 / 24 MINUTES |
+|---|---|---|
+| 30s | **+0.0358** (n 57) | +0.0358 (n 57) |
+| 1m | −0.0450 (n 34) | +0.0047 (n 70) |
+| 5m | −0.0137 (n 17) | −0.0280 (n 69) |
+
+`STUDY_V57`'s finding on a whole configuration: the script converts the fresh-cross reach from
+MINUTES and does **not** convert the EMA lengths, so `EMA 13 / 48` spans **6.5 and 24 minutes** on a
+30-second chart against 13 and 48 on a one-minute one. Holding the EMAs' reach in minutes fixed does
+not reproduce the 30-second result at either other resolution (+0.0047 and −0.0280 against +0.0358),
+so the sign follows neither the minutes nor the bar size consistently — which is what a 57-trade
+sample of a null looks like. Daily P&L correlation across the three resolutions is only 0.27–0.33.
+
+### 22.6 Walk-forward, and the seventeenth re-optimiser to lose
+
+Six folds over the tradeable sessions, a 72-cell declared grid (`E[max t | noise]` 2.413 against the
+2.802 detection needs): totals **+2.226 fixed, +1.515 re-chosen, +2.528 RANDOM**, 4 of 5 folds
+positive for all three arms. The re-chooser picks a different cell in every fold and loses to a coin
+flip drawn from its own grid.
+
+### 22.7 The four Monte Carlos
+
+- **EDGE** (day-block bootstrap): ALL P(mean≤0) 0.018, CI [+0.0020, +0.0699]; IS 0.102; OOS 0.047.
+- **PATH** (6,000 permutations): realised drawdown 0.428% at the **31.6th percentile** of reshuffles
+  of its own trades — a smoother path than the trades imply. MC p99 is **2.28×** realised, which is
+  the sizing number.
+- **EXECUTION** (round turn drawn U(0.5×, 2×) per trade, inside the walk): band +0.0343 to +0.0351,
+  P(total ≤ 0) **0.000**, and the cost ladder is still positive at **8×** the assumed round turn.
+  2.29 points is 2.3% of a 100-point stop, so this test cannot fail on this geometry — it says the
+  implementation is not fragile, never that the edge is real.
+- **DATA** (price jitter at ±0.5/1/2 ticks with the ATR, both EMAs, the 09:00 range and the cross
+  state ALL recomputed): sign kept **1.000** at every level, trade count 57 → 60.
+
+### 22.8 Correlations
+
+Between ARMS on zero-filled daily percent: the rule correlates **0.965** with itself minus the cross
+exit and 0.837 minus the breakeven — those are the same strategy — **0.424** with itself ungated and
+only **0.150** with always-long, so it is not a drift exposure; long and short are −0.057 to each
+other. Between CONDITIONS **on the signal bars**, nothing duplicates: the strongest pair is the
+fresh cross against the 13>48 state at **+0.393**, which is the recency form against the state form
+of one indicator.
+
+### 22.9 The win rate is a relabelling and the accounting says so
+
+70.2% overall against a **target-hit rate of 36.8%** and a driftless break-even of **0.5115** for a
+100/100 pair — **17 of 57 trades book exactly +2.71 points**, the secured 5 minus the 2.29 round
+turn. A breakeven stop is a losing trade by construction; the secured offset is what relabels it
+(§8). And the intrabar tie-break is settled rather than assumed: at 100/100 on 30-second bars the
+ambiguous share is **exactly 0.0000**, so none of this is a convention.
+
+**Deflation.** 98 counted looks, `E[max t | noise]` 2.523; per-trade Sharpe 0.2749 against an
+expected best-of-noise of 0.1388 — **1.98× its own noise floor** — and a deflated Sharpe of
+**0.8418, FAIL** at the 0.95 bar. Detecting the observed effect needs **104 trades against 57 in
+hand**, which is 0.7 years at this feed's rate — and that rate is a property of the export, not of
+the market, because the range exists on only 92 of 293 sessions.
+
+**Verdict.** The configuration clears both nulls and its own bootstrap on 4.5 months of one market,
+is carried entirely by the fresh-cross gate, does not survive a change of bar size in either
+reading, and is inside its own MDE in every block. Robust to execution and to data noise; not
+resolved by the sample. Ship nothing; forward-test ~50 more trades on a feed whose pre-open the
+export actually carries.

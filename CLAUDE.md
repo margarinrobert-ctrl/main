@@ -4627,6 +4627,45 @@ See `docs/ib/STUDY_US30_SCALP_0711.md` section 20, `research/us30s/`.
 | `research/nineam/run_n19.py` | the correction applied BACKWARDS to the two published ratchet ladders, both engines side by side |
 | `research/nineam/na_30s.py` | the 30-second US30 feed in `na_core` shape, with what it can and cannot carry in the docstring |
 | `research/nineam/run_n20.py` | a fresh 13x48 cross as a bypass of the 200: the degeneracy asserted on the signal set first, then what the bypass can ACT ON (its share of the breaks the gate refuses), then four arms -- none / the gate / the OR / the bypass alone -- each against a null CACHED BY KEPT FRACTION, with both readings of "fresh cross" declared rather than picked |
+**A FEED CAN CHANGE ITS EXPORT BEHAVIOUR MID-FILE, AND A COVERAGE CHECK COSTS TWO LINES.** Asked to
+run the 09:00-range rule's user configuration on 30-second bars only. `US30_30s` omits bars with no
+activity and the 09:00 half hour is exactly where a Dow CFD is quiet: of 293 sessions carrying a
+09:30 bar, **92 (31.4%) carry the 09:00-09:04:30 range**, the coverage is ALL-OR-NOTHING (the full
+ten bars or no bar at all), and it begins **2026-04-30 -- three days after the volume column
+starts**. So the tradeable sample is not the file, it is a 4.5-month tail, and a rule that cannot
+see its own range on 69% of sessions has no result to report until that is stated. **THE BYPASS IS
+INERT AT THESE SETTINGS AND IT IS ASSERTED ON THE SIGNAL SET**: 174 ungated signals, 58 kept by the
+'Fresh cross' gate, 58 by the bypass, 58 by their OR -- and the strict research mask keeps the same
+58 here, because a 14-bar recency window at 30 seconds is too short for the state to flip back, so
+the mask ambiguity that bit on 15-minute bars does not bite on this feed. Result: **57 trades,
++0.0358 %/trade, PF 2.02, win 70.2%**, clearing a matched random entry at **p 0.003** and a
+same-selectivity random gate at **0.010** with a day-block bootstrap of **0.018** -- and
+**INSIDE ITS OWN MDE IN EVERY BLOCK** (0.74x / 0.44x / 0.59x). **THE MA GATE IS THE STRATEGY**:
+removing the fresh cross takes it to **-0.0130 on 131 trades**, PF 2.02 -> 0.78, while the
+breakeven (-0.0019), the cross exit (-0.0018) and the target (-0.0213) move it by a third of that
+or less, and moving the arm from 568 to the 09:30 open IMPROVES it. **AND THE RESULT IS THE BAR
+SIZE**: the same configuration on 1m and 5m bars resampled from the SAME file reads **-0.0450 and
+-0.0137**, and holding the EMAs' reach in MINUTES fixed gives +0.0047 and -0.0280 against 30s's
++0.0358 -- so it survives neither reading, because the script converts the fresh-cross reach from
+minutes and does NOT convert the EMA lengths (`EMA 13/48` is 6.5/24 minutes at 30s against 13/48 at
+1m). Cross-resolution daily correlation 0.27-0.33. Walk-forward: **+2.226 fixed, +1.515 re-chosen,
++2.528 RANDOM** -- seventeenth re-optimiser to lose and the fourth to also lose to a coin flip.
+Four MCs: bootstrap CI [+0.0020, +0.0699]; realised drawdown at the **31.6th percentile** of its own
+permutations with p99 **2.28x**; execution band 0.0343-0.0351 with the ladder still positive at
+**8x** cost (2.29 points is 2.3% of a 100-point stop, so that test cannot fail); price jitter with
+every indicator recomputed keeps the sign **1.000**. **THE WIN RATE IS A RELABELLING**: 70.2%
+against a **36.8% target-hit rate** and a driftless break-even of 0.5115, with **17 of 57 trades
+booking exactly +2.71 points** (the secured 5 minus the 2.29 round turn). Intrabar ambiguity at
+100/100 on 30-second bars is **exactly 0.0000**, so none of it is a convention. Deflated Sharpe
+**0.8418 FAIL** at 98 looks, though the per-trade Sharpe is **1.98x its own noise floor**; detecting
+the observed effect needs 104 trades against 57. Ships nothing.
+See `docs/ib/STUDY_NINE_AM_RANGE.md` section 22, `research/nineam/na_s30.py`, `run_n21..n23.py`.
+
+| `research/nineam/na_s30.py` | the 09:00-range rule on 30-SECOND bars: the screenshot configuration as `CFG`, and a `Ctx30` adding only the script's LOOSE fresh-cross mask and a `firstEntry` threaded through `events` |
+| `research/nineam/run_n21.py` | coverage FIRST (a rule that cannot see its own range has no result), then the transcription, the bypass degeneracy asserted on the signal set, base rates, the ratchet artifact priced, IS/OOS, and both nulls |
+| `research/nineam/run_n22.py` | walk-forward with the constants fixed beside a re-chosen arm and a random cell; four Monte Carlos kept apart (edge / path / execution per TRADE / price jitter with every indicator recomputed); three correlation matrices -- arms, conditions on the signal bars, and resolutions |
+| `research/nineam/run_n23.py` | is it the rule or the bar size (EMA lengths held at matched MINUTES), the driftless break-even, drop-one, the cost ladder, daily zero-filled Sharpe/Sortino, months, power and deflation |
+| `research/nineam/plot_n21.py` | the four sheets: what the feed can carry, IS/OOS and walk-forward, the four Monte Carlos, and the correlations with the resolution test |
 | `research/us30s/` | US30 at THIRTY SECONDS, the first parquet feed: `us30s.py` (the clock RE-DERIVED from the bars rather than trusted from the tz-aware dtype, the volume era boundary exported so nothing averages a zero into a mean, and a `convert` that asserts the 09:30 peak before it writes), `run_u1.py` (the intrabar tie-break at 15m / 1m / 30s on the SAME trades at the SAME geometry, with ties inside a fine bar still counted as ties rather than guessed) |
 | `research/ma13/` | the submitted MA 13/48/200 rule with 100-point barriers, and the session / session-stop / breakeven additions measured before they shipped: `m13core.py` (the cross event stream, a barrier walker carrying the window, the flatten filling at the cutoff bar's open and a breakeven that ARMS on one bar and BINDS from the next, plus a SORTED matched random entry), `run_s1.py` (cost and the driftless break-even first, then both declared ladders read by marginal average with the TRADE COUNT printed beside the win rate so a relabelling and a lock-freeing cannot be read as improvements), `run_s2.py` (nine cells against a matched random entry with each cell's own MDE and a day-block bootstrap), `m13_parity.py` |
 | `research/runlog.sh` | run a script so its output is LIVE -- tee not `>`, unbuffered, never piped through `tail`; pair it with a `Monitor` on the log |
