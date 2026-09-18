@@ -1,0 +1,81 @@
+
+================================================================================================================
+THE POSITION LOCK -- what the baseline looks like when one account has to hold it
+================================================================================================================
+ lock  trades    pts   pct    win       total    hold  sharpe       maxdd      worst       cvar  blocked
+    0    5045 21.330 0.138 14.985 107,607.617 926.000   1.021 -55,045.288 -3,261.279 -1,819.527        0
+    1     227 62.043 0.340 18.062  14,083.656 902.000   1.249  -2,766.038   -300.122   -195.941     4873
+
+  concurrency without the lock is what makes the unlocked total large; the locked
+  book is the one an account can actually carry.
+
+================================================================================================================
+A. BASELINE vs OVERLAY, both with the position lock on
+================================================================================================================
+  metric                             baseline      overlay            Δ
+  trades                              227.000      227.000       +0.000
+  points / trade                       62.043       64.283       +2.240
+  % of entry price / trade              0.340        0.351       +0.012
+  win rate %                           18.062       18.062       +0.000
+  total points                     14,083.656   14,592.156     +508.500
+  median hold (min)                   902.000      891.000      -11.000
+  Sharpe (daily, ann.)                  1.249        1.295       +0.046
+  max drawdown (pts)               -2,766.038   -2,607.788     +158.250
+  worst day (pts)                    -300.122     -329.889      -29.767
+  CVaR 5% (pts)                      -195.941     -188.509       +7.432
+
+  blocked by the lock: baseline 4,873   overlay 4,873   stopped while waiting: 0
+
+================================================================================================================
+B. ATTRIBUTION with the lock on
+================================================================================================================
+  total difference +508.5 points   matched 227   dropped by overlay 0   added 0
+    entry_improvement            +508.5 pts    +100.0% of Δ
+    exit_improvement               +0.0 pts      +0.0% of Δ
+    dropped_trades                 +0.0 pts      +0.0% of Δ
+    added_trades                   +0.0 pts      +0.0% of Δ
+    residual                       +0.0 pts      +0.0% of Δ
+
+================================================================================================================
+C. THE RANDOM-DELAY PLACEBO with the lock on
+================================================================================================================
+  observed improvement      +508.5 points
+  placebo mean              -132.6 points
+  placebo 5-95%            [-510.7, +271.4]
+  percentile vs placebo     100.0
+  p (one-sided)             0.0000
+  verdict                   improvement exceeds mechanical delay; the signal is doing work
+
+================================================================================================================
+D. PAIRED BLOCK BOOTSTRAP with the lock on
+================================================================================================================
+  n_obs                        +923.0000
+  mean_daily_difference        +0.5509
+  mean_ci95                    [-0.0629, +1.2183]
+  p_value_mean                 +0.0826
+  sharpe_base                  +1.2490
+  sharpe_overlay               +1.2947
+  sharpe_difference            +0.0457
+  sharpe_diff_ci95             [-0.0069, +0.1044]
+  p_value_sharpe               +0.0988
+  block                        +10.0000
+  n_boot                       +5,000.0000
+
+================================================================================================================
+E. FILL HAIRCUT with the lock on
+================================================================================================================
+  gain_before_haircut          508.5
+  breakeven_haircut_bps_per_side 0.5582012884283382
+  note                         improvement survives only if realised fill quality is within 0.558 bps/side of what the backtest assumed
+
+================================================================================================================
+F. URGENCY SWEEP with the lock on
+================================================================================================================
+    K (min)   trades  blocked  skipped   pts/trade   Δ vs base    total Δ
+   baseline      227    4,873        0      62.043      +0.000         +0
+          5      227    4,873        0      62.563      +0.521       +118
+         10      227    4,873        0      62.701      +0.659       +150
+         15      227    4,873        0      63.832      +1.790       +406
+         30      227    4,873        0      64.283      +2.240       +508
+         60      227    4,873        0      64.271      +2.228       +506
+        120      227    4,873        0      64.327      +2.284       +518

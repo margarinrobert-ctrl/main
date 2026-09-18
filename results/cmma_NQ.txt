@@ -1,0 +1,135 @@
+========================================================================================================
+CMMA MEAN REVERSION ON MNQ -- NQ price path, does it have an edge?
+========================================================================================================
+  1,048,575 intraday bars, 923 daily bars, 748 traded days
+  session 08:00-15:45 New York   split 2025-01-30  (523 in-sample / 225 holdout)
+  cost 1.220 pts per round turn ($1.44 fees + 1.0 tick slippage a side)
+
+========================================================================================================
+1. LEAKAGE AND EXECUTION AUDIT
+========================================================================================================
+========================================================================
+LEAKAGE AUDIT  --  748 rows x 1 features
+========================================================================
+
+NOTES (1)
+  [INFO    ] ic_summary: Highest |IC|: signal=+0.065
+
+>> Clean on the mechanical checks. The judgment-based ones (publication lag, survivorship, same-bar execution) still need a human -- see references/features.md.
+========================================================================
+LEAKAGE AUDIT  --  748 rows x 1 features
+========================================================================
+
+NOTES (1)
+  [INFO    ] ic_summary: Highest |IC|: signal=+0.065
+
+>> Clean on the mechanical checks. The judgment-based ones (publication lag, survivorship, same-bar execution) still need a human -- see references/features.md.
+------------------------------------------------------------------------
+EXECUTION ALIGNMENT CHECK
+------------------------------------------------------------------------
+  corr(position_t, return_t)   : +0.0685   -> Sharpe +0.73
+  corr(position_t, return_t+1) : +0.0360   -> Sharpe +0.33
+  same-bar execution: clean
+  No same-bar execution signature. Positions relate to future returns at least as strongly as to contemporaneous ones, which is the correct direction.
+  IC of the signal against the session move it is held for : +0.0684
+  IC against the NEXT session's move                       : +0.0360
+  verdict from the skill's checker                         : clean
+  An IC of 0.065 on daily returns is small and plausible. The skill's red-flag line is
+  0.15; anything above that on this kind of feature is usually a leak.
+
+========================================================================================================
+2. WHAT THE NOTEBOOK REPORTS, AND WHY IT IS NOT A SHARPE RATIO
+========================================================================================================
+  notebook:  eq = pnl.cumsum();  sr = eq.mean() / eq.std()   ->   0.875
+  That is the mean of an EQUITY CURVE divided by its own standard deviation. It is
+  large for any curve that trends and it has no sampling interpretation: it does not
+  scale with the square root of time, it is not comparable between strategies, and it
+  cannot be given a standard error. The same series scored as a return stream:
+  annualised Sharpe on the daily return series: +0.83 +- 0.58
+  The two happen to be close here (0.875 against 0.83), which is a coincidence of this sample and not a validation of the
+  formula. And the standard error is the point: +-0.58 on a 3-year sample means this
+  Sharpe is not distinguishable from zero OR from 1.5 without more data.
+
+========================================================================================================
+3. THE THREE ACCOUNTING CHOICES, ONE AT A TIME (full sample)
+========================================================================================================
+                                      days   pts/day      total   Sharpe  +-SE     maxDD     win
+  notebook: bar bodies, gross          748    +1.415      +1058    +0.83 +-0.58      -2.3%    50.7%
+  honest: session endpoints, gross     748    +1.252       +936    +0.73 +-0.58      -2.3%    49.9%
+  endpoints, NET of costs              748    +1.205       +901    +0.70 +-0.58      -2.3%    49.3%
+
+  summing bar bodies instead of taking the session's endpoints is worth +122 points in total
+  (+0.163 a day): every gap BETWEEN bars is silently dropped.
+  mean daily turnover 0.038 contracts -> 0.047 pts/day of cost, 35 points over the sample.
+  breakeven cost: 23.72 bps of notional per unit turnover (the model charges 0.88 bps at the sample's first price).
+
+========================================================================================================
+4. IN-SAMPLE ONLY (the first 70%), net of costs
+========================================================================================================
+                                      days   pts/day      total   Sharpe  +-SE     maxDD     win
+  CMMA as briefed                      523    +0.942       +493    +0.76 +-0.70      -1.1%    48.9%
+  without KER weighting                537    +0.585       +314    +0.16 +-0.69      -7.0%    48.6%
+  without tanh bounding                523    +1.243       +650    +0.78 +-0.70      -1.5%    48.8%
+  without the EMA smoothing            523    +1.245       +651    +0.78 +-0.70      -1.7%    48.4%
+  sign(cmma) only, no scaling          537    -0.054        -29    -0.01 +-0.69     -10.0%    48.6%
+
+  each component removed one at a time, so a component that contributes nothing is
+  visible as a row that does not move.
+
+========================================================================================================
+5. THE PARAMETER SURFACE, IN-SAMPLE -- and the trial count it creates
+========================================================================================================
+  The notebook sweeps MA type x length (cells 20-28) and then reads a decile plot and
+  adds a threshold filter (cells 31-32), all on the full sample. Here the same sweep is
+  run IN-SAMPLE ONLY, and every cell is counted as a trial.
+  MA      len   days   pts/day   Sharpe  net Sharpe
+  sma       3    523    +0.600    +0.86       +0.81
+  sma       5    523    +0.942    +0.79       +0.76
+  sma       8    523    +1.140    +0.68       +0.66
+  sma      12    523    +1.164    +0.57       +0.55
+  sma      19    523    +1.454    +0.60       +0.58
+  ema       3    523    +1.046    +0.69       +0.66
+  ema       5    523    +1.265    +0.65       +0.62
+  ema       8    523    +1.306    +0.57       +0.55
+  ema      12    523    +1.226    +0.50       +0.48
+  ema      19    523    +1.167    +0.45       +0.44
+
+  34 configurations swept.  net Sharpe: best +0.82, median +0.56, worst +0.44, 100% positive
+  the briefed cell (sma, 5) scores +0.76 -- rank 3 of 34
+  DEFLATED SHARPE at 34 trials: {'deflated_sharpe': 0.15005388620276805, 'observed_sr_per_period': np.float64(0.047660766736293256), 'observed_sr_annualized': np.float64(0.7565912164733491), 'expected_max_sr_from_noise': 0.09303985773567858, 'expected_max_sr_annualized': np.float64(1.4769619535126075), 'n_trials': 34, 'n_obs': 523, 'sr_variance_approximated': True, 'verdict': 'not distinguishable from the best of 34 random tries'}
+  probability of backtest overfitting across the sweep: {'pbo': 0.5357142857142857, 'median_oos_rank': 0.45714285714285713, 'mean_logit': -0.1297039895848731, 'n_combinations': 252, 'n_configurations': 34, 'verdict': 'selection is no better than random'}
+
+========================================================================================================
+6. THE HOLDOUT -- read once, now
+========================================================================================================
+                                      days   pts/day      total   Sharpe  +-SE     maxDD     win
+  in-sample,  net                      523    +0.942       +493    +0.76 +-0.70      -1.1%    48.9%
+  HOLDOUT,    net                      225    +1.817       +409    +0.73 +-1.06      -2.1%    50.2%
+  in-sample,  gross                    523    +0.989       +517    +0.79 +-0.70      -1.1%    49.3%
+  HOLDOUT,    gross                    225    +1.862       +419    +0.75 +-1.06      -2.1%    51.1%
+
+========================================================================================================
+7. ROBUSTNESS ON THE FULL SAMPLE, net of costs
+========================================================================================================
+  block bootstrap (stationary): {'n_obs': 748, 'block_size': 9, 'method': 'stationary', 'sharpe': {'p1': -0.3685449425120848, 'p5': 0.013410550734862373, 'p25': 0.4621556470679878, 'p50': 0.7255634317135378, 'p75': 0.9732149002255495, 'p95': 1.3290420973272374, 'p99': 1.5939630203046866, 'mean': 0.7032631796669463, 'observed': 0.7025654787981739, 'observed_percentile': 47.599999999999994}, 'max_drawdown': {'p1': -0.06061465757927963, 'p5': -0.04630048328951553, 'p25': -0.031233621704278097, 'p50': -0.024610746553440532, 'p75': -0.019956440959798982, 'p95': -0.014775418227888526, 'p99': -0.012053395154261218, 'mean': -0.026806184147764724}, 'total_return': {'p1': -0.028764937585889248, 'p5': -4.71371880114143e-05, 'p25': 0.038209410149657286, 'p50': 0.06488840230207427, 'p75': 0.0952550294601402, 'p95': 0.1375398852692765, 'p99': 0.17436653026302865, 'mean': 0.06672351190478863}, 'prob_sharpe_below_zero': 0.0455, 'prob_sharpe_below_half': 0.279}
+  shift null (same position series, wrong dates): {'n_obs': 748, 'observed_sharpe': 0.7297622876258943, 'null_sharpe': {'p1': -1.1988685273937651, 'p5': -0.9399582800269138, 'p25': -0.4534284040099868, 'p50': -0.08296623793479031, 'p75': 0.25441209680338167, 'p95': 0.9132992929259698, 'p99': 1.4777866546792813, 'mean': -0.06961834198069841, 'observed': 0.7297622876258943, 'observed_percentile': 92.25}, 'p_value': 0.0775, 'beats_null_pct': 92.25, 'avg_abs_exposure': 0.07617076428474155, 'verdict': 'not distinguishable from randomly-timed trading with the same exposure profile'}
+
+  BY CALENDAR YEAR, net:
+  year      days   pts/day      total   Sharpe     win
+  2023       244    -0.283        -69    -0.32   46.3%
+  2024       259    +2.166       +561    +1.42   52.9%
+  2025       245    +1.672       +410    +0.70   48.6%
+
+  concentration: the best 7 days (0.9%) are 135% of net; the best 35 are 267%
+
+========================================================================================================
+8. COST SENSITIVITY
+========================================================================================================
+ cost_bps    sharpe      cagr  max_drawdown
+        0  0.729762  0.022595     -0.022768
+        1  0.698959  0.021612     -0.022926
+        2  0.668156  0.020629     -0.023084
+        5  0.575756  0.017686     -0.023557
+       10  0.421807  0.012801     -0.024347
+       20  0.114254  0.003099     -0.030440
+       50 -0.802538 -0.025455     -0.083205

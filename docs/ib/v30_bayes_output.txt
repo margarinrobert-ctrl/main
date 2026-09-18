@@ -1,0 +1,62 @@
+
+================================================================================================================
+A. THE POPULATION -- what the optimiser was searching, before any ranking
+================================================================================================================
+   1391 scorable trials across 2 markets x 2 sides, 07:00-11:00 New York, flatten at 11:00
+
+   market  side     trials  res Sh>0  res PF>1  LOCK Sh>0  LOCK PF>1  best res Sh  its LOCK Sh
+   NQ      long        393       76%       76%        38%        38%       +0.990         +nan
+   NQ      short       284       83%       83%        20%        20%       +1.227         +nan
+   US30    long        397       83%       83%         2%         2%       +0.795       -0.767
+   US30    short       317       83%       83%        71%        71%       +0.893       +0.025
+
+================================================================================================================
+B. TRANSFER -- does a trial's research score say anything about its locked score?
+================================================================================================================
+   market  side         n   Pearson   Spearman   top-10% res -> mean LOCK Sh   all-trial mean LOCK Sh
+   NQ      long       253    +0.722     +0.426                        +0.174                   -0.243
+   NQ      short       71    +0.189     +0.162                        -0.347                   -0.532
+   US30    long       395    +0.667     +0.074                        -0.780                   -0.887
+   US30    short      315    +0.866     +0.304                        +0.025                   -0.104
+
+================================================================================================================
+C. THE SURROGATE -- can a booster learn the parameter surface, and does it transfer?
+================================================================================================================
+   Trained on (parameters -> RESEARCH Sharpe), out-of-fold. Then the SAME model's
+   predictions are correlated against the LOCKED Sharpe. Learning research and failing
+   locked is the signature of a surface that exists in one block only.
+
+   market  side   model         fits research   predicts LOCKED
+   NQ      long   XGBoost              +0.906            +0.445
+   NQ      long   LightGBM             +0.876            +0.411
+   NQ      short  XGBoost              +0.503            -0.143
+   NQ      short  LightGBM             -0.147            -0.005
+   US30    long   XGBoost              +0.960            +0.074
+   US30    long   LightGBM             +0.932            +0.049
+   US30    short  XGBoost              +0.905            +0.258
+   US30    short  LightGBM             +0.860            +0.254
+
+================================================================================================================
+D. THE WINNER -- one locked read, against not searching at all
+================================================================================================================
+   `spec` is the Turtle's own defaults in this window, with no search: entry 20,
+   exit 10, ATR 20, 2.0N, 0.5N ladder to 4 units, no gates. `best` is the top trial of
+   400 by research Sharpe. `robust` is the trial with the best MEAN Sharpe over its own
+   neighbourhood -- the 20 nearest trials in normalised parameter space.
+
+   market side   config                     RESEARCH  |                    LOCKED
+                               n   Sharpe      PF  |     n   Sharpe      PF  R/trade
+   NQ     long   spec        377   -3.842   0.469  |   175   -2.138   0.618  -0.1894
+   NQ     long   best         48   +0.990   1.749  |        -- under 25 trades
+   NQ     long   robust       55   +0.938   1.654  |        -- under 25 trades
+   NQ     short  spec        302   -2.212   0.598  |   153   -3.730   0.424  -0.2756
+   NQ     short  best         37   +1.227   2.609  |        -- under 25 trades
+   NQ     short  robust       36   +1.150   2.478  |        -- under 25 trades
+   US30   long   spec        856   -2.962   0.515  |   549   -3.735   0.463  -0.2818
+   US30   long   best        479   +0.795   1.270  |   280   -0.767   0.801  -0.1127
+   US30   long   robust      486   +0.724   1.241  |   282   -0.857   0.786  -0.1232
+   US30   short  spec        754   -3.357   0.437  |   497   -3.246   0.467  -0.2796
+   US30   short  best        161   +0.893   1.657  |   116   +0.025   1.013  +0.0029
+   US30   short  robust      163   +0.797   1.562  |   117   +0.058   1.030  +0.0069
+
+   A search is only worth its multiplicity if `best` beats `spec` OUT OF SAMPLE.

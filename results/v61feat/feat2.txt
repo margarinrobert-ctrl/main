@@ -1,0 +1,116 @@
+GATE 2 -- incremental value, then ONE locked read, then deflation.
+
+The screen in `run_feat1` produced a kept set. This file asks the only question that matters about
+it: does scoring the primary's events with those features improve the UNSIZED per-event return, and
+does each feature earn its place INCREMENTALLY?
+
+  * PURGED + EMBARGOED cross-validation inside the research block. Events occupy [signal, exit] and
+    those windows overlap, so a naive split leaks.
+  * EVERY MODEL BESIDE A SHUFFLED-LABEL TWIN. `STUDY_V28` recorded the deepest net's shuffled twin
+    earning MORE than any real model on the headline statistic -- which is how you learn the column
+    is noise rather than that the model is good.
+  * DROP-ONE for incremental value. A feature that does not move the score when removed is not
+    contributing; it is decoration with a correlation.
+  * The uplift is scored on UNSIZED returns, so no sizing rule can be mistaken for the finding, and
+    against a SAME-SELECTIVITY RANDOM FILTER, so restrictiveness alone cannot produce it.
+  * ONE read of the locked block, at the end, with the threshold taken from the research score
+    distribution -- and the KEPT FRACTION reported, because a score that is not calibrated across
+    the split makes any research threshold meaningless (STUDY_AUTOBNN kept 105 of 105).
+
+  research events 225, locked events 125
+  kept feature set (8): mom.roc240, vol.atr_pct, ffd.cvd_z, regime.hmm_side, trend.er20, regime.chop48, trend.er60, struct.excess
+
+==============================================================================================================================
+MODELS -- purged + embargoed 5-fold on RESEARCH, each beside a SHUFFLED-LABEL TWIN
+==============================================================================================================================
+  Objective is the event's own RETURN, not win/lose. STUDY_V28/V32 measured what a win/lose
+  objective does to a breakout system: it raises the win rate and CUTS p90 of R, which is
+  exactly the tail the system earns in.
+
+  model       OOF IC   twin IC  OOF p90 R kept  baseline p90
+  ridge      +0.0559   -0.1332          0.7011        0.7222
+  logit      -0.0359   -0.2037          0.6792        0.7222
+  rf         +0.1637   -0.0460          0.6953        0.7222
+  lgbm       +0.1517   +0.0157          0.7148        0.7222
+
+==============================================================================================================================
+GATE 2 -- unsized uplift against a bootstrap, and against a SAME-SELECTIVITY RANDOM FILTER
+==============================================================================================================================
+  Keep-fractions declared in advance: 80/70/60/50/40%.
+
+  model     keep    n      base  filtered    uplift                 95% CI  boot p  random-filter p
+  ridge      80%  180    0.0697    0.0905   +0.0208 [ -0.0074, +0.0533]   0.091            0.097
+  ridge      70%  157    0.0697    0.0907   +0.0211 [ -0.0164, +0.0618]   0.144            0.168
+  ridge      60%  135    0.0697    0.0682   -0.0015 [ -0.0517, +0.0491]   1.000            0.505
+  ridge      50%  113    0.0697    0.0978   +0.0281 [ -0.0306, +0.0833]   0.154            0.205
+  ridge      40%   90    0.0697    0.1132   +0.0435 [ -0.0269, +0.1175]   0.118            0.137
+  logit      80%  180    0.0697    0.0658   -0.0039 [ -0.0388, +0.0286]   1.000            0.607
+  logit      70%  157    0.0697    0.0692   -0.0005 [ -0.0444, +0.0434]   1.000            0.533
+  logit      60%  135    0.0697    0.0407   -0.0289 [ -0.0826, +0.0196]   1.000            0.837
+  logit      50%  113    0.0697    0.0451   -0.0246 [ -0.0852, +0.0325]   1.000            0.763
+  logit      40%   90    0.0697    0.0620   -0.0077 [ -0.0780, +0.0565]   1.000            0.603
+  rf         80%  180    0.0697    0.0676   -0.0021 [ -0.0326, +0.0267]   1.000            0.568
+  rf         70%  157    0.0697    0.0792   +0.0095 [ -0.0256, +0.0464]   0.310            0.350
+  rf         60%  135    0.0697    0.0736   +0.0039 [ -0.0402, +0.0490]   0.455            0.383
+  rf         50%  113    0.0697    0.1052   +0.0355 [ -0.0205, +0.0969]   0.141            0.143
+  rf         40%   90    0.0697    0.1798   +0.1101 [ +0.0345, +0.1936]   0.006            0.007
+  lgbm       80%  180    0.0697    0.0880   +0.0183 [ -0.0147, +0.0493]   0.122            0.108
+  lgbm       70%  157    0.0697    0.0784   +0.0087 [ -0.0273, +0.0467]   0.335            0.350
+  lgbm       60%  135    0.0697    0.0867   +0.0170 [ -0.0299, +0.0640]   0.241            0.268
+  lgbm       50%  113    0.0697    0.1227   +0.0530 [ -0.0060, +0.1134]   0.042            0.050
+  lgbm       40%   90    0.0697    0.1562   +0.0865 [ +0.0101, +0.1642]   0.017            0.027
+
+  cells clearing BOTH nulls at p<=0.10: 4 of 20
+
+==============================================================================================================================
+DROP-ONE -- does each kept feature earn its place INCREMENTALLY?
+==============================================================================================================================
+  measured at the best Gate-2 cell: rf at keep 40%
+
+  feature set                       OOF IC    uplift  delta vs full
+  ALL kept features                +0.1637   +0.1101             --
+  minus mom.roc240                 -0.0152   -0.0402        -0.1503
+  minus vol.atr_pct                +0.1421   +0.0817        -0.0284
+  minus ffd.cvd_z                  +0.1322   +0.0654        -0.0447
+  minus regime.hmm_side            +0.1693   +0.0933        -0.0169
+  minus trend.er20                 +0.1328   +0.0886        -0.0215
+  minus regime.chop48              +0.1502   +0.0841        -0.0261
+  minus trend.er60                 +0.1822   +0.0978        -0.0124
+  minus struct.excess              +0.1723   +0.0927        -0.0175
+
+  features whose REMOVAL makes it worse (i.e. they contribute): 8 of 8
+  features whose removal makes it BETTER (drop them): []
+
+==============================================================================================================================
+THE FINAL SET, refitted, and ONE READ OF THE LOCKED BLOCK
+==============================================================================================================================
+  final set (8): mom.roc240, vol.atr_pct, ffd.cvd_z, regime.hmm_side, trend.er20, regime.chop48, trend.er60, struct.excess
+
+  arm                               n    %/event      PF   total %
+  locked, unfiltered              125     0.1022   1.862     12.78
+  locked + the meta filter         56     0.1560   2.707      8.74
+  uplift +0.0538 %/event;  random filter of the same size: median -0.0027, p 0.145
+  kept on locked 45% against the 40% the threshold was set for -- if these differ the score is NOT calibrated across the split
+
+==============================================================================================================================
+DEFLATION -- every look counted
+==============================================================================================================================
+  features_screened         51
+  ic_tests                  51
+  models                     4
+  keep_fractions            20
+  dropone                    8
+  primaries                  2
+  TOTAL                    136
+
+  effective trials at rho 0.5: 68 of 136
+  locked Sharpe per event 0.3114 on 56 events
+  DEFLATED SHARPE 0.7498  (expected max under the null 0.2184)
+  var_trials here is the variance of the 51 feature ICs -- the population the screen actually
+  searched. Stating what it is measured over is the point; the same input estimated two other
+  ways gave 0.571 and 0.9919 on earlier studies, both wrong.
+
+  White's reality check over 20 candidates: best ridge@80%, p 0.011
+  PASS -- best candidate beats what the search alone would produce
+
+  runtime 28s

@@ -1,0 +1,46 @@
+lightgbm: True
+family (Donchian-55 RTH, no filters) signal bars: 2,693; the cell's: 960
+features: 37  (8s)
+training universe: 2,693 labelled family bars, mean concurrency 2.0, research 1,778
+
+==============================================================================================================================
+THE CELL, unfiltered: research / locked
+==============================================================================================================================
+  n  192 PF  2.495 +0.1018%/tr total +19.54%  |  n  105 PF  1.916 +0.0764%/tr total  +8.02%
+
+==============================================================================================================================
+RESEARCH -- purged/embargoed folds; models trained on the family, scored on the cell's own trades
+==============================================================================================================================
+  fold 0: fit   984 cal  491 -> cell trades  33   CQR Q +4.79  coverage 0.91 (target 0.90)   (10s)
+  fold 1: fit   974 cal  487 -> cell trades  34   CQR Q +5.53  coverage 0.88 (target 0.90)   (12s)
+  fold 2: fit   986 cal  492 -> cell trades  26   CQR Q +4.76  coverage 0.88 (target 0.90)   (15s)
+  fold 3: fit   985 cal  492 -> cell trades  36   CQR Q +5.01  coverage 0.81 (target 0.90)   (17s)
+  fold 4: fit   983 cal  491 -> cell trades  35   CQR Q +3.50  coverage 0.91 (target 0.90)   (20s)
+  fold 5: fit   984 cal  491 -> cell trades  28   CQR Q +3.37  coverage 0.79 (target 0.90)   (22s)
+
+  OOF IC on the cell's research trades: q50 -0.093 (twin -0.024)   RF +0.118 (twin -0.127)   CQR lower -0.060 (twin -0.043)
+  scored: n  192 PF  2.495 +0.1018%/tr total +19.54%
+  rule                                                           research (cell trades) |          random subset | shuffled twin
+  CQR lower bound > 0  (no research cut)   n    0 PF    nan +nan%/tr total   +nan% | median PF nan p 0.000 | PF nan n 0
+  CQR lower bound > -1 R                   n    0 PF    nan +nan%/tr total   +nan% | median PF nan p 0.000 | PF nan n 0
+  q50 (median R) > 0                       n    0 PF    nan +nan%/tr total   +nan% | median PF nan p 0.000 | PF nan n 0
+  q50 top 60%                              n  115 PF  2.201 +0.0827%/tr total  +9.52% | median PF 2.448 p 0.703 | PF 1.841 n 115
+  RF top 60%                               n  115 PF  3.038 +0.1341%/tr total +15.42% | median PF 2.506 p 0.138 | PF 1.817 n 115
+  RF > 0                                   n   14 PF  8.008 +0.3375%/tr total  +4.73% | median PF 1.981 p 0.043 | PF 2.181 n 136
+
+  sizing overlay (size = clipped q50 / its mean, same trades): flat total +19.54% Sharpe-ish 3.48  |  sized total +18.06% Sharpe-ish 3.55
+
+==============================================================================================================================
+LOCKED -- one read, pre-declared: CQR lower bound > 0 at 90% coverage (needs no research threshold); RF > 0
+==============================================================================================================================
+  CQR Q +4.62; locked coverage 0.89 (target 0.90); locked IC q50 +0.063  RF +0.027
+  base                    locked: n  105 PF  1.916 +0.0764%/tr total  +8.02%
+  CQR lower bound > 0     locked: n    0 PF    nan +nan%/tr total   +nan%
+  CQR lower bound > -1 R  locked: n    0 PF    nan +nan%/tr total   +nan%
+  RF > 0                  locked: n    4 PF 15.841 +1.0372%/tr total  +4.15%
+  RF top 60% @ research cut locked (DESCRIPTIVE, second read): n   52 PF  2.293 +0.0993%/tr total  +5.17%   (keeps 50% of locked trades)
+  sizing by RF rank on locked (0.5x..1.5x): flat total +8.02%  sized +8.40%  (descriptive)
+
+  RF top features: vlm.ratio_tod 0.192, x.bars_since_cross 0.080, mom.ret3_atr 0.077, v61.d_ma 0.071, x.close_vs_ef_atr 0.036, loc.sess_range_atr 0.034, loc.prev_sess_hi_atr 0.030, vol.range_atr 0.027
+
+  total runtime 24s

@@ -1,0 +1,407 @@
+//@version=5
+// V29 -- the best-performing Donchian breakout on this branch, as measured through V29.
+//
+// ================================ WHAT THE DEFAULTS ARE, AND WHY ================================
+// Defaults are V24's winner: 30-minute NQ, Donchian 30 entry / 20-bar channel exit, 2.0 x ATR(14)
+// stop, NO take profit, one unit, long only, market order at the next open, CHOP(14) <= 40.
+//
+//   block      n      PF   Sharpe        R      DD   ret/DD
+//   research 234   1.177     0.54            12.8
+//   LOCKED   125   1.318     0.98  +0.1542    11.6     1.67
+//
+// THE LINEAR-REGRESSION CONDITION IS ON BY DEFAULT BY USER INSTRUCTION, AND IT COSTS. Re-measured
+// 2026-08-29 on NQ 30m with this file's own defaults, one engine, both blocks:
+//
+//   configuration                          research PF   LOCKED PF   LOCKED Sharpe   ret/DD    n
+//   base breakout only                        1.193        1.326         +1.02        1.80    161
+//   + CHOP <= 40            <- the numbers    1.398        1.518         +1.34        2.41    102
+//                              quoted above
+//   + CHOP + linreg slope state  <- DEFAULT   1.339        1.308         +0.85        1.53     97
+//
+// So the defaults as shipped are NOT the configuration the table above describes: turning the
+// linear-regression condition on takes locked profit factor 1.518 -> 1.308 and Sharpe +1.34 ->
+// +0.85 while removing only five trades. Set `Require a linear-regression condition` to FALSE to
+// run the measured best. It is left on because it was asked for, and recorded here so the decision
+// can be revisited on evidence -- the same treatment V9's Donchian trigger got.
+//
+// An earlier version of this header said the condition was off by default while the input said
+// true. That contradiction is the defect this note replaces.
+//
+// THE SUPPORTING MEASUREMENT, unchanged. 484 declared cells
+// (6 pairs x 5 readings x 4 R-squared floors + off, x 2 CHOP x 2 timeframes):
+//
+//   beat this baseline on LOCKED PROFIT FACTOR   197 of 478 = 41%   (chance 50%)  mean -0.048
+//   beat it on LOCKED SHARPE                     162 of 478 = 34%   (chance 50%)  mean -0.26
+//   research PF vs locked PF across the grid     +0.025
+//
+// AND THE LITERAL 9/21 VALUE CROSS IS THE WORST READING IN THE STUDY. Against a same-selectivity
+// control -- a random filter keeping the same number of signals:
+//
+//   cell                        block      n      PF       p   Sharpe       p
+//   30m  LR 9/21 VALUE cross    research 128   1.309   0.270     0.67   0.275
+//   30m  LR 9/21 VALUE cross    LOCKED    66   0.853   0.880    -0.43   0.882
+//   15m  LR 9/21 VALUE cross    LOCKED   116   0.858   0.917    -0.52   0.900
+//
+// It turns a profitable strategy into a losing one with negative Sharpe on both timeframes.
+//
+// BY READING -- the CROSS forms have the HIGHEST research PF and the LOWEST locked PF:
+//   reading           research PF   LOCKED PF   LOCKED Sharpe   edge PF   % beat
+//   SLOPE state             1.112       1.173            0.62    +0.008      58%
+//   FORECAST state          1.125       1.163            0.59    -0.002      57%
+//   VALUE state             1.126       1.162            0.58    -0.003      50%
+//   SLOPE cross             1.118       1.058            0.15    -0.105      18%
+//   VALUE cross             1.181       1.021            0.02    -0.142      22%
+//
+// THE R-SQUARED GATE IS MONOTONICALLY WRONG-WAY. Requiring the regression to actually FIT before
+// trusting its cross is the one condition a moving average cannot express, and it makes research
+// look better while the holdout gets worse: floor off/0.2/0.4/0.6 gives research PF
+// 1.124/1.131/1.133/1.141 against LOCKED 1.123/1.130/1.122/1.088 and Sharpe 0.46/0.45/0.40/0.27.
+//
+// 9/21 IS THE BEST OF ITS OWN NEIGHBOURHOOD AND STILL NEGATIVE. Six pairs scored: 21/55 -0.015,
+// 9/21 -0.026, 7/17 -0.039, 11/26 -0.053, 5/13 -0.069, 13/34 -0.089 mean edge PF. Spread across all
+// six is 0.070 PF, so the pair is not a lever either. 9/21 is the least bad, not good.
+//
+// THE ONE CELL THAT BEATS THE BASELINE OUT OF SAMPLE, and why it is still OFF: `9/21 SLOPE state`
+// scores locked PF 1.370 and Sharpe 1.08 against 1.318 / 0.98 -- and it FAILS RESEARCH at p 0.583
+// while clearing no control on either block. A rule that looks better on the holdout than on the
+// block it was chosen from is the wrong shape; this branch treats it as a defect, not a result.
+// It is reachable here as reading "slope state" with pair 9/21 if you want to look at it.
+//
+// ================================ EVERYTHING TESTED AGAINST THIS BASE, AND ITS VERDICT ==========
+// Sixteen families, each scored against a RANDOM FILTER OF THE SAME SELECTIVITY on a held-out
+// block. Restrictiveness alone moves profit factor, so that control is the only honest null.
+//
+//   family                        tested                    result                  verdict
+//   CHOP <= 45 regime gate        1,184 cells x 2 tf        locked p 0.048          SHIPPED, ON
+//   ATR pct 500 <= 0.2            240 cells x 2 markets     locked p 0.003          US30 only, OFF
+//   volatility-adaptive stop      5 policies x 2 tf         locked PF 1.249         wrong shape, OFF
+//   ADX floor                     10 rungs                  locked p 0.372          null
+//   momentum filters              1,184 cells               44% beat baseline       null (chance 50%)
+//   MA crossovers                 1,016 cells               45% beat baseline       null (chance 50%)
+//   linear-regression cross       484 cells                 41% PF / 34% Sharpe     null (chance 50%)
+//   HMM regime gate               3 states x 2 markets      locked p 0.95-1.00      null
+//   XGBoost / LightGBM / RF       9 models x 2 markets      NQ p 0.76-0.88          null on NQ
+//   deep MLP 6x256                3 depths                  locked AUC 0.506        chance
+//   forward-chop prediction       6 horizon x market        locked IC 0.014         null (0.70 in-sample)
+//   take profit, any R            plateau 0.5R to 5R        0 of 1,027 reached 5R   null, 8th time
+//   07:00-11:00 window            7 windows                 worse on every row      null
+//   fixed-time flatten            3 times                   -0.055 R                null
+//   cross-index rel. strength     needs 2 feeds             untested                UNMEASURED, OFF
+//   VIX / implied volatility      117 tests                 research-locked -0.638  sign inversion
+//
+// THE THREE NEWEST NULLS, because they are the ones people keep proposing:
+//   * A HIDDEN MARKOV REGIME MODEL read the standard way is a TWO-SIDED FILTER. Fit on the whole
+//     series and decode smoothed: locked PF 1.351. Fit on research and decode filtered: 0.973. The
+//     trade counts are near identical (111 against 109), so the leak is invisible in the count.
+//     And the Markov forecasting machinery collapses to the state label -- the 1/5/12/24-step
+//     `p_bull - p_bear` each take exactly THREE distinct values over 35,701 bars, and
+//     `state == Bull` vs `signal > 0.3` has a Jaccard overlap of 1.0000.
+//   * MODEL CAPACITY IS MONOTONICALLY HARMFUL. 141 causal features, purged and embargoed CV.
+//     XGBoost AUC 0.5603 -> 0.5347 -> 0.5233 at depths 3, 6, 10. MLP 0.5394 -> 0.5132 -> 0.5060 at
+//     2x64, 4x128, 6x256. The best two models in the ladder are a REGULARISED RANDOM FOREST and
+//     LOGISTIC REGRESSION. The deepest net's SHUFFLED-LABEL twin scored +0.2633 R on top-decile
+//     P&L, higher than any real model -- which is how you learn that statistic is noise.
+//     On the locked block all nine models turn NQ's +0.0304 R NEGATIVE. The mechanism is the TAIL:
+//     win rate rises 32.7% -> 38.9% exactly as trained while p90 R falls 1.740 -> 1.340. Train on
+//     win/lose and you get a win-rate optimiser; a breakout system earns in the tail.
+//   * FORWARD CHOP IS NOT PREDICTABLE. XGBoost on 74 volatility features fits the forward
+//     efficiency ratio at in-sample IC 0.70 and delivers LOCKED IC 0.014, AUC 0.49-0.52, and never
+//     beats simply reading CHOP(14) today. CHOP describes the last 14 bars; nothing forecasts the
+//     next 24. Which is why the gate below is a plain CHOP threshold and not a model.
+//
+// ================================ THE LINREG CROSS SHIPS ON, BY REQUEST ================================
+// It is enabled at the READING THAT MEASURES BEST -- `slope state`, pair 9/21 -- not at the literal
+// value cross, which is the worst reading in the study. What that choice is worth on the defaults:
+//
+//   configuration                        research PF / Sharpe / control p     LOCKED PF / Sharpe / p
+//   no linreg          (V24 winner)          1.177   0.54                       1.318   0.98
+//   9/21 SLOPE state   (SHIPPED)             1.189   0.55   p 0.583             1.370   1.08   p 0.295
+//   9/21 VALUE cross   (the literal cross)   1.309   0.67   p 0.270             0.853  -0.43   p 0.880
+//
+// Read that middle row honestly before trading it. `slope state` is the ONLY cell in 484 that beats
+// the baseline out of sample, and it does so while FAILING its own research block (p 0.583) and
+// clearing no control on either. Better on the holdout than on the block it was chosen from is the
+// shape this branch treats as a defect. The improvement it shows -- +0.052 PF and +0.10 Sharpe --
+// is inside the noise of a 484-cell search. It is enabled because it was asked for, and switching
+// the reading to "value cross" reproduces the third row, which loses money.
+//
+// ================================ THE ADAPTIVE STOP IS ALSO OFF, FOR THE SAME REASON ============
+// V22's volatility-adaptive stop was measured on the plain Donchian with no CHOP. Run on THIS base
+// for the first time (30m, CHOP <= 40):
+//
+//   configuration                  research PF / Sharpe     LOCKED PF / Sharpe / ret-DD
+//   flat 2.0N        (default)           1.177   0.54          1.318   0.98   1.67
+//   ADAPTIVE 2.5/1.5                     1.095   0.32          1.409   1.21   1.92
+//   ADAPTIVE 3.0/1.5                     1.076   0.26          1.454   1.32   2.14
+//   INVERSE 1.5/2.5  (sign check)        0.992  -0.02          1.248   0.72   0.97
+//
+// The adaptive stop is BETTER on the locked block and WORSE on research -- again the wrong shape,
+// so it ships off. The sign check does pass (the inverse is worst on research), so this is a
+// candidate worth watching rather than a rejected idea.
+//
+// ================================ THE CROSS-INDEX RELATIVE-STRENGTH GATE ================================
+// Added on request: take the long only when THIS symbol is up more on the day than a peer index.
+//
+// *** IT IS UNTESTED, AND THAT IS NOT A FORMALITY. *** Every other number in this header comes from
+// a measured grid with a same-selectivity control. This one has none, because a relative-strength
+// filter needs TWO instruments by construction and repeated container recycles left only NQ on
+// disk -- US30, US100, XAU, EURUSD and BTC were all wiped. `research/v26/v26rs.py` holds the test
+// with its grid already fixed (2 anchors x 4 margins x 3 comparison modes + off, x 2 CHOP x 2
+// timeframes = 100 cells); it runs the moment a second index is re-uploaded. Until then this gate
+// is an IDEA WIRED UP CORRECTLY, not a validated filter, and it ships OFF.
+//
+// THE MECHANISM CONCERN, so it is on the record before any backtest flatters it. 15-minute return
+// correlation is US30/US100 0.758, US30/NQ 0.679, NQ/US100 0.874. Two series that correlated share
+// most of their variance, so the SPREAD between their daily percentage moves is a small residual on
+// a large common factor. A filter built on that residual may be selecting noise. It may also be the
+// one genuinely cross-sectional thing tried here -- every filter tested so far reads one
+// instrument's own history. Both are live possibilities; only data settles it.
+//
+// THE ANCHOR CHOICE IS THE PART MOST LIKELY TO GO WRONG. "Percent on the day" needs a reference
+// price, and the obvious one is the previous DAILY close -- but `request.security` on a daily bar
+// returns the 24-HOUR range on a futures feed and the broker's day on a cash index
+// (STUDY_TICK_RECALC). Comparing MNQ's 24-hour change against US100's cash day is comparing two
+// different windows, and the gap between them is a calendar artifact, not relative strength. So the
+// DEFAULT anchor here is the SESSION OPEN at a chosen New York time: both symbols are measured from
+// the same minute, which is apples-to-apples whatever the two symbol types are. "Prior daily close"
+// is available and is the literal reading of the request; use it only when both symbols are the
+// same instrument type.
+//
+// Everything is pulled with `lookahead_off` and read on CONFIRMED bars only, so no future data
+// enters. A peer symbol that does not trade on this bar simply holds its last price.
+//
+// ================================ SETTINGS THAT DECIDE WHETHER THE REPORT IS REAL ===============
+// Script execution / recalculate: ALL THREE BOXES OFF. If a checkbox changes the report, the report
+// is about the checkbox. Every var-state write below is guarded by barstate.isconfirmed.
+// SET COMMISSION AND SLIPPAGE. A "Commission load 0.00%" means the fills were free and the P&L is
+// not. Research charges the real MNQ stack, $1.44 round turn plus bar-dependent slippage.
+// USE A LARGE ENOUGH ACCOUNT -- the broker emulator silently REJECTS unfundable orders.
+//
+// One market: a container recycle left NQ as the only feed, so every figure above is NQ, two
+// timeframes. Research tooling for education and analysis -- not financial advice.
+
+strategy("V29 Donchian Breakout", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 100000,
+     calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72, slippage = 2)
+
+// ---------------------------------------------------------------------------- inputs
+gE      = "Entry and exit"
+entryN  = input.int(30, "Donchian entry length", minval = 2, group = gE)
+exitN   = input.int(20, "Donchian exit channel", minval = 2, group = gE)
+atrLen  = input.int(14, "ATR length", minval = 2, group = gE,
+     tooltip = "ATR here is ema(TR, n), NOT ta.atr -- ta.atr is Wilder's RMA and a different series.")
+stopN   = input.float(2.0, "ATR stop multiple", minval = 0.1, step = 0.1, group = gE)
+useTp   = input.bool(false, "Use a take profit", group = gE,
+     tooltip = "OFF. No take profit has beaten every target tested on this branch eight independent times.")
+tpR     = input.float(2.0, "  target, in R", minval = 0.1, step = 0.1, group = gE)
+
+gC      = "Regime filter -- ON by default, it is the only one that earns its place"
+useChop = input.bool(true, "Require CHOP(14) at or below a ceiling", group = gC,
+     tooltip = "CHOP <= 45 is the only regime setting beating a same-selectivity control on BOTH blocks (p 0.005 research, 0.015 locked). ADX clears nothing and makes CHOP worse when stacked. Momentum takes CHOP's locked p from 0.048 to 0.427.")
+chopMax = input.float(40, "  CHOP ceiling", minval = 1, maxval = 100, step = 1, group = gC)
+
+gA      = "ATR regime gate -- OFF; survives on US30 and is null on NQ"
+useAtr  = input.bool(false, "Only trade when ATR sits low in its own range", group = gA,
+     tooltip = "240 declared cells across four ATR families. On NQ only 4% clear a same-selectivity control against a 5% chance rate, mean excess negative. On US30 exactly two cells survive both blocks and they are the same condition -- ATR percentile over 500 bars at or below 0.2 -- at research p 0.003 and locked p 0.003, PF 1.207. Two survivors of 240 is what chance delivers, and the US30 locked baseline is NEGATIVE, so it rescues a loser rather than improving a winner. Watch, do not trade.")
+atrRankLen = input.int(500, "  ATR percentile lookback", minval = 20, group = gA)
+atrRankMax = input.float(0.2, "  trade only below this percentile", minval = 0.01, maxval = 1.0,
+     step = 0.05, group = gA)
+
+gL      = "Linear-regression cross -- ON BY REQUEST, and it costs locked PF 1.518 -> 1.308"
+useLr   = input.bool(true, "Require a linear-regression condition", group = gL,
+     tooltip = "ON by request, and measured to cost: locked PF 1.518 -> 1.308 and Sharpe +1.34 -> +0.85 on five fewer trades. Across 478 declared cells only 41% beat baseline on profit factor and 34% on Sharpe, where chance is 50%. Set this FALSE to run the measured best.")
+lrFast  = input.int(9,  "  fast length", minval = 2, group = gL)
+lrSlow  = input.int(21, "  slow length", minval = 3, group = gL)
+lrRead  = input.string("slope state", "  reading",
+     options = ["value state", "value cross", "slope state", "slope cross", "forecast state"],
+     group = gL,
+     tooltip = "The CROSS forms carry the highest research PF and the lowest locked PF -- value cross 1.181 -> 1.021 with Sharpe 0.02 and only 22% of cells beating baseline. The STATE forms are neutral. `slope state` is the least bad.")
+lrBars  = input.int(5, "  cross counts for this many bars", minval = 1, group = gL)
+useR2   = input.bool(false, "  also require an R-squared floor", group = gL,
+     tooltip = "Wrong-way monotone: raising the floor improves RESEARCH profit factor (1.124 -> 1.141) while LOCKED PF falls 1.123 -> 1.088 and Sharpe 0.46 -> 0.27.")
+r2Min   = input.float(0.2, "  R-squared floor", minval = 0.0, maxval = 1.0, step = 0.05, group = gL)
+
+gRS     = "Cross-index relative strength -- OFF and UNTESTED; see the header"
+useRs   = input.bool(false, "Only go long if this symbol leads its peers on the day", group = gRS,
+     tooltip = "UNTESTED. A relative-strength filter needs two instruments and only NQ survived the container recycles, so this has no control, no holdout and no p-value behind it -- unlike every other setting in this script. research/v26/v26rs.py runs the 100-cell test the moment a second index is re-uploaded.")
+rsAnchor = input.string("session open", "  measure the day from",
+     options = ["session open", "prior daily close"], group = gRS,
+     tooltip = "SESSION OPEN measures both symbols from the same New York minute and is apples-to-apples. PRIOR DAILY CLOSE is the literal 'percent on the day' -- but a daily bar is the 24-hour range on a futures feed and the broker's day on a cash index, so mixing symbol types compares two different windows.")
+rsAnchorH = input.int(9,  "  session anchor hour, New York", minval = 0, maxval = 23, group = gRS)
+rsAnchorM = input.int(30, "  session anchor minute", minval = 0, maxval = 59, group = gRS)
+rsSym1  = input.symbol("CAPITALCOM:US100", "  peer index 1", group = gRS)
+rsUse2  = input.bool(false, "  use a second peer index", group = gRS)
+rsSym2  = input.symbol("CAPITALCOM:US500", "  peer index 2", group = gRS)
+rsMode  = input.string("beat best of the peers", "  requirement",
+     options = ["beat best of the peers", "beat their average"], group = gRS,
+     tooltip = "With one peer both are identical. `beat best` is the strict reading -- this symbol must lead every peer named.")
+rsMargin = input.float(0.0, "  required lead, in percentage points", minval = 0.0, step = 0.05,
+     group = gRS,
+     tooltip = "0 means any lead counts. A margin makes the gate more selective, and a more selective filter raises profit factor by selectivity alone -- which is exactly why this needs a same-selectivity control before it is believed.")
+
+gV      = "Volatility-adaptive stop -- OFF; better on locked, worse on research"
+useAdapt = input.bool(false, "Scale the stop by the volatility state", group = gV,
+     tooltip = "On this base it takes locked PF 1.318 -> 1.409 and Sharpe 0.98 -> 1.21 while research falls 1.177 -> 1.095. Better out of sample than in it is the wrong shape. The sign check passes, so it is a candidate, not a rejected idea.")
+volLen  = input.int(20,  "  realised-vol window", minval = 2, group = gV)
+rankLen = input.int(250, "  percentile lookback", minval = 20, group = gV)
+volSplit = input.float(50.0, "  percentile split", minval = 1, maxval = 99, group = gV)
+stopCalm = input.float(2.5, "  stop x ATR when CALM (at or below the split)", step = 0.1, group = gV)
+stopFast = input.float(1.5, "  stop x ATR when FAST (above the split)", step = 0.1, group = gV)
+
+gT      = "Trading window -- OFF; every figure above is all hours"
+useWin  = input.bool(false, "Restrict entries to a window", group = gT)
+startH  = input.int(9,  "Start hour, New York", minval = 0, maxval = 23, group = gT)
+startM  = input.int(30, "Start minute", minval = 0, maxval = 59, group = gT)
+endH    = input.int(16, "Stop hour, New York", minval = 0, maxval = 23, group = gT)
+endM    = input.int(0,  "Stop minute", minval = 0, maxval = 59, group = gT)
+
+// ---------------------------------------------------------------------------- series
+atrN  = ta.ema(ta.tr(true), atrLen)
+entHi = ta.highest(high, entryN)[1]      // entry channel EXCLUDES this bar so a break is possible
+exLo  = ta.lowest(low, exitN)            // exit channel takes NO offset: set at this close, live next bar
+
+// CHOP(14) = 100 * log10(sum(TR,14) / 14-bar range) / log10(14). LOW means trending.
+chopV = 100 * math.log10(math.sum(ta.tr(true), 14) /
+     math.max(ta.highest(high, 14) - ta.lowest(low, 14), syminfo.mintick)) / math.log10(14)
+
+// ta.linreg(src, n, 0) is the fitted value AT this bar; the slope is that minus the same fit one bar
+// back; the one-bar forecast is value + slope. R-squared is computed from the slope and the variance.
+lrVf = ta.linreg(close, lrFast, 0)
+lrVs = ta.linreg(close, lrSlow, 0)
+lrSf = lrVf - ta.linreg(close, lrFast, 1)
+lrSs = lrVs - ta.linreg(close, lrSlow, 1)
+lrSdX = math.sqrt((math.pow(lrFast, 2) - 1) / 12.0)
+lrSdY = ta.stdev(close, lrFast)
+lrR2  = lrSdY > 0 ? math.pow(lrSf * lrSdX / lrSdY, 2) : na
+
+lrStateV = lrVf > lrVs
+lrStateS = lrSf > lrSs
+lrStateF = lrVf + lrSf > lrVs
+lrRawUp  = lrRead == "value cross" ? lrStateV : lrStateS
+lrFresh  = ta.barssince(lrRawUp and not lrRawUp[1]) <= lrBars - 1
+lrBase   = lrRead == "value state" ? lrStateV : lrRead == "slope state" ? lrStateS :
+     lrRead == "forecast state" ? lrStateF : lrFresh
+lrOk = not useLr or (not na(lrVf) and not na(lrVs) and lrBase
+     and (not useR2 or (not na(lrR2) and lrR2 >= r2Min)))
+
+// BARE `hour`/`minute` ARE EXCHANGE TIME in Pine -- Chicago for CME, an hour off New York.
+// Declared BEFORE the relative-strength block, which reads modNY: Pine has no forward references.
+modNY    = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+startMod = startH * 60 + startM
+endMod   = endH * 60 + endM
+inWin = not useWin or (startMod <= endMod ? modNY >= startMod and modNY < endMod
+     : modNY >= startMod or modNY < endMod)
+
+// ---------------------------------------------------------------------------- relative strength
+// Peer prices on THIS chart's timeframe, `lookahead_off` so no future bar can be read. A symbol
+// that is not trading holds its last print, which is the correct behaviour for a comparison.
+rsP1 = request.security(rsSym1, timeframe.period, close, lookahead = barmerge.lookahead_off)
+rsP2 = request.security(rsSym2, timeframe.period, close, lookahead = barmerge.lookahead_off)
+// `close[1]` on the daily timeframe with lookahead_off is the last COMPLETED daily bar.
+rsD0 = request.security(syminfo.tickerid, "D", close[1], lookahead = barmerge.lookahead_off)
+rsD1 = request.security(rsSym1, "D", close[1], lookahead = barmerge.lookahead_off)
+rsD2 = request.security(rsSym2, "D", close[1], lookahead = barmerge.lookahead_off)
+
+rsAnchorMod = rsAnchorH * 60 + rsAnchorM
+var float rsA0 = na
+var float rsA1 = na
+var float rsA2 = na
+var int   rsDay = na
+nyDay = dayofmonth(time, "America/New_York") + 100 * month(time, "America/New_York")
+     + 10000 * year(time, "America/New_York")
+if barstate.isconfirmed
+    if na(rsDay) or nyDay != rsDay
+        rsDay := nyDay
+        rsA0 := na
+        rsA1 := na
+        rsA2 := na
+    if na(rsA0) and modNY >= rsAnchorMod
+        rsA0 := close
+        rsA1 := rsP1
+        rsA2 := rsP2
+
+b0 = rsAnchor == "session open" ? rsA0 : rsD0
+b1 = rsAnchor == "session open" ? rsA1 : rsD1
+b2 = rsAnchor == "session open" ? rsA2 : rsD2
+rsOwn = not na(b0) and b0 > 0 ? (close / b0 - 1) * 100 : na
+rsPc1 = not na(b1) and b1 > 0 ? (rsP1 / b1 - 1) * 100 : na
+rsPc2 = not na(b2) and b2 > 0 ? (rsP2 / b2 - 1) * 100 : na
+rsRef = not rsUse2 ? rsPc1 : na(rsPc1) or na(rsPc2) ? na :
+     rsMode == "beat their average" ? (rsPc1 + rsPc2) / 2 : math.max(rsPc1, rsPc2)
+rsOk = not useRs or (not na(rsOwn) and not na(rsRef) and (rsOwn - rsRef) >= rsMargin)
+
+// The volatility state: 20-bar close-to-close vol, ranked within its own trailing 250 bars.
+lr1    = math.log(close / close[1])
+ccVol  = math.sqrt(ta.sma(lr1 * lr1, volLen))
+volPct = ta.percentrank(ccVol, rankLen - 1)
+smult  = not useAdapt ? stopN : volPct <= volSplit ? stopCalm : stopFast
+
+// ATR percentile: where today's ATR sits within its own trailing distribution, in [0,1].
+atrRank = ta.percentrank(atrN, atrRankLen - 1) / 100.0
+atrOk = not useAtr or (not na(atrRank) and atrRank <= atrRankMax)
+
+chopOk = not useChop or (not na(chopV) and chopV <= chopMax)
+ready  = not na(entHi) and not na(atrN) and atrN > 0 and (not useAdapt or not na(volPct))
+sigOK  = ready and high > entHi and chopOk and atrOk and lrOk and rsOk and inWin
+
+// ---------------------------------------------------------------------------- state
+var float stopAnchor = na
+var float tpTarget   = na
+var int   lastExit   = -2
+var int   nClosed    = 0
+
+// EVERY durable write is guarded. Without the guard, mid-bar evaluation reads a `close` the
+// bar-close run never sees, and `stopAnchor` is durable.
+if barstate.isconfirmed
+    // FIRST: record the exit, so a signal cannot fire on the bar a trade closed -- the research
+    // position lock forbids it. Counting CLOSED TRADES also catches a trade that opened and
+    // stopped out inside one bar, where position_size reads 0 at both closes.
+    if strategy.closedtrades > nClosed
+        nClosed  := strategy.closedtrades
+        lastExit := bar_index
+
+    if strategy.position_size > 0
+        // Working stop: the NEARER of the ATR stop and the exit channel, capped at this bar's
+        // close, because a sell stop cannot rest above the market.
+        lvl = math.min(math.max(stopAnchor, exLo), close)
+        if useTp
+            strategy.exit("x", from_entry = "L", stop = lvl, limit = tpTarget)
+        else
+            strategy.exit("x", from_entry = "L", stop = lvl)
+    else if sigOK and bar_index > lastExit
+        // Anchored to the SIGNAL bar's close, not the fill: a script cannot know the fill price
+        // when the exit order must be written, and anchoring here lets entry and exit go out
+        // TOGETHER so the entry bar is never unprotected. Measured cost of that substitution:
+        // 99.5% identical exit bars, per-trade R correlation 0.9998.
+        stopAnchor := close - smult * atrN
+        tpTarget   := close + tpR * smult * atrN
+        strategy.entry("L", strategy.long)
+        lvl0 = math.min(math.max(stopAnchor, exLo), close)
+        if useTp
+            strategy.exit("x", from_entry = "L", stop = lvl0, limit = tpTarget)
+        else
+            strategy.exit("x", from_entry = "L", stop = lvl0)
+
+// ---------------------------------------------------------------------------- plots
+plot(entHi, "Donchian entry", color.new(color.teal, 40))
+plot(strategy.position_size > 0 ? exLo : na, "Exit channel", color.new(color.orange, 30))
+plot(strategy.position_size > 0 ? stopAnchor : na, "ATR stop", color.new(color.red, 30),
+     style = plot.style_linebr)
+plot(useLr ? lrVf : na, "Linreg fast", color.new(color.aqua, 20))
+plot(useLr ? lrVs : na, "Linreg slow", color.new(color.purple, 20))
+bgcolor(useChop and not chopOk ? color.new(color.gray, 92) : na, title = "CHOP blocked")
+bgcolor(useRs and not rsOk ? color.new(color.maroon, 90) : na, title = "RS blocked")
+bgcolor(useAtr and not atrOk ? color.new(color.navy, 90) : na, title = "ATR regime blocked")
+
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "Defaults are the measured best: 30m, Donchian 30/20, 2.0N, no target, CHOP<=40",
+         text_color = color.white, bgcolor = color.new(color.teal, 30))
+    table.cell(hud, 0, 1, "Linreg ON at 9/21 SLOPE STATE - the best of 484 cells, and it FAILS research at p 0.583",
+         text_color = color.white, bgcolor = color.new(color.orange, 20))
+    table.cell(hud, 0, 2, "Do NOT switch the reading to 'value cross': locked PF 1.318 -> 0.853, Sharpe +0.98 -> -0.43",
+         text_color = color.white, bgcolor = color.new(color.red, 25))
+    table.cell(hud, 0, 3, useRs ? "RELATIVE-STRENGTH GATE IS ON AND IT IS UNTESTED - no control, no holdout, no p-value" :
+         "Relative-strength gate off (untested - needs a second index feed to measure)",
+         text_color = color.white, bgcolor = useRs ? color.new(color.red, 10) : color.new(color.gray, 40))

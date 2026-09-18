@@ -1,0 +1,101 @@
+feed,cell,year,n,R
+US100,Optuna totR,2016,15,0.202
+US100,Optuna totR,2017,78,0.155
+US100,Optuna totR,2018,75,0.33
+US100,Optuna totR,2019,63,0.032
+US100,Optuna totR,2020,77,0.713
+US100,Optuna totR,2021,81,0.014
+US100,Optuna totR,2022,64,0.675
+US100,Optuna totR,2023,81,-0.035
+US100,Optuna totR,2024,81,0.522
+US100,Optuna totR,2025,60,-0.256
+US100,Optuna pf,2016,4,1.439
+US100,Optuna pf,2017,8,0.491
+US100,Optuna pf,2018,19,0.401
+US100,Optuna pf,2019,14,0.104
+US100,Optuna pf,2020,16,1.097
+US100,Optuna pf,2021,25,0.554
+US100,Optuna pf,2022,26,0.539
+US100,Optuna pf,2023,20,0.014
+US100,Optuna pf,2024,19,0.149
+US100,Optuna pf,2025,13,0.509
+US100,Optuna retdd,2016,3,0.493
+US100,Optuna retdd,2017,28,0.089
+US100,Optuna retdd,2018,59,0.454
+US100,Optuna retdd,2019,31,0.117
+US100,Optuna retdd,2020,43,0.219
+US100,Optuna retdd,2021,51,0.095
+US100,Optuna retdd,2022,80,0.346
+US100,Optuna retdd,2023,58,-0.281
+US100,Optuna retdd,2024,47,0.182
+US100,Optuna retdd,2025,35,0.064
+US30,Optuna totR,2016,24,0.674
+US30,Optuna totR,2017,122,0.356
+US30,Optuna totR,2018,134,0.537
+US30,Optuna totR,2019,128,0.191
+US30,Optuna totR,2020,134,0.574
+US30,Optuna totR,2021,125,-0.119
+US30,Optuna totR,2022,132,0.089
+US30,Optuna totR,2023,126,0.035
+US30,Optuna totR,2024,143,0.199
+US30,Optuna totR,2025,84,-0.059
+US30,Optuna pf,2016,3,6.484
+US30,Optuna pf,2017,28,2.491
+US30,Optuna pf,2018,14,-0.14
+US30,Optuna pf,2019,16,0.47
+US30,Optuna pf,2020,14,0.233
+US30,Optuna pf,2021,25,-0.14
+US30,Optuna pf,2022,29,0.13
+US30,Optuna pf,2023,29,0.131
+US30,Optuna pf,2024,37,0.064
+US30,Optuna pf,2025,9,0.462
+US30,Optuna retdd,2016,7,2.611
+US30,Optuna retdd,2017,33,3.071
+US30,Optuna retdd,2018,20,0.996
+US30,Optuna retdd,2019,20,0.607
+US30,Optuna retdd,2020,19,0.102
+US30,Optuna retdd,2021,33,0.04
+US30,Optuna retdd,2022,33,0.061
+US30,Optuna retdd,2023,34,-0.174
+US30,Optuna retdd,2024,37,0.146
+US30,Optuna retdd,2025,12,0.271
+US100,As published L,2016,10,-0.448
+US100,As published L,2017,97,-0.294
+US100,As published L,2018,84,0.062
+US100,As published L,2019,73,0.142
+US100,As published L,2020,105,0.046
+US100,As published L,2021,81,0.096
+US100,As published L,2022,76,-0.074
+US100,As published L,2023,86,0.051
+US100,As published L,2024,93,-0.014
+US100,As published L,2025,66,-0.055
+US100,As published S,2016,11,0.235
+US100,As published S,2017,50,0.255
+US100,As published S,2018,75,-0.159
+US100,As published S,2019,44,-0.248
+US100,As published S,2020,55,0.326
+US100,As published S,2021,65,-0.066
+US100,As published S,2022,89,-0.092
+US100,As published S,2023,76,-0.235
+US100,As published S,2024,63,0.049
+US100,As published S,2025,54,-0.202
+US30,As published L,2016,10,0.486
+US30,As published L,2017,66,0.021
+US30,As published L,2018,60,0.191
+US30,As published L,2019,57,0.302
+US30,As published L,2020,62,0.239
+US30,As published L,2021,51,0.286
+US30,As published L,2022,60,-0.013
+US30,As published L,2023,53,0.047
+US30,As published L,2024,53,-0.138
+US30,As published L,2025,38,-0.17
+US30,As published S,2016,4,-0.696
+US30,As published S,2017,43,-0.662
+US30,As published S,2018,55,-0.042
+US30,As published S,2019,50,-0.217
+US30,As published S,2020,55,0.106
+US30,As published S,2021,47,-0.198
+US30,As published S,2022,72,-0.092
+US30,As published S,2023,53,-0.054
+US30,As published S,2024,62,-0.089
+US30,As published S,2025,39,0.078

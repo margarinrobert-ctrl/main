@@ -1,0 +1,49 @@
+VETO vs SUBSET -- and the shipped script is the VETO.
+
+The parity harness surfaced this. `run_xcvd.py` scored every feature as a SUBSET: run the base
+ungated, then split its realised trades by the feature. The shipped script cannot do that. It is a
+VETO -- the gate decides which bars may OPEN a trade, so refusing one trade frees the position lock
+and lets a LATER breakout be taken that the ungated run never saw.
+
+CLAUDE.md has this exact rule from `STUDY_AUCTION`: "A conditional split of realised trades is not
+a filter test -- filter the TRIGGERS and re-simulate." The subset number is not wrong, it answers a
+different question ("among the trades this system took, did the flagged ones do better"), and the
+VP/TPO handoff measured the same split from the other side (32 lock-freed trades reading PF 0.92).
+
+Block A: 844 ungated trades, 318 kept as a subset -- but 400 events when the gate is run as a veto.
+So 82 trades exist ONLY because the gate refused an earlier one. This file scores the veto properly,
+against a control built the SAME way: a random gate passing the same FRACTION OF BARS, re-simulated
+end to end, so the lock is re-run in the null exactly as it is in the rule.
+
+
+==========================================================================================================================
+THE SAME GATE, SCORED BOTH WAYS
+==========================================================================================================================
+  block       base n  base %/ev |  SUBSET n  subset %/ev |  VETO n  veto %/ev  lock-freed  their %/ev
+  A_primary      844    0.02923 |       318      0.10915 |     400    0.05634          82    -0.14845
+  B_meta         566    0.02125 |       211      0.10780 |     265    0.10177          56     0.06206
+  C_locked       319    0.17855 |       116      0.34068 |     150    0.22331          34    -0.17715
+
+  'lock-freed' are trades the VETO run takes that the ungated run never saw, because the
+  gate refused an earlier breakout and released the one-position lock.
+
+==========================================================================================================================
+THE VETO AGAINST ITS OWN CONTROL: a RANDOM gate passing the same FRACTION OF BARS, re-simulated
+==========================================================================================================================
+  This is the null the shipped script actually faces. 400 draws, the whole walk re-run each time.
+
+  the real gate passes 32.3% of bars
+
+  block       rule n  rule %/ev   ctl n    ctl p50    ctl p95    excess       p
+  A_primary      400    0.05634     604    0.00533    0.03421  +0.05101   0.003
+  B_meta         265    0.10177     406    0.03980    0.07344  +0.06197   0.003
+  C_locked       150    0.22331     238    0.17654    0.23649  +0.04677   0.110
+
+==========================================================================================================================
+AND AGAINST DOING NOTHING -- the ungated base, which is the real alternative
+==========================================================================================================================
+  A_primary  ungated  844 trades  PF 1.101  total    24.67%   |   gated  400  PF 1.193  total    22.54%   (gate LOSES total return)
+  B_meta     ungated  566 trades  PF 1.076  total    12.03%   |   gated  265  PF 1.411  total    26.97%   (gate WINS)
+  C_locked   ungated  319 trades  PF 1.642  total    56.96%   |   gated  150  PF 1.776  total    33.50%   (gate LOSES total return)
+
+  runtime 8s

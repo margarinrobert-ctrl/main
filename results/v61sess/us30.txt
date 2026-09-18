@@ -1,0 +1,70 @@
+THE V61 CVD RULE, FROZEN, ON US30 -- the cross-market read it has never had.
+
+WHY THIS IS THE TEST THAT MATTERS. Everything in the V61 line was chosen on NQ: the geometry, the
+pivot width, the recency window, the presets, and the 2,177,280-cell grid behind them. US30 chose
+NOTHING. So BOTH of its blocks are out of sample and the only reason to split it at all is to see
+whether the result decays in the right direction.
+
+NOTHING IS FITTED HERE. The geometry and the order-flow settings are the shipped incumbent's,
+carried over unchanged. The only thing that had to change is the chart timeframe, because CVD needs
+sub-bars and US30's finest feed is 15-minute -- see `us30_core` for what that costs.
+
+THREE NULLS, because a breakout on a market that rose needs all three:
+  * a RANDOM ENTRY with the same geometry and exits -- does the trigger beat a coin flip?
+  * a RANDOM FILTER of the same selectivity -- does the CVD gate earn its place?
+  * always-long over the same holding periods -- is any of it just the index?
+
+  US30 60m  49,325 bars, 4 sub-bars a bar, gate k=2 w=10, passes 17.4% of bars
+  US30 240m 13,502 bars, 16 sub-bars a bar, gate k=1 w=2 -- the 90/600-minute conversion DEGENERATES here, so 240m is reported and not relied on
+  blocks split at 20220629; both are out of sample because US30 chose nothing
+
+==============================================================================================================================
+1  THE FROZEN RULE ON US30. Nothing fitted; the geometry and windows are NQ's
+==============================================================================================================================
+  US30 at $1 a point, 1.50 points of cost and 0.10 of slippage a side.
+
+   chart ent/exit    = minutes block        n     PF    win        $  maxDD $  ret/DD   %/trade  cost/stop
+      60 20/20            1200 block A    208  1.146  34.6%     2276     3047    0.75   +0.0533       2.2%
+      60 20/20            1200 block B    142  1.101  31.7%     1443     2947    0.49   +0.0195       2.2%
+      60 10/10             600 block A    351  1.094  38.7%     1905     2367    0.80   +0.0180       2.3%
+      60 10/10             600 block B    236  0.943  30.1%    -1011     3505   -0.29   -0.0173       2.3%
+     240 20/20            4800 block A     31  1.242  32.3%      997     2021    0.49   +0.1951       1.1%
+     240 20/20            4800 block B     26  1.674  38.5%     3041     1278    2.38   +0.3323       1.1%
+     240 10/10            2400 block A     56  0.919  30.4%     -599     3254   -0.18   -0.0034       1.1%
+     240 10/10            2400 block B     40  1.639  42.5%     3290     1620    2.03   +0.2478       1.1%
+
+==============================================================================================================================
+2  THE THREE NULLS on the 60-minute read (the faithful conversion)
+==============================================================================================================================
+  block        n  rule pts/trade  random ENTRY p50       p  random FILTER p50       p  always-long
+  block A    208           10.94             20.95   0.870              22.81   0.760        15.12
+  block B    142           10.16             10.74   0.507              14.60   0.595        29.55
+
+  'random FILTER' keeps the same NUMBER of the UNGATED base's trades at random, so it asks
+  whether the CVD gate picks better trades or merely fewer.
+
+==============================================================================================================================
+3  DOES THE FLATTEN FINDING REPLICATE ON A MARKET THAT CHOSE NOTHING?
+==============================================================================================================================
+  arm                        block        n     PF   %/trade  total %  maxDD $  ret/DD
+  all hours, no flatten      block A    208  1.146   +0.0533   +11.09     3047    0.75
+  all hours, no flatten      block B    142  1.101   +0.0195    +2.78     2947    0.49
+  07:00-11:00, NO flatten    block A     83  1.410   +0.1029    +8.54     1456    1.54
+  07:00-11:00, NO flatten    block B     65  1.178   +0.0306    +1.99     1587    0.64
+  all hours, flatten 11:00   block A    113  1.226   +0.0515    +5.82     1063    1.09
+  all hours, flatten 11:00   block B     77  1.010   +0.0012    +0.09     1730    0.02
+  07:00-11:00 + flatten      block A     88  0.965   -0.0032    -0.28      781   -0.16
+  07:00-11:00 + flatten      block B     73  0.883   -0.0164    -1.20     1861   -0.24
+
+  flatten cost on the same all-hours base: block A 1.146 -> 1.226 (+0.081), block B 1.101 -> 1.010 (-0.091)
+
+==============================================================================================================================
+4  THE GATE'S OWN ABLATION -- what the CVD is worth on a market that never chose it
+==============================================================================================================================
+  arm                        block        n     PF  pts/trade  total pts
+  gate ON (as shipped)       block A    208  1.146      10.94       2276
+  gate ON (as shipped)       block B    142  1.101      10.16       1443
+  gate OFF (base only)       block A    568  1.265      21.96      12471
+  gate OFF (base only)       block B    353  1.143      14.42       5092
+
+  runtime 2s

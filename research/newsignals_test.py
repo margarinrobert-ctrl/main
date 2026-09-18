@@ -111,5 +111,5 @@ if __name__ == "__main__":
         rows = sweep(f)
         best = pick(rows)
         out[f] = read_locked(best) if best else []
-    np.save("/tmp/newsignals.npy", np.array(
+    np.save("results/newsignals/newsignals.npy", np.array(
         [r for f in out for r in out[f]], dtype=object), allow_pickle=True)

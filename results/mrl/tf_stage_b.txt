@@ -1,0 +1,81 @@
+TFI -- an intraday TREND-FOLLOWING design from the library, measured the same way.
+
+Components (library entries): E2 the exit geometry (ATR stop, N-bar channel exit, one unit, NO
+target, market order at the next open); E3 an ADX floor as a regime gate; E4 the prior RTH
+session's HIGH as a level the breakout must also clear; E9 the session window. 15-minute NQ
+bars, entries 09:30-14:00, everything flat at the 15:45 close (the intraday constraint the
+branch has measured at about half the edge -- it is imposed by the brief). A target axis is
+included ONLY because the brief asks for a 66% win rate; the branch's evidence is that a
+target hurts a trend follower, and the grid will say so or not.
+
+Selection on research (first 65% of sessions) by marginal per axis and the two-feed shape
+check on US100 / US30; the locked block read once for the chosen cell and its neighbours,
+against a random-bar control with the identical geometry, session and lock.
+
+====================================================================================================
+A. GRID on NQ research (15m): 144 cells x 2 sides
+====================================================================================================
+
+  side +1: 144 cells with n >= 40; share PF > 1 93%, PF >= 1.5 0, win >= 66% 0; median R +0.0652
+    N     20: R +0.068 PF 1.16 win 52% (n 224)  55: R +0.067 PF 1.15 win 52% (n 205)
+    adx   0: R +0.060 PF 1.09 win 51% (n 264)  20: R +0.075 PF 1.17 win 52% (n 218)  25: R +0.067 PF 1.20 win 53% (n 162)
+    gate  False: R +0.052 PF 1.08 win 52% (n 258)  True: R +0.083 PF 1.22 win 53% (n 171)
+    stop  1.5: R +0.064 PF 1.13 win 51% (n 226)  2.5: R +0.071 PF 1.18 win 54% (n 203)
+    exN   10: R +0.066 PF 1.16 win 52% (n 215)  20: R +0.069 PF 1.15 win 53% (n 215)
+    tp    0.0: R +0.108 PF 1.22 win 44% (n 188)  0.75: R +0.033 PF 1.08 win 58% (n 232)  1.0: R +0.061 PF 1.15 win 54% (n 223)
+
+  side -1: 144 cells with n >= 40; share PF > 1 47%, PF >= 1.5 0, win >= 66% 0; median R -0.0082
+    N     20: R +0.011 PF 1.04 win 48% (n 181)  55: R -0.008 PF 1.01 win 47% (n 160)
+    adx   0: R -0.010 PF 0.98 win 48% (n 203)  20: R -0.005 PF 0.99 win 47% (n 173)  25: R +0.020 PF 1.10 win 48% (n 135)
+    gate  False: R -0.024 PF 0.95 win 46% (n 222)  True: R +0.027 PF 1.10 win 50% (n 119)
+    stop  1.5: R +0.020 PF 1.07 win 49% (n 180)  2.5: R -0.017 PF 0.98 win 47% (n 161)
+    exN   10: R -0.001 PF 1.02 win 47% (n 170)  20: R +0.004 PF 1.03 win 49% (n 170)
+    tp    0.0: R +0.032 PF 1.07 win 40% (n 151)  0.75: R -0.012 PF 1.00 win 55% (n 184)  1.0: R -0.015 PF 1.00 win 48% (n 176)
+
+  top 8 long cells by PF (n >= 40), research:
+     N  adx  gate  stop  exN    tp   n   win    pf     R  sharpe
+    55   20  True 2.500   10 0.000 145 0.490 1.420 0.140   1.113
+    55   20  True 2.500   20 0.000 145 0.503 1.402 0.143   1.092
+    55   20  True 1.500   20 0.000 156 0.391 1.342 0.179   0.938
+    55   25  True 2.500   20 0.000 117 0.530 1.335 0.095   0.873
+    55   25  True 2.500   10 0.000 117 0.513 1.334 0.085   0.858
+    20   25  True 2.500   10 0.000 119 0.504 1.332 0.086   0.855
+    20   25  True 2.500   20 1.000 134 0.552 1.332 0.080   0.942
+    20   20  True 2.500   10 0.000 149 0.477 1.328 0.112   0.914
+
+====================================================================================================
+B. JUDGE -- the marginal-consensus long cell on NQ research and LOCKED (read once), the
+   random-bar control (same window, count, geometry, lock), neighbours, and the 15m feeds
+====================================================================================================
+  cell: long, Donchian 55 breakout, ADX >= 20, prior-session-high gate True, stop 2.5 x ATR14, channel exit 20, target none, entries 09:30-14:00, flat 15:45
+  research (signals 264)                   n  145 win 50.3% PF 1.402 R +0.1434 pts +13.54 Sharpe 1.09 stop 37% chan 2% flat 61% tgt 0% | ctl +0.0201 p 0.013
+  locked (signals 141)                     n   81 win 55.6% PF 1.238 R +0.0472 pts  +9.94 Sharpe 0.58 stop 35% chan 2% flat 63% tgt 0% | ctl +0.0160 p 0.327
+    bootstrap P(mean R <= 0) 0.339, 90% CI [-0.1229, +0.2209]; net +805 pts = $+1,611 on one MNQ; top 5% of trades 190% of net
+    by year: 2024: n 9.0 R +0.543 +221 pts  2025: n 72.0 R -0.015 +585 pts
+
+  LOCKED neighbours and variants (same signals unless stated):
+    stop 1.5                               n   82 win 48.8% PF 1.440 R +0.1429 pts +14.47 Sharpe 0.92 stop 49% chan 1% flat 50% tgt 0%
+    exit channel 10                        n   81 win 54.3% PF 1.236 R +0.0395 pts  +9.43 Sharpe 0.56 stop 32% chan 10% flat 58% tgt 0%
+    target 1.0x stop (the win-rate variant) n   90 win 55.6% PF 1.182 R +0.0119 pts  +7.06 Sharpe 0.48 stop 31% chan 1% flat 41% tgt 27%
+    target 0.75x stop                      n   93 win 60.2% PF 1.315 R +0.0393 pts +10.36 Sharpe 0.84 stop 26% chan 2% flat 31% tgt 41%
+    no ADX floor                           n   94 win 53.2% PF 1.099 R +0.0086 pts  +4.45 Sharpe 0.28 stop 38% chan 2% flat 60% tgt 0%
+    ADX >= 25                              n   63 win 58.7% PF 1.447 R +0.1113 pts +17.45 Sharpe 0.86 stop 30% chan 3% flat 67% tgt 0%
+    no prior-session-high gate             n  114 win 51.8% PF 0.997 R +0.0310 pts  -0.18 Sharpe -0.01 stop 34% chan 3% flat 63% tgt 0%
+    Donchian 20                            n   80 win 55.0% PF 1.204 R +0.0322 pts  +8.60 Sharpe 0.50 stop 35% chan 2% flat 62% tgt 0%
+    the SHORT mirror                       n   53 win 49.1% PF 0.851 R -0.0696 pts -10.36 Sharpe -0.44 stop 36% chan 2% flat 62% tgt 0%
+    cost x1.5                              n   81 win 55.6% PF 1.216 R +0.0384 pts  +9.08 Sharpe 0.53 stop 35% chan 2% flat 63% tgt 0%
+    cost x2.0                              n   81 win 55.6% PF 1.194 R +0.0297 pts  +8.22 Sharpe 0.48 stop 35% chan 2% flat 63% tgt 0%
+
+  15-minute feeds, same rules (bar level, their own blocks):
+/home/user/main/research/mrl/mrl_bar.py:150: RuntimeWarning: invalid value encountered in divide
+  close_pos_bar=np.where(h > l, (c - l) / (h - l), np.nan))
+Traceback (most recent call last):
+  File "/home/user/main/research/mrl/tf_design.py", line 316, in <module>
+    judge()
+  File "/home/user/main/research/mrl/tf_design.py", line 306, in judge
+    Dm = prep(mk)
+         ^^^^^^^^
+  File "/home/user/main/research/mrl/tf_design.py", line 65, in prep
+    blocks = {"research": (ts < "2022-01-01").to_numpy(),
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'numpy.ndarray' object has no attribute 'to_numpy'

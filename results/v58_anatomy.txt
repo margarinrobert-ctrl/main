@@ -1,0 +1,128 @@
+====================================================================================================
+REVERSE-ENGINEERING THE INITIAL BALANCE EDGE -- NQ, the block that chose nothing
+====================================================================================================
+  the cluster as declared: IB 30m, long, entry 0.5, stop 1.0, no target, flat 15:55,
+  adx>=20 + ibr>=0.8x + cpos>=0.5 + 13 under 48
+  n 48   +0.3544 ATR/trade   +21.60 pts   PF 1.801   win 45.8%
+
+====================================================================================================
+1. EXIT SPLIT -- a rule earning at the TIME exit is a direction bet, not a barrier edge
+====================================================================================================
+  exit                      n   share    ATR/tr   total ATR  share of net
+  stop hit                 22   45.8%   -1.3551     -29.813       -175.3%
+  flatten 15:55            26   54.2%   +1.8009     +46.823        275.3%
+
+====================================================================================================
+2. WIDEN THE STOP UNTIL THE BARRIERS STOP BINDING
+====================================================================================================
+  stop (fraction of IB range)         n    ATR/tr    pts/tr      PF     win  stopped out
+  0.60                               48   +0.2129     +7.72   1.681   10.4%        89.6%
+  0.80                               48   -0.0751     -4.30   0.843   20.8%        75.0%
+  1.00  <- shipped                   48   +0.3544    +21.60   1.801   45.8%        45.8%
+  1.30                               48   +0.3920    +21.77   1.700   54.2%        31.2%
+  INFINITE (no stop at all)          48   +0.1546    +13.90   1.336   60.4%         0.0%
+
+  the shipped 1.00 stop is worth +0.1998 ATR/trade against no stop at all.
+
+====================================================================================================
+3. DAY VERSUS BAR -- same days, same geometry, RANDOM entry time
+====================================================================================================
+  rule +0.3544 ATR/trade   vs   random-entry control median -0.1286   p 0.0030   over 2000 draws
+  (the control keeps the side, the geometry, the costs and the SAME 48 DAYS; only the
+   entry moment is randomised, so it prices drift, barrier width and session timing.)
+
+====================================================================================================
+4. WHAT DO THE SELECTED DAYS DO ON THEIR OWN? -- the session-picker test
+====================================================================================================
+  group                         days   mean travel    median  share up
+  the 48 selected days            48       -0.5945   -0.1407     47.9%
+  every other day                716       +0.1775   +0.6030     57.1%
+  travel = IB close to 15:55 close, in ATR units at the plan bar. If the selected days
+  simply drift up, the four conditions are a session picker and not an entry rule.
+
+====================================================================================================
+5. WHICH CONDITION CREATES THE EDGE -- each dropped, then each on its own
+====================================================================================================
+  rule                                  n    ATR/tr    pts/tr      PF     win   vs full   ctrl p
+  FULL RULE (all four)                 48   +0.3544    +21.60   1.801   45.8%              0.003
+  none (geometry only)                329   +0.3087    +15.16   1.539   38.0%   -0.0457    0.000
+  --- drop one --------------------------------------------------------------------------
+  without adx>=20                      59   +0.6489    +28.67   2.161   49.2%   +0.2945    0.000
+  without ibr>=0.8x                    68   +0.2966    +19.18   1.752   42.6%   -0.0578    0.002
+  without cpos>=0.5                    79   +0.0340     +4.51   1.148   39.2%   -0.3204    0.043
+  without 13 under 48                 111   +0.1906    +23.91   1.715   39.6%   -0.1637    0.004
+  --- alone -----------------------------------------------------------------------------
+  adx>=20 only                        245   +0.2183    +14.16   1.482   37.6%   -0.1360    0.001
+  ibr>=0.8x only                      206   +0.2684    +16.08   1.510   40.3%   -0.0860    0.000
+  cpos>=0.5 only                      222   +0.4132    +22.19   1.772   39.2%   +0.0588    0.000
+  13 under 48 only                    143   +0.2333    +11.29   1.431   39.2%   -0.1210    0.001
+
+====================================================================================================
+6. THE LADDER -- every rung of every condition, the rest held at the cluster
+====================================================================================================
+  A real mechanism decays smoothly across its own axis. A threshold that works at one
+  setting and nowhere near it is a spike, not a mechanism.
+  axis    setting             n    ATR/tr    pts/tr      PF     win
+  adx     off                59   +0.6489    +28.67   2.161   49.2%
+  adx     adx>=20            48   +0.3544    +21.60   1.801   45.8%  <-- shipped
+  adx     adx>=25            41   +0.1134    +14.53   1.556   46.3%
+  adx     adx<=20            11   +1.9341    +59.52   5.026   63.6%
+  --------------------------------------------------------------
+  vol     off                68   +0.2966    +19.18   1.752   42.6%
+  vol     ibr>=0.8x          48   +0.3544    +21.60   1.801   45.8%  <-- shipped
+  vol     ibr>=1.2x          21   +0.5531    +31.63   1.938   47.6%
+  vol     ibr<=1.2x          45   +0.1305    +12.83   1.595   40.0%
+  --------------------------------------------------------------
+  cpos    off                79   +0.0340     +4.51   1.148   39.2%
+  cpos    cpos>=0.6          40   +0.2709    +13.13   1.446   42.5%
+  cpos    cpos>=0.5          48   +0.3544    +21.60   1.801   45.8%  <-- shipped
+  cpos    cpos<=0.4          26   -0.3211    -17.51   0.493   34.6%
+  --------------------------------------------------------------
+  ema     off               111   +0.1906    +23.91   1.715   39.6%
+  ema     13 over 48         63   +0.0659    +25.67   1.669   34.9%
+  ema     13 under 48        48   +0.3544    +21.60   1.801   45.8%  <-- shipped
+  --------------------------------------------------------------
+
+====================================================================================================
+7. THE GEOMETRY LADDER, UNCONDITIONAL -- if the geometry is the edge, sweep it
+====================================================================================================
+  All four conditions OFF, one geometry axis moved at a time from the cluster's values.
+  axis      setting          n    ATR/tr    pts/tr      PF     win   ctrl p
+  IB length 30             329   +0.3087    +15.16   1.539   38.0%    0.000  <-- shipped
+  IB length 60             212   +0.2812     +9.10   1.333   46.2%    0.000
+  IB length 90             161   +0.2544    +10.14   1.405   48.4%    0.000
+  -------------------------------------------------------------------------
+  retracement0.0            496   +0.0226     +3.20   1.079   47.4%    1.000
+  retracement0.1            468   +0.1072     +7.66   1.203   47.6%    0.902
+  retracement0.25           413   +0.2148    +10.38   1.300   45.0%    0.075
+  retracement0.4            356   +0.2397    +11.61   1.369   40.4%    0.001
+  retracement0.5            329   +0.3087    +15.16   1.539   38.0%    0.000  <-- shipped
+  -------------------------------------------------------------------------
+  stop      0.4            -- too few --
+  stop      0.6            329   +0.1448     +4.30   1.472   11.9%    0.002
+  stop      0.8            329   +0.1640     +3.46   1.156   23.7%    0.001
+  stop      1.0            329   +0.3087    +15.16   1.539   38.0%    0.000  <-- shipped
+  stop      1.3            329   +0.3258    +17.09   1.502   47.1%    0.000
+  -------------------------------------------------------------------------
+  target    0.5            329   +0.1163     +4.78   1.177   41.6%    0.006
+  target    0.75           329   +0.1880     +7.59   1.278   40.7%    0.001
+  target    1.0            329   +0.2171     +9.03   1.329   40.1%    0.000
+  target    1.5            329   +0.2687    +11.58   1.416   38.9%    0.000
+  target    2.5            329   +0.2991    +12.53   1.448   38.6%    0.000
+  target    none           329   +0.3087    +15.16   1.539   38.0%    0.000  <-- shipped
+  -------------------------------------------------------------------------
+  flatten   780            253   +0.2361     +6.87   1.289   45.1%    0.000
+  flatten   900            311   +0.3518    +15.19   1.567   41.2%    0.000
+  flatten   955            329   +0.3087    +15.16   1.539   38.0%    0.000  <-- shipped
+  -------------------------------------------------------------------------
+  side      long           329   +0.3087    +15.16   1.539   38.0%    0.000  <-- shipped
+  side      short          331   -0.0658     -1.24   0.959   29.0%    0.001
+
+====================================================================================================
+MULTIPLICITY, STATED RATHER THAN BURIED
+====================================================================================================
+  NQ was reserved as the block that chose nothing, and STUDY_V58 spent it on ONE read
+  of a pre-declared cluster. This anatomy has read roughly SIXTY cells on it. Every
+  p-value above is therefore descriptive, not pre-registered: they say which parts of
+  the rule carry its result, and they no longer say the result is significant. The next
+  test of anything found here needs a block none of this touched.

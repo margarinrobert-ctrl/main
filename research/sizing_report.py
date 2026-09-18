@@ -9,7 +9,7 @@ sys.path.insert(0, "research")
 from sizing_sweep import (CAPITAL, EQ_FILTER, MAX_LOTS, RISK_PCT, SCHEMES, STOPS,
                           VOL_LB, VOL_MULT)
 
-Z = np.load("/tmp/sizing.npz", allow_pickle=True)
+Z = np.load("results/sizing/sizing.npz", allow_pickle=True)
 grid = Z["grid"]
 COLS = ["net", "maxDD", "sharpe", "res_net", "lok_net", "mar", "ruin"]
 

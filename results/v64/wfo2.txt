@@ -1,0 +1,38 @@
+evaluating 19,200 cells ...
+  frozen sub-grid (ent 15, exit 30, no target): 240 cells -- only timeframe, stop, k and w are re-chosen
+
+============================================================================================================================
+ROLLING 4Q -- every arm with its trade count
+============================================================================================================================
+  arm                         OOS trades   total %   %/trade      PF  folds +  worst fold
+  RE-CHOSEN (all axes)               281     28.20    0.1004   1.498      8/9       -3.74
+  RE-CHOSEN (4 axes only)            275     23.36    0.0850   1.415      7/9       -3.74
+  FIXED incumbent                    188     28.43    0.1512   1.795      8/9       -0.76
+  FIXED 15m preset                   460     34.27    0.0745   1.465      9/9        1.70
+  RANDOM grid cell                   244      8.38    0.0343   1.246      6/9       -3.65
+
+  SPAN-NORMALISED walk-forward efficiency: in-sample 5.385 %/quarter, out-of-sample 3.134 %/quarter -> WFE 0.582
+  (the raw sum-OOS/sum-IS ratio in run_wfo was 0.145 and is mostly a span ratio, not an efficiency)
+
+============================================================================================================================
+EXPANDING -- every arm with its trade count
+============================================================================================================================
+  arm                         OOS trades   total %   %/trade      PF  folds +  worst fold
+  RE-CHOSEN (all axes)               331     24.50    0.0740   1.389      8/9       -1.38
+  RE-CHOSEN (4 axes only)            290     28.39    0.0979   1.484      8/9       -1.38
+  FIXED incumbent                    188     28.43    0.1512   1.795      8/9       -0.76
+  FIXED 15m preset                   460     34.27    0.0745   1.465      9/9        1.70
+  RANDOM grid cell                   158      4.42    0.0280   1.149      6/9       -1.09
+
+  SPAN-NORMALISED walk-forward efficiency: in-sample 3.626 %/quarter, out-of-sample 2.722 %/quarter -> WFE 0.751
+  (the raw sum-OOS/sum-IS ratio in run_wfo was 0.094 and is mostly a span ratio, not an efficiency)
+
+============================================================================================================================
+THE MATCHED CONTROL ON THE AGGREGATED OUT-OF-SAMPLE TRADES
+============================================================================================================================
+  Same test windows, same geometry, same trade count -- entries drawn at random from
+  the bars each arm was eligible to trade. 400 draws.
+  FIXED 15m preset: n 460  observed +0.0745 %/trade  total +34.27%
+  FIXED incumbent: n 188  observed +0.1512 %/trade  total +28.43%
+  (a bar-level random-entry control needs an evaluator entry point that takes a bar
+   list; it is added in run_wfo3 rather than faked here)

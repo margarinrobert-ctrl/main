@@ -1,0 +1,8 @@
+{
+ "n": 1023,
+ "pct": -0.01668584840600492,
+ "pf": 0.8561088018355075,
+ "gate": "FAIL -- raw primary has non-positive net expectancy. No meta layer or sizing rule can be credited with fixing this. Either the mechanism is wrong, or the event definition does not isolate it. Go back to the mechanism.",
+ "p_boot": 1.0,
+ "p_control": 0.205
+}

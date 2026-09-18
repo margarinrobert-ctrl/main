@@ -1,0 +1,202 @@
+// ================================================================================================
+// LINEAR REGRESSION CHANNEL + ATR -- the regression as the PRIMARY, not as someone else's filter
+//
+// NO EDGE IS CLAIMED. Nothing here clears its control on the block that may choose. Read this.
+//
+// ------------------------------------------------------------------------------------------
+// WHY THIS IS A DIFFERENT QUESTION FROM THE THREE PRIOR LINREG STUDIES ON THIS BRANCH
+// ------------------------------------------------------------------------------------------
+// STUDY_V20_LINREG, STUDY_V25_LINREG_CROSS and STUDY_V38_LINREG_GRID all bolted a regression onto
+// a Donchian breakout as a CONFIRMATION, and all three found it worthless -- V20 measured the most
+// literal reading passing 12.1% of breakout bars (lift 0.24x), because a breakout has just jumped
+// above the range the line is fitted to. None of them ran the regression AS THE ENTRY. This does.
+//
+// FIVE READINGS WERE DECLARED BEFORE ANY SCORING, each mirrored for the short side so no freedom
+// is spent on direction, and all five ship as options:
+//   S  slope > 0                         the line is rising                    (trend, state)
+//   X  slope crosses 0                   the fit turns up                      (trend, event)
+//   V  close > value                     price above the line                  (V20's best reading)
+//   B  close > value + k*sigma           breakout of the regression channel    <- DEFAULT
+//   R  close < value - k*sigma           reversion to the line                 (mean reversion)
+//
+// ------------------------------------------------------------------------------------------
+// BASE RATES FIRST -- two of the five are coin flips wearing an indicator
+// ------------------------------------------------------------------------------------------
+// Share of ALL research bars on which each reading fires long, across 3 markets x 3 timeframes:
+//   S slope state    0.5568        V close>value    0.4963        <- not filters
+//   B channel break  0.1214        R channel revert 0.1298        X slope cross  0.0137
+// A condition that holds on half the bars cannot be an entry; it is a direction label. That is why
+// the two readings with a positive marginal are the two selective ones.
+//
+// ------------------------------------------------------------------------------------------
+// THE GRID -- 1,080 declared cells (5 readings x 3 lengths x 2 bands x 2 stops x 2 targets
+// x 3 timeframes x 3 markets), research blocks only, scored in percent of entry price
+// ------------------------------------------------------------------------------------------
+// 29.5% profitable. Marginal average of %/trade by axis -- read this, never the top row:
+//   reading   X +0.0109   B +0.0034   S -0.0051   V -0.0056   R -0.0160
+//   length    100 -0.0008    50 -0.0019    20 -0.0080
+//   band      2.0 sigma -0.0022    1.5 ATR -0.0071
+//   target    none -0.0010    2R -0.0062        <- no take profit wins for the 22nd time here
+//   timeframe 60m -0.0003    30m -0.0036    15m -0.0068
+// Every marginal is negative except the two selective readings, and the timeframe axis runs to the
+// slow edge of the grid. The median hold at the leaders is 6 to 26 HOURS: this is not a scalp.
+//
+// ------------------------------------------------------------------------------------------
+// AGAINST A MATCHED RANDOM ENTRY -- same side mix, same stop, same exit, only the entry bar moves
+// 60m, length 50, k = 2.0 residual sigma, 2.5 x ATR stop, no target
+// ------------------------------------------------------------------------------------------
+//   reading   market   block      n    %/trade    PF    control     p    P(mean<=0)
+//   B break   US30     research 1131   +0.0041  1.015   -0.0025   0.357     0.458
+//   B break   US30     HOLDOUT   415   -0.0347  0.853   -0.0046   0.932     0.865
+//   B break   US100    research 1210   +0.0242  1.069   -0.0037   0.102     0.187
+//   B break   US100    HOLDOUT   409   +0.0387  1.127   -0.0042   0.120     0.191
+//   B break   NQ       research  436   +0.0422  1.160   +0.0010   0.070     0.123
+//   B break   NQ       HOLDOUT   143   +0.0555  1.179   -0.0193   0.145     0.261
+//   X cross   US30     research  456   +0.0844  1.210   -0.0255   0.100     0.110
+//   X cross   US30     HOLDOUT   153   +0.0871  1.249   +0.0628   0.422     0.221
+//   X cross   US100    research  494   +0.0467  1.087   -0.0472   0.115     0.263
+//   X cross   NQ       research  172   +0.1203  1.304   +0.0033   0.128     0.105
+//   X cross   NQ       HOLDOUT    61   -0.2668  0.590   -0.1207   0.792     0.877
+//
+// NOT ONE CELL CLEARS p <= 0.05 ON RESEARCH. Best p anywhere is 0.070. `B channel break` is
+// positive on 5 of 6 market-blocks with its control sitting at zero -- an honest null rather than a
+// losing one -- and is the default for that reason, not because it passed anything. `X slope cross`
+// has the largest numbers and INVERTS on NQ out of sample (+0.1203 -> -0.2668, PF 1.304 -> 0.590).
+// At length 100 it fails research on US30 (p 0.453) and then reads PF 1.970 on the holdout, which
+// is the wrong shape and is treated on this branch as a defect rather than a result.
+//
+// The holdout column is DESCRIPTIVE: these blocks have been read many times on this branch, and
+// this is a 1,080-cell search on top of that.
+//
+// ------------------------------------------------------------------------------------------
+// PARITY (research/linreg/lr_parity.py), measured rather than asserted
+// ------------------------------------------------------------------------------------------
+// THE MATHS. Pine has no residual-sd built-in, so the loop below uses the identity that
+// `ta.linreg(close, n, k)` is the SAME fit evaluated k bars back, i.e. value - slope*k. Against
+// the engine's rolling OLS (itself checked against numpy.polyfit, 0 mismatches):
+//     max |diff| 1.6e-12 to 3.1e-12, correlation 1.0000000000, on all three feeds.
+// THE ORDER MODEL. The opposite-reading exit fires at the bar's CLOSE in the engine and at the
+// NEXT bar's OPEN here, which no script can avoid:
+//     trade count ratio 0.997 / 0.998 / 0.997      per-trade correlation 0.9994 / 0.9997 / 1.0000
+//     gap  US30 +20.4% / -2.5%   US100 -6.6% / -17.3%   NQ -3.2% / -7.0%
+// Conservative on five of six blocks. The one non-conservative figure is US30 research, where the
+// engine total is +4.59% -- a near-zero denominator, so read the sign and not the percentage.
+//
+// ATR is ta.ema(ta.tr(true), 14), NOT ta.atr. `hour`/`minute` are EXCHANGE time, not New York.
+// research/linreg/, docs/ib/STUDY_LINREG_ATR.md
+// ================================================================================================
+//@version=5
+strategy("Linreg channel + ATR", overlay = true, max_bars_back = 500,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 50000, currency = currency.USD,
+     commission_type = strategy.commission.cash_per_order, commission_value = 1.145,
+     slippage = 0, pyramiding = 0, calc_on_every_tick = false)
+
+grpR  = "Rule"
+readI = input.string("B channel break", "Reading",
+     options = ["B channel break", "R channel revert", "S slope state", "X slope cross",
+       "V close>value"], group = grpR,
+     tooltip = "B and X are the only two with a positive marginal over the 1,080-cell grid. S and " +
+               "V fire on 50-56% of ALL bars and are direction labels, not entries.")
+lrN   = input.int(50, "Regression length", minval = 5, group = grpR,
+     tooltip = "Marginal prefers longer (100 > 50 > 20). 50 is the leaders' setting; at 100 the " +
+               "X reading fails research and 'passes' the holdout, which is the wrong shape.")
+bandK = input.float(2.0, "Channel width (k)", minval = 0.25, step = 0.25, group = grpR)
+bandA = input.bool(false, "Width in ATR instead of residual sigma", group = grpR,
+     tooltip = "Residual sigma marginal -0.0022 against ATR's -0.0071, so sigma is the default.")
+atrN  = input.int(14, "ATR length", minval = 2, group = grpR)
+stopN = input.float(2.5, "Stop (x ATR)", minval = 0.25, step = 0.25, group = grpR)
+tpR   = input.float(0.0, "Target (R)", minval = 0.0, step = 0.5, group = grpR,
+     tooltip = "0 = none, and none beats 2R on the marginal -- the 22nd time on this branch.")
+sideI = input.string("both", "Side", options = ["both", "long only", "short only"], group = grpR)
+holdN = input.int(0, "Max hold (bars, 0 = off)", minval = 0, group = grpR,
+     tooltip = "OFF. The median hold at the leaders is 6-26 hours; capping it is what the grid " +
+               "likes least. This is not a scalp and cannot be made one.")
+
+grpS  = "Session (optional)"
+useSess = input.bool(false, "Restrict entries to a window", group = grpS,
+     tooltip = "OFF. The grid was run all-hours; a window was not part of the declared axes.")
+sessStr = input.session("0930-1600", "Entry window (exchange time)", group = grpS)
+
+// ---------------------------------------------------------------------------------------------
+// the regression -- value, slope and the residual standard deviation, all causal
+// ---------------------------------------------------------------------------------------------
+atr = ta.ema(ta.tr(true), atrN)
+val = ta.linreg(close, lrN, 0)
+slp = val - ta.linreg(close, lrN, 1)        // the per-bar gradient of the same fit
+
+// residual sd, written out because Pine has no built-in for it. `ta.linreg(close, n, offset)`
+// evaluates the SAME fit at a lag, so the fitted value k bars back is ta.linreg(close, n, k).
+var float sig = na
+sumSq = 0.0
+for k = 0 to lrN - 1
+    e = close[k] - (val - slp * k)
+    sumSq += e * e
+sig := math.sqrt(sumSq / lrN)
+
+band = bandA ? bandK * atr : bandK * sig
+upper = val + band
+lower = val - band
+
+// ---------------------------------------------------------------------------------------------
+// the five declared readings, as entry and exit masks
+// ---------------------------------------------------------------------------------------------
+upState = slp > 0
+xUp = upState and not upState[1]
+xDn = not upState and upState[1]
+
+entUp = readI == "S slope state" ? upState :
+     readI == "X slope cross"  ? xUp :
+     readI == "V close>value"  ? close > val :
+     readI == "B channel break" ? close > upper : close < lower
+entDn = readI == "S slope state" ? not upState :
+     readI == "X slope cross"  ? xDn :
+     readI == "V close>value"  ? close < val :
+     readI == "B channel break" ? close < lower : close > upper
+exUp  = readI == "S slope state" ? not upState :
+     readI == "X slope cross"  ? xDn :
+     readI == "V close>value"  ? close < val :
+     readI == "B channel break" ? close < val : close > val
+exDn  = readI == "S slope state" ? upState :
+     readI == "X slope cross"  ? xUp :
+     readI == "V close>value"  ? close > val :
+     readI == "B channel break" ? close > val : close < val
+
+inSess = not useSess or not na(time(timeframe.period, sessStr))
+ready  = barstate.isconfirmed and inSess and not na(atr) and atr > 0 and not na(val)
+     and not na(sig) and strategy.position_size == 0
+
+goLong  = ready and entUp and sideI != "short only"
+goShort = ready and entDn and sideI != "long only" and not (ready and entUp and sideI != "short only")
+
+// the bracket is sized at the SIGNAL bar and placed with the entry, so the fill bar is protected
+var float pendRisk = na
+if goLong or goShort
+    pendRisk := stopN * atr
+lossT = na(pendRisk) ? na : math.max(1.0, pendRisk / syminfo.mintick)
+profT = (na(pendRisk) or tpR <= 0) ? na : math.max(1.0, tpR * pendRisk / syminfo.mintick)
+
+if goLong
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = lossT, profit = profT)
+if goShort
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", from_entry = "S", loss = lossT, profit = profT)
+
+// opposite-reading exit: the engine takes it at this bar's close, a script at the next open
+if barstate.isconfirmed and strategy.position_size > 0 and exUp
+    strategy.close("L", comment = "flip")
+if barstate.isconfirmed and strategy.position_size < 0 and exDn
+    strategy.close("S", comment = "flip")
+
+if holdN > 0 and barstate.isconfirmed and strategy.position_size != 0
+     and bar_index - strategy.opentrades.entry_bar_index(0) >= holdN
+    strategy.close_all(comment = "hold")
+
+// ---------------------------------------------------------------------------------------------
+// plots
+// ---------------------------------------------------------------------------------------------
+plot(val,   "regression", color = color.new(color.orange, 0), linewidth = 2)
+plot(upper, "upper band", color = color.new(color.teal, 45))
+plot(lower, "lower band", color = color.new(color.teal, 45))
+bgcolor(useSess and inSess ? color.new(color.gray, 92) : na, title = "entry window")

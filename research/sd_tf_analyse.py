@@ -8,9 +8,9 @@ import numpy as np
 sys.path.insert(0, "research")
 import sd_tf_sweep as W
 
-out = np.load("/tmp/sd_tf_out.npy")
-meta = np.load("/tmp/sd_tf_meta.npy")
-P = np.load("/tmp/sd_tf_sel.npy")
+out = np.load("results/sd/sd_tf_out.npy")
+meta = np.load("results/sd/sd_tf_meta.npy")
+P = np.load("results/sd/sd_tf_sel.npy")
 nsel = len(P)
 SEL = np.tile(P, (len(out) // nsel, 1))
 

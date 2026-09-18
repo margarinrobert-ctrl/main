@@ -1,0 +1,21 @@
+feed,cell,block,n,realised_dd,percentile,mc_p99,ratio
+US100,Optuna totR,research,431,28.77,0.596,51.38,1.79
+US100,Optuna totR,LOCKED,244,21.45,0.205,50.42,2.35
+US100,Optuna pf,research,102,6.35,0.349,13.9,2.19
+US100,Optuna pf,LOCKED,62,10.43,0.747,16.24,1.56
+US100,Optuna retdd,research,270,5.55,0.003,18.45,3.33
+US100,Optuna retdd,LOCKED,165,20.53,0.839,27.52,1.34
+US30,Optuna totR,research,722,40.49,0.686,70.02,1.73
+US30,Optuna totR,LOCKED,430,24.92,0.08,65.69,2.64
+US30,Optuna pf,research,110,6.64,0.44,13.05,1.97
+US30,Optuna pf,LOCKED,94,12.47,0.621,21.24,1.7
+US30,Optuna retdd,research,144,5.18,0.071,14.63,2.82
+US30,Optuna retdd,LOCKED,104,15.59,0.728,23.25,1.49
+US100,As published L,research,502,36.57,0.559,62.12,1.7
+US100,As published L,LOCKED,269,20.38,0.189,42.65,2.09
+US100,As published S,research,357,23.86,0.37,47.43,1.99
+US100,As published S,LOCKED,225,36.62,0.232,54.2,1.48
+US30,As published L,research,333,9.53,0.038,27.75,2.91
+US30,As published L,LOCKED,177,21.03,0.263,38.62,1.84
+US30,As published S,research,293,52.6,0.104,76.04,1.45
+US30,As published S,LOCKED,187,20.47,0.429,36.91,1.8

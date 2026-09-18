@@ -1,0 +1,44 @@
+====================================================================================================
+2. MONTE CARLO ON EVERY CELL -- bootstrap (edge) + permutation (path), fixed-R and
+   compounded at 1% of equity per trade as the EA sizes, research blocks
+====================================================================================================
+  US100: 2352 cells x 2000 draws x 2 in 66s
+
+US100 research: 2352 cells with n>=30
+  P(mean R <= 0):  median 0.007; share < 0.05: 83.5% (chance alone would give ~5% of a null grid); share < 0.01: 54.6%
+  fixed-R max drawdown, permutation median: median across cells 6.3R, p95 across cells 18.3R
+  1%-risk compounded max DD: median-cell median 6.2%, median-cell p95 9.7%; share of cells with P(DD>10%) > 0.5: 26.3%; P(DD>20%) > 0.5: 0.1%
+  1%-risk final equity multiple over the block (bootstrap): median cell 1.316, 5th percentile of paths at the median cell 1.079; share of cells whose 5th percentile is below 1.0: 19.3%
+  EA default: n 167 R +0.2449 P(<=0) 0.004 CI [+0.092, +0.408]  DD median 6.9R p95 11.0R  1%-risk DD median 6.8% p95 10.5%  P(DD>10%) 0.07  equity median 1.487 p5 1.155
+  8 cells with the lowest P(mean<=0):
+      entry    exit   hold   mult   n      R  p_le0    ci5  dd_med  cdd_p95  eq_med
+    25.0000 65.0000 3.0000 3.0000 201 0.0946 0.0000 0.0482  2.5957   0.0408  1.2106
+    20.0000 60.0000 5.0000 3.0000 162 0.1045 0.0000 0.0580  2.1707   0.0347  1.1830
+    40.0000 80.0000 7.0000 3.0000 229 0.1167 0.0000 0.0600  3.5102   0.0544  1.3052
+    30.0000 70.0000 3.0000 3.0000 229 0.0954 0.0000 0.0505  2.9214   0.0461  1.2399
+    20.0000 65.0000 2.0000 3.0000 167 0.0957 0.0000 0.0519  1.9767   0.0319  1.1733
+    20.0000 65.0000 3.0000 1.5000 172 0.1802 0.0000 0.0931  4.0378   0.0634  1.3561
+    20.0000 65.0000 3.0000 3.0000 165 0.1067 0.0000 0.0592  2.0920   0.0327  1.1927
+    40.0000 75.0000 4.0000 3.0000 257 0.0990 0.0000 0.0518  3.3689   0.0527  1.2832
+  Multiplicity: 2352 cells were drawn; the minimum P over them is the minimum of 2352 draws, not a p-value.
+  US30: 2352 cells x 2000 draws x 2 in 57s
+
+US30 research: 2352 cells with n>=30
+  P(mean R <= 0):  median 0.287; share < 0.05: 10.0% (chance alone would give ~5% of a null grid); share < 0.01: 1.1%
+  fixed-R max drawdown, permutation median: median across cells 11.2R, p95 across cells 33.0R
+  1%-risk compounded max DD: median-cell median 10.8%, median-cell p95 16.2%; share of cells with P(DD>10%) > 0.5: 53.0%; P(DD>20%) > 0.5: 19.1%
+  1%-risk final equity multiple over the block (bootstrap): median cell 1.058, 5th percentile of paths at the median cell 0.864; share of cells whose 5th percentile is below 1.0: 90.5%
+  EA default: n 174 R +0.0493 P(<=0) 0.308 CI [-0.105, +0.216]  DD median 14.4R p95 22.5R  1%-risk DD median 13.7% p95 20.4%  P(DD>10%) 0.90  equity median 1.070 p5 0.823
+  8 cells with the lowest P(mean<=0):
+      entry    exit   hold   mult   n      R  p_le0    ci5  dd_med  cdd_p95  eq_med
+    15.0000 90.0000 4.0000 3.0000 128 0.1575 0.0010 0.0781  2.9240   0.0468  1.2193
+    20.0000 90.0000 4.0000 3.0000 146 0.1344 0.0015 0.0601  3.0214   0.0468  1.2158
+    15.0000 90.0000 4.0000 2.0000 129 0.2160 0.0020 0.0982  4.0656   0.0632  1.3187
+    20.0000 90.0000 5.0000 3.0000 136 0.1352 0.0020 0.0489  3.2597   0.0514  1.1947
+    15.0000 70.0000 4.0000 3.0000 136 0.1094 0.0030 0.0429  2.8533   0.0462  1.1619
+    15.0000 85.0000 4.0000 3.0000 130 0.1305 0.0040 0.0522  3.0600   0.0489  1.1799
+    15.0000 85.0000 4.0000 2.0000 131 0.1760 0.0045 0.0704  4.2877   0.0666  1.2593
+    15.0000 65.0000 4.0000 3.0000 139 0.0965 0.0045 0.0326  2.9098   0.0459  1.1400
+  Multiplicity: 2352 cells were drawn; the minimum P over them is the minimum of 2352 draws, not a p-value.
+
+[124s]

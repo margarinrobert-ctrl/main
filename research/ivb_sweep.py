@@ -82,9 +82,9 @@ def main():
         row += len(G)
         print(f"   {tf:>3}m bars, {iv:>3}m initial value   {row:>9,} rows   "
               f"{time.time()-t0:6.1f}s", flush=True)
-    np.save("/tmp/ivb_out.npy", out)
-    np.save("/tmp/ivb_meta.npy", meta)
-    np.save("/tmp/ivb_grid.npy", G)
+    np.save("results/ivb/ivb_out.npy", out)
+    np.save("results/ivb/ivb_meta.npy", meta)
+    np.save("results/ivb/ivb_grid.npy", G)
     print(f"\ndone in {time.time()-t0:.0f}s")
 
 

@@ -1,0 +1,164 @@
+//@version=6
+// =============================================================================================
+// HODRICK-PRESCOTT LOW-FREQUENCY MOMENTUM -- MA(1,2) on the HP trend, lambda = 100
+//   after Harris & Yilmaz (JBF 33(9), 2009); QuantConnect note by Jing Wu, June 2018.
+//   long and short, reverse on signal, 30-minute bars.
+//
+// ---------------------------------------------------------------------------------------------
+// READ THIS FIRST. THIS SCRIPT LOSES MONEY. THAT IS THE CORRECT RESULT.
+//
+// It was requested as "the 30m full-sample, +$519,532, Sharpe 12.96, maxDD $1,031" version.
+// That row CANNOT BE WRITTEN IN PINE, and not because of any limitation of Pine. It is the
+// measurement of a LOOK-AHEAD BUG.
+//
+// The HP trend solves   min over x of  SUM (y_t - x_t)^2 + lambda * SUM (x_{t+1} - 2x_t + x_{t-1})^2
+// JOINTLY over the whole series. So the fitted trend at bar t depends on prices at t+1, t+2, ...
+// Solve it once across a finished price history and the "trend" you get is not a signal, it is a
+// partial answer key. Measured on this data, trend_full revises ALREADY-PAST bars by up to
+// 458.9 index points -- 15% of the series' own standard deviation.
+//
+// Pine is causal by construction: a script cannot read a bar that has not printed. So any honest
+// Pine implementation produces the CAUSAL number, and the causal number is negative:
+//
+//   30-minute MNQ, 2022-12 to 2025-12, 1 contract, itemised fees + 1 tick each side
+//     causal (this script, window 100)     8,055 fills    -$7,120    Sharpe -0.17   maxDD $13,987
+//     causal (window 200)                  8,033 fills    -$7,480    Sharpe -0.18   maxDD $13,987
+//     full-sample (leaky, NOT PORTABLE)    2,059 fills  +$519,532    Sharpe 12.96   maxDD  $1,031
+//     buy and hold 1 contract                            +$24,234    Sharpe  0.59   maxDD $12,180
+//
+//   On DAILY bars the same comparison is $8,893 causal against $83,789 leaky, Sharpe 0.43
+//   against 3.95. Even daily-causal loses to buy-and-hold ($8,893 vs $24,796) and fails a
+//   control that flips position the same number of times on random days at p = 0.238.
+//
+// The tell in that table is the DRAWDOWN. The leaky version makes 70x the money on a quarter of
+// the trades while its maximum drawdown COLLAPSES 93%, from $13,987 to $1,031. No real edge
+// produces an equity curve that smooth. See docs/ib/STUDY_HP_FILTER.md.
+//
+// The published result was already negative -- Sharpe -0.309 to 0.480 across six FX pairs,
+// 10-15 trades in six and a half years -- and the note names the mechanism in passing:
+// "the entry of new data into the filter model can cause the trend line to change the trend
+// through past data".
+// ---------------------------------------------------------------------------------------------
+//
+// WHAT THIS SCRIPT DOES IMPLEMENT, EXACTLY:
+//   The HP filter is re-solved on EVERY bar over the trailing `window` closes, and only the
+//   ENDPOINT is read -- which is what the note's own on_data does, `hpfilter(close[-numdays:])`.
+//   The linear system (I + lambda*K'K)x = y is symmetric PENTADIAGONAL, so it is solved by a
+//   banded LDL' factorisation rather than a sparse solver. That factorisation depends only on
+//   `window` and `lambda`, never on price, so it is computed ONCE and reused; each bar pays only
+//   a forward and a back substitution. The algorithm was checked against scipy's spsolve at
+//   lambda 10 / 100 / 1600: maximum absolute difference 2.9e-11.
+//
+//   MA(1,2) on the trend reduces exactly to "is the trend higher than last bar's trend":
+//   mean(trend[0:1]) - mean(trend[0:2]) = (trend - trend[1]) / 2, so the sign is the sign of the
+//   one-bar change. That is also how the note words it in prose.
+//
+// NOT COMPILED BY TRADINGVIEW. A compiler error is a typo, not a changed strategy.
+// Research tooling for education and analysis. NOT FINANCIAL ADVICE, and specifically not a
+// suggestion to trade this -- it is published here as a measured negative and a leakage demo.
+// =============================================================================================
+
+strategy("HP MA(1,2) low-frequency momentum | lambda 100 | MEASURED NEGATIVE", overlay = true,
+     initial_capital = 25000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72,
+     slippage = 2, pyramiding = 0, calc_on_every_tick = false, process_orders_on_close = false)
+
+W      = input.int(100, "HP window (bars re-solved each bar)", minval = 20, maxval = 300,
+     group = "Filter", tooltip = "The trailing window the filter is re-solved over. 60 to 200 " +
+     "changes the result by under $400 on the measured sample; it is not a tuning knob.")
+lam    = input.float(100.0, "lambda (HP / L2 penalty -- NOT an EWMA lambda)", minval = 0.1,
+     step = 10.0, group = "Filter",
+     tooltip = "SCALE WARNING. This lambda weights the SQUARED SECOND DIFFERENCE in the HP " +
+     "objective, so it lives in (0, infinity) -- NOT the 0..1 of an EWMA lambda and not the " +
+     "lambda/lambda_max of an L1 trend filter. Typical values are 100 (the note's choice), " +
+     "1600 (quarterly) and 129600 (monthly). Setting it to 0.95 does almost nothing: measured " +
+     "on 30m MNQ the trend still tracks price to within 0.46 of one bar-move and reverses " +
+     "direction on 20% of bars, against 0.95 and 6% at lambda=100.\n\n" +
+     "Timescale, via the half-power cutoff 4*lambda*(1-cos w)^2 = 1:\n" +
+     "  lambda 1 -> 6 bars   10 -> 11   100 -> 20   1600 -> 40   129600 -> 119\n" +
+     "An EMA matched to the same cutoff is much shorter (lambda 100 <-> EMA 6) because the HP " +
+     "gain rolls off far more sharply, so the two are not interchangeable.")
+allowLong  = input.bool(true,  "Allow longs",  group = "Direction")
+allowShort = input.bool(true,  "Allow shorts", group = "Direction")
+
+// ---- the banded factorisation of A = I + lambda*K'K, built once -------------------------------
+// A is symmetric pentadiagonal. Its bands depend on W and lambda only, never on price, so the
+// LDL' is hoisted out of the per-bar path entirely.
+var array<float> Dg = array.new<float>(W, 0.0)
+var array<float> L1 = array.new<float>(W, 0.0)
+var array<float> L2 = array.new<float>(W, 0.0)
+var bool factored = false
+
+if not factored and bar_index >= W
+    for i = 0 to W - 1
+        dd = i == 0 or i == W - 1 ? 1.0 + lam : (i == 1 or i == W - 2 ? 1.0 + 5.0 * lam : 1.0 + 6.0 * lam)
+        ee = i == 0 or i == W - 2 ? -2.0 * lam : (i < W - 1 ? -4.0 * lam : 0.0)
+        ff = i < W - 2 ? lam : 0.0
+        p1 = i >= 1 ? array.get(L1, i - 1) : 0.0
+        p2 = i >= 2 ? array.get(L2, i - 2) : 0.0
+        d1 = i >= 1 ? array.get(Dg, i - 1) : 0.0
+        d2 = i >= 2 ? array.get(Dg, i - 2) : 0.0
+        di = dd - (i >= 1 ? p1 * p1 * d1 : 0.0) - (i >= 2 ? p2 * p2 * d2 : 0.0)
+        array.set(Dg, i, di)
+        if i + 1 < W
+            q1 = i >= 1 ? array.get(L2, i - 1) : 0.0
+            array.set(L1, i, (ee - (i >= 1 ? q1 * p1 * d1 : 0.0)) / di)
+        if i + 2 < W
+            array.set(L2, i, ff / di)
+    factored := true
+
+// ---- the causal HP endpoint: forward then back substitution on this bar's window --------------
+// y is oldest-first, so y[i] = close[W-1-i] and the endpoint we want is x[W-1] = this bar.
+hpEndpoint() =>
+    float out = na
+    if factored
+        z = array.new<float>(W, 0.0)
+        for i = 0 to W - 1
+            zi = close[W - 1 - i]
+            if i >= 1
+                zi := zi - array.get(L1, i - 1) * array.get(z, i - 1)
+            if i >= 2
+                zi := zi - array.get(L2, i - 2) * array.get(z, i - 2)
+            array.set(z, i, zi)
+        x = array.new<float>(W, 0.0)
+        for k = 0 to W - 1
+            i = W - 1 - k
+            xi = array.get(z, i) / array.get(Dg, i)
+            if i + 1 < W
+                xi := xi - array.get(L1, i) * array.get(x, i + 1)
+            if i + 2 < W
+                xi := xi - array.get(L2, i) * array.get(x, i + 2)
+            array.set(x, i, xi)
+        out := array.get(x, W - 1)
+    out
+
+trend = hpEndpoint()
+
+// ---- MA(1,2) on the trend --------------------------------------------------------------------
+// mean(trend[0:1]) - mean(trend[0:2]) = (trend - trend[1]) / 2, so this IS the one-bar change.
+ready = not na(trend) and not na(trend[1]) and bar_index > W + 2
+state = ready ? (trend > trend[1] ? 1 : -1) : 0
+turnUp   = ready and state == 1 and state[1] == -1
+turnDown = ready and state == -1 and state[1] == 1
+
+if turnUp and allowLong and barstate.isconfirmed
+    strategy.entry("L", strategy.long)
+if turnDown and allowShort and barstate.isconfirmed
+    strategy.entry("S", strategy.short)
+// with only one side enabled, a turn against the open position closes it rather than reversing
+if turnDown and not allowShort and strategy.position_size > 0 and barstate.isconfirmed
+    strategy.close("L", comment = "trend turned down")
+if turnUp and not allowLong and strategy.position_size < 0 and barstate.isconfirmed
+    strategy.close("S", comment = "trend turned up")
+
+plot(trend, "HP trend (causal endpoint)", color = color.new(color.orange, 0), linewidth = 2)
+plotshape(turnUp,   "up",   shape.triangleup,   location.belowbar, color.teal, size = size.tiny)
+plotshape(turnDown, "down", shape.triangledown, location.abovebar, color.red,  size = size.tiny)
+
+// ---- the warning that belongs on the chart, not only in the header ----------------------------
+var table warn = table.new(position.top_center, 1, 2, border_width = 1)
+if barstate.islast
+    table.cell(warn, 0, 0, "MEASURED NEGATIVE - published as a leakage demonstration",
+         text_size = size.normal, text_color = color.white, bgcolor = color.red)
+    table.cell(warn, 0, 1, "causal HP is the only version that exists forward. The +$519,532 / Sharpe 12.96 figure was a two-sided filter reading future bars.",
+         text_size = size.small, text_color = color.gray)

@@ -1,0 +1,9 @@
+cell,jitter_ticks,draws,n_med,R_med,R_p5,keeps_sign
+as published,1,40,457,-0.0492,-0.0915,0.0
+as published,3,40,456,-0.0684,-0.1198,0.0
+Optuna excess,1,40,417,0.0598,0.0094,0.975
+Optuna excess,3,40,417,0.0244,-0.0389,0.625
+Optuna excess_pf,1,40,426,0.1639,-0.0238,0.875
+Optuna excess_pf,3,40,427,0.1519,-0.0738,0.825
+Optuna return,1,40,108,0.9007,0.738,1.0
+Optuna return,3,40,109,0.8277,0.5403,1.0

@@ -1,0 +1,132 @@
+GOLD x DONCHIAN x CVD -- base rates first, then the control battery, then ONE locked read.
+
+ORDER OF OPERATIONS, and it is not negotiable on this branch:
+  1. THE BASE, on every block, against a random ENTRY. If the base is a drift exposure, say so
+     before anything is added to it.
+  2. BASE RATES on the trigger's OWN bars. `STUDY_V60_AROON` (Aroon 100.0% of breakout bars),
+     `STUDY_V16_MOMENTUM` (RSI>=55 94.7%), `STUDY_V62` (MACD 99.8-100.0%, MFI 91.7%) -- four
+     indicators that turned out to BE the breakout restated. Two lines, before any P&L.
+  3. Every feature against a SAME-SELECTIVITY RANDOM FILTER on the RESEARCH blocks (A + B), never
+     against total dollars and never against per-trade edge.
+  4. Benjamini-Hochberg across the whole pool, because 60 features is 60 tests.
+  5. ONE read of block C for the survivors.
+
+>>> BLOCK C HAS ALREADY BEEN READ ONCE ON GOLD, by STUDY_XAU_TWO_LAYER. This is the SECOND read.
+>>> Everything it returns is correspondingly weaker and is reported as descriptive.
+
+  60m: 93,536 bars, 60 CVD features, 4 sub-bars a bar for the delta
+  240m: 25,326 bars, 60 CVD features, 16 sub-bars a bar for the delta
+
+============================================================================================================================
+STEP 0 -- THE BASE, against a RANDOM ENTRY with the same exits. Read this before anything else
+============================================================================================================================
+     tf geometry                 block          n  rule %/ev  random p50    excess       p
+     60 V54  20/20 2.0N no-tp    A_primary    844    0.02923     0.00660  +0.02263   0.077
+     60 V54  20/20 2.0N no-tp    B_meta       566    0.02125     0.02472  -0.00347   0.593
+     60 V54  20/20 2.0N no-tp    C_locked     319    0.17855     0.09369  +0.08485   0.000
+     60 V38  70/30 2.5N no-tp    A_primary    337    0.07701     0.04066  +0.03635   0.157
+     60 V38  70/30 2.5N no-tp    B_meta       237    0.02041     0.08155  -0.06114   0.920
+     60 V38  70/30 2.5N no-tp    C_locked     143    0.23540     0.13816  +0.09724   0.060
+    240 V54  20/20 2.0N no-tp    A_primary    195    0.05011     0.05001  +0.00009   0.500
+    240 V54  20/20 2.0N no-tp    B_meta       142    0.11575     0.05555  +0.06020   0.183
+    240 V54  20/20 2.0N no-tp    C_locked      62    1.09388     0.40950  +0.68438   0.000
+    240 V38  70/30 2.5N no-tp    A_primary     87    0.28083     0.15432  +0.12652   0.193
+    240 V38  70/30 2.5N no-tp    B_meta        59    0.15947     0.20155  -0.04209   0.610
+    240 V38  70/30 2.5N no-tp    C_locked      38    1.27706     0.49316  +0.78390   0.007
+
+============================================================================================================================
+STEP 1 -- BASE RATES ON THE TRIGGER'S OWN BARS. Does the feature bind at all, before any P&L?
+============================================================================================================================
+  A pass rate near 1.00 with a lift near 1.00 means the feature IS the breakout restated and
+  removes nothing. Four indicators have died this way on this branch (RSI, Aroon, MACD, MFI).
+
+     tf feature                                 pass on signals  pass on all bars    lift   binds?
+    240 ctx.excess                                       100.0%             50.8%    1.97 restated
+    240 eff.px_per_delta20                                89.5%             50.9%    1.76    binds
+    240 cvd.z10                                           85.2%             50.8%    1.68    binds
+    240 cvd.z20                                           82.0%             50.8%    1.61    binds
+    240 flow.sub_up                                       81.5%             61.1%    1.33    binds
+    240 cvd.slope10                                       79.9%             50.8%    1.58    binds
+    240 ctx.vol_ratio                                     79.7%             51.2%    1.56    binds
+    240 cvd.above_ema20                                   78.9%             51.7%    1.53    binds
+    240 div.exhausted_buyers_k5_w20                       12.8%             17.7%    0.72    binds
+    240 div.exhausted_buyers_k3_w10                       12.5%             14.2%    0.88    binds
+    240 conf.both55                                        7.8%              3.4%    2.29    binds
+    240 div.exhausted_buyers_k5_w10                        4.5%              9.2%    0.49    binds
+
+  features passing >95% of signal bars (the breakout restated): 2 of 120
+  features with lift within 3% of 1.00 (inert on these bars): 8
+
+============================================================================================================================
+STEP 2 -- EVERY FEATURE vs a SAME-SELECTIVITY RANDOM FILTER, on the RESEARCH blocks (A + B)
+============================================================================================================================
+  The base's own events, filtered; the null keeps the same NUMBER of the same events at random.
+  Continuous features are cut at their research-block median; binaries at True.
+
+  229 scorable cells.  cells at p<=0.05: 13 (expected by chance 11.5).  surviving BH q=0.10: 1
+
+     tf geometry                 feature                                keep      base  filtered      edge       p   BH
+     60 V54  20/20 2.0N no-tp    div.exhausted_sellers_k2_w20            38%   0.02603   0.10861  +0.08259   0.000  yes
+     60 V54  20/20 2.0N no-tp    div.absorbed_buying_k2_w10              23%   0.02603   0.14994  +0.12392   0.003     
+     60 V54  20/20 2.0N no-tp    div.exhausted_buyers_k3_w30             32%   0.02603   0.11278  +0.08675   0.008     
+    240 V38  70/30 2.5N no-tp    ctx.close_pos                           50%   0.23179   0.65095  +0.41916   0.020     
+    240 V54  20/20 2.0N no-tp    eff.px_per_delta50                      50%   0.07777   0.26732  +0.18956   0.025     
+     60 V54  20/20 2.0N no-tp    div.exhausted_sellers_k2_w10            23%   0.02603   0.10423  +0.07821   0.030     
+     60 V54  20/20 2.0N no-tp    div.exhausted_buyers_k5_w30             20%   0.02603   0.11850  +0.09247   0.030     
+    240 V38  70/30 2.5N no-tp    div.exhausted_buyers_k2_w20             36%   0.23179   0.76319  +0.53140   0.032     
+     60 V54  20/20 2.0N no-tp    div.absorbed_buying_k5_w10              12%   0.02603   0.13527  +0.10924   0.037     
+     60 V54  20/20 2.0N no-tp    div.absorbed_selling_k5_w30             29%   0.02603   0.09576  +0.06974   0.038     
+     60 V54  20/20 2.0N no-tp    div.absorbed_buying_k2_w30              53%   0.02603   0.06357  +0.03755   0.038     
+    240 V38  70/30 2.5N no-tp    div.exhausted_buyers_k5_w30             29%   0.23179   0.76125  +0.52947   0.047     
+    240 V54  20/20 2.0N no-tp    div.absorbed_buying_k5_w20              26%   0.07777   0.39803  +0.32026   0.050     
+     60 V54  20/20 2.0N no-tp    div.absorbed_buying_k3_w30              42%   0.02603   0.06982  +0.04379   0.052     
+
+============================================================================================================================
+STEP 3 -- THE FOUR PATTERNS, SEPARATELY (STUDY_V55: a union is diluted by its weaker member)
+============================================================================================================================
+     tf pattern                 k   w   keep   A+B edge       p     C edge   C n
+    240 absorbed_buying        k2 w10    25%   -0.03017   0.555       +nan    12
+    240 absorbed_buying        k2 w20    47%   +0.11154   0.157   -0.44332    25
+    240 absorbed_buying        k2 w30    57%   +0.10442   0.123   -0.44580    37
+    240 absorbed_buying        k3 w10    19%   +0.13990   0.262       +nan    16
+    240 absorbed_buying        k3 w20    33%   +0.19161   0.100   +0.10183    21
+    240 absorbed_buying        k3 w30    42%   +0.18769   0.040   -0.06732    31
+    240 absorbed_buying        k5 w10    15%   +0.33089   0.103       +nan     7
+    240 absorbed_buying        k5 w20    26%   +0.32026   0.040       +nan    14
+    240 absorbed_buying        k5 w30    33%   +0.20212   0.102   -0.47050    21
+    240 absorbed_selling       k2 w10    26%   -0.09636   0.672   -0.17758    23
+    240 absorbed_selling       k2 w20    43%   -0.05631   0.703   +0.74672    33
+    240 absorbed_selling       k2 w30    58%   -0.05010   0.713   +0.36022    41
+    240 absorbed_selling       k3 w10    22%   -0.16550   0.800       +nan    14
+    240 absorbed_selling       k3 w20    32%   -0.11220   0.758   +0.01076    22
+    240 absorbed_selling       k3 w30    45%   -0.10560   0.822   -0.28238    27
+    240 absorbed_selling       k5 w10    13%   -0.06247   0.543       +nan    11
+    240 absorbed_selling       k5 w20    23%   -0.16756   0.812       +nan    14
+    240 absorbed_selling       k5 w30    30%   -0.09613   0.753       +nan    19
+    240 exhausted_buyers       k2 w10    21%   -0.01213   0.497       +nan    14
+    240 exhausted_buyers       k2 w20    34%   +0.09470   0.260   -0.69341    20
+    240 exhausted_buyers       k2 w30    51%   +0.15492   0.053   +0.48159    33
+    240 exhausted_buyers       k3 w10    12%   +0.07491   0.392       +nan    10
+    240 exhausted_buyers       k3 w20    22%   +0.10146   0.310       +nan    15
+    240 exhausted_buyers       k3 w30    36%   +0.21116   0.083   +0.91904    26
+    240 exhausted_buyers       k5 w20    12%   +0.39236   0.073       +nan     9
+    240 exhausted_buyers       k5 w30    21%   +0.26697   0.083   -0.57776    20
+    240 exhausted_sellers      k2 w10    26%   +0.22201   0.118       +nan    10
+    240 exhausted_sellers      k2 w20    41%   +0.02711   0.427   -0.68103    23
+    240 exhausted_sellers      k2 w30    55%   +0.06740   0.232   -0.71109    30
+    240 exhausted_sellers      k3 w10    22%   +0.04488   0.383       +nan     8
+    240 exhausted_sellers      k3 w20    34%   +0.09451   0.228       +nan    17
+    240 exhausted_sellers      k3 w30    45%   +0.10910   0.175   -1.20647    22
+    240 exhausted_sellers      k5 w10    16%   -0.04302   0.548       +nan     5
+    240 exhausted_sellers      k5 w20    26%   +0.11870   0.253       +nan    12
+    240 exhausted_sellers      k5 w30    33%   +0.09044   0.250       +nan    15
+
+  by pattern, pooled over both timeframes, all pivot widths and windows:
+                   cells  mean_edge       pos    best_p
+pattern                                                
+absorbed_buying       18    0.11452  94.44444   0.00000
+absorbed_selling      18   -0.04496  27.77778   0.04500
+exhausted_buyers      17    0.10082  88.23529   0.01000
+exhausted_sellers     18    0.06386  94.44444   0.00333
+
+  runtime 15s

@@ -1,0 +1,91 @@
+WHAT CAN ACTUALLY SHIP -- a portable form of the meta layer, measured before it is written.
+
+A RANDOM FOREST CANNOT GO INTO PINE. Two forms can:
+
+  COUNT   each of the eight kept features cut at its RESEARCH median, oriented by the SIGN OF ITS
+          RESEARCH IC, and simply counted 0..8. No weights to transcribe, nothing to overfit, and
+          the branch has shipped this shape before (STUDY_TURTLE_15M's three gates counted into a
+          monotone chop score, 3/3 PF 1.58 against 0/3 0.63).
+  RIDGE   a linear score. Portable exactly -- standardise with the research mean and sd, multiply by
+          eight coefficients, add. Every constant is exported below so the Pine is arithmetic and
+          not an approximation.
+
+Both are measured HERE, on research, with ONE locked read at the end, so the numbers that go in the
+script header are the numbers the script produces rather than the forest's.
+
+This file also exports the two constants sets a script needs to reproduce the causal features:
+the frozen HMM parameters (so Pine can run the FILTERED forward recursion itself) and the
+fixed-width fracdiff weights for d = 0.8.
+
+
+==============================================================================================================================
+THE EIGHT KEPT FEATURES -- direction and cut, both taken from RESEARCH only
+==============================================================================================================================
+  feature                 research IC  favourable  research median  passes on research
+  mom.roc240                  +0.1870        high         0.349952               50.2%
+  vol.atr_pct                 -0.1668         low         0.001225               50.2%
+  ffd.cvd_z                   -0.1542         low         0.278510               50.2%
+  regime.hmm_side             +0.1406        high         0.002719               50.2%
+  trend.er20                  +0.1239        high         0.168116               50.2%
+  regime.chop48               -0.1236         low        50.542118               50.2%
+  trend.er60                  +0.1193        high         0.100714               50.2%
+  struct.excess               -0.1149         low         0.341443               50.2%
+
+==============================================================================================================================
+THE COUNT COMPOSITE -- monotone? and what does each rung earn?
+==============================================================================================================================
+    count  research n  research %/ev  locked n   locked %/ev
+        0           4        -0.2502         0           nan
+        1          12        -0.1928         6        0.3887
+        2          25         0.0868        16        0.0809
+        3          38         0.1186        23        0.1644
+        4          62         0.0526        22        0.1001
+        5          44         0.0942        33        0.0762
+        6          26         0.1363        16        0.0068
+        7           8         0.0125         8        0.0831
+        8           6         0.2110         1       -0.1154
+
+  Spearman(count, research %/event) over the rungs: +0.667
+
+==============================================================================================================================
+THRESHOLD LADDER -- take the trade only at count >= T. ONE locked read at the end
+==============================================================================================================================
+    T  research n   keeps      %/ev      PF  vs random p ||  locked n   keeps      %/ev      PF  vs random p
+    3         184     82%    0.0914   1.836        0.075 ||       103     82%    0.0889   1.785        0.746
+    4         146     65%    0.0843   1.856        0.259 ||        80     64%    0.0672   1.679        0.829
+    5          84     37%    0.1078   2.450        0.190 ||        58     46%    0.0547   1.591        0.836
+    6          40     18%    0.1228   2.867        0.216 ||        25     20%    0.0263   1.323        0.806
+
+  base for reference: research 0.0697 %/ev  PF 1.546  n 225   |   locked 0.1022  PF 1.862  n 125
+
+==============================================================================================================================
+RIDGE -- the portable linear alternative, with every constant exported
+==============================================================================================================================
+  feature                          mean             sd   coefficient
+  mom.roc240                   0.366515       1.411577     +0.100522
+  vol.atr_pct                  0.001299       0.000643     +0.035454
+  ffd.cvd_z                    0.830523       1.450333     -0.042431
+  regime.hmm_side              0.344640       0.461228     -0.038275
+  trend.er20                   0.187666       0.133227     +0.036386
+  regime.chop48               50.360108       7.320107     -0.020397
+  trend.er60                   0.123946       0.101950     -0.012324
+  struct.excess                0.469034       0.545266     -0.037647
+  intercept                                                +0.069665
+
+    keep  research %/ev      PF ||  locked n   locked %/ev      PF  vs random p
+     70%         0.1140   1.967 ||        91        0.1267   2.057        0.187
+     60%         0.1391   2.216 ||        82        0.1266   2.008        0.257
+     50%         0.1096   1.924 ||        70        0.1281   1.977        0.285
+     40%         0.1480   2.332 ||        61        0.1233   1.886        0.334
+
+==============================================================================================================================
+CONSTANTS FOR THE SCRIPT
+==============================================================================================================================
+  HMM (states reordered bear/side/bull) -- pi [1. 0. 0.]
+    A = [[0.93654, 0.0043, 0.05917], [0.01047, 0.96687, 0.02266], [0.01604, 0.0295, 0.95446]]
+    mu = [[-0.002037, 0.144405], [0.001328, 0.064927], [0.002041, 0.096832]]
+    var = [[0.02890443, 0.00161595], [0.00315938, 0.0001536], [0.0079663, 0.00011186]]
+  fracdiff d = 0.8, 64 weights, first five [-0.000102, -0.000105, -0.000108, -0.000111, -0.000115]
+
+  written to /home/user/main/results/v61feat/pine_constants.json
+  runtime 1s

@@ -1,0 +1,33 @@
+======================================================================================================================
+WHY THE DIRECTION MODEL SCORES 0.86 -- and why it is worth nothing
+======================================================================================================================
+   463 research sessions, base rate up 0.495
+
+   1. SINGLE FEATURES, alone, against the same label
+      f_close_pos      AUC 0.8766
+      f_vwap_pos       AUC 0.5604
+      f_body           AUC 0.8342
+      f_dir            AUC 0.7617
+      f_upwick         AUC 0.3535
+      f_dnwick         AUC 0.6130
+      f_hi_when        AUC 0.7471
+      f_lo_when        AUC 0.2221
+      f_rng_atr        AUC 0.4681
+      f_vol_bal        AUC 0.7894
+
+   2. THE GEOMETRY STATED EXPLICITLY -- distance from the window close to each edge
+      'the high is nearer than the low'  AUC 0.8703
+      share of sessions where the NEARER edge broke first: 0.7862
+
+   3. THE MODEL WITH POSITION FEATURES REMOVED
+      xgb    full 0.8599  ->  without the 7 position features 0.8222   (-0.0376)
+      lgbm   full 0.8575  ->  without the 7 position features 0.8327   (-0.0247)
+
+   4. WHAT THE PREDICTION IS WORTH.  If the model only knows which edge is nearer,
+      the trade it implies has no room: the break level is already at price.
+      distance from the window close to the edge that broke, in ATR: median 0.779  mean 0.840
+      break-trade R by distance-to-broken-edge quartile (Q1 = nearest):
+         Q1  n  116  mean R  +0.1182  PF  1.212
+         Q2  n  116  mean R  +0.2780  PF  1.572
+         Q3  n  115  mean R  -0.1334  PF  0.770
+         Q4  n  116  mean R  -0.0756  PF  0.859
