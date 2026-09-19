@@ -1,0 +1,333 @@
+// SPDX-License-Identifier: MIT
+// EMA 13/48 momentum entry inside a New York session window -> ATR stop -> optional target,
+// optional 200 filter, optional auto breakeven, flat at 16:00.
+//
+// WHAT WAS REMOVED, AND WHAT IT COST. This is "09:00 Range Breakout + EMA Momentum" with the
+// first half deleted. The 09:00 range was not a filter on that script, it was the TRIGGER: the
+// range high and low, the break buffer, the touch rule, the per-session break lock, the
+// "opposite side of the range" stop and both bypasses (the 200 sitting AT the broken level, and
+// a fresh 13x48 cross overriding the 200) are all defined in terms of a level that no longer
+// exists. All of them are gone rather than switched off.
+//
+// Deleting the trigger leaves nothing to enter on, so THE MA READING IS PROMOTED FROM
+// CONFIRMATION TO TRIGGER. That is the whole edit. It is a different strategy, not a subset of
+// the old one.
+//
+// ============================================================================================
+// EVERY MEASUREMENT IN THE PREVIOUS HEADER IS VOID AND NONE OF IT IS CARRIED OVER.
+// ============================================================================================
+// All of it was conditioned on the 09:00 range trigger: the per-trade figures and p-values on
+// US30 / US30_ISO, the 56- and 84-cell declared grids, the 16,200-cell parameter grid and its
+// research/holdout correlation, the 09:00-bar-versus-half-hour pairing, the fixed-points grid,
+// the ATR-period ladder, the target ladder, the breakeven ladder and its fill-model correction,
+// the two bypass grids, and the opposite-cross placebo. Every one of those numbers describes
+// trades taken on a range break. This script takes none.
+//
+// NOTHING IN THIS FILE HAS BEEN MEASURED. The old header's nulls were at least nulls that had
+// been looked for. This configuration has not been run at all, on any block, against any
+// control. Treat it as untested code, not as a strategy with a known absence of edge.
+//
+// AND ONE FINDING INVERTS RATHER THAN MERELY LAPSING, which is the reason this warning is at the
+// top instead of the bottom. The single positive result in the old header was that the 13/48
+// reading was NOT the trigger restated -- it passed 53-59% of signal bars at a lift of 1.03-1.14,
+// where on a Donchian break the same condition passes 82.6% at lift 2.24 -- and the argument for
+// it was explicit: "a range breakout clears a two-bar window from thirty minutes ago, which says
+// nothing about a 48-bar average". Promote the 13/48 reading to the trigger and that argument
+// runs backwards. The 200 filter below now sits on a trigger built from the same two averages it
+// reads, so it is far closer to the trigger restated than to an independent condition, and the
+// measured base rates (38.4-61.6% admitted at a lift of 0.990-1.007) were taken on range breaks
+// and do not transfer. Re-measure the base rate on THIS trigger before reading anything into a
+// filtered result. The 13/48 state is not offered as a filter at all, because on a 13/48 trigger
+// it is a tautology.
+//
+// WHAT DOES CARRY, because it is definitional or general to the branch rather than conditional
+// on the trigger:
+//   * ATR is `ta.ema(ta.tr(true), n)`, a SPAN. Wilder's `ta.atr` is a different average with
+//     roughly twice the effective lookback and would silently change every distance below.
+//   * MA TYPE is not a degree of freedom for a single average (STUDY_MA_LAG): matched-lag
+//     variants correlate 0.9999+ and overlap 89.5-97.3% of triggers. Change the LENGTH.
+//   * POINTS ARE NOT A GEOMETRY across markets or eras (STUDY_DL50): 100 points is 2.35x the
+//     median in-window ATR on US30, 3.24x on NQ, 4.36x on US100, and on US30 alone it was
+//     4.23 ATR in 2016 against 1.10 in 2025. The panel prints your distance in ATR.
+//   * A reach in TIME is declared in minutes and converted with timeframe.in_seconds(), so the
+//     same number means the same thing on any chart (STUDY_V57).
+//   * THE EXIT BRACKET SHIPS WITH THE ENTRY and is priced from the signal bar. `strategy.exit`
+//     on a later bar leaves the entry bar naked (STUDY_PINE_PARITY: 4.4-13.0% of trades, -33 to
+//     -118 points), and a bracket reading strategy.position_avg_price cannot be armed on the
+//     fill bar at all (STUDY_SCALP89).
+//   * A MOVED BREAKEVEN STOP CAN BE WRITTEN THROUGH THE MARKET -- the high touched +25, the bar
+//     closed at +8, the sell stop goes at +25 -- and a walker that fills a stop at its level
+//     pays it there. That artifact was worth up to -11.0 points a trade where it was measured.
+//     It is a property of the ratchet, not of the old trigger, so it applies here unchanged.
+//   * NO TAKE PROFIT has beaten every target tested 27 times on this branch. That is a prior
+//     about this branch, not a measurement of this script.
+//   * Entries require `barstate.isconfirmed` so the Strategy Tester's "Script execution"
+//     checkboxes cannot change the result. Without it, tick evaluation fires 5.1x as many
+//     signals with 80% on bars that never satisfied the rule.
+//
+// NO EDGE IS CLAIMED. None is measured either way.
+//@version=5
+strategy("EMA Momentum Session", overlay = true,
+         initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1,
+         commission_type = strategy.commission.cash_per_order, commission_value = 1.145,
+         slippage = 1, calc_on_every_tick = false, process_orders_on_close = false,
+         pyramiding = 0, margin_long = 0, margin_short = 0)
+
+// ----------------------------------------------------------------------------- inputs
+grpS = "Session"
+firstEntry = input.int(570, "Earliest entry, minutes past New York midnight", minval = 0, maxval = 1439, group = grpS, tooltip = "570 = the 09:30 cash open. With the 09:00 range gone this is the only thing anchoring the strategy to the session, so it now does the whole job the range end and the entry arm time used to share. Set 0 to trade the entire day.")
+lastEntry  = input.int(960, "No new entries after",                          minval = 1, maxval = 1440, group = grpS)
+flatMin    = input.int(960, "Flatten at (0 = never)",                        minval = 0, maxval = 1440, group = grpS, tooltip = "Filled at the OPEN of this minute, so the order is submitted on the bar before -- strategy.close_all() cannot sell the close of the bar that triggers it. 960 = 16:00.")
+oncePer    = input.bool(true, "One entry per side per day",                  group = grpS, tooltip = "The old script took the FIRST break of the session or none, and marked a side used even when a gate refused it, so that a filter could never turn the rule into 'wait for the first break that passes'. The same discipline is kept here on the CROSS: the day is marked used when the TRIGGER fires, whether or not the filter let it through. Turn this off and a choppy day can fire repeatedly -- which is a materially different strategy, not a setting, because trade count is what every per-trade figure is divided by.")
+
+grpA = "ATR -- one period, used by every ATR setting below"
+atrLen = input.int(14, "ATR period", minval = 1, maxval = 500, group = grpA, tooltip = "ONE period, read by the stop, the ATR target and every ATR figure on the panel, so the strategy has a single definition of volatility rather than one per setting. It is `ta.ema(ta.tr(true), n)`, a SPAN -- Wilder's `ta.atr` is a different average with roughly twice the effective lookback and would silently change every distance. The 14 is inherited, and the ladder that justified it (7/10/14/21/30/50, 60 paired cells, nothing resolvable) was measured on the range trigger and does NOT transfer to this one.")
+
+grpT = "Entry trigger -- this is the strategy now, not a confirmation"
+sideIn  = input.string("Both", "Side", options = ["Long", "Short", "Both"], group = grpT)
+trigMode = input.string("Fresh cross", "Trigger", options = ["Fresh cross", "State (first qualifying bar)"], group = grpT, tooltip = "FRESH CROSS is the 13x48 cross itself, taken on the first bar inside the entry window on which the cross is no older than the recency below. A cross that happens before the window opens is therefore still tradable when it opens, provided it is fresh enough -- which is the same expression the old script used for its gate, so 'fresh cross' means the same thing it always did here.\n\nSTATE enters on the first bar inside the window whose fast/slow relation points the right way. It is not an event, so without 'One entry per side per day' it would fire on every bar of a trend; the per-day lock is what makes it a trigger at all. Prefer the cross unless you have a reason.")
+crossMin = input.int(75, "Fresh cross: within this many MINUTES", minval = 1, group = grpT, tooltip = "A reach in time, not a bar count -- 75 minutes is 5 bars on a 15-minute chart, which is what the inherited default was measured at (on the other trigger). Converted with timeframe.in_seconds() so it is the same reach on any chart.")
+maType   = input.string("EMA", "MA type", options = ["EMA", "SMA", "WMA", "Hull", "VWMA"], group = grpT, tooltip = "STUDY_MA_LAG: MA TYPE is not a degree of freedom for a single average -- matched-lag variants correlate 0.9999+ and overlap 89.5-97.3% of triggers. Change the LENGTH, not the letter. This one carries over unchanged, because it is a fact about moving averages rather than about the old trigger.")
+maFast   = input.int(13, "Fast length", minval = 1, group = grpT)
+maSlow   = input.int(48, "Slow length", minval = 2, group = grpT)
+
+grpF = "Filter -- the 200"
+fltMode = input.string("Off", "200 filter", options = ["Off", "200 state: ANY of fast/slow", "200 state: ALL of fast/slow", "200 cross: ANY of fast/slow", "200 cross: ALL of fast/slow"], group = grpF, tooltip = "DEFAULT OFF. Each of the fast and slow averages is read against the LONG one, and the entry is allowed when ANY of them (or ALL of them) sits on the side the trade points.\n\nREAD THE WARNING IN THE HEADER BEFORE USING THIS. On the old range trigger these readings admitted 38.4-61.6% of signal bars at a lift over all bars of 0.990 to 1.007 -- a coin flip applied to the signal set, and the reason they shipped off. That measurement was taken on range breaks. On a 13x48 trigger the filter reads the SAME TWO AVERAGES that define the entry, so it is structurally entangled with the trigger in a way it was not before, and its base rate here is unknown. Measure the pass rate and the lift on this trigger's own signal bars before reading anything into a filtered result.\n\nANY and ALL differ only because a SPLIT reading -- 13 above the 200, 48 below -- confirms both sides under ANY. Collapsed into one direction label they are the same condition.\n\nTHE 13/48 STATE IS DELIBERATELY NOT OFFERED HERE. On a 13/48 trigger it is the trigger restated, which is the exact failure mode nine confirmation families on this branch were caught by.")
+maLong  = input.int(200, "Long length (the 200)", minval = 3, group = grpF, tooltip = "Used only by the filter. This is the shorter AVERAGES against the long one, which is a different object from price against it: STUDY_V40 found the MA200 is priced by its DISTANCE and not by its state, and STUDY_V51 found the FLOOR reading (>= 1.5 ATR above) clears three blocks where the support reading fails two. Neither of those is this.")
+
+grpX = "Exit"
+stopMode = input.string("ATR", "Stop mode", options = ["ATR", "Points"], group = grpX, tooltip = "The old script's third mode, 'Opposite side of the range', was defined by the range and went with it.\n\nPOINTS is a fixed distance in index points and is NOT the same geometry on two markets: 100 points is 2.35x the median in-window ATR on US30, 3.24x on NQ and 4.36x on US100, and on US30 alone it was 4.23 ATR in 2016 against 1.10 in 2025. A points setting confounds geometry with market and with era (STUDY_DL50). The panel prints what your chosen distance currently is in ATR.")
+stopAtr  = input.float(1.5, "Stop, xATR", minval = 0.1, maxval = 10, step = 0.1, group = grpX)
+stopPts  = input.float(100, "Stop, POINTS", minval = 0.1, step = 1, group = grpX, tooltip = "Used when Stop mode = Points.")
+tgtMode  = input.string("None", "Target mode", options = ["None", "R", "ATR", "Points"], group = grpX, tooltip = "No take profit has beaten every target tested 27 times on this branch. That is a prior about this branch, not a measurement of this script -- the target ladders in the old header were all taken on the range trigger.\n\nUNDER AN ATR STOP, `R` AND `ATR` ARE THE SAME AXIS: k x ATR and r x stop are the same level when k = r x stopAtr, asserted on 2,295-2,580 trades with identical exit bars and a max difference of 0.000e+00. They separate only under a POINTS stop.")
+tgtR     = input.float(0.0, "Target, R", minval = 0, maxval = 20, step = 0.5, group = grpX, tooltip = "Used when Target mode = R.")
+tgtAtr   = input.float(3.0, "Target, xATR", minval = 0.1, maxval = 30, step = 0.25, group = grpX, tooltip = "Used when Target mode = ATR: the target sits this many ATR from the FILL.")
+tgtPts   = input.float(100, "Target, POINTS", minval = 0.1, step = 1, group = grpX, tooltip = "Used when Target mode = Points.")
+beMode   = input.string("Off", "Auto breakeven", options = ["Off", "Points"], group = grpX, tooltip = "DEFAULT OFF. The ladder that measured it as a subtractor was run on the range trigger and does not transfer, but the MECHANISM does, and it is worth knowing before switching this on: a breakeven ratchet arms on a favourable excursion and is then taken out on the pullback before the clock would have closed the trade in profit. Where it was measured the stop share of exits rose 14.5 points and the flatten share fell 9.5.\n\nTHE FILL-MODEL TRAP IS GENERAL, NOT TRIGGER-SPECIFIC. This ratchet arms on the bar whose favourable EXTREME reaches the distance, so when the secured offset is near the arming distance the moved stop can be written ABOVE the market -- the high touched +25, the bar closed at +8, the sell stop goes at +25. A sell stop above the market is not a stop. A backtest walker that fills a stop AT ITS LEVEL pays it there and invents up to 11.0 points a trade. Pine fills the moved stop honestly; a research walker compared against it must too.")
+bePts    = input.float(50, "Breakeven arms at, POINTS", minval = 1, step = 1, group = grpX, tooltip = "Favourable excursion from the FILL that arms the ratchet, in index points. It arms on the bar that reaches the distance and can only BIND from the bar after -- within one bar OHLC cannot say whether the excursion came before or after the pullback, so arming and filling the moved stop on the same bar invents information.")
+beOffset = input.float(5, "Secure, POINTS (0 = true breakeven)", minval = 0, step = 1, group = grpX, tooltip = "How far BEYOND the fill the moved stop sits. THE THRESHOLD IS THE ROUND TURN, NOT ZERO: a stop at the fill books minus commission and slippage, which is why a true breakeven exit paints red in the Strategy Tester. The panel computes the round turn LIVE from your own closed trades and this symbol's point value and says whether your setting clears it.")
+xMode    = input.string("Off", "Close on an opposite MA cross", options = ["Off", "Fresh opposite cross", "Opposite state"], group = grpX, tooltip = "DEFAULT OFF. Note what this becomes once the MA is the trigger: with trigger = Fresh cross and this set to Fresh opposite cross, the rule is close to stop-and-reverse with the reverse suppressed by the per-day lock -- a different object from the same two settings on a range-breakout entry, where the exit cross was unrelated to why the trade was opened.\n\nWhere it was measured (on the range trigger) the OPPOSITE STATE reading bound on 35% of trades, cut the median hold from 10.9 bars to 6.5, RAISED the win rate and LOWERED the money -- converting a payoff book into a hit-rate book. Against an exit array with the same NUMBER of early exits placed at RANDOM bars, the real delta sat at the 0.38-0.57 percentile of its own null and the placebo did better in 12 of 24 cells: closing early at that RATE cost what closing early AT THE CROSS cost. None of those figures describe this script.")
+
+// ----------------------------------------------------------------------------- clock
+// Exchange time is Chicago on CME; New York is what the rule is written in.
+nyH = hour(time, "America/New_York")
+nyM = minute(time, "America/New_York")
+nyMin = nyH * 60 + nyM
+tfMin = math.max(1.0, timeframe.in_seconds(timeframe.period) / 60.0)
+crossBars = int(math.max(1.0, math.round(crossMin / tfMin)))
+newDay = ta.change(time("D", "America/New_York")) != 0
+
+// ----------------------------------------------------------------------------- indicators
+atrv = ta.ema(ta.tr(true), atrLen)
+
+f_ma(src, len, typ) =>
+    typ == "SMA"  ? ta.sma(src, len)  :
+     typ == "WMA" ? ta.wma(src, len)  :
+     typ == "Hull" ? ta.hma(src, len) :
+     typ == "VWMA" ? ta.vwma(src, len) : ta.ema(src, len)
+
+maF = f_ma(close, maFast, maType)
+maS = f_ma(close, maSlow, maType)
+maL = f_ma(close, maLong, maType)
+bull = maF > maS
+crossUp = bull and not bull[1]
+crossDn = (not bull) and bull[1]
+
+var int barsSinceUp = 1000000
+var int barsSinceDn = 1000000
+if barstate.isconfirmed
+    barsSinceUp := crossUp ? 0 : barsSinceUp + 1
+    barsSinceDn := crossDn ? 0 : barsSinceDn + 1
+
+// Each of the two shorter averages against the LONG one. The ages are forward counters, never a
+// fill-forward to the NEXT cross -- that fill-forward is the leak STUDY_DIVERGENCE_CONFIRM caught
+// reading +37 full against +999 truncated.
+fOverL = maF > maL
+sOverL = maS > maL
+var int barsFup = 1000000
+var int barsFdn = 1000000
+var int barsSup = 1000000
+var int barsSdn = 1000000
+if barstate.isconfirmed
+    barsFup := (fOverL and not fOverL[1]) ? 0 : barsFup + 1
+    barsFdn := ((not fOverL) and fOverL[1]) ? 0 : barsFdn + 1
+    barsSup := (sOverL and not sOverL[1]) ? 0 : barsSup + 1
+    barsSdn := ((not sOverL) and sOverL[1]) ? 0 : barsSdn + 1
+
+// ----------------------------------------------------------------------------- signals
+armed = nyMin >= firstEntry and nyMin < lastEntry and not na(atrv) and atrv > 0
+
+// THE TRIGGER. "Fresh cross" is an event with a tolerance: the cross may have happened up to
+// crossBars ago, so one that fires before the window opens is still takeable at the open. "State"
+// has no event at all and leans entirely on the per-day lock to stop it re-firing every bar.
+trigL = trigMode == "Fresh cross" ? barsSinceUp <= crossBars : bull
+trigS = trigMode == "Fresh cross" ? barsSinceDn <= crossBars : not bull
+sigL = armed and trigL
+sigS = armed and trigS
+
+var bool tookUp = false
+var bool tookDn = false
+if barstate.isconfirmed and newDay
+    tookUp := false
+    tookDn := false
+
+// The 200 filter, as TWO masks rather than one direction label: under ANY a split reading
+// (13 above the 200, 48 below) confirms both sides, so the filter vetoes nothing that day.
+// Collapsed into a single +1/-1/0 label a split has to abstain and ANY becomes ALL exactly.
+f200L = fltMode == "200 state: ANY of fast/slow" ? (fOverL or sOverL) :
+         fltMode == "200 state: ALL of fast/slow" ? (fOverL and sOverL) :
+         fltMode == "200 cross: ANY of fast/slow" ?
+           ((fOverL and barsFup <= crossBars) or (sOverL and barsSup <= crossBars)) :
+           ((fOverL and barsFup <= crossBars) and (sOverL and barsSup <= crossBars))
+f200S = fltMode == "200 state: ANY of fast/slow" ? ((not fOverL) or (not sOverL)) :
+         fltMode == "200 state: ALL of fast/slow" ? ((not fOverL) and (not sOverL)) :
+         fltMode == "200 cross: ANY of fast/slow" ?
+           (((not fOverL) and barsFdn <= crossBars) or ((not sOverL) and barsSdn <= crossBars)) :
+           (((not fOverL) and barsFdn <= crossBars) and ((not sOverL) and barsSdn <= crossBars))
+fltOn = fltMode != "Off"
+fltOkL = not fltOn ? true : f200L
+fltOkS = not fltOn ? true : f200S
+
+wantLong  = (sideIn == "Long"  or sideIn == "Both") and sigL and (not oncePer or not tookUp) and fltOkL
+wantShort = (sideIn == "Short" or sideIn == "Both") and sigS and (not oncePer or not tookDn) and fltOkS
+
+// ----------------------------------------------------------------------------- orders
+// The exit bracket is placed WITH the entry and priced from the SIGNAL bar, so the fill bar is
+// protected. `strategy.exit` on a later bar leaves the entry bar naked (STUDY_PINE_PARITY:
+// 4.4-13.0% of trades, -33 to -118 points) and a bracket that reads strategy.position_avg_price
+// cannot be armed on the fill bar at all (STUDY_SCALP89).
+var bool  beArmed  = false
+var float pendTgt  = na
+
+riskL = stopMode == "ATR" ? stopAtr * atrv : stopPts
+riskS = stopMode == "ATR" ? stopAtr * atrv : stopPts
+
+// The target is an absolute distance in price, whichever mode set it; `na` means no target, and
+// `strategy.exit` is then a stop-only bracket.
+tgtDistL = tgtMode == "Points" ? tgtPts : tgtMode == "ATR" ? tgtAtr * atrv :
+             tgtMode == "R" and tgtR > 0 ? tgtR * riskL : na
+tgtDistS = tgtMode == "Points" ? tgtPts : tgtMode == "ATR" ? tgtAtr * atrv :
+             tgtMode == "R" and tgtR > 0 ? tgtR * riskS : na
+
+flatNow = flatMin > 0 and (nyMin + tfMin >= flatMin) and nyMin < flatMin
+
+if barstate.isconfirmed and strategy.position_size != 0 and flatNow
+    strategy.close_all(comment = "flat")
+
+// The opposite-cross exit reads the SAME pair the trigger and the plots use, so one pair means
+// one thing everywhere. It is read at this bar's CLOSE and fills at the NEXT bar's open, which is
+// what strategy.close() can actually do and what the research walker was made to match
+// (STUDY_V16's flat_open lesson). The stop and the target are intrabar and resolve first.
+xFlip = xMode == "Off" or strategy.position_size == 0 ? false
+         : strategy.position_size > 0 ? (xMode == "Fresh opposite cross" ? crossDn : not bull)
+         : (xMode == "Fresh opposite cross" ? crossUp : bull)
+
+if barstate.isconfirmed and not flatNow and xFlip
+    strategy.close_all(comment = "opp cross")
+
+if barstate.isconfirmed and not flatNow and not xFlip and strategy.position_size == 0
+    if wantLong
+        tookUp := true
+        beArmed := false
+        pendTgt := tgtDistL
+        strategy.entry("L", strategy.long)
+        strategy.exit("Lx", "L", loss = riskL / syminfo.mintick,
+                      profit = na(tgtDistL) ? na : tgtDistL / syminfo.mintick)
+    else if wantShort
+        tookDn := true
+        beArmed := false
+        pendTgt := tgtDistS
+        strategy.entry("S", strategy.short)
+        strategy.exit("Sx", "S", loss = riskS / syminfo.mintick,
+                      profit = na(tgtDistS) ? na : tgtDistS / syminfo.mintick)
+
+// ----------------------------------------------------------------------------- auto breakeven
+// The ratchet ARMS on the bar whose favourable extreme reaches bePts from the fill and the moved
+// stop is live only from the NEXT bar, which is what an order placed at a bar close can actually
+// do. The target distance is the one captured AT ENTRY (`pendTgt`), not recomputed from a later
+// bar's ATR, so re-issuing the bracket cannot silently move the take profit (STUDY_V56).
+if barstate.isconfirmed and beMode == "Points" and strategy.position_size != 0 and not beArmed
+    ep = strategy.position_avg_price
+    if not na(ep)
+        isLong  = strategy.position_size > 0
+        fav     = isLong ? high - ep : ep - low
+        if fav >= bePts
+            beArmed := true
+            beStop = isLong ? ep + beOffset : ep - beOffset
+            if isLong
+                strategy.exit("Lx", "L", stop = beStop,
+                              limit = na(pendTgt) ? na : ep + pendTgt)
+            else
+                strategy.exit("Sx", "S", stop = beStop,
+                              limit = na(pendTgt) ? na : ep - pendTgt)
+
+// A trigger refused by the filter still marks the side used for the session, so the rule takes
+// the FIRST signal or none. Without this a filter silently becomes "wait for the first cross that
+// passes", which is a strictly more fitted rule with a different trade count.
+if barstate.isconfirmed and oncePer
+    if sigL
+        tookUp := true
+    if sigS
+        tookDn := true
+
+// ----------------------------------------------------------------------------- plots
+plot(maF, "fast MA", color = color.new(color.blue, 40))
+plot(maS, "slow MA", color = color.new(color.purple, 40))
+plot(fltOn ? maL : na, "long MA (200)", color = color.new(color.orange, 30), linewidth = 2)
+bgcolor(armed ? color.new(color.gray, 92) : na)
+plotshape(wantLong,  "long",  shape.triangleup,   location.belowbar, color.new(color.teal, 0), size = size.tiny)
+plotshape(wantShort, "short", shape.triangledown, location.abovebar, color.new(color.maroon, 0), size = size.tiny)
+
+var table hud = table.new(position.top_right, 2, 10, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "window", text_size = size.tiny)
+    table.cell(hud, 1, 0, str.tostring(firstEntry) + "-" + str.tostring(lastEntry) + " NY"
+               + (oncePer ? ", one per side per day" : ", UNLIMITED per day"), text_size = size.tiny)
+    table.cell(hud, 0, 1, "trigger", text_size = size.tiny)
+    table.cell(hud, 1, 1, str.tostring(maFast) + "x" + str.tostring(maSlow) + " " + maType + "  "
+               + (trigMode == "Fresh cross" ? "fresh cross <=" + str.tostring(crossMin) + "m = "
+                   + str.tostring(crossBars) + " bars" : "state, first bar in window"),
+               text_size = size.tiny)
+    table.cell(hud, 0, 2, "ATR", text_size = size.tiny)
+    table.cell(hud, 1, 2, "period " + str.tostring(atrLen) + " = "
+               + str.tostring(atrv, "#.##") + " pt  (ema of true range, not Wilder)",
+               text_size = size.tiny)
+    // The filter reads the same two averages the trigger is built from, so the panel says what it
+    // is actually doing rather than only that it is on.
+    f200Txt = f200L and f200S ? "both sides ok" : f200L ? "longs only" : f200S ? "shorts only" : "no trade"
+    fltTxt = not fltOn ? "off" : fltMode + "  ->  " + f200Txt
+    fltCol = not fltOn ? color.gray : f200L and f200S ? color.gray : f200L ? color.teal : f200S ? color.maroon : color.red
+    table.cell(hud, 0, 3, "200 filter", text_size = size.tiny)
+    table.cell(hud, 1, 3, fltTxt, text_size = size.tiny, text_color = fltCol)
+    stopShow = stopMode == "ATR" ? stopAtr * atrv : stopPts
+    tgtShow  = tgtMode == "Points" ? tgtPts : tgtMode == "ATR" ? tgtAtr * atrv :
+                 tgtMode == "R" and tgtR > 0 ? tgtR * stopShow : na
+    table.cell(hud, 0, 4, "stop / target", text_size = size.tiny)
+    table.cell(hud, 1, 4, str.tostring(stopShow, "#.#") + " pt = " + str.tostring(stopShow / atrv, "#.##") + " ATR"
+               + "  /  " + (na(tgtShow) ? "none" : str.tostring(tgtShow, "#.#") + " pt = " + str.tostring(tgtShow / atrv, "#.##") + " ATR"),
+               text_size = size.tiny)
+    table.cell(hud, 0, 5, "breakeven", text_size = size.tiny)
+    table.cell(hud, 1, 5, beMode == "Off" ? "off" : str.tostring(bePts, "#.#") + " pt = "
+               + str.tostring(bePts / atrv, "#.##") + " ATR", text_size = size.tiny)
+    // The round turn is what a secured exit has to clear before the Strategy Tester calls it a
+    // win, and it is not zero. Commission is measured from the run itself (gross minus net) and
+    // converted to POINTS through this symbol's point value; slippage is charged in TICKS on both
+    // sides and never appears in the commission figure, so it is added explicitly.
+    nTr  = math.max(strategy.closedtrades, 1)
+    comm = (strategy.grossprofit - strategy.netprofit) / nTr
+    rtPt = comm / math.max(syminfo.pointvalue, 1e-9) + 2.0 * syminfo.mintick
+    table.cell(hud, 0, 6, "secure", text_size = size.tiny)
+    secTxt = beOffset > rtPt ? "CLEARS (+" + str.tostring(beOffset - rtPt, "#.##") + ")" : "BELOW -- still a loss"
+    secCol = beMode == "Off" ? color.gray : beOffset > rtPt ? color.green : color.red
+    table.cell(hud, 1, 6, beMode == "Off" ? "--"
+      : str.tostring(beOffset, "#.#") + " pt vs round turn " + str.tostring(rtPt, "#.##") + " pt  " + secTxt,
+      text_size = size.tiny, text_color = secCol)
+    xTxt = xMode == "Off" ? "off" : xMode == "Fresh opposite cross"
+             ? "fresh opposite cross -- near stop-and-reverse on a cross trigger" : "opposite state"
+    xCol = xMode == "Off" ? color.gray : color.red
+    table.cell(hud, 0, 7, "opp-cross exit", text_size = size.tiny)
+    table.cell(hud, 1, 7, xTxt, text_size = size.tiny, text_color = xCol)
+    table.cell(hud, 0, 8, "trades", text_size = size.tiny)
+    table.cell(hud, 1, 8, str.tostring(strategy.closedtrades), text_size = size.tiny)
+    table.cell(hud, 0, 9, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 9, "none -- and NOTHING HERE IS MEASURED", text_size = size.tiny, text_color = color.red)

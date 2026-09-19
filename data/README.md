@@ -24,6 +24,48 @@ reports any row landing in a non-existent (spring-forward) or ambiguous (fall-ba
 The source column order is free and headers are matched loosely, so `timestamp ET,open,high,low,
 close,volume,Vwap_RTH,Vwap_ETH` works as-is; extra columns are ignored.
 
+## Bitcoin
+
+`research/fetch_btc.py` pulls BTC bars straight from an exchange into the format above, so a
+crypto file is reproducible the same way an NQ one is:
+
+```bash
+python3 research/fetch_btc.py --tf 1d --start 2017-08-17 --out data/BTCUSDT_1d.csv
+python3 research/fetch_btc.py --tf 1m --start 2023-01-01 --source vision --out data/BTCUSDT_1m.csv
+python3 research/fetch_btc.py --tf 1h --source coinbase --out data/BTCUSD_1h.csv   # different tape
+```
+
+Use `--source vision` (archive ZIPs) for minute and sub-minute bars and `binance` for hourly or
+daily; below an hour the paged REST endpoint needs thousands of calls to cover the same span. It
+reports gap and OHLC-violation counts on the way out.
+
+**Sub-minute.** No venue publishes a 30-second bar. Binance's finest native kline is **1 second**,
+and a 30s bar is an exact fold of 30 of them -- first open, max high, min low, last close, summed
+volume, nothing interpolated. `--tf 30s` does that fold; so does any other multiple (`45s`, `2m`).
+Coinbase is floored at one minute and refuses.
+
+```bash
+python3 research/fetch_btc.py --tf 30s --start 2025-01-01 --source vision --dry-run
+python3 research/fetch_btc.py --tf 30s --start 2025-01-01 --source vision --out data/BTCUSDT_30s.csv
+```
+
+Price it with `--dry-run` first, because the 1s source data is the expensive part: one year of 30s
+bars is 1.05M output rows but 31.5M one-second bars and ~330 MB of ZIPs; three years is 94.7M bars
+and ~1 GB. The 1s interval is published as DAILY archive files for much of its history, so a long
+pull is ~365 requests per year rather than 12.
+
+**Nothing is stored but the output.** The bytes have to cross the wire, but they are never all
+resident: sources are generators yielding one archive file at a time, the folder holds exactly one
+open bucket, and completed bars go straight to the CSV. Peak memory is flat at well under a
+megabyte whether the pull is a day or three years -- the alternative, folding a list at the end,
+needs 10 GB for one year of 1s bars and 30 GB for three. Peak disk is the output file: 1.05M 30s
+bars is about 80 MB, against ~330 MB of ZIPs that are decompressed, folded and discarded.
+
+Two things BTC is not. It is not a second sample of the same market -- it trades 24/7 with no RTH
+session, so every minute-of-day, session-index and daily-trend construction on this branch has to
+be re-derived rather than re-pointed. And BTCUSDT is not BTCUSD: do not splice the two venues into
+one file to extend history.
+
 ## Then run a study
 
 ```bash
