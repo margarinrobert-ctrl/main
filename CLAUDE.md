@@ -118,6 +118,26 @@ asserted trade-for-trade against `runBacktest`; note the app sizes stops in WILD
 `runBacktest` uses) while the research layer uses `ema(tr, n)`, so compare the two on shape, not to
 the dollar. See `docs/ib/STUDY_TUNER.md`.
 
+**A meta-labeller reaches whatever profit factor you ask it for, on the block it was fitted to.**
+Asked to get the 09:00 US30 range breakout to PF 2, a 22-feature meta layer returned PF 2.476 at 1
+minute and PF 3.898 on the best of 960 cells -- and PF 0.859 and 0.749 on the locked block. The
+neighbourhood is the tell: as the gate tightens from keep-90% to keep-30% research PF climbs
+MONOTONICALLY 1.279 -> 3.205 while locked PF wanders 0.79-0.95 with no relationship to the
+threshold, and the median out-of-fold AUC over 84 trials is 0.500. At a round turn of ZERO the
+locked block still reads PF 0.904, so it is not the costs. Price the search before the result:
+White's Reality Check over the grid returned p 0.7495, the winner's deflated Sharpe 0.124 against
+an E[max | 960 noise trials] of 0.194, and PBO 0.737. See `docs/ib/STUDY_NINE_AM_1M.md`.
+
+**A fixed POINT barrier is a different strategy at every bar size.** 100 points is 4.16 x ATR at 1
+minute on US30, 2.48 at 3, 1.97 at 5 and 1.28 at 15. Moving a script down a timeframe with a points
+stop triples the barrier in the only unit that matters without changing an input. Check the ATR
+multiple before comparing two timeframes at all -- otherwise the timeframe sweep is a stop sweep.
+
+**Check the sessions a window can actually produce before sweeping it.** The US30 file given for
+the 09:00 study contained a 09:00-09:15 range on 92 of its 293 sessions; everything before
+2026-04-30 starts at 09:30. A window that does not exist does not announce itself, it just returns
+a thin, flattering sample.
+
 **Score against a matched control, not a population mean.** Random entries with the same side,
 geometry and minute-of-day distribution price in drift, costs, barrier width and session timing at
 once. `research/oner_anom.py`. And split net P&L by exit reason first: a 1R rule earning at the
@@ -157,6 +177,7 @@ TIME stop is a direction bet, not a barrier edge.
 | `research/indpool.py` | 42 indicators with the PERIOD as an argument, memoised |
 | `research/fastbars.py` | disk-cached bars; 4.5s -> 0.1s cold start |
 | `src/lib/quant/tuner/` | the same tuner in TypeScript, running in the browser at `/quant/tune` |
+| `research/nineam/` | the 09:00 range breakout on 30-second US30: 30s-path exits, 22 causal features, meta layer, reality check / DSR / PBO |
 
 ## Pine
 
