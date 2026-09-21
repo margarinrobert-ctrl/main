@@ -103,6 +103,11 @@ confTol    = input.float(0.25, "Bypass tolerance (xATR)", minval = 0.01, step = 
 crossBypass = input.string("Off", "Bypass: a fresh 13x48 cross overrides the 200", options = ["Off", "A fresh 13x48 cross overrides the 200"], group = grpM, tooltip = "DEFAULT OFF. The ask: \"if ema cross of 13 and 48 cross it with a orb breakout of the 9am high and low ... it can long or short against the 200 ema\" -- so a FRESH 13x48 cross aligned with the break overrides the 200 reading above, and the trade is allowed even when the shorter averages sit on the wrong side of the 200. It uses the SAME 'Fresh cross: within this many MINUTES' setting and the SAME expression as the MA gate above, so 'fresh cross' means one thing across the whole script.\n\nIT IS AN OR, SO IT SITS BETWEEN TWO ARMS AND WAS READ AGAINST BOTH -- the 200 gate alone (tightest) and NO GATE AT ALL (loosest). Read against the gated arm only, an OR looks like an improvement whenever the gate was worth nothing, and on this trigger the 200 state readings admit 38.4-61.6% of the signal bars at a lift over all bars of 0.990 to 1.007, EXACTLY ONE.\n\nWHAT IT CAN ACT ON, computed before any P&L: a fresh cross fires on only 7.0-20.1% of the breaks the 200 REFUSES, so it is near the INERT end of the two ways a bypass can be worthless rather than the 'it IS no gate' end -- the OR keeps 50.1-63.7% of breaks against the 200 gate's 46.1-54.6%.\n\nAND IT DOES NOT PAY. Over a declared 144-cell grid (2 readings of the 200 x 2 readings of 'fresh' x 3 recencies x 2 geometries x long/both x US30 research, holdout and a different-provider forward block), each arm scored against a RANDOM gate of the same selectivity re-simulated end to end: the OR beats the 200 gate in 18 of 68 cells (26%, chance 50%) at a mean -0.0021 %/trade, and beats NO GATE AT ALL in 6 of 68 (9%) at -0.0137. 0 OF 424 ARM-CELLS CLEAR THEIR CONTROL at p<=0.05 where 21 are expected by chance, and 12 of 144 OR cells DO exceed their own minimum detectable effect -- every one of them on the negative side, so those are resolvably bad rather than merely unproven. E[max t | pure noise] over 144 looks is 2.656 against the 2.802 detection needs. Pooled arm means: no gate -0.0005, the fresh cross alone -0.0057, the 200 gate -0.0119, the OR -0.0141 %/trade. THE OR IS THE WORST ARM AND THE LOOSEST ARM IS THE BEST, which is the second bypass on this trigger to measure that way -- switching the 200 gate off is free and this is a slower route to it.\n\nTHE DECOMPOSITION IS THE ONE THING WORTH KEEPING: of the two conditions this OR combines, the CROSS (the override) is the better of the two and the 200 (the base) is the worse -- fresh alone -0.0057 against the 200's -0.0119 -- and the cross alone is still negative against no gate on all three blocks (-0.0071 research, -0.0045 holdout, -0.0029 forward).\n\nDEGENERACY, asserted on the real signal set and not reasoned: with MA confirmation set to 'Fresh cross' this bypass IS the gate, so the OR is an identity and the switch does nothing -- verified keeping 296 / 456 / 690 signals identically at 30 / 75 / 150 minutes, and again in the parity harness. With MA confirmation Off it is inert for the same reason. The panel says so.")
 
 
+grpZ = "Alerts -- for acting on the signal, and webhook-ready for later"
+alertOn  = input.bool(false, "Emit alerts", group = grpZ, tooltip = "DEFAULT OFF. Fires alert() at the CLOSE of the signal bar, which is the earliest moment the rule exists -- the research fills at the NEXT bar's open, so acting immediately on this alert is the zero-latency case the backtest measures.\n\nWHY THE TIMING MATTERS MORE HERE THAN USUAL. The median hold is 2.5 minutes at the live 30-second settings, so a delayed fill competes with the trade itself. Measured on US30 30s: half a minute of delay keeps 91% of the per-trade edge, one minute keeps 69%, two minutes 36%, and THREE MINUTES TURNS IT NEGATIVE (-30%). Treat the alert as having a sixty-second shelf life. The payload carries the bar time so a late one is visibly late.\n\nTO USE IT: right-click the chart -> Add alert -> Condition = this strategy -> and in the alert dialog set Trigger to 'Any alert() function call'. Leave the dialog's own message box alone; the text below is what gets sent. Webhook URL requires a TradingView plan that includes webhooks; the popup and phone-push notifications do not.")
+alertFmt = input.string("Plain text", "Payload format", options = ["Plain text", "JSON (webhook)"], group = grpZ, tooltip = "PLAIN TEXT is for a human reading a phone notification and placing the order: it leads with the side and the three prices so nothing has to be computed after reading it.\n\nJSON is the same information as a machine-readable object for a webhook consumer, emitted now so that adding a bridge later needs no change to this script. Distances are sent ALONGSIDE absolute levels because the fill price is not knowable when the alert fires -- a bracket must be priced from the actual fill, which is what strategy.exit does here (loss/profit in ticks) and what STUDY_V56 found is required to protect the fill bar.")
+alertQty = input.int(1, "Quantity to state in the payload", minval = 1, group = grpZ, tooltip = "Carried through to the alert text only; it does not change the backtest, which is always one unit. Section 24a: TradingView's reported average win of $606.48 is 2.01x the $301.60 measured at one contract, so that run was sized at two.")
+
 grpX = "Exit"
 stopMode = input.string("ATR", "Stop mode", options = ["ATR", "Points", "Opposite side of the range"], group = grpX, tooltip = "POINTS is a fixed distance in index points and is NOT the same geometry on two markets: 100 points is 2.35x the median in-window ATR on US30, 3.24x on NQ and 4.36x on US100, and on US30 alone it was 4.23 ATR in 2016 against 1.10 in 2025. A points setting therefore confounds geometry with market and with era (STUDY_DL50). The panel prints what your chosen distance currently is in ATR.")
 stopAtr  = input.float(1.5, "Stop, xATR",   minval = 0.1, maxval = 10, step = 0.1, group = grpX)
@@ -255,6 +260,56 @@ wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and
 
 
 
+// ----------------------------------------------------------------------------- alert payload
+f_hhmm(h, m) =>
+    (h < 10 ? "0" : "") + str.tostring(h) + ":" + (m < 10 ? "0" : "") + str.tostring(m)
+
+// Built at the SIGNAL bar's close from the signal bar's own numbers. The fill price does not
+// exist yet -- the research fills at the next bar's open -- so absolute levels are quoted from
+// this bar's close and flagged as REFERENCE, while the DISTANCES are exact and are what a
+// bracket must actually be priced from (STUDY_V56: a bracket read from a fill price cannot be
+// armed on the fill bar at all).
+f_pay(side, ref, stopD, tgtD) =>
+    isJson = alertFmt == "JSON (webhook)"
+    sgn    = side == "long" ? 1.0 : -1.0
+    stopP  = ref - sgn * stopD
+    // TYPED EXPLICITLY. A bare `na` in one branch of a ternary with no type keyword is the
+    // "Value with NA type cannot be assigned to a variable that was defined without type
+    // keyword" error that shipped PIN_POSTERIOR with 0 trades.
+    float tgtP = na(tgtD) ? na : ref + sgn * tgtD
+    nyTxt  = f_hhmm(nyH, nyM)
+    out    = ""
+    if isJson
+        out := '{"v":1,"strat":"NINE_AM_RANGE","act":"open"' +
+               ',"sym":"' + syminfo.ticker + '"' +
+               ',"tf":"' + timeframe.period + '"' +
+               ',"side":"' + side + '"' +
+               ',"qty":' + str.tostring(alertQty) +
+               ',"ref":' + str.tostring(ref, "#.#####") +
+               ',"stop_dist":' + str.tostring(stopD, "#.#####") +
+               ',"stop_ref":' + str.tostring(stopP, "#.#####") +
+               ',"tgt_dist":' + (na(tgtD) ? "null" : str.tostring(tgtD, "#.#####")) +
+               ',"tgt_ref":' + (na(tgtP) ? "null" : str.tostring(tgtP, "#.#####")) +
+               ',"be_arm":' + (beMode == "Off" ? "null" : str.tostring(bePts, "#.#####")) +
+               ',"be_secure":' + (beMode == "Off" ? "null" : str.tostring(beOffset, "#.#####")) +
+               ',"flat_ny_min":' + str.tostring(flatMin) +
+               ',"atr":' + str.tostring(atrv, "#.#####") +
+               ',"bar_ms":' + str.tostring(time_close) +
+               ',"ny":"' + nyTxt + '"}'
+    else
+        out := str.upper(side) + " " + syminfo.ticker + " x" + str.tostring(alertQty) +
+               "  @market now" +
+               "\nref " + str.tostring(ref, format.mintick) +
+               "  stop " + str.tostring(stopP, format.mintick) +
+               "  (" + str.tostring(stopD, "#.#") + " pt = " + str.tostring(stopD / atrv, "#.##") + " ATR)" +
+               (na(tgtP) ? "\ntarget none" :
+                 "\ntarget " + str.tostring(tgtP, format.mintick) + "  (" + str.tostring(tgtD, "#.#") + " pt)") +
+               (beMode == "Off" ? "" :
+                 "\nbreakeven: arm +" + str.tostring(bePts, "#.#") + " pt, secure +" + str.tostring(beOffset, "#.#") + " pt") +
+               "\nflat by " + f_hhmm(int(flatMin / 60), int(flatMin % 60)) + " NY" +
+               "\nsignal bar closed " + nyTxt + " NY -- ACT WITHIN 60s (3 min inverts the edge)"
+    out
+
 // ----------------------------------------------------------------------------- orders
 // The exit bracket is placed WITH the entry and priced from the SIGNAL bar, so the fill bar is
 // protected. `strategy.exit` on a later bar leaves the entry bar naked (STUDY_PINE_PARITY:
@@ -277,6 +332,11 @@ flatNow = flatMin > 0 and (nyMin + tfMin >= flatMin) and nyMin < flatMin
 
 if barstate.isconfirmed and strategy.position_size != 0 and flatNow
     strategy.close_all(comment = "flat")
+    if alertOn
+        alert(alertFmt == "JSON (webhook)"
+               ? '{"v":1,"strat":"NINE_AM_RANGE","act":"close","reason":"flat","sym":"' + syminfo.ticker + '","bar_ms":' + str.tostring(time_close) + '}'
+               : "FLATTEN " + syminfo.ticker + " -- session cutoff, close at market",
+              alert.freq_once_per_bar_close)
 
 // The opposite-cross exit reads the SAME pair the momentum gate and the plots use, so one pair
 // means one thing everywhere. It is read at this bar's CLOSE and fills at the NEXT bar's open,
@@ -288,6 +348,11 @@ xFlip = xMode == "Off" or strategy.position_size == 0 ? false
 
 if barstate.isconfirmed and not flatNow and xFlip
     strategy.close_all(comment = "opp cross")
+    if alertOn
+        alert(alertFmt == "JSON (webhook)"
+               ? '{"v":1,"strat":"NINE_AM_RANGE","act":"close","reason":"opp_cross","sym":"' + syminfo.ticker + '","bar_ms":' + str.tostring(time_close) + '}'
+               : "CLOSE " + syminfo.ticker + " -- opposite MA cross",
+              alert.freq_once_per_bar_close)
 
 if barstate.isconfirmed and not flatNow and not xFlip and strategy.position_size == 0
     if wantLong
@@ -297,6 +362,8 @@ if barstate.isconfirmed and not flatNow and not xFlip and strategy.position_size
         strategy.entry("L", strategy.long)
         strategy.exit("Lx", "L", loss = riskL / syminfo.mintick,
                       profit = na(tgtDistL) ? na : tgtDistL / syminfo.mintick)
+        if alertOn
+            alert(f_pay("long", close, riskL, tgtDistL), alert.freq_once_per_bar_close)
     else if wantShort
         tookDn := true
         beArmed := false
@@ -304,6 +371,8 @@ if barstate.isconfirmed and not flatNow and not xFlip and strategy.position_size
         strategy.entry("S", strategy.short)
         strategy.exit("Sx", "S", loss = riskS / syminfo.mintick,
                       profit = na(tgtDistS) ? na : tgtDistS / syminfo.mintick)
+        if alertOn
+            alert(f_pay("short", close, riskS, tgtDistS), alert.freq_once_per_bar_close)
 
 // ----------------------------------------------------------------------------- auto breakeven
 // The ratchet ARMS on the bar whose favourable extreme reaches bePts from the fill and the moved
@@ -325,6 +394,12 @@ if barstate.isconfirmed and beMode == "Points" and strategy.position_size != 0 a
             else
                 strategy.exit("Sx", "S", stop = beStop,
                               limit = na(pendTgt) ? na : ep - pendTgt)
+            // The fill price exists by now, so unlike the entry alert this level is EXACT.
+            if alertOn
+                alert(alertFmt == "JSON (webhook)"
+                       ? '{"v":1,"strat":"NINE_AM_RANGE","act":"amend","reason":"breakeven","sym":"' + syminfo.ticker + '","stop":' + str.tostring(beStop, "#.#####") + ',"bar_ms":' + str.tostring(time_close) + '}'
+                       : "MOVE STOP " + syminfo.ticker + " -> " + str.tostring(beStop, format.mintick) + "  (breakeven armed)",
+                      alert.freq_once_per_bar_close)
 
 // a break that is refused by a gate still counts as used for the session, so the rule takes the
 // FIRST break or none -- the research event stream does the same and the two must agree
@@ -342,7 +417,7 @@ plot(maMode == "Off" ? na : maS, "slow MA", color = color.new(color.purple, 40))
 plot(is200 or confOn ? maL : na, "long MA (200)", color = color.new(color.orange, 30), linewidth = 2)
 bgcolor(inRange ? color.new(color.gray, 90) : na)
 
-var table hud = table.new(position.top_right, 2, 10, border_width = 1)
+var table hud = table.new(position.top_right, 2, 11, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "range",   text_size = size.tiny)
     table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)), text_size = size.tiny)
@@ -395,3 +470,36 @@ if barstate.islast
     table.cell(hud, 1, 7, xTxt, text_size = size.tiny, text_color = xCol)
     table.cell(hud, 0, 9, "edge claimed", text_size = size.tiny)
     table.cell(hud, 1, 9, "none", text_size = size.tiny, text_color = color.red)
+    // ---- the forward test's frozen configuration, checked field by field.
+    // `research/nineam/fwd_live.py` hashes the same eighteen settings into CFG_SHA and REFUSES to
+    // continue if one moves. This is that guard on the chart side: a single mistyped input is a
+    // different strategy and the ledger it feeds is void, and nothing else on the screen says so.
+    diff = ""
+    diff := diff + (rangeStart  == 540    ? "" : " rangeStart")
+    diff := diff + (rangeEnd    == 545    ? "" : " rangeEnd")
+    diff := diff + (firstEntry  == 566    ? "" : " firstEntry")
+    diff := diff + (lastEntry   == 600    ? "" : " lastEntry")
+    diff := diff + (flatMin     == 630    ? "" : " flatten")
+    diff := diff + (atrLen      == 45     ? "" : " atrLen")
+    diff := diff + (sideIn      == "Both" ? "" : " side")
+    diff := diff + (bufAtr      == 0.0    ? "" : " buffer")
+    diff := diff + (touchOk               ? "" : " touch")
+    diff := diff + (maMode == "Fresh cross" ? "" : " maMode")
+    diff := diff + (crossMin    == 5      ? "" : " crossMin")
+    diff := diff + (confBypass  == "Off"  ? "" : " confBypass")
+    diff := diff + (crossBypass == "Off"  ? "" : " crossBypass")
+    diff := diff + (stopMode    == "ATR"  ? "" : " stopMode")
+    diff := diff + (stopAtr     == 2.25   ? "" : " stopAtr")
+    diff := diff + (tgtMode  == "Points"  ? "" : " tgtMode")
+    diff := diff + (tgtPts      == 100.0  ? "" : " tgtPts")
+    diff := diff + (beMode   == "Points"  ? "" : " beMode")
+    diff := diff + (bePts       == 43.0   ? "" : " bePts")
+    diff := diff + (beOffset    == 3.0    ? "" : " beOffset")
+    diff := diff + (xMode == "Fresh opposite cross" ? "" : " xMode")
+    tfOk = timeframe.period == "30S"
+    diff := diff + (tfOk ? "" : " CHART-TF")
+    table.cell(hud, 0, 10, "forward cfg", text_size = size.tiny)
+    table.cell(hud, 1, 10,
+      diff == "" ? "MATCHES the pre-registered live config (fwd_live.py)"
+                 : "DIFFERS ->" + diff,
+      text_size = size.tiny, text_color = diff == "" ? color.green : color.red)

@@ -1699,3 +1699,103 @@ only began doing on 2026-04-30. `coverage()` prints the covered share of every n
 because a shortfall in trades is a data question before it is a strategy question. The tracker also
 re-checks that bars at or before the cutoff are unchanged; a feed revision voids the ledger rather
 than shifting the baseline. Nothing is scheduled — it runs on a drop.
+
+---
+
+## 26. Automating the entry — what TradingView can and cannot do
+
+**TradingView cannot place orders.** It is a charting platform: it evaluates Pine and fires alerts
+(popup, email, phone push, webhook). There is no setting that makes a `strategy` script execute
+against a broker. Every automated TradingView setup is `alert → webhook → something that can
+trade`. This is a platform fact, not a configuration problem, and it is stated here so nobody goes
+looking for the checkbox.
+
+That matters more on this configuration than on most, because §24d measured the latency tolerance:
+
+| delay between the signal bar closing and the fill | 0 | 30 s | 1 min | 2 min | 3 min |
+| --- | --- | --- | --- | --- | --- |
+| fraction of the per-trade edge kept | 1.00 | 0.91 | 0.69 | 0.36 | **−0.30** |
+
+A three-minute delay does not degrade this strategy, it **inverts** it. So the gap between "alert
+fires" and "order exists" is the whole engineering problem.
+
+### 26a. What was built
+
+`alert()` emission on the signal bar's **close** — the earliest moment the rule exists, and the
+same bar the research prices its entry from. Three events fire: **open** (a break was taken),
+**amend** (the breakeven ratchet armed and the stop moved), **close** (flatten, or an opposite
+cross). Default OFF.
+
+Two payload formats, because the honest path here is two-stage:
+
+- **Plain text** — for a phone notification a person acts on. Leads with the side and the three
+  prices so nothing has to be computed after reading, and ends with the 60-second shelf life.
+- **JSON** — the same information as a machine-readable object. Emitted **now**, before any bridge
+  exists, so that adding one later needs no change to this script.
+
+```
+SHORT US30 x1  @market now
+ref 49832.3  stop 49859.4  (27.1 pt = 2.25 ATR)
+target 49732.3  (100.0 pt)
+breakeven: arm +43.0 pt, secure +3.0 pt
+flat by 10:30 NY
+signal bar closed 09:30 NY -- ACT WITHIN 60s (3 min inverts the edge)
+```
+
+**The absolute levels are quoted as REFERENCE, not as the fill.** The fill price does not exist
+when the alert fires — the research fills at the next bar's open — so the payload carries the
+**distances**, which are exact, alongside levels priced from the signal bar's close. A bracket must
+be priced from the actual fill; that is what `strategy.exit(loss=, profit=)` does here and what
+STUDY_V56 found is required to protect the fill bar. The one alert whose absolute level *is* exact
+is the breakeven amend, because by then the position has a fill price.
+
+### 26b. A config guard on the chart
+
+`fwd_live.py` hashes eighteen settings into `CFG_SHA` and refuses to run if one moves. The same
+guard now exists on the chart: a HUD row checks every input against the pre-registered live
+configuration and the chart timeframe against `30S`, printing **MATCHES** in green or **DIFFERS →**
+with the offending field names in red. One mistyped input is a different strategy and the ledger it
+feeds is void; nothing else on the screen would have said so.
+
+### 26c. What was verified, and what could not be
+
+`research/nineam/alert_parity.py` transliterates the Pine payload builder line for line and runs it
+on all 44 trades the live configuration takes: **44 of 44 parse as JSON**, every `stop_ref` equals
+`ref ∓ stop_dist`, every long stop is below its reference and every short stop above, the stated
+stop distances reproduce the research median (25.86 pt) and the sides reproduce the trade set
+(27 long / 17 short). The `na` target case — the field most likely to emit malformed JSON — is
+tested explicitly and emits `null`.
+
+Beyond that, the script was scanned for this branch's five recorded Pine traps and one real one was
+found and fixed: `tgtP = na(tgtD) ? na : ...` is a bare `na` in an untyped ternary, which is the
+"Value with NA type cannot be assigned to a variable that was defined without type keyword" error
+that shipped `PIN_POSTERIOR` with zero trades. It is now `float tgtP`. `str.format` with a
+MessageFormat pattern was replaced by plain concatenation for the same reason.
+
+**Not verified: that it compiles on TradingView, or that an alert is delivered on time.** There is
+no Pine compiler and no TradingView in this environment. Both need one run on a live chart.
+
+### 26d. Setting it up
+
+1. A **30-second chart requires a paid TradingView plan**, and **webhooks require a higher tier
+   still** — the popup and phone-push alerts do not.
+2. Add the strategy to a US30 30-second chart. Check the HUD's `forward cfg` row reads
+   **MATCHES** before anything else.
+3. Turn `Emit alerts` on and pick the format.
+4. Right-click → Add alert → Condition = this strategy → **Trigger: "Any alert() function call"**.
+   Leave the dialog's own message box empty; the script supplies the text.
+5. Expect roughly **0.48 alerts per session** (§24), all between 09:26 and 10:00 New York.
+
+### 26e. The honest position
+
+With TradingView alone this is **a fast manual workflow, not automation**. A person who is at the
+screen during the 34-minute entry window and acts within 30 seconds keeps ~91% of the measured
+edge; at a minute it is 69%. The alert is built to make that as fast as it can be — side and prices
+first, nothing to compute — but a person who is away from the desk gets no fill, or a late one that
+is worse than no trade.
+
+True automation needs one more component: a webhook consumer that places the order. The JSON
+payload is already shaped for it. What that consumer must enforce, none of which TradingView can:
+reject any alert older than ~60 seconds, one position at a time, one trade per session, a hard
+flat at 10:30, a daily loss kill-switch, and duplicate suppression. Those rails are the reason to
+build it properly rather than quickly.
