@@ -1,0 +1,356 @@
+//@version=5
+// 09:00 Range Breakout + EMA Momentum -- US30. MIT.
+//
+// The 09:00 New York high and low -> breakout at or after the 09:30 cash open -> optional MA
+// confirmation -> ATR or points stop, optional target.
+//
+// NO EDGE IS CLAIMED. Measured on a 30-second US30 file, 293 sessions, split 65/35:
+//   * a declared 960-cell grid (6 timeframes x 5 windows x 2 sides x 4 stops x 4 targets) has
+//     0 CELLS AT PF 2.0 on the research block, before any holdout.
+//   * 9 of 960 clear a matched random control at p<=0.05 where 48.0 are expected by chance, so
+//     the rule sits BELOW random entries of its own geometry. 0 of 960 beat their own MDE.
+//   * White reality check p 0.7495; deflated Sharpe 0.124 against an E[max | 960 noise trials]
+//     of 0.194; PBO 0.737.
+//   * a 22-feature meta-labeller reached PF 2.476 at 1 minute ON RESEARCH and PF 0.859 on the
+//     locked block. At a round turn of ZERO the locked block still reads PF 0.904, so it is not
+//     the costs. Median out-of-fold AUC over 84 trials: 0.500.
+//   * 1 minute is the LEAST BAD of six timeframes (-$2.41/trade), not a fix. Every timeframe
+//     marginal is negative. The only positive marginal in the grid is the 09:30-10:00 window.
+//
+// THE ONE SETTING TO CHECK BEFORE ANYTHING ELSE: a 100-point stop is 4.16 x ATR at 1 minute and
+// 1.28 x at 15. One input, four geometries. The panel prints the multiple and turns red outside
+// 0.5-3.0 ATR.
+//
+// Full study: docs/ib/STUDY_NINE_AM_1M.md. This is the compact build -- identical logic to
+// US30_NineAmRange.pine, with the research prose cut down so it pastes into the editor.
+strategy("09:00 Range Breakout + EMA Momentum", overlay = true,
+         initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1,
+         commission_type = strategy.commission.cash_per_order, commission_value = 1.145,
+         slippage = 1, calc_on_every_tick = false, process_orders_on_close = false,
+         pyramiding = 0, margin_long = 0, margin_short = 0)
+
+// ----------------------------------------------------------------------------- inputs
+grpS = "Session"
+rangeStart = input.int(540, "Range start, minutes past New York midnight", minval = 0, maxval = 1439, group = grpS, tooltip = "540 = 09:00. The range is every bar whose stamp lies in [start, end).")
+rangeEnd   = input.int(555, "Range end (exclusive)", minval = 1, maxval = 1440, group = grpS, tooltip = "555 = 09:15, the 09:00 candle on a 15-minute chart. Set 570 for the whole half hour -- measured, the two are the same thing (the 09:00 bar wins 14 of 28 paired cells, exactly chance). Declared in MINUTES so it is the same reach on any chart.")
+firstEntry = input.int(570, "Earliest entry", minval = 1, maxval = 1440, group = grpS, tooltip = "570 = the 09:30 cash open. SEPARATE from the range end, so shortening the range does not move the entry with it.")
+lastEntry  = input.int(960, "No new entries after", minval = 1, maxval = 1440, group = grpS)
+flatMin    = input.int(960, "Flatten at (0 = never)", minval = 0, maxval = 1440, group = grpS, tooltip = "Filled at the OPEN of this minute, so the order goes in on the bar before. 960 = 16:00.")
+
+grpA = "ATR -- one period, used by every ATR setting below"
+atrLen = input.int(14, "ATR period", minval = 1, maxval = 500, group = grpA, tooltip = "ONE period for the break buffer, the stop, the ATR target and the panel. It is ta.ema(ta.tr(true), n), a SPAN -- Wilder's ta.atr has roughly twice the effective lookback and would silently change every distance. Measured over 7/10/14/21/30/50: a rung beats 14 in 21 of 60 paired cells where chance is 50%, and 0 of 60 deltas beat their own MDE.")
+
+grpE = "Entry"
+sideIn  = input.string("Both", "Side", options = ["Long", "Short", "Both"], group = grpE, tooltip = "Long-only is the better marginal on this sample (-$3.23/trade against -$5.46 for both), which is drift, not a signal.")
+bufAtr  = input.float(0.0, "Break buffer, xATR beyond the level", minval = 0, maxval = 2, step = 0.05, group = grpE)
+touchOk = input.bool(true, "A touch counts as a break", group = grpE, tooltip = "Measured free; a strict inequality loses signals to exact tick equality.")
+
+grpM = "Momentum -- the MA 3 in 1 reading"
+maMode = input.string("Off", "MA confirmation", options = ["Off", "State (fast > slow)", "Fresh cross", "200 state: ANY of fast/slow", "200 state: ALL of fast/slow", "200 cross: ANY of fast/slow", "200 cross: ALL of fast/slow"], group = grpM, tooltip = "DEFAULT OFF and every option is measured as a null.\n\n13x48 READINGS. Unlike most confirmations this one BINDS -- the state passes 53-59% of this trigger's bars at lift 1.03-1.14, so it is not the trigger restated. It still does not pay: a random filter of the same selectivity does as well on research and better out of sample. At 1 minute the fresh cross cuts 355 trades to 66 -- it refuses 81% of breaks -- to buy a locked PF of 1.079 on 25 trades, which is not a resolvable quantity.\n\n200 READINGS. The base rate IS the finding: they admit 38.4-61.6% of this trigger's bars at a lift over all bars of 0.990 to 1.007 -- EXACTLY ONE. A 200-period average is too slow for a 15-minute range break to carry any information about it, so the gate is a coin flip on the signal set. Over 48 declared cells, 0 of 36 scorable ones beat their own MDE.")
+maType = input.string("EMA", "MA type", options = ["EMA", "SMA", "WMA", "Hull", "VWMA"], group = grpM, tooltip = "NOT a degree of freedom: matched-lag variants correlate 0.9999+ and overlap 89.5-97.3% of triggers. Change the LENGTH, not the letter.")
+maFast = input.int(13, "Fast length", minval = 1, group = grpM)
+maSlow = input.int(48, "Slow length", minval = 2, group = grpM)
+maLong = input.int(200, "Long length (the 200)", minval = 3, group = grpM, tooltip = "Used only by the four 200 readings and the level bypass. This is the shorter AVERAGES against the long one, which is a different object from PRICE against it.")
+crossMin = input.int(75, "Fresh cross: within this many MINUTES", minval = 1, group = grpM, tooltip = "A reach in TIME, not a bar count -- 75 minutes is 5 bars on a 15-minute chart, which is what was measured.")
+confBypass = input.string("Off", "Bypass: the 200 AT the break level", options = ["Off", "Support (long) / resistance (short)", "Through (the break clears the 200)", "Confluence (either configuration)"], group = grpM, tooltip = "DEFAULT OFF. An OR: the MA confirmation may be satisfied EITHER by its own reading OR by the broken level coinciding with the 200. Inert while MA confirmation is Off.\n\nAn OR LOOSENS a gate, so it was read against BOTH arms it sits between -- the MA gate alone and no gate at all. It passes the base-rate check (confluence admits 5.2-28.0% of bars at lift 1.25-1.63, so it is genuinely selective) and earns nothing: over 54 declared cells, 2 of 50 clear p<=0.05 where 2.5 are expected, 0 OF 50 beat their own MDE, and both clearing cells INVERT out of sample. Pooled arm means: no gate -0.0025, MA gate -0.0123, the OR -0.0188 %/trade. The loosest arm is the best one.")
+confTol = input.float(0.25, "Bypass tolerance (xATR)", minval = 0.01, step = 0.05, group = grpM, tooltip = "How near the broken level the 200 must sit, in ATR rather than points -- a point distance is not a setting, it is a setting times a market. The ladder runs +0.0268 / -0.0154 / +0.0032 %/trade at 0.25 / 0.50 / 1.00, all inside their own MDE.")
+crossBypass = input.string("Off", "Bypass: a fresh 13x48 cross overrides the 200", options = ["Off", "A fresh 13x48 cross overrides the 200"], group = grpM, tooltip = "DEFAULT OFF. A fresh 13x48 cross aligned with the break overrides the 200 reading, using the SAME recency setting above.\n\nIt can only act on 7.0-20.1% of the breaks the 200 refuses, so it is near the INERT end rather than the 'it IS no gate' end. Over 144 declared cells the OR beats the 200 gate in 18 of 68 (chance 50%) and beats NO GATE AT ALL in 6 of 68; 12 of 144 beat their own MDE and every one is on the NEGATIVE side. Pooled: no gate -0.0005, cross alone -0.0057, 200 gate -0.0119, the OR -0.0141 %/trade -- the OR is the worst arm.\n\nDEGENERACY: with MA confirmation on 'Fresh cross' this bypass IS the gate, so the OR is an identity and the switch does nothing. The panel says so.")
+
+grpX = "Exit"
+stopMode = input.string("ATR", "Stop mode", options = ["ATR", "Points", "Opposite side of the range"], group = grpX, tooltip = "POINTS CONFOUNDS GEOMETRY WITH TIMEFRAME, and this is the setting to check before comparing any two charts. The SAME 100-point stop is 4.16 x ATR at 1 minute, 2.48 x at 3, 1.97 x at 5 and 1.28 x at 15. Dropping from 15m to 1m with this mode on more than triples the barrier in the only unit that matters, without changing an input -- so a 'timeframe sweep' done this way is really a stop sweep. It confounds market too: 100 points is 2.35x the median in-window ATR on US30, 3.24x on NQ, 4.36x on US100. The panel prints the live multiple and turns red outside 0.5-3.0 ATR.")
+stopAtr  = input.float(1.5, "Stop, xATR", minval = 0.1, maxval = 10, step = 0.1, group = grpX)
+stopPts  = input.float(100, "Stop, POINTS", minval = 0.1, step = 1, group = grpX, tooltip = "Used when Stop mode = Points. Read the mode tooltip first.")
+tgtMode  = input.string("None", "Target mode", options = ["None", "R", "ATR", "Points"], group = grpX, tooltip = "No take profit had beaten every target tested 26 times on this branch. THE 27th WENT THE OTHER WAY: at 1 minute on a 30-second US30 file, 'None' showed the LARGEST research-to-locked inversion in the study -- research PF 1.259 at the 85th control percentile, locked PF 0.643 -- while 100 points read 0.974 / 0.899 and 200 points 1.123 / 0.927. On that sample a target is the more robust choice. One block, inside its own MDE, and it contradicts 26 earlier readings: a reason to test, not to switch.")
+tgtR     = input.float(0.0, "Target, R", minval = 0, maxval = 20, step = 0.5, group = grpX, tooltip = "Used when Target mode = R.")
+tgtAtr   = input.float(3.0, "Target, xATR", minval = 0.1, maxval = 30, step = 0.25, group = grpX, tooltip = "Used when Target mode = ATR. UNDER AN ATR STOP THIS IS NOT A NEW AXIS -- k x ATR and r x stop are the same level when k = r x stopAtr, asserted with identical exit bars at a max difference of 0.000e+00. It separates from the R target only under a POINTS or range stop.")
+tgtPts   = input.float(100, "Target, POINTS", minval = 0.1, step = 1, group = grpX, tooltip = "Used when Target mode = Points.")
+beMode   = input.string("Off", "Auto breakeven", options = ["Off", "Points"], group = grpX, tooltip = "DEFAULT OFF, and measured as a SUBTRACTOR on four separate blocks. Over a 72-cell ladder it beats its own OFF twin in 19 of 60 cells -- 32%, where chance is 50% -- and the marginal falls monotonically with the arming distance. At the 43/5 settings on a 30-second US30 file at 1 minute: research PF 0.974 -> 1.025 with the ratchet ON, locked PF 0.899 -> 0.743. IT HELPS THE BLOCK YOU FIT AND DAMAGES THE BLOCK YOU DO NOT.\n\nThe mechanism is in the exit mix: the stop share rises and the flatten share falls, so the ratchet arms on a favourable excursion and is taken out on the pullback before the clock would have closed the trade in profit.")
+bePts    = input.float(50, "Breakeven arms at, POINTS", minval = 1, step = 1, group = grpX, tooltip = "Favourable excursion from the FILL that arms the ratchet. It arms on the bar that reaches the distance and can only BIND from the bar after -- within one bar OHLC cannot say whether the excursion came before or after the pullback, and arming plus filling on the same bar invents that information.")
+beOffset = input.float(5, "Secure, POINTS (0 = true breakeven)", minval = 0, step = 1, group = grpX, tooltip = "How far BEYOND the fill the moved stop sits. THE THRESHOLD IS THE ROUND TURN, NOT ZERO: a stop at the fill books minus commission and slippage, which is why a true breakeven paints red in the Strategy Tester. The panel computes the round turn live from your own closed trades and says whether your setting clears it.\n\nSecuring MORE does not buy anything. The apparent rise along the ladder was a fill artifact -- the moved stop can sit ABOVE the market when it is written, and a walker that pays it at its level books a fill that could not happen. Corrected, the marginal is flat and negative at every distance.")
+xMode    = input.string("Off", "Close on an opposite MA cross", options = ["Off", "Fresh opposite cross", "Opposite state"], group = grpX, tooltip = "DEFAULT OFF. Over 72 declared cells it beats its own OFF twin in 15 of 48, which is 31% where chance is 50%, and 0 of 48 deltas beat their own MDE.\n\nBY READING: the FRESH CROSS barely binds (it closes 4.5-7.5% of trades). The OPPOSITE STATE binds on 35% and cuts the median hold 10.9 bars to 6.5, which RAISES the win rate and LOWERS the money -- it converts a payoff book into a hit-rate book and pays for it.\n\nTHE PLACEBO IS WHY IT SHIPS OFF: against an exit array with the SAME NUMBER of early exits at RANDOM bars, 100 seeds a cell, the real delta sits at the 0.38 / 0.57 percentile of its own null and the placebo does BETTER in 12 of 24 cells. Closing early at that RATE costs what closing early AT THE CROSS costs -- the moving average is not doing the work.")
+
+// ----------------------------------------------------------------------------- clock
+// Exchange time is Chicago on CME; New York is what the rule is written in.
+nyH = hour(time, "America/New_York")
+nyM = minute(time, "America/New_York")
+nyMin = nyH * 60 + nyM
+tfMin = math.max(1.0, timeframe.in_seconds(timeframe.period) / 60.0)
+crossBars = int(math.max(1.0, math.round(crossMin / tfMin)))
+newDay = ta.change(time("D", "America/New_York")) != 0
+
+// ----------------------------------------------------------------------------- indicators
+atrv = ta.ema(ta.tr(true), atrLen)
+
+f_ma(src, len, typ) =>
+    typ == "SMA"  ? ta.sma(src, len)  :
+     typ == "WMA" ? ta.wma(src, len)  :
+     typ == "Hull" ? ta.hma(src, len) :
+     typ == "VWMA" ? ta.vwma(src, len) : ta.ema(src, len)
+
+maF = f_ma(close, maFast, maType)
+maS = f_ma(close, maSlow, maType)
+maL = f_ma(close, maLong, maType)
+bull = maF > maS
+crossUp = bull and not bull[1]
+crossDn = (not bull) and bull[1]
+
+var int barsSinceUp = 1000000
+var int barsSinceDn = 1000000
+if barstate.isconfirmed
+    barsSinceUp := crossUp ? 0 : barsSinceUp + 1
+    barsSinceDn := crossDn ? 0 : barsSinceDn + 1
+
+// Each of the two shorter averages against the LONG one. The ages are forward counters, never a
+// fill-forward to the NEXT cross -- that fill-forward is the leak STUDY_DIVERGENCE_CONFIRM caught
+// reading +37 full against +999 truncated, and the research side is audited at 0 mismatches of 80.
+fOverL = maF > maL
+sOverL = maS > maL
+var int barsFup = 1000000
+var int barsFdn = 1000000
+var int barsSup = 1000000
+var int barsSdn = 1000000
+if barstate.isconfirmed
+    barsFup := (fOverL and not fOverL[1]) ? 0 : barsFup + 1
+    barsFdn := ((not fOverL) and fOverL[1]) ? 0 : barsFdn + 1
+    barsSup := (sOverL and not sOverL[1]) ? 0 : barsSup + 1
+    barsSdn := ((not sOverL) and sOverL[1]) ? 0 : barsSdn + 1
+
+// ----------------------------------------------------------------------------- the range
+var float rHi = na
+var float rLo = na
+var bool  rReady = false
+inRange = nyMin >= rangeStart and nyMin < rangeEnd
+if barstate.isconfirmed
+    if newDay
+        rHi := na
+        rLo := na
+        rReady := false
+    if inRange
+        rHi := na(rHi) ? high : math.max(rHi, high)
+        rLo := na(rLo) ? low  : math.min(rLo, low)
+    if nyMin >= rangeEnd and not na(rHi) and not na(rLo)
+        rReady := true
+
+
+
+
+// ----------------------------------------------------------------------------- signals
+armed = rReady and nyMin >= math.max(rangeEnd, firstEntry) and nyMin < lastEntry and not na(atrv) and atrv > 0
+upLvl = rHi + bufAtr * atrv
+dnLvl = rLo - bufAtr * atrv
+hitUp = armed and (touchOk ? high >= upLvl : high > upLvl)
+hitDn = armed and (touchOk ? low  <= dnLvl : low  < dnLvl)
+
+var bool tookUp = false
+var bool tookDn = false
+if barstate.isconfirmed and newDay
+    tookUp := false
+    tookDn := false
+
+// The 200 readings, as TWO masks rather than one direction label: under ANY a split reading
+// (13 above the 200, 48 below) confirms both sides, so the gate simply vetoes nothing that day.
+// Collapsed into a single +1/-1/0 label a split has to abstain and ANY becomes ALL exactly.
+m200L = maMode == "200 state: ANY of fast/slow" ? (fOverL or sOverL) :
+         maMode == "200 state: ALL of fast/slow" ? (fOverL and sOverL) :
+         maMode == "200 cross: ANY of fast/slow" ?
+           ((fOverL and barsFup <= crossBars) or (sOverL and barsSup <= crossBars)) :
+           ((fOverL and barsFup <= crossBars) and (sOverL and barsSup <= crossBars))
+m200S = maMode == "200 state: ANY of fast/slow" ? ((not fOverL) or (not sOverL)) :
+         maMode == "200 state: ALL of fast/slow" ? ((not fOverL) and (not sOverL)) :
+         maMode == "200 cross: ANY of fast/slow" ?
+           (((not fOverL) and barsFdn <= crossBars) or ((not sOverL) and barsSdn <= crossBars)) :
+           (((not fOverL) and barsFdn <= crossBars) and ((not sOverL) and barsSdn <= crossBars))
+is200 = str.startswith(maMode, "200")
+
+maOkL = maMode == "Off" ? true : is200 ? m200L :
+         maMode == "State (fast > slow)" ? bull : barsSinceUp <= crossBars
+maOkS = maMode == "Off" ? true : is200 ? m200S :
+         maMode == "State (fast > slow)" ? not bull : barsSinceDn <= crossBars
+
+// The 200 AT the break level. A LEVEL COINCIDENCE -- the price the break clears and the long
+// average are the same price, within a tolerance in ATR -- which is a different object from the
+// three MA readings above: those compare two averages with each other, or the shorter averages
+// with the 200. "Through" is the ask's "resistance" on the long side and "support" on the short
+// side, named by the ROLE so the two sides mirror instead of swapping words, and it partitions
+// "Confluence" exactly with "Behind".
+confOn  = confBypass != "Off"
+confTolP = confTol * atrv
+confNearU = confOn and not na(rHi) and not na(maL) and math.abs(rHi - maL) <= confTolP
+confNearD = confOn and not na(rLo) and not na(maL) and math.abs(rLo - maL) <= confTolP
+confThruU = confNearU and maL >= rHi
+confThruD = confNearD and maL <= rLo
+confAny = str.startswith(confBypass, "Confluence")
+confThr = str.startswith(confBypass, "Through")
+// "Support (long) / resistance (short)" is the average sitting BEHIND the break -- beneath price
+// on a long, above it on a short -- which is what support/bullish and resistance/bearish mean.
+confOkL = not confOn ? false : confAny ? confNearU :
+           confThr ? confThruU : (confNearU and not confThruU)
+confOkS = not confOn ? false : confAny ? confNearD :
+           confThr ? confThruD : (confNearD and not confThruD)
+
+// A FRESH 13x48 CROSS AS THE SECOND BYPASS. Aligned with the break: a long break needs a fresh UP
+// cross, a short break a fresh DOWN cross. It uses the SAME recency setting as the MA gate, so one
+// number means one thing. Note the degeneracy, which run_n20 asserts on the real signal set rather
+// than reasoning about: with MA confirmation on "Fresh cross" this bypass IS the gate, so the OR
+// is an identity and the switch is inert -- the panel says so.
+xbypOn = crossBypass != "Off"
+xbypL = xbypOn and barsSinceUp <= crossBars
+xbypS = xbypOn and barsSinceDn <= crossBars
+
+// The OR the ask proposes. With MA confirmation Off, maOk is already true and both bypasses are
+// inert. Both are bypasses OF THE SAME GATE, so they belong in one OR rather than in sequence --
+// gating in sequence would be an AND, which is a different strategy.
+momOkL = maOkL or confOkL or xbypL
+momOkS = maOkS or confOkS or xbypS
+
+wantLong  = (sideIn == "Long"  or sideIn == "Both") and hitUp and not tookUp and momOkL
+wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and momOkS
+
+
+
+// ----------------------------------------------------------------------------- orders
+// The exit bracket is placed WITH the entry and priced from the SIGNAL bar, so the fill bar is
+// protected. `strategy.exit` on a later bar leaves the entry bar naked (STUDY_PINE_PARITY:
+// 4.4-13.0% of trades, -33 to -118 points) and a bracket that reads strategy.position_avg_price
+// cannot be armed on the fill bar at all (STUDY_SCALP89).
+var bool  beArmed  = false
+var float pendTgt  = na
+
+riskL = stopMode == "ATR" ? stopAtr * atrv : stopMode == "Points" ? stopPts : math.max(close - rLo, syminfo.mintick)
+riskS = stopMode == "ATR" ? stopAtr * atrv : stopMode == "Points" ? stopPts : math.max(rHi - close, syminfo.mintick)
+
+// The target is an absolute distance in price, whichever mode set it; `na` means no target, and
+// `strategy.exit` is then a stop-only bracket.
+tgtDistL = tgtMode == "Points" ? tgtPts : tgtMode == "ATR" ? tgtAtr * atrv :
+             tgtMode == "R" and tgtR > 0 ? tgtR * riskL : na
+tgtDistS = tgtMode == "Points" ? tgtPts : tgtMode == "ATR" ? tgtAtr * atrv :
+             tgtMode == "R" and tgtR > 0 ? tgtR * riskS : na
+
+flatNow = flatMin > 0 and (nyMin + tfMin >= flatMin) and nyMin < flatMin
+
+if barstate.isconfirmed and strategy.position_size != 0 and flatNow
+    strategy.close_all(comment = "flat")
+
+// The opposite-cross exit reads the SAME pair the momentum gate and the plots use, so one pair
+// means one thing everywhere. It is read at this bar's CLOSE and fills at the NEXT bar's open,
+// which is what strategy.close() can actually do and what the research walker was made to match
+// (STUDY_V16's flat_open lesson). The stop and the target are intrabar and resolve first.
+xFlip = xMode == "Off" or strategy.position_size == 0 ? false
+         : strategy.position_size > 0 ? (xMode == "Fresh opposite cross" ? crossDn : not bull)
+         : (xMode == "Fresh opposite cross" ? crossUp : bull)
+
+if barstate.isconfirmed and not flatNow and xFlip
+    strategy.close_all(comment = "opp cross")
+
+if barstate.isconfirmed and not flatNow and not xFlip and strategy.position_size == 0
+    if wantLong
+        tookUp := true
+        beArmed := false
+        pendTgt := tgtDistL
+        strategy.entry("L", strategy.long)
+        strategy.exit("Lx", "L", loss = riskL / syminfo.mintick,
+                      profit = na(tgtDistL) ? na : tgtDistL / syminfo.mintick)
+    else if wantShort
+        tookDn := true
+        beArmed := false
+        pendTgt := tgtDistS
+        strategy.entry("S", strategy.short)
+        strategy.exit("Sx", "S", loss = riskS / syminfo.mintick,
+                      profit = na(tgtDistS) ? na : tgtDistS / syminfo.mintick)
+
+// ----------------------------------------------------------------------------- auto breakeven
+// The ratchet ARMS on the bar whose favourable extreme reaches bePts from the fill and the moved
+// stop is live only from the NEXT bar, which is what the research walker does and what an order
+// placed at a bar close can actually do. The target distance is the one captured AT ENTRY
+// (`pendTgt`), not recomputed from a later bar's ATR, so re-issuing the bracket cannot silently
+// move the take profit (STUDY_V56).
+if barstate.isconfirmed and beMode == "Points" and strategy.position_size != 0 and not beArmed
+    ep = strategy.position_avg_price
+    if not na(ep)
+        isLong  = strategy.position_size > 0
+        fav     = isLong ? high - ep : ep - low
+        if fav >= bePts
+            beArmed := true
+            beStop = isLong ? ep + beOffset : ep - beOffset
+            if isLong
+                strategy.exit("Lx", "L", stop = beStop,
+                              limit = na(pendTgt) ? na : ep + pendTgt)
+            else
+                strategy.exit("Sx", "S", stop = beStop,
+                              limit = na(pendTgt) ? na : ep - pendTgt)
+
+// a break that is refused by a gate still counts as used for the session, so the rule takes the
+// FIRST break or none -- the research event stream does the same and the two must agree
+if barstate.isconfirmed
+    if hitUp
+        tookUp := true
+    if hitDn
+        tookDn := true
+
+// ----------------------------------------------------------------------------- plots
+plot(rReady ? rHi : na, "range high", color = color.new(color.teal, 0), style = plot.style_linebr)
+plot(rReady ? rLo : na, "range low",  color = color.new(color.orange, 0), style = plot.style_linebr)
+plot(maMode == "Off" ? na : maF, "fast MA", color = color.new(color.blue, 40))
+plot(maMode == "Off" ? na : maS, "slow MA", color = color.new(color.purple, 40))
+plot(is200 or confOn ? maL : na, "long MA (200)", color = color.new(color.orange, 30), linewidth = 2)
+bgcolor(inRange ? color.new(color.gray, 90) : na)
+
+var table hud = table.new(position.top_right, 2, 10, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "range",   text_size = size.tiny)
+    table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)), text_size = size.tiny)
+    table.cell(hud, 0, 1, "fresh cross", text_size = size.tiny)
+    table.cell(hud, 1, 1, str.tostring(crossMin) + "m = " + str.tostring(crossBars) + " bars", text_size = size.tiny)
+    table.cell(hud, 0, 2, "ATR", text_size = size.tiny)
+    table.cell(hud, 1, 2, "period " + str.tostring(atrLen) + " = "
+               + str.tostring(atrv, "#.##") + " pt  (ema of true range, not Wilder)",
+               text_size = size.tiny)
+    table.cell(hud, 0, 8, "trades",  text_size = size.tiny)
+    table.cell(hud, 1, 8, str.tostring(strategy.closedtrades), text_size = size.tiny)
+    stopShow = stopMode == "ATR" ? stopAtr * atrv : stopMode == "Points" ? stopPts : na
+    tgtShow  = tgtMode == "Points" ? tgtPts : tgtMode == "ATR" ? tgtAtr * atrv :
+                 tgtMode == "R" and tgtR > 0 ? tgtR * (na(stopShow) ? atrv : stopShow) : na
+    // THE STOP IN ATR IS THE READING THAT TRAVELS BETWEEN TIMEFRAMES, and a POINTS stop does not.
+    // On a 30-second US30 file the same 100 points is 4.16 ATR at 1 minute and 1.28 at 15
+    // (STUDY_NINE_AM_1M), so the band below flags a geometry that has quietly changed underneath
+    // an unchanged input rather than leaving it to be read off the number.
+    stopN = na(stopShow) ? na : stopShow / atrv
+    stopOk = na(stopN) or (stopN >= 0.5 and stopN <= 3.0)
+    table.cell(hud, 0, 4, "stop / target", text_size = size.tiny)
+    table.cell(hud, 1, 4, (na(stopShow) ? "range" : str.tostring(stopShow, "#.#") + " pt = " + str.tostring(stopN, "#.##") + " ATR" + (stopOk ? "" : "  OUT OF BAND for this timeframe"))
+               + "  /  " + (na(tgtShow) ? "none" : str.tostring(tgtShow, "#.#") + " pt = " + str.tostring(tgtShow / atrv, "#.##") + " ATR"),
+               text_size = size.tiny, text_color = stopOk ? color.gray : color.red)
+    table.cell(hud, 0, 5, "breakeven", text_size = size.tiny)
+    table.cell(hud, 1, 5, beMode == "Off" ? "off" : str.tostring(bePts, "#.#") + " pt = "
+               + str.tostring(bePts / atrv, "#.##") + " ATR", text_size = size.tiny)
+    // The round turn is what a secured exit has to clear before the Strategy Tester calls it a
+    // win, and it is not zero. Commission is measured from the run itself (gross minus net) and
+    // converted to POINTS through this symbol's point value; slippage is charged in TICKS on both
+    // sides and never appears in the commission figure, so it is added explicitly.
+    nTr  = math.max(strategy.closedtrades, 1)
+    comm = (strategy.grossprofit - strategy.netprofit) / nTr
+    rtPt = comm / math.max(syminfo.pointvalue, 1e-9) + 2.0 * syminfo.mintick
+    table.cell(hud, 0, 6, "secure", text_size = size.tiny)
+    secTxt = beOffset > rtPt ? "CLEARS (+" + str.tostring(beOffset - rtPt, "#.##") + ")" : "BELOW -- still a loss"
+    secCol = beMode == "Off" ? color.gray : beOffset > rtPt ? color.green : color.red
+    table.cell(hud, 1, 6, beMode == "Off" ? "--"
+      : str.tostring(beOffset, "#.#") + " pt vs round turn " + str.tostring(rtPt, "#.##") + " pt  " + secTxt,
+      text_size = size.tiny, text_color = secCol)
+    table.cell(hud, 0, 3, "MA gate", text_size = size.tiny)
+    m200Txt = m200L and m200S ? "both sides ok" : m200L ? "longs only" : m200S ? "shorts only" : "no trade"
+    maTxt = maMode == "Off" ? "off" : not is200 ? maMode : maMode + "  ->  " + m200Txt
+    bypTxt = not confOn ? "" : "  OR 200@level " + str.tostring(confTol, "#.##") + "N" +
+              (confOkL and confOkS ? " (both)" : confOkL ? " (long)" : confOkS ? " (short)" : "")
+    // a bypass that is an identity of the gate it bypasses is worth saying out loud
+    xbTxt = not xbypOn ? "" : maMode == "Fresh cross" ? "  OR fresh cross -- INERT, it IS the gate"
+             : "  OR fresh 13x48 cross <=" + str.tostring(crossMin) + "m" +
+               (xbypL and xbypS ? " (both)" : xbypL ? " (long)" : xbypS ? " (short)" : "")
+    maCol = maMode == "Off" or not is200 ? color.gray : m200L and m200S ? color.gray : m200L ? color.teal : m200S ? color.maroon : color.red
+    table.cell(hud, 1, 3, maTxt + bypTxt + xbTxt, text_size = size.tiny, text_color = maCol)
+    xTxt = xMode == "Off" ? "off" : xMode == "Fresh opposite cross"
+             ? "fresh cross, binds ~5% of trades" : "opposite state, binds ~35%, cuts the hold 40%"
+    xCol = xMode == "Off" ? color.gray : color.red
+    table.cell(hud, 0, 7, "opp-cross exit", text_size = size.tiny)
+    table.cell(hud, 1, 7, xTxt, text_size = size.tiny, text_color = xCol)
+    table.cell(hud, 0, 9, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 9, "none", text_size = size.tiny, text_color = color.red)
