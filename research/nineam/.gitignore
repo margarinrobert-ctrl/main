@@ -1,0 +1,4 @@
+.cache/
+grid.npz
+meta.json
+deflate.json
