@@ -26,6 +26,9 @@ sys.path.insert(0, "/root/.claude/skills/synced/a952e675-7aaf-4d14-bf01-c1a3db21
 import na_core as N    # noqa: E402
 import na_opt as O     # noqa: E402
 import na_s30 as S     # noqa: E402
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution; see the module)
 
 try:
     import gates as G
@@ -161,7 +164,7 @@ sh.to_csv(os.path.join(OUT, "n23_sharpe.csv"), index=False)
 
 # ====================================================== 6  stability
 hd("6  MONTH BY MONTH -- 4.5 MONTHS IS THE WHOLE SAMPLE")
-mo = pd.DataFrame({"m": pd.to_datetime(tr["eday"].to_numpy() * 86_400_000_000_000)
+mo = pd.DataFrame({"m": DK.from_day(tr["eday"].to_numpy())
                         .to_period("M").astype(str), "pct": r})
 g = mo.groupby("m")["pct"].agg(["size", "mean", "sum"])
 print(g.to_string(float_format=lambda v: f"{v:+.4f}"))

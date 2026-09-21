@@ -24,6 +24,9 @@ import na_core as N    # noqa: E402
 import na_opt as O     # noqa: E402
 import na_30s as T     # noqa: E402
 import na_s30 as S     # noqa: E402
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution; see the module)
 
 OUT = HERE
 pd.set_option("display.width", 220)
@@ -42,8 +45,8 @@ sig_all, sd_all = c.events(P["range_end"], P["side"], P["buf_atr"], P["atr_n"],
 atrf = c.atr_frame(P["atr_n"])
 tdays = np.unique(c.day[sig_g])
 print(f"rule: {len(tr)} trades on {len(tdays)} tradeable sessions, "
-      f"{pd.to_datetime(tdays.min()*86_400_000_000_000).date()}"
-      f"..{pd.to_datetime(tdays.max()*86_400_000_000_000).date()}")
+      f"{DK.from_day(tdays.min()).date()}"
+      f"..{DK.from_day(tdays.max()).date()}")
 
 # =============================================================================== 1  walk-forward
 hd("1  WALK-FORWARD -- THE CONSTANTS FIXED, BESIDE A RE-CHOSEN ARM AND A RANDOM CELL")

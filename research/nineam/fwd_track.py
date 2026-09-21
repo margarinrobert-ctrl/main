@@ -56,6 +56,9 @@ sys.path.insert(0, HERE)
 import na_core as N    # noqa: E402
 import na_30s as T     # noqa: E402
 import na_s30 as S     # noqa: E402
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution; see the module)
 
 LEDGER = os.path.join(HERE, "fwd_ledger.csv")
 STATE = os.path.join(HERE, "fwd_state.json")
@@ -82,7 +85,7 @@ def coverage(f):
     mod = f["mod"].to_numpy(); day = f["day"].to_numpy()
     sess = np.unique(day[mod >= 570])
     have = np.unique(day[(mod >= 540) & (mod < 545)])
-    cut_day = (CUTOFF.normalize().value // 86_400_000_000_000)
+    cut_day = int(DK.to_day([CUTOFF])[0])
     new = sess[sess > cut_day]
     new_have = have[have > cut_day]
     return dict(sessions=len(sess), covered=len(have),

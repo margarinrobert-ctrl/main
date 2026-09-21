@@ -29,6 +29,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution; see the module)
 
 TIMEFRAMES = ("1H", "4H", "D", "W", "M")
 
@@ -42,9 +45,9 @@ def _period_key(ix: pd.DatetimeIndex, tf: str) -> np.ndarray:
         return ns // (4 * 3_600_000_000_000)
     shifted = ix + pd.Timedelta(hours=7)
     if tf == "D":
-        return np.asarray(shifted.normalize().view("int64")) // 86_400_000_000_000
+        return DK.to_day(shifted)
     if tf == "W":
-        return (np.asarray(shifted.view("int64")) // 86_400_000_000_000 + 4) // 7
+        return DK.to_week(shifted)
     if tf == "M":
         return np.asarray(shifted.year) * 12 + np.asarray(shifted.month)
     raise ValueError(tf)

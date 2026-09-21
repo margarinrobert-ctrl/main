@@ -31,6 +31,9 @@ sys.path.insert(0, "research/v46")
 import v38feeds as FD        # noqa: E402
 import v46grid as G          # noqa: E402
 import carver as CV          # noqa: E402
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution; see the module)
 
 SPLIT = 0.65
 COSTS = {"US100L": (0.72, 0.25), "US30L": (1.50, 0.50), "NQ": (0.72, 0.25)}
@@ -109,7 +112,7 @@ def control(P, cfg, block, xb, pnl, n_target, draws=400, seed=17):
 
 
 def boot_days(ts, p, draws=2000, seed=5):
-    day = (ts // 86_400_000_000_000).astype(np.int64)
+    day = DK.to_day(pd.to_datetime(ts))
     ud = np.unique(day)
     idx = {u: np.flatnonzero(day == u) for u in ud}
     rng = np.random.default_rng(seed)

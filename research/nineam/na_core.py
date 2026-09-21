@@ -53,6 +53,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(ROOT, "research"))
 sys.path.insert(0, os.path.join(ROOT, "research", "v38"))
 import v38feeds as F  # noqa: E402
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution; see the module)
 
 # round turn in index points: broker + exchange + the NFA line + slippage (STUDY_COSTS)
 COST = {"NQ": 1.72, "US100L": 1.215, "US30L": 2.29, "US30I": 2.29}
@@ -95,7 +98,7 @@ def load(name="NQ", tf=15):
     f["tr"] = tr
     f["atr"] = pd.Series(tr).ewm(span=14, adjust=False).mean().to_numpy()
     f["mod"] = f.index.hour * 60 + f.index.minute
-    f["day"] = (f.index.normalize().view("int64") // 86_400_000_000_000).astype(np.int64)
+    f["day"] = DK.to_day(f.index).astype(np.int64)
     return f
 
 

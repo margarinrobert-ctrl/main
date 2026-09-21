@@ -18,6 +18,9 @@ from edgelab import feeds
 from scalp import core
 from hypo.metrics import suite
 from atme.livesim import run_live, perturb
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution)
 
 WINDOW = (540, 780)
 INST = "NQ"
@@ -55,8 +58,7 @@ def live(d5, d1, ck, pos1, trig):
         want_px, STOP_K * atr, TP_R, WAIT_BARS * 5, HOLD_BARS * 5, FLAT_MOD,
         hs, ck.slip_stop, ck.commission)
     f = filled.astype(bool)
-    day = ((d1["idx"][sig] + pd.Timedelta(hours=6)).normalize().view("int64")
-           // 86_400_000_000_000)
+    day = DK.to_day(d1["idx"][sig] + pd.Timedelta(hours=6))
     return dict(trig=trig[f], sig=sig[f], R=R[f], why=why[f], amb=amb[f],
                 wait=wait[f], held=held[f], day=np.asarray(day)[f], n_signals=len(trig))
 

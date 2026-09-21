@@ -1467,3 +1467,162 @@ revision on the studied span would void the ledger rather than silently shift th
 
 **0 of 50 forward trades.** The feed ends on the cutoff bar. Nothing is scheduled; drop a newer
 `US30_30s` export over `data/US30_30s.csv` and run `python research/nineam/fwd_track.py`.
+
+---
+
+## 24. The settings the Inputs dialog actually holds — the full battery
+
+Section 22 measured a 100/100-point configuration on 30-second bars. The Inputs screenshots that
+arrived afterwards hold a **different configuration**, and the differences are not cosmetic:
+
+| setting | §22 | the dialog | what changes |
+| --- | --- | --- | --- |
+| first entry | 568 | 566 | — |
+| no new entries after | 960 (16:00) | 600 (10:00) | entry window 392 min → **34 min** |
+| flatten | 960 | 630 (10:30) | max hold 392 min → **64 min** |
+| ATR length | 14 bars (7 min) | 45 bars (22.5 min) | a different indicator |
+| fresh-cross reach | 7 min | 5 min | tighter |
+| stop | 100 POINTS | **2.25 × ATR** | a different geometry per session |
+| breakeven secures | 5 pts | 3 pts | — |
+
+The target stays 100 points. With ATR(45) running at a median 11.59 points the stop lands at
+**26.07 points**, so the reward-to-risk is **3.84 : 1** and the driftless break-even win rate is
+**0.207, not 0.500**. That single change makes this a different strategy, not a tweak, and every
+number below is read against *its own* geometry.
+
+Modules: `research/nineam/na_live.py` (the config), `run_n24.py` (geometry, coverage, IS/OOS,
+nulls), `run_n25.py` (walk-forward, four Monte Carlos, drop-one, correlations, deflation),
+`run_n26.py` (tradeability), `plot_n24.py` → `fig10_live_validation.png`,
+`fig11_live_tradeability.png`.
+
+### 24a. The result, and the reconciliation with TradingView
+
+92 of 293 sessions in the file carry the 09:00 range (all-or-nothing, from 2026-04-30). 162 breaks
+occur in 09:26–10:00; the fresh 13×48 cross keeps **27.8%** of them, leaving **45 triggers on 42
+sessions → 44 trades**.
+
+```
+44 trades   +0.0548 %/trade = +28.56 points = $142.81 at 1 contract, $5/point
+total +2.41 % = +1,257 points = $6,283      PF 3.903   win 0.6364   max DD 0.249 %
+```
+
+**The locally measured PF of 3.903 lands on TradingView's reported 3.85.** That is the strongest
+evidence available that the transcription of the Inputs dialog is correct and the TV report is
+reproducible outside TradingView. One residual discrepancy is resolved the same way: TV's average
+win of **$606.48** is 2.01× the $301.60 measured here at 1 contract, so the TV run was sized at
+**two contracts (or $10/point)**, not one. Nothing else needs to change; P&L scales linearly.
+
+### 24b. What survives
+
+| test | result | reading |
+| --- | --- | --- |
+| MDE at n=44 | 0.0463 %/trade, delivered 0.0548 = **1.18×** | clears, barely |
+| day-block bootstrap | 95% CI [+0.0233, +0.0873], P(mean≤0) = **0.0003** | clears |
+| random ENTRY null (400) | median +0.0023, **p = 0.000** | 0 of 400 draws reached the rule |
+| random GATE null (400) | median +0.0086, **p = 0.000** | the gate is not merely thinning |
+| IS / OOS (chronological) | +0.0391 (n=22) / +0.0704 (n=22) | both positive; neither clears its own MDE |
+| MC path (8,000 permutations) | realised DD at the 71.7th pct; p99 = 1.70× realised | size to the p99, $1,103, not to $648 |
+| MC execution (U(0.5×,2×) round turn) | P(mean≤0) = 0.0000 | **nearly free by arithmetic — not evidence** |
+| MC data (price jitter, all indicators recomputed) | sign kept **60/60** at ±0.5, ±1, ±2 ticks | robust |
+| cost ladder | net survives to ~14× the modelled round turn | the edge is in the target hits |
+| months | **5 / 5 positive**; best month 41% of net | |
+| weeks | 14 / 19 positive; best week 23% of net | |
+| concentration | best trade = 8.2% of net; removing the best three leaves +0.0446 | **not an outlier result** |
+| daily Sharpe (zero-filled, annualised) | 4.892 — with a standard error of **1.66** | the estimate and its error bar are the same size |
+
+### 24c. Where the result actually comes from — one component, and it has a dose-response curve
+
+Drop-one is unambiguous. Removing the **fresh 13×48 cross gate** takes the rule from 44 trades at
++0.0548 to **142 trades at +0.0068** (−0.0479 %/trade). Every other knob is worth under ±0.004:
+
+```
+no breakeven ratchet    +0.0022      no 10:30 flatten       +0.0033
+no 10:00 entry cutoff   -0.0004      no opposite-cross exit  0.0000 (exactly)
+```
+
+And the gate is **monotone in its own parameter** — the shape CLAUDE.md demands before a rule is
+called a mechanism:
+
+| cross within | 1 min | 2 | 3 | **5** | 8 | 12 | 20 | 40 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| %/trade | +0.0952 | +0.0843 | +0.0734 | **+0.0548** | +0.0368 | +0.0238 | +0.0113 | +0.0092 |
+| n | 26 | 31 | 37 | **44** | 63 | 79 | 102 | 124 |
+| t | 4.64 | 4.53 | 4.08 | **3.31** | 2.71 | 2.05 | 1.17 | 1.09 |
+
+Monotone across a 40× range of the parameter, every rung positive, with the trade count moving the
+right way. This is the first thing on this branch to produce that curve. **The mechanism claim is
+that a 09:00-range break matters only when a 13×48 EMA cross has *just* happened — momentum
+confirmed within minutes, not momentum in general.**
+
+The same reading holds across all nine knobs swept individually: **49 of 50 distinct grid cells are
+positive**, and the configured value is the *peak* on only three of them (`stop_atr`, `open_m`,
+`range_end`). A hand-search that had found a peak would sit on the maximum of most knobs. This
+does not — which is evidence *against* a large effective look count, and the reason the deflation
+below is survivable.
+
+### 24d. Where it does not survive, and the two that matter
+
+**Walk-forward says the exit geometry is not the edge.** Over four expanding folds on a declared
+54-cell grid: constants fixed **+2.171**, re-chosen on the training window **+1.850**, and a cell
+drawn **blind from the same grid +1.899**. The random cell captures **87%** of the fixed arm. The
+stop/target/breakeven settings are therefore *not* what produced the result — which is consistent
+with 24c, since every cell in that grid carries the gate.
+
+**Latency is the hard constraint, and it is severe.** The median hold is 2.5 minutes, so a delayed
+fill competes with the trade itself:
+
+| delay | 0 | 30 s | 1 min | 2 min | 3 min | 5 min |
+| --- | --- | --- | --- | --- | --- | --- |
+| edge kept | 1.00 | 0.91 | 0.69 | 0.36 | **−0.30** | −0.25 |
+
+A three-minute delay does not degrade the strategy, it **inverts** it. This needs an automated
+order sitting at the broker, not a person reacting to an alert.
+
+**Entry slippage is survivable in P&L and brutal on the win rate.** At 2–3 points per side — the
+realistic retail CFD figure at 09:30, against the 2.29-point round turn modelled here — 79–86% of
+the edge remains. But the win rate falls **0.636 → 0.409 at the first extra point**, because the
+ten trades booking the secured +0.71 flip to losses. *A live win rate far below the backtest's is
+the expected outcome and is not evidence the edge broke.* Judge live results on P&L, not win rate.
+
+**Deflation is the number that governs.** t = 3.313 on 44 trades. Against `e_max_normal`:
+
+| looks | 10 | 50 | 100 | 500 | 2,000 |
+| --- | --- | --- | --- | --- | --- |
+| E[max t \| noise] | 1.575 | 2.276 | 2.531 | 3.053 | 3.447 |
+| verdict | survives | survives | survives | survives | **fails** |
+
+The look count is not something a backtest can supply — it is how many settings were tried in the
+Inputs dialog before this one was kept. Nine knobs at three plausible values each is 19,683. The
+honest statement: **significant against a random entry and a random gate, survivable up to roughly
+500 looks, and not established against an unbounded hand-search.** 24c is the mitigating evidence:
+a configuration sitting mid-grid on six of nine knobs was not arrived at by maximising.
+
+### 24e. One setting in the dialog does nothing
+
+"Close on fresh opposite cross" ON and OFF produce a **bit-identical trade set**; 0 of 44 trades
+exit that way. With entries confined to 09:26–10:00, a flatten at 10:30 and a 2.5-minute median
+hold, a fresh opposite 13×48 cross never has time to arrive. It is inert *at these settings* — it
+is not inert at §22's, where a position could be held to 16:00.
+
+### 24f. Verdict
+
+The effect is real on this sample, is carried by one component that shows a proper dose-response
+curve, and is uncorrelated with the market over its own window (ρ = +0.034). Against that:
+**44 trades, 92 tradeable sessions, five months of one summer on one instrument**, with no bear
+market, rate shock or volatility event anywhere in it, and a latency tolerance measured in tens of
+seconds.
+
+Three things would move it, in order of value:
+
+1. **More history.** The 30-second feed carries the 09:00 range on 92 sessions. 250 would put the
+   delivered effect at 2.7× its MDE instead of 1.18×, and would let a genuine research/locked
+   split exist at all.
+2. **A second instrument.** The mechanism (a range break confirmed by a fresh cross) is not
+   US30-specific. If it does not appear on US100, it is a fact about this file.
+3. **The tighter gate.** `cross_min = 1` delivers +0.0952 at t = 4.64 on 26 trades. It is the same
+   curve's end, not a new search, so it carries no extra multiplicity — but it halves the trade
+   count, and the forward test in §23 is pre-registered on §22's configuration, not this one.
+
+`research/nineam/fwd_track.py` tracks §22's settings and its `CFG_SHA` guard will refuse this
+configuration by design. A forward test of *this* configuration is a separate pre-registration and
+has not been made.

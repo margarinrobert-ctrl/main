@@ -32,6 +32,9 @@ from numba import njit
 
 sys.path.insert(0, "research")
 from edgelab import fx
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution)
 
 TP_R = 1.0
 MAX_HOLD = 200          # bars; the flatten time binds long before this
@@ -42,8 +45,7 @@ def eur_bars(atr_n=14):
     b = fx.bars("EURUSD", 30, atr_n=atr_n)
     d = dict(o=b["o"], h=b["h"], l=b["l"], c=b["c"], v=b["v"], atr=b["atr"],
              mod=b["mod"].astype(np.int64), spread=b["spread"], idx=b["idx"])
-    d["sess"] = ((b["idx"] + pd.Timedelta(hours=6)).normalize().view("int64")
-                 // 86_400_000_000_000)
+    d["sess"] = DK.to_day(b["idx"] + pd.Timedelta(hours=6))
     d["df"] = b["df"]          # the factory pool reads `df.index` for its calendar conditions
     d["n"] = len(b["c"])
     return d

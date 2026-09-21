@@ -41,6 +41,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution)
 
 # The upload directory is not durable -- this file was cleared from it mid-study once already,
 # which is why `find_raw` searches rather than hard-coding, and why the error names the fix.
@@ -86,7 +89,7 @@ def load(path=None):
     out = out[~out.index.duplicated()].sort_index()
     out["mod"] = out.index.hour * 60 + out.index.minute
     # a session runs 18:00 -> 18:00 New York, matching the futures convention used elsewhere here
-    out["sess"] = (out.index + pd.Timedelta(hours=6)).normalize().view("int64") // 86_400_000_000_000
+    out["sess"] = DK.to_day(out.index + pd.Timedelta(hours=6))
     _C[("raw", path)] = out
     return out
 
@@ -121,7 +124,7 @@ def resample(tf, path=None):
     out = pd.DataFrame({"o": g.o.first(), "h": g.h.max(), "l": g.l.min(),
                         "c": g.c.last(), "v": g.v.sum()}).dropna()
     out["mod"] = out.index.hour * 60 + out.index.minute
-    out["sess"] = (out.index + pd.Timedelta(hours=6)).normalize().view("int64") // 86_400_000_000_000
+    out["sess"] = DK.to_day(out.index + pd.Timedelta(hours=6))
     return out
 
 

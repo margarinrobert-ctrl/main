@@ -27,6 +27,9 @@ import sys
 
 import numpy as np
 import pandas as pd
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution; see the module)
 
 sys.path.insert(0, "research")
 
@@ -67,8 +70,7 @@ def load(market):
         return _CACHE[market]
     d = _intraday(market)
     ix = pd.DatetimeIndex(d["idx"])
-    day_key = ((ix + pd.Timedelta(hours=DAY_ANCHOR_H)).normalize().view("int64")
-               // 86_400_000_000_000)
+    day_key = DK.to_day(ix + pd.Timedelta(hours=DAY_ANCHOR_H))
     df = pd.DataFrame({"o": d["o"], "h": d["h"], "l": d["l"], "c": d["c"],
                        "v": d["v"], "day": day_key})
     g = df.groupby("day", sort=True)
@@ -80,7 +82,7 @@ def load(market):
     # index of the first and last intraday bar of each surviving day
     starts = np.searchsorted(day_key, daily.index.to_numpy(), side="left")
     ends = np.searchsorted(day_key, daily.index.to_numpy(), side="right")
-    date = pd.to_datetime(daily.index.to_numpy() * 86_400_000_000_000) - pd.Timedelta(
+    date = DK.from_day(daily.index.to_numpy()) - pd.Timedelta(
         hours=DAY_ANCHOR_H)
     if market in FIRST_DAY:
         keep2 = date >= pd.Timestamp(FIRST_DAY[market])

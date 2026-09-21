@@ -32,6 +32,9 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "research", "us30s"))
 import na_core as N  # noqa: E402
 import us30s as S    # noqa: E402
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution; see the module)
 
 
 def frame(tf=0.5, atr_n=14):
@@ -47,7 +50,7 @@ def frame(tf=0.5, atr_n=14):
     f["tr"] = np.maximum(h - l, np.maximum(np.abs(h - pc), np.abs(l - pc)))
     f["atr"] = pd.Series(f["tr"].to_numpy()).ewm(span=int(atr_n), adjust=False).mean().to_numpy()
     f["mod"] = f.index.hour * 60 + f.index.minute
-    f["day"] = (f.index.normalize().view("int64") // 86_400_000_000_000).astype(np.int64)
+    f["day"] = DK.to_day(f.index).astype(np.int64)
     return f
 
 

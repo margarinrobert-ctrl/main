@@ -16,6 +16,9 @@ sys.path.insert(0, HERE)
 import na_core as N   # noqa: E402
 import na_s30 as S    # noqa: E402
 import na_30s as T    # noqa: E402
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution; see the module)
 
 INK = "#1c1917"; MUTE = "#78716c"; FAINT = "#e7e5e4"
 POS = "#0f766e"; NEG = "#b91c1c"; ACC = "#c2410c"; BLU = "#1e40af"; GRY = "#a8a29e"
@@ -54,7 +57,7 @@ cap(fig, "US30 at 30 seconds — what the feed can carry",
     "Everything downstream lives on a 4.5-month tail.")
 
 a = ax[0, 0]
-mo = pd.DataFrame({"m": pd.to_datetime(pd.Series(sess) * 86_400_000_000_000).dt.to_period("M").astype(str),
+mo = pd.DataFrame({"m": DK.from_day(pd.Series(sess)).dt.to_period("M").astype(str),
                    "have": np.isin(sess, have)}).groupby("m")["have"].agg(["sum", "size"])
 x = np.arange(len(mo))
 a.bar(x, mo["size"], color=FAINT, width=0.74, label="sessions in the file")

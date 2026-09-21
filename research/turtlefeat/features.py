@@ -35,6 +35,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution)
 
 CH_WINDOWS = (10, 20, 55)
 ATR_SPANS = (5, 14, 50)
@@ -169,7 +172,7 @@ def build(o, h, l, c, v, idx, session_open=570, session_close=960):
     F["min_since_open"] = mod - session_open
     F["min_to_close"] = session_close - mod
     F["sess_bucket"] = np.digitize(mod, [session_open, session_open + 90, session_close - 90]) - 1.0
-    day = ((ix + pd.Timedelta(hours=7)).normalize().view("int64") // 86_400_000_000_000)
+    day = DK.to_day(ix + pd.Timedelta(hours=7))
     tod = pd.DataFrame({"mod": mod, "v": v, "tr": tr, "day": day})
     gm = tod.groupby("mod")
     # expanding means by minute-of-day, shifted, so today never sees itself

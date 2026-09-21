@@ -47,6 +47,9 @@ import sys
 
 import numpy as np
 import pandas as pd
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -151,8 +154,7 @@ def bars(inst="BTC", tf=15, atr_n=14):
                                    out=np.full(len(v), np.nan), where=v > 0),
              mod=df["mod"].to_numpy(int), atr=_ema(tr, atr_n),
              idx=pd.DatetimeIndex(df.index), df=df)
-    d["sess"] = ((d["idx"] + pd.Timedelta(hours=6)).normalize().view("int64")
-                 // 86_400_000_000_000)
+    d["sess"] = DK.to_day(d["idx"] + pd.Timedelta(hours=6))
     d["n"] = len(c)
     _CACHE[key] = d
     return d

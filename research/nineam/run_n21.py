@@ -19,6 +19,9 @@ import na_core as N    # noqa: E402
 import na_opt as O     # noqa: E402
 import na_30s as T     # noqa: E402
 import na_s30 as S     # noqa: E402
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), '.'))
+import daykey as DK  # noqa: E402  (pandas 3 made us the default resolution; see the module)
 
 OUT = HERE
 pd.set_option("display.width", 200)
@@ -48,13 +51,13 @@ print(f"file: {len(f):,} bars, {f.index[0]} -> {f.index[-1]}, {len(sess)} sessio
 print(cov.to_string(index=False, float_format=lambda v: f"{v:.3f}"))
 
 have = np.unique(day[(mod >= 540) & (mod < 545)])
-mo = pd.DataFrame({"m": pd.to_datetime(pd.Series(sess) * 86_400_000_000_000).dt.to_period("M").astype(str),
+mo = pd.DataFrame({"m": DK.from_day(pd.Series(sess)).dt.to_period("M").astype(str),
                    "have": np.isin(sess, have)}).groupby("m")["have"].agg(["sum", "size"])
 print("\nsessions carrying the 09:00-09:05 range, by month:")
 print(mo.to_string())
 print(f"\nthe range exists on {len(have)} of {len(sess)} sessions ({100*len(have)/len(sess):.1f}%), "
-      f"first {pd.to_datetime(have.min()*86_400_000_000_000).date()} "
-      f"last {pd.to_datetime(have.max()*86_400_000_000_000).date()}")
+      f"first {DK.from_day(have.min()).date()} "
+      f"last {DK.from_day(have.max()).date()}")
 print("""
   `US30_30s` OMITS BARS WITH NO ACTIVITY, and the pre-open is exactly where a Dow CFD is quiet.
   Coverage of the 09:00 half hour is ALL-OR-NOTHING per session -- where it exists it is the full
@@ -143,10 +146,10 @@ hd("4  IS / OOS -- A CHRONOLOGICAL SPLIT OVER THE SESSIONS THAT CAN TRADE")
 tr_all = c.trades(p)
 is_d, oos_d = S.split_days(c, p, 0.5)
 print(f"  tradeable sessions {len(np.unique(c.day[c.sigs(p)[0]]))}, "
-      f"IS {len(is_d)} sessions {pd.to_datetime(is_d.min()*86_400_000_000_000).date()}"
-      f"..{pd.to_datetime(is_d.max()*86_400_000_000_000).date()}, "
-      f"OOS {len(oos_d)} {pd.to_datetime(oos_d.min()*86_400_000_000_000).date()}"
-      f"..{pd.to_datetime(oos_d.max()*86_400_000_000_000).date()}")
+      f"IS {len(is_d)} sessions {DK.from_day(is_d.min()).date()}"
+      f"..{DK.from_day(is_d.max()).date()}, "
+      f"OOS {len(oos_d)} {DK.from_day(oos_d.min()).date()}"
+      f"..{DK.from_day(oos_d.max()).date()}")
 rows = []
 for lab, dd in [("ALL", None), ("IS", is_d), ("OOS", oos_d)]:
     t = tr_all if dd is None else S.sub(tr_all, dd)
