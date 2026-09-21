@@ -1626,3 +1626,76 @@ Three things would move it, in order of value:
 `research/nineam/fwd_track.py` tracks §22's settings and its `CFG_SHA` guard will refuse this
 configuration by design. A forward test of *this* configuration is a separate pre-registration and
 has not been made.
+
+---
+
+## 25. Forward test of the LIVE configuration — pre-registered 2026-09-21
+
+§23 pre-registered a forward test of §22's 100/100-point configuration. This is the second one,
+for the settings the Inputs dialog actually holds (§24). `research/nineam/fwd_live.py`; the
+`CFG_SHA` guard on `fwd_track.py` refuses this configuration by design, and vice versa.
+
+### 25a. Why the target is forty and not fifty
+
+§22's rule needed fifty more trades to reach detectability **at all** — its pooled MDE crossed its
+delivered effect only at n = 107. This configuration's 44 trades already clear their own MDE
+(0.0463 against +0.0548, **1.18×**). So the job here is not to reach the bar but to confirm on data
+the configuration has never seen, and the target is chosen for **power on the forward trades
+alone**:
+
+| forward N | confirm band | P(CONFIRM \| backtest is right) | pooled n | pooled MDE |
+| --- | --- | --- | --- | --- |
+| 25 | +0.0361 | 0.803 | 69 | 0.0370 |
+| 30 | +0.0329 | 0.862 | 74 | 0.0357 |
+| **40** | **+0.0285** | **0.935** | **84** | **0.0335** |
+| 50 | +0.0255 | 0.970 | 94 | 0.0317 |
+
+**Forty is the stronger test at fewer trades** — 93.5% power against §23's 61.8% at fifty — because
+the per-trade effect is 1.5× larger and the per-trade sd is 16% smaller. Under §23 CONSISTENT was
+the most likely outcome of a real edge; here CONFIRM is.
+
+### 25b. The pre-registration
+
+**Frozen** (`na_live.LIVE`, sha `33a92c617985e281`, asserted on every run — moving `stop_atr` from
+2.25 to 2.50 raises `CONFIGURATION CHANGED` and refuses to continue, verified):
+
+```
+range 540..545 · first entry 566 · no new entries after 600 · flatten 630 · ATR 45 · side BOTH
+buffer 0 · touch counts · MA confirmation FRESH CROSS 13x48 within 5 MINUTES · bypass OFF
+stop 2.25 x ATR · target 100 POINTS · breakeven arming 43 securing 3 · exit on a fresh opposite cross
+```
+
+One of those is inert on this sample — the opposite-cross exit fires on 0 of 44 trades (§24e) — and
+is frozen anyway. A setting that cannot act is still part of what was measured.
+
+**Cutoff**: 2026-09-16 18:17 New York, the last bar of the studied file. A trade is forward only if
+its **entry** bar post-dates it.
+
+**Bands**, on the forward trades alone:
+
+| band | condition | |
+| --- | --- | --- |
+| CONFIRM | mean ≥ **+0.0285** %/trade | one-sided 5% on 40 trades; P = 0.935 if the backtest is right, 0.05 if the truth is zero |
+| CONSISTENT | 0 < mean < +0.0285 | pooled n = 84 then read against its own MDE of 0.0335 |
+| REFUTE | mean ≤ 0 | the research block was the draw. No re-fit. |
+
+### 25c. Two things declared now so they are not invented later
+
+**The win rate is expected to come in well below 63.6%, and that is not evidence against the rule.**
+Ten of the 44 trades book exactly the secured +0.71 points, and one extra point of slippage per side
+flips those to losses: §24d measures the win rate falling **0.636 → 0.409 at the first extra point**
+while 93% of the P&L survives. The bands are written on the mean for this reason. Judge it on P&L.
+
+**The two forward tests are not independent, and the number is measured.** The §22 and §24
+configurations share **42% of their signal bars** (Jaccard 0.4225, 30 of 71) and their daily results
+correlate **+0.844**. Two CONFIRMs is close to one confirmation, not two, and the tracker prints
+this on every run.
+
+### 25d. Rate and timeline
+
+44 trades over 92 tradeable sessions = **0.48 a session ≈ 120 a year**, so 40 trades is about four
+months — late January 2027 — and that assumes the feed keeps carrying the 09:00 half hour, which it
+only began doing on 2026-04-30. `coverage()` prints the covered share of every new session per drop,
+because a shortfall in trades is a data question before it is a strategy question. The tracker also
+re-checks that bars at or before the cutoff are unchanged; a feed revision voids the ledger rather
+than shifting the baseline. Nothing is scheduled — it runs on a drop.
