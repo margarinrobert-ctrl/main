@@ -4657,6 +4657,7 @@ an edge. See `docs/ib/STUDY_NINE_AM_RANGE.md` section 31.
 | `research/nineam/run_n19.py` | the correction applied BACKWARDS to the two published ratchet ladders, both engines side by side |
 | `research/nineam/na_30s.py` | the 30-second US30 feed in `na_core` shape, with what it can and cannot carry in the docstring |
 | `research/nineam/na_second.py` + `run_n27.py` + `pick_parity.py` | the k-th break per side per session (the "second break only" option): a numba state machine that re-arms on a close back inside, asserted identical to `na_core.events` at k=1 and to the shipped Pine's own state machine at k=1 and k=2, then first vs second break with both nulls |
+| `pine/macross/MA_CROSS_SELECT_strategy.pine` + `research/macross/mx_sim.py` | a plain fast x slow crossover with the TYPE selectable on each side (SMA/EMA/WMA/RMA/HMA/VWMA/LinReg/DEMA/TEMA); the sim is the script's order model run on bars as a mechanics check, with LinReg asserted equal to 3*WMA-2*SMA at 5e-11 |
 | `research/nineam/run_n20.py` | a fresh 13x48 cross as a bypass of the 200: the degeneracy asserted on the signal set first, then what the bypass can ACT ON (its share of the breaks the gate refuses), then four arms -- none / the gate / the OR / the bypass alone -- each against a null CACHED BY KEPT FRACTION, with both readings of "fresh cross" declared rather than picked |
 **A FEED CAN CHANGE ITS EXPORT BEHAVIOUR MID-FILE, AND A COVERAGE CHECK COSTS TWO LINES.** Asked to
 run the 09:00-range rule's user configuration on 30-second bars only. `US30_30s` omits bars with no
