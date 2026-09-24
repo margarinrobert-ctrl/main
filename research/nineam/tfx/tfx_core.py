@@ -228,3 +228,24 @@ def split(c_ref, P_ref):
     d = np.intersect1d(have, win)
     k = int(round(len(d) / 2))
     return d, d[:k], d[k:]
+
+
+def full_days(c, P, days, n_draw=400, seed=0):
+    """`full` restricted to a set of SESSIONS: the rule, both nulls and the bootstrap are all
+    computed from signals on those sessions only, so a block's p-value is that block's."""
+    P = dict(P)
+    atrf = c.atr_frame(int(P.get("atr_n", 14)))
+    sig_g, sd_g = c.sigs(P)
+    k = np.isin(c.day[sig_g], days); sig_g, sd_g = sig_g[k], sd_g[k]
+    sig_all, sd_all = ungated(c, P)
+    k = np.isin(c.day[sig_all], days); sig_all, sd_all = sig_all[k], sd_all[k]
+    tr = c._walk_sig(P, atrf, sig_g, sd_g) if len(sig_g) else None
+    row = stats(tr)
+    row["ungated"] = len(sig_all); row["kept"] = len(sig_g)
+    row["p_entry"] = row["p_gate"] = row["p_boot"] = np.nan
+    if tr is not None and len(tr) >= 3 and n_draw:
+        row["p_entry"] = pval(row["pct"], control(c, P, sig_g, sd_g, n_draw, seed + 1))
+        if P.get("ma_mode", "off") != "off" and len(sig_g) < len(sig_all):
+            row["p_gate"] = pval(row["pct"], gate_null(c, P, sig_g, sig_all, sd_all, n_draw, seed + 2))
+        row["p_boot"] = boot_p(tr, 4000, seed + 3)
+    return row, tr
