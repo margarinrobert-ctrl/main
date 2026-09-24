@@ -2061,3 +2061,67 @@ exact identity `3·WMA − 2·SMA` and asserted against a direct least-squares f
   every type. CLAUDE.md: a result that exists at one setting of a knob is not a mechanism. It is
   the same 92 sessions read again, so it changes nothing about §29c: forward-test it, don't tune it.
 - `LinReg` is now an option in the script's MA type menu, default still EMA.
+
+---
+
+## 31. A million MA combinations, vectorbt and Optuna, market-order entry — nothing beats the incumbent
+
+The ask: keep trying EMA and other moving-average combinations — 1,000,000 of them, with vectorbt and
+Optuna — keeping the market-order entry. `research/nineam/ma1m/`.
+
+**Space.** Fast type × slow type (EMA, SMA, WMA, Hull, linear regression, DEMA, TEMA — mixed types
+allowed, 49 pairings) × 489 length pairs (fast 2–40, slow 10–300, slow ≥ fast + 3) × 16 gates (a
+fresh cross within 0.5–15 minutes, or the plain fast > slow state) × 3 exits (off / fresh opposite
+cross / opposite state) = **1,150,128 configurations**. Everything else frozen at `na_live.TV35`:
+market order at the next bar's open, 100/100 points, breakeven 43/3, flat 11:00, 2.29-point round
+turn, fix = 1.
+
+**Engine, verified before anything was read.** The trigger and each break's natural walk do not
+depend on the MAs, so they are computed once by the research engine itself; a configuration only
+selects breaks and truncates at the first opposite cross BEFORE the natural decision bar. Parity
+against `Ctx30.trades`: **360 of 360 random configurations identical** — trade counts exact, max
+difference 8.9e-16 — mixed types included. 1,150,128 configurations in **16 seconds**. vectorbt 1.1.0
+as a second engine, transcription first, on the reduced geometry it can express (no breakeven, zero
+cost): **trade-count ratio 1.000 and same exit bar on 100% of trades for all four picks**, points
+per trade within 1.0 — the cleanest second-engine check recorded on this branch.
+
+**Population (research half, first 46 of 92 sessions).** 72.5% of configurations with ≥ 10 trades are
+profitable and **41.9% show PF ≥ 1.5** — at this search size PF 1.5 is the TYPICAL result, not a
+finding. 931,726 of the 1,150,128 are distinct trade sets. `E[max t | noise]` over the looks taken
+is **4.896** against the 2.802 detection needs. corr(research, holdout) over 982,311 configurations
+**+0.278 / +0.267** Spearman; the research top 1% goes +0.0893 → +0.0242 on the holdout against a
+population holdout mean of **−0.0049**.
+
+**Optuna**, 3,000 trials on the research half, slow length widened to 600 because the grid's slow
+marginal was best at its 300 edge: best research t **3.64, below the grid's 5.31** (a sampler cannot
+beat an exhaustive search on the same space); the fast length ran to its box EDGE at 2 — a 2-bar SMA
+is the price, so it rediscovered "price above a slow TEMA"; fANOVA gives the **gate mode 0.60**.
+
+**The one holdout read, four picks declared before it:**
+
+| pick | research | holdout | vs random entry | vs random gate | bootstrap P(≤0) |
+| --- | --- | --- | --- | --- | --- |
+| **A incumbent EMA13/EMA48, 3.5 min, cross exit** | PF 3.28, n 20 | **PF 3.07, n 19** | **p 0.013** | **p 0.003** | 0.020 |
+| B marginal consensus EMA6/SMA250, 1 min, state exit | PF 2.94, n 11 | PF 1.41, n 10 | p 0.323 | p 0.165 | 0.349 |
+| C top research t, SMA24/LinReg55 state, no exit | **PF ∞ — 0 losses in 32** | **PF 1.03**, n 28 | p 0.970 | p 0.172 | 0.457 |
+| D Optuna best, SMA2/TEMA179 state, state exit | PF 4.20, n 60 | **PF 0.99**, n 53 | p 0.410 | p 0.310 | 0.513 |
+
+**The only survivor is the configuration the search did not choose.** C is the textbook
+maximum-of-a-million: a perfect research record — no losing trade in 32 — that reads as a coin flip
+out of sample. A is itself a second read of sessions §29c already opened, so it is corroborated
+here, not newly established.
+
+**The population's own gradients, read on both halves** (a population statistic, not a selection):
+
+| gate | 0.5 | 1 | 2 | 3 | **3.5** | 5 | 7 | 10 | 15 | state |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| research | +0.034 | +0.037 | +0.030 | +0.019 | +0.015 | +0.009 | +0.004 | +0.004 | +0.004 | +0.002 |
+| holdout | +0.001 | −0.003 | −0.003 | **+0.003** | **+0.002** | −0.003 | −0.008 | −0.009 | −0.012 | −0.011 |
+
+The research dose-response below 3 minutes does NOT transfer — the tightest windows fall to zero —
+and the best holdout rungs are 3–3.5 minutes, where the incumbent sits. What holds on both halves:
+windows ≥ 7 minutes and the plain state gate lose, and the exit order state > cross > off. On the
+holdout every MA type is negative on average: most MA combinations lose in the second half.
+
+**Ship nothing new; keep EMA 13/48 at 3.5 minutes.** What would move it is sessions, not
+combinations — the same conclusion §29 reached from the timeframe side.

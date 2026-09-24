@@ -4612,6 +4612,20 @@ the research under what the script actually computes** -- and read `tfMin`, `cro
 minimum trade count written into it**: one without it picked a 3-trade cell and spent the holdout on
 six events. See `docs/ib/STUDY_NINE_AM_RANGE.md` sections 27-29.
 
+**A MILLION MA COMBINATIONS FOUND NOTHING BETTER THAN THE INCUMBENT, AND THE ONLY HOLDOUT SURVIVOR IS
+THE ONE THE SEARCH DID NOT PICK.** 1,150,128 configurations (7x7 MA types incl. mixed, 489 length
+pairs, 16 gates, 3 exits) on the traded 30-second 09:00-range rule, market-order entry. Exact fast
+engine: the trigger and each break's natural walk are MA-independent, so a config only SELECTS breaks
+and TRUNCATES at the first opposite cross before the natural decision bar -- 360/360 random configs
+identical to `Ctx30.trades`, 1.15M in 16 s; vectorbt 1.1.0 transcription 4/4 at count ratio 1.000 and
+100% same exit bar. On research 41.9% of configs show PF >= 1.5, so PF 1.5 is what a search this size
+TYPICALLY returns; E[max t | noise] 4.90. The grid's top cell had **zero losses in 32 research trades
+and reads PF 1.03 on the holdout**; Optuna's best 4.20 -> 0.99; the marginal consensus 2.94 -> 1.41;
+the incumbent EMA 13/48 at 3.5 min 3.28 -> 3.07 and the only pick beating both nulls. The research
+dose-response (tighter cross window better) does not transfer below 3 minutes. Read a search this
+size by its population, and treat a perfect research record as the signature of the maximum, not of
+an edge. See `docs/ib/STUDY_NINE_AM_RANGE.md` section 31.
+
 ## Tooling
 
 | module | what it does |

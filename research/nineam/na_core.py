@@ -215,6 +215,12 @@ def ma(x, n, kind="ema"):
         if len(a) >= n:
             out[n - 1:] = np.convolve(a, w[::-1], mode="valid") / w.sum()
         return out
+    if kind == "dema":
+        e1 = ma(x, n, "ema")
+        return 2.0 * e1 - ma(e1, n, "ema")
+    if kind == "tema":
+        e1 = ma(x, n, "ema"); e2 = ma(e1, n, "ema")
+        return 3.0 * e1 - 3.0 * e2 + ma(e2, n, "ema")
     if kind == "linreg":
         # least-squares line over the last n bars, read at its END -- Pine's ta.linreg(src, n, 0).
         # Identity: endpoint = 3*WMA(n) - 2*SMA(n), asserted against a direct fit in matype/.
