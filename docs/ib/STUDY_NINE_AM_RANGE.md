@@ -1816,7 +1816,27 @@ figure. Two trades (−$9.90 and −$100.90) are breakeven stops filled *through
 open — TradingView's emulator already does what `fix=1` does, so its breakeven accounting carries
 no ratchet artifact.
 
-### 27a. The transcription check fails — and the cause is the data, not the rule
+### 27a. The transcription check fails — and the MAIN cause is a bug in the shipped Pine, not the data
+
+> **CORRECTED the same day.** This section first attributed the whole mismatch to the price feed
+> and concluded the local file understates the rule 2.45×. The timeframe-translation workstream
+> (`docs/ib/TEAM_TF_TRANSLATION.md`) then found that the shipped Pine computes
+> `tfMin = math.max(1.0, seconds / 60)`, which CLAMPS a 30-second chart to one minute, so
+> `crossBars = round(7 / 1) = 7` bars = **3.5 minutes** -- not the 7 minutes = 14 bars that every
+> 30-second study in this repository modelled (sections 22-26, `na_s30`, `na_live`, `fwd_track`,
+> `fwd_live`). The export corroborates it: the one `flat` exit fills at 10:59:30, which is where
+> the clamped `flatNow` puts it. Re-run under what the Pine actually does:
+>
+> | cross reach modelled | TradingView / ours | matched | net pts TV / ours |
+> | --- | --- | --- | --- |
+> | 7 minutes = 14 bars (the original reading below) | 43 / 54 | 70.4% | +1,730 / +706 |
+> | **7 bars = 3.5 minutes (the Pine as shipped)** | **43 / 39** | **86.0%** | **+1,730 / +1,205** |
+>
+> "Ours only" falls from 14 trades to 2. **The gate reach was the main cause; the feed is the
+> residual** -- 6 TradingView-only trades and 2 ours-only remain, 86% is still just below the ~90%
+> bar declared in advance, and the price-level gap below is a real measurement. The "understates
+> 2.45×" figure is WITHDRAWN: under the matched rule the gap is 1.44×, carried by those 6 trades.
+> The original text follows unchanged so the error stays visible.
 
 Over the 92 sessions both sides can see, **TradingView took 43 trades and our walker took 54; 38
 agree on session, side and fill minute (70.4%)**, below the ~90% declared before the check was run.
@@ -1837,8 +1857,9 @@ first eligible bar: a knife-edge trigger. Same rule, different bars, different t
 | opposite side | 1 | +93.5 | −39.0 |
 | **total** | | **+1,730.1** | **+705.6** |
 
-**Every local measurement of this rule has been on a proxy feed, and the proxy understates it** —
-2.45× fewer net points than the feed the user trades, on identical sessions. The forward trackers
+~~**Every local measurement of this rule has been on a proxy feed, and the proxy understates it** —
+2.45× fewer net points than the feed the user trades, on identical sessions.~~ *(Withdrawn -- see the
+correction above: mostly the gate-reach bug; 1.44× under the matched rule.)* The forward trackers
 (§23, §25) also run on the proxy. Neither conclusion transfers automatically to Capital.com.
 
 ### 27b. On the user's own feed the edge clears its MDE
@@ -1874,3 +1895,49 @@ this configuration.
 **What would settle it**: a pre-registered forward test of THIS configuration scored on THIS feed —
 TradingView exports read by `tv_trades.py`, cutoff at the export date, bands fixed from these 109
 trades before the next one exists.
+
+---
+
+## 28. The Pine clamps a 30-second chart to one minute — what it changes, and the trap in fixing it
+
+Found by the timeframe-translation workstream and verified against the user's own TradingView trades
+(§27a). Both shipped 09:00-range scripts compute:
+
+```pine
+tfMin     = math.max(1.0, timeframe.in_seconds(timeframe.period) / 60.0)   // 30s chart -> 1.0, not 0.5
+crossBars = int(math.max(1.0, math.round(crossMin / tfMin)))               // 7 min -> 7 BARS
+flatNow   = flatMin > 0 and (nyMin + tfMin >= flatMin) and nyMin < flatMin
+```
+
+**Two effects, both only on sub-minute charts (at 1m and above the clamp is a no-op):**
+
+1. **The fresh-cross reach is HALVED.** "Within 7 minutes" becomes 7 bars = 3.5 minutes on 30s.
+   Every 30-second study here modelled 14 bars. On our file the 7-bar rule reads 39 trades,
+   +0.0593 %/trade, PF 3.149, p 0.005 against a random entry and p 0.000 against a random gate —
+   against the 14-bar rule's 54 trades at PF 1.601. That 7-bar row is a SECOND LOOK at the same 92
+   sessions and one cell of a declared grid whose noise floor (1.92) exceeds its research t (1.75);
+   it is recorded, not promoted. **But it is the rule behind the user's 109-trade TradingView
+   record** (PF 2.32), because that is what the Pine ran.
+2. **The flatten fires one 30-second bar early** — close_all on the 10:59:00 bar, filled at 10:59:30.
+
+**THE NAIVE FIX IS WORSE THAN THE BUG.** Pine's `minute()` returns whole minutes, so the 10:59:00
+and 10:59:30 bars both read `nyMin = 659`. Evaluated exactly as the script does:
+
+| version | `close_all` fires on |
+| --- | --- |
+| shipped: clamp `tfMin = 1.0`, whole-minute clock | 10:59:00 and 10:59:30 |
+| **naive fix: `tfMin = 0.5`, whole-minute clock** | **NEVER** — `659 + 0.5 < 660`, and at 11:00 `nyMin < 660` is false |
+| correct: `tfMin = 0.5`, clock with seconds | 10:59:30, filling at 11:00:00 as intended |
+
+Removing the clamp alone would silently switch the 11:00 flatten OFF on every 30-second chart,
+holding positions until a stop, target or cross closed them. The fix needs BOTH changes: no clamp,
+and `nyMin = nyH * 60 + nyM + second(time, "America/New_York") / 60.0`.
+
+**AND THE FORWARD TESTS TRACK RULES NOBODY RUNS.** `fwd_track` (§23) models 14 bars and `fwd_live`
+(§25) models 10; the Pine runs 7 and 5 on a 30-second chart. Neither ledger measures what the
+user trades. They are left untouched until the user decides which rule is intended — a forward
+test is not re-pointed after the fact.
+
+**The decision is the user's**: keep the 3.5-minute rule their TradingView record was produced by,
+with the units made honest so the dialog says what it does; or switch to the 7-minute rule the
+research intended, which scores worse on our file and has no record on their feed.
