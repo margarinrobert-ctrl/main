@@ -54,7 +54,10 @@ lrOff = input.int(0, "LinReg offset (0 = value at the current bar)", minval = 0,
 
 grpE = "Entries and exits"
 sideIn = input.string("Both", "Side", options = ["Long", "Short", "Both"], group = grpE)
-xMode  = input.string("Opposite cross", "Exit on", options = ["Opposite cross", "Stop / target only"], group = grpE, tooltip = "Opposite cross: close (or reverse, when Side = Both) on the opposite crossover. Stop / target only: the cross opens trades and only the bracket closes them.")
+xMode  = input.string("Opposite cross", "Exit on", options = ["Opposite cross", "Stop / target only"], group = grpE, tooltip = "Opposite cross: a long is closed on the next bearish crossover (fast crosses back under slow) and a short on the next bullish one, with the stop/target bracket still live beside it. Stop / target only: the cross opens trades and only the bracket closes them. Measured on the 09:00-range breakout (STUDY_NINE_AM_RANGE section 17) an opposite-cross exit beat no such exit in 31% of cells, and closing the SAME number of trades at random bars did as well -- it is not measured on this rule.")
+revOnX = input.bool(true, "Reverse on the opposite cross (Side = Both)", group = grpE, tooltip = "On: when the opposite cross is itself a valid entry, the position flips in one order. Off: the opposite cross only EXITS; a new trade in the other direction then needs its own valid entry (with 'Fresh cross within N minutes' it can still come on a later bar).")
+crossMode = input.string("Cross bar only", "Take the trade", options = ["Cross bar only", "Fresh cross within N minutes"], group = grpE, tooltip = "Cross bar only: the entry must fire on the bar the crossover happens. Fresh cross within N minutes: the entry may fire on any later bar while the fast MA is still on the cross side and the cross is no older than N minutes -- which lets a cross that happened just before the session window opens, before the 09:00 range was complete, or while a trade was still open, be taken late. Each crossover gives AT MOST ONE trade either way, so a stop-out does not re-enter on the same cross.")
+freshMin = input.float(15, "Fresh cross window, MINUTES", minval = 0, step = 0.5, group = grpE, tooltip = "Declared in minutes and measured on the clock, so it means the same reach on a 30-second or a 15-minute chart. 0 is the same as 'Cross bar only'.")
 atrLen = input.int(14, "ATR length", minval = 1, group = grpE)
 stopMode = input.string("ATR", "Stop", options = ["Off", "ATR", "Points"], group = grpE)
 stopAtr  = input.float(2.0, "Stop, x ATR", minval = 0.1, step = 0.1, group = grpE)
@@ -178,26 +181,47 @@ xDnNear  = not na(lastXDnT) and time_close - lastXDnT <= winMs
 bUpNear  = not na(lastBrkUpT) and time_close - lastBrkUpT <= winMs
 bDnNear  = not na(lastBrkDnT) and time_close - lastBrkDnT <= winMs
 
+// fresh cross: the MA state still agrees and the last crossover in that direction is at most
+// freshMin old (the cross bar itself counts). Clock based, never reset at midnight.
+var float lastCrossUpT = na
+var float lastCrossDnT = na
+var float usedCrossUpT = na
+var float usedCrossDnT = na
+freshMs = freshMin * 60000.0
+curUpT = crossUp ? time_close : lastCrossUpT
+curDnT = crossDn ? time_close : lastCrossDnT
+xFreshL = maF > maS and not na(curUpT) and time_close - curUpT <= freshMs
+xFreshS = maF < maS and not na(curDnT) and time_close - curDnT <= freshMs
+baseL = crossMode == "Fresh cross within N minutes" ? xFreshL : crossUp
+baseS = crossMode == "Fresh cross within N minutes" ? xFreshS : crossDn
+// one trade per crossover
+unusedL = na(usedCrossUpT) or curUpT != usedCrossUpT
+unusedS = na(usedCrossDnT) or curDnT != usedCrossDnT
+
 modeClose  = orbMode == "Cross bar closes beyond range"
 modeEither = orbMode == "Cross and break within N minutes (either order)"
 eitherL = (crossUp and (brkUp or bUpNear)) or (freshUp and maF > maS and xUpNear)
 eitherS = (crossDn and (brkDn or bDnNear)) or (freshDn and maF < maS and xDnNear)
-bool sigL = crossUp
-bool sigS = crossDn
+bool sigL = baseL
+bool sigS = baseS
 if modeClose
-    sigL := crossUp and brkUp
-    sigS := crossDn and brkDn
+    sigL := baseL and brkUp
+    sigS := baseS and brkDn
 else if modeEither
-    sigL := eitherL
-    sigS := eitherS
+    sigL := eitherL or (baseL and brkUp)
+    sigS := eitherS or (baseS and brkDn)
+sigL := sigL and unusedL
+sigS := sigS and unusedS
 
 // remember today's crosses and range breaks AFTER the signal is read, so the same-bar case is
 // the "closes beyond range" case and not a second match
 if barstate.isconfirmed
     if crossUp
         lastXUpT := time_close
+        lastCrossUpT := time_close
     if crossDn
         lastXDnT := time_close
+        lastCrossDnT := time_close
     if brkUp
         lastBrkUpT := time_close
     if brkDn
@@ -246,15 +270,16 @@ if okBar and not pastFlat
     pos = strategy.position_size
     // exits on the opposite cross (a reversal is handled by the entry below)
     if xMode == "Opposite cross"
-        if pos > 0 and crossDn and not wantS
+        if pos > 0 and crossDn and not (wantS and revOnX)
             strategy.close("L", comment = "opp cross")
-        if pos < 0 and crossUp and not wantL
+        if pos < 0 and crossUp and not (wantL and revOnX)
             strategy.close("S", comment = "opp cross")
     // entries: from flat, or a reversal when the opposite side is allowed and exits are on the cross
-    flatOrRev = pos == 0 or xMode == "Opposite cross"
+    flatOrRev = pos == 0 or (xMode == "Opposite cross" and revOnX)
     if wantL and pos <= 0 and flatOrRev
         strategy.entry("L", strategy.long)
         tookL := true
+        usedCrossUpT := curUpT
         beArmed := false
         pendTgt := tgtDist
         if hasBracket
@@ -262,6 +287,7 @@ if okBar and not pastFlat
     else if wantS and pos >= 0 and flatOrRev
         strategy.entry("S", strategy.short)
         tookS := true
+        usedCrossDnT := curDnT
         beArmed := false
         pendTgt := tgtDist
         if hasBracket
@@ -277,7 +303,7 @@ plot(orbMode != "Off" and orbReady ? orbLo : na, "09:00 range low", color = colo
 plotshape(okBar and orbMode != "Off" and wantL, "confirmed long", shape.labelup, location.belowbar, color.new(color.teal, 40), size = size.tiny, text = "L")
 plotshape(okBar and orbMode != "Off" and wantS, "confirmed short", shape.labeldown, location.abovebar, color.new(color.red, 40), size = size.tiny, text = "S")
 
-var table hud = table.new(position.top_right, 2, 6, border_width = 1)
+var table hud = table.new(position.top_right, 2, 7, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "fast", text_size = size.tiny)
     table.cell(hud, 1, 0, fType + " " + str.tostring(fLen), text_size = size.tiny)
@@ -289,5 +315,7 @@ if barstate.islast
     table.cell(hud, 1, 3, orbMode == "Off" ? "off" : na(orbHi) ? orbMode + " -- no range yet today" : orbMode + "  " + str.tostring(orbLo, format.mintick) + " - " + str.tostring(orbHi, format.mintick), text_size = size.tiny)
     table.cell(hud, 0, 4, "breakeven", text_size = size.tiny)
     table.cell(hud, 1, 4, beMode == "Off" ? "off" : "arm +" + str.tostring(bePts, "#.#") + " pt, secure +" + str.tostring(beOffset, "#.#") + " pt", text_size = size.tiny)
-    table.cell(hud, 0, 5, "edge claimed", text_size = size.tiny)
-    table.cell(hud, 1, 5, "none", text_size = size.tiny, text_color = color.red)
+    table.cell(hud, 0, 5, "entry / exit", text_size = size.tiny)
+    table.cell(hud, 1, 5, (crossMode == "Cross bar only" ? "cross bar" : "fresh cross <= " + str.tostring(freshMin, "#.#") + " min") + " / " + (xMode == "Opposite cross" ? (revOnX ? "opp cross, reverse" : "opp cross, flat") : "stop/target"), text_size = size.tiny)
+    table.cell(hud, 0, 6, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 6, "none", text_size = size.tiny, text_color = color.red)

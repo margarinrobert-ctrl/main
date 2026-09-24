@@ -99,7 +99,7 @@ def orb_arrays(d, nymin, tf, start=540, end=545):
 def run(d, fT="LinReg", fL=13, sT="EMA", sL=48, side="Both", xmode="cross",
         stop_atr=2.0, tgt_atr=None, atr_n=14, flat=None, win=None,
         orb=None, orb_start=540, orb_end=545, orb_win=30.0, orb_once=False,
-        be_pts=None, be_off=5.0, stats=None):
+        be_pts=None, be_off=5.0, cross_mode="bar", fresh_min=15.0, rev=True, stats=None):
     o = d["open"].to_numpy(); h = d["high"].to_numpy(); l = d["low"].to_numpy()
     c = d["close"].to_numpy()
     ny = d["ny"]
@@ -116,8 +116,17 @@ def run(d, fT="LinReg", fL=13, sT="EMA", sL=48, side="Both", xmode="cross",
     tms = (ny.values.astype("datetime64[s]").astype(np.int64) + tf * 60.0)  # bar close, seconds
     bu = np.nan_to_num(c > ohi) .astype(bool) & np.isfinite(ohi)
     bd = np.nan_to_num(c < olo).astype(bool) & np.isfinite(olo)
+    # last crossover time per side, forward-filled and including the current bar
+    tup = pd.Series(np.where(up, tms, np.nan)).ffill().to_numpy()
+    tdn = pd.Series(np.where(dn, tms, np.nan)).ffill().to_numpy()
+    if cross_mode == "fresh":
+        with np.errstate(invalid="ignore"):
+            bl = (f > s) & (tms - tup <= fresh_min * 60.0)
+            bs = (f < s) & (tms - tdn <= fresh_min * 60.0)
+    else:
+        bl, bs = up.copy(), dn.copy()
     if orb is None:
-        sl_, ss_ = up.copy(), dn.copy()
+        sl_, ss_ = bl.copy(), bs.copy()
     else:
         sl_ = np.zeros(len(c), bool); ss_ = np.zeros(len(c), bool)
         lxu = lxd = lbu = lbd = np.nan; lastd = -1
@@ -125,14 +134,16 @@ def run(d, fT="LinReg", fL=13, sT="EMA", sL=48, side="Both", xmode="cross",
             if day[i] != lastd:
                 lastd = day[i]; lxu = lxd = lbu = lbd = np.nan
             if orb == "close":
-                sl_[i] = up[i] and bu[i]; ss_[i] = dn[i] and bd[i]
+                sl_[i] = bl[i] and bu[i]; ss_[i] = bs[i] and bd[i]
             else:
                 w = orb_win * 60.0
                 fu = bu[i] and not (i > 0 and bu[i - 1]); fd = bd[i] and not (i > 0 and bd[i - 1])
                 sl_[i] = (up[i] and (bu[i] or (lbu == lbu and tms[i] - lbu <= w))) or \
-                         (fu and f[i] > s[i] and lxu == lxu and tms[i] - lxu <= w)
+                         (fu and f[i] > s[i] and lxu == lxu and tms[i] - lxu <= w) or \
+                         (bl[i] and bu[i])
                 ss_[i] = (dn[i] and (bd[i] or (lbd == lbd and tms[i] - lbd <= w))) or \
-                         (fd and f[i] < s[i] and lxd == lxd and tms[i] - lxd <= w)
+                         (fd and f[i] < s[i] and lxd == lxd and tms[i] - lxd <= w) or \
+                         (bs[i] and bd[i])
             if up[i]: lxu = tms[i]
             if dn[i]: lxd = tms[i]
             if bu[i]: lbu = tms[i]
@@ -149,6 +160,7 @@ def run(d, fT="LinReg", fL=13, sT="EMA", sL=48, side="Both", xmode="cross",
                      dn_beyond_all=float(bd[np.isfinite(olo)].mean()) if np.isfinite(olo).any() else np.nan)
     took_l = took_s = False; lastday = -1
     armed = False; be_n = 0
+    used_u = used_d = np.nan
     pos = 0; ent = 0.0; stp = tgt = np.nan
     pend = None       # action to execute at the next bar's open
     trades = []
@@ -193,18 +205,19 @@ def run(d, fT="LinReg", fL=13, sT="EMA", sL=48, side="Both", xmode="cross",
                 pend = ("close", 0, np.nan, np.nan)
             continue
         once = orb_once and orb is not None
-        want_l = sl_[i] and can_l and inwin and not (once and took_l)
-        want_s = ss_[i] and can_s and inwin and not (once and took_s)
+        fresh_u = not (tup[i] == used_u); fresh_d = not (tdn[i] == used_d)   # one trade per cross
+        want_l = sl_[i] and fresh_u and can_l and inwin and not (once and took_l)
+        want_s = ss_[i] and fresh_d and can_s and inwin and not (once and took_s)
         if xmode == "cross":
-            if pos > 0 and dn[i] and not want_s:
+            if pos > 0 and dn[i] and not (want_s and rev):
                 pend = ("close", 0, np.nan, np.nan)
-            if pos < 0 and up[i] and not want_l:
+            if pos < 0 and up[i] and not (want_l and rev):
                 pend = ("close", 0, np.nan, np.nan)
-        rev_ok = pos == 0 or xmode == "cross"
+        rev_ok = pos == 0 or (xmode == "cross" and rev)
         if want_l and pos <= 0 and rev_ok:
-            pend = ("rev" if pos < 0 else "open", 1, sdist, tdist); took_l = True
+            pend = ("rev" if pos < 0 else "open", 1, sdist, tdist); took_l = True; used_u = tup[i]
         elif want_s and pos >= 0 and rev_ok:
-            pend = ("rev" if pos > 0 else "open", -1, sdist, tdist); took_s = True
+            pend = ("rev" if pos > 0 else "open", -1, sdist, tdist); took_s = True; used_d = tdn[i]
     if stats is not None:
         stats["be_armed"] = be_n
     return np.asarray(trades)
@@ -242,6 +255,11 @@ if __name__ == "__main__":
             ("+ range close, window 09:05-12:00, flat 16:00", dict(orb="close", win=(545, 720), flat=960)),
             ("+ breakeven 50 / secure 5", dict(be_pts=50, be_off=5)),
             ("+ range close + breakeven 50/5", dict(orb="close", be_pts=50, be_off=5)),
+            ("opp-cross exit, NO reverse", dict(rev=False)),
+            ("fresh cross <= 15 min (no range)", dict(cross_mode="fresh", fresh_min=15)),
+            ("fresh cross <= 15 min, no reverse", dict(cross_mode="fresh", fresh_min=15, rev=False)),
+            ("fresh <= 30 min + range close", dict(cross_mode="fresh", fresh_min=30, orb="close")),
+            ("fresh <= 30 min + range close, 1/side/day", dict(cross_mode="fresh", fresh_min=30, orb="close", orb_once=True)),
         ]
         for lab, kw in cfgs:
             st = {}
