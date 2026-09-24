@@ -2032,3 +2032,32 @@ asserted identical to an explicit `_day`. Corrected figures: **§24 P(mean ≤ 0
 3. **A resting stop order at the range edge** instead of a bar-close market order — the only thing
    that addresses the latency that kills 3m and above. It needs its own parity harness, because a
    resting order is exactly where this branch's fill models have gone wrong before.
+
+---
+
+## 30. MA type × length on the traded 30-second rule — linear regression added, EMA 13/48 stays
+
+5 types (EMA, SMA, WMA, Hull, linear-regression endpoint = `ta.linreg(src, n, 0)`, implemented as the
+exact identity `3·WMA − 2·SMA` and asserted against a direct least-squares fit at 1e-13) × 3 pairs
+(9/21, 13/48, 21/55), everything else frozen at `na_live.TV35`. 15 cells, `E[max t | noise]` 1.771.
+`research/nineam/matype/run_m1.py`.
+
+| marginal by type | EMA | WMA | SMA | Hull | LinReg |
+| --- | --- | --- | --- | --- | --- |
+| PF | **1.88** | 1.70 | 1.09 | 1.07 | 1.04 |
+
+| marginal by pair | 9/21 | **13/48** | 21/55 |
+| --- | --- | --- | --- |
+| PF | 1.07 | **1.88** | 1.12 |
+
+- **EMA 13/48 — the configuration already traded — is the best of 15**: PF 3.15, research 3.28 /
+  holdout 3.07, random-entry p 0.003, delivered/MDE 1.00. 3 of 15 cells clear p ≤ 0.05 (0.75
+  expected); best |t| 2.79 against a noise floor of 1.77, just under the 2.802 detection needs.
+- **Linear regression does not help**: 13/48 PF 1.48 (p 0.150), marginal PF 1.04 — last of five.
+  It and Hull are near-zero-lag averages and share only **5–20%** of their trades with EMA at the
+  same lengths, so they are DIFFERENT gates, not variants; `STUDY_MA_LAG` again — lag is the axis,
+  and the laggier EMA/WMA gates are the ones that work.
+- **The warning: 13/48 is a PEAK, not a plateau.** Both neighbouring pairs average PF ~1.1 across
+  every type. CLAUDE.md: a result that exists at one setting of a knob is not a mechanism. It is
+  the same 92 sessions read again, so it changes nothing about §29c: forward-test it, don't tune it.
+- `LinReg` is now an option in the script's MA type menu, default still EMA.

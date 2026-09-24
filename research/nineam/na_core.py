@@ -210,7 +210,15 @@ def ma(x, n, kind="ema"):
         return s.rolling(n).mean().to_numpy()
     if kind == "wma":
         w = np.arange(1, n + 1, dtype=float)
-        return s.rolling(n).apply(lambda v: np.dot(v, w) / w.sum(), raw=True).to_numpy()
+        a = np.asarray(x, float)
+        out = np.full(len(a), np.nan)
+        if len(a) >= n:
+            out[n - 1:] = np.convolve(a, w[::-1], mode="valid") / w.sum()
+        return out
+    if kind == "linreg":
+        # least-squares line over the last n bars, read at its END -- Pine's ta.linreg(src, n, 0).
+        # Identity: endpoint = 3*WMA(n) - 2*SMA(n), asserted against a direct fit in matype/.
+        return 3.0 * ma(x, n, "wma") - 2.0 * ma(x, n, "sma")
     if kind == "hull":
         h1 = ma(x, max(1, n // 2), "wma"); h2 = ma(x, n, "wma")
         return ma(2 * h1 - h2, max(1, int(round(np.sqrt(n)))), "wma")
