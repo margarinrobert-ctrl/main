@@ -45,3 +45,18 @@ ctx = S.ctx
 sub = S.sub
 summary = S.summary
 split_days = S.split_days
+
+# The settings in the Inputs screenshots of 2026-09-24, which is a FOURTH configuration -- not
+# section 22's (entries to 16:00) and not section 24's (2.25 x ATR(45) stop). Transcribed field by
+# field from the dialog; `stop_atr` 1.5 and `tgt_atr` 3 are present in the dialog but UNUSED
+# because both modes are Points. TradingView reports 305 trades, PF 1.522 on it over a span our
+# file cannot reach (its 30-second pre-open coverage begins 2026-04-30).
+TV = dict(
+    range_start=540, range_end=545, open_m=567, end_m=600, flat_m=660,
+    side="both", buf_atr=0.0, atr_n=14,
+    ma_mode="xcross", cross_min=7, conf="off",
+    stop_mode="points", stop_pts=100.0,
+    tgt_mode="points", tgt_pts=100.0,
+    be_pts=43.0, be_off=3.0,
+    x_mode="cross",
+)
