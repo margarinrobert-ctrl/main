@@ -1,3 +1,4 @@
+//@version=5
 // SPDX-License-Identifier: MIT
 // Fast MA x slow MA crossover, each average with its own TYPE and LENGTH -- linear regression
 // ("LinReg", ta.linreg) is one of the types on both sides, so LinReg-over-EMA, EMA-over-LinReg,
@@ -36,7 +37,6 @@
 //
 // COSTS ARE ON BY DEFAULT: $0.72 per contract per side (a real MNQ round turn is ~$1.44) and one
 // tick of slippage. A Strategy Tester report with zero costs is gross, not net.
-//@version=5
 strategy("MA cross -- selectable fast/slow type (incl. LinReg)", shorttitle = "MA-X select",
      overlay = true, pyramiding = 0, initial_capital = 50000,
      default_qty_type = strategy.fixed, default_qty_value = 1,
@@ -85,7 +85,7 @@ beOffset = input.float(5, "Secure, POINTS (0 = true breakeven)", minval = 0, ste
 // ----------------------------------------------------------------------------- the averages
 // Every type is computed on every bar and only the result is selected, so each ta.* call keeps a
 // continuous history whichever type is chosen.
-f_ma(series float x, simple int len, simple string typ, simple int off) =>
+f_ma(x, len, typ, off) =>
     e1 = ta.ema(x, len)
     e2 = ta.ema(e1, len)
     e3 = ta.ema(e2, len)
@@ -98,9 +98,24 @@ f_ma(series float x, simple int len, simple string typ, simple int off) =>
     vLin = ta.linreg(x, len, off)
     vDem = 2.0 * e1 - e2
     vTem = 3.0 * e1 - 3.0 * e2 + e3
-    typ == "SMA" ? vSma : typ == "EMA" ? vEma : typ == "WMA" ? vWma : typ == "RMA" ? vRma :
-      typ == "HMA" ? vHma : typ == "VWMA" ? vVwm : typ == "LinReg" ? vLin :
-      typ == "DEMA" ? vDem : vTem
+    float out = vTem
+    if typ == "SMA"
+        out := vSma
+    else if typ == "EMA"
+        out := vEma
+    else if typ == "WMA"
+        out := vWma
+    else if typ == "RMA"
+        out := vRma
+    else if typ == "HMA"
+        out := vHma
+    else if typ == "VWMA"
+        out := vVwm
+    else if typ == "LinReg"
+        out := vLin
+    else if typ == "DEMA"
+        out := vDem
+    out
 
 maF = f_ma(src, fLen, fType, lrOff)
 maS = f_ma(src, sLen, sType, lrOff)
@@ -163,10 +178,18 @@ xDnNear  = not na(lastXDnT) and time_close - lastXDnT <= winMs
 bUpNear  = not na(lastBrkUpT) and time_close - lastBrkUpT <= winMs
 bDnNear  = not na(lastBrkDnT) and time_close - lastBrkDnT <= winMs
 
-sigL = orbMode == "Off" ? crossUp : orbMode == "Cross bar closes beyond range" ? crossUp and brkUp :
-       (crossUp and (brkUp or bUpNear)) or (freshUp and maF > maS and xUpNear)
-sigS = orbMode == "Off" ? crossDn : orbMode == "Cross bar closes beyond range" ? crossDn and brkDn :
-       (crossDn and (brkDn or bDnNear)) or (freshDn and maF < maS and xDnNear)
+modeClose  = orbMode == "Cross bar closes beyond range"
+modeEither = orbMode == "Cross and break within N minutes (either order)"
+eitherL = (crossUp and (brkUp or bUpNear)) or (freshUp and maF > maS and xUpNear)
+eitherS = (crossDn and (brkDn or bDnNear)) or (freshDn and maF < maS and xDnNear)
+bool sigL = crossUp
+bool sigS = crossDn
+if modeClose
+    sigL := crossUp and brkUp
+    sigS := crossDn and brkDn
+else if modeEither
+    sigL := eitherL
+    sigS := eitherS
 
 // remember today's crosses and range breaks AFTER the signal is read, so the same-bar case is
 // the "closes beyond range" case and not a second match
