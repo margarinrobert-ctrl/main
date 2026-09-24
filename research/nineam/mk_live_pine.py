@@ -25,24 +25,24 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 SRC = os.path.join(ROOT, "pine", "nineam", "NINE_AM_RANGE_BREAKOUT_strategy.pine")
 DST = os.path.join(ROOT, "pine", "nineam", "NINE_AM_RANGE_LIVE_30s_strategy.pine")
 
-# `na_live.LIVE` expressed as this script's own inputs. The config guard on the HUD checks the
-# same eighteen fields, so a mismatch here shows up in red on the chart rather than silently.
+# `na_live.TV35` -- the configuration the user TRADES (section 28) -- expressed as this script's own
+# inputs. The chart guard checks the same fields, so a mismatch shows up in red rather than silently.
 LIVE = {
     "rangeStart":  "540",
     "rangeEnd":    "545",
-    "firstEntry":  "566",
+    "firstEntry":  "567",
     "lastEntry":   "600",
-    "flatMin":     "630",
-    "atrLen":      "45",
+    "flatMin":     "660",
+    "atrLen":      "14",
     "sideIn":      '"Both"',
     "bufAtr":      "0.0",
     "touchOk":     "true",
     "maMode":      '"Fresh cross"',
-    "crossMin":    "5",
+    "crossMin":    "3.5",            # 7 BARS on a 30-second chart: the rule the TradingView record ran
     "confBypass":  '"Off"',
     "crossBypass": '"Off"',
-    "stopMode":    '"ATR"',
-    "stopAtr":     "2.25",
+    "stopMode":    '"Points"',
+    "stopPts":     "100",
     "tgtMode":     '"Points"',
     "tgtPts":      "100",
     "beMode":      '"Points"',
@@ -111,9 +111,10 @@ def main():
         "// differ, and the generator asserts that exactly the declared fields moved and nothing\n"
         "// else. Re-run it after any change to the research file.\n"
         "//\n"
-        "// The defaults are `na_live.LIVE`, the configuration the forward test in section 25 is\n"
-        "// pre-registered on (fwd_live.py, CFG_SHA 33a92c617985e281). The HUD's `forward cfg`\n"
-        "// row must read MATCHES on a 30-second chart. NO EDGE IS CLAIMED -- see section 24.\n")
+        "// The defaults are `na_live.TV35`, the configuration the user trades: the fresh cross is\n"
+        "// 3.5 MINUTES = 7 bars on a 30-second chart, which is what produced the 109-trade\n"
+        "// TradingView record (section 27). The HUD's `traded cfg` row must read MATCHES on a\n"
+        "// 30-second chart. Not out of sample -- the settings were chosen on that record.\n")
     open(DST, "w").write(header + body)
 
     print(f"wrote {os.path.relpath(DST, ROOT)}")

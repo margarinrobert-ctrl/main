@@ -60,3 +60,9 @@ TV = dict(
     be_pts=43.0, be_off=3.0,
     x_mode="cross",
 )
+
+# THE RULE GOING FORWARD (section 28, the user's decision of 2026-09-24). The shipped Pine clamped a
+# 30-second chart to one minute, so the dialog's "7 minutes" ran as 7 BARS = 3.5 minutes -- and the
+# user's 109-trade TradingView record (PF 2.32) was produced by THAT rule. It is the one kept. `TV`
+# above stays as transcribed, because a running workstream was measured on it.
+TV35 = dict(TV, cross_min=3.5)

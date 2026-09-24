@@ -3,9 +3,10 @@
 // differ, and the generator asserts that exactly the declared fields moved and nothing
 // else. Re-run it after any change to the research file.
 //
-// The defaults are `na_live.LIVE`, the configuration the forward test in section 25 is
-// pre-registered on (fwd_live.py, CFG_SHA 33a92c617985e281). The HUD's `forward cfg`
-// row must read MATCHES on a 30-second chart. NO EDGE IS CLAIMED -- see section 24.
+// The defaults are `na_live.TV35`, the configuration the user trades: the fresh cross is
+// 3.5 MINUTES = 7 bars on a 30-second chart, which is what produced the 109-trade
+// TradingView record (section 27). The HUD's `traded cfg` row must read MATCHES on a
+// 30-second chart. Not out of sample -- the settings were chosen on that record.
 // SPDX-License-Identifier: MIT
 // The 09:00 New York high and low -> breakout at or after the 09:30 cash open -> optional MA
 // confirmation -> ATR stop, optional ATR target.
@@ -87,12 +88,12 @@ strategy("09:00 Range Breakout -- LIVE 30s preset", overlay = true,
 grpS = "Session"
 rangeStart = input.int(540,  "Range start, minutes past New York midnight", minval = 0, maxval = 1439, group = grpS, tooltip = "540 = 09:00. The range is built from every bar whose stamp lies in [start, end).")
 rangeEnd   = input.int(545,  "Range end (exclusive)",                      minval = 1, maxval = 1440, group = grpS, tooltip = "555 = 09:15, so the range is the HIGH and LOW of 09:00-09:15 -- exactly the 09:00 candle on a 15-minute chart, the fifteen bars 09:00..09:14 on a 1-minute one. Declared in MINUTES so it is the same reach on any chart (STUDY_V57). Set 570 for the whole 09:00-09:30 half hour: measured, the two are the same thing -- the 09:00 bar wins 14 of 28 paired cells, exactly chance, at a mean +0.0014 %/trade against a mean MDE of 0.0593. What DOES change is the range WIDTH: 1.03-1.13 ATR for the 09:00 bar against 1.50-1.87 for the half hour.")
-firstEntry = input.int(566,  "Earliest entry",                             minval = 1, maxval = 1440, group = grpS, tooltip = "570 = the 09:30 cash open. Kept SEPARATE from the range end so shortening the range does not silently move the entry forward with it.")
+firstEntry = input.int(567,  "Earliest entry",                             minval = 1, maxval = 1440, group = grpS, tooltip = "570 = the 09:30 cash open. Kept SEPARATE from the range end so shortening the range does not silently move the entry forward with it.")
 lastEntry  = input.int(600,  "No new entries after",                        minval = 1, maxval = 1440, group = grpS)
-flatMin    = input.int(630,  "Flatten at (0 = never)",                      minval = 0, maxval = 1440, group = grpS, tooltip = "Filled at the OPEN of this minute, so the order is submitted on the bar before -- strategy.close_all() cannot sell the close of the bar that triggers it. 960 = 16:00.")
+flatMin    = input.int(660,  "Flatten at (0 = never)",                      minval = 0, maxval = 1440, group = grpS, tooltip = "Filled at the OPEN of this minute, so the order is submitted on the bar before -- strategy.close_all() cannot sell the close of the bar that triggers it. 960 = 16:00.")
 
 grpA = "ATR -- one period, used by every ATR setting below"
-atrLen = input.int(45, "ATR period", minval = 1, maxval = 500, group = grpA, tooltip = "ONE period, read by the break buffer, the stop, the ATR target and every ATR figure on the panel -- so the strategy has a single definition of volatility rather than one per setting. It is `ta.ema(ta.tr(true), n)`, a SPAN, which is what the research uses; Wilder's `ta.atr` is a different average with roughly twice the effective lookback and would silently change every distance. MEASURED BEFORE IT SHIPPED, because every figure in this study was taken at 14: over a declared ladder 7/10/14/21/30/50 x long and both x two geometries x US30 research, holdout and a different-provider forward block -- 60 cells paired against their own ATR(14) twin -- a rung beats 14 in 21 of 60 = 35% where chance is 50%, and 0 of 60 paired deltas exceed their own minimum detectable effect. The marginal average of the paired delta runs -0.0027 %/trade at 7, -0.0019 at 10, +0.0004 at 21, -0.0002 at 30, -0.0021 at 50: the two rungs either side of 14 are the only non-negative ones and nothing is resolvable, so 14 stays the default and this is a knob rather than a finding. Note what moves with it -- the TRADE COUNT rises monotonically with the period (-15 trades at 7, +13 at 50) even though the break level is unchanged at the default zero buffer, because a wider stop holds positions longer and the one-position lock then refuses later breaks.")
+atrLen = input.int(14, "ATR period", minval = 1, maxval = 500, group = grpA, tooltip = "ONE period, read by the break buffer, the stop, the ATR target and every ATR figure on the panel -- so the strategy has a single definition of volatility rather than one per setting. It is `ta.ema(ta.tr(true), n)`, a SPAN, which is what the research uses; Wilder's `ta.atr` is a different average with roughly twice the effective lookback and would silently change every distance. MEASURED BEFORE IT SHIPPED, because every figure in this study was taken at 14: over a declared ladder 7/10/14/21/30/50 x long and both x two geometries x US30 research, holdout and a different-provider forward block -- 60 cells paired against their own ATR(14) twin -- a rung beats 14 in 21 of 60 = 35% where chance is 50%, and 0 of 60 paired deltas exceed their own minimum detectable effect. The marginal average of the paired delta runs -0.0027 %/trade at 7, -0.0019 at 10, +0.0004 at 21, -0.0002 at 30, -0.0021 at 50: the two rungs either side of 14 are the only non-negative ones and nothing is resolvable, so 14 stays the default and this is a knob rather than a finding. Note what moves with it -- the TRADE COUNT rises monotonically with the period (-15 trades at 7, +13 at 50) even though the break level is unchanged at the default zero buffer, because a wider stop holds positions longer and the one-position lock then refuses later breaks.")
 
 grpE = "Entry"
 sideIn   = input.string("Both", "Side", options = ["Long", "Short", "Both"], group = grpE)
@@ -105,7 +106,7 @@ maType   = input.string("EMA", "MA type", options = ["EMA", "SMA", "WMA", "Hull"
 maFast   = input.int(13, "Fast length", minval = 1, group = grpM)
 maSlow   = input.int(48, "Slow length", minval = 2, group = grpM)
 maLong   = input.int(200, "Long length (the 200)", minval = 3, group = grpM, tooltip = "Used only by the four 200 readings. This is the shorter AVERAGES against the long one, which is a different object from price against it: STUDY_V40 found the MA200 is priced by its DISTANCE and not by its state, and STUDY_V51 found the FLOOR reading (>= 1.5 ATR above) clears three blocks where the support reading fails two. Neither of those is this.")
-crossMin = input.int(5, "Fresh cross: within this many MINUTES", minval = 1, group = grpM, tooltip = "A reach in time, not a bar count -- 75 minutes is 5 bars on a 15-minute chart, which is what was measured.")
+crossMin = input.float(3.5, "Fresh cross: within this many MINUTES", minval = 0.5, step = 0.5, group = grpM, tooltip = "A reach in time, not a bar count -- 75 minutes is 5 bars on a 15-minute chart, which is what was measured. The panel prints the conversion as `Xm = N bars`; read it.\n\nON A 30-SECOND CHART, READ THIS. Before this version the script clamped any sub-minute chart to one minute, so a setting of 7 ran as 7 BARS = 3.5 minutes. The TradingView record the 30-second configuration was judged on (109 trades, PF 2.32, section 27) was produced by that 3.5-minute rule. The clamp is gone, so 7 now means 7 real minutes = 14 bars -- a DIFFERENT, looser gate that scores worse on the research file (PF 1.60 against 3.15). Enter 3.5 to keep the rule the record belongs to; the panel should then read 3.5m = 7 bars.")
 confBypass = input.string("Off", "Bypass: the 200 AT the break level", options = ["Off", "Support (long) / resistance (short)", "Through (the break clears the 200)", "Confluence (either configuration)"], group = grpM, tooltip = "DEFAULT OFF. The ask was \"if the breakout of the 9am high or low is the same as the ema 200 as support or resistance it could enter without a ema cross\", so this is an OR: the MA confirmation above may be satisfied EITHER by its own reading OR by the broken level coinciding with the long average. It does nothing while MA confirmation is Off.\n\nAN OR LOOSENS A GATE, so it can only be read against BOTH arms it sits between -- the MA gate alone AND no gate at all. Read against the gated arm alone it looks like an improvement whenever the gate was worth nothing, which on this trigger is exactly what was measured.\n\nTHE READING ASKED FOR IS \"Support (long) / resistance (short)\": a long break at the level leaves the 200 BENEATH price, which is support and is bullish, and a short break leaves it ABOVE, which is resistance and is bearish. \"Through\" is the opposite configuration -- the break clearing the average -- and is offered as its mirror because this branch has inverted a proposed condition's sign nine times. The two partition \"Confluence\" exactly.\n\nTHE READING ASKED FOR IS THE BEST OF THE THREE AND STILL NOTHING. At 0.25 ATR it is the only family in the table with a positive marginal (+0.0268 %/trade over no filter, beating the ungated rule in 3 of 4 scorable cells) and its one clearing cell is US30 research at PF 2.029, p 0.043 on 82 trades -- which reads -0.0825 %/trade at PF 0.523 and p 0.803 on the holdout, and whose research effect of +0.1438 sits inside its own MDE of 0.2107. Widen the tolerance and even that goes: -0.0154 at 0.50 ATR, +0.0032 at 1.00.\n\nIT PASSES THE BASE-RATE CHECK, which nine confirmation families on this branch did not: confluence admits 5.2-28.0% of this trigger's own bars at a lift over all bars of 1.25-1.63, so it is genuinely selective and is not the trigger restated. Through and Behind partition Confluence exactly.\n\nAND IT EARNS NOTHING. As a REQUIREMENT, over a declared 54-cell grid (3 tolerances x 3 readings x two geometries x US30 research, holdout and a different-provider forward block) scored against a RANDOM gate of the same selectivity re-simulated end to end: 2 of 50 scorable cells clear p<=0.05 where 2.5 are expected by chance, 0 OF 50 EXCEED THEIR OWN MINIMUM DETECTABLE EFFECT, and it beats the ungated rule in 20 of 50 cells where chance is 50%. The marginal average gets WORSE as the tolerance widens (+0.0064 / -0.0161 / -0.0197 %/trade at 0.25 / 0.50 / 1.00 ATR). The two cells that do clear are both research cells at 0.25 ATR (PF 1.820 and 2.029) and both INVERT on the holdout (PF 0.694 and 0.523, p 0.750 and 0.803).\n\nAS THE OR ITSELF, over 36 further cells: it beats the MA gate in 13 of 36 and NO GATE AT ALL in 4 of 36, every marginal delta is negative, and 0 of 36 paired deltas against the MA gate exceed their own MDE. Pooled arm means run no gate -0.0025, MA gate -0.0123, confluence only -0.0123, MA-or-confluence -0.0188 %/trade -- the loosest arm is the best one and the OR is the worst, so the bypass is a slower way of switching the gate off and switching it off is free.")
 confTol    = input.float(0.25, "Bypass tolerance (xATR)", minval = 0.01, step = 0.05, group = grpM, tooltip = "How near the broken level the long average must sit, in ATR rather than points -- a point distance is not a setting, it is a setting times a market (STUDY_US30_SCALP_0711). Measured at 0.25 / 0.50 / 1.00. For the reading asked for the ladder runs +0.0268 / -0.0154 / +0.0032 %/trade against no filter, so 0.25 is the only rung with a positive marginal and all three sit inside their own MDE.")
 crossBypass = input.string("Off", "Bypass: a fresh 13x48 cross overrides the 200", options = ["Off", "A fresh 13x48 cross overrides the 200"], group = grpM, tooltip = "DEFAULT OFF. The ask: \"if ema cross of 13 and 48 cross it with a orb breakout of the 9am high and low ... it can long or short against the 200 ema\" -- so a FRESH 13x48 cross aligned with the break overrides the 200 reading above, and the trade is allowed even when the shorter averages sit on the wrong side of the 200. It uses the SAME 'Fresh cross: within this many MINUTES' setting and the SAME expression as the MA gate above, so 'fresh cross' means one thing across the whole script.\n\nIT IS AN OR, SO IT SITS BETWEEN TWO ARMS AND WAS READ AGAINST BOTH -- the 200 gate alone (tightest) and NO GATE AT ALL (loosest). Read against the gated arm only, an OR looks like an improvement whenever the gate was worth nothing, and on this trigger the 200 state readings admit 38.4-61.6% of the signal bars at a lift over all bars of 0.990 to 1.007, EXACTLY ONE.\n\nWHAT IT CAN ACT ON, computed before any P&L: a fresh cross fires on only 7.0-20.1% of the breaks the 200 REFUSES, so it is near the INERT end of the two ways a bypass can be worthless rather than the 'it IS no gate' end -- the OR keeps 50.1-63.7% of breaks against the 200 gate's 46.1-54.6%.\n\nAND IT DOES NOT PAY. Over a declared 144-cell grid (2 readings of the 200 x 2 readings of 'fresh' x 3 recencies x 2 geometries x long/both x US30 research, holdout and a different-provider forward block), each arm scored against a RANDOM gate of the same selectivity re-simulated end to end: the OR beats the 200 gate in 18 of 68 cells (26%, chance 50%) at a mean -0.0021 %/trade, and beats NO GATE AT ALL in 6 of 68 (9%) at -0.0137. 0 OF 424 ARM-CELLS CLEAR THEIR CONTROL at p<=0.05 where 21 are expected by chance, and 12 of 144 OR cells DO exceed their own minimum detectable effect -- every one of them on the negative side, so those are resolvably bad rather than merely unproven. E[max t | pure noise] over 144 looks is 2.656 against the 2.802 detection needs. Pooled arm means: no gate -0.0005, the fresh cross alone -0.0057, the 200 gate -0.0119, the OR -0.0141 %/trade. THE OR IS THE WORST ARM AND THE LOOSEST ARM IS THE BEST, which is the second bypass on this trigger to measure that way -- switching the 200 gate off is free and this is a slower route to it.\n\nTHE DECOMPOSITION IS THE ONE THING WORTH KEEPING: of the two conditions this OR combines, the CROSS (the override) is the better of the two and the 200 (the base) is the worse -- fresh alone -0.0057 against the 200's -0.0119 -- and the cross alone is still negative against no gate on all three blocks (-0.0071 research, -0.0045 holdout, -0.0029 forward).\n\nDEGENERACY, asserted on the real signal set and not reasoned: with MA confirmation set to 'Fresh cross' this bypass IS the gate, so the OR is an identity and the switch does nothing -- verified keeping 296 / 456 / 690 signals identically at 30 / 75 / 150 minutes, and again in the parity harness. With MA confirmation Off it is inert for the same reason. The panel says so.")
@@ -117,8 +118,8 @@ alertFmt = input.string("Plain text", "Payload format", options = ["Plain text",
 alertQty = input.int(1, "Quantity to state in the payload", minval = 1, group = grpZ, tooltip = "Carried through to the alert text only; it does not change the backtest, which is always one unit. Section 24a: TradingView's reported average win of $606.48 is 2.01x the $301.60 measured at one contract, so that run was sized at two.")
 
 grpX = "Exit"
-stopMode = input.string("ATR", "Stop mode", options = ["ATR", "Points", "Opposite side of the range"], group = grpX, tooltip = "POINTS is a fixed distance in index points and is NOT the same geometry on two markets: 100 points is 2.35x the median in-window ATR on US30, 3.24x on NQ and 4.36x on US100, and on US30 alone it was 4.23 ATR in 2016 against 1.10 in 2025. A points setting therefore confounds geometry with market and with era (STUDY_DL50). The panel prints what your chosen distance currently is in ATR.")
-stopAtr  = input.float(2.25, "Stop, xATR",   minval = 0.1, maxval = 10, step = 0.1, group = grpX)
+stopMode = input.string("Points", "Stop mode", options = ["ATR", "Points", "Opposite side of the range"], group = grpX, tooltip = "POINTS is a fixed distance in index points and is NOT the same geometry on two markets: 100 points is 2.35x the median in-window ATR on US30, 3.24x on NQ and 4.36x on US100, and on US30 alone it was 4.23 ATR in 2016 against 1.10 in 2025. A points setting therefore confounds geometry with market and with era (STUDY_DL50). The panel prints what your chosen distance currently is in ATR.")
+stopAtr  = input.float(1.5, "Stop, xATR",   minval = 0.1, maxval = 10, step = 0.1, group = grpX)
 stopPts  = input.float(100, "Stop, POINTS",     minval = 0.1, step = 1, group = grpX, tooltip = "Used when Stop mode = Points.")
 tgtMode  = input.string("Points", "Target mode", options = ["None", "R", "ATR", "Points"], group = grpX, tooltip = "No take profit has beaten every target tested 26 times on this branch, and the points grid here agrees: over 75 declared US30 research cells the target marginal runs NONE +0.87 bp, 200 pts +0.80, 150 +0.43, 100 -0.44, 50 -1.07 -- monotone, with the tightest target the single worst choice in the space.")
 tgtR     = input.float(0.0, "Target, R",        minval = 0, maxval = 20, step = 0.5, group = grpX, tooltip = "Used when Target mode = R.")
@@ -133,8 +134,18 @@ xMode    = input.string("Fresh opposite cross", "Close on an opposite MA cross",
 // Exchange time is Chicago on CME; New York is what the rule is written in.
 nyH = hour(time, "America/New_York")
 nyM = minute(time, "America/New_York")
-nyMin = nyH * 60 + nyM
-tfMin = math.max(1.0, timeframe.in_seconds(timeframe.period) / 60.0)
+// SECONDS are part of the clock. Pine's minute() is whole minutes, so on a 30-second chart the
+// 10:59:00 and 10:59:30 bars would both read 659 -- and with the clamp removed below, the 11:00
+// flatten would then NEVER fire (659 + 0.5 < 660, and at 11:00 `nyMin < flatMin` is false).
+// On 1-minute charts and above second() is always 0 and nothing changes (section 28, verified bar
+// by bar on every timeframe).
+nyS = second(time, "America/New_York")
+nyMin = nyH * 60 + nyM + nyS / 60.0
+// NO CLAMP. `math.max(1.0, ...)` here turned a 30-second chart into a 1-minute one, so a reach of
+// "7 minutes" ran as 7 BARS = 3.5 minutes while every study modelled 14 bars (section 28). The
+// user's 109-trade TradingView record was produced by that 3.5-minute rule, and it is the rule
+// kept: enter 3.5 below to reproduce it exactly.
+tfMin = timeframe.in_seconds(timeframe.period) / 60.0
 crossBars = int(math.max(1.0, math.round(crossMin / tfMin)))
 newDay = ta.change(time("D", "America/New_York")) != 0
 
@@ -478,26 +489,27 @@ if barstate.islast
     table.cell(hud, 1, 7, xTxt, text_size = size.tiny, text_color = xCol)
     table.cell(hud, 0, 9, "edge claimed", text_size = size.tiny)
     table.cell(hud, 1, 9, "none", text_size = size.tiny, text_color = color.red)
-    // ---- the forward test's frozen configuration, checked field by field.
-    // `research/nineam/fwd_live.py` hashes the same eighteen settings into CFG_SHA and REFUSES to
-    // continue if one moves. This is that guard on the chart side: a single mistyped input is a
-    // different strategy and the ledger it feeds is void, and nothing else on the screen says so.
+    // ---- the configuration actually traded, checked field by field (na_live.TV35, section 28).
+    // One mistyped input is a different strategy, and on a 30-second chart the single most likely
+    // one is the fresh-cross reach: 7 was the old dialog value and now means twice the window.
     diff = ""
     diff := diff + (rangeStart  == 540    ? "" : " rangeStart")
     diff := diff + (rangeEnd    == 545    ? "" : " rangeEnd")
-    diff := diff + (firstEntry  == 566    ? "" : " firstEntry")
+    diff := diff + (firstEntry  == 567    ? "" : " firstEntry")
     diff := diff + (lastEntry   == 600    ? "" : " lastEntry")
-    diff := diff + (flatMin     == 630    ? "" : " flatten")
-    diff := diff + (atrLen      == 45     ? "" : " atrLen")
+    diff := diff + (flatMin     == 660    ? "" : " flatten")
     diff := diff + (sideIn      == "Both" ? "" : " side")
     diff := diff + (bufAtr      == 0.0    ? "" : " buffer")
     diff := diff + (touchOk               ? "" : " touch")
     diff := diff + (maMode == "Fresh cross" ? "" : " maMode")
-    diff := diff + (crossMin    == 5      ? "" : " crossMin")
+    diff := diff + (maType      == "EMA"  ? "" : " maType")
+    diff := diff + (maFast      == 13     ? "" : " maFast")
+    diff := diff + (maSlow      == 48     ? "" : " maSlow")
+    diff := diff + (crossMin    == 3.5    ? "" : (crossMin == 7 ? " crossMin(7->3.5!)" : " crossMin"))
     diff := diff + (confBypass  == "Off"  ? "" : " confBypass")
     diff := diff + (crossBypass == "Off"  ? "" : " crossBypass")
-    diff := diff + (stopMode    == "ATR"  ? "" : " stopMode")
-    diff := diff + (stopAtr     == 2.25   ? "" : " stopAtr")
+    diff := diff + (stopMode == "Points"  ? "" : " stopMode")
+    diff := diff + (stopPts     == 100.0  ? "" : " stopPts")
     diff := diff + (tgtMode  == "Points"  ? "" : " tgtMode")
     diff := diff + (tgtPts      == 100.0  ? "" : " tgtPts")
     diff := diff + (beMode   == "Points"  ? "" : " beMode")
@@ -506,8 +518,8 @@ if barstate.islast
     diff := diff + (xMode == "Fresh opposite cross" ? "" : " xMode")
     tfOk = timeframe.period == "30S"
     diff := diff + (tfOk ? "" : " CHART-TF")
-    table.cell(hud, 0, 10, "forward cfg", text_size = size.tiny)
+    table.cell(hud, 0, 10, "traded cfg", text_size = size.tiny)
     table.cell(hud, 1, 10,
-      diff == "" ? "MATCHES the pre-registered live config (fwd_live.py)"
+      diff == "" ? "MATCHES your TradingView configuration (3.5m cross, section 28)"
                  : "DIFFERS ->" + diff,
       text_size = size.tiny, text_color = diff == "" ? color.green : color.red)
