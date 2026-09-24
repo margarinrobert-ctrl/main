@@ -99,6 +99,7 @@ grpE = "Entry"
 sideIn   = input.string("Both", "Side", options = ["Long", "Short", "Both"], group = grpE)
 bufAtr   = input.float(0.0,  "Break buffer, xATR beyond the level", minval = 0, maxval = 2, step = 0.05, group = grpE)
 touchOk  = input.bool(true,  "A touch counts as a break",                group = grpE, tooltip = "Measured free on the researched base; a strict inequality loses signals to exact tick equality (STUDY_V57).")
+breakPick = input.string("First break", "Which break to trade", options = ["First break", "Second break only"], group = grpE, tooltip = "First break: the first touch of each side's level after the arm, or none (a gated-out break still uses the side up). Second break only: that first break is never traded; after it, a bar must CLOSE back inside the level, and the next break of that side is the one taken -- or none. Measured on 30s US30 at your settings (section 32): 30 trades vs 39, +0.0570 vs +0.0593 %/trade, PF 4.02 vs 3.15 -- the same per-trade edge on fewer trades, both inside their own MDE.")
 
 grpM = "Momentum -- the MA 3 in 1 reading"
 maMode   = input.string("Fresh cross", "MA confirmation", options = ["Off", "State (fast > slow)", "Fresh cross", "200 state: ANY of fast/slow", "200 state: ALL of fast/slow", "200 cross: ANY of fast/slow", "200 cross: ALL of fast/slow"], group = grpM, tooltip = "DEFAULT OFF, and every option below is measured.\n\nTHE 13x48 READINGS (State, Fresh cross). State passes 53-59% of this trigger's own bars at lift 1.03-1.14, so unlike every other confirmation measured on this branch it is NOT the trigger restated. It is also worth nothing: a random filter of the same selectivity does as well on research and better on the holdout (research +0.0094 PF 1.071 at gate p 0.477, holdout -0.0201 PF 0.867 at p 0.998).\n\nTHE 200 READINGS. Each of the fast and slow averages is read against the LONG one, and the break is confirmed when ANY of them (or ALL of them) sits on the side the break points. ANY and ALL are genuinely different only because a SPLIT reading -- 13 above the 200, 48 below -- confirms both sides under ANY; collapsed into one direction label they are the SAME condition, measured identical to four decimals.\n\nITS BASE RATE IS THE FINDING: the state readings admit 38.4-61.6% of this trigger's own bars at a lift over all bars of 0.990 to 1.007 -- EXACTLY ONE. A 200-period average is so slow that a 15-minute range break carries no information whatever about where the 13 and 48 sit relative to it, which makes the gate a coin flip applied to the signal set. (By contrast close > MA200 does lean, at lift 1.089-1.152.)\n\nAND IT DOES NOT PAY, IN THE DIRECTION ASKED FOR. Over a declared 48-cell grid (4 readings x Align/Counter x two geometries x US30 research, holdout and a different-provider forward block) scored against a RANDOM gate of the same selectivity re-simulated end to end: 3 of 36 scorable cells clear p<=0.05 where 1.8 are expected by chance, 0 OF 36 EXCEED THEIR OWN MINIMUM DETECTABLE EFFECT, and the gate beats the ungated rule in 15 of 36 cells where chance is 50%. Aligning with the 200 is negative in 0 of 6 scorable cells for BOTH state readings (-0.0189 and -0.0199 %/trade against no filter); the COUNTER mirror is the one that scores (+0.0085 / +0.0113, all three p<=0.05 cells) and it is negative on the reserved forward block, which is the wrong shape. The ALL CROSS reading is unscorable -- it admits 0.0-1.1% of breaks, 12 of 48 cells under 25 trades.")
@@ -213,11 +214,25 @@ dnLvl = rLo - bufAtr * atrv
 hitUp = armed and (touchOk ? high >= upLvl : high > upLvl)
 hitDn = armed and (touchOk ? low  <= dnLvl : low  < dnLvl)
 
-var bool tookUp = false
-var bool tookDn = false
+// Break counting, per side. A side is DISARMED after it breaks and RE-ARMS at the close of any
+// armed bar that closes back inside its level (the break bar included, so a wick through re-arms
+// at once). `nUp` counts the breaks this session; the pick is break 1 or break 2, and a break the
+// gate refuses still counts -- so "second break only" takes the second break or none, exactly as
+// the default takes the first or none. `research/nineam/na_second.py` is the same state machine.
+var int  nUp = 0
+var int  nDn = 0
+var bool rdyUp = true
+var bool rdyDn = true
 if barstate.isconfirmed and newDay
-    tookUp := false
-    tookDn := false
+    nUp := 0
+    nDn := 0
+    rdyUp := true
+    rdyDn := true
+brkUp = hitUp and rdyUp
+brkDn = hitDn and rdyDn
+pickN = breakPick == "Second break only" ? 1 : 0
+pickUp = brkUp and nUp == pickN
+pickDn = brkDn and nDn == pickN
 
 // The 200 readings, as TWO masks rather than one direction label: under ANY a split reading
 // (13 above the 200, 48 below) confirms both sides, so the gate simply vetoes nothing that day.
@@ -275,8 +290,8 @@ xbypS = xbypOn and barsSinceDn <= crossBars
 momOkL = maOkL or confOkL or xbypL
 momOkS = maOkS or confOkS or xbypS
 
-wantLong  = (sideIn == "Long"  or sideIn == "Both") and hitUp and not tookUp and momOkL
-wantShort = (sideIn == "Short" or sideIn == "Both") and hitDn and not tookDn and momOkS
+wantLong  = (sideIn == "Long"  or sideIn == "Both") and pickUp and momOkL
+wantShort = (sideIn == "Short" or sideIn == "Both") and pickDn and momOkS
 
 
 
@@ -376,7 +391,6 @@ if barstate.isconfirmed and not flatNow and xFlip
 
 if barstate.isconfirmed and not flatNow and not xFlip and strategy.position_size == 0
     if wantLong
-        tookUp := true
         beArmed := false
         pendTgt := tgtDistL
         strategy.entry("L", strategy.long)
@@ -385,7 +399,6 @@ if barstate.isconfirmed and not flatNow and not xFlip and strategy.position_size
         if alertOn
             alert(f_pay("long", close, riskL, tgtDistL), alert.freq_once_per_bar_close)
     else if wantShort
-        tookDn := true
         beArmed := false
         pendTgt := tgtDistS
         strategy.entry("S", strategy.short)
@@ -421,13 +434,17 @@ if barstate.isconfirmed and beMode == "Points" and strategy.position_size != 0 a
                        : "MOVE STOP " + syminfo.ticker + " -> " + str.tostring(beStop, format.mintick) + "  (breakeven armed)",
                       alert.freq_once_per_bar_close)
 
-// a break that is refused by a gate still counts as used for the session, so the rule takes the
-// FIRST break or none -- the research event stream does the same and the two must agree
+// count the break, then re-arm the side if the bar closed back inside its level. A break that is
+// refused by a gate still counts, so each pick is "that break or none" -- the research event
+// stream (`na_second.events_k`) does the same and the two must agree.
 if barstate.isconfirmed
-    if hitUp
-        tookUp := true
-    if hitDn
-        tookDn := true
+    if brkUp
+        nUp += 1
+    if brkDn
+        nDn += 1
+    if armed
+        rdyUp := close < upLvl ? true : brkUp ? false : rdyUp
+        rdyDn := close > dnLvl ? true : brkDn ? false : rdyDn
 
 // ----------------------------------------------------------------------------- plots
 plot(rReady ? rHi : na, "range high", color = color.new(color.teal, 0), style = plot.style_linebr)
@@ -440,7 +457,7 @@ bgcolor(inRange ? color.new(color.gray, 90) : na)
 var table hud = table.new(position.top_right, 2, 11, border_width = 1)
 if barstate.islast
     table.cell(hud, 0, 0, "range",   text_size = size.tiny)
-    table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)), text_size = size.tiny)
+    table.cell(hud, 1, 0, str.tostring(rangeStart) + "-" + str.tostring(rangeEnd) + " NY, arm " + str.tostring(math.max(rangeEnd, firstEntry)) + (breakPick == "First break" ? "" : ", 2nd break only"), text_size = size.tiny)
     table.cell(hud, 0, 1, "fresh cross", text_size = size.tiny)
     table.cell(hud, 1, 1, str.tostring(crossMin) + "m = " + str.tostring(crossBars) + " bars", text_size = size.tiny)
     table.cell(hud, 0, 2, "ATR", text_size = size.tiny)
@@ -502,6 +519,7 @@ if barstate.islast
     diff := diff + (sideIn      == "Both" ? "" : " side")
     diff := diff + (bufAtr      == 0.0    ? "" : " buffer")
     diff := diff + (touchOk               ? "" : " touch")
+    diff := diff + (breakPick == "First break" ? "" : " breakPick")
     diff := diff + (maMode == "Fresh cross" ? "" : " maMode")
     diff := diff + (maType      == "EMA"  ? "" : " maType")
     diff := diff + (maFast      == 13     ? "" : " maFast")

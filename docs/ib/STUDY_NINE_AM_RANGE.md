@@ -2125,3 +2125,42 @@ holdout every MA type is negative on average: most MA combinations lose in the s
 
 **Ship nothing new; keep EMA 13/48 at 3.5 minutes.** What would move it is sessions, not
 combinations — the same conclusion §29 reached from the timeframe side.
+
+## 32. Second break only
+
+Asked for as an option: skip the first break of the 09:00 range and trade the second. Defined
+BEFORE any number was read (`research/nineam/na_second.py`). After a side breaks it is DISARMED.
+It re-arms at the close of any armed bar that closes back inside its level, the break bar
+included. The next armed hit is break two. A gate refusing break two uses it up, the same way a
+refused first break is used up under the default, so each option is "that break or none".
+`k = 1` reproduces `na_core.events` exactly (161 of 161 triggers). The Pine's state machine was
+transliterated line by line (`pick_parity.py`) and matches the research function bar for bar:
+161 of 161 at k=1 and 125 of 125 at k=2.
+
+Measured on 30-second US30 at the rule the user trades (`na_live.TV35`), `run_n27.py`:
+
+| | trades | %/trade | win | PF | total | MDE | per/MDE |
+|---|---|---|---|---|---|---|---|
+| first break (default) | 39 | +0.0593 | 0.795 | 3.15 | +2.31% | 0.0595 | 1.00 |
+| second break only | 30 | +0.0570 | 0.833 | 4.02 | +1.71% | 0.0599 | 0.95 |
+| first half, break 1 / 2 | 19 / 9 | +0.0492 / +0.0640 | | 3.28 / 3.94 | | | |
+| second half, break 1 / 2 | 20 / 7 | +0.0689 / +0.0625 | | 3.07 / 4.64 | | | |
+
+- **A second break is common.** Of the sessions with a first break, 68% of longs and 87% of shorts
+  also get a second one. The fresh-cross gate passes the same share of both (0.248 and 0.240), so
+  the gate is not selecting for one break number.
+- **The per-trade edge is the same.** On the 15 sessions that traded both, break one earned
+  +0.0681 and break two +0.0676 %/session. The higher PF and win rate on break two come from fewer
+  trades, not a larger mean, and both rows sit inside their own MDE. The second-break rule earns
+  less in total because it trades less.
+- **Nulls on the second-break rule:** a matched random entry gives p 0.053 (its median is +0.0209).
+  A same-selectivity random gate over the second-break triggers gives p 0.000 (median -0.0081,
+  because ungated second breaks lose). The day-block bootstrap gives P(mean<=0) 0.002. This is the
+  fresh cross doing the same job on break two that it does on break one.
+- **Only one market could be measured.** The 15-minute US30 feeds that §1-§20 used are not on disk
+  in this container, so the research/holdout/forward read was skipped rather than proxied. Every
+  number above comes from the 13-month 30-second file, which is in-sample for the user's settings.
+
+Ships as `breakPick` ("First break" / "Second break only"), with **First break as the default**.
+The live preset's chart guard reports "breakPick" in red when it is switched, because it is not
+the configuration behind the 109-trade TradingView record.
