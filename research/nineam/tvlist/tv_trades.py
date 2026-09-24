@@ -38,14 +38,14 @@ sys.path.insert(0, os.path.dirname(NA))
 
 # TradingView has renamed these columns across versions; match on what the header CONTAINS.
 COLS = {
-    "trade": [r"^trade\s*#", r"^trade$"],
+    "trade": [r"^trade\s*(#|number|no\.?)", r"^trade$"],
     "type": [r"^type$"],
     "signal": [r"^signal$"],
     "time": [r"date\s*/?\s*time", r"date and time", r"^date$", r"^time$"],
     "price": [r"^price"],
     "qty": [r"contracts", r"quantity", r"^qty", r"size"],
-    "pnl": [r"^profit$", r"^p&l", r"net p&l", r"^profit\s*usd", r"^profit\s*\("],
-    "pnl_pct": [r"profit\s*%", r"p&l\s*%", r"net p&l\s*%"],
+    "pnl": [r"^profit$", r"^p&l", r"net p&l", r"net pnl", r"^profit\s*usd", r"^profit\s*\("],
+    "pnl_pct": [r"profit\s*%", r"p&l\s*%", r"net p&l\s*%", r"net pnl\s*%", r"^return\s*%"],
 }
 
 

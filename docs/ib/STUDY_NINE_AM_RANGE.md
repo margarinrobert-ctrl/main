@@ -1799,3 +1799,78 @@ payload is already shaped for it. What that consumer must enforce, none of which
 reject any alert older than ~60 seconds, one position at a time, one trade per session, a hard
 flat at 10:30, a daily loss kill-switch, and duplicate suppression. Those rails are the reason to
 build it properly rather than quickly.
+
+---
+
+## 27. The user's TradingView trade list — a transcription check, and the feed they actually trade
+
+The user exported the Strategy Tester's List of trades for `na_live.TV` (their current settings:
+100/100 points, entries 09:27–10:00, flat 11:00, breakeven 43/3, fresh cross ≤ 7 min) on
+Capital.com US30, 30 seconds: **109 round trips, 2025-09-24 → 2026-09-22.** Not the 305-trade run
+in their screenshot — a different span. `research/nineam/tvlist/`.
+
+**The costs decode exactly and match the research.** A target nets $977.10 = 100 pts × 10
+contracts × **$1/pt** − $22.90 commission; a stop nets −$1,023.90, adding one 0.1-pt tick of stop
+slippage; a breakeven nets +$6.10. So the round turn is **2.29 points**, the research's own
+figure. Two trades (−$9.90 and −$100.90) are breakeven stops filled *through* the market at the next
+open — TradingView's emulator already does what `fix=1` does, so its breakeven accounting carries
+no ratchet artifact.
+
+### 27a. The transcription check fails — and the cause is the data, not the rule
+
+Over the 92 sessions both sides can see, **TradingView took 43 trades and our walker took 54; 38
+agree on session, side and fill minute (70.4%)**, below the ~90% declared before the check was run.
+Of those 38, 36 have the same outcome within a few points.
+
+The shape identifies the cause. **Capital.com prices sit a median −26.2 points from our 30-second
+provider (mean −34.5, sd 38.6, range −145 to +25)** on the 38 shared entries — the same order as
+the 26.8-point gap this file measured against US30_ISO when it arrived. The gap is not a constant
+offset, so the two feeds disagree on bar SHAPE, and this rule breaks a five-minute range on the
+first eligible bar: a knife-edge trigger. Same rule, different bars, different trades.
+
+| class | n | TradingView net pts | ours net pts |
+| --- | --- | --- | --- |
+| same entry | 38 | +1,245.8 | +1,144.6 |
+| ours only | 14 | — | −337.2 |
+| TradingView only | 3 | +293.1 | — |
+| same side, shifted | 1 | +97.7 | −62.8 |
+| opposite side | 1 | +93.5 | −39.0 |
+| **total** | | **+1,730.1** | **+705.6** |
+
+**Every local measurement of this rule has been on a proxy feed, and the proxy understates it** —
+2.45× fewer net points than the feed the user trades, on identical sessions. The forward trackers
+(§23, §25) also run on the proxy. Neither conclusion transfers automatically to Capital.com.
+
+### 27b. On the user's own feed the edge clears its MDE
+
+TradingView's own net, per contract:
+
+| span | n | %/trade | PF | win | delivered / MDE |
+| --- | --- | --- | --- | --- | --- |
+| **all** | **109** | **+0.0483** | **2.32** | **0.716** | **1.25×** |
+| before our coverage (2025-09 → 2026-04) | 62 | +0.0297 | 1.69 | 0.677 | 0.57× |
+| overlap with our file | 45 | +0.0676 | 3.33 | 0.756 | 1.18× |
+| after our 09-16 cutoff | 2 | +0.1874 | — | 1.000 | — |
+
+Day-block bootstrap 95% CI **[+0.0213, +0.0745], P(mean ≤ 0) 0.0002**; 70 trades resolve the
+delivered edge and there are 109; **11 of 13 months positive**; max drawdown 258 points per contract.
+Exit mix: 47 targets, 31 breakevens, 19 opposite crosses, 12 stops.
+
+### 27c. What this does and does not establish
+
+**It is significant against zero on the traded feed. It is not out of sample.** The user chose these
+settings while looking at a Strategy Tester that contains these 109 trades, so all 109 are inside
+their own search — §24's deflation question, unchanged: significant against a random outcome, not
+established against an unknown number of settings tried. The research never saw the 62 earlier
+trades; the user did. They are also the WEAKEST segment (PF 1.69, 0.57× MDE) while the most recent
+segment — where the settings were iterated — is the strongest (PF 3.33). That is the shape a fit to
+recent data produces, and it is recorded rather than explained away.
+
+**The configuration has changed three times** (§22 → §24 → this one). Each change after seeing
+results is a look, and the two pre-registered forward tests track configurations no longer being
+run. The two post-cutoff trades are both targets and are DESCRIPTIVE: nothing was pre-registered on
+this configuration.
+
+**What would settle it**: a pre-registered forward test of THIS configuration scored on THIS feed —
+TradingView exports read by `tv_trades.py`, cutoff at the export date, bands fixed from these 109
+trades before the next one exists.
