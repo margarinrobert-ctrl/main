@@ -1,0 +1,321 @@
+//@version=5
+// SPDX-License-Identifier: MIT
+// Fast MA x slow MA crossover, each average with its own TYPE and LENGTH -- linear regression
+// ("LinReg", ta.linreg) is one of the types on both sides, so LinReg-over-EMA, EMA-over-LinReg,
+// LinReg-over-LinReg and every other pair are all one dropdown away.
+//
+// NO EDGE IS CLAIMED. What this branch has measured about the idea, so it is read against that:
+//   * A LinReg line fits a straight line through the window, so its ramp lag is ZERO at every
+//     length -- it behaves like DEMA/TEMA, not like SMA/EMA (STUDY_MA_LAG, STUDY_V25).
+//   * LinReg 9/21 VALUE cross on NQ 30m: research PF 1.309 -> locked 0.853 (control p 0.880),
+//     15m 1.293 -> 0.858 -- the literal "linreg cross" was the WORST reading of five (STUDY_V25).
+//   * 7 MA types x 9 pairs as a crossover: type spread 0.093 PF, pair spread 0.135, and the type
+//     effect vanished at matched lag -- change the LENGTH, not the letter (STUDY_V24).
+//   * EMA 16/64 cross with a 4h cap: no edge on three markets, gross edge smaller than the
+//     commission (STUDY_V59).
+//   * On the 09:00-range breakout, 1.15M MA-type x length combinations found nothing better than
+//     EMA 13/48 (STUDY_NINE_AM_RANGE section 31).
+// Use it to look, not as a finished system.
+//
+// TWO OPTIONAL ADDITIONS, BOTH DEFAULT OFF:
+//   * 09:00 range confirmation -- the high/low of the 09:00 New York range (09:00-09:05 by
+//     default, the range the 09:00 breakout preset trades; set the end to 555 or 570 for the
+//     09:00 bar / the half hour -- measured the same rule, STUDY_NINE_AM_RANGE section 20). A long
+//     cross is taken only if it closes above the range high (or, in the either-order mode, the
+//     cross and a close above the high happen within N minutes of each other); shorts mirror.
+//     The range is accumulated from the chart's own bars and frozen at its end, never pulled with
+//     request.security -- a higher-timeframe bar is the exchange's bar and need not start at 09:00.
+//   * Auto breakeven in POINTS -- the 09:00-range script's ratchet, copied: it arms on the bar
+//     whose favourable extreme reaches the distance and binds from the next bar. On that rule it
+//     beat its own OFF twin in 12% of 240 paired cells, chance 50% (STUDY_NINE_AM_RANGE section 30).
+//
+// ORDER MODEL. Signals are read on the CLOSED bar (barstate.isconfirmed) and fill at the next
+// bar's open. The stop/target bracket is fill-relative (ticks) and is placed on the SAME bar as
+// the entry, so the fill bar is never unprotected (STUDY_PINE_PARITY / STUDY_V56). The ATR is
+// ta.ema(ta.tr(true), n), this branch's convention. The session clock is New York WITH seconds,
+// so a 30-second chart flattens correctly (STUDY_NINE_AM_RANGE section 28).
+//
+// COSTS ARE ON BY DEFAULT: $0.72 per contract per side (a real MNQ round turn is ~$1.44) and one
+// tick of slippage. A Strategy Tester report with zero costs is gross, not net.
+strategy("MA cross -- selectable fast/slow type (incl. LinReg)", shorttitle = "MA-X select",
+     overlay = true, pyramiding = 0, initial_capital = 50000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.72,
+     slippage = 1, process_orders_on_close = false)
+
+// ----------------------------------------------------------------------------- inputs
+grpM = "Moving averages"
+fType = input.string("LinReg", "Fast MA type", options = ["SMA", "EMA", "WMA", "RMA", "HMA", "VWMA", "LinReg", "DEMA", "TEMA"], group = grpM)
+fLen  = input.int(13, "Fast MA length", minval = 2, group = grpM)
+sType = input.string("EMA", "Slow MA type", options = ["SMA", "EMA", "WMA", "RMA", "HMA", "VWMA", "LinReg", "DEMA", "TEMA"], group = grpM)
+sLen  = input.int(48, "Slow MA length", minval = 2, group = grpM)
+src   = input.source(close, "Source", group = grpM)
+lrOff = input.int(0, "LinReg offset (0 = value at the current bar)", minval = 0, group = grpM, tooltip = "Applies to whichever side is LinReg. 0 is the fitted line's value at the current bar, which is what ta.linreg(src, len, 0) returns.")
+
+grpE = "Entries and exits"
+sideIn = input.string("Both", "Side", options = ["Long", "Short", "Both"], group = grpE)
+xMode  = input.string("Opposite cross", "Exit on", options = ["Opposite cross", "Stop / target only"], group = grpE, tooltip = "Opposite cross: a long is closed on the next bearish crossover (fast crosses back under slow) and a short on the next bullish one, with the stop/target bracket still live beside it. Stop / target only: the cross opens trades and only the bracket closes them. Measured on the 09:00-range breakout (STUDY_NINE_AM_RANGE section 17) an opposite-cross exit beat no such exit in 31% of cells, and closing the SAME number of trades at random bars did as well -- it is not measured on this rule.")
+revOnX = input.bool(true, "Reverse on the opposite cross (Side = Both)", group = grpE, tooltip = "On: when the opposite cross is itself a valid entry, the position flips in one order. Off: the opposite cross only EXITS; a new trade in the other direction then needs its own valid entry (with 'Fresh cross within N minutes' it can still come on a later bar).")
+crossMode = input.string("Cross bar only", "Take the trade", options = ["Cross bar only", "Fresh cross within N minutes"], group = grpE, tooltip = "Cross bar only: the entry must fire on the bar the crossover happens. Fresh cross within N minutes: the entry may fire on any later bar while the fast MA is still on the cross side and the cross is no older than N minutes -- which lets a cross that happened just before the session window opens, before the 09:00 range was complete, or while a trade was still open, be taken late. Each crossover gives AT MOST ONE trade either way, so a stop-out does not re-enter on the same cross.")
+freshMin = input.float(15, "Fresh cross window, MINUTES", minval = 0, step = 0.5, group = grpE, tooltip = "Declared in minutes and measured on the clock, so it means the same reach on a 30-second or a 15-minute chart. 0 is the same as 'Cross bar only'.")
+atrLen = input.int(14, "ATR length", minval = 1, group = grpE)
+stopMode = input.string("ATR", "Stop", options = ["Off", "ATR", "Points"], group = grpE)
+stopAtr  = input.float(2.0, "Stop, x ATR", minval = 0.1, step = 0.1, group = grpE)
+stopPts  = input.float(100.0, "Stop, points", minval = 0.0, step = 1.0, group = grpE)
+tgtMode  = input.string("Off", "Target", options = ["Off", "ATR", "Points"], group = grpE, tooltip = "No target has beaten every target tested on this branch more than twenty times; it stays optional.")
+tgtAtr   = input.float(3.0, "Target, x ATR", minval = 0.1, step = 0.1, group = grpE)
+tgtPts   = input.float(150.0, "Target, points", minval = 0.0, step = 1.0, group = grpE)
+
+grpS = "Session (New York time)"
+useWin   = input.bool(false, "Only open trades inside a window", group = grpS)
+winStart = input.int(570, "Window start, minutes after midnight NY (570 = 09:30)", minval = 0, maxval = 1439, group = grpS)
+winEnd   = input.int(960, "Window end, minutes after midnight NY (960 = 16:00)", minval = 1, maxval = 1440, group = grpS)
+useFlat  = input.bool(false, "Flatten at a fixed time", group = grpS, tooltip = "A hard flatten has cost a trend rule most of its edge in every study on this branch that measured it. Off by default.")
+flatMin  = input.int(960, "Flatten at, minutes after midnight NY", minval = 1, maxval = 1440, group = grpS)
+
+grpO = "09:00 range (ORB) confirmation"
+orbMode  = input.string("Off", "Range confirmation", options = ["Off", "Cross bar closes beyond range", "Cross and break within N minutes (either order)"], group = grpO, tooltip = "Off: every cross is eligible. Cross bar closes beyond range: a LONG cross must close above the 09:00 range high, a SHORT cross below the range low, on the same bar. Either order: the entry fires on whichever comes second -- the cross, or a close beyond the range -- provided the other happened within the window below, the MA state still agrees, and both are today. Nothing is taken before the range is complete.")
+orbStart = input.int(540, "Range start, minutes after midnight NY (540 = 09:00)", minval = 0, maxval = 1439, group = grpO)
+orbEnd   = input.int(545, "Range end (exclusive), minutes NY (545 = 09:05)", minval = 1, maxval = 1440, group = grpO, tooltip = "The range is every bar whose OPEN time is in [start, end). On a 15-minute chart 545 therefore takes the whole 09:00 bar (09:00-09:15); on a 30-second chart it takes ten bars. 555 = the 09:00 15m bar, 570 = 09:00-09:30. The 09:00 bar and the half hour measured the same rule on the 09:00 breakout.")
+orbWinMin = input.float(30, "Either-order window, minutes", minval = 0, step = 0.5, group = grpO, tooltip = "Declared in MINUTES and converted with the chart's bar length, so it means the same reach on any timeframe.")
+orbOnce  = input.bool(false, "One trade per side per day", group = grpO, tooltip = "Only when range confirmation is on: after one long (or short) has been opened today, further crosses on that side are ignored until tomorrow.")
+
+grpB = "Auto breakeven"
+beMode   = input.string("Off", "Auto breakeven", options = ["Off", "Points"], group = grpB, tooltip = "DEFAULT OFF. On the 09:00 breakout this ratchet, measured on a walker that fills a stop at the WORSE of its level and the next open, beat its own OFF twin in 7-8 of 60 cells at every secured offset -- 12%, where chance is 50% -- and the marginal was flat and negative at every distance (STUDY_NINE_AM_RANGE section 30). The mechanism: it arms on a favourable excursion and is taken out on the pullback. Not measured on this MA-cross rule.")
+bePts    = input.float(50, "Breakeven arms at, POINTS", minval = 1, step = 1, group = grpB, tooltip = "Favourable excursion from the FILL, in index points, that arms the ratchet. It arms on the bar that reaches it and can only BIND from the next bar -- inside one bar OHLC cannot say whether the excursion came before the pullback.")
+beOffset = input.float(5, "Secure, POINTS (0 = true breakeven)", minval = 0, step = 1, group = grpB, tooltip = "How far beyond the fill the moved stop sits. The threshold that makes the exit a WIN is the round turn, not zero (US30 ~2.29 points with this script's costs), so a true breakeven books a small loss. Securing more mostly RELABELS exits as wins without moving the money: at arm 50 the win rate rose ~0.41 while the trade count moved by 0-5.")
+
+// ----------------------------------------------------------------------------- the averages
+// Every type is computed on every bar and only the result is selected, so each ta.* call keeps a
+// continuous history whichever type is chosen.
+f_ma(x, len, typ, off) =>
+    e1 = ta.ema(x, len)
+    e2 = ta.ema(e1, len)
+    e3 = ta.ema(e2, len)
+    vSma = ta.sma(x, len)
+    vEma = e1
+    vWma = ta.wma(x, len)
+    vRma = ta.rma(x, len)
+    vHma = ta.hma(x, len)
+    vVwm = ta.vwma(x, len)
+    vLin = ta.linreg(x, len, off)
+    vDem = 2.0 * e1 - e2
+    vTem = 3.0 * e1 - 3.0 * e2 + e3
+    float out = vTem
+    if typ == "SMA"
+        out := vSma
+    else if typ == "EMA"
+        out := vEma
+    else if typ == "WMA"
+        out := vWma
+    else if typ == "RMA"
+        out := vRma
+    else if typ == "HMA"
+        out := vHma
+    else if typ == "VWMA"
+        out := vVwm
+    else if typ == "LinReg"
+        out := vLin
+    else if typ == "DEMA"
+        out := vDem
+    out
+
+maF = f_ma(src, fLen, fType, lrOff)
+maS = f_ma(src, sLen, sType, lrOff)
+crossUp = ta.crossover(maF, maS)
+crossDn = ta.crossunder(maF, maS)
+
+atrv = ta.ema(ta.tr(true), atrLen)
+
+// ----------------------------------------------------------------------------- the clock
+nyH = hour(time, "America/New_York")
+nyM = minute(time, "America/New_York")
+nyS = second(time, "America/New_York")
+nyMin = nyH * 60 + nyM + nyS / 60.0
+tfMin = timeframe.in_seconds(timeframe.period) / 60.0
+// an order written at this bar's close fills at the next bar's open, which is nyMin + tfMin
+fillMin = nyMin + tfMin
+inWin = not useWin or (fillMin >= winStart and fillMin < winEnd)
+// from the bar whose close is the last chance to be flat by flatMin until midnight, nothing opens
+// and anything still open is closed (this also catches a position carried over a missing bar)
+pastFlat = useFlat and fillMin >= flatMin
+
+// ----------------------------------------------------------------------------- the 09:00 range
+// Accumulated from the chart's own bars, reset on the New York calendar day and complete from the
+// close of the first bar that ends at or after orbEnd. Every block writing var state is guarded by
+// barstate.isconfirmed, so the Strategy Tester's recalculation checkboxes cannot change it.
+nyDay  = year(time, "America/New_York") * 10000 + month(time, "America/New_York") * 100 + dayofmonth(time, "America/New_York")
+newDay = nyDay != nyDay[1]
+inOrb  = nyMin >= orbStart and nyMin < orbEnd
+
+var float orbHi = na
+var float orbLo = na
+var float lastXUpT = na
+var float lastXDnT = na
+var float lastBrkUpT = na
+var float lastBrkDnT = na
+var bool  tookL = false
+var bool  tookS = false
+
+if barstate.isconfirmed and newDay
+    orbHi := na
+    orbLo := na
+    lastXUpT := na
+    lastXDnT := na
+    lastBrkUpT := na
+    lastBrkDnT := na
+    tookL := false
+    tookS := false
+if barstate.isconfirmed and inOrb
+    orbHi := na(orbHi) ? high : math.max(orbHi, high)
+    orbLo := na(orbLo) ? low : math.min(orbLo, low)
+
+orbReady = not na(orbHi) and not na(orbLo) and fillMin >= orbEnd
+brkUp = orbReady and close > orbHi
+brkDn = orbReady and close < orbLo
+freshUp = brkUp and not brkUp[1]
+freshDn = brkDn and not brkDn[1]
+winMs = orbWinMin * 60000.0
+xUpNear  = not na(lastXUpT) and time_close - lastXUpT <= winMs
+xDnNear  = not na(lastXDnT) and time_close - lastXDnT <= winMs
+bUpNear  = not na(lastBrkUpT) and time_close - lastBrkUpT <= winMs
+bDnNear  = not na(lastBrkDnT) and time_close - lastBrkDnT <= winMs
+
+// fresh cross: the MA state still agrees and the last crossover in that direction is at most
+// freshMin old (the cross bar itself counts). Clock based, never reset at midnight.
+var float lastCrossUpT = na
+var float lastCrossDnT = na
+var float usedCrossUpT = na
+var float usedCrossDnT = na
+freshMs = freshMin * 60000.0
+curUpT = crossUp ? time_close : lastCrossUpT
+curDnT = crossDn ? time_close : lastCrossDnT
+xFreshL = maF > maS and not na(curUpT) and time_close - curUpT <= freshMs
+xFreshS = maF < maS and not na(curDnT) and time_close - curDnT <= freshMs
+baseL = crossMode == "Fresh cross within N minutes" ? xFreshL : crossUp
+baseS = crossMode == "Fresh cross within N minutes" ? xFreshS : crossDn
+// one trade per crossover
+unusedL = na(usedCrossUpT) or curUpT != usedCrossUpT
+unusedS = na(usedCrossDnT) or curDnT != usedCrossDnT
+
+modeClose  = orbMode == "Cross bar closes beyond range"
+modeEither = orbMode == "Cross and break within N minutes (either order)"
+eitherL = (crossUp and (brkUp or bUpNear)) or (freshUp and maF > maS and xUpNear)
+eitherS = (crossDn and (brkDn or bDnNear)) or (freshDn and maF < maS and xDnNear)
+bool sigL = baseL
+bool sigS = baseS
+if modeClose
+    sigL := baseL and brkUp
+    sigS := baseS and brkDn
+else if modeEither
+    sigL := eitherL or (baseL and brkUp)
+    sigS := eitherS or (baseS and brkDn)
+sigL := sigL and unusedL
+sigS := sigS and unusedS
+
+// remember today's crosses and range breaks AFTER the signal is read, so the same-bar case is
+// the "closes beyond range" case and not a second match
+if barstate.isconfirmed
+    if crossUp
+        lastXUpT := time_close
+        lastCrossUpT := time_close
+    if crossDn
+        lastXDnT := time_close
+        lastCrossDnT := time_close
+    if brkUp
+        lastBrkUpT := time_close
+    if brkDn
+        lastBrkDnT := time_close
+
+// ----------------------------------------------------------------------------- bracket distances
+stopDist = stopMode == "ATR" ? stopAtr * atrv : stopMode == "Points" ? stopPts : na
+tgtDist  = tgtMode == "ATR" ? tgtAtr * atrv : tgtMode == "Points" ? tgtPts : na
+lossT = na(stopDist) or stopDist <= 0 ? na : math.max(1.0, math.round(stopDist / syminfo.mintick))
+profT = na(tgtDist) or tgtDist <= 0 ? na : math.max(1.0, math.round(tgtDist / syminfo.mintick))
+
+canLong  = sideIn == "Long" or sideIn == "Both"
+canShort = sideIn == "Short" or sideIn == "Both"
+okBar = barstate.isconfirmed and not na(maF) and not na(maS) and not na(atrv)
+onceOn = orbOnce and orbMode != "Off"
+wantL = sigL and canLong and inWin and not (onceOn and tookL)
+wantS = sigS and canShort and inWin and not (onceOn and tookS)
+
+// ----------------------------------------------------------------------------- auto breakeven
+// Arms on the bar whose favourable extreme reaches bePts from the fill; the moved stop is live
+// only from the NEXT bar. The target distance is the one captured AT ENTRY (pendTgt), so
+// re-issuing the exit cannot silently move the take profit (STUDY_V56). A stop written through
+// the market fills at the next open -- the worse of its level and the open -- which is the
+// corrected research fill (STUDY_NINE_AM_RANGE section 30).
+var bool  beArmed = false
+var float pendTgt = na
+if barstate.isconfirmed and beMode == "Points" and strategy.position_size != 0 and not beArmed
+    ep = strategy.position_avg_price
+    if not na(ep)
+        isLong = strategy.position_size > 0
+        fav    = isLong ? high - ep : ep - low
+        if fav >= bePts
+            beArmed := true
+            if isLong
+                strategy.exit("Lx", "L", stop = ep + beOffset, limit = na(pendTgt) ? na : ep + pendTgt)
+            else
+                strategy.exit("Sx", "S", stop = ep - beOffset, limit = na(pendTgt) ? na : ep - pendTgt)
+
+// ----------------------------------------------------------------------------- orders
+hasBracket = not na(lossT) or not na(profT)
+
+if okBar and pastFlat and strategy.position_size != 0
+    strategy.close_all(comment = "flatten")
+
+if okBar and not pastFlat
+    pos = strategy.position_size
+    // exits on the opposite cross (a reversal is handled by the entry below)
+    if xMode == "Opposite cross"
+        if pos > 0 and crossDn and not (wantS and revOnX)
+            strategy.close("L", comment = "opp cross")
+        if pos < 0 and crossUp and not (wantL and revOnX)
+            strategy.close("S", comment = "opp cross")
+    // entries: from flat, or a reversal when the opposite side is allowed and exits are on the cross
+    flatOrRev = pos == 0 or (xMode == "Opposite cross" and revOnX)
+    if wantL and pos <= 0 and flatOrRev
+        strategy.entry("L", strategy.long)
+        tookL := true
+        usedCrossUpT := curUpT
+        beArmed := false
+        pendTgt := tgtDist
+        if hasBracket
+            strategy.exit("Lx", "L", loss = lossT, profit = profT)
+    else if wantS and pos >= 0 and flatOrRev
+        strategy.entry("S", strategy.short)
+        tookS := true
+        usedCrossDnT := curDnT
+        beArmed := false
+        pendTgt := tgtDist
+        if hasBracket
+            strategy.exit("Sx", "S", loss = lossT, profit = profT)
+
+// ----------------------------------------------------------------------------- plots
+plot(maF, "fast MA", color = color.new(color.blue, 0), linewidth = 2)
+plot(maS, "slow MA", color = color.new(color.orange, 0), linewidth = 2)
+plotshape(okBar and crossUp, "cross up", shape.triangleup, location.belowbar, color.new(color.teal, 0), size = size.tiny)
+plotshape(okBar and crossDn, "cross down", shape.triangledown, location.abovebar, color.new(color.red, 0), size = size.tiny)
+plot(orbMode != "Off" and orbReady ? orbHi : na, "09:00 range high", color = color.new(color.green, 20), style = plot.style_linebr)
+plot(orbMode != "Off" and orbReady ? orbLo : na, "09:00 range low", color = color.new(color.red, 20), style = plot.style_linebr)
+plotshape(okBar and orbMode != "Off" and wantL, "confirmed long", shape.labelup, location.belowbar, color.new(color.teal, 40), size = size.tiny, text = "L")
+plotshape(okBar and orbMode != "Off" and wantS, "confirmed short", shape.labeldown, location.abovebar, color.new(color.red, 40), size = size.tiny, text = "S")
+
+var table hud = table.new(position.top_right, 2, 7, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "fast", text_size = size.tiny)
+    table.cell(hud, 1, 0, fType + " " + str.tostring(fLen), text_size = size.tiny)
+    table.cell(hud, 0, 1, "slow", text_size = size.tiny)
+    table.cell(hud, 1, 1, sType + " " + str.tostring(sLen), text_size = size.tiny)
+    table.cell(hud, 0, 2, "stop", text_size = size.tiny)
+    table.cell(hud, 1, 2, na(stopDist) ? "off" : str.tostring(stopDist, "#.##") + " pts = " + str.tostring(stopDist / atrv, "#.##") + " ATR", text_size = size.tiny)
+    table.cell(hud, 0, 3, "09:00 range", text_size = size.tiny)
+    table.cell(hud, 1, 3, orbMode == "Off" ? "off" : na(orbHi) ? orbMode + " -- no range yet today" : orbMode + "  " + str.tostring(orbLo, format.mintick) + " - " + str.tostring(orbHi, format.mintick), text_size = size.tiny)
+    table.cell(hud, 0, 4, "breakeven", text_size = size.tiny)
+    table.cell(hud, 1, 4, beMode == "Off" ? "off" : "arm +" + str.tostring(bePts, "#.#") + " pt, secure +" + str.tostring(beOffset, "#.#") + " pt", text_size = size.tiny)
+    table.cell(hud, 0, 5, "entry / exit", text_size = size.tiny)
+    table.cell(hud, 1, 5, (crossMode == "Cross bar only" ? "cross bar" : "fresh cross <= " + str.tostring(freshMin, "#.#") + " min") + " / " + (xMode == "Opposite cross" ? (revOnX ? "opp cross, reverse" : "opp cross, flat") : "stop/target"), text_size = size.tiny)
+    table.cell(hud, 0, 6, "edge claimed", text_size = size.tiny)
+    table.cell(hud, 1, 6, "none", text_size = size.tiny, text_color = color.red)
