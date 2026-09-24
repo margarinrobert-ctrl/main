@@ -558,7 +558,19 @@ def boot_edge(tr, n=2000, seed=0, col="pct"):
 
 
 def f_day(tr):
-    return tr["_day"].to_numpy() if "_day" in tr else tr["sig"].to_numpy() // 1
+    """The session key a DAY-block bootstrap groups on.
+
+    `_day` if the frame carries one, then `eday` -- the entry session, which every trade frame from
+    `na_opt.Ctx` / `na_s30.Ctx30` carries -- and only then the signal bar. The original fell straight
+    from `_day` to `sig`, which is unique per trade, so on those frames `boot_edge` silently became a
+    per-TRADE bootstrap while being reported as a day-block one (sections 22 and 24; corrected in
+    section 29). Small at <=2 trades a session and larger wherever trades cluster in one session.
+    """
+    if "_day" in tr:
+        return tr["_day"].to_numpy()
+    if "eday" in tr:
+        return tr["eday"].to_numpy()
+    return tr["sig"].to_numpy() // 1
 
 
 def attach_day(f, tr):

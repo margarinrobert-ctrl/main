@@ -4596,6 +4596,22 @@ whatever the bar size, so the MDE is still 10.74 pts/trade and the 1,073-trade r
 Finer bars fix the MEASUREMENT; only more calendar or more independent markets fix the RESOLUTION.
 See `docs/ib/STUDY_US30_SCALP_0711.md` section 20, `research/us30s/`.
 
+**A PINE THAT CLAMPS `tfMin` TO ONE MINUTE HALVES EVERY MINUTES-DECLARED REACH ON A 30-SECOND CHART,
+AND THE NAIVE FIX SWITCHES THE FLATTEN OFF.** The 09:00-range scripts computed
+`tfMin = math.max(1.0, timeframe.in_seconds(timeframe.period) / 60.0)`, so on 30 seconds "fresh cross
+within 7 minutes" ran as 7 BARS = 3.5 minutes while every study modelled 14 bars. Found by a
+timeframe-translation workstream and CONFIRMED against the user's own TradingView trade export:
+transcription agreement rose **70.4% -> 86.0%** and "ours only" trades fell 14 -> 2 once the research
+modelled what the script ran -- which overturned a same-day conclusion that blamed the mismatch on the
+price feed. Removing the clamp alone is WORSE: Pine's `minute()` is whole minutes, so the 10:59:00 and
+10:59:30 bars both read 659, `659 + 0.5 < 660`, and the 11:00 flatten never fires. The fix needs a
+seconds clock (`+ second(time, tz) / 60.0`) as well, and was proven bar by bar: identical on 1m-15m,
+one intended bar different on 30s. **Before attributing a transcription mismatch to the DATA, re-run
+the research under what the script actually computes** -- and read `tfMin`, `crossBars` and every
+`nyMin` comparison on a sub-minute chart. And **a declared selection rule for a holdout read needs a
+minimum trade count written into it**: one without it picked a 3-trade cell and spent the holdout on
+six events. See `docs/ib/STUDY_NINE_AM_RANGE.md` sections 27-29.
+
 ## Tooling
 
 | module | what it does |

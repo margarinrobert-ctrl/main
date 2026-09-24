@@ -1941,3 +1941,94 @@ test is not re-pointed after the fact.
 **The decision is the user's**: keep the 3.5-minute rule their TradingView record was produced by,
 with the units made honest so the dialog says what it does; or switch to the 7-minute rule the
 research intended, which scores worse on our file and has no record on their feed.
+
+---
+
+## 29. PF ≥ 1.5 on 30s, 2m, 3m, 4m, 5m and 15m — two workstreams, and what they settle
+
+The ask: feature engineering and deep learning "with timeframe parameters" to make the 09:00-range
+system profitable at PF ≥ 1.50 on 30s, 2m, 3m, 4m, 5m and 15m. Two parallel workstreams, each
+with a declared mandate, nulls in front and the MDE beside every number:
+`docs/ib/TEAM_TF_TRANSLATION.md` (`research/nineam/tfx/`) and `docs/ib/TEAM_TF_ML.md`
+(`research/nineam/tfml/`).
+
+**The constraint that governs everything, stated first by both:** every timeframe is resampled
+from the one 30-second file, and only **92 sessions** carry the 09:00 pre-open range. Seven
+timeframes are seven views of ONE sample — break events overlap at Jaccard 0.90–1.00 across every
+pair of timeframes — and 1,100 nominal pooled rows are 161 distinct breaks with an effective n of
+~406 at best, 92 sessions at the ceiling.
+
+### 29a. Translation: the collapse is units, then latency — and no timeframe resolves PF 1.5
+
+- **EMA 13/48 is a bar count**: 6.5/24 minutes at 30s, 195/720 at 15m. The fresh-cross gate keeps
+  34.8% of breaks at 30s and 6.9% at 15m, which is the whole 54 → 8 trade-count collapse. **Holding
+  the EMAs in MINUTES restores 58–74 trades on every timeframe** and brings 1m back almost exactly
+  (PF 1.466 against 1.601); a declared grid picked the minutes conversion independently.
+- **What kills 3m and above is not a parameter — it is the latency of a bar-close market order.**
+  The edge sits in the first 1–2 minutes after the touch; a 5-minute bar fills a median 65 points
+  past the range edge and a 15-minute bar 118. Holding the 30s rule, gate and exits fixed and ONLY
+  delaying the fill to a higher bar's close: PF 1.60 → 1.54 (1m), 1.65 (2m), **0.93 (3m), 1.08 (4m),
+  0.80 (5m), 0.75 (15m)**. At 4m and above 83–94% of triggers are bars already beyond the range.
+- **ATR(14) is inert** in this configuration (identical trades at 7, 14 and 45 on every timeframe).
+- Verdicts: **2m** reaches PF 1.63 on the second half but ~211 trades are needed to resolve it
+  (unresolvable); **3m** reaches 1.54 on the second half and 1.10 on research (the wrong shape); 30s,
+  1m, 4m, 5m and 15m do not reach it. **No cell on 1m–15m beats a matched random entry on any read**
+  (best p 0.185).
+
+### 29b. The meta layer: nothing was eligible, and the ladder confirms it
+
+- **Gate 1 fails on the research half at every timeframe, 0 of 7** (30s p 0.253), so under the
+  two-gate architecture no meta layer was eligible anywhere. The ladder was run anyway, as asked.
+- 29 causal features in seven families, **truncation audit 0 / 1,260**. The ninth
+  confirmation-is-the-trigger catch: `mom.gap > 0` passes **97.0%** of gated bars — the loose cross
+  gate restated as the EMA state.
+- Ridge → random forest → LightGBM → XGBoost → three MLP sizes (sklearn; torch was blocked by an
+  organization-policy 403 and not retried), purged session folds, uniqueness weights, a shuffled
+  twin beside every model: the regularised forest is best for the **sixth** time (OOF IC +0.077),
+  the twin wins 18% of cells, and **capacity is inert** (MLP 2×32 / 2×64 / 4×128: +0.022 / +0.065 /
+  +0.029).
+- **Feature engineering is subtractive again**: the six `rng.` range features ALONE score IC +0.172
+  against all 29 at +0.086 — STUDY_V66's shape a seventh time. Drop-one alone would have flagged
+  only `pre.`; keep-one found it.
+- **Gate 2: 0 of 14 cells clear either null, 0 of 14 uplifts exceed their MDE, 9 of 14 are
+  negative.** The one cell that raised the win rate (30s keep 0.5, 0.690 → 0.800) LOWERED PF and the
+  target-hit rate — it kept the +0.71-point breakeven scratches.
+- **A process defect, disclosed:** the pre-declared rule for the one holdout read had no trade floor
+  and selected a 15m cell with **3 research trades**; it was read as declared rather than swapped
+  after seeing the table, so the holdout was spent on 6 events and says nothing. A declared
+  selection rule needs a minimum count written into it.
+- 121 looks counted, `E[max t | noise]` 2.597; deflated Sharpe 0.218, FAIL. The win-rate lift PF 1.5
+  would need at each primary's realised win/loss sizes: +0.20 (1m), +0.24 (2m), +0.12 (3m), +0.25
+  (4m), +0.16 (5m); no cell delivered a positive lift at any of them.
+
+### 29c. What stands, for the rule actually traded (7 bars on 30s, `na_live.TV35`)
+
+| read | n | PF | %/trade | control |
+| --- | --- | --- | --- | --- |
+| all 92 sessions | 39 | 3.149 | +0.0593 | entry p 0.005–0.013 (two workstreams' draws); delivered/MDE 1.00× |
+| research half | 18–20 | 3.27 | +0.0519 | entry p 0.100 — **fails at 0.05** |
+| holdout half | 19–21 | 3.07 | +0.0657 | entry p 0.008 |
+| true day-block bootstrap | 39 | — | CI [+0.0151, +0.1003] | P(mean ≤ 0) 0.0045 |
+
+It holds its PF across the split — the right shape — and it is a SECOND LOOK at the same 92 sessions
+and one cell of a declared grid whose noise floor exceeds its research t. It is the rule to
+forward-test, not a result.
+
+### 29d. The day-block bootstrap, corrected
+
+`na_core.f_day` fell back from `_day` straight to `sig`, unique per trade, so on every `Ctx` trade
+frame `boot_edge` was a per-TRADE bootstrap reported as a day-block one. Fixed to key on `eday` —
+asserted identical to an explicit `_day`. Corrected figures: **§24 P(mean ≤ 0) 0.0002 → 0.0012
+(CI [+0.0216, +0.0876])**; **§22 0.018 → 0.0222 (CI [+0.0009, +0.0700])**. No conclusion changes at
+≤ 2 trades a session.
+
+### 29e. What would actually move it
+
+1. **More calendar with 09:00 pre-open coverage** — resampling adds no sessions; 2m needs ~211
+   trades at its second-half effect.
+2. **The user's own feed, per timeframe**: the minutes-converted settings run on 2m / 3m / 5m / 15m
+   charts in TradingView, each trade list exported and read by `tvlist/tv_trades.py` — the
+   transcription check first, then the statistics on a longer span than this file holds.
+3. **A resting stop order at the range edge** instead of a bar-close market order — the only thing
+   that addresses the latency that kills 3m and above. It needs its own parity harness, because a
+   resting order is exactly where this branch's fill models have gone wrong before.
