@@ -81,7 +81,7 @@ for tf in C.TFS:
                 row.update(p_gate=float((v >= up).mean()), null_sd=float(v.std(ddof=1)),
                            mde_uplift=2.802 * float(v.std(ddof=1)),
                            mde_kept=float(C.N.mde(row["kept_sd"], kst["n"])),
-                           p_boot=float((bo <= 0).mean()))
+                           p_boot=float((bo <= 0).mean()) if kst["n"] > 1 else np.nan)
             rows.append(row)
             print(f"  tf {tf:>4} keep {k} {src:5s} base n{bst['n']:>3} PF {bst['pf']:.3f} "
                   f"-> kept n{kst['n']:>3} PF {kst['pf']:.3f} uplift {up:+.4f}"
