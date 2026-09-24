@@ -1,0 +1,2 @@
+tf,keep,n_sig,kept_frac,base_n,base_pct,base_pf,base_hit,kept_n,kept_pct,kept_pf,kept_hit,uplift,p_gate,p_boot,mde_uplift,mde_kept
+15.0,0.7,6,0.3333333333333333,5,0.18662804913058478,inf,1.0,2,0.18568924870586956,inf,1.0,-0.0009388004247152248,0.5075,0.7565,0.24328115241172224,0.006833809264934379
