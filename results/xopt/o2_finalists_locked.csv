@@ -1,0 +1,9 @@
+cell,block,n,R,ctl,excess,makes_money,beats_control
+as published,research,378,-0.0447,-0.2512,0.2065,False,True
+as published,LOCKED,214,0.1423,-0.1383,0.2806,True,True
+Optuna excess,research,351,0.1375,-0.4083,0.5458,True,True
+Optuna excess,LOCKED,175,-0.2029,,,False,False
+Optuna excess_pf,research,357,0.317,-0.3013,0.6183,True,True
+Optuna excess_pf,LOCKED,214,-0.4585,-0.2244,-0.2341,False,False
+Optuna return,research,94,1.0787,,,True,False
+Optuna return,LOCKED,56,-0.072,,,False,False

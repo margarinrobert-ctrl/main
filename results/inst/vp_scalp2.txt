@@ -1,0 +1,71 @@
+
+==============================================================================================================================
+1. THE DISTANCE LADDER on research -- 'prior-session single print within X ATR above', and its mirror 'none within X'
+==============================================================================================================================
+  rung                                         keep%    n     PF   dPF%    Sh   total       R | ctl PF      p    [locked, descriptive: n PF]
+  single print within 0.5 ATR above               13  165  1.234   +6.0  1.54   +4.33 +0.0395 |  1.100  0.175    [ 107  1.335]
+  NO single print within 0.5 ATR above            87  702  1.135   -2.5  1.03  +11.60 +0.0207 |  1.152  0.715    [ 334  1.020]
+  single print within 1.0 ATR above               19  225  1.238   +6.4  1.63   +6.35 +0.0499 |  1.083  0.120    [ 125  1.119]
+  NO single print within 1.0 ATR above            81  669  1.091   -6.2  0.69   +7.58 +0.0085 |  1.151  0.935    [ 321  1.021]
+  single print within 1.5 ATR above               25  265  1.266   +8.8  1.86   +8.26 +0.0515 |  1.112  0.075    [ 150  1.327]
+  NO single print within 1.5 ATR above            75  629  1.065   -8.5  0.50   +5.12 +0.0006 |  1.146  0.985    [ 301  1.001]
+  single print within 2.0 ATR above               29  298  1.303  +12.0  2.16  +10.43 +0.0606 |  1.078  0.010    [ 163  1.410]
+  NO single print within 2.0 ATR above            71  598  1.032  -11.3  0.25   +2.48 -0.0104 |  1.142  1.000    [ 288  0.990]
+  single print within 3.0 ATR above               37  350  1.446  +24.2  2.84  +16.42 +0.0845 |  1.114  0.000    [ 187  1.382]
+  NO single print within 3.0 ATR above            63  534  1.072   -7.9  0.53   +4.86 -0.0081 |  1.135  0.910    [ 251  0.922]
+  single print within 4.0 ATR above               43  392  1.320  +13.4  2.21  +13.70 +0.0534 |  1.124  0.000    [ 211  1.426]
+  NO single print within 4.0 ATR above            57  479  1.080   -7.2  0.59   +4.88 -0.0017 |  1.126  0.780    [ 227  0.961]
+  single print within 5.0 ATR above               48  425  1.235   +6.1  1.69  +11.25 +0.0332 |  1.117  0.060    [ 226  1.309]
+  NO single print within 5.0 ATR above            52  436  1.095   -5.9  0.72   +5.16 +0.0136 |  1.119  0.675    [ 203  1.067]
+  single print within 6.0 ATR above               52  445  1.256   +7.9  1.82  +12.62 +0.0371 |  1.123  0.040    [ 234  1.290]
+  NO single print within 6.0 ATR above            48  402  1.108   -4.8  0.81   +5.47 +0.0202 |  1.124  0.565    [ 189  0.972]
+  single print within 8.0 ATR above               55  467  1.222   +5.0  1.59  +11.61 +0.0276 |  1.133  0.095    [ 242  1.241]
+  NO single print within 8.0 ATR above            45  370  1.087   -6.6  0.67   +4.15 +0.0170 |  1.122  0.700    [ 173  1.022]
+  by distance band (research):
+    single print 0-1 ATR above: research n  225 PF  1.238 R +0.0499 win  52.4   [locked n  125 PF  1.119]
+    single print 1-2 ATR above: research n  141 PF  1.087 R +0.0055 win  49.6   [locked n   67 PF  1.358]
+    single print 2-3 ATR above: research n  109 PF  1.282 R +0.0314 win  51.4   [locked n   59 PF  1.350]
+    single print 3-4 ATR above: research n   86 PF  1.198 R -0.0481 win  43.0   [locked n   44 PF  1.388]
+    single print 4-6 ATR above: research n   96 PF  0.966 R -0.0824 win  43.8   [locked n   41 PF  0.905]
+    single print 6-99 ATR above: research n   53 PF  1.136 R +0.0481 win  50.9   [locked n   19 PF  0.849]
+
+==============================================================================================================================
+2. WHAT IT CO-SELECTS -- pass rates of the other declared states inside vs outside the condition, on the research signal bars
+==============================================================================================================================
+  state                                         inside outside  ratio
+  close above prior TPO VAH                       37.1    64.9   0.57
+  close above prior VP VAH                        38.4    65.2   0.59
+  close above prior POC                           68.6    74.4   0.92
+  prior profile skewed low                        55.9    52.9   1.06
+  prior VA wide >= 3 ATR                          80.7    81.1   1.00
+  close above prior session high                   0.0    61.9   0.00
+  EMA13 > EMA48                                   63.7    80.5   0.79
+  EMA200 >= 1 ATR below                           56.8    78.1   0.73
+  ATR >= 1.0x ATR50                               82.8    81.0   1.02
+  single print within 2 ATR BELOW                 37.2    37.6   0.99
+  prior RTH high above close (psh not ok)        100.0    37.7   2.65
+
+  inside the condition, close vs prior session high (ATR): median -2.67  (outside +0.99);  prior VA width median 5.00 vs 4.69 ATR
+
+==============================================================================================================================
+3. MECHANISM -- exit mix, target-hit rate and fixed-horizon excursion, inside vs outside (research trades)
+==============================================================================================================================
+  inside (single print <= 3 ATR above)     n  350  stop   45%  target   50%  hold    5%   mean R +0.0845   MFE 4.11 ATR  MAE 3.69  MFE/MAE 1.11   p90 R 0.71
+  outside                                  n  534  stop   49%  target   47%  hold    4%   mean R -0.0081   MFE 4.06 ATR  MAE 4.44  MFE/MAE 0.91   p90 R 0.71
+  base                                     n  765  stop   48%  target   48%  hold    4%   mean R +0.0255   MFE 4.11 ATR  MAE 4.21  MFE/MAE 0.97   p90 R 0.71
+
+==============================================================================================================================
+4. BY YEAR (both blocks; the locked block is 2024-11-27 onward) -- which fold carries it
+==============================================================================================================================
+  2023: filtered n  179 PF  1.520 total   +9.50%   |  base n  398 PF  1.236 total  +10.99%
+  2024: filtered n  191 PF  1.432 total   +8.62%   |  base n  410 PF  1.139 total   +6.73%
+  2025: filtered n  167 PF  1.334 total   +8.23%   |  base n  346 PF  1.065 total   +3.30%
+
+==============================================================================================================================
+5. LOCKED, DESCRIPTIVE -- day-block bootstrap P(mean<=0), permutation drawdown percentile and MC p99 on the filtered locked trades
+==============================================================================================================================
+  filtered locked: n 187 mean +0.0531 %/trade  bootstrap P(mean<=0) 0.056  95% CI [-0.0119, +0.1224]
+  realised DD 4.69%  permutation percentile 0.45  MC median 5.12  p95 10.51  p99 13.12  (p99/realised 2.80x)
+  base locked:     n 389 mean +0.0154  bootstrap P(mean<=0) 0.233
+
+  total runtime 55s

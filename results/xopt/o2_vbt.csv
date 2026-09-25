@@ -1,0 +1,5 @@
+cell,engine_n,vbt_n,ratio,transcription,engine_usd,vbt_usd,gap_pct
+as published,593,586,0.9882,PASS,1.027,0.939,-8.6
+Optuna excess,525,466,0.8876,FAIL,0.318,-0.239,-175.3
+Optuna excess_pf,571,568,0.9947,PASS,-0.216,-0.135,37.7
+Optuna return,150,146,0.9733,PASS,8.421,6.657,-20.9

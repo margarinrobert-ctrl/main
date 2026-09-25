@@ -10,7 +10,7 @@ import sys
 import numpy as np
 import pandas as pd
 
-path = sys.argv[1] if len(sys.argv) > 1 else "/tmp/mega.npz"
+path = sys.argv[1] if len(sys.argv) > 1 else "results/mega/mega.npz"
 z = np.load(path)
 g = pd.DataFrame({k: z[k] for k in z.files})
 names = ["ib_minutes", "retr_pct", "stop_pct", "rr_mult", "side_mode", "break_buffer", "exit_mso"]

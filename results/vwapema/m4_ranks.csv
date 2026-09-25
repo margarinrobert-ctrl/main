@@ -1,0 +1,9 @@
+feed,cell,median_IS_rank,p10,p90,dispersion
+US100,As published,0.165,0.064,0.381,0.317
+US100,Optuna totR,0.926,0.735,0.994,0.259
+US100,Optuna pf,0.98,0.95,0.995,0.045
+US100,Optuna retdd,0.634,0.487,0.738,0.251
+US30,As published,0.485,0.246,0.799,0.553
+US30,Optuna totR,0.832,0.582,0.921,0.338
+US30,Optuna pf,0.975,0.809,0.985,0.176
+US30,Optuna retdd,0.985,0.785,1.0,0.215

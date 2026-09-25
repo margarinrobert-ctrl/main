@@ -1,0 +1,363 @@
+//@version=5
+// ================================================================================================
+// V65 -- the V61 CVD rule with the ENGINEERED FEATURE LAYER attached. NQ 15-minute.
+// Base rule unchanged from V61. Everything added here is DEFAULT OFF.
+// See docs/ib/STUDY_V61_FEATURES_15M.md.
+//
+// ============================ WHAT WAS BUILT, AND WHAT IT IS WORTH ============================
+// 51 causal features in 7 declared families were built from raw OHLCV and screened. Eight survived.
+// They are all here, computed exactly as the research computes them -- including a fixed-width
+// FRACTIONAL DIFFERENCE and a 3-state HIDDEN MARKOV MODEL run as a FILTERED forward recursion, both
+// of which are META FEATURES and neither of which can fire a trade.
+//
+// >>> THE HONEST SUMMARY, BEFORE THE DETAIL.
+// >>>   GATE 1 (the primary alone)   PASSES on both blocks: research p 0.006, locked p 0.005.
+// >>>   THE SCREEN                   passes at every stage -- 9 of 51 features clear p<=0.05
+// >>>                                against 2.6 expected, 0 exact duplicates, 18 of 51 stable
+// >>>                                across regimes against ~6.4 expected, all 8 kept features
+// >>>                                contribute incrementally on a drop-one.
+// >>>   GATE 2 (research)            PASSES: random forest uplift +0.1101 %/event at keep 40%,
+// >>>                                bootstrap p 0.006, same-selectivity random filter p 0.007.
+// >>>   THE LOCKED READ              DOES NOT CLEAR. PF 1.862 -> 2.707 on 56 of 125 events, but a
+// >>>                                random filter of the same size gives p 0.145.
+// >>> So the feature layer is real on research and underpowered out of sample. It ships DEFAULT OFF.
+// >>> The fix is MORE EVENTS -- the primary makes ~120 trades a year, so another year roughly
+// >>> doubles the locked sample -- not more searching, which only worsens the deflation.
+//
+// ============================ THE TWO PORTABLE FORMS, BOTH MEASURED ============================
+// A random forest cannot go into Pine. Two forms can, and both were measured before this was written
+// so the numbers below are the SCRIPT'S numbers and not the forest's.
+//
+//   RIDGE SCORE   standardise each feature with its RESEARCH mean and sd, multiply by a fixed
+//                 coefficient, add. Positive at EVERY keep fraction on BOTH blocks:
+//                   keep 70%  research 0.1140 %/ev PF 1.967 || locked n 91  0.1267 PF 2.057  p 0.187
+//                   keep 60%  research 0.1391      PF 2.216 || locked n 82  0.1266 PF 2.008  p 0.257
+//                   keep 50%  research 0.1096      PF 1.924 || locked n 70  0.1281 PF 1.977  p 0.285
+//                   keep 40%  research 0.1480      PF 2.332 || locked n 61  0.1233 PF 1.886  p 0.334
+//                 against a base of research 0.0697 PF 1.546 / locked 0.1022 PF 1.862.
+//                 It never clears its null. It is the only portable form that stays positive on both
+//                 blocks, which is why it is the one exposed.
+//
+//   COUNT 0..8    each feature cut at its research median and oriented by its research IC, counted.
+//                 MONOTONE ON RESEARCH (Spearman +0.667 across the rungs) and it INVERTS ON LOCKED:
+//                   T>=3  research 0.0914 PF 1.836 p 0.075 || locked 0.0889 PF 1.785 p 0.746
+//                   T>=5  research 0.1078 PF 2.450 p 0.190 || locked 0.0547 PF 1.591 p 0.836
+//                   T>=6  research 0.1228 PF 2.867 p 0.216 || locked 0.0263 PF 1.323 p 0.806
+//                 Every locked rung is BELOW the unfiltered base of 0.1022. It is here so the
+//                 inversion is visible, NOT as a recommendation. Do not trade the count.
+//
+// ============================ THREE THINGS THAT MATTER ABOUT THE FEATURES ============================
+// 1. THREE OF THE EIGHT RIDGE COEFFICIENTS HAVE THE OPPOSITE SIGN TO THEIR UNIVARIATE IC
+//    (vol.atr_pct IC -0.167 coef +0.035; regime.hmm_side IC +0.141 coef -0.038; trend.er60
+//    IC +0.119 coef -0.012). That is multicollinearity being exploited conditionally, and it is
+//    the least stable part of the model. If you only want the univariate readings, use the
+//    single-feature switches instead of the score.
+// 2. THE HMM's SIDEWAYS STATE IS VERY NEARLY REALISED VOLATILITY -- |rho| 0.945 with rv(96) on the
+//    signal bars. Do not read it as a regime discovery; it is a volatility reading with a Markov
+//    prior on top.
+// 3. THE HMM MUST BE READ FILTERED. STUDY_V27 measured a fit-on-all + SMOOTHED decode at locked
+//    PF 1.351 against the causal version of the same model at 0.973, on nearly identical trade
+//    counts, so the leak is invisible in the count. The recursion below is forward-only by
+//    construction: alpha_t depends on alpha_{t-1} and today's bar and on nothing after it.
+//
+// COSTS ARE NOT SET. Set commission and slippage in Properties before reading any number.
+// ONE MARKET: the CVD needs sub-bars and NQ is the only feed with 1-minute data behind this work.
+// ================================================================================================
+
+strategy("V65 CVD + engineered features", overlay = true,
+     default_qty_type = strategy.fixed, default_qty_value = 1, initial_capital = 100000,
+     calc_on_every_tick = false, process_orders_on_close = false, pyramiding = 0)
+
+gG = "Base rule (V61) -- unchanged"
+gC = "Order flow -- MINUTES, so it means the same on every chart"
+gM = "META LAYER -- everything here is DEFAULT OFF"
+gF = "Single features -- univariate, each with its own measured reading"
+gS = "Session"
+
+entN    = input.int(20, "Entry channel (bars)", minval = 2, group = gG)
+exitN   = input.int(20, "Exit channel (bars)", minval = 2, group = gG)
+stopN   = input.float(2.0, "Stop (ATR)", minval = 0.1, step = 0.1, group = gG)
+tpATR   = input.float(0.0, "Take profit (ATR, 0 = none)", minval = 0.0, step = 0.5, group = gG)
+maxHold = input.int(480, "Max hold (bars)", minval = 1, group = gG)
+
+pivMin  = input.int(90,  "Pivot half-width (minutes)", minval = 1, group = gC)
+winMin  = input.int(600, "Window (minutes)", minval = 1, group = gC)
+touchOk = input.bool(true, "Count a TOUCH of the channel as a break", group = gC)
+cvLTF   = input.string("1", "Volume-delta lower timeframe", group = gC,
+     options = ["1S", "5S", "10S", "30S", "1", "5"],
+     tooltip = "Must be STRICTLY LOWER than the chart timeframe or there is no delta at all.")
+
+metaMode = input.string("off", "Meta filter", group = gM,
+     options = ["off", "Ridge score (the only form positive on both blocks)",
+                 "Count 0-8 (INVERTS on locked -- shown, not recommended)"],
+     tooltip = "OFF is the default because the locked read does not clear its null (p 0.145). The ridge score is positive at every keep fraction on both blocks and never significant; the count is monotone on research and inverts on locked.")
+ridgeKeep = input.string("60%", "  ridge: keep the top", options = ["70%", "60%", "50%", "40%"],
+     group = gM,
+     tooltip = "Thresholds are the RESEARCH score quantiles, frozen: 70% -> 0.011065, 60% -> 0.037338, 50% -> 0.058696, 40% -> 0.079043. Locked results at each: 0.1267 / 0.1266 / 0.1281 / 0.1233 %/event against an unfiltered 0.1022.")
+countMin  = input.int(3, "  count: minimum score to take the trade", minval = 0, maxval = 8, group = gM)
+showHud   = input.bool(true, "Show the feature panel", group = gM)
+
+useRoc   = input.bool(false, "ROC(240) >= its research median (0.3500)", group = gF,
+     tooltip = "The strongest single feature: research IC +0.1870 against a shuffled twin's 95th percentile of 0.108, and the largest drop-one contribution of the eight (-0.150).")
+useAtrP  = input.bool(false, "ATR/price <= its research median (0.001225)", group = gF,
+     tooltip = "Research IC -0.1668. Calm bars score better on this base. Note its RIDGE coefficient is POSITIVE -- the univariate and conditional readings disagree.")
+useCvdZ  = input.bool(false, "fracdiff CVD z <= its research median (0.2785)", group = gF,
+     tooltip = "Research IC -0.1542. Both fracdiff z-scores are negative -- a high fractionally-differenced value predicts a worse event, which is mean reversion.")
+useSide  = input.bool(false, "HMM sideways posterior >= 0.002719", group = gF,
+     tooltip = "Research IC +0.1406. Correlates 0.945 with realised vol on the signal bars, so read it as a volatility state with a Markov prior, not as a regime discovery.")
+useEr20  = input.bool(false, "Efficiency ratio(20) >= 0.168116", group = gF,
+     tooltip = "Research IC +0.1239, and stable in all three volatility regimes.")
+useChop  = input.bool(false, "CHOP(48) <= 50.542118", group = gF,
+     tooltip = "Research IC -0.1236. CHOP is the best-behaved filter family on this branch.")
+useEr60  = input.bool(false, "Efficiency ratio(60) >= 0.100714", group = gF,
+     tooltip = "Research IC +0.1193. Its ridge coefficient is negative -- see the header note on sign flips.")
+useExc   = input.bool(false, "Channel excess <= 0.341443 ATR", group = gF,
+     tooltip = "Research IC -0.1149: a SMALLER break scores better, which is the same direction STUDY_V43 found from the excursion side.")
+
+sessOn = input.bool(false, "Restrict entries to a window", group = gS)
+startH = input.int(7,  "Start hour (New York)", minval = 0, maxval = 23, group = gS)
+stopH  = input.int(11, "Stop hour (New York)",  minval = 0, maxval = 23, group = gS)
+flatOn = input.bool(false, "Flatten at the stop time", group = gS,
+     tooltip = "MEASURED: adding a flatten to an all-hours run costs 0.4-0.5 profit factor on both timeframes and both blocks. The window alone is close to free.")
+
+// ---------------------------------------------------------------------------------------------
+// base series
+// ---------------------------------------------------------------------------------------------
+barMin = math.max(timeframe.in_seconds() / 60.0, 1.0 / 60.0)
+pivK   = math.max(1, int(math.round(pivMin / barMin)))
+cvWin  = math.max(1, int(math.round(winMin / barMin)))
+
+ltfDelta() =>
+    close > open ? volume : close < open ? -volume : 0.0
+
+dArr = request.security_lower_tf(syminfo.tickerid, cvLTF, ltfDelta())
+barDelta = array.size(dArr) > 0 ? array.sum(dArr) : 0.0
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := cvd + barDelta
+
+atrN   = ta.ema(ta.tr(true), 14)                  // NOT ta.atr, which is Wilder
+entHi  = ta.highest(high, entN)[1]
+exitLo = ta.lowest(low, exitN)[1]
+
+pvLow = ta.pivotlow(low, pivK, pivK)
+var float prevLowP = na
+var float prevLowC = na
+var bool exhaustedSellers = false
+if barstate.isconfirmed
+    exhaustedSellers := false
+    if not na(pvLow)
+        curP = pvLow
+        curC = cvd[pivK]
+        if not na(prevLowP)
+            exhaustedSellers := curP < prevLowP and curC > prevLowC
+        prevLowP := curP
+        prevLowC := curC
+sinceES = nz(ta.barssince(exhaustedSellers), 1000000)
+flowOk = sinceES <= cvWin - 1
+
+// ---------------------------------------------------------------------------------------------
+// FEATURE 1-2, 5-8: the six that are ordinary indicators
+// ---------------------------------------------------------------------------------------------
+f_roc240 = 100.0 * (close / close[240] - 1.0)
+f_atrPct = atrN / close
+
+er(len) =>
+    num = math.abs(close - close[len])
+    den = math.sum(math.abs(close - close[1]), len)
+    den > 0 ? num / den : na
+f_er20 = er(20)
+f_er60 = er(60)
+
+f_chop48 = 100 * math.log10(math.sum(ta.tr(true), 48)
+     / (ta.highest(high, 48) - ta.lowest(low, 48))) / math.log10(48)
+f_excess = (high - ta.highest(high, 20)[1]) / atrN
+
+// ---------------------------------------------------------------------------------------------
+// FEATURE 3: fixed-width FRACTIONAL DIFFERENCE of the log CVD, z-scored.
+// The weights w_k = -w_{k-1} (d - k + 1) / k are computed once, recursively, and truncated where
+// |w| < 1e-4 -- that truncation is what makes the window FIXED, so bar t uses a fixed number of
+// PRIOR bars and nothing after it. d = 0.8 was chosen by ADF on the RESEARCH block only.
+// The level shift uses a RUNNING minimum, not a full-sample one: the research used the global min,
+// which sits at bar 177 and therefore never binds after the warm-up, but a running min is causal by
+// construction and a global one is not.
+// ---------------------------------------------------------------------------------------------
+FFD_D = 0.8
+var float[] ffdW = array.new_float(0)
+if barstate.isfirst
+    wk = 1.0
+    array.push(ffdW, wk)
+    for k = 1 to 200
+        wk := -wk * (FFD_D - k + 1) / k
+        if math.abs(wk) < 0.0001
+            break
+        array.push(ffdW, wk)
+
+var float cvdMin = na
+if barstate.isconfirmed
+    cvdMin := na(cvdMin) ? cvd : math.min(cvdMin, cvd)
+logCvd = math.log(math.max(cvd - nz(cvdMin, cvd) + 1.0, 1e-9))
+
+ffdVal = 0.0
+nW = array.size(ffdW)
+if bar_index >= nW
+    for k = 0 to nW - 1
+        ffdVal += array.get(ffdW, k) * logCvd[k]
+else
+    ffdVal := na
+f_cvdZ = (ffdVal - ta.sma(ffdVal, 500)) / ta.stdev(ffdVal, 500)
+
+// ---------------------------------------------------------------------------------------------
+// FEATURE 4: the 3-state HMM, FILTERED. Parameters frozen from a Baum-Welch fit on the RESEARCH
+// block; states ordered by drift (bear, side, bull). The recursion is forward-only:
+//     alpha_t(j)  =  b_j(x_t) * sum_i alpha_{t-1}(i) A_ij ,   normalised each bar.
+// Nothing after bar t enters alpha_t. `posterior_smoothed` and Viterbi would, which is the leak.
+// ---------------------------------------------------------------------------------------------
+hmmR  = math.log(close / close[1]) * 100.0
+hmmV  = ta.stdev(math.log(close / close[1]), 96) * 100.0
+
+gauss(x1, x2, m1, m2, v1, v2) =>
+    z1 = (x1 - m1) * (x1 - m1) / math.max(v1, 1e-12)
+    z2 = (x2 - m2) * (x2 - m2) / math.max(v2, 1e-12)
+    math.exp(-0.5 * (z1 + z2)) / math.sqrt(math.max(v1, 1e-12) * math.max(v2, 1e-12))
+
+var float a0 = 1.0        // bear
+var float a1 = 0.0        // side
+var float a2 = 0.0        // bull
+var bool hmmOn = false
+
+if barstate.isconfirmed and not na(hmmV) and not na(hmmR)
+    b0 = gauss(hmmR, hmmV, -0.0020368, 0.1444047, 0.028904426, 0.001615946)
+    b1 = gauss(hmmR, hmmV,  0.0013277, 0.0649267, 0.003159376, 0.000153597)
+    b2 = gauss(hmmR, hmmV,  0.0020411, 0.0968317, 0.007966302, 0.000111857)
+    p0 = hmmOn ? (a0 * 0.936536 + a1 * 0.010475 + a2 * 0.016039) : 1.0
+    p1 = hmmOn ? (a0 * 0.004296 + a1 * 0.966870 + a2 * 0.029499) : 0.0
+    p2 = hmmOn ? (a0 * 0.059168 + a1 * 0.022655 + a2 * 0.954462) : 0.0
+    n0 = p0 * b0
+    n1 = p1 * b1
+    n2 = p2 * b2
+    tot = n0 + n1 + n2
+    if tot > 0 and not na(tot)
+        a0 := n0 / tot
+        a1 := n1 / tot
+        a2 := n2 / tot
+        hmmOn := true
+f_hmmSide = hmmOn ? a1 : na
+
+// ---------------------------------------------------------------------------------------------
+// the two portable meta forms
+// ---------------------------------------------------------------------------------------------
+zs(x, m, s) => (x - m) / s
+ridgeScore = 0.069665
+     + 0.100522 * zs(f_roc240,   0.366515,  1.411577)
+     + 0.035454 * zs(f_atrPct,   0.001299,  0.000643)
+     - 0.042431 * zs(f_cvdZ,     0.830523,  1.450333)
+     - 0.038275 * zs(f_hmmSide,  0.344640,  0.461228)
+     + 0.036386 * zs(f_er20,     0.187666,  0.133227)
+     - 0.020397 * zs(f_chop48,  50.360108,  7.320107)
+     - 0.012324 * zs(f_er60,     0.123946,  0.101950)
+     - 0.037647 * zs(f_excess,   0.469034,  0.545266)
+
+ridgeThr = ridgeKeep == "70%" ? 0.011065 : ridgeKeep == "60%" ? 0.037338
+     : ridgeKeep == "50%" ? 0.058696 : 0.079043
+
+cnt = (f_roc240  >= 0.349952   ? 1 : 0) + (f_atrPct  <= 0.001225   ? 1 : 0)
+     + (f_cvdZ    <= 0.278510  ? 1 : 0) + (f_hmmSide >= 0.002719   ? 1 : 0)
+     + (f_er20    >= 0.168116  ? 1 : 0) + (f_chop48  <= 50.542118  ? 1 : 0)
+     + (f_er60    >= 0.100714  ? 1 : 0) + (f_excess  <= 0.341443   ? 1 : 0)
+
+featsReady = not na(f_roc240) and not na(f_cvdZ) and not na(f_hmmSide) and not na(f_er20)
+     and not na(f_chop48) and not na(f_er60) and not na(f_excess) and not na(f_atrPct)
+
+metaOk = metaMode == "off" ? true
+     : not featsReady ? false
+     : metaMode == "Count 0-8 (INVERTS on locked -- shown, not recommended)" ? (cnt >= countMin)
+     : (ridgeScore >= ridgeThr)
+
+singleOk = (not useRoc  or f_roc240  >= 0.349952)
+     and (not useAtrP or f_atrPct  <= 0.001225)
+     and (not useCvdZ or f_cvdZ    <= 0.278510)
+     and (not useSide or f_hmmSide >= 0.002719)
+     and (not useEr20 or f_er20    >= 0.168116)
+     and (not useChop or f_chop48  <= 50.542118)
+     and (not useEr60 or f_er60    >= 0.100714)
+     and (not useExc  or f_excess  <= 0.341443)
+anySingle = useRoc or useAtrP or useCvdZ or useSide or useEr20 or useChop or useEr60 or useExc
+singleGate = not anySingle or (featsReady and singleOk)
+
+// ---------------------------------------------------------------------------------------------
+// session and orders -- V61's model, unchanged
+// ---------------------------------------------------------------------------------------------
+nyMin  = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+sStart = startH * 60
+sStop  = stopH * 60
+inWin  = not sessOn ? true
+     : sStart <= sStop ? (nyMin >= sStart and nyMin < sStop) : (nyMin >= sStart or nyMin < sStop)
+doFlat = sessOn and flatOn and not inWin
+
+broke  = touchOk ? (high >= entHi) : (high > entHi)
+gateOk = flowOk and metaOk and singleGate and inWin and atrN > 0 and not na(entHi)
+
+var float pendAtr = na
+var int   heldBars = 0
+if barstate.isconfirmed
+    heldBars := strategy.position_size > 0 ? heldBars + 1 : 0
+
+if barstate.isconfirmed and strategy.position_size == 0 and gateOk and broke
+    pendAtr := atrN
+    heldBars := 0
+    strategy.entry("L", strategy.long)
+    lossTk = stopN * pendAtr / syminfo.mintick
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", loss = lossTk,
+             profit = tpATR * pendAtr / syminfo.mintick)
+    else
+        strategy.exit("x", from_entry = "L", loss = lossTk)
+
+if barstate.isconfirmed and strategy.position_size > 0 and not na(pendAtr)
+    fillStop = strategy.position_avg_price - stopN * pendAtr
+    lvl = math.max(fillStop, nz(exitLo, fillStop))
+    lvl := math.min(lvl, close[1])
+    if tpATR > 0
+        strategy.exit("x", from_entry = "L", stop = lvl,
+             limit = strategy.position_avg_price + tpATR * pendAtr)
+    else
+        strategy.exit("x", from_entry = "L", stop = lvl)
+
+if barstate.isconfirmed and strategy.position_size > 0 and (doFlat or heldBars >= maxHold)
+    strategy.close_all(doFlat ? "flat" : "max hold")
+
+// ---------------------------------------------------------------------------------------------
+// display
+// ---------------------------------------------------------------------------------------------
+plot(entHi,  "Entry channel", color = color.new(color.teal, 50))
+plot(exitLo, "Exit channel",  color = color.new(color.maroon, 50))
+plotshape(exhaustedSellers, "Exhausted sellers (the gate)", shape.triangleup, location.belowbar,
+     color.new(color.lime, 0), size = size.small)
+
+var table hud = table.new(position.top_right, 3, 11, border_width = 1)
+cell(r, a, b, c, col) =>
+    table.cell(hud, 0, r, a, text_color = color.white, bgcolor = col, text_size = size.small)
+    table.cell(hud, 1, r, b, text_color = color.white, bgcolor = col, text_size = size.small)
+    table.cell(hud, 2, r, c, text_color = color.white, bgcolor = col, text_size = size.small)
+
+if barstate.islast and showHud
+    ltfBad = timeframe.in_seconds(cvLTF) >= timeframe.in_seconds()
+    hdr = color.new(color.teal, 20)
+    row = color.new(color.gray, 55)
+    cell(0, "V65 feature layer", "value", "cut / IC", hdr)
+    cell(1, "ROC(240)",        str.tostring(f_roc240, "#.###"),   ">= 0.350  IC +0.187", row)
+    cell(2, "ATR / price",     str.tostring(f_atrPct, "#.#####"), "<= 0.00123  IC -0.167", row)
+    cell(3, "fracdiff CVD z",  str.tostring(f_cvdZ, "#.###"),     "<= 0.279  IC -0.154", row)
+    cell(4, "HMM sideways",    str.tostring(f_hmmSide, "#.###"),  ">= 0.003  IC +0.141", row)
+    cell(5, "ER(20)",          str.tostring(f_er20, "#.###"),     ">= 0.168  IC +0.124", row)
+    cell(6, "CHOP(48)",        str.tostring(f_chop48, "#.##"),    "<= 50.54  IC -0.124", row)
+    cell(7, "ER(60)",          str.tostring(f_er60, "#.###"),     ">= 0.101  IC +0.119", row)
+    cell(8, "channel excess",  str.tostring(f_excess, "#.###"),   "<= 0.341  IC -0.115", row)
+    cell(9, "count / ridge",   str.tostring(cnt) + " of 8   " + str.tostring(ridgeScore, "#.####"),
+         metaMode == "off" ? "meta filter OFF" : (metaOk ? "PASS" : "blocked"),
+         metaOk or metaMode == "off" ? color.new(color.green, 45) : color.new(color.red, 45))
+    cell(10, ltfBad ? "CVD LTF NOT BELOW CHART" : "locked read did not clear",
+         ltfBad ? "no delta -- fix it" : "p 0.145 on 56 events",
+         ltfBad ? "" : "meta layer ships OFF",
+         ltfBad ? color.new(color.red, 10) : color.new(color.orange, 45))

@@ -1,0 +1,470 @@
+//@version=5
+// V20 -- Donchian 30/20 with a 50-period linear regression confirmation, exactly as briefed, and
+// the measurements that say the regression does not earn its place.
+//
+// ================================ THE SPEC, AS ASKED ================================
+//   entry     Donchian 30 break, market order at the next open, one unit
+//   confirm   a 50-period linear regression must support the move
+//   exit      the NEARER of 2.0 x ATR(14) and the 20-bar opposite channel | target 2R
+//   markets   US30, US100, NQ, an 8.5-year US30 history and 22 years of gold, 15m and 30m
+//
+// ================================ "SUPPORTING THE MOVE" HAS FOUR READINGS ================================
+// Picking whichever backtests best is how a spec becomes an overfit, so all four were declared in
+// advance, all four were run, and 4 readings x 5 markets x 2 timeframes = 40 research cells is the
+// multiplicity. What each adds over the SAME rule with no confirmation at all, pooled median:
+//
+//   reading                        15m       30m    markets helped
+//   A  slope > 0               -0.0151   -0.0082      40% / 40%
+//   B  forecast > close        -0.0534   +0.0023      20% / 60%
+//   C  close > value           +0.0049   +0.0028      60% / 80%   <- the best, and it is nothing
+//   D  slope>0 AND close>value -0.0046   +0.0090      40% / 60%
+//
+// The best reading adds **five thousandths of an R**, against a base that is losing 0.05 to 0.15 R
+// a trade. Nothing here rescues anything.
+//
+// ================================ AND THE MOST LITERAL READING IS BACKWARDS ================================
+// "Forecasting the move" reads most naturally as reading B -- the line extrapolated one bar ahead
+// sits above the current price. Share of bars passing each test, US30 15m:
+//
+//   reading                    all bars   BREAKOUT bars    lift
+//   A  slope > 0                  53.1%          78.2%    1.47x
+//   B  forecast > close           50.5%          12.1%    **0.24x**
+//   C  close > value              49.7%          89.1%    1.80x
+//   D  both                       21.8%          67.7%    3.11x
+//
+// **On a breakout bar the regression's forecast is BELOW the current price 88% of the time.** It has
+// to be: a breakout bar has just jumped above its own recent range, so price sits far above a line
+// fitted to that range, and one bar of extrapolation cannot catch up. Reading B is not a
+// confirmation of a breakout -- it is mechanically close to a rejection of one. And reading C, the
+// one that scores best, passes 89.1% of breakout bars, so it removes about a ninth of the trades and
+// adds no information. A breakout is already a directional event; a trend filter on top of it is
+// mostly redundant with the trigger.
+//
+// ================================ THE NUMBERS, LOCKED BLOCK, READING C ================================
+//   market      tf       n     EV(R)      PF     MAR   Sharpe   Sortino   control p
+//   US30       15m     366   +0.0487   1.085    0.76     0.70      0.79     0.006
+//   US100      15m     323   +0.0994   1.192    2.14     1.42      1.76     0.033
+//   NQ         15m     494   -0.0023   0.996   -0.03    -0.04     -0.04     0.395
+//   US30 8.5yr 15m    1548   -0.1373   0.794   -0.92    -2.21     -2.09     0.968
+//   XAU 22yr   15m    3670   -0.0546   0.910   -0.74    -0.86     -0.91     0.304
+//   US30       30m     190   +0.0174   1.032    0.13     0.21      0.20     0.098
+//   US100      30m     176   -0.0082   0.985   -0.09    -0.10     -0.10     0.458
+//   NQ         30m     281   +0.0163   1.030    0.20     0.19      0.20     0.364
+//   US30 8.5yr 30m     791   -0.0778   0.869   -0.77    -0.91     -0.84     0.874
+//   XAU 22yr   30m    1867   -0.0022   0.996   -0.05    -0.02     -0.02     0.236
+//
+//   Bootstrap P(mean daily R <= 0) at 30m on the locked block: 0.421, 0.551, 0.411, 0.965, 0.532.
+//   **Nothing is significant.** Cost stress: at 1.5x the assumed friction EVERY market is negative.
+//   Regression length is inert -- 20/30/50/75/100 give pooled -0.029/-0.030/-0.024/-0.021/-0.019,
+//   so the 50 is neither special nor rescuable by moving it.
+//
+// ================================ THE ONE CHANGE THAT IS WORTH MAKING ================================
+// The 2R target is the weakest part of the brief, and it is the seventh independent time this has
+// come out the same way. Holding the Donchian, the regression and the stop fixed and removing ONLY
+// the target, locked block, 30 minutes:
+//
+//   market      as briefed (2R)     no target        change
+//   US100        -0.0082 / 0.985   +0.1581 / 1.285   +0.166 R
+//   XAU          -0.0022 / 0.996   +0.1555 / 1.256   +0.158 R
+//   NQ           +0.0163 / 1.030   +0.0990 / 1.179   +0.083 R
+//   US30         +0.0174 / 1.032   +0.0049 / 1.008   -0.013 R
+//   US30 8.5yr   -0.0778 / 0.869   -0.0923 / 0.861   -0.015 R
+//
+// Better on three of five and by an order of magnitude more than it costs on the other two. The
+// target ships ON because the brief asked for it; `Use a take profit` turns it off.
+//
+// ================================ THE TRADING WINDOW AND THE FLATTEN ================================
+// Added on request, both OFF by default, and measured rather than offered. Seven windows and three
+// flatten times -- a set fixed in advance, not swept. Pooled EV in R across all five markets on the
+// LOCKED block, so points are never added across instruments:
+//
+//   entry window      US30     US100        NQ    US30L       XAU   POOLED    PF     n
+//   all hours      +0.0174   -0.0082   +0.0163  -0.0778   -0.0022  -0.0179  0.968  3305
+//   07:00-11:00    +0.0556   -0.0372   +0.0386  -0.0894   +0.0197  -0.0078  0.986  1891
+//   08:00-12:00    -0.0357   -0.0463   +0.0741  -0.0710   +0.0328  -0.0010  0.998  1928
+//   09:30-11:00    -0.1102   -0.0699   +0.1005  -0.0099   +0.0857  +0.0345  1.069  1185
+//   09:30-12:00    -0.1592   -0.1243   +0.0900  -0.0221   +0.0762  +0.0187  1.038  1376
+//   09:30-16:00    -0.1649   -0.0435   +0.0214  -0.0248   +0.0556  +0.0075  1.016  1779
+//   13:00-16:00    -0.2259   -0.0213   +0.0769  -0.0011   +0.0467  +0.0161  1.038   815
+//
+// Every window that STARTS at the 09:30 cash open is pooled-positive and every one that starts
+// before it is not, which is a real and consistent shape. But 09:30-11:00, the best of the seven,
+// is inconsistent underneath: it helps NQ (+0.1005), gold (+0.0857) and the 8.5-year US30 history
+// and it takes US30 to -0.1102 and US100 to -0.0699. Three of five, and it is the best of seven
+// tested, so it does not survive its own multiplicity. It ships as the default VALUE of the input
+// with the input itself OFF.
+//
+// The flatten costs money in every configuration measured:
+//
+//   configuration                 POOLED EV
+//   all hours, no flatten           -0.0179
+//   all hours, flatten 16:00        -0.0461
+//   all hours, flatten 19:00        -0.0360
+//   09:30-16:00, no flatten         +0.0075
+//   09:30-16:00, flatten 16:00      -0.0209
+//   09:30-16:00, flatten 19:00      +0.0035
+//
+// It truncates exactly the trades the channel exit exists to hold. THE FLATTEN FILLS AT THE NEXT
+// BAR'S OPEN -- `strategy.close_all()` issued at a bar's close cannot sell that close -- so the
+// research engine was changed to match the script rather than the other way round, and the figures
+// above are the script's.
+//
+// ================================ THE HONEST SUMMARY ================================
+// **This configuration does not have a demonstrable edge.** It is negative or indistinguishable
+// from zero on the two long histories, its bootstrap p-values run 0.41 to 0.97, it dies at 1.5x the
+// assumed spread, and the regression confirmation contributes about five thousandths of an R while
+// being 89% redundant with the trigger it is meant to confirm. It is shipped because it was asked
+// for and because the measurements belong with it, not because it should be traded as it stands.
+// ================================ ADX vs CHOP, MEASURED ================================
+// A 110-cell ADX x CHOP grid on this base, five markets, pooled in R. The population first: 22% of
+// cells have profit factor > 1 on research and 36% on locked, and the correlation between a cell's
+// research PF and its locked PF is **+0.035** -- so a ranking of this grid should not transfer.
+//
+//   family        cells   research PF   LOCKED PF   % of cells with PF>1 on locked
+//   ADX alone        10         0.959       0.961                10%
+//   CHOP alone        9         0.965       0.986                44%
+//   both             90         0.969       0.981                39%
+//   no filter         1         0.959       0.968                 0%
+//
+// CHOP's ladder is monotone on BOTH blocks -- ceiling 100/55/50/45/40/35 gives research
+// 0.959/0.965/0.992/1.007/1.029/1.027 and locked 0.968/0.971/0.986/1.022/1.015/1.044. ADX's is
+// flat: every floor from 10 to 40 sits between 0.911 and 0.977 on research and 0.951 and 1.025 on
+// locked.
+//
+// AGAINST A RANDOM FILTER OF THE SAME SELECTIVITY -- the only null a restrictive condition cannot
+// beat by being restrictive:
+//
+//   filter             research p   LOCKED p
+//   ADX >= 25              0.248      0.372     nothing
+//   ADX >= 40              0.736      0.269     nothing
+//   CHOP <= 50             0.003      0.133
+//   **CHOP <= 45**         0.005      0.015     <- the only setting clearing BOTH blocks
+//   CHOP <= 40             0.005      0.108
+//   CHOP <= 35             0.041      0.083
+//   ADX>=25 + CHOP<=35     0.040      0.215     <- ADX makes CHOP WORSE out of sample
+//   ADX>=18 + CHOP<=35     0.016      0.127
+//
+// WHY ADX FAILS AND CHOP DOES NOT, mechanically: on US30 breakout bars ADX >= 25 passes 55.6%
+// against 50.0% of bars in general -- a lift of **1.11x**, so it barely discriminates. CHOP <= 40
+// passes 41.1% against 21.3% -- a lift of **1.93x**. And 68.3% of the bars CHOP keeps already pass
+// ADX, so stacking them removes little that CHOP has not already removed.
+//
+// Against the harder minute-of-day matched control, CHOP <= 40 clears BOTH blocks only on US30
+// (p 0.016 research, 0.039 locked; CHOP <= 35 gives 0.010 and 0.001). On US100, NQ, the 8.5-year
+// US30 history and gold, research passes and the holdout does not. So: CHOP is a real filter and
+// ADX is not, but "real" here means it clears a selectivity null broadly and a drift-priced null on
+// one market of five.
+//
+// ================================ AND MOMENTUM ON TOP? MEASURED, AND NO ================================
+// A declared grid crossed momentum against the two regime filters on this base: 12 momentum
+// readings x 3 rungs (plus OFF) x 4 ADX floors x 4 CHOP ceilings x 2 timeframes = 1,184 cells, of
+// which 531 clear a 25-trade floor. NQ only -- every other feed was lost to a container recycle --
+// so this is two timeframes on one market, weaker than the five-market table above.
+//
+// THE POPULATION FIRST. 68.9% of cells have research PF > 1 and 54.9% keep it on locked, and a
+// cell's research PF correlates +0.489 with its locked PF. So the ranking half-transfers, and row 1
+// of 531 still carries a selection premium: the top 100 average research PF 1.369 and LOCKED 1.163.
+//
+// THE MARGINAL AVERAGE PER AXIS, which is how a grid should be read:
+//
+//   momentum setting   cells   research PF   LOCKED PF   LOCKED Sharpe   % cells locked PF>1
+//   tsi >= 5              14         1.113       1.151            0.36                  64%
+//   ao >= 0.25            14         1.185       1.133            0.34                  64%
+//   cmo14 >= 20           15         1.093       1.125            0.27                  60%
+//   **OFF (no momentum)** 17         1.061       1.037            0.09                  47%
+//   roc20 >= 2            13         1.099       0.947           -0.22                  23%
+//   aroon21 >= 80         10         1.089       0.939           -0.40                  10%
+//
+// **16 of the 36 momentum settings beat the no-momentum baseline on the locked block = 44%, where
+// chance is 50%.** That is V16's finding reproducing on a different base: 2,167 conditions there,
+// 28% beat the unfiltered rule out of sample.
+//
+// AGAINST A SAME-SELECTIVITY CONTROL, the three-way question asked directly:
+//
+//   configuration                       research PF / p        LOCKED PF / p
+//   30m  no filter (V20 default)          1.082   1.000          1.014   1.000
+//   30m  MOMENTUM alone (best cell)       1.252   0.003          0.977   0.750   <- inverts
+//   30m  **CHOP <= 45 alone**             1.191   0.000          1.138   **0.048**  <- clears BOTH
+//   30m  ADX >= 20 alone                  1.135   0.417          0.990   0.680
+//   30m  ADX >= 20 + CHOP <= 45           1.204   0.345          1.212   0.395
+//   30m  CHOP <= 45 + momentum            1.257   0.022          1.064   0.427
+//   30m  ALL THREE                        under 25 trades -- not scorable
+//   15m  MOMENTUM alone (best cell)       1.448   0.005          0.726   0.943   <- control WINS
+//
+// CHOP alone is the only cell that clears its control on both blocks. ADX makes it worse, momentum
+// makes it worse, and all three together does not have enough trades to score at all.
+//
+// WHY, MECHANICALLY -- the same reason V16 found. A breakout IS a momentum event, so a momentum
+// filter has almost nothing left to remove:
+//
+//   reading          all bars   BREAKOUT bars    lift   signals it removes
+//   rsi14 >= 55         39.9%           96.3%   2.41x                 3.7%
+//   stoch14 >= 70       37.4%           91.8%   2.46x                 8.2%
+//   cci21 >= 100        22.6%           89.0%   3.94x                11.0%
+//   slope50 >= 0        54.9%           77.8%   1.42x                22.2%
+//
+// The cleanest demonstration is in the grid itself: every momentum reading set at its zero rung --
+// `cmo14>=0`, `aroon21>=0`, `roc20>=0`, `tsmom20>=0`, `agree20_60>=0` -- reproduces the NO-MOMENTUM
+// row EXACTLY, same 277 research and 147 locked trades, same PF to three decimals. They are not
+// weak filters; on a breakout bar they are not filters at all.
+//
+// So the momentum input below ships OFF, like ADX. The configuration these measurements support is
+// the one already available: 30 minutes, CHOP on, ADX off, momentum off.
+//
+// ==========================================================================================
+
+strategy("V20 Donchian 30/20 + linear regression", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Timeframe          15 or 30 minutes; both were measured and both are in the header.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+// ======================================================================
+
+gE       = "Entry"
+donLen   = input.int(30, "Donchian breakout length", minval = 2, group = gE)
+useLong  = input.bool(true,  "Trade the LONG side", group = gE)
+useShort = input.bool(false, "Trade the SHORT side", group = gE,
+     tooltip="Off by default: the short mirror of this family loses on every market measured on this branch, and every sample here is a rising one.")
+
+gR       = "Linear regression confirmation"
+lrLen    = input.int(50, "Regression length", minval = 5, group = gR,
+     tooltip="Inert. 20/30/50/75/100 give pooled EV -0.029/-0.030/-0.024/-0.021/-0.019 across five markets -- the length is not a lever.")
+lrMode   = input.string("close>value", "Confirmation", options = ["off", "slope", "forecast", "close>value", "both"], group = gR,
+     tooltip="slope: the line is rising. forecast: the line one bar ahead is above price -- only 12.1% of breakout bars pass this, so it mostly REJECTS breakouts. close>value: price above the line, passes 89.1% of breakout bars and adds +0.005 R. both: slope and close>value together.")
+
+gRg      = "Regime filter -- CHOP earns its place, ADX does not"
+useChop  = input.bool(false, "Require CHOP(14) below a ceiling", group = gRg,
+     tooltip="CHOP <= 45 is the only regime setting that beats a random filter of the same selectivity on BOTH blocks (p 0.005 research, 0.015 locked). The pooled profit factor ladder is monotone on both: 100 -> 0.959/0.968, 50 -> 0.992/0.986, 45 -> 1.007/1.022, 40 -> 1.029/1.015, 35 -> 1.027/1.044.")
+chopMax  = input.float(45, "  CHOP ceiling", minval = 1, maxval = 100, step = 1, group = gRg)
+useAdx   = input.bool(false, "Require ADX(14) above a floor", group = gRg,
+     tooltip="OFF because it does nothing. Every ADX floor from 10 to 40 fails a same-selectivity control on both blocks (p 0.248 and 0.372 at 25). On breakout bars ADX >= 25 has a lift of 1.11x -- it barely discriminates. Adding it ON TOP of CHOP makes the holdout WORSE: CHOP<=35 alone p 0.083, with ADX>=25 p 0.215.")
+adxMin   = input.float(25, "  ADX floor", minval = 0, step = 1, group = gRg)
+useMom   = input.bool(false, "Require a MOMENTUM reading above a floor", group = gRg,
+     tooltip="OFF because it does not earn a place. 16 of 36 momentum settings beat the no-momentum baseline on the locked block -- 44%, where chance is 50%. The best momentum-only cell scores research p 0.003 and locked p 0.750 on 30m, and on 15m the control BEATS it (p 0.943). Adding momentum to CHOP<=45 takes the locked control p from 0.048 to 0.427. On a breakout bar RSI>=55 removes 3.7% of signals -- a breakout is already a momentum event.")
+momKind  = input.string("RSI", "  reading", options = ["RSI", "Stochastic K", "CMO", "CCI", "Awesome Osc", "MACD hist"], group = gRg)
+momLen   = input.int(14, "  reading length", minval = 2, group = gRg)
+momMin   = input.float(55, "  floor", step = 1, group = gRg,
+     tooltip="Defaults suit RSI. Stochastic K ~70, CMO ~20, CCI ~100, Awesome Osc ~0.25 (in ATR units), MACD hist ~0.05 (in ATR units).")
+
+gT       = "Trading window -- both OFF; the header has the measurements"
+useWin   = input.bool(false, "Restrict ENTRIES to a session", group = gT,
+     tooltip="Entries only. A trade already open keeps its stop, channel and target however long that takes -- use the flatten below if you also want it closed.")
+winSess  = input.session("0930-1100", "Entry session, New York time", group = gT,
+     tooltip="09:30-11:00 is the best of seven tested windows, taking pooled EV from -0.0179 to +0.0345. It helps NQ, gold and the 8.5-year US30 history and HURTS US30 (-0.1102) and US100 (-0.0699). Best of seven, inconsistent underneath -- a candidate, not a finding.")
+useFlat  = input.bool(false, "Flatten at a fixed time", group = gT,
+     tooltip="Costs money in every configuration measured: all hours -0.0179 -> -0.0461 at 16:00. It truncates the trades the channel exit exists to hold.")
+flatH    = input.int(16, "Flatten hour, New York", minval = 0, maxval = 23, group = gT)
+flatM    = input.int(0,  "Flatten minute", minval = 0, maxval = 59, group = gT)
+
+gRisk    = "ATR in real money -- reads the chart's own ticker"
+showRisk = input.bool(true, "Show the live ATR / risk panel", group = gRisk)
+riskMode = input.string("percent of equity", "Size risk by", options = ["percent of equity", "fixed cash"], group = gRisk)
+riskPct  = input.float(0.5, "  risk per trade, % of equity", minval = 0.01, step = 0.05, group = gRisk,
+     tooltip="Every figure in the research is ONE CONTRACT. Sizing changes the equity path and the drawdown; it does not change the per-trade edge.")
+riskCash = input.float(500, "  or a fixed cash amount", minval = 1, step = 50, group = gRisk)
+autoSize = input.bool(false, "Size positions from that risk instead of a fixed count", group = gRisk,
+     tooltip="OFF by default and it MATTERS: every number in the research and in this header is ONE CONTRACT. Turning this on changes the equity path, the drawdown and the compounding, and it does not change the per-trade edge -- sizing creates no edge. Read the backtest as a different experiment, not as an improved one.")
+
+gX       = "Exit"
+atrLen   = input.int(14, "ATR length", minval = 2, group = gX,
+     tooltip="ATR here is ema(TR, n), NOT ta.atr -- ta.atr is Wilder's RMA and a different series.")
+stopMult = input.float(2.0, "ATR stop multiple", minval = 0.1, step = 0.1, group = gX)
+exitCh   = input.int(20, "Donchian exit channel", minval = 2, group = gX)
+useTp    = input.bool(true, "Use a take profit", group = gX,
+     tooltip="Turning this OFF is the single change the measurements support: locked EV moves -0.008 to +0.158 on US100, -0.002 to +0.156 on gold and +0.016 to +0.099 on NQ. It ships on only because the brief asked for it.")
+tpR      = input.float(2.0, "  target, in R", minval = 0.1, step = 0.1, group = gX)
+qty      = input.int(1, "Contracts", minval = 1, group = gX)
+
+// ----------------------------------------------------------------- series
+atrN   = ta.ema(ta.tr(true), atrLen)
+entHi  = ta.highest(high, donLen)[1]     // ENTRY channels exclude this bar so a break is possible
+entLo  = ta.lowest(low,  donLen)[1]
+exLo   = ta.lowest(low,  exitCh)         // EXIT channels take NO [1]: placed at this close, live next bar
+exHi   = ta.highest(high, exitCh)
+
+// ta.linreg(source, n, 0) is the fitted value AT the current bar; the slope is that value minus the
+// same fit one bar back, and the one-bar-ahead forecast is the value plus the slope. Verified
+// against an explicit least-squares fit to 1e-6 in research/v20/v20linreg.py.
+lrVal  = ta.linreg(close, lrLen, 0)
+lrSlope = lrVal - ta.linreg(close, lrLen, 1)
+lrFc   = lrVal + lrSlope
+
+okLongC  = lrMode == "off" ? true : lrMode == "slope" ? lrSlope > 0 :
+     lrMode == "forecast" ? lrFc > close : lrMode == "close>value" ? close > lrVal :
+     (lrSlope > 0 and close > lrVal)
+okShortC = lrMode == "off" ? true : lrMode == "slope" ? lrSlope < 0 :
+     lrMode == "forecast" ? lrFc < close : lrMode == "close>value" ? close < lrVal :
+     (lrSlope < 0 and close < lrVal)
+
+// BARE `hour`/`minute` ARE EXCHANGE TIME IN PINE -- Chicago for CME, an hour off New York.
+// `time(timeframe.period, session, tz)` is na outside the session and resolves the timezone itself,
+// which also makes it survive both daylight-saving transitions.
+modNY   = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+inWin   = not useWin or not na(time(timeframe.period, winSess, "America/New_York"))
+flatNow = useFlat and modNY >= flatH * 60 + flatM
+
+// ---------------------------------------------------------- ATR IN THE CHART'S OWN UNITS
+// `syminfo.pointvalue` is the currency value of ONE FULL POINT of this symbol for one contract, and
+// `syminfo.mintick` is its smallest increment. Together they turn an ATR -- which is in points and
+// therefore means nothing across instruments -- into ticks and into money, automatically, for
+// whatever ticker the chart is on. Nothing here is hard-coded to a market.
+// CAVEAT WORTH KNOWING: these two fields come from the BROKER'S symbol record. On CFD and spot
+// symbols a broker sometimes reports a point value of 1 when the real contract is 100 units, so the
+// panel prints the raw fields as well as the derived money -- if `pt value` looks wrong, the money
+// column is wrong by the same factor and nothing else in the script is affected.
+tickMoney = syminfo.pointvalue * syminfo.mintick        // currency per tick, one contract
+atrPts    = atrN                                        // ATR in price points
+atrTicks  = atrN / syminfo.mintick
+atrMoney  = atrN * syminfo.pointvalue
+stopPts   = stopMult * atrN                             // the ATR leg of the working stop
+stopTicks = stopPts / syminfo.mintick
+stopMoney = stopPts * syminfo.pointvalue
+tgtPts    = useTp ? tpR * stopPts : na
+tgtMoney  = useTp ? tgtPts * syminfo.pointvalue : na
+riskAmt   = riskMode == "percent of equity" ? strategy.equity * riskPct / 100.0 : riskCash
+sizeSug   = stopMoney > 0 ? math.floor(riskAmt / stopMoney) : na
+
+// CHOP(14) = 100 * log10(sum(TR,14) / (14-bar range)) / log10(14). LOW means trending.
+chopV  = 100 * math.log10(math.sum(ta.tr(true), 14) /
+     math.max(ta.highest(high, 14) - ta.lowest(low, 14), syminfo.mintick)) / math.log10(14)
+[_p2, _m2, adxV] = ta.dmi(14, 14)        // returns [+DI, -DI, ADX] IN THAT ORDER
+// The momentum reading. CMO and the two ATR-normalised oscillators are written out rather than
+// borrowed so the script has no dependency on a library build.
+momUp   = math.sum(math.max(ta.change(close), 0), momLen)
+momDn   = math.sum(math.max(-ta.change(close), 0), momLen)
+cmoV    = momUp + momDn > 0 ? 100 * (momUp - momDn) / (momUp + momDn) : na
+medPr   = (high + low) / 2
+aoV     = (ta.sma(medPr, 5) - ta.sma(medPr, 34)) / math.max(atrN, syminfo.mintick)
+[mlV, msV, _mh] = ta.macd(close, 12, 26, 9)
+macdhV  = (mlV - msV) / math.max(atrN, syminfo.mintick)
+momV    = momKind == "RSI" ? ta.rsi(close, momLen) :
+     momKind == "Stochastic K" ? ta.stoch(close, high, low, momLen) :
+     momKind == "CMO" ? cmoV : momKind == "CCI" ? ta.cci(close, momLen) :
+     momKind == "Awesome Osc" ? aoV : macdhV
+
+regimeOk = (not useChop or (not na(chopV) and chopV <= chopMax))
+     and (not useAdx or (not na(adxV) and adxV >= adxMin))
+     and (not useMom or (not na(momV) and momV >= momMin))
+
+ready = not na(atrN) and atrN > 0 and not na(lrVal)
+sigL  = useLong  and ready and inWin and regimeOk and okLongC  and not na(entHi) and high > entHi
+sigS  = useShort and ready and inWin and regimeOk and okShortC and not na(entLo) and low  < entLo
+
+// The size actually sent. `sizeSug` is floored, so a stop bigger than the whole risk budget gives
+// zero -- that is a real answer and it is clamped to one contract rather than silently skipping the
+// trade, because a skipped trade would quietly change WHICH trades the backtest contains.
+tradeQty = autoSize ? int(math.max(1, na(sizeSug) ? 1 : sizeSug)) : qty
+
+// ----------------------------------------------------------------- state
+var float sigAtr    = na     // ATR FROZEN AT THE SIGNAL BAR; stop and target read this all trade
+var int   lastCnt   = 0
+var int   closedBar = na
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL -- docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    sigAtr := na
+    lastCnt := 0
+    closedBar := bar_index
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    lastCnt := strategy.opentrades
+
+// A position cannot re-arm on the bar it closed on -- the research lock requires the next signal to
+// be strictly after the exit bar, and Pine is already flat at that bar's close.
+flat = strategy.position_size == 0 and (na(closedBar) or bar_index > closedBar)
+
+// ----------------------------------------------------------------- entry, bracket riding with it
+// THE EXIT MUST BE LIVE ON THE ENTRY BAR. `stop` and `loss` together give exactly
+// max(ATR stop, channel) for a long: Pine takes whichever produces the SMALLER LOSS.
+lvlL = math.min(exLo, close)      // a sell stop cannot rest above the market
+lvlS = math.max(exHi, close)      // nor a buy stop below it
+
+if barstate.isconfirmed and flat
+    if sigL
+        sigAtr := atrN
+        strategy.entry("L", strategy.long, qty = tradeQty)
+        strategy.exit("x", from_entry = "L", stop = lvlL,
+             loss = int(math.max(1, math.round(stopMult * atrN / syminfo.mintick))),
+             profit = useTp ? int(math.max(1, math.round(tpR * stopMult * atrN / syminfo.mintick))) : na)
+    else if sigS
+        sigAtr := atrN
+        strategy.entry("S", strategy.short, qty = tradeQty)
+        strategy.exit("x", from_entry = "S", stop = lvlS,
+             loss = int(math.max(1, math.round(stopMult * atrN / syminfo.mintick))),
+             profit = useTp ? int(math.max(1, math.round(tpR * stopMult * atrN / syminfo.mintick))) : na)
+
+if barstate.isconfirmed and strategy.position_size != 0 and lastCnt > 0 and not na(sigAtr)
+    lTk = int(math.max(1, math.round(stopMult * sigAtr / syminfo.mintick)))
+    pTk = useTp ? int(math.max(1, math.round(tpR * stopMult * sigAtr / syminfo.mintick))) : na
+    if strategy.position_size > 0
+        strategy.exit("x", from_entry = "L", stop = lvlL, loss = lTk, profit = pTk)
+    else
+        strategy.exit("x", from_entry = "S", stop = lvlS, loss = lTk, profit = pTk)
+
+// ----------------------------------------------------------------- flatten
+// AFTER the working stop and target are placed, so a bar that hits either is a STOP or a TARGET and
+// not a flatten -- the resting orders are checked intrabar while `close_all` is a market order for
+// the next bar. The engine resolves them in the same order.
+if barstate.isconfirmed and strategy.position_size != 0 and flatNow
+    strategy.close_all(comment = "flat")
+
+// ----------------------------------------------------------------- plots
+plot(useLong  ? entHi : na, "Donchian 30 high", color = color.new(color.teal, 30))
+plot(useShort ? entLo : na, "Donchian 30 low",  color = color.new(color.maroon, 30))
+plot(lrVal, "Linear regression 50", color = color.new(color.orange, 0), linewidth = 2)
+plot(strategy.position_size > 0 ? lvlL : na, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+plot(strategy.position_size < 0 ? lvlS : na, "Working stop", color = color.fuchsia, style = plot.style_linebr)
+bgcolor(useWin and inWin ? color.new(color.teal, 94) : na, title = "entry window")
+
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V20 as briefed - NO demonstrable edge: bootstrap p 0.41 to 0.97, dies at 1.5x spread",
+         text_color = color.white, bgcolor = color.new(color.red, 20))
+    table.cell(hud, 0, 1, "The regression adds +0.005 R and passes 89% of breakout bars - it is redundant with the trigger",
+         text_color = color.white, bgcolor = color.new(color.orange, 20))
+    table.cell(hud, 0, 2, "Turning the take profit OFF is worth +0.08 to +0.17 R on three of five markets",
+         text_color = color.white, bgcolor = color.new(color.teal, 30))
+    table.cell(hud, 0, 3, "Momentum adds nothing: 44% of settings beat no-momentum out of sample, chance is 50%",
+         text_color = color.white, bgcolor = color.new(color.orange, 20))
+
+// ---------------------------------------------------------- the live ATR / risk panel
+var table rk = table.new(position.bottom_right, 2, 10, border_width = 1)
+if barstate.islast and showRisk
+    bg = color.new(color.gray, 88)
+    hd = color.new(color.teal, 25)
+    table.cell(rk, 0, 0, "ATR in real units", text_color = color.white, bgcolor = hd)
+    table.cell(rk, 1, 0, syminfo.ticker + "  " + timeframe.period, text_color = color.white, bgcolor = hd)
+    table.cell(rk, 0, 1, "tick size", bgcolor = bg)
+    table.cell(rk, 1, 1, str.tostring(syminfo.mintick, format.mintick), bgcolor = bg)
+    table.cell(rk, 0, 2, "pt value / tick value", bgcolor = bg)
+    table.cell(rk, 1, 2, str.tostring(syminfo.pointvalue, "#.##") + " / " +
+         str.tostring(tickMoney, "#.####") + " " + syminfo.currency, bgcolor = bg)
+    table.cell(rk, 0, 3, "ATR(" + str.tostring(atrLen) + ")", bgcolor = bg)
+    table.cell(rk, 1, 3, str.tostring(atrPts, format.mintick) + " pts  |  " +
+         str.tostring(atrTicks, "#.#") + " ticks  |  " +
+         str.tostring(atrMoney, "#.##") + " " + syminfo.currency, bgcolor = bg)
+    table.cell(rk, 0, 4, "stop = " + str.tostring(stopMult, "#.##") + " x ATR", bgcolor = bg)
+    table.cell(rk, 1, 4, str.tostring(stopPts, format.mintick) + " pts  |  " +
+         str.tostring(stopTicks, "#.#") + " ticks  |  " +
+         str.tostring(stopMoney, "#.##") + " " + syminfo.currency, bgcolor = bg)
+    table.cell(rk, 0, 5, useTp ? "target = " + str.tostring(tpR, "#.##") + "R" : "target", bgcolor = bg)
+    table.cell(rk, 1, 5, useTp ? str.tostring(tgtPts, format.mintick) + " pts  |  " +
+         str.tostring(tgtMoney, "#.##") + " " + syminfo.currency : "none", bgcolor = bg)
+    table.cell(rk, 0, 6, "risk per trade", bgcolor = bg)
+    table.cell(rk, 1, 6, str.tostring(riskAmt, "#.##") + " " + syminfo.currency +
+         (riskMode == "percent of equity" ? "  (" + str.tostring(riskPct, "#.##") + "% of " +
+         str.tostring(strategy.equity, "#") + ")" : ""), bgcolor = bg)
+    table.cell(rk, 0, 7, "contracts at that risk", bgcolor = bg)
+    table.cell(rk, 1, 7, na(sizeSug) or sizeSug < 1 ? "0 -- one contract already risks more" :
+         str.tostring(sizeSug, "#"), bgcolor = sizeSug >= 1 ? color.new(color.teal, 70) : color.new(color.red, 70))
+    table.cell(rk, 0, 8, "1 contract risks", bgcolor = bg)
+    table.cell(rk, 1, 8, str.tostring(stopMoney, "#.##") + " " + syminfo.currency + " = " +
+         str.tostring(stopMoney / math.max(strategy.equity, 1) * 100, "#.##") + "% of account", bgcolor = bg)
+    table.cell(rk, 0, 9, "the stop is the NEARER of this and the channel", text_color = color.white,
+         bgcolor = color.new(color.orange, 40))
+    table.cell(rk, 1, 9, "so the real risk is <= the figure above", text_color = color.white,
+         bgcolor = color.new(color.orange, 40))

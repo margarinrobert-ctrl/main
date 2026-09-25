@@ -24,7 +24,9 @@
  * `tuner.test.ts` asserts this reproduces `runBacktest` trade for trade.
  */
 import { clockFor, inWindow, type Clock } from "../clock";
-import { commissionPoints, pointsToUsd, roundTurnCostPoints, snap, takerSideCostPoints } from "../instruments";
+import { feePoints, fillFrictionPoints, type FillContext } from "../costs";
+import { pointsToUsd, snap } from "../instruments";
+import { trueRange } from "../series";
 import type { Bar, ExitReason, Instrument } from "../types";
 
 export const REASON = { stop: 1, target: 2, time: 3, session: 4, none: 0 } as const;
@@ -70,6 +72,18 @@ export interface ExitTensor {
   inst: Instrument;
   /** Bars per geometry that could actually open a trade — the control samples from these. */
   eligible: Uint8Array;
+  /**
+   * Spread + slippage for a TAKER fill landing on each bar, and for a STOP fill landing on each
+   * bar, in price units.
+   *
+   * These are per BAR, not per trade, which is the observation that keeps costs a read-time
+   * lookup even though slippage is now bar-dependent: friction is a function of the bar a fill
+   * lands on and the role it played, and the tensor already stores the exit bar and the exit
+   * reason. So the fill model, the broker and the cost multiplier all stay free to change without
+   * rebuilding anything, and the per-bar arrays cost 2n doubles instead of 2 x geometries x n.
+   */
+  frictionTaker: Float64Array;
+  frictionStop: Float64Array;
   bytes: number;
 }
 
@@ -97,6 +111,23 @@ export function buildTensor(spec: TensorSpec): ExitTensor {
   const reason = new Uint8Array(g * n);
   const gross = new Float64Array(g * n);
   const eligible = new Uint8Array(n);
+
+  // Slippage scales with how fast the bar was, measured against the instrument's own MEDIAN true
+  // range. Median rather than mean: bar ranges are heavy-tailed, and a mean is dragged up by the
+  // same fast bars the model is trying to charge extra for, flattening the effect being measured.
+  const tr = trueRange(bars);
+  const sorted = tr.filter((x) => Number.isFinite(x) && x > 0).sort((a, b) => a - b);
+  const medianTr = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+  const frictionTaker = new Float64Array(n);
+  const frictionStop = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const ctx: FillContext = {
+      volRatio: medianTr > 0 && Number.isFinite(tr[i]) ? tr[i] / medianTr : 1,
+      inSession: inWindow(clock.minuteOfDay[i], inst.session[0], inst.session[1]),
+    };
+    frictionTaker[i] = fillFrictionPoints(inst, "taker", ctx);
+    frictionStop[i] = fillFrictionPoints(inst, "stop", ctx);
+  }
 
   const allowed = spec.eligible;
   for (let i = 0; i < n; i++) {
@@ -172,26 +203,45 @@ export function buildTensor(spec: TensorSpec): ExitTensor {
     side,
     inst,
     eligible,
-    bytes: exitBar.byteLength + reason.byteLength + gross.byteLength,
+    frictionTaker,
+    frictionStop,
+    bytes: exitBar.byteLength + reason.byteLength + gross.byteLength + frictionTaker.byteLength + frictionStop.byteLength,
   };
 }
 
 // ------------------------------------------------------------------ costs, applied at read time
 export interface CostModel {
-  /** `taker` charges the full round turn either way; `realistic` lets a target rest. */
-  fillModel: "taker" | "realistic";
+  /**
+   * How orders reached the market. `taker` assumes every fill crossed the spread, including the
+   * target — conservative, and what a pure market-order system experiences. `realistic` lets a
+   * target rest, so it pays fees only. `passive` additionally treats the ENTRY as a resting limit;
+   * the tensor does not model whether such an entry would have filled, so use it only alongside a
+   * fill test, and read it as an upper bound on what execution can buy you.
+   */
+  fillModel: "taker" | "realistic" | "passive";
   /** Multiplier on every component. 2 is the standard stress case. */
   mult: number;
 }
 
 export const DEFAULT_COSTS: CostModel = { fillModel: "taker", mult: 1 };
 
-/** Cost in POINTS for a trade that exited for `why`. Affine, which is why it can live out here. */
-export function costPointsFor(inst: Instrument, costs: CostModel, why: number): number {
-  if (costs.fillModel === "taker") return roundTurnCostPoints(inst) * costs.mult;
-  const takerSide = takerSideCostPoints(inst) * costs.mult;
-  const exit = why === REASON.target ? 0 : takerSide;
-  return takerSide + exit + commissionPoints(inst) * costs.mult;
+/**
+ * Cost in POINTS for one trade: per-side fees, plus the spread and slippage each fill actually
+ * paid on the bar it landed on.
+ *
+ * The two halves are kept apart on purpose. Fees are constant per trade, so a different broker is
+ * free to try. Friction is bar-dependent, so it is looked up from the per-bar arrays the tensor
+ * built — which is what lets slippage depend on how fast the market was without giving up the
+ * property that every knob is a read-time lookup.
+ */
+export function costPointsFor(t: ExitTensor, costs: CostModel, why: number, entryBar: number, exitBar: number): number {
+  const fees = 2 * feePoints(t.inst);
+  const entry = costs.fillModel === "passive" ? 0 : t.frictionTaker[entryBar];
+  let exit: number;
+  if (why === REASON.stop) exit = t.frictionStop[exitBar];
+  else if (why === REASON.target && costs.fillModel !== "taker") exit = 0;
+  else exit = t.frictionTaker[exitBar];
+  return (fees + entry + exit) * costs.mult;
 }
 
 // ------------------------------------------------------------------ the walk
@@ -254,7 +304,7 @@ export function walk(
     const x = t.exitBar[base + i];
     if (x < 0) continue;
     const why = t.reason[base + i];
-    const net = t.gross[base + i] - costPointsFor(t.inst, costs, why);
+    const net = t.gross[base + i] - costPointsFor(t, costs, why, i + 1, x);
     const pnl = pointsToUsd(t.inst, net);
     free = x;
     s.n++;
@@ -343,6 +393,18 @@ export interface ControlResult {
   pAll: number;
   pResearch: number;
   pLocked: number;
+  /**
+   * The BASE RATE: what fraction of trades a random entry wins under this exact geometry.
+   *
+   * A win rate means nothing without it. The driftless bound for an R-multiple target is
+   * 1/(1+R), but the real base rate is not that -- costs push it down, a wider barrier pushes it
+   * back up, and drift lifts longs and sinks shorts. Measuring it from the same matched draws
+   * that price the dollars means a rule is always scored against its own geometry rather than
+   * against 50%.
+   */
+  meanWinPct: number;
+  /** One-sided p on the win rate specifically. */
+  pWin: number;
 }
 
 /**
@@ -359,7 +421,7 @@ export function matchedControl(
   costs: CostModel,
   lockedFromSession: number,
   sessionOfBar: ArrayLike<number>,
-  actual: { all: number; research: number; locked: number },
+  actual: { all: number; research: number; locked: number; winPct?: number },
   draws = 2000,
   seed = 7,
 ): ControlResult {
@@ -368,6 +430,7 @@ export function matchedControl(
   const perAll = new Float64Array(draws);
   const perRes = new Float64Array(draws);
   const perLok = new Float64Array(draws);
+  const winPct = new Float64Array(draws);
   const pick = new Int32Array(triggers.length);
   for (let d = 0; d < draws; d++) {
     let m = 0;
@@ -384,6 +447,7 @@ export function matchedControl(
     perAll[d] = st.n ? st.netUsd / st.n : 0;
     perRes[d] = st.nResearch ? st.netResearch / st.nResearch : 0;
     perLok[d] = st.nLocked ? st.netLocked / st.nLocked : 0;
+    winPct[d] = st.n ? (100 * st.wins) / st.n : 0;
   }
   const mean = (a: Float64Array) => a.reduce((x, y) => x + y, 0) / Math.max(a.length, 1);
   const p = (a: Float64Array, act: number) => {
@@ -399,5 +463,7 @@ export function matchedControl(
     pAll: p(perAll, actual.all),
     pResearch: p(perRes, actual.research),
     pLocked: p(perLok, actual.locked),
+    meanWinPct: mean(winPct),
+    pWin: actual.winPct === undefined ? NaN : p(winPct, actual.winPct),
   };
 }

@@ -93,5 +93,5 @@ for combo in itertools.product(*[SPACE[k] for k in keys]):
         print(f"  {done:,} evaluated, {len(rows):,} kept, {el:.0f}s", flush=True)
 
 R = np.array(rows, np.float32)
-np.save("/tmp/ema_rows.npy", R)
+np.save("results/ema/ema_rows.npy", R)
 print(f"\nevaluated {done:,} valid cells in {time.time()-t0:.0f}s; {len(R):,} had >=20 trades", flush=True)

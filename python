@@ -1,0 +1,3 @@
+### START 02:31:40  research/v69/run_r5.py
+stdbuf: failed to run command 'research/v69/run_r5.py': Permission denied
+### END 02:31:40 rc=126

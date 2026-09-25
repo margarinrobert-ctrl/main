@@ -1,0 +1,44 @@
+TFI -- an intraday TREND-FOLLOWING design from the library, measured the same way.
+
+Components (library entries): E2 the exit geometry (ATR stop, N-bar channel exit, one unit, NO
+target, market order at the next open); E3 an ADX floor as a regime gate; E4 the prior RTH
+session's HIGH as a level the breakout must also clear; E9 the session window. 15-minute NQ
+bars, entries 09:30-14:00, everything flat at the 15:45 close (the intraday constraint the
+branch has measured at about half the edge -- it is imposed by the brief). A target axis is
+included ONLY because the brief asks for a 66% win rate; the branch's evidence is that a
+target hurts a trend follower, and the grid will say so or not.
+
+Selection on research (first 65% of sessions) by marginal per axis and the two-feed shape
+check on US100 / US30; the locked block read once for the chosen cell and its neighbours,
+against a random-bar control with the identical geometry, session and lock.
+
+====================================================================================================
+A. GRID on NQ research (15m): 144 cells x 2 sides
+====================================================================================================
+
+  side +1: 144 cells with n >= 40; share PF > 1 93%, PF >= 1.5 0, win >= 66% 0; median R +0.0652
+    N     20: R +0.068 PF 1.16 win 52% (n 224)  55: R +0.067 PF 1.15 win 52% (n 205)
+    adx   0: R +0.060 PF 1.09 win 51% (n 264)  20: R +0.075 PF 1.17 win 52% (n 218)  25: R +0.067 PF 1.20 win 53% (n 162)
+    gate  False: R +0.052 PF 1.08 win 52% (n 258)  True: R +0.083 PF 1.22 win 53% (n 171)
+    stop  1.5: R +0.064 PF 1.13 win 51% (n 226)  2.5: R +0.071 PF 1.18 win 54% (n 203)
+    exN   10: R +0.066 PF 1.16 win 52% (n 215)  20: R +0.069 PF 1.15 win 53% (n 215)
+    tp    0.0: R +0.108 PF 1.22 win 44% (n 188)  0.75: R +0.033 PF 1.08 win 58% (n 232)  1.0: R +0.061 PF 1.15 win 54% (n 223)
+
+  side -1: 144 cells with n >= 40; share PF > 1 47%, PF >= 1.5 0, win >= 66% 0; median R -0.0082
+    N     20: R +0.011 PF 1.04 win 48% (n 181)  55: R -0.008 PF 1.01 win 47% (n 160)
+    adx   0: R -0.010 PF 0.98 win 48% (n 203)  20: R -0.005 PF 0.99 win 47% (n 173)  25: R +0.020 PF 1.10 win 48% (n 135)
+    gate  False: R -0.024 PF 0.95 win 46% (n 222)  True: R +0.027 PF 1.10 win 50% (n 119)
+    stop  1.5: R +0.020 PF 1.07 win 49% (n 180)  2.5: R -0.017 PF 0.98 win 47% (n 161)
+    exN   10: R -0.001 PF 1.02 win 47% (n 170)  20: R +0.004 PF 1.03 win 49% (n 170)
+    tp    0.0: R +0.032 PF 1.07 win 40% (n 151)  0.75: R -0.012 PF 1.00 win 55% (n 184)  1.0: R -0.015 PF 1.00 win 48% (n 176)
+
+  top 8 long cells by PF (n >= 40), research:
+     N  adx  gate  stop  exN    tp   n   win    pf     R  sharpe
+    55   20  True 2.500   10 0.000 145 0.490 1.420 0.140   1.113
+    55   20  True 2.500   20 0.000 145 0.503 1.402 0.143   1.092
+    55   20  True 1.500   20 0.000 156 0.391 1.342 0.179   0.938
+    55   25  True 2.500   20 0.000 117 0.530 1.335 0.095   0.873
+    55   25  True 2.500   10 0.000 117 0.513 1.334 0.085   0.858
+    20   25  True 2.500   10 0.000 119 0.504 1.332 0.086   0.855
+    20   25  True 2.500   20 1.000 134 0.552 1.332 0.080   0.942
+    20   20  True 2.500   10 0.000 149 0.477 1.328 0.112   0.914

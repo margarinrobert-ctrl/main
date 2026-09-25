@@ -1,0 +1,184 @@
+//@version=5
+// V19 -- what survived a full attempt to destroy it. A 1-HOUR Donchian breakout, long only, taken
+// only while price is above its own 200-day average.
+//
+// ================================ HOW THIS WAS ARRIVED AT ================================
+// The brief was to find the strongest genuinely robust edge, not to make a backtest profitable.
+// The starting point was V17's rule -- the one thing on this branch that had ever replicated --
+// frozen and run on four markets that had no part in finding it. IT FAILED: positive on one of
+// four, and that one was US100, the same index it was found on. 59.9% of its NQ signal bars are
+// also US100 signal bars at the identical timestamp (83.6% within two bars), and splitting US100
+// at the end of NQ's data collapses it from +0.2952 R to +0.0334. One footing, not two.
+//
+// The zero-cost variant then changed the diagnosis. At zero friction the rule is POSITIVE on all
+// four markets (+0.037 US30, +0.113 US30-8.5yr, +0.103 gold, +0.231 US100) while the round turn is
+// 8-11% of the stop on the three that fail against 3.1% on the one that does not. It did not lack
+// an edge; it lacked an edge large enough for its own cost. The only axis that changes cost-in-R
+// with a real mechanism is BAR SIZE, and the response was monotone on three markets and inverted
+// on the fourth -- the Nasdaq one:
+//
+//   EV in R          15m        30m        60m
+//   US30 8.5yr    -0.0218    +0.0663    +0.2511
+//   US30          -0.0445    +0.0483    +0.2177
+//   XAU 22yr      -0.0117    +0.0568    +0.1154
+//   US100         +0.1962    +0.0376    -0.0793     <- the NQ duplicate, and it goes the other way
+//
+// The GROSS edge rises with bar size too, so this is not cost arithmetic. Drop-one then removed
+// V17's own feature: at 60 minutes the session-high filter earns nothing and on the 8.5-year
+// history removing it IMPROVES the rule (+0.2511 -> +0.2554, control p 0.005 -> 0.001).
+//
+// ================================ THE TEST THAT DECIDED IT ================================
+// Three findings said "this is just long exposure": the SHORT MIRROR loses almost exactly what the
+// long side wins (-0.165 against +0.251 on the 8.5-year history), the edge lives ENTIRELY above the
+// 200-day (+0.2689 above against +0.0210 below; gold +0.2062 against -0.0464), and a minute-of-day
+// control on 60-minute bars has only about seven minutes to match on, so it prices the CLOCK and
+// not the DIRECTION.
+//
+// So the rule was restricted to the up state and scored against a control drawn from THE SAME
+// UP-TREND BARS -- the honest null for a regime-conditional rule:
+//
+//   market      trades   rule R   control median   p       excess per trade
+//   US30 8.5yr     263    +72.3          +21.9    0.004        +0.192
+//   XAU 22yr       659   +141.5          +78.8    0.032        +0.095
+//   US30            53     +7.4           +1.6    0.241        +0.108
+//
+// And against the blunter baseline -- EVERY eligible bar in the same up state with the identical
+// geometry, no breakout at all: US30 8.5yr +0.2750 against +0.0531, gold +0.2148 against +0.0948,
+// US30 +0.1391 against +0.0083. **The breakout adds +0.12 to +0.22 R per trade over simply being
+// long in that regime.** That is the finding.
+//
+// ================================ THE NUMBERS ================================
+//   market   span                     n     EV(R)     PF   win%   net R  maxDD   MAR  Sharpe  Sortino
+//   US30     2016-10 to 2025-07     263   +0.2750  1.597  44.1%   +72.3   15.5  4.67    0.90     0.65
+//   XAU      2004-06 to 2026-01     659   +0.2148  1.474  39.9%  +141.5   12.7 11.17    0.71     0.59
+//   US30-2y  2024-08 to 2026-08      53   +0.1391  1.290  37.7%    +7.4    7.0  1.06    0.56     0.38
+//   US100    2024-08 to 2026-08      63   -0.0723  0.876  20.6%    -4.6   13.6 -0.34   -0.30    -0.23
+//
+//   Bootstrap P(mean daily R <= 0): US30 8.5yr **0.0034**, gold **0.0005**, US30-2y 0.268.
+//   Walk-forward by year on the 8.5-year history: **6 of 9 positive** -- 2019, 2021 and 2022 are
+//   the losses, and they are small (-4.0, -1.4, -1.6) while 2024 alone is +27.8, which is 38% of
+//   the total. That concentration is a real risk, not a rounding note.
+//   Cost stress: still +0.138 (US30 8.5yr), +0.109 (gold) and +0.049 (US30-2y) at **3x** the
+//   assumed friction. Every spread in every feed here is an assumption, so this matters.
+//   Perturbation, one axis at a time on the 8.5-year history: entry length 40/45/55/65/75 gives
+//   +0.317/+0.289/+0.275/+0.266/+0.321 -- FLAT, so the Donchian length is not the mechanism; the
+//   exit channel RISES to 25 (+0.406) and the stop FALLS with width (1.75N gives +0.336). The
+//   shipped cell is deliberately not the peak on either axis.
+//
+// ================================ WHAT IS WRONG WITH IT ================================
+//   * **THE TIMEFRAME WAS CHOSEN AFTER LOOKING.** Three were compared; 60 minutes won. That one
+//     choice is post-hoc and no amount of downstream testing repairs it.
+//   * **IT DOES NOT CLEAR ITS OWN MULTIPLICITY.** This session took roughly sixty looks. Bonferroni
+//     over that needs about 0.0008; the best control p is 0.004.
+//   * **IT IS NOT ESTABLISHED ON THE NASDAQ.** US100 is negative at every setting tested at 60m.
+//   * **REALISED DRAWDOWN WAS LUCKY.** Monte Carlo puts the median at 22.4R against a realised 15.5
+//     on US30 and 38.6 against 12.7 on gold, with p99 at **60.8R and 98.8R**. Size for the p99.
+//   * **THE 200-DAY FILTER IS 98.0-99.0% IDENTICAL between the research construction and what this
+//     script can build** -- the residual is day-boundary bars. Read that as a real 1-2% difference
+//     between the rule tested and the rule run, not as noise.
+//
+// It is a drift-harvesting trend system with a defined stop that beats its own regime. It is not
+// an all-weather alpha, and in a bear market it will not trade.
+// ==========================================================================================
+
+strategy("V19 H1 trend breakout", overlay = true, pyramiding = 0,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     initial_capital = 100000, calc_on_every_tick = false, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_order, commission_value = 0.72, slippage = 2)
+
+// ===================== STRATEGY TESTER PROPERTIES =====================
+//   Script execution   ON BAR CLOSE only -- see docs/ib/STUDY_TICK_RECALC.md.
+//   Timeframe          1 HOUR. 15m and 30m were both tested and both are worse; on 15m the same
+//                      rules lose on three of four markets.
+//   Leverage Infinity  stops silent order rejection; then read DOLLAR drawdown, not %.
+// ======================================================================
+
+gE       = "Entry"
+donLen   = input.int(55, "Donchian breakout length", minval = 2, group = gE,
+     tooltip="Flat from 40 to 75 on the 8.5-year history (+0.317 to +0.266 R). The length is NOT the mechanism; it is here because a breakout needs one.")
+useTrend = input.bool(true, "Only above the 200-day average", group = gE,
+     tooltip="The whole result lives here. Above: +0.2689 R on the 8.5-year US30 and +0.2062 on gold. Below: +0.0210 and -0.0464. Turning this off does not make the strategy worse so much as make it a different, worse strategy.")
+trendLen = input.int(200, "Daily average length", minval = 20, group = gE)
+adxMin   = input.float(25, "ADX(14) floor", minval = 0, step = 1, group = gE,
+     tooltip="Helps on the indices (+0.177 -> +0.251 on the 8.5-year history) and HURTS on gold (+0.144 -> +0.115). Set it to 0 for metals.")
+
+gX       = "Exit"
+atrLen   = input.int(20, "ATR length", minval = 2, group = gX,
+     tooltip="ATR here is ema(TR, n), NOT ta.atr -- ta.atr is Wilder's RMA and a different series.")
+stopMult = input.float(2.5, "ATR stop multiple", minval = 0.1, step = 0.1, group = gX,
+     tooltip="1.75 scores better (+0.336 against +0.275) and is left alone deliberately -- the shipped cell is not the peak of its own perturbation.")
+exitCh   = input.int(20, "Donchian exit channel", minval = 2, group = gX,
+     tooltip="25 scores better (+0.406). Same reason.")
+qty      = input.int(1, "Contracts", minval = 1, group = gX)
+
+// ----------------------------------------------------------------- series
+atrN   = ta.ema(ta.tr(true), atrLen)
+entHi  = ta.highest(high, donLen)[1]     // ENTRY channel excludes this bar so a break is possible
+exLo   = ta.lowest(low, exitCh)          // EXIT channel takes NO [1]: placed at this close, live next bar
+[_pdi, _mdi, adxVal] = ta.dmi(14, 14)    // returns [+DI, -DI, ADX] IN THAT ORDER
+
+// THE `[1]` INSIDE THE SECURITY CALL IS THE WHOLE POINT. Without it this returns the value of the
+// CURRENTLY FORMING daily bar, which is not look-ahead but is NOT what the research computed --
+// the research keys on the last COMPLETED daily bar. The two differ on every bar of every day.
+// Measured agreement between the two constructions is 98.0-99.0%; the residual is day boundaries.
+dSma = request.security(syminfo.tickerid, "D", ta.sma(close, trendLen)[1],
+     lookahead = barmerge.lookahead_off)
+
+ready   = not na(atrN) and atrN > 0
+trendOk = not useTrend or (not na(dSma) and close >= dSma)
+sigL    = ready and trendOk and (not na(adxVal) and adxVal >= adxMin)
+     and not na(entHi) and high > entHi
+
+// ----------------------------------------------------------------- state
+var float sigAtr    = na     // ATR FROZEN AT THE SIGNAL BAR; the stop distance reads this all trade
+var int   lastCnt   = 0
+var int   closedBar = na
+
+// EVERY var-STATE BLOCK IS GUARDED, AND SO IS THE EXIT CALL -- docs/ib/STUDY_TICK_RECALC.md.
+if barstate.isconfirmed and strategy.position_size == 0 and lastCnt > 0
+    sigAtr := na
+    lastCnt := 0
+    closedBar := bar_index
+
+if barstate.isconfirmed and strategy.opentrades > lastCnt
+    lastCnt := strategy.opentrades
+
+// A position cannot re-arm on the bar it closed on -- the engine's lock requires the next signal to
+// be strictly after the exit bar, and Pine is already flat at that bar's close.
+flat = strategy.position_size == 0 and (na(closedBar) or bar_index > closedBar)
+
+// ----------------------------------------------------------------- entry, with the bracket riding
+// THE EXIT MUST BE LIVE ON THE ENTRY BAR -- the engine starts its walk at the fill bar.
+// `stop` and `loss` together give exactly max(ATR stop, channel): Pine takes whichever produces the
+// SMALLER LOSS, which for a long is the HIGHER of the two prices. Two separate orders race.
+lvlL = math.min(exLo, close)      // a sell stop cannot rest above the market
+
+if barstate.isconfirmed and flat and sigL
+    sigAtr := atrN
+    strategy.entry("L", strategy.long, qty = qty)
+    strategy.exit("x", from_entry = "L", stop = lvlL,
+         loss = int(math.max(1, math.round(stopMult * atrN / syminfo.mintick))))
+
+if barstate.isconfirmed and strategy.position_size != 0 and lastCnt > 0 and not na(sigAtr)
+    strategy.exit("x", from_entry = "L", stop = lvlL,
+         loss = int(math.max(1, math.round(stopMult * sigAtr / syminfo.mintick))))
+
+// ----------------------------------------------------------------- plots
+plot(entHi, "Donchian 55 high", color = color.new(color.teal, 30))
+plot(dSma, "200-day average", color = color.new(color.orange, 0), linewidth = 2)
+plot(strategy.position_size > 0 ? lvlL : na, "Working stop", color = color.fuchsia,
+     style = plot.style_linebr)
+bgcolor(useTrend and not na(dSma) and close >= dSma ? color.new(color.teal, 95) : na,
+     title = "above the 200-day")
+
+onTf = timeframe.period == "60"
+var table hud = table.new(position.top_right, 1, 4, border_width = 1)
+if barstate.islast
+    table.cell(hud, 0, 0, "V19 - 22yr gold PF 1.47 / 8.5yr US30 PF 1.60, beats its own regime p 0.004",
+         text_color = color.white, bgcolor = color.new(color.teal, 20))
+    table.cell(hud, 0, 1, onTf ? "1-hour chart" : "NOT 1h - 15m and 30m are both worse",
+         text_color = color.white, bgcolor = onTf ? color.new(color.teal, 45) : color.red)
+    table.cell(hud, 0, 2, "Size for the MC p99 drawdown (60R US30, 99R gold), not the realised 13-16R.",
+         text_color = color.white, bgcolor = color.new(color.orange, 20))
+    table.cell(hud, 0, 3, "Timeframe chosen post-hoc; fails on US100; does not clear its own multiplicity.",
+         text_color = color.white, bgcolor = color.new(color.red, 20))

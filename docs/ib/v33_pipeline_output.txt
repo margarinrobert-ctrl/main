@@ -1,0 +1,306 @@
+   US30 side +1: rescored 30,003; top score 0.6661, 0 saturated at 1.000, median trades/year in the top 400 359
+   US30 side -1: rescored 51,840; top score 0.2759, 0 saturated at 1.000, median trades/year in the top 400 400
+   NQ side +1: rescored 27,024; top score 0.9785, 0 saturated at 1.000, median trades/year in the top 400 104
+   NQ side -1: rescored 51,840; top score 0.3821, 0 saturated at 1.000, median trades/year in the top 400 117
+
+============================================================================================================================
+US30  side +1 LONG
+============================================================================================================================
+   BASELINE   tf 30m  Donchian 30/20  stop 2.0N  tp none  chop 40.0  adx None  session None  vol None  side LONG
+      base train   n   513  net   +120.2R  PF  1.420  Sharpe  +1.01  Sortino  +2.96  DD   20.6R  ret/DD  5.82  Calmar  0.90  win 0.357  R/trade +0.2342
+      base valid   n   177  net    -19.5R  PF  0.823  Sharpe  -0.66  Sortino  -1.52  DD   26.9R  ret/DD -0.72  Calmar -0.34  win 0.299  R/trade -0.1100
+
+   CANDIDATE  tf 60m  Donchian 40/20  stop 2.5N  tp 2.0R  chop 45.0  adx None  session (570, 960)  vol (2.5, 1.5)  side LONG
+   chosen as the CENTRE of the top-20 surviving region, not its top row
+      region tf        60:20
+      region entry_n   20:3  40:12  55:5
+      region exit_n    10:16  20:1  30:3
+      region stop      1.5:5  2.0:3  2.5:4  3.0:8
+      region tp_r      0.0:12  2.0:3  3.0:5
+      region chop_max  None:19  45.0:1
+      region adx_min   None:20
+
+      cand train   n   286  net    +26.8R  PF  1.191  Sharpe  +0.50  Sortino  +0.77  DD   16.4R  ret/DD  1.63  Calmar  0.25  win 0.395  R/trade +0.0936
+      cand valid   n   103  net     +6.9R  PF  1.136  Sharpe  +0.38  Sortino  +0.64  DD    6.8R  ret/DD  1.00  Calmar  0.47  win 0.388  R/trade +0.0667
+
+   --- PARAMETER PERTURBATION on VALID -- the whole ladder, not the minimum --------------------------------------------
+      entry_n     20:+0.22/1.07    30:+0.14/1.05   [40:+0.38/1.14]   55:+0.37/1.15 
+      exit_n      10:+0.43/1.16    15:+0.83/1.33   [20:+0.38/1.14]   30:+0.49/1.18 
+      stop        1.5:+0.38/1.14    2.0:+0.38/1.14   [2.5:+0.38/1.14]   3.0:+0.38/1.14 
+      tp_r        0.0:+0.25/1.11   [2.0:+0.38/1.14]   3.0:+0.68/1.30 
+      chop_max    None:+0.45/1.14    50.0:+0.65/1.23   [45.0:+0.38/1.14]   40.0:+0.07/1.03    35.0:+0.15/1.08 
+      adx_min    [None:+0.38/1.14]   20.0:+nan/nan    25.0:+nan/nan 
+      STABILITY SCORE (share of the whole ladder with PF>1 and Sharpe>0): 1.000
+
+   --- REGIME BREAKDOWN on VALID -- signal bars split, then re-simulated -----------------------------------------------
+      TREND  chop<=40          share  0.67  n   74  PF  1.029  Sharpe  +0.07  R +0.0143
+      CHOP   chop> 40          share  0.33  n   49  PF  1.242  Sharpe  +0.45  R +0.1173
+      HIGH vol pct>0.5         share  0.47  n   51  PF  1.492  Sharpe  +0.86  R +0.2406
+      LOW  vol pct<=.5         share  0.53  n   60  PF  0.777  Sharpe  -0.55  R -0.1108
+      BULL  >200MA             share  0.84  n   86  PF  1.287  Sharpe  +0.68  R +0.1340
+      BEAR  <=200MA            share  0.16  n   22  PF    nan  Sharpe   +nan  R -0.1376
+      HIGH momentum adx>=25    share  0.00  n    1  PF    nan  Sharpe   +nan  R +1.9796
+      LOW  momentum adx<25     share  1.00  n  103  PF  1.094  Sharpe  +0.27  R +0.0465
+      regimes with PF>1: 0.83
+
+   --- WALK-FORWARD over the whole series ------------------------------------------------------------------------------
+      fold 1  20161026-20180413    n   91  PF  1.349  Sharpe  +0.92   in the training span
+      fold 2  20180413-20190925    n   73  PF  1.245  Sharpe  +0.57   in the training span
+      fold 3  20190925-20210311    n   78  PF  1.298  Sharpe  +0.74   in the training span
+      fold 4  20210311-20220821    n   76  PF  0.799  Sharpe  -0.64   in the training span
+      fold 5  20220821-20240204    n   96  PF  1.398  Sharpe  +1.05   post-selection
+      fold 6  20240204-20250715    n   99  PF  1.297  Sharpe  +0.83   post-selection
+      folds with PF>1: 5/6   post-selection folds with PF>1: 2/2
+
+   --- COST STRESS on VALID --------------------------------------------------------------------------------------------
+      1.00x   n  103  PF  1.136  Sharpe  +0.38  R/trade +0.0667
+      1.25x   n  103  PF  1.120  Sharpe  +0.34  R/trade +0.0597
+      1.50x   n  103  PF  1.105  Sharpe  +0.30  R/trade +0.0526
+      2.00x   n  103  PF  1.075  Sharpe  +0.22  R/trade +0.0384
+      3.00x   n  103  PF  1.019  Sharpe  +0.06  R/trade +0.0101
+
+   --- MONTE CARLO on TRAIN+VALID -- bootstrap for the edge, permutation for the path ----------------------------------
+      edge      R/trade +0.0865  bootstrap [-0.0175, +0.1865]  P(R<=0) 0.083
+      PF        bootstrap [0.967, 1.408]  P(PF<=1) 0.083
+      drawdown  realised 16.8R   MC p50 16.8  p95 27.0  p99 31.4   realised percentile 0.496   SIZE FOR THE p99
+
+   --- DEFLATED SHARPE -- against 51,840 trials, not against zero ------------------------------------------------------
+      observed Sharpe +0.471   the Sharpe a search of this size produces under the NULL +1.458
+      skew +1.976  kurtosis 11.29  T 2138 days   DEFLATED SHARPE PROBABILITY 0.0016   DOES NOT PASS at 0.95
+
+   --- THE ONE READ OF OUT-OF-SAMPLE.  Nothing above may be changed after this line. -----------------------------------
+      BASE oos     n   205  net    +14.6R  PF  1.118  Sharpe  +0.33  Sortino  +1.13  DD   24.7R  ret/DD  0.59  Calmar  0.28  win 0.351  R/trade +0.0713
+      CAND oos     n   124  net    +23.9R  PF  1.412  Sharpe  +1.13  Sortino  +1.88  DD   10.5R  ret/DD  2.28  Calmar  1.06  win 0.411  R/trade +0.1928
+      GENERALIZATION GAP   Sharpe +0.690   PF +0.249   (OOS minus the mean of train and valid)
+      OOS bootstrap  R/trade +0.1928 [+0.0082, +0.3700]  P(R<=0) 0.043   P(PF<=1) 0.043
+
+============================================================================================================================
+US30  side -1 SHORT
+============================================================================================================================
+   BASELINE   tf 30m  Donchian 30/20  stop 2.0N  tp none  chop 40.0  adx None  session None  vol None  side SHORT
+      base train   n   484  net    -87.3R  PF  0.724  Sharpe  -1.02  Sortino  -2.14  DD   93.3R  ret/DD -0.94  Calmar -0.15  win 0.248  R/trade -0.1803
+      base valid   n   187  net    -13.9R  PF  0.882  Sharpe  -0.39  Sortino  -1.03  DD   34.8R  ret/DD -0.40  Calmar -0.19  win 0.241  R/trade -0.0744
+
+   CANDIDATE  tf 30m  Donchian 20/20  stop 2.5N  tp 3.0R  chop 40.0  adx 20.0  session (570, 960)  vol (2.5, 1.5)  side SHORT
+   chosen as the CENTRE of the top-20 surviving region, not its top row
+      region tf        15:2  30:18
+      region entry_n   20:20
+      region exit_n    15:6  20:12  30:2
+      region stop      1.5:5  2.0:5  2.5:7  3.0:3
+      region tp_r      2.0:18  3.0:2
+      region chop_max  40.0:20
+      region adx_min   None:7  20.0:7  25.0:6
+
+      cand train   n   312  net    -14.4R  PF  0.926  Sharpe  -0.21  Sortino  -0.38  DD   20.5R  ret/DD -0.70  Calmar -0.11  win 0.285  R/trade -0.0461
+      cand valid   n   124  net    -11.4R  PF  0.849  Sharpe  -0.46  Sortino  -0.77  DD   28.1R  ret/DD -0.41  Calmar -0.19  win 0.282  R/trade -0.0922
+
+   --- PARAMETER PERTURBATION on VALID -- the whole ladder, not the minimum --------------------------------------------
+      entry_n    [20:-0.46/0.85]   30:-0.46/0.85    40:-0.43/0.86    55:-0.38/0.87 
+      exit_n      10:-0.89/0.73    15:-0.51/0.83   [20:-0.46/0.85]   30:-0.48/0.85 
+      stop        1.5:-0.46/0.85    2.0:-0.46/0.85   [2.5:-0.46/0.85]   3.0:-0.46/0.85 
+      tp_r        0.0:-0.58/0.80    2.0:-0.50/0.86   [3.0:-0.46/0.85]
+      chop_max    None:-0.58/0.88    50.0:-0.76/0.82    45.0:-0.64/0.83   [40.0:-0.46/0.85]   35.0:-0.02/0.99 
+      adx_min     None:-0.38/0.87   [20.0:-0.46/0.85]   25.0:-0.45/0.85 
+      STABILITY SCORE (share of the whole ladder with PF>1 and Sharpe>0): 0.000
+
+   --- REGIME BREAKDOWN on VALID -- signal bars split, then re-simulated -----------------------------------------------
+      TREND  chop<=40          share  1.00  n  124  PF  0.849  Sharpe  -0.46  R -0.0922
+      CHOP   chop> 40          share  0.00  n    0  PF    nan  Sharpe   +nan  R    +nan
+      HIGH vol pct>0.5         share  0.85  n  104  PF  0.763  Sharpe  -0.72  R -0.1520
+      LOW  vol pct<=.5         share  0.15  n   28  PF    nan  Sharpe   +nan  R +0.1188
+      BULL  >200MA             share  0.18  n   32  PF  1.285  Sharpe  +0.38  R +0.1412
+      BEAR  <=200MA            share  0.82  n  101  PF  0.735  Sharpe  -0.81  R -0.1716
+      HIGH momentum adx>=25    share  0.99  n  122  PF  0.852  Sharpe  -0.45  R -0.0913
+      LOW  momentum adx<25     share  0.01  n    2  PF    nan  Sharpe   +nan  R -0.1456
+      regimes with PF>1: 0.20
+
+   --- WALK-FORWARD over the whole series ------------------------------------------------------------------------------
+      fold 1  20161026-20180413    n   81  PF  0.740  Sharpe  -0.81   in the training span
+      fold 2  20180413-20190925    n   97  PF  1.067  Sharpe  +0.18   in the training span
+      fold 3  20190925-20210311    n   82  PF  0.992  Sharpe  -0.02   in the training span
+      fold 4  20210311-20220821    n   89  PF  1.058  Sharpe  +0.15   in the training span
+      fold 5  20220821-20240204    n   97  PF  0.605  Sharpe  -1.38   post-selection
+      fold 6  20240204-20250715    n  103  PF  0.913  Sharpe  -0.28   post-selection
+      folds with PF>1: 2/6   post-selection folds with PF>1: 0/2
+
+   --- COST STRESS on VALID --------------------------------------------------------------------------------------------
+      1.00x   n  124  PF  0.849  Sharpe  -0.46  R/trade -0.0922
+      1.25x   n  124  PF  0.835  Sharpe  -0.51  R/trade -0.1020
+      1.50x   n  124  PF  0.821  Sharpe  -0.56  R/trade -0.1118
+      2.00x   n  124  PF  0.795  Sharpe  -0.65  R/trade -0.1314
+      3.00x   n  124  PF  0.746  Sharpe  -0.85  R/trade -0.1705
+
+   --- MONTE CARLO on TRAIN+VALID -- bootstrap for the edge, permutation for the path ----------------------------------
+      edge      R/trade -0.0592  bootstrap [-0.1769, +0.0572]  P(R<=0) 0.813
+      PF        bootstrap [0.729, 1.097]  P(PF<=1) 0.813
+      drawdown  realised 28.1R   MC p50 45.4  p95 62.2  p99 70.4   realised percentile 0.004   SIZE FOR THE p99
+
+   --- DEFLATED SHARPE -- against 51,840 trials, not against zero ------------------------------------------------------
+      observed Sharpe -0.284   the Sharpe a search of this size produces under the NULL +1.465
+      skew +3.179  kurtosis 22.14  T 2117 days   DEFLATED SHARPE PROBABILITY 0.0000   DOES NOT PASS at 0.95
+
+   --- THE ONE READ OF OUT-OF-SAMPLE.  Nothing above may be changed after this line. -----------------------------------
+      BASE oos     n   168  net     +9.6R  PF  1.093  Sharpe  +0.25  Sortino  +0.71  DD   20.5R  ret/DD  0.47  Calmar  0.22  win 0.292  R/trade +0.0572
+      CAND oos     n   112  net    -11.1R  PF  0.839  Sharpe  -0.51  Sortino  -0.78  DD   12.9R  ret/DD -0.86  Calmar -0.40  win 0.277  R/trade -0.0990
+      GENERALIZATION GAP   Sharpe -0.172   PF -0.049   (OOS minus the mean of train and valid)
+      OOS bootstrap  R/trade -0.0990 [-0.3100, +0.1272]  P(R<=0) 0.755   P(PF<=1) 0.755
+
+============================================================================================================================
+NQ  side +1 LONG
+============================================================================================================================
+   BASELINE   tf 30m  Donchian 30/20  stop 2.0N  tp none  chop 40.0  adx None  session None  vol None  side LONG
+      base train   n   224  net    +16.8R  PF  1.129  Sharpe  +0.42  Sortino  +1.19  DD   12.1R  ret/DD  1.39  Calmar  0.63  win 0.371  R/trade +0.0749
+      base valid   n    61  net    +28.5R  PF  2.073  Sharpe  +2.01  Sortino  +6.63  DD   11.6R  ret/DD  2.47  Calmar  3.38  win 0.475  R/trade +0.4679
+
+   CANDIDATE  tf 60m  Donchian 40/20  stop 2.5N  tp 2.0R  chop 50.0  adx None  session (570, 960)  vol (2.5, 1.5)  side LONG
+   chosen as the CENTRE of the top-20 surviving region, not its top row
+      region tf        60:20
+      region entry_n   30:2  40:2  55:16
+      region exit_n    10:8  20:10  30:2
+      region stop      1.5:9  2.0:2  2.5:2  3.0:7
+      region tp_r      0.0:3  2.0:15  3.0:2
+      region chop_max  None:3  50.0:12  45.0:5
+      region adx_min   None:20
+
+      cand train   n   117  net    +47.3R  PF  2.042  Sharpe  +2.23  Sortino  +3.92  DD    4.6R  ret/DD 10.24  Calmar  4.67  win 0.496  R/trade +0.4043
+      cand valid   n    41  net     +1.2R  PF  1.075  Sharpe  +0.22  Sortino  +0.29  DD    5.7R  ret/DD  0.21  Calmar  0.29  win 0.390  R/trade +0.0297
+
+   --- PARAMETER PERTURBATION on VALID -- the whole ladder, not the minimum --------------------------------------------
+      entry_n     20:-0.41/0.89    30:+0.25/1.09   [40:+0.22/1.08]   55:+0.49/1.20 
+      exit_n      10:+1.43/1.70    15:+0.59/1.24   [20:+0.22/1.08]   30:-0.93/0.74 
+      stop        1.5:+0.22/1.08    2.0:+0.22/1.08   [2.5:+0.22/1.08]   3.0:+0.22/1.08 
+      tp_r        0.0:+0.80/1.58   [2.0:+0.22/1.08]   3.0:+0.54/1.23 
+      chop_max    None:-0.15/0.95   [50.0:+0.22/1.08]   45.0:+0.38/1.15    40.0:+nan/nan    35.0:+nan/nan 
+      adx_min    [None:+0.22/1.08]   20.0:+nan/nan    25.0:+nan/nan 
+      STABILITY SCORE (share of the whole ladder with PF>1 and Sharpe>0): 0.842
+
+   --- REGIME BREAKDOWN on VALID -- signal bars split, then re-simulated -----------------------------------------------
+      TREND  chop<=40          share  0.65  n   28  PF    nan  Sharpe   +nan  R -0.0879
+      CHOP   chop> 40          share  0.35  n   21  PF    nan  Sharpe   +nan  R +0.0958
+      HIGH vol pct>0.5         share  0.35  n   19  PF    nan  Sharpe   +nan  R -0.1370
+      LOW  vol pct<=.5         share  0.65  n   25  PF    nan  Sharpe   +nan  R +0.0800
+      BULL  >200MA             share  0.81  n   33  PF  0.908  Sharpe  -0.26  R -0.0391
+      BEAR  <=200MA            share  0.19  n   10  PF    nan  Sharpe   +nan  R +0.0466
+      HIGH momentum adx>=25    share  0.00  n    0  PF    nan  Sharpe   +nan  R    +nan
+      LOW  momentum adx<25     share  1.00  n   41  PF  1.075  Sharpe  +0.22  R +0.0297
+      regimes with PF>1: 0.50
+
+   --- WALK-FORWARD over the whole series ------------------------------------------------------------------------------
+      fold 1  19352-19533          n   30  PF  2.875  Sharpe  +3.10   in the training span
+      fold 2  19533-19712          n   34  PF  1.553  Sharpe  +1.45   in the training span
+      fold 3  19712-19895          n   32  PF  2.120  Sharpe  +2.30   in the training span
+      fold 4  19895-20074          n   40  PF  1.850  Sharpe  +1.96   in the training span
+      fold 5  20074-20255          n   30  PF  0.604  Sharpe  -1.45   post-selection
+      fold 6  20255-20433          n   40  PF  0.983  Sharpe  -0.06   post-selection
+      folds with PF>1: 4/6   post-selection folds with PF>1: 0/2
+
+   --- COST STRESS on VALID --------------------------------------------------------------------------------------------
+      1.00x   n   41  PF  1.075  Sharpe  +0.22  R/trade +0.0297
+      1.25x   n   41  PF  1.057  Sharpe  +0.16  R/trade +0.0225
+      1.50x   n   41  PF  1.038  Sharpe  +0.11  R/trade +0.0153
+      2.00x   n   41  PF  1.002  Sharpe  +0.01  R/trade +0.0009
+      3.00x   n   41  PF  0.935  Sharpe  -0.20  R/trade -0.0278
+
+   --- MONTE CARLO on TRAIN+VALID -- bootstrap for the edge, permutation for the path ----------------------------------
+      edge      R/trade +0.3071  bootstrap [+0.1489, +0.4643]  P(R<=0) 0.000
+      PF        bootstrap [1.337, 2.369]  P(PF<=1) 0.000
+      drawdown  realised 5.7R   MC p50 6.9  p95 10.8  p99 13.5   realised percentile 0.245   SIZE FOR THE p99
+
+   --- DEFLATED SHARPE -- against 51,840 trials, not against zero ------------------------------------------------------
+      observed Sharpe +1.821   the Sharpe a search of this size produces under the NULL +2.510
+      skew +1.916  kurtosis 8.36  T 721 days   DEFLATED SHARPE PROBABILITY 0.0971   DOES NOT PASS at 0.95
+
+   --- THE ONE READ OF OUT-OF-SAMPLE.  Nothing above may be changed after this line. -----------------------------------
+      BASE oos     n    78  net     -1.0R  PF  0.976  Sharpe  -0.10  Sortino  -0.20  DD   10.8R  ret/DD -0.09  Calmar -0.12  win 0.423  R/trade -0.0126
+      CAND oos     n    47  net     -1.4R  PF  0.937  Sharpe  -0.21  Sortino  -0.42  DD    5.3R  ret/DD -0.26  Calmar -0.36  win 0.447  R/trade -0.0296
+      GENERALIZATION GAP   Sharpe -1.438   PF -0.621   (OOS minus the mean of train and valid)
+      OOS bootstrap  R/trade -0.0296 [-0.2973, +0.2378]  P(R<=0) 0.595   P(PF<=1) 0.595
+
+============================================================================================================================
+NQ  side -1 SHORT
+============================================================================================================================
+   BASELINE   tf 30m  Donchian 30/20  stop 2.0N  tp none  chop 40.0  adx None  session None  vol None  side SHORT
+      base train   n   195  net    -13.8R  PF  0.894  Sharpe  -0.37  Sortino  -1.07  DD   40.2R  ret/DD -0.34  Calmar -0.16  win 0.256  R/trade -0.0705
+      base valid   n    60  net    +20.9R  PF  1.642  Sharpe  +1.57  Sortino  +5.90  DD    4.8R  ret/DD  4.31  Calmar  5.90  win 0.383  R/trade +0.3479
+
+   CANDIDATE  tf 30m  Donchian 40/20  stop 2.5N  tp 3.0R  chop 35.0  adx 20.0  session (570, 960)  vol (2.5, 1.5)  side SHORT
+   chosen as the CENTRE of the top-20 surviving region, not its top row
+      region tf        15:2  30:18
+      region entry_n   30:1  40:19
+      region exit_n    10:2  20:4  30:14
+      region stop      1.5:8  2.0:5  2.5:3  3.0:4
+      region tp_r      2.0:18  3.0:2
+      region chop_max  40.0:18  35.0:2
+      region adx_min   None:8  20.0:7  25.0:5
+
+      cand train   n    65  net     -1.0R  PF  0.971  Sharpe  -0.06  Sortino  -0.08  DD   11.7R  ret/DD -0.08  Calmar -0.04  win 0.369  R/trade -0.0152
+      cand valid   unscorable (fewer than 30 trades)
+
+   --- PARAMETER PERTURBATION on VALID -- the whole ladder, not the minimum --------------------------------------------
+      entry_n     20:+nan/nan    30:+nan/nan   [40:+nan/nan]   55:+nan/nan 
+      exit_n      10:+nan/nan    15:+nan/nan   [20:+nan/nan]   30:+nan/nan 
+      stop        1.5:+nan/nan    2.0:+nan/nan   [2.5:+nan/nan]   3.0:+nan/nan 
+      tp_r        0.0:+nan/nan    2.0:+1.59/1.81   [3.0:+nan/nan]
+      chop_max    None:+1.88/1.52    50.0:+1.44/1.41    45.0:+1.60/1.52    40.0:+1.53/1.63   [35.0:+nan/nan]
+      adx_min     None:+nan/nan   [20.0:+nan/nan]   25.0:+nan/nan 
+      STABILITY SCORE (share of the whole ladder with PF>1 and Sharpe>0): 1.000
+
+   --- REGIME BREAKDOWN on VALID -- signal bars split, then re-simulated -----------------------------------------------
+      TREND  chop<=40          share  1.00  n   28  PF    nan  Sharpe   +nan  R +0.4301
+      CHOP   chop> 40          share  0.00  n    0  PF    nan  Sharpe   +nan  R    +nan
+      HIGH vol pct>0.5         share  0.92  n   26  PF    nan  Sharpe   +nan  R +0.3422
+      LOW  vol pct<=.5         share  0.08  n    4  PF    nan  Sharpe   +nan  R +0.4114
+      BULL  >200MA             share  0.12  n    7  PF    nan  Sharpe   +nan  R +1.1136
+      BEAR  <=200MA            share  0.88  n   22  PF    nan  Sharpe   +nan  R +0.1920
+      HIGH momentum adx>=25    share  1.00  n   28  PF    nan  Sharpe   +nan  R +0.4301
+      LOW  momentum adx<25     share  0.00  n    0  PF    nan  Sharpe   +nan  R    +nan
+      regimes with PF>1: nan
+
+   --- WALK-FORWARD over the whole series ------------------------------------------------------------------------------
+      fold 1  19352-19533          n   12  PF    nan  Sharpe   +nan   in the training span
+      fold 2  19533-19712          n   17  PF    nan  Sharpe   +nan   in the training span
+      fold 3  19712-19895          n   20  PF    nan  Sharpe   +nan   in the training span
+      fold 4  19895-20074          n   25  PF    nan  Sharpe   +nan   in the training span
+      fold 5  20074-20255          n   20  PF    nan  Sharpe   +nan   post-selection
+      fold 6  20255-20433          n   16  PF    nan  Sharpe   +nan   post-selection
+      folds with PF>1: 0/0   post-selection folds with PF>1: 0/0
+
+   --- COST STRESS on VALID --------------------------------------------------------------------------------------------
+      1.00x   n    0  PF    nan  Sharpe   +nan  R/trade    +nan
+      1.25x   n    0  PF    nan  Sharpe   +nan  R/trade    +nan
+      1.50x   n    0  PF    nan  Sharpe   +nan  R/trade    +nan
+      2.00x   n    0  PF    nan  Sharpe   +nan  R/trade    +nan
+      3.00x   n    0  PF    nan  Sharpe   +nan  R/trade    +nan
+
+   --- MONTE CARLO on TRAIN+VALID -- bootstrap for the edge, permutation for the path ----------------------------------
+      edge      R/trade +0.1189  bootstrap [-0.1364, +0.3630]  P(R<=0) 0.231
+      PF        bootstrap [0.766, 1.812]  P(PF<=1) 0.231
+      drawdown  realised 11.7R   MC p50 10.4  p95 16.6  p99 19.7   realised percentile 0.660   SIZE FOR THE p99
+
+   --- DEFLATED SHARPE -- against 51,840 trials, not against zero ------------------------------------------------------
+      observed Sharpe +0.470   the Sharpe a search of this size produces under the NULL +2.540
+      skew +3.737  kurtosis 25.00  T 704 days   DEFLATED SHARPE PROBABILITY 0.0001   DOES NOT PASS at 0.95
+
+   --- THE ONE READ OF OUT-OF-SAMPLE.  Nothing above may be changed after this line. -----------------------------------
+      BASE oos     n    67  net    -20.4R  PF  0.560  Sharpe  -1.92  Sortino  -4.09  DD   20.6R  ret/DD -0.99  Calmar -1.35  win 0.149  R/trade -0.3040
+      CAND oos     unscorable (fewer than 30 trades)
+
+============================================================================================================================
+FINAL RANKING  --  by generalisation, never by net profit
+============================================================================================================================
+   market side     OOS Sh  OOS PF  OOS n  OOS DD   stab    wf   reg  cost  gap Sh     DSR   SCORE
+   US30   LONG      +1.13   1.412    124    10.5   1.00  0.83  0.83  1.00   +0.69   0.002    54.9
+   US30   SHORT     -0.51   0.839    112    12.9   0.00  0.33  0.20  0.00   -0.17   0.000     9.5
+   NQ     LONG      -0.21   0.937     47     5.3   0.84  0.67  0.50  0.67   -1.44   0.097    26.8
+
+   US30 LONG  score 54.9/100
+      oos_sharpe 15.1   oos_pf 12.4   wf_consistency 12.5   param_stability 15.0   regime 8.3   mc 8.3   cost 10.0   gen_gap 10.0   DEFLATED SHARPE PENALTY x0.60
+
+   US30 SHORT  score 9.5/100
+      oos_sharpe 0.0   oos_pf 0.0   wf_consistency 5.0   param_stability 0.0   regime 2.0   mc 0.0   cost 0.0   gen_gap 8.9   DEFLATED SHARPE PENALTY x0.60
+
+   NQ LONG  score 26.8/100
+      oos_sharpe 0.0   oos_pf 0.0   wf_consistency 10.0   param_stability 12.6   regime 5.0   mc 10.0   cost 6.7   gen_gap 0.4   DEFLATED SHARPE PENALTY x0.60
+
+   NQ SHORT  score 0.0/100
+      

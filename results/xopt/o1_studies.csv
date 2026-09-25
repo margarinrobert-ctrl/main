@@ -1,0 +1,4 @@
+study,scorable,mean_R,mean_ctl,mean_excess,top5pct_R,top5pct_ctl,top5pct_excess,top5pct_stop,top5pct_trail_on
+excess,607,-0.0412,-0.2584,0.1808,0.0339,-0.3837,0.4176,0.37,0.03
+excess_pf,605,-0.0096,-0.229,0.1874,0.0376,-0.381,0.4186,0.32,1.0
+return,500,0.2511,-0.0672,0.048,0.8644,,,3.13,0.0

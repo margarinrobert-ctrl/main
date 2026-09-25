@@ -1,0 +1,264 @@
+features 45 (vp 18, tpo 14, ema 7, atr 6)   build 51s
+
+==============================================================================================================================
+A. THE BASE, and BASE RATES of the declared conditions on the base's own signal bars (research)
+==============================================================================================================================
+  walk_tp parity with O._walk: exact (1154 trades)
+  base research: n  765 PF  1.164 win  51.5% total  +15.04% Sh  1.26 DD  5.52%  R +0.0255
+  base locked:   n  389 PF  1.110 win  48.8% total   +5.98% Sh  0.73 DD  7.77%  R -0.0084
+  signal bars research (pre-lock): 2,071   exit mix research: stop 48% target 48% hold 4%
+                                             cond  pass_sig  pass_win   lift
+                              EMA200: close above     76.58     59.20   1.29
+            EMA200: close below (resistance side)     23.42     40.80   0.57
+         EMA200: above and within 1 ATR (support)      6.37      7.46   0.85
+                   EMA200: >= 1 ATR above (floor)     70.21     51.74   1.36
+                   EMA200: >= 2 ATR above (floor)     63.11     44.22   1.43
+                    EMA200: touched within 5 bars     43.70     53.63   0.81
+                EMA200: rising (10-bar slope > 0)     67.46     59.46   1.13
+                            EMA13 > EMA48 (state)     74.26     57.12   1.30
+          EMA13 crossed above EMA48 <= 5 bars ago     18.11     10.55   1.72
+         EMA13 crossed above EMA48 <= 20 bars ago     34.09     27.10   1.26
+                       EMA13-48 spread >= 0.5 ATR     56.54     39.60   1.43
+                  EMA13-48 spread rising (5 bars)     87.01     50.72   1.72
+                    EMA13 < EMA48 (counter-state)     25.74     42.88   0.60
+                        VP: close above prior VAH     55.29     37.52   1.47
+                VP: close inside prior value area     33.12     36.80   0.90
+                        VP: close below prior VAL     11.59     25.69   0.45
+                        VP: close above prior POC     72.28     55.08   1.31
+                    VP: prior VA narrow (< 3 ATR)     19.02     20.26   0.94
+                     VP: prior VA wide (>= 3 ATR)     80.98     79.74   1.02
+          VP: HVN within 1 ATR above (resistance)     11.93     13.86   0.86
+             VP: no HVN within 2 ATR above (room)     80.44     76.74   1.05
+                       VP: LVN within 1 ATR above     25.74     27.97   0.92
+                 VP: naked POC within 3 ATR above     27.09     31.16   0.87
+                      VP: prior session poor high      2.61      2.39   1.09
+               VP: close above prior session high     38.92     23.01   1.69
+                   VP: close above developing VAH     20.33      8.51   2.39
+                   VP: close above developing POC     32.16     18.91   1.70
+             VP: developing VA narrow (< 1.5 ATR)     12.80     12.54   1.02
+                       TPO: close above prior VAH     54.61     36.94   1.48
+TPO: prior profile skewed low (POC in lower half)     53.98     52.92   1.02
+       TPO: prior single print within 3 ATR above     37.08     40.89   0.91
+    TPO: no prior single print within 3 ATR above     62.92     59.11   1.06
+                         TPO: close above IB high      6.28      2.05   3.07
+                          TPO: IB range < 1.5 ATR      0.05      0.22   0.22
+                         TPO: IB range >= 1.5 ATR     42.25     37.23   1.13
+   TPO: single print within 2 ATR below (support)     37.47     34.20   1.10
+                  TPO: close above developing VAH     16.85      6.95   2.42
+                      ATR >= 1.0x its 50-bar mean     81.70     81.94   1.00
+                     ATR >= 1.2x its 250-bar mean     29.07     29.36   0.99
+                       ATR < 1.0x its 50-bar mean     18.30     18.06   1.01
+                     vol percentile <= 0.5 (calm)     36.99     37.49   0.99
+                      signal bar range >= 1.5 ATR     49.69     38.22   1.30
+                       signal bar range < 0.8 ATR      6.76     10.00   0.68
+  (a pass rate near 100% on the signal bars is the trigger restated; a lift near 1 is a random filter)
+
+==============================================================================================================================
+B. FEATURE IC on the base's RESEARCH trades -- Spearman vs realised R and vs 15-bar MFE/MAE (ATR), with a shuffled null (200 draws)
+==============================================================================================================================
+  research trades 765   shuffled-null sd of the IC 0.0368   |z|>=2 needs |IC| >= 0.074;  BH over 45 features
+                   feature   n    ic_R  ic_MFE  ic_MAE       z       p    bh
+             atr.pct_price 765   0.266  -0.220  -0.231   7.228   0.000  True
+              atr.ratio250 765   0.201  -0.258  -0.253   5.471   0.000  True
+            atr.vol_pct250 765   0.183  -0.256  -0.245   4.972   0.000  True
+               atr.ratio50 765   0.171  -0.228  -0.262   4.648   0.000  True
+tpo.prior_single_above_atr 457  -0.135  -0.094   0.134  -2.826   0.005  True
+     vp.prior_va_width_atr 765  -0.084   0.182   0.128  -2.284   0.022 False
+           tpo.dev_poc_atr 326  -0.081  -0.097   0.101  -1.441   0.150 False
+              tpo.above_ib 765   0.074  -0.145  -0.150   2.024   0.043 False
+             atr.range_atr 765   0.068  -0.051  -0.086   1.836   0.066 False
+              atr.tr_ratio 765   0.067  -0.051  -0.086   1.833   0.067 False
+      tpo.single_above_atr 324   0.067   0.065  -0.077   1.191   0.234 False
+           tpo.dev_vah_atr 326  -0.067  -0.113   0.080  -1.184   0.236 False
+           tpo.dev_val_atr 326  -0.062  -0.123   0.077  -1.091   0.275 False
+           vp.prior_lo_atr 765  -0.062   0.103   0.076  -1.671   0.095 False
+    vp.naked_poc_above_atr 578  -0.061  -0.006   0.090  -1.443   0.149 False
+      ema.spread_slope_atr 765   0.058  -0.071  -0.058   1.584   0.113 False
+            vp.dev_val_atr 326   0.050  -0.164  -0.033   0.880   0.379 False
+            vp.dev_poc_atr 326   0.044  -0.163  -0.050   0.785   0.433 False
+            vp.dev_vah_atr 326   0.043  -0.143  -0.069   0.759   0.448 False
+          vp.prior_val_atr 765  -0.042   0.055   0.050  -1.132   0.258 False
+          vp.lvn_below_atr 649  -0.041   0.013   0.014  -1.025   0.305 False
+         tpo.prior_val_atr 765  -0.038   0.054   0.046  -1.024   0.306 False
+      ema.bars_since_x1348 765   0.038   0.069   0.028   1.020   0.308 False
+          vp.prior_poor_hi 765   0.037   0.011   0.001   1.007   0.314 False
+           vp.prior_hi_atr 765   0.034  -0.040  -0.039   0.926   0.354 False
+             tpo.ib_hi_atr 326   0.033  -0.190  -0.086   0.579   0.562 False
+            tpo.prior_skew 765  -0.031   0.004   0.025  -0.843   0.399 False
+          vp.hvn_above_atr 280   0.031   0.103   0.092   0.509   0.611 False
+          ema.slope200_atr 765  -0.030   0.076   0.033  -0.823   0.411 False
+              ema.d200_atr 765  -0.029   0.043   0.024  -0.787   0.432 False
+           ema.x1348_state 765  -0.028   0.032   0.052  -0.748   0.454 False
+       vp.dev_va_width_atr 326   0.025  -0.109   0.027   0.445   0.656 False
+            ema.touch200_5 765   0.022  -0.085  -0.021   0.601   0.548 False
+             tpo.ib_lo_atr 326   0.021  -0.166  -0.028   0.367   0.714 False
+          vp.lvn_above_atr 409  -0.019  -0.043   0.113  -0.377   0.706 False
+          vp.prior_poor_lo 765   0.018   0.002  -0.021   0.500   0.617 False
+         tpo.prior_vah_atr 765   0.018  -0.017  -0.023   0.499   0.618 False
+          vp.prior_vah_atr 765   0.015  -0.027  -0.023   0.396   0.692 False
+         tpo.prior_poc_atr 765  -0.012   0.020   0.025  -0.322   0.747 False
+      tpo.single_below_atr 325   0.011  -0.104  -0.001   0.192   0.848 False
+          tpo.ib_range_atr 326   0.007  -0.064   0.008   0.128   0.898 False
+          vp.prior_poc_atr 765  -0.007  -0.009   0.001  -0.179   0.858 False
+          vp.hvn_below_atr 560   0.006   0.046   0.011   0.141   0.888 False
+        vp.pos_in_prior_va 765   0.003  -0.015  -0.012   0.082   0.934 False
+        ema.spread1348_atr 765  -0.001   0.051   0.006  -0.029   0.977 False
+  features passing BH q=0.10 on IC vs R: 5 of 45   (|IC|>=0.1: 5)
+  MFE and MAE move together (STUDY_V44): corr(ic_MFE, ic_MAE) across features = 0.670
+
+==============================================================================================================================
+C. EACH ENTRY CONDITION ON RESEARCH against a random filter of the SAME selectivity (250 draws); locked NOT read
+==============================================================================================================================
+  condition                                        keep%    n     PF   dPF%    Sh   total | ctl PF  p(PF)  p(Sh)
+  EMA200: close above                                 77  589  1.161   -0.3  1.23  +11.24 |  1.143  0.364  0.336
+  EMA200: close below (resistance side)               23  223  1.167   +0.3  1.19   +4.59 |  1.093  0.244  0.216
+  EMA200: above and within 1 ATR (support)             6   89  0.931  -20.0 -0.51   -0.88 |  1.071  0.752  0.748
+  EMA200: >= 1 ATR above (floor)                      70  539  1.197   +2.8  1.50  +12.42 |  1.140  0.164  0.116
+  EMA200: >= 2 ATR above (floor)                      63  482  1.153   -0.9  1.17   +8.70 |  1.138  0.392  0.352
+  EMA200: touched within 5 bars                       44  372  1.107   -4.8  0.84   +5.48 |  1.124  0.580  0.544
+  EMA200: rising (10-bar slope > 0)                   67  515  1.196   +2.8  1.51  +11.54 |  1.144  0.200  0.144
+  EMA13 > EMA48 (state)                               74  566  1.105   -5.0  0.80   +7.30 |  1.146  0.820  0.836
+  EMA13 crossed above EMA48 <= 5 bars ago             18  163  0.988  -15.1 -0.09   -0.29 |  1.082  0.820  0.816
+  EMA13 crossed above EMA48 <= 20 bars ago            34  278  0.996  -14.4 -0.03   -0.14 |  1.107  0.900  0.900
+  EMA13-48 spread >= 0.5 ATR                          57  431  1.082   -7.0  0.61   +4.42 |  1.124  0.768  0.788
+  EMA13-48 spread rising (5 bars)                     87  669  1.127   -3.1  1.00  +10.77 |  1.155  0.856  0.844
+  EMA13 < EMA48 (counter-state)                       26  247  1.308  +12.4  2.00   +8.72 |  1.094  0.020  0.016
+  VP: close above prior VAH                           55  441  1.117   -4.0  0.89   +6.50 |  1.129  0.560  0.560
+  VP: close inside prior value area                   33  307  1.113   -4.4  0.79   +4.06 |  1.109  0.488  0.488
+  VP: close below prior VAL                           12  107  1.248   +7.2  1.59   +3.03 |  1.080  0.136  0.132
+  VP: close above prior POC                           72  561  1.195   +2.7  1.48  +12.92 |  1.141  0.116  0.100
+  VP: prior VA narrow (< 3 ATR)                       19  189  1.173   +0.8  1.22   +4.77 |  1.098  0.260  0.248
+  VP: prior VA wide (>= 3 ATR)                        81  613  1.126   -3.3  0.97   +8.83 |  1.150  0.756  0.760
+  VP: HVN within 1 ATR above (resistance)             12  153  0.844  -27.5 -1.21   -3.39 |  1.072  0.976  0.976
+  VP: no HVN within 2 ATR above (room)                80  653  1.231   +5.8  1.66  +17.44 |  1.153  0.024  0.032
+  VP: LVN within 1 ATR above                          26  270  1.136   -2.3  0.96   +4.62 |  1.096  0.364  0.360
+  VP: naked POC within 3 ATR above                    27  275  1.229   +5.6  1.52   +7.98 |  1.106  0.124  0.120
+  VP: prior session poor high                          3   19  (too few)
+  VP: close above prior session high                  39  318  1.139   -2.1  1.04   +5.67 |  1.111  0.332  0.308
+  VP: close above developing VAH                      20  234  1.289  +10.8  1.86   +9.68 |  1.091  0.040  0.040
+  VP: close above developing POC                      32  335  1.248   +7.2  1.65  +11.74 |  1.111  0.048  0.048
+  VP: developing VA narrow (< 1.5 ATR)                13  174  1.258   +8.1  1.58   +5.45 |  1.074  0.116  0.116
+  TPO: close above prior VAH                          55  437  1.156   -0.6  1.15   +8.44 |  1.130  0.332  0.324
+  TPO: prior profile skewed low (POC in lower half)    54  406  1.209   +3.9  1.55  +10.03 |  1.131  0.100  0.084
+  TPO: prior single print within 3 ATR above          37  350  1.446  +24.2  2.84  +16.42 |  1.127  0.000  0.000
+  TPO: no prior single print within 3 ATR above       63  534  1.072   -7.9  0.53   +4.86 |  1.133  0.904  0.908
+  TPO: close above IB high                             6   92  1.533  +31.8  2.93   +6.43 |  1.074  0.044  0.044
+  TPO: IB range < 1.5 ATR                              0    1  (too few)
+  TPO: IB range >= 1.5 ATR                            42  430  1.185   +1.8  1.30  +10.90 |  1.126  0.164  0.176
+  TPO: single print within 2 ATR below (support)      37  417  1.157   -0.5  1.13   +9.17 |  1.114  0.280  0.280
+  TPO: close above developing VAH                     17  229  1.176   +1.1  1.17   +6.09 |  1.086  0.248  0.252
+  ATR >= 1.0x its 50-bar mean                         82  675  1.207   +3.7  1.53  +17.05 |  1.155  0.060  0.068
+  ATR >= 1.2x its 250-bar mean                        29  297  1.221   +4.9  1.52   +9.76 |  1.100  0.096  0.084
+  ATR < 1.0x its 50-bar mean                          18  145  0.858  -26.3 -1.10   -2.02 |  1.078  0.964  0.960
+  vol percentile <= 0.5 (calm)                        37  280  0.964  -17.2 -0.29   -0.99 |  1.108  0.988  0.988
+  signal bar range >= 1.5 ATR                         50  576  1.137   -2.3  0.98   +9.84 |  1.117  0.396  0.416
+  signal bar range < 0.8 ATR                           7  111  1.115   -4.2  0.76   +1.46 |  1.038  0.360  0.368
+
+  BH q=0.10 over 41 conditions: 1 pass;  6 at p<=0.05 against 2.1 expected by chance
+  survivors (BH AND >= 100 research trades AND >= +10% PF):
+                                      cond   keep   n     pf    dpf     sh    tot  ctl_pf   p_pf   p_sh
+TPO: prior single print within 3 ATR above 37.084 350  1.446 24.245  2.843 16.419   1.127  0.000  0.000
+
+  by family (mean over its cells):
+          cells    dPF   p_pf  beat_ctl
+family                                 
+ATR           6  -6.89   0.48      0.00
+EMA13/48      6  -5.38   0.70     16.67
+EMA200        7  -2.88   0.39      0.00
+TPO           8   6.72   0.26     25.00
+VP           14   0.32   0.31     21.43
+
+==============================================================================================================================
+D. TAKE PROFIT on research -- a fixed ATR ladder against PROFILE LEVELS as the target (same entries, same stop); each level vs a random target at the SAME distance distribution (200 draws)
+==============================================================================================================================
+  target rule                                             n     PF   win   total       R    Sh    DD | tgt%  medD | rnd PF  p(PF) p(tot)
+  fixed 1.0 ATR                                         999  0.944  66.9   -4.83 -0.0343 -0.51  7.77 |   67  1.00 |      -      -      -
+  fixed 1.5 ATR                                         886  0.997  59.3   -0.26 -0.0172 -0.02  5.86 |   59  1.50 |      -      -      -
+  fixed 2.0 ATR                                         802  1.091  53.9   +8.43 +0.0096  0.75  4.19 |   51  2.00 |      -      -      -
+  fixed 2.3 ATR                                         765  1.164  51.5  +15.04 +0.0255  1.26  5.52 |   48  2.30 |      -      -      -
+  fixed 3.0 ATR                                         706  1.149  44.6  +13.85 +0.0200  1.09  4.85 |   38  3.00 |      -      -      -
+  fixed 4.0 ATR                                         669  1.019  37.7   +1.87 -0.0146  0.15  6.87 |   25  4.00 |      -      -      -
+  fixed 6.0 ATR                                         618  1.099  34.0   +8.98 +0.0204  0.67  8.54 |   17  6.00 |      -      -      -
+  no target (stop / channel / hold only)                565  1.069  29.9   +5.71 +0.0204  0.43  8.01 |    0   nan |      -      -      -
+  prior VP VAH (else 2.3 ATR)                           746  1.077  48.5   +7.23 +0.0095  0.59  5.93 |   44  2.30 |  1.112  0.875  0.855
+  prior VP VAH (else no target)                         629  1.035  36.4   +3.17 +0.0110  0.24  7.47 |   17  3.44 |  1.074  0.915  0.910
+  prior VP VAH capped 4 ATR (else 2.3)                  783  1.110  52.2  +10.32 +0.0162  0.87  5.33 |   49  2.30 |  1.140  0.930  0.915
+  nearest prior HVN above (else 2.3 ATR)                760  1.120  50.7  +10.98 +0.0103  0.92  5.86 |   47  2.30 |  1.120  0.495  0.505
+  nearest prior HVN above (else no target)              615  1.050  36.6   +4.28 +0.0035  0.32  7.09 |   14  2.33 |  1.046  0.445  0.455
+  nearest prior HVN above capped 4 ATR (else 2.3)       777  1.133  52.1  +12.21 +0.0109  1.03  5.31 |   50  2.30 |  1.138  0.605  0.615
+  nearest naked POC above (else 2.3 ATR)                693  1.068  44.9   +5.94 -0.0007  0.48  6.87 |   35  2.30 |  1.124  0.955  0.965
+  nearest naked POC above (else no target)              632  1.028  37.8   +2.40 -0.0073  0.19  6.51 |   18  4.99 |  1.063  0.840  0.845
+  nearest naked POC above capped 4 ATR (else 2.3)       780  1.108  51.8  +10.08 +0.0061  0.86  6.05 |   48  2.30 |  1.125  0.700  0.695
+  prior TPO VAH (else 2.3 ATR)                          745  1.115  48.5  +10.61 +0.0138  0.86  5.63 |   43  2.30 |  1.114  0.470  0.460
+  prior TPO VAH (else no target)                        626  1.063  36.3   +5.62 +0.0108  0.42  7.28 |   16  3.52 |  1.086  0.810  0.810
+  prior TPO VAH capped 4 ATR (else 2.3)                 784  1.140  52.4  +12.93 +0.0180  1.09  4.90 |   49  2.30 |  1.141  0.510  0.510
+  prior TPO POC (else 2.3 ATR)                          752  1.108  50.1   +9.86 +0.0119  0.82  6.42 |   47  2.30 |  1.126  0.805  0.835
+  prior TPO POC (else no target)                        604  1.026  33.8   +2.26 +0.0017  0.17  7.19 |   11  2.70 |  1.047  0.805  0.810
+  prior TPO POC capped 4 ATR (else 2.3)                 774  1.123  52.1  +11.29 +0.0147  0.96  5.87 |   49  2.30 |  1.143  0.915  0.915
+  prior TPO single print above (else 2.3 ATR)           763  1.098  50.2   +9.12 +0.0091  0.76  5.11 |   45  2.30 |  1.104  0.585  0.570
+  prior TPO single print above (else no target)         645  1.093  39.5   +8.09 +0.0231  0.62  6.20 |   20  2.75 |  1.089  0.435  0.450
+  prior TPO single print above capped 4 ATR (else 2.3)  784  1.082  51.9   +7.77 +0.0034  0.66  4.97 |   49  2.30 |  1.105  0.800  0.795
+  developing TPO VAH (else 2.3 ATR)                     789  1.102  52.9   +9.47 +0.0059  0.82  5.62 |   50  2.30 |  1.099  0.425  0.425
+  developing TPO VAH (else no target)                   578  1.075  32.4   +6.13 +0.0170  0.47  7.68 |    4  1.08 |  1.069  0.335  0.330
+  developing TPO VAH capped 4 ATR (else 2.3)            789  1.102  52.9   +9.47 +0.0059  0.82  5.62 |   50  2.30 |  1.101  0.490  0.480
+  developing TPO single print above (else 2.3 ATR)      776  1.126  52.4  +11.56 +0.0134  0.99  5.61 |   49  2.30 |  1.115  0.195  0.180
+  developing TPO single print above (else no target)    569  1.077  31.1   +6.38 +0.0226  0.48  8.01 |    2  0.94 |  1.073  0.300  0.295
+  developing TPO single print above capped 4 ATR (else 2.3)  776  1.126  52.4  +11.56 +0.0134  0.99  5.61 |   49  2.30 |  1.113  0.090  0.095
+  IB high (else 2.3 ATR)                                806  1.139  54.8  +12.46 +0.0125  1.10  4.16 |   52  2.30 |  1.103  0.065  0.065
+  IB high (else no target)                              601  1.108  36.4   +8.49 +0.0231  0.66  5.34 |   12  1.07 |  1.068  0.030  0.030
+  IB high capped 4 ATR (else 2.3)                       806  1.141  54.8  +12.69 +0.0132  1.12  4.16 |   52  2.30 |  1.098  0.025  0.025
+  nearest of {VP VAH, HVN, TPO VAH, single print} (else 2.3)  791  1.087  52.8   +8.13 +0.0032  0.68  5.46 |   50  2.30 |  1.108  0.820  0.820
+  nearest level if within 2 ATR (else 2.3)              799  1.089  53.6   +8.39 +0.0030  0.71  5.52 |   51  2.30 |  1.099  0.780  0.780
+
+==============================================================================================================================
+E. STOP on research -- fixed multiples, an adaptive-vol stop, ATR-ratio and range-scaled stops, and STRUCTURAL stops (profile levels); three units + drawdown
+==============================================================================================================================
+  stop rule                                                   n     PF   win  %/trade  R/trade  total%    DD% ret/DD stop% medRisk
+  fixed 1.00 ATR                                            903  0.980  29.6  -0.0017  -0.0699   -1.53   6.72  -0.23    71    1.00
+  fixed 1.50 ATR                                            825  1.103  40.0  +0.0104  +0.0026   +8.59   4.64   1.85    60    1.50
+  fixed 2.00 ATR                                            783  1.134  46.2  +0.0150  +0.0249  +11.71   5.49   2.13    54    2.00
+  fixed 2.50 ATR                                            774  1.141  49.1  +0.0165  +0.0187  +12.80   4.93   2.60    51    2.50
+  fixed 3.00 ATR                                            767  1.173  51.2  +0.0206  +0.0287  +15.79   5.62   2.81    48    3.00
+  fixed 3.19 ATR                                            765  1.164  51.5  +0.0197  +0.0255  +15.04   5.52   2.72    48    3.19
+  fixed 4.00 ATR                                            764  1.139  51.6  +0.0171  +0.0147  +13.05   6.03   2.16    47    4.00
+  fixed 6.00 ATR                                            764  1.116  51.7  +0.0146  +0.0054  +11.14   7.00   1.59    47    6.00
+  adaptive: 3.19 if vol pct <= 0.5 else 2.0 (V22 direction)  775  1.153  47.6  +0.0173  +0.0344  +13.39   5.77   2.32    52    2.00
+  adaptive: 4.0 if vol pct <= 0.5 else 2.5 (V22 direction)  770  1.163  49.9  +0.0190  +0.0299  +14.66   4.93   2.97    49    2.50
+  adaptive: 2.5 if vol pct <= 0.5 else 1.5 (V22 direction)  805  1.136  43.1  +0.0144  +0.0277  +11.56   5.56   2.08    57    1.50
+  adaptive INVERTED: 2.0 if vol pct <= 0.5 else 3.19        772  1.143  50.1  +0.0171  +0.0159  +13.19   5.56   2.37    50    3.19
+  adaptive INVERTED: 1.5 if vol pct <= 0.5 else 2.5         793  1.108  45.9  +0.0123  -0.0056   +9.75   4.22   2.31    54    2.50
+  2.0 ATR x (ATR/ATR50) -- wider when ATR is expanding      778  1.133  49.2  +0.0157  -0.0053  +12.24   5.74   2.13    50    2.63
+  3.19 ATR x (ATR/ATR50) -- wider when ATR is expanding     765  1.118  51.5  +0.0147  -0.0028  +11.28   6.65   1.70    47    4.21
+  2.0 ATR / (ATR/ATR50) -- wider when ATR is contracting    816  1.052  38.6  +0.0052  +0.0117   +4.28   6.76   0.63    61    1.49
+  3.19 ATR / (ATR/ATR50) -- wider when ATR is contracting   779  1.128  47.0  +0.0146  +0.0363  +11.35   6.19   1.84    53    2.40
+  1.0 x signal-bar range (floor 1 ATR, cap 6)               822  1.104  42.6  +0.0111  +0.0094   +9.15   6.92   1.32    57    1.66
+  1.5 x signal-bar range (floor 1 ATR, cap 6)               784  1.106  48.1  +0.0126  +0.0210   +9.87   7.03   1.40    51    2.49
+  2.0 x signal-bar range (floor 1 ATR, cap 6)               768  1.105  50.5  +0.0130  +0.0209   +9.98   6.31   1.58    48    3.31
+  below prior VP VAL + 0.25 ATR (fallback 3.19, [1,6])      770  1.145  50.6  +0.0173  +0.0216  +13.32   4.99   2.67    49    3.19
+  below prior VP POC + 0.25 ATR                             770  1.142  50.1  +0.0169  +0.0191  +13.02   6.58   1.98    49    3.19
+  below developing VP VAL + 0.25 ATR                        770  1.152  49.6  +0.0179  +0.0264  +13.80   6.05   2.28    50    3.19
+  below TPO IB low + 0.25 ATR                               767  1.139  50.8  +0.0169  +0.0148  +12.97   6.02   2.15    48    3.19
+  below nearest HVN below + 0.25 ATR                        775  1.143  49.7  +0.0169  +0.0150  +13.11   6.68   1.96    50    3.19
+  below EMA200 + 0.25 ATR                                   767  1.175  51.0  +0.0206  +0.0316  +15.79   5.11   3.09    48    3.19
+  below EMA48 + 0.25 ATR                                    780  1.110  48.2  +0.0131  -0.0065  +10.21   6.32   1.62    51    3.19
+
+  marginal read: fixed ladder %/trade 1.00:-0.0017 1.50:+0.0104 2.00:+0.0150 2.50:+0.0165 3.00:+0.0206 3.19:+0.0197 4.00:+0.0171 6.00:+0.0146
+               fixed ladder ret/DD  1.00:-0.23 1.50:1.85 2.00:2.13 2.50:2.60 3.00:2.81 3.19:2.72 4.00:2.16 6.00:1.59
+
+==============================================================================================================================
+F. THE ONE LOCKED READ -- base, every research survivor (entry / TP / stop), each against its own locked null; multiplicity stated
+==============================================================================================================================
+  things looked at on research: 43 entry conditions + 37 target rules + 27 stop rules + 45 feature ICs = 152
+  base locked: n  389 PF  1.110 win  48.8% total   +5.98% Sh  0.73 DD  7.77%  R -0.0084
+
+  entry conditions (research survivors):
+    TPO: prior single print within 3 ATR above               locked: n  187 PF  1.382 win  50.8% total   +9.93% Sh  2.02 DD  4.69%   dPF  +24.5%   random filter median PF 1.109 p 0.016
+
+  target rules beating fixed 2.3 ATR on research PF and total AND clearing the random-distance null: 0
+
+  stop rules: the top-3 research return/drawdown, read on locked (descriptive -- the base 3.19 is the declared stop):
+    below EMA200 + 0.25 ATR                                  locked: n  390 PF  1.082 win  47.9% total   +4.52% Sh  0.55 DD  7.49%   R -0.0032  ret/DD  0.60   (research ret/DD 3.09)
+    adaptive: 4.0 if vol pct <= 0.5 else 2.5 (V22 direction) locked: n  390 PF  1.092 win  47.7% total   +5.00% Sh  0.62 DD  7.23%   R -0.0025  ret/DD  0.69   (research ret/DD 2.97)
+    fixed 3.00 ATR                                           locked: n  390 PF  1.100 win  48.5% total   +5.46% Sh  0.66 DD  7.64%   R -0.0095  ret/DD  0.71   (research ret/DD 2.81)
+
+  total runtime 77s

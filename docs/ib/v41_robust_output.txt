@@ -1,0 +1,138 @@
+
+================================================================================================================================
+8. PERTURBATION -- every axis at +/-1 rung. A ridge survives; a spike does not.
+================================================================================================================================
+
+   TOP (best research PF)   base research PF 3.363
+      axis                   -1 rung      centre               +1 rung
+      ema_f                    1.568       3.363                    --
+      ema_s                    1.968       3.363                 1.971
+      win                      1.531       3.363                 3.189
+      don_e                    2.919       3.363                    --
+      don_x                       --       3.363                 2.742
+      stop                     2.776       3.363                 3.185
+      tp                          --       3.363                 2.704
+      neighbourhood mean PF 2.455 against centre 3.363   gap +0.908
+
+   CONSENSUS (top-100 mode)   base research PF 3.189
+      axis                   -1 rung      centre               +1 rung
+      ema_f                    1.959       3.189                    --
+      ema_s                    2.092       3.189                 2.475
+      win                      3.363       3.189                 1.929
+      don_e                    3.195       3.189                 1.998
+      don_x                       --       3.189                 2.597
+      stop                     2.618       3.189                 2.995
+      tp                          --       3.189                 2.655
+      neighbourhood mean PF 2.534 against centre 3.189   gap +0.654
+
+   THE BRIEF (EMA 13/48 fixed)   base research PF 2.444
+      axis                   -1 rung      centre               +1 rung
+      ema_f                    2.318       2.444                 2.415
+      ema_s                    1.917       2.444                 2.295
+      win                      1.358       2.444                    --
+      don_e                    2.182       2.444                    --
+      don_x                    1.914       2.444                    --
+      stop                        --       2.444                 2.261
+      tp                          --       2.444                 1.620
+      neighbourhood mean PF 2.031 against centre 2.444   gap +0.413
+
+================================================================================================================================
+9. WALK-FORWARD -- 6 chronological folds over the whole sample
+================================================================================================================================
+
+   TOP (best research PF)
+      fold 1   n    7   net $   +1,945   $/t  +277.82   PF  7.578
+      fold 2   n    7   net $     +214   $/t   +30.61   PF  1.444
+      fold 3   n    9   net $   +1,357   $/t  +150.74   PF  6.287
+      fold 4   n   11   net $   +1,195   $/t  +108.65   PF  2.170
+      fold 5   n   10   net $   -1,493   $/t  -149.31   PF  0.205
+      fold 6   n   10   net $     +543   $/t   +54.26   PF  1.604
+      folds positive: 5 of 6
+
+   CONSENSUS (top-100 mode)
+      fold 1   n    8   net $   +2,193   $/t  +274.18   PF  8.419
+      fold 2   n    9   net $     -150   $/t   -16.67   PF  0.823
+      fold 3   n   10   net $   +1,919   $/t  +191.93   PF  8.480
+      fold 4   n   11   net $   +1,195   $/t  +108.65   PF  2.170
+      fold 5   n   11   net $   -1,828   $/t  -166.17   PF  0.174
+      fold 6   n   15   net $   +1,704   $/t  +113.60   PF  2.039
+      folds positive: 4 of 6
+
+   THE BRIEF (EMA 13/48 fixed)
+      fold 1   n   14   net $     +859   $/t   +61.38   PF  1.917
+      fold 2   n   16   net $   +2,092   $/t  +130.78   PF  2.629
+      fold 3   n   24   net $   +1,428   $/t   +59.50   PF  1.663
+      fold 4   n   16   net $   +4,183   $/t  +261.42   PF  3.715
+      fold 5   n   19   net $   -3,213   $/t  -169.10   PF  0.101
+      fold 6   n   20   net $     +936   $/t   +46.82   PF  1.410
+      folds positive: 5 of 6
+
+================================================================================================================================
+10. BOOTSTRAP AND PATH -- 1,000 draws each, on the LOCKED block
+================================================================================================================================
+
+   TOP (best research PF)   n 21
+      bootstrap mean   -46.47  [ -156.61,   +63.53]   P(mean <= 0) 0.762
+      realised DD $   1,579   MC median $   1,684   p95 $   2,320   p99 $   2,539
+
+   CONSENSUS (top-100 mode)   n 27
+      bootstrap mean    -5.99  [ -140.34,  +146.23]   P(mean <= 0) 0.557
+      realised DD $   2,165   MC median $   1,986   p95 $   2,887   p99 $   3,200
+
+   THE BRIEF (EMA 13/48 fixed)   n 42
+      bootstrap mean   -45.38  [ -117.74,   +34.03]   P(mean <= 0) 0.824
+      realised DD $   3,474   MC median $   2,970   p95 $   4,074   p99 $   4,597
+
+================================================================================================================================
+11. COST STRESS -- the spread is an assumption, so vary it
+================================================================================================================================
+   candidate                     block           1.0x      1.5x      2.0x      3.0x
+   TOP (best research PF)        research       3.363     3.289     3.218     3.079
+   TOP (best research PF)        LOCKED         0.647     0.635     0.623     0.600
+   CONSENSUS (top-100 mode)      research       3.189     3.121     3.055     2.927
+   CONSENSUS (top-100 mode)      LOCKED         0.957     0.942     0.928     0.900
+   THE BRIEF (EMA 13/48 fixed)   research       2.444     2.392     2.341     2.244
+   THE BRIEF (EMA 13/48 fixed)   LOCKED         0.691     0.679     0.667     0.645
+
+================================================================================================================================
+12. CROSS-MARKET -- US30 and US100, frozen, each charged its OWN tick and point value
+================================================================================================================================
+   These feeds had NO part in the search. Re-uploaded and verified byte-identical to
+   the registry (US30_LONG sha 24dcf2e1c7ba398f, US100_LONG sha c449dddfbc06a943).
+
+   --- US30L  ($5/point)
+      TOP (best research PF)             n   130  PF  1.027  $/t   +13.23  win 0.362  Sh +0.03  DD $  15,585  ret/DD  0.11
+      CONSENSUS (top-100 mode)           n   169  PF  1.058  $/t   +26.52  win 0.373  Sh +0.08  DD $  15,950  ret/DD  0.28
+      THE BRIEF (EMA 13/48 fixed)        n   311  PF  1.249  $/t   +97.61  win 0.325  Sh +0.37  DD $  26,832  ret/DD  1.13
+
+   --- US100L  ($2/point)
+      TOP (best research PF)             n   142  PF  1.526  $/t   +39.59  win 0.437  Sh +0.50  DD $   1,714  ret/DD  3.28
+      CONSENSUS (top-100 mode)           n   179  PF  1.666  $/t   +50.59  win 0.441  Sh +0.65  DD $   1,311  ret/DD  6.90
+      THE BRIEF (EMA 13/48 fixed)        n   322  PF  1.532  $/t   +44.15  win 0.335  Sh +0.68  DD $   2,940  ret/DD  4.83
+
+================================================================================================================================
+13. DEFLATED SHARPE -- against the EFFECTIVE trial count, not the nominal one
+================================================================================================================================
+
+   TOP (best research PF)
+      N =       1   SR -0.628   null SR +0.458   DSR 0.0978
+      N =     100   SR -0.628   null SR +2.232   DSR 0.0003
+      N =  10,000   SR -0.628   null SR +3.405   DSR 0.0000
+      N =  62,208   SR -0.628   null SR +3.780   DSR 0.0000
+      N = 103,680   SR -0.628   null SR +3.879   DSR 0.0000
+
+   CONSENSUS (top-100 mode)
+      N =       1   SR -0.064   null SR +0.458   DSR 0.2799
+      N =     100   SR -0.064   null SR +2.232   DSR 0.0052
+      N =  10,000   SR -0.064   null SR +3.405   DSR 0.0001
+      N =  62,208   SR -0.064   null SR +3.780   DSR 0.0000
+      N = 103,680   SR -0.064   null SR +3.879   DSR 0.0000
+
+   THE BRIEF (EMA 13/48 fixed)
+      N =       1   SR -0.781   null SR +0.458   DSR 0.1006
+      N =     100   SR -0.781   null SR +2.232   DSR 0.0009
+      N =  10,000   SR -0.781   null SR +3.405   DSR 0.0000
+      N =  62,208   SR -0.781   null SR +3.780   DSR 0.0000
+      N = 103,680   SR -0.781   null SR +3.879   DSR 0.0000
+
+   elapsed 6s

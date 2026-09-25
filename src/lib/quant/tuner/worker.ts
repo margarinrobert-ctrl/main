@@ -9,7 +9,8 @@
  * reason a second question is faster than the first, and it would be thrown away by any design
  * that recomputed per request.
  */
-import { instrument } from "../instruments";
+import { describe as describeCosts, feesRoundTurn, scheduleFor } from "../costs";
+import { instrument, roundTurnCostTicks } from "../instruments";
 import { parseCsv } from "../data";
 import { syntheticSeries } from "../synth";
 import type { Bar, Instrument } from "../types";
@@ -17,7 +18,15 @@ import { catalogue, resampleBars, TunerSession, type Config, type RevealRow, typ
 import type { WalkTrade } from "./tensor";
 
 type Req =
-  | { id: number; kind: "load"; source: { type: "csv"; text: string } | { type: "demo"; days: number }; symbol: string; timeframe: number }
+  | {
+      id: number;
+      kind: "load";
+      source: { type: "csv"; text: string } | { type: "demo"; days: number };
+      symbol: string;
+      timeframe: number;
+      /** Broker preset from `costs.ts`. Changes the fee lines, not the slippage model. */
+      broker?: string;
+    }
   | { id: number; kind: "run"; config: Config; controlDraws: number }
   | { id: number; kind: "sweep"; axes: SweepAxes }
   | { id: number; kind: "reveal"; keys: string[]; draws: number }
@@ -33,6 +42,9 @@ export interface LoadedInfo {
   researchSessions: number;
   lockedSessions: number;
   synthetic: boolean;
+  /** The cost breakdown actually in force, so the page can show what it charged. */
+  costs: string;
+  roundTurnTicks: number;
 }
 
 let session: TunerSession | null = null;
@@ -45,7 +57,11 @@ function need(): TunerSession {
 }
 
 function load(msg: Extract<Req, { kind: "load" }>): LoadedInfo {
-  const inst: Instrument = instrument(msg.symbol);
+  const base: Instrument = instrument(msg.symbol);
+  // The broker preset changes the FEE lines only. Spread and the slippage model belong to the
+  // instrument and the market, not to who clears the trade.
+  const fees = scheduleFor(msg.symbol, msg.broker ?? "discount");
+  const inst: Instrument = { ...base, fees, commissionRoundTurn: feesRoundTurn(fees) };
   let raw: Bar[];
   let synthetic = false;
   if (msg.source.type === "demo") {
@@ -71,6 +87,8 @@ function load(msg: Extract<Req, { kind: "load" }>): LoadedInfo {
     researchSessions: Math.floor(session.sessionCount * 0.65),
     lockedSessions: session.sessionCount - Math.floor(session.sessionCount * 0.65),
     synthetic,
+    costs: describeCosts(inst),
+    roundTurnTicks: roundTurnCostTicks(inst),
   };
   return info;
 }

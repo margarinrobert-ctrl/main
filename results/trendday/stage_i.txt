@@ -1,0 +1,55 @@
+========================================================================================================
+I. ALL MARKETS IN COMPARABLE UNITS
+========================================================================================================
+  Points are not comparable across four instruments. The unit here is PERCENT OF ENTRY PRICE, which cannot
+  collapse. The obvious alternative -- the entry-to-target distance, the natural 'R' of a target-only system --
+  is shown beside it and must NOT be used: when the session opens almost exactly on the EMA that distance goes
+  to zero and the ratio explodes. Same denominator trap as STUDY_SWEEP_110K's channel stop.
+
+  market       block           n   mean %     win    p5 %  worst %   gap %  clock    mean R (broken)
+  NQ 1m        research       26   +0.192   88.5%   -0.17    -0.91    0.42     0%              +0.54
+  NQ 1m        locked         17   +0.213   82.4%   -0.50    -0.60    0.30     6%              +0.39
+  NQ 1m        ALL            43   +0.200   86.0%   -0.45    -0.91    0.34     2%              +0.48
+  US100 15m    research       63   +0.032   66.7%   -1.22    -2.86    0.42    14%              -0.08
+  US100 15m    validation     38   +0.230   78.9%   -1.37    -2.58    0.74     5%              +0.35
+  US100 15m    test           24   +0.235   83.3%   -0.06    -0.61    0.34     0%              +0.49
+  US100 15m    ALL           125   +0.131   73.6%   -1.18    -2.86    0.45     9%              +0.16
+  US30 15m     research       64   +0.003   59.4%   -0.46    -3.14    0.41    12%              -1.73
+  US30 15m     validation     21   +0.088   76.2%   -0.71    -0.84    0.49    10%              +0.33
+  US30 15m     test           21   +0.041   61.9%   -0.87    -2.99    0.26    19%              -0.34
+  US30 15m     ALL           106   +0.028   63.2%   -0.81    -3.14    0.41    13%              -1.05
+  US30_ISO 15m research       20   +0.107   75.0%   -0.65    -2.93    0.33     5%              +0.23
+  US30_ISO 15m locked          4   +0.256  100.0%   +0.05    +0.03    0.56     0%              +0.62
+  US30_ISO 15m ALL            24   +0.132   79.2%   -0.52    -2.93    0.39     4%              +0.30
+
+  POOLED, 298 trades over four feeds: mean +0.104% of price, win 72.1%, worst -3.14%, p5 -0.97%
+  pooled bootstrap P(mean <= 0) 0.0054, 95% CI [+0.022, +0.187]
+  per feed: {'NQ 1m': (43, np.float64(0.1999)), 'US100 15m': (125, np.float64(0.1312)), 'US30 15m': (106, np.float64(0.0276)), 'US30_ISO 15m': (24, np.float64(0.1319))}
+  in the SAME pooled sample the R unit gives -0.213 with a worst of -114.3 -- one trade whose gap was 0.0001% of price.
+  That single denominator, not the market, is the whole difference between the two columns.
+
+  271 target exits average +0.222% and 27 clock exits -1.077% (worst -3.14%).
+  The clock exits are 9% of trades and carry -93% of net. A no-stop system's whole risk is there.
+
+  MINIMUM-GAP FILTER -- the cost floor. A target closer than the round turn cannot pay, so require the
+  entry-to-EMA gap to exceed a floor, in percent of price:
+    floor     n    mean %     win  clock   per feed (n / mean %)
+     0.00   298    +0.104   72.1%     9%   NQ 43/+0.200  US100 125/+0.131  US30 106/+0.028  US30_ISO 24/+0.132
+     0.05   285    +0.108   71.9%     9%   NQ 42/+0.204  US100 120/+0.136  US30 101/+0.029  US30_ISO 22/+0.143
+     0.10   267    +0.115   70.4%    10%   NQ 38/+0.219  US100 114/+0.140  US30 97/+0.037  US30_ISO 18/+0.159
+     0.15   248    +0.120   69.4%    10%   NQ 34/+0.232  US100 107/+0.143  US30 90/+0.041  US30_ISO 17/+0.162
+     0.20   230    +0.122   68.7%    11%   NQ 30/+0.256  US100 102/+0.144  US30 83/+0.032  US30_ISO 15/+0.208
+     0.30   191    +0.132   67.5%    13%   NQ 23/+0.265  US100 87/+0.169  US30 67/+0.022  US30_ISO 14/+0.209
+     0.40   155    +0.148   66.5%    14%   NQ 19/+0.320  US100 69/+0.198  US30 55/+0.016  US30_ISO 12/+0.197
+     0.60    94    +0.239   70.2%    18%   NQ 11/+0.445  US100 49/+0.311  US30 28/-0.012  US30_ISO 6/+0.451
+
+  The same ladder on the RESEARCH block only, so the floor is not chosen on the reserved blocks:
+    floor     n    mean %     win
+     0.00   173    +0.054   68.2%
+     0.05   166    +0.056   68.7%
+     0.10   153    +0.056   66.0%
+     0.15   146    +0.059   65.8%
+     0.20   135    +0.058   65.2%
+     0.30   112    +0.061   63.4%
+     0.40    89    +0.063   61.8%
+     0.60    48    +0.078   62.5%

@@ -1,0 +1,44 @@
+V63 stage I -- Monte Carlo, robustness, and a walk-forward that RE-CHOOSES the session.
+
+THE WALK-FORWARD IS THE POINT. The question the user asked -- add a start time, a stop time and a
+flatten -- is a question about three parameters, and the honest way to price a parameter is to let
+an optimiser pick it inside each training fold and then read the fold it has never seen. This
+branch has run that test four times (`STUDY_IBS_SESSION`, `STUDY_APM_VWAP`, `STUDY_TRENDDAY_EMA`,
+`STUDY_V60`) and the re-optimiser lost to the author's fixed constants every time. Fifth run.
+
+======================================================================================================================
+I1. MONTE CARLO on the pooled out-of-sample trades -- day-block bootstrap for the EDGE,
+    permutation for the PATH. Blocks from three markets over overlapping calendars are
+    not independent, so the interval is optimistic; the comparison between rows is not.
+======================================================================================================================
+  variant                                n    pct/tr  P(mean<=0)               95% CI  realDD   MCp99  pctile
+  SHIPPED  all hours, no flatten       850   +0.1988      0.0000 [+0.0865,+0.3191]   16.48   34.60    0.32
+  window 09:30-12:00, no flatten       437   +0.1964      0.0015 [+0.0619,+0.3450]    8.40   22.78    0.06
+  window 09:30-16:00 + FLATTEN        1132   +0.0350      0.0027 [+0.0093,+0.0610]    5.62   15.13    0.06
+  window 13:00-16:00 + FLATTEN         856   +0.0356      0.0063 [+0.0071,+0.0657]    4.28   13.24    0.02
+
+======================================================================================================================
+I2. ROBUSTNESS -- cost stress, and the stop ladder, pooled over the same blocks
+======================================================================================================================
+  SHIPPED  all hours, no flatten     cost  x0 +0.2054  x1 +0.1988  x2 +0.1932  x4 +0.1811   stops  1.5N +0.1988  2.0N +0.2166  2.5N +0.2728  3.0N +0.2589
+  window 09:30-12:00, no flatten     cost  x0 +0.2019  x1 +0.1964  x2 +0.1909  x4 +0.1804   stops  1.5N +0.1964  2.0N +0.1953  2.5N +0.1913  3.0N +0.1929
+  window 09:30-16:00 + FLATTEN       cost  x0 +0.0413  x1 +0.0350  x2 +0.0292  x4 +0.0167   stops  1.5N +0.0350  2.0N +0.0348  2.5N +0.0457  3.0N +0.0445
+  window 13:00-16:00 + FLATTEN       cost  x0 +0.0417  x1 +0.0356  x2 +0.0298  x4 +0.0173   stops  1.5N +0.0356  2.0N +0.0409  2.5N +0.0427  3.0N +0.0481
+
+======================================================================================================================
+I3. WALK-FORWARD OPTIMISATION -- the session and the stop re-chosen inside every
+    training fold from 60 declared cells, then applied to the fold it
+    has never seen. Both an EXPANDING and a ROLLING training window.
+======================================================================================================================
+  US100   expanding        re-chosen: n  240 +0.3486 %/trade (6/6 folds +)   fixed: n  351 +0.2523 (6/6 folds +)   WFE  1.38
+                           chose: 09:30-16:00 2.5N, 09:30-16:00 1.5N, 09:30-16:00 3.0N   flatten chosen in 0/6 folds
+  US100   rolling 2 folds  re-chosen: n  207 +0.3233 %/trade (6/6 folds +)   fixed: n  351 +0.2523 (6/6 folds +)   WFE  1.28
+                           chose: 09:30-16:00 2.5N, 13:00-16:00 3.0N, 09:30-11:00 2.0N, 09:30-16:00 1.5N   flatten chosen in 0/6 folds
+  US30    expanding        re-chosen: n  246 +0.0966 %/trade (3/6 folds +)   fixed: n  359 +0.1366 (5/6 folds +)   WFE  0.71
+                           chose: all hours 2.5N, all hours 3.0N, 09:30-16:00 3.0N, 03:00-12:00 1.5N   flatten chosen in 0/6 folds
+  US30    rolling 2 folds  re-chosen: n  283 +0.0818 %/trade (4/6 folds +)   fixed: n  359 +0.1366 (5/6 folds +)   WFE  0.60
+                           chose: all hours 2.5N, 03:00-12:00 1.5N, 09:30-16:00 3.0N, 09:30-16:00 1.5N   flatten chosen in 0/6 folds
+  NQ      expanding        re-chosen: n  105 +0.1839 %/trade (3/6 folds +)   fixed: n  140 +0.1936 (5/6 folds +)   WFE  0.95
+                           chose: all hours 2.0N, 13:00-16:00 2.5N, 13:00-16:00 1.5N, 13:00-16:00 2.0N   flatten chosen in 0/6 folds
+  NQ      rolling 2 folds  re-chosen: n   94 +0.1953 %/trade (4/6 folds +)   fixed: n  140 +0.1936 (5/6 folds +)   WFE  1.01
+                           chose: 13:00-16:00 2.5N, 13:00-16:00 2.0N, all hours 2.5N, 13:00-16:00 1.5N   flatten chosen in 0/6 folds

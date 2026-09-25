@@ -1,0 +1,278 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+//@version=5
+
+// NQ 07:00-11:00 NEW YORK -- THE BEST OF THE FIVE BY EV AND SHARPE. One leg, no menu.
+//
+// Of five designs measured on 766 sessions of NQ 5-minute bars, this is the one that reads best on
+// both statistics the ask named, and the only one whose matched control comes anywhere near
+// rejecting. It is shipped alone because a menu invites picking the biggest research number, and
+// on this family that is the wrong instinct.
+//
+// ============================ THE MECHANISM ============================
+// SELLERS OUT OF SIZE. Price makes a LOWER LOW while cumulative volume delta makes a HIGHER low:
+// the second push down is being made by fewer contracts than the first, so the flow driving it is
+// finishing. Long. The bearish mirror -- higher high on falling delta -- is the short.
+// Both pivots are CONFIRMED: a pivot at bar i needs bars i-k..i+k, so it is knowable at i+k and
+// never at i. Nearly every published divergence indicator marks it at the pivot, which back-tests
+// beautifully and cannot be traded.
+// THE DELTA IS A PROXY and the panel says so: no feed here carries aggressor tags, so each
+// 1-minute sub-bar's whole volume is signed by its own direction, which is TradingView's own rule.
+//
+// ============================ MEASURED ============================
+// NQ, 5-minute bars built from NQ_1m, 766 window sessions 2022-12-27 to 2025-12-11, one position
+// at a time, MNQ all-in round turn 1.72 points (commission + exchange + NFA + slippage).
+// Research block to 2024-11-27; the locked block was read ONCE.
+//
+// DOLLARS ARE DEFLATED. The research series carries index levels above the real Nasdaq-100 and the
+// ratio decays across the sample, so raw points overstate P&L -- by 13.6% on research and 3.7% on
+// locked, measured against a second US100 feed over 862 overlapping sessions. On a REAL broker feed
+// the deflated column is the one to expect; the Strategy Tester's own report is already in that
+// feed's points and needs no adjustment. Points below are raw; dollars are deflated, ONE MNQ.
+//
+//   year   trades    raw pts     $ (1 MNQ)     PF      win
+//   2023     205      -372.4        -611     0.908   52.7%    <- a full year of losses, up front
+//   2024     192     +1621.5      +3,000     1.445   53.1%
+//   2025     162     +1671.2      +3,253     1.404   59.9%
+//   TOTAL    559     +2920.3      +5,643     1.263   55.1%
+//
+//   = $1,924 a year on one contract, 191 trades a year, $10.09 a trade,
+//     worst drawdown $1,670, return/drawdown 3.38, longest losing run 12 sessions.
+//   research block  380 trades   +2.31 pts   $ 4.44/trade   PF 1.118   Sharpe +0.55
+//   LOCKED block    179 trades  +11.41 pts   $22.10/trade   PF 1.470   Sharpe +1.76
+//
+// ============================ THE OUT-OF-SAMPLE YEAR, IN FULL ============================
+// 2024-11-27 to 2025-12-11 -- 269 sessions, the only stretch with no say in choosing the rule.
+//   net +$3,956  |  $22.10/trade (median $23.08)  |  PF 1.470  |  win 60.3% (108W/71L)
+//   Sharpe +1.76 over EVERY session zero-filled  |  max DD $1,670  |  return/DD 2.37
+//   avg win $114 vs avg loss -$118  |  best +$677  worst -$576
+//
+//   2024-11    +63     2025-03   -724 <- only losing month     2025-08  +1,161
+//   2024-12   +639     2025-04   +378                          2025-09    +596
+//   2025-01   +217     2025-05   +338                          2025-10    +318
+//   2025-02   +246     2025-06    +12    2025-07    +20        2025-11    +458
+//                                                              2025-12    +232
+//   13 of 14 months positive, longest losing run ONE month.
+//
+// READ THE SHAPE, NOT THE TOTAL: the average win ($114) and average loss (-$118) are almost
+// IDENTICAL, so the entire out-of-sample result is the 60.3% WIN RATE and not asymmetric payoffs.
+// The driftless base rate for this geometry is ~51.9%. If the win rate reverts toward the research
+// block's 52.4%, the P&L goes to roughly break-even, because the payoffs will not rescue it.
+// THE WIN RATE IS THE NUMBER TO WATCH IN LIVE TRADING.
+//
+// ============================ WHAT IT CLEARS, AND WHAT IT DOES NOT ============================
+//                                                       research      LOCKED
+//   vs a matched random entry (same geometry/rate/side)   p 0.102      p 0.018
+//   vs a coin-flip SIDE on its own bars                   p 0.042      p 0.008
+//   day-block bootstrap against ZERO                      P 0.256      P 0.032
+//   its MEDIAN trade beats the control in                  97.8%        99.8%   of draws
+//   its mean EXCLUDING the best 5% beats the control in    85.2%        99.5%   of draws
+//
+// The last two lines matter most. A median is immune to the tail by construction, so the rule is
+// picking better bars and better sides than a random entry -- that is not a tail artifact and it
+// holds on BOTH blocks. Removing the best 5% of trades leaves the rule at -0.10 pts against the
+// control's -12.38: the heavy concentration is the EXIT GEOMETRY, which any entry inherits, and
+// not evidence against the entry.
+//
+// The control here is the CORRECTED one: the sampled bars are sorted before the walk, because an
+// unsorted control has the position lock reject an arbitrary share of them. That moved the locked
+// p-value from 0.095 (an earlier build of this header) to 0.018.
+//
+// ============================ THE MULTIPLICITY, HONESTLY ============================
+// At the search count that actually produced this cell -- N = 805 (5 designs x ~800 declared
+// geometry cells, plus 30 (k,w) reads) -- E[max Sharpe | pure noise] is 0.1280 per trade.
+//   LOCKED   Sharpe/trade +0.1372  CLEARS the noise floor (deflated Sharpe 0.550, not significant)
+//   research Sharpe/trade +0.0393  does NOT clear at any N above 5 (DSR 0.037)
+// Non-parametric version, best of 30 matched random entries: locked p 0.346, research p 0.958.
+// An earlier build of this header, and STUDY_S3_10M, said NOTHING cleared the noise floor. That
+// was wrong twice: it counted 1,260 cells of 10-minute stress testing as search trials when those
+// were run to FALSIFY the result, and it took the trial variance from the 10-minute family rather
+// than the 5-minute one that produced the cell (0.004208 against 0.001607). Both errors made the
+// test too harsh. Corrected in docs/ib/STUDY_S3_EDGE.md.
+//
+// ============================ COST IS NOT THE BINDING QUESTION HERE ============================
+//   zero cost $13.92/trade   as modelled $10.09   2x the assumed spread $5.77   4x -$2.63
+// A 3xATR stop on 5-minute NQ is ~45 points, so the 1.72-point round turn is under 4% of risk.
+// This survives DOUBLE the assumed spread; most candidates on this branch die at 1.5x.
+//
+// ============================ WHY THIS GEOMETRY AND NOT A SCALP'S ============================
+// The geometry is the MARGINAL CONSENSUS of an 800-cell declared grid, never any cell's top row.
+// Across the whole grid Sharpe rises monotonically as the stop WIDENS and NO TAKE PROFIT is the
+// best target rung -- the 23rd time on this branch. Median hold 54-63 minutes: intraday, not a
+// scalp. A tighter stop does not make this a better scalp, it makes it a worse trade -- at 0.5xATR
+// on 1-minute bars the 1:1 break-even is 72.8% against 51.9% here.
+//
+// ============================ THE FOUR THINGS THAT ARGUE AGAINST IT ============================
+// 1. THE RESEARCH BLOCK DOES NOT SEPARATE FROM ZERO. Bootstrap P(mean<=0) 0.256, DSR 0.037,
+//    best-of-30 p 0.958. The block permitted to choose it says "maybe"; the block read once says
+//    "yes". That is the wrong order, and on this branch it has never been the good kind of
+//    surprise. The forward expectation is between $4.44 and $22.10 a trade and probably nearer the
+//    low end, because the research block is three times longer.
+// 2. THE MONEY IS REGIME-TILTED. By quarter with fixed constants, nothing selected: 8 of 12
+//    positive overall, but 3 of 6 in the FIRST half at a mean of -1.82 pts against 5 of 6 in the
+//    second at +13.22. The direction call looks present throughout; the money does not.
+//    Mitigating: the split date does NOT decide the verdict -- both sides are profitable at 8 of
+//    12 cut dates swept from 2023-11 to 2025-07.
+// 3. IT FAILS AT A DIFFERENT BAR SIZE. On a 10-minute chart it is NEGATIVE on the research block at
+//    every one of 630 geometry cells, with corr(research, locked) = -0.823. Cost is ruled out --
+//    the round turn is 2.93% of risk at 10m against 3.78% at 5m, so the wider bar is CHEAPER.
+//    The two timeframes catch largely different trades (daily corr +0.107) and disagree only about
+//    WHEN the regime turned: during 2024 at 5m, not until 2025 at 10m. RUN THIS ON 5 MINUTES.
+// 4. ONE MARKET, NEVER CONFIRMED ELSEWHERE. The CVD needs sub-bars and NQ is the only feed with
+//    1-minute data here. 1-minute US100 or US30 bars would settle this; nothing else will.
+//
+// ============================ A NEURAL NETWORK WAS TRIED AND SHIPS NOTHING ============================
+// 45 causal features (truncation audit 0 of 900), 1,672 labelled events / effective n 960, purged
+// embargoed folds, uniqueness weights, objective = the R the trade earned, eight models from a
+// ridge to a four-layer net, each beside a SHUFFLED-label twin.
+//   The twin beat the real model in 14 of 24 ladder cells (58%) -- above 50% the noise floor is
+//   higher than the signal. Every tree model ranked the events BACKWARDS. 0 of 24 cells cleared a
+//   same-selectivity random filter or a day-block bootstrap (best control p 0.348), and p90 of R
+//   fell below baseline in 21 of 24. Capacity is inert: ridge -0.012 to 4x128 +0.018 IC.
+//   Nothing portable came out of it, so this script has NO model in it. The unfiltered rule below
+//   IS the best cell measured. PF 2.0 would need +15.7 points of win rate at the measured win
+//   (+0.824 R) and loss (-0.859 R) sizes; the best of 99 model cells delivered +3.0.
+//   See docs/ib/STUDY_S3_NEURAL_NET.md, STUDY_S3_10M.md, STUDY_S3_EDGE.md.
+//
+// ============================ SIZING ============================
+// Monte Carlo p99 drawdown is ~1.2x the realised $1,670, so size for ~$2,000 per contract, not for
+// the backtest. At one contract this is roughly $1,900 a year against a $1,700 drawdown.
+//
+// COMMISSION AND SLIPPAGE ARE NOT SET HERE. Set them in Properties before reading any report.
+
+strategy("NQ 07:00-11:00 Flow Exhaustion", shorttitle = "NQ S3", overlay = true, pyramiding = 0, initial_capital = 50000, default_qty_type = strategy.fixed, default_qty_value = 1, calc_on_every_tick = false, process_orders_on_close = false)
+
+gS = "Session (New York wall clock)"
+winOpen  = input.int(420, "Window opens (min past NY midnight, 420 = 07:00)", group = gS)
+winClose = input.int(660, "Flatten at (min past NY midnight, 660 = 11:00)", group = gS, tooltip = "The flatten order is submitted on the bar BEFORE the cutoff so it fills at the 11:00 open -- a script cannot sell the close of the bar that triggers it.")
+
+gR = "The rule"
+pivK    = input.int(3, "Pivot half-width, bars", minval = 1, group = gR, tooltip = "A pivot at bar i needs bars i-k..i+k, so it is stamped at i+k. This is what makes the divergence tradeable rather than merely back-testable.")
+pivW    = input.int(20, "Look back this many bars for the prior pivot", minval = 2, group = gR)
+ltfIn   = input.timeframe("1", "Sub-bar timeframe for the delta", group = gR, tooltip = "Must be STRICTLY below the chart timeframe or request.security_lower_tf returns nothing and the delta is flat. The panel prints the live sub-bar count.")
+doLong  = input.bool(true, "Long: price lower low + delta higher low", group = gR)
+doShort = input.bool(true, "Short: price higher high + delta lower high", group = gR)
+
+gX = "Exit geometry (the marginal consensus of an 800-cell grid)"
+stopN  = input.float(3.0, "Stop, x ATR at the signal bar", minval = 0.25, step = 0.25, group = gX, tooltip = "Sharpe rises monotonically toward wider across the whole grid. At 3xATR the round turn is 3.8% of risk on 5-minute NQ and the 1:1 break-even is 51.9%.")
+tgtR   = input.float(0.0, "Target in R (0 = none)", minval = 0.0, step = 0.5, group = gX, tooltip = "No take profit is the best target rung on the grid -- the 23rd independent time on this branch.")
+beAt   = input.float(1.0, "Breakeven once this many R are in front (0 = off)", minval = 0.0, step = 0.25, group = gX)
+beOff  = input.float(0.25, "...placed this many R the right side of entry", minval = 0.0, step = 0.05, group = gX)
+trArm  = input.float(1.0, "Arm the trail at (R in front, 0 = off)", minval = 0.0, step = 0.25, group = gX)
+trDist = input.float(1.0, "Trail distance behind the running high (R)", minval = 0.25, step = 0.25, group = gX)
+showHUD = input.bool(true, "Show the panel", group = gX)
+
+// ------------------------------------------------------------------ clock
+TZ = "America/New_York"
+nyMin = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow = dayofweek(time, TZ)
+wkday = nyDow != dayofweek.saturday and nyDow != dayofweek.sunday
+inWin = wkday and nyMin >= winOpen and nyMin < winClose
+newWin = inWin and not inWin[1]
+tfMin = timeframe.in_seconds() / 60
+lastWin = inWin and nyMin + tfMin >= winClose
+
+// ta.atr is Wilder's; the research uses ema(tr, n). This matches the research.
+atr = ta.ema(ta.tr(true), 14)
+
+// ------------------------------------------------------------------ cumulative delta, reset at the open
+lo_c = request.security_lower_tf(syminfo.tickerid, ltfIn, close)
+lo_o = request.security_lower_tf(syminfo.tickerid, ltfIn, open)
+lo_v = request.security_lower_tf(syminfo.tickerid, ltfIn, volume)
+nSub = array.size(lo_c)
+barDelta = 0.0
+if nSub > 0
+    for i = 0 to nSub - 1
+        barDelta += math.sign(array.get(lo_c, i) - array.get(lo_o, i)) * array.get(lo_v, i)
+var float cvd = 0.0
+if barstate.isconfirmed
+    cvd := newWin ? barDelta : (inWin ? cvd + barDelta : cvd)
+
+// ------------------------------------------------------------------ confirmed-pivot divergence
+pl = ta.pivotlow(low, pivK, pivK)
+ph = ta.pivothigh(high, pivK, pivK)
+var float lastPL = na
+var float lastPLcvd = na
+var int lastPLbar = na
+var float lastPH = na
+var float lastPHcvd = na
+var int lastPHbar = na
+sigL = false
+sigS = false
+if barstate.isconfirmed
+    if not na(pl)
+        if not na(lastPL) and bar_index - lastPLbar <= pivW and pl < lastPL and cvd[pivK] > lastPLcvd
+            sigL := true
+        lastPL := pl
+        lastPLcvd := cvd[pivK]
+        lastPLbar := bar_index
+    if not na(ph)
+        if not na(lastPH) and bar_index - lastPHbar <= pivW and ph > lastPH and cvd[pivK] < lastPHcvd
+            sigS := true
+        lastPH := ph
+        lastPHcvd := cvd[pivK]
+        lastPHbar := bar_index
+sigL := sigL and inWin and doLong
+sigS := sigS and inWin and doShort
+
+// ------------------------------------------------------------------ orders
+// The exit-bar marker updates BEFORE the entry test so a trade cannot re-enter on the bar it
+// closed on. The bracket is fill-relative and goes out WITH the entry, so the initial stop is live
+// on the fill bar -- leaving it naked is 4.4-13.0% of trades on this branch's parity measurements.
+var int lastExitBar = -1
+var int nClosed = 0
+var float riskPts = na
+var float peak = na
+if strategy.closedtrades != nClosed
+    nClosed := strategy.closedtrades
+    lastExitBar := bar_index
+
+canEnter = barstate.isconfirmed and strategy.position_size == 0 and bar_index != lastExitBar and not na(atr) and atr > 0 and not lastWin
+
+if canEnter and sigL
+    riskPts := stopN * atr
+    peak := na
+    ticks = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick)
+    strategy.entry("L", strategy.long)
+    strategy.exit("Lx", from_entry = "L", loss = ticks, profit = tgtR > 0 ? math.round(tgtR * ticks) : na)
+
+if canEnter and sigS
+    riskPts := stopN * atr
+    peak := na
+    ticks = math.round(math.max(riskPts, syminfo.mintick) / syminfo.mintick)
+    strategy.entry("S", strategy.short)
+    strategy.exit("Sx", from_entry = "S", loss = ticks, profit = tgtR > 0 ? math.round(tgtR * ticks) : na)
+
+// Breakeven and trail act on the CLOSE and cannot act on the fill bar: `position_avg_price` does
+// not exist until one bar after the fill, so a level written from it there is `na` and silently
+// does nothing. The fill-relative bracket above covers exactly that bar.
+sideN = strategy.position_size > 0 ? 1 : -1
+if barstate.isconfirmed and strategy.position_size != 0 and bar_index > lastExitBar and not na(strategy.position_avg_price) and riskPts > 0
+    adv = sideN * (close - strategy.position_avg_price) / riskPts
+    peak := na(peak) ? adv : math.max(peak, adv)
+    beLvl = beAt > 0 and peak >= beAt ? strategy.position_avg_price + sideN * beOff * riskPts : na
+    trLvl = trArm > 0 and peak >= trArm ? strategy.position_avg_price + sideN * (peak - trDist) * riskPts : na
+    lvl = na(beLvl) ? trLvl : (na(trLvl) ? beLvl : (sideN > 0 ? math.max(beLvl, trLvl) : math.min(beLvl, trLvl)))
+    if not na(lvl) and (sideN > 0 ? close < lvl : close > lvl)
+        strategy.close_all(comment = "secured")
+
+if barstate.isconfirmed and lastWin and strategy.position_size != 0
+    strategy.close_all(comment = "11:00 flat")
+
+// ------------------------------------------------------------------ plots
+bgcolor(inWin ? color.new(#1baf7a, 94) : na)
+plot(inWin ? cvd : na, "cumulative delta (proxy)", color = color.new(#7a5cd6, 0), display = display.data_window)
+plotshape(sigL, "bullish divergence", shape.triangleup, location.belowbar, color.new(#1baf7a, 0), size = size.tiny)
+plotshape(sigS, "bearish divergence", shape.triangledown, location.abovebar, color.new(#c0392b, 0), size = size.tiny)
+
+var table hud = table.new(position.top_right, 2, 5, border_width = 1)
+if showHUD and barstate.islast
+    table.cell(hud, 0, 0, "research  Sharpe / EV / PF / win", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 0, "+0.55  /  $4.44  /  1.118  /  52.4%", text_size = size.tiny)
+    table.cell(hud, 0, 1, "LOCKED  Sharpe / EV / PF / win", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 1, "+1.76  /  $22.10  /  1.470  /  60.3%", text_size = size.tiny)
+    table.cell(hud, 0, 2, "vs a matched random entry", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 2, "p 0.102 research  /  0.018 locked", text_size = size.tiny)
+    table.cell(hud, 0, 3, "WATCH THIS", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 3, "avg win = avg loss, so the edge IS the win rate. Break-even 51.9%.", text_color = color.new(#eb6834, 0), text_size = size.tiny)
+    table.cell(hud, 0, 4, "sub-bar delta live?", text_color = color.gray, text_size = size.tiny)
+    table.cell(hud, 1, 4, nSub > 0 ? str.tostring(nSub) + " sub-bars per chart bar" : "NO — the rule cannot fire on this chart", text_color = nSub > 0 ? color.gray : color.new(#c0392b, 0), text_size = size.tiny)

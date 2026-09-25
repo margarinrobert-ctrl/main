@@ -1,0 +1,29 @@
+NQ 1m: engine 43 trades, Pine model 43, shared days 43
+  same entry bar 43/43  same side 43/43  same exit bar 43/43  P&L correlation 1.0000
+  mean pts: engine +40.88  Pine +40.97  gap +0.09
+  exit reasons: engine {'target': 42, 'flatten': 1}  Pine {'target': 42, 'flatten': 1}
+
+US100 15m: engine 125 trades, Pine model 98, shared days 97
+  same entry bar 0/97  same side 97/97  same exit bar 97/97  P&L correlation 0.9031
+  mean pts: engine +18.31  Pine +12.60  gap -5.71
+  exit reasons: engine {'target': 86, 'flatten': 11}  Pine {'target': 84, 'flatten': 13}
+  ONLY in the engine: [20161202, 20170222, 20171006, 20180830, 20180918, 20181108]   ONLY in the Pine model: [20240910]
+
+US30 15m: engine 106 trades, Pine model 94, shared days 87
+  same entry bar 0/87  same side 87/87  same exit bar 87/87  P&L correlation 0.9296
+  mean pts: engine +1.02  Pine +13.79  gap +12.76
+  exit reasons: engine {'target': 73, 'flatten': 14}  Pine {'target': 69, 'flatten': 18}
+  ONLY in the engine: [20170206, 20170622, 20180806, 20181017, 20191209, 20210513]   ONLY in the Pine model: [20161108, 20200103, 20221101, 20221102, 20221103, 20221104]
+
+============================================================================================
+WHAT THE FILL DELAY COSTS -- the same rule on NQ at three chart resolutions
+============================================================================================
+  The EA fills one minute after the session open. Pine can only fill at the open of the
+  bar AFTER the one that decides the signal, so a coarser chart fills later.
+
+     chart   fill minute     n   mean pts     win     PF   vs 1-minute
+        1m             1    43     +40.97   86.0%   4.68         +0.00
+        5m             5    39     +50.15   84.6%   5.01         +9.18
+       15m            15    29     +44.89   79.3%   4.28         +3.92
+
+  A 15-minute chart is not a slower version of the strategy, it is a different one.

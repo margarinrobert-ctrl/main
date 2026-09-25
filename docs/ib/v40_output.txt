@@ -1,0 +1,240 @@
+
+==============================================================================================================================
+V40 -- DONCHIAN 40/25 LONG, MA200 SUPPORT, 07:00-11:00 NEW YORK, FLAT AT 11:00
+==============================================================================================================================
+   fixed by the brief: entry 40, exit 25, MA(200) as support, long only, entries 07:00-11:00 NY,
+   hard flatten 11:00, no take profit. Swept: the ATR stop, handed back explicitly.
+   Real per-instrument costs. One position at a time. Filters are chosen to be INDEPENDENT:
+   at most one per declared concept family, then a |rho| ceiling on the SIGNAL BARS.
+
+==============================================================================================================================
+1. THE STOP AXIS, NQ 15m -- swept on RESEARCH, read as a curve
+==============================================================================================================================
+   base signals in the window: 977   (635 research / 342 locked)
+    stop xATR     n      PF   $/trade   Sharpe        DD  ret/DD
+         1.00   326   0.799     -7.51    -0.91     3,006   -0.81
+         1.25   310   0.803     -8.30    -0.89     3,125   -0.82
+         1.50   293   0.816     -8.61    -0.83     2,938   -0.86
+         1.75   284   0.784    -11.27    -1.01     3,559   -0.90
+         2.00   280   0.773    -12.57    -1.05     3,868   -0.91
+         2.25   274   0.766    -13.75    -1.09     4,331   -0.87
+         2.50   270   0.781    -12.92    -1.02     4,073   -0.86
+         2.75   267   0.774    -13.79    -1.05     4,306   -0.86
+         3.00   264   0.777    -13.92    -1.03     4,375   -0.84
+         3.50   257   0.760    -15.94    -1.10     4,863   -0.84
+   marginal shape: PF at 1.0N 0.799 -> at 3.5N 0.760;  best 1.50N at PF 0.816
+
+==============================================================================================================================
+1. THE STOP AXIS, NQ 30m -- swept on RESEARCH, read as a curve
+==============================================================================================================================
+   base signals in the window: 486   (316 research / 170 locked)
+    stop xATR     n      PF   $/trade   Sharpe        DD  ret/DD
+         1.00   187   0.857     -5.67    -0.48     2,712   -0.39
+         1.25   181   0.834     -7.24    -0.57     2,647   -0.50
+         1.50   176   0.866     -6.21    -0.45     2,243   -0.49
+         1.75   172   0.902     -4.60    -0.32     2,082   -0.38
+         2.00   170   0.903     -4.77    -0.31     1,665   -0.49
+         2.25   169   0.851     -7.83    -0.50     1,870   -0.71
+         2.50   167   0.832     -9.17    -0.56     2,067   -0.74
+         2.75   165   0.820    -10.29    -0.60     2,117   -0.80
+         3.00   165   0.778    -13.37    -0.75     2,573   -0.86
+         3.50   164   0.753    -15.73    -0.84     2,850   -0.91
+   marginal shape: PF at 1.0N 0.857 -> at 3.5N 0.753;  best 2.00N at PF 0.903
+
+   THE BASE IS NEGATIVE AT EVERY STOP ON BOTH TIMEFRAMES. No stop rescues it, the
+   curve is flat-to-falling, and the filters below have to close a gap of 0.10-0.25
+   profit factor before they are worth anything at all.
+
+==============================================================================================================================
+2. THE WINDOW -- the brief's 07:00-11:00 against what the branch prefers (NQ 30m, 2.00N)
+==============================================================================================================================
+   window          res n   res PF   res $/t  lock n  lock PF  lock $/t  lock Sh
+   07:00-11:00       170    0.903     -4.77      88    0.957     -2.63    -0.14
+   07:30-11:00       165    0.914     -4.24      84    1.057     +3.25    +0.17
+   08:30-11:00       151    0.850     -7.30      77    1.067     +3.54    +0.19
+   09:30-11:00       120    0.713    -11.60      63    0.699    -16.42    -0.85
+   09:30-12:00       150    0.959     -1.97      76    0.879     -7.52    -0.37
+   09:30-16:00       219    1.208    +13.59     111    1.152    +11.60    +0.43
+   00:00-24:00       224    1.366    +33.00     115    1.140    +16.61    +0.42
+
+   (the last row is all hours with no flatten -- the cost of the intraday constraint itself)
+
+==============================================================================================================================
+3. THE CORRELATION MATRIX, COMPUTED ON THE SIGNAL BARS ONLY
+==============================================================================================================================
+   17 features, 316 research signal bars
+
+                       adx14 di_spre eff_rat chop14_ range_e atr_ran bbwidth atr_vs_ tr_vs_a dist_ma ma200_s vol_vs_ vol_tre body_sh close_p upwick_ mins_in
+   adx14                  --    0.49    0.47    0.21    0.21   -0.01    0.38   -0.11   -0.10    0.37    0.15    0.23   -0.11   -0.11   -0.02   -0.02   -0.05
+   di_spread            0.49      --    0.66    0.73    0.73    0.24    0.64    0.28    0.15    0.19   -0.05    0.27    0.26   -0.02   -0.10   -0.10    0.16
+   eff_ratio20          0.47    0.66      --    0.57    0.57    0.08    0.61    0.04   -0.02    0.04   -0.19    0.20    0.08   -0.07   -0.02   -0.02    0.01
+   chop14_inv           0.21    0.73    0.57      --    1.00    0.40    0.73    0.38    0.15   -0.06   -0.24    0.24    0.39    0.03   -0.07   -0.07    0.25
+   range_eff14          0.21    0.73    0.57    1.00      --    0.40    0.73    0.38    0.15   -0.06   -0.24    0.24    0.39    0.03   -0.07   -0.07    0.25
+   atr_rank250         -0.01    0.24    0.08    0.40    0.40      --    0.56    0.80    0.24   -0.32   -0.31    0.21    0.73    0.05    0.09    0.09    0.62
+   bbwidth_rank250      0.38    0.64    0.61    0.73    0.73    0.56      --    0.32   -0.06   -0.17   -0.32    0.19    0.36   -0.01    0.01    0.01    0.33
+   atr_vs_mean         -0.11    0.28    0.04    0.38    0.38    0.80    0.32      --    0.47   -0.14   -0.09    0.09    0.85    0.10    0.16    0.16    0.65
+   tr_vs_atr           -0.10    0.15   -0.02    0.15    0.15    0.24   -0.06    0.47      --   -0.01    0.07    0.20    0.28    0.28    0.24    0.24    0.12
+   dist_ma200_atr       0.37    0.19    0.04   -0.06   -0.06   -0.32   -0.17   -0.14   -0.01      --    0.77   -0.00   -0.16   -0.01    0.05    0.05   -0.18
+   ma200_slope_atr      0.15   -0.05   -0.19   -0.24   -0.24   -0.31   -0.32   -0.09    0.07    0.77      --   -0.10   -0.12   -0.02    0.02    0.02   -0.10
+   vol_vs_tod           0.23    0.27    0.20    0.24    0.24    0.21    0.19    0.09    0.20   -0.00   -0.10      --   -0.08    0.05   -0.06   -0.06   -0.25
+   vol_trend5          -0.11    0.26    0.08    0.39    0.39    0.73    0.36    0.85    0.28   -0.16   -0.12   -0.08      --   -0.01    0.06    0.06    0.86
+   body_share          -0.11   -0.02   -0.07    0.03    0.03    0.05   -0.01    0.10    0.28   -0.01   -0.02    0.05   -0.01      --    0.65    0.65   -0.05
+   close_pos           -0.02   -0.10   -0.02   -0.07   -0.07    0.09    0.01    0.16    0.24    0.05    0.02   -0.06    0.06    0.65      --    1.00   -0.00
+   upwick_share        -0.02   -0.10   -0.02   -0.07   -0.07    0.09    0.01    0.16    0.24    0.05    0.02   -0.06    0.06    0.65    1.00      --   -0.00
+   mins_into_window    -0.05    0.16    0.01    0.25    0.25    0.62    0.33    0.65    0.12   -0.18   -0.10   -0.25    0.86   -0.05   -0.00   -0.00      --
+
+   pairs above |rho| 0.35, which the selector will not allow together:
+      adx14                di_spread            rho +0.491   SAME family (TREND)
+      adx14                eff_ratio20          rho +0.470   SAME family (TREND)
+      adx14                bbwidth_rank250      rho +0.385   different families
+      adx14                dist_ma200_atr       rho +0.369   different families
+      di_spread            eff_ratio20          rho +0.664   SAME family (TREND)
+      di_spread            range_eff14          rho +0.734   different families
+      eff_ratio20          range_eff14          rho +0.570   different families
+      chop14_inv           di_spread            rho +0.734   different families
+      chop14_inv           eff_ratio20          rho +0.570   different families
+      chop14_inv           range_eff14          rho +1.000   SAME family (CHOP)
+      chop14_inv           vol_trend5           rho +0.392   different families
+      range_eff14          vol_trend5           rho +0.392   different families
+      atr_rank250          chop14_inv           rho +0.398   different families
+      atr_rank250          range_eff14          rho +0.398   different families
+      atr_rank250          bbwidth_rank250      rho +0.559   SAME family (VOLLEVEL)
+      atr_rank250          atr_vs_mean          rho +0.795   different families
+      atr_rank250          vol_trend5           rho +0.733   different families
+      atr_rank250          mins_into_window     rho +0.619   different families
+      bbwidth_rank250      di_spread            rho +0.638   different families
+      bbwidth_rank250      eff_ratio20          rho +0.610   different families
+      bbwidth_rank250      chop14_inv           rho +0.732   different families
+      bbwidth_rank250      range_eff14          rho +0.732   different families
+      bbwidth_rank250      vol_trend5           rho +0.364   different families
+      atr_vs_mean          chop14_inv           rho +0.379   different families
+      atr_vs_mean          range_eff14          rho +0.379   different families
+      atr_vs_mean          tr_vs_atr            rho +0.473   SAME family (VOLCHG)
+      atr_vs_mean          vol_trend5           rho +0.849   different families
+      atr_vs_mean          mins_into_window     rho +0.649   different families
+      dist_ma200_atr       ma200_slope_atr      rho +0.770   SAME family (LOCATION)
+      body_share           close_pos            rho +0.653   SAME family (SHAPE)
+      body_share           upwick_share         rho +0.653   SAME family (SHAPE)
+      close_pos            upwick_share         rho +1.000   SAME family (SHAPE)
+      mins_into_window     vol_trend5           rho +0.865   different families
+
+==============================================================================================================================
+4. EACH CANDIDATE FILTER AGAINST A SAME-SELECTIVITY CONTROL -- RESEARCH ONLY
+==============================================================================================================================
+   feature             family      keep     n      PF   $/trade  ctrl $/t       p
+   dist_ma200_atr      LOCATION    0.50    82   1.171     +7.92     -5.85   0.017
+   dist_ma200_atr      LOCATION    0.65   109   1.081     +3.60     -6.39   0.022
+   ma200_slope_atr     LOCATION    0.65   114   1.070     +3.02     -6.39   0.035
+   adx14               TREND       0.50    84   1.057     +2.52     -5.85   0.090
+   range_eff14         CHOP        0.65   115   1.002     +0.08     -6.39   0.092
+   chop14_inv          CHOP        0.65   115   1.002     +0.08     -6.39   0.092
+   body_share          SHAPE       0.65   143   0.995     -0.24     -6.39   0.110
+   chop14_inv          CHOP        0.50    90   1.013     +0.58     -5.85   0.140
+   range_eff14         CHOP        0.50    90   1.013     +0.58     -5.85   0.140
+   body_share          SHAPE       0.50   122   1.011     +0.53     -5.85   0.140
+   di_spread           TREND       0.65   113   0.946     -2.62     -6.39   0.212
+   upwick_share        SHAPE       0.65   143   0.869     -6.28     -6.39   0.494
+   di_spread           TREND       0.50    92   0.886     -5.41     -5.85   0.494
+   close_pos           SHAPE       0.65   143   0.869     -6.28     -6.39   0.494
+   bbwidth_rank250     VOLLEVEL    0.50    94   0.839     -7.28     -6.46   0.544
+   atr_vs_mean         VOLCHG      0.50   102   0.849     -6.24     -5.85   0.546
+   vol_trend5          PARTIC      0.65   132   0.840     -7.27     -6.39   0.566
+   vol_trend5          PARTIC      0.50   107   0.795     -7.55     -5.85   0.621
+   adx14               TREND       0.65   115   0.844     -7.90     -6.39   0.623
+   eff_ratio20         TREND       0.65   113   0.846     -7.89     -6.39   0.623
+   tr_vs_atr           VOLCHG      0.50   126   0.803     -9.90     -5.85   0.733
+   ma200_slope_atr     LOCATION    0.50    94   0.782    -10.00     -5.85   0.736
+   upwick_share        SHAPE       0.50   118   0.790    -10.49     -5.85   0.763
+   close_pos           SHAPE       0.50   118   0.790    -10.49     -5.85   0.763
+   mins_into_window    CLOCK       0.50   120   0.713    -11.60     -6.09   0.820
+   atr_rank250         VOLLEVEL    0.65   123   0.769    -11.00     -6.39   0.830
+   eff_ratio20         TREND       0.50    90   0.754    -13.04     -5.85   0.853
+   atr_rank250         VOLLEVEL    0.50   100   0.704    -13.73     -6.46   0.863
+   atr_vs_mean         VOLCHG      0.65   131   0.746    -11.88     -6.39   0.873
+   vol_vs_tod          PARTIC      0.65   129   0.780    -12.49     -6.39   0.895
+   vol_vs_tod          PARTIC      0.50   105   0.748    -14.94     -5.85   0.908
+   tr_vs_atr           VOLCHG      0.65   148   0.751    -13.09     -6.39   0.913
+   bbwidth_rank250     VOLLEVEL    0.65   119   0.746    -13.70     -6.39   0.935
+   mins_into_window    CLOCK       0.65   139   0.700    -14.21     -6.15   0.950
+
+   clearing p<=0.05: 3 of 34   (1.7 expected by chance)
+
+==============================================================================================================================
+5. THE INDEPENDENT SELECTION -- one per concept family, then a |rho| ceiling of 0.35
+==============================================================================================================================
+   picked, in the order the selector took them:
+      dist_ma200_atr       LOCATION   keep 0.50  PF 1.171  $/trade   +7.92  control p 0.017
+      range_eff14          CHOP       keep 0.65  PF 1.002  $/trade   +0.08  control p 0.092
+      body_share           SHAPE      keep 0.65  PF 0.995  $/trade   -0.24  control p 0.110
+      tr_vs_atr            VOLCHG     keep 0.50  PF 0.803  $/trade   -9.90  control p 0.733
+      mins_into_window     CLOCK      keep 0.50  PF 0.713  $/trade  -11.60  control p 0.820
+      vol_vs_tod           PARTIC     keep 0.65  PF 0.780  $/trade  -12.49  control p 0.895
+
+   rejected, and why:
+      ma200_slope_atr      family LOCATION already represented by dist_ma200_atr
+      adx14                |rho| 0.369 against dist_ma200_atr
+      chop14_inv           family CHOP already represented by range_eff14
+      di_spread            |rho| 0.734 against range_eff14
+      upwick_share         family SHAPE already represented by body_share
+      close_pos            family SHAPE already represented by body_share
+      bbwidth_rank250      |rho| 0.732 against range_eff14
+      atr_vs_mean          |rho| 0.379 against range_eff14
+      vol_trend5           |rho| 0.392 against range_eff14
+      eff_ratio20          |rho| 0.570 against range_eff14
+      atr_rank250          |rho| 0.398 against range_eff14
+
+==============================================================================================================================
+5b. DUPLICATES IN MY OWN POOL, found by the matrix rather than by reading
+==============================================================================================================================
+   chop14_inv           == range_eff14          rho +1.0000
+   close_pos            == upwick_share         rho +1.0000
+   These are ONE reading with two names. Collapsing them is CONSERVATIVE -- it lowers the
+   effective test count, so nothing above needs revising -- but a drop-one test on a stack
+   containing such a pair would report a filter contributing nothing when it was never a
+   second filter.
+
+==============================================================================================================================
+6. THE STACK -- only filters clearing their control at p <= 0.1 on RESEARCH
+==============================================================================================================================
+   admitted: ['dist_ma200_atr']
+   (the greedy selector fills every family; a filter that loses to a random one of the same
+   selectivity does not earn a place just because its family is unrepresented.)
+
+   LOCKED IS READ ONCE, HERE, after every choice above was fixed.
+
+   base (Donchian 40/25 + MA200 support)               
+      research  n  170 PF  0.903 $/t    -4.77 Sh -0.31 DD $  1,665
+      LOCKED    n   88 PF  0.957 $/t    -2.63 Sh -0.14 DD $  2,494
+   base (Donchian 40/25 + MA200 support) + dist_ma200  
+      research  n   82 PF  1.171 $/t    +7.92 Sh +0.35 DD $    963
+      LOCKED    n   46 PF  1.208 $/t   +11.24 Sh +0.44 DD $  1,556
+
+==============================================================================================================================
+7. THE SAME STACK ON TWO MARKETS THAT HAD NO PART IN ANY OF IT
+==============================================================================================================================
+
+   --- US30L  ($5/point)
+   base (Donchian 40/25 + MA200 support)               
+      research  n  411 PF  0.970 $/t    -4.51 Sh -0.08 DD $ 10,318
+      LOCKED    n  246 PF  0.708 $/t   -70.74 Sh -1.07 DD $ 22,799
+   base (Donchian 40/25 + MA200 support) + dist_ma200  
+      research  n  212 PF  0.950 $/t    -7.18 Sh -0.10 DD $  8,223
+      LOCKED    n  133 PF  0.757 $/t   -55.97 Sh -0.63 DD $ 10,485
+
+   --- US100L  ($2/point)
+   base (Donchian 40/25 + MA200 support)               
+      research  n  461 PF  0.899 $/t    -2.80 Sh -0.29 DD $  1,717
+      LOCKED    n  266 PF  1.055 $/t    +2.91 Sh +0.17 DD $  1,583
+   base (Donchian 40/25 + MA200 support) + dist_ma200  
+      research  n  237 PF  1.001 $/t    +0.03 Sh +0.00 DD $  1,233
+      LOCKED    n  138 PF  1.328 $/t   +15.72 Sh +0.65 DD $  1,256
+
+==============================================================================================================================
+8. MONTE CARLO on the full stack, NQ -- 1,000 draws each
+==============================================================================================================================
+   research   n   82   bootstrap mean    +8.19  [  -14.84,   +33.77]  P(mean<=0) 0.300
+                       realised DD $    963   MC median $    928  p95 $  1,438  p99 $  1,665
+   LOCKED     n   46   bootstrap mean   +12.37  [  -25.08,   +50.91]  P(mean<=0) 0.300
+                       realised DD $  1,556   MC median $    776  p95 $  1,213  p99 $  1,457
+
+   elapsed 5s

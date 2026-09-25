@@ -1,0 +1,71 @@
+
+======================================================================================================================
+THE SPEC, AS IMPLEMENTED
+======================================================================================================================
+  market NQ   trading bars 5m   higher timeframe 15m   execution path 1m
+  session 09:30-16:00 New York, liquidation 15:55 filled at the NEXT 1m bar's open
+  opening range = the first 15 completed minutes (09:30-09:45); breakouts are
+    not evaluated until 09:45 and the range bars themselves can never signal
+  EMA(20)/EMA(50) on the last CLOSED 15m bar; ATR(14) Wilder; volume SMA(20) shifted one bar
+  range/ATR gate [0.3, 1.5]   buffer max(0.05xATR, 0.25)   volume > 1.2x its own prior SMA
+  risk 0.25% of CURRENT equity, stop 1.0xATR frozen at the signal, start $100,000
+  50% out at +1R (rounded DOWN to a whole lot), stop to breakeven, rest at +2R
+  cost per side: spread 0.25 + slippage 0.25 as a price adjustment, + 0.36 pts of fees = 0.86 pts; point value 2.0
+  765 RTH sessions, 20221227 to 20251211; blocks cut at 20240620 and 20241128
+
+======================================================================================================================
+A. TRUNCATION AUDIT -- recompute every input on history that ENDS at the bar
+======================================================================================================================
+  40 probe bars x 3 series: 0 mismatches. CLEAN
+  opening-range bars are 3 per session (3.00 measured) and none of them is evaluable
+
+======================================================================================================================
+B. WHAT THE FILTER CHAIN COSTS -- sessions surviving each condition
+======================================================================================================================
+  sessions                                      765
+  ... with a range/ATR ratio in [0.3, 1.5]       85  (11.1%)
+  ... producing at least one full signal          34  (4.4%)
+  ... and actually traded (first signal only)     31  (4.1%)
+  signals discarded because a trade was already taken this session: 8
+  trades skipped because quantity < 1 lot: 2
+
+======================================================================================================================
+C. THE THREE BLOCKS
+======================================================================================================================
+  metric                                 development        validation     out-of-sample   ALL (reference)
+  trades                                          15                 5                11                31
+  % of sessions traded                         3.927             4.348             4.104             4.052
+  expectancy $/trade                         -88.307             127.6            25.392           -13.138
+  net $                                     -1,324.6             638.0             279.3            -407.3
+  profit factor                                0.367             4.152             1.250             0.881
+  win rate %                                  40.000            80.000            45.455            48.387
+  average win $                                127.7             210.1             279.2             200.2
+  average loss $                              -232.3            -202.4            -186.1            -213.1
+  max drawdown $                            -1,604.4            -202.4            -389.0          -1,604.4
+  Sharpe (daily, ann.)                        -1.352             1.765             0.327            -0.184
+  longest losing streak                            3                 1                 2                 3
+  mean R                                      -0.391             0.674             0.155            -0.025
+  % trades with an ambiguous bar               0.000             0.000             0.000             0.000
+  % long                                      60.000            80.000            72.727            67.742
+
+  'ALL' is a research-block statistic wearing a whole-sample name and is printed only
+  for reference -- the out-of-sample column is the one that was never selected on.
+
+======================================================================================================================
+D. EXIT MIX AND THE INTRABAR ASSUMPTION
+======================================================================================================================
+  development      stop 60.0% ($-2,091)  target 6.7% ($326)  breakeven 33.3% ($440)  liquidation 0.0% ($0)
+  validation       stop 20.0% ($-202)  target 40.0% ($676)  breakeven 40.0% ($165)  liquidation 0.0% ($0)
+  out-of-sample    stop 45.5% ($-1,114)  target 27.3% ($1,039)  breakeven 18.2% ($110)  liquidation 9.1% ($244)
+
+  exits are walked on the 1-MINUTE path, so the bar-level tie-break is mostly gone.
+  residual 1-minute bars where a stop and a target were both touched: 0.00% of trades -- resolved as a STOP (conservative).
+  the OPPOSITE assumption (target first) would give $-407 against $-407 -- a difference of $0, which is the size of the assumption.
+
+======================================================================================================================
+E. SIZING REALITY
+======================================================================================================================
+  quantity: median 3, min 1, max 6   |   trades where the 50% scale rounds to ZERO lots: 12.9%
+  final equity $99,593 from $100,000
+
+  trades written to results/orb/trades_v1.parquet

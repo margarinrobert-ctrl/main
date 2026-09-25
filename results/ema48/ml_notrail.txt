@@ -1,0 +1,69 @@
+  LABEL GEOMETRY: notrail -- fresh 13/48 cross, VWAP state, 1.5 ATR stop, NO trail, 15:55 flatten
+  1122 trades (748 research / 374 locked), 36 features after a 98% coverage floor
+  base research: mean R +0.0370  win 29.8%  p90 R +2.837
+  6 sequential folds, purged on trade lifetime and embargoed one session; mean train size 620
+
+============================================================================================================================
+A. THE LADDER on the research block -- OOF, purged and embargoed; each model beside its SHUFFLED twin
+============================================================================================================================
+  model             objective       IC    AUC |  R keep50     PF    p90 |  R keep30     PF    p90 | twin IC / R keep30
+  UNFILTERED base                             |    0.0370  1.052  2.837 |    0.0370  1.052  2.837
+  ridge             R           0.0647  0.515 |    0.0824  1.114  3.043 |    0.1294  1.180  2.915 | +0.0049 / +0.1460
+  lightgbm          R           0.0540  0.525 |    0.1710  1.247  2.974 |    0.1307  1.184  2.593 | -0.0966 / -0.2473
+  xgboost           R           0.0717  0.523 |    0.1006  1.143  2.851 |    0.2499  1.363  3.349 | -0.0790 / +0.0054
+  mlp_2x64          R           0.0872  0.556 |    0.0999  1.149  2.831 |    0.1564  1.235  2.958 | +0.0054 / +0.0780
+  mlp_4x128         R           0.1168  0.557 |    0.0926  1.136  2.717 |    0.1497  1.223  2.849 | +0.0485 / +0.1177
+  logistic          win/lose    0.1564  0.586 |    0.0686  1.106  2.228 |    0.1237  1.201  2.108 | -0.0687 / +0.0619
+  lightgbm          win/lose    0.1493  0.582 |    0.1604  1.244  2.654 |    0.2796  1.475  2.299 | -0.0253 / +0.0046
+  xgboost           win/lose    0.1302  0.581 |    0.1894  1.296  2.753 |    0.1569  1.254  2.299 | +0.1082 / +0.0559
+  mlp_2x64          win/lose    0.1032  0.547 |    0.0692  1.102  2.838 |    0.0781  1.116  2.716 | -0.0842 / -0.1373
+  mlp_4x128         win/lose    0.1086  0.558 |    0.2183  1.333  3.165 |    0.2537  1.384  3.418 | +0.0016 / -0.0559
+
+============================================================================================================================
+B. THE SAME-SELECTIVITY RANDOM FILTER -- what keeping 50% / 30% of trades AT RANDOM earns (500 draws)
+============================================================================================================================
+  keep 50%: random-filter R median +0.0402  5-95% [-0.0858, +0.1769]
+      ridge       R    real +0.0824 (p 0.292)   twin +0.0913 (p 0.264)
+      lightgbm    R    real +0.1710 (p 0.062)   twin +0.0157 (p 0.618)
+      xgboost     R    real +0.1006 (p 0.224)   twin -0.0269 (p 0.814)
+      mlp_2x64    R    real +0.0999 (p 0.226)   twin -0.0364 (p 0.840)
+      mlp_4x128   R    real +0.0926 (p 0.260)   twin +0.1021 (p 0.216)
+      logistic    win  real +0.0686 (p 0.350)   twin +0.0001 (p 0.686)
+      lightgbm    win  real +0.1604 (p 0.082)   twin -0.0468 (p 0.862)
+      xgboost     win  real +0.1894 (p 0.030)   twin +0.1500 (p 0.098)
+      mlp_2x64    win  real +0.0692 (p 0.348)   twin -0.0855 (p 0.948)
+      mlp_4x128   win  real +0.2183 (p 0.010)   twin +0.0124 (p 0.636)
+  keep 30%: random-filter R median +0.0537  5-95% [-0.1471, +0.2462]
+      ridge       R    real +0.1294 (p 0.298)   twin +0.1460 (p 0.238)
+      lightgbm    R    real +0.1307 (p 0.292)   twin -0.2473 (p 1.000)
+      xgboost     R    real +0.2499 (p 0.050)   twin +0.0054 (p 0.628)
+      mlp_2x64    R    real +0.1564 (p 0.222)   twin +0.0780 (p 0.420)
+      mlp_4x128   R    real +0.1497 (p 0.234)   twin +0.1177 (p 0.322)
+      logistic    win  real +0.1237 (p 0.316)   twin +0.0619 (p 0.472)
+      lightgbm    win  real +0.2796 (p 0.034)   twin +0.0046 (p 0.636)
+      xgboost     win  real +0.1569 (p 0.216)   twin +0.0559 (p 0.494)
+      mlp_2x64    win  real +0.0781 (p 0.420)   twin -0.1373 (p 0.936)
+      mlp_4x128   win  real +0.2537 (p 0.050)   twin -0.0559 (p 0.806)
+
+============================================================================================================================
+C. THE ONE LOCKED READ -- the model with the best research OOF IC, trained on ALL research trades
+============================================================================================================================
+  chosen on research IC: logistic (win/lose), IC +0.1564. Multiplicity: 10 model-objective cells x 2 rungs.
+  locked base: n 374  R +0.1129  PF 1.164  p90 +2.395
+  locked logistic: IC +0.1414  AUC 0.567 | keep50 R -0.0918 PF 0.859 p90 +1.830 (n 187) | keep30 R -0.0781 PF 0.870 p90 +1.847 (n 112)
+  locked random filter keep 50%: median +0.1144  ->  logistic p 0.958
+  locked random filter keep 30%: median +0.1206  ->  logistic p 0.844
+
+============================================================================================================================
+D. WHAT THE BEST MODEL READS -- top features by |ridge coefficient| on research (interpretable, not the winner)
+============================================================================================================================
+  mom.rsi14                  -0.7835
+  x.ef_slope_atr             +0.5083
+  loc.pos20                  +0.4923
+  x.spread_atr               +0.2487
+  mom.ret3_atr               -0.2422
+  mom.body_atr               +0.1999
+  loc.dist_hi20_atr          +0.1697
+  x.es_slope_atr             -0.1689
+  loc.prev_sess_hi_atr       +0.1491
+  x.spread_slope5            -0.1425

@@ -1,0 +1,23 @@
+
+==========================================================================================================================
+THE SCREENSHOT'S NUMBER, REPRODUCED -- and taken apart. NQ 5m signals, exits on the true 1-minute path, research block
+==========================================================================================================================
+
+  [as configured: 15/8 trail, 1.5/2.5 ATR]
+                                                                   n      PF   win%   %/trade    $ 5 MNQ   exits
+  bar-close fill at the next open (a live market order)         1353   0.428   57.1   -0.0311    -75,084   trail62% stop36% target2%
+  (a) fill AT the EMA8 touch, only on bars that CONFIRM at the close   926   0.419   55.3   -0.0355    -59,758   trail62% stop37% target1%
+      touch fill sits a median +0.10 pts (+nan ATR) better than the bar-close fill -- that is the whole difference
+  (b) resting limit at the EMA8, fills on EVERY eligible touch  3164   0.193   40.0   -0.0767   -444,967   stop53% trail46% target1%
+
+  [trail OFF: 1.5/2.5 ATR bracket]
+                                                                   n      PF   win%   %/trade    $ 5 MNQ   exits
+  bar-close fill at the next open (a live market order)         1210   0.890   38.7   -0.0112    -20,852   stop61% target39%
+  (a) fill AT the EMA8 touch, only on bars that CONFIRM at the close   826   0.854   37.2   -0.0160    -22,293   stop63% target37%
+      touch fill sits a median -0.60 pts (+nan ATR) better than the bar-close fill -- that is the whole difference
+  (b) resting limit at the EMA8, fills on EVERY eligible touch  2377   0.461   24.7   -0.0710   -307,115   stop75% target25%
+
+  (a) is what an unguarded script does with an intrabar execution option ticked: it buys the touch on bars it
+  will only know CONFIRMED at the close. (b) is the only order that can buy the touch, and it cannot see the
+  close either -- so it also fills the touches that never confirm. The gap between them is lookahead, and it
+  is the screenshot.
