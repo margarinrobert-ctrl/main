@@ -286,7 +286,7 @@ REGISTRY = {
         volume="tick volume; a separate TickVolume column is also present",
         defects="not re-measured after the identification.",
         loader="research/v13/*, research/us100.py",
-        provenance="user upload, 2026-08-26, unlabelled -- the instrument had to be inferred; re-uploaded 2026-08-29 as `nasdaq_20252016_15m_data.csv`, row count identical, and the sha256 recorded here is from THAT delivery -- the 2026-08-26 copy was never hashed uncompressed, so a future mismatch means a different delivery, not necessarily different bars.",
+        provenance="user upload, 2026-08-26, unlabelled -- the instrument had to be inferred; re-uploaded 2026-08-29 as `nasdaq_20252016_15m_data.csv`, row count identical, and the sha256 recorded here is from THAT delivery -- the 2026-08-26 copy was never hashed uncompressed, so a future mismatch means a different delivery, not necessarily different bars. Re-uploaded again 2026-09-25 as `nasdaq_2025-2016_15m_data.csv`: sha256 prefix c449dddfbc06a943, bytes and rows IDENTICAL -- the same delivery, every block already read.",
         notes="NINE years against the ISO feed's two, so it is where a rule gets tested on 2018, "
               "COVID and the 2022 bear. Everything before 2022-12-26 is unseen by any NQ study."),
 

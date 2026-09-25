@@ -99,7 +99,8 @@ def orb_arrays(d, nymin, tf, start=540, end=545):
 def run(d, fT="LinReg", fL=13, sT="EMA", sL=48, side="Both", xmode="cross",
         stop_atr=2.0, tgt_atr=None, atr_n=14, flat=None, win=None,
         orb=None, orb_start=540, orb_end=545, orb_win=30.0, orb_once=False,
-        be_pts=None, be_off=5.0, cross_mode="bar", fresh_min=15.0, rev=True, stats=None):
+        be_pts=None, be_off=5.0, cross_mode="bar", fresh_min=15.0, rev=True, stats=None,
+        return_entries=False, force_sig=None):
     o = d["open"].to_numpy(); h = d["high"].to_numpy(); l = d["low"].to_numpy()
     c = d["close"].to_numpy()
     ny = d["ny"]
@@ -148,6 +149,8 @@ def run(d, fT="LinReg", fL=13, sT="EMA", sL=48, side="Both", xmode="cross",
             if dn[i]: lxd = tms[i]
             if bu[i]: lbu = tms[i]
             if bd[i]: lbd = tms[i]
+    if force_sig is not None:          # a control: replace WHERE entries fire, keep every exit rule
+        sl_, ss_ = force_sig
     if stats is not None:
         stats.update(cross_up=int(up.sum()), cross_dn=int(dn.sum()),
                      sig_l=int(sl_.sum()), sig_s=int(ss_.sum()),
@@ -164,6 +167,7 @@ def run(d, fT="LinReg", fL=13, sT="EMA", sL=48, side="Both", xmode="cross",
     pos = 0; ent = 0.0; stp = tgt = np.nan
     pend = None       # action to execute at the next bar's open
     trades = []
+    ents = []
     n = len(c)
     for i in range(n):
         # 1. pending order fills at this bar's open
@@ -172,7 +176,7 @@ def run(d, fT="LinReg", fL=13, sT="EMA", sL=48, side="Both", xmode="cross",
             if pos != 0 and act in ("close", "rev"):
                 trades.append(pos * (o[i] - ent) - COST); pos = 0
             if act in ("open", "rev"):
-                pos = sd; ent = o[i]; armed = False
+                pos = sd; ent = o[i]; armed = False; ents.append(ny.values[i])
                 stp = ent - sd * sdist if sdist == sdist else np.nan
                 tgt = ent + sd * tdist if tdist == tdist else np.nan
             pend = None
@@ -220,6 +224,8 @@ def run(d, fT="LinReg", fL=13, sT="EMA", sL=48, side="Both", xmode="cross",
             pend = ("rev" if pos > 0 else "open", -1, sdist, tdist); took_s = True; used_d = tdn[i]
     if stats is not None:
         stats["be_armed"] = be_n
+    if return_entries:
+        return np.asarray(trades), np.asarray(ents[:len(trades)])
     return np.asarray(trades)
 
 
