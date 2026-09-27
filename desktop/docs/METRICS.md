@@ -113,6 +113,26 @@ Large MFE with small net profit means the exits are leaving money on the table.
 MAE close to the stop distance on winners means the stop is barely wide enough
 and small changes to it will change the result a lot.
 
+## Tail risk and confidence
+
+Computed on trade net P&L (`x`), not bars. `q_p` is the p-th percentile of `x`.
+
+| Metric | Formula |
+|---|---|
+| `trade_var_95` | `max(0, -q_5)`: a positive number is a loss |
+| `trade_cvar_95` | `max(0, -mean(x[x <= q_5]))` |
+| `tail_ratio` | `q_95 / -q_5`, only when `q_5 < 0 < q_95` |
+| `trade_skew` | `m3 / m2^1.5` of per-trade account returns (population moments) |
+| `trade_kurtosis` | `m4 / m2^2 - 3` (excess; 0 is normal) |
+| `probabilistic_sharpe` | `Phi( SR sqrt(n-1) / sqrt(1 - g3 SR + (g4-1)/4 SR^2) )` |
+| `min_track_record_trades` | `1 + (1 - g3 SR + (g4-1)/4 SR^2) (Z_0.95 / SR)^2`, only when `SR > 0` |
+
+`SR` is the per-trade Sharpe (mean over sample standard deviation) of account
+returns `net_pnl / equity_at_entry`, `g3` the skew, `g4` the raw kurtosis. If
+the variance term is not positive, which a heavily skewed sample can cause, it
+falls back to the normal-returns case `1 + SR^2 / 2`. Unavailable under 3
+trades; `low_sample` under 60.
+
 ## Exit reasons
 
 `exit_reason_breakdown` gives count, net P&L, win rate and average P&L for each

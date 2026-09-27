@@ -344,7 +344,11 @@ def test_saving_a_variant_records_how_many_were_tried(dialog, bars,
         pytest.skip("nothing to save on this fixture")
     d.on_keep()
 
-    saved = [e for e in window.strategies.list() if e.name != spec.name]
+    # On a first launch the library is seeded with the built-in strategies;
+    # the variant is the one entry that is neither a built-in nor the source.
+    from tradingbacktester.strategy.builtin import BUILTIN_STRATEGIES
+    saved = [e for e in window.strategies.list()
+             if e.name != spec.name and e.name not in BUILTIN_STRATEGIES]
     assert len(saved) == 1
     kept = window.strategies.load(saved[0].id)
     assert str(report.tried) in kept.description

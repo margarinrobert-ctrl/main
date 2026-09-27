@@ -449,3 +449,141 @@ def overfitting_note(results: OptimizationResults,
             f"the ranking.")
 
     return " ".join(parts)
+
+
+#: Metrics where smaller is better but which are not in RANKING_METRICS, whose
+#: unknown-key default is "bigger is better".  A Pareto front must never
+#: maximise a loss.
+_SMALLER_IS_BETTER = frozenset({
+    "max_drawdown", "max_drawdown_pct", "max_drawdown_duration_bars",
+    "ulcer_index", "total_costs", "total_commission", "total_slippage",
+    "total_spread_cost", "trade_var_95", "trade_cvar_95",
+    "min_track_record_trades", "max_consecutive_losses", "avg_mae",
+    "max_mae", "annual_volatility_pct", "downside_deviation",
+    "time_under_water_pct", "beta_pnl_share", "concentration", "loss_rate",
+    "cost_to_gross_profit_pct", "deepest_drawdown_bars", "losing_trades",
+})
+# NOT here: losses the metrics layer stores as NEGATIVE numbers (avg_loss,
+# largest_loss, gross_loss, worst_month_pct).  "Bigger is better" is already
+# right for those -- -100 beats -5000 -- and minimising them would pick the
+# larger loss.
+
+
+def objective_direction(spec: str) -> tuple[str, bool]:
+    """``"metric"``, ``"metric:max"`` or ``"metric:min"`` -> (key, maximise)."""
+    text = str(spec).strip()
+    key, _, forced = text.partition(":")
+    key = key.strip()
+    forced = forced.strip().lower()
+    if forced in ("max", "maximise", "maximize"):
+        return key, True
+    if forced in ("min", "minimise", "minimize"):
+        return key, False
+    if forced:
+        raise ValueError(f"'{forced}' is not a direction; use {key}:max or {key}:min.")
+    if key in _BY_KEY:
+        return key, _BY_KEY[key].maximise
+    return key, key not in _SMALLER_IS_BETTER
+
+
+def pareto_front(results: OptimizationResults, objectives: Sequence[str],
+                 minimum_trades: int = 0) -> list[OptimizationRow]:
+    """The combinations no other combination beats on EVERY objective.
+
+    Cost: O(n log n) for two objectives.  For three or more it is
+    O(n x front size) -- well under a second on 50,000 typical rows, but a
+    minute when tens of thousands of rows are all on the front.
+
+    ``objectives`` are metric keys, each optimised in its natural direction
+    (``max_drawdown_pct``, ``trade_cvar_95`` and other losses are minimised
+    without being asked); append ``:max`` or ``:min`` to override.  A row is
+    on the front when no other row is at least as good on every objective and
+    strictly better on one.  Returned sorted by the first objective, best
+    first.  A metric no row has raises ``ValueError`` rather than returning an
+    empty front that reads as "nothing qualified".
+
+    This replaces "pick one number and maximise it" with the set of honest
+    trade-offs and leaves the choice between them to the reader.  It is still
+    a selection over the same rows: run it on the research block, and judge
+    whatever is picked from it on the locked block.
+    """
+    parsed = [objective_direction(k) for k in objectives if str(k).strip()]
+    if len(parsed) < 2:
+        raise ValueError("A Pareto front needs at least two objectives.")
+    keys = [k for k, _ in parsed]
+    signs = [1.0 if up else -1.0 for _, up in parsed]
+    ok_rows = [r for r in results.rows if r.ok]
+    missing = [k for k in keys
+               if ok_rows and all(math.isnan(r.value(k)) for r in ok_rows)]
+    if missing:
+        raise ValueError(
+            f"No combination has a value for {', '.join(missing)}. Check the "
+            f"spelling against the metric names a backtest reports.")
+    rows: list[OptimizationRow] = []
+    points: list[tuple[float, ...]] = []
+    for row in ok_rows:
+        if row.trade_count < int(minimum_trades):
+            continue
+        values = tuple(row.value(k) for k in keys)
+        if any(math.isnan(v) for v in values):
+            continue
+        rows.append(row)
+        points.append(tuple(v * s for v, s in zip(values, signs)))
+    if not rows:
+        return []
+    arr = np.asarray(points, dtype="float64")
+    k = arr.shape[1]
+    # Descending lexicographic order: anything that dominates a point is
+    # lexicographically greater, so it has been visited already, and by
+    # transitivity something on the front found so far dominates it too.
+    order = np.lexsort(tuple(-arr[:, j] for j in reversed(range(k))))
+    front: list[int] = []
+    if k == 2:
+        # Two objectives: one sweep.  A point is on the front when its second
+        # value beats every earlier one, or exactly duplicates the point that
+        # set the best (duplicates do not dominate each other).
+        best = -math.inf
+        best_pt: tuple[float, float] | None = None
+        for i in order:
+            a, b = float(arr[i, 0]), float(arr[i, 1])
+            if best_pt is None or b > best:
+                best, best_pt = b, (a, b)
+                front.append(int(i))
+            elif best_pt is not None and (a, b) == best_pt:
+                front.append(int(i))
+    else:
+        front_pts = np.empty((len(rows), k), dtype="float64")
+        size = 0
+        for i in order:
+            p = arr[i]
+            if size:
+                f = front_pts[:size]
+                if np.any(np.all(f >= p, axis=1) & np.any(f > p, axis=1)):
+                    continue
+            front_pts[size] = p
+            size += 1
+            front.append(int(i))
+    chosen = [rows[i] for i in front]
+    first, sign = keys[0], signs[0]
+    chosen.sort(key=lambda r: (-sign * r.value(first), -r.trade_count, r.index))
+    return chosen
+
+def format_pareto(front: Sequence[OptimizationRow], objectives: Sequence[str],
+                  limit: int = 25) -> str:
+    """A plain-text table of a Pareto front."""
+    keys = [objective_direction(k)[0] for k in objectives if str(k).strip()]
+    lines = [f"Pareto front over {', '.join(keys)}: {len(front)} combination(s) "
+             f"that no other beats on all of them"]
+    if not front:
+        return lines[0]
+    names = sorted({name for row in front for name in row.params})
+    head = "  " + "".join(f"{n[:14]:>15}" for n in names) + \
+        "".join(f"{k[:16]:>18}" for k in keys) + f"{'trades':>8}"
+    lines.append(head)
+    for row in list(front)[:max(1, int(limit))]:
+        cells = "".join(f"{str(row.params.get(n, '')):>15}" for n in names)
+        vals = "".join(f"{row.value(k):>18,.2f}" for k in keys)
+        lines.append(f"  {cells}{vals}{row.trade_count:>8,}")
+    if len(front) > limit:
+        lines.append(f"  ... and {len(front) - limit} more")
+    return "\n".join(lines)

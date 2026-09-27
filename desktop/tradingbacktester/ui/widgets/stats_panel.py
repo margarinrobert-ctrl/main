@@ -194,6 +194,24 @@ _LAYOUT: tuple[tuple[str, tuple[tuple[str, str, str, bool, str], ...]], ...] = (
         ("kelly_fraction", "Kelly fraction", "ratio", False, "Theoretical optimal fraction of capital; treat as an upper bound"),
         ("exposure_pct", "Time in market", "pct", False, "Percentage of bars with an open position"),
     )),
+    ("Tail risk and confidence", (
+        ("trade_var_95", "Trade VaR 95%", "money_loss", False,
+         "The loss exceeded by the worst 5% of trades (historical)"),
+        ("trade_cvar_95", "Trade CVaR 95%", "money_loss", False,
+         "Expected shortfall: the average loss of the worst 5% of trades"),
+        ("tail_ratio", "Tail ratio", "ratio", False,
+         "Best 5% of trades over worst 5%; above 1 the right tail is fatter"),
+        ("trade_skew", "Trade skew", "ratio", False,
+         "Skewness of per-trade returns; negative means rare large losses"),
+        ("trade_kurtosis", "Trade excess kurtosis", "ratio", False,
+         "Fat tails in per-trade returns; 0 is a normal distribution"),
+        ("probabilistic_sharpe", "Probabilistic Sharpe", "pct_unit", False,
+         "Probability the true per-trade Sharpe is above zero, allowing for "
+         "skew, fat tails and trade count. Prices this ONE backtest, not the "
+         "search that found it"),
+        ("min_track_record_trades", "Min track record", "int", False,
+         "Trades needed at this Sharpe for 95% confidence it is above zero"),
+    )),
     ("Is it an edge, or is it exposure?", (
         ("residual_sharpe", "Residual Sharpe", "ratio", True,
          "Sharpe of what is left once the market's own move across this strategy's "
@@ -396,6 +414,9 @@ class StatsPanel(QWidget):
             return "-"
         if fmt == "money":
             return money(value, self._currency)
+        if fmt == "money_loss":
+            # A loss stored as a positive amount; zero is a real value here.
+            return money(-abs(float(value)), self._currency)
         if fmt == "money_cost":
             return money(-abs(float(value)), self._currency) if value else "-"
         if fmt == "pct":

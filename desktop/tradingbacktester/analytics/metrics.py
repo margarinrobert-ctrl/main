@@ -361,6 +361,7 @@ def _compute(result: BacktestResult) -> dict[str, Any]:
     _exposure(result, metrics, rel, curves, trades)
     _sides(metrics, rel, trades)
     _excursions(metrics, rel, trades, n)
+    _tail_risk(metrics, rel, trades, net, n)
     _periods(result, metrics, rel)
     _activity(result, metrics, rel, trades, n)
     _exit_reasons(metrics, trades, n)
@@ -876,6 +877,142 @@ def _excursions(m: dict[str, Any], rel: _Reliability, trades: Sequence[Trade],
     if n == 0:
         rel.mark(("avg_mae", "avg_mfe", "max_mae", "max_mfe"), UNAVAILABLE,
                  "Unavailable - this run produced no trades.")
+
+
+#: Below this many trades the tail and confidence figures are marked low-sample.
+#: A 5th percentile of 20 trades is the single worst trade; of 60 it is the
+#: third-worst, which is the least it takes to be a percentile at all.
+TAIL_MIN_TRADES = 60
+
+#: Confidence that the Probabilistic Sharpe Ratio and the minimum track record
+#: are stated at.
+PSR_CONFIDENCE = 0.95
+
+
+def probabilistic_sharpe(returns: np.ndarray, benchmark: float = 0.0
+                         ) -> tuple[float | None, float | None, float, float, float]:
+    """Bailey & Lopez de Prado (2012): P(true Sharpe > ``benchmark``).
+
+    Returns ``(psr, min_track_record, sharpe, skew, kurtosis)``.  ``sharpe``
+    is per observation (not annualised), ``kurtosis`` is raw (3.0 is normal).
+    ``min_track_record`` is how many observations it would take, at this
+    Sharpe, skew and kurtosis, for the PSR to reach :data:`PSR_CONFIDENCE`;
+    ``None`` when the observed Sharpe does not beat the benchmark, since no
+    track record is long enough to confirm an edge that is not there.
+
+        PSR   = Phi( (SR - SR*) sqrt(n - 1) / sqrt(1 - g3 SR + (g4 - 1)/4 SR^2) )
+        MinTRL = 1 + (1 - g3 SR + (g4 - 1)/4 SR^2) (Z_alpha / (SR - SR*))^2
+    """
+    from ..finder.overfit import norm_cdf, norm_ppf
+
+    x = np.asarray(returns, dtype="float64")
+    x = x[np.isfinite(x)]
+    n = int(x.size)
+    if n < 3:
+        return None, None, math.nan, math.nan, math.nan
+    sd = float(np.std(x, ddof=1))
+    mean = float(np.mean(x))
+    # Identical values rarely give an exact zero: rounding in the mean leaves
+    # a standard deviation near 1e-19 and a Sharpe near 1e15.  Treat anything
+    # that small relative to the mean as no variance at all.
+    if float(np.ptp(x)) == 0.0 or sd <= 1e-12 * max(abs(mean), 1e-300):
+        return None, None, math.nan, math.nan, math.nan
+    sr = mean / sd
+    centred = x - float(np.mean(x))
+    m2 = float(np.mean(centred ** 2))
+    skew = float(np.mean(centred ** 3)) / m2 ** 1.5 if m2 > 0 else 0.0
+    kurt = float(np.mean(centred ** 4)) / m2 ** 2 if m2 > 0 else 3.0
+    var_term = 1.0 - skew * sr + (kurt - 1.0) / 4.0 * sr * sr
+    if var_term <= 0.0:
+        # Possible on a heavily skewed sample; fall back to the normal case,
+        # as the deflated Sharpe in the finder does.
+        var_term = 1.0 + 0.5 * sr * sr
+    psr = norm_cdf((sr - benchmark) * math.sqrt(n - 1) / math.sqrt(var_term))
+    min_trl: float | None = None
+    if sr > benchmark:
+        z = norm_ppf(PSR_CONFIDENCE)
+        min_trl = 1.0 + var_term * (z / (sr - benchmark)) ** 2
+    return psr, min_trl, sr, skew, kurt
+
+
+def _tail_risk(m: dict[str, Any], rel: _Reliability, trades: Sequence[Trade],
+               net: np.ndarray, n: int) -> None:
+    """Per-trade tail risk and how much confidence the Sharpe deserves.
+
+    Computed on TRADES, not bars.  Most bars of most strategies are flat, and
+    a 5th percentile of a series that is 80% zeros is zero -- a VaR that says
+    nothing.  A trade is the unit a position can lose on.
+
+    * ``trade_var_95`` -- the loss exceeded by the worst 5% of trades (cash,
+      historical, positive = a loss).
+    * ``trade_cvar_95`` -- expected shortfall: the average of those worst 5%.
+    * ``tail_ratio`` -- size of the 95th-percentile trade over the size of the
+      5th.  Above 1: the right tail is fatter than the left.
+    * ``trade_skew`` / ``trade_kurtosis`` -- of per-trade account returns
+      (net P&L over equity at entry); kurtosis is EXCESS (0 is normal).
+    * ``probabilistic_sharpe`` -- probability the true per-trade Sharpe is
+      above zero, allowing for skew, fat tails and the number of trades.  It
+      prices ONE backtest; it does not know how many were tried to find this
+      one.  For that, use the deflated Sharpe the finder reports.
+    * ``min_track_record_trades`` -- trades needed at this Sharpe, skew and
+      kurtosis for 95% confidence the Sharpe is above zero.
+    """
+    keys = ("trade_var_95", "trade_cvar_95", "tail_ratio", "trade_skew",
+            "trade_kurtosis", "probabilistic_sharpe", "min_track_record_trades")
+    for key in keys:
+        m[key] = None
+    if n < 3:
+        rel.mark(keys, UNAVAILABLE,
+                 "Unavailable - at least three trades are needed to describe "
+                 "a distribution of trade results.")
+        return
+
+    q05 = float(np.percentile(net, 5.0))
+    q95 = float(np.percentile(net, 95.0))
+    m["trade_var_95"] = float(max(0.0, -q05))
+    tail = net[net <= q05]
+    cvar = -float(np.mean(tail)) if tail.size else 0.0
+    m["trade_cvar_95"] = float(max(0.0, cvar))
+    if q05 < 0.0 and q95 > 0.0:
+        m["tail_ratio"] = abs(q95) / abs(q05)
+    else:
+        rel.mark("tail_ratio", UNAVAILABLE,
+                 "Unavailable - the tail ratio compares the best 5% of trades "
+                 "with the worst 5%, and here one of those tails has no losing "
+                 "(or no winning) trade in it.")
+
+    # Account return per trade, so a compounding size does not skew the
+    # Sharpe; falls back to cash where the entry equity is unknown.
+    # All-or-nothing: mixing fractions with cash would make a series of two
+    # different units and a Sharpe of nothing in particular.
+    equity = np.array([float(getattr(t, "equity_at_entry", 0.0) or 0.0)
+                       for t in trades], dtype="float64")
+    if np.all(equity > 0.0):
+        returns = net / equity
+    else:
+        returns = np.asarray(net, dtype="float64")
+    psr, min_trl, _sr, skew, kurt = probabilistic_sharpe(returns)
+    if math.isfinite(skew):
+        m["trade_skew"] = skew
+        m["trade_kurtosis"] = kurt - 3.0
+    m["probabilistic_sharpe"] = psr
+    # Rounded UP: at the truncated count the PSR is still below 95%.
+    m["min_track_record_trades"] = (int(math.ceil(min_trl - 1e-9))
+                                    if min_trl is not None else None)
+    if psr is None:
+        rel.mark(("probabilistic_sharpe", "min_track_record_trades",
+                  "trade_skew", "trade_kurtosis"), UNAVAILABLE,
+                 "Unavailable - every trade returned the same amount, so there "
+                 "is no variance to measure confidence against.")
+    elif min_trl is None:
+        rel.mark("min_track_record_trades", UNAVAILABLE,
+                 "Unavailable - the per-trade Sharpe is not above zero, so no "
+                 "number of trades would confirm an edge above zero.")
+    if n < TAIL_MIN_TRADES:
+        rel.mark(keys, LOW_SAMPLE,
+                 f"Low sample - {n} trades. A 5th percentile needs at least "
+                 f"{TAIL_MIN_TRADES} trades before it is more than the worst "
+                 f"one or two, and skew and kurtosis are noisier still.")
 
 
 def _periods(result: BacktestResult, m: dict[str, Any], rel: _Reliability) -> None:

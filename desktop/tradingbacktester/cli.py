@@ -467,7 +467,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     for line in row("", result.summary_line()):
         print(line, file=stream)
     metrics = compute_metrics(result)
+    regimes = None
+    if getattr(args, "regimes", False):
+        from .analytics.regimes import regime_breakdown
+        from .core.types import SignalExecution
+        regimes = regime_breakdown(
+            bars, result.trades,
+            fills_next_bar=(config.execution.signal_execution
+                            is not SignalExecution.THIS_CLOSE))
     if args.json:
+        if regimes is not None:
+            metrics = dict(metrics, regimes=regimes.to_dict())
         print(json.dumps(metrics, indent=2, default=str))
         return 0
     # `trade_count` is not a metric key -- the metrics layer calls it
@@ -477,7 +487,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     notes = metrics.get("reliability_notes") or {}
     shown = ("total_trades", "net_profit", "return_pct", "profit_factor",
              "win_rate", "expectancy", "max_drawdown_pct", "sharpe_ratio",
-             "sortino_ratio", "avg_trade")
+             "sortino_ratio", "avg_trade", "trade_cvar_95",
+             "probabilistic_sharpe")
     for key in shown:
         if key not in metrics:
             continue
@@ -500,6 +511,10 @@ def cmd_run(args: argparse.Namespace) -> int:
                         f" — {note}" if note else
                         f"LOW n: {', '.join(flagged)}"):
             print(line)
+    if regimes is not None:
+        from .analytics.regimes import format_regimes
+        print()
+        print(format_regimes(regimes, bars.instrument.currency))
     return 0
 
 
@@ -664,18 +679,53 @@ def cmd_optimise(args: argparse.Namespace) -> int:
     if method != "grid" and trials <= 0:
         raise SystemExit(f"--method {method} needs --trials N (how many "
                          f"combinations it may try).")
+    objectives = [k.strip() for k in str(getattr(args, "pareto", "") or "").split(",")
+                  if k.strip()]
+    if objectives and len(objectives) < 2:
+        raise SystemExit("--pareto needs at least two metrics, separated by commas.")
+    if objectives:
+        from .optimize.ranking import objective_direction
+        try:
+            for spec_text in objectives:
+                objective_direction(spec_text)
+        except ValueError as exc:
+            raise SystemExit(f"--pareto: {exc}") from None
     result = optimise_with_holdout(
         bars, spec, config, ranges, metric=args.metric,
         research_fraction=args.research, reveal=args.reveal,
         method=method, trials=trials,
         progress=_stderr_progress("sweeping the research block"))
     _clear_progress()
+    front = None
+    if objectives and result.research is not None:
+        from .optimize.ranking import objective_direction, pareto_front
+        try:
+            front = pareto_front(result.research, objectives)
+        except ValueError as exc:
+            raise SystemExit(f"--pareto: {exc}") from None
+        objectives = [objective_direction(k)[0] for k in objectives]
     if args.json:
-        print(json.dumps(result.to_dict(), indent=2))
+        payload = result.to_dict()
+        if front is not None:
+            payload["pareto"] = {
+                "objectives": objectives, "block": "research",
+                "rows": [{"params": dict(r.params), "trades": r.trade_count,
+                          # Strict JSON has no Infinity: an unbounded value
+                          # (a profit factor with no losing trade) is null.
+                          **{k: (r.value(k) if math.isfinite(r.value(k)) else None)
+                             for k in objectives}} for r in front]}
+        print(json.dumps(payload, indent=2, default=str))
     else:
         print()
         print(format_holdout(result, bars,
                              currency=bars.instrument.currency))
+        if front is not None:
+            from .optimize.ranking import format_pareto
+            print()
+            print(format_pareto(front, objectives))
+            print("  Measured on the research block only. Every row here was "
+                  "chosen by looking; judge the one you pick on the locked "
+                  "block, once.")
     return 0
 
 
@@ -1310,6 +1360,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--capital", type=float, default=100_000.0)
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")
+    p.add_argument("--regimes", action="store_true",
+                   help="Also split the trades by volatility and trend regime, "
+                        "read at each trade's signal bar")
     p.set_defaults(func=cmd_run)
 
     p = sub.add_parser(
@@ -1377,6 +1430,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--trials", type=int, default=0,
                    help="Budget for --method tpe or random. 0 with grid "
                         "means the whole grid.")
+    p.add_argument("--pareto", default="", metavar="METRIC,METRIC[,...]",
+                   help="Also print the Pareto front of the RESEARCH block over "
+                        "these metrics, e.g. net_profit,max_drawdown_pct: the "
+                        "combinations no other beats on all of them. Losses "
+                        "are minimised automatically; add :max or :min to "
+                        "force a direction")
     p.add_argument("--capital", type=float, default=100_000.0)
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")

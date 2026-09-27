@@ -460,6 +460,47 @@ A short guide to the ones people misread:
   was open. Large MFE with small net profit means your exits are leaving money
   behind.
 
+### Tail risk and confidence
+
+A separate group measures the shape of the trade distribution, per TRADE rather
+than per bar. On a per-bar series that is mostly flat bars, a 5th percentile is
+zero and says nothing.
+
+- **Trade VaR 95%** — the loss exceeded by the worst 5% of trades.
+- **Trade CVaR 95%** (expected shortfall) — the average loss of those worst 5%.
+  This is the number to size against: it is what a bad trade actually costs.
+- **Tail ratio** — the best 5% of trades over the worst 5%. Above 1 the right
+  tail is the fatter one.
+- **Trade skew / excess kurtosis** — negative skew with high kurtosis is the
+  profile of a strategy that wins often and occasionally loses a lot.
+- **Probabilistic Sharpe** (Bailey & López de Prado, 2012) — the probability the
+  true per-trade Sharpe is above zero, allowing for skew, fat tails and the
+  number of trades. It prices **one** backtest. It does not know how many were
+  tried to find this one; the finder's deflated Sharpe does.
+- **Min track record** — how many trades it would take, at this Sharpe, skew and
+  kurtosis, to be 95% confident the Sharpe is above zero. Blank when the Sharpe
+  is not above zero, because no track record confirms an edge that is not there.
+
+All of these are marked `LOW n` under 60 trades: a 5th percentile of 20 trades
+is simply the worst trade.
+
+### Performance by market regime
+
+`run --regimes` splits the trades by volatility regime (ATR as a percentage of
+price, ranked against its own trailing 250 bars, in thirds) and by trend regime
+(close above or below its 200-bar average). Each row shows trades, win rate,
+average trade, net, profit factor and the share of all bars spent in that
+regime, so a strategy that simply trades more in one regime is visible as such.
+
+Every label is read at the bar that **raised the signal**, never the bar the
+order filled on, and every label uses only that bar and the ones before it.
+Reading a condition at the fill bar reads a bar that closes after the order was
+sent, and produces splits that look significant and are pure leakage.
+
+This is a description of trades already taken, not a filter test. "The edge is
+in high volatility" is a hypothesis. Testing it means filtering the rule's
+triggers to that regime and re-running on the research block.
+
 The full formula for every metric is in **Help → Metric Definitions**
 (`docs/METRICS.md`).
 
@@ -1233,6 +1274,18 @@ combinations were tried"* — because sixty chances to be lucky is the honest
 count, not sixteen hundred. The same **Method** and **Trials** apply to the
 Out of Sample and Walk-Forward tabs, so every tab searches the way the Results
 tab did. On the command line: `--method tpe --trials 60`.
+
+### Several objectives at once: the Pareto front
+
+Maximising one number hides the trade-off. `optimize --pareto
+net_profit,max_drawdown_pct` also prints the combinations that no other
+combination beats on **every** listed metric: the honest menu of "more profit
+for more drawdown". Each metric is optimised in its own direction, so a
+drawdown is minimised without being asked. Any number of metrics works.
+
+The front is computed on the **research block only**. Every row on it was chosen
+by looking, so the one you pick is judged on the locked block, once, like
+anything else the optimiser selects.
 
 ---
 
