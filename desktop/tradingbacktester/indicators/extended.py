@@ -839,3 +839,83 @@ def volume_index(bars: BarSeries) -> dict[str, np.ndarray]:
 
 
 log.debug("extended indicator library registered")
+
+
+# --------------------------------------------------------------------------
+# A clock-anchored range and its first break
+# --------------------------------------------------------------------------
+
+_RANGE_ZONES = ("America/New_York", "America/Chicago", "Europe/London",
+                "Europe/Berlin", "Asia/Tokyo", "Australia/Sydney", "UTC")
+
+
+@REGISTRY.register(
+    "TIME_RANGE", "Time-window range (opening range)", "Price levels",
+    params=(ParamSpec("start", "Range start, minutes past midnight", "int", 540, 0, 1439,
+                      help="540 = 09:00. Bars whose OPENING minute is in "
+                           "[start, end) build the range."),
+            ParamSpec("end", "Range end (exclusive), minutes", "int", 555, 1, 1440,
+                      help="555 = 09:15. The levels exist from the first bar "
+                           "at or after this minute, never during the range."),
+            ParamSpec("arm", "Breaks count from, minutes", "int", 570, 0, 1440,
+                      help="570 = 09:30. A break before this minute is not a "
+                           "break. The effective start is the later of this "
+                           "and the range end."),
+            ParamSpec("last", "Breaks count until (exclusive), minutes", "int", 960, 1, 1440),
+            ParamSpec("timezone", "Clock", "choice", "America/New_York",
+                      None, None, choices=_RANGE_ZONES)),
+    outputs=("high", "low", "first_up", "first_down"), overlay=True,
+    uses_source=False,
+    plot_style=_style(high={"color": _GREEN, "width": 1.4},
+                      low={"color": _ORANGE, "width": 1.4},
+                      first_up={"color": _GREY, "panel": "hidden"},
+                      first_down={"color": _GREY, "panel": "hidden"}),
+    description="The high and low of a fixed clock window each day -- the "
+                "09:00 bar, the opening 30 minutes -- held for the rest of that "
+                "day. first_up is 1 on the FIRST bar of the day, inside the "
+                "arm window, whose high touches the range high (first_down: "
+                "low touches the low), and 0 otherwise; a break that a gate "
+                "refuses still uses the day's one chance, as TradingView's "
+                "one-break-per-side scripts do. Every value uses only the bar "
+                "itself and the bars before it on the same day.", min_bars=1,
+)
+def time_range(bars: BarSeries, start: int, end: int, arm: int, last: int,
+               timezone: str) -> dict[str, np.ndarray]:
+    import pandas as pd
+
+    from ..strategy.rules import _local_parts
+
+    start, end, arm, last = int(start), int(end), int(arm), int(last)
+    if end <= start:
+        raise IndicatorError(
+            f"The range must end after it starts ({start} to {end} minutes).")
+    ts = np.asarray(bars.ts, dtype="int64")
+    n = ts.size
+    nan = np.full(n, np.nan)
+    if n == 0:
+        return {"high": nan, "low": nan, "first_up": nan.copy(),
+                "first_down": nan.copy()}
+    seconds, _weekday = _local_parts(ts, timezone)
+    minute = np.asarray(seconds, dtype="int64") // 60
+    # Local midnight, as a UTC instant: unique per local calendar day and
+    # correct across daylight-saving changes.
+    day = ts // 1_000_000_000 - np.asarray(seconds, dtype="int64")
+    high = pd.Series(_f64(bars.high))
+    low = pd.Series(_f64(bars.low))
+    inside = (minute >= start) & (minute < end)
+    groups = pd.Series(day)
+    rhi = high.where(inside).groupby(groups).cummax().groupby(groups).ffill()
+    rlo = low.where(inside).groupby(groups).cummin().groupby(groups).ffill()
+    ready = (minute >= end) & rhi.notna().to_numpy() & rlo.notna().to_numpy()
+    out_hi = np.where(ready, rhi.to_numpy(), np.nan)
+    out_lo = np.where(ready, rlo.to_numpy(), np.nan)
+    armed = ready & (minute >= max(end, arm)) & (minute < last)
+    hit_up = armed & (high.to_numpy() >= out_hi)
+    hit_dn = armed & (low.to_numpy() <= out_lo)
+    first_up = hit_up & (pd.Series(hit_up.astype(np.int64)).groupby(groups)
+                         .cumsum().to_numpy() == 1)
+    first_dn = hit_dn & (pd.Series(hit_dn.astype(np.int64)).groupby(groups)
+                         .cumsum().to_numpy() == 1)
+    return {"high": out_hi, "low": out_lo,
+            "first_up": first_up.astype("float64"),
+            "first_down": first_dn.astype("float64")}

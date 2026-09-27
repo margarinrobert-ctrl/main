@@ -157,10 +157,21 @@ class RiskPanel(QWidget):
                       tooltip="Units of the value above. Points is what a strategy "
                               "converted from a platform that arms its trail after "
                               "a fixed distance means; R varies with an ATR stop"),
-            FieldSpec("breakeven_at_r", "Break even at", "float", 0.0, 0.0, 100.0,
-                      0.25, 2, " R",
+            FieldSpec("breakeven_at_r", "Break even at", "float", 0.0, 0.0, 1_000_000.0,
+                      0.25, 2, "",
                       tooltip="Move the stop to the entry price once the trade "
-                              "reaches this many R; 0 disables it"),
+                              "is this far in profit, in the units chosen below; "
+                              "0 disables it"),
+            FieldSpec("breakeven_mode", "Break even in", "choice", "r",
+                      choices=[("R multiples", "r"), ("Price points", "points"),
+                               ("ATR multiples", "atr"), ("Percent of price", "percent")],
+                      tooltip="Units of the value above. Points is what a script "
+                              "that moves its stop after a fixed distance means"),
+            FieldSpec("breakeven_offset", "Secure beyond entry", "float", 0.0, 0.0,
+                      1_000_000.0, 1.0, 2, " pts",
+                      tooltip="Price points beyond the entry the moved stop sits, "
+                              "so the exit covers commission and slippage; 0 is a "
+                              "true breakeven"),
             FieldSpec("atr_period", "ATR period", "int", 14, 1, 500,
                       tooltip="Period used by every ATR-based stop, target and trail"),
             FieldSpec("max_bars_in_trade", "Time stop (bars)", "int", 0, 0, 1_000_000,
@@ -309,6 +320,8 @@ class RiskPanel(QWidget):
             trailing_activate_at_r=float(e["trailing_activate_at_r"]),
             trailing_activate_mode=str(e.get("trailing_activate_mode", "r") or "r"),
             breakeven_at_r=float(e["breakeven_at_r"]),
+            breakeven_mode=str(e.get("breakeven_mode", "r") or "r"),
+            breakeven_offset=float(e.get("breakeven_offset", 0.0) or 0.0),
             atr_period=int(e["atr_period"]),
             max_bars_in_trade=int(e["max_bars_in_trade"]),
         )
@@ -371,7 +384,10 @@ class RiskPanel(QWidget):
             "trailing_value": e.trailing_value,
             "trailing_activate_at_r": e.trailing_activate_at_r,
             "trailing_activate_mode": getattr(e, "trailing_activate_mode", "r") or "r",
-            "breakeven_at_r": e.breakeven_at_r, "atr_period": e.atr_period,
+            "breakeven_at_r": e.breakeven_at_r,
+            "breakeven_mode": getattr(e, "breakeven_mode", "r") or "r",
+            "breakeven_offset": getattr(e, "breakeven_offset", 0.0) or 0.0,
+            "atr_period": e.atr_period,
             "max_bars_in_trade": e.max_bars_in_trade,
         })
         weekday_values = {f"trade_{name}": (i in s.weekdays) for i, name in enumerate(

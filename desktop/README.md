@@ -390,6 +390,28 @@ can be offset backwards by *N* bars.
 A cross fires on the bar where the relationship changes, not on every bar the
 inequality happens to hold.
 
+### Clock ranges: the opening range, the 09:00 bar
+
+The **Time-window range** indicator (`TIME_RANGE`) holds the high and low of a
+fixed clock window each day, such as 09:00-09:15 New York, for the rest of that
+day. The levels do not exist during the window itself, so nothing can trade on
+a range that is still forming. Its `first_up` and `first_down` outputs are 1 on
+the **first** bar of the day, inside the arm window, whose high touches the
+range high (or whose low touches the low). A break that a gate refuses still
+uses up the day's one chance per side, which is how TradingView scripts with a
+`tookUp`/`tookDn` flag behave. Entry rule: `first_up > 0.5`, ANDed with any
+confirmation.
+
+### Breakeven in points, with a secured offset
+
+**Break even at** takes R multiples, price points, ATR multiples or percent of
+price. **Secure beyond entry** puts the moved stop that many points past the
+entry, so the exit covers commission and slippage instead of booking a small
+loss. The stop arms on the bar whose favourable extreme reaches the distance
+and binds from the next bar. If that bar opens through it, it fills at the
+open. A strategy file saved before these settings existed reads as R with no
+offset, which is what it meant.
+
 ### The worked example
 
 ```

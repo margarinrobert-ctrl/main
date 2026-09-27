@@ -212,6 +212,10 @@ class SimulatedBroker:
         self._trail_arm_mode = str(getattr(config.exits, "trailing_activate_mode",
                                            "r") or "r").strip().lower()
         self._breakeven_r = float(config.exits.breakeven_at_r)
+        self._breakeven_mode = str(getattr(config.exits, "breakeven_mode", "r")
+                                   or "r").strip().lower()
+        self._breakeven_offset = max(0.0, float(getattr(
+            config.exits, "breakeven_offset", 0.0) or 0.0))
         self._partial_ladder = tuple(config.exits.partial_exits)
         self._use_margin = bool(config.risk.use_margin)
         self._round_qty = bool(config.risk.round_quantity)
@@ -699,13 +703,16 @@ class SimulatedBroker:
         long = slot.is_long
         risk = slot.risk_per_unit
 
-        if self._breakeven_r > 0.0 and not slot.breakeven_done and risk > 0.0:
-            if favourable >= self._breakeven_r * risk:
+        if self._breakeven_r > 0.0 and not slot.breakeven_done:
+            arm = self._breakeven_distance(c, risk)
+            if arm is not None and favourable >= arm:
                 slot.breakeven_done = True
                 entry = p.entry_price
-                if p.stop_loss is None or (entry > p.stop_loss if long
-                                           else entry < p.stop_loss):
-                    p.stop_loss = entry
+                level = (entry + self._breakeven_offset if long
+                         else entry - self._breakeven_offset)
+                if p.stop_loss is None or (level > p.stop_loss if long
+                                           else level < p.stop_loss):
+                    p.stop_loss = level
 
         if not self._trailing:
             return
@@ -735,6 +742,20 @@ class SimulatedBroker:
         if cur is None or (new_stop > cur if long else new_stop < cur):
             p.stop_loss = new_stop
             slot.stop_reason = ExitReason.TRAILING_STOP
+
+    def _breakeven_distance(self, price: float, risk: float) -> float | None:
+        """Favourable excursion that arms the breakeven; ``None`` = never.
+
+        R is the historical meaning and keeps its historical behaviour: a
+        trade with no stop has no R, so it never arms.
+        """
+        value = self._breakeven_r
+        mode = self._breakeven_mode
+        if mode in ("", "r", "r_multiple"):
+            return None if risk <= 0.0 else value * risk
+        dist = self._distance(mode, value, price, self._atr_at_close,
+                              risk if risk > 0.0 else None, "breakeven")
+        return None if dist is None else float(dist)
 
     def _trail_arm_distance(self, price: float, risk: float) -> float | None:
         """How far in profit a trade must be before its trail starts.

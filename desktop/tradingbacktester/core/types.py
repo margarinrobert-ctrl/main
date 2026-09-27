@@ -446,7 +446,17 @@ class ExitSettings:
     be reproduced in R when the stop is ATR-based, because R then varies from
     trade to trade; ``points`` says exactly what was meant."""
     breakeven_at_r: float = 0.0
-    """Move the stop to entry once the trade reaches this many R; ``0`` disables."""
+    """Move the stop to entry once the trade reaches this far in profit; ``0``
+    disables.  Measured in :attr:`breakeven_mode` units (R by default, which
+    is what the name says and what every saved strategy before this meant)."""
+    breakeven_mode: str = "r"
+    """Units of :attr:`breakeven_at_r`: ``r``, ``points``, ``atr`` or ``percent``.
+    A platform that moves the stop after "43 points" cannot be reproduced in R
+    unless the stop is a fixed distance, so ``points`` says what was meant."""
+    breakeven_offset: float = 0.0
+    """Price points BEYOND the entry the moved stop sits, so a breakeven exit
+    books a small profit instead of the round-turn cost.  ``0`` is a true
+    breakeven.  Never placed worse than the stop it replaces."""
     atr_period: int = 14
     max_bars_in_trade: int = 0
     """Time stop in bars; ``0`` disables."""
