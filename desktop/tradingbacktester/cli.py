@@ -64,6 +64,7 @@ def _load_bars(args: argparse.Namespace):
     repository = _repository(args)
     for meta in repository.list():
         if wanted.lower() in (meta.name.lower(), meta.id.lower()):
+            args._dataset_id = meta.id
             return repository.load_bars(meta.id), meta.name
 
     dataset = find_bundled(wanted)
@@ -129,6 +130,46 @@ def cmd_data(args: argparse.Namespace) -> int:
         for line in row(f"  {dataset.name:<20} {size:5.1f} MB  ",
                         dataset.description):
             print(line)
+    return 0
+
+
+def cmd_ticks(args: argparse.Namespace) -> int:
+    """Import a tick file: store the ticks and the bars built from them."""
+    import numpy as np
+
+    from .analytics.sanity import price_scale_problem
+    from .data.instruments import instrument_from_filename
+    from .data.ticks import bars_from_ticks, read_ticks
+
+    path = Path(args.path).expanduser()
+    instruments = _instruments(args)
+    symbol = (args.symbol or instrument_from_filename(
+        str(path), [i.symbol for i in instruments.all()]) or "").strip()
+    if not symbol:
+        raise BacktesterError(
+            f"Name the instrument with --symbol; '{path.name}' does not say "
+            f"which it is.")
+    instrument = instruments.get(symbol)
+    ticks = read_ticks(path, args.timezone)
+    for warning in ticks.warnings:
+        print(f"  ! {warning}")
+    problem = price_scale_problem(instrument, float(np.median(ticks.price)))
+    if problem:
+        raise BacktesterError(problem)
+    bars = bars_from_ticks(ticks, args.timeframe, instrument)
+    repository = _repository(args)
+    name = args.name or f"{symbol} ticks {bars.timeframe.label}"
+    meta = repository.add_from_bars(bars, name=name, source_path=str(path),
+                                    notes=f"Built from {len(ticks):,} ticks.")
+    repository.add_ticks(meta.id, ticks)
+    import pandas as pd
+
+    first = pd.Timestamp(ticks.start_ts, tz="UTC")
+    last = pd.Timestamp(ticks.end_ts, tz="UTC")
+    print(f"{path.name}: {len(ticks):,} ticks of {symbol}, {first:%Y-%m-%d %H:%M} "
+          f"to {last:%Y-%m-%d %H:%M} UTC")
+    print(f"  saved as '{meta.name}': {len(bars):,} {bars.timeframe.label} bars, "
+          f"ticks kept for fills")
     return 0
 
 
@@ -457,7 +498,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     bars, name = _resolve_bars(args)
     spec = _resolve_spec(args)
     config = _config_for(spec, args.capital)
-    result = Backtester(bars, spec, config).run()
+    ticks = None
+    dataset_id = getattr(args, "_dataset_id", "")
+    if dataset_id and not getattr(args, "no_ticks", False) \
+            and not getattr(args, "mirror", False):
+        ticks = _repository(args).load_ticks(dataset_id)
+    result = Backtester(bars, spec, config, ticks=ticks).run()
 
     stream = sys.stderr if args.json else sys.stdout
     for line in row("", f"{spec.name} on {name} ({len(bars):,} bars, "
@@ -465,6 +511,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(line, file=stream)
     for line in row("", result.summary_line()):
         print(line, file=stream)
+    if result.execution_note:
+        print(f"  {result.execution_note}", file=stream)
     metrics = compute_metrics(result)
     regimes = None
     if getattr(args, "regimes", False):
@@ -1225,6 +1273,20 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Inspect and validate without saving")
     p.set_defaults(func=cmd_import)
 
+    p = sub.add_parser(
+        "ticks", help="Import tick data: bars are built from it and it is kept "
+                      "so every fill can be resolved on the ticks")
+    p.add_argument("path")
+    p.add_argument("--symbol", default="",
+                   help="Instrument, e.g. YM or MYM; guessed from the file name "
+                        "when it names one")
+    p.add_argument("--timeframe", default="1m",
+                   help="Bar size to build, 1s to 1h (default 1m)")
+    p.add_argument("--timezone", default="UTC",
+                   help="The clock the file's times are written in")
+    p.add_argument("--name", default="")
+    p.set_defaults(func=cmd_ticks)
+
     p = sub.add_parser("find", help="Search for strategies")
     # Not required, so `--style list` and `--template list` work on their own.
     # A search without it still stops immediately, with the same message.
@@ -1359,6 +1421,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--capital", type=float, default=100_000.0)
     p.add_argument("--json", action="store_true")
     p.add_argument("--symbol", default="")
+    p.add_argument("--no-ticks", action="store_true", dest="no_ticks",
+                   help="Use the bar rules even when the dataset has tick data")
     p.add_argument("--regimes", action="store_true",
                    help="Also split the trades by volatility and trend regime, "
                         "read at each trade's signal bar")
@@ -1667,7 +1731,7 @@ def build_parser() -> argparse.ArgumentParser:
     seen: set[int] = set()
     for name, subparser in sub.choices.items():
         if name in ("mirror", "data", "import", "strategies", "convert",
-                    "continuous"):
+                    "continuous", "ticks"):
             continue
         if id(subparser) in seen:
             continue

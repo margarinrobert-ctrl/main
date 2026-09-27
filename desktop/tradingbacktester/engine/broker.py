@@ -702,6 +702,111 @@ class SimulatedBroker:
             return True
         return False
 
+    # -- tick-accurate management ------------------------------------------
+
+    def manage_bar_ticks(self, i: int, ts: int, prices: np.ndarray, h: float,
+                         l: float, c: float) -> None:
+        """Run every open position through this bar's trades, in order.
+
+        The tick counterpart of :meth:`manage_bar`: no priority rule, because
+        the ticks say which barrier was reached first.
+        """
+        for slot in list(self.positions):
+            if self.walk_ticks(slot, i, ts, prices, at_open=True):
+                continue
+            p = slot.pos
+            favourable = (h - p.entry_price) if slot.is_long else (p.entry_price - l)
+            self._update_protective_stop(slot, h, l, c, favourable)
+            if self._max_bars and (i - p.entry_bar) >= self._max_bars:
+                self.close_position(slot, i, ts, c, ExitReason.TIME_STOP)
+
+    def walk_ticks(self, slot: _Slot, i: int, ts: int, prices: np.ndarray,
+                   at_open: bool) -> bool:
+        """Fill this position's stop, target and scale-out rungs on ``prices``.
+
+        ``prices`` are the trades after the position existed, in order;
+        ``at_open`` says the first of them is the bar's opening trade.
+
+        * A stop is a stop-MARKET order: it fills at the price of the trade that
+          triggered it, so a jump through the level costs the jump -- the gap
+          rule of the bar engine, applied to every trade instead of the open.
+        * A target or rung is a LIMIT: it fills at its level once a trade
+          reaches it (by ``limit_requires_through`` points), or at the opening
+          trade when the bar opened beyond it in the trader's favour.
+
+        Returns True if the position closed.
+        """
+        prices = np.asarray(prices, dtype="float64")
+        if prices.size == 0:
+            return False
+        p = slot.pos
+        long = slot.is_long
+        entry = p.entry_price
+        hi = float(prices.max())
+        lo = float(prices.min())
+        p.mfe = max(p.mfe, (hi - entry) if long else (entry - lo))
+        p.mae = max(p.mae, (entry - lo) if long else (hi - entry))
+        p.bars_held = i - p.entry_bar
+        through = self._through
+        pos = 0
+        n = prices.size
+        while pos < n:
+            seg = prices[pos:]
+            best: tuple[int, int, str, Any, float] | None = None
+
+            def consider(k: int, rank: int, kind: str, row: Any, level: float) -> None:
+                nonlocal best
+                if best is None or (k, rank) < (best[0], best[1]):
+                    best = (k, rank, kind, row, level)
+
+            stop = p.stop_loss
+            if stop is not None:
+                hit = (seg <= stop) if long else (seg >= stop)
+                k = int(hit.argmax())
+                if hit[k]:
+                    consider(k, 0, "stop", None, stop)
+            rung = next((row for row in slot.partials if not row[2]), None)
+            target = p.take_profit
+            # On a shared trade, whichever profit level sits nearer the entry
+            # goes first, as in the bar engine.
+            rung_first = rung is not None and (
+                target is None or (rung[0] < target if long else rung[0] > target))
+            if rung is not None:
+                need = rung[0] + through if long else rung[0] - through
+                hit = (seg >= need) if long else (seg <= need)
+                k = int(hit.argmax())
+                if hit[k]:
+                    consider(k, 1 if rung_first else 2, "partial", rung, rung[0])
+            if target is not None:
+                need = target + through if long else target - through
+                hit = (seg >= need) if long else (seg <= need)
+                k = int(hit.argmax())
+                if hit[k]:
+                    consider(k, 2 if rung_first else 1, "target", None, target)
+            if best is None:
+                return False
+            k, _rank, kind, row, level = best
+            trade = float(seg[k])
+            opening = at_open and pos == 0 and k == 0
+            if kind == "stop":
+                fill = trade
+                self.close_position(slot, i, ts, fill, slot.stop_reason)
+                return True
+            # A limit fills at its level -- or at the opening trade when the
+            # bar opened beyond it in the trader's favour.
+            fill = trade if opening else level
+            if kind == "target":
+                self.close_position(slot, i, ts, fill, ExitReason.TAKE_PROFIT)
+                return True
+            row[2] = 1.0
+            p.partials_done += 1
+            self.close_position(slot, i, ts, fill, ExitReason.PARTIAL_TARGET,
+                                quantity=min(row[1], p.quantity))
+            if p.quantity <= _QTY_EPS:
+                return True
+            pos += k           # the same trade may reach the next rung too
+        return False
+
     def manage_after_fill(self, slot: _Slot, i: int, ts: int,
                           path: Sequence[float]) -> bool:
         """Barriers on the rest of the bar a resting entry filled on.

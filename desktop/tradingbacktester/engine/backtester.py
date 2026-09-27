@@ -240,8 +240,13 @@ class Backtester:
                  progress: Callable[[int, int], None] | None = None,
                  cancel: Callable[[], bool] | None = None,
                  param_overrides: dict[str, Any] | None = None,
-                 label: str = "") -> None:
+                 label: str = "", ticks: Any = None) -> None:
         self.bars = bars
+        self.ticks = ticks
+        """A :class:`~tradingbacktester.data.ticks.TickSeries` covering the
+        bars. With ``execution.use_ticks`` every fill is resolved on it."""
+        self._tick_px = None
+        self._tick_off = None
         self.spec = spec
         self.config = config if config is not None else BacktestConfig()
         self.progress = progress
@@ -341,6 +346,7 @@ class Backtester:
         )
 
         signals = self._signal_arrays(compiled, lo, hi)
+        tick_note = self._attach_ticks(run_bars, config)
         session = _SessionArrays.build(run_bars.ts, config.session,
                                        bars.instrument.timezone)
         if config.session.enabled:
@@ -371,6 +377,7 @@ class Backtester:
         # the warning the status bar shows.
         result.warnings = (run_problems(result) + spec_warnings + self.warnings
                            + broker.warnings + _touch_only_warning(broker))
+        result.execution_note = tick_note
         result.duration_seconds = time.perf_counter() - started
         result.metrics = self._metrics(result)
         logger.info("Backtest finished: %s", result.summary_line())
@@ -500,6 +507,40 @@ class Backtester:
             logger.info("Falling back to the built-in ATR: %r", exc)
         return _wilder_atr(bars, period)
 
+    def _attach_ticks(self, run_bars: BarSeries, config: BacktestConfig) -> str:
+        """Map each bar to its ticks, or leave the run on bar rules."""
+        self._tick_px = self._tick_off = None
+        ticks = self.ticks
+        if ticks is None or not bool(getattr(config.execution, "use_ticks", True)):
+            return ""
+        from ..data.ticks import tick_coverage, tick_offsets
+
+        if len(ticks) == 0:
+            self.warnings.append("The tick data is empty, so fills used the bar rules.")
+            return ""
+        off = tick_offsets(ticks, run_bars.ts, float(run_bars.timeframe.approx_seconds))
+        cov = tick_coverage(ticks, run_bars, off)
+        if cov["bars_with_ticks"] == 0:
+            self.warnings.append(
+                "None of the tick data falls inside these bars (different dates or "
+                "a different clock), so fills used the bar rules.")
+            return ""
+        self._tick_px = ticks.price
+        self._tick_off = off
+        missing = cov["bars"] - cov["bars_with_ticks"]
+        if missing:
+            self.warnings.append(
+                f"{missing:,} of {cov['bars']:,} bars have no ticks; fills on those "
+                f"bars used the bar rules.")
+        if cov["disagree"]:
+            self.warnings.append(
+                f"On {cov['disagree']:,} bars the ticks' high or low differs from "
+                f"the bar's own, so the bars and the ticks are not the same data. "
+                f"Build the bars from the ticks, or the fills and the chart will "
+                f"disagree.")
+        return (f"fills resolved on {cov['ticks_used']:,} ticks "
+                f"({cov['bars_with_ticks']:,} of {cov['bars']:,} bars)")
+
     def _signal_arrays(self, compiled: Any, lo: int, hi: int) -> dict[str, np.ndarray]:
         """The four rule arrays plus the tradeable mask, sliced to the run range."""
         n = hi - lo
@@ -599,6 +640,8 @@ class Backtester:
             order_type = OrderType.STOP if resting_mode == "stop" else OrderType.LIMIT
         #: side -> (price, placing bar, last bar it may fill on or None)
         resting_orders: dict[Side, tuple[float, int, int | None]] = {}
+        tick_px = self._tick_px
+        tick_off = self._tick_off
 
         daily_limit_pct = bool(risk.max_daily_loss_is_percent)
         daily_limit_raw = float(risk.max_daily_loss)
@@ -649,15 +692,27 @@ class Backtester:
                 pending = None
 
             # -- 2. protective exits over this bar's range ----------------
+            bar_ticks = None
+            if tick_px is not None:
+                a, b = tick_off[i], tick_off[i + 1]
+                if b > a:
+                    bar_ticks = tick_px[a:b]
             if positions:
                 if trailing:
                     set_bar_atr(ATR[i])
-                manage_bar(i, TS[i], o, HI[i], LO[i], c)
+                if bar_ticks is not None:
+                    broker.manage_bar_ticks(i, TS[i], bar_ticks, HI[i], LO[i], c)
+                else:
+                    manage_bar(i, TS[i], o, HI[i], LO[i], c)
 
             # -- 2b. resting entries that this bar trades through --------
             if resting_orders and not positions:
-                self._fill_resting(broker, resting_orders, i, TS[i], o, HI[i],
-                                   LO[i], c, order_type, through, priority, oca)
+                if bar_ticks is not None:
+                    self._fill_resting_ticks(broker, resting_orders, i, TS[i],
+                                             bar_ticks, order_type, through, oca)
+                else:
+                    self._fill_resting(broker, resting_orders, i, TS[i], o, HI[i],
+                                       LO[i], c, order_type, through, priority, oca)
 
             # -- 3. close-of-bar account rules ---------------------------
             if positions and session_flat and session_last[i]:
@@ -810,6 +865,47 @@ class Backtester:
             return
         path = _path_after_fill(side, order_type, px, gapped, o, h, l, c, priority)
         broker.manage_after_fill(slot, i, ts, path)
+
+    @staticmethod
+    def _fill_resting_ticks(broker: SimulatedBroker,
+                            orders: dict[Side, tuple[float, int, int | None]],
+                            i: int, ts: int, prices: np.ndarray,
+                            order_type: OrderType, through: float,
+                            oca: bool) -> None:
+        """The tick counterpart of :meth:`_fill_resting`: the first trade that
+        reaches an order fills it, and the rest of the bar's trades then run
+        the new position.
+
+        A stop entry is a stop-MARKET order and fills at the trade that
+        triggered it; a limit entry fills at its level, or at the opening trade
+        when the bar opened beyond it in the trader's favour.
+        """
+        best = None
+        for side, (level, placed, _last) in orders.items():
+            buying = side is Side.LONG
+            if order_type is OrderType.STOP:
+                hit = (prices >= level) if buying else (prices <= level)
+            else:
+                need = level - through if buying else level + through
+                hit = (prices <= need) if buying else (prices >= need)
+            k = int(hit.argmax())
+            if hit[k] and (best is None or k < best[0]):
+                best = (k, side, level, placed)
+        if best is None:
+            return
+        k, side, level, placed = best
+        trade = float(prices[k])
+        if order_type is OrderType.STOP or k == 0:
+            fill = trade
+        else:
+            fill = level
+        del orders[side]
+        if oca:
+            orders.clear()
+        slot = broker.open_position(side, i, ts, fill, placed, order_type=order_type,
+                                    order_price=level)
+        if slot is not None:
+            broker.walk_ticks(slot, i, ts, prices[k + 1:], at_open=False)
 
     def _run_ops(self, broker: SimulatedBroker, ops: Sequence[tuple], bar: int,
                  ts: int, price: float) -> None:

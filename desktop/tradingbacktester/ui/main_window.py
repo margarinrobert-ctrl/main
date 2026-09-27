@@ -120,6 +120,9 @@ class MainWindow(QMainWindow):
 
         act("import", "Import CSV…", "import", "Ctrl+I",
             "Import an OHLCV CSV file", self.on_import_csv)
+        act("import_ticks", "Import Tick Data…", "import", "",
+            "Import trades tick by tick; bars are built from them and every "
+            "fill can be resolved on the ticks", self.on_import_ticks)
         act("sample", "Load Sample Data", "database", "",
             "Load the bundled synthetic dataset", self.on_load_sample)
         act("shipped", "Import Shipped Market Data…", "database", "",
@@ -292,6 +295,7 @@ class MainWindow(QMainWindow):
 
         m = bar.addMenu("&File")
         m.addAction(self.act_import)
+        m.addAction(self.act_import_ticks)
         m.addAction(self.act_sample)
         m.addAction(self.act_datasets)
         m.addSeparator()
@@ -310,6 +314,7 @@ class MainWindow(QMainWindow):
 
         m = bar.addMenu("&Data")
         m.addAction(self.act_import)
+        m.addAction(self.act_import_ticks)
         m.addAction(self.act_shipped)
         m.addAction(self.act_datasets)
         m.addAction(self.act_quality)
@@ -1219,8 +1224,11 @@ class MainWindow(QMainWindow):
                 f"{self._view_bars.timeframe.label}"
         self._run_started = time.monotonic()
         self.status(f"Running {label}…")
+        ticks = self._ticks_for_run(config)
+        if ticks is not None:
+            self.status(f"Running {label} on {len(ticks):,} ticks…")
         self._runner.start(run_backtest_task, self._view_bars, self._spec, config,
-                           overrides, label)
+                           overrides, label, ticks=ticks)
 
     def on_cancel(self) -> None:
         if self._runner.busy:
@@ -1245,7 +1253,11 @@ class MainWindow(QMainWindow):
             self.progress.reset()
 
     def on_task_finished(self, result: Any) -> None:
-        if isinstance(result, BacktestResult):
+        from .workers import TickImport
+
+        if isinstance(result, TickImport):
+            self._finish_tick_import(result)
+        elif isinstance(result, BacktestResult):
             self._show_result(result)
         elif result is not None and hasattr(result, "instrument"):
             self._finish_import(result)
@@ -1329,7 +1341,8 @@ class MainWindow(QMainWindow):
         for warning in result.warnings[:3]:
             log.info("Backtest warning: %s", warning)
         note = f" · {result.warnings[0]}" if result.warnings else ""
-        self.status(f"Finished in {elapsed:.1f}s — {result.trade_count} trades{note}")
+        how = f" · {result.execution_note}" if getattr(result, "execution_note", "") else ""
+        self.status(f"Finished in {elapsed:.1f}s — {result.trade_count} trades{how}{note}")
         self.tabs.setCurrentIndex(0)
         self._update_actions()
         self._update_start_here()
@@ -1356,6 +1369,51 @@ class MainWindow(QMainWindow):
         self.status(f"Importing {Path(wizard.path).name}…")
         self._runner.start(import_csv_task, wizard.path, wizard.mapping,
                            wizard.instrument, wizard.timeframe)
+
+    def on_import_ticks(self) -> None:
+        from .dialogs.tick_import_dialog import TickImportDialog
+        from .workers import import_ticks_task
+
+        dialog = TickImportDialog(self.instruments, self)
+        if dialog.exec() != dialog.DialogCode.Accepted:
+            return
+        self.status(f"Importing ticks from {Path(dialog.path).name}…")
+        self._runner.start(import_ticks_task, dialog.path, dialog.timezone,
+                           dialog.instrument, dialog.timeframe, dialog.name)
+
+    def _finish_tick_import(self, result: Any) -> None:
+        try:
+            meta = self.datasets.add_from_bars(
+                result.bars, name=result.name, source_path=result.ticks.source,
+                notes=f"Built from {len(result.ticks):,} ticks.")
+            self.datasets.add_ticks(meta.id, result.ticks)
+        except BacktesterError as exc:
+            show_error(self, exc)
+            return
+        self._tick_cache = None
+        self.data_panel.refresh_datasets(meta.id)
+        self.status(f"Imported {len(result.ticks):,} ticks as {len(result.bars):,} "
+                    f"{result.bars.timeframe.label} bars in '{meta.name}'. "
+                    f"Backtests on it fill on the ticks.")
+
+    def _ticks_for_run(self, config: Any) -> Any:
+        """The selected dataset's ticks when the run should use them."""
+        if not bool(getattr(config.execution, "use_ticks", True)):
+            return None
+        dataset_id = getattr(self.settings, "last_dataset", "") or ""
+        if not dataset_id or not self.datasets.has_ticks(dataset_id):
+            return None
+        cache = getattr(self, "_tick_cache", None)
+        if cache is not None and cache[0] == dataset_id:
+            return cache[1]
+        try:
+            ticks = self.datasets.load_ticks(dataset_id)
+        except BacktesterError as exc:
+            log.warning("Ticks for %s could not be loaded: %s", dataset_id,
+                        exc.user_message)
+            return None
+        self._tick_cache = (dataset_id, ticks)
+        return ticks
 
     def _finish_import(self, bars: Any) -> None:
         try:

@@ -196,6 +196,22 @@ DEFAULT_INSTRUMENTS: tuple[Instrument, ...] = (
               "2 USD. Margin is an indicative exchange minimum and brokers vary.",
     ),
     Instrument(
+        symbol="YM", name="E-mini Dow Jones ($5) Future", asset_class=AssetClass.FUTURES,
+        tick_size=1.0, point_value=5.0, lot_size=1.0, price_decimals=0,
+        currency="USD", exchange="CBOT", timezone="America/Chicago",
+        margin_per_unit=10000.0, default_commission=2.25, default_spread_points=1.0,
+        notes="The futures contract on the Dow. One tick (1 index point) is "
+              "5 USD. Margin is indicative only: check your broker's current "
+              "figure."),
+    Instrument(
+        symbol="MYM", name="Micro E-mini Dow Jones ($0.50) Future",
+        asset_class=AssetClass.FUTURES,
+        tick_size=1.0, point_value=0.5, lot_size=1.0, price_decimals=0,
+        currency="USD", exchange="CBOT", timezone="America/Chicago",
+        margin_per_unit=1000.0, default_commission=0.52, default_spread_points=1.0,
+        notes="One tenth of a YM. One tick (1 index point) is 0.50 USD. Margin "
+              "is indicative only: check your broker's current figure."),
+    Instrument(
         symbol="CL", name="Crude Oil (WTI) Future", asset_class=AssetClass.FUTURES,
         tick_size=0.01, point_value=1000.0, lot_size=1.0, price_decimals=2,
         currency="USD", exchange="NYMEX", timezone="America/Chicago",
@@ -562,3 +578,23 @@ def _atomic_write_text(path: Path, text: str) -> None:
             f"write to it.",
             detail=repr(exc),
         ) from exc
+
+
+def instrument_from_filename(path: str, symbols: list[str]) -> str | None:
+    """A known symbol that appears as a whole word in a file's name.
+
+    "US30_30s.csv" names US30 and "MYM_ticks.csv" names MYM, not YM: the name
+    is split into words and the longest symbol among them wins. None when the
+    name names nothing -- then the caller's choice stands, and the price check
+    at validation is what stands between a wrong choice and an import.
+    """
+    import re
+    from pathlib import Path
+
+    name = Path(path).name
+    for suffix in (".gz", ".csv", ".txt", ".tsv"):
+        if name.lower().endswith(suffix):
+            name = name[: -len(suffix)]
+    tokens = {t for t in re.split(r"[^A-Za-z0-9]+", name.upper()) if t}
+    hits = [sym for sym in symbols if sym.upper() in tokens]
+    return max(hits, key=len) if hits else None

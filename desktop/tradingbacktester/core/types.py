@@ -500,6 +500,11 @@ class ExecutionSettings:
     entry_oca: bool = True
     """One-cancels-other: when one side's resting entry fills, cancel the
     other side's.  The usual bracket around a range."""
+    use_ticks: bool = True
+    """When the dataset has tick data, resolve every fill on the ticks: each
+    stop, target and resting entry fills at the first trade that reaches it,
+    and no intrabar assumption is made.  Bars without ticks fall back to the
+    bar rules."""
 
 
 # --------------------------------------------------------------------------

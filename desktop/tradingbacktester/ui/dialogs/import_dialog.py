@@ -30,6 +30,7 @@ from ...core.types import AssetClass
 from ...data.autodetect import audit_mapping
 from ...data.csv_loader import (ColumnMapping, load_csv, resolve_column,
                                 sniff_csv)
+from ...data.instruments import instrument_from_filename
 from ...data.models import Instrument
 from ...logging_setup import get_logger
 from ..theme import PALETTE, Fonts
@@ -509,26 +510,11 @@ class ImportWizard(QDialog):
     # -- instruments -----------------------------------------------------
 
     def _instrument_from_name(self, path: str) -> str | None:
-        """A known symbol that appears as a whole word in the file's name.
-
-        "US30_30s.csv" names US30.  The longest match wins, so "NAS100" is not
-        read as a shorter symbol it happens to contain.  None when the name
-        names nothing -- then the box is left as it was, and the price check at
-        validation is what stands between a wrong choice and an import.
-        """
-        import re
-
-        name = Path(path).name
-        for suffix in (".gz", ".csv", ".txt", ".tsv"):
-            if name.lower().endswith(suffix):
-                name = name[: -len(suffix)]
-        tokens = {t for t in re.split(r"[^A-Za-z0-9]+", name.upper()) if t}
         try:
             symbols = [inst.symbol for inst in self._instruments.all()]
         except BacktesterError:
             return None
-        hits = [sym for sym in symbols if sym.upper() in tokens]
-        return max(hits, key=len) if hits else None
+        return instrument_from_filename(path, symbols)
 
     def _refresh_instruments(self, select: str = "") -> None:
         self.instrument_box.blockSignals(True)
@@ -913,3 +899,4 @@ class _NewInstrumentDialog(QDialog):
             self.error.setText(str(exc))
             return
         self.accept()
+

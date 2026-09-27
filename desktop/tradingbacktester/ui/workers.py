@@ -196,7 +196,7 @@ class TaskRunner(QObject):
 
 def run_backtest_task(bars: Any, spec: Any, config: Any,
                       param_overrides: dict[str, Any] | None = None,
-                      label: str = "",
+                      label: str = "", ticks: Any = None,
                       progress: Callable[[int, int, str], None] | None = None,
                       cancel: Callable[[], bool] | None = None) -> Any:
     """Run one backtest.  Returns a
@@ -208,7 +208,7 @@ def run_backtest_task(bars: Any, spec: Any, config: Any,
             progress(current, total, f"Simulating bar {current:,} of {total:,}")
 
     engine = Backtester(bars, spec, config, progress=report, cancel=cancel,
-                        param_overrides=param_overrides)
+                        param_overrides=param_overrides, ticks=ticks)
     result = engine.run()
     if label:
         result.label = label
@@ -312,3 +312,37 @@ def mirror_task(bars: Any, spec: Any, config: Any,
     from ..research.mirror import mirror_test
 
     return mirror_test(bars, spec, config, progress=progress, cancel=cancel)
+
+
+class TickImport:
+    """What :func:`import_ticks_task` hands back to the window."""
+
+    def __init__(self, bars: Any, ticks: Any, name: str) -> None:
+        self.bars = bars
+        self.ticks = ticks
+        self.name = name
+
+
+def import_ticks_task(path: str, timezone: str, instrument: Any, timeframe: str,
+                      name: str,
+                      progress: Callable[[int, int, str], None] | None = None,
+                      cancel: Callable[[], bool] | None = None) -> TickImport:
+    """Read ticks, refuse prices that cannot be this instrument, build bars."""
+    from ..analytics.sanity import price_scale_problem
+    from ..core.errors import DataError
+    from ..data.ticks import bars_from_ticks, read_ticks
+
+    if progress is not None:
+        progress(0, 3, "Reading ticks")
+    ticks = read_ticks(path, timezone)
+    import numpy as np
+
+    problem = price_scale_problem(instrument, float(np.median(ticks.price)))
+    if problem:
+        raise DataError(problem)
+    if progress is not None:
+        progress(1, 3, f"Building {timeframe} bars from {len(ticks):,} ticks")
+    bars = bars_from_ticks(ticks, timeframe, instrument)
+    if progress is not None:
+        progress(3, 3, "")
+    return TickImport(bars, ticks, name)

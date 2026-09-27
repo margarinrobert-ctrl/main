@@ -225,6 +225,11 @@ class RiskPanel(QWidget):
                       0.0, 1e6, 0.25, 4,
                       tooltip="Require price to trade this many points past a resting "
                               "limit before treating it as filled"),
+            FieldSpec("use_ticks", "Use tick data for fills", "bool", True,
+                      tooltip="When the dataset was imported from ticks, fill every "
+                              "stop, target and resting entry at the first trade "
+                              "that reaches it, instead of assuming which way each "
+                              "bar moved. No effect on a dataset without ticks."),
             FieldSpec("risk_free_rate", "Risk-free rate", "float", 0.0, -10.0, 100.0,
                       0.25, 2, " %",
                       tooltip="Annual rate subtracted before computing Sharpe and Sortino"),
@@ -345,6 +350,7 @@ class RiskPanel(QWidget):
             allow_reversal=bool(s["allow_reversal"]),
             close_on_opposite_signal=bool(s["close_on_opposite_signal"]),
             limit_requires_through=float(s["limit_requires_through"]),
+            use_ticks=bool(s.get("use_ticks", True)),
         )
         execution = ExecutionSettings(**execution_kw)
         #: What this panel shows and sets, block by block. Folding the panel
@@ -416,6 +422,7 @@ class RiskPanel(QWidget):
             "allow_reversal": x.allow_reversal,
             "close_on_opposite_signal": x.close_on_opposite_signal,
             "limit_requires_through": x.limit_requires_through,
+            "use_ticks": bool(getattr(x, "use_ticks", True)),
             "risk_free_rate": config.risk_free_rate * 100.0,
             **weekday_values,
         })

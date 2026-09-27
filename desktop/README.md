@@ -420,6 +420,39 @@ uses up the day's one chance per side, which is how TradingView scripts with a
 `tookUp`/`tookDn` flag behave. Entry rule: `first_up > 0.5`, ANDed with any
 confirmation.
 
+### Tick data: fills in the order they really happened
+
+A bar keeps the open, high, low and close and throws away the ORDER they came
+in. When a bar reaches both a stop and a target, bar data cannot say which was
+first, so the engine has to assume. Tick data does not have to.
+
+**Data ▸ Import Tick Data…** (or `ticks FILE --symbol YM` on the command line)
+reads a file of trades. It builds bars from them at the size you choose, from
+1 second to 1 hour, and stores the ticks with the bars. Select that dataset as
+usual. Every backtest on it then walks each bar's trades in order:
+
+- A **stop** (stop loss, or a stop entry) fills at the first trade at or
+  through it, at that trade's price. A jump through the level costs the jump.
+- A **target** (take profit, or a limit entry) fills at its level once a trade
+  reaches it, or at the opening trade if the bar opened beyond it in your
+  favour.
+- On the bar a resting entry fills, the rest of that bar's trades run the new
+  position. Nothing before the fill can touch it.
+- No intrabar assumption is used, so the "If stop and target both hit" setting
+  does not apply.
+
+Execution ▸ **Use tick data for fills** turns it off, to compare with the bar
+rules. The status line says when fills came from ticks. Bars with no ticks,
+or ticks that disagree with the bars' highs and lows, are reported.
+
+Formats read: CSV with a header naming a time column and a price column, or a
+MetaTrader tick export (date and time as separate columns), NinjaTrader's
+tick export (`yyyyMMdd HHmmss fffffff;price;volume`), headerless
+`time,price[,volume]`, and epoch timestamps. A file with only bid and ask is
+read at the mid, with a warning to put the spread into costs. A time column
+headed `ny`, `utc`, `chicago` and so on sets the timezone. So does a symbol
+in the file name, such as `MYM_ticks.csv`.
+
 ### Stop and limit entries: the bracket around a range
 
 By default an entry is a market order at the next bar's open. A strategy can

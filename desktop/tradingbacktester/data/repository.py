@@ -125,6 +125,10 @@ class DatasetMeta:
     instrument: dict[str, Any] = field(default_factory=dict)
     """Full contract specification, so bars reload with the right point value
     even if the instrument has since been renamed or deleted from the catalogue."""
+    tick_file: str = ""
+    """Tick data stored with the bars (``*.ticks.npz`` beside them), or empty.
+    When present, a backtest can resolve every fill on the ticks."""
+    tick_count: int = 0
     import_warnings: list[str] = field(default_factory=list)
     """Caveats the loader raised at import time -- a derived low, a missing
     volume column, dropped rows.  Stored with the dataset because a user loads
@@ -189,7 +193,7 @@ class DatasetMeta:
         payload.setdefault("symbol", "")
         payload.setdefault("timeframe", "1d")
         # Older or hand-edited rows may carry numbers as strings.
-        for key in ("bar_count", "start_ts", "end_ts", "file_size"):
+        for key in ("bar_count", "start_ts", "end_ts", "file_size", "tick_count"):
             if key in payload and payload[key] is not None:
                 payload[key] = int(payload[key])
         if not isinstance(payload.get("instrument", {}), dict):
@@ -491,6 +495,39 @@ class DatasetRepository:
         log.info("Added dataset %s: %s", meta.id, meta.describe())
         return meta
 
+    # -- ticks -------------------------------------------------------------
+
+    def add_ticks(self, dataset_id: str, ticks: Any) -> DatasetMeta:
+        """Store tick data with an existing dataset."""
+        from .ticks import save_ticks
+
+        with self._lock:
+            meta = self.get(dataset_id)
+            name = f"{Path(meta.filename).stem.split('.')[0] or meta.id}.ticks.npz"
+            save_ticks(ticks, self.dir / name)
+            meta.tick_file = name
+            meta.tick_count = int(len(ticks))
+            self._write_sidecar(meta)
+            self._save_index()
+        log.info("Stored %d ticks with dataset %s", len(ticks), dataset_id)
+        return meta
+
+    def has_ticks(self, dataset_id: str) -> bool:
+        try:
+            meta = self.get(dataset_id)
+        except DataError:
+            return False
+        return bool(meta.tick_file) and (self.dir / meta.tick_file).is_file()
+
+    def load_ticks(self, dataset_id: str) -> Any:
+        """The dataset's ticks, or None when it has none."""
+        from .ticks import load_ticks
+
+        if not self.has_ticks(dataset_id):
+            return None
+        meta = self.get(dataset_id)
+        return load_ticks(self.dir / meta.tick_file)
+
     def remove(self, dataset_id: str) -> None:
         """Delete a dataset and its file from the workspace.
 
@@ -502,7 +539,10 @@ class DatasetRepository:
             if meta is None:
                 raise DataError("That dataset is not in the library, so there is "
                                 "nothing to remove.")
-            for target in (self.path_for(meta), self.sidecar_for(meta)):
+            targets = [self.path_for(meta), self.sidecar_for(meta)]
+            if meta.tick_file:
+                targets.append(self.dir / meta.tick_file)
+            for target in targets:
                 try:
                     target.unlink()
                 except FileNotFoundError:

@@ -71,6 +71,8 @@ class BacktestResult:
     plus ``tradeable`` (session filter)."""
     metrics: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    execution_note: str = ""
+    """How fills were resolved, e.g. "on 1,234,567 ticks", for the status line."""
     rejected_orders: int = 0
     bars_processed: int = 0
 
