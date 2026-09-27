@@ -92,11 +92,14 @@ def test_the_kind_of_copy_is_read_from_its_folder(tmp_path):
 def test_the_installer_script_installs_silently_into_this_folder(tmp_path):
     exe = tmp_path / "TradingBacktesterSetup.exe"
     exe.write_bytes(_setup_bytes())
-    script = updater.build_script(updater.inspect_update(exe),
-                                  Path("C:/Users/me/App's dir"), 4242,
+    app_dir = Path("C:/Users/me/App's dir")
+    script = updater.build_script(updater.inspect_update(exe), app_dir, 4242,
                                   tmp_path / "update.log")
+    # The folder as this platform spells it (backslashes on Windows), in a
+    # single-quoted PowerShell literal with the apostrophe doubled.
+    quoted = "'" + str(app_dir).replace("'", "''") + "'"
     for piece in ("/SILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS",
-                  "Get-Process -Id 4242", "'C:/Users/me/App''s dir'",
+                  "Get-Process -Id 4242", quoted,
                   "Start-Process -FilePath $relaunch"):
         assert piece in script, piece
 
