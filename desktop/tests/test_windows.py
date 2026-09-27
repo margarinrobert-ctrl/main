@@ -129,7 +129,7 @@ def test_plain_windows_stay_format_one_and_new_ones_are_format_three():
                          (Within(FLAG, 3, mode="all"), ()),
                          (Within(FLAG, "$w"), (ParamSpec("w", "W", "int", 5, 1, 50, 1),))):
         d = _spec(cond, params).to_dict()
-        assert d["schema_version"] == 3 == SCHEMA_VERSION
+        assert d["schema_version"] == 3 <= SCHEMA_VERSION
         back = StrategySpec.from_dict(json.loads(json.dumps(d)))
         assert back.entry_long.to_dict() == cond.to_dict()
 

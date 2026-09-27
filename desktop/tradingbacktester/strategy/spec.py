@@ -45,7 +45,7 @@ from ..core.types import (ExecutionSettings, ExitSettings, RiskSettings,
                           CostModel)
 from ..indicators.base import ParamSpec
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 """Format 3 adds windows in minutes, held-for and at-least-K windows, windows
 set by a parameter, and indicators computed on another indicator. Format 2
 adds resting entry orders.  A file only CLAIMS format 2 when it uses
@@ -785,6 +785,10 @@ class StrategySpec:
                 "Long trades have no exit rule and no stop, target or time stop, "
                 "so a position will be held until the data ends."
             )
+        if str(getattr(self.exits, "atr_method", "wilder")) not in ("wilder", "ema", "sma"):
+            raise StrategyError(
+                f"'{self.exits.atr_method}' is not an ATR smoothing. Use wilder, "
+                f"ema or sma.")
         total_partial = sum(f for f, _ in self.exits.partial_exits)
         if total_partial > 1.0 + 1e-9:
             raise StrategyError(
@@ -848,6 +852,10 @@ class StrategySpec:
         """The oldest file format that can hold this strategy without loss."""
         conditions = (self.entry_long, self.entry_short, self.exit_long,
                       self.exit_short, self.entry_cancel)
+        # An older build would read an EMA-smoothed ATR as Wilder's and
+        # silently move every stop, so it must refuse the file instead.
+        if str(getattr(self.exits, "atr_method", "wilder") or "wilder") != "wilder":
+            return 4
         if any(isinstance(node, Within) and node.uses_format_3()
                for cond in conditions for node in walk_conditions(cond)) \
                 or any(str(slot.source or "").startswith("@")
@@ -956,6 +964,9 @@ class StrategySpec:
         e = self.exits
         if e.stop_loss_enabled:
             out.append(f"Stop loss:   {e.stop_loss_value:g} {e.stop_loss_mode}")
+        if getattr(e, "atr_method", "wilder") != "wilder":
+            out.append(f"ATR:         {e.atr_period}, {e.atr_method.upper()}-smoothed "
+                       f"true range")
         if e.take_profit_enabled:
             out.append(f"Take profit: {e.take_profit_value:g} {e.take_profit_mode}")
         if e.trailing_enabled:

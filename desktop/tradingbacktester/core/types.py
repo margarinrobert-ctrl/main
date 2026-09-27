@@ -464,6 +464,14 @@ class ExitSettings:
     books a small profit instead of the round-turn cost.  ``0`` is a true
     breakeven.  Never placed worse than the stop it replaces."""
     atr_period: int = 14
+    atr_method: str = "wilder"
+    """How the true range is averaged for every ATR distance the strategy uses
+    (stops, targets, trails, breakeven, sizing, ATR slippage): ``wilder``
+    (Wilder's RMA, alpha 1/n, which is TradingView's ``ta.atr``), ``ema``
+    (alpha 2/(n+1), TradingView's ``ta.ema(ta.tr(true), n)``) or ``sma``.
+    The two EMAs are different averages -- Wilder's has roughly twice the
+    lookback -- so a script that sizes its stop with one cannot be
+    reproduced with the other."""
     max_bars_in_trade: int = 0
     """Time stop in bars; ``0`` disables."""
     partial_exits: tuple[tuple[float, float], ...] = ()

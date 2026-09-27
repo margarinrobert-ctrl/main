@@ -424,7 +424,8 @@ def _compute_atr(spec: StrategySpec, bars: BarSeries) -> tuple[np.ndarray, np.nd
     and MFE in ATR terms, and a second pass later would cost more than this one.
     """
     exit_period = max(1, int(spec.exits.atr_period))
-    atr = _atr_array(bars, exit_period)
+    method = str(getattr(spec.exits, "atr_method", "wilder") or "wilder")
+    atr = _atr_array(bars, exit_period, method)
     size_period = max(1, int(spec.risk.volatility_atr_period))
     if size_period == exit_period:
         # Deliberately the same object: the sizer can check ``is`` to know it
@@ -432,13 +433,17 @@ def _compute_atr(spec: StrategySpec, bars: BarSeries) -> tuple[np.ndarray, np.nd
         return atr, atr
     if spec.risk.sizing_mode is not SizingMode.VOLATILITY_TARGET:
         return atr, atr
-    return atr, _atr_array(bars, size_period)
+    return atr, _atr_array(bars, size_period, method)
 
 
-def _atr_array(bars: BarSeries, period: int) -> np.ndarray:
-    """Wilder's ATR through the registry, so there is one definition of it."""
+def _atr_array(bars: BarSeries, period: int, method: str = "wilder") -> np.ndarray:
+    """The ATR through the registry, so there is one definition of it.
+
+    ``method`` is the strategy's ``exits.atr_method``: Wilder's unless the
+    strategy says otherwise.
+    """
     try:
-        return _cached_compute("ATR", bars, {"period": period, "method": "wilder"},
+        return _cached_compute("ATR", bars, {"period": period, "method": method},
                                "close", _bars_fingerprint(bars))["value"]
     except BacktesterError as exc:
         raise StrategyError(

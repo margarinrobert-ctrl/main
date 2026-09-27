@@ -174,6 +174,15 @@ class RiskPanel(QWidget):
                               "true breakeven"),
             FieldSpec("atr_period", "ATR period", "int", 14, 1, 500,
                       tooltip="Period used by every ATR-based stop, target and trail"),
+            FieldSpec("atr_method", "ATR smoothing", "choice", "wilder",
+                      choices=[("Wilder (ta.atr)", "wilder"),
+                               ("EMA (ta.ema of true range)", "ema"),
+                               ("Simple average", "sma")],
+                      tooltip="How the true range is averaged for every ATR "
+                              "distance. Wilder's is TradingView's ta.atr; a "
+                              "script that uses ta.ema(ta.tr(true), n) needs EMA. "
+                              "The two put the same '1.5 x ATR' stop at "
+                              "different prices."),
             FieldSpec("max_bars_in_trade", "Time stop (bars)", "int", 0, 0, 1_000_000,
                       tooltip="Close the position after this many bars; 0 disables it"),
         ], label_width=118)
@@ -332,6 +341,7 @@ class RiskPanel(QWidget):
             breakeven_mode=str(e.get("breakeven_mode", "r") or "r"),
             breakeven_offset=float(e.get("breakeven_offset", 0.0) or 0.0),
             atr_period=int(e["atr_period"]),
+            atr_method=str(e.get("atr_method", "wilder") or "wilder"),
             max_bars_in_trade=int(e["max_bars_in_trade"]),
         )
         exits = ExitSettings(**exits_kw)
@@ -408,6 +418,7 @@ class RiskPanel(QWidget):
             "breakeven_mode": getattr(e, "breakeven_mode", "r") or "r",
             "breakeven_offset": getattr(e, "breakeven_offset", 0.0) or 0.0,
             "atr_period": e.atr_period,
+            "atr_method": getattr(e, "atr_method", "wilder") or "wilder",
             "max_bars_in_trade": e.max_bars_in_trade,
         })
         weekday_values = {f"trade_{name}": (i in s.weekdays) for i, name in enumerate(

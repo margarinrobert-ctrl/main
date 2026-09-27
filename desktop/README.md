@@ -574,6 +574,18 @@ and binds from the next bar. If that bar opens through it, it fills at the
 open. A strategy file saved before these settings existed reads as R with no
 offset, which is what it meant.
 
+### ATR: Wilder's or an EMA of the true range
+
+**ATR smoothing** in the exit settings says how the true range is averaged for
+every ATR distance a strategy uses — stop, target, trail, breakeven, sizing.
+**Wilder** is TradingView's `ta.atr` and the default. **EMA** is
+`ta.ema(ta.tr(true), n)`, which many scripts use instead. The two are
+different averages, since Wilder's reacts about half as fast, so the same
+"1.5 × ATR" stop lands at different prices. On US30 30-second bars the EMA
+version was a median 1.21× Wilder's at the entries of one converted script.
+A strategy that uses EMA or SMA is saved as format 4, so an older build refuses
+it rather than silently using Wilder's.
+
 ### The worked example
 
 ```

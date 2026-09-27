@@ -348,7 +348,8 @@ class Backtester:
                 detail=f"start={config.start_ts} end={config.end_ts} bars={n}")
 
         run_bars = bars if (lo == 0 and hi == len(bars)) else bars.slice(lo, hi)
-        atr = self._resolve_atr(compiled, bars, config.exits.atr_period)[lo:hi]
+        atr = self._resolve_atr(compiled, bars, config.exits.atr_period,
+                                getattr(config.exits, "atr_method", "wilder"))[lo:hi]
 
         broker = SimulatedBroker(
             bars.instrument, config, atr,
@@ -496,7 +497,8 @@ class Backtester:
                 detail=f"start_ts={config.start_ts} end_ts={config.end_ts}")
         return lo, hi
 
-    def _resolve_atr(self, compiled: Any, bars: BarSeries, period: int) -> np.ndarray:
+    def _resolve_atr(self, compiled: Any, bars: BarSeries, period: int,
+                     method: str = "wilder") -> np.ndarray:
         """The ATR series used for stops, targets, sizing and ATR slippage.
 
         The compiled strategy already carries an ATR at the *strategy's* period.
@@ -505,18 +507,28 @@ class Backtester:
         quietly be 1.5 x ATR(14).
         """
         period = int(period)
-        spec_period = int(getattr(getattr(self.spec, "exits", None), "atr_period",
-                                  period))
+        method = str(method or "wilder")
+        spec_exits = getattr(self.spec, "exits", None)
+        spec_period = int(getattr(spec_exits, "atr_period", period))
+        spec_method = str(getattr(spec_exits, "atr_method", "wilder") or "wilder")
         candidate = getattr(compiled, "atr", None)
-        if candidate is not None and spec_period == period:
+        # The same goes for the smoothing: an EMA-of-true-range stop must not
+        # quietly become a Wilder one because the run's settings differ.
+        if candidate is not None and spec_period == period and spec_method == method:
             arr = np.asarray(candidate, dtype="float64")
             if len(arr) == len(bars):
                 return arr
         try:
             from ..indicators.registry import REGISTRY
 
-            return REGISTRY.compute("ATR", bars, {"period": period})["value"]
+            return REGISTRY.compute("ATR", bars, {"period": period,
+                                                  "method": method})["value"]
         except BacktesterError as exc:
+            if method != "wilder":
+                raise BacktestError(
+                    f"The {method.upper()} average true range could not be "
+                    f"calculated, so the stops cannot be placed.",
+                    detail=str(exc)) from exc
             logger.info("Falling back to the built-in ATR: %s", exc)
         except Exception as exc:  # pragma: no cover - defensive
             logger.info("Falling back to the built-in ATR: %r", exc)
