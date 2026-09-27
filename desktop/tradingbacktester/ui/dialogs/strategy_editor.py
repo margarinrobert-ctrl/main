@@ -481,11 +481,10 @@ class StrategyEditor(QDialog):
             config = self.risk_panel.build_config()
         except BacktesterError:
             return
-        self.spec.risk = config.risk
-        self.spec.costs = config.costs
-        self.spec.exits = config.exits
-        self.spec.session = config.session
-        self.spec.execution = config.execution
+        from ..widgets.risk_panel import fold_panel_into_spec
+
+        fold_panel_into_spec(self.spec, config,
+                             getattr(self.risk_panel, "shown_fields", {}))
 
     def _accept(self) -> None:
         self._collect()

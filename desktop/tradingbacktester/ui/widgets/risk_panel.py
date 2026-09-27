@@ -213,7 +213,9 @@ class RiskPanel(QWidget):
                       IntrabarPriority.PESSIMISTIC.value,
                       choices=[("Assume the stop (pessimistic)", IntrabarPriority.PESSIMISTIC.value),
                                ("Assume the target (optimistic)", IntrabarPriority.OPTIMISTIC.value),
-                               ("Infer from the bar's shape", IntrabarPriority.OHLC_PATH.value)],
+                               ("Infer from the bar's shape", IntrabarPriority.OHLC_PATH.value),
+                               ("As TradingView does (nearer extreme first)",
+                                IntrabarPriority.TRADINGVIEW.value)],
                       tooltip="Bar data cannot say which barrier was reached first. "
                               "Pessimistic is the only assumption that will not "
                               "flatter the result."),
@@ -279,7 +281,7 @@ class RiskPanel(QWidget):
             ("trade_monday", "trade_tuesday", "trade_wednesday", "trade_thursday",
              "trade_friday", "trade_saturday", "trade_sunday")) if s[key])
 
-        risk = RiskSettings(
+        risk_kw = dict(
             starting_capital=float(c["starting_capital"]),
             sizing_mode=SizingMode(c["sizing_mode"]),
             fixed_units=float(c["fixed_units"]),
@@ -298,7 +300,8 @@ class RiskPanel(QWidget):
             margin_percent=float(c["margin_percent"]),
             margin_per_unit=float(c["margin_per_unit"]),
         )
-        costs = CostModel(
+        risk = RiskSettings(**risk_kw)
+        costs_kw = dict(
             commission_mode=CommissionMode(k["commission_mode"]),
             commission_value=float(k["commission_value"]),
             min_commission=float(k["min_commission"]),
@@ -307,7 +310,8 @@ class RiskPanel(QWidget):
             slippage_mode=SlippageMode(k["slippage_mode"]),
             slippage_value=float(k["slippage_value"]),
         )
-        exits = ExitSettings(
+        costs = CostModel(**costs_kw)
+        exits_kw = dict(
             stop_loss_enabled=bool(e["stop_loss_enabled"]),
             stop_loss_mode=str(e["stop_loss_mode"]),
             stop_loss_value=float(e["stop_loss_value"]),
@@ -325,7 +329,8 @@ class RiskPanel(QWidget):
             atr_period=int(e["atr_period"]),
             max_bars_in_trade=int(e["max_bars_in_trade"]),
         )
-        session = SessionSettings(
+        exits = ExitSettings(**exits_kw)
+        session_kw = dict(
             enabled=bool(s["session_enabled"]),
             start=str(s["session_start"]),
             end=str(s["session_end"]),
@@ -333,13 +338,22 @@ class RiskPanel(QWidget):
             weekdays=weekdays or (0, 1, 2, 3, 4),
             flat_at_session_end=bool(s["flat_at_session_end"]),
         )
-        execution = ExecutionSettings(
+        session = SessionSettings(**session_kw)
+        execution_kw = dict(
             signal_execution=SignalExecution(s["signal_execution"]),
             intrabar_priority=IntrabarPriority(s["intrabar_priority"]),
             allow_reversal=bool(s["allow_reversal"]),
             close_on_opposite_signal=bool(s["close_on_opposite_signal"]),
             limit_requires_through=float(s["limit_requires_through"]),
         )
+        execution = ExecutionSettings(**execution_kw)
+        #: What this panel shows and sets, block by block. Folding the panel
+        #: back into a strategy must touch these and nothing else: a strategy's
+        #: partial-exit ladder or resting entry orders are not on the panel, and
+        #: replacing a whole block would reset them to their defaults unseen.
+        self.shown_fields = {"risk": set(risk_kw), "costs": set(costs_kw),
+                             "exits": set(exits_kw), "session": set(session_kw),
+                             "execution": set(execution_kw)}
         config = BacktestConfig(
             starting_capital=float(c["starting_capital"]),
             risk=risk, costs=costs, session=session, exits=exits,
@@ -422,3 +436,25 @@ class RiskPanel(QWidget):
         tz = getattr(instrument, "timezone", "")
         if tz and self.session_form.editor("session_timezone") is not None:
             self.session_form.set_value("session_timezone", tz)
+
+
+def fold_panel_into_spec(spec: Any, config: BacktestConfig,
+                         shown: dict[str, set[str]]) -> None:
+    """Write the panel's values into ``spec``, keeping everything it does not show.
+
+    Each settings block is updated field by field from ``shown`` rather than
+    replaced, so a setting that exists only in the strategy file survives a
+    save from the window.
+    """
+    import copy as _copy
+    import dataclasses as _dc
+
+    for block in ("risk", "costs", "exits", "session", "execution"):
+        mine = getattr(spec, block)
+        panel = getattr(config, block)
+        names = shown.get(block)
+        if not names or type(mine) is not type(panel):
+            setattr(spec, block, panel)
+            continue
+        setattr(spec, block, _dc.replace(
+            _copy.deepcopy(mine), **{n: getattr(panel, n) for n in names}))

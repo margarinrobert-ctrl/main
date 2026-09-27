@@ -420,6 +420,33 @@ uses up the day's one chance per side, which is how TradingView scripts with a
 `tookUp`/`tookDn` flag behave. Entry rule: `first_up > 0.5`, ANDed with any
 confirmation.
 
+### Stop and limit entries: the bracket around a range
+
+By default an entry is a market order at the next bar's open. A strategy can
+instead set `execution.entry_order` to `stop` or `limit` and give
+`entry_long_price` / `entry_short_price`: any expression, such as the range
+high + 10. When the entry rule is true at a bar's close and the account is
+flat, a resting order is placed at that price and works from the next bar:
+
+- A stop fills when price trades through it, or at the open if the bar gapped
+  past. A limit fills when price trades back to it.
+- Both sides may rest at once. With `entry_oca` on (the default), the first
+  fill cancels the other.
+- An order stops working when it fills, when `entry_order_bars` run out, at
+  the close of any bar where the `entry_cancel` rule is true, or at the day's
+  end.
+
+On the bar an order fills, the stop and target are checked only on the part
+of the bar AFTER the fill, along the bar's assumed path. The dip that came
+before a breakout cannot stop out the trade the breakout opened. Execution ▸
+**As TradingView does** makes that path TradingView's: to whichever extreme is
+nearer the open first. Use it to line a converted Pine strategy up with its
+Strategy Tester.
+
+Files that use resting entries are saved as format 2. An older build of the
+app refuses them with a message, rather than quietly running the stops as
+market orders.
+
 ### Breakeven in points, with a secured offset
 
 **Break even at** takes R multiples, price points, ATR multiples or percent of

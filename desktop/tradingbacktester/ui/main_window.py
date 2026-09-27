@@ -1091,11 +1091,10 @@ class MainWindow(QMainWindow):
             config = self.risk_panel.build_config()
         except BacktesterError:
             return
-        spec.risk = config.risk
-        spec.costs = config.costs
-        spec.exits = config.exits
-        spec.session = config.session
-        spec.execution = config.execution
+        from .widgets.risk_panel import fold_panel_into_spec
+
+        fold_panel_into_spec(spec, config,
+                             getattr(self.risk_panel, "shown_fields", {}))
 
     def on_save_strategy(self) -> None:
         if self._spec is None:

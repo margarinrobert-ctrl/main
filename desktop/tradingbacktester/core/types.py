@@ -114,6 +114,12 @@ class IntrabarPriority(str, Enum):
     OHLC_PATH = "ohlc_path"
     """Assume open -> high -> low -> close on up bars and open -> low -> high ->
     close on down bars, resolving the order by the sign of ``close - open``."""
+    TRADINGVIEW = "tradingview"
+    """TradingView's broker emulator: the bar visits whichever extreme is
+    NEARER its open first -- open -> high -> low -> close when the open is
+    closer to the high, open -> low -> high -> close otherwise (ties go to the
+    high).  Use it to line a converted Pine strategy up with its Strategy
+    Tester; it is an assumption about the path, not knowledge of it."""
 
 
 class SizingMode(str, Enum):
@@ -478,6 +484,22 @@ class ExecutionSettings:
     """Require price to trade this many points *past* a resting limit before it
     is treated as filled.  Guards against the classic 'touched, therefore
     filled' optimism."""
+    entry_order: str = "market"
+    """How an entry signal becomes a position.  ``market`` fills at the next
+    open (or this close, per :attr:`signal_execution`).  ``stop`` and ``limit``
+    place a RESTING order at the strategy's ``entry_long_price`` /
+    ``entry_short_price``, evaluated on the signal bar and fixed from then on:
+    a stop fills when price trades through it (at the open if the bar gapped
+    past), a limit when price trades back to it.  Resting orders are only
+    placed while flat, both sides may rest at once, and they live until they
+    fill, :attr:`entry_order_bars` runs out, the strategy's ``entry_cancel``
+    rule is true at a bar's close, or the day ends."""
+    entry_order_bars: int = 0
+    """Bars a resting entry stays working after the bar that placed it;
+    ``0`` means until the end of the day."""
+    entry_oca: bool = True
+    """One-cancels-other: when one side's resting entry fills, cancel the
+    other side's.  The usual bracket around a range."""
 
 
 # --------------------------------------------------------------------------

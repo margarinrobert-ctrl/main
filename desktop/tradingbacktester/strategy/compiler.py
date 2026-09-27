@@ -83,6 +83,10 @@ class CompiledStrategy:
     bars: BarSeries | None = field(default=None, repr=False)
     warnings: list[str] = field(default_factory=list)
     """Non-fatal problems worth showing the user, e.g. "no signals at all"."""
+    entry_long_price: np.ndarray | None = field(default=None, repr=False)
+    """Resting-order prices per bar (NaN where undefined); None for market."""
+    entry_short_price: np.ndarray | None = field(default=None, repr=False)
+    entry_cancel: np.ndarray | None = field(default=None, repr=False)
 
     # -- convenience -----------------------------------------------------
 
@@ -92,9 +96,14 @@ class CompiledStrategy:
     @property
     def signals(self) -> dict[str, np.ndarray]:
         """The arrays in the shape :class:`BacktestResult.signals` wants."""
-        return {"entry_long": self.entry_long, "entry_short": self.entry_short,
-                "exit_long": self.exit_long, "exit_short": self.exit_short,
-                "tradeable": self.tradeable}
+        out = {"entry_long": self.entry_long, "entry_short": self.entry_short,
+               "exit_long": self.exit_long, "exit_short": self.exit_short,
+               "tradeable": self.tradeable}
+        if self.entry_long_price is not None:
+            out["entry_long_price"] = self.entry_long_price
+            out["entry_short_price"] = self.entry_short_price
+            out["entry_cancel"] = self.entry_cancel
+        return out
 
     @property
     def entry_long_allowed(self) -> np.ndarray:
@@ -195,6 +204,20 @@ def compile_strategy(spec: StrategySpec, bars: BarSeries,
     for arr in (entry_long, entry_short, exit_long, exit_short, tradeable):
         arr[:blank] = False
 
+    long_price = short_price = cancel = None
+    if spec.uses_resting_entries():
+        def price_of(op) -> np.ndarray:
+            if op is None:
+                return np.full(n, np.nan)
+            return np.array(evaluate_operand(op, ctx), dtype="float64")
+
+        long_price = price_of(spec.entry_long_price)
+        short_price = price_of(spec.entry_short_price)
+        cancel = (np.array(evaluate_condition(spec.entry_cancel, ctx), dtype=bool)
+                  if spec.entry_cancel is not None else np.zeros(n, dtype=bool))
+        long_price[:blank] = np.nan
+        short_price[:blank] = np.nan
+
     if not entry_long.any() and not entry_short.any():
         warnings.append(
             "No entry signal fired anywhere in this dataset. Check the rule "
@@ -205,7 +228,8 @@ def compile_strategy(spec: StrategySpec, bars: BarSeries,
         entry_long=entry_long, entry_short=entry_short,
         exit_long=exit_long, exit_short=exit_short,
         tradeable=tradeable, warmup=int(warmup), atr=atr, sizing_atr=sizing_atr,
-        bars=bars, warnings=warnings,
+        bars=bars, warnings=warnings, entry_long_price=long_price,
+        entry_short_price=short_price, entry_cancel=cancel,
     )
     log.debug("Compiled %s", compiled.describe())
     return compiled

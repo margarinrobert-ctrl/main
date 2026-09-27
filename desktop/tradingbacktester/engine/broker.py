@@ -52,7 +52,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 
@@ -398,7 +398,9 @@ class SimulatedBroker:
     # -- opening ---------------------------------------------------------
 
     def open_position(self, side: Side, bar: int, ts: int, reference_price: float,
-                      signal_bar: int, tag: str = "") -> _Slot | None:
+                      signal_bar: int, tag: str = "",
+                      order_type: OrderType = OrderType.MARKET,
+                      order_price: float | None = None) -> _Slot | None:
         """Open a position at ``reference_price`` on ``bar``.
 
         ``signal_bar`` is the bar whose close produced the signal.  Everything
@@ -453,8 +455,11 @@ class SimulatedBroker:
         slot.partials = self._build_partials(fill, slot.sign, risk_pu, qty)
         self.positions.append(slot)
 
-        order = self._record_order(side, qty, bar, ts, OrderType.MARKET,
-                                   OrderStatus.FILLED, tag=tag, fill_price=fill)
+        order = self._record_order(
+            side, qty, bar, ts, order_type, OrderStatus.FILLED, tag=tag,
+            fill_price=fill,
+            stop_price=order_price if order_type is OrderType.STOP else None,
+            limit_price=order_price if order_type is OrderType.LIMIT else None)
         self.fills.append(Fill(
             order_id=order.id, bar=bar, ts=int(ts), side=side, quantity=qty,
             reference_price=float(reference_price), fill_price=fill,
@@ -660,9 +665,10 @@ class SimulatedBroker:
                     stop_first = False
                 else:
                     # OHLC_PATH: an up bar visits its high first, a down bar its
-                    # low first, so whichever barrier sits on that side is
-                    # reached first.
-                    upper_first = c >= o
+                    # low first. TRADINGVIEW: the extreme nearer the open is
+                    # visited first. Either way whichever barrier sits on the
+                    # side visited first is reached first.
+                    upper_first = bar_upper_first(o, h, l, c, priority)
                     fav_first = upper_first if slot.is_long else not upper_first
                     stop_first = not fav_first
         else:
@@ -694,6 +700,73 @@ class SimulatedBroker:
         if stop_hit is not None:
             self.close_position(slot, i, ts, stop_hit[0], slot.stop_reason)
             return True
+        return False
+
+    def manage_after_fill(self, slot: _Slot, i: int, ts: int,
+                          path: Sequence[float]) -> bool:
+        """Barriers on the rest of the bar a resting entry filled on.
+
+        ``path`` is the price path from the fill to the close, as vertices
+        (fill, extreme, extreme, close) under the run's path assumption. Each
+        leg is monotone, so a leg moving up can only reach barriers above where
+        it started and a leg moving down only those below: walking the legs in
+        order decides exactly which barrier came first, with no priority rule
+        needed. Returns True if the position closed on this bar.
+
+        Partial-exit rungs and the target are limit orders (honouring
+        ``limit_requires_through``), the stop a stop order; mid-bar there is no
+        gap, so each fills at its own level.
+        """
+        p = slot.pos
+        long = slot.is_long
+        entry = p.entry_price
+        through = self._through
+        hi = max(path)
+        lo = min(path)
+        p.mfe = max(p.mfe, (hi - entry) if long else (entry - lo))
+        p.mae = max(p.mae, (entry - lo) if long else (hi - entry))
+        p.bars_held = 0
+        for a, b in zip(path, path[1:]):
+            if b == a:
+                continue
+            up = b > a
+            while True:
+                levels: list[tuple[float, str, Any]] = []
+                favourable_way = up if long else not up
+                if favourable_way:
+                    for row in slot.partials:
+                        if not row[2]:
+                            levels.append((row[0], "partial", row))
+                            break
+                    if p.take_profit is not None:
+                        levels.append((p.take_profit, "target", None))
+                elif p.stop_loss is not None:
+                    levels.append((p.stop_loss, "stop", None))
+                reached = []
+                for level, kind, row in levels:
+                    need = (through if kind != "stop" else 0.0) * (1 if up else -1)
+                    start_ok = level > a if up else level < a
+                    if kind == "stop":
+                        start_ok = level >= a if up else level <= a
+                    if start_ok and ((b >= level + need) if up else (b <= level + need)):
+                        reached.append((level, kind, row))
+                if not reached:
+                    break
+                level, kind, row = (min(reached, key=lambda r: r[0]) if up
+                                    else max(reached, key=lambda r: r[0]))
+                if kind == "stop":
+                    self.close_position(slot, i, ts, level, slot.stop_reason)
+                    return True
+                if kind == "target":
+                    self.close_position(slot, i, ts, level, ExitReason.TAKE_PROFIT)
+                    return True
+                row[2] = 1.0
+                p.partials_done += 1
+                self.close_position(slot, i, ts, level, ExitReason.PARTIAL_TARGET,
+                                    quantity=min(row[1], p.quantity))
+                if p.quantity <= _QTY_EPS:
+                    return True
+                a = level
         return False
 
     def _update_protective_stop(self, slot: _Slot, h: float, l: float, c: float,
@@ -913,3 +986,24 @@ class SimulatedBroker:
         self._seen_warnings.add(message)
         self.warnings.append(message)
         logger.warning("%s", message)
+
+
+def bar_upper_first(o: float, h: float, l: float, c: float,
+                    priority: IntrabarPriority) -> bool:
+    """Whether the bar is assumed to visit its high before its low.
+
+    ``TRADINGVIEW``: the extreme nearer the open first (ties: the high).
+    Every other setting: an up bar (close at or above open) visits its high
+    first, a down bar its low -- the OHLC_PATH rule, which is also what
+    orders two resting entries on one bar under PESSIMISTIC and OPTIMISTIC,
+    since those settings say which barrier wins, not which way the bar went.
+    """
+    if priority is IntrabarPriority.TRADINGVIEW:
+        return (h - o) <= (o - l)
+    return c >= o
+
+
+def bar_path(o: float, h: float, l: float, c: float,
+             priority: IntrabarPriority) -> tuple[float, float, float, float]:
+    """The four vertices a bar is assumed to trace."""
+    return (o, h, l, c) if bar_upper_first(o, h, l, c, priority) else (o, l, h, c)

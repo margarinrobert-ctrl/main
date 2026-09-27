@@ -143,10 +143,11 @@ import numpy as np
 from ..core.errors import (BacktestError, BacktesterError, CancelledError,
                            DataError, InsufficientDataError)
 from ..core.types import (BacktestConfig, CostModel, ExecutionSettings,
-                          ExitReason, ExitSettings, RiskSettings,
-                          SessionSettings, Side, SignalExecution)
+                          ExitReason, ExitSettings, IntrabarPriority, OrderType,
+                          RiskSettings, SessionSettings, Side, SignalExecution)
 from ..data.models import BarSeries
-from .broker import SimulatedBroker
+from .broker import (SimulatedBroker, bar_path, bar_upper_first,
+                     limit_fill_price, stop_fill_price)
 from .execution import CostCalculator
 from .results import BacktestResult, EquityCurves
 from .risk import PositionSizer
@@ -512,6 +513,12 @@ class Backtester:
         tradeable = getattr(compiled, "tradeable", None)
         out["tradeable"] = (np.ones(n, dtype=bool) if tradeable is None
                             else np.asarray(tradeable, dtype=bool)[lo:hi])
+        if getattr(compiled, "entry_long_price", None) is not None:
+            out["entry_long_price"] = np.asarray(compiled.entry_long_price,
+                                                 dtype="float64")[lo:hi]
+            out["entry_short_price"] = np.asarray(compiled.entry_short_price,
+                                                  dtype="float64")[lo:hi]
+            out["entry_cancel"] = np.asarray(compiled.entry_cancel, dtype=bool)[lo:hi]
         return out
 
     def _first_tradeable_bar(self, compiled: Any, config: BacktestConfig,
@@ -573,6 +580,26 @@ class Backtester:
         use_margin = bool(risk.use_margin)
         trailing = bool(config.exits.trailing_enabled)
 
+        # -- resting entry orders (stop / limit) ----------------------------
+        # The order TYPE is the strategy's, read from the spec and never from
+        # the run configuration: a panel that knows nothing about it must not
+        # be able to turn a stop-entry strategy into a market-entry one.
+        spec_exec = getattr(self.spec, "execution", None)
+        resting_mode = str(getattr(spec_exec, "entry_order", "market")
+                           or "market").lower()
+        resting = resting_mode in ("stop", "limit") and "entry_long_price" in signals
+        if resting:
+            ELP = signals["entry_long_price"].tolist()
+            ESP = signals["entry_short_price"].tolist()
+            CXL = signals["entry_cancel"].tolist()
+            order_bars = max(0, int(getattr(spec_exec, "entry_order_bars", 0) or 0))
+            oca = bool(getattr(spec_exec, "entry_oca", True))
+            through = float(execu.limit_requires_through or 0.0)
+            priority = execu.intrabar_priority
+            order_type = OrderType.STOP if resting_mode == "stop" else OrderType.LIMIT
+        #: side -> (price, placing bar, last bar it may fill on or None)
+        resting_orders: dict[Side, tuple[float, int, int | None]] = {}
+
         daily_limit_pct = bool(risk.max_daily_loss_is_percent)
         daily_limit_raw = float(risk.max_daily_loss)
         daily_limit_on = daily_limit_raw > 0.0
@@ -614,6 +641,7 @@ class Backtester:
             if dk != current_day:
                 current_day = dk
                 day_start_equity = equity_of(o) if positions else broker.cash
+                resting_orders.clear()          # resting entries are day orders
 
             # -- 1. orders raised on the previous bar fill at this open ---
             if pending is not None:
@@ -625,6 +653,11 @@ class Backtester:
                 if trailing:
                     set_bar_atr(ATR[i])
                 manage_bar(i, TS[i], o, HI[i], LO[i], c)
+
+            # -- 2b. resting entries that this bar trades through --------
+            if resting_orders and not positions:
+                self._fill_resting(broker, resting_orders, i, TS[i], o, HI[i],
+                                   LO[i], c, order_type, through, priority, oca)
 
             # -- 3. close-of-bar account rules ---------------------------
             if positions and session_flat and session_last[i]:
@@ -656,8 +689,32 @@ class Backtester:
                     if (XL[i] if held is Side.LONG else XS[i]):
                         ops = [(_OP_EXIT, ExitReason.SIGNAL)]
 
-                long_sig = EL[i]
-                short_sig = ES[i]
+                if resting:
+                    # Cancel and expire at this close -- after this bar had its
+                    # chance to fill them -- then place, so an order re-placed
+                    # on the bar that cancels survives, as a script that
+                    # cancels before it places behaves.
+                    if resting_orders:
+                        if CXL[i] or blocked_day == dk:
+                            resting_orders.clear()
+                        else:
+                            for side in [sd for sd, od in resting_orders.items()
+                                         if od[2] is not None and i >= od[2]]:
+                                del resting_orders[side]
+                    if (held is None and ops is None and TR[i]
+                            and blocked_day != dk):
+                        for side, sig, prices, permitted in (
+                                (Side.LONG, EL[i], ELP, allow_long),
+                                (Side.SHORT, ES[i], ESP, allow_short)):
+                            price = prices[i]
+                            if sig and permitted and price == price:
+                                resting_orders[side] = (
+                                    float(price), i,
+                                    i + order_bars if order_bars else None)
+                    long_sig = short_sig = False
+                else:
+                    long_sig = EL[i]
+                    short_sig = ES[i]
                 if long_sig and short_sig:
                     ambiguous += 1
                     long_sig = short_sig = False
@@ -707,6 +764,52 @@ class Backtester:
         if progress is not None:
             progress(n, n)
         return equity_curve, balance_curve, exposure_curve
+
+    @staticmethod
+    def _fill_resting(broker: SimulatedBroker,
+                      orders: dict[Side, tuple[float, int, int | None]], i: int,
+                      ts: int, o: float, h: float, l: float, c: float,
+                      order_type: OrderType, through: float,
+                      priority: IntrabarPriority, oca: bool) -> None:
+        """Fill whichever resting entry this bar reaches first, and manage the
+        rest of the bar from the fill.
+
+        Two orders on one bar -- a bracket both of whose sides the bar trades
+        through -- are ordered by the bar's assumed path: a bar that visits its
+        high first reaches the higher order first. An order the bar OPENED
+        through is not a question of path and goes first.
+        """
+        hits = []
+        for side, (price, placed, _last) in orders.items():
+            buying = side is Side.LONG
+            if order_type is OrderType.STOP:
+                hit = stop_fill_price(buying, price, o, h, l)
+            else:
+                hit = limit_fill_price(buying, price, o, h, l, through)
+            if hit is not None:
+                hits.append((side, float(hit[0]), bool(hit[1]), price, placed))
+        if not hits:
+            return
+        if len(hits) == 1:
+            first = hits[0]
+        else:
+            gapped = [x for x in hits if x[2]]
+            if gapped:
+                first = gapped[0]
+            elif bar_upper_first(o, h, l, c, priority):
+                first = max(hits, key=lambda x: x[3])
+            else:
+                first = min(hits, key=lambda x: x[3])
+        side, px, gapped, level, placed = first
+        del orders[side]
+        if oca:
+            orders.clear()
+        slot = broker.open_position(side, i, ts, px, placed, order_type=order_type,
+                                    order_price=level)
+        if slot is None:
+            return
+        path = _path_after_fill(side, order_type, px, gapped, o, h, l, c, priority)
+        broker.manage_after_fill(slot, i, ts, path)
 
     def _run_ops(self, broker: SimulatedBroker, ops: Sequence[tuple], bar: int,
                  ts: int, price: float) -> None:
@@ -918,3 +1021,33 @@ def _wilder_atr(bars: BarSeries, period: int) -> np.ndarray:
         acc += (tr[i] - acc) * inv
         out[i] = acc
     return out
+
+
+def _path_after_fill(side: Side, order_type: OrderType, px: float, gapped: bool,
+                     o: float, h: float, l: float, c: float,
+                     priority: IntrabarPriority) -> list[float]:
+    """The price path from a mid-bar entry fill to the bar's close.
+
+    Under PESSIMISTIC the adverse extreme comes next, then the favourable one;
+    under OPTIMISTIC the reverse -- the same stance those settings take on a
+    bar that touches both barriers. Under OHLC_PATH and TRADINGVIEW the bar's
+    assumed path is followed from the point where the order was reached.
+    """
+    long = side is Side.LONG
+    if priority is IntrabarPriority.PESSIMISTIC:
+        return [px, l if long else h, h if long else l, c]
+    if priority is IntrabarPriority.OPTIMISTIC:
+        return [px, h if long else l, l if long else h, c]
+    vertices = list(bar_path(o, h, l, c, priority))
+    if gapped:
+        return [px] + vertices[1:]
+    # A buy stop and a sell limit are reached on a rising leg; a sell stop
+    # and a buy limit on a falling one.
+    rising = long if order_type is OrderType.STOP else not long
+    for k in range(len(vertices) - 1):
+        a, b = vertices[k], vertices[k + 1]
+        if rising and a < px <= b:
+            return [px] + vertices[k + 1:]
+        if not rising and a > px >= b:
+            return [px] + vertices[k + 1:]
+    return [px, c]

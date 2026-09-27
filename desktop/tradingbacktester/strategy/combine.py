@@ -438,6 +438,16 @@ def combine_strategies(specs: Iterable[StrategySpec], mode: str = "all",
         raise StrategyError(
             f"Combining needs at least two strategies; {len(originals)} "
             f"{'was' if len(originals) == 1 else 'were'} given.")
+    resting = [s.name for s in originals
+               if getattr(s, "uses_resting_entries", lambda: False)()]
+    if resting:
+        # Combining merges RULES; a resting order's price and lifetime are not
+        # a rule, and dropping them would run a stop-entry strategy as market
+        # entries without saying so.
+        raise StrategyError(
+            f"{', '.join(resting)} enter{'s' if len(resting) == 1 else ''} with "
+            f"resting stop or limit orders, which cannot be merged with other "
+            f"strategies' rules. Combine market-entry strategies only.")
     mode = str(mode).lower().strip()
     exit_mode = str(exit_mode).lower().strip()
     for label, value in (("entry", mode), ("exit", exit_mode)):

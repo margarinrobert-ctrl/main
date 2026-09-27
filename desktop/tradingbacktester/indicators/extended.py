@@ -863,13 +863,23 @@ _RANGE_ZONES = ("America/New_York", "America/Chicago", "Europe/London",
                            "and the range end."),
             ParamSpec("last", "Breaks count until (exclusive), minutes", "int", 960, 1, 1440),
             ParamSpec("timezone", "Clock", "choice", "America/New_York",
-                      None, None, choices=_RANGE_ZONES)),
-    outputs=("high", "low", "first_up", "first_down"), overlay=True,
+                      None, None, choices=_RANGE_ZONES),
+            ParamSpec("ready", "Levels available", "choice", "next_bar", None, None,
+                      choices=("next_bar", "bar_close"),
+                      help="next_bar: from the first bar that OPENS at or after "
+                           "the range end. bar_close: from the close of the bar "
+                           "that completes the window -- the 09:29 one-minute "
+                           "bar for a 09:00-09:30 range, which is when a "
+                           "script that locks the range on that bar's close "
+                           "can place orders. The lock output then fires "
+                           "only on that bar: a day without it has no lock.")),
+    outputs=("high", "low", "first_up", "first_down", "lock"), overlay=True,
     uses_source=False,
     plot_style=_style(high={"color": _GREEN, "width": 1.4},
                       low={"color": _ORANGE, "width": 1.4},
                       first_up={"color": _GREY, "panel": "hidden"},
-                      first_down={"color": _GREY, "panel": "hidden"}),
+                      first_down={"color": _GREY, "panel": "hidden"},
+                      lock={"color": _GREY, "panel": "hidden"}),
     description="The high and low of a fixed clock window each day -- the "
                 "09:00 bar, the opening 30 minutes -- held for the rest of that "
                 "day. first_up is 1 on the FIRST bar of the day, inside the "
@@ -880,7 +890,7 @@ _RANGE_ZONES = ("America/New_York", "America/Chicago", "Europe/London",
                 "itself and the bars before it on the same day.", min_bars=1,
 )
 def time_range(bars: BarSeries, start: int, end: int, arm: int, last: int,
-               timezone: str) -> dict[str, np.ndarray]:
+               timezone: str, ready: str = "next_bar") -> dict[str, np.ndarray]:
     import pandas as pd
 
     from ..strategy.rules import _local_parts
@@ -894,7 +904,11 @@ def time_range(bars: BarSeries, start: int, end: int, arm: int, last: int,
     nan = np.full(n, np.nan)
     if n == 0:
         return {"high": nan, "low": nan, "first_up": nan.copy(),
-                "first_down": nan.copy()}
+                "first_down": nan.copy(), "lock": nan.copy()}
+    mode = str(ready)
+    if mode not in ("next_bar", "bar_close"):
+        raise IndicatorError(f"'{mode}' is not a readiness setting; use "
+                             f"next_bar or bar_close.")
     seconds, _weekday = _local_parts(ts, timezone)
     minute = np.asarray(seconds, dtype="int64") // 60
     # Local midnight, as a UTC instant: unique per local calendar day and
@@ -906,7 +920,17 @@ def time_range(bars: BarSeries, start: int, end: int, arm: int, last: int,
     groups = pd.Series(day)
     rhi = high.where(inside).groupby(groups).cummax().groupby(groups).ffill()
     rlo = low.where(inside).groupby(groups).cummin().groupby(groups).ffill()
-    ready = (minute >= end) & rhi.notna().to_numpy() & rlo.notna().to_numpy()
+    if mode == "bar_close":
+        # A bar's close is its open plus its length. The bar whose close
+        # reaches the end of the window completes the range, and the range is
+        # known at that close -- not before, so still nothing reads a bar that
+        # has not finished.
+        span = int(round(float(bars.timeframe.approx_seconds)))
+        seconds_arr = np.asarray(seconds, dtype="int64")
+        complete = (seconds_arr + span) >= end * 60
+    else:
+        complete = minute >= end
+    ready = complete & rhi.notna().to_numpy() & rlo.notna().to_numpy()
     out_hi = np.where(ready, rhi.to_numpy(), np.nan)
     out_lo = np.where(ready, rlo.to_numpy(), np.nan)
     armed = ready & (minute >= max(end, arm)) & (minute < last)
@@ -916,6 +940,20 @@ def time_range(bars: BarSeries, start: int, end: int, arm: int, last: int,
                          .cumsum().to_numpy() == 1)
     first_dn = hit_dn & (pd.Series(hit_dn.astype(np.int64)).groupby(groups)
                          .cumsum().to_numpy() == 1)
+    if mode == "bar_close":
+        # The lock is the event of the window COMPLETING: the bar that opens
+        # inside it and closes at or past its end. A day with no such bar --
+        # the 09:29 minute missing from the data -- has no lock at all, as a
+        # script that locks on `time_close == rangeEnd` has none; the levels
+        # still exist from the next bar for anything that reads them.
+        completing = ready & inside & ((np.asarray(seconds, dtype="int64") + span)
+                                       >= end * 60)
+        lock = completing & (pd.Series(completing.astype(np.int64)).groupby(groups)
+                             .cumsum().to_numpy() == 1)
+    else:
+        lock = ready & (pd.Series(ready.astype(np.int64)).groupby(groups)
+                        .cumsum().to_numpy() == 1)
     return {"high": out_hi, "low": out_lo,
             "first_up": first_up.astype("float64"),
-            "first_down": first_dn.astype("float64")}
+            "first_down": first_dn.astype("float64"),
+            "lock": lock.astype("float64")}

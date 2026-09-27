@@ -45,7 +45,11 @@ from ..core.types import (ExecutionSettings, ExitSettings, RiskSettings,
                           CostModel)
 from ..indicators.base import ParamSpec
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+"""Format 2 adds resting entry orders.  A file only CLAIMS format 2 when it uses
+them, so every other strategy stays readable by older builds -- and an older
+build refuses a file that does use them, rather than silently running its stop
+entries as market orders."""
 
 # --------------------------------------------------------------------------
 # Operands
@@ -549,6 +553,13 @@ class StrategySpec:
     exit_long: Condition | None = None
     exit_short: Condition | None = None
 
+    entry_long_price: Operand | None = None
+    """Price of the resting long entry when ``execution.entry_order`` is
+    ``stop`` or ``limit``, evaluated on the signal bar.  Unused for market."""
+    entry_short_price: Operand | None = None
+    entry_cancel: Condition | None = None
+    """Resting entries are cancelled at the close of any bar where this is true."""
+
     risk: RiskSettings = field(default_factory=RiskSettings)
     exits: ExitSettings = field(default_factory=ExitSettings)
     execution: ExecutionSettings = field(default_factory=ExecutionSettings)
@@ -619,9 +630,13 @@ class StrategySpec:
             raise StrategyError("Two strategy parameters share the same name.")
 
         used: set[str] = set()
-        for cond in (self.entry_long, self.entry_short, self.exit_long, self.exit_short):
+        for cond in (self.entry_long, self.entry_short, self.exit_long,
+                     self.exit_short, self.entry_cancel):
             if cond is not None:
                 used |= cond.referenced_indicators()
+        for op in (self.entry_long_price, self.entry_short_price):
+            if op is not None:
+                used |= _refs(op)
         missing = used - seen
         if missing:
             raise StrategyError(
@@ -651,6 +666,22 @@ class StrategySpec:
 
         if self.entry_long is None and self.entry_short is None:
             raise StrategyError("A strategy needs at least one entry rule.")
+        mode = str(getattr(self.execution, "entry_order", "market") or "market").lower()
+        if mode not in ("market", "stop", "limit"):
+            raise StrategyError(
+                f"'{mode}' is not an entry order type. Use market, stop or limit.")
+        if mode != "market":
+            for side, rule, price in (("long", self.entry_long, self.entry_long_price),
+                                      ("short", self.entry_short, self.entry_short_price)):
+                if rule is not None and price is None:
+                    raise StrategyError(
+                        f"Entries are {mode} orders, but the {side} entry has no "
+                        f"order price. Set entry_{side}_price, or use market "
+                        f"entries.")
+        elif self.entry_long_price is not None or self.entry_short_price is not None:
+            warnings.append(
+                "The strategy sets entry order prices but its entries are market "
+                "orders, so the prices are not used.")
         if self.entry_long is not None and not self.risk.allow_long:
             warnings.append("There is a long entry rule but long trading is disabled.")
         if self.entry_short is not None and not self.risk.allow_short:
@@ -695,7 +726,9 @@ class StrategySpec:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "schema_version": self.schema_version,
+            # Format 2 only when a format-2 feature is in use; see SCHEMA_VERSION.
+            "schema_version": (SCHEMA_VERSION if (self.uses_resting_entries()
+                                                  or self._resting_dict()) else 1),
             "id": self.id, "name": self.name, "description": self.description,
             "author": self.author, "version": self.version,
             "created_at": self.created_at, "updated_at": self.updated_at,
@@ -706,10 +739,26 @@ class StrategySpec:
             "entry_short": self.entry_short.to_dict() if self.entry_short else None,
             "exit_long": self.exit_long.to_dict() if self.exit_long else None,
             "exit_short": self.exit_short.to_dict() if self.exit_short else None,
+            **self._resting_dict(),
             "risk": _enum_dict(self.risk), "exits": _enum_dict(self.exits),
             "execution": _enum_dict(self.execution), "session": _enum_dict(self.session),
             "costs": _enum_dict(self.costs),
         }
+
+    def uses_resting_entries(self) -> bool:
+        return str(getattr(self.execution, "entry_order", "market")
+                   or "market").lower() != "market"
+
+    def _resting_dict(self) -> dict[str, Any]:
+        """The format-2 fields, written only when they are set."""
+        out: dict[str, Any] = {}
+        if self.entry_long_price is not None:
+            out["entry_long_price"] = self.entry_long_price.to_dict()
+        if self.entry_short_price is not None:
+            out["entry_short_price"] = self.entry_short_price.to_dict()
+        if self.entry_cancel is not None:
+            out["entry_cancel"] = self.entry_cancel.to_dict()
+        return out
 
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent, sort_keys=False)
@@ -738,6 +787,11 @@ class StrategySpec:
                 entry_short=Condition.from_dict(d.get("entry_short")),
                 exit_long=Condition.from_dict(d.get("exit_long")),
                 exit_short=Condition.from_dict(d.get("exit_short")),
+                entry_long_price=(Operand.from_dict(d["entry_long_price"])
+                                  if d.get("entry_long_price") else None),
+                entry_short_price=(Operand.from_dict(d["entry_short_price"])
+                                   if d.get("entry_short_price") else None),
+                entry_cancel=Condition.from_dict(d.get("entry_cancel")),
                 risk=_risk_from_dict(d.get("risk", {})),
                 exits=_exits_from_dict(d.get("exits", {})),
                 execution=_execution_from_dict(d.get("execution", {})),
@@ -796,6 +850,14 @@ class StrategySpec:
             out.append(f"Trailing:    {e.trailing_value:g} {e.trailing_mode}")
         if e.max_bars_in_trade:
             out.append(f"Time stop:   {e.max_bars_in_trade} bars")
+        if self.uses_resting_entries():
+            kind = self.execution.entry_order
+            if self.entry_long_price is not None:
+                out.append(f"Long order:  {kind} at {self.entry_long_price.describe()}")
+            if self.entry_short_price is not None:
+                out.append(f"Short order: {kind} at {self.entry_short_price.describe()}")
+            if self.entry_cancel is not None:
+                out.append(f"Cancel when: {self.entry_cancel.describe()}")
         return out
 
 
