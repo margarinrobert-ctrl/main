@@ -54,7 +54,7 @@ from typing import Any, Iterable, Sequence
 from ..core.errors import StrategyError
 from .spec import (Condition, ExprOperand, Group, IndicatorOperand,
                    IndicatorSlot, Operand, ParamOperand, StrategySpec, Vote,
-                   _enum_dict, walk_conditions)
+                   Within, _enum_dict, walk_conditions)
 
 __all__ = ["COMBINE_MODES", "CombineReport", "combine_strategies",
            "default_threshold", "describe_mode"]
@@ -205,6 +205,20 @@ def _rewrite_condition(cond: Condition | None, refs: dict[str, str],
             operand = getattr(node, attribute, None)
             if isinstance(operand, Operand):
                 _rewrite_operand(operand, refs, params)
+        if isinstance(node, Within):
+            # A window or count can be a parameter too: "$name".
+            for attribute in ("bars", "count"):
+                value = getattr(node, attribute)
+                if isinstance(value, str) and value.startswith("$"):
+                    setattr(node, attribute, f"${params.get(value[1:], value[1:])}")
+
+
+def _rewrite_source(slot: IndicatorSlot, refs: dict[str, str]) -> None:
+    """Rename the upstream of a chained source, ``@ref`` or ``@ref.output``."""
+    source = slot.source
+    if isinstance(source, str) and source.startswith("@"):
+        ref, dot, output = source[1:].partition(".")
+        slot.source = f"@{refs.get(ref, ref)}{dot}{output}"
 
 
 def _namespace(spec: StrategySpec, prefix: str) -> StrategySpec:
@@ -223,6 +237,7 @@ def _namespace(spec: StrategySpec, prefix: str) -> StrategySpec:
     out.params = [replace(p, name=params[p.name]) for p in out.params]
     for slot in out.indicators:
         slot.ref = refs[slot.ref]
+        _rewrite_source(slot, refs)
         for key, value in list(slot.params.items()):
             if isinstance(value, str) and value.startswith("$"):
                 old = value[1:]
@@ -294,6 +309,9 @@ def _share_identical(sources: list[StrategySpec]) -> list[str]:
         rename: dict[str, str] = {}
         keep: list[IndicatorSlot] = []
         for slot in spec.indicators:
+            # Upstream slots come first, so a chain whose upstream was just
+            # shared reads the shared one -- and may then be shared itself.
+            _rewrite_source(slot, rename)
             key = _slot_key(slot)
             if key is None:
                 keep.append(slot)

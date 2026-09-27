@@ -31,6 +31,12 @@ def _portable(folder: Path, marker: str, extra: str) -> Path:
     return app
 
 
+def _setup_bytes(product: str = updater.PRODUCT_NAME) -> bytes:
+    """The parts of an Inno Setup installer the updater looks at."""
+    return (b"MZ" + b"\0" * 100 + b"Inno Setup Setup Data (6.2.0)" + b"\0" * 64
+            + product.encode("utf-16-le") + b"\0" * 100)
+
+
 def _zip_of(app: Path, target: Path) -> Path:
     with zipfile.ZipFile(target, "w") as archive:
         for path in app.rglob("*"):
@@ -51,8 +57,12 @@ def _run(script: str, where: Path) -> subprocess.CompletedProcess:
 
 def test_an_installer_is_recognised_and_a_random_exe_is_not(tmp_path):
     good = tmp_path / "TradingBacktesterSetup.exe"
-    good.write_bytes(b"MZ" + b"\0" * 100 + b"Inno Setup Setup Data (6.2.0)" + b"\0" * 100)
+    good.write_bytes(_setup_bytes())
     assert updater.inspect_update(good).ok
+    # Another product's Inno Setup installer is not this application's.
+    foreign = tmp_path / "Git-2.45.1-64-bit.exe"
+    foreign.write_bytes(_setup_bytes("Git"))
+    assert "not this application's installer" in updater.inspect_update(foreign).reason
     other = tmp_path / "other.exe"
     other.write_bytes(b"MZ" + b"\0" * 1000)
     assert "not this application's installer" in updater.inspect_update(other).reason
@@ -81,13 +91,13 @@ def test_the_kind_of_copy_is_read_from_its_folder(tmp_path):
 
 def test_the_installer_script_installs_silently_into_this_folder(tmp_path):
     exe = tmp_path / "TradingBacktesterSetup.exe"
-    exe.write_bytes(b"MZ Inno Setup")
+    exe.write_bytes(_setup_bytes())
     script = updater.build_script(updater.inspect_update(exe),
                                   Path("C:/Users/me/App's dir"), 4242,
                                   tmp_path / "update.log")
     for piece in ("/SILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS",
                   "Get-Process -Id 4242", "'C:/Users/me/App''s dir'",
-                  "Start-Process -FilePath $exe"):
+                  "Start-Process -FilePath $relaunch"):
         assert piece in script, piece
 
 
@@ -98,7 +108,7 @@ def test_the_installer_script_installs_silently_into_this_folder(tmp_path):
 @needs_pwsh
 def test_both_scripts_parse_in_powershell(tmp_path):
     exe = tmp_path / "Setup.exe"
-    exe.write_bytes(b"MZ Inno Setup")
+    exe.write_bytes(_setup_bytes())
     app = _portable(tmp_path / "old", "old", "a.dll")
     z = _zip_of(_portable(tmp_path / "new", "new", "b.dll"), tmp_path / "u.zip")
     for update in (updater.inspect_update(exe), updater.inspect_update(z)):
@@ -153,6 +163,8 @@ def test_a_bad_update_keeps_the_copy_that_was_there(tmp_path):
     assert (app / updater.EXE_NAME).read_text() == "old"
     assert (app / "_internal" / "old.dll").exists()
     assert "FAILED" in log.read_text()
+    # No unpacked copy is left lying beside the application.
+    assert [p.name for p in app.parent.iterdir()] == ["TradingBacktester"]
 
 
 # -- the menu command ---------------------------------------------------------
@@ -204,7 +216,7 @@ def test_the_menu_installs_a_portable_zip_and_quits(window, monkeypatch, tmp_pat
     script = calls["launched"]
     assert script and str(app_dir) in script and str(new) in script
     assert f"Get-Process -Id {os.getpid()}" in script      # waits for THIS process
-    assert "Start-Process -FilePath $exe" in script          # and reopens it
+    assert "Start-Process -FilePath $relaunch" in script          # and reopens it
     assert calls["quit"] == 1
 
 
@@ -227,7 +239,7 @@ def test_the_menu_refuses_the_wrong_kind_of_update(window, monkeypatch, tmp_path
     assert "TradingBacktesterSetup.exe" in calls["errors"][0]
 
     setup = tmp_path / "TradingBacktesterSetup.exe"
-    setup.write_bytes(b"MZ" + b"\0" * 100 + b"Inno Setup Setup Data" + b"\0" * 100)
+    setup.write_bytes(_setup_bytes())
     calls, _ = _menu_update(window, monkeypatch, tmp_path, "portable", setup, yes)
     assert calls["launched"] is None
     assert "TradingBacktester-portable.zip" in calls["errors"][0]
@@ -244,3 +256,58 @@ def test_running_from_source_explains_instead_of_updating(window, monkeypatch, t
     calls, _ = _menu_update(window, monkeypatch, tmp_path, "source", tmp_path / "x.zip",
                             QMessageBox.StandardButton.Yes)
     assert calls["launched"] is None and "git" in calls["infos"][0]
+
+
+def test_a_workspace_inside_the_portable_folder_is_never_swapped_away(
+        qapp, monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QMessageBox
+
+    from tradingbacktester.config import AppSettings, Workspace
+    from tradingbacktester.ui.main_window import MainWindow
+
+    app_dir = tmp_path / "app"
+    workspace = Workspace(app_dir / "workspace").ensure()
+    settings = AppSettings()
+    settings.workspace_dir = str(workspace.root)
+    win = MainWindow(settings, workspace)
+    new = _zip_of(_portable(tmp_path / "new", "new", "lib.dll"), tmp_path / "u.zip")
+    calls, used_dir = _menu_update(win, monkeypatch, tmp_path, "portable", new,
+                                   QMessageBox.StandardButton.Yes)
+    assert used_dir == app_dir
+    assert calls["launched"] is None and calls["quit"] == 0
+    assert "Change Workspace Folder" in calls["errors"][0]
+    assert updater.is_inside(app_dir / "workspace", app_dir)
+    assert not updater.is_inside(tmp_path / "elsewhere", app_dir)
+
+
+@needs_pwsh
+@pytest.mark.parametrize("rollback_fails", [False, True])
+def test_a_failed_swap_puts_the_old_copy_back_or_says_where_it_is(tmp_path, rollback_fails):
+    app = _portable(tmp_path / "apps", "old", "old.dll")
+    z = _zip_of(_portable(tmp_path / "build", "new", "new.dll"), tmp_path / "u.zip")
+    log = tmp_path / "update.log"
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    script = updater.build_script(updater.inspect_update(z), app, gone.pid, log,
+                                  relaunch=False)
+    # Inject the failures a locked or vanished folder would cause.
+    move_new = "      Move-Item -LiteralPath $newDir -Destination $appDir"
+    move_back = "        Move-Item -LiteralPath $backup -Destination $appDir"
+    assert move_new in script and move_back in script
+    script = script.replace(move_new, "      throw 'injected: the new folder would not move'")
+    if rollback_fails:
+        script = script.replace(move_back, "        throw 'injected: nor would the old one'")
+    done = _run(script, tmp_path)
+    assert done.returncode == 0, done.stdout + done.stderr
+    text = log.read_text()
+    left = sorted(p.name for p in app.parent.iterdir())
+    assert not any(".update-" in name for name in left)      # stage cleaned up
+    if not rollback_fails:
+        assert "the previous version is kept" in text
+        assert left == ["TradingBacktester"]
+        assert (app / updater.EXE_NAME).read_text() == "old"
+    else:
+        assert "could not be moved back" in text and "previous version is kept" not in text
+        backup = [name for name in left if ".previous-" in name]
+        assert len(backup) == 1 and backup[0] in text
+        assert (app.parent / backup[0] / updater.EXE_NAME).read_text() == "old"

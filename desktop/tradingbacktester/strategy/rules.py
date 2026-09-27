@@ -203,10 +203,20 @@ def _within(cond: Within, ctx: EvalContext) -> np.ndarray:
 
     One cumulative sum answers every mode: the number of true bars in the
     window is ``cum[i+1] - cum[start]``, and the window's length is
-    ``i + 1 - start``.  For a window in minutes ``start`` is the first bar that
-    opened no more than N minutes before bar ``i`` opened -- found by one
+    ``i + 1 - start``.
+
+    A window of N bars is this bar and the N-1 before it. A window of N
+    minutes is the bars that opened in the N minutes up to this bar's open,
+    ``(t - N, t]`` -- so 30 minutes is six 5-minute bars or thirty 1-minute
+    bars, the same stretch of the clock on either chart. It is found by one
     binary search over the timestamps, so a gap in the data shortens the bar
     count and never stretches the time.
+
+    ``all`` (held for the whole window) also needs the window to be COVERED:
+    its earliest bar must have opened within one bar of the window's start.
+    At the start of the data, or on the first bars after a session break,
+    the minutes before are not in the data and "held for 30 minutes" is not
+    known -- so it is false, never assumed.
     """
     size = _window_value(cond.bars, ctx, "window", cond)
     inner = evaluate_condition(cond.child, ctx)
@@ -217,9 +227,12 @@ def _within(cond: Within, ctx: EvalContext) -> np.ndarray:
     idx = np.arange(n)
     if cond.unit == "minutes":
         ts = np.asarray(ctx.bars.ts, dtype="int64")
-        start = np.searchsorted(ts, ts - size * 60_000_000_000, side="left")
-        # A window that reaches back before the first bar is not a whole one.
-        full = ts - size * 60_000_000_000 >= ts[0]
+        span = int(size) * 60_000_000_000
+        start = np.searchsorted(ts, ts - span, side="right")
+        steps = np.diff(ts)
+        steps = steps[steps > 0]
+        bar = int(np.median(steps)) if steps.size else 0
+        full = ts[start] <= ts - span + bar
     elif cond.unit == "bars":
         start = np.maximum(idx + 1 - size, 0)
         full = idx + 1 >= size

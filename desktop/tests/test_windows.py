@@ -62,8 +62,32 @@ def test_held_for_every_bar_and_not_before_a_full_window():
     flags = [1, 1, 1, 0, 1, 1, 1, 1]
     got = _eval(Within(FLAG, 3, mode="all"), _ctx(flags))
     assert got == [False, False, True, False, False, False, True, True]
+    # Two minutes of 1-minute bars is two bars, the same as a 2-bar window.
     got = _eval(Within(FLAG, 2, unit="minutes", mode="all"), _ctx(flags))
-    assert got == [False, False, True, False, False, False, True, True]
+    assert got == _eval(Within(FLAG, 2, mode="all"), _ctx(flags))
+    assert got == [False, True, True, False, False, True, True, True]
+
+
+def test_minutes_mean_the_same_clock_time_on_any_chart():
+    rng = np.random.default_rng(7)
+    fine = rng.random(600) < 0.2                     # 1-minute flags
+    coarse = fine.reshape(-1, 5).any(axis=1)         # the same, on 5-minute bars
+    for mode in ("any", "all", "count"):
+        one = _eval(Within(FLAG, 30, unit="minutes", mode=mode, count=2),
+                    _ctx(coarse, minutes_apart=5))
+        six = _eval(Within(FLAG, 6, mode=mode, count=2), _ctx(coarse, minutes_apart=5))
+        assert one == six, mode                      # 30 minutes = six 5-minute bars
+
+
+def test_held_is_not_assumed_across_a_session_break():
+    flags = [1, 1, 1, 1, 1, 1]
+    # 1-minute bars with a 30-minute break before bar 3: "held for 3 minutes"
+    # cannot be true on bar 3 or 4 -- the minutes before them were not traded.
+    got = _eval(Within(FLAG, 3, unit="minutes", mode="all"), _ctx(flags, gaps=(3,)))
+    assert got == [False, False, True, False, False, True]
+    # "any" and "count" count the bars that did trade in the window.
+    got = _eval(Within(FLAG, 3, unit="minutes"), _ctx(flags, gaps=(3,)))
+    assert got == [True] * 6
 
 
 def test_at_least_k_times():
@@ -250,3 +274,51 @@ def test_the_editor_offers_indicators_as_sources_and_renames_follow(qapp):
     editor._rename_slot(0, "fast")
     assert editor.spec.indicators[1].source == "@fast"
     editor.close()
+
+
+# --------------------------------------------------------------------------
+# Renames reach windows and chained sources
+# --------------------------------------------------------------------------
+
+
+def _chained_windowed(ema: int) -> StrategySpec:
+    """EMA of an EMA, crossing price within a window that is a parameter."""
+    spec = StrategySpec(name=f"chain{ema}")
+    spec.indicators = [IndicatorSlot("e1", "EMA", {"period": ema}),
+                       IndicatorSlot("e2", "EMA", {"period": 5}, source="@e1.value")]
+    spec.params = [ParamSpec("win", "Window", "int", 4, 1, 50, 1)]
+    spec.entry_long = Within(Cross(Price("close"), "above", Ind("e2")), "$win")
+    spec.exits.stop_loss_enabled = True
+    return spec
+
+
+def test_combining_strategies_renames_windows_and_chains():
+    from tradingbacktester.strategy.combine import combine_strategies
+    bars = generate_sample_data("NQ", "5m", n_bars=2000, seed=11)
+    a, b = _chained_windowed(20), _chained_windowed(50)
+    combined = combine_strategies([a.copy(), b.copy()], mode="any").spec
+    combined.validate()
+    either = compile_strategy(combined, bars).entry_long
+    one = compile_strategy(a, bars).entry_long | compile_strategy(b, bars).entry_long
+    assert np.array_equal(either, one) and one.any()
+    # Two identical chains fold into one computation, and still agree.
+    same = combine_strategies([a.copy(), a.copy()], mode="all").spec
+    same.validate()
+    assert len(same.indicators) == 2
+    assert np.array_equal(compile_strategy(same, bars).entry_long,
+                          compile_strategy(a, bars).entry_long)
+
+
+def test_a_malformed_chain_reference_is_refused():
+    for bad in ("@", "@e1."):
+        spec = _chained_windowed(20)
+        spec.indicators[1].source = bad
+        with pytest.raises(StrategyError):
+            spec.validate()
+
+
+def test_renaming_a_parameter_in_the_editor_renames_the_window(qapp):
+    from tradingbacktester.ui.dialogs.strategy_editor import _rename_param_in_condition
+    cond = Within(Within(FLAG, "$win", mode="count", count="$win"), 3)
+    _rename_param_in_condition(cond, "win", "span")
+    assert cond.child.bars == "$span" and cond.child.count == "$span"

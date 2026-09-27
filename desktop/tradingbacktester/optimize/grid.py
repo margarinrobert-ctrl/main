@@ -178,8 +178,12 @@ def suggested_range(param: "ParamSpec") -> ParameterRange:
     span = step * 4
     low = centre - span / 2
     high = centre + span / 2
-    if param.minimum is not None:
-        low = max(low, float(param.minimum))
+    if param.minimum is not None and low < float(param.minimum):
+        # The lowest value on the default's own step lattice, not the minimum
+        # itself, so the sweep still passes through the default.
+        low = max(float(param.minimum),
+                  centre - math.floor((centre - float(param.minimum)) / step
+                                      + 1e-9) * step)
     if param.maximum is not None:
         high = min(high, float(param.maximum))
     if high < low:

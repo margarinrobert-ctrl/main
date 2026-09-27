@@ -758,8 +758,13 @@ def _suggest(param: Any) -> tuple[float, float, float]:
     step = float(param.step or (1 if param.kind == "int" else 0.1))
     low = default - 4 * step
     high = default + 4 * step
-    if param.minimum is not None:
-        low = max(low, float(param.minimum))
+    if param.minimum is not None and low < float(param.minimum):
+        # Clip to the lowest value ON the default's step lattice, not to the
+        # minimum itself: a stop of 0.5 with step 0.25 and minimum 0.0001
+        # should start at 0.25, not at 0.0001 -- a stop at the entry price.
+        low = max(float(param.minimum),
+                  default - math.floor((default - float(param.minimum)) / step
+                                       + 1e-9) * step)
     if param.maximum is not None:
         high = min(high, float(param.maximum))
     if high <= low:

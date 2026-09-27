@@ -1422,6 +1422,15 @@ class MainWindow(QMainWindow):
                 "This is the portable copy, so update it with "
                 "TradingBacktester-portable.zip. The installer would install a "
                 "second copy elsewhere.")
+        if (update.ok and update.kind == "zip"
+                and updater.is_inside(self.workspace.root, updater.app_directory())):
+            # The portable update replaces the whole folder -- and with it a
+            # workspace kept inside it. Refuse rather than delete their work.
+            update.ok, update.reason = False, (
+                f"Your workspace folder ({self.workspace.root}) is inside this "
+                f"application's folder, and a portable update replaces that whole "
+                f"folder. Move the workspace somewhere else first with File ▸ "
+                f"Change Workspace Folder, then update.")
         if not update.ok:
             show_error(self, update.reason, "Update")
             return
@@ -1446,8 +1455,8 @@ class MainWindow(QMainWindow):
             self, "Install update",
             f"Install {Path(path).name} over this copy ({APP_VERSION})?\n\n"
             f"The application will close, install the update and reopen by "
-            f"itself, usually within a minute. Your strategies, datasets and "
-            f"results are in the workspace and are not touched.")
+            f"itself, usually within a minute or two. Your strategies, datasets "
+            f"and results are in the workspace and are not touched.")
         if answer != QMessageBox.StandardButton.Yes:
             return
         import tempfile

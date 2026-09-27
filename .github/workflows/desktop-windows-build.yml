@@ -110,6 +110,11 @@ jobs:
           }
           $size = [math]::Round((Get-Item "dist\TradingBacktesterSetup.exe").Length / 1MB, 1)
           Write-Host "TradingBacktesterSetup.exe is $size MB"
+          # The in-app updater must recognise this installer as its own, or
+          # Help > Update from a Downloaded File would refuse the very file the
+          # release offers. Blocking: better no release than that one.
+          python -c "from tradingbacktester.updater import inspect_update as i; u = i('dist/TradingBacktesterSetup.exe'); print(u); raise SystemExit(0 if u.ok else 1)"
+          if ($LASTEXITCODE -ne 0) { throw "the updater does not recognise the installer it ships with" }
 
       # The in-app updater, for real, on Windows PowerShell 5.1 (what every
       # Windows machine has): install this build, then upgrade that copy IN

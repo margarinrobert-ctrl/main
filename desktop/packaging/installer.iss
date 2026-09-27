@@ -22,6 +22,10 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+; The in-app updater accepts an installer only if its version resource names
+; this product (tradingbacktester/updater.py, PRODUCT_NAME).
+VersionInfoProductName={#MyAppName}
+VersionInfoDescription={#MyAppName} Setup
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes

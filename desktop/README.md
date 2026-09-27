@@ -143,7 +143,15 @@ results — is never touched.
   it fails, the reason is there and the previous version is reopened.
 - The installed copy refuses the zip (it would delete the uninstaller) and the
   portable copy refuses the installer (it would install a second copy
-  elsewhere); each says which file to use instead.
+  elsewhere); each says which file to use instead. An installer for any other
+  program is refused too.
+- If your workspace folder is *inside* the portable folder, the portable update
+  refuses to run, because the swap would replace it with the rest of the folder.
+  Move it first with **File ▸ Change Workspace Folder**.
+- If the application has not closed two minutes later, nothing is replaced.
+- Windows may show its "protected your PC" notice for the new installer, as it
+  did the first time: **More info → Run anyway**. If you cancel it, the
+  installer does not run and nothing is replaced.
 
 The application never downloads anything itself. The browser does, when you ask
 it to. Every Windows build installs a copy, upgrades it in place with this same
@@ -454,11 +462,14 @@ bar:
 | **all** | it held on every bar of the window — *close above VWAP for the last 3 bars* |
 | **count** | it held on at least *k* bars of the window — *RSI above 70 at least twice in the last 10 bars* |
 
-The window is counted in **bars** or in **minutes**. Minutes are clock time, so
-a window of 30 minutes on 5-minute bars is six bars, and across a session gap or
-a missing bar it covers only the bars that really fell in those 30 minutes. A
-held (**all**) window needs its full length of history; until then it is
-false. In the editor, **Add condition** offers *Within N bars*, *Cross within N
+The window is counted in **bars** or in **minutes**. N bars is this bar and the
+N−1 before it. N minutes is the bars that opened in the N minutes up to this
+bar's open: 30 minutes is six 5-minute bars or thirty 1-minute bars, the same
+stretch of the clock on either chart. Across a session gap or a missing bar it
+covers only the bars that really fell in those minutes. A held (**all**) window
+must also be covered from its start: at the beginning of the data, or on the
+first bars after a session break, "held for the last 30 minutes" is not known,
+so it is false. In the editor, **Add condition** offers *Within N bars*, *Cross within N
 bars*, *Held for N bars* and *At least K times in N bars*, and each can be
 negated (*not within*).
 

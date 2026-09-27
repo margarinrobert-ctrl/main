@@ -126,3 +126,20 @@ def test_the_optimiser_dialog_lists_exit_rows_unticked(qapp, bars):
         if row["param"].name.startswith("exits."):
             assert not row["enabled"].isChecked()
     dialog.close()
+
+
+def test_a_stop_of_zero_is_not_a_sweep_value():
+    """0 switches a stop off -- a different strategy, and one Apply cannot set."""
+    from tradingbacktester.core.errors import ParameterError
+    from tradingbacktester.optimize.grid import ParameterRange, build_grid, suggested_range
+    spec = _spec()
+    spec.exits.stop_loss_value = 0.5
+    with pytest.raises(ParameterError) as exc:
+        apply_exit_overrides(spec.exits, {"stop_loss_value": 0})
+    assert "switches that exit off" in str(exc.value)
+    with pytest.raises(ParameterError):
+        build_grid(spec, [ParameterRange("exits.stop_loss_value", 0, 1, 0.5)])
+    rows = {p.name: p for p in exit_parameters(spec.exits)}
+    suggested = suggested_range(rows["exits.stop_loss_value"])
+    assert suggested.start == 0.25 and 0.5 in [round(v, 6) for v in suggested.values()]
+    assert rows["exits.atr_period"].maximum <= 500

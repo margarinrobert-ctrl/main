@@ -1413,6 +1413,10 @@ def _rename_in_condition(condition: Any, old: str, new: str) -> None:
 
 
 def _rename_param_in_condition(condition: Any, old: str, new: str) -> None:
+    if isinstance(condition, Within):
+        for attribute in ("bars", "count"):
+            if getattr(condition, attribute) == f"${old}":
+                setattr(condition, attribute, f"${new}")
     if isinstance(condition, (ConditionGroup, Vote, Within)):
         for child in condition.children:
             _rename_param_in_condition(child, old, new)

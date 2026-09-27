@@ -22,16 +22,20 @@ __all__ = ["PREFIX", "SWEEPABLE", "split_overrides", "apply_exit_overrides",
 
 PREFIX = "exits."
 
-#: field -> (kind, minimum). Every one of these is a number the engine reads.
-SWEEPABLE: dict[str, tuple[str, float]] = {
-    "stop_loss_value": ("float", 0.0),
-    "take_profit_value": ("float", 0.0),
-    "breakeven_at_r": ("float", 0.0),
-    "breakeven_offset": ("float", 0.0),
-    "trailing_value": ("float", 0.0),
-    "trailing_activate_at_r": ("float", 0.0),
-    "atr_period": ("int", 1.0),
-    "max_bars_in_trade": ("int", 0.0),
+#: field -> (kind, minimum, maximum), the same bounds the Risk panel's exit
+#: form enforces, so a value the optimiser ranks is always one Apply can set.
+#: A stop, target or trail of 0 is not a tight exit, it is NO exit -- the
+#: engine reads 0 as "off" -- so those start just above it, where the form
+#: does; switching an exit off is a different strategy, not a sweep value.
+SWEEPABLE: dict[str, tuple[str, float, float | None]] = {
+    "stop_loss_value": ("float", 0.0001, 1e6),
+    "take_profit_value": ("float", 0.0001, 1e6),
+    "breakeven_at_r": ("float", 0.0, 1e6),
+    "breakeven_offset": ("float", 0.0, 1e6),
+    "trailing_value": ("float", 0.0001, 1e6),
+    "trailing_activate_at_r": ("float", 0.0, 1e6),
+    "atr_period": ("int", 1.0, 500.0),
+    "max_bars_in_trade": ("int", 0.0, 1_000_000.0),
 }
 
 _UNITS = {"atr": "x ATR", "points": "points", "percent": "%", "r": "R",
@@ -70,15 +74,22 @@ def apply_exit_overrides(settings: Any, values: dict[str, Any]) -> Any:
             raise ParameterError(
                 f"'{PREFIX}{field}' is not an exit setting that can be swept. "
                 f"These can: {', '.join(PREFIX + f for f in SWEEPABLE)}.")
-        kind, minimum = SWEEPABLE[field]
+        kind, minimum, maximum = SWEEPABLE[field]
         try:
             value: Any = int(round(float(raw))) if kind == "int" else float(raw)
         except (TypeError, ValueError) as exc:
             raise ParameterError(
                 f"'{PREFIX}{field}' must be a number, not '{raw}'.") from exc
         if value < minimum:
+            off = (" A value of 0 switches that exit off, which is a different "
+                   "strategy; untick it in the exit settings instead."
+                   if value <= 0 < minimum else "")
             raise ParameterError(
                 f"'{PREFIX}{field}' must be at least {minimum:g}; the sweep "
+                f"asked for {value:g}.{off}")
+        if maximum is not None and value > maximum:
+            raise ParameterError(
+                f"'{PREFIX}{field}' must be at most {maximum:g}; the sweep "
                 f"asked for {value:g}.")
         changes[field] = value
     return dataclasses.replace(settings, **changes)
@@ -95,15 +106,19 @@ def exit_parameters(exits: Any) -> list[ParamSpec]:
     rows: list[ParamSpec] = []
 
     def add(field: str, label: str, value: float) -> None:
-        kind, minimum = SWEEPABLE[field]
+        kind, minimum, maximum = SWEEPABLE[field]
         value = float(value)
         if kind == "int":
             hi = max(int(value) * 4, int(value) + 20)
+            if maximum is not None:
+                hi = min(hi, int(maximum))
             rows.append(ParamSpec(PREFIX + field, label, "int", int(value),
                                   int(minimum), hi, 1,
                                   help=f"Exit setting '{field}', swept."))
         else:
             hi = max(value * 4, 1.0)
+            if maximum is not None:
+                hi = min(hi, float(maximum))
             step = 0.25 if hi <= 10 else 1.0 if hi <= 400 else 5.0
             rows.append(ParamSpec(PREFIX + field, label, "float", value,
                                   float(minimum), hi, step,
@@ -146,6 +161,6 @@ def exit_param_spec(name: str) -> ParamSpec:
         raise ParameterError(
             f"'{name}' is not an exit setting that can be swept. These can: "
             f"{', '.join(PREFIX + f for f in SWEEPABLE)}.")
-    kind, minimum = SWEEPABLE[field]
+    kind, minimum, maximum = SWEEPABLE[field]
     return ParamSpec(PREFIX + field, field.replace("_", " "), kind,
-                     int(minimum) if kind == "int" else minimum, minimum, None, 1)
+                     int(minimum) if kind == "int" else minimum, minimum, maximum, 1)

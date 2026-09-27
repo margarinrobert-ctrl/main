@@ -731,7 +731,11 @@ class StrategySpec:
         for slot in self.indicators:
             source = str(slot.source or "")
             if source.startswith("@"):
-                upstream = source[1:].split(".", 1)[0]
+                upstream, dot, output = source[1:].partition(".")
+                if not upstream or (dot and not output):
+                    raise StrategyError(
+                        f"The indicator '{slot.ref}' reads '{source}', which is "
+                        f"not '@name' or '@name.output'.")
                 if upstream not in earlier:
                     raise StrategyError(
                         f"The indicator '{slot.ref}' is computed on '{upstream}', "
