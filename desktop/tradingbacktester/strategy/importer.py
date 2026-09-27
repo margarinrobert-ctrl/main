@@ -189,23 +189,54 @@ class ImportReport:
 # format detection
 # ---------------------------------------------------------------------------
 
+#: Characters a copy from a rendered page, a chat window or a word processor
+#: slips into pasted text.  Invisible, and every one of them makes strict JSON
+#: refuse to parse -- which used to be reported as "the language could not be
+#: identified", about a file this application wrote itself.
+_INVISIBLE = dict.fromkeys(map(ord, "\ufeff\u200b\u200c\u200d\u2060"), None)
+_ODD_SPACES = {ord(c): " " for c in "\u00a0\u2007\u202f\u2002\u2003\u2009"}
+_CURLY = {ord("\u201c"): '"', ord("\u201d"): '"', ord("\u201e"): '"'}
+
+
+def normalise_pasted(text: str) -> str:
+    """Undo what copying and pasting does to a strategy's text.
+
+    Zero-width characters and byte-order marks are removed, non-breaking and
+    other typographic spaces become plain spaces, and -- only when the text is
+    JSON-shaped, where a curly quote can never be meant -- curly double quotes
+    become straight ones.  Pine is left alone apart from the invisible
+    characters and spaces, which mean nothing to it either.
+    """
+    out = str(text).translate(_INVISIBLE).translate(_ODD_SPACES)
+    if out.lstrip().startswith("{"):
+        out = out.translate(_CURLY)
+    return out
+
+
 def detect_format(text: str) -> tuple[str, float, list[str]]:
     """Guess the language, with the evidence that decided it.
 
     Evidence is returned rather than a bare label so a wrong guess is arguable
     instead of mysterious.
     """
-    stripped = text.strip()
+    stripped = normalise_pasted(text).strip()
     if not stripped:
         return "unknown", 0.0, ["the text is empty"]
 
     if stripped.startswith("{") and '"' in stripped:
-        try:
-            import json
+        import json
 
+        try:
             data = json.loads(stripped)
-        except ValueError:
-            pass
+        except ValueError as exc:
+            looks_ours = any(k in stripped for k in (
+                '"indicators"', '"entry_long"', '"schema_version"'))
+            if looks_ours:
+                where = (f"{exc.msg} at line {exc.lineno}, column {exc.colno}"
+                         if isinstance(exc, json.JSONDecodeError) else str(exc))
+                return "invalid JSON", 0.0, [
+                    f"it is shaped like this application's strategy JSON but "
+                    f"does not parse: {where}"]
         else:
             if isinstance(data, dict) and ("indicators" in data or
                                            "entry_long" in data or
@@ -979,7 +1010,17 @@ def import_strategy(text: str, *, name_numbers: bool = True) -> ImportReport:
 def _import_strategy(text: str) -> ImportReport:
     """The conversion itself, before anything is named."""
     report = ImportReport()
+    text = normalise_pasted(text)
     report.detected, report.confidence, report.evidence = detect_format(text)
+
+    if report.detected == "invalid JSON":
+        report.errors.append(
+            f"This is this application's strategy format, but the text is not "
+            f"complete, valid JSON ({report.evidence[0]}). It was almost "
+            f"certainly cut off or altered while being copied. Use 'Open a "
+            f"file...' on the downloaded .json instead of pasting it; nothing "
+            f"was imported.")
+        return report
 
     if report.detected == "json":
         try:

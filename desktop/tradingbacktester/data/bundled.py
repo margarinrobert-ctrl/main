@@ -42,6 +42,19 @@ class BundledDataset:
     def exists(self) -> bool:
         return self.path().is_file()
 
+    def load(self, instrument):
+        """The file as bars, read in the timezone this entry declares.
+
+        Every loader of a shipped file goes through here.  The timezone used to
+        be declared and then ignored -- harmless while every file was UTC, and
+        four hours wrong on the first file stamped in New York time.
+        """
+        from .csv_loader import load_csv, sniff_csv
+
+        profile = sniff_csv(str(self.path()))
+        profile.mapping.timezone = self.timezone
+        return load_csv(str(self.path()), profile.mapping, instrument)
+
 
 #: Everything shipped, in the order it should appear.
 BUNDLED: tuple[BundledDataset, ...] = (
@@ -60,6 +73,13 @@ BUNDLED: tuple[BundledDataset, ...] = (
         "Dow Jones index CFD, 30-minute bars, July 2024 to July 2025 "
         "(11,445 bars).",
         timezone="UTC", asset_class=AssetClass.INDEX_CFD),
+    BundledDataset(
+        "US30_30s.csv.gz", "US30", "30s",
+        "Dow Jones index CFD, 30-second bars, 18 August 2025 to 16 September "
+        "2026 (390,552 bars), stamped in New York time. Two sources: to 24 "
+        "April 2026 the cash session only with no volume; from 27 April "
+        "nearly 24 hours with volume. Only 92 days include the 09:00 bar.",
+        timezone="America/New_York", asset_class=AssetClass.INDEX_CFD),
     BundledDataset(
         "BTCUSD_1d.csv.gz", "BTCUSD", "1D",
         "Bitcoin daily bars from CoinMarketCap, July 2025 to August 2026 "

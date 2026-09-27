@@ -70,8 +70,7 @@ def _load_bars(args: argparse.Namespace):
     if dataset is not None and dataset.exists():
         instruments = _instruments(args)
         instrument = instruments.ensure(dataset.symbol, dataset.asset_class)
-        profile = sniff_csv(str(dataset.path()))
-        return load_csv(str(dataset.path()), profile.mapping, instrument), dataset.name
+        return dataset.load(instrument), dataset.name
 
     path = Path(wanted).expanduser()
     if path.is_file():

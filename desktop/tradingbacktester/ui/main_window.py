@@ -692,7 +692,6 @@ class MainWindow(QMainWindow):
         quick; ``None`` imports everything and is what the menu item uses.
         """
         from ..data.bundled import available
-        from ..data.csv_loader import load_csv, sniff_csv
 
         existing = {m.name for m in self.datasets.list()}
         added: list[Any] = []
@@ -704,8 +703,7 @@ class MainWindow(QMainWindow):
             try:
                 instrument = self.instruments.ensure(dataset.symbol,
                                                      dataset.asset_class)
-                profile = sniff_csv(str(dataset.path()))
-                bars = load_csv(str(dataset.path()), profile.mapping, instrument)
+                bars = dataset.load(instrument)
                 meta = self.datasets.add_from_bars(
                     bars, name=dataset.name, source_path=str(dataset.path()),
                     notes=dataset.description)

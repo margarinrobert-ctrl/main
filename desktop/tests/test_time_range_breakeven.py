@@ -162,3 +162,65 @@ def test_breakeven_settings_round_trip_and_old_files_read_as_r():
     del old["exits"]["breakeven_mode"], old["exits"]["breakeven_offset"]
     loaded = StrategySpec.from_dict(old)
     assert (loaded.exits.breakeven_mode, loaded.exits.breakeven_offset) == ("r", 0.0)
+
+
+# --------------------------------------------------------------------------
+# Pasting the strategy file: what copying does to text
+# --------------------------------------------------------------------------
+
+def _strategy_json() -> str:
+    import json
+    spec = _spec(43.0, "points", offset=5.0)
+    return json.dumps(spec.to_dict(), indent=2)
+
+
+@pytest.mark.parametrize("damage", [
+    lambda t: t.replace("  ", "\u00a0\u00a0"),          # non-breaking indent
+    lambda t: "\ufeff" + t,                              # byte-order mark
+    lambda t: "\u200b" + t.replace(",\n", ",\u200b\n"),  # zero-width spaces
+    lambda t: t.replace('"name"', "\u201cname\u201d"),   # curly quotes
+])
+def test_a_pasted_strategy_survives_what_copying_does_to_it(damage):
+    from tradingbacktester.strategy.importer import import_strategy
+    report = import_strategy(damage(_strategy_json()))
+    assert report.detected == "json"
+    assert report.faithful and not report.errors
+    assert report.spec.exits.breakeven_offset == 5.0
+
+
+def test_a_cut_off_strategy_file_says_so_instead_of_language_unknown():
+    from tradingbacktester.strategy.importer import import_strategy
+    report = import_strategy(_strategy_json()[:-60])
+    assert report.detected == "invalid JSON"
+    assert report.spec is None
+    assert "Open a file" in report.errors[0]
+    assert "line" in report.errors[0]
+
+
+# --------------------------------------------------------------------------
+# Shipped data is read in the timezone it declares
+# --------------------------------------------------------------------------
+
+def test_a_shipped_file_stamped_in_new_york_time_loads_in_new_york_time():
+    from tradingbacktester.data.bundled import find
+    from tradingbacktester.data.models import Instrument
+
+    dataset = find("US30 30s")
+    if dataset is None or not dataset.exists():
+        pytest.skip("the 30-second file is not present")
+    bars = dataset.load(Instrument.with_defaults("US30"))
+    first = pd.Timestamp(int(bars.ts[0]), tz="UTC").tz_convert(NY)
+    assert (first.hour, first.minute) == (9, 30), first
+    assert first.date().isoformat() == "2025-08-18"
+    assert bars.timeframe.label == "30s"
+
+
+def test_every_shipped_loader_goes_through_the_timezone_aware_path():
+    """The declared timezone was once ignored by all three loaders."""
+    import inspect
+    import tradingbacktester.cli as cli
+    import tradingbacktester.ui.dialogs.finder_dialog as fd
+    import tradingbacktester.ui.main_window as mw
+    for module in (cli, fd, mw):
+        source = inspect.getsource(module)
+        assert "sniff_csv(str(dataset.path()))" not in source, module.__name__

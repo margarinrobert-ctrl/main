@@ -571,7 +571,6 @@ class FinderDialog(QDialog):
 
     def _load_bars(self):
         from ...data.bundled import BUNDLED
-        from ...data.csv_loader import load_csv, sniff_csv
 
         reference = self.dataset_box.currentData() or ""
         if reference == "@current":
@@ -586,9 +585,7 @@ class FinderDialog(QDialog):
                 if dataset.filename == name:
                     instrument = self._instruments.ensure(dataset.symbol,
                                                           dataset.asset_class)
-                    profile = sniff_csv(str(dataset.path()))
-                    return load_csv(str(dataset.path()), profile.mapping,
-                                    instrument)
+                    return dataset.load(instrument)
         raise BacktesterError("Choose a dataset to search.")
 
     # -- running ---------------------------------------------------------

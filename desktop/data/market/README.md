@@ -10,6 +10,7 @@ reads `.csv.gz` directly, so nothing has to be unpacked by hand.
 | `US30_5m.csv.gz` | US30 (Dow Jones index CFD) | 5 minutes | 581,195 | 2016-10-27 → 2025-07-15 |
 | `US30_15m.csv.gz` | US30 (Dow Jones index CFD) | 15 minutes | 193,942 | 2016-10-27 → 2025-07-15 |
 | `US30_30m.csv.gz` | US30 (Dow Jones index CFD) | 30 minutes | 11,445 | 2024-07-22 → 2025-07-15 |
+| `US30_30s.csv.gz` | US30 (Dow Jones index CFD) | 30 seconds | 390,552 | 2025-08-18 → 2026-09-16 |
 | `BTCUSD_1d.csv.gz` | Bitcoin | 1 day | 397 | 2025-07-23 → 2026-08-24 |
 
 ## What is in them
@@ -42,3 +43,23 @@ strategy — it moves every bar, so it changes any rule with a time window in it
 `TickVolume` counts price changes, not contracts. It is a fair proxy for
 activity on a CFD, where true traded volume is not published, but it is not
 comparable to exchange volume on a futures contract.
+
+## `US30_30s.csv.gz`
+
+Supplied on 2026-09-27. Comma-separated, oldest first, columns
+`ny,open,high,low,close,volume`, stamped in **New York local time** at the bar
+open, so it is registered with `America/New_York` rather than UTC. Checked on
+arrival: sorted, no duplicate stamps, every stamp on a :00/:30 second, no
+high/low that fails to contain the open and close, no missing values.
+
+It is two sources joined, and the join matters:
+
+| Period | Hours | Volume |
+|---|---|---|
+| 2025-08-18 → 2026-04-24 | the cash session, from 09:30 | zero on every bar |
+| 2026-04-27 → 2026-09-16 | nearly 24 hours, including Sunday evening | real |
+
+The first part has no bar before 09:30, so a strategy that reads the 09:00
+bar has nothing to trade there: 92 days of the file include a 09:00 bar, all
+of them from 27 April 2026. The largest 30-second move, 2.9% at 09:30 on
+2026-04-08, is the overnight gap of the cash-session-only part, not an error.
