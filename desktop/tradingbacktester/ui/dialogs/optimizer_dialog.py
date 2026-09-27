@@ -113,9 +113,21 @@ class OptimizerDialog(QDialog):
             grid.addWidget(head, 0, column)
 
         self._rows: list[dict[str, Any]] = []
-        for index, param in enumerate(self._spec.params, start=1):
+        from ...strategy.exit_params import exit_parameters
+
+        # The strategy's own parameters, then the exit settings it uses: stop,
+        # target, breakeven, trail, time stop and the ATR period behind them.
+        from ...core.types import ExitSettings
+
+        # The exits a run will use: the engine adopts the strategy's own when
+        # the run's are still the defaults, so the rows must follow suit.
+        exits = (self._spec.exits if self._config.exits == ExitSettings()
+                 else self._config.exits)
+        sweepable = list(self._spec.params) + exit_parameters(exits)
+        for index, param in enumerate(sweepable, start=1):
             enabled = QCheckBox()
-            enabled.setChecked(index <= 2)      # two swept by default
+            # Two strategy parameters swept by default; exits are opt-in.
+            enabled.setChecked(index <= 2 and not param.name.startswith("exits."))
             grid.addWidget(enabled, index, 0)
 
             name = QLabel(param.label or param.name)

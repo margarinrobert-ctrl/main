@@ -54,6 +54,22 @@ jobs:
         run: |
           python -c "from PySide6.QtWidgets import QApplication; app=QApplication([]); from tradingbacktester.ui.icons import save_app_icon_ico; save_app_icon_ico('assets/app.ico'); print('icon written')"
 
+      # Stamp the build so the app shows which one it is (title bar, About)
+      # and the installer carries the same version.
+      - name: Stamp the build number
+        run: |
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
+          $lines = @(
+            '"""Which build this is. Written by the Windows build; do not edit."""',
+            "BUILD_NUMBER = ${{ github.run_number }}",
+            "COMMIT = `"$sha`"",
+            "BUILD_DATE = `"$date`""
+          )
+          Set-Content -Path "tradingbacktester\_build_info.py" -Value ($lines -join "`n") -Encoding utf8
+          Get-Content "tradingbacktester\_build_info.py"
+          python -c "from tradingbacktester.config import APP_VERSION, APP_BUILD; print(APP_VERSION, APP_BUILD)"
+
       - name: Build the application with PyInstaller
         run: python -m PyInstaller packaging/TradingBacktester.spec --noconfirm --clean
 
@@ -88,12 +104,59 @@ jobs:
 
       - name: Build the installer
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\installer.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=1.0.${{ github.run_number }}" packaging\installer.iss
           if (-not (Test-Path "dist\TradingBacktesterSetup.exe")) {
             throw "Inno Setup did not produce dist\TradingBacktesterSetup.exe"
           }
           $size = [math]::Round((Get-Item "dist\TradingBacktesterSetup.exe").Length / 1MB, 1)
           Write-Host "TradingBacktesterSetup.exe is $size MB"
+
+      # The in-app updater, for real, on Windows PowerShell 5.1 (what every
+      # Windows machine has): install this build, then upgrade that copy IN
+      # PLACE with the updater's own script; then the same for a portable copy
+      # from the zip. Non-blocking so a problem here cannot hold back a
+      # release, but its log is read after every build.
+      - name: Test updating in place (installed and portable)
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          $ErrorActionPreference = "Stop"
+          $t = $env:RUNNER_TEMP
+
+          # -- installed copy, upgraded with the installer ------------------
+          $dir = Join-Path $t "tb-installed"
+          $p = Start-Process -FilePath "dist\TradingBacktesterSetup.exe" -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=`"$dir`"") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "first install failed: exit $($p.ExitCode)" }
+          if (-not (Test-Path "$dir\unins000.exe")) { throw "no uninstaller after the first install" }
+          (Get-Item "$dir\TradingBacktester.exe").LastWriteTime = [datetime]"2000-01-01"
+          $log = Join-Path $t "update-installed.log"
+          python packaging\ci_update_script.py "dist\TradingBacktesterSetup.exe" "$dir" "$log" "$t\apply-installed.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "the updater refused the installer" }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$t\apply-installed.ps1"
+          Get-Content $log
+          if (-not (Select-String -Path $log -Pattern "update installed" -Quiet)) { throw "installed-copy update did not report success" }
+          if ((Get-Item "$dir\TradingBacktester.exe").LastWriteTime -le [datetime]"2000-01-02") { throw "the installer did not replace the program" }
+          if (-not (Test-Path "$dir\unins000.exe")) { throw "the upgrade lost the uninstaller" }
+          $p = Start-Process -FilePath "$dir\TradingBacktester.exe" -ArgumentList "--self-test" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "the upgraded copy failed its self-test" }
+          Write-Host "installed copy: upgraded in place and self-tested"
+
+          # -- portable copy, upgraded with the zip --------------------------
+          Compress-Archive -Path "dist\TradingBacktester" -DestinationPath "$t\portable.zip" -Force
+          $pdir = Join-Path $t "tb-portable\TradingBacktester"
+          New-Item -ItemType Directory -Path (Split-Path $pdir) -Force | Out-Null
+          Copy-Item -Path "dist\TradingBacktester" -Destination $pdir -Recurse
+          Set-Content -Path "$pdir\stale-from-old-version.txt" -Value "old"
+          $log = Join-Path $t "update-portable.log"
+          python packaging\ci_update_script.py "$t\portable.zip" "$pdir" "$log" "$t\apply-portable.ps1"
+          if ($LASTEXITCODE -ne 0) { throw "the updater refused the portable zip" }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$t\apply-portable.ps1"
+          Get-Content $log
+          if (-not (Select-String -Path $log -Pattern "update installed" -Quiet)) { throw "portable update did not report success" }
+          if (Test-Path "$pdir\stale-from-old-version.txt") { throw "the portable update mixed old and new files" }
+          $p = Start-Process -FilePath "$pdir\TradingBacktester.exe" -ArgumentList "--self-test" -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "the updated portable copy failed its self-test" }
+          Write-Host "portable copy: swapped in place and self-tested"
 
       - name: Upload the installer
         uses: actions/upload-artifact@v4

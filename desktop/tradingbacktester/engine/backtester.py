@@ -251,7 +251,18 @@ class Backtester:
         self.config = config if config is not None else BacktestConfig()
         self.progress = progress
         self.cancel = cancel
-        self.param_overrides = dict(param_overrides or {})
+        from ..strategy.exit_params import (apply_exit_overrides,
+                                            split_overrides)
+
+        # ``exits.*`` names in a sweep are exit settings, not strategy
+        # parameters: they are applied to the strategy's exits (so warm-up and
+        # the ATR see them) and again to the run's, after the two are merged.
+        params, self.exit_overrides = split_overrides(param_overrides)
+        if self.exit_overrides and spec is not None and hasattr(spec, "exits"):
+            spec = copy.copy(spec)
+            spec.exits = apply_exit_overrides(spec.exits, self.exit_overrides)
+            self.spec = spec
+        self.param_overrides = params
         self.label = label
         self.warnings: list[str] = []
 
@@ -322,6 +333,10 @@ class Backtester:
         self._check_bars(bars)
         spec_warnings = self._validate_spec()
         config = self._effective_config()
+        if self.exit_overrides:
+            from ..strategy.exit_params import apply_exit_overrides
+
+            config.exits = apply_exit_overrides(config.exits, self.exit_overrides)
         compiled = self._compile(config)
 
         lo, hi = self._run_range(config)

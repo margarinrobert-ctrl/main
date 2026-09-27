@@ -116,6 +116,40 @@ The application is not code-signed. Windows SmartScreen will show a
 **More info → Run anyway**. Signing requires a certificate from a commercial
 authority, which this project does not have.
 
+### Updating without uninstalling
+
+Every build carries a number, shown in the title bar and in **Help ▸ About**
+(`1.0.<build>`). To move to a newer one:
+
+1. **Help ▸ Download the Latest Update** opens the release page in your
+   browser. Download `TradingBacktesterSetup.exe` if you installed the
+   application, or `TradingBacktester-portable.zip` if you use the portable
+   copy.
+2. **Help ▸ Update from a Downloaded File…** and choose that file.
+
+The application checks the file is really its own installer or portable zip,
+asks you to save an unsaved strategy, then closes. A small script waits for it
+to exit, installs the update over the same folder and opens the new version.
+There is nothing to uninstall and the workspace — strategies, datasets,
+results — is never touched.
+
+- The installed copy is upgraded by running the installer silently with the
+  folder it is already in. Running the new installer by hand does the same
+  thing: it finds the existing installation and upgrades it.
+- The portable copy is unpacked beside its folder and **swapped** in: the old
+  folder is renamed, the new one moved into its place, and the old one deleted
+  only once that worked. A failure leaves the old copy, never a mixture.
+- Each attempt is written to `update.log` in the workspace's `logs` folder. If
+  it fails, the reason is there and the previous version is reopened.
+- The installed copy refuses the zip (it would delete the uninstaller) and the
+  portable copy refuses the installer (it would install a second copy
+  elsewhere); each says which file to use instead.
+
+The application never downloads anything itself. The browser does, when you ask
+it to. Every Windows build installs a copy, upgrades it in place with this same
+script, and runs the upgraded copy's self-test, for both the installer and the
+zip.
+
 ### Uninstalling
 
 Use *Add or remove programs*. Your workspace folder — datasets, strategies and
@@ -390,6 +424,7 @@ deeply as you like:
 | **State** | a series is rising, falling, positive, negative, or has risen for *N* bars |
 | **Session** | the bar falls inside a time window on an allowed weekday |
 | **Vote** | at least *k* of *n* child conditions hold on the same bar |
+| **Within** | a condition held within the last *N* bars or minutes — or on every bar of them, or at least *k* times |
 | **Always** | a constant, useful as a placeholder |
 
 **Vote** is the middle of the scale AND and OR sit at either end of. It exists
@@ -407,6 +442,44 @@ can be offset backwards by *N* bars.
 
 A cross fires on the bar where the relationship changes, not on every bar the
 inequality happens to hold.
+
+### Within N bars or minutes, held, at least k times
+
+**Within** wraps any condition and asks about a window ending on the current
+bar:
+
+| Mode | True when |
+|---|---|
+| **any** | the condition held on at least one bar of the window — *EMA 9 crossed above EMA 21 within the last 5 bars* |
+| **all** | it held on every bar of the window — *close above VWAP for the last 3 bars* |
+| **count** | it held on at least *k* bars of the window — *RSI above 70 at least twice in the last 10 bars* |
+
+The window is counted in **bars** or in **minutes**. Minutes are clock time, so
+a window of 30 minutes on 5-minute bars is six bars, and across a session gap or
+a missing bar it covers only the bars that really fell in those 30 minutes. A
+held (**all**) window needs its full length of history; until then it is
+false. In the editor, **Add condition** offers *Within N bars*, *Cross within N
+bars*, *Held for N bars* and *At least K times in N bars*, and each can be
+negated (*not within*).
+
+Tick **Make the window a strategy parameter** and the window size becomes a
+parameter like any other: it appears in the left panel and the optimiser can
+sweep it. The count *k* can be a parameter too, in the file (`"count":
+"$hits"`).
+
+### Indicators of indicators: an EMA of an EMA
+
+An indicator's **Source** can be another indicator's output, not only a price
+column: add *EMA 20*, then add an EMA whose source is `@ema20.value`. That is an
+EMA of the EMA, seeded the same way an EMA of price is. Any indicator that takes
+a source can be chained — an SMA of RSI, an RSI of an EMA — and the chain can be
+as long as you like, provided each link is defined above the one that uses it.
+Warm-up adds up along the chain, so the first bars that cannot be computed are
+left undefined rather than guessed.
+
+A strategy that uses minutes windows, window parameters or chained sources is
+saved as format 3. Older builds refuse it with a message instead of silently
+reading it differently.
 
 ### Clock ranges: the opening range, the 09:00 bar
 
@@ -510,6 +583,12 @@ Anything numeric in a strategy can be a named parameter with a label, a default,
 a range and a step. Parameters appear as controls in the left panel, are saved
 with the strategy, and are what the optimiser sweeps. You never edit source code
 to change a strategy.
+
+Optimising a strategy that has no parameters — one pasted from Pine, say —
+offers to turn the numbers in its rules into parameters in one step, window
+sizes included. The exits — stop, target,
+breakeven, ATR period — are swept from the optimiser without being made into
+parameters; see [Sweeping the exits](#sweeping-the-exits-stop-target-breakeven-atr).
 
 ---
 
@@ -1342,6 +1421,33 @@ that sample's noise best. Expect it to be worse out of sample.
 
 The **Out of Sample** and **Walk-Forward** tabs in the same dialog are how you
 find out how much worse.
+
+### Sweeping the exits: stop, target, breakeven, ATR
+
+Below the strategy's own parameters the optimiser lists the exits that are
+switched on, unticked:
+
+| Row | Sweeps |
+|---|---|
+| `exits.stop_loss_value` | the stop distance, in whatever mode the stop uses (ATR, points, %, ticks) |
+| `exits.take_profit_value` | the target distance, likewise |
+| `exits.breakeven_at_r` | where the stop moves to breakeven, in its own unit |
+| `exits.breakeven_offset` | how far past entry the moved stop sits |
+| `exits.trailing_value`, `exits.trailing_activate_at_r` | the trailing stop's distance and when it starts |
+| `exits.atr_period` | the ATR the exits are measured in |
+| `exits.max_bars_in_trade` | the time stop |
+
+Tick any of them, alongside or instead of the strategy's parameters. The sweep,
+the robustness column, Out of Sample and Walk-Forward treat them exactly like
+parameters. **Apply** writes the chosen values into the Risk panel's exit
+settings; the saved strategy is changed only when you save it. The modes
+themselves (ATR or points, on or off) are not swept: a grid over *which kind* of
+stop is a different strategy per row. From the command line:
+
+```
+python -m tradingbacktester.cli optimise "EMA Cross + RSI" --data "US30 30m" \
+    --param exits.stop_loss_value=1:2:0.5 --param exits.take_profit_value=2:4:1
+```
 
 ### Search method: grid, Bayesian or random
 

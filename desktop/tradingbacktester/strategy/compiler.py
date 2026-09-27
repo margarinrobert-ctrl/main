@@ -298,6 +298,7 @@ def _compute_indicators(spec: StrategySpec, bars: BarSeries,
     """Run every slot exactly once, memoised across identical definitions."""
     out: dict[str, dict[str, np.ndarray]] = {}
     memo: dict[tuple[Any, ...], dict[str, np.ndarray]] = {}
+    keys: dict[str, Any] = {}
     fingerprint = _bars_fingerprint(bars)
     for slot in spec.indicators:
         if not slot.ref:
@@ -308,8 +309,15 @@ def _compute_indicators(spec: StrategySpec, bars: BarSeries,
                 f"Give each one a different reference name.")
         resolved = resolve_slot_params(slot, params)
         source = slot.source or "close"
+        if source.startswith("@"):
+            out[slot.ref] = _chained(slot, source, bars, resolved, out, keys)
+            keys[slot.ref] = (slot.indicator, tuple(sorted(
+                (k, _hashable(v)) for k, v in resolved.items())), source,
+                keys.get(source[1:].split(".", 1)[0]))
+            continue
         key = (str(slot.indicator).upper(), tuple(sorted(
             (k, _hashable(v)) for k, v in resolved.items())), source)
+        keys[slot.ref] = key
         cached = memo.get(key)
         if cached is not None:
             # Two slots with identical definitions share one computation.  The
@@ -335,6 +343,68 @@ def _compute_indicators(spec: StrategySpec, bars: BarSeries,
         memo[key] = arrays
         out[slot.ref] = arrays
     return out
+
+
+def _chained(slot: Any, source: str, bars: BarSeries, resolved: dict[str, Any],
+             done: dict[str, dict[str, np.ndarray]], keys: dict[str, Any]
+             ) -> dict[str, np.ndarray]:
+    """An indicator computed on another indicator's output: an EMA of an EMA.
+
+    ``source`` is ``"@ref"`` (the upstream's first output) or ``"@ref.output"``.
+    The upstream series stands in for price: a bar series whose open, high,
+    low and close are all that series is handed to the indicator, from the
+    upstream's first defined value on, and the result is padded back with NaN.
+    Only indicators that read a single price source can be chained; one that
+    reads the bar's high and low would see a bar with no range.
+
+    Not held in the cross-compile cache: its input changes with the upstream's
+    parameters, which the cache key does not see.
+    """
+    from ..indicators.base import REGISTRY
+
+    ref, _, output = source[1:].partition(".")
+    if ref not in done:
+        raise StrategyError(
+            f"The indicator '{slot.ref}' is computed on '{ref}', which must be "
+            f"defined above it.")
+    upstream = done[ref]
+    if not output:
+        output = next(iter(upstream))
+    if output not in upstream:
+        raise StrategyError(
+            f"'{ref}' has no output called '{output}'. It has: "
+            f"{', '.join(upstream)}.")
+    definition = REGISTRY.get(slot.indicator)
+    if not definition.uses_source:
+        raise StrategyError(
+            f"{definition.name} reads the bar's high and low, so it cannot be "
+            f"computed on another indicator. Only single-source indicators "
+            f"(moving averages, RSI and the like) can.")
+    series = np.asarray(upstream[output], dtype="float64")
+    n = series.size
+    finite = np.flatnonzero(np.isfinite(series))
+    result: dict[str, np.ndarray]
+    if finite.size == 0:
+        return {name: np.full(n, np.nan) for name in definition.outputs}
+    k = int(finite[0])
+    tail = series[k:]
+    derived = BarSeries(ts=np.asarray(bars.ts)[k:], open=tail, high=tail, low=tail,
+                        close=tail, volume=np.asarray(bars.volume)[k:],
+                        instrument=bars.instrument, timeframe=bars.timeframe,
+                        source=f"{bars.source} -> {ref}.{output}")
+    try:
+        computed = REGISTRY.compute(slot.indicator, derived, resolved, "close")
+    except BacktesterError as exc:
+        raise StrategyError(
+            f"The indicator '{slot.ref}' ({slot.indicator} of {ref}) could not "
+            f"be calculated: {exc.user_message}", detail=exc.detail) from exc
+    result = {}
+    for name, arr in computed.items():
+        full = np.full(n, np.nan)
+        full[k:] = np.asarray(arr, dtype="float64")
+        full.setflags(write=False)
+        result[name] = full
+    return result
 
 
 def _hashable(value: Any) -> Any:

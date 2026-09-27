@@ -202,7 +202,8 @@ def test_resting_fields_round_trip_and_mark_the_file_format_two():
                  cancel=SessionWindow("10:29", "23:59:59", NY))
     spec.entry_long_price = ExprOperand("+", Price("high"), Const(10.0))
     d = spec.to_dict()
-    assert d["schema_version"] == SCHEMA_VERSION == 2
+    # Resting entries need format 2; nothing here needs anything newer.
+    assert d["schema_version"] == 2 <= SCHEMA_VERSION
     back = StrategySpec.from_dict(json.loads(json.dumps(d)))
     assert back.execution.entry_order == "stop"
     assert back.entry_long_price.to_dict() == spec.entry_long_price.to_dict()

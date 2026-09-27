@@ -9,7 +9,10 @@
 ; what lets it install on a locked-down work machine.
 
 #define MyAppName "Trading Backtester"
-#define MyAppVersion "1.0.0"
+; The build passes /DMyAppVersion=1.0.<run number>; a local build keeps 1.0.0.
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "Trading Backtester"
 #define MyAppExeName "TradingBacktester.exe"
 
@@ -37,6 +40,13 @@ MinVersion=10.0
 LicenseFile=..\LICENSE
 InfoBeforeFile=..\packaging\installer_notice.txt
 AppReadmeFile={app}\README.md
+; Running a newer installer over an existing copy upgrades it in place: the
+; fixed AppId finds the previous folder, and an application still running is
+; closed first rather than half-overwritten. The updater in the app relaunches
+; it afterwards, so Setup does not.
+UsePreviousAppDir=yes
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

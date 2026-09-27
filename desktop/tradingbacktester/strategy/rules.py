@@ -177,25 +177,63 @@ def _state(cond: State, ctx: EvalContext) -> np.ndarray:
         f"true, false.")
 
 
-def _within(cond: Within, ctx: EvalContext) -> np.ndarray:
-    """Rolling OR: the child was true on this bar or any of the ``bars-1`` before.
-
-    One cumulative sum, however long the window -- the same trick
-    :func:`_run_of` uses for a run of rising bars, pointed the other way.
-    """
-    bars = int(cond.bars)
-    if bars < 1:
+def _window_value(value: Any, ctx: EvalContext, what: str, cond: Within) -> int:
+    """A window size or count: a number, or a strategy parameter's value."""
+    if isinstance(value, str):
+        name = value[1:] if value.startswith("$") else value
+        if name not in ctx.params:
+            raise StrategyError(
+                f"'{cond.describe()}' uses the parameter '{name}' for its {what}, "
+                f"which this strategy does not define.")
+        value = ctx.params[name]
+    try:
+        out = int(round(float(value)))
+    except (TypeError, ValueError) as exc:
         raise StrategyError(
-            f"'{cond.describe()}' asks about the last {bars} bars; the window "
-            f"must be at least 1 bar.")
+            f"The {what} of '{cond.describe()}' is not a whole number.",
+            detail=repr(value)) from exc
+    if out < 1:
+        raise StrategyError(
+            f"'{cond.describe()}' asks for a {what} of {out}; it must be at least 1.")
+    return out
+
+
+def _within(cond: Within, ctx: EvalContext) -> np.ndarray:
+    """``child`` judged over a window of bars or of minutes.
+
+    One cumulative sum answers every mode: the number of true bars in the
+    window is ``cum[i+1] - cum[start]``, and the window's length is
+    ``i + 1 - start``.  For a window in minutes ``start`` is the first bar that
+    opened no more than N minutes before bar ``i`` opened -- found by one
+    binary search over the timestamps, so a gap in the data shortens the bar
+    count and never stretches the time.
+    """
+    size = _window_value(cond.bars, ctx, "window", cond)
     inner = evaluate_condition(cond.child, ctx)
     n = len(inner)
     if n == 0:
         return inner
     cumulative = np.concatenate(([0], np.cumsum(inner.astype(np.int64))))
     idx = np.arange(n)
-    start = np.maximum(idx + 1 - bars, 0)
-    out = (cumulative[idx + 1] - cumulative[start]) > 0
+    if cond.unit == "minutes":
+        ts = np.asarray(ctx.bars.ts, dtype="int64")
+        start = np.searchsorted(ts, ts - size * 60_000_000_000, side="left")
+        # A window that reaches back before the first bar is not a whole one.
+        full = ts - size * 60_000_000_000 >= ts[0]
+    elif cond.unit == "bars":
+        start = np.maximum(idx + 1 - size, 0)
+        full = idx + 1 >= size
+    else:
+        raise StrategyError(f"'{cond.unit}' is not a window unit. Use bars or minutes.")
+    hits = cumulative[idx + 1] - cumulative[start]
+    if cond.mode == "any":
+        out = hits > 0
+    elif cond.mode == "all":
+        out = full & (hits == (idx + 1 - start))
+    elif cond.mode == "count":
+        out = hits >= _window_value(cond.count, ctx, "count", cond)
+    else:
+        raise StrategyError(f"'{cond.mode}' is not a window mode. Use any, all or count.")
     return ~out if cond.negate else out
 
 

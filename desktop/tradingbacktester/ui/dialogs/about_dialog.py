@@ -18,7 +18,8 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QPushButton,
                                QTextBrowser, QVBoxLayout, QWidget)
 
-from ...config import APP_DISPLAY_NAME, APP_VERSION, Workspace, resource_path
+from ...config import (APP_BUILD, APP_DISPLAY_NAME, APP_VERSION, Workspace,
+                        resource_path)
 from ...logging_setup import get_logger
 from ..theme import PALETTE, Fonts
 
@@ -296,7 +297,7 @@ class AboutDialog(QDialog):
         name = QLabel(APP_DISPLAY_NAME)
         name.setFont(Fonts.heading(16))
         titles.addWidget(name)
-        version = QLabel(f"Version {APP_VERSION}")
+        version = QLabel(f"Version {APP_VERSION} · {APP_BUILD}")
         version.setFont(Fonts.numeric(9))
         version.setStyleSheet(f"color:{PALETTE.text_dim};")
         titles.addWidget(version)

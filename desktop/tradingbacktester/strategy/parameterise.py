@@ -367,8 +367,20 @@ def _promote_condition(cond: Condition | None, spec: StrategySpec,
                          for child in cond.children) if c is not None],
             cond.negate)
     if isinstance(cond, Within):
-        return Within(_promote_condition(cond.child, spec, col), cond.bars,
-                      cond.negate)
+        size: int | str = cond.bars
+        if not isinstance(size, str) and int(size) > 1:
+            # The window is a knob like any other: "crossed within 5 bars" is
+            # one point of a range the optimiser should be able to sweep.
+            unit = "minutes" if cond.unit == "minutes" else "bars"
+            value = int(size)
+            name = col.add(base=f"window_{unit}", value=value,
+                           where=f"the window of `{cond.describe()}`", kind="int",
+                           minimum=1, maximum=max(value * 3, value + 10), step=1,
+                           basis="a window from a single bar up to three times "
+                                 "the one written")
+            size = f"${name}"
+        return Within(_promote_condition(cond.child, spec, col), size,
+                      cond.negate, cond.unit, cond.mode, cond.count)
     # State, SessionWindow and Always carry structure rather than knobs.
     return cond
 

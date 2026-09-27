@@ -20,7 +20,13 @@ from typing import Any
 
 APP_NAME = "TradingBacktester"
 APP_DISPLAY_NAME = "Trading Backtester"
-APP_VERSION = "1.0.0"
+from ._build_info import BUILD_DATE, BUILD_NUMBER, COMMIT  # noqa: E402
+
+#: 1.0.<build> on a Windows build, so two downloads can be told apart and an
+#: update can say what it replaces; 1.0.0 on a copy run from source.
+APP_VERSION = f"1.0.{BUILD_NUMBER}" if BUILD_NUMBER else "1.0.0"
+APP_BUILD = (f"build {BUILD_NUMBER} ({COMMIT}, {BUILD_DATE})" if BUILD_NUMBER
+             else "development copy")
 APP_ORG = "TradingBacktester"
 
 

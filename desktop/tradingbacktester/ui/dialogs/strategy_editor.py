@@ -235,11 +235,24 @@ class StrategyEditor(QDialog):
             source_box = QComboBox()
             for field in _PRICE_FIELDS:
                 source_box.addItem(field, field)
-            position = source_box.findData(slot.source or definition.default_source)
+            # Any indicator above this one can be its input: an EMA of an EMA,
+            # an RSI of a moving average.
+            for upstream in self.spec.indicators[:index]:
+                for output in self.indicator_outputs(upstream.ref):
+                    source_box.addItem(f"{upstream.ref}.{output}  (indicator)",
+                                       f"@{upstream.ref}.{output}")
+            current = slot.source or definition.default_source
+            if current.startswith("@") and "." not in current:
+                ups = current[1:]
+                current = f"@{ups}.{self.indicator_outputs(ups)[0]}"
+            position = source_box.findData(current)
             source_box.setCurrentIndex(max(0, position))
+            source_box.setToolTip(
+                "A price field, or the output of an indicator defined above "
+                "this one -- for an EMA of an EMA.")
             source_box.currentIndexChanged.connect(
                 lambda _i, b=source_box: self._set_slot(index, "source", b.currentData()))
-            form.addRow(self._label("Price source"), source_box)
+            form.addRow(self._label("Source"), source_box)
 
         panel_box = QComboBox()
         panel_box.addItem("Automatic", "auto")
@@ -631,6 +644,11 @@ class StrategyEditor(QDialog):
                       PALETTE.danger)
             return
         self.spec.indicators[index].ref = new_ref
+        # So do indicators computed on this one.
+        for other in self.spec.indicators:
+            source = str(other.source or "")
+            if source == f"@{old}" or source.startswith(f"@{old}."):
+                other.source = f"@{new_ref}" + source[len(old) + 1:]
         # Rules refer to slots by name, so a rename has to follow through.
         for key, _title in _RULE_SLOTS:
             condition = getattr(self.spec, key, None)
@@ -1361,7 +1379,14 @@ def _node_title(node: Any) -> str:
                 f"{len(node.children)})")
     if isinstance(node, Within):
         label = "NOT " if node.negate else ""
-        return f"{label}WITHIN the last {int(node.bars)} bars"
+        size = f"{{{node.bars[1:]}}}" if isinstance(node.bars, str) else int(node.bars)
+        unit = "minutes" if node.unit == "minutes" else "bars"
+        if node.mode == "all":
+            return f"{label}HELD for the last {size} {unit}"
+        if node.mode == "count":
+            k = f"{{{node.count[1:]}}}" if isinstance(node.count, str) else int(node.count)
+            return f"{label}AT LEAST {k}x in the last {size} {unit}"
+        return f"{label}WITHIN the last {size} {unit}"
     try:
         return node.describe()
     except Exception:                       # pragma: no cover - defensive
@@ -1499,7 +1524,12 @@ class _ConditionPicker(QDialog):
         for label, key in (("Compare two things", "compare"),
                            ("One crosses another", "cross"),
                            ("A series is rising or falling", "state"),
-                           ("Something happened within the last N bars", "within"),
+                           ("Something happened within the last N bars or minutes", "within"),
+                           ("A cross happened within the last N bars or minutes",
+                            "within_cross"),
+                           ("Something held for the last N bars or minutes", "held"),
+                           ("Something happened at least K times in the last N",
+                            "count"),
                            ("Inside a session window", "session"),
                            ("Always true", "always")):
             self.kind_box.addItem(label, key)
@@ -1544,6 +1574,18 @@ class _ConditionPicker(QDialog):
             # of a reset-then-trigger rule, which is what nearly every
             # oscillator system needs and could not be written before.
             self.condition = Within(Compare(left, "<", ConstOperand(20.0)), 8)
+        elif kind == "within_cross":
+            # "EMA 13 crossed EMA 48 within the last 5 bars": the cross is
+            # still fresh, which is how a crossover confirms a later trigger.
+            right = (IndicatorOperand(refs[1], self._editor.indicator_outputs(refs[1])[0])
+                     if len(refs) > 1 else PriceOperand("close"))
+            self.condition = Within(Cross(left, "above", right), 5)
+        elif kind == "held":
+            self.condition = Within(Compare(PriceOperand("close"), ">", left), 3,
+                                    mode="all")
+        elif kind == "count":
+            self.condition = Within(Compare(left, ">", ConstOperand(0.0)), 10,
+                                    mode="count", count=2)
         elif kind == "session":
             self.condition = SessionWindow("09:30", "16:00", "America/New_York",
                                            (0, 1, 2, 3, 4))
@@ -1607,34 +1649,133 @@ class _GroupEditor(QWidget):
 
 
 class _WithinEditor(QWidget):
-    """The window of a Within: how many bars back its condition may have held."""
+    """A window: how far back, in bars or minutes, and what must have held."""
+
+    _MODES = (("happened at least once in it", "any"),
+              ("held on every bar of it", "all"),
+              ("happened at least K times in it", "count"))
 
     def __init__(self, editor: StrategyEditor, node: Within) -> None:
         super().__init__()
         self._editor = editor
         self._node = node
+        self._building = True
         lay = QFormLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
-        head = QLabel("True if the condition inside held on this bar or any of "
-                      "the previous ones in the window.")
+        head = QLabel("The condition inside, judged over a recent window rather "
+                      "than on this bar alone.")
         head.setWordWrap(True)
         head.setObjectName("Hint")
         lay.addRow(head)
-        self.bars = QSpinBox()
-        self.bars.setRange(1, 10_000)
-        self.bars.setValue(max(1, int(node.bars)))
-        self.bars.setToolTip("Counts the current bar, so 1 is the condition itself.")
-        self.bars.valueChanged.connect(self._changed)
-        lay.addRow("Window (bars)", self.bars)
-        self.negate = QCheckBox("Negate (true only if it did NOT happen)")
+
+        self.mode = QComboBox()
+        for label, key in self._MODES:
+            self.mode.addItem(label, key)
+        self.mode.setCurrentIndex(max(0, self.mode.findData(node.mode)))
+        lay.addRow("True if it", self.mode)
+
+        self.count = QSpinBox()
+        self.count.setRange(1, 100_000)
+        self.count.setValue(self._value(node.count, 1))
+        self.count_label = QLabel("K (times)")
+        lay.addRow(self.count_label, self.count)
+
+        self.size = QSpinBox()
+        self.size.setRange(1, 1_000_000)
+        self.size.setValue(self._value(node.bars, 5))
+        self.unit = QComboBox()
+        self.unit.addItem("bars", "bars")
+        self.unit.addItem("minutes", "minutes")
+        self.unit.setCurrentIndex(max(0, self.unit.findData(node.unit)))
+        self.unit.setToolTip(
+            "Bars: this bar and the ones before it. Minutes: every bar that "
+            "opened at most that long before this one -- the same window on "
+            "any chart, and a gap in the data is not stretched.")
+        row = QHBoxLayout()
+        row.addWidget(self.size)
+        row.addWidget(self.unit)
+        holder = QWidget()
+        holder.setLayout(row)
+        lay.addRow("Window, the last", holder)
+
+        self.as_param = QCheckBox("Make the window a strategy parameter, so the "
+                                  "optimiser can sweep it")
+        self.as_param.setChecked(isinstance(node.bars, str))
+        lay.addRow(self.as_param)
+        self.param_note = QLabel("")
+        self.param_note.setObjectName("Hint")
+        self.param_note.setWordWrap(True)
+        lay.addRow(self.param_note)
+
+        self.negate = QCheckBox("Negate (true only when it did NOT)")
         self.negate.setChecked(bool(node.negate))
-        self.negate.toggled.connect(self._changed)
         lay.addRow(self.negate)
 
+        for widget, signal in ((self.mode, "currentIndexChanged"),
+                               (self.unit, "currentIndexChanged"),
+                               (self.size, "valueChanged"),
+                               (self.count, "valueChanged"),
+                               (self.as_param, "toggled"),
+                               (self.negate, "toggled")):
+            getattr(widget, signal).connect(self._changed)
+        self._building = False
+        self._sync_visibility()
+
+    def _param(self, name: str) -> Any:
+        return next((p for p in self._editor.spec.params if p.name == name), None)
+
+    def _value(self, value: Any, default: int) -> int:
+        if isinstance(value, str):
+            param = self._param(value[1:] if value.startswith("$") else value)
+            return int(param.default) if param is not None else default
+        return max(1, int(value))
+
+    def _sync_visibility(self) -> None:
+        counting = self.mode.currentData() == "count"
+        self.count.setVisible(counting)
+        self.count_label.setVisible(counting)
+        if isinstance(self._node.bars, str):
+            self.param_note.setText(
+                f"Window is the parameter '{self._node.bars[1:]}' (its default is "
+                f"the number above); sweep it in the optimiser.")
+        else:
+            self.param_note.setText("")
+
     def _changed(self, *_args) -> None:
-        self._node.bars = int(self.bars.value())
-        self._node.negate = bool(self.negate.isChecked())
+        if self._building:
+            return
+        node = self._node
+        node.mode = self.mode.currentData()
+        node.unit = self.unit.currentData()
+        node.count = int(self.count.value())
+        node.negate = bool(self.negate.isChecked())
+        size = int(self.size.value())
+        if self.as_param.isChecked():
+            name = node.bars[1:] if isinstance(node.bars, str) else ""
+            param = self._param(name) if name else None
+            if param is None:
+                taken = {p.name for p in self._editor.spec.params}
+                base = f"window_{node.unit}"
+                name, k = base, 2
+                while name in taken:
+                    name, k = f"{base}_{k}", k + 1
+                param = ParamSpec(name, f"Window ({node.unit})", "int", size, 1,
+                                  max(size * 3, size + 10), 1,
+                                  help="How far back the window reaches.")
+                self._editor.spec.params.append(param)
+            # ParamSpec is frozen: swap in an updated copy.
+            import dataclasses
+            params = self._editor.spec.params
+            position = next(i for i, p in enumerate(params) if p.name == name)
+            params[position] = dataclasses.replace(
+                param, default=size,
+                maximum=max(float(param.maximum or 1), float(size)))
+            node.bars = f"${name}"
+            self._editor._reload_params()
+        else:
+            node.bars = size
+        self._sync_visibility()
         self._editor.node_changed()
 
 

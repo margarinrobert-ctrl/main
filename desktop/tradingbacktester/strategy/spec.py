@@ -45,8 +45,10 @@ from ..core.types import (ExecutionSettings, ExitSettings, RiskSettings,
                           CostModel)
 from ..indicators.base import ParamSpec
 
-SCHEMA_VERSION = 2
-"""Format 2 adds resting entry orders.  A file only CLAIMS format 2 when it uses
+SCHEMA_VERSION = 3
+"""Format 3 adds windows in minutes, held-for and at-least-K windows, windows
+set by a parameter, and indicators computed on another indicator. Format 2
+adds resting entry orders.  A file only CLAIMS format 2 when it uses
 them, so every other strategy stays readable by older builds -- and an older
 build refuses a file that does use them, rather than silently running its stop
 entries as market orders."""
@@ -239,8 +241,17 @@ class Condition:
                                      for x in d.get("children", [])) if c],
                         bool(d.get("negate", False)))
         if kind == "within":
+            def number_or_param(value: Any, default: int) -> int | str:
+                if isinstance(value, str) and value.startswith("$"):
+                    return value
+                return int(value if value is not None else default)
+
             return Within(Condition.from_dict(d.get("child")),
-                          int(d.get("bars", 5)), bool(d.get("negate", False)))
+                          number_or_param(d.get("bars", 5), 5),
+                          bool(d.get("negate", False)),
+                          str(d.get("unit", "bars") or "bars"),
+                          str(d.get("mode", "any") or "any"),
+                          number_or_param(d.get("count", 1), 1))
         raise StrategyError(f"'{kind}' is not a condition kind this application knows.")
 
 
@@ -381,31 +392,69 @@ class ConditionGroup(Condition):
 
 @dataclass
 class Within(Condition):
-    """True on a bar if ``child`` was true on it or any of the previous ``bars - 1``.
+    """A condition judged over a recent WINDOW rather than on one bar.
 
-    The rule "the StochRSI dipped below 20 at some point in the last eight bars,
-    and now %K crosses %D" is a reset-then-trigger, and nearly every oscillator
-    system has one.  Without this it has to be written as an OR over eight
-    copies of the same comparison at eight offsets -- which evaluates eight
-    times, describes itself in a paragraph, and cannot have its window swept by
-    the optimiser because the window is the NUMBER of children.  Here it is one
-    node, one pass, and ``bars`` is a plain integer.
+    ``mode``:
 
-    ``bars`` counts the current bar, so ``bars=1`` is the child itself.
+    * ``any`` (the default) -- true if ``child`` held on at least one bar in
+      the window: "EMA 13 crossed EMA 48 within the last 5 bars". The
+      reset-then-trigger half of nearly every oscillator system.
+    * ``all`` -- true if ``child`` held on EVERY bar in the window: "the
+      close has been above the EMA for the last 3 bars". False until the
+      data covers a whole window.
+    * ``count`` -- true if ``child`` held on at least ``count`` bars of it.
+
+    ``unit``:
+
+    * ``bars`` -- the window is this bar and the ``bars - 1`` before it, so
+      ``bars=1`` is the child itself.
+    * ``minutes`` -- the window is every bar that opened at most ``bars``
+      minutes before this one opened. "Crossed within the last 7 minutes"
+      then means the same thing on a 30-second chart and a 5-minute one, and
+      a gap in the data is a gap in time, not a shorter window.
+
+    ``bars`` and ``count`` take a number or a strategy parameter (``"$name"``),
+    so the optimiser can sweep the window like any other setting.
     """
 
     child: Condition | None = None
-    bars: int = 5
+    bars: int | str = 5
     negate: bool = False
+    unit: str = "bars"
+    mode: str = "any"
+    count: int | str = 1
+
+    def uses_format_3(self) -> bool:
+        return (self.unit != "bars" or self.mode != "any"
+                or isinstance(self.bars, str) or isinstance(self.count, str))
 
     def to_dict(self) -> dict[str, Any]:
-        return {"kind": "within", "bars": int(self.bars),
-                "child": self.child.to_dict() if self.child is not None else None,
-                "negate": self.negate}
+        out: dict[str, Any] = {
+            "kind": "within",
+            "bars": self.bars if isinstance(self.bars, str) else int(self.bars),
+            "child": self.child.to_dict() if self.child is not None else None,
+            "negate": self.negate}
+        # Written only when used, so a plain window reads in older builds.
+        if self.unit != "bars":
+            out["unit"] = self.unit
+        if self.mode != "any":
+            out["mode"] = self.mode
+            if self.mode == "count":
+                out["count"] = (self.count if isinstance(self.count, str)
+                                else int(self.count))
+        return out
 
     def describe(self) -> str:
         inner = self.child.describe() if self.child is not None else "nothing"
-        text = f"({inner}) within the last {int(self.bars)} bars"
+        n = self.bars[1:] if isinstance(self.bars, str) else int(self.bars)
+        unit = "minutes" if self.unit == "minutes" else "bars"
+        if self.mode == "all":
+            text = f"({inner}) on every bar of the last {n} {unit}"
+        elif self.mode == "count":
+            k = self.count[1:] if isinstance(self.count, str) else int(self.count)
+            text = f"({inner}) at least {k} times in the last {n} {unit}"
+        else:
+            text = f"({inner}) within the last {n} {unit}"
         return f"NOT {text}" if self.negate else text
 
     def referenced_indicators(self) -> set[str]:
@@ -637,6 +686,9 @@ class StrategySpec:
         for op in (self.entry_long_price, self.entry_short_price):
             if op is not None:
                 used |= _refs(op)
+        # An indicator computed on another one uses it.
+        used |= {str(slot.source)[1:].split(".", 1)[0] for slot in self.indicators
+                 if str(slot.source or "").startswith("@")}
         missing = used - seen
         if missing:
             raise StrategyError(
@@ -649,6 +701,42 @@ class StrategySpec:
                 f"Indicator(s) {', '.join(sorted(unused))} are calculated and plotted "
                 f"but no rule uses them."
             )
+
+        declared = {p.name: p for p in self.params}
+        for cond in (self.entry_long, self.entry_short, self.exit_long,
+                     self.exit_short, self.entry_cancel):
+            for node in walk_conditions(cond):
+                if not isinstance(node, Within):
+                    continue
+                if node.unit not in ("bars", "minutes"):
+                    raise StrategyError(
+                        f"'{node.unit}' is not a window unit. Use bars or minutes.")
+                if node.mode not in ("any", "all", "count"):
+                    raise StrategyError(
+                        f"'{node.mode}' is not a window mode. Use any, all or count.")
+                for what, value in (("window", node.bars), ("count", node.count)):
+                    if what == "count" and node.mode != "count":
+                        continue
+                    if isinstance(value, str):
+                        name = value[1:] if value.startswith("$") else value
+                        if name not in declared:
+                            raise StrategyError(
+                                f"The {what} of '{node.describe()}' uses the "
+                                f"parameter '{name}', which is not defined.")
+                    elif int(value) < 1:
+                        raise StrategyError(
+                            f"The {what} of '{node.describe()}' must be at least 1.")
+
+        earlier: set[str] = set()
+        for slot in self.indicators:
+            source = str(slot.source or "")
+            if source.startswith("@"):
+                upstream = source[1:].split(".", 1)[0]
+                if upstream not in earlier:
+                    raise StrategyError(
+                        f"The indicator '{slot.ref}' is computed on '{upstream}', "
+                        f"which must be defined above it.")
+            earlier.add(slot.ref)
 
         for cond in (self.entry_long, self.entry_short,
                      self.exit_long, self.exit_short):
@@ -709,12 +797,19 @@ class StrategySpec:
 
         values = self.param_values(overrides)
         need = 1
+        own: dict[str, int] = {}
         for s in self.indicators:
             d = REGISTRY.get(s.indicator)
             resolved = {}
             for k, v in s.params.items():
                 resolved[k] = values[v[1:]] if isinstance(v, str) and v.startswith("$") else v
-            need = max(need, d.warmup(d.coerce_params(resolved)))
+            warm = int(d.warmup(d.coerce_params(resolved)))
+            source = str(s.source or "")
+            if source.startswith("@"):
+                # An indicator of an indicator warms up after its input has.
+                warm += own.get(source[1:].split(".", 1)[0], 0)
+            own[s.ref] = warm
+            need = max(need, warm)
         if self.exits.stop_loss_enabled or self.exits.take_profit_enabled or \
                 self.exits.trailing_enabled:
             need = max(need, self.exits.atr_period)
@@ -726,9 +821,9 @@ class StrategySpec:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            # Format 2 only when a format-2 feature is in use; see SCHEMA_VERSION.
-            "schema_version": (SCHEMA_VERSION if (self.uses_resting_entries()
-                                                  or self._resting_dict()) else 1),
+            # The lowest format that holds what this strategy uses; see
+            # SCHEMA_VERSION.
+            "schema_version": self.required_format(),
             "id": self.id, "name": self.name, "description": self.description,
             "author": self.author, "version": self.version,
             "created_at": self.created_at, "updated_at": self.updated_at,
@@ -744,6 +839,19 @@ class StrategySpec:
             "execution": _enum_dict(self.execution), "session": _enum_dict(self.session),
             "costs": _enum_dict(self.costs),
         }
+
+    def required_format(self) -> int:
+        """The oldest file format that can hold this strategy without loss."""
+        conditions = (self.entry_long, self.entry_short, self.exit_long,
+                      self.exit_short, self.entry_cancel)
+        if any(isinstance(node, Within) and node.uses_format_3()
+               for cond in conditions for node in walk_conditions(cond)) \
+                or any(str(slot.source or "").startswith("@")
+                       for slot in self.indicators):
+            return 3
+        if self.uses_resting_entries() or self._resting_dict():
+            return 2
+        return 1
 
     def uses_resting_entries(self) -> bool:
         return str(getattr(self.execution, "entry_order", "market")

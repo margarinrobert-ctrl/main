@@ -11,6 +11,7 @@ engine on a worker thread, and hands the result to the views.
 
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from pathlib import Path
@@ -65,7 +66,7 @@ class MainWindow(QMainWindow):
         self._runner = TaskRunner(self)
         self._dirty_strategy = False
 
-        self.setWindowTitle(APP_DISPLAY_NAME)
+        self.setWindowTitle(f"{APP_DISPLAY_NAME} {APP_VERSION}")
         self.resize(1680, 980)
         self.setMinimumSize(1180, 720)
         self.setDockOptions(QMainWindow.DockOption.AllowNestedDocks |
@@ -224,6 +225,12 @@ class MainWindow(QMainWindow):
         act("metrics_help", "Metric Definitions", "info", "",
             "What every statistic means and how it is computed", self.on_metrics_help)
         act("about", "About", "info", "", "About this application", self.on_about)
+        act("update_file", "Update from a Downloaded File…", "import", "",
+            "Install TradingBacktesterSetup.exe (or the portable zip) over this "
+            "copy: the app closes, updates and reopens. Your workspace is kept.",
+            self.on_update_from_file)
+        act("update_page", "Download the Latest Update", "database", "",
+            "Open the download page in your browser", self.on_update_page)
         act("quit", "Exit", "close", "Ctrl+Q", "Close the application", self.close)
 
     def _build_toolbar(self) -> None:
@@ -359,6 +366,9 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_assumptions)
         m.addAction(self.act_metrics_help)
         m.addAction(self.act_open_log)
+        m.addSeparator()
+        m.addAction(self.act_update_page)
+        m.addAction(self.act_update_file)
         m.addSeparator()
         m.addAction(self.act_about)
 
@@ -1370,6 +1380,94 @@ class MainWindow(QMainWindow):
         self._runner.start(import_csv_task, wizard.path, wizard.mapping,
                            wizard.instrument, wizard.timeframe)
 
+    # -- updating ----------------------------------------------------------
+
+    def on_update_page(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from ..updater import RELEASE_PAGE
+
+        QDesktopServices.openUrl(QUrl(RELEASE_PAGE))
+        self.status(f"Opened {RELEASE_PAGE} in your browser. Download the "
+                    f"installer, then use Help ▸ Update from a Downloaded File.")
+
+    def on_update_from_file(self) -> None:
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+        from .. import updater
+
+        kind = updater.install_kind()
+        if kind == "source":
+            show_info(self, "Update",
+                      "This copy runs from the Python source, so there is nothing "
+                      "to install over. Update it with git instead. The installed "
+                      "Windows application updates itself from here.")
+            return
+        downloads = Path.home() / "Downloads"
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose the update you downloaded",
+            str(downloads if downloads.is_dir() else Path.home()),
+            "Updates (TradingBacktesterSetup*.exe TradingBacktester*.zip *.exe *.zip)")
+        if not path:
+            return
+        update = updater.inspect_update(path)
+        if update.ok and kind == "installed" and update.kind == "zip":
+            update.ok, update.reason = False, (
+                "This copy was installed with the installer, so update it with "
+                "TradingBacktesterSetup.exe. The portable zip would replace the "
+                "folder and remove its uninstaller.")
+        if update.ok and kind == "portable" and update.kind == "installer":
+            update.ok, update.reason = False, (
+                "This is the portable copy, so update it with "
+                "TradingBacktester-portable.zip. The installer would install a "
+                "second copy elsewhere.")
+        if not update.ok:
+            show_error(self, update.reason, "Update")
+            return
+        if self._runner.busy:
+            show_info(self, "Update", "A task is still running. Let it finish or "
+                                      "cancel it, then update.")
+            return
+        if getattr(self, "_dirty_strategy", False):
+            choice = QMessageBox.question(
+                self, "Unsaved strategy",
+                "The strategy you are editing has unsaved changes. Save it "
+                "before updating?",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel)
+            if choice == QMessageBox.StandardButton.Cancel:
+                return
+            if choice == QMessageBox.StandardButton.Save:
+                self.on_save_strategy()
+                if self._dirty_strategy:          # the save failed; it said why
+                    return
+        answer = QMessageBox.question(
+            self, "Install update",
+            f"Install {Path(path).name} over this copy ({APP_VERSION})?\n\n"
+            f"The application will close, install the update and reopen by "
+            f"itself, usually within a minute. Your strategies, datasets and "
+            f"results are in the workspace and are not touched.")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        import tempfile
+
+        try:
+            script = updater.build_script(
+                update, updater.app_directory(), os.getpid(),
+                self.workspace.logs / "update.log")
+            updater.launch(script, Path(tempfile.gettempdir()) / "TradingBacktester-update")
+        except Exception as exc:                  # noqa: BLE001
+            log.exception("Could not start the update")
+            show_error(self, f"The update could not be started: {exc}", "Update")
+            return
+        log.info("Update from %s started; closing so it can install", path)
+        # Quit outright rather than only closing this window: an open tool
+        # window would otherwise keep the process -- and its files -- alive.
+        if self.close():
+            from PySide6.QtWidgets import QApplication
+            QApplication.quit()
+
     def on_import_ticks(self) -> None:
         from .dialogs.tick_import_dialog import TickImportDialog
         from .workers import import_ticks_task
@@ -1553,7 +1651,13 @@ class MainWindow(QMainWindow):
         dlg = OptimizerDialog(self._view_bars, self._spec, config, self)
         dlg.exec()
         if dlg.chosen_params:
-            self.strategy_panel.set_parameter_values(dlg.chosen_params)
+            from ..strategy.exit_params import split_overrides
+
+            params, exits = split_overrides(dlg.chosen_params)
+            self.strategy_panel.set_parameter_values(params)
+            if exits:
+                # Swept exit settings go where every run reads them from.
+                self.risk_panel.exit_form.set_values(exits)
             self.status("Applied the selected parameter combination. "
                         "Remember that a grid search reports the best result on "
                         "past data, not a prediction.")
@@ -1994,7 +2098,7 @@ class MainWindow(QMainWindow):
             self._result is not None and bool(self._result.trades))
         self.act_mirror.setEnabled(has_data and has_strategy)
         self.act_quality.setEnabled(self._quality is not None)
-        title = APP_DISPLAY_NAME
+        title = f"{APP_DISPLAY_NAME} {APP_VERSION}"
         if self._spec is not None:
             title = f"{self._spec.name}{' *' if self._dirty_strategy else ''} — {title}"
         self.setWindowTitle(title)

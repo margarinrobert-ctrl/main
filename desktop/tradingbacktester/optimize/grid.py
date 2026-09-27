@@ -239,7 +239,12 @@ def build_grid(spec: "StrategySpec", ranges: Sequence[ParameterRange],
 
     columns: list[list[Any]] = []
     for r in ranges:
-        param = spec.param(r.name)          # raises ParameterError if unknown
+        if r.name.startswith("exits."):
+            from ..strategy.exit_params import exit_param_spec
+
+            param = exit_param_spec(r.name)
+        else:
+            param = spec.param(r.name)      # raises ParameterError if unknown
         coerced: list[Any] = []
         for raw in r.values():
             try:
