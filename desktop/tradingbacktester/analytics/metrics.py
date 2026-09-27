@@ -370,6 +370,9 @@ def _compute(result: BacktestResult) -> dict[str, Any]:
     _low_sample_pass(metrics, rel, n, curves)
     _sanitise(metrics, rel)
 
+    from .sanity import run_problems
+
+    metrics["integrity_warnings"] = run_problems(result)
     rel.default_ok(metrics)
     metrics["reliability"] = dict(sorted(rel.states.items()))
     metrics["reliability_notes"] = dict(sorted(rel.notes.items()))

@@ -263,6 +263,24 @@ appear in the Market Data panel and in full under **Data → Data Quality Report
 The application warns rather than silently repairing, because silently repairing
 data is how a backtest ends up describing something that never happened.
 
+### The instrument decides every number
+
+A backtest multiplies each price move by the instrument's point value, so data
+loaded against the wrong instrument does not fail. It produces numbers. US30
+prices loaded as AUDUSD (100,000 USD per point) turn a 100-point stop into a
+ten-million-dollar loss. Three guards stop that:
+
+- The import dialog takes the instrument from the file name when it names one
+  (`US30_30s.csv` is US30), and says so.
+- A time column headed `ny`, `et`, `utc`, `chicago` and the like sets the
+  timezone it names.
+- Validation refuses prices that cannot belong to the chosen instrument: fewer
+  than 20 or more than a billion of its ticks. No real market is outside that
+  band, and a currency pair given index prices is billions of ticks.
+
+A run on data that slipped through anyway, or that went below zero equity, is
+marked **NOT A VALID RESULT** in red above the statistics.
+
 ---
 
 ## Instruments

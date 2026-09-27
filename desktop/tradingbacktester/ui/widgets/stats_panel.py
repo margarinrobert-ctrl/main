@@ -365,7 +365,12 @@ class StatsPanel(QWidget):
         self._set_exit_breakdown(metrics.get("exit_reason_breakdown", {}) or {})
 
         n = int(metrics.get("total_trades", 0) or 0)
-        if n == 0:
+        integrity = list(metrics.get("integrity_warnings") or [])
+        if integrity:
+            # Ahead of everything: the other notices are about how much to trust
+            # the numbers, and these say the numbers are not about this market.
+            self._notice("NOT A VALID RESULT. " + "  ".join(integrity))
+        elif n == 0:
             self._notice("This run produced no trades. Check the entry rules, the "
                          "date range and the session filter.")
         elif n < 30:

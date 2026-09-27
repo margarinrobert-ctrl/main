@@ -13,6 +13,8 @@ caller imports the whole thing on a worker thread afterwards.
 from __future__ import annotations
 
 from pathlib import Path
+
+import numpy as np
 from typing import Any
 
 from PySide6.QtCore import QSize, Qt
@@ -337,8 +339,16 @@ class ImportWizard(QDialog):
         self._fill_preview()
         self._fill_columns()
         self._apply_profile_options()
+        guessed = self._instrument_from_name(path)
+        if guessed:
+            pos = self.instrument_box.findData(guessed)
+            if pos >= 0 and pos != self.instrument_box.currentIndex():
+                self.instrument_box.setCurrentIndex(pos)
         self._validated = False
         self._update_ok()
+        if guessed:
+            self._profile.problems.insert(
+                0, f"Instrument set to {guessed} from the file name; check it.")
         if self._profile.problems:
             self._set_status("  ".join(self._profile.problems[:3]), PALETTE.warning)
         else:
@@ -498,6 +508,28 @@ class ImportWizard(QDialog):
 
     # -- instruments -----------------------------------------------------
 
+    def _instrument_from_name(self, path: str) -> str | None:
+        """A known symbol that appears as a whole word in the file's name.
+
+        "US30_30s.csv" names US30.  The longest match wins, so "NAS100" is not
+        read as a shorter symbol it happens to contain.  None when the name
+        names nothing -- then the box is left as it was, and the price check at
+        validation is what stands between a wrong choice and an import.
+        """
+        import re
+
+        name = Path(path).name
+        for suffix in (".gz", ".csv", ".txt", ".tsv"):
+            if name.lower().endswith(suffix):
+                name = name[: -len(suffix)]
+        tokens = {t for t in re.split(r"[^A-Za-z0-9]+", name.upper()) if t}
+        try:
+            symbols = [inst.symbol for inst in self._instruments.all()]
+        except BacktesterError:
+            return None
+        hits = [sym for sym in symbols if sym.upper() in tokens]
+        return max(hits, key=len) if hits else None
+
     def _refresh_instruments(self, select: str = "") -> None:
         self.instrument_box.blockSignals(True)
         self.instrument_box.clear()
@@ -634,6 +666,19 @@ class ImportWizard(QDialog):
             self._validated = False
             self._update_ok()
             self._set_status(failure, PALETTE.danger)
+            return
+
+        from ...analytics.sanity import price_scale_problem
+
+        problem = price_scale_problem(self.instrument,
+                                      float(np.nanmedian(np.asarray(bars.close))))
+        if problem:
+            # Refused rather than warned: every number a backtest of this would
+            # print is multiplied by the wrong point value, and nothing
+            # downstream can tell.
+            self._validated = False
+            self._update_ok()
+            self._set_status(problem, PALETTE.danger)
             return
 
         self.mapping = mapping

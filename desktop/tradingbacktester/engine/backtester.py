@@ -364,8 +364,12 @@ class Backtester:
 
         result = self._build_result(run_bars, compiled, config, broker, signals,
                                     equity, balance, exposure, lo, hi)
-        result.warnings = (spec_warnings + self.warnings + broker.warnings
-                           + _touch_only_warning(broker))
+        from ..analytics.sanity import run_problems
+
+        # Anything that makes every number meaningless goes first, so it is
+        # the warning the status bar shows.
+        result.warnings = (run_problems(result) + spec_warnings + self.warnings
+                           + broker.warnings + _touch_only_warning(broker))
         result.duration_seconds = time.perf_counter() - started
         result.metrics = self._metrics(result)
         logger.info("Backtest finished: %s", result.summary_line())

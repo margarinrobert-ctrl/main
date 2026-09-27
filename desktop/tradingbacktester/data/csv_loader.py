@@ -1025,6 +1025,29 @@ def _column_samples(rows: Sequence[Sequence[str]], index: int | None) -> list[st
 # ---------------------------------------------------------------------------
 
 
+#: Header names that say which clock a time column is on.  Only names that
+#: cannot mean anything else: a column called "time" says nothing.
+_HEADER_ZONES = {
+    "ny": "America/New_York", "nyc": "America/New_York",
+    "new_york": "America/New_York", "newyork": "America/New_York",
+    "new york": "America/New_York", "ny_time": "America/New_York",
+    "time_ny": "America/New_York", "et": "America/New_York",
+    "est": "America/New_York", "edt": "America/New_York",
+    "america/new_york": "America/New_York",
+    "chicago": "America/Chicago", "ct": "America/Chicago",
+    "cst": "America/Chicago", "cdt": "America/Chicago",
+    "america/chicago": "America/Chicago",
+    "london": "Europe/London", "europe/london": "Europe/London",
+    "utc": "UTC", "gmt": "UTC", "time_utc": "UTC", "utc_time": "UTC",
+}
+
+
+def timezone_from_header(name: str) -> str | None:
+    """The timezone a column header names, or None if it names none."""
+    key = str(name or "").strip().lower().replace("-", "_")
+    return _HEADER_ZONES.get(key)
+
+
 def sniff_csv(path: str | Path) -> CsvProfile:
     """Inspect a CSV and guess how to read it.  Never raises.
 
@@ -1240,6 +1263,13 @@ def sniff_csv(path: str | Path) -> CsvProfile:
         # file is compressed.
         profile.row_estimate = max(len(data_rows),
                                    int((data_size(p) - profile.skip_rows) / avg))
+        zone = timezone_from_header(mapping.datetime or mapping.date or "")
+        if zone and (getattr(mapping, "timezone", "") or "UTC") == "UTC":
+            mapping.timezone = zone
+            profile.problems.append(
+                f"The time column is headed '{mapping.datetime or mapping.date}', "
+                f"so its times are read as {zone}. Change the timezone if that "
+                f"is wrong.")
         profile.mapping = mapping
     except Exception as exc:  # noqa: BLE001 - the sniffer must never raise
         log.exception("sniff_csv failed for %s", path)
