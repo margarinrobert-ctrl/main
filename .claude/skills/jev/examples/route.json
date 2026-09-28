@@ -1,0 +1,29 @@
+{
+  "state": {
+    "user_request": "Make a bar chart of monthly P&L from trades.csv",
+    "available": ["dataviz", "xlsx", "pdf", "code-review", "none"]
+  },
+  "questions": {
+    "skill": {
+      "type": "choice",
+      "instructions": "Which single skill should handle `user_request`?",
+      "criteria": {
+        "dataviz": "The deliverable is a chart, graph, plot or dashboard.",
+        "xlsx": "The deliverable is a spreadsheet file.",
+        "pdf": "The request involves reading or producing a PDF.",
+        "code-review": "The request is to review a diff or pull request for bugs.",
+        "none": "No listed skill clearly fits."
+      }
+    },
+    "complexity": {
+      "type": "score",
+      "instructions": "How much work is `user_request`?",
+      "criteria": [
+        "A one-step answer or a single small edit",
+        "A few steps in one file or one tool",
+        "Several files or tools, but a known pattern",
+        "Open-ended, needs design decisions or research"
+      ]
+    }
+  }
+}

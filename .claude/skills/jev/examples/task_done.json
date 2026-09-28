@@ -1,0 +1,28 @@
+{
+  "state": {
+    "request": "Add a --dry-run flag that prints the request body without sending it.",
+    "diff_stat": "scripts/jev.py | 12 +++++++++---",
+    "evidence": "Ran `jev.py --dry-run examples/route.json`: printed {\"ok\": true, \"dry_run\": true, ...}; no network call made.",
+    "claim": "The --dry-run flag is implemented and verified."
+  },
+  "questions": {
+    "implemented": {
+      "type": "noul",
+      "instructions": "Does `evidence` show the behaviour described in `request` actually working?"
+    },
+    "claim_supported": {
+      "type": "noul",
+      "instructions": "Is every part of `claim` supported by `diff_stat` and `evidence`, with nothing asserted that they do not show?"
+    },
+    "next": {
+      "type": "choice",
+      "instructions": "What should happen next?",
+      "criteria": {
+        "complete": "The request is implemented and verified by the evidence.",
+        "verify": "It looks implemented but the evidence does not yet prove it.",
+        "retry": "The evidence shows it is not working or not implemented.",
+        "escalate": "The request is ambiguous or needs a human decision."
+      }
+    }
+  }
+}
